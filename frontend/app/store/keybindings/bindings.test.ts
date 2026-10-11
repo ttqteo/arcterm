@@ -49,8 +49,9 @@ import {
     buildJarvisTourBindings,
     buildListNavBindings,
     buildUsageBindings,
-    closeTargetForDoubleCtrlC,
+    closeTarget,
 } from "./bindings";
+import { setPlatform } from "@/util/platformutil";
 import { listNavAtom } from "./listnav";
 import type { KeyContext } from "./types";
 
@@ -92,31 +93,65 @@ const ctx = (surface: SurfaceKey = "cockpit"): KeyContext => ({
     leader: null,
 });
 
-describe("closeTargetForDoubleCtrlC", () => {
-    const agents = [
+describe("closeTarget", () => {
+    const items = [
         { id: "agent-tab", name: "Agent", state: "working" },
         { id: "terminal-tab", name: "Terminal", state: "idle", kind: "terminal" },
     ] as any;
 
-    it("closes a focused agent session (spec §5: double-Ctrl+C closes the agent)", () => {
-        expect(closeTargetForDoubleCtrlC(agents, "agent-tab")).toEqual(agents[0]);
+    it("closes the focused agent", () => {
+        expect(closeTarget(items, "agent-tab")).toEqual(items[0]);
     });
 
-    it("never closes a plain terminal: both presses reach its shell", () => {
-        expect(closeTargetForDoubleCtrlC(agents, "terminal-tab")).toBeNull();
+    it("closes a plain terminal too, as a terminal app's tab closes", () => {
+        expect(closeTarget(items, "terminal-tab")).toEqual(items[1]);
     });
 
-    it("goes by the pane that took the keys, not the selected agent: a terminal docked under it closes nothing", () => {
-        expect(closeTargetForDoubleCtrlC(agents, "agent-tab", "terminal-tab")).toBeNull();
-        expect(closeTargetForDoubleCtrlC(agents, "terminal-tab", "agent-tab")).toEqual(agents[0]);
+    it("goes by the pane that took the keys, not the selected agent: a terminal docked under it closes the terminal", () => {
+        expect(closeTarget(items, "agent-tab", "terminal-tab")).toEqual(items[1]);
+        expect(closeTarget(items, "terminal-tab", "agent-tab")).toEqual(items[0]);
     });
 
     it("returns null (no close) when nothing is focused", () => {
-        expect(closeTargetForDoubleCtrlC(agents, undefined)).toBeNull();
+        expect(closeTarget(items, undefined)).toBeNull();
     });
 
     it("returns null when the focused id is not in the roster", () => {
-        expect(closeTargetForDoubleCtrlC(agents, "gone")).toBeNull();
+        expect(closeTarget(items, "gone")).toBeNull();
+    });
+});
+
+// ⌘W on a Mac, as a terminal app closes its tab; Ctrl+Shift+W on Windows, where Ctrl+W deletes a word in the terminal
+describe("close-agent chord", () => {
+    beforeEach(() => vi.stubGlobal("document", { activeElement: null }));
+    afterEach(() => {
+        setPlatform("darwin");
+        vi.unstubAllGlobals();
+    });
+
+    const model = () =>
+        ({
+            surfaceAtom: atom<SurfaceKey>("agent"),
+            agentsAtom: atom([{ id: "a1", name: "Agent", state: "idle" }]),
+            terminalsAtom: atom([]),
+            focusIdAtom: atom<string | undefined>("a1"),
+        }) as any;
+
+    it("is Mod+W on a Mac and Ctrl+Shift+W on Windows", () => {
+        expect(buildGlobalBindings(model()).find((x) => x.id === "close-agent")!.keys).toBe("Mod:w");
+        setPlatform("win32");
+        expect(buildGlobalBindings(model()).find((x) => x.id === "close-agent")!.keys).toBe("Ctrl:Shift:w");
+    });
+
+    it("works from inside the terminal on the Agent surface, and asks before closing the focused agent", () => {
+        const m = model();
+        const b = buildGlobalBindings(m).find((x) => x.id === "close-agent")!;
+        expect(b.when?.({ ...ctx("agent"), editable: true })).toBe(true);
+        expect(b.when?.(ctx("cockpit"))).toBe(false);
+        expect(b.when?.({ ...ctx("agent"), modalOpen: true })).toBe(false);
+        vi.mocked(confirmCloseSession).mockClear();
+        b.run(ctx("agent"));
+        expect(confirmCloseSession).toHaveBeenCalledWith(expect.objectContaining({ id: "a1" }), m);
     });
 });
 

@@ -1,7 +1,8 @@
 // The window's macOS chrome (floatstore.ts): hide the traffic lights while the window is folded into Sprout, and send
 // the yellow button and ⌘M to Sprout instead of the Dock while window:minimize says so. Tauri can do neither, so this
 // talks to AppKit. Commands that are not async run on the main thread, which AppKit requires; the marker check turns a
-// mistake there into an error instead of undefined behaviour. Both are no-ops on other platforms.
+// mistake there into an error instead of undefined behaviour. Both are no-ops on other platforms. It also takes ⌘W off
+// the menu's Close Window, so the key reaches the cockpit, which closes the focused agent with it.
 
 use tauri::WebviewWindow;
 
@@ -14,6 +15,7 @@ mod imp {
     use objc2::runtime::{AnyObject, NSObject, Sel};
     use objc2::{define_class, msg_send, sel, MainThreadMarker, MainThreadOnly};
     use objc2_app_kit::{NSApplication, NSMenuItem, NSWindow, NSWindowButton};
+    use objc2_foundation::ns_string;
     use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
     static APP: OnceLock<AppHandle> = OnceLock::new();
@@ -80,6 +82,29 @@ mod imp {
         None
     }
 
+    // Tauri's default menu has Close Window (performClose:) on ⌘W, in File and in Window. Closing the window quits
+    // arcterm and every agent in it, so the items keep their place in the menu but lose the key.
+    pub fn free_close_window_key() {
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let Some(menu) = NSApplication::sharedApplication(mtm).mainMenu() else {
+            return;
+        };
+        for i in 0..menu.numberOfItems() {
+            let Some(sub) = menu.itemAtIndex(i).and_then(|item| item.submenu()) else {
+                continue;
+            };
+            for j in 0..sub.numberOfItems() {
+                if let Some(item) = sub.itemAtIndex(j) {
+                    if item.action() == Some(sel!(performClose:)) {
+                        item.setKeyEquivalent(ns_string!(""));
+                    }
+                }
+            }
+        }
+    }
+
     pub fn set_traffic_lights_hidden(window: &WebviewWindow, hidden: bool) -> Result<(), String> {
         let mtm = MainThreadMarker::new().ok_or("not on the main thread")?;
         let ns = ns_window(window, mtm)?;
@@ -136,6 +161,12 @@ mod imp {
         });
         Ok(())
     }
+}
+
+// Runs from setup, on the main thread, once Tauri has installed the app menu.
+pub fn free_close_window_key() {
+    #[cfg(target_os = "macos")]
+    imp::free_close_window_key();
 }
 
 #[tauri::command]

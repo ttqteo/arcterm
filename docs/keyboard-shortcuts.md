@@ -11,7 +11,7 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 ## Concepts
 
 - **`Mod`** is `Cmd` (⌘) on macOS and `Ctrl` on Windows: the app's own chords (`Mod`+`P`, `Mod`+`N`, `Mod`+`Enter`…)
-  follow the platform. A chord written `Ctrl` is the Control key on both (`Ctrl`+`Tab`, and `Ctrl`+`C`, which
+  follow the platform. A chord written `Ctrl` is the Control key on both (`Ctrl`+`Tab`; `Ctrl`+`C` always
   belongs to the terminal). On macOS an `Alt` chord is `Option`, matched by the key's position.
 - **Postures.** There is no global "mode" to track. Focus determines behavior:
   - **Navigate** — focus is on a surface region (not a text field). Single keys move a cursor and act on it.
@@ -41,7 +41,7 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 | `Mod`+`Shift`+`N` | Launch a Pi tab |
 | `Mod`+`G` | Go to…: opens the go-to leader (see below) |
 | `Ctrl`+`Tab` / `Ctrl`+`Shift`+`Tab` | Next agent / next agent that is asking (it goes forward, not back). In a float: next / previous tab on the ledge, plain terminals included; `Option`+`Tab` / `Option`+`Shift`+`Tab` too on a Mac |
-| `Ctrl`+`C` `Ctrl`+`C` (double, within 500ms) | Close the focused agent |
+| `Cmd`+`W` on macOS, `Ctrl`+`Shift`+`W` on Windows | Close the agent or terminal in focus, as a terminal app closes its tab: the pane you are typing in, else the selected agent. Works from inside the terminal and asks first. Windows keeps `Ctrl`+`W` for the terminal, where it deletes a word |
 | `Mod`+`M` | Fold the window into Sprout, from the cockpit or a float, even from inside a terminal (on Windows it takes Ctrl+M from the terminal). Settings → General → Window → Minimize: Dock sends it to the Dock or taskbar instead |
 
 Setup and Settings have no `Mod`+number slot — the positions are bound to `SURFACE_ORDER`

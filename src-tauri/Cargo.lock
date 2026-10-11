@@ -4295,6 +4295,7 @@ dependencies = [
  "mac-notification-sys",
  "objc2",
  "objc2-app-kit",
+ "objc2-foundation",
  "open",
  "regex",
  "serde",

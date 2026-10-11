@@ -7,7 +7,7 @@ import { cheatsheetOpenAtom } from "@/app/cockpit/shortcuts-cheatsheet";
 import { anyModalOpen } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
 import { activeNavOrder } from "@/app/view/agents/activenav";
-import { confirmCloseSession } from "@/app/view/agents/agentactions";
+import { closeAgentChord, confirmCloseSession } from "@/app/view/agents/agentactions";
 import { centerModeAtom, showHistory, showTerminal } from "@/app/view/agents/agentcenter";
 import { AgentsViewModel, SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
 import { AGENT_DIGITS } from "@/app/view/agents/agentsidebarmodel";
@@ -85,8 +85,6 @@ import { ownsKeys } from "./dispatcher";
 import { listNavAtom } from "./listnav";
 import type { Binding, KeyContext } from "./types";
 
-const DOUBLE_CTRL_C_MS = 500;
-
 function focusCodeSidebarOpener(): boolean {
     const opener = document.querySelector<HTMLButtonElement>('button[aria-label^="Expand Code sidebar"]');
     if (opener == null || opener.classList.contains("hidden")) {
@@ -161,22 +159,15 @@ const terminalSwapped = (model: AgentsViewModel) =>
 // while the focused agent shows either. The agent switches stay live: the tree stays on screen beside them.
 const inAgentSwap = (model: AgentsViewModel, ctx: KeyContext) => ctx.surface === "agent" && terminalSwapped(model);
 
-// Spec §5 (agent-tab-fixes): the second Ctrl+C closes the *focused* agent's session. The session is the one whose pane
-// the keys were typed in (paneId), which is not the selected agent when they went to the terminal docked under it
-// (terminaldock.ts); the selected agent only when the pane names none. A plain terminal is never a target: in a shell
-// Ctrl+C twice is how you stop a stubborn command, so both presses reach it (its menu and the x close it). Returns null
-// when there is no agent to close, so the press falls through to the PTY instead.
-export function closeTargetForDoubleCtrlC(
-    agents: AgentVM[],
-    focusId: string | undefined,
-    paneId?: string
-): AgentVM | null {
+// The close-agent chord closes the tab the keys were typed in: the pane that took them (paneId), which is not the selected
+// agent when they went to the terminal docked under it (terminaldock.ts); the selected agent when the pane names none. A
+// plain terminal closes too, as a terminal app's tab does. Returns null when there is nothing to close.
+export function closeTarget(items: AgentVM[], focusId: string | undefined, paneId?: string): AgentVM | null {
     const id = paneId || focusId;
     if (!id) {
         return null;
     }
-    const target = agents.find((x) => x.id === id);
-    return target != null && target.kind !== "terminal" ? target : null;
+    return items.find((x) => x.id === id) ?? null;
 }
 
 // Ctrl+Tab in a float: show the tab beside the one in view, as a click on it does
@@ -194,8 +185,6 @@ function stepFloat(model: AgentsViewModel, delta: 1 | -1): void {
 }
 
 export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
-    let lastCtrlC: number | null = null;
-
     // `[`/`]` cycle the rail order (SURFACE_ORDER). A surface outside the cycle (settings) enters at an end.
     const cycleSurface = (delta: number) => {
         const cur = globalStore.get(model.surfaceAtom);
@@ -404,33 +393,19 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             : []),
         {
             id: "close-agent",
-            keys: "Ctrl:c",
+            keys: closeAgentChord(),
             group: "Agent",
-            label: "Close agent (press twice)",
-            paletteHidden: true, // one row would fire one press and appear to do nothing
-            // Global chord (allowed while the terminal is focused/editable), Agent surface only.
-            when: (ctx) => ctx.surface === "agent",
+            label: "Close the agent or terminal in focus",
+            // a chord, so it works from inside the terminal; the close still asks first
+            when: (ctx) => ctx.surface === "agent" && !ctx.modalOpen,
             run: () => {
                 const active = document.activeElement as HTMLElement | null;
-                const inTerm = active?.closest?.(".cockpit-focus-pane") != null;
-                if (!inTerm) {
-                    return false; // let ^C reach the shell when not in the focus pane
+                const paneId = active?.closest<HTMLElement>("[data-agent-terminal]")?.dataset.agentTerminal;
+                const items = [...globalStore.get(model.agentsAtom), ...globalStore.get(model.terminalsAtom)];
+                const target = closeTarget(items, globalStore.get(model.focusIdAtom), paneId);
+                if (target != null) {
+                    confirmCloseSession(target, model);
                 }
-                const now = performance.now();
-                if (lastCtrlC != null && now - lastCtrlC < DOUBLE_CTRL_C_MS) {
-                    lastCtrlC = null;
-                    const agents = [...globalStore.get(model.agentsAtom), ...globalStore.get(model.terminalsAtom)];
-                    const fid = globalStore.get(model.focusIdAtom);
-                    const paneId = active?.closest<HTMLElement>("[data-agent-terminal]")?.dataset.agentTerminal;
-                    const a = closeTargetForDoubleCtrlC(agents, fid, paneId);
-                    if (a) {
-                        confirmCloseSession(a, model);
-                        return true;
-                    }
-                    return false;
-                }
-                lastCtrlC = now;
-                return false; // first press falls through so the PTY receives ^C
             },
         },
         {
@@ -1100,7 +1075,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             // The leader letter `f` is taken by the Diff surface (GO_TARGETS), so fullscreen needs a
             // chord to stay reachable from inside the TUI. F11 is the universal convention, carries no
             // editor muscle memory, and is not a key a TUI's text input consumes. Deliberately NOT
-            // gated on !editable — same shape as close-agent's Ctrl+C, which stays live in the terminal.
+            // gated on !editable — same shape as close-agent's chord, which stays live in the terminal.
             id: "agent:fullscreen-chord",
             keys: "F11",
             group: "Agent",
@@ -1652,7 +1627,7 @@ export function buildCodeBindings(): Binding[] {
             destructive: true,
             // deliberately NOT gated on !ctx.editable: you are typing in Monaco when you press this, so
             // the editable exclusion the bare-letter bindings use would make it unreachable. Same shape
-            // as close-agent's Ctrl:c, which stays live while the terminal has focus.
+            // as close-agent's chord, which stays live while the terminal has focus.
             when: (ctx) => ctx.surface === "code",
             run: () => {
                 void saveCurrent();

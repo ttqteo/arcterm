@@ -21,6 +21,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- **⌘W** closes the agent or terminal in focus, as a terminal app closes its tab (Ctrl+Shift+W on Windows, where
+  Ctrl+W still deletes a word in the terminal). It works from inside the terminal and asks first, and it no longer
+  closes arcterm's window. Ctrl+C twice no longer closes an agent: it always goes to the terminal.
 - A **sleeping agent** shows its conversation where its terminal was: the terminal kept only the lines printed before
   the agent started and the kill that put it to sleep. **Wake** brings the live terminal back.
 - Images attached to a **new agent's task** show as pictures in its transcript, not as a list of paths. They are kept

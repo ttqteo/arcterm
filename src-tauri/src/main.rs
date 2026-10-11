@@ -348,6 +348,7 @@ fn main() {
             if let Some(hwnd) = app.get_webview_window("main").and_then(|w| w.hwnd().ok()) {
                 use_resource_window_icons(hwnd.0 as isize);
             }
+            macwindow::free_close_window_key();
             // seed the static identity fields before wavesrv parsing fills in the endpoints.
             {
                 let state = app.state::<InitState>();

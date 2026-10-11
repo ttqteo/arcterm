@@ -38,7 +38,7 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect } from "react";
-import { confirmCloseSession, interruptAgent } from "./agentactions";
+import { closeAgentChord, confirmCloseSession, interruptAgent } from "./agentactions";
 import { contextLevel, contextTokens } from "./agentrailmodel";
 import type { AgentsViewModel } from "./agents";
 import { askingLabel, askSentKey, formatTokens, projectOf, type AgentVM } from "./agentsviewmodel";
@@ -618,8 +618,8 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                             onClick={closeTerminal}
                             title={
                                 agent.kind === "terminal"
-                                    ? "Close terminal — ends its shell"
-                                    : `Close agent — ends its session (${formatChordString("Ctrl:c")} twice)`
+                                    ? `Close terminal — ends its shell (${formatChordString(closeAgentChord())})`
+                                    : `Close agent — ends its session (${formatChordString(closeAgentChord())})`
                             }
                             className={cn(ICON_BTN, "hover:bg-error/15 hover:text-error")}
                         >
