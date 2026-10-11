@@ -112,11 +112,13 @@ type SettingsType struct {
 
 	UsageInsightsLang string `json:"usage:insightslang,omitempty"` // language the usage analysis answers in; empty is English
 
-	TokenGateClear     bool     `json:"tokengate:*,omitempty"`
-	TokenGateEnabled   *bool    `json:"tokengate:enabled,omitempty"`   // nil = on: a costly spawn waits on the Token burn card
-	TokenGateSharePct  *float64 `json:"tokengate:sharepct,omitempty"`  // ask when a spawn would take this % of the 5h window; nil = 10, 0 = off
-	TokenGateWindowPct *float64 `json:"tokengate:windowpct,omitempty"` // ask when the 5h window is this % used; nil = 70, 0 = off
-	TokenGateAgents    *int     `json:"tokengate:agents,omitempty"`    // ask when a group starts this many agents; nil = 3, 0 = off
+	TokenGateClear      bool     `json:"tokengate:*,omitempty"`
+	TokenGateEnabled    *bool    `json:"tokengate:enabled,omitempty"`    // nil = on: a costly spawn waits on the Token burn card
+	TokenGateSharePct   *float64 `json:"tokengate:sharepct,omitempty"`   // ask when a spawn would take this % of the 5h window; nil = 10, 0 = off
+	TokenGateWindowPct  *float64 `json:"tokengate:windowpct,omitempty"`  // ask when the 5h window is this % used; nil = 70, 0 = off
+	TokenGateAgents     *int     `json:"tokengate:agents,omitempty"`     // ask when a group starts this many agents; nil = 3, 0 = off
+	TokenGateWeekPct    *float64 `json:"tokengate:weekpct,omitempty"`    // ask when the weekly window is this % used; nil = 80, 0 = off
+	TokenGateSessionPct *float64 `json:"tokengate:sessionpct,omitempty"` // ask when the asking session has used this % of the 5h window; nil = 25, 0 = off
 
 	JobsSlots *int   `json:"jobs:slots,omitempty"` // heavy jobs run at once (pkg/jobqueue), 1–4; unset is 1
 	JobsMode  string `json:"jobs:mode,omitempty"`  // how the queue starts them: "auto" (unset; as RAM allows), "slots" (jobs:slots at once), "off" (at once)

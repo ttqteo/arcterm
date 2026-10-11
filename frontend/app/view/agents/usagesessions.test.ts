@@ -36,6 +36,8 @@ const sess = (id: string, over: Partial<UsageSession> = {}): UsageSession => ({
     coldtokens: 0,
     firstts: 1_000_000,
     lastts: 1_000_000 + HOUR,
+    fivehourtokens: 0,
+    weektokens: 0,
     ...over,
 });
 

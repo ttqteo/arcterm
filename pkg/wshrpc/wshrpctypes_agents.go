@@ -18,6 +18,9 @@ type AgentCommands interface {
 	GetTranscriptTokensCommand(ctx context.Context, data CommandGetTranscriptTokensData) (*CommandGetTranscriptTokensRtnData, error)
 	GetTranscriptUsageCommand(ctx context.Context, data CommandGetTranscriptUsageData) (*CommandGetTranscriptUsageRtnData, error)
 	GetWindowTokensCommand(ctx context.Context, data CommandGetWindowTokensData) (*CommandGetWindowTokensRtnData, error)
+	GetSessionBurnCommand(ctx context.Context, data CommandGetSessionBurnData) (*CommandGetSessionBurnRtnData, error)                   // a spawn's weighing for the Token burn card
+	GetSubagentCostsCommand(ctx context.Context) (*CommandGetSubagentCostsRtnData, error)                                                // what finished subagents cost, by type (Usage)
+	ReviewTokenEstimatesCommand(ctx context.Context, data CommandReviewTokenEstimatesData) (*CommandReviewTokenEstimatesRtnData, error) // the logged Token burn estimates against what ran
 	GetClaudeQuotaCommand(ctx context.Context) (*CommandGetClaudeQuotaRtnData, error)     // the Claude account's 5-hour and weekly windows with no session running
 	RefreshClaudeQuotaCommand(ctx context.Context) (*CommandGetClaudeQuotaRtnData, error) // the same, asking the usage endpoint now (a 429 backoff still holds: RetryAt says until when)
 	GetCacheStatusCommand(ctx context.Context, data CommandGetCacheStatusData) (*CommandGetCacheStatusRtnData, error)
@@ -150,14 +153,21 @@ type UsageSession struct {
 	ColdTokens  int                 `json:"coldtokens"`
 	FirstTs     int64               `json:"firstts"`
 	LastTs      int64               `json:"lastts"`
+
+	FiveHourTokens int `json:"fivehourtokens"` // this session's tokens since FiveHourCutoff, subagents included
+	WeekTokens     int `json:"weektokens"`
 }
 
 type CommandGetSessionUsageData struct {
-	WindowDays int `json:"windowdays,omitempty"`
+	WindowDays     int   `json:"windowdays,omitempty"`
+	FiveHourCutoff int64 `json:"fivehourcutoff,omitempty"` // epoch seconds; 0 = the trailing 5 hours
+	WeekCutoff     int64 `json:"weekcutoff,omitempty"`     // epoch seconds; 0 = the trailing 7 days
 }
 
 type CommandGetSessionUsageRtnData struct {
-	Sessions []UsageSession `json:"sessions"`
+	Sessions             []UsageSession `json:"sessions"`
+	WindowFiveHourTokens int            `json:"windowfivehourtokens"` // every session's tokens since FiveHourCutoff
+	WindowWeekTokens     int            `json:"windowweektokens"`
 }
 
 type CommandAnalyzeUsageData struct {
@@ -215,6 +225,60 @@ type CommandGetWindowTokensData struct {
 type CommandGetWindowTokensRtnData struct {
 	FiveHourTokens int `json:"fivehourtokens"`
 	WeekTokens     int `json:"weektokens"`
+}
+
+// what finished subagents of one type cost (usagestats.SubagentCost); type "all" is every type at once
+type SubagentCostData struct {
+	Type    string `json:"type"`
+	Samples int    `json:"samples"`
+	Mean    int64  `json:"mean"`
+	P25     int64  `json:"p25"`
+	P90     int64  `json:"p90"`
+}
+
+type CommandGetSessionBurnData struct {
+	Path           string `json:"path,omitempty"`           // the session's transcript, or one of its subagents'; "" = no session
+	FiveHourCutoff int64  `json:"fivehourcutoff,omitempty"` // epoch seconds; 0 = the trailing 5 hours (not all-time, unlike GetWindowTokens)
+	WeekCutoff     int64  `json:"weekcutoff,omitempty"`     // epoch seconds; 0 = the trailing 7 days
+}
+
+// usagestats.Burn on the wire: WindowTokens' sums for both windows and for the session inside them (its subagents
+// included), and what finished subagents cost by type
+type CommandGetSessionBurnRtnData struct {
+	Session         string             `json:"session"`
+	WindowFiveHour  int                `json:"windowfivehour"`
+	WindowWeek      int                `json:"windowweek"`
+	SessionFiveHour int                `json:"sessionfivehour"`
+	SessionWeek     int                `json:"sessionweek"`
+	Subagents       int                `json:"subagents"`
+	Costs           []SubagentCostData `json:"costs"`
+}
+
+type CommandGetSubagentCostsRtnData struct {
+	Costs []SubagentCostData `json:"costs"`
+}
+
+type CommandReviewTokenEstimatesData struct {
+	Days int `json:"days,omitempty"` // 0 = 7
+}
+
+type TokenEstimateTypeReview struct {
+	Type        string  `json:"type"`
+	Matched     int     `json:"matched"`
+	MedianRatio float64 `json:"medianratio"`
+}
+
+// usagestats.EstimateReview on the wire, with the subagent costs as they stand now
+type CommandReviewTokenEstimatesRtnData struct {
+	Days        int                       `json:"days"`
+	Logged      int                       `json:"logged"`
+	Run         int                       `json:"run"`
+	Matched     int                       `json:"matched"`
+	MedianRatio float64                   `json:"medianratio"`
+	WithRange   int                       `json:"withrange"`
+	InRange     int                       `json:"inrange"`
+	ByType      []TokenEstimateTypeReview `json:"bytype"`
+	Costs       []SubagentCostData        `json:"costs"`
 }
 
 // the windows as AgentUsage spells them, from Anthropic's usage endpoint or Claude Code's cache of it;

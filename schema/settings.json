@@ -204,6 +204,12 @@
         "tokengate:agents": {
           "type": "integer"
         },
+        "tokengate:weekpct": {
+          "type": "number"
+        },
+        "tokengate:sessionpct": {
+          "type": "number"
+        },
         "jobs:slots": {
           "type": "integer"
         },

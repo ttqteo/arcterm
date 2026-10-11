@@ -613,6 +613,12 @@ func GetSecretsNamesCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) ([]string, 
 	return resp, err
 }
 
+// command "getsessionburn", wshserver.GetSessionBurnCommand
+func GetSessionBurnCommand(w *wshutil.WshRpc, data wshrpc.CommandGetSessionBurnData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetSessionBurnRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetSessionBurnRtnData](w, "getsessionburn", data, opts)
+	return resp, err
+}
+
 // command "getsessiongroup", wshserver.GetSessionGroupCommand
 func GetSessionGroupCommand(w *wshutil.WshRpc, data wshrpc.CommandGetSessionGroupData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetSessionGroupRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetSessionGroupRtnData](w, "getsessiongroup", data, opts)
@@ -634,6 +640,12 @@ func GetSessionUsageCommand(w *wshutil.WshRpc, data wshrpc.CommandGetSessionUsag
 // command "getstorage", wshserver.GetStorageCommand
 func GetStorageCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*storage.StorageReport, error) {
 	resp, err := sendRpcRequestCallHelper[*storage.StorageReport](w, "getstorage", nil, opts)
+	return resp, err
+}
+
+// command "getsubagentcosts", wshserver.GetSubagentCostsCommand
+func GetSubagentCostsCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetSubagentCostsRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetSubagentCostsRtnData](w, "getsubagentcosts", nil, opts)
 	return resp, err
 }
 
@@ -1011,6 +1023,12 @@ func ResolveIdsCommand(w *wshutil.WshRpc, data wshrpc.CommandResolveIdsData, opt
 func RetryRadarClusteringCommand(w *wshutil.WshRpc, data wshrpc.CommandRetryRadarClusteringData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "retryradarclustering", data, opts)
 	return err
+}
+
+// command "reviewtokenestimates", wshserver.ReviewTokenEstimatesCommand
+func ReviewTokenEstimatesCommand(w *wshutil.WshRpc, data wshrpc.CommandReviewTokenEstimatesData, opts *wshrpc.RpcOpts) (*wshrpc.CommandReviewTokenEstimatesRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandReviewTokenEstimatesRtnData](w, "reviewtokenestimates", data, opts)
+	return resp, err
 }
 
 // command "routeannounce", wshserver.RouteAnnounceCommand

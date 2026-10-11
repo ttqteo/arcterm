@@ -618,6 +618,12 @@ export class RpcApiType {
         return client.wshRpcCall("getsecretsnames", null, opts);
     }
 
+    // command "getsessionburn" [call]
+    GetSessionBurnCommand(client: WshClient, data: CommandGetSessionBurnData, opts?: RpcOpts): Promise<CommandGetSessionBurnRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getsessionburn", data, opts);
+        return client.wshRpcCall("getsessionburn", data, opts);
+    }
+
     // command "getsessiongroup" [call]
     GetSessionGroupCommand(client: WshClient, data: CommandGetSessionGroupData, opts?: RpcOpts): Promise<CommandGetSessionGroupRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getsessiongroup", data, opts);
@@ -640,6 +646,12 @@ export class RpcApiType {
     GetStorageCommand(client: WshClient, opts?: RpcOpts): Promise<StorageReport> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getstorage", null, opts);
         return client.wshRpcCall("getstorage", null, opts);
+    }
+
+    // command "getsubagentcosts" [call]
+    GetSubagentCostsCommand(client: WshClient, opts?: RpcOpts): Promise<CommandGetSubagentCostsRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getsubagentcosts", null, opts);
+        return client.wshRpcCall("getsubagentcosts", null, opts);
     }
 
     // command "getsubagents" [call]
@@ -1018,6 +1030,12 @@ export class RpcApiType {
     RetryRadarClusteringCommand(client: WshClient, data: CommandRetryRadarClusteringData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "retryradarclustering", data, opts);
         return client.wshRpcCall("retryradarclustering", data, opts);
+    }
+
+    // command "reviewtokenestimates" [call]
+    ReviewTokenEstimatesCommand(client: WshClient, data: CommandReviewTokenEstimatesData, opts?: RpcOpts): Promise<CommandReviewTokenEstimatesRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "reviewtokenestimates", data, opts);
+        return client.wshRpcCall("reviewtokenestimates", data, opts);
     }
 
     // command "routeannounce" [call]
