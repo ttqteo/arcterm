@@ -5,17 +5,21 @@
 // (docs/superpowers/specs/2026-10-08-rail-worktree-files-design.md). The pane is one focus owner (role="tree", tabIndex,
 // data-owns-keys), like the Code surface's tree, so the arrow keys and Enter are its own while it holds focus. What is
 // open, selected and under the cursor lives in an atom per agent (railtreestore.ts): the pane unmounts when the tab or
-// the surface changes.
+// the surface changes. The files pinned in Code for this folder list above the tree, and pin from here too: one list
+// (codepins.ts), so a pin on either side shows on the other.
 
 import { FileIcon } from "@/app/element/fileicon";
 import { SkeletonLine } from "@/app/element/skeleton";
+import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
+import { pinsFor } from "@/app/view/code/codepins";
+import { codePinsAtom, toggleCodePinIn } from "@/app/view/code/codestore";
 import { visibleRows, type TreeRow } from "@/app/view/code/codetree";
 import { treeKeyAction, type TreeKey } from "@/app/view/code/codetreekeys";
 import { joinRepoPath, repoBasename } from "@/util/paths";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
+import { ChevronDown, ChevronRight, Pin, PinOff, RefreshCw, X } from "lucide-react";
 import { useEffect, useMemo, useRef, type MouseEvent } from "react";
 import { openFileInPanel } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
@@ -24,6 +28,7 @@ import {
     clickRow,
     dragPaths,
     moveCursorTo,
+    revealRow,
     shouldReloadTree,
     toggleExpanded,
     type ClickMod,
@@ -71,6 +76,7 @@ export function RailTreePane({
     const listed = useAtomValue(railListedAtom(cwd));
     const stateAtom = railTreeStateAtom(agentId);
     const state = useAtomValue(stateAtom);
+    const pinned = pinsFor(useAtomValue(codePinsAtom), cwd);
     const rowRefs = useRef(new Map<string, HTMLDivElement>());
     const seen = useRef<TreeReloadObservation | null>(null);
 
@@ -109,6 +115,10 @@ export function RailTreePane({
     };
     const openFile = (path: string) => openFileInPanel(model, agentId, { abs: joinRepoPath(cwd, path), root: cwd });
     const reload = () => fireAndForget(() => reloadTree(cwd, agentId));
+    const openPinned = (rel: string) => {
+        globalStore.set(stateAtom, revealRow(globalStore.get(stateAtom), rel));
+        openFile(rel);
+    };
 
     const onKeyDown = (ev: React.KeyboardEvent) => {
         const key = KEYS[ev.key];
@@ -167,6 +177,22 @@ export function RailTreePane({
                     setDraggedPathsCount(paths.length);
                 }}
                 onDragEnd={() => setDraggedPathsCount(0)}
+                onContextMenu={(ev) => {
+                    if (row.kind !== "file") {
+                        return;
+                    }
+                    const on = pinned.includes(row.path);
+                    ContextMenuModel.getInstance().showContextMenu(
+                        [
+                            {
+                                label: on ? "Unpin" : "Pin",
+                                icon: on ? <PinOff size={13} strokeWidth={1.8} /> : <Pin size={13} strokeWidth={1.8} />,
+                                click: () => toggleCodePinIn(cwd, row.path),
+                            },
+                        ],
+                        ev
+                    );
+                }}
                 style={{ paddingLeft: 8 + row.depth * 12 }}
                 className={cn(
                     "flex w-full cursor-pointer items-center gap-1.5 py-[3px] pr-2 text-left text-[12.5px]",
@@ -193,6 +219,11 @@ export function RailTreePane({
                     className={row.ignored ? "opacity-50" : undefined}
                 />
                 <span className="min-w-0 truncate">{row.name}</span>
+                {row.kind === "file" && pinned.includes(row.path) ? (
+                    <span aria-label="Pinned" title="Pinned" className="ml-auto flex flex-none text-muted">
+                        <Pin size={10} strokeWidth={1.8} />
+                    </span>
+                ) : null}
             </div>
         );
     };
@@ -237,6 +268,14 @@ export function RailTreePane({
                         Showing the first {listing.files.length.toLocaleString("en-US")} files
                     </div>
                 ) : null}
+                {pinned.length > 0 ? (
+                    <PinnedFiles
+                        pinned={pinned}
+                        cwd={cwd}
+                        onOpen={openPinned}
+                        onUnpin={(rel) => toggleCodePinIn(cwd, rel)}
+                    />
+                ) : null}
                 <div
                     role="tree"
                     aria-label="Worktree files"
@@ -275,6 +314,82 @@ export function RailTreePane({
                 </button>
             </div>
             {body}
+        </div>
+    );
+}
+
+// The Code surface's Pinned list (codetreepane.tsx PinnedFiles) for this folder: a click opens the file in the panel and
+// reveals it in the tree for Back, and a row drags onto a terminal like a tree row.
+function PinnedFiles({
+    pinned,
+    cwd,
+    onOpen,
+    onUnpin,
+}: {
+    pinned: readonly string[];
+    cwd: string;
+    onOpen: (rel: string) => void;
+    onUnpin: (rel: string) => void;
+}) {
+    return (
+        <div data-rail-pinned className="flex max-h-[40%] flex-none flex-col border-b border-border">
+            <div className="flex-none px-3 pb-1 pt-2 text-[10.5px] text-muted">Pinned</div>
+            <div className="min-h-0 overflow-y-auto pb-1.5">
+                {pinned.map((rel) => {
+                    const cut = rel.lastIndexOf("/");
+                    const dir = cut === -1 ? "" : rel.slice(0, cut);
+                    const name = cut === -1 ? rel : rel.slice(cut + 1);
+                    return (
+                        <div
+                            key={rel}
+                            data-rail-pinned-row={rel}
+                            title={rel}
+                            draggable
+                            onClick={() => onOpen(rel)}
+                            onDragStart={(ev) => {
+                                for (const { mime, data } of encodePathsDrag([joinRepoPath(cwd, rel)])) {
+                                    ev.dataTransfer.setData(mime, data);
+                                }
+                                ev.dataTransfer.effectAllowed = "copy";
+                                setDraggedPathsCount(1);
+                            }}
+                            onDragEnd={() => setDraggedPathsCount(0)}
+                            onContextMenu={(ev) =>
+                                ContextMenuModel.getInstance().showContextMenu(
+                                    [
+                                        {
+                                            label: "Unpin",
+                                            icon: <PinOff size={13} strokeWidth={1.8} />,
+                                            click: () => onUnpin(rel),
+                                        },
+                                    ],
+                                    ev
+                                )
+                            }
+                            className="group flex w-full cursor-pointer items-center gap-1.5 py-[3px] pl-3 pr-1.5 text-left text-[12.5px] text-secondary hover:bg-surface-hover"
+                        >
+                            <FileIcon path={rel} />
+                            <span className="min-w-0 flex-1 truncate">
+                                {name}
+                                {dir !== "" ? <span className="ml-1.5 text-[11px] text-muted">{dir}</span> : null}
+                            </span>
+                            <button
+                                type="button"
+                                data-rail-unpin={rel}
+                                aria-label={`Unpin ${name}`}
+                                title="Unpin"
+                                onClick={(ev) => {
+                                    ev.stopPropagation();
+                                    onUnpin(rel);
+                                }}
+                                className="flex size-4 flex-none cursor-pointer items-center justify-center rounded-[4px] text-muted opacity-0 hover:text-primary focus-visible:opacity-100 group-hover:opacity-100"
+                            >
+                                <X size={11} strokeWidth={1.8} />
+                            </button>
+                        </div>
+                    );
+                })}
+            </div>
         </div>
     );
 }

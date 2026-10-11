@@ -224,6 +224,7 @@ Cây file của thư mục làm việc (worktree) của agent, lấy từ git: f
 
 - **Chọn:** bấm một dòng (bấm thư mục thì mở/đóng nó), `Ctrl`+bấm để thêm/bớt, `Shift`+bấm để chọn cả đoạn. `↑`/`↓` di chuyển, `←`/`→` đóng/mở thư mục, `Enter` mở thư mục hoặc mở file ở tab File; bấm đúp một file cũng mở nó.
 - **Kéo vào terminal:** kéo file hoặc thư mục (kéo một dòng đang chọn thì kéo cả vùng chọn) thả lên terminal; đường dẫn được gõ vào prompt, chưa nhấn Enter. Trên terminal của agent nó thành `@src/util.ts`, thư mục là `@src/app/`, đường dẫn có khoảng trắng là `@"docs/my notes.md"`, tính tương đối theo thư mục của agent nhận. Trên terminal thường thì không có `@`.
+- **Ghim:** file đã ghim ở Code cho đúng thư mục này hiện trong mục **Pinned** trên cây (agent trong worktree thấy pin của worktree đó, như khi mở worktree ở Code). Bấm một file ghim thì nó mở ở tab File và cây mở tới chỗ của nó; kéo vào terminal được như một dòng của cây; `×` hoặc chuột phải → **Unpin** để bỏ ghim. Chuột phải một file trong cây → **Pin**/**Unpin**. Hai bên dùng chung một danh sách, nên ghim ở đâu thì bên kia cũng thấy ngay.
 
 Cây mở tới đâu và vùng chọn được giữ riêng cho từng agent khi bạn đổi agent hay đổi surface. Tab Files mở rộng bằng Overview; kéo mép rail để đổi, độ rộng đó được nhớ riêng, không ảnh hưởng tab File.
 

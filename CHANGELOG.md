@@ -31,7 +31,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   through the switcher; it no longer jumps to the next agent that is asking.
 - **Code** can pin files: right-click a file → **Pin**, or **Pin** in the bar above the editor. Pinned files list at
   the top of the Files tab, per project; clicking one opens it and shows where it lives in the tree, and the
-  file search (Ctrl+P, ⌘P on a Mac) lists them first.
+  file search (Ctrl+P, ⌘P on a Mac) lists them first. The agent panel's **Files** tab shows the same pins above its
+  tree for the agent's folder, and right-clicking a file there pins or unpins it on both sides.
 - An **HTML file** opens as the page itself in **Code** and the agent panel's file tab, with **Source** one toggle
   away: images, styles and scripts beside it load, so an exported slide deck shows and pages through as it would in a
   browser. It shows the saved file, and a page too big to open as text still previews.

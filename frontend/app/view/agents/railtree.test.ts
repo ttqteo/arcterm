@@ -9,6 +9,7 @@ import {
     EMPTY_RAIL_TREE,
     moveCursorTo,
     pruneExpanded,
+    revealRow,
     shouldReloadTree,
     toggleExpanded,
     type RailTreeState,
@@ -188,6 +189,26 @@ describe("moveCursorTo", () => {
             anchor: "src/util.ts",
             cursor: "src/util.ts",
         });
+    });
+});
+
+describe("revealRow", () => {
+    it("opens the row's folders, keeps the open ones, and moves the cursor to it", () => {
+        const s = state({ expanded: ["docs"], selected: ["README.md"] });
+        expect(revealRow(s, "src/app/main.ts")).toEqual({
+            expanded: ["docs", "src", "src/app"],
+            selected: ["src/app/main.ts"],
+            anchor: "src/app/main.ts",
+            cursor: "src/app/main.ts",
+        });
+    });
+
+    it("opens nothing for a file at the top", () => {
+        expect(revealRow(state({ expanded: ["src"] }), "README.md").expanded).toEqual(["src"]);
+    });
+
+    it("does not add a folder that is already open", () => {
+        expect(revealRow(state({ expanded: ["src"] }), "src/util.ts").expanded).toEqual(["src"]);
     });
 });
 

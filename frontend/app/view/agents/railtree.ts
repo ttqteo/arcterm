@@ -52,6 +52,19 @@ export function moveCursorTo(s: RailTreeState, path: string): RailTreeState {
     return { ...s, selected: [path], anchor: path, cursor: path };
 }
 
+// A pinned file opened from above the tree: its folders open and the cursor lands on it, so Back from the File tab finds
+// where it lives
+export function revealRow(s: RailTreeState, path: string): RailTreeState {
+    const expanded = [...s.expanded];
+    for (let cut = path.indexOf("/"); cut !== -1; cut = path.indexOf("/", cut + 1)) {
+        const dir = path.slice(0, cut);
+        if (!expanded.includes(dir)) {
+            expanded.push(dir);
+        }
+    }
+    return { ...moveCursorTo(s, path), expanded };
+}
+
 // What dragging `path` carries: the visible selected rows, in row order, when `path` is one of them; otherwise `path`
 // alone. A directory ends in "/", so the drop can tell it from a file.
 export function dragPaths(s: RailTreeState, rows: readonly TreeRow[], path: string): string[] {

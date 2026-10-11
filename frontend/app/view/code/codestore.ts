@@ -767,8 +767,13 @@ export function confirmDelete(rel: string, isDir: boolean): void {
 export function toggleCodePin(rel: string): void {
     const project = globalStore.get(codeProjectAtom);
     if (project != null) {
-        globalStore.set(codePinsStoredAtom, togglePin(globalStore.get(codePinsAtom), project.path, rel));
+        toggleCodePinIn(project.path, rel);
     }
+}
+
+// the same for any folder: the Agent panel's Files tab pins in the agent's worktree, which need not be open in Code
+export function toggleCodePinIn(projectPath: string, rel: string): void {
+    globalStore.set(codePinsStoredAtom, togglePin(globalStore.get(codePinsAtom), projectPath, rel));
 }
 
 export function toggleDir(path: string): void {
