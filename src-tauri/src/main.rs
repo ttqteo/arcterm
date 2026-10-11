@@ -10,6 +10,7 @@ mod notify;
 mod paths;
 mod shellenv;
 mod webcache;
+mod winframe;
 
 use init::InitState;
 use std::io::{BufRead, BufReader};
@@ -340,7 +341,8 @@ fn main() {
             canvas::capture_webview,
             notify::notify_os,
             macwindow::set_traffic_lights_hidden,
-            macwindow::redirect_minimize
+            macwindow::redirect_minimize,
+            winframe::hold_window_frame
         ])
         .setup(move |app| {
             // the config window already exists here (Tauri builds it before running setup)
@@ -349,6 +351,9 @@ fn main() {
                 use_resource_window_icons(hwnd.0 as isize);
             }
             macwindow::free_close_window_key();
+            if let Some(w) = app.get_webview_window("main") {
+                winframe::restore_and_track(&w);
+            }
             // seed the static identity fields before wavesrv parsing fills in the endpoints.
             {
                 let state = app.state::<InitState>();
@@ -427,6 +432,7 @@ fn main() {
         .run(|app_handle, event| {
             // Kill wavesrv when the app exits so it doesn't orphan and hold wave.lock + its exe.
             if let tauri::RunEvent::Exit = event {
+                winframe::save(app_handle);
                 if let Some(mut child) = app_handle.state::<WavesrvChild>().0.lock().unwrap().take() {
                     let _ = child.kill();
                 }

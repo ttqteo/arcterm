@@ -17,6 +17,7 @@ import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { clearTeleports, hidePet, playTeleport } from "@/app/view/jarvis/teleportstore";
 import { isMacOS } from "@/util/platformutil";
 import { fireAndForget } from "@/util/util";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
     availableMonitors,
@@ -36,6 +37,7 @@ import {
     FLOAT_MIN_SIZE,
     floatRect,
     framesMatch,
+    holdsFrame,
     MAIN_MIN_SIZE,
     MINI_CHAT_SIZE,
     MINI_REST_SIZE,
@@ -86,7 +88,7 @@ export const floatPinnedAtom = atom(false) as PrimitiveAtom<boolean>;
 // where the last float was, for the next one
 const RECT_KEY = "arc.float.rect";
 // The frame to give back. Session storage, so a reload mid-float (which loses the atoms) can still give it back,
-// while a relaunch, which opens the window from tauri.conf.json anyway, starts clean.
+// while a relaunch, which opens the window at the last Full frame anyway (src-tauri/src/winframe.rs), starts clean.
 const RESTORE_KEY = "arc.float.restore";
 
 // The window folded into Sprout (docs/superpowers/specs/2026-10-10-jarvis-modes-design.md): the same window, shrunk to
@@ -167,7 +169,7 @@ async function giveFrameBack(win: Window, restore: FloatRestore | null): Promise
         await win.setPosition(new PhysicalPosition(restore.rect.x, restore.rect.y));
     }
     // after the resize, so the window never grows to the minimum at the float's corner first
-    await win.setMinSize(new LogicalSize(MAIN_MIN_SIZE.width, MAIN_MIN_SIZE.height));
+    await setMinSize(win, MAIN_MIN_SIZE);
     // the window opens maximized (tauri.conf.json), so that is the frame when there is none to give back
     if (restore == null || restore.maximized) {
         await win.maximize();
@@ -180,6 +182,19 @@ const MAC = isMacOS();
 // Out of maximized before the window takes a smaller frame. Windows needs the restore first. macOS runs unmaximize as
 // an animated zoom back to the frame it was last zoomed from (an old float's, often): the window was seen jumping there
 // before it shrank, so there the frame set next takes it out of the zoom alone.
+// Every change of the window's minimum size goes through here. A lifted one (Float, the fold) holds the frame first, so
+// the host keeps the last Full frame to reopen at; the main one lets it go once set (src-tauri/src/winframe.rs).
+async function setMinSize(win: Window, min: { width: number; height: number } | null): Promise<void> {
+    const hold = holdsFrame(min);
+    if (hold) {
+        await invoke("hold_window_frame", { held: true }).catch(() => {});
+    }
+    await win.setMinSize(min == null ? null : new LogicalSize(min.width, min.height));
+    if (!hold) {
+        await invoke("hold_window_frame", { held: false }).catch(() => {});
+    }
+}
+
 async function leaveMaximized(win: Window): Promise<void> {
     if (!MAC) {
         await win.unmaximize();
@@ -208,7 +223,7 @@ async function floatTheWindow(model: AgentsViewModel): Promise<void> {
         if (maximized) {
             await leaveMaximized(win);
         }
-        await win.setMinSize(new LogicalSize(FLOAT_MIN_SIZE.width, FLOAT_MIN_SIZE.height));
+        await setMinSize(win, FLOAT_MIN_SIZE);
         await win.setSize(new PhysicalSize(rect.width, rect.height));
         await win.setPosition(new PhysicalPosition(rect.x, rect.y));
         await win.setAlwaysOnTop(true);
@@ -517,7 +532,7 @@ export function foldToSprout(): Promise<void> {
             }
             sprout = spot;
             globalStore.set(miniSidesAtom, miniSides(sprout, screen.area));
-            await win.setMinSize(null);
+            await setMinSize(win, null);
             const placed = await placeMini(win, false);
             foldLog(
                 `from ${origin}${maximized ? " maximized" : ""}${fullscreen ? " fullscreen" : ""}: window ${rectText(frame)}, ` +
@@ -567,7 +582,7 @@ async function leaveMini(win: Window): Promise<Unfold> {
         await setSpaceFrame(win, restore.rect);
     }
     const min = origin === "full" ? MAIN_MIN_SIZE : FLOAT_MIN_SIZE;
-    await win.setMinSize(new LogicalSize(min.width, min.height));
+    await setMinSize(win, min);
     await win.setAlwaysOnTop(origin === "float" && (restore?.pinned ?? false));
     if (origin === "full" && restore?.maximized) {
         await win.maximize();
@@ -749,7 +764,7 @@ async function recoverFold(win: Window, restore: MiniRestore): Promise<void> {
     await win.setAlwaysOnTop(false);
     await setSpaceFrame(win, restore.rect);
     const min = restore.origin === "full" ? MAIN_MIN_SIZE : FLOAT_MIN_SIZE;
-    await win.setMinSize(new LogicalSize(min.width, min.height));
+    await setMinSize(win, min);
     if (restore.origin === "full" && restore.maximized) {
         await win.maximize();
     }

@@ -58,6 +58,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - The **Split** menu's **Show only this agent** is now **Close split**.
 - The **File** tab's header shows the file's whole path, `slides/slide.pdf`, not only its folder, and a middle click
   on the tab closes it, as an editor's tab.
+- arcterm reopens at the **size and place** you left its window, maximized or not, instead of its default frame
+  each launch. Quitting while in Float or folded into Sprout reopens at the full window you came from, and a window
+  left on a display that is gone opens at the default.
 - The **Agent panel** slides between Overview's width and a wider tab's (Files, an open file), as it slides when it
   opens and collapses, instead of jumping.
 - The **File** tab keeps your place: switching agents, tabs, or Back and Forward brings a file back where you left it

@@ -7,6 +7,8 @@ import {
     FLOAT_MIN_SIZE,
     floatRect,
     framesMatch,
+    holdsFrame,
+    MAIN_MIN_SIZE,
     MINI_CHAT_SIZE,
     MINI_REST_SIZE,
     miniSides,
@@ -239,5 +241,15 @@ describe("framesMatch", () => {
     it("does not hold a frame something else moved or resized", () => {
         expect(framesMatch({ ...want, y: 25 }, want)).toBe(false);
         expect(framesMatch({ ...want, width: 1440, height: 875 }, want)).toBe(false);
+    });
+});
+
+describe("holdsFrame", () => {
+    it("holds the window's frame while its minimum is lifted, Float's or the fold's", () => {
+        expect(holdsFrame(FLOAT_MIN_SIZE)).toBe(true);
+        expect(holdsFrame(null)).toBe(true);
+    });
+    it("lets it go with the main minimum, which only Full has", () => {
+        expect(holdsFrame({ ...MAIN_MIN_SIZE })).toBe(false);
     });
 });

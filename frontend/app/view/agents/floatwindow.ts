@@ -28,6 +28,12 @@ export interface FloatRestore {
 export const MAIN_MIN_SIZE = { width: 1280, height: 680 };
 export const FLOAT_MIN_SIZE = { width: 480, height: 300 };
 export const FLOAT_DEFAULT_SIZE = { width: 720, height: 460 };
+
+// Only Full has the main minimum, so a lifted one (Float's, or none in the fold) means the window's frame now is not
+// the one to reopen at: the host holds the last Full frame instead (src-tauri/src/winframe.rs)
+export function holdsFrame(min: { width: number; height: number } | null): boolean {
+    return min == null || min.width !== MAIN_MIN_SIZE.width || min.height !== MAIN_MIN_SIZE.height;
+}
 const FLOAT_MARGIN = 24;
 
 function clamp(n: number, lo: number, hi: number): number {
