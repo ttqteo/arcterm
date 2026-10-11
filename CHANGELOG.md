@@ -12,6 +12,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- **Home** in the New agent dialog: the last row of the Project column starts Claude Code or a terminal in your home
+  folder, outside any project. Claude Code there is ask-only: it cannot edit files, every shell command asks first
+  (even one you once allowed for good), keys and `.env` files stay unreadable, and bypass and auto mode are off.
+  Resuming one of those sessions keeps it ask-only.
 - Your pet (Sprout or the Minion) **teleports** when you minimize into it and back: it turns to light and leaves in a
   blue beam from where it walks, then lands in the screen's corner on a ring with a burst of sparks; Restore plays it
   the other way. Reduced motion skips it.

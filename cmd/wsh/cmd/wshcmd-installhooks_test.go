@@ -976,6 +976,54 @@ func TestInstallClaudeMod_equalBytesPreserveMtime(t *testing.T) {
 	}
 }
 
+func TestInstallClaudeAskSettings_writesAndRestoresTheLockedRules(t *testing.T) {
+	home := t.TempDir()
+	if err := installClaudeAskSettings(home); err != nil {
+		t.Fatal(err)
+	}
+	path := claudeAskSettingsPath(home)
+	if path != filepath.Join(home, ".arc", "claude-ask.json") {
+		t.Fatalf("path = %s; the launcher and agentsessions pass .arc/claude-ask.json relative to home", path)
+	}
+	read := func() map[string]any {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("settings not written: %v", err)
+		}
+		var s map[string]any
+		if err := json.Unmarshal(b, &s); err != nil {
+			t.Fatalf("settings not valid json: %v", err)
+		}
+		return s
+	}
+	perms, _ := read()["permissions"].(map[string]any)
+	if perms["disableBypassPermissionsMode"] != "disable" || perms["disableAutoMode"] != "disable" {
+		t.Fatalf("bypass and auto mode must be off: %v", perms)
+	}
+	has := func(key, rule string) bool {
+		list, _ := perms[key].([]any)
+		return containsString(list, rule)
+	}
+	for _, rule := range []string{"Edit", "Write", "NotebookEdit", "Read(~/.ssh/**)", "Read(**/.env)"} {
+		if !has("deny", rule) {
+			t.Errorf("deny lacks %s", rule)
+		}
+	}
+	if !has("ask", "Bash") {
+		t.Error("ask lacks Bash: a shell command allowed in the user's settings would run unasked")
+	}
+	// a loosened copy is put back on the next launch
+	if err := os.WriteFile(path, []byte(`{"permissions":{"defaultMode":"bypassPermissions"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := installClaudeAskSettings(home); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != claudeAskSettings {
+		t.Fatalf("an edited copy was not restored: %s", b)
+	}
+}
+
 func stubClaudeVersion(t *testing.T, out string, err error) {
 	t.Helper()
 	orig := claudeVersionOutput

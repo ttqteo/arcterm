@@ -142,6 +142,25 @@ export function selectedProject<T extends { name: string }>(rows: T[], picked: s
     return rows.find((r) => r.name === picked) ?? rows[0] ?? null;
 }
 
+// Home: the Project column's last row, which starts Claude Code (ask-only, askStartupCommand) or a terminal in the home
+// folder, outside any project. It is a pick key, not a registered project, and never the default: selectedProject only
+// falls back to registered rows, so a launch lands in Home only when Home was picked.
+export const HOME_PICK = "~";
+export const HOME_NAME = "Home";
+
+// Only an agent row that is safe outside a project starts there, and only once the home folder is known.
+export function homeOffered(kind: LauncherKind, runtime: Runtime, homePath: string): boolean {
+    return kind === "agent" && (runtime === "claude" || runtime === "terminal") && homePath !== "";
+}
+
+// The Project column's pick keys, top to bottom: the filtered projects, then Home while it is offered and its name
+// matches the filter. Digits and arrows walk this list.
+export function projectColumnPicks(visible: { name: string }[], homeShown: boolean, query: string): string[] {
+    const q = query.trim().toLowerCase();
+    const home = homeShown && (q === "" || HOME_NAME.toLowerCase().includes(q));
+    return [...visible.map((p) => p.name), ...(home ? [HOME_PICK] : [])];
+}
+
 // Arrow movement over a column. It wraps: a list this short has no scrollbar to say an end was reached.
 export function stepIndex(count: number, current: number, delta: 1 | -1): number {
     if (count === 0) {

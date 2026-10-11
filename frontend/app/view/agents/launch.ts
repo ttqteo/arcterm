@@ -66,6 +66,39 @@ export function composeStartupCommand(base: string, runtime: Runtime, enabled: R
     return [trimmed, ...flags].join(" ").trim();
 }
 
+// The ask-only settings a Claude Code agent in Home starts under (wsh install-agent-hooks writes ~/.arc/claude-ask.json):
+// no file edits, every shell command asks, secrets unreadable, bypass and auto mode off. Relative, because a Home agent
+// starts in the home folder and claude reads --settings against its cwd (it never expands "~"); a missing file stops
+// claude rather than letting it start unrestricted. agentsessions' claudeResumeCommand passes the same.
+export const ASK_SETTINGS_ARG = ".arc/claude-ask.json";
+
+// The skip flags would read as lifting the ask settings (which refuse them anyway), so Home neither offers nor passes them.
+const ASK_DROPPED_FLAGS = new Set(["--dangerously-skip-permissions", "--allow-dangerously-skip-permissions"]);
+
+// A Home claude's command: the one composed, with a --settings of its own and the skip flags replaced by the ask settings.
+export function askStartupCommand(command: string): string {
+    const tokens = command.trim().split(/\s+/).filter(Boolean);
+    const kept: string[] = [];
+    for (let i = 0; i < tokens.length; i++) {
+        const t = tokens[i];
+        if (t === "--settings") {
+            i++; // also skip its value
+            continue;
+        }
+        if (t.startsWith("--settings=") || ASK_DROPPED_FLAGS.has(t)) {
+            continue;
+        }
+        kept.push(t);
+    }
+    return [...kept, "--settings", ASK_SETTINGS_ARG].join(" ");
+}
+
+// The Flag menu's catalog; Home leaves out the skip flag askStartupCommand would drop.
+export function launcherFlagCatalog(runtime: Runtime, home: boolean): FlagDef[] {
+    const all = RUNTIME_FLAGS[runtime];
+    return home ? all.filter((f) => !ASK_DROPPED_FLAGS.has(f.flag)) : all;
+}
+
 export function runtimeLaunchLabel(runtime: Runtime): string {
     return runtime === "terminal" ? "Open terminal" : "Launch agent";
 }

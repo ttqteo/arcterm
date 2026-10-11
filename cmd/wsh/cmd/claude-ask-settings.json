@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "defaultMode": "default",
+    "disableBypassPermissionsMode": "disable",
+    "disableAutoMode": "disable",
+    "deny": [
+      "Edit",
+      "Write",
+      "NotebookEdit",
+      "mcp__claude-in-chrome",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.kube/**)",
+      "Read(~/.docker/**)",
+      "Read(~/.config/**)",
+      "Read(~/Library/**)",
+      "Read(~/.claude/projects/**)",
+      "Read(~/.claude.json)",
+      "Read(~/.claude/settings*.json)",
+      "Read(~/.netrc)",
+      "Read(~/.npmrc)",
+      "Read(~/.pypirc)",
+      "Read(~/.git-credentials)",
+      "Read(~/.zsh_history)",
+      "Read(~/.bash_history)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/id_rsa*)",
+      "Read(**/id_ed25519*)"
+    ],
+    "ask": [
+      "Bash",
+      "mcp__notion",
+      "mcp__claude_ai_Claude_Docs"
+    ]
+  }
+}

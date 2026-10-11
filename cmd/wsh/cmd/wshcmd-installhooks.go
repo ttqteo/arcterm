@@ -195,6 +195,23 @@ func installClaudeMod(home, wshExe string) error {
 	return nil
 }
 
+//go:embed claude-ask-settings.json
+var claudeAskSettings string
+
+// claudeAskSettingsPath is the settings file a Claude Code agent started in Home (the New launcher's row for the home
+// folder) runs under: no file edits, every shell command asks, secrets unreadable, bypass and auto mode off. The
+// launcher passes it as the relative `--settings .arc/claude-ask.json` (a Home agent's cwd is home), and so does the
+// resume command agentsessions composes for a claude session in home.
+func claudeAskSettingsPath(home string) string {
+	return filepath.Join(home, ".arc", "claude-ask.json")
+}
+
+// installClaudeAskSettings rewrites the ask settings on every launch, so an edit to the installed copy never loosens a
+// Home agent.
+func installClaudeAskSettings(home string) error {
+	return writeFileIfChanged(claudeAskSettingsPath(home), claudeAskSettings)
+}
+
 // writeFileIfChanged writes body to path through a temp file and a rename, unless path already holds it.
 func writeFileIfChanged(path, body string) error {
 	if cur, err := os.ReadFile(path); err == nil && string(cur) == body {
@@ -1151,6 +1168,9 @@ func installAgentHooksRun(cmd *cobra.Command, args []string) error {
 	modDirs := claudeModDirs(home)
 	// the files land before settings name their folders, so no claude launch loads a missing mod
 	if err := installClaudeMod(home, wsh); err != nil {
+		return err
+	}
+	if err := installClaudeAskSettings(home); err != nil {
 		return err
 	}
 

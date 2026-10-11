@@ -7,10 +7,13 @@ import {
     draftShown,
     filterProjects,
     footerLine,
+    HOME_PICK,
+    homeOffered,
     launcherKey,
     launcherTitle,
     primaryLabel,
     projectAfterFilter,
+    projectColumnPicks,
     selectedProject,
     selectedRowId,
     startRows,
@@ -173,6 +176,30 @@ describe("the project filter", () => {
         expect(selectedProject(rows, "")?.name).toBe("arcterm");
         expect(selectedProject(rows, "unregistered")?.name).toBe("arcterm");
         expect(selectedProject([], "")).toBeNull();
+    });
+});
+
+describe("Home", () => {
+    it("is offered to Claude Code and Terminal agents once the home folder is known", () => {
+        expect(homeOffered("agent", "claude", "/Users/me")).toBe(true);
+        expect(homeOffered("agent", "terminal", "/Users/me")).toBe(true);
+        expect(homeOffered("agent", "codex", "/Users/me")).toBe(false);
+        expect(homeOffered("run", "claude", "/Users/me")).toBe(false);
+        expect(homeOffered("agent", "claude", "")).toBe(false);
+    });
+
+    it("sits after the projects and is filtered by its name", () => {
+        const rows = [{ name: "arcterm" }, { name: "thesis" }];
+        expect(projectColumnPicks(rows, true, "")).toEqual(["arcterm", "thesis", HOME_PICK]);
+        expect(projectColumnPicks(rows, false, "")).toEqual(["arcterm", "thesis"]);
+        expect(projectColumnPicks([], true, "HO")).toEqual([HOME_PICK]);
+        expect(projectColumnPicks([{ name: "thesis" }], true, "the")).toEqual(["thesis"]);
+    });
+
+    it("is never the fallback pick", () => {
+        const rows = [{ name: "arcterm" }];
+        expect(selectedProject(rows, HOME_PICK)).toEqual({ name: "arcterm" });
+        expect(selectedProject([], HOME_PICK)).toBeNull();
     });
 });
 

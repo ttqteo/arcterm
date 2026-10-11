@@ -14,11 +14,12 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronDown, Loader2, Plus, TriangleAlert, X } from "lucide-react";
+import { ChevronDown, Loader2, Lock, Plus, TriangleAlert, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState, type ClipboardEvent, type DragEvent } from "react";
 import {
-    RUNTIME_FLAGS,
+    ASK_SETTINGS_ARG,
+    launcherFlagCatalog,
     runtimeShowsTask,
     runtimeStartupCommand,
     runtimeSupportsWorktree,
@@ -188,9 +189,19 @@ interface AgentFieldsProps {
     // the picked agent's recent sessions in the picked project, and the one picked to resume (null: a new session)
     resumeChoices: SessionInfo[];
     resume: SessionInfo | null;
+    // started in Home, the home folder outside any project: no worktree, and Claude Code runs ask-only
+    home: boolean;
 }
 
-export function AgentFields({ runtime, currentBranch, branches, ramWarning, resumeChoices, resume }: AgentFieldsProps) {
+export function AgentFields({
+    runtime,
+    currentBranch,
+    branches,
+    ramWarning,
+    resumeChoices,
+    resume,
+    home,
+}: AgentFieldsProps) {
     const task = useAtomValue(launcherTaskAtom);
     const commands = useAtomValue(launcherCommandAtom);
     const naFlags = useAtomValue(naFlagsAtom);
@@ -209,7 +220,7 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning, resu
     const setStartup = (value: string) =>
         globalStore.set(launcherCommandAtom, (prev) => ({ ...prev, [runtime]: value }));
     // flag state is per runtime: read and write only the picked runtime's record
-    const flagCatalog = RUNTIME_FLAGS[runtime];
+    const flagCatalog = launcherFlagCatalog(runtime, home);
     const runtimeFlags = naFlags[runtime] ?? {};
     // a resume runs the session's own command, which the field previews and does not take edits to
     const startup = resume
@@ -363,12 +374,24 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning, resu
                     )}
                 </AnimatePresence>
             </div>
-            {runtime === "terminal" ? (
-                <span className="text-[11.5px] text-muted">
-                    A plain shell in the project folder. A command typed above runs in it when it opens.
+            {home && runtime === "claude" ? (
+                <span data-launcher-ask className="flex items-start gap-1.5 text-[11.5px] leading-normal text-muted">
+                    <Lock size={12} strokeWidth={2} className="mt-[2px] shrink-0" />
+                    <span>
+                        Ask-only in Home: starts with{" "}
+                        <span className="font-mono text-ink-mid">--settings {ASK_SETTINGS_ARG}</span>. No file edits,
+                        every shell command asks first, secrets stay unreadable, and bypass and auto mode are off.
+                    </span>
                 </span>
             ) : null}
-            {runtimeSupportsWorktree(runtime) && resume == null ? (
+            {runtime === "terminal" ? (
+                <span className="text-[11.5px] text-muted">
+                    {home
+                        ? "A plain shell in your home folder. A command typed above runs in it when it opens."
+                        : "A plain shell in the project folder. A command typed above runs in it when it opens."}
+                </span>
+            ) : null}
+            {runtimeSupportsWorktree(runtime) && resume == null && !home ? (
                 <div className="flex flex-col gap-[7px]">
                     <div className="flex min-h-[34px] items-center gap-3">
                         <button

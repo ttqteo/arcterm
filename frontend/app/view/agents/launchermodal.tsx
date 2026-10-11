@@ -23,12 +23,13 @@ import { homeFromInfo, projectWhere } from "@/app/view/jarvis/projectpicker";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Check, Network, Search, SquareTerminal, X, Zap } from "lucide-react";
+import { Check, House, Network, Search, SquareTerminal, X, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { AgentsViewModel } from "./agents";
 import { channelsAtom, primeChannels } from "./channelsstore";
 import { harnessesAtom, harnessPreferenceAtom, resolveDefaultRuntime } from "./harnessstore";
 import {
+    askStartupCommand,
     composeStartupCommand,
     deriveBranch,
     RUNTIME_FLAGS,
@@ -41,10 +42,14 @@ import {
     agentRuntime,
     filterProjects,
     footerLine,
+    HOME_NAME,
+    HOME_PICK,
+    homeOffered,
     launcherKey,
     launcherTitle,
     primaryLabel,
     projectAfterFilter,
+    projectColumnPicks,
     selectedProject,
     selectedRowId,
     startRows,
@@ -240,10 +245,17 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const isRun = kind === "run";
     const candidates = useMemo(() => recentFirst(rows, recent), [rows, recent]);
     const visible = filterProjects(candidates, filter);
-    const project = selectedProject(candidates, pickedName);
+    const homeShown = homeOffered(kind, runtime, home);
+    const picks = projectColumnPicks(visible, homeShown, filter);
+    // Home is picked only by hand: when it is not on offer, the pick falls back to a registered project
+    const atHome = homeShown && pickedName === HOME_PICK;
+    const project: ProjectRow | null = atHome
+        ? { name: HOME_NAME, path: home }
+        : selectedProject(candidates, pickedName);
+    const pickKey = atHome ? HOME_PICK : (project?.name ?? "");
     const projectPath = project?.path ?? "";
     const { currentBranch, branches } = useProjectBranches(
-        open && !isRun,
+        open && !isRun && !atHome,
         projectPath,
         runtimeSupportsWorktree(runtime)
     );
@@ -252,13 +264,16 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const choices = resumeChoices(sessions, runtime, projectPath);
     const resume = isRun ? null : pickedResume(choices, resumeId);
     // a resumed session keeps its own folder, so the worktree option is neither shown nor applied
-    const wantsWorktree = !isRun && resume == null && worktreeOn && runtimeSupportsWorktree(runtime);
+    const wantsWorktree = !isRun && !atHome && resume == null && worktreeOn && runtimeSupportsWorktree(runtime);
     const chosenBranch = (branchPick ?? currentBranch).trim();
     // git can't reuse the checked-out branch for a worktree; branch a fresh one off it instead
     const landingBranch = chosenBranch === currentBranch ? deriveBranch(currentBranch, branchNames) : chosenBranch;
-    const branchNote = wantsWorktree
+    let branchNote = wantsWorktree
         ? chosenBranch && `worktree on ${landingBranch}`
         : currentBranch && `on ${currentBranch}`;
+    if (atHome) {
+        branchNote = runtime === "claude" ? "ask-only" : "";
+    }
     const blocker = isRun ? launchBlocker({ shape, start, goal, planPath, preview }) : null;
     const footer = footerLine({
         kind,
@@ -421,11 +436,12 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         pickLauncherRuntime(row.id as Runtime);
     };
 
-    const pickProject = (name: string) => pickLauncherProject(name, project?.name ?? "");
+    const pickProject = (key: string) => pickLauncherProject(key, pickKey);
 
     const applyFilter = (next: string) => {
         setFilter(next);
-        pickProject(projectAfterFilter(filterProjects(candidates, next), project?.name ?? ""));
+        const matches = projectColumnPicks(filterProjects(candidates, next), homeShown, next).map((name) => ({ name }));
+        pickProject(projectAfterFilter(matches, pickKey));
     };
 
     const register = () => {
@@ -452,27 +468,37 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             images.flatMap((i) => (i.path ? [i.path] : [])),
             resume != null
         );
+        // a resume replaces the command (and, for pi, the argv and the transcript to preflight)
+        const spec = resume
+            ? resumeLaunchSpec(resume, runtime, naFlags[runtime] ?? {})
+            : {
+                  startupCommand: composeStartupCommand(
+                      commands[runtime] ?? runtimeStartupCommand(runtime),
+                      runtime,
+                      naFlags[runtime] ?? {}
+                  ),
+              };
+        if (atHome && runtime === "claude") {
+            spec.startupCommand = askStartupCommand(spec.startupCommand);
+        }
         try {
             await launchAgent(model, {
                 runtime,
-                startupCommand: composeStartupCommand(
-                    commands[runtime] ?? runtimeStartupCommand(runtime),
-                    runtime,
-                    naFlags[runtime] ?? {}
-                ),
                 task: fullTask,
                 extraArgs,
                 projectPath: p.path,
                 projectName: p.name,
                 branch,
-                // a resume replaces the command (and, for pi, the argv and the transcript to preflight)
-                ...(resume ? resumeLaunchSpec(resume, runtime, naFlags[runtime] ?? {}) : {}),
+                ...spec,
             });
             // Remember off: flags are single-use, cleared for the next agent
             if (!globalStore.get(naRememberFlagsAtom)) {
                 globalStore.set(naFlagsAtom, {});
             }
-            noteRecentProject(p.name);
+            // Home is no project, so it never takes a project's place in last used first
+            if (!atHome) {
+                noteRecentProject(p.name);
+            }
             endLauncherDraft();
             close();
         } catch (e) {
@@ -582,7 +608,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             {
                 zone: zoneOf(e.target),
                 startCount: startList.length,
-                projectCount: visible.length,
+                projectCount: picks.length,
                 filter,
                 flagMenuOpen: flagMenuShown,
                 branchListOpen: branchListShown,
@@ -598,7 +624,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 pickRow(startList[action.index]);
                 return;
             case "pick-project":
-                pickProject(visible[action.index].name);
+                pickProject(picks[action.index]);
                 return;
             case "move": {
                 if (action.column === "start") {
@@ -606,13 +632,9 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                     pickRow(startList[stepIndex(startList.length, at, action.delta)]);
                     return;
                 }
-                const next = stepIndex(
-                    visible.length,
-                    visible.findIndex((p) => p.name === project?.name),
-                    action.delta
-                );
+                const next = stepIndex(picks.length, picks.indexOf(pickKey), action.delta);
                 if (next >= 0) {
-                    pickProject(visible[next].name);
+                    pickProject(picks[next]);
                 }
                 return;
             }
@@ -648,7 +670,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const projectFocused = zone === "project";
     let projectHint = "";
     if (projectFocused) {
-        projectHint = filter === "" && visible.length > 0 ? `type to filter · 1–${Math.min(9, visible.length)}` : "";
+        projectHint = filter === "" && picks.length > 0 ? `type to filter · 1–${Math.min(9, picks.length)}` : "";
     } else if (candidates.length > 1) {
         projectHint = "last used first";
     }
@@ -800,10 +822,11 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                         Register a project
                                     </button>
                                 </div>
-                            ) : (
+                            ) : null}
+                            {candidates.length > 0 || picks.length > 0 ? (
                                 <div className="flex max-h-[236px] flex-col gap-px overflow-y-auto">
                                     {visible.map((p, i) => {
-                                        const selected = p.name === project?.name;
+                                        const selected = p.name === pickKey;
                                         return (
                                             <div
                                                 key={p.name}
@@ -829,13 +852,55 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                             </div>
                                         );
                                     })}
-                                    {visible.length === 0 ? (
+                                    {picks.includes(HOME_PICK) ? (
+                                        <>
+                                            {visible.length > 0 ? (
+                                                <div aria-hidden className="mx-2 my-1 h-px bg-border" />
+                                            ) : null}
+                                            {/* its own data attribute: Home is no registered project, and the scenarios that count
+                                                data-project-row count those */}
+                                            <div
+                                                role="radio"
+                                                aria-checked={atHome}
+                                                data-launcher-home
+                                                title={
+                                                    runtime === "claude"
+                                                        ? `${home}: no project. Claude Code starts ask-only under ~/.arc/claude-ask.json.`
+                                                        : `${home}: no project.`
+                                                }
+                                                onClick={() => pickProject(HOME_PICK)}
+                                                className={cn(rowTone(atHome, projectFocused), "gap-[10px] py-2")}
+                                            >
+                                                <Keycap
+                                                    k={picks.length <= 9 ? String(picks.length) : ""}
+                                                    lit={projectFocused}
+                                                />
+                                                <House
+                                                    size={13}
+                                                    strokeWidth={2}
+                                                    className={cn("shrink-0", atHome ? "text-primary" : "text-muted")}
+                                                />
+                                                <span
+                                                    className={cn(
+                                                        "shrink-0 text-[12.5px] font-semibold",
+                                                        atHome ? "text-primary" : "text-muted-foreground"
+                                                    )}
+                                                >
+                                                    {HOME_NAME}
+                                                </span>
+                                                <span className="min-w-0 flex-1 truncate text-right text-[11px] text-muted">
+                                                    {runtime === "claude" ? "ask-only · ~" : "~"}
+                                                </span>
+                                            </div>
+                                        </>
+                                    ) : null}
+                                    {picks.length === 0 && filter !== "" ? (
                                         <span data-launcher-nomatch className="px-2 py-1.5 text-[12px] text-muted">
                                             No project matches “{filter}”. Esc clears the filter.
                                         </span>
                                     ) : null}
                                 </div>
-                            )}
+                            ) : null}
                         </div>
                     </div>
                     <div className="flex min-h-0 flex-1 flex-col gap-[14px] overflow-y-auto px-[18px] pb-4 pt-[14px]">
@@ -854,6 +919,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                 ramWarning={ramWarning}
                                 resumeChoices={choices}
                                 resume={resume}
+                                home={atHome}
                             />
                         )}
                     </div>

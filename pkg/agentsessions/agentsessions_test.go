@@ -758,3 +758,21 @@ func TestCodexCurrentSessionIDAndTranscriptLookup(t *testing.T) {
 		t.Fatalf("wildcard matched %q", got)
 	}
 }
+
+func TestClaudeResumeCommand_aSessionInHomeKeepsTheAskSettings(t *testing.T) {
+	home := filepath.Join(string(filepath.Separator)+"home", "me")
+	cases := []struct {
+		name, projectPath, home, want string
+	}{
+		{"a project", filepath.Join(home, "web"), home, "claude --resume s1"},
+		{"home", home, home, "claude --resume s1 --settings .arc/claude-ask.json"},
+		{"home with a trailing separator", home + string(filepath.Separator), home, "claude --resume s1 --settings .arc/claude-ask.json"},
+		{"no cwd", "", home, "claude --resume s1"},
+		{"home unknown", home, "", "claude --resume s1"},
+	}
+	for _, c := range cases {
+		if got := claudeResumeCommand("s1", c.projectPath, c.home); got != c.want {
+			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
+		}
+	}
+}

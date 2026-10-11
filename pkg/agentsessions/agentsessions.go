@@ -707,8 +707,27 @@ func claudeProvider(root string) provider {
 			}
 			return s, claudeEventsFrom(recs)
 		},
-		resumeCmd: func(s *SessionInfo) string { return "claude --resume " + s.ID },
+		resumeCmd: func(s *SessionInfo) string { return claudeResumeCommand(s.ID, s.ProjectPath, wavebase.GetHomeDir()) },
 	}
+}
+
+// claudeAskSettingsArg is the ask-only settings the New launcher starts a Home agent under (wsh install-agent-hooks
+// writes ~/.arc/claude-ask.json). It is relative because claude reads --settings against its cwd, which for a session
+// in home is home; a missing file stops claude rather than letting it start unrestricted.
+const claudeAskSettingsArg = ".arc/claude-ask.json"
+
+// claudeResumeCommand resumes a claude session. One whose cwd is the home folder keeps the ask-only settings, so no
+// resume entry point (the launcher, the palette, Recent sessions) lifts them.
+func claudeResumeCommand(id, projectPath, home string) string {
+	cmd := "claude --resume " + id
+	if home == "" || projectPath == "" {
+		return cmd
+	}
+	a, b := filepath.Clean(projectPath), filepath.Clean(home)
+	if a == b || (runtime.GOOS == "windows" && strings.EqualFold(a, b)) {
+		cmd += " --settings " + claudeAskSettingsArg
+	}
+	return cmd
 }
 
 func codexProvider(root string) provider {

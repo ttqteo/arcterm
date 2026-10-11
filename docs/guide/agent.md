@@ -64,6 +64,8 @@ Agent mới xuất hiện trong sidebar và được chọn (arcterm chuyển sa
 
 Chưa có project nào? Cột **Project** hiện *No projects yet* và nút **Register a project**; bạn cũng có thể dùng **New project** ở bộ chọn project (xem [Cockpit](cockpit.md#bộ-chọn-project)).
 
+Muốn hỏi đáp mà không gắn với project nào? Hàng **Home** ở cuối cột **Project** (chỉ có khi chọn **Claude Code** hoặc **Terminal**) mở agent trong thư mục home. Claude Code ở Home chạy chế độ *ask-only* với `--settings .arc/claude-ask.json` (file `~/.arc/claude-ask.json` do arcterm ghi lại mỗi lần khởi động): không sửa được file, lệnh shell nào cũng phải hỏi (kể cả lệnh bạn từng cho phép vĩnh viễn ở project khác), không đọc được khoá SSH, `~/.aws`, `~/.config`, `~/Library` hay file `.env`, và không bật được bypass hay auto mode. Home không có worktree, không bao giờ là lựa chọn mặc định, và không chen vào danh sách *last used first*. Resume một phiên Home vẫn giữ ask-only.
+
 ### Chọn harness
 
 | Hàng | Lệnh khởi động | Flag có sẵn trong menu **Flag** |
