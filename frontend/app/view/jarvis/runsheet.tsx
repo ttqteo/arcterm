@@ -35,7 +35,8 @@ import {
     liveWorkers,
 } from "@/app/view/agents/runmodel";
 import { openRunOrigin, useRunOrigin } from "@/app/view/agents/runoriginstore";
-import { SEG_FILL, STRIP_MAX, taskStrip, taskStripLabel } from "@/app/view/agents/runstrip";
+import { runStage } from "@/app/view/agents/runstage";
+import { PIP_FILL, SEG_FILL, STRIP_MAX, taskStrip, taskStripLabel } from "@/app/view/agents/runstrip";
 import { eventTitle, tsLabel } from "@/app/view/agents/runtimeline";
 import { SectionLabel } from "@/app/view/agents/sectionlabel";
 import { attentionQueue, type QueueEntry } from "@/app/view/orchestrate/attentionqueue";
@@ -374,7 +375,7 @@ function Reading({
                 </span>
                 <span className="min-w-0 text-[13px] leading-[1.35] text-ink-mid">{status.sub}</span>
             </div>
-            <SheetBarView bar={status.meter} dag={dag} />
+            <SheetBarView bar={status.meter} dag={dag} run={run} />
             <RunSettingsPanel
                 run={run}
                 inline
@@ -437,9 +438,9 @@ function Reading({
     );
 }
 
-// the shared task strip (the agent tree, the rail and the Cockpit draw the same one); a stale read keeps the
-// dated count in the dim tone
-function SheetBarView({ bar, dag }: { bar: SheetBar | null; dag: SheetDagRead | null }) {
+// the shared task strip (the agent tree, the rail and the Cockpit draw the same one) and the tail every run ends
+// in, Final check, Wrap-up, Land; a stale read keeps the dated count in the dim tone
+function SheetBarView({ bar, dag, run }: { bar: SheetBar | null; dag: SheetDagRead | null; run: Run }) {
     if (bar == null) {
         return null;
     }
@@ -468,21 +469,38 @@ function SheetBarView({ bar, dag }: { bar: SheetBar | null; dag: SheetDagRead | 
     if (strip == null) {
         return null;
     }
+    const tail = runStage({ status: run.status, land: run.land, dag: group }).tail;
     return (
-        <div role="img" aria-label={taskStripLabel(group, digest)} className="flex h-1 gap-[3px]">
-            {strip.kind === "segments" ? (
-                strip.states.map((st, i) => (
-                    <span key={i} className={cn("h-full min-w-[2px] flex-1 rounded-[2px]", SEG_FILL[st])} />
-                ))
-            ) : (
-                <>
-                    <span className="h-full min-w-0 rounded-[2px] bg-success" style={{ flexGrow: strip.done }} />
+        <div
+            role="img"
+            aria-label={`${taskStripLabel(group, digest)}; ${tail.map((p) => `${p.name} ${p.state}`).join(", ")}`}
+            className="flex h-1 gap-[7px]"
+        >
+            <span className="flex h-full min-w-0 flex-1 gap-[3px]">
+                {strip.kind === "segments" ? (
+                    strip.states.map((st, i) => (
+                        <span key={i} className={cn("h-full min-w-[2px] flex-1 rounded-[2px]", SEG_FILL[st])} />
+                    ))
+                ) : (
+                    <>
+                        <span className="h-full min-w-0 rounded-[2px] bg-success" style={{ flexGrow: strip.done }} />
+                        <span
+                            className="h-full min-w-0 rounded-[2px] bg-edge-strong"
+                            style={{ flexGrow: strip.total - strip.done }}
+                        />
+                    </>
+                )}
+            </span>
+            <span data-run-strip-tail className="flex h-full flex-none gap-[3px] border-l border-edge-strong pl-[7px]">
+                {tail.map((p) => (
                     <span
-                        className="h-full min-w-0 rounded-[2px] bg-edge-strong"
-                        style={{ flexGrow: strip.total - strip.done }}
+                        key={p.name}
+                        data-pip={p.state}
+                        title={`${p.name}: ${p.state}`}
+                        className={cn("h-full w-4 rounded-[2px]", PIP_FILL[p.state])}
                     />
-                </>
-            )}
+                ))}
+            </span>
         </div>
     );
 }

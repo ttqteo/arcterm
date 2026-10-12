@@ -177,9 +177,9 @@ describe("sheetStatus", () => {
         expect(taskSectionMeta(stoppedLead(), undefined)).toBe("none — no plan was submitted");
     });
 
-    it("reads a healthy run as executing, with the meter and next line from the same read", () => {
+    it("reads a healthy run as working, with the meter and next line from the same read", () => {
         const s = sheetStatus(read());
-        expect(s.verb).toBe("Executing");
+        expect(s.verb).toBe("Working");
         expect(s.sub).toBe("2 of 4 tasks done, 2 workers live");
         expect(s.meter).toEqual({ kind: "strip" });
         expect(s.next).toBe("waiting for a slot — task 1, task 2 still running");
@@ -187,7 +187,7 @@ describe("sheetStatus", () => {
     });
 
     // the contradiction that started the redesign: every task finished, the run not yet
-    it("says Landing when the graph is done and the run is still executing", () => {
+    it("says Wrapping up when the graph is done and the run is still executing", () => {
         const s = sheetStatus(
             read({
                 dag: {
@@ -202,12 +202,13 @@ describe("sheetStatus", () => {
                 },
             })
         );
-        expect(s.verb).toBe("Landing");
+        expect(s.verb).toBe("Wrapping up");
+        expect(s.sub).toBe("all 4 tasks done · the lead is writing the report");
         expect(s.meter).toEqual({ kind: "strip" });
         expect(s.next).not.toMatch(/finished/);
     });
 
-    it("says Verifying with the final step while the final stage runs, not Executing", () => {
+    it("says Final check with the final step while the final stage runs, not Working", () => {
         const s = sheetStatus(
             read({
                 dag: {
@@ -220,12 +221,12 @@ describe("sheetStatus", () => {
                 },
             })
         );
-        expect(s.verb).toBe("Verifying");
+        expect(s.verb).toBe("Final check");
         expect(s.sub).toBe("all 4 tasks done · final: running Check (2m)");
         expect(s.next).toMatch(/lands/);
     });
 
-    it("counts a skipped task as finished, so Landing never sits over a strip one short", () => {
+    it("counts a skipped task as finished, so Wrapping up never sits over a strip one short", () => {
         const g = group(["done", "skipped", "done", "done"], { status: "done" });
         const s = sheetStatus(
             read({
@@ -238,7 +239,7 @@ describe("sheetStatus", () => {
                 },
             })
         );
-        expect(s.verb).toBe("Landing");
+        expect(s.verb).toBe("Wrapping up");
         expect(s.meter).toEqual({ kind: "strip" });
         expect(taskStripLabel(g, undefined)).toBe("4 of 4 tasks done");
     });
@@ -268,11 +269,11 @@ describe("sheetStatus", () => {
                 },
             })
         );
-        expect(s.verb).toBe("Executing");
+        expect(s.verb).toBe("Working");
         expect(s.next).toMatch(/waiting on the lead/);
     });
 
-    it("keeps executing while other work runs, and names how many tasks need you", () => {
+    it("keeps working while other work runs, and names how many tasks need you", () => {
         const s = sheetStatus(
             read({
                 dag: {
@@ -290,9 +291,9 @@ describe("sheetStatus", () => {
                 },
             })
         );
-        expect(s.verb).toBe("Executing");
+        expect(s.verb).toBe("Working");
         expect(s.sub).toBe("1 of 4 done · 2 tasks need you");
-        expect(s.meta.map((m) => m.text)).toContain("attention 2");
+        expect(s.meta.map((m) => m.text)).toContain("2 need you");
         expect(s.meta.map((m) => m.text)).toContain("merge 1");
     });
 
@@ -363,7 +364,7 @@ describe("sheetStatus", () => {
                 },
             })
         );
-        expect(s.verb).toBe("Executing");
+        expect(s.verb).toBe("Working");
         expect(s.meta.map((m) => m.text)).toContain("refreshing");
     });
 
@@ -409,7 +410,7 @@ describe("sheetStatus", () => {
 
     it("reads a quick run as one worker with no next line", () => {
         const s = sheetStatus(read({ run: run({ mode: "quick", dagoref: "", createdts: NOW - 6 * MIN }), dag: null }));
-        expect(s.verb).toBe("Executing");
+        expect(s.verb).toBe("Working");
         expect(s.sub).toBe("one worker, no plan");
         expect(s.next).toBeNull();
         expect(s.meta.map((m) => m.text)).toEqual(["6m elapsed", "1 worker"]);
@@ -446,6 +447,34 @@ describe("sheetStatus", () => {
         expect(s.sub).toBe("4 tasks, 2 commits landed, 39m");
         expect(s.pulse).toBe(false);
         expect(s.meta.map((m) => m.text)).toEqual(["finished 11m ago", "workers 1h17m", "evidence sealed"]);
+    });
+
+    // a done run on its own branch is not in its base until the branch lands
+    it("says Landing for a done run whose land is pending, before it says Done", () => {
+        const s = sheetStatus(
+            read({
+                run: run({ status: "done", land: { state: "pending" }, basebranch: "main" }),
+                dag: {
+                    digest: fresh(digest()),
+                    group: group(["done", "done"], { status: "done" }),
+                    groupRead: "ready",
+                },
+            })
+        );
+        expect(s.verb).toBe("Landing");
+        expect(s.sub).toBe("merging wave/3457abcd into main");
+        expect(s.pulse).toBe(true);
+        expect(s.meter).toEqual({ kind: "strip" });
+    });
+
+    it("waits on you for a done run whose land is held, with the reason, until it is dismissed", () => {
+        const held = (land: RunLand) => sheetStatus(read({ run: run({ status: "done", land }) }));
+        const s = held({ state: "held", reason: "staged changes" });
+        expect(s.verb).toBe("Waiting on you");
+        expect(s.sub).toContain("staged changes");
+        expect(s.tone).toBe("warning");
+        expect(held({ state: "held", reason: "staged changes", dismissed: true }).verb).toBe("Done");
+        expect(held({ state: "landed" }).verb).toBe("Done");
     });
 
     it("counts a cancelled run's survivors in the subtitle, so the count and the card cannot drift", () => {

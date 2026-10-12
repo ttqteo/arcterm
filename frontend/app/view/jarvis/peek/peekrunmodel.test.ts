@@ -130,7 +130,7 @@ describe("buildRunPeek: an orchestrator run", () => {
         const view = buildRunPeek(input());
         expect(view.title).toBe("Implement the vault sync design");
         expect(view.goal).toContain("The spec is approved.");
-        expect(view.status).toEqual({ label: "done", tone: "done" });
+        expect(view.status).toEqual({ label: "complete", tone: "done" });
     });
 });
 

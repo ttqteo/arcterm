@@ -9,6 +9,7 @@
 // Pure: no React.
 
 import { formatAge } from "@/app/view/agents/agentsviewmodel";
+import { runStage, type StageTone } from "@/app/view/agents/runstage";
 import { parseAddress, type OpenTarget } from "./address";
 import {
     ACTIVE_CAP,
@@ -28,7 +29,7 @@ import {
 import { headline, noteBody } from "./effortfeed";
 import type { ChunkTone, EffortCardModel } from "./effortmodel";
 
-export type LineTone = "ok" | "active" | "asking" | "error" | "muted" | "faint";
+export type LineTone = "ok" | "active" | "running" | "asking" | "error" | "muted" | "faint";
 export type LineTarget = { queue: QueueOpenTarget } | { oref: string } | null;
 
 export type BriefLine = {
@@ -231,10 +232,22 @@ export type EffortRef = { oref: string; title: string; chunkStages: Record<strin
 // keyed by effort oid, the way a run's effortref names its effort
 export type EffortIndex = Map<string, EffortRef>;
 
-// A Runs row (design L266-278, model L1615-1627) from the live Run object and the roster.
+const STAGE_LINE_TONE: Record<StageTone, LineTone> = {
+    working: "ok",
+    running: "running",
+    asking: "asking",
+    done: "ok",
+    error: "error",
+    muted: "faint",
+};
+
+// A Runs row (design L266-278, model L1615-1627) from the live Run object and the roster. The run's state word and
+// tone are its stage (runstage.ts), read with the dag when the lineage holds it, so the row says what the Agent
+// tree and the run sheet say.
 export function runRowFace(i: {
     line: BriefLine;
     run?: Run;
+    dag?: TaskGroup;
     asking: boolean;
     project: string;
     effort?: EffortRef;
@@ -242,13 +255,15 @@ export function runRowFace(i: {
     const { line, run } = i;
     if (run == null) {
         const asking = i.asking || line.state === "asking";
+        // a direct agent (or a run not loaded yet) has no Run to read, so its line's own tone is the truth
+        const tone: LineTone = asking ? "asking" : line.stateTone;
         return {
             type: "agent",
             meta: line.meta,
             elapsed: line.age,
             state: asking ? "asking" : line.state === "working" ? "running" : line.state,
-            stateTone: asking ? "asking" : "ok",
-            dot: asking ? "asking" : "live",
+            stateTone: tone,
+            dot: tone === "asking" ? "asking" : tone === "ok" ? "live" : "idle",
             asking,
             canStop: false,
             stopped: false,
@@ -259,19 +274,17 @@ export function runRowFace(i: {
     }
     const orch = run.mode === "orchestrator";
     const status = run.status ?? "";
-    const [state, stateTone]: [string, LineTone] = i.asking
-        ? ["asking", "asking"]
+    const s = runStage({ status: run.status, land: run.land, dag: i.dag }, i.asking);
+    // a question names itself, a run whose worker died keeps the word blocked (its stage alone would say working), and
+    // a cancelled run keeps the Brief's own word, stopped, which its Stop button earns
+    const state = i.asking
+        ? "asking"
         : status === "blocked"
-          ? ["blocked", "asking"]
-          : status === "awaiting-review"
-            ? ["review", "asking"]
-            : status === "cancelled"
-              ? ["stopped", "faint"]
-              : status === "done"
-                ? ["done", "ok"]
-                : status === "planning"
-                  ? ["planning", "ok"]
-                  : ["running", "ok"];
+          ? "blocked"
+          : s.key === "cancelled"
+            ? "stopped"
+            : s.label.toLowerCase();
+    const stateTone = STAGE_LINE_TONE[s.tone];
     const terminal = status === "done" || status === "cancelled";
     const ref = run.effortref;
     const linked = ref != null && i.effort != null;
@@ -282,7 +295,7 @@ export function runRowFace(i: {
         elapsed: line.age,
         state,
         stateTone,
-        dot: i.asking ? "asking" : terminal ? (status === "done" ? "done" : "idle") : "live",
+        dot: s.needsYou ? "asking" : s.complete ? "done" : s.key === "cancelled" ? "idle" : "live",
         asking: i.asking,
         canStop: !terminal,
         stopped: status === "cancelled",

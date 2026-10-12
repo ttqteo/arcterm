@@ -6,6 +6,7 @@
 
 import { runProgress } from "./runlineage";
 import { runSegments, type LaneState } from "./runrail";
+import type { PipState } from "./runstage";
 
 // working is blue, not the accent: clay and the error red share a lightness, and at the strip's 3px a working task
 // read as a failed one
@@ -17,6 +18,17 @@ export const SEG_FILL: Record<LaneState, string> = {
     pending: "bg-edge-strong",
     failed: "bg-error",
     muted: "bg-muted",
+};
+
+// the tail after a run's tasks: Final check, Wrap-up, Land (runstage.ts). Pending is the strip's own grey, so a
+// tail with nothing started reads as more of the same road
+export const PIP_FILL: Record<PipState, string> = {
+    pending: "bg-edge-strong",
+    active: "bg-running",
+    done: "bg-success",
+    held: "bg-warning",
+    failed: "bg-error",
+    skipped: "bg-muted/40",
 };
 
 // past this many tasks the segments get too thin to read in the 248px tree, so the strip becomes one bar

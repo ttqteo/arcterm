@@ -6,7 +6,8 @@
 // view + run selection. No React, no jotai — unit-tested in runmodel.test.ts.
 
 import type { AgentVM } from "./agentsviewmodel";
-import { finalStageActivity, runFinished, runProgress, type Lineage, type RunInfo } from "./runlineage";
+import { finalStageActivity, runProgress, type Lineage, type RunInfo } from "./runlineage";
+import { runStage } from "./runstage";
 
 export type RunStatusTone = "planning" | "review" | "running" | "blocked" | "done" | "failed" | "cancelled";
 
@@ -23,46 +24,46 @@ function landView(land: RunLand): { label: string; tone: RunStatusTone } | undef
     return undefined;
 }
 
-/** Pure: what a run whose plan finished is still doing. The dag finishing is not the run finishing: its lead
- *  wraps up and completes it, and only then does a run on its own branch land. */
+/** Pure: what a run whose plan finished is still doing, in the one stage vocabulary (runstage.ts). The dag finishing
+ *  is not the run finishing: its lead wraps up and completes it, and only then does a run on its own branch land. */
 export function finishedRunLabel(run: Pick<RunInfo, "dag" | "status" | "land">): string {
-    if (run.dag?.status === "cancelled" || run.status === "cancelled") {
-        return "run cancelled";
-    }
-    if (run.status != null && run.status !== "done") {
-        return "lead wrapping up";
-    }
-    return (run.land && landView(run.land)?.label) || "run complete";
+    const s = runStage(run);
+    return s.key === "wrapping-up" ? "Wrapping up · lead" : s.label;
 }
 
-/** Pure: a dag run's progress line in the Agents tree. Every task done is not the run done: the final stage
- *  still verifies the merged result, and a bare "5/5 done" there read as finished. */
+/** Pure: a dag run's line in the Agents tree, the stage first so a cut line keeps it. Every task done is not the
+ *  run done: the final stage, the lead's wrap-up and the land still follow. */
 export function dagProgressLabel(
     run: Pick<RunInfo, "dag" | "status" | "land" | "leadStarted">,
     leadless: boolean
 ): string {
     const { done, total } = runProgress(run.dag);
-    if (run.dag?.status === "done") {
+    const s = runStage(run);
+    if (s.key === "final-check") {
+        return `Final check · ${finalStageActivity(run.dag?.final) ?? "verifying the merged result"}`;
+    }
+    if (s.key === "cancelled") {
+        // a cancelled run says how far it got
+        return `Cancelled · ${done}/${total}`;
+    }
+    if (s.key === "land-held") {
+        return s.needsYou ? "Land held · needs you" : "Land held";
+    }
+    if (s.key !== "working" && s.key !== "plan-review" && s.key !== "planning") {
         return finishedRunLabel(run);
     }
-    if (run.dag?.status === "finalizing") {
-        const activity = finalStageActivity(run.dag.final);
-        return `${done}/${total} · ${activity ? `final: ${activity}` : "verifying the merged result"}`;
-    }
+    const base = `${s.label} · ${done}/${total}`;
     if (leadless) {
         // a plan-path run gets its lead only at its first judgment event, so no lead yet is the normal case
-        return `${done}/${total} · ${run.leadStarted ? "lead closed" : "lead starts if needed"}`;
+        return `${base} · ${run.leadStarted ? "lead closed" : "lead starts if needed"}`;
     }
-    return `${done}/${total} done`;
+    return base;
 }
 
-const COMPLETE_LABELS = new Set(["landed", "run complete"]);
-
-// runComplete is a run with nothing left to happen: its plan done (or, with no dag, its lead's own work) and the run
-// itself over and landed (or with nothing to land). a lead still wrapping up, a land in flight or held, and a
-// cancelled run are not complete.
+// runComplete is a run with nothing left to happen: landed, or done with nothing to land. a lead still wrapping up, a
+// land in flight or held, and a cancelled run are not complete.
 export function runComplete(run: Pick<RunInfo, "dag" | "status" | "land">): boolean {
-    return runFinished(run) && COMPLETE_LABELS.has(finishedRunLabel(run));
+    return runStage(run).complete;
 }
 
 export function runStatusView(status: string, land?: RunLand): { label: string; tone: RunStatusTone } {
@@ -78,13 +79,13 @@ export function runStatusView(status: string, land?: RunLand): { label: string; 
         case "plan-review":
             return { label: "reviewing plan", tone: "review" };
         case "executing":
-            return { label: "executing", tone: "running" };
+            return { label: "working", tone: "running" };
         case "finalizing":
-            return { label: "verifying", tone: "running" };
+            return { label: "final check", tone: "running" };
         case "blocked":
             return { label: "blocked", tone: "blocked" };
         case "done":
-            return { label: "done", tone: "done" };
+            return { label: "complete", tone: "done" };
         case "failed":
             return { label: "failed", tone: "failed" };
         case "cancelled":

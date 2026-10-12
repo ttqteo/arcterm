@@ -524,10 +524,14 @@ function BriefRunRow({
     const agents = useAtomValue(model.agentsAtom);
     const projects = useAtomValue(projectsAtom);
     const index = useAtomValue(briefEffortIndexAtom);
+    const lineage = useAtomValue(model.lineageAtom);
     const asking = run != null ? leadAsker(run, agents) != null : line.state === "asking";
+    // the lineage holds a lead run's dag; a run outside it reads by its own status alone
+    const dag = run != null ? lineage.runs[run.id]?.dag : undefined;
     const face = runRowFace({
         line,
         run,
+        dag,
         asking,
         project: projectName(run?.projectpath ?? "", projects),
         effort: run?.effortref != null ? index.get(run.effortref.effortoid) : undefined,

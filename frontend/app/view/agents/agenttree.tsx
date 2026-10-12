@@ -128,7 +128,8 @@ import {
     useRunDigests,
 } from "./runlineagestore";
 import { dagProgressLabel, finishedRunLabel, runComplete, runStatusView } from "./runmodel";
-import { SEG_FILL, taskStrip, taskStripLabel } from "./runstrip";
+import { runStage, type StageTone } from "./runstage";
+import { PIP_FILL, SEG_FILL, taskStrip, taskStripLabel } from "./runstrip";
 import {
     getSubagentExpandAtom,
     toggleSubagentExpand,
@@ -349,41 +350,78 @@ function AskingBadge({ n }: { n: number }) {
     return <span className="whitespace-nowrap text-[11px] font-semibold tabular-nums text-warning">{n} asking</span>;
 }
 
-// TaskStripBar is a run's per-task strip under its second line: a segment per task, or one bar for a long plan.
+// TaskStripBar is a run's per-task strip under its second line: a segment per task, or one bar for a long plan,
+// then a divider and the tail every run ends in: Final check, Wrap-up, Land (runstage.ts), so a run whose tasks are
+// all green still shows it is not over.
 function TaskStripBar({ run }: { run: RunInfo }) {
     const strip = taskStrip(run.dag, run.digest);
     if (strip == null) {
         return null;
     }
+    const tail = runStage(run).tail;
     return (
-        <div role="img" aria-label={taskStripLabel(run.dag, run.digest)} className="mt-[6px] flex h-[3px] gap-[2px]">
-            {strip.kind === "segments" ? (
-                strip.states.map((st, i) => (
-                    <span key={i} className={cn("min-w-[2px] flex-1 rounded-[1.5px]", SEG_FILL[st])} />
-                ))
-            ) : (
-                <>
-                    <span className="min-w-0 rounded-[1.5px] bg-success" style={{ flexGrow: strip.done }} />
+        <div
+            role="img"
+            aria-label={`${taskStripLabel(run.dag, run.digest)}; ${tail.map((p) => `${p.name} ${p.state}`).join(", ")}`}
+            className="mt-[6px] flex h-[3px] gap-[5px]"
+        >
+            <span className="flex min-w-0 flex-1 gap-[2px]">
+                {strip.kind === "segments" ? (
+                    strip.states.map((st, i) => (
+                        <span key={i} className={cn("min-w-[2px] flex-1 rounded-[1.5px]", SEG_FILL[st])} />
+                    ))
+                ) : (
+                    <>
+                        <span className="min-w-0 rounded-[1.5px] bg-success" style={{ flexGrow: strip.done }} />
+                        <span
+                            className="min-w-0 rounded-[1.5px] bg-edge-strong"
+                            style={{ flexGrow: strip.total - strip.done }}
+                        />
+                    </>
+                )}
+            </span>
+            <span data-run-strip-tail className="flex flex-none gap-[2px] border-l border-edge-strong pl-[5px]">
+                {tail.map((p) => (
                     <span
-                        className="min-w-0 rounded-[1.5px] bg-edge-strong"
-                        style={{ flexGrow: strip.total - strip.done }}
+                        key={p.name}
+                        data-pip={p.state}
+                        title={`${p.name}: ${p.state}`}
+                        className={cn("w-3 rounded-[1.5px]", PIP_FILL[p.state])}
                     />
-                </>
-            )}
+                ))}
+            </span>
         </div>
     );
 }
 
+// a finished run's check and word; a run that landed with its final check unverified says so, in the amber a held
+// land uses, so "Complete" does not claim more than the engine could check
 function RunCompleteLabel({ run }: { run: RunInfo }) {
+    const unverified = runStage(run).outcome === "unverified";
+    const label = `${finishedRunLabel(run)}${unverified ? " · unverified" : ""}`;
     return (
-        <span className="flex min-w-0 items-center gap-[5px] text-success">
+        <span
+            data-run-complete={unverified ? "unverified" : "done"}
+            className={cn("flex min-w-0 items-center gap-[5px]", unverified ? "text-warning" : "text-success")}
+        >
             <Check size={11} aria-hidden className="flex-none" />
-            <span className="truncate" title={finishedRunLabel(run)}>
-                {finishedRunLabel(run)}
+            <span className="truncate" title={label}>
+                {label}
             </span>
         </span>
     );
 }
+
+// the progress line's colour by the run's stage: amber when it needs you, red when its final check failed, blue
+// while the engine moves it on, and the quiet grey otherwise
+const PROGRESS_TEXT: Record<StageTone, string> = {
+    asking: "text-warning",
+    error: "text-error",
+    running: "text-running",
+    working: "text-muted",
+    muted: "text-muted",
+    done: "text-muted",
+};
 
 // RunSubline is a run row's second line: a chip folding its workers away, and how far the plan is.
 // a lead's second line: its workers chip and progress, then `trailing` (the lead's own badges) at its right end
@@ -439,7 +477,7 @@ function RunSubline({
                 {runComplete(run) ? (
                     <RunCompleteLabel run={run} />
                 ) : (
-                    <span className="truncate text-muted" title={progress}>
+                    <span className={cn("truncate", PROGRESS_TEXT[runStage(run).tone])} title={progress}>
                         {progress}
                     </span>
                 )}
