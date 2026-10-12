@@ -86,7 +86,8 @@ type SettingsType struct {
 	WindowMagnifiedBlockOpacity         *float64 `json:"window:magnifiedblockopacity,omitempty"`
 	WindowMagnifiedBlockSize            *float64 `json:"window:magnifiedblocksize,omitempty"`
 	WindowMagnifiedBlockBlurSecondaryPx *int64   `json:"window:magnifiedblockblursecondarypx,omitempty"`
-	WindowMinimize                      string   `json:"window:minimize,omitempty"` // what minimize does: "sprout" (default) folds the window into Sprout, "dock" sends it to the Dock or taskbar
+	WindowMinimize                      string   `json:"window:minimize,omitempty"`   // what minimize does: "sprout" (default) folds the window into Sprout, "dock" sends it to the Dock or taskbar
+	WindowAutoSprout                    bool     `json:"window:autosprout,omitempty"` // fold the full window into Sprout when you switch to another app, and grow it back when you return
 
 	ConnClear                bool    `json:"conn:*,omitempty"`
 	ConnLocalHostnameDisplay *string `json:"conn:localhostdisplayname,omitempty"`

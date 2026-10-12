@@ -5,6 +5,9 @@ import { describe, expect, it } from "vitest";
 import { miniSproutRect } from "./floatwindow";
 import {
     afterOpen,
+    autoFoldOnLeave,
+    autoRestoreOnReturn,
+    autoSproutOn,
     FOLD_FADE_FROM,
     foldFade,
     minimizeAction,
@@ -109,6 +112,39 @@ describe("afterOpen", () => {
     it("leaves Full and Float alone", () => {
         expect(afterOpen(full)).toBeNull();
         expect(afterOpen(float)).toBeNull();
+    });
+});
+
+describe("auto Sprout", () => {
+    const left = { on: true, size: "full" as const, ours: false, minimized: false, visible: true };
+    it("is off unless window:autosprout is true", () => {
+        expect(autoSproutOn(undefined)).toBe(false);
+        expect(autoSproutOn("true")).toBe(false);
+        expect(autoSproutOn(true)).toBe(true);
+    });
+    it("folds Full when you have left for another app", () => expect(autoFoldOnLeave(left)).toBe(true));
+    it("leaves the window be when off, in Float, folded, minimized or hidden", () => {
+        expect(autoFoldOnLeave({ ...left, on: false })).toBe(false);
+        expect(autoFoldOnLeave({ ...left, size: "float" })).toBe(false);
+        expect(autoFoldOnLeave({ ...left, size: "sprout" })).toBe(false);
+        expect(autoFoldOnLeave({ ...left, minimized: true })).toBe(false);
+        expect(autoFoldOnLeave({ ...left, visible: false })).toBe(false);
+    });
+    it("does not fold under arcterm's own dialog", () => expect(autoFoldOnLeave({ ...left, ours: true })).toBe(false));
+
+    const back = { autoFolded: true, size: "sprout" as const, pressGapMs: null, chatOpen: false };
+    it("grows back when you return to a fold leaving made", () => {
+        expect(autoRestoreOnReturn(back)).toBe(true);
+        expect(autoRestoreOnReturn({ ...back, pressGapMs: -5000 })).toBe(true);
+    });
+    it("stays folded for a button's fold, outside the fold, or with the chat open", () => {
+        expect(autoRestoreOnReturn({ ...back, autoFolded: false })).toBe(false);
+        expect(autoRestoreOnReturn({ ...back, size: "full" })).toBe(false);
+        expect(autoRestoreOnReturn({ ...back, chatOpen: true })).toBe(false);
+    });
+    it("stays folded when the focus came with a press on Sprout, before or after it", () => {
+        expect(autoRestoreOnReturn({ ...back, pressGapMs: -40 })).toBe(false);
+        expect(autoRestoreOnReturn({ ...back, pressGapMs: 120 })).toBe(false);
     });
 });
 

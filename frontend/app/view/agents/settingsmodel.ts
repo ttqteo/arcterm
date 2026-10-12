@@ -166,6 +166,14 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                             scope: "synced",
                             config: true,
                         },
+                        {
+                            id: "window.autosprout",
+                            title: "Fold when you leave",
+                            desc: "Like a picture-in-picture: once you switch to another app, the full window folds into Sprout, and it grows back when you return to arcterm. Off keeps the cockpit as it is, say on a second screen. Right-click the Sprout button to switch it.",
+                            key: "window:autosprout",
+                            scope: "synced",
+                            config: true,
+                        },
                     ],
                 },
                 {

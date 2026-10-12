@@ -25,7 +25,7 @@ import {
     Toggle,
     writeConfig,
 } from "../settingsui";
-import { minimizeChoice } from "../windowsize";
+import { autoSproutOn, minimizeChoice } from "../windowsize";
 
 export function GeneralPage() {
     return (
@@ -99,6 +99,7 @@ function NotificationRows() {
 
 function WindowRows() {
     const choice = minimizeChoice(useAtomValue(getSettingsKeyAtom("window:minimize")));
+    const autoSprout = autoSproutOn(useAtomValue(getSettingsKeyAtom("window:autosprout")));
     const dock = isMacOS() ? "Dock" : "Taskbar";
     const items: ContextMenuItem[] = [
         {
@@ -117,9 +118,18 @@ function WindowRows() {
         },
     ];
     return (
-        <SettingRow id="window.minimize">
-            <Select value={choice} label={choice === "dock" ? dock : "Sprout"} items={items} ariaLabel="Minimize" />
-        </SettingRow>
+        <>
+            <SettingRow id="window.minimize">
+                <Select value={choice} label={choice === "dock" ? dock : "Sprout"} items={items} ariaLabel="Minimize" />
+            </SettingRow>
+            <SettingRow id="window.autosprout">
+                <Toggle
+                    on={autoSprout}
+                    onToggle={() => writeConfig({ "window:autosprout": !autoSprout })}
+                    label="Fold when you leave"
+                />
+            </SettingRow>
+        </>
     );
 }
 

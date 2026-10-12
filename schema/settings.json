@@ -138,6 +138,9 @@
         "window:minimize": {
           "type": "string"
         },
+        "window:autosprout": {
+          "type": "boolean"
+        },
         "conn:*": {
           "type": "boolean"
         },

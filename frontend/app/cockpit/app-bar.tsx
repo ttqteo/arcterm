@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { ShortcutHint } from "@/app/element/shortcuthint";
+import { ContextMenuModel } from "@/app/store/contextmenu";
 import { atoms, getSettingsKeyAtom, isDev } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { useBindingKeys } from "@/app/store/keybindings/store";
@@ -9,8 +10,9 @@ import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { foldToSprout, minimizeRequested } from "@/app/view/agents/floatstore";
 import { reopenLauncher } from "@/app/view/agents/launcherstore";
 import { ProjectSwitcher } from "@/app/view/agents/projectswitcher";
+import { writeConfig } from "@/app/view/agents/settingsui";
 import { HeaderUsageMeters } from "@/app/view/agents/usagemeters";
-import { minimizeChoice } from "@/app/view/agents/windowsize";
+import { autoSproutOn, minimizeChoice } from "@/app/view/agents/windowsize";
 import { WorkerCapacityChip } from "@/app/view/agents/workercapacitychip";
 import { PET_CHARACTER_NAME, petCharacter } from "@/app/view/jarvis/petcharacter";
 import { spriteFor } from "@/app/view/jarvis/petsprite";
@@ -48,6 +50,23 @@ export function useFoldTitle(): string {
     const choice = minimizeChoice(useAtomValue(getSettingsKeyAtom("window:minimize")));
     const title = `Fold into ${PET_CHARACTER_NAME[character]}`;
     return isMacOS() && choice === "sprout" ? `${title} (⌘M)` : title;
+}
+
+// a right-click on a fold button switches window:autosprout, the fold that follows you out of the app (floatstore.ts)
+export function showFoldMenu(e: React.MouseEvent): void {
+    const on = autoSproutOn(globalStore.get(getSettingsKeyAtom("window:autosprout")));
+    ContextMenuModel.getInstance().showContextMenu(
+        [
+            {
+                label: "Fold when you leave arcterm",
+                type: "checkbox",
+                checked: on,
+                sublabel: "Grows back when you return",
+                click: () => writeConfig({ "window:autosprout": !on }),
+            },
+        ],
+        e
+    );
 }
 
 export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
@@ -127,6 +146,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                     aria-label={`Fold into ${PET_CHARACTER_NAME[character]}`}
                     title={foldTitle}
                     onClick={() => fireAndForget(foldToSprout)}
+                    onContextMenu={showFoldMenu}
                     className="flex h-[26px] cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[7px] border border-edge-mid bg-surface-raised pl-1.5 pr-2 text-[11.5px] font-semibold text-secondary hover:bg-surface-hover hover:text-primary"
                 >
                     <SproutSvg sprite={FOLD_SPRITE[character]} cellPx={1} />
