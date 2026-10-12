@@ -11,7 +11,7 @@ A third Jarvis creature, **Spider-Man** in the Homecoming (2017) suit: slim, red
 chest, big white eyes framed in black. He is the suit at work and Peter Parker (shirt open on the suit) at rest; he walks
 the footer side-on, now and then shoots a strand to the app bar, crawls along under it and hangs upside down; his drag,
 fall, fold and working mark are made of web; folded, he sits on the edge of a brick rooftop. Separately, a **Spider**
-theme preset (near-black + Spider-Man red) re-skins the whole app. The two are picked independently in Settings →
+theme preset (Claude's warm greys with a Spider-Man red accent) re-skins the whole app. The two are picked independently in Settings →
 Appearance; neither switches the other.
 
 Runtime cost is unchanged: a pose is still one grid of at most 400 cells drawn as SVG rects, the theme is a one-time
@@ -76,18 +76,17 @@ A strand is a run of 1-cell rects in `--color-spidey-web`.
 
 ## 3. The Spider theme (`themes.ts`)
 
-A ninth preset, appended; Claude stays the default. Near-black, barely cool, with Spider-Man's red as the accent and a
-pink error so a failure never reads as the accent; the terminal keeps a real blue. Measured against `themes.test.ts`'s
-floor: muted 6.44:1 on bg and 5.38:1 hovered, ink-faint 3.95:1, the weakest ANSI slot 3.95:1.
+A ninth preset, appended; Claude stays the default. It is the **Claude palette unchanged** — the claude.ai warm greys,
+the ink and edge ramps, success, warning and the terminal's blue — with only two roles changed:
 
-| Role | Value |
-|---|---|
-| bg, surface, surfaceRaised, surfaceHover, surfaceSelected | `#0d0d0f`, `#131316`, `#1a1a1e`, `#202025`, `#27272d` |
-| code | `#08080a` |
-| border, edgeMid, edgeStrong, edgeFaint | `#1c1c21`, `#26262c`, `#34343c`, `#151518` |
-| text, secondary, muted, inkFaint | `#ececef`, `#c8c8ce`, `#94949c`, `#707078` |
-| accent, success, warning, error | `#e23636`, `#4fc28f`, `#e8b04b`, `#ff6b9a` |
-| ansiBlue | `#4a8fe7` |
+| Role | Claude | Spider | Why |
+|---|---|---|---|
+| accent | `#d97757` | `#f05252` | Spider-Man's red, lifted from `#e23636` (3.81:1 on bg) to clear 4.5:1 as link text: 4.78:1 |
+| error | `#ff6b80` | `#ff6b9a` | pushed pinker so a failure never reads as the red accent |
+
+`claudeMark` is left out: the accent is no longer Claude's clay, so the Claude mark goes back to the brand clay as in every
+other theme. The ink, edge and ANSI floors are Claude's own, which `themes.test.ts` already passes; the plan adds
+`spider` to the contrast-floor loop.
 
 ## 4. Folded (`sprout-mini.tsx`, `petmini.ts`)
 
