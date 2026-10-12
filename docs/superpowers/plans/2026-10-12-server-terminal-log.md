@@ -263,8 +263,9 @@ which terminal in Servers, and its Log opens that terminal with its search box."
 
 **Depends on:** Task 1, Task 3
 
-**Files:** `scripts/cdp/scenarios.mjs`, and only when the search-box asserts below fail: `frontend/app/element/search.tsx`,
-`frontend/app/element/search.scss`, `frontend/app/view/agents/terminallog.ts`, `frontend/app/view/term/termsearch.ts`
+**Files:** `scripts/cdp/scenarios.mjs`, `frontend/app/element/search.tsx`, `frontend/app/element/search.scss`, `frontend/app/view/agents/terminallog.ts`, `frontend/app/view/term/termsearch.ts`
+
+The four frontend files change only when a search-box assert below fails.
 
 **The search-box asserts** (both scenarios run them after clicking a terminal's Log; call them one shared helper):
 - the terminal pane (`[data-agent-terminal="<tabId>"]`) is shown and `.search-container` exists;
