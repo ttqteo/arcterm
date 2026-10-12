@@ -43,7 +43,12 @@ func readMachineHolders(ctx context.Context) (map[int32]devservers.ServerOwner, 
 }
 
 func (ws *WshServer) ListDevServersCommand(ctx context.Context, data wshrpc.CommandListDevServersData) (*wshrpc.CommandListDevServersRtnData, error) {
-	servers, err := devservers.List(ctx, data.Cwd, data.BlockId)
+	holders, err := machineHolders(ctx)
+	if err != nil {
+		// without the roster the rail still lists every server, none of them named by its terminal
+		log.Printf("devservers: reading arcterm's blocks: %v", err)
+	}
+	servers, err := devservers.List(ctx, data.Cwd, data.BlockId, holders)
 	if err != nil {
 		return nil, err
 	}

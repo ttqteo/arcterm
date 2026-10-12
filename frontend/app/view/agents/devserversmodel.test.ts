@@ -10,6 +10,7 @@ import {
     portsLabel,
     serverLabel,
     serverUrl,
+    terminalLog,
     uptimeLabel,
     type DevServerRow,
 } from "./devserversmodel";
@@ -104,6 +105,23 @@ describe("serverUrl, portsLabel, ownerLabel, copyText", () => {
     it("copies the PID and the full command line", () => {
         const r = row({ pid: 77, cmdline: "node C:\\w\\site\\node_modules\\astro\\astro.js dev" });
         expect(copyText(r)).toBe("PID 77\nnode C:\\w\\site\\node_modules\\astro\\astro.js dev");
+    });
+});
+
+describe("a server held by an arcterm terminal", () => {
+    const owner = { kind: "terminal" as const, tabid: "tab-t", blockid: "blk-t", name: "api" };
+
+    it("names the terminal on its second line", () => {
+        expect(ownerLabel(row({ owner }))).toBe("terminal · api");
+        expect(ownerLabel(row({ owner: { ...owner, name: "" } }))).toBe("terminal · Terminal");
+        expect(ownerLabel(row({ byagent: true, owner }))).toBe("this agent");
+    });
+
+    it("has the terminal as its log", () => {
+        expect(terminalLog(row({ owner }))).toEqual({ tabId: "tab-t", blockId: "blk-t" });
+        expect(terminalLog(row({ owner: { ...owner, blockid: undefined } }))).toBeNull();
+        expect(terminalLog(row({ owner: { kind: "app", name: "Code.exe" } }))).toBeNull();
+        expect(terminalLog(row())).toBeNull();
     });
 });
 

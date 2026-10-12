@@ -295,7 +295,7 @@ Mỗi dòng gồm: các cổng (bấm để mở `http://localhost:<cổng>` tro
 | Tên ứng dụng | Một app khác (vd. Docker) hoặc server mà launcher đã thoát |
 | **no owner** (cam) | Vẫn chạy nhưng không agent, terminal hay app nào giữ — thường là server bị bỏ quên |
 
-Rê chuột (hoặc focus) vào một dòng để hiện ba nút: **Log** (mở output của lệnh nền đã khởi động server, theo dõi trực tiếp — chỉ khi server do một agent khởi động bằng lệnh nền), **Copy** (PID và lệnh) và **Stop**. Stop hỏi hai lần (bấm lần một đổi thành `Stop?`, bấm lần hai mới dừng) và dừng cả những gì tiến trình đó đã khởi động.
+Rê chuột (hoặc focus) vào một dòng để hiện ba nút: **Log** (mở output của lệnh nền đã khởi động server, theo dõi trực tiếp, khi server do một agent khởi động bằng lệnh nền; với server chạy trong một terminal của arcterm, Log mở chính terminal đó với ô tìm kiếm đã mở và focus, Esc đóng ô tìm kiếm và trả bạn về terminal), **Copy** (PID và lệnh) và **Stop**. Stop hỏi hai lần (bấm lần một đổi thành `Stop?`, bấm lần hai mới dừng) và dừng cả những gì tiến trình đó đã khởi động.
 
 ![Popover "Servers on this machine" mở từ chip Servers ở footer, nhóm theo repo, mỗi dòng có cổng, PID và nhãn chủ](images/cockpit-servers-popover.png)
 

@@ -5,7 +5,7 @@
 // listening process grouped by repo, each row's owner badge, the log a background task wrote for it, its Stop
 // confirm, and the chip's counts. machineserversstore.ts polls; machineserverspanel.tsx draws.
 
-import { matchLauncherTask, serverLabel, type DevServerRow } from "./devserversmodel";
+import { matchLauncherTask, serverLabel, terminalLog, type DevServerRow, type TerminalLog } from "./devserversmodel";
 import type { BackgroundTask } from "./transcriptprojection";
 
 export type BadgeKind = "agent" | "terminal" | "app" | "noowner";
@@ -22,6 +22,7 @@ export interface MachineRow {
     label: string;
     badge: MachineBadge;
     log?: { agentId: string; task: BackgroundTask };
+    termLog?: TerminalLog; // the arcterm terminal that holds the server: its pane is the log
     stopConfirm: string;
 }
 
@@ -78,7 +79,11 @@ function resolveRow(s: DevServerRow, agents: MachineAgent[], bgTasks: Record<str
             };
         }
         case "terminal":
-            return { ...base, badge: { kind: "terminal", text: `terminal · ${o.name || "Terminal"}`, tabId: o.tabid } };
+            return {
+                ...base,
+                badge: { kind: "terminal", text: `terminal · ${o.name || "Terminal"}`, tabId: o.tabid },
+                termLog: terminalLog(s) ?? undefined,
+            };
         case "app":
             return { ...base, badge: { kind: "app", text: exeName(o.name) }, stopConfirm: `Stop ${exeName(o.name)}?` };
         default:

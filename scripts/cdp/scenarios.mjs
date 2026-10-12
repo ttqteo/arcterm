@@ -19950,6 +19950,93 @@ const agentRailSections = {
     },
 };
 
+// A terminal-held server's Log opens that terminal with its search box open and focused (docs/superpowers/specs/
+// 2026-10-12-server-terminal-log-design.md). rail-servers and machine-servers each click that Log, then run the same
+// asserts on the box, which had not rendered under Tauri before.
+
+// the shell prints `marker`, so the terminal has a line for the box to find. False when the shell never came up or the
+// echo never reached the block's output
+async function termLogPrint(h, blockId, marker) {
+    if (!(await uploadsShellUp(h, blockId))) return false;
+    await h.rpc("controllerinput", { blockid: blockId, inputdata64: Buffer.from(`echo ${marker}\r`).toString("base64") });
+    return (await uploadsTermHas(h, blockId, marker)).seen;
+}
+
+// the search box as the page shows it; null before it is open
+const termLogBoxFacts = (tabId) => `(() => {
+    const pane = document.querySelector('[data-agent-terminal="${tabId}"]');
+    const box = document.querySelector(".search-container");
+    if (!box) return { paneShown: !!pane && pane.getClientRects().length > 0, box: false };
+    const pr = pane?.getBoundingClientRect();
+    const br = box.getBoundingClientRect();
+    const input = box.querySelector("input");
+    const buttons = [...box.querySelectorAll("button")].map((b) => {
+        const icon = b.querySelector("i");
+        const glyph = icon ? getComputedStyle(icon, "::before").content : null;
+        const svg = !!b.querySelector("svg");
+        const glyphDrawn = glyph != null && !["none", "normal"].includes(glyph) && glyph.replace(/["']/g, "") !== "";
+        return { label: b.getAttribute("aria-label"), svg, glyph, drawn: svg || glyphDrawn };
+    });
+    const results = box.querySelector(".search-results");
+    const m = /(\\d+)\\s*\\/\\s*(\\d+)/.exec(results?.textContent ?? "");
+    return {
+        paneShown: !!pane && pane.getClientRects().length > 0,
+        box: true,
+        boxes: document.querySelectorAll(".search-container").length,
+        sized: br.width > 0 && br.height > 0,
+        inPane:
+            !!pr && br.left >= pr.left - 1 && br.right <= pr.right + 1 && br.top >= pr.top - 1 && br.bottom <= pr.bottom + 1,
+        rects: { box: [br.left, br.top, br.right, br.bottom].map(Math.round), pane: pr ? [pr.left, pr.top, pr.right, pr.bottom].map(Math.round) : null },
+        focused: !!input && document.activeElement === input,
+        active: document.activeElement ? document.activeElement.tagName.toLowerCase() + "." + String(document.activeElement.className).slice(0, 40) : null,
+        buttons,
+        resultsShown: !!results && !results.classList.contains("hidden") && getComputedStyle(results).display !== "none",
+        resultsCount: m ? Number(m[2]) : 0,
+    };
+})()`;
+
+// After a terminal's Log was clicked: the terminal's pane is shown and its search box is open, inside the pane, with the
+// input focused and every button drawing an icon; typing `marker`, which the terminal printed earlier, shows a result
+// count above 0. Shoots before pressing Escape, which closes the box and gives the terminal's own textarea the focus.
+// A box left open is closed through its button, so a failure here does not carry into the steps after it.
+async function termLogSearchBox(h, tabId, marker, shotPath) {
+    const up = await polishWaitFor(h, `!!document.querySelector(".search-container")`, 8000);
+    // the box places itself against the pane a frame after it opens, and anything that takes focus back does so soon
+    await polishNap(500);
+    const opened = await h.ev(termLogBoxFacts(tabId));
+    // a box that lost focus is focused by hand, so what follows is still read; `opened.focused` stays the verdict
+    if (up && !opened.focused) await h.ev(`document.querySelector(".search-container input")?.focus()`);
+    if (up) await h.cdp("Input.insertText", { text: marker });
+    const found = up && (await polishWaitFor(h, `(${termLogBoxFacts(tabId)}).resultsShown && (${termLogBoxFacts(tabId)}).resultsCount > 0`, 5000));
+    const typed = up ? await h.ev(termLogBoxFacts(tabId)) : null;
+    await h.shot(shotPath);
+    await msPressEscape(h);
+    const closed = await polishWaitFor(h, `!document.querySelector(".search-container")`, 3000);
+    const textareaFocused = await polishWaitFor(
+        h,
+        `(() => {
+            const a = document.activeElement;
+            const pane = document.querySelector('[data-agent-terminal="${tabId}"]');
+            return !!a && !!pane && a.classList.contains("xterm-helper-textarea") && pane.contains(a);
+        })()`,
+        3000
+    );
+    if (!closed) await h.ev(`document.querySelector('.search-container button[aria-label="Close (Esc)"]')?.click()`);
+    const ok =
+        up &&
+        opened.paneShown &&
+        opened.boxes === 1 &&
+        opened.sized &&
+        opened.inPane &&
+        opened.focused &&
+        opened.buttons.length > 0 &&
+        opened.buttons.every((b) => b.drawn) &&
+        found &&
+        closed &&
+        textareaFocused;
+    return { ok, detail: { up, opened, found, typed, closed, textareaFocused } };
+}
+
 // The details rail's Servers section (docs/superpowers/specs/2026-10-07-rail-dev-servers-design.md), on real processes:
 //   - `node dev-server.js`, an HTTP server on a loopback port, run in the project: listed by its cwd, "already running";
 //   - node under the name claude (the name pkg/devservers' agent lookup matches) carrying the fixture agent's
@@ -19963,6 +20050,15 @@ const agentRailSections = {
 const RAIL_SERVERS_AGENT_ID = "fx-rail-servers";
 const RAIL_SERVERS_BLOCK = "fx-blk-rail-servers";
 const RAIL_SERVERS_LOG_LINE = "rail-servers: listening on 127.0.0.1";
+// the last step's server runs in a real terminal tab of its own: the tab's name, the marker its server prints when it
+// listens (with its port and pid, with no space in them, since the block's output is read with the whitespace gone), and
+// the file in the project that is the server
+const RAIL_SERVERS_TERM_NAME = "rail servers terminal";
+const RAIL_SERVERS_TERM_MARKER = "rsTermlogReady";
+const RAIL_SERVERS_TERM_SOURCE = `const s = require("node:http").createServer((req, res) => res.end("ok"));
+s.listen(0, "127.0.0.1", () => console.log("${RAIL_SERVERS_TERM_MARKER}:port=" + s.address().port + ":pid=" + process.pid + ":"));
+setTimeout(() => process.exit(0), 600000);
+`;
 // The processes end by themselves after ten minutes, so a run that dies before teardown does not leave a server
 // listening.
 // dev-server.js: a loopback HTTP server on a free port, which prints the port
@@ -20403,6 +20499,82 @@ const railServers = {
             logClick && fileUp && following === "true" && logText,
             JSON.stringify({ logClick, fileUp, following, logText })
         );
+
+        // 10. a server running in an arcterm terminal. Last, because it adds a server and a terminal: steps 1, 3 and 8 count
+        // and order the strip's servers. Step 9 left the panel on a file, so it goes back to its sections first
+        const overviewClick = await railServersMouse(h, `${RAIL_ASIDE}?.querySelector('[data-rail-tab="overview"]')`, true);
+        const sectionsBack = await polishWaitFor(h, `!!${RAIL_ASIDE}?.querySelector("[data-rail-servers]")`, 5000);
+        // the terminal the server runs in: a real tab, with the project as its cwd so the server is listed by it too
+        const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+        const wslist = await h.rpc("workspacelist", null);
+        const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+        // on ctx as soon as the tab exists, so teardown closes it whatever fails after
+        ctx.term = { workspaceId: ws.workspacedata.oid, tabId: null, blockId: null, pid: null, port: null };
+        ctx.term.tabId = await waveService(h, "workspace", "CreateTab", [ctx.term.workspaceId, RAIL_SERVERS_TERM_NAME, false]);
+        const termTab = await waveService(h, "object", "GetObject", [`tab:${ctx.term.tabId}`]);
+        ctx.term.blockId = termTab?.blockids?.[0] ?? null;
+        if (!ctx.term.blockId) throw new Error(`the throwaway terminal tab ${ctx.term.tabId} has no block`);
+        await h.rpc("setmeta", {
+            oref: `block:${ctx.term.blockId}`,
+            meta: { view: "term", controller: "shell", "cmd:cwd": ctx.cwd },
+        });
+        await h.rpc("controllerresync", { tabid: ctx.term.tabId, blockid: ctx.term.blockId, forcerestart: true });
+        const termInRoster = await polishWaitFor(h, `!!document.querySelector('[data-agent-terminal="${ctx.term.tabId}"]')`, 15000);
+        // the server is started through the terminal's input and prints its marker, port and pid when it listens
+        writeFileSync(join(ctx.cwd, "term-server.js"), RAIL_SERVERS_TERM_SOURCE);
+        const shellUp = await uploadsShellUp(h, ctx.term.blockId);
+        let listening = null;
+        if (shellUp) {
+            await h.rpc("controllerinput", {
+                blockid: ctx.term.blockId,
+                inputdata64: Buffer.from("node term-server.js\r").toString("base64"),
+            });
+            for (let waited = 0; waited < 15000 && listening == null; waited += 500) {
+                const m = /rsTermlogReady:port=(\d+):pid=(\d+):/.exec((await uploadsTermText(h, ctx.term.blockId)) ?? "");
+                if (m) listening = { port: Number(m[1]), pid: Number(m[2]) };
+                else await polishNap(500);
+            }
+        }
+        if (listening) {
+            ctx.term.port = listening.port;
+            ctx.term.pid = listening.pid;
+        }
+        // the strip's count is left alone here; the row is what the step is about. The rail polls every 5s
+        const termRowUp = listening != null && (await polishWaitFor(h, `!!${row(listening.pid)}`, 20000));
+        const termFacts = termRowUp
+            ? await h.ev(`(() => {
+                const r = ${row(listening.pid)};
+                return {
+                    text: r.innerText,
+                    log: !!r.querySelector("[data-dev-server-log]"),
+                    termlog: !!r.querySelector("[data-dev-server-log][data-dev-server-termlog]"),
+                };
+            })()`)
+            : null;
+        const termLogBtn = `${row(listening?.pid)}?.querySelector("[data-dev-server-termlog]")`;
+        // the buttons show on hover, so the mouse goes onto the row first
+        const termHover = termRowUp && (await railServersMouse(h, row(listening.pid), false));
+        await polishNap(200);
+        const termLogClick = termHover && termFacts?.termlog === true && (await railServersMouse(h, termLogBtn, true));
+        const box = termLogClick
+            ? await termLogSearchBox(h, ctx.term.tabId, RAIL_SERVERS_TERM_MARKER, "cdp-shots/rail-servers-termlog.png")
+            : { ok: false, detail: null };
+        rec(
+            "10. a server running in an arcterm terminal reads `terminal · <the terminal's name>` on its second line and has a Log button, which opens that terminal with its search box open, inside the pane and focused, each button drawn, finding the text the terminal printed, and Escape closes it back to the terminal",
+            overviewClick &&
+                sectionsBack &&
+                termInRoster &&
+                shellUp &&
+                listening != null &&
+                termRowUp &&
+                termFacts != null &&
+                termFacts.text.includes(`PID ${listening.pid}`) &&
+                termFacts.text.includes(`terminal · ${RAIL_SERVERS_TERM_NAME}`) &&
+                termFacts.termlog &&
+                termLogClick &&
+                box.ok,
+            JSON.stringify({ overviewClick, sectionsBack, termInRoster, shellUp, listening, termRowUp, termFacts, termLogClick, box: box.detail })
+        );
         return steps;
     },
     async teardown(h, ctx) {
@@ -20415,6 +20587,19 @@ const railServers = {
             }
         };
         await step("end the servers and the fake agent", () => railServersStop(ctx));
+        // the terminal's server and its shell lock the project's directory on Windows, so both end before it is removed
+        await step("end the terminal's server", async () => {
+            if (!Number.isInteger(ctx.term?.pid)) return;
+            try {
+                process.kill(ctx.term.pid);
+            } catch {
+                /* already gone */
+            }
+            await railServersWaitDead(ctx.term.pid, 5000);
+        });
+        await step("close the throwaway terminal tab", async () => {
+            if (ctx.term?.tabId) await waveService(h, "workspace", "CloseTab", [ctx.term.workspaceId, ctx.term.tabId, false]);
+        });
         // the clipboard stub is an own property over Navigator's getter; deleting it restores that
         await step("remove the page stubs", () =>
             h.ev(`(() => {
@@ -24384,6 +24569,8 @@ const MS_AGENT_NAME = "machine servers agent";
 const MS_OTHER_ID = "fx-machine-servers-other";
 const MS_OTHER_BLOCK = "fx-blk-machine-servers-other";
 const MS_TERM_NAME = "machine servers terminal";
+// what the throwaway terminal's shell prints in arrange, so its search box has a line to find
+const MS_TERM_MARKER = "msTermlogMarker";
 // the background command the agent ran: the uvicorn row's launcher holds it, so the row belongs to the agent and has a Log
 const MS_COMMAND = "uvicorn app.main:app --port 8100 --reload";
 const MS_LOG_LINE = "machine-servers: uvicorn started on 127.0.0.1:8100";
@@ -24428,7 +24615,7 @@ function machineServersFixture(ctx, now) {
             cmdline: "node D:/fx/arcterm/node_modules/vite/bin/vite.js --port 5174",
             cwd: "D:/fx/arcterm",
             repo: "D:/fx/arcterm",
-            owner: { kind: "terminal", tabid: ctx.termTabId, name: MS_TERM_NAME },
+            owner: { kind: "terminal", tabid: ctx.termTabId, blockid: ctx.termBlockId, name: MS_TERM_NAME },
         }),
         row({
             pid: MS_PID.code,
@@ -24563,6 +24750,8 @@ const machineServers = {
             const termTab = await waveService(h, "object", "GetObject", [`tab:${ctx.termTabId}`]);
             const termBlockId = termTab?.blockids?.[0];
             if (!termBlockId) throw new Error(`the throwaway terminal tab ${ctx.termTabId} has no block`);
+            // the vite row's owner names it, so its Log can open this terminal
+            ctx.termBlockId = termBlockId;
             await h.rpc("setmeta", { oref: `block:${termBlockId}`, meta: { view: "term", controller: "shell", "cmd:cwd": "~" } });
             await h.rpc("controllerresync", { tabid: ctx.termTabId, blockid: termBlockId, forcerestart: true });
 
@@ -24610,6 +24799,9 @@ const machineServers = {
             // revealing it loads its transcript's background tasks into backgroundTasksByIdAtom: what gives the uvicorn row its Log
             await h.rpc("uireveal", { address: `agent:${MS_AGENT_ID}` }, UI_ROUTE);
             ctx.termInRoster = await polishWaitFor(h, `!!document.querySelector('[data-agent-terminal="${ctx.termTabId}"]')`, 15000);
+            // the line the terminal's search box finds in the log step. Its pane has not been shown, so it is not revealed
+            // here: a docked terminal stays docked, and step 9 counts the panes on screen
+            ctx.termMarker = await termLogPrint(h, termBlockId, MS_TERM_MARKER);
             ctx.mock = await installMachineServersMock(h, ctx.servers);
             if (ctx.mock !== "installed") throw new Error(`mock: ${ctx.mock}`);
         } catch (e) {
@@ -24983,6 +25175,32 @@ const machineServers = {
                 fileTab.text === wantTitle &&
                 logText,
             JSON.stringify({ reopened5, logUp, rowLabel, logClick, logClosed, fileUp, following, fileTab, logText })
+        );
+
+        // 10a. Log on the terminal's server (the vite row, which no background command launched) opens that terminal with its
+        // search box open and focused. The vite row is still listed: step 10b is the one that stops it
+        // arrange's echo did not reach the block's output, so the terminal, shown since 9b, is asked again
+        if (!ctx.termMarker) ctx.termMarker = await termLogPrint(h, ctx.termBlockId, MS_TERM_MARKER);
+        const reopened5a = await openFromChip();
+        const termLogBtn = msIn(vite.pid, "[data-machine-server-log][data-machine-server-termlog]");
+        const termLogUp = await polishWaitFor(h, `!!${termLogBtn}`, 15000);
+        const viteHasFileLog = await h.ev(`${msIn(vite.pid, "[data-machine-server-log]:not([data-machine-server-termlog])")} != null`);
+        await hover(vite.pid);
+        const termLogClick = termLogUp && (await railServersMouse(h, termLogBtn, true));
+        const termLogClosed = await waitClosed();
+        const termBox = termLogClick
+            ? await termLogSearchBox(h, ctx.termTabId, MS_TERM_MARKER, "cdp-shots/machine-servers-termlog.png")
+            : { ok: false, detail: null };
+        rec(
+            "10a. Log on the vite row (held by the throwaway terminal) closes the popover and opens that terminal with its search box open, inside the pane and focused, each button drawn, finding the text the terminal printed, and Escape closes it back to the terminal",
+            ctx.termMarker === true &&
+                reopened5a &&
+                termLogUp &&
+                !viteHasFileLog &&
+                termLogClick &&
+                termLogClosed &&
+                termBox.ok,
+            JSON.stringify({ termMarker: ctx.termMarker, reopened5a, termLogUp, viteHasFileLog, termLogClick, termLogClosed, termBox: termBox.detail })
         );
 
         // 10b. a Stop refused because the process had already exited: the toast says so and the list refreshes without the row

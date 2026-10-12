@@ -12,6 +12,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- **A server running in one of arcterm's terminals says which terminal** in Servers, and its Log opens that terminal
+  with its search box.
 - **Read a past session without resuming it**: in the New dialog's Resume list, **Transcript** on a session (or
   Shift+Enter) opens its transcript on the Agent surface instead of starting the agent again.
 - **A `?` button on the bottom bar** opens the keyboard shortcuts on every surface, also while you type in a
@@ -122,6 +124,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - A run's task strip draws a **working task in blue**, so it no longer looks like a failed task's red.
 - A sidebar row with both a **canvas** tag and **Close** no longer runs past the sidebar's edge: beside the canvas tag
   Close shows only its check.
+- **Esc closes a terminal's search box** and puts you back in the terminal, as its Close button's tooltip says; it did
+  nothing before.
 - Switching to an agent whose panel you left on **Files** now opens it on Files at once: it no longer slid to
   Overview's width, flashed Overview, then slid back once the agent's git status loaded.
 - In the Spec review dialog, **a decision points at its place in the spec** when you rest on it or click it, even when

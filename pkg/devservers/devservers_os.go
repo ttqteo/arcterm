@@ -16,8 +16,9 @@ import (
 
 // List returns the servers listening in the project at cwd, and those started by the agent in block blockId. An
 // empty cwd falls back to the agent process's cwd. A process the OS won't describe (another user's, say) is read as
-// far as it allows: one whose cwd can't be read just isn't in the project.
-func List(ctx context.Context, cwd, blockId string) ([]Server, error) {
+// far as it allows: one whose cwd can't be read just isn't in the project. holders maps arcterm blocks' shell pids to
+// their blocks: a server a terminal block holds (and the agent didn't start) carries it as its owner.
+func List(ctx context.Context, cwd, blockId string, holders map[int32]ServerOwner) ([]Server, error) {
 	listeners, err := readListeners(ctx)
 	if err != nil {
 		return nil, err
@@ -47,7 +48,7 @@ func List(ctx context.Context, cwd, blockId string) ([]Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return Select(root, agentPid, procs, listeners), nil
+	return Select(root, agentPid, procs, listeners, holders), nil
 }
 
 // readListeners is every listening TCP socket with a known pid.

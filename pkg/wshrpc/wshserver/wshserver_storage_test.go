@@ -5,6 +5,7 @@ package wshserver
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/wavetermdev/waveterm/pkg/baseds"
@@ -25,11 +26,12 @@ func TestBusyProjectsOfNamesWorkingAgentsAndGoingRuns(t *testing.T) {
 		{ProjectPath: "/p/e", Status: jarvis.RunStatus_Blocked},
 	}
 	busy := busyProjectsOf(agents, runs)
-	if busy["/p/a"] != "agent working in this project" || busy["/p/c"] != "run in progress in this project" {
+	// busyProjectsOf keys by the cleaned path, which is \p\a on Windows.
+	if busy[filepath.Clean("/p/a")] != "agent working in this project" || busy[filepath.Clean("/p/c")] != "run in progress in this project" {
 		t.Fatalf("got %v", busy)
 	}
 	for _, idle := range []string{"/p/b", "/p/d", "/p/e"} {
-		if _, ok := busy[idle]; ok {
+		if _, ok := busy[filepath.Clean(idle)]; ok {
 			t.Fatalf("%s is not busy: %v", idle, busy)
 		}
 	}

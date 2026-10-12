@@ -41,13 +41,14 @@ type Server struct {
 	ByAgent         bool         `json:"byagent"`
 	LauncherCmdline string       `json:"launchercmdline,omitempty"`
 	Repo            string       `json:"repo,omitempty"`  // ListAll: the git repo holding Cwd
-	Owner           *ServerOwner `json:"owner,omitempty"` // ListAll: what holds the process
+	Owner           *ServerOwner `json:"owner,omitempty"` // ListAll: what holds the process; List: only a terminal
 }
 
 // Select picks the servers that belong to an agent: a listener whose cwd is inside root, or one that descends from
 // agentPid (0: no agent process known). procs must hold every listener's process and its ancestors as far as they
-// could be read.
-func Select(root string, agentPid int32, procs map[int32]Proc, listeners []Listener) []Server {
+// could be read. holders maps arcterm blocks' shell pids to their blocks; a row held by a terminal block names it.
+func Select(root string, agentPid int32, procs map[int32]Proc, listeners []Listener, holders map[int32]ServerOwner) []Server {
+	alive := func(pid int32) bool { _, ok := procs[pid]; return ok }
 	portsByPid := make(map[int32][]int)
 	for _, l := range listeners {
 		if l.Pid == 0 {
@@ -76,6 +77,10 @@ func Select(root string, agentPid int32, procs map[int32]Proc, listeners []Liste
 		}
 		if byAgent {
 			s.LauncherCmdline = launcher
+		} else if o, _ := OwnerOf(pid, procs, alive, holders); o.Kind == OwnerTerminal {
+			// only a terminal gives the rail something to show: an agent's own rows are byAgent, and an app or a
+			// detached chain has no output arcterm holds
+			s.Owner = &o
 		}
 		out = append(out, s)
 	}

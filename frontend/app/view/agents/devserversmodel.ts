@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The Servers section of the Agent details rail, as pure functions: the label a row shows for a listening process,
-// its port and owner text, its uptime, which running background task (if any) wrote its log, and how often the rail
-// asks the backend. No React, atoms or RPC; devserversstore.ts polls and agentdetailsrail.tsx renders.
+// its port and owner text, its uptime, which running background task (if any) wrote its log, which arcterm terminal
+// (if any) holds it, and how often the rail asks the backend. No React, atoms or RPC; devserversstore.ts polls and
+// agentdetailsrail.tsx renders.
 
 // the JSON shape of the Go devservers.ServerOwner
 export interface DevServerOwner {
@@ -104,8 +105,26 @@ export function portsLabel(ports: number[]): string {
     return ports.map((p) => `:${p}`).join(" ");
 }
 
+// who holds the server, as the row's second line says it
 export function ownerLabel(row: DevServerRow): string {
-    return row.byagent ? "this agent" : "already running";
+    if (row.byagent) {
+        return "this agent";
+    }
+    if (row.owner?.kind === "terminal") {
+        return `terminal · ${row.owner.name || "Terminal"}`;
+    }
+    return "already running";
+}
+
+// the arcterm terminal a server runs in: its pane is the server's log
+export interface TerminalLog {
+    tabId: string;
+    blockId: string;
+}
+
+export function terminalLog(row: DevServerRow): TerminalLog | null {
+    const o = row.owner;
+    return o?.kind === "terminal" && o.tabid && o.blockid ? { tabId: o.tabid, blockId: o.blockid } : null;
 }
 
 // "45s", "12m", "2h 14m", "3d 4h"; createms and now are epoch milliseconds
