@@ -13,9 +13,8 @@ import { runAtom } from "@/app/view/agents/channelsstore";
 import { SectionLabel } from "@/app/view/agents/sectionlabel";
 import { cn } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
-import { ArrowUpRight, ChevronDown, ChevronUp, X } from "lucide-react";
+import { ArrowUpRight, ChevronDown, ChevronUp, Copy, X } from "lucide-react";
 import { useState } from "react";
-import { SHEET_BTN } from "./briefrunsheet";
 import { REGION_LABEL } from "./briefstyle";
 import { type FeedEntry } from "./effortfeed";
 import { chunkTone } from "./effortmodel";
@@ -172,7 +171,7 @@ export function ChunkSidebar({
         >
             <div className="flex h-[42px] flex-none items-center gap-2 border-b border-edge-faint px-[13px]">
                 <span className={cn(REGION_LABEL, "text-ink-mid")}>Chunk</span>
-                <span className="text-[10.5px] tabular-nums text-muted">
+                <span className="flex-none whitespace-nowrap text-[10.5px] tabular-nums text-muted">
                     {position.n} / {position.total}
                 </span>
                 <div className="flex gap-1">
@@ -213,11 +212,16 @@ export function ChunkSidebar({
                 ) : null}
                 <button
                     type="button"
+                    aria-label="Copy wsh command"
                     title={handle}
                     onClick={() => void navigator.clipboard?.writeText(handle)}
-                    className={cn(SHEET_BTN, "h-6 flex-none py-0", work == null && "ml-auto")}
+                    className={cn(
+                        "inline-flex h-6 w-6 flex-none cursor-pointer items-center justify-center rounded-[6px] text-ink-mid hover:text-ink-hi",
+                        FOCUS,
+                        work == null && "ml-auto"
+                    )}
                 >
-                    Copy wsh command
+                    <Copy size={13} aria-hidden />
                 </button>
                 <button
                     type="button"
