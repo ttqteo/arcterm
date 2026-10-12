@@ -5,7 +5,9 @@ import {
     insightsCard,
     insightsHeld,
     insightsLangOf,
+    relangRuns,
     splitInsights,
+    type InsightsCard,
 } from "./usageinsights";
 
 const HOUR = 3600_000;
@@ -212,5 +214,41 @@ describe("insightsLangOf", () => {
         expect(insightsLangOf(undefined)).toBe("en");
         expect(insightsLangOf(null)).toBe("en");
         expect(insightsLangOf("fr")).toBe("en");
+    });
+});
+
+describe("relangRuns", () => {
+    const ins = (lang?: string): UsageInsights => ({
+        markdown: "## A\nx",
+        analyzedts: 1,
+        windowdays: 7,
+        model: "sonnet",
+        ...(lang != null ? { lang } : {}),
+    });
+    const done = (lang?: string): InsightsCard => ({ kind: "done", ins: ins(lang), stale: false });
+
+    it("re-runs when the analysis on screen is in the other language", () => {
+        expect(relangRuns({ card: done("en"), held: null, lang: "vi" })).toBe(true);
+        expect(relangRuns({ card: done("vi"), held: null, lang: "en" })).toBe(true);
+        expect(relangRuns({ card: { kind: "error", message: "x", prev: ins("en") }, held: null, lang: "vi" })).toBe(
+            true
+        );
+    });
+
+    it("takes an analysis saved before languages were recorded as English", () => {
+        expect(relangRuns({ card: done(), held: null, lang: "vi" })).toBe(true);
+        expect(relangRuns({ card: done(), held: null, lang: "en" })).toBe(false);
+    });
+
+    it("does not re-run when the language already matches", () => {
+        expect(relangRuns({ card: done("vi"), held: null, lang: "vi" })).toBe(false);
+    });
+
+    it("does not re-run with nothing on screen, while one runs, or while Analyze is held", () => {
+        expect(relangRuns({ card: { kind: "never" }, held: null, lang: "vi" })).toBe(false);
+        expect(relangRuns({ card: { kind: "no-sessions" }, held: null, lang: "vi" })).toBe(false);
+        expect(relangRuns({ card: { kind: "running" }, held: null, lang: "vi" })).toBe(false);
+        expect(relangRuns({ card: { kind: "error", message: "x" }, held: null, lang: "vi" })).toBe(false);
+        expect(relangRuns({ card: done("en"), held: "Claude quota is at 96%", lang: "vi" })).toBe(false);
     });
 });

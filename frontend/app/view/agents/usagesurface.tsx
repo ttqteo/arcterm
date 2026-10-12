@@ -46,7 +46,7 @@ import { sessionKey } from "./sessionsruns";
 import { SubagentCostCard } from "./subagentcostcard";
 import { SurfaceError, SurfaceHeader } from "./surfacescaffold";
 import { buildUsageDigest } from "./usagedigest";
-import { insightsCard, insightsHeld, insightsLangOf } from "./usageinsights";
+import { insightsCard, insightsHeld, insightsLangOf, relangRuns, type InsightsLang } from "./usageinsights";
 import { UsageInsightsCard } from "./usageinsightscard";
 import {
     analyzeUsage,
@@ -633,7 +633,7 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
     // The digest is built when Analyze runs, not on every render. It does nothing off the Claude tab, with no
     // sessions to read, or while an analysis runs or is held. The `a` key reaches it through a ref, since the
     // bindings below are built once.
-    const analyze = () => {
+    const analyze = (lang = insightsLang) => {
         if (!claude || sessionRows.length === 0 || insightsRunning || held != null) {
             return;
         }
@@ -642,7 +642,14 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
             stats: aggregateBuckets(buckets, Date.now(), "claude"),
             rows: sessionRows,
         });
-        void analyzeUsage(windowDays, digest);
+        void analyzeUsage(windowDays, digest, lang);
+    };
+    // Picking a language saves it, and re-runs at once when the analysis on screen is in the other one.
+    const pickLang = (lang: InsightsLang) => {
+        setInsightsLang(lang);
+        if (relangRuns({ card: insights, held, lang })) {
+            analyze(lang);
+        }
     };
     const analyzeRef = useRef(analyze);
     analyzeRef.current = analyze;
@@ -929,8 +936,8 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                                     windowDays={windowDays}
                                     now={now}
                                     lang={insightsLang}
-                                    onLang={setInsightsLang}
-                                    onAnalyze={analyze}
+                                    onLang={pickLang}
+                                    onAnalyze={() => analyze()}
                                 />
                                 {sessionRows.length > 0 ? (
                                     <UsageSessionTable

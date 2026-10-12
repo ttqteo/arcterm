@@ -517,6 +517,7 @@ declare global {
     type CommandAnalyzeUsageData = {
         windowdays: number;
         digest: string;
+        lang?: string;
     };
 
     // wshrpc.CommandAnswerAgentData
@@ -3452,6 +3453,7 @@ declare global {
         analyzedts: number;
         windowdays: number;
         model: string;
+        lang?: string;
     };
 
     // waveobj.UsageRow

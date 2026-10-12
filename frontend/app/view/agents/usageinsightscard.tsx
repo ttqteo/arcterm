@@ -38,9 +38,10 @@ function clock(ts: number, now: number): string {
     return now - ts < 20 * 3600_000 ? hhmm : `${d.toLocaleDateString([], { weekday: "short" })} ${hhmm}`;
 }
 
-// "analysed 14:30 · 7 days · sonnet"
+// "analysed 14:30 · 7 days · sonnet · VI" (no language on one saved before it was recorded)
 function analysedMeta(ins: UsageInsights, now: number): string {
-    return `analysed ${clock(ins.analyzedts, now)} · ${windowName(ins.windowdays)} · ${ins.model || "sonnet"}`;
+    const lang = ins.lang ? ` · ${ins.lang.toUpperCase()}` : "";
+    return `analysed ${clock(ins.analyzedts, now)} · ${windowName(ins.windowdays)} · ${ins.model || "sonnet"}${lang}`;
 }
 
 // The server's message starts lowercase and carries no full stop ("the analysis did not finish: ...").
@@ -205,13 +206,13 @@ function HeldNote({ held }: { held: string }) {
 }
 
 const LANG_OPTIONS: { key: InsightsLang; label: string; title: string }[] = [
-    { key: "en", label: "EN", title: "The next analysis answers in English" },
-    { key: "vi", label: "VI", title: "The next analysis answers in Vietnamese" },
+    { key: "en", label: "EN", title: "Analyse in English" },
+    { key: "vi", label: "VI", title: "Analyse in Vietnamese" },
 ];
 
 // `held` is the insightsHeld tooltip, or null when Analyze may run. `windowDays` is the surface's window (7, or 0
-// for all time), against which a result is stale. `lang` is the language the next analysis answers in; changing it
-// does not re-run one.
+// for all time), against which a result is stale. `lang` is the language analyses answer in; the surface re-runs one
+// when it is changed with an analysis in the other language on screen (relangRuns).
 export function UsageInsightsCard({
     card,
     held,

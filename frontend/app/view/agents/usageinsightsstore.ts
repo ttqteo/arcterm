@@ -98,7 +98,7 @@ async function devDelay(fixture: DevInsightsFixture): Promise<void> {
     }
 }
 
-function devAnalyze(fixture: DevInsightsFixture, windowDays: number): Promise<UsageInsights> {
+function devAnalyze(fixture: DevInsightsFixture, windowDays: number, lang: string): Promise<UsageInsights> {
     const mode = fixture.analyze ?? "ok";
     if (mode === "hang") {
         return new Promise(() => {});
@@ -115,6 +115,7 @@ function devAnalyze(fixture: DevInsightsFixture, windowDays: number): Promise<Us
                     analyzedts: Date.now(),
                     windowdays: windowDays,
                     model: "sonnet",
+                    lang,
                 }
             );
         }, DEV_ANALYZE_MS);
@@ -212,9 +213,9 @@ export async function loadSavedInsights(): Promise<void> {
     }
 }
 
-// Runs the analysis over `digest` (usagedigest.ts). A second call while one runs does nothing. On failure
-// the saved result is untouched and the message goes to insightsErrorAtom, for the card to show beside it.
-export async function analyzeUsage(windowDays: number, digest: string): Promise<void> {
+// Runs the analysis over `digest` (usagedigest.ts), answering in `lang`. A second call while one runs does nothing. On
+// failure the saved result is untouched and the message goes to insightsErrorAtom, for the card to show beside it.
+export async function analyzeUsage(windowDays: number, digest: string, lang: "en" | "vi"): Promise<void> {
     if (globalStore.get(insightsRunningAtom)) {
         return;
     }
@@ -224,10 +225,10 @@ export async function analyzeUsage(windowDays: number, digest: string): Promise<
         const fixture = devInsights();
         const ins =
             fixture != null
-                ? await devAnalyze(fixture, windowDays)
+                ? await devAnalyze(fixture, windowDays, lang)
                 : await RpcApi.AnalyzeUsageCommand(
                       TabRpcClient,
-                      { windowdays: windowDays, digest },
+                      { windowdays: windowDays, digest, lang },
                       { timeout: ANALYZE_TIMEOUT_MS }
                   );
         savedSeq++;

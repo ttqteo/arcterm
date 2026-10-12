@@ -97,7 +97,7 @@ func sessionUsageToWire(s usagestats.SessionUsage) wshrpc.UsageSession {
 
 func usageInsightsToWire(ins usageinsights.Insights) *wshrpc.UsageInsights {
 	return &wshrpc.UsageInsights{
-		Markdown: ins.Markdown, AnalyzedTs: ins.AnalyzedTs, WindowDays: ins.WindowDays, Model: ins.Model,
+		Markdown: ins.Markdown, AnalyzedTs: ins.AnalyzedTs, WindowDays: ins.WindowDays, Model: ins.Model, Lang: ins.Lang,
 	}
 }
 
@@ -121,7 +121,12 @@ func (ws *WshServer) AnalyzeUsageCommand(ctx context.Context, data wshrpc.Comman
 	if strings.TrimSpace(data.Digest) == "" {
 		return nil, fmt.Errorf("the usage digest is empty; there is nothing to analyse")
 	}
-	lang := wconfig.GetWatcher().GetFullConfig().Settings.UsageInsightsLang
+	// the card sends the language it shows, so a run started right after picking one does not wait on the config
+	// watcher to read the setting back
+	lang := data.Lang
+	if lang == "" {
+		lang = wconfig.GetWatcher().GetFullConfig().Settings.UsageInsightsLang
+	}
 	ins, err := usageinsights.Analyze(ctx, usageinsights.Dir(), data.WindowDays, data.Digest, lang, time.Now)
 	if err != nil {
 		return nil, err

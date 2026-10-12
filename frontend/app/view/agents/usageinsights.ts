@@ -20,6 +20,14 @@ export function insightsLangOf(setting: string | null | undefined): InsightsLang
     return setting === "vi" ? "vi" : "en";
 }
 
+// Whether picking `lang` re-runs the analysis at once: one is on screen in the other language (one saved before the
+// language was recorded is English) and Analyze may run. With nothing on screen the pick waits for Analyze.
+export function relangRuns(input: { card: InsightsCard; held: string | null; lang: InsightsLang }): boolean {
+    const { card, held, lang } = input;
+    const shown = card.kind === "done" ? card.ins : card.kind === "error" ? card.prev : undefined;
+    return shown != null && held == null && insightsLangOf(shown.lang) !== lang;
+}
+
 export type InsightsCard =
     | { kind: "no-sessions" }
     | { kind: "never" }

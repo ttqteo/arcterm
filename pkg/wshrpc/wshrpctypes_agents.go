@@ -182,7 +182,8 @@ type CommandGetSessionUsageRtnData struct {
 
 type CommandAnalyzeUsageData struct {
 	WindowDays int    `json:"windowdays"`
-	Digest     string `json:"digest"` // the numbers-only digest the frontend builds (usagedigest.ts)
+	Digest     string `json:"digest"`         // the numbers-only digest the frontend builds (usagedigest.ts)
+	Lang       string `json:"lang,omitempty"` // the language to answer in; "" falls back to the usage:insightslang setting
 }
 
 // UsageInsights is one saved usage analysis. The zero value (empty Markdown) means none has run yet.
@@ -191,6 +192,7 @@ type UsageInsights struct {
 	AnalyzedTs int64  `json:"analyzedts"` // unix ms
 	WindowDays int    `json:"windowdays"` // the window the digest covered
 	Model      string `json:"model"`
+	Lang       string `json:"lang,omitempty"` // the language code it answered in; "" in one saved before this was kept
 }
 
 type CommandGetRecentSessionsData struct {

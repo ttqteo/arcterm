@@ -77,7 +77,7 @@ Transcript được đọc ở: Claude `~/.claude/projects`, Codex `~/.codex/ses
 Tab Claude có thêm mục **Insights**. Nó nhờ Claude đọc một bản tóm tắt chỉ chứa **con số theo từng tab** (không phải nội dung hội thoại) và nói quota đi đâu và nên đổi gì.
 
 1. Mở tab **Claude** của Usage và chọn khoảng thời gian cần phân tích (7 days hoặc All time).
-2. Chọn ngôn ngữ trả lời bằng nút **EN** / **VI** cạnh nút Analyze (setting `usage:insightslang`). Đổi ngôn ngữ không tự phân tích lại: lần **Analyze** hay **Re-analyze** kế tiếp sẽ trả lời bằng ngôn ngữ đó.
+2. Chọn ngôn ngữ trả lời bằng nút **EN** / **VI** cạnh nút Analyze (setting `usage:insightslang`). Nếu thẻ đang hiện một kết quả bằng ngôn ngữ kia, bấm sẽ phân tích lại ngay bằng ngôn ngữ mới (một lần gọi Sonnet, như **Re-analyze**); chưa có kết quả thì lần **Analyze** đầu tiên dùng ngôn ngữ đó. Dòng phụ đề ghi ngôn ngữ của kết quả (`· VI`).
 3. Bấm **Analyze** (hoặc `a`). Mất khoảng 30 giây; trong lúc đó thẻ ghi "Analysing…".
 4. Đọc kết quả. Phần lớn nằm ở cột trái; mục `##` cuối cùng (thường là "What to change") nằm ở ô riêng bên phải. Dòng phụ đề ghi giờ phân tích, khoảng thời gian và model (`analysed 14:30 · 7 days · sonnet`).
 5. Muốn phân tích lại thì bấm **Re-analyze**. Nếu lần chạy lỗi, nút đổi thành **Try again** và kết quả trước (nếu có) vẫn nằm bên dưới thông báo lỗi.

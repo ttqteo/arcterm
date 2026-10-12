@@ -58,7 +58,7 @@ func TestAnalyzeSavesAndLoads(t *testing.T) {
 		gotPrompt = prompt
 		return reply, nil
 	})
-	want := Insights{Markdown: reply, AnalyzedTs: fixedNow().UnixMilli(), WindowDays: 7, Model: "sonnet"}
+	want := Insights{Markdown: reply, AnalyzedTs: fixedNow().UnixMilli(), WindowDays: 7, Model: "sonnet", Lang: "en"}
 
 	got, err := Analyze(context.Background(), dir, 7, "d", "", fixedNow)
 	if err != nil {
@@ -155,5 +155,25 @@ func TestLoadMissing(t *testing.T) {
 	}
 	if got != (Insights{}) {
 		t.Errorf("Load on an empty dir = %+v, want the zero value", got)
+	}
+}
+
+func TestAnalyzeRecordsItsLanguage(t *testing.T) {
+	dir := t.TempDir()
+	scriptRun(t, func(_ context.Context, prompt string) (string, error) {
+		if !strings.Contains(prompt, "Vietnamese") {
+			t.Errorf("a vi analysis must ask for Vietnamese, got:\n%s", prompt)
+		}
+		return "## A\nx", nil
+	})
+	got, err := Analyze(context.Background(), dir, 7, "d", "vi", fixedNow)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if got.Lang != "vi" {
+		t.Errorf("Lang = %q, want vi", got.Lang)
+	}
+	if loaded, _ := Load(dir); loaded.Lang != "vi" {
+		t.Errorf("saved Lang = %q, want vi", loaded.Lang)
 	}
 }

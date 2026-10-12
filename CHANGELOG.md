@@ -16,8 +16,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - A Spider theme (Settings → Appearance → Theme): Claude's colours with a Spider-Man red accent.
 - **A green dot on an agent's sidebar row while background tasks it started still run** (a build, a dev server), even
   after its turn has ended; hover it to see which.
-- **Usage → Insights answers in English or Vietnamese**: an EN / VI switch beside Analyze picks the language of the
-  next analysis.
+- **Usage → Insights answers in English or Vietnamese**: an EN / VI switch beside Analyze picks the language, and
+  re-runs an analysis that is on screen in the other one.
 
 ### Changed
 

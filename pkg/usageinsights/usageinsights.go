@@ -28,6 +28,7 @@ type Insights struct {
 	AnalyzedTs int64  `json:"analyzedts"`
 	WindowDays int    `json:"windowdays"`
 	Model      string `json:"model"`
+	Lang       string `json:"lang,omitempty"` // the language code it answered in; "" in one saved before this was kept
 }
 
 // Model is the claude --model alias the analysis runs on (consult.TierMid).
@@ -130,7 +131,10 @@ func Analyze(ctx context.Context, dir string, windowDays int, digest, lang strin
 	if reply == "" {
 		return Insights{}, errors.New("Claude returned an empty analysis")
 	}
-	ins := Insights{Markdown: reply, AnalyzedTs: now().UnixMilli(), WindowDays: windowDays, Model: Model}
+	if lang == "" {
+		lang = "en"
+	}
+	ins := Insights{Markdown: reply, AnalyzedTs: now().UnixMilli(), WindowDays: windowDays, Model: Model, Lang: lang}
 	if err := Save(dir, ins); err != nil {
 		log.Printf("[usageinsights] saving: %v", err)
 	}
