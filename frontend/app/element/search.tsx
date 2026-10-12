@@ -121,6 +121,10 @@ const SearchComponent = ({
                     onNextWrapper();
                 }
                 e.preventDefault();
+            } else if (e.key === "Escape") {
+                setIsOpen(false);
+                e.preventDefault();
+                e.stopPropagation();
             }
         },
         [onPrevWrapper, onNextWrapper, setIsOpen]

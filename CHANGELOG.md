@@ -94,6 +94,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- **Esc closes a terminal's search box** and puts you back in the terminal, as its Close button's tooltip says; it did
+  nothing before.
 - Switching to an agent whose panel you left on **Files** now opens it on Files at once: it no longer slid to
   Overview's width, flashed Overview, then slid back once the agent's git status loaded.
 - In the Spec review dialog, **a decision points at its place in the spec** when you rest on it or click it, even when
