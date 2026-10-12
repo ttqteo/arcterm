@@ -1667,26 +1667,21 @@ describe("jarvis:peek", () => {
     const find = () =>
         buildGlobalBindings({ surfaceAtom: atom<SurfaceKey>("agent") } as any).find((x) => x.id === "jarvis:peek")!;
 
-    it("is TMod+J and opens the creature's peek, from inside the terminal too", () => {
+    it("is Mod+J and opens the creature's peek, from inside the terminal too", () => {
         const b = find();
-        expect(b.keys).toBe("TMod:j");
+        expect(b.keys).toBe("Mod:j");
         expect(b.when?.({ ...ctx("agent"), editable: true })).toBe(true);
         expect(b.when?.({ ...ctx(), modalOpen: true })).toBe(false);
         b.run(ctx("agent"));
         expect(globalStore.get(petPeekOpenAtom)).toBe(true);
     });
 
-    // Ctrl+J is the terminal's newline, Claude Code's prompt included: on Windows the plain form is only an alias
-    it("keeps Ctrl+Shift+J live in a terminal on Windows, and leaves plain Ctrl+J to terminals and fields", () => {
+    // Ctrl+J is the terminal's newline, but Shift+Enter sends the same one, so on Windows the peek takes it there too
+    it("is Ctrl+J on Windows, live in a terminal, with no second key", () => {
         setPlatform("win32");
         const all = buildGlobalBindings({ surfaceAtom: atom<SurfaceKey>("agent") } as any);
-        const b = all.find((x) => x.id === "jarvis:peek")!;
-        const alias = all.find((x) => x.id === "jarvis:peek:ctrl")!;
-        expect(b.when?.({ ...ctx("agent"), editable: true })).toBe(true);
-        expect(alias.keys).toBe("Ctrl:j");
-        expect(alias.alias).toBe(true);
-        expect(alias.when?.({ ...ctx("agent"), editable: true })).toBe(false);
-        expect(alias.when?.(ctx("agent"))).toBe(true);
+        expect(all.find((x) => x.id === "jarvis:peek")!.when?.({ ...ctx("agent"), editable: true })).toBe(true);
+        expect(all.find((x) => x.id === "jarvis:peek:ctrl")).toBeUndefined();
     });
 });
 

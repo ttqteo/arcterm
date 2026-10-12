@@ -319,7 +319,7 @@ Phím đơn (`j`, `k`, `d`, `f`, `r`, `c`, `Esc`…) chỉ có tác dụng khi b
 | `Ctrl+N` / `Ctrl+Shift+R` | Hộp thoại New agent / New run |
 | `Ctrl+G` `s` | Mở Conversation History |
 
-`Ctrl+P`, `Ctrl+N`, `Ctrl+G`, `Ctrl+M` (`⌘` trên Mac) dùng được cả khi đang gõ trong terminal. Chỉ ba phím cần thêm `Shift` trên Windows, vì bản không `Shift` là phím gõ của terminal: đóng agent `Ctrl+Shift+W`, xóa màn hình `Ctrl+Shift+K`, What's waiting `Ctrl+Shift+J` (ngoài ô nhập thì `Ctrl+J` cũng được).
+`Ctrl+P`, `Ctrl+N`, `Ctrl+G`, `Ctrl+M` (`⌘` trên Mac) dùng được cả khi đang gõ trong terminal. `Ctrl+J` (What's waiting) cũng vậy; trong terminal xuống dòng bằng `Shift+Enter`. Chỉ đóng agent cần thêm `Shift` trên Windows (`Ctrl+Shift+W`), vì `Ctrl+W` là xóa một từ trong terminal.
 
 Khi History hoặc transcript của phiên đã kết thúc đang phủ lên terminal, các phím tác động lên agent đang focus (`j`/`k`, `d`, `f`, `r`, `c`…) tạm nhường; trong History `j`/`k` di chuyển con trỏ trong danh sách, `Enter` nhảy tới phiên đang chạy hoặc resume phiên đã kết thúc. Toàn bộ phím: [Phím tắt](../keyboard-shortcuts.md).
 

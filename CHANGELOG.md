@@ -38,9 +38,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   back to arcterm (Alt+Tab, the taskbar) focuses Sprout, and a double-click or Restore grows it back. Off by default;
   right-click the Sprout button in the app bar to switch it, or Settings → General → Window. Your own dialogs (a file
   picker) leave it be.
-- **⌘J opens Jarvis's What's waiting popup** in one chord, from any surface and from inside a terminal (Ctrl+Shift+J on
-  Windows, or plain Ctrl+J outside a terminal or field, where it is not the newline). Hold ⌘ on its own and the
-  creature shows a J.
+- **⌘J opens Jarvis's What's waiting popup** in one chord, from any surface and from inside a terminal (Ctrl+J on
+  Windows, where Shift+Enter is the terminal's newline). Hold ⌘ on its own and the creature shows a J.
 - **@mention another agent** without looking up its id: right-click an agent in the sidebar (or a segment of the split
   row) → **Copy @mention**, its `@` token shown beside the label. Or drag an agent onto a Claude agent's pane holding
   ⌥ (Alt on Windows) to type its token at that prompt; a drag without the key still places it in the split.
@@ -89,8 +88,6 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - **A canvas with many boards stays readable**: past four boards the header picks the board from a menu (with
   `[` and `]` still stepping), the header's buttons no longer get cut off, and All shows the boards as a grid of
   tiles at least 560px wide instead of shrinking them all into one picture. A click on a tile opens that board.
-- **Ctrl+Shift+K clears the terminal's screen on Windows**, as ⌘K does on a Mac (Ctrl+K stays the shell's cut to the
-  end of the line).
 - **⌘, / Ctrl+, opens Settings**, as in VS Code, and **⌘⇧E / Ctrl+Shift+E** focuses Code's file tree (VS Code's
   Explorer key; Alt+T still works).
 - The **Launch a Pi tab** shortcut (⌘⇧N / Ctrl+Shift+N) is gone; the New dialog's Pi row starts one.

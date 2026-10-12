@@ -31,10 +31,6 @@ export interface Binding {
     // the user pressed the key — but a remote caller (wsh ui do, cockpit/uiclient.ts) must get the user's
     // confirmation first.
     destructive?: boolean;
-    // A second key for an action that already has its own row: off a Mac, the plain Ctrl form of a TMod chord
-    // (Ctrl+J beside Ctrl+Shift+J), live outside a field only. Kept out of the cheat sheet, the palette and the
-    // held-modifier bar, so each action shows once, by the chord that works everywhere.
-    alias?: boolean;
     // Return false to explicitly NOT consume the key (let it pass through, e.g. first Ctrl+C to the PTY).
     // Any other return (including void) consumes it.
     run: (ctx: KeyContext) => void | boolean;

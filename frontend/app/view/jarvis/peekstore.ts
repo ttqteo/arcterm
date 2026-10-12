@@ -79,9 +79,8 @@ export function openPetPeek(): void {
     globalStore.set(petBubbleAtom, null);
 }
 
-// Whether ⌘J opens the popup in this posture: the binding's `when`, and the creature's J hint. A terminal chord (TMod),
-// so it works from a field or a terminal too: ⌘J on a Mac, Ctrl+Shift+J on Windows. Windows' plain Ctrl+J, the
-// terminal's newline, is only its outside-a-field alias (bindings.ts WIN_CTRL_ALIAS_GATES).
+// Whether ⌘J (Ctrl+J on Windows) opens the popup in this posture: the binding's `when`, and the creature's J hint. It
+// works from a field or a terminal too; on Windows that takes Ctrl+J from the terminal, whose newline Shift+Enter sends.
 export function peekChordActive(ctx: Pick<KeyContext, "modalOpen">): boolean {
     return !ctx.modalOpen;
 }

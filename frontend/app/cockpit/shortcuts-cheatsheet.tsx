@@ -45,11 +45,9 @@ export function ShortcutsCheatSheet({ model }: { model: AgentsViewModel }) {
 
     const groups = useMemo(() => {
         const q = query.trim().toLowerCase();
-        // an alias (Ctrl+J beside Ctrl+Shift+J off a Mac) is drawn on its action's row, not as a row of its own
-        const rows = bindings.filter((b) => !b.alias);
         const filtered = q
-            ? rows.filter((b) => b.label.toLowerCase().includes(q) || b.keys.toLowerCase().includes(q))
-            : rows;
+            ? bindings.filter((b) => b.label.toLowerCase().includes(q) || b.keys.toLowerCase().includes(q))
+            : bindings;
         const byGroup = new Map<string, typeof filtered>();
         for (const b of filtered) {
             const arr = byGroup.get(b.group) ?? [];
@@ -58,10 +56,6 @@ export function ShortcutsCheatSheet({ model }: { model: AgentsViewModel }) {
         }
         return [...byGroup.entries()].sort(([a], [b]) => (a === surface ? -1 : b === surface ? 1 : a.localeCompare(b)));
     }, [bindings, query, surface]);
-    const aliasOf = useMemo(
-        () => new Map(bindings.filter((b) => b.alias).map((b) => [b.id.replace(/:ctrl$/, ""), b])),
-        [bindings]
-    );
 
     return (
         <ModalShell open={open} onClose={close} className="flex flex-col w-[min(680px,93vw)] max-h-[74vh]" topClass="pt-[10vh]">
@@ -90,13 +84,6 @@ export function ShortcutsCheatSheet({ model }: { model: AgentsViewModel }) {
                                     <span className="text-secondary">{b.label}</span>
                                     <span className="flex items-center gap-1">
                                         <KeyCaps keys={b.keys} />
-                                        {aliasOf.has(b.id) ? (
-                                            <>
-                                                <span className="ml-1.5 text-[11px] text-muted">or</span>
-                                                <KeyCaps keys={aliasOf.get(b.id)!.keys} />
-                                                <span className="text-[11px] text-muted">outside a text field</span>
-                                            </>
-                                        ) : null}
                                     </span>
                                 </div>
                             ))}

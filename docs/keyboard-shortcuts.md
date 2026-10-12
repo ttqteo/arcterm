@@ -16,10 +16,8 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 - **`Mod` works inside a terminal too.** `Mod`+`P`, `Mod`+`G`, `Mod`+`N`, `Mod`+`M`… are the app's on both machines,
   from a focused terminal as well (as in the VS Code terminal): on Windows the shell does not get `Ctrl`+`P`,
   `Ctrl`+`G`, `Ctrl`+`N`, `Ctrl`+`M` while arcterm is open.
-- **`TMod`** is for the few chords whose plain `Ctrl` form you type in a terminal all the time: `Cmd` on macOS,
-  `Ctrl`+`Shift` on Windows. That is close (`TMod`+`W`; `Ctrl`+`W` deletes a word), clear the screen (`TMod`+`K`;
-  `Ctrl`+`K` cuts to the end of the line) and What's waiting (`TMod`+`J`; `Ctrl`+`J` is the newline, and it still
-  opens the popup outside a text field).
+- **`TMod`** is for close only: `Cmd`+`W` on macOS, `Ctrl`+`Shift`+`W` on Windows, since `Ctrl`+`W` deletes a word in a
+  terminal. Every other app chord is plain `Mod`, `Ctrl`+`J` too: in a terminal Shift+Enter is the newline.
 - **Postures.** There is no global "mode" to track. Focus determines behavior:
   - **Navigate** — focus is on a surface region (not a text field). Single keys move a cursor and act on it.
   - **Type** — focus is in a text field, composer, or the terminal. Keys type normally. Press `Esc` to return to Navigate.
@@ -47,11 +45,11 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 | `Mod`+`N` | New agent: opens the New dialog on an agent row |
 | `Mod`+`Shift`+`R` | New run: opens the New dialog on a run row |
 | `Mod`+`G` | Go to…: opens the go-to leader (see below) |
-| `TMod`+`J` | What's waiting: the avatar popup (Jarvis peek), on any surface, from inside a terminal too. On Windows plain `Ctrl`+`J` opens it too outside a text field, where it is not the newline. Hold `Mod` on its own and the creature shows a `J` |
+| `Mod`+`J` | What's waiting: the avatar popup (Jarvis peek), on any surface, from inside a terminal too (on Windows it takes `Ctrl`+`J` there; Shift+Enter is the newline). Hold `Mod` on its own and the creature shows a `J` |
 | `Mod`+`,` | Settings, as in VS Code and every Mac app |
 | `Ctrl`+`Tab` / `Ctrl`+`Shift`+`Tab` | On the Agent surface (a float and fullscreen included): the tab switcher, as the system's app switcher works. Hold `Ctrl`, press `Tab` to move through your agents and terminals (recent first; `Shift`+`Tab` goes back), and let go of `Ctrl` to open the one picked; `Esc` stays where you are. A quick `Ctrl`+`Tab` flips to the tab you were on before without drawing it. `Option`+`Tab` / `Option`+`Shift`+`Tab` too on a Mac, letting go of `Option` |
 | `TMod`+`W` | Close the agent or terminal in focus, as a terminal app closes its tab: the pane you are typing in, else the selected agent. Works from inside the terminal and asks first. It has no plain `Ctrl`+`W` form on Windows: that deletes a word in the terminal |
-| `TMod`+`K` | Clear the focused terminal's screen |
+| `Cmd`+`K` (macOS) | Clear the focused terminal's screen |
 | `Mod`+`=` / `Mod`+`-` / `Mod`+`0` | Zoom the window in / out / back to 100% (`Cmd` on macOS) |
 | `Mod`+`M` | Fold the window into Sprout, from the cockpit or a float, even from inside a terminal. Settings → General → Window → Minimize: Dock sends it to the Dock or taskbar instead |
 

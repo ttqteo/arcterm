@@ -38,13 +38,15 @@ open, which was already the case before this spec.
 **A first version moved those chords to Ctrl+Shift+X in a Windows terminal and was reverted the same day:** having to
 add Shift to keys already in the hands, only on one machine, was worse than giving the shell those four keys.
 
-**`TMod` (Cmd on a Mac, Ctrl+Shift on Windows) is kept for the chords whose plain Ctrl form is typed in a terminal
-all the time:**
+**`TMod` (Cmd on a Mac, Ctrl+Shift on Windows) is kept for close only:** `TMod`+`W`, since Ctrl+W deletes a word in a
+terminal. Unchanged from before.
 
-- Close: `TMod`+`W` (Ctrl+W deletes a word). Unchanged from before.
-- Clear the screen: `TMod`+`K` (Ctrl+K cuts to the end of the line). New on Windows.
-- What's waiting: `TMod`+`J` (Ctrl+J is the newline), plus Windows' plain Ctrl+J outside a text field. Before, the
-  Windows terminal had no way to open it.
+**What's waiting is plain `Mod`+`J` everywhere, terminal included.** On Windows that takes Ctrl+J, the newline, from
+the terminal; arcterm's Shift+Enter (`term:shiftenternewline`) sends the same newline. A Ctrl+Shift+J version (with
+Ctrl+J only outside a field) lasted a day: two keys for one action read as a clash.
+
+**Clear the screen stays ⌘K on a Mac only.** A Ctrl+Shift+K for Windows was added and dropped the same day: rarely
+needed, and one more key to remember.
 
 **Unchanged:** `Mod`+`1`…`7`, `Ctrl`+`Tab`, zoom, the Code surface chords, and the `Alt` chords.
 
@@ -56,9 +58,9 @@ all the time:**
 | Go-to leader | ⌘G | Ctrl+G |
 | New agent | ⌘N | Ctrl+N |
 | Fold into Sprout | ⌘M | Ctrl+M |
-| What's waiting (peek) | ⌘J | Ctrl+Shift+J (and Ctrl+J outside a text field) |
+| What's waiting (peek) | ⌘J | Ctrl+J |
 | Close agent or terminal | ⌘W | Ctrl+Shift+W |
-| Clear terminal | ⌘K | Ctrl+Shift+K |
+| Clear terminal | ⌘K | — |
 | New run | ⌘⇧R | Ctrl+Shift+R |
 | Terminal fullscreen | ⌘⇧Enter | Ctrl+Shift+Enter (F11 kept) |
 | Settings | ⌘, | Ctrl+, |
@@ -68,13 +70,9 @@ all the time:**
 
 - **A `TMod` token** in `keyutil.ts` `parseKeyDescription`: Command on a Mac, Ctrl+Shift elsewhere. `keysym.ts`
   `formatChord` draws it as ⌘ or as two keys (`ctrl`, `shift`).
-- **Windows aliases.** `withWinCtrlAliases` in `bindings.ts` adds a `Ctrl:<key>` binding (`id` + `:ctrl`,
-  `alias: true`, `paletteHidden`) beside each TMod chord listed in `WIN_CTRL_ALIAS_GATES`. Today that is only the peek's
-  Ctrl+J, gated to "not in a field".
 - **`peekChordActive`** (`peekstore.ts`) drops its Windows gate.
-- **Display.** The held-modifier bar (`footer-visible.ts heldHints`) counts `TMod` as the Ctrl / ⌘ key and skips
-  aliases. The cheat sheet draws an alias on its action's row ("or ctrl+j outside a text field").
-- **Clear terminal** (`term-model.ts`) and close (`agentactions.ts closeAgentChord`) are `TMod:k` and `TMod:w`.
+- **Display.** The held-modifier bar (`footer-visible.ts heldHints`) counts `TMod` as the Ctrl / ⌘ key.
+- **Close** (`agentactions.ts closeAgentChord`) is `TMod:w`; clear the terminal (`term-model.ts`) is `Mod:k` on a Mac only.
 
 ## VS Code defaults
 

@@ -49,7 +49,7 @@ export function heldHints(ctx: KeyContext, bindings: Binding[], mod: "ctrl" | "a
     const out: HintChip[] = [];
     let digits: HintChip | null = null;
     for (const b of bindings) {
-        if (b.alias || b.keys.includes(" ") || (b.when && !b.when(ctx))) {
+        if (b.keys.includes(" ") || (b.when && !b.when(ctx))) {
             continue;
         }
         const parts = b.keys.split(":");

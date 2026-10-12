@@ -208,33 +208,6 @@ function switcherBindings(model: AgentsViewModel, mod: "ctrl" | "alt"): Binding[
     ];
 }
 
-// Off a Mac, a TMod chord (Ctrl+Shift+J) can keep its plain Ctrl form (Ctrl+J) too, where that form is not the
-// terminal's or the field's own key. Only the peek has one: Ctrl+J is the newline in a terminal or a field.
-const WIN_CTRL_ALIAS_GATES: Record<string, (ctx: KeyContext) => boolean> = {
-    "jarvis:peek": (ctx) => !ctx.editable,
-};
-
-function withWinCtrlAliases(bindings: Binding[]): Binding[] {
-    if (isMacOS()) {
-        return bindings;
-    }
-    return bindings.flatMap((b) => {
-        const gate = WIN_CTRL_ALIAS_GATES[b.id];
-        if (gate == null) {
-            return [b];
-        }
-        const alias: Binding = {
-            ...b,
-            id: `${b.id}:ctrl`,
-            keys: b.keys.replace(/^TMod:/, "Ctrl:"),
-            alias: true,
-            paletteHidden: true,
-            when: (ctx) => gate(ctx) && (b.when == null || b.when(ctx)),
-        };
-        return [b, alias];
-    });
-}
-
 export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
     // `[`/`]` cycle the rail order (SURFACE_ORDER). A surface outside the cycle (settings) enters at an end.
     const cycleSurface = (delta: number) => {
@@ -277,7 +250,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
         run: () => (t.history ? showHistory(model) : globalStore.set(model.surfaceAtom, t.surface)),
     }));
 
-    return withWinCtrlAliases([
+    return [
         ...surfaceChords,
         ...agentDigitChords,
         ...goBindings,
@@ -340,7 +313,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             // The same peek in one chord (J for Jarvis), from inside the terminal too; the creature shows a J while
             // Mod is held. The palette keeps showing g w, its label twin (palette-commands.ts chordRank).
             id: "jarvis:peek",
-            keys: "TMod:j",
+            keys: "Mod:j",
             group: "Global",
             label: "What's waiting (Jarvis peek)",
             when: peekChordActive,
@@ -475,7 +448,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
                 globalStore.get(trackerMenuAtom) == null,
             run: () => globalStore.set(model.surfaceAtom, "cockpit"),
         },
-    ]);
+    ];
 }
 
 // One shared set of list-cursor bindings for the plain master-detail surfaces. Active only when the

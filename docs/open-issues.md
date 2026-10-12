@@ -67,15 +67,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
 **2026-10-12 (shortcuts, window, terminal)**
 
 - [ ] (arcterm) **Plain Ctrl in a terminal, Windows.** In a Claude Code terminal: `Ctrl`+`P` opens Search, `Ctrl`+`G`
-  opens the go-to bar, `Ctrl`+`N` the New dialog, `Ctrl`+`M` folds into Sprout. `d80e14b74`
-- [ ] (arcterm) **The three Shift chords, Windows.** In a terminal: `Ctrl`+`Shift`+`W` asks to close the agent,
-  `Ctrl`+`Shift`+`K` clears the screen, `Ctrl`+`Shift`+`J` opens What's waiting; `Ctrl`+`J` there is still the
-  newline, and outside a text field it opens What's waiting. `d80e14b74`
+  opens the go-to bar, `Ctrl`+`N` the New dialog, `Ctrl`+`M` folds into Sprout, `Ctrl`+`J` opens What's waiting
+  (Shift+Enter still makes a new line); `Ctrl`+`Shift`+`W` asks to close the agent. `d80e14b74` and the commit after it
 - [ ] (arcterm) **Mac chords.** `⌘=` / `⌘-` / `⌘0` zoom (not Control any more); `⌘⇧Enter` toggles terminal
-  fullscreen from inside the terminal; `⌘K` clears the terminal. `cc7a43629`
+  fullscreen from inside the terminal; `⌘K` clears the terminal (Mac only). `cc7a43629`
 - [ ] (arcterm) **The `?` button**, both machines: at the bottom bar's right end on every surface, also while typing in a
-  terminal; it opens the cheat sheet. The What's waiting row there reads "… or ctrl+j outside a text field" on
-  Windows. `cc7a43629`, `d80e14b74`
+  terminal; it opens the cheat sheet. `cc7a43629`
 - [ ] (arcterm) **VS Code keys.** `Mod`+`,` opens Settings; on Code, `Mod`+`Shift`+`E` focuses the file tree.
   `cc7a43629`
 - [ ] (arcterm) **Auto fold, Windows** (Settings → General → Window → Fold when you leave, on): a maximized or full-screen

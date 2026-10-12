@@ -488,7 +488,7 @@ export class TermViewModel implements ViewModel {
             // the selection goes with the copy, so the next Ctrl+C is the interrupt again
             this.termRef.current?.terminal.clearSelection();
             return false;
-        } else if (keyutil.checkKeyPressed(waveEvent, "TMod:k")) {
+        } else if (isMacOS() && keyutil.checkKeyPressed(waveEvent, "Mod:k")) {
             event.preventDefault();
             event.stopPropagation();
             this.termRef.current?.terminal?.clear();
