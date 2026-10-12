@@ -431,7 +431,7 @@ export function TourOffer(): JSX.Element | null {
             data-jarvis-tour-offer
             role="dialog"
             aria-label={ui.offerTitle}
-            className={cn("absolute right-4 top-[60px] z-30 w-[300px]", CARD_CLASS)}
+            className={cn("absolute bottom-4 right-4 z-30 w-[300px]", CARD_CLASS)}
         >
             <div className="mb-2 flex items-center justify-between gap-3">
                 <h2 className="text-[14px] font-semibold text-ink-hi">{ui.offerTitle}</h2>

@@ -17,6 +17,7 @@ import { useState } from "react";
 import { resolveComposerLabels } from "./briefcompose";
 import { resolveBriefComposerTarget } from "./briefcomposertarget";
 import { briefDraftAtom } from "./briefingstore";
+import { COMPOSER_ATTR } from "./composerkey";
 import { reducePrinciplePatch } from "./profilemodel";
 
 export function RunComposer({
@@ -126,6 +127,7 @@ export function RunComposer({
     const placeholder = orchestrator ? "Message the lead of this session" : "Message the worker on this run";
     return (
         <div
+            {...{ [COMPOSER_ATTR]: "" }}
             data-jarvis-brief-band="composer"
             className="flex flex-col gap-1.5 border-t border-edge-faint px-4 pb-3 pt-2.5"
         >

@@ -63,6 +63,7 @@ import { toggleSide } from "@/app/view/code/codeside";
 import { treeKeyAction, type TreeKey } from "@/app/view/code/codetreekeys";
 import { toggleCodeWrap, toggleWrap } from "@/app/view/code/codewrap";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
+import { COMPOSER_FIELDS, COMPOSER_SELECTOR } from "@/app/view/jarvis/composerkey";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
 import {
     briefPeekRecordAtom,
@@ -636,8 +637,8 @@ export function buildChannelsAskBindings(
 }
 
 // Jarvis surface keys — the surface's own controls, reachable without the mouse. Two shapes:
-//   * state the registry owns outright (the context rail, the graph peek, the run switcher)
-//   * a click on a control the surface already draws (+ Channel, the record band's expand)
+//   * state the registry owns outright (the graph peek, the run switcher)
+//   * a click on a control the surface already draws (New initiative, Work on, the record band's expand)
 // The second shape is deliberate. Whether a band is *expandable* is the band's own derivation from the
 // run's attribution (recordbandview) and re-deriving it here would be a second source of truth that
 // drifts; the button only exists when the band can open, so clicking it is exactly the mouse's contract.
@@ -793,9 +794,7 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
             label: "Focus the composer",
             when: onStage,
             run: () => {
-                const el = document.querySelector<HTMLElement>(
-                    "[data-jarvis-composer] input, [data-jarvis-composer] textarea"
-                );
+                const el = document.querySelector<HTMLElement>(COMPOSER_FIELDS);
                 if (el == null) {
                     return false;
                 }
@@ -828,7 +827,7 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
             when: (ctx) => ctx.surface === "jarvis" && ctx.editable && !ctx.modalOpen,
             run: () => {
                 const el = document.activeElement as HTMLElement | null;
-                if (el?.closest?.("[data-jarvis-composer]") == null) {
+                if (el?.closest?.(COMPOSER_SELECTOR) == null) {
                     return false;
                 }
                 el.blur();
