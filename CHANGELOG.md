@@ -80,6 +80,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
   pips for Final check, Wrap-up and Land, so all tasks green no longer reads as finished.
 - **Tidier file headers**: in the Agent panel's File tab, Outline, Wrap and Pin are icon buttons now, and so are Wrap,
   Pin and Copy path above Code's editor; a pinned file shows a filled pin instead of the word "Pinned".
+- **An agent in a worktree reads clearly in the Agent panel**: the branch moves to its own line beside the
+  worktree's short name, so the project name keeps its width, and a run's long id shows as its first 8 digits (the
+  full name is in the tooltip).
 - **Ctrl+C copies in a terminal on Windows while text is selected**, as in Windows Terminal and VS Code; with nothing
   selected it is the interrupt as before. **Copy on select is now off by default**, so highlighting what you read no
   longer replaces what you copied; Settings → Terminal turns it back on.

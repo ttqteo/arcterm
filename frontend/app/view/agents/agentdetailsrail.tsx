@@ -34,7 +34,9 @@ import {
     offersContextReset,
     railAction,
     railStatusLine,
+    shortIds,
     toolChips,
+    worktreeName,
 } from "./agentrailmodel";
 import { RailResizeGrip, RailStats, RailTabStrip, useWideWidth } from "./agentrailpanel";
 import {
@@ -172,34 +174,65 @@ function ContextRing({ pct, level }: { pct: number; level: "ok" | "warn" | "hot"
     );
 }
 
-// FactsLine is the session's facts on one line, project · branch · model, with no labels: the branch carries its icon
-// and each value's tooltip names it. The project and branch truncate first; the model keeps its width up to 45%, which
-// a session that used several models can reach.
-function FactsLine({ project, branch, model }: { project: string; branch?: string; model: string }) {
+// FactsLine is the session's facts, project · branch · model, with no labels: the branch carries its icon and each
+// value's tooltip names it in full. The project and branch truncate first; the model keeps its width up to 45%, which
+// a session that used several models can reach. In a linked worktree the branch moves to a second line beside the
+// worktree's short name, so the project keeps its width; run ids in both read as 8 digits (shortIds).
+function FactsLine({
+    project,
+    branch,
+    model,
+    worktree,
+}: {
+    project: string;
+    branch?: string;
+    model: string;
+    worktree?: { name: string; path: string };
+}) {
     const dot = <span className="flex-none text-ink-faint">·</span>;
+    const line = "flex min-w-0 items-center gap-[6px] text-[11.5px] font-medium text-secondary";
+    const branchEl = branch ? (
+        <span title={`Branch ${branch}`} className="flex min-w-0 items-center gap-[3px]">
+            <GitBranch size={11} aria-hidden className="flex-none text-muted" />
+            <span className="truncate">{shortIds(branch)}</span>
+        </span>
+    ) : null;
     return (
-        <div data-rail-facts className="flex min-w-0 items-center gap-[6px] text-[11.5px] font-medium text-secondary">
-            <span title={project ? `Project ${project}` : undefined} className="min-w-0 truncate">
-                {project || "—"}
-            </span>
-            {branch ? (
-                <>
-                    {dot}
-                    <span title={`Branch ${branch}`} className="flex min-w-0 items-center gap-[3px]">
-                        <GitBranch size={11} aria-hidden className="flex-none text-muted" />
-                        <span className="truncate">{branch}</span>
+        <>
+            <div data-rail-facts className={line}>
+                <span title={project ? `Project ${project}` : undefined} className="min-w-0 truncate">
+                    {project || "—"}
+                </span>
+                {branchEl && !worktree ? (
+                    <>
+                        {dot}
+                        {branchEl}
+                    </>
+                ) : null}
+                {model ? (
+                    <>
+                        {dot}
+                        <span title={`Model ${model}`} className="max-w-[45%] flex-none truncate">
+                            {model}
+                        </span>
+                    </>
+                ) : null}
+            </div>
+            {worktree ? (
+                <div data-rail-worktree className={line}>
+                    {branchEl ? (
+                        <>
+                            {branchEl}
+                            {dot}
+                        </>
+                    ) : null}
+                    <span title={`Worktree ${worktree.path}`} className="flex min-w-0 items-center gap-[3px]">
+                        <FolderTree size={11} aria-hidden className="flex-none text-muted" />
+                        <span className="truncate">{worktree.name}</span>
                     </span>
-                </>
+                </div>
             ) : null}
-            {model ? (
-                <>
-                    {dot}
-                    <span title={`Model ${model}`} className="max-w-[45%] flex-none truncate">
-                        {model}
-                    </span>
-                </>
-            ) : null}
-        </div>
+        </>
     );
 }
 
@@ -758,18 +791,17 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                         </>
                     ) : (
                         <>
-                            <FactsLine project={project} branch={branch} model={modelLabel} />
-                            {worktree ? (
-                                <span
-                                    title={`Worktree ${railState?.cwd ?? worktree}`}
-                                    className="flex min-w-0 items-center gap-[4px] text-[11.5px] font-medium text-secondary"
-                                >
-                                    <FolderTree size={11} aria-hidden className="flex-none text-muted" />
-                                    <span dir="rtl" className="min-w-0 truncate text-left">
-                                        <bdi dir="ltr">{worktree}</bdi>
-                                    </span>
-                                </span>
-                            ) : null}
+                            <FactsLine
+                                project={project}
+                                branch={branch}
+                                model={modelLabel}
+                                worktree={
+                                    worktree
+                                        ? { name: worktreeName(worktree), path: railState?.cwd ?? worktree }
+                                        : undefined
+                                }
+                            />
+
                             {instructions && instrCwd ? (
                                 <button
                                     type="button"

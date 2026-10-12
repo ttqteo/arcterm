@@ -13,7 +13,9 @@ import {
     offersContextReset,
     railAction,
     railStatusLine,
+    shortIds,
     toolChips,
+    worktreeName,
 } from "./agentrailmodel";
 
 describe("contextLevel", () => {
@@ -185,5 +187,23 @@ describe("containingWorktree", () => {
 
     it("is undefined outside every worktree, including a sibling sharing a prefix", () => {
         expect(containingWorktree("C:/src/arc-api2", [main, wt])).toBeUndefined();
+    });
+});
+
+describe("shortIds", () => {
+    it("cuts a run id in a branch to its first 8 digits, keeping what follows it", () => {
+        expect(shortIds("wave/ae9e6a71-19c0-4874-b526-62196490f5c1")).toBe("wave/ae9e6a71");
+        expect(shortIds("wave/ae9e6a71-19c0-4874-b526-62196490f5c1-t-8")).toBe("wave/ae9e6a71-t-8");
+    });
+
+    it("leaves a name with no id alone", () => {
+        expect(shortIds("feat/graphite-rail")).toBe("feat/graphite-rail");
+    });
+});
+
+describe("worktreeName", () => {
+    it("is the worktree's last path segment with its id shortened", () => {
+        expect(worktreeName(".waveterm/worktrees/ae9e6a71-19c0-4874-b526-62196490f5c1-t-8")).toBe("ae9e6a71-t-8");
+        expect(worktreeName("C:\\src\\wt\\graphite-rail")).toBe("graphite-rail");
     });
 });

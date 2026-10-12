@@ -145,3 +145,17 @@ export function linkedWorktree(cwd: string, worktrees: GitWorktree[]): string | 
         worktrees.find((wt) => wt.ismain)
     );
 }
+
+const UUID_RE = /\b([0-9a-f]{8})-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+
+// shortIds cuts each UUID in a name to its first 8 hex digits, as a short commit hash reads: an engine run's branch
+// and worktree both carry its 36-character id, which crowds the rail's facts line out of a 296px column.
+export function shortIds(s: string): string {
+    return s.replace(UUID_RE, "$1");
+}
+
+// worktreeName is the rail's short name for a linked worktree: its last path segment, ids shortened. The folder icon
+// says it is a worktree and the tooltip holds the full path.
+export function worktreeName(rel: string): string {
+    return shortIds(slashed(rel).split("/").pop() ?? rel);
+}
