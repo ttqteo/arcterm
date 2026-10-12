@@ -513,22 +513,25 @@ export function DeltaRowView({
             {...cursorAttrs(focused)}
             onClick={onOpen}
             className={cn(
-                "flex items-center gap-[13px] py-[7px]",
+                "flex flex-col gap-0.5 py-1.5",
                 ROW_BORDER,
                 onOpen != null && "cursor-pointer hover:bg-surface-hover",
                 focused && CURSOR_RING
             )}
         >
-            <span className={cn("w-28 flex-none truncate text-[10.5px] font-semibold", TONE_TEXT[line.kindTone])}>
-                {line.kind}
-            </span>
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span title={line.title} className="truncate text-[13px] text-ink-hi">
-                    {line.title}
+            <div className="flex items-baseline gap-2">
+                <span
+                    data-jarvis-delta-kind
+                    className={cn("flex-none text-[10.5px] font-semibold", TONE_TEXT[line.kindTone])}
+                >
+                    {line.kind}
                 </span>
-                {line.detail ? <span className={cn("truncate", FAINT_TEXT)}>{line.detail}</span> : null}
+                <span className="ml-auto flex-none text-[11px] tabular-nums text-ink-mid">{line.state}</span>
             </div>
-            <span className="w-12 flex-none text-right text-[11px] tabular-nums text-ink-mid">{line.state}</span>
+            <span data-jarvis-delta-title title={line.title} className="truncate text-[13px] text-ink-hi">
+                {line.title}
+            </span>
+            {line.detail ? <span className={cn("truncate", FAINT_TEXT)}>{line.detail}</span> : null}
         </div>
     );
 }

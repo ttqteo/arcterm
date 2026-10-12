@@ -31,6 +31,7 @@ import { useKeybindings } from "@/app/store/keybindings/store";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { formatAge } from "@/app/view/agents/agentsviewmodel";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
 import { jumpToAgent } from "@/app/view/agents/channelsprimitives";
 import { channelsAtom, createChannel, loadChannels, runAtom } from "@/app/view/agents/channelsstore";
@@ -1692,7 +1693,11 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                             count={queue.length || undefined}
                                             empty={queue.length === 0}
                                             gap="gap-[9px]"
-                                            meta="gates before asks"
+                                            meta={
+                                                queueSummary?.oldestTs != null
+                                                    ? `gates first · oldest ${formatAge(Date.now() - queueSummary.oldestTs)}`
+                                                    : "gates first"
+                                            }
                                             only={only === "waiting"}
                                             onOnly={() => toggleOnly("waiting")}
                                             tools={
