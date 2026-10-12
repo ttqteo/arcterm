@@ -115,6 +115,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - **Zoom on a Mac is ⌘= / ⌘- / ⌘0**, as in other Mac apps; it was Control.
 - An agent's model, and a past conversation's in History, no longer reads `<synthetic>` after you interrupt Claude
   or an API error ends a turn: it keeps the model the session last answered with.
+- A run's task strip draws a **working task in blue**, so it no longer looks like a failed task's red.
+- A sidebar row with both a **canvas** tag and **Close** no longer runs past the sidebar's edge: beside the canvas tag
+  Close shows only its check.
 - On macOS, a double-click or right-click on a button, the app bar (its search box too), the surface rail or the
   footer no longer selects a word of its text. Text boxes still select as before.
 - **Float** shows an orchestrator run as one tab, its lead, not a tab for every worker and reviewer it started;
