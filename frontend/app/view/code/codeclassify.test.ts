@@ -10,6 +10,7 @@ import {
     isMarkdownPath,
     languageForPath,
     lineAtOffset,
+    MAX_IMAGE_BYTES,
     MAX_VIEW_BYTES,
     resolveViewMode,
     viewModesFor,
@@ -34,7 +35,7 @@ describe("classifyFile", () => {
     });
 
     it("calls a real binary type binary", () => {
-        expect(classifyFile(1000, "image/png")).toBe("binary");
+        expect(classifyFile(1000, "image/tiff")).toBe("binary");
         expect(classifyFile(1000, "application/octet-stream")).toBe("binary");
     });
 
@@ -75,6 +76,20 @@ describe("isMarkdownPath", () => {
         expect(isMarkdownPath("foo.md.txt")).toBe(false);
         expect(isMarkdownPath("src/main.ts")).toBe(false);
         expect(isMarkdownPath("Makefile")).toBe(false);
+    });
+});
+
+describe("classifyFile and images", () => {
+    it("calls an image the webview draws image, past the text cap too: it is streamed, never read as text", () => {
+        expect(classifyFile(1000, "image/png")).toBe("image");
+        expect(classifyFile(1000, "image/jpeg")).toBe("image");
+        expect(classifyFile(1000, "image/svg+xml")).toBe("image");
+        expect(classifyFile(MAX_VIEW_BYTES * 5, "image/webp")).toBe("image");
+    });
+
+    it("calls an image too large past the image cap, which the webview would decode whole", () => {
+        expect(classifyFile(MAX_IMAGE_BYTES, "image/png")).toBe("image");
+        expect(classifyFile(MAX_IMAGE_BYTES + 1, "image/png")).toBe("toolarge");
     });
 });
 

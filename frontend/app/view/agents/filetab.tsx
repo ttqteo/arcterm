@@ -34,6 +34,7 @@ import { savedScroll, saveScroll } from "./filescroll";
 import { FileTabDiff } from "./filetabdiff";
 import { formatSize, readPanelFile, type PanelFile } from "./filetabload";
 import { HtmlFrame } from "./htmlframe";
+import { ImageFrame } from "./imageframe";
 import { cancelBox, mdCommentAtom } from "./mdcommentstore";
 import { MdCommentTray } from "./mdcommenttray";
 import { MdDoc } from "./mddoc";
@@ -213,6 +214,16 @@ export function FileTab({
         );
     } else if (state.kind === "pdf") {
         body = <PdfFrame data-file-pdf={ref.abs} path={ref.abs} version={state.modtime} title={name} />;
+    } else if (state.kind === "image") {
+        body = (
+            <ImageFrame
+                data-file-image={ref.abs}
+                path={ref.abs}
+                version={state.modtime}
+                size={state.size}
+                title={name}
+            />
+        );
     } else if (html && preview && (state.kind === "text" || state.kind === "toolarge")) {
         // the page from disk, not the text read here; one too big to read as text still streams
         body = (

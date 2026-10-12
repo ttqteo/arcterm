@@ -12,6 +12,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- **Images open in the Agent panel's File tab and in Code**: a `.png`, `.jpg`, `.gif`, `.webp`, `.svg` or other image
+  shows fitted to the pane, with its size underneath; click it to see it at its own size. It showed "Binary file"
+  before.
 - **Tick a task box in a markdown Preview**: in the Agent panel's File tab, clicking a `- [ ]` box ticks it (or clears
   a ticked one) and saves the file.
 - **A server running in one of arcterm's terminals says which terminal** in Servers, and its Log opens that terminal

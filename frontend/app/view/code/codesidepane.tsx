@@ -12,6 +12,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { formatSize, readPanelFile, type PanelFile } from "@/app/view/agents/filetabload";
 import { HtmlFrame } from "@/app/view/agents/htmlframe";
+import { ImageFrame } from "@/app/view/agents/imageframe";
 import { PdfFrame } from "@/app/view/agents/pdfframe";
 import { SurfaceEmptyState } from "@/app/view/agents/surfacescaffold";
 import { formatChordString } from "@/util/keysym";
@@ -50,7 +51,7 @@ function stampOf(f: PanelFile): string | undefined {
     if (f.kind === "text") {
         return f.stamp;
     }
-    return f.kind === "pdf" ? `${f.size}:${f.modtime}` : undefined;
+    return f.kind === "pdf" || f.kind === "image" ? `${f.size}:${f.modtime}` : undefined;
 }
 
 // the file on disk, re-read each second; readPanelFile answers null while its size and modtime hold
@@ -126,7 +127,7 @@ export function CodeSidePane({ project, side }: { project: CodeProject; side: Co
     // a file still loading counts as previewable, so the column does not settle on Source before the text arrives
     const previewable = file.kind === "text" ? isPreviewable(side.rel, text) : true;
     const mode = effectiveSideMode(side.rel, side.mode, pdf != null, previewable);
-    const modes = file.kind === "pdf" ? [] : sideModesFor(side.rel, pdf != null, previewable);
+    const modes = file.kind === "pdf" || file.kind === "image" ? [] : sideModesFor(side.rel, pdf != null, previewable);
     const wrap = useWrap(abs);
     const options = useMemo(() => ({ ...OPTIONS, wordWrap: wrap ? ("on" as const) : ("off" as const) }), [wrap]);
     const name = side.rel.split("/").pop() ?? side.rel;
@@ -158,6 +159,17 @@ export function CodeSidePane({ project, side }: { project: CodeProject; side: Co
             break;
         case "pdf":
             body = <PdfFrame data-code-side-pdf={side.rel} path={abs} version={file.modtime} title={name} />;
+            break;
+        case "image":
+            body = (
+                <ImageFrame
+                    data-code-side-image={side.rel}
+                    path={abs}
+                    version={file.modtime}
+                    size={file.size}
+                    title={name}
+                />
+            );
             break;
         case "text":
             if (mode === "pdf" && pdf?.pdfpath) {
