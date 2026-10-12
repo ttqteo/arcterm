@@ -43,6 +43,14 @@ does not, say what you saw and it becomes a bug row under Actionable.
   shows. Within ~15 s of the command ending the pulse stops and Close appears. `agenttree.tsx` RuntimeGlyph,
   `donesuggest.ts`.
 
+**2026-10-12 (Mouse wheel in a restored Claude fullscreen pane)**
+
+- [ ] (arcterm) **The wheel scrolls a Claude agent in fullscreen (`"tui": "fullscreen"`) after arcterm restarts.**
+  Start a Claude agent, have a few turns so it overflows, wait ~10 s (the pane's cache is saved when idle), restart
+  arcterm, then wheel over that agent: the conversation scrolls. Before, the restored pane sent X10 mouse reports
+  Claude ignores (the cache lost `ESC[?1006h`). A pane restored before this fix stays broken until its Claude is
+  relaunched. `termmodes.ts`, `termwrap.ts` processAndCacheData.
+
 **2026-10-12 (Outline with many headings)**
 
 - [ ] (arcterm) **A long document's Outline scrolls instead of squeezing.** Open a markdown file with 30+ headings

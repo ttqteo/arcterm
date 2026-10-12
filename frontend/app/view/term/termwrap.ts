@@ -42,6 +42,7 @@ import {
     handleOsc7Command,
     type ShellIntegrationStatus,
 } from "./osc-handlers";
+import { nextMouseEncoding, withMouseEncoding } from "./termmodes";
 import { registerTermHandle } from "./termpaste";
 import { hintFor, makePathLinkProvider, trackForDev } from "./termpathlinks";
 import { multiCharTextKey } from "./termtextkey";
@@ -157,6 +158,8 @@ export class TermWrap {
     lastMode2026ResetTs: number = 0;
     inSyncTransaction: boolean = false;
     inRepaintTransaction: boolean = false;
+    // the mouse report encoding the program set, saved with the cache the serialize addon writes without it
+    mouseEncoding: number | null = null;
 
     constructor(
         tabId: string,
@@ -281,6 +284,7 @@ export class TermWrap {
                 if (params == null || params.length < 1) {
                     return false;
                 }
+                this.mouseEncoding = nextMouseEncoding(this.mouseEncoding, params, true);
                 if (params[0] === 2026) {
                     this.lastMode2026SetTs = Date.now();
                     this.inSyncTransaction = true;
@@ -293,6 +297,7 @@ export class TermWrap {
                 if (params == null || params.length < 1) {
                     return false;
                 }
+                this.mouseEncoding = nextMouseEncoding(this.mouseEncoding, params, false);
                 if (params[0] === 2026) {
                     this.lastMode2026ResetTs = Date.now();
                     this.inSyncTransaction = false;
@@ -818,7 +823,7 @@ export class TermWrap {
         if (this.dataBytesProcessed < MinDataProcessedForCache) {
             return;
         }
-        const serializedOutput = this.serializeAddon.serialize();
+        const serializedOutput = withMouseEncoding(this.serializeAddon.serialize(), this.mouseEncoding);
         const termSize: TermSize = { rows: this.terminal.rows, cols: this.terminal.cols };
         console.log("idle timeout term", this.dataBytesProcessed, serializedOutput.length, termSize);
         fireAndForget(() =>
