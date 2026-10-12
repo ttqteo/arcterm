@@ -27,14 +27,16 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
-**2026-10-12 (Fold when you leave: 80% cover, taskbar grows it back)**
+**2026-10-12 (Fold when you leave: leave folds, return grows back)**
 
-- [ ] (arcterm) **A big window folds arcterm; the taskbar button grows it back.** On Windows, with **Fold when you
-  leave** on and arcterm maximized: switch to an app whose window is not maximized but covers most of arcterm (over
-  80%): Sprout folds after ~1 s; one covering half or less leaves it be. Click arcterm's taskbar button once: the window
-  grows back. Alt+Tab back instead: Sprout only takes the focus. Click Sprout, then its taskbar button: it grows back
-  instead of minimizing. Win+D / Win+M while folded: it stays folded. `foreground.rs` COVER_SHARE and watch_taskbar,
-  `floatstore.ts` REOPEN_EVENT.
+- [ ] (arcterm) **Leaving folds, coming back grows back, overlays do nothing.** On Windows, with **Fold when you leave**
+  on and arcterm maximized: switch to an app covering over 80% of arcterm (maximized or a big window): Sprout folds
+  after ~1 s; one covering half or less leaves it be. Come back by Alt+Tab, by the taskbar button, or by clicking
+  arcterm: it grows back each way. Press Win+Shift+S, or lock the screen (Win+L): it does not fold. Hover Sprout and
+  click an agent while auto-folded: Float opens on it, the window does not grow back. Fold with `Ctrl+M`, switch away
+  and back: it stays folded; one click on the taskbar button grows it back, also when Sprout was already in front (it
+  does not minimize). `waveapp.log` shows `[fold] leaving…`, `[fold] back in arcterm…`, `[tauri] taskbar button…`.
+  `foreground.rs` is_overlay / watch_taskbar, `floatstore.ts` setupAutoSprout.
 
 **2026-10-12 (A lead-less run's row)**
 

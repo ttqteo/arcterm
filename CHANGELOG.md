@@ -17,12 +17,15 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
-- **Fold when you leave** also folds when the app you switch to covers most of arcterm (four fifths of it), not only
-  when it is maximized or full screen. On Windows a click on arcterm's taskbar button now grows the folded window back,
-  as the Dock icon does on macOS; Alt+Tab still only focuses Sprout.
+- **Fold when you leave** is simpler: it folds when the app you switch to covers most of arcterm (four fifths of it,
+  maximized or not), and grows back as soon as you come back to arcterm, by Alt+Tab, the taskbar button or a click. A
+  fold from the Sprout button or `Ctrl+M` stays until you double-click Sprout, pick **Restore**, or click arcterm's
+  taskbar button (the Dock icon on macOS).
 
 ### Fixed
 
+- **Fold when you leave** no longer folds arcterm for a screenshot, the lock screen, Alt+Tab's switcher or the Start
+  menu.
 - The mouse wheel scrolls Claude Code's fullscreen view again after arcterm restarts or reloads its pane.
 - An agent with a background task still running is no longer offered **✓ Close**: closing it would end that task.
 - Agent sidebar: clicking the top row of a run started from a plan (it has no lead) now shows the terminal of the run's
