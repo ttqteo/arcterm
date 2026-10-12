@@ -145,22 +145,29 @@ function Row({ row, model }: { row: ConsumerRow; model: AgentsViewModel }) {
                 {row.name}
                 {row.project ? <span className="ml-1.5 text-[11px] text-muted">{row.project}</span> : null}
             </button>
-            {row.model ? (
-                <span
-                    data-consumer-opus={row.opus ? "" : undefined}
-                    title={row.opus ? "Runs on Opus" : undefined}
-                    className={cn("text-[11px] font-semibold", row.opus ? "text-warning" : "text-muted")}
-                >
-                    {row.model}
-                </span>
-            ) : null}
-            <span data-consumer-ram title="RAM" className="w-[64px] text-right text-[12px] tabular-nums text-secondary">
+            {/* every column after the name has a fixed width, so the columns line up down the panel whichever
+                rows have a model, a burn mark or which actions */}
+            <span
+                data-consumer-opus={row.opus ? "" : undefined}
+                title={row.opus ? "Runs on Opus" : undefined}
+                className={cn(
+                    "w-[62px] flex-none truncate text-[11px] font-semibold",
+                    row.opus ? "text-warning" : "text-muted"
+                )}
+            >
+                {row.model}
+            </span>
+            <span
+                data-consumer-ram
+                title="RAM"
+                className="w-[56px] flex-none text-right text-[12px] tabular-nums text-secondary"
+            >
                 {row.ramBytes === undefined ? "—" : ramLabel(row.ramBytes)}
             </span>
             <span
                 data-consumer-tokens
                 title="Tokens and estimated spend, last 10 minutes"
-                className="flex w-[112px] items-center justify-end gap-1 text-[12px] tabular-nums text-secondary"
+                className="flex w-[104px] flex-none items-center justify-end gap-1 text-[12px] tabular-nums text-secondary"
             >
                 {row.burn ? (
                     <TriangleAlert
@@ -172,47 +179,52 @@ function Row({ row, model }: { row: ConsumerRow; model: AgentsViewModel }) {
                 ) : null}
                 {row.tokens === undefined ? "—" : `${fmt(row.tokens)} · ${usd(row.spendUsd ?? 0)}`}
             </span>
-            {row.canSonnet ? (
-                <button
-                    type="button"
-                    data-consumer-sonnet
-                    title="Switch this session to Sonnet (/model sonnet)"
-                    onClick={() => toSonnet(row)}
-                    className={ROW_ACTION}
-                >
-                    → Sonnet
-                </button>
-            ) : null}
-            {row.canSleep ? (
-                <button
-                    type="button"
-                    data-consumer-sleep
-                    title="End this agent's process to free its RAM; Wake or a message resumes it"
-                    disabled={pending != null}
-                    onClick={() => run("sleep", () => sleepWithConfirm(row.vm))}
-                    className={ROW_ACTION}
-                >
-                    Sleep
-                </button>
-            ) : null}
-            {row.sleeping ? (
-                <button
-                    type="button"
-                    data-consumer-wake
-                    title="Relaunch this agent where its conversation left off"
-                    disabled={pending != null}
-                    onClick={wake}
-                    className={ROW_ACTION}
-                >
-                    {pending === "wake" ? "Waking…" : "Wake"}
-                </button>
-            ) : null}
+            {/* one slot per action, kept when empty, so each kind of button stands in its own column */}
+            <span className="flex w-[62px] flex-none">
+                {row.canSonnet ? (
+                    <button
+                        type="button"
+                        data-consumer-sonnet
+                        title="Switch this session to Sonnet (/model sonnet)"
+                        onClick={() => toSonnet(row)}
+                        className={cn(ROW_ACTION, "w-full")}
+                    >
+                        → Sonnet
+                    </button>
+                ) : null}
+            </span>
+            <span className="flex w-[58px] flex-none">
+                {row.canSleep ? (
+                    <button
+                        type="button"
+                        data-consumer-sleep
+                        title="End this agent's process to free its RAM; Wake or a message resumes it"
+                        disabled={pending != null}
+                        onClick={() => run("sleep", () => sleepWithConfirm(row.vm))}
+                        className={cn(ROW_ACTION, "w-full")}
+                    >
+                        Sleep
+                    </button>
+                ) : null}
+                {row.sleeping ? (
+                    <button
+                        type="button"
+                        data-consumer-wake
+                        title="Relaunch this agent where its conversation left off"
+                        disabled={pending != null}
+                        onClick={wake}
+                        className={cn(ROW_ACTION, "w-full")}
+                    >
+                        {pending === "wake" ? "Waking…" : "Wake"}
+                    </button>
+                ) : null}
+            </span>
             <button
                 type="button"
                 data-consumer-stop
                 title={row.dag ? "Stop this worker; its task is not retried" : "End this agent's session"}
                 onClick={() => stop(row, model)}
-                className="cursor-pointer rounded border border-edge-mid px-1.5 py-[1px] text-[11px] text-error hover:border-edge-strong hover:bg-surface-hover"
+                className="w-[40px] flex-none cursor-pointer rounded border border-edge-mid px-1.5 py-[1px] text-[11px] text-error hover:border-edge-strong hover:bg-surface-hover"
             >
                 Stop
             </button>

@@ -225,7 +225,7 @@ export interface Placement {
     origin: "top right" | "bottom right";
 }
 
-export const PANEL_WIDTH = 580;
+export const PANEL_WIDTH = 620;
 const PANEL_GAP = 6; // between the opener and the panel
 const PANEL_MARGIN = 8; // the nearest it comes to the window's edge
 

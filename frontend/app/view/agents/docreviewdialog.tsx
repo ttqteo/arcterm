@@ -182,6 +182,7 @@ interface Quoting {
     onDraft: (v: string) => void;
     onAdd: () => void;
     onCancel: () => void;
+    onOutside: () => void;
 }
 
 // Lands on the agent that already shows the canvas. When none does, the lead's terminal attaches it first, as
@@ -327,6 +328,8 @@ export function DocReviewDialog({ model }: { model: AgentsViewModel }) {
         onDraft: setDraft,
         onAdd: takePending,
         onCancel: dropPending,
+        // a typed note is kept, so a stray click never loses it; an empty field just closes
+        onOutside: () => (draft.trim() ? takePending() : dropPending()),
     };
 
     return (
@@ -536,6 +539,7 @@ function DocumentPane(p: { path: string; quoting: Quoting; focus: string | null;
                                 onDraft={quoting.onDraft}
                                 onAdd={quoting.onAdd}
                                 onCancel={quoting.onCancel}
+                                onOutside={quoting.onOutside}
                             />
                         ) : null}
                     </>

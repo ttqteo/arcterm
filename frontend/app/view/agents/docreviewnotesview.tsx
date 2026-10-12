@@ -101,9 +101,23 @@ export function NoteField(p: {
     onDraft: (v: string) => void;
     onAdd: () => void;
     onCancel: () => void;
+    onOutside: () => void;
 }) {
     const fieldRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    const onOutsideRef = useRef(p.onOutside);
+    onOutsideRef.current = p.onOutside;
+
+    // a press anywhere else lets the field go; capture, so a control that stops the event still counts
+    useEffect(() => {
+        const onDown = (e: PointerEvent) => {
+            if (!fieldRef.current?.contains(e.target as Node)) {
+                onOutsideRef.current();
+            }
+        };
+        document.addEventListener("pointerdown", onDown, true);
+        return () => document.removeEventListener("pointerdown", onDown, true);
+    }, []);
 
     // placed by hand before paint: under the passage, or above it when the pane has no room left below
     useLayoutEffect(() => {

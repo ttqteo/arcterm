@@ -115,17 +115,23 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- The **RAM and tokens panel lines up in columns**: the model, RAM, tokens and each button (→ Sonnet, Sleep or
+  Wake, Stop) keep one place down the list instead of moving row to row.
+- **No more red spellcheck underlines** in text fields (the New dialog's Task, the composer, comments): the
+  built-in spellchecker marked every Vietnamese word as wrong.
+- A run's task strip draws a **working task in blue**, so it no longer looks like a failed task's red.
+- A sidebar row with both a **canvas** tag and **Close** no longer runs past the sidebar's edge: beside the canvas tag
+  Close shows only its check.
 - Switching to an agent whose panel you left on **Files** now opens it on Files at once: it no longer slid to
   Overview's width, flashed Overview, then slid back once the agent's git status loaded.
 - In the Spec review dialog, **a decision points at its place in the spec** when you rest on it or click it, even when
   the spec is written in another language: it matches the names it shares with a passage (`release_items`,
   FieldPolicy, /infra), and dims the rest down to that one list item. The **SPEC REVIEW** label no longer wraps.
 - **Zoom on a Mac is ⌘= / ⌘- / ⌘0**, as in other Mac apps; it was Control.
+- In a review, a click outside the note field under a selected passage closes it; a note already typed there is kept
+  in Your notes.
 - An agent's model, and a past conversation's in History, no longer reads `<synthetic>` after you interrupt Claude
   or an API error ends a turn: it keeps the model the session last answered with.
-- A run's task strip draws a **working task in blue**, so it no longer looks like a failed task's red.
-- A sidebar row with both a **canvas** tag and **Close** no longer runs past the sidebar's edge: beside the canvas tag
-  Close shows only its check.
 - On macOS, a double-click or right-click on a button, the app bar (its search box too), the surface rail or the
   footer no longer selects a word of its text. Text boxes still select as before.
 - **Float** shows an orchestrator run as one tab, its lead, not a tab for every worker and reviewer it started;
