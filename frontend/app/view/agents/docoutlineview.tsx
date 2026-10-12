@@ -64,6 +64,8 @@ export function OutlineButton(p: {
     // what the document was rendered from: a new one means new headings to read
     textKey: string;
     className?: string;
+    // just the icon, for a header already full of controls (the File tab's)
+    iconOnly?: boolean;
 }) {
     const [items, setItems] = useState<OutlineItem[]>([]);
     const [open, setOpen] = useState(false);
@@ -183,13 +185,18 @@ export function OutlineButton(p: {
                 aria-label="Outline"
                 title="Outline"
                 className={cn(
-                    "inline-flex h-[25px] shrink-0 cursor-pointer items-center gap-[5px] rounded-[6px] border border-edge-mid bg-surface-raised px-2 text-[11.5px] font-semibold text-secondary hover:border-edge-strong hover:bg-surface-hover",
-                    open && "border-edge-strong bg-surface-hover text-primary",
+                    p.iconOnly
+                        ? "flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted hover:bg-surface-hover hover:text-secondary"
+                        : "inline-flex h-[25px] shrink-0 cursor-pointer items-center gap-[5px] rounded-[6px] border border-edge-mid bg-surface-raised px-2 text-[11.5px] font-semibold text-secondary hover:border-edge-strong hover:bg-surface-hover",
+                    open &&
+                        (p.iconOnly
+                            ? "bg-surface-hover text-primary"
+                            : "border-edge-strong bg-surface-hover text-primary"),
                     p.className
                 )}
             >
                 <TableOfContents size={13} aria-hidden />
-                Outline
+                {p.iconOnly ? null : "Outline"}
             </button>
             <FloatingPortal>
                 {/* above ModalShell's z-[70] backdrop: the review dialog's document has one */}

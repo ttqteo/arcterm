@@ -237,7 +237,7 @@ Mở khi bạn bấm một file trong **Files changed**, một output trong **Ba
 - File HTML: **Preview** (chính trang đó, kèm ảnh và CSS cạnh nó) / **Source**.
 - File markdown: **Preview** / **Source**. Bôi chọn chữ rồi nhấn `c` (hoặc bấm `+` cạnh một khối) để viết comment; khay comment gửi tất cả cho agent trong một tin nhắn (`Ctrl+Enter`) hoặc sao chép.
 - File mở từ **Files changed**: thêm **Diff**, và nút **Open in Diff**.
-- **Wrap** (bật/tắt xuống dòng), **Live** (output của task nền: bám theo đuôi khi nó dài ra), **Pin** (ghim file vào mục **Pinned** của tab Files và của Code; chỉ có khi file nằm trong thư mục của agent), **Open in Code**.
+- **Live** (output của task nền: bám theo đuôi khi nó dài ra), và các nút icon: **Outline** (mục lục của file markdown), **Wrap** (bật/tắt xuống dòng), **Pin** (ghim file vào mục **Pinned** của tab Files và của Code; chỉ có khi file nằm trong thư mục của agent; ghim rồi thì icon tô đặc màu accent), **Open in Code**.
 
 Tab File rộng hơn Overview; kéo mép của rail (**Resize panel**) để đổi độ rộng. `Esc` đóng file (hoặc hủy comment đang viết). Phím `←`/`→`/`Home`/`End` chuyển tab khi thanh tab đang focus.
 

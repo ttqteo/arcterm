@@ -59,6 +59,8 @@ const HIT_LINE = "bg-surface-hover";
 const HIT_MARK = "border-l-2 border-accent";
 const ICON_BTN =
     "flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted hover:bg-surface-hover hover:text-secondary disabled:cursor-default disabled:text-edge-strong disabled:hover:bg-transparent";
+// an icon toggle that is on (Wrap, Pin): the accent, as a labelled toggle's border and text are
+const ICON_ON = "text-accent-soft hover:text-accent-soft";
 const BTN =
     "flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-[6px] border border-edge-mid bg-transparent px-2 text-[11.5px] font-medium text-secondary hover:border-edge-strong";
 
@@ -405,19 +407,24 @@ export function FileTab({
                     </div>
                 ) : null}
                 {markdown && preview && state.kind === "text" ? (
-                    <OutlineButton rootRef={bodyRef} selector={OUTLINE_SELECTOR.markdown} textKey={state.text} />
+                    <OutlineButton
+                        rootRef={bodyRef}
+                        selector={OUTLINE_SELECTOR.markdown}
+                        textKey={state.text}
+                        iconOnly
+                    />
                 ) : null}
                 {diffable || (state.kind === "text" && !preview) ? (
                     <button
                         type="button"
                         data-file-wrap
                         aria-pressed={wrap}
+                        aria-label="Wrap long lines"
                         title={wrap ? "Stop wrapping long lines" : "Wrap long lines"}
                         onClick={() => toggleWrap(ref.abs)}
-                        className={cn(BTN, wrap && "border-accent/40 text-accent-soft hover:border-accent/60")}
+                        className={cn(ICON_BTN, wrap && ICON_ON)}
                     >
-                        <WrapText size={11} aria-hidden />
-                        Wrap
+                        <WrapText size={13} aria-hidden />
                     </button>
                 ) : null}
                 {ref.live ? (
@@ -448,12 +455,12 @@ export function FileTab({
                         type="button"
                         data-file-pin
                         aria-pressed={pinned}
+                        aria-label="Pin"
                         title={pinned ? "Unpin this file" : "Pin this file to the top of Files, here and in Code"}
                         onClick={() => toggleCodePinIn(pin.folder, pin.rel)}
-                        className={cn(BTN, pinned && "border-accent/40 text-accent-soft hover:border-accent/60")}
+                        className={cn(ICON_BTN, pinned && ICON_ON)}
                     >
-                        <Pin size={11} aria-hidden />
-                        {pinned ? "Pinned" : "Pin"}
+                        <Pin size={13} fill={pinned ? "currentColor" : "none"} aria-hidden />
                     </button>
                 ) : null}
                 {diff != null ? (

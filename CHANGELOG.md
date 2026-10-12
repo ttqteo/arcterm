@@ -69,6 +69,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- **Tidier file headers**: in the Agent panel's File tab, Outline, Wrap and Pin are icon buttons now, and so are Wrap,
+  Pin and Copy path above Code's editor; a pinned file shows a filled pin instead of the word "Pinned".
 - **Ctrl+C copies in a terminal on Windows while text is selected**, as in Windows Terminal and VS Code; with nothing
   selected it is the interrupt as before. **Copy on select is now off by default**, so highlighting what you read no
   longer replaces what you copied; Settings → Terminal turns it back on.
