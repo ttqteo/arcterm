@@ -31527,6 +31527,134 @@ const settingsStorage = {
     },
 };
 
+// --- sidebar-agent-glyph: an agent row's ✳ carries its state, and a green dot its running background tasks. Four fixture
+// agents in one project: working, asking, idle with a committed last turn (it offers ✓ Close), and the same idle one whose
+// transcript left a command running with run_in_background (a dot, no Close).
+const SAG_PROJECT = "verify-sidebar-glyph";
+const SAG_ID = { working: "fx-sag-working", asking: "fx-sag-asking", idle: "fx-sag-idle", bg: "fx-sag-bg" };
+const sagRow = (id) => `document.querySelector('[data-agent-row="${id}"]')`;
+// what a person reads off one row: the glyph's state and colour, whether it pulses, the dot, and Close
+const sagFacts = (id) => `(() => {
+    const row = ${sagRow(id)};
+    if (!row) return null;
+    const glyph = row.querySelector("[data-agent-glyph-state]");
+    const dot = row.querySelector("[data-agent-background]");
+    return {
+        state: glyph?.dataset.agentGlyphState ?? null,
+        color: glyph ? getComputedStyle(glyph).color : null,
+        pulse: !!glyph?.classList.contains("pulse-dot"),
+        dot: dot ? { n: Number(dot.dataset.agentBackground), title: dot.title, bg: getComputedStyle(dot).backgroundColor } : null,
+        close: !!row.querySelector("[data-agent-done]"),
+        stateDot: !!row.querySelector("span.rounded-full[style*='background-color']"),
+    };
+})()`;
+const sagColor = (token) => `(() => {
+    const el = document.createElement("span");
+    el.style.color = "var(${token})";
+    document.body.appendChild(el);
+    const c = getComputedStyle(el).color;
+    el.remove();
+    return c;
+})()`;
+
+const sidebarAgentGlyph = {
+    name: "sidebar-agent-glyph",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-sidebar-glyph-")) };
+        try {
+            ctx.transcript = join(ctx.cwd, "session.jsonl");
+            writeFileSync(ctx.transcript, railServersTranscript(ctx.cwd, "sleep 600", join(ctx.cwd, "bg-output.log")));
+            const now = Date.now();
+            const agent = (id, name, state, extra = {}) => ({
+                id,
+                name,
+                project: SAG_PROJECT,
+                task: name,
+                state,
+                agent: "claude",
+                model: "opus",
+                idleSince: now - 60_000,
+                blockId: `fx-blk-${id}`,
+                ...extra,
+            });
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(
+                TREE_RAIL_FIXTURE,
+                JSON.stringify(
+                    [
+                        agent(SAG_ID.working, "glyph working", "working"),
+                        agent(SAG_ID.asking, "glyph asking", "asking", { ask: { kind: "question", question: "ok?" } }),
+                        agent(SAG_ID.idle, "glyph idle committed", "idle", { committed: true }),
+                        agent(SAG_ID.bg, "glyph background task", "idle", { committed: true, transcriptPath: ctx.transcript }),
+                    ],
+                    null,
+                    2
+                )
+            );
+            ctx.wroteFixture = true;
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            if (!(await polishWaitFor(h, `!!${sagRow(SAG_ID.bg)}`, 15000))) throw new Error("the fixture rows never showed");
+            // the tracker reads the transcript on enter; the dot follows once it lands
+            ctx.dotSeen = await polishWaitFor(h, `!!${sagRow(SAG_ID.bg)}?.querySelector("[data-agent-background]")`, 15000);
+            await h.ev(`${sagRow(SAG_ID.working)}?.closest("[data-agent-active-rows]")?.scrollIntoView({ block: "start" }) ?? true`);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture roster", false, ctx.arrangeError);
+            return steps;
+        }
+        const f = {};
+        for (const [k, id] of Object.entries(SAG_ID)) f[k] = await h.ev(sagFacts(id));
+        const accent = await h.ev(sagColor("--color-accent"));
+        const warning = await h.ev(sagColor("--color-warning"));
+        const muted = await h.ev(sagColor("--color-muted"));
+        const working = await h.ev(`(() => { const el = document.createElement("span"); el.style.backgroundColor = "var(--color-working)"; document.body.appendChild(el); const c = getComputedStyle(el).backgroundColor; el.remove(); return c; })()`);
+        rec(
+            "1. a working agent's ✳ pulses in the accent colour",
+            f.working?.state === "working" && f.working.pulse && f.working.color === accent,
+            JSON.stringify({ ...f.working, accent })
+        );
+        rec(
+            "2. an asking agent's ✳ pulses in the warning colour",
+            f.asking?.state === "asking" && f.asking.pulse && f.asking.color === warning,
+            JSON.stringify({ ...f.asking, warning })
+        );
+        rec(
+            "3. an idle agent's ✳ is muted and still",
+            f.idle?.state === "idle" && !f.idle.pulse && f.idle.color === muted,
+            JSON.stringify({ ...f.idle, muted })
+        );
+        rec(
+            "4. no row draws a state dot on its second line any more",
+            Object.values(f).every((x) => x && !x.stateDot),
+            JSON.stringify(Object.fromEntries(Object.entries(f).map(([k, x]) => [k, x?.stateDot])))
+        );
+        rec(
+            "5. the agent with a running background task shows one green dot naming it",
+            ctx.dotSeen && f.bg?.dot?.n === 1 && f.bg.dot.bg === working && f.bg.dot.title.includes("Start the dev server"),
+            JSON.stringify({ dot: f.bg?.dot, working })
+        );
+        rec("6. no other row shows the dot", !f.working?.dot && !f.asking?.dot && !f.idle?.dot, "");
+        rec(
+            "7. Close waits for the background task: the idle committed agent offers it, the one with the task does not",
+            f.idle?.close === true && f.bg?.close === false,
+            JSON.stringify({ idle: f.idle?.close, bg: f.bg?.close })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownFixtureRun(h, ctx, "sidebar-agent-glyph");
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -31629,6 +31757,7 @@ export const SCENARIOS = [
     consumersPopover,
     agentSleep,
     machineServers,
+    sidebarAgentGlyph,
     capacityWarn,
     notifyToast,
     jobqueueChip,

@@ -58,7 +58,8 @@ does not, say what you saw and it becomes a bug row under Actionable.
   `run_in_background` (a `sleep 120`), let its turn end and commit: a green dot pulses slowly on its second line,
   hovering it lists the task, and neither the row's ✓ Close, the header's Close nor its key shows. Within ~15 s of the
   command ending the dot goes and Close appears. `agenttree.tsx` RuntimeGlyph / BackgroundDot, `donesuggest.ts`.
-  (The first cut, a pulsing ✳ for background tasks, was seen pulsing in 0.15.10 on 2026-10-12.)
+  The CDP scenario `sidebar-agent-glyph` covers the colours, the dot and Close on fixture rows; what is left to try by
+  hand is a real task ending and its dot going.
 
 **2026-10-12 (Mouse wheel in a restored Claude fullscreen pane)**
 
