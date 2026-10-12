@@ -1,3 +1,4 @@
+import { isMacOS } from "@/util/platformutil";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -82,17 +83,19 @@ export function installChromeListeners() {
             toggleFullscreen();
             return;
         }
-        if (ev.ctrlKey && (ev.key === "=" || ev.key === "+")) {
+        // zoom on the platform's own modifier: ⌘ on a Mac (Control there is the terminal's, Ctrl+- its undo), Ctrl elsewhere
+        const zoomMod = isMacOS() ? ev.metaKey : ev.ctrlKey;
+        if (zoomMod && (ev.key === "=" || ev.key === "+")) {
             ev.preventDefault();
             zoomIn();
             return;
         }
-        if (ev.ctrlKey && ev.key === "-") {
+        if (zoomMod && ev.key === "-") {
             ev.preventDefault();
             zoomOut();
             return;
         }
-        if (ev.ctrlKey && ev.key === "0") {
+        if (zoomMod && ev.key === "0") {
             ev.preventDefault();
             zoomReset();
             return;

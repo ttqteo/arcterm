@@ -125,6 +125,7 @@ export function deriveKeyContext(): KeyContext {
         editable: isEditableTarget(document.activeElement) || ownsKeys(document.activeElement),
         modalOpen,
         leader,
+        terminal: document.activeElement?.closest(".xterm") != null,
     };
 }
 

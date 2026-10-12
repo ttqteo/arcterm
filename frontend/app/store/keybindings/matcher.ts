@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as keyutil from "@/util/keyutil";
+import { isMacOS } from "@/util/platformutil";
 import type { Binding, KeyContext, MatchResult } from "./types";
 
 export function isSequenceKeys(keys: string): boolean {
@@ -17,9 +18,18 @@ function hasModifier(e: WaveKeyboardEvent): boolean {
 // and a plain key elsewhere. Checked against this map directly, NOT against the when-filtered sequence
 // set, which is empty inside the TUI: deriving the door from that set would make it depend on what it
 // exists to open.
-export const LEADER_ALIASES: Record<string, string> = { "Mod:g": "g" };
+export const LEADER_ALIASES: Record<string, string> = { "TMod:g": "g" };
 
-// A sequence as the user presses it: its leader shown as the chord that opens it ("g c" -> "Mod:g c").
+// Off a Mac the plain Ctrl+G opens it too, outside a terminal only (the shell and Claude Code keep Ctrl+G), as every
+// TMod chord keeps its plain Ctrl form there (bindings.ts winCtrlAlias). Never shown: leaderChord names the TMod door.
+const LEADER_ALIASES_OUTSIDE_TERMINAL: Record<string, string> = { "Ctrl:g": "g" };
+
+function leaderDoors(ctx: KeyContext): [string, string][] {
+    const doors = Object.entries(LEADER_ALIASES);
+    return isMacOS() || ctx.terminal ? doors : [...doors, ...Object.entries(LEADER_ALIASES_OUTSIDE_TERMINAL)];
+}
+
+// A sequence as the user presses it: its leader shown as the chord that opens it ("g c" -> "TMod:g c").
 // Bindings keep the leader letter in `keys` (the matcher keys leader mode on it); every place that shows
 // a key to the user goes through this.
 export function displayKeys(keys: string): string {
@@ -30,7 +40,7 @@ export function displayKeys(keys: string): string {
     return [leaderChord(lead), ...rest].join(" ");
 }
 
-// The chord that opens a leader ("g" -> "Mod:g"); the letter itself for a leader no chord opens.
+// The chord that opens a leader ("g" -> "TMod:g"); the letter itself for a leader no chord opens.
 export function leaderChord(leader: string): string {
     return Object.keys(LEADER_ALIASES).find((c) => LEADER_ALIASES[c] === leader) ?? leader;
 }
@@ -75,7 +85,7 @@ export function matchBinding(waveEvent: WaveKeyboardEvent, ctx: KeyContext, bind
     // footer and cheat sheet can advertise it. Matched as a single, that binding would win the key and
     // its run() returns false — the dispatcher would then neither open the leader nor consume the
     // keystroke, and ^G would reach the PTY. Nothing else may claim a key in this map.
-    for (const [chord, leader] of Object.entries(LEADER_ALIASES)) {
+    for (const [chord, leader] of leaderDoors(ctx)) {
         if (keyutil.checkKeyPressed(waveEvent, chord)) {
             return { kind: "enterLeader", leader };
         }

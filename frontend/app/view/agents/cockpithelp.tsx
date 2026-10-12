@@ -3,7 +3,7 @@
 //
 // The cockpit surface's hints bar. The keyboard-help overlay was removed: the single source of truth is
 // now the shared cheat sheet (Shift+?), which documents the cockpit triage keys via buildCockpitBindings.
-// The `?` chip here opens that cheat sheet too.
+// The `?` button at the bar's right end (FooterStatus) opens that cheat sheet too, on every surface.
 
 import { FooterStatus } from "@/app/cockpit/footerstatus";
 import { formatChordString } from "@/util/keysym";
@@ -15,15 +15,7 @@ import type { AgentsViewModel } from "./agents";
 // bar (the footer suppresses its rest posture on this surface — see hints-footer.tsx).
 // hints: false while the roster loads or is empty, where the keys have nothing to act on; the bar still draws its
 // status (servers, version), which every surface keeps.
-export function HintsBar({
-    model,
-    hints,
-    onOpenHelp,
-}: {
-    model: AgentsViewModel;
-    hints: boolean;
-    onOpenHelp: () => void;
-}) {
+export function HintsBar({ model, hints }: { model: AgentsViewModel; hints: boolean }) {
     // Built at render (not module-eval) so the platform-aware modifier glyphs resolve after boot.
     const HINTS: [string, string][] = [
         ["↑↓ / j k", "move"],
@@ -57,15 +49,6 @@ export function HintsBar({
                     </span>
                 ))}
             </div>
-            {hints ? (
-                <button
-                    type="button"
-                    onClick={onOpenHelp}
-                    className="shrink-0 cursor-pointer font-mono hover:text-secondary"
-                >
-                    ?
-                </button>
-            ) : null}
             <FooterStatus model={model} />
         </div>
     );

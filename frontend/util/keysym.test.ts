@@ -26,6 +26,14 @@ describe("keysym", () => {
         setPlatform("win32");
         expect(formatChordString("Mod:Shift:r")).toBe("ctrl+shift+r");
     });
+    // TMod, the terminal chord: ⌘ on a Mac, Ctrl+Shift elsewhere (keyutil), shown as separate keys
+    it("TMod is ⌘ on macOS and ctrl+shift on Windows", () => {
+        setPlatform("darwin");
+        expect(formatChordString("TMod:p")).toBe("⌘P");
+        setPlatform("win32");
+        expect(formatChordString("TMod:p")).toBe("ctrl+shift+p");
+        expect(formatChord("TMod:p")).toEqual(["ctrl", "shift", "p"]);
+    });
     it("formats modifier chords in lower case on Windows", () => {
         setPlatform("win32");
         expect(formatChord("Ctrl:p")).toEqual(["ctrl", "p"]);

@@ -11,7 +11,6 @@ import { buildCockpitBindings } from "@/app/store/keybindings/bindings";
 import { focusClaimed } from "@/app/store/keybindings/dispatcher";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { useKeybindings } from "@/app/store/keybindings/store";
-import { cheatsheetOpenAtom } from "@/app/cockpit/shortcuts-cheatsheet";
 import { dismissAgent, toggleAgentBackground } from "./agentactions";
 import { showTerminal } from "./agentcenter";
 import { AgentRow } from "./agentrow";
@@ -564,11 +563,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                     </div>
                 </div>
 
-                <HintsBar
-                    model={model}
-                    hints={phase === "ready"}
-                    onOpenHelp={() => globalStore.set(cheatsheetOpenAtom, true)}
-                />
+                <HintsBar model={model} hints={phase === "ready"} />
             </div>
 
             <CockpitRail

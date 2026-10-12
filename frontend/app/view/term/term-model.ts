@@ -473,7 +473,7 @@ export class TermViewModel implements ViewModel {
             }
             navigator.clipboard.writeText(sel);
             return false;
-        } else if (keyutil.checkKeyPressed(waveEvent, "Cmd:k")) {
+        } else if (keyutil.checkKeyPressed(waveEvent, "TMod:k")) {
             event.preventDefault();
             event.stopPropagation();
             this.termRef.current?.terminal?.clear();

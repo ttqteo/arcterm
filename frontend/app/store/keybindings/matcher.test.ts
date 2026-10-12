@@ -85,13 +85,23 @@ describe("matchBinding", () => {
 // real posture rule rather than a simplification of it.
 const leaderAware = (c: KeyContext) => (!c.editable || c.leader != null) && !c.modalOpen;
 
-// The alias chord is Mod+G: Ctrl+G on Windows (these tests), Cmd+G on a Mac.
+// The door is TMod+G: Ctrl+Shift+G on Windows (these tests), and plain Ctrl+G there outside a terminal; Cmd+G on a Mac.
 describe("matchBinding — leader reachable from a focused text field", () => {
     beforeEach(() => setPlatform("win32"));
     afterEach(() => setPlatform("darwin"));
 
-    it("LEADER_ALIASES maps Mod+G to the g leader", () => {
-        expect(LEADER_ALIASES["Mod:g"]).toBe("g");
+    it("LEADER_ALIASES maps TMod+G to the g leader", () => {
+        expect(LEADER_ALIASES["TMod:g"]).toBe("g");
+    });
+
+    it("on Windows Ctrl+Shift+G opens it in a terminal, where plain Ctrl+G stays the terminal's", () => {
+        const b = bind({ id: "go-agent", keys: "g a", when: leaderAware });
+        const inTerm: KeyContext = { ...editCtx, terminal: true };
+        expect(matchBinding(ev("G", { control: true, shift: true }), inTerm, [b])).toEqual({
+            kind: "enterLeader",
+            leader: "g",
+        });
+        expect(matchBinding(ev("g", { control: true }), inTerm, [b])).toEqual({ kind: "none" });
     });
 
     it("on a Mac the alias is Cmd+G, so Ctrl+G reaches the terminal", () => {
@@ -154,9 +164,9 @@ describe("matchBinding — leader reachable from a focused text field", () => {
     });
 
     it("displays a leader sequence as the chord that opens it", () => {
-        expect(displayKeys("g c")).toBe("Mod:g c");
+        expect(displayKeys("g c")).toBe("TMod:g c");
         expect(displayKeys("Ctrl:Tab")).toBe("Ctrl:Tab");
-        expect(leaderChord("g")).toBe("Mod:g");
+        expect(leaderChord("g")).toBe("TMod:g");
     });
 });
 

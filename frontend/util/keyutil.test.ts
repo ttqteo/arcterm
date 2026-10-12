@@ -43,6 +43,21 @@ describe("Mod", () => {
     });
 });
 
+// TMod is the terminal chord: Command on a Mac, Ctrl+Shift elsewhere, where Ctrl+letter is the terminal's
+describe("TMod", () => {
+    it("is the Command key on macOS", () => {
+        setPlatform("darwin");
+        expect(checkKeyPressed(ev("p", "KeyP", { meta: true }), "TMod:p")).toBe(true);
+        expect(checkKeyPressed(ev("P", "KeyP", { meta: true, shift: true }), "TMod:p")).toBe(false);
+    });
+
+    it("is Ctrl+Shift on Windows, and plain Ctrl is not it", () => {
+        setPlatform("win32");
+        expect(checkKeyPressed(ev("P", "KeyP", { ctrl: true, shift: true }), "TMod:p")).toBe(true);
+        expect(checkKeyPressed(ev("p", "KeyP", { ctrl: true }), "TMod:p")).toBe(false);
+    });
+});
+
 // Option+letter on a Mac types a character (⌥Z is "Ω", ⌥T is "†") or opens a dead key (⌥E), so the key never
 // reads as the letter the binding names.
 describe("Alt+letter on macOS", () => {

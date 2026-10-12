@@ -7,18 +7,17 @@ import { modalsModel } from "@/app/store/modalmodel";
 import { WorkspaceService } from "@/app/store/services";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { isMacOS } from "@/util/platformutil";
 import { fireAndForget, stringToBase64 } from "@/util/util";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { dismissKey, toggleInSet } from "./cockpitsurfacemodel";
 import { leadRunTabIds } from "./runlineage";
 
-// The close-agent chord (bindings.ts), as a terminal app closes its tab: ⌘W on a Mac, where the menu's Close Window gave
-// the key up (macwindow.rs). On Windows Ctrl+W is the shell's delete-word, so there it is Windows Terminal's Ctrl+Shift+W.
-// A function, not a constant: the platform is set at boot, after this module loads.
+// The close-agent chord (bindings.ts), as a terminal app closes its tab: a terminal chord (TMod), so ⌘W on a Mac, where
+// the menu's Close Window gave the key up (macwindow.rs), and Windows Terminal's Ctrl+Shift+W on Windows, where Ctrl+W
+// is the shell's delete-word.
 export function closeAgentChord(): string {
-    return isMacOS() ? "Mod:w" : "Ctrl:Shift:w";
+    return "TMod:w";
 }
 
 function closeTabs(workspaceId: string, tabIds: string[]): void {

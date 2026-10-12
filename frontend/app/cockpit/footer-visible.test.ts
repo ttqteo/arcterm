@@ -81,7 +81,7 @@ describe("agent canvas mode chips", () => {
             "↑↓ move",
             "d rail",
             "f full",
-            "F11 full",
+            "Mod:Shift:Enter full",
             "c canvas",
             "Alt:c switch view",
             "esc back",
