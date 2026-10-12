@@ -27,6 +27,14 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-12 (Background tasks on the sidebar glyph)**
+
+- [ ] (arcterm) **An agent's sidebar glyph pulses while its background tasks run, and Close waits for them.** Have a
+  Claude agent run something long with `run_in_background` (a `sleep 120`), let its turn end and commit: its ✳ in the
+  sidebar pulses slowly, hovering it lists the task, and neither the row's ✓ Close, the header's Close nor its key
+  shows. Within ~15 s of the command ending the pulse stops and Close appears. `agenttree.tsx` RuntimeGlyph,
+  `donesuggest.ts`.
+
 **2026-10-12 (Outline with many headings)**
 
 - [ ] (arcterm) **A long document's Outline scrolls instead of squeezing.** Open a markdown file with 30+ headings

@@ -423,6 +423,11 @@ export interface BackgroundTask {
     outputFile?: string; // where Claude Code writes the command's output, from its start result or its notification
 }
 
+/** Pure: the tasks of an agent still running, which ending its process would end too. */
+export function runningBackgroundTasks(tasks: BackgroundTask[] | undefined): BackgroundTask[] {
+    return (tasks ?? []).filter((t) => t.status === "running");
+}
+
 // the shell tools that take run_in_background (PowerShell is Claude Code's Windows shell tool)
 const SHELL_TOOLS = new Set(["Bash", "PowerShell"]);
 

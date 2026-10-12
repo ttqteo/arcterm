@@ -60,6 +60,8 @@ import { RuntimeMark } from "./runtimemark";
 import { runtimeMeta } from "./runtimemeta";
 import { splitMenuState } from "./splitmenu";
 import { StatusDot } from "./statusdot";
+import { backgroundTasksByIdAtom } from "./subagentsstore";
+import { runningBackgroundTasks } from "./transcriptprojection";
 import { unreadAgentsAtom } from "./unreadagentsstore";
 import { openLauncher } from "./launcherstore";
 
@@ -316,7 +318,8 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const done = doneSuggestion(
         agent,
         useAtomValue(unreadAgentsAtom).get(agent.id) ?? 0,
-        useAtomValue(model.lineageAtom).runs
+        useAtomValue(model.lineageAtom).runs,
+        runningBackgroundTasks(useAtomValue(backgroundTasksByIdAtom)[agent.id]).length
     );
     const sessionTokens = useAtomValue(liveTokensAtom).get(agent.id);
     const closeLabel = agent.kind === "terminal" ? "Close terminal" : "Close agent";

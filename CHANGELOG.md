@@ -8,6 +8,17 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
+## Unreleased
+
+### Added
+
+- **An agent's glyph in the sidebar pulses while background tasks it started still run** (a build, a dev server), even
+  after its turn has ended; hover it to see which.
+
+### Fixed
+
+- An agent with a background task still running is no longer offered **✓ Close**: closing it would end that task.
+
 ## 0.15.10 — 2026-10-12
 
 ### Added

@@ -149,8 +149,9 @@ import {
 import { subagentExpanded, visibleSubagents, type SubagentState } from "./session-models/sessionviewmodel";
 import { DigitHint } from "./digithint";
 import { StatusDot } from "./statusdot";
-import { focusSubagentAtom, subagentsByIdAtom } from "./subagentsstore";
+import { backgroundTasksByIdAtom, focusSubagentAtom, subagentsByIdAtom } from "./subagentsstore";
 import { useSubagentTracking } from "./subagenttracking";
+import { runningBackgroundTasks, type BackgroundTask } from "./transcriptprojection";
 import { unreadLabel } from "./unreadagents";
 import { unreadAgentsAtom } from "./unreadagentsstore";
 import { showTerminalMenu } from "./terminalsrail";
@@ -623,7 +624,10 @@ function ParentRow({
     // its last turn committed, you have read it and no run it started is still going: the row offers to close it
     // (donesuggest.ts). A sleeping agent offers no Close even when its last turn committed: it is parked, not finished
     const lineageRuns = useAtomValue(model.lineageAtom).runs;
-    const done = !agent.sleeping && doneSuggestion(agent, unreadCount, lineageRuns);
+    // the shell commands it left running in the background (a build, a dev server): its glyph pulses while any runs,
+    // and Close waits for them, since closing the agent would end them
+    const background = runningBackgroundTasks(useAtomValue(backgroundTasksByIdAtom)[agent.id]);
+    const done = !agent.sleeping && doneSuggestion(agent, unreadCount, lineageRuns, background.length);
     // the canvas tag and a worded Close overflow the second line together, so beside the tag Close is its check alone
     const compactClose = useAtomValue(canvasStateAtom(agent.id)) != null;
     // m4: one-shot settle when this agent reaches idle (working/asking -> idle)
@@ -832,7 +836,7 @@ function ParentRow({
                                     className={cn("flex-none", LEAD_MARK_CLASS[mark.tone], mark.pulse && PULSE)}
                                 />
                             ) : (
-                                <RuntimeGlyph runtime={agent.agent} />
+                                <RuntimeGlyph runtime={agent.agent} background={background} />
                             )}
                         </DigitHint>
                         <span
@@ -1264,11 +1268,22 @@ const AGE_COL = "min-w-[24px] flex-none whitespace-nowrap text-right text-[11px]
 // a second line starts under the title, past the runtime glyph and the gap after it
 const UNDER_GLYPH = "pl-[18px]";
 
-// the runtime's glyph at the head of a row, in a slot as wide as the run icon so titles line up
-function RuntimeGlyph({ runtime }: { runtime: string }) {
+// the runtime's glyph at the head of a row, in a slot as wide as the run icon so titles line up. It pulses slowly
+// while background tasks the agent started still run, whatever its own state: the dot on the second line says
+// whether it is in a turn, the glyph whether work goes on under it
+function RuntimeGlyph({ runtime, background = [] }: { runtime: string; background?: BackgroundTask[] }) {
     const rt = runtimeMeta(runtime);
+    const n = background.length;
+    const title =
+        n > 0
+            ? `${rt.label} · ${n} background ${n === 1 ? "task" : "tasks"} running:\n${background.map((t) => t.label).join("\n")}`
+            : rt.label;
     return (
-        <span className={cn("min-w-[12px] flex-none text-center text-[12px]", rt.text)} title={rt.label}>
+        <span
+            data-agent-background={n > 0 ? n : undefined}
+            className={cn("min-w-[12px] flex-none text-center text-[12px]", rt.text, n > 0 && "pulse-dot-slow")}
+            title={title}
+        >
             {rt.glyph}
         </span>
     );
