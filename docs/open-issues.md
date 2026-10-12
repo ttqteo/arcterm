@@ -13,6 +13,8 @@ The rows of that prune were worked as chunks of `effort:c732b933-f976-4263-b191-
 
 Status legend:
 
+- **Waiting on a hand check** — shipped and unit-tested, never tried in the running app; tick it once tried, then
+  delete the line (a finding becomes a row below).
 - **Actionable** — can be picked up as-is.
 - **Blocked** — cannot start until a prerequisite exists.
 - **Held** — deliberately deferred pending a named trigger or evidence; do not build off the spec alone.
@@ -20,11 +22,48 @@ Status legend:
 
 ---
 
+## 0 · Waiting on a hand check
+
+Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
+does not, say what you saw and it becomes a bug row under Actionable.
+
+**2026-10-12 (shortcuts, window, terminal)**
+
+- [ ] (arcterm) **Plain Ctrl in a terminal, Windows.** In a Claude Code terminal: `Ctrl`+`P` opens Search, `Ctrl`+`G`
+  opens the go-to bar, `Ctrl`+`N` the New dialog, `Ctrl`+`M` folds into Sprout. `d80e14b74`
+- [ ] (arcterm) **The three Shift chords, Windows.** In a terminal: `Ctrl`+`Shift`+`W` asks to close the agent,
+  `Ctrl`+`Shift`+`K` clears the screen, `Ctrl`+`Shift`+`J` opens What's waiting; `Ctrl`+`J` there is still the
+  newline, and outside a text field it opens What's waiting. `d80e14b74`
+- [ ] (arcterm) **Mac chords.** `⌘=` / `⌘-` / `⌘0` zoom (not Control any more); `⌘⇧Enter` toggles terminal
+  fullscreen from inside the terminal; `⌘K` clears the terminal. `cc7a43629`
+- [ ] (arcterm) **The `?` button**, both machines: at the bottom bar's right end on every surface, also while typing in a
+  terminal; it opens the cheat sheet. The What's waiting row there reads "… or ctrl+j outside a text field" on
+  Windows. `cc7a43629`, `d80e14b74`
+- [ ] (arcterm) **VS Code keys.** `Mod`+`,` opens Settings; on Code, `Mod`+`Shift`+`E` focuses the file tree.
+  `cc7a43629`
+- [ ] (arcterm) **Auto fold, Windows** (Settings → General → Window → Fold when you leave, on): a maximized or full-screen
+  app on arcterm's screen folds it after ~1 s; a small window, a half-screen snap, the Start menu or a window on the
+  other screen leaves it be. `d80e14b74`
+- [ ] (arcterm) **Auto fold, Mac — compile first.** `foreground.rs`'s macOS branch (`NSWindow.occlusionState`) was
+  never compiled: build on the Mac, then the same check as Windows (a full-screen app folds it, a window beside it
+  does not). `d80e14b74`
+- [ ] (arcterm) **Canvas board picker.** With more boards than fit the tab row, open the picker: the board before the
+  shown one wears `[`, the one after it `]`. `d80e14b74`
+- [ ] (arcterm) **Double-click a sidebar row** (a run's lead row too): it selects the agent and typing goes into its
+  terminal; it no longer folds the workers (the `N workers` chip does). `d80e14b74`
+- [ ] (arcterm) **Ctrl+C copies, Windows.** In a terminal, select text and press `Ctrl`+`C`: it is copied and the
+  selection clears, nothing is interrupted; press it again with nothing selected and it interrupts. After a restart
+  of `task dev` (the default lives in wavesrv), highlighting no longer copies unless Copy on select is on.
+  `6bb81dd0b`
+
+---
+
 ## 1 · Actionable
 
 | Item | Kind | Effort | Source / notes |
 |---|---|---|---|
-| (arcterm) A plan run fails at submit, and the run cancels itself, when the plan or spec file in the checkout differs from its committed copy only in line endings (CRLF in the working copy, LF in git): `SnapshotDocs` sees the copy as changed in `git status --porcelain`, `git add` normalises it back to the committed blob, and `git commit` exits 1 on "nothing to commit" (`committing the spec and plan to wave/<run>: … nothing to commit, working tree clean`). Seen 2026-10-12 on run 33711a7e after the plan was edited by a Windows tool that writes CRLF; `sed -i 's/$//'` on the file and a restart worked. Fix: after `git add`, return when `git diff --cached --quiet -- <paths>` reports nothing staged, and add a test with a CRLF copy of a committed LF doc | bug | S | `pkg/orchestrate/snapshot.go` `SnapshotDocs`; `pkg/wshrpc/wshserver/wshserver_dag.go:360` |
+| (arcterm) A plan run fails at submit, and the run cancels itself, when the plan or spec file in the checkout differs from its committed copy only in line endings (CRLF in the working copy, LF in git): `SnapshotDocs` sees the copy as changed in `git status --porcelain`, `git add` normalises it back to the committed blob, and `git commit` exits 1 on "nothing to commit" (`committing the spec and plan to wave/<run>: … nothing to commit, working tree clean`). Seen 2026-10-12 on run 33711a7e after the plan was edited by a Windows tool that writes CRLF; `sed -i 's/
+$//'` on the file and a restart worked. Fix: after `git add`, return when `git diff --cached --quiet -- <paths>` reports nothing staged, and add a test with a CRLF copy of a committed LF doc | bug | S | `pkg/orchestrate/snapshot.go` `SnapshotDocs`; `pkg/wshrpc/wshserver/wshserver_dag.go:360` |
 | (arcterm) Token burn guard part (1) shipped (a Token burn card before a costly `Agent`/`Task`/`Workflow` spawn). Left: nothing warns while a session burns its 5h window through cache reads (a docs session went ~20M → ~220M tokens in an hour): a burn-rate toast, cache reads shown apart in Consumers, a whole-run cost estimate at plan submit, exempting engine runs | feature | M | `docs/deferred.md` "Token burn guard"; complements `docs/superpowers/specs/2026-10-07-quota-guard-design.md` |
 | (arcterm) The Claude sign-in dialog's `TokenScanner` is tested only on synthetic output: the `settings-claude-account` scenario runs a node stand-in through the dev override `arc:dev:setuptoken-cmd`, never the real command. Record a real `claude setup-token` run's pty output (the token redacted to a fixture of the same shape, line breaks and escape sequences kept) and add it as a `setuptokenscan.test.ts` case | verification gap | S | `frontend/app/view/agents/setuptokenscan.ts`, `frontend/app/cockpit/claude-signin-modal.tsx`; plan review of `docs/superpowers/plans/2026-10-07-claude-account-switch.md` (2026-10-07) |
 | (arcterm) A Claude Code background session whose terminal has exited (and no `claude attach` tab) shows nowhere: its reports are dropped (`statusTarget`) until a tab attaches. The terminal that sent it to the background is found by its command line (`--resume <id>`) or, when that names no session (a bare `claude`, `--continue`, a picked `--resume`), by the session its block last reported (`agentobserve.DisplayBlock`, 2026-10-10); that path is unit-tested only, never exercised on a live background session. Check: send a bare `claude` session to the background, and its tab keeps its status and subagents | verification gap | S | `waveapp.log` 2026-10-06 16:40:02–16:40:20; `claude agents --json` lists the session `kind: background`; Close already stops it by the `--resume` id (`ce797bee`) |
