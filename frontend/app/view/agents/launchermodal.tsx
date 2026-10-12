@@ -25,6 +25,7 @@ import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Check, House, Network, Search, SquareTerminal, X, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { channelsAtom, primeChannels } from "./channelsstore";
 import { harnessesAtom, harnessPreferenceAtom, resolveDefaultRuntime } from "./harnessstore";
@@ -119,6 +120,7 @@ import {
 } from "./runconfigstore";
 import { agentProject } from "./runlineage";
 import { RuntimeMark } from "./runtimemark";
+import { sessionKey } from "./sessionsruns";
 import { newAgentRamWarning } from "./workercapacity";
 import { useWorkerCapacity } from "./workercapacitystore";
 
@@ -477,6 +479,12 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         globalStore.set(model.newProjectOpenAtom, true);
     };
 
+    // the session read back on the Agent surface, where its own Resume button is one click away
+    const viewTranscript = (s: SessionInfo) => {
+        close();
+        showSession(model, sessionKey(s));
+    };
+
     const launchAgentRow = async (p: ProjectRow) => {
         let branch: string | undefined;
         if (wantsWorktree) {
@@ -640,6 +648,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 filter,
                 flagMenuOpen: flagMenuShown,
                 branchListOpen: branchListShown,
+                resumePicked: resume != null,
             },
             { key: e.key, shift: e.shiftKey, mod }
         );
@@ -674,6 +683,11 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 return;
             case "launch":
                 launch();
+                return;
+            case "view-transcript":
+                if (resume != null) {
+                    viewTranscript(resume);
+                }
                 return;
             case "dismiss-inner":
                 // the inner thing takes this Escape; ModalShell's would close the dialog
@@ -947,6 +961,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                 ramWarning={ramWarning}
                                 resumeChoices={choices}
                                 resume={resume}
+                                onViewTranscript={viewTranscript}
                                 home={atHome}
                             />
                         )}

@@ -189,6 +189,8 @@ interface AgentFieldsProps {
     // the picked agent's recent sessions in the picked project, and the one picked to resume (null: a new session)
     resumeChoices: SessionInfo[];
     resume: SessionInfo | null;
+    // reads a session back instead of resuming it
+    onViewTranscript: (s: SessionInfo) => void;
     // started in Home, the home folder outside any project: no worktree, and Claude Code runs ask-only
     home: boolean;
 }
@@ -200,6 +202,7 @@ export function AgentFields({
     ramWarning,
     resumeChoices,
     resume,
+    onViewTranscript,
     home,
 }: AgentFieldsProps) {
     const task = useAtomValue(launcherTaskAtom);
@@ -242,7 +245,13 @@ export function AgentFields({
         <>
             {runtimeShowsTask(runtime) ? (
                 <div className={cn(withResume && "grid grid-cols-2 gap-4")}>
-                    {withResume ? <ResumeList choices={resumeChoices} pickedId={resume?.id ?? null} /> : null}
+                    {withResume ? (
+                        <ResumeList
+                            choices={resumeChoices}
+                            pickedId={resume?.id ?? null}
+                            onViewTranscript={onViewTranscript}
+                        />
+                    ) : null}
                     <div className="flex min-w-0 flex-col gap-2">
                         <div className="flex items-baseline gap-2">
                             <label htmlFor="launcher-task" className={LAUNCHER_LABEL}>

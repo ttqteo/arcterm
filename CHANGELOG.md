@@ -12,6 +12,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- **Read a past session without resuming it**: in the New dialog's Resume list, **Transcript** on a session (or
+  Shift+Enter) opens its transcript on the Agent surface instead of starting the agent again.
 - **A `?` button on the bottom bar** opens the keyboard shortcuts on every surface, also while you type in a
   terminal, where the `?` key itself is text.
 - **⌘⇧Enter toggles terminal fullscreen** (Ctrl+Shift+Enter on Windows), from inside the terminal too: the same
