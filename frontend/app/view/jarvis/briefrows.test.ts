@@ -15,6 +15,9 @@ import {
     runRowFace,
     sessionLine,
     sessionWindow,
+    SHIPPED_EMPTY,
+    SHIPPED_LABEL,
+    sinceEmptyLine,
     sinceLabel,
     splitIdeas,
     type BriefLine,
@@ -384,7 +387,8 @@ describe("behindGroups", () => {
             NOW
         );
         expect(groups).toHaveLength(1);
-        expect(groups[0].label).toBe("Shipped · 7 days");
+        // the Brief tells this group from the delta groups by this label, so the test names the constant
+        expect(groups[0].label).toBe(SHIPPED_LABEL);
         expect(groups[0].lines[0]).toMatchObject({
             id: "behind:shipped:run:r2",
             kind: "Shipped",
@@ -624,5 +628,18 @@ describe("lineOpenTarget", () => {
         expect(lineOpenTarget(null)).toBeNull();
         expect(lineOpenTarget({ oref: "" })).toBeNull();
         expect(lineOpenTarget({ oref: "nonsense:x" })).toBeNull();
+    });
+});
+
+describe("sinceEmptyLine", () => {
+    it("never says 'since you last looked' on a first visit, where there was no last look", () => {
+        expect(sinceEmptyLine(true)).toBe("Runs that land show up here.");
+        expect(sinceEmptyLine(false)).toBe("Nothing new since you last looked.");
+    });
+});
+
+describe("SHIPPED_EMPTY", () => {
+    it("says the window it looked at", () => {
+        expect(SHIPPED_EMPTY).toBe("Nothing shipped in the last seven days.");
     });
 });

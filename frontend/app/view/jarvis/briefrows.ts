@@ -62,7 +62,14 @@ export type BriefLine = {
 
 export type LineGroup = { label: string; lines: BriefLine[] };
 
-export const SHIPPED_LABEL = "Shipped · 7 days";
+// the side column's head shows the seven-day window as its meta, so the label is the bare word
+export const SHIPPED_LABEL = "Shipped";
+export const SHIPPED_EMPTY = "Nothing shipped in the last seven days.";
+
+// A first visit has no last look to be "since", so it says what will show up instead.
+export function sinceEmptyLine(firstVisit: boolean): string {
+    return firstVisit ? "Runs that land show up here." : "Nothing new since you last looked.";
+}
 
 // What Space peeks on a row: the target its click opens, or null when it has none or names an address
 // the router cannot open (a click on that row still says why).
@@ -448,7 +455,7 @@ export function behindGroups(groups: DeltaGroup[], shipped: ShippedRow[], now: n
     });
     if (shipped.length > 0) {
         out.push({
-            label: "Shipped · 7 days",
+            label: SHIPPED_LABEL,
             lines: shipped.map((s) => ({
                 id: "behind:shipped:" + s.oref,
                 kind: "Shipped",

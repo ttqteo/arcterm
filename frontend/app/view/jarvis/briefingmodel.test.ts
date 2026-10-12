@@ -19,6 +19,7 @@ import {
     queueOpenTarget,
     SHIPPED_CAP,
     summarizeAttentionQueue,
+    WAITING_CAP,
     type AgentRow,
     type BlockerRow,
     type BriefingModelInput,
@@ -722,6 +723,15 @@ describe("capRegion", () => {
     // the count has to come off the slice, not off the cap: a region shorter than its window hid nothing
     it("reports no overflow for a region that never reached its cap", () => {
         expect(capRegion(rows, 9, false)).toEqual({ rows, more: 0 });
+    });
+});
+
+describe("the Waiting window", () => {
+    it("shows the first three items and folds the rest", () => {
+        const q = ["a", "b", "c", "d", "e"];
+        expect(WAITING_CAP).toBe(3);
+        expect(capRegion(q, WAITING_CAP, false)).toEqual({ rows: ["a", "b", "c"], more: 2 });
+        expect(capRegion(q, WAITING_CAP, true)).toEqual({ rows: q, more: 0 });
     });
 });
 
