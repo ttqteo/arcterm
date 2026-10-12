@@ -63,9 +63,7 @@ import { terminalFullscreenAtom } from "./railstore";
 import { serialQueue } from "./serialqueue";
 import {
     AUTO_FOLD_DELAY_MS,
-    AUTO_RESTORE_SETTLE_MS,
     autoFoldOnLeave,
-    autoRestoreOnReturn,
     autoSproutOn,
     FOLD_DEPART_LEAD_MS,
     FOLD_MS,
@@ -110,10 +108,6 @@ export const miniResizingAtom = atom(false) as PrimitiveAtom<boolean>;
 
 // the origin, frame and pin to give back; session, so a reload mid-fold can still give them back
 const MINI_RESTORE_KEY = "arc.float.miniRestore";
-
-// the fold leaving made (window:autosprout), which a return to the app grows back; a button's fold and every way out of
-// the fold clear it
-let autoFolded = false;
 
 function readJson(storage: () => Storage, key: string): unknown {
     try {
@@ -490,7 +484,6 @@ export function foldToSprout(): Promise<void> {
         }
         const origin = now.size;
         const win = getCurrentWindow();
-        autoFolded = false;
         try {
             const fullscreen = await win.isFullscreen();
             await leaveNativeFullscreen(win);
@@ -582,7 +575,6 @@ interface Unfold {
 async function leaveMini(win: Window): Promise<Unfold> {
     const was = sprout;
     sprout = null;
-    autoFolded = false;
     stopClickThrough();
     // Sprout must not show in a corner of the grown window
     globalStore.set(miniResizingAtom, true);
@@ -781,21 +773,12 @@ async function recoverFold(win: Window, restore: MiniRestore): Promise<void> {
     }
 }
 
-// window:autosprout, like a picture-in-picture: Full folds into Sprout once you have been in another app for
-// AUTO_FOLD_DELAY_MS, and a fold made so grows back when you return to arcterm (Alt+Tab, the taskbar, the Dock). A focus
-// counts as a return only once the folded window has been seen out of focus, so a fold that takes the focus itself
-// never undoes itself, and only when it came without a press on Sprout (windowsize.ts autoRestoreOnReturn).
-function setupAutoSprout(model: AgentsViewModel): () => void {
+// window:autosprout: Full folds into Sprout once you have been in another app for AUTO_FOLD_DELAY_MS. A return to
+// arcterm (Alt+Tab, the taskbar) only focuses Sprout; it grows back the way a button's fold does, from Sprout itself.
+function setupAutoSprout(): () => void {
     const win = getCurrentWindow();
     const setting = getSettingsKeyAtom("window:autosprout");
     let leaveTimer: ReturnType<typeof setTimeout> | undefined;
-    let returnTimer: ReturnType<typeof setTimeout> | undefined;
-    let armed = false;
-    let lastPress: number | null = null;
-    const onPress = () => {
-        lastPress = Date.now();
-    };
-    window.addEventListener("pointerdown", onPress, true);
     const leave = async () => {
         const [ours, minimized, visible, focused] = await Promise.all([
             invoke<boolean>("app_has_foreground").catch(() => false),
@@ -808,42 +791,18 @@ function setupAutoSprout(model: AgentsViewModel): () => void {
             return;
         }
         await foldToSprout();
-        if (globalStore.get(floatMiniAtom)) {
-            autoFolded = true;
-            armed = !(await win.isFocused());
-        }
-    };
-    const comeBack = (at: number) => {
-        const pressGapMs = lastPress == null ? null : lastPress - at;
-        const chatOpen = globalStore.get(petPeekOpenAtom);
-        if (autoRestoreOnReturn({ autoFolded, size: currentSize().size, pressGapMs, chatOpen })) {
-            void restoreFromSprout(model);
-        }
     };
     const unlistenFocus = win.onFocusChanged(({ payload: focused }) => {
         clearTimeout(leaveTimer);
-        clearTimeout(returnTimer);
-        if (!focused) {
-            armed = autoFolded;
-            if (autoSproutOn(globalStore.get(setting)) && currentSize().size === "full") {
-                leaveTimer = setTimeout(
-                    () => void leave().catch((e) => console.error("folding on leaving failed", e)),
-                    AUTO_FOLD_DELAY_MS
-                );
-            }
-            return;
+        if (!focused && autoSproutOn(globalStore.get(setting)) && currentSize().size === "full") {
+            leaveTimer = setTimeout(
+                () => void leave().catch((e) => console.error("folding on leaving failed", e)),
+                AUTO_FOLD_DELAY_MS
+            );
         }
-        if (!armed) {
-            return;
-        }
-        armed = false;
-        const at = Date.now();
-        returnTimer = setTimeout(() => comeBack(at), AUTO_RESTORE_SETTLE_MS);
     });
     return () => {
         clearTimeout(leaveTimer);
-        clearTimeout(returnTimer);
-        window.removeEventListener("pointerdown", onPress, true);
         void unlistenFocus.then((f) => f());
     };
 }
@@ -897,7 +856,7 @@ export function setupFloatMode(model: AgentsViewModel): () => void {
     syncRedirect();
     const unsubMinimize = globalStore.sub(minimizeSetting, syncRedirect);
     const unlistenMinimize = listen(MINIMIZE_EVENT, minimizeRequested);
-    const stopAutoSprout = setupAutoSprout(model);
+    const stopAutoSprout = setupAutoSprout();
     // the Dock icon brings a folded window back: Sprout may be on another Space, or lost from sight
     const unlistenReopen = listen(REOPEN_EVENT, () => {
         if (onReopen(currentSize()) === "restore") {

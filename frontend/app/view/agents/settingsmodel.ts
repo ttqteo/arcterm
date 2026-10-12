@@ -169,7 +169,7 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                         {
                             id: "window.autosprout",
                             title: "Fold when you leave",
-                            desc: "Like a picture-in-picture: once you switch to another app, the full window folds into Sprout, and it grows back when you return to arcterm. Off keeps the cockpit as it is, say on a second screen. Right-click the Sprout button to switch it.",
+                            desc: "Once you switch to another app, the full window folds into Sprout. Coming back to arcterm (Alt+Tab, the taskbar) focuses Sprout; double-click it or pick Restore to grow it back. Off keeps the cockpit as it is, say on a second screen. Right-click the Sprout button to switch it.",
                             key: "window:autosprout",
                             scope: "synced",
                             config: true,

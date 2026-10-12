@@ -61,7 +61,7 @@ export function showFoldMenu(e: React.MouseEvent): void {
                 label: "Fold when you leave arcterm",
                 type: "checkbox",
                 checked: on,
-                sublabel: "Grows back when you return",
+                sublabel: "Coming back focuses Sprout",
                 click: () => writeConfig({ "window:autosprout": !on }),
             },
         ],

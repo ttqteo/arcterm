@@ -358,8 +358,9 @@ Một con vật pixel nhỏ đi dọc mép trên của footer trên mọi surfac
   chờ và ô **Ask Jarvis**), `Esc` để thu lại; điều nó nói và câu trả lời đến lúc chat đang thu hiện thành bong bóng
   cạnh nó. Không thấy con vật đâu (đang ở Space khác chẳng hạn) thì bấm icon arcterm trên Dock để cửa sổ quay về (macOS).
   Muốn nút minimize về Dock (taskbar trên Windows) như thường: **Settings → General → Window → Minimize**.
-  Muốn cửa sổ tự thu vào Sprout khi bạn chuyển sang app khác và tự phóng to khi quay lại, như picture-in-picture: chuột
-  phải nút **Sprout** trên app bar → **Fold when you leave arcterm**, hoặc **Settings → General → Window**.
+  Muốn cửa sổ tự thu vào Sprout khi bạn chuyển sang app khác: chuột phải nút **Sprout** trên app bar → **Fold when you
+  leave arcterm**, hoặc **Settings → General → Window**. Quay lại arcterm (Alt+Tab, taskbar) chỉ focus con vật; bấm đúp
+  hay **Restore** để phóng to.
 - Popup cũng là nơi **peek** hiển thị: `Space` trên một thẻ/hàng, hoặc giữ `Ctrl` rồi bấm một liên kết (`Cmd`+bấm trên macOS), mở run, agent, record hay initiative trong popup mà không đổi lựa chọn ở surface bên dưới. `Backspace` về màn đầu của popup, `Enter` mở mục đó đúng chỗ của nó.
 - Đổi nhân vật (Sprout hoặc Minion một mắt) và trang phục (áo cờ, cầm cờ hoặc tắt) ở **Settings → Appearance**.
 

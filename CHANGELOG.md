@@ -20,9 +20,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
   terminal, where the `?` key itself is text.
 - **⌘⇧Enter toggles terminal fullscreen** (Ctrl+Shift+Enter on Windows), from inside the terminal too: the same
   chord on both platforms, since a Mac keyboard has no F11 of its own. F11 still works.
-- **Fold when you leave**, like a picture-in-picture: switch to another app and the full window folds into Sprout
-  after a moment; come back to arcterm and it grows back. Off by default; right-click the Sprout button in the app bar
-  to switch it, or Settings → General → Window. Your own dialogs (a file picker) and a press on Sprout leave it be.
+- **Fold when you leave**: switch to another app and the full window folds into Sprout after a moment; coming back to
+  arcterm (Alt+Tab, the taskbar) focuses Sprout, and a double-click or Restore grows it back. Off by default;
+  right-click the Sprout button in the app bar to switch it, or Settings → General → Window. Your own dialogs (a file
+  picker) leave it be.
 - **⌘J opens Jarvis's What's waiting popup** in one chord, from any surface and from inside a terminal (Ctrl+Shift+J on
   Windows, or plain Ctrl+J outside a terminal or field, where it is not the newline). Hold ⌘ on its own and the
   creature shows a J.
