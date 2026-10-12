@@ -35,6 +35,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - **On macOS the folded Sprout follows you to every Space**, beside a full-screen app too, instead of staying on the
   Desktop you folded it on.
 - The launcher's **Transcript** button on a picked session spells out its key, **Shift+Enter**, in place of ⇧⏎.
+- In the launcher, **Task is wider than Resume** (6 to 4) when there are sessions to resume, so a long task has more
+  room to type in.
 - **Usage → Analyze now sees oversized tool results**: whole-file reads and long command output (over 20k characters)
   are counted per tool and per tab, and its advice names concrete fixes such as reading a file by range, making a
   command print only failures, or compacting before you step away.
