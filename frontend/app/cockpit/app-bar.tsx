@@ -81,6 +81,8 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
     return (
         <div
             data-app-bar
+            // the underside Spider-Man crawls along and hangs from (petledge.ts measureCeiling)
+            data-pet-ceiling
             data-tauri-drag-region
             className={clsx(
                 "flex h-[38px] shrink-0 select-none items-center gap-4 border-b border-border bg-surface",

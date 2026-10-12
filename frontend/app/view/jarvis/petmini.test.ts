@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { miniLook, nextUnread, type MiniLookInput } from "./petmini";
+import { miniLook, nextUnread, spideyFoldLook, type MiniLookInput } from "./petmini";
 import type { PetErrand } from "./petstore";
 
 const errand = (status: PetErrand["status"]): PetErrand => ({
@@ -109,5 +109,42 @@ describe("nextUnread", () => {
     it("keeps what it had otherwise", () => {
         expect(nextUnread(errand("done"), errand("done"), false, true)).toBe(true);
         expect(nextUnread(null, errand("streaming"), false, false)).toBe(false);
+    });
+});
+
+describe("spideyFoldLook", () => {
+    const look = miniLook({
+        posture: "none",
+        waiting: 0,
+        working: 0,
+        errand: null,
+        unread: false,
+        chatOpen: false,
+        frame: 0,
+    });
+
+    it("lights a window per working agent, four at most", () => {
+        expect(spideyFoldLook({ ...look, working: null }, 0).lit).toBe(0);
+        expect(spideyFoldLook({ ...look, working: 3 }, 0).lit).toBe(3);
+        expect(spideyFoldLook({ ...look, working: 9 }, 0).lit).toBe(4);
+    });
+
+    it("feels it, spider-sense, when something waits: a posture or the waiting chip", () => {
+        expect(spideyFoldLook(look, 0).sense).toBe(false);
+        expect(spideyFoldLook({ ...look, chip: 2 }, 0).sense).toBe(true);
+        expect(spideyFoldLook({ ...look, marks: ["escalation"] }, 0).sense).toBe(true);
+        expect(spideyFoldLook({ ...look, marks: ["unread"] }, 0).sense).toBe(false);
+    });
+
+    it("swings his legs on the bob's second frame, and holds still while sensing", () => {
+        expect(spideyFoldLook(look, 0).swing).toBe(false);
+        expect(spideyFoldLook(look, 1).swing).toBe(true);
+        expect(spideyFoldLook({ ...look, chip: 1 }, 1).swing).toBe(false);
+    });
+
+    it("keeps the unread mark, and shows thinking while Jarvis types", () => {
+        expect(spideyFoldLook({ ...look, marks: ["unread"] }, 0).unread).toBe(true);
+        expect(spideyFoldLook({ ...look, pose: "work1" }, 0).thinking).toBe(true);
+        expect(spideyFoldLook(look, 0).thinking).toBe(false);
     });
 });

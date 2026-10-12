@@ -3,10 +3,11 @@
 //
 // The pet's teleport drawn (petteleport.ts): the ring, the beam, the pet scaled from its feet under its light, and the
 // sparks, as svg layers in place of the pet's cells, so the walking pet (petview.tsx) and the folded one
-// (sprout-mini.tsx) draw it alike. Its own frame clock runs while it plays, so only these layers redraw.
+// (sprout-mini.tsx) draw it alike. Its own frame clock runs while it plays, so only these layers redraw. Spider-Man's
+// is a web-swing instead (petwebswing.ts), drawn by WebSwingLayers.
 
 import { useEffect, useState } from "react";
-import { PET_GRID, type PetCell, type spriteFor } from "./petsprite";
+import { PET_GRID, SPIDEY_SWING, spriteOfRows, type PetCell, type PetCharacter, type PetSprite } from "./petsprite";
 import {
     BEAM_CELLS,
     DISC_CELLS,
@@ -16,9 +17,15 @@ import {
     teleportFrame,
     type TeleportCell,
 } from "./petteleport";
+import { WEB_TOKEN, webSwingFrame } from "./petwebswing";
 import type { TeleportRun } from "./teleportstore";
 
-type Sprite = ReturnType<typeof spriteFor>;
+// at: a fixed ms into the run in place of its clock — the DEV contract's force({ swing }) (petview.tsx), so a CDP step
+// can show the swing mid-fold
+type LayerProps = { run: TeleportRun; sprite: PetSprite; cellPx: number; flip?: boolean; at?: number };
+
+// the swing's body, the same whatever the pose he left or will land in
+const SWING_BODY = spriteOfRows(SPIDEY_SWING, []).body;
 
 function useTeleportClock(run: TeleportRun): number {
     const [clock, setClock] = useState(() => ({ run, t: performance.now() - run.at }));
@@ -47,17 +54,7 @@ function about(x: number, y: number, sx: number, sy: number): string {
     return `translate(${x} ${y}) scale(${sx} ${sy}) translate(${-x} ${-y})`;
 }
 
-export function PetTeleportLayers({
-    run,
-    sprite,
-    cellPx,
-    flip = false,
-}: {
-    run: TeleportRun;
-    sprite: Sprite;
-    cellPx: number;
-    flip?: boolean;
-}) {
+function BeamLayers({ run, sprite, cellPx, flip = false }: LayerProps) {
     const t = useTeleportClock(run);
     if (run.kind === "gone") {
         return null;
@@ -120,8 +117,54 @@ export function PetTeleportLayers({
     );
 }
 
+// Spider-Man's teleport (petwebswing.ts): the strand, and the swing's body moved along it
+function WebSwingLayers({ run, cellPx, flip, at }: LayerProps) {
+    const clock = useTeleportClock(run);
+    const t = at ?? clock;
+    if (run.kind === "gone") {
+        return null;
+    }
+    const f = webSwingFrame(run.kind, t);
+    const px = PET_GRID * cellPx;
+    const cell = (c: PetCell, i: number) => (
+        <rect key={i} x={c.x * cellPx} y={c.y * cellPx} width={cellPx} height={cellPx} fill={`var(${c.token})`} />
+    );
+    return (
+        <>
+            {f.strand.map((c, i) => (
+                <rect
+                    key={`web${i}`}
+                    x={c.x * cellPx}
+                    y={c.y * cellPx}
+                    width={cellPx}
+                    height={cellPx}
+                    fill={`var(${WEB_TOKEN})`}
+                />
+            ))}
+            <g opacity={f.pet.opacity} transform={`translate(${f.pet.dx * cellPx} ${f.pet.dy * cellPx})`}>
+                <g transform={flip ? `matrix(-1 0 0 1 ${px} 0)` : undefined}>{SWING_BODY.map(cell)}</g>
+            </g>
+        </>
+    );
+}
+
+// character is optional, Sprout's beam by default, so a caller that does not pass it still draws what it always did
+export function PetTeleportLayers({ character = "sprout", ...props }: LayerProps & { character?: PetCharacter }) {
+    return character === "spidey" ? <WebSwingLayers {...props} /> : <BeamLayers {...props} />;
+}
+
 /** The folded pet's svg while it teleports, in SproutSvg's place: the ring and the sparks draw past its box. */
-export function PetTeleportSvg({ run, sprite, cellPx }: { run: TeleportRun; sprite: Sprite; cellPx: number }) {
+export function PetTeleportSvg({
+    run,
+    sprite,
+    cellPx,
+    character = "sprout",
+}: {
+    run: TeleportRun;
+    sprite: PetSprite;
+    cellPx: number;
+    character?: PetCharacter;
+}) {
     const px = PET_GRID * cellPx;
     return (
         <svg
@@ -133,7 +176,7 @@ export function PetTeleportSvg({ run, sprite, cellPx }: { run: TeleportRun; spri
             aria-hidden
             className="block"
         >
-            <PetTeleportLayers run={run} sprite={sprite} cellPx={cellPx} />
+            <PetTeleportLayers run={run} sprite={sprite} cellPx={cellPx} character={character} />
         </svg>
     );
 }

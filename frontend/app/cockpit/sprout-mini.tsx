@@ -6,7 +6,8 @@
 // miniSides), bobs, wears what waits on you (petmini.ts), and is dragged by a press that moves. Hovered, it lists the
 // agents (a click floats on one) and Restore; a click opens the Jarvis chat (the pet peek); a double-click restores the
 // size it was folded from. What Sprout says (petBubbleAtom), and a reply that landed while the chat was folded, show in
-// a bubble beside it.
+// a bubble beside it. Spider-Man folds into a rooftop scene instead (petmini.ts spideyFoldLook): windows lit for the
+// agents working, spider-sense for what waits.
 // Every element the cursor may use carries data-mini-hit, or the click-through poll lets clicks fall through it. Nothing
 // here carries a title or a drop shadow, and Sprout has no ground shadow: over a light app behind the see-through
 // window, they read as dark smears. A border keeps each one apart from what is behind it.
@@ -29,11 +30,18 @@ import { StatusDot } from "@/app/view/agents/statusdot";
 import { closePeek, openPetPeek } from "@/app/view/jarvis/peekstore";
 import { PetBubble } from "@/app/view/jarvis/petbubble";
 import { petCharacter } from "@/app/view/jarvis/petcharacter";
-import { postureFor } from "@/app/view/jarvis/petcondition";
-import { miniLook, nextUnread } from "@/app/view/jarvis/petmini";
+import { postureFor, type PetPosture } from "@/app/view/jarvis/petcondition";
+import { miniLook, nextUnread, spideyFoldLook, type SpideyFoldLook } from "@/app/view/jarvis/petmini";
 import { petOutfit, petOutfitChoice } from "@/app/view/jarvis/petoutfit";
 import { PetPeek } from "@/app/view/jarvis/petpeek";
-import { PET_CELL_PX, spriteFor } from "@/app/view/jarvis/petsprite";
+import {
+    PET_CELL_PX,
+    SPIDEY_SENSE,
+    spideyFold,
+    spriteFor,
+    spriteOfRows,
+    type PetCell,
+} from "@/app/view/jarvis/petsprite";
 import {
     petBubbleAtom,
     petCharacterAtom,
@@ -62,6 +70,41 @@ const MINI_TILE = false;
 
 // a reply that landed while the chat was folded (petmini.ts nextUnread)
 const miniUnreadAtom = atom(false) as PrimitiveAtom<boolean>;
+
+// the DEV contract's override: replaces those fold-look inputs until force(null), so a CDP step can light windows and
+// raise spider-sense without arranging working agents or an attention item
+type MiniForce = { working?: number | null; waiting?: number; posture?: PetPosture; thinking?: boolean };
+
+// Spider-Man folded: the rooftop scene, 20x20 cells, in the same box as Sprout's 16x16
+function SpideyRoof({ f }: { f: SpideyFoldLook }) {
+    const px = 20 * PET_CELL_PX;
+    const cells = spriteOfRows(spideyFold(f.lit, f.swing), f.unread ? ["unread"] : []);
+    const cell = (c: PetCell, i: number) => (
+        <rect
+            key={i}
+            x={c.x * PET_CELL_PX}
+            y={c.y * PET_CELL_PX}
+            width={PET_CELL_PX}
+            height={PET_CELL_PX}
+            fill={`var(${c.token})`}
+        />
+    );
+    return (
+        <svg
+            data-spidey-roof
+            width={px}
+            height={px}
+            viewBox={`0 0 ${px} ${px}`}
+            shapeRendering="crispEdges"
+            aria-hidden
+            className="block"
+        >
+            {cells.body.map(cell)}
+            {cells.overlay.map(cell)}
+            {f.sense ? SPIDEY_SENSE.map(({ x, y }, i) => cell({ x, y, token: "--color-asking" }, 1000 + i)) : null}
+        </svg>
+    );
+}
 
 function useBobFrame(): 0 | 1 {
     const [frame, setFrame] = useState<0 | 1>(0);
@@ -109,12 +152,28 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
     const outfitChoice = useAtomValue(petOutfitChoiceAtom);
     const character = petCharacter(useAtomValue(petCharacterAtom));
     const frame = useBobFrame();
-    const waiting = useWaitingCount(model);
-    const working = useMemo(() => workingCount(agents), [agents]);
-    const look = miniLook({ posture: postureFor(signals), waiting, working, errand, unread, chatOpen, frame });
+    const liveWaiting = useWaitingCount(model);
+    const liveWorking = useMemo(() => workingCount(agents), [agents]);
+    const [forced, setForced] = useState<MiniForce | null>(null);
+    const look = miniLook({
+        posture: forced?.posture ?? postureFor(signals),
+        waiting: forced?.waiting ?? liveWaiting,
+        working: forced?.working !== undefined ? (forced.working ?? 0) : liveWorking,
+        errand,
+        unread,
+        chatOpen,
+        frame,
+    });
     const sprite = spriteFor(look.pose, look.marks, petOutfit(petOutfitChoice(outfitChoice), new Date()), character);
+    // Spider-Man's rooftop: what it draws (lit windows, spider-sense, swinging legs, the unread mark) and the working web
+    const spidey = character === "spidey";
+    const roofLook = spideyFoldLook(look, frame);
+    const roof: SpideyFoldLook | null = spidey
+        ? { ...roofLook, thinking: forced?.thinking ?? roofLook.thinking }
+        : null;
     // the fold lands it in the corner with a teleport, and a restore takes it away with one (floatstore.ts)
     const teleport = useAtomValue(petTeleportAtom).mini;
+    const roofed = roof != null && teleport == null;
     const lineage = useAtomValue(model.lineageAtom);
     const list = useMemo(
         () => foldedList(agents, terminals, focusId ?? null, lineage),
@@ -149,6 +208,28 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
             clearTimeout(clickTimer.current);
         };
     }, []);
+
+    // Dev-only: the CDP harness reads the rooftop's look and forces its inputs through this, like petview.tsx's
+    // __jarvisPet. Folded out of production builds — import.meta.env.DEV is statically false there.
+    useEffect(() => {
+        if (!import.meta.env.DEV) {
+            return;
+        }
+        (window as unknown as { __jarvisMini?: unknown }).__jarvisMini = {
+            character,
+            chip: look.chip,
+            roof,
+            force: setForced,
+        };
+    });
+    useEffect(
+        () => () => {
+            if (import.meta.env.DEV) {
+                delete (window as unknown as { __jarvisMini?: unknown }).__jarvisMini;
+            }
+        },
+        []
+    );
 
     const onPointerDown = (e: ReactPointerEvent) => {
         if (e.button !== 0) {
@@ -210,24 +291,37 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
                     onClick={onClick}
                     onDoubleClick={() => restore()}
                     className={cn(
-                        "absolute left-2 top-2 cursor-pointer rounded-[10px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                        "absolute cursor-pointer rounded-[10px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                        // the rooftop's 60px sits centred in the 64px box; Sprout's 48px, 8px in
+                        roofed ? "left-0.5 top-0.5" : "left-2 top-2",
                         chatOpen && "bg-accentbg",
-                        look.bob && "-translate-y-1"
+                        // his legs swing on the bob's beat instead
+                        look.bob && !spidey && "-translate-y-1"
                     )}
                 >
                     {teleport != null ? (
-                        <PetTeleportSvg run={teleport} sprite={sprite} cellPx={PET_CELL_PX} />
+                        <PetTeleportSvg run={teleport} sprite={sprite} cellPx={PET_CELL_PX} character={character} />
+                    ) : roof != null ? (
+                        <SpideyRoof f={roof} />
                     ) : (
                         <SproutSvg sprite={sprite} cellPx={PET_CELL_PX} />
                     )}
                 </button>
                 {look.chip != null && teleport == null ? (
-                    <span className="pointer-events-none absolute left-1 top-3 min-w-4 rounded-full bg-warning px-1 text-center text-[10px] font-bold leading-4 text-on-warning tabular-nums">
+                    <span
+                        data-mini-chip
+                        className={cn(
+                            "pointer-events-none absolute min-w-4 rounded-full bg-warning px-1 text-center text-[10px] font-bold leading-4 text-on-warning tabular-nums",
+                            // Spider-Man's sits at the right, under the working web while that shows
+                            spidey ? (roof?.thinking ? "right-0 top-5" : "right-0 top-3") : "left-1 top-3"
+                        )}
+                    >
                         {look.chip}
                     </span>
                 ) : null}
-                {look.working != null && teleport == null ? (
-                    <WorkingDots count={look.working} className="absolute right-0 top-0" />
+                {/* Spider-Man's windows carry the count; his web shows only while Jarvis thinks */}
+                {teleport == null && (roof != null ? roof.thinking : look.working != null) ? (
+                    <WorkingDots count={look.working ?? 0} character={character} className="absolute right-0 top-0" />
                 ) : null}
             </div>
 
