@@ -20,7 +20,7 @@ import (
 // Claude daemon it is the tab attached to it (agentobserve.HostedDisplayBlock), and drop is true when no tab is
 // attached: the environment's block is the tab that first started the daemon, so reporting there is the bug.
 func statusTarget(envORef *waveobj.ORef) (target *waveobj.ORef, drop bool) {
-	block, hosted := agentobserve.HostedDisplayBlock()
+	block, hosted := agentobserve.HostedDisplayBlock(blockSession)
 	if !hosted {
 		return envORef, false
 	}
@@ -29,6 +29,19 @@ func statusTarget(envORef *waveobj.ORef) (target *waveobj.ORef, drop bool) {
 	}
 	oref := waveobj.MakeORef(waveobj.OType_Block, block)
 	return &oref, false
+}
+
+// blockSession is the session a block's terminal last reported: the id its agent:transcriptpath names, "" when it has
+// none or wavesrv does not answer. It tells a hosted session which terminal running a bare `claude` sent it to the
+// background (agentobserve.DisplayBlock).
+func blockSession(blockID string) string {
+	meta, err := wshclient.GetMetaCommand(RpcClient, wshrpc.CommandGetMetaData{
+		ORef: waveobj.MakeORef(waveobj.OType_Block, blockID),
+	}, &wshrpc.RpcOpts{Timeout: 2000})
+	if err != nil {
+		return ""
+	}
+	return agentobserve.TranscriptSession(meta.GetString(waveobj.MetaKey_AgentTranscriptPath, ""))
 }
 
 // staleStatus is what to publish to the environment's tab once a hosted session reports elsewhere: that tab's

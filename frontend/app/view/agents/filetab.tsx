@@ -173,8 +173,13 @@ export function FileTab({
             closeRailFile(agentId);
             return;
         }
-        // Ctrl+Enter sends from anywhere in the tab but a comment box, which takes it to add the comment
-        if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !(e.target instanceof HTMLTextAreaElement)) {
+        // Ctrl+Enter sends from anywhere in the tab but a comment box, which takes it to add the comment. Not every
+        // textarea: in WKWebView Monaco takes its input in one, and the Source view must still send.
+        if (
+            e.key === "Enter" &&
+            (e.ctrlKey || e.metaKey) &&
+            !(e.target instanceof Element && e.target.closest("[data-md-box]") != null)
+        ) {
             const send = e.currentTarget.querySelector<HTMLButtonElement>("[data-md-send]");
             if (send != null && !send.disabled) {
                 e.preventDefault();

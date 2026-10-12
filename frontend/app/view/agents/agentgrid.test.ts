@@ -476,8 +476,11 @@ describe("gridHold", () => {
         expect(gridHold(g(["a", "b"]), new Set(["z"]), false)).toBe(true);
         expect(gridHold(g(["a", "b"]), new Set(), false)).toBe(true);
     });
-    it("lets go as soon as one saved agent is live", () => {
-        expect(gridHold(g(["a", "b"]), new Set(["b"]), false)).toBe(false);
+    // a reload resumed on whichever saved cell's agent arrived first, and that one then stayed the focused agent
+    it("holds while the roster loads until the saved focused cell's agent arrives", () => {
+        expect(gridHold(g(["a", "b"]), new Set(["b"]), false)).toBe(true);
+        expect(gridHold(g(["a", "b"]), new Set(["a"]), false)).toBe(false);
+        expect(gridHold(g(["a", "b"], "b"), new Set(["b"]), false)).toBe(false);
     });
     it("never holds once the roster has been read", () => {
         expect(gridHold(g(["a", "b"]), new Set(), true)).toBe(false);

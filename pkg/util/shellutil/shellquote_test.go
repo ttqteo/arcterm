@@ -2,7 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 package shellutil
 
-import "testing"
+import (
+	"runtime"
+	"strings"
+	"testing"
+)
 
 func TestQuote(t *testing.T) {
 	tests := []struct {
@@ -125,6 +129,10 @@ func TestIsWindowsPowerShell(t *testing.T) {
 		"":                                       false,
 	}
 	for path, want := range cases {
+		// filepath.Base splits a backslash path only on Windows, the one place it names a shell
+		if runtime.GOOS != "windows" && strings.Contains(path, `\`) {
+			continue
+		}
 		if got := IsWindowsPowerShell(path); got != want {
 			t.Errorf("IsWindowsPowerShell(%q) = %v, want %v", path, got, want)
 		}

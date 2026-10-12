@@ -277,9 +277,11 @@ export function gridFallbackFocus(state: GridState, eligible: ReadonlySet<string
     return order.find((id) => eligible.has(id));
 }
 
-// True while the roster is still loading and none of the saved cells has arrived: resuming on the roster's
-// first agent now would have the focus rule swap it into a saved cell once the roster is complete.
+// True while the roster is still loading and the saved focused cell has not arrived: resuming on the roster's first
+// agent now would have the focus rule swap it into a saved cell once the roster is complete, and resuming on another
+// saved cell would make that the focused agent, which the focused cell arriving after it cannot take back. A grid
+// with cells always has a focused one (normalizeGrid).
 export function gridHold(state: GridState, eligible: ReadonlySet<string>, seeded: boolean): boolean {
     const s = normalizeGrid(state);
-    return !seeded && s.ids.length > 0 && !s.ids.some((id) => eligible.has(id));
+    return !seeded && s.focused != null && !eligible.has(s.focused);
 }
