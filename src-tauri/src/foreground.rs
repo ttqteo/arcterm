@@ -3,8 +3,9 @@
 // - "ours": a file dialog, the color picker or another arcterm window took the focus; folding under them would be wrong.
 // - "covered": another app took it, and its window hides most of arcterm (maximized, full screen, or a big window over
 //   it), so the fold keeps arcterm in sight as a picture-in-picture would.
-// - "beside": another app took it but arcterm still shows next to it (a small window, a popup, the Start menu, a window on
-//   another screen); folding would hide a cockpit you can still see.
+// - "beside": another app took it but arcterm still shows next to it (a small window, a popup, a window on another
+//   screen), or an overlay took it: the screenshot tool, the lock screen, Alt+Tab's switcher or the Start menu cover the
+//   whole screen for a moment, which is no leaving arcterm. Folding would hide a cockpit you are coming back to.
 // On Windows the foreground window's process is compared with ours and its frame with arcterm's; on macOS the app is
 // asked whether it is active, which a sheet or dialog keeps it, and the window whether any of it is still on screen.
 // Elsewhere it answers "covered", so a lost focus alone decides.
@@ -43,6 +44,15 @@ struct Frame {
 #[cfg_attr(not(windows), allow(dead_code))]
 const COVER_SHARE: f64 = 0.80;
 
+// Whether a window with these extended styles is an overlay rather than an app's window: it stays above every other
+// window (the screenshot tool, the lock screen, Alt+Tab's switcher) or is a tool window kept out of the taskbar.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn is_overlay(ex_style: u32) -> bool {
+    const WS_EX_TOPMOST: u32 = 0x8;
+    const WS_EX_TOOLWINDOW: u32 = 0x80;
+    ex_style & (WS_EX_TOPMOST | WS_EX_TOOLWINDOW) != 0
+}
+
 #[cfg_attr(not(windows), allow(dead_code))]
 fn covers(front: Frame, ours: Frame) -> bool {
     let area = ((ours.right - ours.left).max(0) * (ours.bottom - ours.top).max(0)) as f64;
@@ -58,7 +68,7 @@ fn covers(front: Frame, ours: Frame) -> bool {
 fn foreground(window: &WebviewWindow) -> Foreground {
     use windows_sys::Win32::Foundation::{HWND, RECT};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetWindowRect, GetWindowThreadProcessId,
+        GetForegroundWindow, GetWindowLongW, GetWindowRect, GetWindowThreadProcessId, GWL_EXSTYLE,
     };
 
     fn frame(hwnd: HWND) -> Option<Frame> {
@@ -90,6 +100,10 @@ fn foreground(window: &WebviewWindow) -> Foreground {
     unsafe { GetWindowThreadProcessId(front, &mut pid) };
     if pid == std::process::id() {
         return Foreground::Ours;
+    }
+    // SAFETY: takes no pointers; a stale handle reads 0
+    if is_overlay(unsafe { GetWindowLongW(front, GWL_EXSTYLE) } as u32) {
+        return Foreground::Beside;
     }
     // both frames from GetWindowRect, so they share its pixels and its borders
     let ours = window.hwnd().ok().and_then(|h| frame(h.0 as HWND));
@@ -210,6 +224,7 @@ pub fn watch_taskbar(window: &WebviewWindow) {
             return;
         }
         if from_taskbar(TASKBAR_AT.swap(0, Ordering::Relaxed), time) {
+            crate::applog::log_line("[tauri] taskbar button: app-reopen");
             if let Some(app) = APP.get() {
                 let _ = app.emit("app-reopen", ());
             }
@@ -281,6 +296,15 @@ mod tests {
     #[test]
     fn a_window_over_three_quarters_does_not() {
         assert!(!covers(f(0, 0, 1440, 1040), f(0, 0, 1920, 1040)));
+    }
+
+    #[test]
+    fn an_overlay_is_a_topmost_or_tool_window() {
+        // the lock screen (LockApp): WS_EX_NOREDIRECTIONBITMAP | WS_EX_TOPMOST
+        assert!(is_overlay(0x200008));
+        assert!(is_overlay(0x80));
+        // a plain app window: WS_EX_WINDOWEDGE | WS_EX_APPWINDOW
+        assert!(!is_overlay(0x40100));
     }
 
     #[test]

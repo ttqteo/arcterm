@@ -356,13 +356,12 @@ Một con vật pixel nhỏ đi dọc mép trên của footer trên mọi surfac
   để thấy mọi agent và trạng thái: bấm một agent để mở Float trên agent đó, **Restore**
   (hoặc bấm đúp con vật) để về đúng chế độ trước khi thu, đầy đủ hay Float, đúng khung cũ. Bấm vào nó để mở chat (hàng
   chờ và ô **Ask Jarvis**), `Esc` để thu lại; điều nó nói và câu trả lời đến lúc chat đang thu hiện thành bong bóng
-  cạnh nó. Không thấy con vật đâu (đang ở Space khác chẳng hạn) thì bấm icon arcterm trên Dock để cửa sổ quay về (macOS).
+  cạnh nó. Bấm icon arcterm trên taskbar (Dock trên macOS) cũng đưa cửa sổ về, kể cả khi không thấy con vật đâu.
   Muốn nút minimize về Dock (taskbar trên Windows) như thường: **Settings → General → Window → Minimize**.
   Muốn cửa sổ tự thu vào Sprout khi bạn chuyển sang một app che gần hết arcterm (từ 80% trở lên: maximize, fullscreen
-  hay một cửa sổ to đè lên; app nằm cạnh hay ở màn hình khác thì không thu): chuột phải nút **Sprout** trên app bar →
-  **Fold when you leave arcterm**, hoặc **Settings → General → Window**. Quay lại bằng Alt+Tab chỉ focus con vật; bấm
-  icon arcterm trên taskbar (Dock trên macOS) thì cửa sổ phóng to lại ngay, còn không thì bấm đúp con vật hay
-  **Restore**.
+  hay một cửa sổ to đè lên; app nằm cạnh, ở màn hình khác, chụp màn hình hay khoá máy thì không thu) và tự mở ra khi
+  bạn quay lại arcterm (Alt+Tab, taskbar, bấm vào cửa sổ): chuột phải nút **Sprout** trên app bar → **Fold when you
+  leave arcterm**, hoặc **Settings → General → Window**.
 - Popup cũng là nơi **peek** hiển thị: `Space` trên một thẻ/hàng, hoặc giữ `Ctrl` rồi bấm một liên kết (`Cmd`+bấm trên macOS), mở run, agent, record hay initiative trong popup mà không đổi lựa chọn ở surface bên dưới. `Backspace` về màn đầu của popup, `Enter` mở mục đó đúng chỗ của nó.
 - Đổi nhân vật (Sprout hoặc Minion một mắt) và trang phục (áo cờ, cầm cờ hoặc tắt) ở **Settings → Appearance**.
 

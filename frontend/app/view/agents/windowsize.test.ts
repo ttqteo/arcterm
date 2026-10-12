@@ -6,6 +6,7 @@ import { miniSproutRect } from "./floatwindow";
 import {
     afterOpen,
     autoFoldOnLeave,
+    autoRestoreOnReturn,
     autoSproutOn,
     FOLD_FADE_FROM,
     foldFade,
@@ -133,6 +134,21 @@ describe("auto Sprout", () => {
     });
     it("does not fold under arcterm's own dialog", () =>
         expect(autoFoldOnLeave({ ...left, foreground: "ours" })).toBe(false));
+
+    const back = { autoFolded: true, size: "sprout" as const, pressGapMs: null, chatOpen: false };
+    it("grows back when you return to a fold leaving made", () => {
+        expect(autoRestoreOnReturn(back)).toBe(true);
+        expect(autoRestoreOnReturn({ ...back, pressGapMs: -5000 })).toBe(true);
+    });
+    it("stays folded for a button's fold, outside the fold, or with the chat open", () => {
+        expect(autoRestoreOnReturn({ ...back, autoFolded: false })).toBe(false);
+        expect(autoRestoreOnReturn({ ...back, size: "full" })).toBe(false);
+        expect(autoRestoreOnReturn({ ...back, chatOpen: true })).toBe(false);
+    });
+    it("stays folded when the focus came with a press on Sprout, before or after it", () => {
+        expect(autoRestoreOnReturn({ ...back, pressGapMs: -40 })).toBe(false);
+        expect(autoRestoreOnReturn({ ...back, pressGapMs: 120 })).toBe(false);
+    });
 });
 
 describe("minimize", () => {
