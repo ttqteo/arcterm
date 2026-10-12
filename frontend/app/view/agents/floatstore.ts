@@ -78,6 +78,7 @@ import {
     sproutCenter,
     windowSize,
     type FoldOrigin,
+    type Foreground,
     type Pt,
     type SizeState,
     type Viewport,
@@ -773,21 +774,22 @@ async function recoverFold(win: Window, restore: MiniRestore): Promise<void> {
     }
 }
 
-// window:autosprout: Full folds into Sprout once you have been in another app for AUTO_FOLD_DELAY_MS. A return to
+// window:autosprout: Full folds into Sprout once you have been for AUTO_FOLD_DELAY_MS in another app whose window hides
+// arcterm (maximized or full screen on its screen); one beside it leaves the cockpit in sight. A return to
 // arcterm (Alt+Tab, the taskbar) only focuses Sprout; it grows back the way a button's fold does, from Sprout itself.
 function setupAutoSprout(): () => void {
     const win = getCurrentWindow();
     const setting = getSettingsKeyAtom("window:autosprout");
     let leaveTimer: ReturnType<typeof setTimeout> | undefined;
     const leave = async () => {
-        const [ours, minimized, visible, focused] = await Promise.all([
-            invoke<boolean>("app_has_foreground").catch(() => false),
+        const [foreground, minimized, visible, focused] = await Promise.all([
+            invoke<Foreground>("app_foreground").catch((): Foreground => "beside"),
             win.isMinimized(),
             win.isVisible(),
             win.isFocused(),
         ]);
         const on = autoSproutOn(globalStore.get(setting));
-        if (focused || !autoFoldOnLeave({ on, size: currentSize().size, ours, minimized, visible })) {
+        if (focused || !autoFoldOnLeave({ on, size: currentSize().size, foreground, minimized, visible })) {
             return;
         }
         await foldToSprout();

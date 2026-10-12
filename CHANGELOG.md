@@ -20,8 +20,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
   terminal, where the `?` key itself is text.
 - **⌘⇧Enter toggles terminal fullscreen** (Ctrl+Shift+Enter on Windows), from inside the terminal too: the same
   chord on both platforms, since a Mac keyboard has no F11 of its own. F11 still works.
-- **Fold when you leave**: switch to another app and the full window folds into Sprout after a moment; coming back to
-  arcterm (Alt+Tab, the taskbar) focuses Sprout, and a double-click or Restore grows it back. Off by default;
+- **Fold when you leave**: switch to another app whose window hides arcterm (maximized or full screen on its screen)
+  and the full window folds into Sprout after a moment; an app beside it, or on another screen, leaves it be. Coming
+  back to arcterm (Alt+Tab, the taskbar) focuses Sprout, and a double-click or Restore grows it back. Off by default;
   right-click the Sprout button in the app bar to switch it, or Settings → General → Window. Your own dialogs (a file
   picker) leave it be.
 - **⌘J opens Jarvis's What's waiting popup** in one chord, from any surface and from inside a terminal (Ctrl+Shift+J on
@@ -59,14 +60,13 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- **A double-click on a sidebar row opens the agent**, typing in its terminal; it used to fold a run's workers or an
+  agent's subagents, which their chip still does.
 - **A canvas with many boards stays readable**: past four boards the header picks the board from a menu (with
   `[` and `]` still stepping), the header's buttons no longer get cut off, and All shows the boards as a grid of
   tiles at least 560px wide instead of shrinking them all into one picture. A click on a tile opens that board.
-- **One shortcut rule between Windows and Mac:** a chord that works from inside a terminal is ⌘X on a Mac and
-  Ctrl+Shift+X on Windows: Search ⌘P / Ctrl+Shift+P, Go to ⌘G / Ctrl+Shift+G, New agent, What's waiting (J), Fold
-  (M), Close (W), Clear the terminal (K). On Windows the plain Ctrl+P, Ctrl+G, Ctrl+N, Ctrl+M still work outside a
-  terminal, and inside one they are the shell's again (history, Claude Code's Ctrl+G), and **What's waiting now opens
-  from inside a terminal on Windows too** (Ctrl+Shift+J). The cheat sheet shows both keys.
+- **Ctrl+Shift+K clears the terminal's screen on Windows**, as ⌘K does on a Mac (Ctrl+K stays the shell's cut to the
+  end of the line).
 - **⌘, / Ctrl+, opens Settings**, as in VS Code, and **⌘⇧E / Ctrl+Shift+E** focuses Code's file tree (VS Code's
   Explorer key; Alt+T still works).
 - The **Launch a Pi tab** shortcut (⌘⇧N / Ctrl+Shift+N) is gone; the New dialog's Pi row starts one.

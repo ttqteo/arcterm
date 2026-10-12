@@ -319,7 +319,7 @@ Phím đơn (`j`, `k`, `d`, `f`, `r`, `c`, `Esc`…) chỉ có tác dụng khi b
 | `Ctrl+N` / `Ctrl+Shift+R` | Hộp thoại New agent / New run |
 | `Ctrl+G` `s` | Mở Conversation History |
 
-Đang gõ trong terminal trên Windows thì `Ctrl+P`, `Ctrl+N`, `Ctrl+G`, `Ctrl+J`, `Ctrl+M` thuộc về shell (lùi/tiến lịch sử, edit-in-editor của Claude Code…); thêm `Shift` để dùng phím của arcterm: `Ctrl+Shift+P`, `Ctrl+Shift+G`… Trên Mac là `⌘P`, `⌘G`… ở mọi chỗ.
+`Ctrl+P`, `Ctrl+N`, `Ctrl+G`, `Ctrl+M` (`⌘` trên Mac) dùng được cả khi đang gõ trong terminal. Chỉ ba phím cần thêm `Shift` trên Windows, vì bản không `Shift` là phím gõ của terminal: đóng agent `Ctrl+Shift+W`, xóa màn hình `Ctrl+Shift+K`, What's waiting `Ctrl+Shift+J` (ngoài ô nhập thì `Ctrl+J` cũng được).
 
 Khi History hoặc transcript của phiên đã kết thúc đang phủ lên terminal, các phím tác động lên agent đang focus (`j`/`k`, `d`, `f`, `r`, `c`…) tạm nhường; trong History `j`/`k` di chuyển con trỏ trong danh sách, `Enter` nhảy tới phiên đang chạy hoặc resume phiên đã kết thúc. Toàn bộ phím: [Phím tắt](../keyboard-shortcuts.md).
 

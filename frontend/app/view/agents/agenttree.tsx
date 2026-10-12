@@ -537,25 +537,19 @@ function ParentRow({
             />
         ) : null;
 
-    // a double-click anywhere on the row folds what its chip folds (a lead's workers, an agent's subagents),
-    // so the small chip is not the only target. A click on a button inside the row is that button's own.
-    const fold =
-        lead != null
-            ? () => toggleRunCollapsed(lead.run.runId)
-            : subs.length > 0
-              ? () => toggleSubagentExpand(oref, expanded)
-              : null;
-    const foldRow =
-        fold != null && !renaming
-            ? (e: React.MouseEvent) => {
-                  if (!(e.target as HTMLElement).closest("button")) {
-                      fold();
-                  }
+    // a double-click opens the row: the agent chosen and typing in its terminal, as Ctrl+Tab from a terminal brings it.
+    // Folding a lead's workers or an agent's subagents is its chip's. A click on a button inside the row is that button's.
+    const openRow = !renaming
+        ? (e: React.MouseEvent) => {
+              if (!(e.target as HTMLElement).closest("button")) {
+                  globalStore.set(model.typingFollowsAtom, agent.id);
+                  select();
               }
-            : undefined;
+          }
+        : undefined;
     // the second press of a double-click would select a word of the name; a single press and a drag are untouched
     const keepSelection =
-        foldRow != null
+        openRow != null
             ? (e: React.MouseEvent) => {
                   if (e.detail > 1) {
                       e.preventDefault();
@@ -675,7 +669,7 @@ function ParentRow({
                 and age (a lead's second line: its workers chip and progress, then its state, tokens and age) */}
             <div
                 onClick={select}
-                onDoubleClick={foldRow}
+                onDoubleClick={openRow}
                 onMouseDown={keepSelection}
                 onContextMenu={onContextMenu}
                 data-agent-row={agent.id}

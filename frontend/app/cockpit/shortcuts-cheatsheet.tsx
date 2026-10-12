@@ -45,7 +45,7 @@ export function ShortcutsCheatSheet({ model }: { model: AgentsViewModel }) {
 
     const groups = useMemo(() => {
         const q = query.trim().toLowerCase();
-        // an alias (Ctrl+P beside Ctrl+Shift+P off a Mac) is drawn on its action's row, not as a row of its own
+        // an alias (Ctrl+J beside Ctrl+Shift+J off a Mac) is drawn on its action's row, not as a row of its own
         const rows = bindings.filter((b) => !b.alias);
         const filtered = q
             ? rows.filter((b) => b.label.toLowerCase().includes(q) || b.keys.toLowerCase().includes(q))
@@ -94,7 +94,7 @@ export function ShortcutsCheatSheet({ model }: { model: AgentsViewModel }) {
                                             <>
                                                 <span className="ml-1.5 text-[11px] text-muted">or</span>
                                                 <KeyCaps keys={aliasOf.get(b.id)!.keys} />
-                                                <span className="text-[11px] text-muted">outside a terminal</span>
+                                                <span className="text-[11px] text-muted">outside a text field</span>
                                             </>
                                         ) : null}
                                     </span>

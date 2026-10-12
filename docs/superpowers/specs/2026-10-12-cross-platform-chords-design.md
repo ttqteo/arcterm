@@ -31,55 +31,49 @@ So the person has to remember, chord by chord, which platform does what.
 
 ## Rule
 
-**A chord that works from inside a terminal is ⌘X on a Mac and Ctrl+Shift+X on Windows.**
+**⌘X on a Mac is Ctrl+X on Windows, everywhere, inside a terminal too.** The app's chord wins over the shell, as
+VS Code's own chords win in its terminal. The shell does not get Ctrl+P, Ctrl+G, Ctrl+N or Ctrl+M while arcterm is
+open, which was already the case before this spec.
 
-This is the shape Windows Terminal and the VS Code terminal already use (Ctrl+Shift+P, Ctrl+Shift+W, Ctrl+Shift+C/V),
-and close already follows it. Translating a chord from one platform to the other becomes one step: ⌘ ↔ Ctrl+Shift.
+**A first version moved those chords to Ctrl+Shift+X in a Windows terminal and was reverted the same day:** having to
+add Shift to keys already in the hands, only on one machine, was worse than giving the shell those four keys.
 
-**Windows keeps the plain Ctrl+X too, but only outside a terminal.** Habit from the Mac (⌘P becomes Ctrl+P) still works
-on a list, a field or the Code editor. Inside a terminal, Ctrl+X goes to the shell as it would in any other terminal.
+**`TMod` (Cmd on a Mac, Ctrl+Shift on Windows) is kept for the chords whose plain Ctrl form is typed in a terminal
+all the time:**
 
-**Exceptions, kept as they are:**
+- Close: `TMod`+`W` (Ctrl+W deletes a word). Unchanged from before.
+- Clear the screen: `TMod`+`K` (Ctrl+K cuts to the end of the line). New on Windows.
+- What's waiting: `TMod`+`J` (Ctrl+J is the newline), plus Windows' plain Ctrl+J outside a text field. Before, the
+  Windows terminal had no way to open it.
 
-- `Mod`+`1`…`7`: digits are not terminal control keys, and Ctrl+Shift+digit reads as a symbol (`!`, `@`) on most layouts.
-- `Ctrl`+`Tab`: Control on both platforms, as the system's own switchers are.
-- Zoom (`Mod`+`=`, `-`, `0`).
-- Code surface chords (`Mod`+`S`, `Mod`+`\`, `Mod`+`Shift`+`F`): they act in Monaco, not in a terminal.
-- `Alt` chords (`Alt`+`1`…`9`, `Alt`+`C`, `Alt`+`W`): Option on a Mac, Alt on Windows, matched by key position. On
-  Windows they shadow readline's meta keys (`Alt`+`C` capitalises a word, `Alt`+digit is a count), which are rarely used.
+**Unchanged:** `Mod`+`1`…`7`, `Ctrl`+`Tab`, zoom, the Code surface chords, and the `Alt` chords.
 
 ## Table
 
-| Action | Mac | Windows, in a terminal | Windows, elsewhere |
-|---|---|---|---|
-| Search | ⌘P | Ctrl+Shift+P | Ctrl+P or Ctrl+Shift+P |
-| Go-to leader | ⌘G | Ctrl+Shift+G | Ctrl+G or Ctrl+Shift+G |
-| New agent | ⌘N | Ctrl+Shift+N | Ctrl+N or Ctrl+Shift+N |
-| What's waiting (peek) | ⌘J | Ctrl+Shift+J | Ctrl+J or Ctrl+Shift+J |
-| Fold into Sprout | ⌘M | Ctrl+Shift+M | Ctrl+M or Ctrl+Shift+M |
-| Close agent or terminal | ⌘W | Ctrl+Shift+W | Ctrl+Shift+W (unchanged) |
-| Clear terminal | ⌘K | Ctrl+Shift+K | — |
-| New run | ⌘⇧R | Ctrl+Shift+R | Ctrl+Shift+R (unchanged) |
-| Terminal fullscreen | ⌘⇧Enter | Ctrl+Shift+Enter | Ctrl+Shift+Enter (shipped 2026-10-12; F11 kept) |
-| Settings | ⌘, | Ctrl+, | Ctrl+, (a comma is no terminal key) |
-| Launch a Pi tab | removed | removed | removed (the New dialog's Pi row starts one) |
+| Action | Mac | Windows (terminal included) |
+|---|---|---|
+| Search | ⌘P | Ctrl+P |
+| Go-to leader | ⌘G | Ctrl+G |
+| New agent | ⌘N | Ctrl+N |
+| Fold into Sprout | ⌘M | Ctrl+M |
+| What's waiting (peek) | ⌘J | Ctrl+Shift+J (and Ctrl+J outside a text field) |
+| Close agent or terminal | ⌘W | Ctrl+Shift+W |
+| Clear terminal | ⌘K | Ctrl+Shift+K |
+| New run | ⌘⇧R | Ctrl+Shift+R |
+| Terminal fullscreen | ⌘⇧Enter | Ctrl+Shift+Enter (F11 kept) |
+| Settings | ⌘, | Ctrl+, |
+| Launch a Pi tab | removed | removed (the New dialog's Pi row starts one) |
 
 ## Implementation
 
 - **A `TMod` token** in `keyutil.ts` `parseKeyDescription`: Command on a Mac, Ctrl+Shift elsewhere. `keysym.ts`
-  `formatChord` draws it as ⌘ or as two keys (`ctrl`, `shift`). Bindings name it statically (`TMod:p`), so nothing
-  reads the platform at module load.
+  `formatChord` draws it as ⌘ or as two keys (`ctrl`, `shift`).
 - **Windows aliases.** `withWinCtrlAliases` in `bindings.ts` adds a `Ctrl:<key>` binding (`id` + `:ctrl`,
-  `alias: true`, `paletteHidden`) beside each TMod chord listed in `WIN_CTRL_ALIAS_GATES`. Its `when` adds the gate:
-  "not in a terminal", or for the peek's Ctrl+J "not in a field".
-- **`ctx.terminal`** (`types.ts`, set by `dispatcher.ts deriveKeyContext` from `closest(".xterm")`). `ctx.editable` is
-  not enough: it is also true in plain text fields, where Ctrl+P is harmless.
-- **The leader door.** `LEADER_ALIASES` in `matcher.ts` is `TMod:g`. Off a Mac, `Ctrl:g` opens it too, outside a
-  terminal only.
+  `alias: true`, `paletteHidden`) beside each TMod chord listed in `WIN_CTRL_ALIAS_GATES`. Today that is only the peek's
+  Ctrl+J, gated to "not in a field".
 - **`peekChordActive`** (`peekstore.ts`) drops its Windows gate.
 - **Display.** The held-modifier bar (`footer-visible.ts heldHints`) counts `TMod` as the Ctrl / ⌘ key and skips
-  aliases. The footer chips name `TMod`. The cheat sheet draws an alias on its action's row ("or ctrl+p outside a
-  terminal").
+  aliases. The cheat sheet draws an alias on its action's row ("or ctrl+j outside a text field").
 - **Clear terminal** (`term-model.ts`) and close (`agentactions.ts closeAgentChord`) are `TMod:k` and `TMod:w`.
 
 ## VS Code defaults
@@ -88,8 +82,8 @@ The person comes from VS Code, so its default keys were checked against this tab
 
 | VS Code (Windows / Mac) | Action | arcterm |
 |---|---|---|
-| Ctrl+P / ⌘P | Quick Open | Search; Ctrl+P stays on Windows outside a terminal, Code opens on Files |
-| Ctrl+Shift+P / ⌘⇧P | Command palette | Search from inside a terminal on Windows: the same key |
+| Ctrl+P / ⌘P | Quick Open | Search, on Code it opens on Files |
+| Ctrl+Shift+P / ⌘⇧P | Command palette | not bound; Search's Commands scope (`c:`) does the job |
 | Ctrl+, / ⌘, | Settings | **added**: Settings |
 | Ctrl+Shift+E / ⌘⇧E | Explorer | **added** on Code: focus the file tree (Alt+T kept) |
 | Ctrl+Shift+F / ⌘⇧F | Search in files | already the same on Code |
@@ -101,12 +95,12 @@ The person comes from VS Code, so its default keys were checked against this tab
 | Alt+← / Alt+→ (Mac ⌃- / ⌃⇧-) | Back / forward | Alt+← / Alt+→ on both; the Mac keys were not added |
 | Ctrl+G / ⌃G | Go to line | **kept as the go-to leader**: on Code, type `:123` in Search instead |
 | Ctrl+B / ⌘B | Toggle sidebar | not added: Code's sidebar opens and closes through its own button (later) |
-| Ctrl+Shift+G / ⌃⇧G | Source control | taken by the leader on Windows in a terminal; the Diff surface is `TMod`+`G` `f` |
+| Ctrl+Shift+G / ⌃⇧G | Source control | not bound; the Diff surface is `Mod`+`G` `f` |
 
 ## Decisions
 
 1. **Launch a Pi tab:** the chord is removed (the person does not use it); `launchPiTab` went with it.
-2. **Ctrl+P in Code on Windows** stays, since Monaco is not a terminal.
+2. **Ctrl+P, Ctrl+G, Ctrl+N, Ctrl+M stay plain on Windows, terminal included** (the Ctrl+Shift version was reverted).
 3. **Alt chords in a Windows terminal** stay as they are.
 
 ## Later

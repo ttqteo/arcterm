@@ -344,7 +344,7 @@ fn main() {
             macwindow::set_traffic_lights_hidden,
             macwindow::redirect_minimize,
             winframe::hold_window_frame,
-            foreground::app_has_foreground
+            foreground::app_foreground
         ])
         .setup(move |app| {
             // the config window already exists here (Tauri builds it before running setup)

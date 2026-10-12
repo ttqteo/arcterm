@@ -92,19 +92,22 @@ export function autoSproutOn(raw: unknown): boolean {
 // how long the window stays out of focus before it folds, so an Alt+Tab that comes straight back leaves it be
 export const AUTO_FOLD_DELAY_MS = 800;
 
+export type Foreground = "ours" | "covered" | "beside";
+
 export interface LeaveCheck {
     on: boolean;
     size: WindowSize;
-    // the OS's foreground is still arcterm's: a file dialog or another arcterm window took the focus
-    ours: boolean;
+    // where the OS's foreground is (the host's app_foreground, foreground.rs): still arcterm's (a file dialog, another
+    // arcterm window), another app whose window hides arcterm, or another app beside it, where arcterm still shows
+    foreground: Foreground;
     minimized: boolean;
     visible: boolean;
 }
 
-/** Whether a window still out of focus when AUTO_FOLD_DELAY_MS ends folds into Sprout. Only Full: Float is already the
- *  size for watching an agent from another app. */
+/** Whether a window still out of focus when AUTO_FOLD_DELAY_MS ends folds into Sprout: only when the app you left for
+ *  hides it, as a picture-in-picture would. Only Full: Float is already the size for watching an agent from another app. */
 export function autoFoldOnLeave(c: LeaveCheck): boolean {
-    return c.on && c.size === "full" && !c.ours && !c.minimized && c.visible;
+    return c.on && c.size === "full" && c.foreground === "covered" && !c.minimized && c.visible;
 }
 
 export interface Pt {

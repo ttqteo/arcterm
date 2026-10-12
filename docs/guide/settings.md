@@ -77,7 +77,7 @@ Trang **About**, thẻ **Coding agents** liệt kê mỗi harness đã cài vớ
 | | **In-app toasts** (`notify:toast`) | Toast khi arcterm ở trước, trừ khi bạn đang nhìn đúng agent đó. |
 | | **When an agent finishes** (`notify:reply`) | Báo cả khi agent xong một lượt, không chỉ khi nó cần bạn. Worker của run không bao giờ báo. |
 | **Window** | **Minimize** (`window:minimize`) | Nút minimize (cả nút vàng và `⌘M` trên macOS) thu cửa sổ vào Sprout (`sprout`, mặc định) hay đưa xuống Dock hoặc taskbar (`dock`). Nút **Sprout** trên app bar luôn thu vào Sprout. |
-| **Window** | **Fold when you leave** (`window:autosprout`) | Chuyển sang app khác khoảng 1 giây thì cửa sổ Full tự thu vào Sprout; quay lại arcterm (Alt+Tab, taskbar) chỉ focus con vật, bấm đúp nó hay **Restore** để phóng to. Mặc định tắt. Không thu khi đang ở Float, khi cửa sổ đang minimize, hay khi hộp thoại của arcterm (chọn file…) đang mở. Chuột phải nút **Sprout** trên app bar để bật/tắt nhanh. |
+| **Window** | **Fold when you leave** (`window:autosprout`) | Chuyển sang một app che kín arcterm (maximize hay fullscreen trên cùng màn hình) khoảng 1 giây thì cửa sổ Full tự thu vào Sprout; app nằm cạnh hay ở màn hình khác thì không thu; quay lại arcterm (Alt+Tab, taskbar) chỉ focus con vật, bấm đúp nó hay **Restore** để phóng to. Mặc định tắt. Không thu khi đang ở Float, khi cửa sổ đang minimize, hay khi hộp thoại của arcterm (chọn file…) đang mở. Chuột phải nút **Sprout** trên app bar để bật/tắt nhanh. |
 | **Vault & sync** | **Vault path**, **Sync remote** | Xem trên. |
 
 Cả ba công tắc thông báo mặc định bật.

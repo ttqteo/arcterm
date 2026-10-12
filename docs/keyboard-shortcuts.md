@@ -13,18 +13,20 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 - **`Mod`** is `Cmd` (⌘) on macOS and `Ctrl` on Windows: the app's own chords (`Mod`+`1`, `Mod`+`S`, `Mod`+`Enter`…)
   follow the platform. A chord written `Ctrl` is the Control key on both (`Ctrl`+`Tab`; `Ctrl`+`C` always
   belongs to the terminal). On macOS an `Alt` chord is `Option`, matched by the key's position.
-- **`TMod`** is for the chords that work from inside a terminal: `Cmd` on macOS, `Ctrl`+`Shift` on Windows. The rule is
-  one step between the two machines, ⌘X ↔ `Ctrl`+`Shift`+X, as in Windows Terminal and the VS Code terminal. On Windows
-  each `TMod` chord also answers to plain `Ctrl` outside a terminal (`Ctrl`+`P` on a list, a field or the Code editor),
-  while inside a terminal plain `Ctrl`+letter stays the shell's: `Ctrl`+`P` / `Ctrl`+`N` walk the history, `Ctrl`+`G`
-  is Claude Code's edit-in-editor. The cheat sheet shows both keys on the row.
+- **`Mod` works inside a terminal too.** `Mod`+`P`, `Mod`+`G`, `Mod`+`N`, `Mod`+`M`… are the app's on both machines,
+  from a focused terminal as well (as in the VS Code terminal): on Windows the shell does not get `Ctrl`+`P`,
+  `Ctrl`+`G`, `Ctrl`+`N`, `Ctrl`+`M` while arcterm is open.
+- **`TMod`** is for the few chords whose plain `Ctrl` form you type in a terminal all the time: `Cmd` on macOS,
+  `Ctrl`+`Shift` on Windows. That is close (`TMod`+`W`; `Ctrl`+`W` deletes a word), clear the screen (`TMod`+`K`;
+  `Ctrl`+`K` cuts to the end of the line) and What's waiting (`TMod`+`J`; `Ctrl`+`J` is the newline, and it still
+  opens the popup outside a text field).
 - **Postures.** There is no global "mode" to track. Focus determines behavior:
   - **Navigate** — focus is on a surface region (not a text field). Single keys move a cursor and act on it.
   - **Type** — focus is in a text field, composer, or the terminal. Keys type normally. Press `Esc` to return to Navigate.
   - A Vietnamese input method left on Telex (EVKey, Unikey) does not get in Navigate's way: a letter it rewrites there
     ("đ" for `dd`, "ư" for `w`, "á" for `a` `s`) acts as the key pressed. One that moves a tone back onto an earlier
     vowel (free tone placement) sends more than one letter, and only the last counts.
-- **Leader (`TMod`+`G`, "go").** Press `TMod`+`G`, then a letter, to teleport. It works the same everywhere,
+- **Leader (`Mod`+`G`, "go").** Press `Mod`+`G`, then a letter, to teleport. It works the same everywhere,
   inside the terminal too; a bare `g` is never a leader. A hint bar appears at the bottom of the screen showing
   the available next keys.
 - **Which-key bar.** The transient bottom bar shown after pressing a leader — it only lists keys
@@ -34,27 +36,27 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
   (`Mod`+`1`–`7`, `Alt`+`1`–`9`) while the rail and the Active list number their rows.
 - **Cheat sheet.** Press `?` (while not typing), or click the `?` button at the right end of the bottom bar (on every
   surface, while typing too), to open a searchable modal of every shortcut. From the keyboard while typing, open it via
-  Search (`TMod`+`P`) → Commands → "Keyboard shortcuts".
+  Search (`Mod`+`P`) → Commands → "Keyboard shortcuts".
 
 ## Global (work anywhere, including inside the terminal)
 
 | Keys | Action |
 |---|---|
 | `Mod`+`1`…`7` | Jump to surface by position — in order: Cockpit, Jarvis, Agent, Usage, Code, Diff, Radar. Hold `Mod` a moment to see the numbers on the rail |
-| `TMod`+`P` | Search — opens on the Files scope on Code (see below) |
-| `TMod`+`N` | New agent: opens the New dialog on an agent row |
+| `Mod`+`P` | Search — opens on the Files scope on Code (see below) |
+| `Mod`+`N` | New agent: opens the New dialog on an agent row |
 | `Mod`+`Shift`+`R` | New run: opens the New dialog on a run row |
-| `TMod`+`G` | Go to…: opens the go-to leader (see below) |
-| `TMod`+`J` | What's waiting: the avatar popup (Jarvis peek), on any surface. Windows' plain `Ctrl`+`J` works only outside a terminal or field, where it is not the newline. Hold `Mod` on its own and the creature shows a `J` |
+| `Mod`+`G` | Go to…: opens the go-to leader (see below) |
+| `TMod`+`J` | What's waiting: the avatar popup (Jarvis peek), on any surface, from inside a terminal too. On Windows plain `Ctrl`+`J` opens it too outside a text field, where it is not the newline. Hold `Mod` on its own and the creature shows a `J` |
 | `Mod`+`,` | Settings, as in VS Code and every Mac app |
 | `Ctrl`+`Tab` / `Ctrl`+`Shift`+`Tab` | On the Agent surface (a float and fullscreen included): the tab switcher, as the system's app switcher works. Hold `Ctrl`, press `Tab` to move through your agents and terminals (recent first; `Shift`+`Tab` goes back), and let go of `Ctrl` to open the one picked; `Esc` stays where you are. A quick `Ctrl`+`Tab` flips to the tab you were on before without drawing it. `Option`+`Tab` / `Option`+`Shift`+`Tab` too on a Mac, letting go of `Option` |
 | `TMod`+`W` | Close the agent or terminal in focus, as a terminal app closes its tab: the pane you are typing in, else the selected agent. Works from inside the terminal and asks first. It has no plain `Ctrl`+`W` form on Windows: that deletes a word in the terminal |
 | `TMod`+`K` | Clear the focused terminal's screen |
 | `Mod`+`=` / `Mod`+`-` / `Mod`+`0` | Zoom the window in / out / back to 100% (`Cmd` on macOS) |
-| `TMod`+`M` | Fold the window into Sprout, from the cockpit or a float, even from inside a terminal. Settings → General → Window → Minimize: Dock sends it to the Dock or taskbar instead |
+| `Mod`+`M` | Fold the window into Sprout, from the cockpit or a float, even from inside a terminal. Settings → General → Window → Minimize: Dock sends it to the Dock or taskbar instead |
 
 Setup and Settings have no `Mod`+number slot — the positions are bound to `SURFACE_ORDER`
-(`frontend/app/view/agents/agents.tsx`), which excludes them. Reach Setup with `TMod`+`G` `.` and Settings with `Mod`+`,` or `TMod`+`G` `,`.
+(`frontend/app/view/agents/agents.tsx`), which excludes them. Reach Setup with `Mod`+`G` `.` and Settings with `Mod`+`,` or `Mod`+`G` `,`.
 
 ## The New dialog (New agent, New run)
 
@@ -72,24 +74,24 @@ One dialog starts an agent, a terminal or a run. It opens with focus on the Star
 | `Mod`+`Enter` | Launch, from anywhere in the dialog |
 | `Esc` | Close the open menu or the project filter first, then the dialog. What you typed is kept for the next open |
 
-## Go-to surface — leader `TMod`+`G`
+## Go-to surface — leader `Mod`+`G`
 
 | Keys | Surface |
 |---|---|
-| `TMod`+`G` `c` | Cockpit (home) |
-| `TMod`+`G` `a` | Agent |
-| `TMod`+`G` `j` | Jarvis — channels, records, recall |
-| `TMod`+`G` `r` | Radar |
-| `TMod`+`G` `s` | Conversation History (in the Agent surface) |
-| `TMod`+`G` `f` | Files |
-| `TMod`+`G` `u` | Usage |
-| `TMod`+`G` `b` | Code — browse source |
-| `TMod`+`G` `.` | Setup — instructions and skills |
-| `TMod`+`G` `,` | Settings |
-| `TMod`+`G` `p` | Search |
-| `TMod`+`G` `w` | What's waiting — the avatar popup (Jarvis peek), on any surface |
+| `Mod`+`G` `c` | Cockpit (home) |
+| `Mod`+`G` `a` | Agent |
+| `Mod`+`G` `j` | Jarvis — channels, records, recall |
+| `Mod`+`G` `r` | Radar |
+| `Mod`+`G` `s` | Conversation History (in the Agent surface) |
+| `Mod`+`G` `f` | Files |
+| `Mod`+`G` `u` | Usage |
+| `Mod`+`G` `b` | Code — browse source |
+| `Mod`+`G` `.` | Setup — instructions and skills |
+| `Mod`+`G` `,` | Settings |
+| `Mod`+`G` `p` | Search |
+| `Mod`+`G` `w` | What's waiting — the avatar popup (Jarvis peek), on any surface |
 
-## Search (`TMod`+`P`)
+## Search (`Mod`+`P`)
 
 One overlay with scopes: All, Needs you, Go to, Agents, Runs, Sessions, Records, Projects, Files, Commands.
 
@@ -125,7 +127,7 @@ cancelled now, in All and in Commands, so it never starts a run named "cancel".
 
 ## The avatar popup (what's waiting)
 
-Click the creature on the footer, or press `TMod`+`G` `w`, to open it.
+Click the creature on the footer, or press `Mod`+`G` `w`, to open it.
 
 | Keys | Action |
 |---|---|
@@ -200,7 +202,7 @@ A link inside an item view does a full open, even with `Mod` held.
 
 ### Agent: Conversation History
 
-Opened with `TMod`+`G` `s` or the sidebar's Conversation History button. History and an ended session's transcript cover the terminal, so the keys
+Opened with `Mod`+`G` `s` or the sidebar's Conversation History button. History and an ended session's transcript cover the terminal, so the keys
 that act on the focused agent stand down while either is open: `j` / `k`, the arrows, `d`, `f`, `r`, `c`, the canvas and review keys, `F11`,
 `Mod`+`Enter` (send marks, send review) and the `Esc` that goes back to the Cockpit. In History `j` / `k` (or `↓` / `↑`) move the list cursor,
 `Enter` jumps to a live session or resumes an ended one, and `Esc` returns to the terminal. The `Ctrl`+`Tab` switcher still works and brings
@@ -209,7 +211,7 @@ the terminal back. An ended session opened from the sidebar covers the terminal 
 ### Agent: terminal grid
 
 Open a split by dragging a live agent from the tree onto a terminal (up to four cells), or by right-clicking its row and
-picking **Open in split**. From the keyboard it is in the palette: `TMod`+`P`, the agent, `→`, **Open in split**. A split
+picking **Open in split**. From the keyboard it is in the palette: `Mod`+`P`, the agent, `→`, **Open in split**. A split
 needs an agent with no cell yet and a grid with room; otherwise the menu item is disabled and the palette action just
 opens the agent.
 
@@ -308,7 +310,7 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `Enter` | Open the file under the cursor |
 | `/` | Filter history (`Esc` clears) |
 | `Shift`+`G` | Toggle the history graph |
-| `TMod`+`G` `g` | Top of history |
+| `Mod`+`G` `g` | Top of history |
 | `Shift`+`C` | Commit tab, with the message box focused |
 | `Shift`+`H` | Log tab |
 | `Shift`+`B` | Hide / show the left panel (it starts hidden in a narrow window; your choice is kept) |
