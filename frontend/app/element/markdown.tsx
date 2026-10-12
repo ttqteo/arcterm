@@ -328,6 +328,8 @@ type MarkdownProps = {
     contentBlocks?: boolean;
     // rendered after every stamped block (inside an li, as its last child): the Agent panel's comment cards
     blockAfter?: (tag: string) => React.ReactNode;
+    // makes task boxes clickable: called with the source line of the box's list item (needs srcLineOffset)
+    onToggleTask?: (line: number) => void;
 };
 
 const Markdown = memo(function Markdown({
@@ -344,6 +346,7 @@ const Markdown = memo(function Markdown({
     srcLineOffset,
     contentBlocks = true,
     blockAfter,
+    onToggleTask,
     scrollable = true,
     rehype = true,
     onClickExecute,
@@ -465,6 +468,27 @@ const Markdown = memo(function Markdown({
             </>
         ),
     };
+    if (onToggleTask != null) {
+        // GFM renders a task box disabled; enabled here, it stays controlled by `checked` until the file changes
+        markdownComponents.input = ({ node, ...props }: any) => {
+            if (props.type !== "checkbox") {
+                return <input {...props} />;
+            }
+            return (
+                <input
+                    {...props}
+                    disabled={false}
+                    className="cursor-pointer accent-accent"
+                    onChange={(e) => {
+                        const li = e.currentTarget.closest("li[data-src-start]");
+                        if (li != null) {
+                            onToggleTask(Number(li.getAttribute("data-src-start")));
+                        }
+                    }}
+                />
+            );
+        };
+    }
     markdownComponents["waveblock"] = (props: any) => <WaveBlock {...props} blockmap={contentBlocksMap} />;
     markdownComponents["mermaidblock"] = (props: any) => {
         const getTextContent = (children: any): string => {

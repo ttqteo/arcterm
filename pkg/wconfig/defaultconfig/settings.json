@@ -16,7 +16,7 @@
     "term:cursorblink": true,
     "term:fontsize": 14,
     "term:fontfamily": "\"JetBrains Mono\", monospace",
-    "term:copyonselect": true,
+    "term:copyonselect": false,
     "term:trimtrailingwhitespace": true,
     "harness:updatecheck": true,
     "agents:sleepidle": true,

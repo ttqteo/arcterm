@@ -4,7 +4,7 @@
 // The Agent panel's File tab: one file, read-only, at a line (docs/superpowers/specs/2026-10-06-agent-rail-tabs-design.md).
 // A markdown file renders as a document that takes comments (docs/superpowers/specs/2026-10-06-md-comments-design.md);
 // Source is the Monaco view. A file opened from Files changed also has Diff, against the base that list is measured from.
-// Editing is the Code surface's job, one click away.
+// Editing is the Code surface's job, one click away; the one edit here is ticking a task box in a markdown Preview.
 
 import { SkeletonLine } from "@/app/element/skeleton";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -34,6 +34,7 @@ import { savedScroll, saveScroll } from "./filescroll";
 import { FileTabDiff } from "./filetabdiff";
 import { formatSize, readPanelFile, type PanelFile } from "./filetabload";
 import { HtmlFrame } from "./htmlframe";
+import { ImageFrame } from "./imageframe";
 import { cancelBox, mdCommentAtom } from "./mdcommentstore";
 import { MdCommentTray } from "./mdcommenttray";
 import { MdDoc } from "./mddoc";
@@ -58,6 +59,8 @@ const HIT_LINE = "bg-surface-hover";
 const HIT_MARK = "border-l-2 border-accent";
 const ICON_BTN =
     "flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted hover:bg-surface-hover hover:text-secondary disabled:cursor-default disabled:text-edge-strong disabled:hover:bg-transparent";
+// an icon toggle that is on (Wrap, Pin): the accent, as a labelled toggle's border and text are
+const ICON_ON = "text-accent-soft hover:text-accent-soft";
 const BTN =
     "flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-[6px] border border-edge-mid bg-transparent px-2 text-[11.5px] font-medium text-secondary hover:border-edge-strong";
 
@@ -173,8 +176,13 @@ export function FileTab({
             closeRailFile(agentId);
             return;
         }
-        // Ctrl+Enter sends from anywhere in the tab but a comment box, which takes it to add the comment
-        if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !(e.target instanceof HTMLTextAreaElement)) {
+        // Ctrl+Enter sends from anywhere in the tab but a comment box, which takes it to add the comment. Not every
+        // textarea: in WKWebView Monaco takes its input in one, and the Source view must still send.
+        if (
+            e.key === "Enter" &&
+            (e.ctrlKey || e.metaKey) &&
+            !(e.target instanceof Element && e.target.closest("[data-md-box]") != null)
+        ) {
             const send = e.currentTarget.querySelector<HTMLButtonElement>("[data-md-send]");
             if (send != null && !send.disabled) {
                 e.preventDefault();
@@ -208,6 +216,16 @@ export function FileTab({
         );
     } else if (state.kind === "pdf") {
         body = <PdfFrame data-file-pdf={ref.abs} path={ref.abs} version={state.modtime} title={name} />;
+    } else if (state.kind === "image") {
+        body = (
+            <ImageFrame
+                data-file-image={ref.abs}
+                path={ref.abs}
+                version={state.modtime}
+                size={state.size}
+                title={name}
+            />
+        );
     } else if (html && preview && (state.kind === "text" || state.kind === "toolarge")) {
         // the page from disk, not the text read here; one too big to read as text still streams
         body = (
@@ -219,7 +237,16 @@ export function FileTab({
             />
         );
     } else if (state.kind === "text" && preview) {
-        body = <MdDoc model={model} agent={agent} fileRef={ref} text={state.text} />;
+        // re-read in place, as Live does: no skeleton, the scroll stays. Not against the stamp: a flipped box keeps
+        // the size, and a write in the same modtime tick would read as unchanged
+        const reread = () =>
+            fireAndForget(async () => {
+                const next = await readPanelFile(ref.abs);
+                if (next != null) {
+                    setState(next);
+                }
+            });
+        body = <MdDoc model={model} agent={agent} fileRef={ref} text={state.text} onFileChanged={reread} />;
     } else if (state.kind === "text") {
         const line = ref.line;
         body = (
@@ -380,19 +407,24 @@ export function FileTab({
                     </div>
                 ) : null}
                 {markdown && preview && state.kind === "text" ? (
-                    <OutlineButton rootRef={bodyRef} selector={OUTLINE_SELECTOR.markdown} textKey={state.text} />
+                    <OutlineButton
+                        rootRef={bodyRef}
+                        selector={OUTLINE_SELECTOR.markdown}
+                        textKey={state.text}
+                        iconOnly
+                    />
                 ) : null}
                 {diffable || (state.kind === "text" && !preview) ? (
                     <button
                         type="button"
                         data-file-wrap
                         aria-pressed={wrap}
+                        aria-label="Wrap long lines"
                         title={wrap ? "Stop wrapping long lines" : "Wrap long lines"}
                         onClick={() => toggleWrap(ref.abs)}
-                        className={cn(BTN, wrap && "border-accent/40 text-accent-soft hover:border-accent/60")}
+                        className={cn(ICON_BTN, wrap && ICON_ON)}
                     >
-                        <WrapText size={11} aria-hidden />
-                        Wrap
+                        <WrapText size={13} aria-hidden />
                     </button>
                 ) : null}
                 {ref.live ? (
@@ -423,12 +455,12 @@ export function FileTab({
                         type="button"
                         data-file-pin
                         aria-pressed={pinned}
+                        aria-label="Pin"
                         title={pinned ? "Unpin this file" : "Pin this file to the top of Files, here and in Code"}
                         onClick={() => toggleCodePinIn(pin.folder, pin.rel)}
-                        className={cn(BTN, pinned && "border-accent/40 text-accent-soft hover:border-accent/60")}
+                        className={cn(ICON_BTN, pinned && ICON_ON)}
                     >
-                        <Pin size={11} aria-hidden />
-                        {pinned ? "Pinned" : "Pin"}
+                        <Pin size={13} fill={pinned ? "currentColor" : "none"} aria-hidden />
                     </button>
                 ) : null}
                 {diff != null ? (

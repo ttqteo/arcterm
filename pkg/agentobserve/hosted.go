@@ -64,6 +64,7 @@ func AttachKey(cmdline string) string {
 const (
 	forkSessionFlag = "--fork-session"
 	jsonlSuffix     = ".jsonl"
+	daemonVerb      = "daemon"
 )
 
 // cmdTokens splits a command line into arguments. A double quote groups an argument that holds spaces and is
@@ -137,6 +138,14 @@ func sessionIDOf(value string) string {
 	return strings.TrimSuffix(value, jsonlSuffix)
 }
 
+// TranscriptSession returns the session id a transcript path names (its file name without ".jsonl"), or "".
+func TranscriptSession(path string) string {
+	if path == "" {
+		return ""
+	}
+	return sessionIDOf(path)
+}
+
 func hasFlag(tokens []string, name string) bool {
 	return slices.Contains(tokens, name)
 }
@@ -179,6 +188,31 @@ func isForkSourceViewer(cmdline, forkSource string) bool {
 	return !hasFlag(cmdTokens(cmdline), forkSessionFlag)
 }
 
+// isDaemon reports whether a command line runs the Claude daemon itself (`claude daemon run ...`), which carries the
+// environment of the tab that first started it. The verb is looked for up to the first flag, as in AttachKey.
+func isDaemon(tokens []string) bool {
+	for _, t := range tokens[min(1, len(tokens)):] {
+		if strings.HasPrefix(t, "-") {
+			return false
+		}
+		if t == daemonVerb {
+			return true
+		}
+	}
+	return false
+}
+
+// isUnnamedTerminal reports whether a command line is a terminal claude whose session is not on it: a bare `claude`,
+// `--continue`, or a `--resume` picked from the list. Which session it runs is known only from what its hooks stamped
+// on its block. The daemon, a pty host, an attach client and a fork show no session of their own.
+func isUnnamedTerminal(cmdline string) bool {
+	if PtyHostKey(cmdline) != "" || AttachKey(cmdline) != "" || SessionRef(cmdline) != "" {
+		return false
+	}
+	tokens := cmdTokens(cmdline)
+	return len(tokens) > 0 && !hasFlag(tokens, forkSessionFlag) && !isDaemon(tokens)
+}
+
 // AttachedBlock picks the block of the terminal attached to the session `key`: the newest attach client
 // carrying a block, since a session reattached in a second tab is shown there now. "" when none is attached.
 func AttachedBlock(procs []ProcInfo, key string) string {
@@ -197,16 +231,35 @@ func AttachedBlock(procs []ProcInfo, key string) string {
 	return best.BlockID
 }
 
-// DisplayBlock picks the block of the terminal that shows the hosted session `key`: the newest attach client
-// (AttachedBlock), else, when the session was forked from `forkSource`, the newest terminal claude carrying a
-// block that runs that source (the TUI that sent it to the background). "" when neither exists.
-func DisplayBlock(procs []ProcInfo, key, forkSource string) string {
+// DisplayBlock picks the block of the terminal that shows the hosted session `key` (its own session id `own`): the
+// newest attach client (AttachedBlock), else, when the session was forked from `forkSource`, the newest terminal
+// claude carrying a block that runs that source (the TUI that sent it to the background). A TUI whose command line
+// names no session (isUnnamedTerminal) is known by blockSession, the session its block last reported: the source, or
+// `own` once this session's reports have moved the block's stamp to it. "" when none exists.
+func DisplayBlock(procs []ProcInfo, key, forkSource, own string, blockSession func(blockID string) string) string {
 	if block := AttachedBlock(procs, key); block != "" {
 		return block
 	}
+	if block := newestBlock(procs, func(p ProcInfo) bool { return isForkSourceViewer(p.Cmdline, forkSource) }); block != "" {
+		return block
+	}
+	if forkSource == "" || blockSession == nil {
+		return ""
+	}
+	return newestBlock(procs, func(p ProcInfo) bool {
+		if !isUnnamedTerminal(p.Cmdline) {
+			return false
+		}
+		session := blockSession(p.BlockID)
+		return session != "" && (session == forkSource || session == own)
+	})
+}
+
+// newestBlock returns the block of the newest process carrying one that `match` accepts, or "".
+func newestBlock(procs []ProcInfo, match func(ProcInfo) bool) string {
 	best := ProcInfo{}
 	for _, p := range procs {
-		if p.BlockID == "" || !isForkSourceViewer(p.Cmdline, forkSource) {
+		if p.BlockID == "" || !match(p) {
 			continue
 		}
 		if best.BlockID == "" || p.CreateMs > best.CreateMs {
@@ -250,21 +303,22 @@ func hostKey() (key, cmdline string) {
 
 // HostedDisplayBlock reports whether the calling hook runs for a daemon-hosted Claude session and, if so, the
 // bare block id of the terminal that shows it: the one attached to it, else the one that started the fork it is
-// ("" when neither exists). A session that runs directly in a terminal returns hosted=false and keeps its own
-// WAVETERM_BLOCKID. The process table is read for a hosted session alone, so a direct session pays only for the
-// ancestor walk.
-func HostedDisplayBlock() (blockID string, hosted bool) {
+// ("" when neither exists). blockSession reads the session a block last reported (DisplayBlock), asked only of a
+// terminal whose command line names none. A session that runs directly in a terminal returns hosted=false and keeps
+// its own WAVETERM_BLOCKID. The process table is read for a hosted session alone, so a direct session pays only for
+// the ancestor walk.
+func HostedDisplayBlock(blockSession func(blockID string) string) (blockID string, hosted bool) {
 	key, cmdline := hostKey()
 	if key == "" {
 		return "", false
 	}
 	forkSource := ForkSource(cmdline)
-	return DisplayBlock(displayCandidates(key, forkSource), key, forkSource), true
+	return DisplayBlock(displayCandidates(key, forkSource), key, forkSource, SessionRef(cmdline), blockSession), true
 }
 
-// displayCandidates lists the claude processes that can show the hosted session `key`: those attached to it and
-// those that run its fork source. Unlike EnumerateAgents it reads the environment of those alone, since this runs
-// inside a hook on every tool call.
+// displayCandidates lists the claude processes that can show the hosted session `key`: those attached to it, those
+// that run its fork source, and, for a fork, the terminals whose command line names no session. Unlike
+// EnumerateAgents it reads the environment of those alone, since this runs inside a hook on every tool call.
 func displayCandidates(key, forkSource string) []ProcInfo {
 	procs, err := process.Processes()
 	if err != nil {
@@ -276,7 +330,8 @@ func displayCandidates(key, forkSource string) []ProcInfo {
 			continue
 		}
 		cmdline, _ := p.Cmdline()
-		if AttachKey(cmdline) != key && !isForkSourceViewer(cmdline, forkSource) {
+		if AttachKey(cmdline) != key && !isForkSourceViewer(cmdline, forkSource) &&
+			(forkSource == "" || !isUnnamedTerminal(cmdline)) {
 			continue
 		}
 		environ, _ := p.Environ()

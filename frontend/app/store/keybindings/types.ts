@@ -11,9 +11,6 @@ export interface KeyContext {
     editable: boolean; // focus is in an input/textarea/select/contenteditable (covers the terminal textarea)
     modalOpen: boolean; // command palette / new-agent / new-project / any modalsModel modal is open
     leader: string | null;
-    // focus is in a terminal (xterm), a narrower test than `editable`: off a Mac, a plain Ctrl chord stands down
-    // there for the shell (see alias below). Left out, as tests do, it reads as not in a terminal.
-    terminal?: boolean;
 }
 
 // keys syntax reuses keyutil descriptors:
@@ -35,7 +32,7 @@ export interface Binding {
     // confirmation first.
     destructive?: boolean;
     // A second key for an action that already has its own row: off a Mac, the plain Ctrl form of a TMod chord
-    // (Ctrl+P beside Ctrl+Shift+P), live outside a terminal only. Kept out of the cheat sheet, the palette and the
+    // (Ctrl+J beside Ctrl+Shift+J), live outside a field only. Kept out of the cheat sheet, the palette and the
     // held-modifier bar, so each action shows once, by the chord that works everywhere.
     alias?: boolean;
     // Return false to explicitly NOT consume the key (let it pass through, e.g. first Ctrl+C to the PTY).

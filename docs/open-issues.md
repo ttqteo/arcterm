@@ -13,6 +13,8 @@ The rows of that prune were worked as chunks of `effort:c732b933-f976-4263-b191-
 
 Status legend:
 
+- **Waiting on a hand check** — shipped and unit-tested, never tried in the running app; tick it once tried, then
+  delete the line (a finding becomes a row below).
 - **Actionable** — can be picked up as-is.
 - **Blocked** — cannot start until a prerequisite exists.
 - **Held** — deliberately deferred pending a named trigger or evidence; do not build off the spec alone.
@@ -20,29 +22,96 @@ Status legend:
 
 ---
 
+## 0 · Waiting on a hand check
+
+Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
+does not, say what you saw and it becomes a bug row under Actionable.
+
+**2026-10-12 (type into the task from the New dialog's Start column)**
+
+- [ ] (arcterm) **A letter in the Start column starts the task.** Mod+N, `1`, type `fix`: focus is in Task and it
+  reads `fix`, a saved draft kept before it. With Unikey/EVKey Telex, typing `vieets` from the Start column gives
+  `viết`, the first letter included; with the Windows Vietnamese IME the first key may do nothing (it is skipped on
+  purpose). Pick Orchestrate → A plan file: letters do nothing; pick Terminal: nothing; the footer shows `a–z task`
+  only when a letter would write. (`launcher.ts` `launcherKey` "write", `launchermodal.tsx`)
+
+**2026-10-12 (path links from another folder)**
+
+- [ ] (arcterm) **A path an agent names from a subfolder is a link.** In an agent that worked on
+  `obsidian/seminar_cycle2/huong_C/plan_cycle2_C_rulegen_20261011.md` from the mit-thesis root and wrote it back as
+  `huong_C/plan_cycle2_C_rulegen_20261011.md`: hovering the path underlines it, Ctrl+click opens the file in the
+  agent's File tab. A path two touched files both end in stays plain. (`pathlinks.ts` `matchKnownPath`,
+  `pathlinkroute.ts`, `termpathlinks.ts`)
+
+**2026-10-12 (images in File tab and Code)**
+
+- [ ] (arcterm) **An image opens instead of "Binary file".** Open a `.png` (e.g. `docs/guide/images/agent-rail.png`)
+  from the Agent panel's Files list, in Code, and in Code's side column: it shows fitted with "W × H · size" under it;
+  a click shows it at its own size with scrollbars, a second click fits it again. Try an `.svg` too. (`imageframe.tsx`,
+  `codeclassify.ts`)
+
+**2026-10-12 (File tab header)**
+
+- [ ] (arcterm) **Icon-only Outline, Wrap and Pin in the File tab.** Open a markdown file in the Agent panel's File
+  tab: the header shows Preview/Source then icons only (Outline, Pin, Copy path, Open in Code); Pin turns into a filled
+  accent pin when on, and its tooltip says "Unpin this file"; Outline still opens its list. In Source, the Wrap icon
+  toggles accent. On Code, the bar above the editor shows Wrap, Pin and Copy path as icons the same way, `Alt+Z`
+  still lights Wrap, and Copy path flashes a check. (`filetab.tsx`, `docoutlineview.tsx`, `codepathbar.tsx`)
+
+**2026-10-12 (shortcuts, window, terminal)**
+
+- [ ] (arcterm) **Plain Ctrl in a terminal, Windows.** In a Claude Code terminal: `Ctrl`+`P` opens Search, `Ctrl`+`G`
+  opens the go-to bar, `Ctrl`+`N` the New dialog, `Ctrl`+`M` folds into Sprout. `d80e14b74`
+- [ ] (arcterm) **The three Shift chords, Windows.** In a terminal: `Ctrl`+`Shift`+`W` asks to close the agent,
+  `Ctrl`+`Shift`+`K` clears the screen, `Ctrl`+`Shift`+`J` opens What's waiting; `Ctrl`+`J` there is still the
+  newline, and outside a text field it opens What's waiting. `d80e14b74`
+- [ ] (arcterm) **Mac chords.** `⌘=` / `⌘-` / `⌘0` zoom (not Control any more); `⌘⇧Enter` toggles terminal
+  fullscreen from inside the terminal; `⌘K` clears the terminal. `cc7a43629`
+- [ ] (arcterm) **The `?` button**, both machines: at the bottom bar's right end on every surface, also while typing in a
+  terminal; it opens the cheat sheet. The What's waiting row there reads "… or ctrl+j outside a text field" on
+  Windows. `cc7a43629`, `d80e14b74`
+- [ ] (arcterm) **VS Code keys.** `Mod`+`,` opens Settings; on Code, `Mod`+`Shift`+`E` focuses the file tree.
+  `cc7a43629`
+- [ ] (arcterm) **Auto fold, Windows** (Settings → General → Window → Fold when you leave, on): a maximized or full-screen
+  app on arcterm's screen folds it after ~1 s; a small window, a half-screen snap, the Start menu or a window on the
+  other screen leaves it be. `d80e14b74`
+- [ ] (arcterm) **Auto fold, Mac — compile first.** `foreground.rs`'s macOS branch (`NSWindow.occlusionState`) was
+  never compiled: build on the Mac, then the same check as Windows (a full-screen app folds it, a window beside it
+  does not). `d80e14b74`
+- [ ] (arcterm) **Canvas board picker.** With more boards than fit the tab row, open the picker: the board before the
+  shown one wears `[`, the one after it `]`. `d80e14b74`
+- [ ] (arcterm) **Double-click a sidebar row** (a run's lead row too): it selects the agent and typing goes into its
+  terminal; it no longer folds the workers (the `N workers` chip does). `d80e14b74`
+- [ ] (arcterm) **Ctrl+C copies, Windows.** In a terminal, select text and press `Ctrl`+`C`: it is copied and the
+  selection clears, nothing is interrupted; press it again with nothing selected and it interrupts. After a restart
+  of `task dev` (the default lives in wavesrv), highlighting no longer copies unless Copy on select is on.
+  `6bb81dd0b`
+- [ ] (arcterm) **Tick a task box in a markdown Preview.** Open a `.md` with `- [ ]` lines in the Agent panel's File
+  tab, Preview: click a box; it ticks, the file on disk now reads `- [x]` on that line, and the scroll stays put.
+  Click again to clear it. `65179f6b8`
+
+---
+
 ## 1 · Actionable
 
 | Item | Kind | Effort | Source / notes |
 |---|---|---|---|
+| (arcterm) A plan run fails at submit, and the run cancels itself, when the plan or spec file in the checkout differs from its committed copy only in line endings (CRLF in the working copy, LF in git): `SnapshotDocs` sees the copy as changed in `git status --porcelain`, `git add` normalises it back to the committed blob, and `git commit` exits 1 on "nothing to commit" (`committing the spec and plan to wave/<run>: … nothing to commit, working tree clean`). Seen 2026-10-12 on run 33711a7e after the plan was edited by a Windows tool that writes CRLF; `sed -i 's/$//'` on the file and a restart worked. Fix: after `git add`, return when `git diff --cached --quiet -- <paths>` reports nothing staged, and add a test with a CRLF copy of a committed LF doc | bug | S | `pkg/orchestrate/snapshot.go` `SnapshotDocs`; `pkg/wshrpc/wshserver/wshserver_dag.go:360` |
 | (arcterm) Token burn guard part (1) shipped (a Token burn card before a costly `Agent`/`Task`/`Workflow` spawn). Left: nothing warns while a session burns its 5h window through cache reads (a docs session went ~20M → ~220M tokens in an hour): a burn-rate toast, cache reads shown apart in Consumers, a whole-run cost estimate at plan submit, exempting engine runs | feature | M | `docs/deferred.md` "Token burn guard"; complements `docs/superpowers/specs/2026-10-07-quota-guard-design.md` |
 | (arcterm) The Claude sign-in dialog's `TokenScanner` is tested only on synthetic output: the `settings-claude-account` scenario runs a node stand-in through the dev override `arc:dev:setuptoken-cmd`, never the real command. Record a real `claude setup-token` run's pty output (the token redacted to a fixture of the same shape, line breaks and escape sequences kept) and add it as a `setuptokenscan.test.ts` case | verification gap | S | `frontend/app/view/agents/setuptokenscan.ts`, `frontend/app/cockpit/claude-signin-modal.tsx`; plan review of `docs/superpowers/plans/2026-10-07-claude-account-switch.md` (2026-10-07) |
-| (arcterm) A Claude Code background session reports its hooks to the block it was sent to the background from, not the tab that attached to it: the daemon inherits that tab's `WAVETERM_*` env, so after the tab closes its `SetMeta agent:transcriptpath` lands on a deleted block, and the Attach tab (`claude --resume <id>` turned `claude attach`) never gets the agent's status. Seen 2026-10-06: session `61c3c450` kept writing to block `0af9fb6e`, deleted 18 s earlier. Fix needs a way to bind a daemon-hosted session to the tab attached to it (e.g. route by session id, not by the hook's env block). Fixed since: a hosted session reports into the tab running `claude attach <key>` (`8a8006d9`), and a session sent to the background from its own terminal (no `claude attach`) is now matched by its fork source, the hosted command line's `--fork-session --resume <id>` against the terminal claude running that id (`agentobserve.DisplayBlock`). Still open: a session whose terminal command line names no session (a bare `claude`, `--continue`, or `--resume` picked from the list) or whose terminal has exited is matched to nothing, so its reports are dropped (`statusTarget`) and no tab shows its status or subagents | bug | M | `waveapp.log` 2026-10-06 16:40:02–16:40:20; `claude agents --json` lists the session `kind: background`; Close already stops it by the `--resume` id (`ce797bee`) |
+| (arcterm) A Claude Code background session whose terminal has exited (and no `claude attach` tab) shows nowhere: its reports are dropped (`statusTarget`) until a tab attaches. The terminal that sent it to the background is found by its command line (`--resume <id>`) or, when that names no session (a bare `claude`, `--continue`, a picked `--resume`), by the session its block last reported (`agentobserve.DisplayBlock`, 2026-10-10); that path is unit-tested only, never exercised on a live background session. Check: send a bare `claude` session to the background, and its tab keeps its status and subagents | verification gap | S | `waveapp.log` 2026-10-06 16:40:02–16:40:20; `claude agents --json` lists the session `kind: background`; Close already stops it by the `--resume` id (`ce797bee`) |
+| The 2026-10-10 fixes were unit-tested on macOS only, where WKWebView answers no CDP: the palette pick that hides its cell (focus goes to the picked agent, `modalfocusfallback.ts`), every ModalShell dialog gating the surface keys (`anyDialogOpen`), the grid holding for its saved focused cell on reload (`gridHold`; `agent-grid` step 10b now passes or fails, no longer skips), and the File tab Source view sending on `Ctrl`+`Enter` in WKWebView. Run `agent-grid` and `md-comments` on Windows, and try the Source view send in a macOS build | verification gap | S | the 2026-10-10 bug fixes (branch `fix/open-bugs`, landed on main 2026-10-12) |
 | (arcterm) Closing an agent attached to a background session was never exercised live: `ce797bee` runs `claude stop <id>` from `WorkspaceService.CloseTab` (dry run against the real `claude agents` picked only the background session), but no wavesrv with it has closed a real one. Check: Close it, then `claude agents` no longer lists it `working` | verification gap | S | `pkg/bgagents` `Stop`, `pkg/service/workspaceservice` `tabSessionIds` |
 | A run whose lead is down is visible only on the Cockpit: its card shows "Lead down" and "Lead wake failed" with **Relaunch lead** (`leadcard.tsx`, `orchestrate/relaunchlead.ts`). The Agent surface's run row only reads "lead closed" (`runmodel.ts` `dagProgressLabel`), with no action, and `wsh runs show` does not mention it at all. A run whose lead died in an app restart (run 74f0fa77, 2026-10-06) then sat 15 min on a failed plan review with nobody to revise it, unnoticed by a user who works in Agent/Conversation History. Since `90f4b49e` (kaeltran16 fork, merged 2026-10-07) a lead killed by an app restart is resumed at boot (`ResumeInterruptedLeads`), so what is left is a lead that resume cannot bring back. Show the lead-down state and Relaunch on the Agent surface's run row, and a `lead down` line (and a relaunch command) in `wsh runs` | feature | S | Session 2026-10-06; restart recovery itself is `docs/deferred.md` "Run recovery after a restart — dag runs" |
 | Agent + Sessions merge, the 2x2 grid and Uploads were never run live: no `task check:ts`, none of the four new CDP scenarios (`agent-history`, `agent-rail-sections`, `agent-grid`, `agent-uploads`) have run, and a real WebView2 drag, an OS file drop and the native Attach dialog were never exercised. Clear `public/cockpit-fixtures/active.json` first (`npm run cockpit:fixtures -- --clear`): the new scenarios SKIP while it exists | verification gap | M | `docs/superpowers/specs/2026-10-05-agent-sessions-merge-design.md`; If WebView2 cancels a drag the instant it starts, the fix is a `setTimeout(0)` in `beginAgentDrag` (already deferred once) or moving the overlay mount later |
-| `deriveKeyContext().modalOpen` ignores `ModalShell`'s registered-modal stack: a ModalShell dialog with no text field over the Agent, Diff or Code surface lets Escape and `j`/`k`/`d`/`f` act behind it unless it has its own atom in that hand-written list (the Uploads lightbox does, `uploadsLightboxOpenAtom`). General fix: add `anyModalOpen()` (`modals/modalstack.ts`) to `modalOpen` and sweep the binding tests | tech-debt | S | `frontend/app/store/keybindings/dispatcher.ts`; found in the Uploads review (2026-10-06) |
 | Plain terminals are reachable only by mouse, from the Agent tree's Terminals section (back from the details rail 2026-10-06): not in the palette, Ctrl+Tab or `j`/`k`, and not while the centre is fullscreen (which hides the tree). Option: list terminals in the palette's Agents group | feature | S | `docs/superpowers/specs/2026-10-05-agent-sessions-merge-design.md`; Task 13 review (2026-10-06) |
 | `wsh ui state` cannot tell a worker that Conversation History is open (it reports `surface: agent`, `agent:<id>`): needs a `center` field in `UiState` (Go type + `task generate`) | feature | S | `frontend/app/cockpit/uiapi.ts`, `uiclient.ts`; Task 7 review |
-| A reload does not resume the grid on its saved focused cell: `focusIdAtom` is not persisted, so `resolveShownAgent` shows the first saved cell whose agent arrives (usually the first in roster order). Hold the shown agent until the saved focused cell arrives or the roster is seeded; `agent-grid` step 10b can only PASS or SKIP until then | bug | S | `frontend/app/view/agents/cockpitsurfacemodel.ts` `resolveShownAgent`; Task 22 review |
-| Palette pick (or `agent:split` falling back to replace) of an agent that is not in a multi-cell grid leaves keyboard focus on `<body>` (the old cell is hidden at restore time). The cell `onFocus` hand-off also relies on the exit-animation window keeping the dialog in the DOM: a modal that unmounts synchronously and restores into a cell would revert the pick. Deterministic fix: a flag set around `previous.focus()` in `takeModalFocus` | bug | S | `frontend/app/view/agents/agentsurface.tsx` `focusCell`, `frontend/app/modals/modalfocus.ts`; Task 21 reviews |
 | `useLocalImage` (shared by the Uploads lightbox, the Final check viewer and the run sheet) decodes the whole file with no size guard: a very large attached image costs hundreds of MB transiently. Check `content-length` before `resp.blob()` and add a `toolarge` status | limitation | S | `frontend/app/view/jarvis/localimage.ts`; Task 28 review |
 | Duplicated rules from the merge: "choose an agent row" (`selectAgentRow` in `agenttree.tsx` and `select` in `terminalsrail.tsx`); the Open-in-split gate (seeded + `canOpenInSplit` + fallback to `openTerminal`) in `agenttree.tsx` and `cockpit/actions/agent.ts`; `blockId != null` checks beside `eligibleIds` | tech-debt | S | final integration review 2026-10-06 |
 | OS-file drops on a plain terminal are recorded under its block, but `TerminalRail` has no Uploads section, so they are invisible and count toward `MAX_OWNERS` (40), which can evict an agent's older records | limitation | S | `frontend/app/view/agents/uploadsingest.ts` `ingestFiles`, `terminalsrail.tsx`; final review |
 | A sidebar session scan requested inside its rate-limit gap (an exit within 1 s of the last scan, an arrival within 5 s) is dropped, not deferred: two agents closed within a second leave the second ended session missing until the next trigger | limitation | S | `frontend/app/view/agents/usesessionsscan.ts`; Task 5 review |
 | Ctrl+Tab with more live agents than grid cells keeps changing which four agents show (it replaces the focused cell); Ctrl+Shift+Tab is "next asking agent, forward", not previous. Decide whether Ctrl+Tab should cycle only among agents already in the grid | held decision | S | `docs/superpowers/specs/2026-10-05-agent-sessions-merge-design.md`; plan `Decisions to confirm` 1 and 4 |
 | Markdown comments in the File tab (Preview, cards, the three gestures, the tray) were never run live: the run's Final stage ran on macOS, where WKWebView answers no CDP, so none of the 17 steps of the `md-comments` scenario ran. Run `node scripts/cdp/final-verify.mjs md-comments` on Windows and compare the shots with the mockup boards (`.superpowers/design/md-comments/project/`, gitignored: keep it until then). Step 12 also checks that the Cockpit card of a roster agent with no `blockId` still shows its inline `docs/guide.md` link | verification gap | M | `docs/superpowers/specs/2026-10-06-md-comments-design.md`; run 74f0fa77 |
-| Ctrl+Enter does not send the markdown comments from the File tab's Source view while Monaco has focus on macOS: `filetab.tsx`'s handler skips any `HTMLTextAreaElement` target so a comment box keeps its own Ctrl+Enter, and in WKWebView Monaco takes its input in a textarea (WebView2 is unaffected) | bug | S | Final verifier of run 74f0fa77; skip only a target inside `[data-md-box]` (`frontend/app/view/agents/filetab.tsx:86`) |
-| Running `scripts/cdp/final-verify.test.mjs` inside a worktree removes that worktree's `src-tauri/target` and `dist/bin` links: its tests spawn `final-verify.mjs` with the repo as cwd, and the script calls `unlinkBuildJunctions(process.cwd())` (`scripts/cdp/final-verify.mjs:292`). What the links point at is left alone, but the worktree's next build starts cold | bug | S | run 74f0fa77 (t-7); give the spawned script a temp cwd, or have an env var name the tree to unlink |
 | (arcterm) A Claude account at its usage limit is not marked exhausted: a token account at its limit never finishes a turn, so arcterm never learns its quota from it (`/api/oauth/usage` refuses a setup-token with 403, so `claudequota` cannot ask either), and the picker shows its last snapshot, or "Not used yet", while it sits at 100%. Noting a 429 usage-limit answer from an agent on it as "exhausted until the window resets" is not done: it needs the agent's hook to report the refusal (and the reset time Claude prints with it) and a snapshot written at 100% with that reset | feature | M | `docs/superpowers/specs/2026-10-07-claude-account-switch-design.md` decision 8; `frontend/app/view/agents/ratelimitstore.ts`, `cmd/wsh/cmd/wshcmd-agenthook.go` |
 | (arcterm) A dag child's question that a human owns is not in the Cockpit's "Cần bạn" strip: the strip lists the attention list's gates, blocked tasks, runs to accept or land and escalations, and `ChildAskCard` (answered through `DagAsksCommand`) is fed by the run sheet and the agent rail, not by `GetAttention`. It stays there, and the Cockpit and dock badges do not count it. Listing it in the strip needs the attention list to carry it, with an answer path through `DagAsksCommand` rather than the agent's block | feature | M | `docs/superpowers/specs/2026-10-07-cockpit-needs-you-design.md` decision 5; `frontend/app/view/agents/childaskcard.tsx`, `frontend/app/view/agents/needsyoustripmodel.ts` |
 | (arcterm) Whether `/model` applies inside a running Claude turn was never checked (the Consumers plan's Task 1 spike could not drive a session: tmux is not installed on this Mac), so the panel's → Sonnet toast says "from its next turn". Check it as the spike describes; if the switch waits for the turn, add spec decision 9's fallback: a re-run of a worker's task on Sonnet through the existing `escalate` dag action (`wsh jarvis dag escalate <task> --model sonnet`) | verification gap | S | `docs/superpowers/specs/2026-10-08-consumers-panel-design.md` decision 9; Task 1 of the Consumers plan, `git show 75f82cd9:docs/superpowers/plans/2026-10-08-consumers-panel.md` |

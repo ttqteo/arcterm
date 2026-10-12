@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { anyModalOpen } from "@/app/modals/modalstack";
+import { anyDialogOpen, anyModalOpen } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
 import { modalsModel } from "@/app/store/modalmodel";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
@@ -119,13 +119,15 @@ export function deriveKeyContext(): KeyContext {
         globalStore.get(floatMiniAtom) ||
         // the Ctrl+Tab switcher over the terminal: its Escape closes it (switcher:cancel), not the surface underneath
         globalStore.get(tabSwitcherAtom) != null ||
-        globalStore.get(modalsModel.modalsAtom).length > 0;
+        globalStore.get(modalsModel.modalsAtom).length > 0 ||
+        // and every other ModalShell dialog (the cheat sheet, a confirm, the tool detail): without an atom above, Escape
+        // and j/k/d/f acted on the surface behind it. A sheet does not count: its surface's keys stay live.
+        anyDialogOpen();
     return {
         surface,
         editable: isEditableTarget(document.activeElement) || ownsKeys(document.activeElement),
         modalOpen,
         leader,
-        terminal: document.activeElement?.closest(".xterm") != null,
     };
 }
 

@@ -91,42 +91,23 @@ export function autoSproutOn(raw: unknown): boolean {
 
 // how long the window stays out of focus before it folds, so an Alt+Tab that comes straight back leaves it be
 export const AUTO_FOLD_DELAY_MS = 800;
-// how long a focus waits to see whether a press on Sprout comes with it
-export const AUTO_RESTORE_SETTLE_MS = 250;
-// a focus this close to a press on Sprout is the press's (a drag, a click on an agent), not a return to the app
-export const AUTO_RESTORE_PRESS_MS = 300;
+
+export type Foreground = "ours" | "covered" | "beside";
 
 export interface LeaveCheck {
     on: boolean;
     size: WindowSize;
-    // the OS's foreground is still arcterm's: a file dialog or another arcterm window took the focus
-    ours: boolean;
+    // where the OS's foreground is (the host's app_foreground, foreground.rs): still arcterm's (a file dialog, another
+    // arcterm window), another app whose window hides arcterm, or another app beside it, where arcterm still shows
+    foreground: Foreground;
     minimized: boolean;
     visible: boolean;
 }
 
-/** Whether a window still out of focus when AUTO_FOLD_DELAY_MS ends folds into Sprout. Only Full: Float is already the
- *  size for watching an agent from another app. */
+/** Whether a window still out of focus when AUTO_FOLD_DELAY_MS ends folds into Sprout: only when the app you left for
+ *  hides it, as a picture-in-picture would. Only Full: Float is already the size for watching an agent from another app. */
 export function autoFoldOnLeave(c: LeaveCheck): boolean {
-    return c.on && c.size === "full" && !c.ours && !c.minimized && c.visible;
-}
-
-export interface ReturnCheck {
-    // the fold was the one leaving made, not a button's
-    autoFolded: boolean;
-    size: WindowSize;
-    // the last press on the window minus the focus's time; null with no press yet
-    pressGapMs: number | null;
-    chatOpen: boolean;
-}
-
-/** Whether a focus coming back to a folded window grows it back, as a picture-in-picture returns to its tab: only a fold
- *  leaving made, and not a focus that came with a press on Sprout or with its chat open. */
-export function autoRestoreOnReturn(c: ReturnCheck): boolean {
-    if (!c.autoFolded || c.size !== "sprout" || c.chatOpen) {
-        return false;
-    }
-    return c.pressGapMs == null || Math.abs(c.pressGapMs) > AUTO_RESTORE_PRESS_MS;
+    return c.on && c.size === "full" && c.foreground === "covered" && !c.minimized && c.visible;
 }
 
 export interface Pt {

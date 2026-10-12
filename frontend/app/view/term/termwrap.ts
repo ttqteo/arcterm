@@ -7,7 +7,7 @@ import { getFileSubject } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { FileRef } from "@/app/view/agents/agentrailtabs";
-import { openPathFromTerminal } from "@/app/view/agents/pathlinkroute";
+import { openPathFromTerminal, touchedPathForBlock } from "@/app/view/agents/pathlinkroute";
 import { isAgentSleeping, relaunchBlockedBy } from "@/app/view/agents/session-models/agentresumestore";
 import { recordPastedImage } from "@/app/view/agents/uploadsingest";
 import { pasteTextFor } from "@/app/view/agents/uploadsstore";
@@ -228,6 +228,7 @@ export class TermWrap {
                 const cwd = WOS.getObjectValue<Block>(WOS.makeORef("block", this.blockId))?.meta?.["cmd:cwd"];
                 return typeof cwd === "string" && cwd !== "" ? cwd : null;
             },
+            touched: (cwd: string | null, path: string) => touchedPathForBlock(this.blockId, cwd, path),
             activate: (ref: FileRef) => openPathFromTerminal(this.blockId, ref),
             hover: (e: MouseEvent, ref: FileRef) => this.onLinkHover?.(ref.abs, e.clientX, e.clientY, hintFor(ref)),
             leave: () => this.onLinkHover?.(null, 0, 0),

@@ -18,6 +18,7 @@ import {
     parseCanvasPath,
     prototypePath,
     shownBoards,
+    stepKeys,
     stepTab,
     tabsFitStrip,
     updatedAgo,
@@ -167,6 +168,30 @@ describe("tabsFitStrip", () => {
 describe("boardLabel", () => {
     it("strips the board extension", () => {
         expect(boardLabel("Main.dc.html")).toBe("Main");
+    });
+});
+
+describe("stepKeys", () => {
+    const tabs = [ALL_TAB, "Main.dc.html", "B.dc.html", "C.dc.html"];
+
+    it("names the tab [ and ] would open from the shown one, wrapping through All", () => {
+        expect(stepKeys(tabs, "B.dc.html")).toEqual(
+            new Map([
+                ["Main.dc.html", "["],
+                ["C.dc.html", "]"],
+            ])
+        );
+        expect(stepKeys(tabs, ALL_TAB)).toEqual(
+            new Map([
+                ["C.dc.html", "["],
+                ["Main.dc.html", "]"],
+            ])
+        );
+    });
+
+    it("gives one tab both ways only ], and a lone tab no key", () => {
+        expect(stepKeys([ALL_TAB, "Main.dc.html"], ALL_TAB)).toEqual(new Map([["Main.dc.html", "]"]]));
+        expect(stepKeys(["Main.dc.html"], "Main.dc.html")).toEqual(new Map());
     });
 });
 

@@ -30,6 +30,7 @@ import type { FileRef } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { savedScroll, saveScroll } from "./filescroll";
+import { toggleTaskInFile } from "./filetabload";
 import { CardSlot, MdDocContext, type MdDocCtx } from "./mdcommentcards";
 import {
     blockForLine,
@@ -92,11 +93,14 @@ export function MdDoc({
     agent,
     fileRef,
     text,
+    onFileChanged,
 }: {
     model: AgentsViewModel;
     agent: AgentVM;
     fileRef: FileRef;
     text: string;
+    // a task box was ticked here and the file written: read it again
+    onFileChanged?: () => void;
 }) {
     const agentId = agent.id;
     const state = useAtomValue(mdCommentAtom(agentId));
@@ -386,6 +390,18 @@ export function MdDoc({
 
     const blockAfter = useCallback((tag: string) => <CardSlot inside={tag === "li"} />, []);
 
+    // stable for the memo'd Markdown; a box whose line changed on disk since this read only re-reads the file
+    const changedRef = useRef(onFileChanged);
+    changedRef.current = onFileChanged;
+    const onToggleTask = useCallback(
+        (line: number) =>
+            fireAndForget(async () => {
+                await toggleTaskInFile(fileRef.abs, line, fileLines[line - 1] ?? "");
+                changedRef.current?.();
+            }),
+        [fileRef.abs, fileLines]
+    );
+
     const hosts = useMemo(() => {
         const m = new Map<Element, MdComment[]>();
         for (const c of fileComments) {
@@ -459,6 +475,7 @@ export function MdDoc({
                             contentBlocks={false}
                             blockAfter={blockAfter}
                             onClickLink={onClickLink}
+                            onToggleTask={onToggleTask}
                         />
                     </MdDocContext.Provider>
                 </div>

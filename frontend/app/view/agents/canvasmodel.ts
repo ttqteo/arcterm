@@ -157,6 +157,21 @@ export function boardLabel(name: string): string {
     return name.endsWith(BOARD_EXT) ? name.slice(0, -BOARD_EXT.length) : name;
 }
 
+// The tab each of the board keys opens from the shown one ([ the previous, ] the next, as stepTab wraps), for the board
+// picker to label its rows with; a tab both keys reach shows ].
+export function stepKeys(tabs: string[], current: string | null): Map<string, "[" | "]"> {
+    const keys = new Map<string, "[" | "]">();
+    const prev = stepTab(tabs, current, -1);
+    const next = stepTab(tabs, current, 1);
+    if (prev != null && prev !== current) {
+        keys.set(prev, "[");
+    }
+    if (next != null && next !== current) {
+        keys.set(next, "]");
+    }
+    return keys;
+}
+
 export function stepTab(tabs: string[], current: string | null, delta: number): string | null {
     const n = tabs.length;
     if (n === 0) {

@@ -169,7 +169,7 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                         {
                             id: "window.autosprout",
                             title: "Fold when you leave",
-                            desc: "Like a picture-in-picture: once you switch to another app, the full window folds into Sprout, and it grows back when you return to arcterm. Off keeps the cockpit as it is, say on a second screen. Right-click the Sprout button to switch it.",
+                            desc: "Once you switch to another app whose window hides arcterm (maximized or full screen on its screen), the full window folds into Sprout; an app beside it, or on another screen, leaves it be. Coming back to arcterm (Alt+Tab, the taskbar) focuses Sprout; double-click it or pick Restore to grow it back. Off keeps the cockpit as it is, say on a second screen. Right-click the Sprout button to switch it.",
                             key: "window:autosprout",
                             scope: "synced",
                             config: true,
@@ -362,7 +362,7 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                         {
                             id: "terminal.copyonselect",
                             title: "Copy on select",
-                            desc: "Copy highlighted text to the clipboard automatically.",
+                            desc: "Copy highlighted text to the clipboard automatically. Off, highlighting only marks what you read; copy with Ctrl+C while text is selected (⌘C on a Mac), and with nothing selected Ctrl+C stays the interrupt.",
                             key: "term:copyonselect",
                             scope: "synced",
                             config: true,

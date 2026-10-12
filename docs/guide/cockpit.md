@@ -169,7 +169,7 @@ Các phím này chỉ có tác dụng khi không đang gõ trong ô nhập.
 | `b` | Đẩy xuống nền / gỡ thẻ đã xong |
 | `Space` | Peek agent trong popup |
 | `[` / `]` | Surface trước / sau |
-| `Ctrl+G` rồi một chữ | Nhảy tới surface (xem bên dưới); trong terminal là `Ctrl+Shift+G` |
+| `Ctrl+G` rồi một chữ | Nhảy tới surface (xem bên dưới) |
 | `?` | Mở bảng phím tắt đầy đủ (hoặc bấm nút `?` ở góc phải thanh dưới cùng) |
 
 HintsBar ở đáy Cockpit liệt kê gần như đúng các phím này; cửa sổ hẹp thì các gợi ý cuối danh sách bị bỏ bớt.
@@ -358,8 +358,10 @@ Một con vật pixel nhỏ đi dọc mép trên của footer trên mọi surfac
   chờ và ô **Ask Jarvis**), `Esc` để thu lại; điều nó nói và câu trả lời đến lúc chat đang thu hiện thành bong bóng
   cạnh nó. Không thấy con vật đâu (đang ở Space khác chẳng hạn) thì bấm icon arcterm trên Dock để cửa sổ quay về (macOS).
   Muốn nút minimize về Dock (taskbar trên Windows) như thường: **Settings → General → Window → Minimize**.
-  Muốn cửa sổ tự thu vào Sprout khi bạn chuyển sang app khác và tự phóng to khi quay lại, như picture-in-picture: chuột
-  phải nút **Sprout** trên app bar → **Fold when you leave arcterm**, hoặc **Settings → General → Window**.
+  Muốn cửa sổ tự thu vào Sprout khi bạn chuyển sang một app che kín arcterm (maximize hay fullscreen trên cùng màn
+  hình; app nằm cạnh hay ở màn hình khác thì không thu): chuột phải nút **Sprout** trên app bar → **Fold when you
+  leave arcterm**, hoặc **Settings → General → Window**. Quay lại arcterm (Alt+Tab, taskbar) chỉ focus con vật; bấm đúp
+  hay **Restore** để phóng to.
 - Popup cũng là nơi **peek** hiển thị: `Space` trên một thẻ/hàng, hoặc giữ `Ctrl` rồi bấm một liên kết (`Cmd`+bấm trên macOS), mở run, agent, record hay initiative trong popup mà không đổi lựa chọn ở surface bên dưới. `Backspace` về màn đầu của popup, `Enter` mở mục đó đúng chỗ của nó.
 - Đổi nhân vật (Sprout hoặc Minion một mắt) và trang phục (áo cờ, cầm cờ hoặc tắt) ở **Settings → Appearance**.
 

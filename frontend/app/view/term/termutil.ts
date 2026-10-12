@@ -16,6 +16,13 @@ export function trimTerminalSelection(text: string): string {
         .join("\n");
 }
 
+// Ctrl+C in a terminal off a Mac: a copy while text is selected, else the interrupt (Windows Terminal's and VS Code's
+// rule), so copying without copy-on-select never needs Ctrl+Shift+C and never stops a running command. A Mac copies with
+// ⌘C, so Ctrl+C stays the interrupt there.
+export function ctrlCCopies(mac: boolean, hasSelection: boolean): boolean {
+    return !mac && hasSelection;
+}
+
 export function normalizeCursorStyle(cursorStyle: string): TermTypes.Terminal["options"]["cursorStyle"] {
     if (cursorStyle === "underline" || cursorStyle === "bar") {
         return cursorStyle;

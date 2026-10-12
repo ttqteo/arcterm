@@ -208,14 +208,10 @@ function switcherBindings(model: AgentsViewModel, mod: "ctrl" | "alt"): Binding[
     ];
 }
 
-// Off a Mac, a TMod chord (Ctrl+Shift+P) keeps its plain Ctrl form (Ctrl+P) too, live outside a terminal only: VS Code's
-// and the Mac's habit on a list, a field or the editor, while inside a terminal Ctrl+letter stays the shell's. The
-// peek's Ctrl+J also stands down in a field, where it was the newline before it had a TMod form.
+// Off a Mac, a TMod chord (Ctrl+Shift+J) can keep its plain Ctrl form (Ctrl+J) too, where that form is not the
+// terminal's or the field's own key. Only the peek has one: Ctrl+J is the newline in a terminal or a field.
 const WIN_CTRL_ALIAS_GATES: Record<string, (ctx: KeyContext) => boolean> = {
-    palette: (ctx) => !ctx.terminal,
     "jarvis:peek": (ctx) => !ctx.editable,
-    "new-agent": (ctx) => !ctx.terminal,
-    "window:fold": (ctx) => !ctx.terminal,
 };
 
 function withWinCtrlAliases(bindings: Binding[]): Binding[] {
@@ -307,7 +303,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             // reachable from inside a text field, and a binding that always matches is also what keeps
             // WebView2's print dialog off this key. `g p` opens it too.
             id: "palette",
-            keys: "TMod:p",
+            keys: "Mod:p",
             group: "Global",
             label: "Search (files on Code)",
             paletteHidden: true, // a palette row that opens the palette
@@ -320,7 +316,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             // sheet can advertise the chord. Same shape as the cockpit-grid documentation bindings.
             // The matcher checks LEADER_ALIASES ahead of the singles pass, so this never wins the key.
             id: "leader:enter",
-            keys: "TMod:g",
+            keys: "Mod:g",
             group: "Navigation",
             label: "Go to… (works inside the agent terminal too)",
             paletteHidden: true, // a palette row for a key the palette itself would swallow
@@ -361,7 +357,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
         },
         {
             id: "new-agent",
-            keys: "TMod:n",
+            keys: "Mod:n",
             group: "Global",
             label: "New agent",
             // yields to an open modal: unguarded it stacked New Agent on top of whatever was already
@@ -370,10 +366,10 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             run: () => openLauncher(model, "agent"),
         },
         {
-            // ⌘M on a Mac, Ctrl+Shift+M on Windows (Ctrl+M outside a terminal): from the cockpit or a float straight into Sprout, or to the Dock when
+            // ⌘M on a Mac, Ctrl+M on Windows: from the cockpit or a float straight into Sprout, or to the Dock when
             // window:minimize says so (floatstore.ts). Works from a focused terminal, like the yellow button.
             id: "window:fold",
-            keys: "TMod:m",
+            keys: "Mod:m",
             group: "Global",
             label: "Fold the window into Sprout",
             when: (ctx) => !ctx.modalOpen,

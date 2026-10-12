@@ -37,10 +37,13 @@ async function freePort() {
 
 const close = (srv) => new Promise((r) => srv.close(r));
 
-// spawn the real CLI: the engine only sees the exit code and the last stdout line
+// spawn the real CLI: the engine only sees the exit code and the last stdout line. It runs from an empty dir: the
+// script unlinks the build links of its cwd, which would otherwise be the checkout running these tests
 function run(env) {
+    const cwd = mkdtempSync(join(tmpdir(), "final-cwd-"));
     return new Promise((resolve) => {
-        execFile(process.execPath, [SCRIPT], { env, timeout: 30_000 }, (err, stdout) => {
+        execFile(process.execPath, [SCRIPT], { env, cwd, timeout: 30_000 }, (err, stdout) => {
+            rmSync(cwd, { recursive: true, force: true });
             const lines = stdout.trim().split(/\r?\n/);
             resolve({ code: err ? err.code : 0, killed: Boolean(err?.killed), last: lines[lines.length - 1] });
         });

@@ -22,12 +22,17 @@ export function topId(stack: string[]): string | null {
 }
 
 let openStack: string[] = [];
+const openSheets = new Set<string>();
 
 /** Registers an open modal and returns its unregister. Call from an effect gated on `open`. */
-export function registerModal(id: string): () => void {
+export function registerModal(id: string, variant: "dialog" | "sheet" = "dialog"): () => void {
     openStack = pushId(openStack, id);
+    if (variant === "sheet") {
+        openSheets.add(id);
+    }
     return () => {
         openStack = popId(openStack, id);
+        openSheets.delete(id);
     };
 }
 
@@ -39,6 +44,12 @@ export function ownsFocus(stack: string[], id: string): boolean {
 /** Whether any shell is open: an open shell's own listener closes it on Escape. */
 export function anyModalOpen(): boolean {
     return openStack.length > 0;
+}
+
+/** Whether a dialog is open. A sheet is scoped to its surface and leaves it switchable (modalshell.tsx), so the
+ *  surface's keys stay live under it. */
+export function anyDialogOpen(): boolean {
+    return openStack.some((id) => !openSheets.has(id));
 }
 
 export function isTopModal(id: string): boolean {

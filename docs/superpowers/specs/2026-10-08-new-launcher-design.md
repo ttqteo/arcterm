@@ -123,6 +123,7 @@ is added to `bindings.ts`. Global bindings already stand down while the dialog i
 | `1`–`9` | Start or Project column | pick the nth row of that column |
 | `↑` `↓` | Start or Project column | move the selection, wrapping |
 | letters, `-` `_` `.` space | Project column | extend the filter |
+| letters, `-` `_` `.` (not space) | Start column | move focus to the pick's Task box (an agent) or Goal box (a run from a goal), caret at the end, and let the key land there; nothing for a terminal or a run from a plan file |
 | `Backspace` | Project column | shorten the filter |
 | `Tab` / `Shift+Tab` | anywhere | through the controls in order (Clear when shown, Start, Project, each field, Cancel, primary) and wrapping; focus never leaves the dialog |
 | `Enter` | a column, or a one-line input (command, branch, plan path) | launch; a run with a blocker moves focus to the field that blocks it instead |

@@ -233,6 +233,32 @@ describe("deriveKeyContext", () => {
         unbind();
     });
 
+    // a ModalShell dialog with no atom in the list above (the shortcuts cheat sheet, a confirm, the tool detail) let
+    // Escape and j/k/d/f act on the surface behind it
+    it("counts any open ModalShell dialog as a modal", () => {
+        const unbind = bindModel("agent");
+        const unregister = registerModal("dispatcher-dialog-test");
+        try {
+            expect(deriveKeyContext().modalOpen).toBe(true);
+        } finally {
+            unregister();
+        }
+        expect(deriveKeyContext().modalOpen).toBe(false);
+        unbind();
+    });
+
+    // a sheet is scoped to its surface and leaves it switchable, so its surface's keys stay live
+    it("does not count an open ModalShell sheet", () => {
+        const unbind = bindModel("jarvis");
+        const unregister = registerModal("dispatcher-sheet-test", "sheet");
+        try {
+            expect(deriveKeyContext().modalOpen).toBe(false);
+        } finally {
+            unregister();
+        }
+        unbind();
+    });
+
     // the footer's popovers close on their own Escape listener, which runs after this dispatcher's capture handler;
     // uncounted, agent:back took Escape and the popover stayed open
     it("counts the Consumers and Servers popovers as modals", () => {

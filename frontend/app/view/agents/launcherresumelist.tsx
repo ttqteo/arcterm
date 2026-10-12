@@ -7,6 +7,7 @@
 // lands on the picked row and ↑↓ move the pick. Enter bubbles to the dialog, which launches from this zone.
 
 import { globalStore } from "@/app/store/jotaiStore";
+import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useRef, type KeyboardEvent } from "react";
 import { formatAge, formatTokens } from "./agentsviewmodel";
@@ -108,7 +109,8 @@ export function ResumeList({ choices, pickedId, onViewTranscript }: ResumeListPr
                                     {formatTokens(s.tokenstotal)} tok
                                 </span>
                             </span>
-                            {/* out of the tab order: the row's radio is the stop, and Shift+Enter is this button's key */}
+                            {/* out of the tab order: the row's radio is the stop, and Shift+Enter is this button's key,
+                                which the picked row's button names, since the key acts on the picked row */}
                             <button
                                 type="button"
                                 tabIndex={-1}
@@ -119,11 +121,16 @@ export function ResumeList({ choices, pickedId, onViewTranscript }: ResumeListPr
                                     onViewTranscript(s);
                                 }}
                                 className={cn(
-                                    "shrink-0 cursor-pointer rounded-[6px] border border-edge-mid bg-surface-raised px-2 py-[3px] text-[10.5px] font-semibold text-secondary hover:border-edge-strong hover:text-primary",
+                                    "flex shrink-0 cursor-pointer items-center gap-1.5 rounded-[6px] border border-edge-mid bg-surface-raised px-2 py-[3px] text-[10.5px] font-semibold text-secondary hover:border-edge-strong hover:text-primary",
                                     on ? "opacity-100" : "opacity-0 group-hover:opacity-100"
                                 )}
                             >
                                 Transcript
+                                {on ? (
+                                    <span aria-hidden className="font-mono font-normal text-muted">
+                                        {formatChordString("Shift:Enter")}
+                                    </span>
+                                ) : null}
                             </button>
                         </div>
                     );

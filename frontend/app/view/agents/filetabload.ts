@@ -6,12 +6,14 @@
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { classifyFile, hasNulByte } from "@/app/view/code/codeclassify";
-import { base64ToString } from "@/util/util";
+import { base64ToString, stringToBase64 } from "@/util/util";
+import { toggleTaskLine } from "./mdtasks";
 
 export type PanelFile =
     | { kind: "loading" }
     | { kind: "text"; text: string; stamp: string } // stamp: size and modtime, what tells a re-read nothing changed
     | { kind: "pdf"; size: number; modtime: number } // streamed into a viewer, never read here
+    | { kind: "image"; size: number; modtime: number } // streamed into an <img>, never read here
     | { kind: "binary"; size: number }
     | { kind: "toolarge"; size: number }
     | { kind: "missing" }
@@ -30,8 +32,8 @@ export async function readPanelFile(abs: string, since?: string): Promise<PanelF
             return null;
         }
         const klass = classifyFile(size, info.mimetype ?? "");
-        if (klass === "pdf") {
-            return { kind: "pdf", size, modtime: info.modtime ?? 0 };
+        if (klass === "pdf" || klass === "image") {
+            return { kind: klass, size, modtime: info.modtime ?? 0 };
         }
         if (klass !== "text") {
             return { kind: klass, size };
@@ -42,6 +44,18 @@ export async function readPanelFile(abs: string, since?: string): Promise<PanelF
     } catch (e) {
         return { kind: "error", message: e instanceof Error ? e.message : String(e) };
     }
+}
+
+// Flips the task box on `line` (mdtasks.ts), read fresh so an edit made since the Preview's read is kept; false when
+// that line no longer reads `shown`, as the Preview rendered it.
+export async function toggleTaskInFile(abs: string, line: number, shown: string): Promise<boolean> {
+    const data = await RpcApi.FileReadCommand(TabRpcClient, { info: { path: abs } });
+    const next = toggleTaskLine(base64ToString(data?.data64 ?? ""), line, shown);
+    if (next == null) {
+        return false;
+    }
+    await RpcApi.FileWriteCommand(TabRpcClient, { info: { path: abs }, data64: stringToBase64(next) });
+    return true;
 }
 
 export function formatSize(bytes: number): string {

@@ -86,7 +86,7 @@ Một danh sách phẳng, chữ trạng thái, đường dẫn, và `+/−`. B�
 
 ## Đọc và sửa một file
 
-Thanh đường dẫn phía trên trình soạn thảo cho biết file đang mở, có chấm tròn khi file có sửa đổi chưa lưu, rồi đến công tắc chế độ xem, nút **Wrap** và nút **Copy path** (chép đường dẫn tuyệt đối).
+Thanh đường dẫn phía trên trình soạn thảo cho biết file đang mở, có chấm tròn khi file có sửa đổi chưa lưu, rồi đến công tắc chế độ xem và ba nút icon: **Wrap** (bật/tắt xuống dòng, `Alt+Z`), **Pin** (ghim file lên đầu tab Files; ghim rồi thì icon tô đặc màu accent) và **Copy path** (chép đường dẫn tuyệt đối).
 
 ### Chế độ xem
 
@@ -98,6 +98,7 @@ Thanh đường dẫn phía trên trình soạn thảo cho biết file đang m�
 | `.tex` không có tiêu đề/đoạn văn (file macro sinh tự động) | source, diff | source |
 | Mọi file văn bản khác | source, diff | source |
 | `.pdf` | một trình xem PDF | |
+| Ảnh (`.png`, `.jpg`, `.gif`, `.webp`, `.avif`, `.bmp`, `.svg`, `.ico`) | ảnh vừa khung, bấm để xem đúng cỡ; chân khung ghi kích thước và dung lượng | |
 
 Chế độ bạn chọn áp dụng cho mọi file; file nào không có chế độ đó thì rơi về preview, rồi source.
 
@@ -193,5 +194,5 @@ Các phím này hoạt động khi Code đang hiện và bạn không gõ trong 
 - Danh sách file không tự làm tươi; file mới xuất hiện sau **Refresh index** hoặc khi quay lại Code.
 - Không có hàng tab và không có nhiều cửa sổ soạn thảo; tối đa hai cột, cột phụ chỉ-đọc.
 - Không có tìm-và-thay trong nhiều file; Search chỉ tìm, và bỏ qua file bị `.gitignore` loại.
-- Chỉ xem được file ≤ 2 MB. PDF dùng trình xem riêng và không bị giới hạn đó.
+- Chỉ xem được file ≤ 2 MB. PDF dùng trình xem riêng và không bị giới hạn đó; ảnh xem được tới 32 MB.
 - Không gửi dòng code cho agent từ Code. Việc đó thuộc review theo dòng của surface [Diff](diff.md).

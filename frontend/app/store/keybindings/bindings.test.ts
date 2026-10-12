@@ -792,23 +792,9 @@ describe("command palette chord", () => {
         return { model, b: buildGlobalBindings(model).find((x) => x.id === "palette")! };
     };
 
-    it("keeps plain Ctrl+P on Windows outside a terminal only, and has no second key on a Mac", () => {
-        expect(buildGlobalBindings(build().model).find((x) => x.id === "palette:ctrl")).toBeUndefined();
-        setPlatform("win32");
-        try {
-            const alias = buildGlobalBindings(build().model).find((x) => x.id === "palette:ctrl")!;
-            expect(alias.keys).toBe("Ctrl:p");
-            expect(alias.paletteHidden).toBe(true);
-            expect(alias.when!({ ...ctx("code"), editable: true })).toBe(true); // Monaco: VS Code's Ctrl+P
-            expect(alias.when!({ ...ctx("agent"), editable: true, terminal: true })).toBe(false); // the shell's ^P
-        } finally {
-            setPlatform("darwin");
-        }
-    });
-
-    it("is TMod+P with no `when`, so nothing else can claim the chord", () => {
+    it("is Mod+P with no `when`, so nothing else can claim the chord", () => {
         const { b } = build();
-        expect(b.keys).toBe("TMod:p");
+        expect(b.keys).toBe("Mod:p");
         // no guard at all: reachable from inside a text field, and an always-matching binding is
         // what stops WebView2's print dialog from taking the key on unhandled surfaces
         expect(b.when).toBeUndefined();
@@ -852,7 +838,7 @@ describe("new agent chord", () => {
     it("is Mod+N and opens the launcher at the agent door", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("cockpit"), launcherAtom: atom<LauncherKind | null>(null) } as any;
         const b = buildGlobalBindings(model).find((x) => x.id === "new-agent")!;
-        expect(b.keys).toBe("TMod:n");
+        expect(b.keys).toBe("Mod:n");
         b.run(ctx());
         expect(globalStore.get(model.launcherAtom)).toBe("agent");
     });
@@ -863,7 +849,7 @@ describe("fold chord", () => {
     it("is Mod+M, works from inside a terminal, and minimizes the way window:minimize says", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("agent") } as any;
         const b = buildGlobalBindings(model).find((x) => x.id === "window:fold")!;
-        expect(b.keys).toBe("TMod:m");
+        expect(b.keys).toBe("Mod:m");
         expect(b.when?.({ ...ctx("agent"), editable: true }) ?? true).toBe(true);
         expect(b.when?.({ ...ctx(), modalOpen: true })).toBe(false);
         vi.mocked(minimizeRequested).mockClear();
@@ -1019,7 +1005,7 @@ describe("leader reachability and the fullscreen chord", () => {
     it("registers a documentation-only leader:enter binding on the alias chord", () => {
         const b = buildGlobalBindings(model).find((x) => x.id === "leader:enter")!;
         expect(b).toBeDefined();
-        expect(b.keys).toBe("TMod:g");
+        expect(b.keys).toBe("Mod:g");
         // documentation only — the matcher performs leader entry, so this must never consume the key
         expect(b.run(inTerm)).toBe(false);
     });
@@ -1696,7 +1682,7 @@ describe("jarvis:peek", () => {
         const all = buildGlobalBindings({ surfaceAtom: atom<SurfaceKey>("agent") } as any);
         const b = all.find((x) => x.id === "jarvis:peek")!;
         const alias = all.find((x) => x.id === "jarvis:peek:ctrl")!;
-        expect(b.when?.({ ...ctx("agent"), editable: true, terminal: true })).toBe(true);
+        expect(b.when?.({ ...ctx("agent"), editable: true })).toBe(true);
         expect(alias.keys).toBe("Ctrl:j");
         expect(alias.alias).toBe(true);
         expect(alias.when?.({ ...ctx("agent"), editable: true })).toBe(false);

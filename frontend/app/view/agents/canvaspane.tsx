@@ -29,6 +29,7 @@ import {
     prototypePath,
     shownBoard,
     shownBoards,
+    stepKeys,
     tabsFitStrip,
     updatedAgo,
     type BoardFrame,
@@ -210,22 +211,32 @@ function BoardPicker({
     onChange: (tab: string) => void;
 }) {
     const at = boards.findIndex((b) => b.name === value);
-    const open = (e: React.MouseEvent) =>
+    const open = (e: React.MouseEvent) => {
+        // the rows [ and ] would open from here wear their key, so the way to step through is in sight
+        const keys = stepKeys(canvasTabs(boards), value);
         ContextMenuModel.getInstance().showContextMenu(
             [
-                { label: "All boards", type: "radio", checked: value === ALL_TAB, click: () => onChange(ALL_TAB) },
+                {
+                    label: "All boards",
+                    type: "radio",
+                    checked: value === ALL_TAB,
+                    accel: keys.get(ALL_TAB),
+                    click: () => onChange(ALL_TAB),
+                },
                 { type: "separator" },
                 ...boards.map(
                     (b): ContextMenuItem => ({
                         label: boardLabel(b.name),
                         type: "radio",
                         checked: b.name === value,
+                        accel: keys.get(b.name),
                         click: () => onChange(b.name),
                     })
                 ),
             ],
             e
         );
+    };
     return (
         <button
             type="button"

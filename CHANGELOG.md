@@ -14,17 +14,30 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - Jarvis: a **New run** button in the header, **Work on this chunk** in the chunk panel, and ideas you jot down
   inline.
+- **Type straight into the task in the New dialog**: with focus on the Start column, a letter moves you into the Task
+  box (or a run's Goal) with that letter in it, so a digit, then the task, then Enter launches.
+- **Images open in the Agent panel's File tab and in Code**: a `.png`, `.jpg`, `.gif`, `.webp`, `.svg` or other image
+  shows fitted to the pane, with its size underneath; click it to see it at its own size. It showed "Binary file"
+  before.
+- **Tick a task box in a markdown Preview**: in the Agent panel's File tab, clicking a `- [ ]` box ticks it (or clears
+  a ticked one) and saves the file.
 - **A server running in one of arcterm's terminals says which terminal** in Servers, and its Log opens that terminal
   with its search box.
+- **A run's own actions on its row's right-click menu** in the agent tree: Open in Jarvis, Open the DAG, Open the
+  diff, Workers at once, Resume, Stop a worker, Copy run id and Cancel run, each offered only when it applies, as in
+  the command palette.
 - **Read a past session without resuming it**: in the New dialog's Resume list, **Transcript** on a session (or
-  Shift+Enter) opens its transcript on the Agent surface instead of starting the agent again.
+  Shift+Enter, which the picked session's button shows) opens its transcript on the Agent surface instead of starting
+  the agent again.
 - **A `?` button on the bottom bar** opens the keyboard shortcuts on every surface, also while you type in a
   terminal, where the `?` key itself is text.
 - **⌘⇧Enter toggles terminal fullscreen** (Ctrl+Shift+Enter on Windows), from inside the terminal too: the same
   chord on both platforms, since a Mac keyboard has no F11 of its own. F11 still works.
-- **Fold when you leave**, like a picture-in-picture: switch to another app and the full window folds into Sprout
-  after a moment; come back to arcterm and it grows back. Off by default; right-click the Sprout button in the app bar
-  to switch it, or Settings → General → Window. Your own dialogs (a file picker) and a press on Sprout leave it be.
+- **Fold when you leave**: switch to another app whose window hides arcterm (maximized or full screen on its screen)
+  and the full window folds into Sprout after a moment; an app beside it, or on another screen, leaves it be. Coming
+  back to arcterm (Alt+Tab, the taskbar) focuses Sprout, and a double-click or Restore grows it back. Off by default;
+  right-click the Sprout button in the app bar to switch it, or Settings → General → Window. Your own dialogs (a file
+  picker) leave it be.
 - **⌘J opens Jarvis's What's waiting popup** in one chord, from any surface and from inside a terminal (Ctrl+Shift+J on
   Windows, or plain Ctrl+J outside a terminal or field, where it is not the newline). Hold ⌘ on its own and the
   creature shows a J.
@@ -66,14 +79,18 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - An unverified run is accepted with **Accept** (was Acknowledge).
 - Runs read one way everywhere (Working, Final check, Wrapping up, Landing, Landed), and a run's strip ends in three
   pips for Final check, Wrap-up and Land, so all tasks green no longer reads as finished.
+- **Tidier file headers**: in the Agent panel's File tab, Outline, Wrap and Pin are icon buttons now, and so are Wrap,
+  Pin and Copy path above Code's editor; a pinned file shows a filled pin instead of the word "Pinned".
+- **Ctrl+C copies in a terminal on Windows while text is selected**, as in Windows Terminal and VS Code; with nothing
+  selected it is the interrupt as before. **Copy on select is now off by default**, so highlighting what you read no
+  longer replaces what you copied; Settings → Terminal turns it back on.
+- **A double-click on a sidebar row opens the agent**, typing in its terminal; it used to fold a run's workers or an
+  agent's subagents, which their chip still does.
 - **A canvas with many boards stays readable**: past four boards the header picks the board from a menu (with
   `[` and `]` still stepping), the header's buttons no longer get cut off, and All shows the boards as a grid of
   tiles at least 560px wide instead of shrinking them all into one picture. A click on a tile opens that board.
-- **One shortcut rule between Windows and Mac:** a chord that works from inside a terminal is ⌘X on a Mac and
-  Ctrl+Shift+X on Windows: Search ⌘P / Ctrl+Shift+P, Go to ⌘G / Ctrl+Shift+G, New agent, What's waiting (J), Fold
-  (M), Close (W), Clear the terminal (K). On Windows the plain Ctrl+P, Ctrl+G, Ctrl+N, Ctrl+M still work outside a
-  terminal, and inside one they are the shell's again (history, Claude Code's Ctrl+G), and **What's waiting now opens
-  from inside a terminal on Windows too** (Ctrl+Shift+J). The cheat sheet shows both keys.
+- **Ctrl+Shift+K clears the terminal's screen on Windows**, as ⌘K does on a Mac (Ctrl+K stays the shell's cut to the
+  end of the line).
 - **⌘, / Ctrl+, opens Settings**, as in VS Code, and **⌘⇧E / Ctrl+Shift+E** focuses Code's file tree (VS Code's
   Explorer key; Alt+T still works).
 - The **Launch a Pi tab** shortcut (⌘⇧N / Ctrl+Shift+N) is gone; the New dialog's Pi row starts one.
@@ -130,6 +147,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - Jarvis: `i` focuses the run sheet's composer; a blocked run no longer reads green; the tour's first card no longer
   covers the Waiting controls; a chunk note whose run is gone says so instead of loading forever.
+- **A file an agent names from another folder opens on Ctrl+click**: when an agent writes a path relative to the
+  folder it is working in (`huong_C/plan.md` rather than `notes/huong_C/plan.md`), the link now finds the file it
+  read or wrote there, in its terminal and in its transcript. Before, it was not a link at all.
 - The **RAM and tokens panel lines up in columns**: the model, RAM, tokens and each button (→ Sonnet, Sleep or
   Wake, Stop) keep one place down the list instead of moving row to row.
 - **No more red spellcheck underlines** in text fields (the New dialog's Task, the composer, comments): the
@@ -163,6 +183,14 @@ Add one line in the same commit as any change a user would notice, under `Added`
   not on its bottom edge. The arrow keys still scroll a row at a time.
 - The agent panel's file tab shows a long file name in full when the panel has room, instead of cutting it at a fixed
   width; a narrow panel cuts the name, never the counts beside it.
+- On macOS, `Ctrl`+`Enter` sends your markdown comments from the File tab's Source view too, not only from Preview.
+- A Claude session you send to the background from a terminal started as plain `claude`, `claude --continue` or a
+  `--resume` picked from the list keeps showing its status and subagents in that tab.
+- After a reload, the agent grid comes back focused on the cell you left focused, not on whichever agent loaded first.
+- Picking an agent from the search palette while typing in another agent's terminal moves the keyboard to the picked
+  agent instead of dropping it, so keys work without a click.
+- With a dialog open over Agent, Diff or Code (the shortcuts sheet, a confirm), `Esc` closes the dialog and `j`/`k`,
+  `d` and `f` no longer act on the surface behind it.
 
 ## 0.15.9 — 2026-10-11
 

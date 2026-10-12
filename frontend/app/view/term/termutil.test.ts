@@ -11,7 +11,7 @@ vi.mock("@/app/store/wshclientapi", () => ({ RpcApi: { WriteTempFileCommand: moc
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: mocks.client }));
 
 import { MAX_UPLOAD_BYTES, UploadError } from "@/app/view/agents/uploadfile";
-import { createTempFileFromBlob, createTempFileFromFile, extractDataTransferItems } from "./termutil";
+import { createTempFileFromBlob, createTempFileFromFile, ctrlCCopies, extractDataTransferItems } from "./termutil";
 
 // the tests run in node, which has no FileReader; this one reads a Blob the way the real one hands bytes back
 class FakeFileReader {
@@ -108,5 +108,15 @@ describe("empty pasted images", () => {
         const items = [item(0), item(3)] as unknown as DataTransferItemList;
         const out = await extractDataTransferItems(items);
         expect(out.map((d) => d.image?.size)).toEqual([3]);
+    });
+});
+
+// Windows Terminal's and VS Code's Ctrl+C: a copy while text is selected, else the interrupt it always is
+describe("ctrlCCopies", () => {
+    it("copies on Windows while text is selected", () => expect(ctrlCCopies(false, true)).toBe(true));
+    it("interrupts on Windows with nothing selected", () => expect(ctrlCCopies(false, false)).toBe(false));
+    it("always interrupts on a Mac, where ⌘C copies", () => {
+        expect(ctrlCCopies(true, true)).toBe(false);
+        expect(ctrlCCopies(true, false)).toBe(false);
     });
 });

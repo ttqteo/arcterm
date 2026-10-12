@@ -69,7 +69,7 @@ export function ModalShell({
         if (!open) {
             return;
         }
-        const unregister = registerModal(shellId);
+        const unregister = registerModal(shellId, variant);
         const restore = isTopModal(shellId)
             ? takeModalFocus(panelRef.current, document.activeElement as HTMLElement | null)
             : null;
@@ -80,7 +80,7 @@ export function ModalShell({
                 restore?.();
             }
         };
-    }, [open, shellId]);
+    }, [open, shellId, variant]);
 
     useEffect(() => {
         if (!open) {

@@ -1,16 +1,19 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { buildRunThing, RUN_KIND } from "@/app/cockpit/actions/run";
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
 import { ctrlHeldAtom } from "@/app/cockpit/ctrlheld";
 import { digitHintAtom } from "@/app/cockpit/digithints";
 import { queuedJobFor } from "@/app/cockpit/jobqueue";
 import { QueuedJobTag } from "@/app/cockpit/jobqueuechip";
 import { jobQueueAtom } from "@/app/cockpit/jobqueuestore";
+import { pushToast } from "@/app/cockpit/notificationstore";
 import { useSettle } from "@/app/element/motionhooks";
 import { cardVariants, composerReveal, computeEntrances, initialEntranceState } from "@/app/element/motiontokens";
 import { globalStore } from "@/app/store/jotaiStore";
 import { ContextMenuModel } from "@/app/store/contextmenu";
+import * as WOS from "@/app/store/wos";
 import { openTarget, peekTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
@@ -18,6 +21,7 @@ import {
     ArrowRight,
     ArrowUpRight,
     AtSign,
+    Ban,
     Check,
     Bookmark,
     BookmarkCheck,
@@ -28,17 +32,22 @@ import {
     Copy,
     CopyPlus,
     ExternalLink,
+    FileDiff,
     Folder,
     FolderOpen,
     GitBranch,
+    Hash,
     History as HistoryIcon,
     Moon,
     Pencil,
     Play,
     Plus,
+    RotateCcw,
+    Square,
     SquareTerminal,
     Sun,
     Trash2,
+    Users,
     Workflow,
     X,
 } from "lucide-react";
@@ -58,6 +67,9 @@ import { laterMarksAtom, setLater } from "./laterstore";
 import { RenameBox, startRowRename } from "./rowrename";
 import { dockedTerminalAtom } from "./railstore";
 import { renamingRowAtom } from "./rowrenameatom";
+import { cancellingRunIdsAtom } from "./runactions";
+import { runEventsAtom } from "./runeventstore";
+import { runMenuEntries } from "./runrowmenu";
 import { centerModeAtom, showHistory, showSession, showTerminal } from "./agentcenter";
 import {
     activeAgentIds,
@@ -218,6 +230,89 @@ function splitMenuItem(model: AgentsViewModel, agent: AgentVM): ContextMenuItem[
             },
         },
     ];
+}
+
+const RUN_ACTION_ICONS: Record<string, React.ReactNode> = {
+    "run:dag": <Workflow size={15} />,
+    "run:diff": <FileDiff size={15} />,
+    "run:lead-terminal": <SquareTerminal size={15} />,
+    "run:workers": <Users size={15} />,
+    "run:relaunch": <RotateCcw size={15} />,
+    "run:resume": <Play size={15} />,
+    "run:stop-worker": <Square size={15} />,
+    "run:cancel": <Ban size={15} />,
+};
+
+// The run part of a run row's menu (runrowmenu.ts): Open in Jarvis (Ctrl peeks), then the palette's run actions that
+// fit a menu and Copy run id; its destructive ones come apart for the menu's danger end. Until the lineage and the run
+// object have loaded only the open and the copy are offered. `skip` is what the row's own items already do.
+function runMenuItems(
+    model: AgentsViewModel,
+    runId: string,
+    skip: string[] = []
+): { items: ContextMenuItem[]; danger: ContextMenuItem[] } {
+    const open: ContextMenuItem = {
+        label: "Open in Jarvis",
+        icon: <ExternalLink size={15} />,
+        // a menu item's click carries no event, so Ctrl is read from the held flag
+        click: () => {
+            const target = { kind: "run", runId } as const;
+            fireAndForget(() =>
+                globalStore.get(ctrlHeldAtom) ? peekTarget(model, target) : openTarget(model, target)
+            );
+        },
+    };
+    const copyId: ContextMenuItem = {
+        label: "Copy run id",
+        icon: <Hash size={15} />,
+        click: () => void navigator.clipboard.writeText(runId),
+    };
+    const lineage = globalStore.get(model.lineageAtom);
+    const info = lineage.runs[runId];
+    const run = WOS.getObjectValue<Run>(WOS.makeORef("run", runId));
+    if (info == null || run == null) {
+        return { items: [open, copyId], danger: [] };
+    }
+    const thing = buildRunThing({ channelId: info.channelId, run }, globalStore.get(model.agentsAtom), lineage, {
+        events: globalStore.get(runEventsAtom(runId)),
+        cancelling: globalStore.get(cancellingRunIdsAtom).has(runId),
+    });
+    const items: ContextMenuItem[] = [open];
+    const danger: ContextMenuItem[] = [];
+    for (const entry of runMenuEntries(RUN_KIND.actions, thing, new Set(["run:open", ...skip]))) {
+        const { action } = entry;
+        const label = action.label.replace(/…$/, "");
+        // the palette shows a rejected action; a menu has closed by then, so it is a toast
+        const act = (value?: string) =>
+            fireAndForget(async () => {
+                try {
+                    await action.run(thing, { model }, value);
+                } catch (e) {
+                    pushToast({
+                        title: `${label} failed`,
+                        message: e instanceof Error ? e.message : String(e),
+                        level: "error",
+                    });
+                }
+            });
+        const icon = RUN_ACTION_ICONS[action.id];
+        if (entry.kind === "pick") {
+            items.push({
+                label,
+                icon,
+                submenu: entry.options.map((o) => ({ label: o.label, click: () => act(o.value) })),
+            });
+        } else {
+            (action.destructive ? danger : items).push({
+                label,
+                icon,
+                danger: action.destructive,
+                click: () => act(),
+            });
+        }
+    }
+    items.push(copyId);
+    return { items, danger };
 }
 
 // the harnesses wavesrv can sleep: the ones that resume a conversation (agentsleep.Harnesses; codex cannot)
@@ -540,6 +635,9 @@ function ParentRow({
 
     const select = () => selectAgentRow(model, agent.id);
     const onContextMenu = (e: React.MouseEvent) => {
+        // a lead's row is also its run's: the run's items follow the agent's, and Cancel run sits beside Close agent.
+        // The lead's terminal is this row itself
+        const runMenu = lead != null ? runMenuItems(model, lead.run.runId, ["run:lead-terminal"]) : null;
         const items: ContextMenuItem[] = [
             { label: "Rename", icon: <Pencil size={15} />, click: () => startRowRename(agent.id) },
             { label: "Duplicate", icon: <CopyPlus size={15} />, click: () => duplicateSession(model, agent.id) },
@@ -552,7 +650,9 @@ function ParentRow({
             mentionMenuItem(agent),
             laterMenuItem(agent.transcriptPath, laterAt != null),
             ...sleepMenuItems(agent),
+            ...(runMenu != null ? [{ type: "separator" } as const, ...runMenu.items] : []),
             { type: "separator" },
+            ...(runMenu?.danger ?? []),
             {
                 label: "Close agent",
                 icon: <X size={15} />,
@@ -575,25 +675,19 @@ function ParentRow({
             />
         ) : null;
 
-    // a double-click anywhere on the row folds what its chip folds (a lead's workers, an agent's subagents),
-    // so the small chip is not the only target. A click on a button inside the row is that button's own.
-    const fold =
-        lead != null
-            ? () => toggleRunCollapsed(lead.run.runId)
-            : subs.length > 0
-              ? () => toggleSubagentExpand(oref, expanded)
-              : null;
-    const foldRow =
-        fold != null && !renaming
-            ? (e: React.MouseEvent) => {
-                  if (!(e.target as HTMLElement).closest("button")) {
-                      fold();
-                  }
+    // a double-click opens the row: the agent chosen and typing in its terminal, as Ctrl+Tab from a terminal brings it.
+    // Folding a lead's workers or an agent's subagents is its chip's. A click on a button inside the row is that button's.
+    const openRow = !renaming
+        ? (e: React.MouseEvent) => {
+              if (!(e.target as HTMLElement).closest("button")) {
+                  globalStore.set(model.typingFollowsAtom, agent.id);
+                  select();
               }
-            : undefined;
+          }
+        : undefined;
     // the second press of a double-click would select a word of the name; a single press and a drag are untouched
     const keepSelection =
-        foldRow != null
+        openRow != null
             ? (e: React.MouseEvent) => {
                   if (e.detail > 1) {
                       e.preventDefault();
@@ -713,7 +807,7 @@ function ParentRow({
                 and age (a lead's second line: its workers chip and progress, then its state, tokens and age) */}
             <div
                 onClick={select}
-                onDoubleClick={foldRow}
+                onDoubleClick={openRow}
                 onMouseDown={keepSelection}
                 onContextMenu={onContextMenu}
                 data-agent-row={agent.id}
@@ -841,19 +935,11 @@ function RunRow({ model, run, open, live }: { model: AgentsViewModel; run: RunIn
             globalStore.get(model.agentsAtom),
             run.runId
         ).map((a) => a.id);
+        const runMenu = runMenuItems(model, run.runId);
         const items: ContextMenuItem[] = [
-            {
-                label: "Open run",
-                icon: <ExternalLink size={15} />,
-                // a menu item's click carries no event, so Ctrl is read from the held flag
-                click: () => {
-                    const target = { kind: "run", runId: run.runId } as const;
-                    fireAndForget(() =>
-                        globalStore.get(ctrlHeldAtom) ? peekTarget(model, target) : openTarget(model, target)
-                    );
-                },
-            },
+            ...runMenu.items,
             { type: "separator" },
+            ...runMenu.danger,
             {
                 label: "Close run",
                 icon: <X size={15} />,

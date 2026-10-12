@@ -241,12 +241,15 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const startRef = useRef<HTMLDivElement>(null);
     const projectRef = useRef<HTMLDivElement>(null);
     const goalRef = useRef<HTMLTextAreaElement>(null);
+    const taskRef = useRef<HTMLTextAreaElement>(null);
     const planRef = useRef<HTMLInputElement>(null);
 
     const startList = useMemo(() => startRows(harnesses), [harnesses]);
     const runtime = agentRuntime(startList, remembered);
     const selectedRow = selectedRowId(kind, runtime, shape);
     const isRun = kind === "run";
+    // the pick has a box a letter typed in the Start column writes into (launcherKey "write")
+    const writable = isRun ? !(shape === "orchestrator" && start === "plan") : runtimeShowsTask(runtime);
     const candidates = useMemo(() => recentFirst(rows, recent), [rows, recent]);
     const visible = filterProjects(candidates, filter);
     const homeShown = homeOffered(kind, runtime, home);
@@ -640,6 +643,9 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             focusTrapTarget(stops, document.activeElement, e.shiftKey)?.focus();
             return;
         }
+        // the box a letter typed in the Start column starts: an agent's Task, or a run's Goal (none for a terminal, or a
+        // run from a plan file)
+        const textField = isRun ? goalRef.current : taskRef.current;
         const action = launcherKey(
             {
                 zone: zoneOf(e.target),
@@ -649,10 +655,19 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 flagMenuOpen: flagMenuShown,
                 branchListOpen: branchListShown,
                 resumePicked: resume != null,
+                textField: textField != null,
             },
             { key: e.key, shift: e.shiftKey, mod }
         );
         if (action.kind === "none") {
+            return;
+        }
+        if (action.kind === "write") {
+            // no preventDefault: the key lands in the box focus moved to, after what is already there, so a Telex or
+            // IME edit that follows applies to it
+            const end = textField.value.length;
+            textField.focus();
+            textField.setSelectionRange(end, end);
             return;
         }
         e.preventDefault();
@@ -784,6 +799,12 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             <span className="flex items-center gap-[5px]">
                                 <kbd className={KEY_LEGEND}>1–9</kbd>pick
                             </span>
+                            {startFocused && writable ? (
+                                <span className="flex items-center gap-[5px]">
+                                    <kbd className={KEY_LEGEND}>a–z</kbd>
+                                    {isRun ? "goal" : "task"}
+                                </span>
+                            ) : null}
                             {projectFocused ? (
                                 <span className="flex items-center gap-[5px]">
                                     <kbd className={KEY_LEGEND}>←</kbd>back
@@ -963,6 +984,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                 resume={resume}
                                 onViewTranscript={viewTranscript}
                                 home={atHome}
+                                taskRef={taskRef}
                             />
                         )}
                     </div>

@@ -15,6 +15,7 @@ import { openLink } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { HtmlFrame } from "@/app/view/agents/htmlframe";
+import { ImageFrame } from "@/app/view/agents/imageframe";
 import { PdfFrame } from "@/app/view/agents/pdfframe";
 import { SurfaceEmptyState } from "@/app/view/agents/surfacescaffold";
 import { CodeEditor } from "@/app/view/codeeditor/codeeditor";
@@ -230,6 +231,19 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
                         data-code-pdf={file.path}
                         path={project != null ? joinRepoPath(project.path, file.path) : file.path}
                         version={file.modtime}
+                        title={file.path}
+                    />
+                </div>
+            );
+        case "image":
+            return (
+                <div className="flex h-full min-h-0 flex-col">
+                    <ImageFrame
+                        key={file.path}
+                        data-code-image={file.path}
+                        path={project != null ? joinRepoPath(project.path, file.path) : file.path}
+                        version={file.modtime}
+                        size={file.size}
                         title={file.path}
                     />
                 </div>

@@ -33,6 +33,11 @@ import {
 } from "./codestore";
 import { toggleWrap, useWrap } from "./codewrap";
 
+// Wrap, Pin and Copy path are icons, as in the Agent panel's File tab (filetab.tsx); an on toggle takes the accent
+const ICON_BTN =
+    "flex h-6 w-6 flex-none cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted hover:bg-surface-hover hover:text-secondary";
+const ICON_ON = "text-accent-soft hover:text-accent-soft";
+
 // `sideHidden`: the side column's file while the editor area is too narrow to show it; the chip opens it here instead
 export function CodePathBar({ sideHidden }: { sideHidden?: string | null }) {
     const project = useAtomValue(codeProjectAtom);
@@ -51,7 +56,7 @@ export function CodePathBar({ sideHidden }: { sideHidden?: string | null }) {
     const dirty = file.kind === "text" && drafts.has(draftKey(project, file.path));
 
     return (
-        <div className="flex flex-none items-center gap-2 border-b border-border px-3 py-1.5">
+        <div className="flex flex-none items-center gap-1.5 border-b border-border px-3 py-1">
             <span data-code-path={file.path} className="min-w-0 truncate text-[11.5px] text-secondary">
                 {file.path}
             </span>
@@ -90,20 +95,16 @@ export function CodePathBar({ sideHidden }: { sideHidden?: string | null }) {
             <PinToggle on={isPinned(pins, project.path, file.path)} onToggle={() => toggleCodePin(file.path)} />
             <button
                 type="button"
-                aria-label="Copy absolute path"
-                title={abs}
+                aria-label={copied ? "Copied" : "Copy absolute path"}
+                title={copied ? "Copied" : `Copy path: ${abs}`}
                 onClick={() => {
                     void navigator.clipboard?.writeText(abs);
                     setCopied(true);
                     window.setTimeout(() => setCopied(false), 1200);
                 }}
-                className={cn(
-                    "flex flex-none cursor-pointer items-center gap-1 rounded-[6px] border border-border px-2 py-[3px] text-[11px]",
-                    copied ? "text-accent-soft" : "text-muted hover:text-primary"
-                )}
+                className={cn(ICON_BTN, copied && ICON_ON)}
             >
-                {copied ? <Check size={11} strokeWidth={2} /> : <Copy size={11} strokeWidth={1.8} />}
-                <span>{copied ? "Copied" : "Copy path"}</span>
+                {copied ? <Check size={13} strokeWidth={2} aria-hidden /> : <Copy size={13} aria-hidden />}
             </button>
         </div>
     );
@@ -150,15 +151,12 @@ function PinToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
             type="button"
             data-code-pin
             aria-pressed={on}
+            aria-label="Pin"
             title={on ? "Unpin this file" : "Pin this file to the top of Files"}
             onClick={onToggle}
-            className={cn(
-                "flex flex-none cursor-pointer items-center gap-1 rounded-[6px] border px-2 py-[3px] text-[11px]",
-                on ? "border-accent/40 text-accent-soft" : "border-border text-muted hover:text-primary"
-            )}
+            className={cn(ICON_BTN, on && ICON_ON)}
         >
-            <Pin size={11} strokeWidth={1.8} />
-            <span>{on ? "Pinned" : "Pin"}</span>
+            <Pin size={13} fill={on ? "currentColor" : "none"} aria-hidden />
         </button>
     );
 }
@@ -170,15 +168,12 @@ function WrapToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
             type="button"
             data-code-wrap
             aria-pressed={on}
+            aria-label="Wrap long lines"
             title={on ? "Stop wrapping long lines (Alt+Z)" : "Wrap long lines (Alt+Z)"}
             onClick={onToggle}
-            className={cn(
-                "flex flex-none cursor-pointer items-center gap-1 rounded-[6px] border px-2 py-[3px] text-[11px]",
-                on ? "border-accent/40 text-accent-soft" : "border-border text-muted hover:text-primary"
-            )}
+            className={cn(ICON_BTN, on && ICON_ON)}
         >
-            <WrapText size={11} strokeWidth={1.8} />
-            <span>Wrap</span>
+            <WrapText size={13} aria-hidden />
         </button>
     );
 }

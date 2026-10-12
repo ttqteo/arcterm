@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { focusTrapTarget, shellOwnsEscape, takeModalFocus } from "./modalfocus";
+import {
+    focusTrapTarget,
+    restoringModalFocus,
+    setModalFocusFallback,
+    shellOwnsEscape,
+    takeModalFocus,
+} from "./modalfocus";
 
 function fakePanel(contains: boolean) {
     return { focus: vi.fn(), contains: vi.fn(() => contains) } as unknown as HTMLElement;
@@ -82,6 +88,60 @@ describe("takeModalFocus", () => {
 
     it("is a no-op when the panel ref is not attached yet", () => {
         expect(() => takeModalFocus(null, fakeNode(true))()).not.toThrow();
+    });
+
+    // a focus handler tells the hand-back from a pick by this flag, not by the dialog still being in the DOM through
+    // its exit animation, which a shell that unmounts at once does not have
+    it("marks the hand-back while it focuses", () => {
+        let during: boolean | null = null;
+        const previous = { ...fakeNode(true), focus: () => (during = restoringModalFocus()) } as unknown as HTMLElement;
+        takeModalFocus(fakePanel(false), previous)();
+        expect(during).toBe(true);
+        expect(restoringModalFocus()).toBe(false);
+    });
+
+    describe("with a fallback", () => {
+        let unset: () => void = () => {};
+        afterEach(() => unset());
+
+        // a palette pick hid the cell whose terminal had focus: focus fell to <body>
+        it("hands focus to the fallback's choice when it cannot hand it back", () => {
+            const previous = fakeNode(true, false);
+            const target = fakeNode(true);
+            const fallback = vi.fn(() => target);
+            unset = setModalFocusFallback(fallback);
+            let during: boolean | null = null;
+            target.focus = vi.fn(() => (during = restoringModalFocus())) as unknown as HTMLElement["focus"];
+            takeModalFocus(fakePanel(false), previous)();
+            expect(fallback).toHaveBeenCalledWith(previous);
+            expect(target.focus).toHaveBeenCalledOnce();
+            expect(during).toBe(true);
+        });
+
+        it("asks it after dropping focus from the closing panel", () => {
+            const input = fakeNode(true);
+            vi.stubGlobal("document", { activeElement: input });
+            const target = fakeNode(true);
+            unset = setModalFocusFallback(() => target);
+            takeModalFocus(fakePanel(true), fakeNode(true, false))();
+            expect(input.blur).toHaveBeenCalledOnce();
+            expect(target.focus).toHaveBeenCalledOnce();
+        });
+
+        it("does not ask it when focus was handed back", () => {
+            const fallback = vi.fn(() => fakeNode(true));
+            unset = setModalFocusFallback(fallback);
+            takeModalFocus(fakePanel(false), fakeNode(true))();
+            expect(fallback).not.toHaveBeenCalled();
+        });
+
+        it("does not ask it when focus already moved outside the panel", () => {
+            vi.stubGlobal("document", { activeElement: fakeNode(true) });
+            const fallback = vi.fn(() => fakeNode(true));
+            unset = setModalFocusFallback(fallback);
+            takeModalFocus(fakePanel(false), fakeNode(false))();
+            expect(fallback).not.toHaveBeenCalled();
+        });
     });
 });
 

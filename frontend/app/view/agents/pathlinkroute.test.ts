@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { focusedPanelAgent, panelOwnerOf } from "./pathlinkroute";
+import { focusedPanelAgent, panelOwnerOf, touchedPaths } from "./pathlinkroute";
 
 const roster = [
     { id: "t-agent", name: "a", task: "", state: "working", blockId: "b-agent" },
@@ -32,5 +32,24 @@ describe("focusedPanelAgent", () => {
         expect(focusedPanelAgent({ ...base, focusId: "t-term" })).toBeNull();
         expect(focusedPanelAgent({ ...base, cwd: null })).toBeNull();
         expect(focusedPanelAgent({ ...base, abs: "C:/elsewhere/a.ts" })).toBeNull();
+    });
+});
+
+describe("touchedPaths", () => {
+    it("gives every file the agent's tools named, absolute, once each", () => {
+        const entries = [
+            { kind: "message", text: "hi" },
+            { kind: "action", verb: "read", target: "a.md", path: "D:\\thesis\\notes\\a.md" },
+            { kind: "action", verb: "edit", target: "b.ts", path: "src/b.ts" },
+            { kind: "action", verb: "ran", target: "ls" },
+            { kind: "action", verb: "read", target: "a.md", path: "D:/thesis/notes/a.md" },
+        ] as any[];
+        expect(touchedPaths(entries, "D:/thesis")).toEqual(["D:/thesis/notes/a.md", "D:/thesis/src/b.ts"]);
+    });
+
+    it("skips a relative path when the cwd is unknown", () => {
+        expect(
+            touchedPaths([{ kind: "action", verb: "edit", target: "b.ts", path: "src/b.ts" }] as any[], null)
+        ).toEqual([]);
     });
 });

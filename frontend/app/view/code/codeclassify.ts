@@ -37,8 +37,25 @@ const TEXTISH_MIME = new Set([
     "application/x-tex",
 ]);
 
-// pdf is its own class: the viewer streams it from /wave/stream-file, so it never meets the size gate.
-export type FileClass = "text" | "binary" | "toolarge" | "pdf";
+// the images WebView2 and WKWebView both draw in an <img>; a .tiff or .heic stays binary
+const IMAGE_MIME = new Set([
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+    "image/avif",
+    "image/bmp",
+    "image/svg+xml",
+    "image/x-icon",
+    "image/vnd.microsoft.icon",
+]);
+
+// an image streams too, but the webview decodes it whole into memory: past this it shows as too large
+export const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
+
+// pdf and image are their own classes: the viewer streams them from /wave/stream-file, so they never meet the
+// text size gate.
+export type FileClass = "text" | "binary" | "toolarge" | "pdf" | "image";
 
 // an empty mimetype means the backend did not recognize the extension — Go, Rust and most config
 // files land there, so empty must be viewable or the surface would call this repo binary.
@@ -46,6 +63,9 @@ export function classifyFile(size: number, mimeType: string): FileClass {
     const m = (mimeType ?? "").split(";")[0].trim().toLowerCase();
     if (m === "application/pdf") {
         return "pdf";
+    }
+    if (IMAGE_MIME.has(m)) {
+        return size > MAX_IMAGE_BYTES ? "toolarge" : "image";
     }
     if (size > MAX_VIEW_BYTES) {
         return "toolarge";
