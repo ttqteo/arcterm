@@ -867,6 +867,53 @@ const briefLayout = {
         );
         await h.shot("cdp-shots/brief-layout-columns.png");
 
+        // 3b. Since you looked rows are compact: the kind and age on one line, the title under it at nearly the row's
+        // width (a side-column row that kept the old three columns left the title about 150px of 340)
+        const deltas = await h.ev(`(() => {
+            const rows = [...document.querySelectorAll('[data-jarvis-brief-side] [data-jarvis-brief-row="delta"]')];
+            return rows.map((row) => {
+                const kind = row.querySelector('[data-jarvis-delta-kind]')?.getBoundingClientRect();
+                const title = row.querySelector('[data-jarvis-delta-title]')?.getBoundingClientRect();
+                const box = row.getBoundingClientRect();
+                return kind && title
+                    ? {
+                          kindBottom: Math.round(kind.bottom),
+                          titleTop: Math.round(title.top),
+                          titleShare: Math.round((title.width / box.width) * 100) / 100,
+                      }
+                    : null;
+            });
+        })()`);
+        steps.push(
+            deltas.length === 0
+                ? skipStep("3b. a Since you looked row puts the kind and age over a full-width title", "the attention fixture has no Since you looked row")
+                : {
+                      step: "3b. a Since you looked row puts the kind and age over a full-width title",
+                      ok: deltas.every((d) => d != null && d.kindBottom <= d.titleTop && d.titleShare >= 0.8),
+                      detail: JSON.stringify(deltas),
+                  }
+        );
+        // the shot is the whole viewport, which at 1600 wide holds the side column to the right
+        await h.shot("cdp-shots/brief-layout-side.png");
+
+        // 3c. the Waiting head says what orders the queue, and how old its oldest item is when there is one
+        const waitingHead = await h.ev(`(() => {
+            const head = document.querySelector('[data-jarvis-brief-region="waiting"]')?.firstElementChild;
+            return head ? (head.innerText || '').replace(/\\s+/g, ' ').trim() : null;
+        })()`);
+        steps.push(
+            waitingHead == null
+                ? skipStep("3c. the Waiting head reads gates first, with the oldest item's age", "the attention fixture draws no Waiting region")
+                : {
+                      step: "3c. the Waiting head reads gates first, with the oldest item's age",
+                      ok:
+                          waitingHead.includes("gates first") &&
+                          !waitingHead.includes("gates before asks") &&
+                          (!waitingHead.includes("oldest") || /gates first · oldest \S+/.test(waitingHead)),
+                      detail: JSON.stringify(waitingHead),
+                  }
+        );
+
         // 4. Runs above Initiatives
         const tops = await h.ev(`(() => {
             const top = (id) => document.querySelector('[data-jarvis-brief-region="' + id + '"]')?.getBoundingClientRect().top ?? null;
@@ -1183,19 +1230,32 @@ const briefChunkPanel = {
         );
         await h.shot("cdp-shots/brief-chunk-panel-docked.png");
 
-        // 3. Work on this chunk and Copy wsh command in the header
+        // 3. the header fits its 460px on one line: n / total does not wrap, Work on this chunk (or Go to agent) is not
+        // cut, and Copy wsh command is an icon button (aria-label) whose title is the command
         const header = await h.ev(`(() => {
             const sb = ${SIDEBAR};
+            const head = sb?.firstElementChild;
             const work = sb?.querySelector('[data-jarvis-chunk-work]');
-            const copy = [...(sb?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim() === 'Copy wsh command');
+            const workLabel = work?.querySelector('span');
+            const pos = [...(head?.querySelectorAll('span') ?? [])].find((s) => /^\\d+ \\/ \\d+$/.test(s.textContent.trim()));
+            const copy = sb?.querySelector('button[aria-label="Copy wsh command"]');
             return {
-                work: work ? work.textContent.trim() : null,
+                work: workLabel ? workLabel.textContent.trim() : null,
+                workCut: workLabel ? workLabel.scrollWidth > workLabel.clientWidth : null,
+                headScroll: head ? head.scrollWidth : null,
+                headClient: head ? head.clientWidth : null,
+                posHeight: pos ? Math.round(pos.getBoundingClientRect().height) : null,
                 copyTitle: copy ? copy.getAttribute('title') : null,
             };
         })()`);
         rec(
-            "3. the header holds Work on this chunk (or Go to agent) and Copy wsh command",
+            "3. the header fits on one line and holds Work on this chunk (or Go to agent) in full and a Copy wsh command icon",
             (header.work === "Work on this chunk" || header.work === "Go to agent") &&
+                header.workCut === false &&
+                header.headScroll != null &&
+                header.headScroll <= header.headClient &&
+                header.posHeight != null &&
+                header.posHeight < 20 &&
                 (header.copyTitle ?? "").startsWith("wsh effort note"),
             JSON.stringify(header)
         );
@@ -1479,13 +1539,14 @@ const briefRunSheetOrder = {
         })()`);
         rec("2. the dock draws at most one accent button", dock != null && dock.accents.length <= 1, JSON.stringify(dock));
 
-        // 3. i focuses the composer, and the composer shows its keycap. A composer needs a live lead.
+        // 3. i focuses the composer, and the composer shows its keycap and says who it messages. A composer needs a live
+        // lead; briefcompose.test.ts covers the words for every target, so a run with no composer loses nothing here.
         const composer = await h.ev(`!!document.querySelector('[data-jarvis-brief-composer="input"]')`);
         if (composer !== true) {
             steps.push(
                 skipStep(
-                    "3. i focuses the composer, which shows an i keycap",
-                    "the fixture run has no live lead, so its sheet has no composer; seed a run whose lead is a phase worker to see it"
+                    "3. i focuses the composer, which shows an i keycap and says who it messages",
+                    "the fixture run has no live lead, so its sheet has no composer (briefcompose.test.ts covers the words); seed a run whose lead is a phase worker to see it"
                 )
             );
         } else {
@@ -1494,12 +1555,22 @@ const briefRunSheetOrder = {
             const focus = await h.ev(`(() => {
                 const input = document.querySelector('[data-jarvis-brief-composer="input"]');
                 const band = document.querySelector('[data-jarvis-brief-band="composer"]');
+                const text = (k) => band?.querySelector('[data-jarvis-brief-composer="' + k + '"]')?.textContent.trim() ?? null;
                 return {
                     focused: document.activeElement === input,
                     keycap: [...(band?.querySelectorAll('kbd') ?? [])].some((k) => k.textContent.trim() === 'i'),
+                    who: text('who'),
+                    scope: text('scope'),
                 };
             })()`);
-            rec("3. i focuses the composer, which shows an i keycap", focus.focused && focus.keycap, JSON.stringify(focus));
+            rec(
+                "3. i focuses the composer, which shows an i keycap and says who it messages",
+                focus.focused &&
+                    focus.keycap &&
+                    (focus.who === "Message the lead" || focus.who === "Message the worker") &&
+                    focus.scope === "goes straight to its terminal",
+                JSON.stringify(focus)
+            );
         }
 
         // 4. the sheet's verb is one word of the one vocabulary, and its strip ends in the three-pip tail
