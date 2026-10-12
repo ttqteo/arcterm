@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { findPathCandidates, findSpanningPaths, inlinePathOf, resolvePath } from "./pathlinks";
+import { findPathCandidates, findSpanningPaths, inlinePathOf, matchKnownPath, resolvePath } from "./pathlinks";
 
 const paths = (line: string) => findPathCandidates(line).map((c) => [c.path, c.line, c.col]);
 
@@ -119,5 +119,37 @@ describe("inlinePathOf", () => {
         expect(inlinePathOf("console.log")).toBeNull();
         expect(inlinePathOf("npm run dev")).toBeNull();
         expect(inlinePathOf("const x = 1")).toBeNull();
+    });
+});
+
+describe("matchKnownPath", () => {
+    const known = [
+        "D:/thesis/obsidian/seminar_cycle2/huong_C/plan_C.md",
+        "D:/thesis/obsidian/seminar_cycle2/huong_C/idea_C.md",
+        "D:/thesis/README.md",
+    ];
+
+    it("finds the one known file a path is the tail of", () => {
+        expect(matchKnownPath("huong_C/plan_C.md", known)).toBe("D:/thesis/obsidian/seminar_cycle2/huong_C/plan_C.md");
+        expect(matchKnownPath("./huong_C\\plan_C.md", known)).toBe(
+            "D:/thesis/obsidian/seminar_cycle2/huong_C/plan_C.md"
+        );
+    });
+
+    it("matches whole segments only", () => {
+        expect(matchKnownPath("C/plan_C.md", known)).toBeNull();
+        expect(matchKnownPath("an_C.md", known)).toBeNull();
+    });
+
+    it("gives up when two different files fit", () => {
+        const two = [...known, "D:/thesis/archive/huong_C/plan_C.md"];
+        expect(matchKnownPath("huong_C/plan_C.md", two)).toBeNull();
+        expect(matchKnownPath("huong_C/plan_C.md", [...known, known[0]])).toBe(known[0]);
+    });
+
+    it("leaves absolute, parent-relative and home paths alone", () => {
+        expect(matchKnownPath("/huong_C/plan_C.md", known)).toBeNull();
+        expect(matchKnownPath("../huong_C/plan_C.md", known)).toBeNull();
+        expect(matchKnownPath("~/huong_C/plan_C.md", known)).toBeNull();
     });
 });

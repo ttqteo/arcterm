@@ -177,6 +177,37 @@ export function resolvePath(cwd: string | null | undefined, p: string): string |
     return `${drive}/${segs.join("/")}`;
 }
 
+// the "/a/b" a relative path can be the tail of another path by, or null for a path that names no folder-relative tail
+// (absolute, from home, or climbing out with "..")
+export function knownPathTail(p: string): string | null {
+    if (isAbsolutePath(p) || p.startsWith("~")) {
+        return null;
+    }
+    const segs = p.split(/[\\/]+/).filter((s) => s !== "" && s !== ".");
+    return segs.length === 0 || segs.includes("..") ? null : `/${segs.join("/")}`;
+}
+
+// the one file in `known` (absolute paths) that a relative path names the tail of, by whole segments, or null when none
+// or several do. An agent often names a file from the folder it is working in rather than its own cwd
+export function matchKnownPath(p: string, known: readonly string[]): string | null {
+    const tail = knownPathTail(p);
+    if (tail == null) {
+        return null;
+    }
+    let found: string | null = null;
+    for (const k of known) {
+        const norm = k.replace(/\\/g, "/");
+        if (!norm.endsWith(tail)) {
+            continue;
+        }
+        if (found != null && found !== norm) {
+            return null;
+        }
+        found = norm;
+    }
+    return found;
+}
+
 // inline code that is exactly one path: with a separator, a line, or a source file's extension
 export function inlinePathOf(code: string): PathCandidate | null {
     const text = code.trim();

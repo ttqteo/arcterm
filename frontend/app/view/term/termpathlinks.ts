@@ -20,6 +20,8 @@ import type { IBufferRange, IDisposable, ILink, ILinkProvider, Terminal } from "
 
 export interface PathLinkHooks {
     cwd: () => string | null;
+    // the file the terminal's agent touched that a path it names from another folder than its cwd is the tail of
+    touched: (cwd: string | null, path: string) => Promise<string | null>;
     activate: (ref: FileRef) => void;
     hover: (e: MouseEvent, ref: FileRef) => void;
     leave: () => void;
@@ -48,12 +50,24 @@ export function hintFor(ref: FileRef): string {
     return `open ${name}${ref.line != null ? ` at line ${ref.line}` : ""}`;
 }
 
+type Touched = PathLinkHooks["touched"];
+
+// the existing file a path names: under the cwd, else the one file the agent touched that the path is the tail of
+async function locate(path: string, cwd: string | null, touched: Touched): Promise<string | null> {
+    const abs = resolvePath(cwd, path);
+    if (abs != null && (await exists(abs))) {
+        return abs;
+    }
+    const hit = await touched(cwd, path);
+    return hit != null && (await exists(hit)) ? hit : null;
+}
+
 // the existing files a line names, as references
-async function refsForLine(text: string, cwd: string | null) {
+async function refsForLine(text: string, cwd: string | null, touched: Touched) {
     const out: { text: string; start: number; end: number; ref: FileRef }[] = [];
     for (const c of findPathCandidates(text)) {
-        const abs = resolvePath(cwd, c.path);
-        if (abs == null || !(await exists(abs))) {
+        const abs = await locate(c.path, cwd, touched);
+        if (abs == null) {
             continue;
         }
         out.push({
@@ -70,7 +84,7 @@ async function refsForLine(text: string, cwd: string | null) {
 const SPAN_ROWS = 3;
 
 // the existing files named by paths that run across rows and touch row `y` (0-based), with their ranges in buffer rows
-async function spanningRefsAt(term: Terminal, y: number, cwd: string | null) {
+async function spanningRefsAt(term: Terminal, y: number, cwd: string | null, touched: Touched) {
     const buf = term.buffer.active;
     const from = Math.max(0, y - SPAN_ROWS);
     const to = Math.min(buf.length - 1, y + SPAN_ROWS);
@@ -84,8 +98,8 @@ async function spanningRefsAt(term: Terminal, y: number, cwd: string | null) {
         if (s.start.row + from > y || s.end.row + from < y) {
             continue;
         }
-        const abs = resolvePath(cwd, s.path);
-        if (abs == null || !(await exists(abs))) {
+        const abs = await locate(s.path, cwd, touched);
+        if (abs == null) {
             continue;
         }
         out.push({
@@ -119,12 +133,18 @@ export function makePathLinkProvider(term: Terminal, hooks: PathLinkHooks): ILin
                 return;
             }
             const cwd = hooks.cwd();
-            void Promise.all([refsForLine(text, cwd), spanningRefsAt(term, y - 1, cwd)]).then(([found, spanning]) => {
+            void Promise.all([
+                refsForLine(text, cwd, hooks.touched),
+                spanningRefsAt(term, y - 1, cwd, hooks.touched),
+            ]).then(([found, spanning]) => {
                 // xterm ranges are 1-based and inclusive
                 const links: ILink[] = spanning.map((s) =>
                     link(
                         s.text,
-                        { start: { x: s.start.col + 1, y: s.start.row + 1 }, end: { x: s.end.col, y: s.end.row + 1 } },
+                        {
+                            start: { x: s.start.col + 1, y: s.start.row + 1 },
+                            end: { x: s.end.col, y: s.end.row + 1 },
+                        },
                         s.ref
                     )
                 );
@@ -155,7 +175,7 @@ export function trackForDev(blockId: string, term: Terminal, hooks: PathLinkHook
             const found = [];
             for (let i = 0; i < buf.length; i++) {
                 const text = buf.getLine(i)?.translateToString(true) ?? "";
-                for (const f of await refsForLine(text, t.hooks.cwd())) {
+                for (const f of await refsForLine(text, t.hooks.cwd(), t.hooks.touched)) {
                     found.push({ text: f.text, abs: f.ref.abs, line: f.ref.line ?? null });
                 }
             }
@@ -217,7 +237,7 @@ export function trackForDev(blockId: string, term: Terminal, hooks: PathLinkHook
             const buf = t.term.buffer.active;
             for (let i = buf.length - 1; i >= 0; i--) {
                 const text = buf.getLine(i)?.translateToString(true) ?? "";
-                const hit = (await refsForLine(text, t.hooks.cwd())).find((f) => f.text === linkText);
+                const hit = (await refsForLine(text, t.hooks.cwd(), t.hooks.touched)).find((f) => f.text === linkText);
                 if (hit != null) {
                     t.hooks.activate(hit.ref);
                     return true;

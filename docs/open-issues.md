@@ -27,6 +27,14 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-12 (path links from another folder)**
+
+- [ ] (arcterm) **A path an agent names from a subfolder is a link.** In an agent that worked on
+  `obsidian/seminar_cycle2/huong_C/plan_cycle2_C_rulegen_20261011.md` from the mit-thesis root and wrote it back as
+  `huong_C/plan_cycle2_C_rulegen_20261011.md`: hovering the path underlines it, Ctrl+click opens the file in the
+  agent's File tab. A path two touched files both end in stays plain. (`pathlinks.ts` `matchKnownPath`,
+  `pathlinkroute.ts`, `termpathlinks.ts`)
+
 **2026-10-12 (images in File tab and Code)**
 
 - [ ] (arcterm) **An image opens instead of "Binary file".** Open a `.png` (e.g. `docs/guide/images/agent-rail.png`)
