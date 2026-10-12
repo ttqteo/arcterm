@@ -136,6 +136,10 @@ export function RunComposer({
                 <span data-jarvis-brief-composer="scope" className="text-muted">
                     {labels.scope}
                 </span>
+                {/* the key that focuses this field (bindings.ts `i`), seen where it works */}
+                <kbd className="rounded-[4px] border border-edge-strong px-1 font-mono text-[10px] leading-4 text-ink-mid">
+                    i
+                </kbd>
                 {labels.alt != null ? (
                     <span data-jarvis-brief-composer="alt" className="ml-auto text-muted">
                         {labels.alt}
