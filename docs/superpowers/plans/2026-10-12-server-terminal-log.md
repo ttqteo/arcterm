@@ -180,7 +180,7 @@ Update the file's header comment (it now also says which terminal holds a row). 
 
 **Depends on:** Task 2
 
-**Files:** `frontend/app/view/term/termsearch.ts`, `frontend/app/view/agents/terminallog.ts`, `frontend/app/view/term/term.tsx`, `frontend/app/view/agents/railservers.tsx`, `frontend/app/view/agents/machineserverspanel.tsx`, `frontend/app/element/search.tsx`, `frontend/app/element/search.scss`, `CHANGELOG.md`
+**Files:** `frontend/app/view/term/termsearch.ts`, `frontend/app/view/agents/terminallog.ts`, `frontend/app/view/term/term.tsx`, `frontend/app/view/agents/railservers.tsx`, `frontend/app/view/agents/machineserverspanel.tsx`, `CHANGELOG.md`
 
 **Step 1: The pending search.** `frontend/app/view/term/termsearch.ts`:
 
@@ -248,46 +248,65 @@ In `machineserverspanel.tsx`, `ServerRow` shows the `data-machine-server-log` bu
 `data-machine-server-termlog`) when `row.termLog` is set, calling `openTerminalLog(model, row.termLog)` and then
 `close()`.
 
-**Step 5: Check it in the running dev app** (`task dev` must already be running; do not build). Over CDP
-(`node scripts/cdp-shot.mjs`, or `Runtime.evaluate` through `scripts/cdp/attach.mjs`): open a terminal tab, run a
-server in it inside the focused agent's project (e.g. `node -e "require('http').createServer((q,s)=>s.end('ok')).listen(4399)"`),
-hover its rail row, click Log. Confirm: the terminal is focused, the `.search-container` box shows above its
-top-right, its input holds focus (`document.activeElement` is inside `.search-container`; if the terminal's own focus
-steals it after `openTarget`, defer `requestTermSearch` a frame with `requestAnimationFrame` and recheck), typing finds
-matches, and Esc closes it and gives focus back to the terminal. This box has not rendered under Tauri before: if its
-icons are blank (they are Font Awesome names, `chevron-up`, `xmark-large`, `custom@regex`), it sits off the pane, or
-its colours are not theme tokens, fix it in `frontend/app/element/search.tsx` / `search.scss` with lucide icons and
-`@theme` tokens (DESIGN.md).
+The live check of the search box (its position, icons, focus, matches and Esc) is Task 4's: a run worker has no
+dev app running, and Task 4's acceptance starts its own.
 
-**Step 6: Typecheck and lint the touched files.** `task check:ts` (give it 5 minutes; exit 0 expected), then
+**Step 5: Typecheck and lint the touched files.** `task check:ts` (give it 5 minutes; exit 0 expected), then
 `npx eslint` and `npx prettier --check` on each file you touched.
 
-**Step 7: CHANGELOG.** Under `## Unreleased` → `### Added`: "A server running in one of arcterm's terminals says
+**Step 6: CHANGELOG.** Under `## Unreleased` → `### Added`: "A server running in one of arcterm's terminals says
 which terminal in Servers, and its Log opens that terminal with its search box."
 
-**Step 8: Commit** with a pathspec naming every file of this task.
+**Step 7: Commit** with a pathspec naming every file of this task.
 
 ### Task 4: The scenarios open a terminal's log
 
 **Depends on:** Task 1, Task 3
 
-**Files:** `scripts/cdp/scenarios.mjs`
+**Files:** `scripts/cdp/scenarios.mjs`, and only when the search-box asserts below fail: `frontend/app/element/search.tsx`,
+`frontend/app/element/search.scss`, `frontend/app/view/agents/terminallog.ts`, `frontend/app/view/term/termsearch.ts`
+
+**The search-box asserts** (both scenarios run them after clicking a terminal's Log; call them one shared helper):
+- the terminal pane (`[data-agent-terminal="<tabId>"]`) is shown and `.search-container` exists;
+- `.search-container`'s `getBoundingClientRect()` lies inside the terminal pane's rect;
+- `document.activeElement` is the box's input;
+- each of its buttons draws an icon: an `svg` inside it, or an icon element whose `::before` `content` is a non-empty
+  glyph (not `none` / `""`);
+- typing a marker string the terminal printed earlier into the input (`Input.insertText`) makes `.search-results`
+  visible with a count above 0;
+- Escape removes `.search-container` and `document.activeElement` is the terminal's xterm textarea
+  (`.xterm-helper-textarea` inside the pane).
+
+This box has not rendered under Tauri before. When an assert fails, fix the code, not the assert: blank icons (they are
+Font Awesome names, `chevron-up`, `xmark-large`, `custom@regex`) or colours that are not theme tokens in
+`search.tsx` / `search.scss` with lucide icons and `@theme` tokens (DESIGN.md); a box off the pane in `search.scss` /
+its floating placement; an input that loses focus to the terminal after `openTarget` by deferring `requestTermSearch`
+a frame with `requestAnimationFrame` in `terminallog.ts`.
 
 **Step 1: machine-servers.** Its arrange already creates a real throwaway terminal tab (`ctx.termTabId`) and its
 mocked `vite` row is owned by it (`machineServersFixture`). Keep the terminal's block id on `ctx` (`ctx.termBlockId`)
-and give the vite row's owner `blockid: ctx.termBlockId`. Add a step after the existing Log step: open the popover,
-hover the vite row, click `[data-machine-server-termlog]`; assert the popover closed, the terminal pane
-(`[data-agent-terminal="<termTabId>"]`) is shown, `.search-container` exists and `document.activeElement` is its
-input; shoot `cdp-shots/machine-servers-termlog.png`; press Escape and assert the box is gone.
+and give the vite row's owner `blockid: ctx.termBlockId`. In arrange, once the shell is up, print a marker in it
+(`controllerinput` with `echo <marker>` and a newline, base64 in `inputdata64`). Add a step after the existing Log
+step: open the popover, hover the vite row, click `[data-machine-server-termlog]`; assert the popover closed, then the
+search-box asserts on that terminal; shoot `cdp-shots/machine-servers-termlog.png` before pressing Escape.
 
-**Step 2: rail-servers.** It runs real processes, so the holder must be real: create a throwaway terminal tab the
-same way machine-servers does, with `cmd:cwd` set to the fixture agent's project directory, and start a small
-`node` HTTP server on a free loopback port in it through the terminal's input (`controllerinput` with the command
-and a newline, base64 in `inputdata64`). Wait for its row; assert its second line reads `terminal · <tab name>` and
-it has `[data-dev-server-termlog]`; click it and assert as in Step 1; shoot `cdp-shots/rail-servers-termlog.png`.
-Teardown ends that server and closes the tab whatever failed.
+**Step 2: rail-servers.** It runs real processes, so the holder must be real. Steps 1, 3 and 8 count and order the
+strip's servers, so this one comes **last, as step 10 after step 9**, and creates its terminal there in the assert,
+not in arrange. Step 9 left the rail's panel on a file: bring the panel back to its sections first. Then create a
+throwaway terminal tab the same way machine-servers does, with `cmd:cwd` set to the fixture agent's project
+directory (`ctx.cwd`), and start a small `node` HTTP server on a free loopback port in it through the terminal's input
+(`controllerinput`), one that prints a marker line when it listens. Keep its tab, block and the server's pid on `ctx`.
+Wait for its row (assert no strip count here); assert its second line reads `terminal · <tab name>` and it has
+`[data-dev-server-termlog]`; click it, run the search-box asserts on that terminal with the marker, shoot
+`cdp-shots/rail-servers-termlog.png` before pressing Escape.
+Teardown, each its own `step` whatever failed, and both **before** `teardownFixtureRun` (which removes `ctx.cwd`; the
+shell, started inside it, locks the directory on Windows): end the node server by its pid, then close the throwaway
+tab, ending its shell.
 
-**Step 3: Run them against the running dev app:** `task verify:ui -- machine-servers rail-servers`; both PASS.
-Never `taskkill /IM`: stop a dev app only by the PID whose path is in a repo checkout.
+**Step 3: Run them:** `node scripts/cdp/final-verify.mjs machine-servers rail-servers` (it builds and starts its own
+dev app and stops it after; give it 20 minutes); both PASS. Look at the two `-termlog.png` shots. Never
+`taskkill /IM`: stop a dev app only by the PID whose path is in a repo checkout.
 
-**Step 4: Commit** with a pathspec: `git commit -m "test(cdp): the Servers scenarios open a terminal-held server's log" -- scripts/cdp/scenarios.mjs`
+**Step 4: Check and commit.** If you touched a frontend file, `task check:ts` (5 minutes; exit 0), and `npx eslint` /
+`npx prettier --check` on each touched `.ts`/`.tsx`/`.scss` file. Commit with a pathspec naming every file you touched:
+`git commit -m "test(cdp): the Servers scenarios open a terminal-held server's log" -- scripts/cdp/scenarios.mjs [the fixed files]`
