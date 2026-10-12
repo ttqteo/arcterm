@@ -21,7 +21,7 @@ func TestSelectInProjectByCwd(t *testing.T) {
 		Proc{Pid: 100, Ppid: 1, Name: "node.exe", Cmdline: "node vite", Cwd: `d:/W/Site\web`, CreateMs: 5},
 		Proc{Pid: 1, Ppid: 0, Name: "explorer.exe"},
 	)
-	got := Select(`D:\w\site\`, 0, procs, []Listener{{Pid: 100, Port: 5173}})
+	got := Select(`D:\w\site\`, 0, procs, []Listener{{Pid: 100, Port: 5173}}, nil)
 	want := []Server{{Pid: 100, CreateMs: 5, Ports: []int{5173}, Name: "node.exe", Cmdline: "node vite", Cwd: `d:/W/Site\web`}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v, want %+v", got, want)
@@ -38,7 +38,7 @@ func TestSelectDescendantOfAgent(t *testing.T) {
 		Proc{Pid: 30, Ppid: 20, Name: "npm", Cmdline: "npm run dev", Cwd: `D:\elsewhere`},
 		Proc{Pid: 40, Ppid: 30, Name: "node.exe", Cmdline: "node server.js", Cwd: `D:\elsewhere`, CreateMs: 9},
 	)
-	got := Select(`D:\w\site`, 10, procs, []Listener{{Pid: 40, Port: 3000}})
+	got := Select(`D:\w\site`, 10, procs, []Listener{{Pid: 40, Port: 3000}}, nil)
 	if len(got) != 1 || got[0].Pid != 40 {
 		t.Fatalf("got %+v, want only pid 40", got)
 	}
@@ -55,7 +55,7 @@ func TestSelectDirectChildOfAgentIsItsOwnLauncher(t *testing.T) {
 		Proc{Pid: 10, Ppid: 1, Name: "claude.exe"},
 		Proc{Pid: 20, Ppid: 10, Name: "node.exe", Cmdline: "node a.js", Cwd: `D:\elsewhere`},
 	)
-	got := Select("", 10, procs, []Listener{{Pid: 20, Port: 80}})
+	got := Select("", 10, procs, []Listener{{Pid: 20, Port: 80}}, nil)
 	if len(got) != 1 || !got[0].ByAgent || got[0].LauncherCmdline != "node a.js" {
 		t.Fatalf("got %+v", got)
 	}
@@ -67,7 +67,7 @@ func TestSelectDropsOutsideAndUnrelated(t *testing.T) {
 		Proc{Pid: 50, Ppid: 1, Name: "postgres.exe", Cwd: `C:\Program Files\pg`},
 		Proc{Pid: 1, Ppid: 0, Name: "explorer.exe"},
 	)
-	got := Select(`D:\w\site`, 10, procs, []Listener{{Pid: 50, Port: 5432}})
+	got := Select(`D:\w\site`, 10, procs, []Listener{{Pid: 50, Port: 5432}}, nil)
 	if got == nil || len(got) != 0 {
 		t.Fatalf("got %#v, want an empty non-nil slice", got)
 	}
@@ -78,7 +78,7 @@ func TestSelectRootNeedsSeparator(t *testing.T) {
 		Proc{Pid: 60, Ppid: 1, Name: "node.exe", Cwd: `D:\w\site-old`},
 		Proc{Pid: 61, Ppid: 1, Name: "node.exe", Cwd: `D:\w\site`},
 	)
-	got := Select(`D:\w\site`, 0, procs, []Listener{{Pid: 60, Port: 1}, {Pid: 61, Port: 2}})
+	got := Select(`D:\w\site`, 0, procs, []Listener{{Pid: 60, Port: 1}, {Pid: 61, Port: 2}}, nil)
 	if len(got) != 1 || got[0].Pid != 61 {
 		t.Fatalf("got %+v, want only pid 61 (site-old is a different folder)", got)
 	}
@@ -86,14 +86,14 @@ func TestSelectRootNeedsSeparator(t *testing.T) {
 
 func TestSelectEmptyRootMatchesNothingByCwd(t *testing.T) {
 	procs := procMap(Proc{Pid: 60, Ppid: 1, Name: "node.exe", Cwd: `D:\w\site`})
-	if got := Select("", 0, procs, []Listener{{Pid: 60, Port: 1}}); len(got) != 0 {
+	if got := Select("", 0, procs, []Listener{{Pid: 60, Port: 1}}, nil); len(got) != 0 {
 		t.Fatalf("got %+v, want none: no root, no agent", got)
 	}
 }
 
 func TestSelectOnePidManyPortsIsOneServer(t *testing.T) {
 	procs := procMap(Proc{Pid: 70, Ppid: 1, Name: "node.exe", Cwd: `D:\w\site`})
-	got := Select(`D:\w\site`, 0, procs, []Listener{{Pid: 70, Port: 24678}, {Pid: 70, Port: 4321}, {Pid: 70, Port: 24678}})
+	got := Select(`D:\w\site`, 0, procs, []Listener{{Pid: 70, Port: 24678}, {Pid: 70, Port: 4321}, {Pid: 70, Port: 24678}}, nil)
 	if len(got) != 1 {
 		t.Fatalf("got %+v, want one server", got)
 	}
@@ -108,12 +108,12 @@ func TestSelectDropsClaudeAndTheAgent(t *testing.T) {
 		Proc{Pid: 11, Ppid: 10, Name: "Claude", Cwd: `D:\w\site`},
 		Proc{Pid: 12, Ppid: 10, Name: "node.exe", Cwd: `D:\w\site`},
 	)
-	got := Select(`D:\w\site`, 10, procs, []Listener{{Pid: 10, Port: 1}, {Pid: 11, Port: 2}, {Pid: 12, Port: 3}})
+	got := Select(`D:\w\site`, 10, procs, []Listener{{Pid: 10, Port: 1}, {Pid: 11, Port: 2}, {Pid: 12, Port: 3}}, nil)
 	if len(got) != 1 || got[0].Pid != 12 {
 		t.Fatalf("got %+v, want only pid 12", got)
 	}
 	// no agent known: a claude.exe in the project is still not a dev server
-	got = Select(`D:\w\site`, 0, procs, []Listener{{Pid: 10, Port: 1}})
+	got = Select(`D:\w\site`, 0, procs, []Listener{{Pid: 10, Port: 1}}, nil)
 	if len(got) != 0 {
 		t.Fatalf("got %+v, want none", got)
 	}
@@ -121,7 +121,7 @@ func TestSelectDropsClaudeAndTheAgent(t *testing.T) {
 
 func TestSelectSkipsUnreadAndZeroPids(t *testing.T) {
 	procs := procMap(Proc{Pid: 80, Ppid: 1, Name: "node.exe", Cwd: `D:\w\site`})
-	got := Select(`D:\w\site`, 0, procs, []Listener{{Pid: 0, Port: 1}, {Pid: 99, Port: 2}, {Pid: 80, Port: 3}})
+	got := Select(`D:\w\site`, 0, procs, []Listener{{Pid: 0, Port: 1}, {Pid: 99, Port: 2}, {Pid: 80, Port: 3}}, nil)
 	if len(got) != 1 || got[0].Pid != 80 {
 		t.Fatalf("got %+v, want only pid 80", got)
 	}
@@ -132,7 +132,7 @@ func TestSelectPpidLoopTerminates(t *testing.T) {
 		Proc{Pid: 90, Ppid: 91, Name: "node.exe", Cwd: `D:\w\site`},
 		Proc{Pid: 91, Ppid: 90, Name: "sh"},
 	)
-	got := Select(`D:\w\site`, 7, procs, []Listener{{Pid: 90, Port: 1}})
+	got := Select(`D:\w\site`, 7, procs, []Listener{{Pid: 90, Port: 1}}, nil)
 	if len(got) != 1 || got[0].ByAgent {
 		t.Fatalf("got %+v, want pid 90 by cwd, not by agent", got)
 	}
@@ -148,12 +148,12 @@ func TestSelectLongChainStopsAtHopLimit(t *testing.T) {
 		procs[agent+i] = Proc{Pid: agent + i, Ppid: prev, Name: "sh"}
 		prev = agent + i
 	}
-	got := Select("", agent, procs, []Listener{{Pid: prev, Port: 1}})
+	got := Select("", agent, procs, []Listener{{Pid: prev, Port: 1}}, nil)
 	if len(got) != 0 {
 		t.Fatalf("got %+v, want none past the hop limit", got)
 	}
 	// 20 parents is within it
-	got = Select("", agent, procs, []Listener{{Pid: agent + 20, Port: 1}})
+	got = Select("", agent, procs, []Listener{{Pid: agent + 20, Port: 1}}, nil)
 	if len(got) != 1 || !got[0].ByAgent {
 		t.Fatalf("got %+v, want pid %d by agent", got, agent+20)
 	}
@@ -165,13 +165,51 @@ func TestSelectOrderedByFirstPort(t *testing.T) {
 		Proc{Pid: 2, Ppid: 0, Name: "b", Cwd: `D:\w\site`},
 		Proc{Pid: 3, Ppid: 0, Name: "c", Cwd: `D:\w\site`},
 	)
-	got := Select(`D:\w\site`, 0, procs, []Listener{{Pid: 1, Port: 9000}, {Pid: 2, Port: 3000}, {Pid: 2, Port: 9999}, {Pid: 3, Port: 5000}})
+	got := Select(`D:\w\site`, 0, procs, []Listener{{Pid: 1, Port: 9000}, {Pid: 2, Port: 3000}, {Pid: 2, Port: 9999}, {Pid: 3, Port: 5000}}, nil)
 	var pids []int32
 	for _, s := range got {
 		pids = append(pids, s.Pid)
 	}
 	if !reflect.DeepEqual(pids, []int32{2, 3, 1}) {
 		t.Fatalf("order = %v, want [2 3 1]", pids)
+	}
+}
+
+func TestSelectNamesTheTerminalThatHoldsIt(t *testing.T) {
+	procs := procMap(
+		Proc{Pid: 1, Ppid: 0, Name: "explorer.exe"},
+		Proc{Pid: 50, Ppid: 1, Name: "wavesrv.x64.exe"},
+		Proc{Pid: 60, Ppid: 50, Name: "pwsh.exe", Cmdline: "pwsh"},
+		Proc{Pid: 70, Ppid: 60, Name: "python.exe", Cmdline: "uvicorn app.main:app --port 8100", Cwd: `D:\w\portal`},
+	)
+	term := ServerOwner{Kind: OwnerTerminal, BlockId: "blk-t", TabId: "tab-t", Name: "api"}
+	got := Select(`D:\w\portal`, 0, procs, []Listener{{Pid: 70, Port: 8100}}, map[int32]ServerOwner{60: term})
+	if len(got) != 1 || got[0].Owner == nil || *got[0].Owner != term {
+		t.Fatalf("got %+v, want the terminal as owner", got)
+	}
+}
+
+func TestSelectOwnerOnlyForATerminal(t *testing.T) {
+	procs := procMap(
+		Proc{Pid: 1, Ppid: 0, Name: "explorer.exe"},
+		Proc{Pid: 10, Ppid: 5, Name: "claude.exe"},
+		Proc{Pid: 5, Ppid: 1, Name: "pwsh.exe"},
+		Proc{Pid: 20, Ppid: 10, Name: "node.exe", Cmdline: "node a.js", Cwd: `D:\w\site`},
+		Proc{Pid: 30, Ppid: 1, Name: "node.exe", Cmdline: "node b.js", Cwd: `D:\w\site`},
+		Proc{Pid: 40, Ppid: 999, Name: "node.exe", Cmdline: "node c.js", Cwd: `D:\w\site`},
+	)
+	holders := map[int32]ServerOwner{5: {Kind: OwnerAgent, BlockId: "blk-a", TabId: "tab-a"}}
+	got := Select(`D:\w\site`, 10, procs, []Listener{{Pid: 20, Port: 1}, {Pid: 30, Port: 2}, {Pid: 40, Port: 3}}, holders)
+	if len(got) != 3 {
+		t.Fatalf("got %+v, want three rows", got)
+	}
+	for _, s := range got {
+		if s.Owner != nil {
+			t.Fatalf("pid %d: owner %+v, want none (by-agent, an app, a broken chain)", s.Pid, *s.Owner)
+		}
+	}
+	if !got[0].ByAgent {
+		t.Fatalf("pid 20 descends from the agent: %+v", got[0])
 	}
 }
 
