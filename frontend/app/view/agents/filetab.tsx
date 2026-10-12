@@ -4,7 +4,7 @@
 // The Agent panel's File tab: one file, read-only, at a line (docs/superpowers/specs/2026-10-06-agent-rail-tabs-design.md).
 // A markdown file renders as a document that takes comments (docs/superpowers/specs/2026-10-06-md-comments-design.md);
 // Source is the Monaco view. A file opened from Files changed also has Diff, against the base that list is measured from.
-// Editing is the Code surface's job, one click away.
+// Editing is the Code surface's job, one click away; the one edit here is ticking a task box in a markdown Preview.
 
 import { SkeletonLine } from "@/app/element/skeleton";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -224,7 +224,16 @@ export function FileTab({
             />
         );
     } else if (state.kind === "text" && preview) {
-        body = <MdDoc model={model} agent={agent} fileRef={ref} text={state.text} />;
+        // re-read in place, as Live does: no skeleton, the scroll stays. Not against the stamp: a flipped box keeps
+        // the size, and a write in the same modtime tick would read as unchanged
+        const reread = () =>
+            fireAndForget(async () => {
+                const next = await readPanelFile(ref.abs);
+                if (next != null) {
+                    setState(next);
+                }
+            });
+        body = <MdDoc model={model} agent={agent} fileRef={ref} text={state.text} onFileChanged={reread} />;
     } else if (state.kind === "text") {
         const line = ref.line;
         body = (

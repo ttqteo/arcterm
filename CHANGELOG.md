@@ -12,6 +12,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- **Tick a task box in a markdown Preview**: in the Agent panel's File tab, clicking a `- [ ]` box ticks it (or clears
+  a ticked one) and saves the file.
 - **A server running in one of arcterm's terminals says which terminal** in Servers, and its Log opens that terminal
   with its search box.
 - **A run's own actions on its row's right-click menu** in the agent tree: Open in Jarvis, Open the DAG, Open the
