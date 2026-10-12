@@ -92,6 +92,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- Switching to an agent whose panel you left on **Files** now opens it on Files at once: it no longer slid to
+  Overview's width, flashed Overview, then slid back once the agent's git status loaded.
 - In the Spec review dialog, **a decision points at its place in the spec** when you rest on it or click it, even when
   the spec is written in another language: it matches the names it shares with a passage (`release_items`,
   FieldPolicy, /infra), and dims the rest down to that one list item. The **SPEC REVIEW** label no longer wraps.

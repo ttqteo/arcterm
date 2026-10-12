@@ -66,6 +66,7 @@ import { ServersSection } from "./railservers";
 import {
     loadRailForAgent,
     railChangesRangeAtom,
+    railCwdsAtom,
     railStateAtom,
     railVisibleAtom,
     type RailChangesRange,
@@ -527,8 +528,12 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const panels = useAtomValue(railPanelsAtom);
     const defaultTab = useAtomValue(railTabDefaultAtom);
     const panel = panelFor(panels, agent.id, defaultTab);
-    // the Files tab lists the agent's worktree: it needs a resolved cwd, and a subagent's interior has no worktree of its own
-    const hasTree = railState?.cwd != null && sub == null;
+    // the Files tab lists the agent's worktree: it needs a resolved cwd, and a subagent's interior has no worktree of its
+    // own. The cwd is this agent's last resolved one, not railState's, which is empty or another agent's for the moment
+    // after a switch: reading that, a switch to an agent left on Files slid to Overview's width and back
+    const agentCwd = useAtomValue(railCwdsAtom)[agent.id] ?? null;
+    const treeCwd = sub == null ? agentCwd : null;
+    const hasTree = treeCwd != null;
     const shown = shownTab(panel, hasTree);
     // File and Files each keep their own dragged width; Overview's is fixed
     const wide = useWideWidth(shown === "tree" ? "tree" : "file");
@@ -994,13 +999,13 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             body={
                 shown === "file" && fileRef != null ? (
                     <FileTab model={model} agent={agent} file={panel.file} cwd={railState?.cwd ?? null} />
-                ) : shown === "tree" && railState?.cwd != null ? (
+                ) : shown === "tree" && treeCwd != null ? (
                     // keyed by agent and cwd: the pane's reload bookkeeping (railtreepane.tsx) belongs to one of each
                     <RailTreePane
-                        key={`${agent.id}:${railState.cwd}`}
+                        key={`${agent.id}:${treeCwd}`}
                         model={model}
                         agentId={agent.id}
-                        cwd={railState.cwd}
+                        cwd={treeCwd}
                         agentState={agent.state}
                     />
                 ) : undefined

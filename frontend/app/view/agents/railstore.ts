@@ -83,6 +83,25 @@ export const usageBreakdownAtom = atom(false);
 
 export const railStateAtom = atom<RailGitState | null>(null) as PrimitiveAtom<RailGitState | null>;
 
+// each agent's resolved cwd, kept across focus changes: railStateAtom empties on every switch and fills only after its
+// git reads, so the panel's Files tab reads the cwd here instead, and an agent left on Files comes back on Files at once
+// rather than through Overview
+export const railCwdsAtom = atom<Record<string, string>>({}) as PrimitiveAtom<Record<string, string>>;
+
+function setRailCwd(id: string, cwd: string | null): void {
+    const cwds = globalStore.get(railCwdsAtom);
+    if ((cwds[id] ?? null) === cwd) {
+        return;
+    }
+    const next = { ...cwds };
+    if (cwd == null) {
+        delete next[id];
+    } else {
+        next[id] = cwd;
+    }
+    globalStore.set(railCwdsAtom, next);
+}
+
 // guards against a stale focus's load overwriting a newer one (same pattern as filesstore.ts)
 const current = { id: "" };
 
@@ -97,6 +116,7 @@ export async function loadRailForAgent(
     globalStore.set(railStateAtom, null);
 
     const [cwd, startTs] = await Promise.all([resolveCwd(transcriptPath, blockId), ensureSessionStart(transcriptPath)]);
+    setRailCwd(id, cwd || null);
     if (current.id !== id) {
         return;
     }
