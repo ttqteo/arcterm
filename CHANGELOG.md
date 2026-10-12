@@ -25,6 +25,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
   maximized or not), and grows back as soon as you come back to arcterm, by Alt+Tab, the taskbar button or a click. A
   fold from the Sprout button or `Ctrl+M` stays until you double-click Sprout, pick **Restore**, or click arcterm's
   taskbar button (the Dock icon on macOS).
+- The launcher's **Transcript** button on a picked session spells out its key, **Shift+Enter**, in place of ⇧⏎.
 
 ### Fixed
 

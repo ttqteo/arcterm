@@ -7,7 +7,6 @@
 // lands on the picked row and ↑↓ move the pick. Enter bubbles to the dialog, which launches from this zone.
 
 import { globalStore } from "@/app/store/jotaiStore";
-import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useRef, type KeyboardEvent } from "react";
 import { formatAge, formatTokens } from "./agentsviewmodel";
@@ -126,9 +125,10 @@ export function ResumeList({ choices, pickedId, onViewTranscript }: ResumeListPr
                                 )}
                             >
                                 Transcript
+                                {/* spelled out: ⇧⏎ at 10.5px reads as noise */}
                                 {on ? (
-                                    <span aria-hidden className="font-mono font-normal text-muted">
-                                        {formatChordString("Shift:Enter")}
+                                    <span aria-hidden className="font-normal text-muted">
+                                        Shift+Enter
                                     </span>
                                 ) : null}
                             </button>
