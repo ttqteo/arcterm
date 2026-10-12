@@ -23,6 +23,8 @@ const MARK_PATH = cellsPath(SPIDER_MARK, "#", 1);
 const SMALL_BODY = cellsPath(SPIDER_SMALL, "S", 2);
 const SMALL_EYES = cellsPath(SPIDER_SMALL, "e", 2);
 const SENSE_JAGS = cellsPath(SPIDER_SENSE, "y", 2);
+const HERO_BODY = cellsPath(SPIDER_SMALL, "S", 3);
+const HERO_EYES = cellsPath(SPIDER_SMALL, "e", 3);
 const WEB_TOP = cobwebPath(132, [20, 42, 68, 98, 128]);
 const WEB_BOTTOM = cobwebPath(150, [22, 46, 76, 108, 144]);
 
@@ -122,6 +124,21 @@ export function TreeSpider({ sensing }: { sensing: boolean }) {
                 </div>
             </div>
         </MotionConfig>
+    );
+}
+
+// The no-terminal hero's spider (agentlaunchhero.tsx), over its icon box at 3px a cell. Its strand runs a viewport
+// up, and the hero clips it at its own top (overflow-hidden while this shows), so it hangs from the surface's top
+// wherever the centred column sits. Static: it marks the theme, not a state.
+export function HeroSpider() {
+    return (
+        <div aria-hidden className="pointer-events-none relative mb-4 h-[24px] w-[27px] flex-none">
+            <div className="absolute bottom-full left-[13px] h-[100vh] w-px bg-spidey-web/55" />
+            <svg width="27" height="24" viewBox="0 0 27 24" shapeRendering="crispEdges" className="block">
+                <path d={HERO_BODY} fill="var(--color-spidey-red)" />
+                <path d={HERO_EYES} fill="var(--color-spidey-eye)" />
+            </svg>
+        </div>
     );
 }
 

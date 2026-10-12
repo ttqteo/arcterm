@@ -15,7 +15,7 @@ import { useContext, useState } from "react";
 import { MONO_FONTS, SANS_FONTS } from "../fonts";
 import { fontMonoAtom, fontSansAtom } from "../fontstore";
 import { RowCtx, Segmented, SettingCard, SettingRow, Toggle } from "../settingsui";
-import { offersSpiderTheme, SPIDER_THEME } from "../themedecor";
+import { chipSwatches, offersSpiderTheme, SPIDER_THEME } from "../themedecor";
 import { SmallSpider } from "../themedecorview";
 import { ACCENT_SWATCHES, activePalette, colorOf, THEMES, type OverrideRole } from "../themes";
 import { themeOverridesAtom, themePresetAtom } from "../themestore";
@@ -49,6 +49,7 @@ function ThemeChips() {
         <div data-theme-presets role="group" aria-label="Theme" className="grid grid-cols-3 gap-1.5 p-3">
             {THEMES.map((t) => {
                 const on = t.id === preset;
+                const [bg, surface, accent, last] = chipSwatches(t.id, t.palette);
                 return (
                     <button
                         key={t.id}
@@ -63,10 +64,10 @@ function ThemeChips() {
                         )}
                     >
                         <span className="grid flex-none grid-cols-2 gap-[2px]">
-                            <Swatch color={t.palette.bg} />
-                            <Swatch color={t.palette.surface} />
-                            <Swatch color={t.palette.accent} />
-                            <Swatch color={t.palette.success} />
+                            <Swatch color={bg} />
+                            <Swatch color={surface} />
+                            <Swatch color={accent} />
+                            <Swatch color={last} />
                         </span>
                         <span className="min-w-0 flex-1 truncate">{t.name}</span>
                         {t.id === SPIDER_THEME ? <SmallSpider /> : null}

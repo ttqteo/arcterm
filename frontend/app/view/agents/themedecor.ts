@@ -6,6 +6,7 @@
 // and when each shows; themedecorview.tsx draws them.
 
 import type { PetCharacter } from "@/app/view/jarvis/petsprite";
+import type { ThemePalette } from "./themes";
 
 export const SPIDER_THEME = "spider";
 
@@ -58,6 +59,15 @@ export const SPIDER_SMALL: readonly string[] = [
     ".S.SSS.S.",
     "S...S...S",
 ];
+
+/**
+ * The four swatches a theme chip shows: background, surface, accent and success. The Spider chip trades success for
+ * its terminal blue, so it shows the suit's red and blue.
+ */
+export function chipSwatches(id: string, palette: ThemePalette): [string, string, string, string] {
+    const last = hasSpiderDecor(id) ? (palette.ansiBlue ?? palette.success) : palette.success;
+    return [palette.bg, palette.surface, palette.accent, last];
+}
 
 // Spider-sense around the small spider, as Spider-Man's in the fold (petsprite.ts SPIDEY_SENSE): a jag either side
 // of its eyes and two over it, beside the thread. Cells of a frame 3 cells wider a side and 2 taller than the spider,

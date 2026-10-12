@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
     cellsPath,
+    chipSwatches,
     cobwebPath,
     hasSpiderDecor,
     offersSpiderTheme,
@@ -12,6 +13,7 @@ import {
     SPIDER_SENSE_OFFSET,
     SPIDER_SMALL,
 } from "./themedecor";
+import { activePalette } from "./themes";
 
 describe("hasSpiderDecor", () => {
     it("is the Spider theme's alone", () => {
@@ -55,6 +57,18 @@ describe("the spider's cells", () => {
         expect(SPIDER_SMALL).toHaveLength(8);
         expect(SPIDER_SMALL.every((row) => row.length === 9)).toBe(true);
         expect(SPIDER_SMALL.join("").split("e")).toHaveLength(3);
+    });
+});
+
+describe("chipSwatches", () => {
+    it("shows background, surface, accent and success", () => {
+        const p = activePalette("monokai");
+        expect(chipSwatches("monokai", p)).toEqual([p.bg, p.surface, p.accent, p.success]);
+    });
+
+    it("shows the suit's red and blue on the Spider chip", () => {
+        const p = activePalette("spider");
+        expect(chipSwatches("spider", p)).toEqual([p.bg, p.surface, "#f05252", "#5b8cf0"]);
     });
 });
 

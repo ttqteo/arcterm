@@ -264,7 +264,8 @@ export const THEMES: ThemeDef[] = [
         name: "Spider",
         // Claude's palette with Spider-Man's red: the accent lifted from #e23636 (3.81:1 on bg) to clear 4.5:1 as link
         // text (4.78:1), the error pushed pinker so a failure never reads as the accent. No claudeMark: the accent is not
-        // Claude's clay, so the Claude mark keeps the brand clay as in every other theme.
+        // Claude's clay, so the Claude mark keeps the brand clay as in every other theme. The terminal's blue is the
+        // suit's (--color-spidey-blue #1f4aa8, 2.06:1 on bg) lifted to read as text (5.12:1).
         palette: {
             bg: "#1f1e1d",
             surface: "#262624",
@@ -284,7 +285,7 @@ export const THEMES: ThemeDef[] = [
             success: "#4eba65",
             warning: "#ffc107",
             error: "#ff6b9a",
-            ansiBlue: "#6a9bcc",
+            ansiBlue: "#5b8cf0",
         },
     },
 ];

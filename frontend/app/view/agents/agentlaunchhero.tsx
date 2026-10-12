@@ -8,7 +8,7 @@
 // so the agent picks up its prior session in its original cwd.
 
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
-import { fireAndForget } from "@/util/util";
+import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { TriangleAlert } from "lucide-react";
 import { useEffect } from "react";
@@ -20,11 +20,13 @@ import { loadRecentSessions, recentSessionsAtom } from "./recentsessionsstore";
 import { newAgentRamWarning } from "./workercapacity";
 import { useWorkerCapacity } from "./workercapacitystore";
 import { openLauncher } from "./launcherstore";
+import { HeroSpider, useSpiderDecor } from "./themedecorview";
 
 export function AgentLaunchHero({ model }: { model: AgentsViewModel }) {
     const sessions = useAtomValue(recentSessionsAtom);
     // a resume launches at once, with no New agent dialog to warn in, so the hero says it up front
     const ramWarning = newAgentRamWarning(useWorkerCapacity(), "claude");
+    const spider = useSpiderDecor();
     useEffect(() => {
         fireAndForget(loadRecentSessions);
     }, []);
@@ -52,8 +54,15 @@ export function AgentLaunchHero({ model }: { model: AgentsViewModel }) {
 
     const now = Date.now();
     return (
-        <div className="flex h-full w-full flex-col items-center justify-center bg-background px-8 py-9">
+        // the Spider theme's strand runs up out of the column: clipped here, at the surface's top
+        <div
+            className={cn(
+                "flex h-full w-full flex-col items-center justify-center bg-background px-8 py-9",
+                spider && "overflow-hidden"
+            )}
+        >
             <div className="flex w-full max-w-[440px] flex-col items-center text-center">
+                {spider ? <HeroSpider /> : null}
                 <div className="mb-5 flex h-[54px] w-[54px] items-center justify-center rounded-[14px] border border-edge-mid bg-surface-raised text-accent">
                     <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="3 4 6.5 8 3 12" />

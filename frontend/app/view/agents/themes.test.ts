@@ -135,14 +135,15 @@ describe("helpers", () => {
         expect(THEMES).toHaveLength(9);
         expect(THEMES[0].id).toBe(DEFAULT_THEME_PRESET);
     });
-    it("Spider is Claude's palette with a red accent and a pinker error", () => {
+    it("Spider is Claude's palette with a red accent, a pinker error and the suit's blue", () => {
         const claude = activePalette(DEFAULT_THEME_PRESET);
         const spider = activePalette("spider");
-        const { accent, error, claudeMark, ...rest } = spider;
-        const { accent: _a, error: _e, claudeMark: _m, ...claudeRest } = claude;
+        const { accent, error, claudeMark, ansiBlue, ...rest } = spider;
+        const { accent: _a, error: _e, claudeMark: _m, ansiBlue: _b, ...claudeRest } = claude;
         expect(rest).toEqual(claudeRest);
         expect(accent).toBe("#f05252");
         expect(error).toBe("#ff6b9a");
+        expect(ansiBlue).toBe("#5b8cf0");
         expect(claudeMark).toBeUndefined();
     });
     it("ACCENT_SWATCHES has 10 hex values", () => {
