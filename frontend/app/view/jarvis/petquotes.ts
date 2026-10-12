@@ -1,7 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Now and then, a well-known line about programming. This is the one thing the creature says that the system does
+// Now and then, a well-known line about programming, or, while Spider-Man is the character, now and then one of his
+// own from the films. This is the one thing the creature says that the system does
 // not know: the pet spec's rule is to speak only of committed state (2026-08-04-jarvis-pet-design.md §2), and its
 // user chose this exception on 2026-10-09. It is kept from costing the rule anything: a quote speaks only when the
 // creature has nothing else to say and you are in the window, it leaves no unread marker, and the popup never lists
@@ -10,6 +11,7 @@
 // Every line is a well-documented quote with its author, verbatim, and short enough for the bubble.
 
 import type { PetExpression, PetPosture } from "./petcondition";
+import type { PetCharacter } from "./petsprite";
 import type { PetEvent } from "./petvoice";
 
 export interface Quote {
@@ -114,6 +116,28 @@ export const QUOTES: readonly Quote[] = [
     },
 ];
 
+// Spider-Man's own lines, from his films: said only while he is the character, mixed in with the rest.
+export const SPIDEY_QUOTES: readonly Quote[] = [
+    { text: "With great power comes great responsibility.", author: "Uncle Ben, Spider-Man (2002)" },
+    { text: "I believe there's a hero in all of us.", author: "Aunt May, Spider-Man 2 (2004)" },
+    {
+        text: "If you're nothing without this suit, then you shouldn't have it.",
+        author: "Tony Stark, Spider-Man: Homecoming (2017)",
+    },
+    { text: "Anyone can wear the mask.", author: "Miles Morales, Spider-Man: Into the Spider-Verse (2018)" },
+    {
+        text: "That's all it is, Miles. A leap of faith.",
+        author: "Peter B. Parker, Spider-Man: Into the Spider-Verse (2018)",
+    },
+];
+
+const WITH_SPIDEY: readonly Quote[] = [...QUOTES, ...SPIDEY_QUOTES];
+
+/** The lines the creature draws from: the programming ones, and Spider-Man's own too while he is the one. */
+export function quotePool(character: PetCharacter): readonly Quote[] {
+    return character === "spidey" ? WITH_SPIDEY : QUOTES;
+}
+
 // a moment that was not quiet is tried again this much later, rather than waiting out a whole delay
 export const QUOTE_RETRY_MS = 5 * 60_000;
 
@@ -137,12 +161,12 @@ export function canQuote(m: QuoteMoment): boolean {
 }
 
 // The quote a random number lands on, stepping past the last one said so none comes twice in a row.
-export function pickQuote(rand: number, last: number): number {
-    const i = Math.min(QUOTES.length - 1, Math.floor(rand * QUOTES.length));
-    return i === last ? (i + 1) % QUOTES.length : i;
+export function pickQuote(rand: number, last: number, pool: readonly Quote[] = QUOTES): number {
+    const i = Math.min(pool.length - 1, Math.floor(rand * pool.length));
+    return i === last ? (i + 1) % pool.length : i;
 }
 
-export function quoteEvent(index: number, nowMs: number): PetEvent {
-    const q = QUOTES[index];
+export function quoteEvent(index: number, nowMs: number, pool: readonly Quote[] = QUOTES): PetEvent {
+    const q = pool[index];
     return { id: `quote:${nowMs}`, at: nowMs, kind: "quote", text: `“${q.text}”`, detail: q.author };
 }

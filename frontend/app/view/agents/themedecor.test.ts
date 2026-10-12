@@ -2,7 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { cellsPath, cobwebPath, hasSpiderDecor, offersSpiderTheme, SPIDER_MARK, SPIDER_SMALL } from "./themedecor";
+import {
+    cellsPath,
+    cobwebPath,
+    hasSpiderDecor,
+    offersSpiderTheme,
+    SPIDER_MARK,
+    SPIDER_SENSE,
+    SPIDER_SENSE_OFFSET,
+    SPIDER_SMALL,
+} from "./themedecor";
 
 describe("hasSpiderDecor", () => {
     it("is the Spider theme's alone", () => {
@@ -46,6 +55,27 @@ describe("the spider's cells", () => {
         expect(SPIDER_SMALL).toHaveLength(8);
         expect(SPIDER_SMALL.every((row) => row.length === 9)).toBe(true);
         expect(SPIDER_SMALL.join("").split("e")).toHaveLength(3);
+    });
+});
+
+describe("SPIDER_SENSE", () => {
+    const cells = (rows: readonly string[], code: string, dx = 0, dy = 0) =>
+        rows.flatMap((row, y) => [...row].flatMap((c, x) => (c === code ? [{ x: x + dx, y: y + dy }] : [])));
+
+    it("frames the small spider three cells a side, mirror-symmetric", () => {
+        for (const row of SPIDER_SENSE) {
+            expect(row).toHaveLength(SPIDER_SMALL[0].length + 2 * SPIDER_SENSE_OFFSET.x);
+            expect([...row].reverse().join("")).toBe(row);
+        }
+    });
+
+    it("keeps every jag a cell clear of the spider", () => {
+        const body = cells(SPIDER_SMALL, "S", SPIDER_SENSE_OFFSET.x, SPIDER_SENSE_OFFSET.y);
+        for (const j of cells(SPIDER_SENSE, "y")) {
+            for (const b of body) {
+                expect(Math.max(Math.abs(j.x - b.x), Math.abs(j.y - b.y)), `${j.x},${j.y}`).toBeGreaterThanOrEqual(2);
+            }
+        }
     });
 });
 

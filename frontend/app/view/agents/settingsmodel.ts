@@ -290,7 +290,7 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                         {
                             id: "appearance.petquotes",
                             title: "Jarvis quotes",
-                            desc: "Now and then, when nothing waits on you, Jarvis says a well-known line about programming.",
+                            desc: "Now and then, when nothing waits on you, Jarvis says a well-known line about programming. Spider-Man has a few of his own.",
                             key: "jarvis.pet.quotes",
                             scope: "local",
                         },

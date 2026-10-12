@@ -53,7 +53,15 @@ import { petOutfit, petOutfitChoice } from "./petoutfit";
 import { PetPeek } from "./petpeek";
 import { queueRows } from "./petpeekmodel";
 import { tightestWindow } from "./petquota";
-import { canQuote, pickQuote, QUOTE_RETRY_MS, quoteDelayMs, quoteEvent, type QuoteMoment } from "./petquotes";
+import {
+    canQuote,
+    pickQuote,
+    QUOTE_RETRY_MS,
+    quoteDelayMs,
+    quoteEvent,
+    quotePool,
+    type QuoteMoment,
+} from "./petquotes";
 import {
     PET_CELL_PX,
     PET_PX,
@@ -326,8 +334,10 @@ export function PetView({ model }: { model: AgentsViewModel }) {
                 arm(QUOTE_RETRY_MS);
                 return;
             }
-            lastQuote = pickQuote(Math.random(), lastQuote);
-            globalStore.set(petBubbleAtom, quoteEvent(lastQuote, Date.now()));
+            // read when it fires, as the moment is, so a character picked since the timer was armed draws its own lines
+            const pool = quotePool(petCharacter(globalStore.get(petCharacterAtom)));
+            lastQuote = pickQuote(Math.random(), lastQuote, pool);
+            globalStore.set(petBubbleAtom, quoteEvent(lastQuote, Date.now(), pool));
             arm(quoteDelayMs(Math.random()));
         };
         arm(quoteDelayMs(Math.random()));

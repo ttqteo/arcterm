@@ -59,6 +59,19 @@ export const SPIDER_SMALL: readonly string[] = [
     "S...S...S",
 ];
 
+// Spider-sense around the small spider, as Spider-Man's in the fold (petsprite.ts SPIDEY_SENSE): a jag either side
+// of its eyes and two over it, beside the thread. Cells of a frame 3 cells wider a side and 2 taller than the spider,
+// so every jag stays a cell clear of it.
+export const SPIDER_SENSE: readonly string[] = [
+    ".....y...y.....",
+    "...............",
+    "...............",
+    ".y...........y.",
+    "y.............y",
+    ".y...........y.",
+];
+export const SPIDER_SENSE_OFFSET = { x: 3, y: 2 } as const;
+
 /** One SVG path of every `code` cell in `rows`, each a `cellPx` square, so a sprite is a path per color. */
 export function cellsPath(rows: readonly string[], code: string, cellPx: number): string {
     let d = "";

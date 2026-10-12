@@ -2144,7 +2144,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
 
     return (
         <div data-agent-tree className="flex w-[248px] shrink-0 select-none flex-col border-r border-border bg-surface">
-            <TreeSpider />
+            <TreeSpider sensing={asking > 0} />
             <div className="flex flex-col gap-[4px] px-[8px] pb-[4px] pt-[10px]">
                 {/* no New agent button here: the app bar's is always on screen above it */}
                 <button

@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { canQuote, pickQuote, quoteDelayMs, quoteEvent, QUOTES, type QuoteMoment } from "./petquotes";
+import {
+    canQuote,
+    pickQuote,
+    quoteDelayMs,
+    quoteEvent,
+    quotePool,
+    QUOTES,
+    SPIDEY_QUOTES,
+    type QuoteMoment,
+} from "./petquotes";
 
 const QUIET: QuoteMoment = {
     enabled: true,
@@ -83,5 +92,31 @@ describe("quoteEvent", () => {
             text: `“${q.text}”`,
             detail: q.author,
         });
+    });
+});
+
+describe("SPIDEY_QUOTES", () => {
+    it("keeps his lines to the bubble's rules: authored, short, no em dash, none said twice", () => {
+        for (const q of SPIDEY_QUOTES) {
+            expect(q.author.trim()).not.toBe("");
+            expect(q.text.length, q.text).toBeLessThanOrEqual(125);
+            expect(q.text + q.author).not.toContain("—");
+        }
+        const all = [...QUOTES, ...SPIDEY_QUOTES].map((q) => q.text);
+        expect(new Set(all).size).toBe(all.length);
+    });
+});
+
+describe("quotePool", () => {
+    it("mixes Spider-Man's lines in only while he is the character", () => {
+        expect(quotePool("sprout")).toBe(QUOTES);
+        expect(quotePool("minion")).toBe(QUOTES);
+        expect(quotePool("spidey")).toEqual([...QUOTES, ...SPIDEY_QUOTES]);
+    });
+
+    it("picks and says from the pool it is given", () => {
+        const pool = quotePool("spidey");
+        expect(pickQuote(0.999, -1, pool)).toBe(pool.length - 1);
+        expect(quoteEvent(pool.length - 1, 1, pool).detail).toBe(SPIDEY_QUOTES[SPIDEY_QUOTES.length - 1].author);
     });
 });
