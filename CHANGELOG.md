@@ -14,6 +14,22 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - Spider-Man as a third Jarvis character (Settings → Appearance → Character): the Homecoming suit at work, Peter Parker at rest. He walks the footer side-on, thwips when he speaks, hangs from a strand when you drag him and rappels down when you let go, now and then crawls along under the app bar and hangs upside down until your cursor comes near, web-swings out and back when the window folds, and folded sits on a rooftop whose windows light up for each running agent.
 - A Spider theme (Settings → Appearance → Theme): Claude's colours with a Spider-Man red accent.
+- **An agent's glyph in the sidebar pulses while background tasks it started still run** (a build, a dev server), even
+  after its turn has ended; hover it to see which.
+
+### Changed
+
+- **Fold when you leave** also folds when the app you switch to covers most of arcterm (four fifths of it), not only
+  when it is maximized or full screen. On Windows a click on arcterm's taskbar button now grows the folded window back,
+  as the Dock icon does on macOS; Alt+Tab still only focuses Sprout.
+
+### Fixed
+
+- The mouse wheel scrolls Claude Code's fullscreen view again after arcterm restarts or reloads its pane.
+- An agent with a background task still running is no longer offered **✓ Close**: closing it would end that task.
+- Agent sidebar: clicking the top row of a run started from a plan (it has no lead) now shows the terminal of the run's
+  agent that is asking or working, such as its plan reviewer or a worker, and a double-click lets you type into it.
+  The click used to fold and unfold the run, so a double-click did nothing; the workers chip still folds it.
 
 ## 0.15.10 — 2026-10-12
 

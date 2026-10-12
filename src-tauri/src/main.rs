@@ -355,6 +355,8 @@ fn main() {
             macwindow::free_close_window_key();
             if let Some(w) = app.get_webview_window("main") {
                 winframe::restore_and_track(&w);
+                #[cfg(windows)]
+                foreground::watch_taskbar(&w);
             }
             // seed the static identity fields before wavesrv parsing fills in the endpoints.
             {

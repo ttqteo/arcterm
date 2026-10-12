@@ -39,8 +39,9 @@ import { canRequest } from "@/app/view/agents/proseanchor";
 import { railVisibleAtom, terminalFullscreenAtom } from "@/app/view/agents/railstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { resolveActiveRunId } from "@/app/view/agents/runmodel";
-import { focusSubagentAtom } from "@/app/view/agents/subagentsstore";
+import { backgroundTasksByIdAtom, focusSubagentAtom } from "@/app/view/agents/subagentsstore";
 import { closeSwitcher, switcherKey, tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
+import { runningBackgroundTasks } from "@/app/view/agents/transcriptprojection";
 import { unreadAgentsAtom } from "@/app/view/agents/unreadagentsstore";
 import { panelShownFoldedAtom, refreshSidebar } from "@/app/view/agents/worktreesidebarstore";
 import { codeSearchModeAtom } from "@/app/view/code/codesearchstore";
@@ -918,7 +919,9 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         const id = globalStore.get(model.focusIdAtom);
         const agent = globalStore.get(model.agentsAtom).find((a) => a.id === id);
         const unread = agent != null ? (globalStore.get(unreadAgentsAtom).get(agent.id) ?? 0) : 0;
-        return agent != null && doneSuggestion(agent, unread, globalStore.get(model.lineageAtom).runs)
+        const bgRunning =
+            agent != null ? runningBackgroundTasks(globalStore.get(backgroundTasksByIdAtom)[agent.id]).length : 0;
+        return agent != null && doneSuggestion(agent, unread, globalStore.get(model.lineageAtom).runs, bgRunning)
             ? agent
             : undefined;
     };

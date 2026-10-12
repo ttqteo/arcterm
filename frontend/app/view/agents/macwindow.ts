@@ -3,7 +3,8 @@
 //
 // The window's macOS chrome, from src-tauri/src/macwindow.rs: hide the traffic lights while folded into Sprout, and send
 // the yellow button and ⌘M to Sprout while window:minimize says so (they emit MINIMIZE_EVENT). No-ops elsewhere. A click
-// on the Dock icon emits REOPEN_EVENT (main.rs, macOS reopen).
+// on the Dock icon emits REOPEN_EVENT (main.rs, macOS reopen), and so does one on the Windows taskbar button
+// (foreground.rs watch_taskbar).
 
 import { isMacOS } from "@/util/platformutil";
 import { invoke } from "@tauri-apps/api/core";

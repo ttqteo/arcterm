@@ -1,8 +1,9 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Load each agent's disk-backed subagents into subagentsByIdAtom: refresh on enter, debounce on parent
-// transcript activity or a parent state change, poll while a child still reads as working, drop on leave.
+// Load each agent's disk-backed subagents into subagentsByIdAtom (and its background tasks into
+// backgroundTasksByIdAtom): refresh on enter, debounce on parent transcript activity or a parent state change, poll
+// while a child or a background task still reads as working, drop on leave.
 // Extracted from agenttree so the cockpit grid and the Runs surface populate the store the same way instead of
 // each copying the effect. Safe to mount on more than one surface at once: refreshSubagents is seq-guarded and
 // dropSubagents only clears ids this caller tracked.
@@ -10,14 +11,27 @@
 import { useAtomValue } from "jotai";
 import { useEffect, useRef } from "react";
 import { lastActivityByIdAtom } from "./livetranscript";
-import { statusChangedIds, WORKING_CHILD_POLL_MS, workingChildIds, type StatusTrackable } from "./subagentrefresh";
-import { dropSubagents, refreshSubagents, scheduleSubagents, subagentsByIdAtom } from "./subagentsstore";
+import {
+    backgroundRunningIds,
+    statusChangedIds,
+    WORKING_CHILD_POLL_MS,
+    workingChildIds,
+    type StatusTrackable,
+} from "./subagentrefresh";
+import {
+    backgroundTasksByIdAtom,
+    dropSubagents,
+    refreshSubagents,
+    scheduleSubagents,
+    subagentsByIdAtom,
+} from "./subagentsstore";
 
 type Trackable = StatusTrackable & { transcriptPath?: string };
 
 export function useSubagentTracking(agents: Trackable[]): void {
     const lastActivity = useAtomValue(lastActivityByIdAtom);
     const subs = useAtomValue(subagentsByIdAtom);
+    const bg = useAtomValue(backgroundTasksByIdAtom);
     const trackedRef = useRef<Set<string>>(new Set());
     const statusRef = useRef<Map<string, string>>(new Map());
     const agentsRef = useRef(agents);
@@ -53,7 +67,7 @@ export function useSubagentTracking(agents: Trackable[]): void {
             }
         }
     });
-    const pollKey = workingChildIds(agents, subs).join(",");
+    const pollKey = [...new Set([...workingChildIds(agents, subs), ...backgroundRunningIds(agents, bg)])].join(",");
     useEffect(() => {
         if (!pollKey) {
             return;

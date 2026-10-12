@@ -3,7 +3,8 @@
 
 import { describe, expect, it } from "vitest";
 import type { SubagentVM } from "./session-models/sessionviewmodel";
-import { statusChangedIds, workingChildIds } from "./subagentrefresh";
+import { backgroundRunningIds, statusChangedIds, workingChildIds } from "./subagentrefresh";
+import type { BackgroundTask, BackgroundTaskStatus } from "./transcriptprojection";
 
 describe("statusChangedIds", () => {
     it("records a first sighting without reporting it", () => {
@@ -45,5 +46,18 @@ describe("workingChildIds", () => {
     it("names only parents with a child still working", () => {
         const subs = { a: [sub("done"), sub("working")], b: [sub("done")], c: [sub("failure")] };
         expect(workingChildIds([{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }], subs)).toEqual(["a"]);
+    });
+});
+
+describe("backgroundRunningIds", () => {
+    const task = (status: BackgroundTaskStatus): BackgroundTask => ({ toolUseId: status, label: "build", status });
+
+    // a build left running while its agent sits idle: no hook says when it ends, so the poll has to
+    it("names only agents with a background task still running", () => {
+        const bg = {
+            a: [task("completed"), task("running")],
+            b: [task("completed"), task("failed"), task("stopped")],
+        };
+        expect(backgroundRunningIds([{ id: "a" }, { id: "b" }, { id: "c" }], bg)).toEqual(["a"]);
     });
 });

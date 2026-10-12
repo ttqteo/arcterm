@@ -49,6 +49,17 @@ export function toggleRunCollapsed(runId: string): void {
     globalStore.set(treeFoldsAtom, (f) => ({ ...f, collapsed: toggled(f.collapsed, runId) }));
 }
 
+export function openRunFold(runId: string): void {
+    globalStore.set(treeFoldsAtom, (f) => {
+        if (!f.collapsed.has(runId)) {
+            return f;
+        }
+        const collapsed = new Set(f.collapsed);
+        collapsed.delete(runId);
+        return { ...f, collapsed };
+    });
+}
+
 // a fold the next landing closed is still in the map under an older count, so open must come from the row
 export function toggleRunDoneOpen(runId: string, open: boolean, doneCount: number): void {
     globalStore.set(treeFoldsAtom, (f) => {

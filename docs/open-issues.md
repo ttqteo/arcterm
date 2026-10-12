@@ -31,6 +31,39 @@ does not, say what you saw and it becomes a bug row under Actionable.
 
 - [ ] (arcterm) Spider-Man pet: drag and rappel, the crawl and hang under the app bar (hover cuts it), the web-swing on fold and unfold, the rooftop's windows and spider-sense, and the Spider theme — look in the running app.
 
+**2026-10-12 (Fold when you leave: 80% cover, taskbar grows it back)**
+
+- [ ] (arcterm) **A big window folds arcterm; the taskbar button grows it back.** On Windows, with **Fold when you
+  leave** on and arcterm maximized: switch to an app whose window is not maximized but covers most of arcterm (over
+  80%): Sprout folds after ~1 s; one covering half or less leaves it be. Click arcterm's taskbar button once: the window
+  grows back. Alt+Tab back instead: Sprout only takes the focus. Click Sprout, then its taskbar button: it grows back
+  instead of minimizing. Win+D / Win+M while folded: it stays folded. `foreground.rs` COVER_SHARE and watch_taskbar,
+  `floatstore.ts` REOPEN_EVENT.
+
+**2026-10-12 (A lead-less run's row)**
+
+- [ ] (arcterm) **Clicking a plan run's top row shows a terminal.** Start a run from a plan file
+  (`wsh runs start --plan`) and, while its plan review or a worker is running, click the run's top row in the Agent
+  sidebar: the reviewer's or worker's terminal shows and its row reads selected. Double-click it: the terminal takes
+  your typing. Click it while every task is still queued: the run only unfolds. The workers chip still folds it.
+  `agenttree.tsx` RunRow, `runlineage.ts` runFocusAgent.
+
+**2026-10-12 (Background tasks on the sidebar glyph)**
+
+- [ ] (arcterm) **An agent's sidebar glyph pulses while its background tasks run, and Close waits for them.** Have a
+  Claude agent run something long with `run_in_background` (a `sleep 120`), let its turn end and commit: its ✳ in the
+  sidebar pulses slowly, hovering it lists the task, and neither the row's ✓ Close, the header's Close nor its key
+  shows. Within ~15 s of the command ending the pulse stops and Close appears. `agenttree.tsx` RuntimeGlyph,
+  `donesuggest.ts`.
+
+**2026-10-12 (Mouse wheel in a restored Claude fullscreen pane)**
+
+- [ ] (arcterm) **The wheel scrolls a Claude agent in fullscreen (`"tui": "fullscreen"`) after arcterm restarts.**
+  Start a Claude agent, have a few turns so it overflows, wait ~10 s (the pane's cache is saved when idle), restart
+  arcterm, then wheel over that agent: the conversation scrolls. Before, the restored pane sent X10 mouse reports
+  Claude ignores (the cache lost `ESC[?1006h`). A pane restored before this fix stays broken until its Claude is
+  relaunched. `termmodes.ts`, `termwrap.ts` processAndCacheData.
+
 **2026-10-12 (Outline with many headings)**
 
 - [ ] (arcterm) **A long document's Outline scrolls instead of squeezing.** Open a markdown file with 30+ headings
@@ -118,7 +151,8 @@ does not, say what you saw and it becomes a bug row under Actionable.
 
 | Item | Kind | Effort | Source / notes |
 |---|---|---|---|
-| (arcterm) A plan run fails at submit, and the run cancels itself, when the plan or spec file in the checkout differs from its committed copy only in line endings (CRLF in the working copy, LF in git): `SnapshotDocs` sees the copy as changed in `git status --porcelain`, `git add` normalises it back to the committed blob, and `git commit` exits 1 on "nothing to commit" (`committing the spec and plan to wave/<run>: … nothing to commit, working tree clean`). Seen 2026-10-12 on run 33711a7e after the plan was edited by a Windows tool that writes CRLF; `sed -i 's/$//'` on the file and a restart worked. Fix: after `git add`, return when `git diff --cached --quiet -- <paths>` reports nothing staged, and add a test with a CRLF copy of a committed LF doc | bug | S | `pkg/orchestrate/snapshot.go` `SnapshotDocs`; `pkg/wshrpc/wshserver/wshserver_dag.go:360` |
+| (arcterm) A plan run fails at submit, and the run cancels itself, when the plan or spec file in the checkout differs from its committed copy only in line endings (CRLF in the working copy, LF in git): `SnapshotDocs` sees the copy as changed in `git status --porcelain`, `git add` normalises it back to the committed blob, and `git commit` exits 1 on "nothing to commit" (`committing the spec and plan to wave/<run>: … nothing to commit, working tree clean`). Seen 2026-10-12 on run 33711a7e after the plan was edited by a Windows tool that writes CRLF; `sed -i 's/
+$//'` on the file and a restart worked. Fix: after `git add`, return when `git diff --cached --quiet -- <paths>` reports nothing staged, and add a test with a CRLF copy of a committed LF doc | bug | S | `pkg/orchestrate/snapshot.go` `SnapshotDocs`; `pkg/wshrpc/wshserver/wshserver_dag.go:360` |
 | (arcterm) Token burn guard part (1) shipped (a Token burn card before a costly `Agent`/`Task`/`Workflow` spawn). Left: nothing warns while a session burns its 5h window through cache reads (a docs session went ~20M → ~220M tokens in an hour): a burn-rate toast, cache reads shown apart in Consumers, a whole-run cost estimate at plan submit, exempting engine runs | feature | M | `docs/deferred.md` "Token burn guard"; complements `docs/superpowers/specs/2026-10-07-quota-guard-design.md` |
 | (arcterm) The Claude sign-in dialog's `TokenScanner` is tested only on synthetic output: the `settings-claude-account` scenario runs a node stand-in through the dev override `arc:dev:setuptoken-cmd`, never the real command. Record a real `claude setup-token` run's pty output (the token redacted to a fixture of the same shape, line breaks and escape sequences kept) and add it as a `setuptokenscan.test.ts` case | verification gap | S | `frontend/app/view/agents/setuptokenscan.ts`, `frontend/app/cockpit/claude-signin-modal.tsx`; plan review of `docs/superpowers/plans/2026-10-07-claude-account-switch.md` (2026-10-07) |
 | (arcterm) A Claude Code background session whose terminal has exited (and no `claude attach` tab) shows nowhere: its reports are dropped (`statusTarget`) until a tab attaches. The terminal that sent it to the background is found by its command line (`--resume <id>`) or, when that names no session (a bare `claude`, `--continue`, a picked `--resume`), by the session its block last reported (`agentobserve.DisplayBlock`, 2026-10-10); that path is unit-tested only, never exercised on a live background session. Check: send a bare `claude` session to the background, and its tab keeps its status and subagents | verification gap | S | `waveapp.log` 2026-10-06 16:40:02–16:40:20; `claude agents --json` lists the session `kind: background`; Close already stops it by the `--resume` id (`ce797bee`) |
