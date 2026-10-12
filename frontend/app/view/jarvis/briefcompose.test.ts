@@ -9,7 +9,7 @@ describe("resolveComposerLabels", () => {
     it("offers a standing rule when the session has a project", () => {
         setPlatform("win32");
         expect(resolveComposerLabels("waveterm")).toEqual({
-            scope: "scoped to this session",
+            scope: "goes straight to its terminal",
             hint: "Message the lead of this session",
             action: "Send ⏎",
             alt: "shift+⏎ standing rule for waveterm",

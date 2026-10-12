@@ -17,7 +17,7 @@ export interface ComposerLabels {
 export function resolveComposerLabels(project?: string): ComposerLabels {
     const p = project?.trim();
     return {
-        scope: "scoped to this session",
+        scope: "goes straight to its terminal",
         hint: "Message the lead of this session",
         action: "Send ⏎",
         // a standing rule outlives the session, so it needs a project to stand for: no project, no offer.
