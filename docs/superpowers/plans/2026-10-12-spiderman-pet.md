@@ -39,7 +39,8 @@ Notes for every task:
 
 **Depends on:** none
 
-**Files:**
+**Files:** `frontend/tailwindsetup.css`, `frontend/app/view/jarvis/petsprite.ts`, `frontend/app/view/jarvis/petcharacter.ts`, `frontend/app/view/agents/settingspages/appearance.tsx`, `frontend/app/view/agents/settingsmodel.ts`, `frontend/app/cockpit/app-bar.tsx`, `frontend/app/view/jarvis/petsprite.test.ts`, `frontend/app/view/jarvis/petcharacter.test.ts`
+
 - Modify: `frontend/tailwindsetup.css` (after the `--color-minion-*` block, ~line 106)
 - Modify: `frontend/app/view/jarvis/petsprite.ts`
 - Modify: `frontend/app/view/jarvis/petcharacter.ts`
@@ -655,7 +656,8 @@ git commit -m "feat(pet): Spider-Man as a third Jarvis character — Peter Parke
 
 **Depends on:** none
 
-**Files:**
+**Files:** `frontend/app/view/agents/themes.ts`, `frontend/app/view/agents/themes.test.ts`
+
 - Modify: `frontend/app/view/agents/themes.ts` (append to `THEMES`, after `monokai`)
 - Test: `frontend/app/view/agents/themes.test.ts:79,134-135`
 
@@ -734,7 +736,8 @@ git commit -m "feat(theme): Spider, a navy and red preset" -- frontend/app/view/
 
 **Depends on:** Task 1
 
-**Files:**
+**Files:** `frontend/app/view/jarvis/petfall.ts`, `frontend/app/view/jarvis/petwebswing.ts`, `frontend/app/view/jarvis/petfall.test.ts`, `frontend/app/view/jarvis/petwebswing.test.ts`
+
 - Modify: `frontend/app/view/jarvis/petfall.ts`
 - Create: `frontend/app/view/jarvis/petwebswing.ts`
 - Test: `frontend/app/view/jarvis/petfall.test.ts`, create `frontend/app/view/jarvis/petwebswing.test.ts`
@@ -1013,7 +1016,8 @@ git commit -m "feat(pet): Spider-Man rappels down a strand and web-swings in pla
 
 **Depends on:** Task 1
 
-**Files:**
+**Files:** `frontend/app/view/jarvis/petwalk.ts`, `frontend/app/view/jarvis/petledge.ts`, `frontend/app/view/jarvis/petsprite.ts`, `frontend/app/view/jarvis/petwalk.test.ts`, `frontend/app/view/jarvis/petledge.test.ts`, `frontend/app/view/jarvis/petsprite.test.ts`, `frontend/app/view/jarvis/petview.tsx`
+
 - Modify: `frontend/app/view/jarvis/petwalk.ts`
 - Modify: `frontend/app/view/jarvis/petledge.ts`
 - Modify: `frontend/app/view/jarvis/petsprite.ts` (after `spriteFor`)
@@ -1315,7 +1319,8 @@ git commit -m "feat(pet): Spider-Man's hang rest, the app bar as its ceiling, an
 
 **Depends on:** Task 3, Task 4
 
-**Files:**
+**Files:** `frontend/app/view/jarvis/petview.tsx`, `frontend/app/view/jarvis/petteleportsvg.tsx`, `frontend/app/view/jarvis/workingdots.tsx`, `frontend/app/cockpit/sprout-mini.tsx`, `frontend/app/cockpit/app-bar.tsx`
+
 - Modify: `frontend/app/view/jarvis/petview.tsx`
 - Modify: `frontend/app/view/jarvis/petteleportsvg.tsx`
 - Modify: `frontend/app/view/jarvis/workingdots.tsx`
@@ -1549,7 +1554,8 @@ git commit -m "feat(pet): Spider-Man hangs from the app bar, dangles and rappels
 
 **Depends on:** Task 2, Task 5
 
-**Files:**
+**Files:** `scripts/cdp/scenarios.mjs`, `docs/guide/settings.md`, `CHANGELOG.md`, `docs/open-issues.md`
+
 - Modify: `scripts/cdp/scenarios.mjs` (the `jarvisPet` scenario, after step 14 "the Minion", ~line 5554)
 - Modify: `docs/guide/settings.md:89,93`
 - Modify: `CHANGELOG.md` (the top `## Unreleased` → `Added`)
