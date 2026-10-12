@@ -27,6 +27,19 @@ tasks:
             WAVETERM_ENVFILE: "{{.ROOT_DIR}}/.env"
             WAVETERM_NOCONFIRMQUIT: "1"
 
+    dev:browser:
+        desc: "Run the cockpit in headless Chrome for the CDP scenarios where the webview answers none (macOS's WKWebView): builds the dev-host backend like `task dev`, then scripts/cdp/browser-app.mjs (CDP :9222, vite :5180). `task dev:browser -- --headed` shows the window."
+        cmd: node scripts/cdp/browser-app.mjs {{.CLI_ARGS}}
+        deps:
+            - npm:install
+            - sync:piartifacts
+            - sync:claudemod
+            - build:backend:devhost
+            - build:backend:devhost:full
+        env:
+            WAVETERM_ENVFILE: "{{.ROOT_DIR}}/.env"
+            WAVETERM_NOCONFIRMQUIT: "1"
+
     tauri:sync-version:
         desc: Write package.json's version into every file that carries a copy (src-tauri/tauri.conf.json, src-tauri/Cargo.toml) so the installer, the crate, and app.getVersion() agree (package.json stays the single source of truth).
         cmds:

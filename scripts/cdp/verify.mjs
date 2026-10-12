@@ -41,12 +41,24 @@ await h.cdp("Emulation.setDeviceMetricsOverride", VERIFY_VIEWPORT);
 // the Jarvis tour's first-visit offer would sit under the header in every Jarvis scenario's shots; the
 // jarvis-tour scenario clears this itself to see the offer. The Brief reads it when it mounts (jarvistour.ts).
 await h.ev("localStorage.setItem('jarvis.tour.offered', 'true')").catch(() => {});
+// the browser app (scripts/cdp/browser-app.mjs) has no Tauri host: a scenario marked host: true is skipped there. Its
+// headless Chrome has no focused window either, where the dev app's has, so focus is emulated, and re-emulated after
+// each scenario since one may end it (agent-grid does)
+const inBrowser = await h.ev("!!window.__ARC_BROWSER_SHIM__").catch(() => false);
+const emulateFocus = () => (inBrowser ? h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => {}) : undefined);
+if (inBrowser) console.log("attached to the browser app: scenarios that need the Tauri host are skipped");
+await emulateFocus();
 
 const SHOTS_DIR = "cdp-shots";
 const results = [];
 // a scenario owns the shots taken from its start to the next one's: the goto shot, then any from assert or teardown
 const shotsByScenario = {};
 for (const scenario of chosen) {
+    if (inBrowser && scenario.host) {
+        results.push({ name: scenario.name, steps: [{ step: "needs the Tauri host, which the browser app has not: run it on Windows", ok: false, skip: true }] });
+        shotsByScenario[scenario.name] = [];
+        continue;
+    }
     const firstShot = h.shots.length;
     let ctx;
     try {
@@ -66,6 +78,8 @@ for (const scenario of chosen) {
         }
         // a scenario that drove width leaves the override where it put it; restore the pin for the next one
         await h.cdp("Emulation.setDeviceMetricsOverride", VERIFY_VIEWPORT).catch(() => {});
+        await emulateFocus();
+        if (inBrowser) console.log(`focus after ${scenario.name}: ${await h.ev("document.hasFocus()").catch(() => "unknown")}`);
         shotsByScenario[scenario.name] = shotsUnder(h.shots.slice(firstShot), SHOTS_DIR);
     }
 }
