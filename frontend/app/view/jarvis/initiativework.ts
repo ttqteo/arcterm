@@ -53,6 +53,21 @@ export function openAgentFor(effortOid: string, agents: AgentVM[]): AgentVM | un
         .sort((a, b) => STATE_RANK[a.state] - STATE_RANK[b.state] || (b.idleSince ?? 0) - (a.idleSince ?? 0))[0];
 }
 
+type Orderable = { oref: string; status: string; blockedChunks: string[]; updatedts: number };
+
+// where the next hour goes: what is stuck, then what an agent is already on, then the freshest; paused last
+export function orderInitiatives<T extends Orderable>(cards: T[], agents: AgentVM[]): T[] {
+    const rank = (c: T) =>
+        c.status === "paused"
+            ? 3
+            : c.blockedChunks.length > 0
+              ? 0
+              : openAgentFor(c.oref.replace(/^effort:/, ""), agents) != null
+                ? 1
+                : 2;
+    return [...cards].sort((a, b) => rank(a) - rank(b) || b.updatedts - a.updatedts);
+}
+
 export type InitiativeResume =
     | { kind: "go"; agentId: string; status: string }
     | { kind: "work"; status: string; when: string; note: string };

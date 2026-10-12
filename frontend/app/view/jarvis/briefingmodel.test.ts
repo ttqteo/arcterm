@@ -265,10 +265,10 @@ describe("briefing projection", () => {
         state.efforts = EFFORT_FIXTURES;
         const m = projectBriefing(input(state));
         expect(m.efforts.map((e) => e.title)).toEqual(["Scenario gate clearance", "Reflux state-layer migration"]);
-        // 8 efforts in, 7 projected (archived never counts), and the cap is what the region opens at
+        // 10 efforts in, 9 projected (archived never counts), and the cap is what the region opens at
         const many = [
             ...EFFORT_FIXTURES,
-            ...Array.from({ length: 6 }, (_, i) => ({
+            ...Array.from({ length: 8 }, (_, i) => ({
                 oref: `effort:e${i}`,
                 title: `effort ${i}`,
                 status: i === 0 ? "archived" : "active",
@@ -279,10 +279,10 @@ describe("briefing projection", () => {
             })),
         ] as WorkState["efforts"];
         const m2 = projectBriefing(input({ ...state, efforts: many }));
-        expect(m2.efforts).toHaveLength(7);
+        expect(m2.efforts).toHaveLength(9);
         expect(m2.efforts.some((e) => e.title === "effort 0")).toBe(false); // archived excluded
         expect(capRegion(m2.efforts, EFFORT_CAP, false)).toMatchObject({ more: 1 });
-        expect(capRegion(m2.efforts, EFFORT_CAP, true).rows).toHaveLength(7);
+        expect(capRegion(m2.efforts, EFFORT_CAP, true).rows).toHaveLength(9);
     });
 
     it("folds blocked chunks into the queue", () => {

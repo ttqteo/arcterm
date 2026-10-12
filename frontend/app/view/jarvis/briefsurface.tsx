@@ -120,7 +120,7 @@ import {
     type LineTarget,
     type RunKindFilter,
 } from "./briefrows";
-import { DeltaRowView, IdeaRow, InitiativeCard, RunRowView, ShippedRowView, WaitingRow } from "./briefrowviews";
+import { DeltaRowView, IdeaRow, InitiativeRow, RunRowView, ShippedRowView, WaitingRow } from "./briefrowviews";
 import { BriefSheet } from "./briefsheet";
 import { FAINT_TEXT, LINK_BTN, REGION_LABEL, SMALL_BTN } from "./briefstyle";
 import { BriefToastView } from "./brieftoast";
@@ -133,6 +133,7 @@ import {
     addChunkAt,
     appendChunkNote,
     archivedEffortsAtom,
+    createIdea,
     deleteEffort,
     editNote,
     effortChunkRows,
@@ -153,7 +154,7 @@ import {
 import { freshKeys } from "./freshrows";
 import { type PeekFocus } from "./graphfocus";
 import { GraphPeek } from "./graphpeek";
-import { initiativeResume, noteStamp, type InitiativeResume } from "./initiativework";
+import { initiativeResume, noteStamp, openAgentFor, orderInitiatives, type InitiativeResume } from "./initiativework";
 import { workOnDueChunk, workOnInitiative } from "./initiativeworkaction";
 import {
     chunkRowId,
@@ -718,9 +719,10 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     const queueSummary = useMemo(() => summarizeAttentionQueue(queue, Date.now()), [queue]);
 
     const effortGroups = useMemo(() => splitIdeas(efforts), [efforts]);
+    // ordered before the cap, so the eight shown are the ones that need the next hour
     const effortWindow = useMemo(
-        () => capRegion(effortGroups.trackers, EFFORT_CAP, initiativesOpen),
-        [effortGroups, initiativesOpen]
+        () => capRegion(orderInitiatives(effortGroups.trackers, agents), EFFORT_CAP, initiativesOpen),
+        [effortGroups, agents, initiativesOpen]
     );
     const ideaWindow = useMemo(() => capRegion(effortGroups.ideas, IDEA_CAP, ideasOpen), [effortGroups, ideasOpen]);
     const [runKind, setRunKind] = useAtom(briefRunKindAtom);
@@ -784,6 +786,8 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     );
     // archived initiatives come off the effort list, not the briefing, and show only on request
     const [showArchived, setShowArchived] = useState(false);
+    // the Ideas column's inline input
+    const [jot, setJot] = useState("");
     const archivedSummaries = useAtomValue(archivedEffortsAtom);
     const archivedCards = useMemo(() => archivedSummaries.map(buildEffortCard), [archivedSummaries]);
     useEffect(() => {
@@ -929,6 +933,18 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     );
     const selected = tracker.rows.find((r) => r.kind === "chunk" && r.id === noteChunk);
     const selectedChunk = selected?.kind === "chunk" ? selected : null;
+    // Work on this chunk, or Go to agent when one is already open on the initiative (workOnInitiative goes there first)
+    const chunkWork =
+        selectedChunk != null && openCard != null
+            ? {
+                  label:
+                      openAgentFor(openCard.oref.replace(/^effort:/, ""), agents) != null
+                          ? "Go to agent"
+                          : "Work on this chunk",
+                  onWork: () => void workOnInitiative(model, openCard, { chunk: selectedChunk.row.label }),
+              }
+            : undefined;
+    const chunkPanel = selectedChunk != null && openInitiative != null;
     const closeNotes = useCallback(() => {
         setNoteChunk(null);
         setReadingNote(new Set());
@@ -1596,8 +1612,9 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 <div
                     className={cn(
                         "flex min-h-0 flex-1 flex-col gap-[26px] overflow-y-auto px-[22px] pb-2.5 pt-5",
-                        // the sidebar docks only in the wide band; below it, it floats over the index
-                        selectedChunk != null && "@min-[1281px]:pr-[480px]"
+                        // the panel docks only in the wide band, where it takes the side column's place and the
+                        // scroller keeps a gutter for it (460px and the 22px edge); below it, it floats over the index
+                        selectedChunk != null && "@min-[1281px]:pr-[482px]"
                     )}
                     aria-live="polite"
                 >
@@ -1658,10 +1675,11 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                 transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
                                 // main column (minmax 1fr) and side column (340px); below a container width of
                                 // 1100px the side column drops under the main one. A region read alone has no
-                                // side column to make room for.
+                                // side column to make room for, and neither has a chunk panel docked in its place.
                                 className={cn(
                                     "grid grid-cols-1 items-start gap-7",
-                                    view.sideShown && "@min-[1100px]:grid-cols-[minmax(0,1fr)_340px]"
+                                    view.sideShown && "@min-[1100px]:grid-cols-[minmax(0,1fr)_340px]",
+                                    view.sideShown && chunkPanel && "@min-[1281px]:grid-cols-[minmax(0,1fr)]"
                                 )}
                             >
                                 <div className="flex min-w-0 flex-col gap-6">
@@ -1863,82 +1881,92 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                         </span>
                                                     )
                                                 ) : null}
-                                                <MotionConfig reducedMotion="user">
-                                                    <div className="grid grid-cols-2 gap-3">
-                                                        <AnimatePresence initial={false}>
-                                                            {trackerLines.map((l) => (
-                                                                <motion.div
-                                                                    key={l.id}
-                                                                    // position, not full layout: the opened card's detail owns
-                                                                    // its own height animation, and a size-animating parent
-                                                                    // would re-project that growth as a scale
-                                                                    layout="position"
-                                                                    variants={cardVariants}
-                                                                    initial={entering.has(keyOf(l)) ? "initial" : false}
-                                                                    animate="animate"
-                                                                    exit="exit"
-                                                                    transition={{
-                                                                        duration: MOTION.durMacro,
-                                                                        ease: MOTION.easeFluid,
-                                                                    }}
-                                                                    // the opened card takes the whole row, so its chunk editor
-                                                                    // keeps its width; lifted so a plan menu hanging past it
-                                                                    // paints over the cards after it
-                                                                    className={cn(
-                                                                        "min-w-0",
-                                                                        l.id === openInitiative &&
-                                                                            "relative z-10 col-span-full"
-                                                                    )}
-                                                                >
-                                                                    <InitiativeCard
-                                                                        line={l}
-                                                                        focused={cursor === l.id}
-                                                                        fresh={freshInitiatives.has(keyOf(l))}
-                                                                        expanded={l.id === openInitiative}
-                                                                        resume={resumeOf(l)}
-                                                                        onWork={() => {
-                                                                            const c = cardOf(l);
-                                                                            if (c != null) {
-                                                                                void workOnInitiative(model, c);
-                                                                            }
-                                                                        }}
-                                                                        onContextMenu={(ev) =>
-                                                                            showInitiativeMenu(
-                                                                                l,
-                                                                                ev,
-                                                                                (oref) => openLine({ oref }),
-                                                                                manageOf(l)
-                                                                            )
+                                                {trackerLines.length > 0 ||
+                                                effortWindow.more > 0 ||
+                                                initiativesOpen ||
+                                                archivedCards.length > 0 ? (
+                                                    <div className="flex flex-col rounded-[10px] border border-edge-mid bg-surface p-1">
+                                                        <MotionConfig reducedMotion="user">
+                                                            <AnimatePresence initial={false}>
+                                                                {trackerLines.map((l) => (
+                                                                    <motion.div
+                                                                        key={l.id}
+                                                                        // position, not full layout: the opened row detail owns
+                                                                        // its own height animation, and a size-animating parent
+                                                                        // would re-project that growth as a scale
+                                                                        layout="position"
+                                                                        variants={cardVariants}
+                                                                        initial={
+                                                                            entering.has(keyOf(l)) ? "initial" : false
                                                                         }
-                                                                        onOpen={() => {
-                                                                            setCursor(l.id);
-                                                                            toggleInitiative(l.id);
+                                                                        animate="animate"
+                                                                        exit="exit"
+                                                                        transition={{
+                                                                            duration: MOTION.durMacro,
+                                                                            ease: MOTION.easeFluid,
                                                                         }}
-                                                                        titleSlot={titleSlotOf(l)}
+                                                                        // the opened row expands where it is; lifted so a plan menu
+                                                                        // hanging past it paints over the rows after it
+                                                                        className={cn(
+                                                                            "min-w-0",
+                                                                            l.id === openInitiative && "relative z-10"
+                                                                        )}
                                                                     >
-                                                                        {detailOf(l)}
-                                                                    </InitiativeCard>
-                                                                </motion.div>
-                                                            ))}
-                                                        </AnimatePresence>
+                                                                        <InitiativeRow
+                                                                            line={l}
+                                                                            focused={cursor === l.id}
+                                                                            fresh={freshInitiatives.has(keyOf(l))}
+                                                                            expanded={l.id === openInitiative}
+                                                                            resume={resumeOf(l)}
+                                                                            onWork={() => {
+                                                                                const c = cardOf(l);
+                                                                                if (c != null) {
+                                                                                    void workOnInitiative(model, c);
+                                                                                }
+                                                                            }}
+                                                                            onContextMenu={(ev) =>
+                                                                                showInitiativeMenu(
+                                                                                    l,
+                                                                                    ev,
+                                                                                    (oref) => openLine({ oref }),
+                                                                                    manageOf(l)
+                                                                                )
+                                                                            }
+                                                                            onOpen={() => {
+                                                                                setCursor(l.id);
+                                                                                toggleInitiative(l.id);
+                                                                            }}
+                                                                            titleSlot={titleSlotOf(l)}
+                                                                        >
+                                                                            {detailOf(l)}
+                                                                        </InitiativeRow>
+                                                                    </motion.div>
+                                                                ))}
+                                                            </AnimatePresence>
+                                                        </MotionConfig>
+                                                        {/* what the cap hid, and the archived ones, close the box */}
+                                                        <div className="flex flex-wrap items-center gap-2 px-1.5 pb-1 pt-0.5 empty:hidden">
+                                                            <MoreControl
+                                                                n={effortWindow.more}
+                                                                expanded={initiativesOpen}
+                                                                onToggle={() => toggleRegion("initiatives")}
+                                                            />
+                                                            {archivedCards.length > 0 ? (
+                                                                <button
+                                                                    type="button"
+                                                                    data-jarvis-brief-archived={
+                                                                        showArchived ? "hide" : "show"
+                                                                    }
+                                                                    onClick={() => setShowArchived(!showArchived)}
+                                                                    className={LINK_BTN}
+                                                                >
+                                                                    {showArchived
+                                                                        ? "Hide archived"
+                                                                        : `Show ${archivedCards.length} archived`}
+                                                                </button>
+                                                            ) : null}
+                                                        </div>
                                                     </div>
-                                                </MotionConfig>
-                                                <MoreControl
-                                                    n={effortWindow.more}
-                                                    expanded={initiativesOpen}
-                                                    onToggle={() => toggleRegion("initiatives")}
-                                                />
-                                                {archivedCards.length > 0 ? (
-                                                    <button
-                                                        type="button"
-                                                        data-jarvis-brief-archived={showArchived ? "hide" : "show"}
-                                                        onClick={() => setShowArchived(!showArchived)}
-                                                        className={cn(LINK_BTN, "self-start")}
-                                                    >
-                                                        {showArchived
-                                                            ? "Hide archived"
-                                                            : `Show ${archivedCards.length} archived`}
-                                                    </button>
                                                 ) : null}
                                             </div>
                                         </Region>
@@ -1947,7 +1975,14 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                 {/* the side column: the past (what happened, what shipped) and what is not
                                     planned yet. Drawn only when no one region is being read alone. */}
                                 {view.sideShown ? (
-                                    <aside data-jarvis-brief-side className="flex min-w-0 flex-col gap-[22px]">
+                                    <aside
+                                        data-jarvis-brief-side
+                                        className={cn(
+                                            "flex min-w-0 flex-col gap-[22px]",
+                                            // the chunk panel takes its place on a wide Brief
+                                            chunkPanel && "@min-[1281px]:hidden"
+                                        )}
+                                    >
                                         {view.shows("behind") ? (
                                             <section
                                                 data-jarvis-brief-region="behind"
@@ -2082,7 +2117,13 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                     <span className="h-px min-w-3 flex-1 bg-edge-faint" />
                                                     <span className={FAINT_TEXT}>not planned yet</span>
                                                 </div>
-                                                <div className="flex flex-col rounded-[10px] border border-border bg-surface p-1">
+                                                <div
+                                                    className={cn(
+                                                        "flex flex-col",
+                                                        ideaLines.length > 0 &&
+                                                            "rounded-[10px] border border-border bg-surface p-1"
+                                                    )}
+                                                >
                                                     {ideaLines.map((l) => (
                                                         <IdeaRow
                                                             key={l.id}
@@ -2107,18 +2148,38 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                             {ideaDetailOf(l)}
                                                         </IdeaRow>
                                                     ))}
-                                                    <button
-                                                        type="button"
+                                                    <label
                                                         data-jarvis-jot-idea
-                                                        title="Write an initiative down without a plan"
-                                                        onClick={() =>
-                                                            globalStore.set(model.newInitiativeOpenAtom, true)
-                                                        }
-                                                        className="flex cursor-pointer items-center gap-[7px] rounded-[8px] px-2.5 py-[9px] text-left text-[12px] text-ink-mid hover:bg-surface-hover hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                                        className={cn(
+                                                            "flex h-8 items-center gap-2 rounded-[8px] border border-dashed border-edge-strong px-2.5 focus-within:border-accent/60",
+                                                            ideaLines.length > 0 && "mt-1"
+                                                        )}
                                                     >
-                                                        <Plus size={12} aria-hidden />
-                                                        Jot down an idea
-                                                    </button>
+                                                        <Plus size={12} aria-hidden className="flex-none text-muted" />
+                                                        <input
+                                                            aria-label="Jot down an idea"
+                                                            placeholder="Jot down an idea — Enter saves"
+                                                            value={jot}
+                                                            onChange={(e) => setJot(e.target.value)}
+                                                            onKeyDown={(e) => {
+                                                                if (
+                                                                    e.key === "Enter" &&
+                                                                    !e.nativeEvent.isComposing &&
+                                                                    jot.trim() !== ""
+                                                                ) {
+                                                                    const t = jot.trim();
+                                                                    setJot("");
+                                                                    runMutation(() => createIdea(t));
+                                                                    briefUndo.notify(`Jotted “${t}”`);
+                                                                } else if (e.key === "Escape") {
+                                                                    e.stopPropagation();
+                                                                    setJot("");
+                                                                    e.currentTarget.blur();
+                                                                }
+                                                            }}
+                                                            className="min-w-0 flex-1 bg-transparent text-[12px] text-ink-hi outline-none placeholder:text-muted"
+                                                        />
+                                                    </label>
                                                 </div>
                                                 <MoreControl
                                                     n={ideaWindow.more}
@@ -2150,6 +2211,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                         now={Date.now()}
                         handle={`wsh effort note ${selectedChunk.oref.replace(/^effort:/, "")} "${selectedChunk.row.label}"`}
                         error={mutateError}
+                        work={chunkWork}
                         onPrev={stepTo("prev")}
                         onNext={stepTo("next")}
                         onToggle={(key) =>

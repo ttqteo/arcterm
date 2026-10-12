@@ -7,6 +7,7 @@ import {
     initiativeResume,
     noteStamp,
     openAgentFor,
+    orderInitiatives,
     planIdeaPrompt,
     projectPathFor,
     resumeIsBlank,
@@ -176,5 +177,31 @@ describe("chunkPrompt", () => {
         expect(p).toContain("(effort:e1)");
         expect(p).toContain("add the result as a chunk note");
         expect(p).toContain("mark it done");
+    });
+});
+
+describe("orderInitiatives", () => {
+    const card = (oref: string, o: Partial<{ status: string; blockedChunks: string[]; updatedts: number }> = {}) => ({
+        oref,
+        status: o.status ?? "active",
+        blockedChunks: o.blockedChunks ?? [],
+        updatedts: o.updatedts ?? 0,
+    });
+    it("puts blocked first, then those with an agent open, then the freshest, and paused last", () => {
+        const cards = [
+            card("effort:old", { updatedts: 1 }),
+            card("effort:paused", { status: "paused", updatedts: 9 }),
+            card("effort:new", { updatedts: 5 }),
+            card("effort:open", { updatedts: 2 }),
+            card("effort:blocked", { blockedChunks: ["Phase 5"], updatedts: 0 }),
+        ];
+        const agents = [agent({ id: "a1", effortId: "open", state: "working" })];
+        expect(orderInitiatives(cards, agents).map((c) => c.oref)).toEqual([
+            "effort:blocked",
+            "effort:open",
+            "effort:new",
+            "effort:old",
+            "effort:paused",
+        ]);
     });
 });

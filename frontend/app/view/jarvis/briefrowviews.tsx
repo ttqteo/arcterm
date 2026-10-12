@@ -89,7 +89,7 @@ export function WaitingRow({
     );
 }
 
-// Work on / Go to it. In flow at a fixed width and shown by opacity, so the row never reflows under the
+// Work on / Go to agent. In flow at a fixed width and shown by opacity, so the row never reflows under the
 // cursor, and a hidden button can still be tabbed to.
 function WorkOnButton({
     resume,
@@ -100,7 +100,7 @@ function WorkOnButton({
     resume: InitiativeResume;
     focused: boolean;
     onWork: () => void;
-    // on a card it is always shown: the card is the place to start
+    // on an initiative row it is always shown: the row is the place to start
     always?: boolean;
 }) {
     const go = resume.kind === "go";
@@ -114,14 +114,14 @@ function WorkOnButton({
                 onWork();
             }}
             className={cn(
-                "flex w-[84px] flex-none cursor-pointer items-center justify-center gap-1.5 rounded-[6px] border py-[3px] text-[10.5px] font-semibold opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                "flex w-[92px] flex-none cursor-pointer items-center justify-center gap-1.5 rounded-[6px] border py-[3px] text-[10.5px] font-semibold opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                 go
                     ? "border-success/45 bg-success/12 text-success"
                     : "border-accent/45 bg-accentbg text-accent-soft hover:text-accent-50",
                 (focused || always) && "opacity-100"
             )}
         >
-            {go ? "Go to it" : "Work on"}
+            {go ? "Go to agent" : "Work on"}
             <span className="rounded-[4px] border border-current/35 px-1 text-[9.5px] leading-[14px]">w</span>
         </button>
     );
@@ -193,9 +193,9 @@ function MenuButton({
     );
 }
 
-// A tracker: an initiative with a plan. Opened, it holds its chunk editor; the grid gives the opened card the
-// whole row, so the editor keeps the width it had as a row.
-export function InitiativeCard({
+// A tracker: an initiative with a plan, one dense row in the Initiatives box. Opened, it expands where it is:
+// the chunk editor renders under the row inside the same raised box, so nothing jumps and no hole is left.
+export function InitiativeRow({
     line,
     focused,
     fresh,
@@ -218,12 +218,21 @@ export function InitiativeCard({
     onOpen: () => void;
     onWork?: () => void;
     onContextMenu?: (e: React.MouseEvent) => void;
-    // the opened card's detail
+    // the opened row's detail
     children?: ReactNode;
 }) {
     const p = line.progress ?? { done: 0, total: 0, pct: 0 };
     // a paused or archived initiative is not where the next hour goes
     const resting = line.state === "paused" || line.state === "archived";
+    // what the cell at the row's end says: stuck, an agent on it, its state (paused, archived), else when it last moved
+    const status =
+        line.noteLabel === "Blocked on"
+            ? { text: "● blocked", tone: "text-asking" }
+            : resume?.kind === "go"
+              ? { text: "● agent open", tone: "text-success" }
+              : line.state !== ""
+                ? { text: line.state, tone: TONE_TEXT[line.stateTone] }
+                : { text: resume?.kind === "work" ? resume.when : "", tone: "text-ink-mid" };
     return (
         <div
             data-jarvis-brief-row="initiative"
@@ -231,8 +240,8 @@ export function InitiativeCard({
             {...cursorAttrs(focused)}
             onContextMenu={onContextMenu}
             className={cn(
-                "group relative flex min-w-0 flex-col rounded-[10px] border bg-surface-raised",
-                expanded ? "border-edge-strong" : "border-edge-mid hover:border-edge-strong",
+                "group flex min-w-0 flex-col rounded-[8px] border",
+                expanded ? "border-edge-strong bg-surface-raised" : "border-transparent",
                 focused && CURSOR_RING,
                 fresh && "fresh-mark"
             )}
@@ -243,34 +252,23 @@ export function InitiativeCard({
                 aria-expanded={expanded}
                 aria-label={expanded ? `Collapse ${line.title}` : `Open ${line.title}`}
                 onClick={onOpen}
-                className={cn("flex cursor-pointer flex-col gap-[11px] px-4 pb-3 pt-3.5", resting && "opacity-60")}
+                className={cn(
+                    "grid cursor-pointer grid-cols-[minmax(0,1.1fr)_150px_minmax(0,1.4fr)_74px_auto] items-center gap-3.5 rounded-[7px] px-2.5 py-[7px]",
+                    !expanded && "hover:bg-surface-hover",
+                    resting && "opacity-60"
+                )}
             >
-                <div className="flex min-w-0 items-start gap-2.5">
-                    <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
-                        {titleSlot ?? (
-                            <span title={line.title} className="truncate text-[14px] font-semibold text-ink-hi">
-                                {line.title}
-                            </span>
-                        )}
-                        <span className="truncate text-[11px] text-muted">{line.meta}</span>
-                    </div>
-                    {line.state !== "" ? (
-                        <span
-                            data-jarvis-initiative-state
-                            className={cn(
-                                "flex flex-none items-center gap-[5px] rounded-[5px] border border-current/35 px-[7px] py-px text-[10.5px] font-semibold",
-                                TONE_TEXT[line.stateTone]
-                            )}
-                        >
-                            <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                            {line.state}
+                <div className="flex min-w-0 flex-col gap-px">
+                    {titleSlot ?? (
+                        <span title={line.title} className="truncate text-[13px] font-semibold text-ink-hi">
+                            {line.title}
                         </span>
-                    ) : null}
-                    {onContextMenu != null ? <MenuButton title={line.title} onMenu={onContextMenu} /> : null}
+                    )}
+                    <span className="truncate text-[10.5px] text-muted">{line.meta}</span>
                 </div>
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2">
                     <SegmentBar segments={line.segments ?? []} className="flex-1" />
-                    <span className="flex-none text-[11.5px] font-semibold tabular-nums text-secondary">
+                    <span className="w-[34px] flex-none text-right text-[11px] font-semibold tabular-nums text-secondary">
                         {p.done}/{p.total}
                     </span>
                 </div>
@@ -279,45 +277,28 @@ export function InitiativeCard({
                         <span className={cn("flex-none text-[10.5px] font-semibold", NOTE_LABEL_TEXT[line.noteLabel])}>
                             {line.noteLabel}
                         </span>
-                        <span title={line.note} className="min-w-0 truncate text-[12.5px] text-secondary">
+                        <span title={line.note} className="min-w-0 truncate text-[12px] text-secondary">
                             {line.note}
                         </span>
                     </div>
-                ) : null}
-                {resume != null ? (
-                    <div className="flex min-w-0 items-center gap-2.5 border-t border-edge-mid pt-2.5">
-                        <span className={cn("flex min-w-0 flex-1 items-baseline gap-2", FAINT_TEXT)}>
-                            <span
-                                className={cn(
-                                    "flex flex-none items-center gap-[5px]",
-                                    resume.kind === "go" ? "text-success" : "text-ink-mid"
-                                )}
-                            >
-                                <span
-                                    className={cn(
-                                        "h-1.5 w-1.5 rounded-full",
-                                        resume.kind === "go" ? "bg-success" : "bg-ink-faint"
-                                    )}
-                                />
-                                {resume.status}
-                            </span>
-                            {resume.kind === "work" && resume.when !== "" ? (
-                                <>
-                                    <span className="flex-none tabular-nums text-ink-mid">{resume.when}</span>
-                                    <span title={resume.note} className="min-w-0 truncate">
-                                        {resume.note}
-                                    </span>
-                                </>
-                            ) : null}
-                        </span>
-                        {onWork != null ? (
-                            <WorkOnButton resume={resume} focused={focused} onWork={onWork} always />
-                        ) : null}
-                    </div>
-                ) : null}
+                ) : (
+                    <span />
+                )}
+                <span
+                    data-jarvis-initiative-status
+                    className={cn("truncate whitespace-nowrap text-right text-[10.5px] tabular-nums", status.tone)}
+                >
+                    {status.text}
+                </span>
+                <div className="flex min-w-[122px] items-center justify-end gap-1">
+                    {resume != null && onWork != null ? (
+                        <WorkOnButton resume={resume} focused={focused} onWork={onWork} always />
+                    ) : null}
+                    {onContextMenu != null ? <MenuButton title={line.title} onMenu={onContextMenu} /> : null}
+                </div>
             </div>
             {expanded && children != null ? (
-                // the editor's own clicks must not fold the card
+                // the editor's own clicks must not fold the row
                 <div className="border-t border-edge-mid" onClick={(e) => e.stopPropagation()}>
                     {children}
                 </div>

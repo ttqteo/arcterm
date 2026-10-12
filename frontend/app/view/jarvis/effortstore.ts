@@ -211,3 +211,9 @@ export async function editNote(oref: string, chunk: string, at: number, ts: numb
 export async function removeNote(oref: string, chunk: string, at: number, ts: number): Promise<void> {
     await mutateEffort(oref, [{ op: "removeNote", chunk, at, notets: ts }]);
 }
+
+// an idea is a title written down to come back to: no project, no chunks, no form
+export async function createIdea(title: string): Promise<void> {
+    await RpcApi.EffortCreateCommand(TabRpcClient, { title, chunks: [] }, { timeout: stateRpcTimeoutMs });
+    void loadBriefingAsync();
+}
