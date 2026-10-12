@@ -27,6 +27,14 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-12 (A lead-less run's row)**
+
+- [ ] (arcterm) **Clicking a plan run's top row shows a terminal.** Start a run from a plan file
+  (`wsh runs start --plan`) and, while its plan review or a worker is running, click the run's top row in the Agent
+  sidebar: the reviewer's or worker's terminal shows and its row reads selected. Double-click it: the terminal takes
+  your typing. Click it while every task is still queued: the run only unfolds. The workers chip still folds it.
+  `agenttree.tsx` RunRow, `runlineage.ts` runFocusAgent.
+
 **2026-10-12 (Background tasks on the sidebar glyph)**
 
 - [ ] (arcterm) **An agent's sidebar glyph pulses while its background tasks run, and Close waits for them.** Have a

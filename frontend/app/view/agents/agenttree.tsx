@@ -122,6 +122,7 @@ import {
     endedWorkerId,
     laneLabel,
     runAgentsOf,
+    runFocusAgent,
     runProgress,
     stageLabel,
     taskStateLabel,
@@ -132,6 +133,7 @@ import {
     type RunInfo,
 } from "./runlineage";
 import {
+    openRunFold,
     toggleRunCollapsed,
     toggleRunDoneOpen,
     toggleRunQueuedOpen,
@@ -953,10 +955,32 @@ function RunRow({ model, run, open, live }: { model: AgentsViewModel; run: RunIn
         ];
         ContextMenuModel.getInstance().showContextMenu(items, e);
     };
+    // with no lead to show, a click opens the run's tab that asks or works and unfolds the run so its row shows; a
+    // double-click also types into it, as a lead row's does. Folding is the workers chip's. With no such tab (every
+    // task still queued), the click only unfolds, so a double-click no longer folds and unfolds back
+    const show = (typing: boolean) => {
+        openRunFold(run.runId);
+        const agent = runFocusAgent(globalStore.get(model.lineageAtom), globalStore.get(model.agentsAtom), run.runId);
+        if (agent == null) {
+            return;
+        }
+        if (typing) {
+            globalStore.set(model.typingFollowsAtom, agent.id);
+        }
+        selectAgentRow(model, agent.id);
+    };
     return (
         <div
-            onClick={() => toggleRunCollapsed(run.runId)}
+            onClick={() => show(false)}
+            onDoubleClick={() => show(true)}
+            // the second press of a double-click would select a word of the title
+            onMouseDown={(e) => {
+                if (e.detail > 1) {
+                    e.preventDefault();
+                }
+            }}
             onContextMenu={onContextMenu}
+            data-agent-run-row={run.runId}
             className="relative flex cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms] hover:bg-surface-hover"
         >
             <Slot>

@@ -17,6 +17,7 @@ import {
     leadStandingBy,
     runAgentsOf,
     runEngineBusy,
+    runFocusAgent,
     runProgress,
     runRoleOf,
     runTitle,
@@ -165,6 +166,32 @@ describe("run facts", () => {
         expect(leadRunTabIds(lineage, agents, "alone")).toBeUndefined();
         expect(leadRunTabIds(lineage, agents, "w")).toBeUndefined();
         expect(leadRunTabIds(lineage, agents, "plain")).toBeUndefined();
+    });
+
+    it("opens a lead-less run on the tab that asks, else the one at work, never one with no terminal", () => {
+        const lineage = {
+            roles: {
+                done: { kind: "worker", leadRunId: "r1", taskId: "t-1" },
+                rev: { kind: "stage", leadRunId: "r1", stageRole: "plan-reviewer" },
+                w: { kind: "worker", leadRunId: "r1", taskId: "t-2" },
+                ask: { kind: "worker", leadRunId: "r1", taskId: "t-3" },
+                noblock: { kind: "worker", leadRunId: "r1", taskId: "t-4" },
+                other: { kind: "worker", leadRunId: "r2", taskId: "t-1" },
+            },
+            runs: {},
+        } as const;
+        const tab = (id: string, state: AgentVM["state"], blockId: string | null = `b-${id}`) =>
+            ({ id, state, blockId: blockId ?? undefined }) as const;
+        const idle = tab("done", "idle");
+        const reviewing = tab("rev", "working");
+        const working = tab("w", "working");
+        const asking = tab("ask", "asking");
+        const blockless = tab("noblock", "asking", null);
+        const other = tab("other", "asking");
+        expect(runFocusAgent(lineage, [idle, reviewing, working, asking, other], "r1")?.id).toBe("ask");
+        expect(runFocusAgent(lineage, [idle, reviewing, working, blockless], "r1")?.id).toBe("rev");
+        expect(runFocusAgent(lineage, [idle, other], "r1")).toBeUndefined();
+        expect(runFocusAgent(lineage, [], "r1")).toBeUndefined();
     });
 
     it("shows a worker under its lead's project, else its run's", () => {

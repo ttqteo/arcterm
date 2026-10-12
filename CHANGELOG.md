@@ -18,6 +18,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 ### Fixed
 
 - An agent with a background task still running is no longer offered **✓ Close**: closing it would end that task.
+- Agent sidebar: clicking the top row of a run started from a plan (it has no lead) now shows the terminal of the run's
+  agent that is asking or working, such as its plan reviewer or a worker, and a double-click lets you type into it.
+  The click used to fold and unfold the run, so a double-click did nothing; the workers chip still folds it.
 
 ## 0.15.10 — 2026-10-12
 

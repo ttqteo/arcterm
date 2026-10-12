@@ -124,6 +124,18 @@ export function runAgentsOf<T extends { id: string }>(lineage: Lineage, agents: 
     });
 }
 
+// runFocusAgent is the tab a lead-less run's row opens, standing in for the lead's terminal it lacks: the one asking,
+// else the first at work (a plan reviewer, a worker, the verifier). Only tabs with a terminal; undefined when none is
+// asking or working.
+export function runFocusAgent<T extends { id: string; state: string; blockId?: string }>(
+    lineage: Lineage,
+    agents: T[],
+    runId: string
+): T | undefined {
+    const tabs = runAgentsOf(lineage, agents, runId).filter((a) => a.blockId != null);
+    return tabs.find((a) => a.state === "asking") ?? tabs.find((a) => a.state !== "idle");
+}
+
 // leadRunTabIds is every tab of the run agentId leads, its own included, when the run holds any besides the lead:
 // closing the lead alone would leave those nested under a lead-less run row. Undefined for anything else.
 export function leadRunTabIds<T extends { id: string }>(
