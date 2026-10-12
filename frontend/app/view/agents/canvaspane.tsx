@@ -6,11 +6,12 @@
 // which useCanvasPoller keeps current.
 
 import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
+import { ContextMenuModel } from "@/app/store/contextmenu";
 import { getApi } from "@/app/store/global";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { SquareDashed, X } from "lucide-react";
+import { ChevronDown, SquareDashed, X } from "lucide-react";
 import { useEffect, useState, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
 import type { AgentsViewModel } from "./agents";
 import { projectOf, type AgentVM } from "./agentsviewmodel";
@@ -28,15 +29,16 @@ import {
     prototypePath,
     shownBoard,
     shownBoards,
+    tabsFitStrip,
     updatedAgo,
     type BoardFrame,
+    type CanvasBoard,
 } from "./canvasmodel";
 import { sendCanvasMarks } from "./canvassend";
 import {
     canvasStateAtom,
     clearMarks,
     detachCanvas,
-    selectCanvasBoard,
     selectCanvasTab,
     setMarking,
     updateCanvas,
@@ -66,6 +68,7 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
     const now = useAtomValue(model.nowAtom);
     const [measureRef, scrollRef, rect] = useDimensionsWithCallbackRef<HTMLDivElement>();
     const selected = s != null ? shownBoard(s).name : null;
+    const tab = s != null ? currentTab(s) : null;
     // a tab, [ or ] can pick a board below the fold. Only its top edge is brought into view, label included:
     // scrollIntoView top-aligns any board taller than the pane, which scrolled the labels away on every pick
     useEffect(() => {
@@ -78,14 +81,15 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
         if (top < CANVAS_TOP_PAD || top > pane.clientHeight - CANVAS_TOP_PAD) {
             pane.scrollTop += top - CANVAS_TOP_PAD;
         }
-    }, [selected]);
+    }, [selected, tab]);
     if (s == null) {
         return null;
     }
     const pane = paneState(s);
     const board = shownBoard(s);
     const layout = canvasLayout(shownBoards(s), rect?.width ?? 0);
-    const scale = layout.scale;
+    const scale = (layout.frames.find((f) => f.board.name === board.name) ?? layout.frames[0]).scale;
+    const all = layout.frames.length > 1;
     const marking = s.marking && pane === "board";
     const meta = [updatedAgo(now, s.lastModifiedMs), `${Math.round(scale * 100)}%`].filter(Boolean).join(" · ");
 
@@ -93,7 +97,13 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
         <div data-canvas-pane className="flex min-h-0 flex-1 flex-col">
             <div className={SWAP_BAR}>
                 <span className={SWAP_LABEL}>{s.topic}</span>
-                {s.boards.length > 0 ? (
+                {s.boards.length > 0 && !tabsFitStrip(s.boards) ? (
+                    <BoardPicker
+                        boards={s.boards}
+                        value={currentTab(s)}
+                        onChange={(t) => selectCanvasTab(agent.id, t)}
+                    />
+                ) : s.boards.length > 0 ? (
                     <SwapTabs
                         ariaLabel="Boards"
                         title={`Previous and next board (${formatChordString("[")} and ${formatChordString("]")})`}
@@ -106,7 +116,9 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
                     />
                 ) : null}
                 <div className="flex-1" />
-                {pane === "board" ? <span className="text-[10.5px] tabular-nums text-muted">{meta}</span> : null}
+                {pane === "board" ? (
+                    <span className="flex-none whitespace-nowrap text-[10.5px] tabular-nums text-muted">{meta}</span>
+                ) : null}
                 <button
                     type="button"
                     title={`Mark parts of the board (${formatChordString("m")})`}
@@ -147,8 +159,8 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
                 ) : pane === "removed" ? (
                     <Removed agent={agent} topic={s.topic} />
                 ) : (
-                    // the shown boards (every one under All) at their canvas.json frames, each iframe at the board's full size, so the canvas
-                    // scrolls here, in arcterm, instead of showing the board pages' own scrollbars. The gutter is
+                    // the shown board, or every one under All in a grid of tiles, each iframe at the board's full size, so the
+                    // canvas scrolls here, in arcterm, instead of showing the board pages' own scrollbars. The gutter is
                     // reserved so the scrollbar appearing can't narrow the pane, change the fit scale, and make
                     // itself disappear again
                     <div
@@ -162,16 +174,15 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
                                 <BoardFrameView
                                     key={f.board.name}
                                     frame={f}
-                                    scale={scale}
                                     selected={f.board.name === board.name}
-                                    single={layout.frames.length === 1}
+                                    tile={all}
                                     src={
                                         pane === "board" && s.base != null
                                             ? boardUrl(s.base, s.topic, f.board.name)
                                             : null
                                     }
                                     reloadKey={s.reloadKey}
-                                    onSelect={() => selectCanvasBoard(agent.id, f.board.name)}
+                                    onOpen={() => selectCanvasTab(agent.id, f.board.name)}
                                 >
                                     {marking && f.board.name === board.name ? (
                                         <MarkLayer agentId={agent.id} marks={s.marks} />
@@ -187,34 +198,78 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
     );
 }
 
-// A board the user hasn't picked wears a transparent cover: its iframe would swallow the click, and the first
-// click on a board should pick it (the one marks and Open in browser act on), not operate it
+// The header's board picker once the boards outnumber a row of tabs: the shown tab's name and where it sits, and a
+// menu of All and every board
+function BoardPicker({
+    boards,
+    value,
+    onChange,
+}: {
+    boards: CanvasBoard[];
+    value: string;
+    onChange: (tab: string) => void;
+}) {
+    const at = boards.findIndex((b) => b.name === value);
+    const open = (e: React.MouseEvent) =>
+        ContextMenuModel.getInstance().showContextMenu(
+            [
+                { label: "All boards", type: "radio", checked: value === ALL_TAB, click: () => onChange(ALL_TAB) },
+                { type: "separator" },
+                ...boards.map(
+                    (b): ContextMenuItem => ({
+                        label: boardLabel(b.name),
+                        type: "radio",
+                        checked: b.name === value,
+                        click: () => onChange(b.name),
+                    })
+                ),
+            ],
+            e
+        );
+    return (
+        <button
+            type="button"
+            data-canvas-board-picker
+            aria-haspopup="menu"
+            title={`Pick a board (${formatChordString("[")} and ${formatChordString("]")} step through them)`}
+            onClick={open}
+            className={cn(SWAP_BTN, "min-w-0 flex-initial")}
+        >
+            <span className="truncate">{value === ALL_TAB ? "All boards" : boardLabel(value)}</span>
+            <span className="flex-none tabular-nums font-normal text-muted">
+                {at < 0 ? boards.length : `${at + 1}/${boards.length}`}
+            </span>
+            <ChevronDown size={13} strokeWidth={1.9} className="flex-none text-muted" aria-hidden />
+        </button>
+    );
+}
+
+// Under All every tile wears a transparent cover: its iframe would swallow the click, and a click on a tile opens
+// that board on its own tab, where it is drawn whole and can be operated
 function BoardFrameView({
     frame,
-    scale,
     selected,
-    single,
+    tile,
     src,
     reloadKey,
-    onSelect,
+    onOpen,
     children,
 }: {
     frame: BoardFrame;
-    scale: number;
     selected: boolean;
-    single: boolean;
+    tile: boolean;
     src: string | null;
     reloadKey: number;
-    onSelect: () => void;
+    onOpen: () => void;
     children?: ReactNode;
 }) {
-    const { board } = frame;
+    const { board, scale } = frame;
     const label = boardLabel(board.name);
     return (
         <>
             <button
                 type="button"
-                onClick={onSelect}
+                onClick={onOpen}
                 title={board.title ?? label}
                 className={cn(
                     "absolute flex cursor-pointer items-baseline gap-[8px] truncate text-left text-[11px]",
@@ -230,7 +285,7 @@ function BoardFrameView({
                 data-canvas-board={selected ? "" : undefined}
                 className={cn(
                     "absolute overflow-hidden rounded-[8px] border bg-background",
-                    selected && !single ? "border-accent" : "border-edge-mid"
+                    selected && tile ? "border-accent" : "border-edge-mid"
                 )}
                 style={{ left: frame.left, top: frame.top, width: frame.width, height: frame.height }}
             >
@@ -249,11 +304,11 @@ function BoardFrameView({
                         }}
                     />
                 ) : null}
-                {!selected ? (
+                {tile ? (
                     <button
                         type="button"
-                        aria-label={`Select ${label}`}
-                        onClick={onSelect}
+                        aria-label={`Open ${label}`}
+                        onClick={onOpen}
                         className="absolute inset-0 cursor-pointer hover:bg-accentbg"
                     />
                 ) : null}

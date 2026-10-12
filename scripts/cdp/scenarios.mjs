@@ -19500,50 +19500,68 @@ const clickCanvasTab = async (h, label) => {
     return canvasTabFrames(h);
 };
 
+// a temp design folder holding these boards (name -> canvas.json entry), and a plain terminal focused to own it
+async function arrangeCanvasBoards(h, prefix, topic, boards) {
+    const cwd = mkdtempSync(join(tmpdir(), prefix));
+    const project = join(cwd, ".superpowers", "design", topic, "project");
+    mkdirSync(project, { recursive: true });
+    writeFileSync(join(project, "canvas.json"), JSON.stringify({ boards, order: Object.keys(boards) }));
+    for (const name of Object.keys(boards)) {
+        const label = name.replace(/\.dc\.html$/, "");
+        writeFileSync(join(project, name), `<!doctype html><title>${label}</title><p>${label} board</p>`);
+    }
+    const ctx = { cwd };
+    // a throw past this point still returns ctx, so teardown removes whatever was already made
+    try {
+        await openCanvasTerminal(h, ctx);
+    } catch (e) {
+        ctx.launchError = String(e?.message ?? e);
+        return ctx;
+    }
+    await h.goto("agent");
+    ctx.inRoster = await polishWaitFor(
+        h,
+        `!!document.querySelector('[data-agent-terminal="${ctx.tabId}"]')`,
+        CANVAS_ROSTER_WAIT_MS
+    );
+    // a populated store may have an agent focused, so the terminal is focused explicitly
+    if (ctx.inRoster) {
+        try {
+            await h.rpc("uireveal", { address: `agent:${ctx.tabId}` }, UI_ROUTE);
+        } catch (e) {
+            ctx.focusError = String(e?.message ?? e);
+        }
+    }
+    return ctx;
+}
+
+// best-effort, so one failed step does not strand the rest
+async function teardownCanvasBoards(h, ctx, name) {
+    const step = async (what, fn) => {
+        try {
+            await fn();
+        } catch (e) {
+            console.error(`${name} teardown: ${what} failed: ${e?.message ?? e}`);
+        }
+    };
+    await step("leave the canvas", () => clickCanvasSwap(h, "Terminal"));
+    if (ctx.tabId) {
+        await step("close the terminal tab", () =>
+            waveService(h, "workspace", "CloseTab", [ctx.workspaceId, ctx.tabId, false])
+        );
+    }
+    await step("remove the temp dir", () => rmSync(ctx.cwd, { recursive: true, force: true }));
+    await step("go home", () => h.goto("cockpit"));
+}
+
 const canvasTabsScenario = {
     name: "canvas-tabs",
     surface: "agent",
-    async arrange(h) {
-        const cwd = mkdtempSync(join(tmpdir(), "verify-canvas-tabs-"));
-        const project = join(cwd, ".superpowers", "design", CANVAS_TABS_TOPIC, "project");
-        mkdirSync(project, { recursive: true });
-        writeFileSync(
-            join(project, "canvas.json"),
-            JSON.stringify({
-                boards: {
-                    "Main.dc.html": { x: 0, y: 0, w: 640, h: 480, title: "A" },
-                    "Cards.dc.html": { x: 720, y: 0, w: 640, h: 480, title: "B" },
-                },
-                order: ["Main.dc.html", "Cards.dc.html"],
-            })
-        );
-        for (const name of ["Main", "Cards"]) {
-            writeFileSync(join(project, `${name}.dc.html`), `<!doctype html><title>${name}</title><p>${name} board</p>`);
-        }
-        const ctx = { cwd };
-        // a throw past this point still returns ctx, so teardown removes whatever was already made
-        try {
-            await openCanvasTerminal(h, ctx);
-        } catch (e) {
-            ctx.launchError = String(e?.message ?? e);
-            return ctx;
-        }
-        await h.goto("agent");
-        ctx.inRoster = await polishWaitFor(
-            h,
-            `!!document.querySelector('[data-agent-terminal="${ctx.tabId}"]')`,
-            CANVAS_ROSTER_WAIT_MS
-        );
-        // a populated store may have an agent focused, so the terminal is focused explicitly
-        if (ctx.inRoster) {
-            try {
-                await h.rpc("uireveal", { address: `agent:${ctx.tabId}` }, UI_ROUTE);
-            } catch (e) {
-                ctx.focusError = String(e?.message ?? e);
-            }
-        }
-        return ctx;
-    },
+    arrange: (h) =>
+        arrangeCanvasBoards(h, "verify-canvas-tabs-", CANVAS_TABS_TOPIC, {
+            "Main.dc.html": { x: 0, y: 0, w: 640, h: 480, title: "A" },
+            "Cards.dc.html": { x: 720, y: 0, w: 640, h: 480, title: "B" },
+        }),
     async assert(h, ctx) {
         if (ctx.launchError != null) {
             return [skipStep("canvas tabs", `could not verify: ${ctx.launchError}`)];
@@ -19578,7 +19596,7 @@ const canvasTabsScenario = {
         const all = await clickCanvasTab(h, "All");
         await h.shot("cdp-shots/canvas-tabs-all.png");
         rec(
-            "2. All lays every board out side by side",
+            "2. All lays every board out in a grid of tiles",
             JSON.stringify(all.frames) === JSON.stringify(["Main.dc.html", "Cards.dc.html"]),
             JSON.stringify(all)
         );
@@ -19591,24 +19609,112 @@ const canvasTabsScenario = {
         );
         return steps;
     },
-    // best-effort, so one failed step does not strand the rest
-    async teardown(h, ctx) {
-        const step = async (what, fn) => {
-            try {
-                await fn();
-            } catch (e) {
-                console.error(`canvas-tabs teardown: ${what} failed: ${e?.message ?? e}`);
-            }
+    teardown: (h, ctx) => teardownCanvasBoards(h, ctx, "canvas-tabs"),
+};
+
+// --- a canvas with many boards: a board menu instead of a row of tabs, and All as a grid of readable tiles -----
+// The header must keep its buttons whole at the dev window's width: Build this… inside the bar, the meta on one line.
+// The menu is the DOM context menu, found by its row labels (caMenuHas / caMenuClick, settings-claude-account's).
+const CANVAS_MANY_TOPIC = "verify-canvas-many";
+const CANVAS_MANY_BOARDS = ["Main", "Current", "Proposed-Brief", "Proposed-ChunkPanel", "Proposed-RunSheet", "Proposed-RunStates"];
+const CANVAS_PICKER = `document.querySelector("[data-canvas-board-picker]")`;
+
+const canvasManyState = (h) =>
+    h.ev(`(() => {
+        const pane = document.querySelector("[data-canvas-pane]");
+        const bar = pane?.firstElementChild;
+        const barRect = bar?.getBoundingClientRect();
+        const build = [...(bar?.querySelectorAll("button") ?? [])].find((b) => (b.textContent || "").trim() === "Build this…");
+        const meta = [...(bar?.querySelectorAll("span") ?? [])].find((x) => /[0-9]+%$/.test(x.textContent || ""));
+        const frames = [...document.querySelectorAll("[data-canvas-frame]")];
+        return {
+            picker: (${CANVAS_PICKER}?.textContent || "").trim(),
+            tablist: !!${CANVAS_TABS},
+            frames: frames.map((f) => f.getAttribute("data-canvas-frame")),
+            widths: frames.map((f) => Math.round(f.getBoundingClientRect().width)),
+            buildInBar: !!build && !!barRect && build.getBoundingClientRect().right <= barRect.right + 0.5,
+            metaOneLine: !!meta && meta.getBoundingClientRect().height < 20,
         };
-        await step("leave the canvas", () => clickCanvasSwap(h, "Terminal"));
-        if (ctx.tabId) {
-            await step("close the terminal tab", () =>
-                waveService(h, "workspace", "CloseTab", [ctx.workspaceId, ctx.tabId, false])
-            );
+    })()`);
+
+const canvasManyBoards = {
+    name: "canvas-many-boards",
+    surface: "agent",
+    arrange: (h) =>
+        arrangeCanvasBoards(
+            h,
+            "verify-canvas-many-",
+            CANVAS_MANY_TOPIC,
+            Object.fromEntries(
+                CANVAS_MANY_BOARDS.map((b, i) => [
+                    `${b}.dc.html`,
+                    { x: (i % 3) * 1520, y: Math.floor(i / 3) * 1000, w: 1440, h: 900 },
+                ])
+            )
+        ),
+    async assert(h, ctx) {
+        if (ctx.launchError != null) {
+            return [skipStep("canvas many boards", `could not verify: ${ctx.launchError}`)];
         }
-        await step("remove the temp dir", () => rmSync(ctx.cwd, { recursive: true, force: true }));
-        await step("go home", () => h.goto("cockpit"));
+        if (ctx.focusError != null) {
+            return [skipStep("canvas many boards", `could not verify: focusing the terminal failed: ${ctx.focusError}`)];
+        }
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        rec("0. the launched terminal is in the roster", ctx.inRoster === true, `tab=${ctx.tabId}`);
+        if (!ctx.inRoster) return steps;
+
+        await h.rpc(
+            "uireveal",
+            { address: `canvas:${CANVAS_MANY_TOPIC}`, callerblockid: ctx.blockId, callercwd: ctx.cwd },
+            UI_ROUTE
+        );
+        await polishWaitFor(h, `!!${CANVAS_SWAP}`, 3000);
+        await clickCanvasSwap(h, "Canvas");
+        const loaded = await polishWaitFor(h, `(${CANVAS_PICKER}?.textContent || "").includes("/6")`, CANVAS_TABS_WAIT_MS);
+        const first = await canvasManyState(h);
+        await h.shot("cdp-shots/canvas-many-boards-main.png");
+        rec(
+            "1. six boards get a board menu reading Main 1/6, no tab row, and the header keeps Build this… and its meta whole",
+            loaded &&
+                !first.tablist &&
+                first.picker.startsWith("Main") &&
+                first.picker.includes("1/6") &&
+                first.buildInBar &&
+                first.metaOneLine,
+            JSON.stringify({ loaded, ...first })
+        );
+
+        await h.ev(`${CANVAS_PICKER}?.click()`);
+        await polishNap(300);
+        const menu = await h.ev(`[${["All boards", ...CANVAS_MANY_BOARDS].map((l) => caMenuHas(l)).join(",")}].every(Boolean)`);
+        await h.shot("cdp-shots/canvas-many-boards-menu.png");
+        await h.ev(caMenuClick("All boards"));
+        await polishNap(600);
+        const all = await canvasManyState(h);
+        await h.shot("cdp-shots/canvas-many-boards-all.png");
+        rec(
+            "2. the menu lists All boards and every board; All draws all six as tiles no narrower than 560px",
+            menu && all.frames.length === 6 && all.widths.every((w) => w >= 559) && all.picker.startsWith("All boards"),
+            JSON.stringify({ menu, ...all })
+        );
+
+        await h.ev(
+            `document.querySelector('[data-canvas-frame="Proposed-RunSheet.dc.html"] button[aria-label^="Open"]')?.click()`
+        );
+        await polishNap(600);
+        const one = await canvasManyState(h);
+        await h.shot("cdp-shots/canvas-many-boards-open.png");
+        rec(
+            "3. a click on a tile opens that board alone, and the menu reads Proposed-RunSheet 5/6",
+            JSON.stringify(one.frames) === JSON.stringify(["Proposed-RunSheet.dc.html"]) &&
+                one.picker.startsWith("Proposed-RunSheet") &&
+                one.picker.includes("5/6"),
+            JSON.stringify(one)
+        );
+        return steps;
     },
+    teardown: (h, ctx) => teardownCanvasBoards(h, ctx, "canvas-many-boards"),
 };
 
 // --- the details rail's sections: Artifacts and Uploads in the order the spec gives, and the tree's Terminals -------
@@ -29671,6 +29777,7 @@ export const SCENARIOS = [
     codexWorkerRoute,
     canvasSwap,
     canvasTabsScenario,
+    canvasManyBoards,
     agentRailSections,
     railServers,
     agentGrid,

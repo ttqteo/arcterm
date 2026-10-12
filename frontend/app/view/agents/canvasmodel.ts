@@ -96,30 +96,61 @@ export function shownBoards(s: CanvasState): CanvasBoard[] {
     return s.all && s.boards.length > 1 ? s.boards : [shownBoard(s)];
 }
 
-export type BoardFrame = { board: CanvasBoard; left: number; top: number; width: number; height: number };
-export type CanvasLayout = { scale: number; width: number; height: number; frames: BoardFrame[] };
+// scale is the board's own: under All each board is shrunk to its tile
+export type BoardFrame = {
+    board: CanvasBoard;
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    scale: number;
+};
+export type CanvasLayout = { width: number; height: number; frames: BoardFrame[] };
 
-// Every board at its canvas.json frame, shifted so the top-left board sits at the origin and shrunk (never
-// grown) so the widest row fits the pane. Sizes are screen px.
+// the All grid: a tile is never narrower than this, so a board stays readable instead of shrinking with the count
+export const MIN_TILE_W = 560;
+const TILE_GAP = 40;
+// room under a tile for the next row's label
+const TILE_ROW_GAP = 56;
+// a tile is cut off at this height-to-width; the board's own tab shows the rest
+const TILE_MAX_ASPECT = 0.9;
+
+// One board fills the pane's width (shrunk, never grown). More than one sit in a grid in canvas.json's order, as many
+// columns as fit tiles of MIN_TILE_W, each board shrunk to its tile and cut off past TILE_MAX_ASPECT. canvas.json's
+// x/y are a design tool's layout, made for a canvas you pan and zoom, so they are not used here. Sizes are screen px.
 export function canvasLayout(boards: CanvasBoard[], paneWidth: number): CanvasLayout {
     const all = boards.length > 0 ? boards : [MAIN_FALLBACK];
-    const minX = Math.min(...all.map((b) => b.x));
-    const minY = Math.min(...all.map((b) => b.y));
-    const spanW = Math.max(...all.map((b) => b.x + b.w)) - minX;
-    const spanH = Math.max(...all.map((b) => b.y + b.h)) - minY;
-    const scale = fitScale(paneWidth, spanW);
-    return {
-        scale,
-        width: spanW * scale,
-        height: spanH * scale,
-        frames: all.map((board) => ({
-            board,
-            left: (board.x - minX) * scale,
-            top: (board.y - minY) * scale,
-            width: board.w * scale,
-            height: board.h * scale,
-        })),
-    };
+    if (all.length === 1) {
+        const board = all[0];
+        const scale = fitScale(paneWidth, board.w);
+        const [width, height] = [board.w * scale, board.h * scale];
+        return { width, height, frames: [{ board, left: 0, top: 0, width, height, scale }] };
+    }
+    const pane = paneWidth > 0 ? paneWidth : MIN_TILE_W;
+    const cols = Math.max(1, Math.min(all.length, Math.floor((pane + TILE_GAP) / (MIN_TILE_W + TILE_GAP))));
+    const tileW = (pane - TILE_GAP * (cols - 1)) / cols;
+    const frames: BoardFrame[] = [];
+    let top = 0;
+    for (let row = 0; row * cols < all.length; row++) {
+        const inRow = all.slice(row * cols, row * cols + cols);
+        let rowH = 0;
+        inRow.forEach((board, i) => {
+            const scale = Math.min(1, tileW / board.w);
+            const width = board.w * scale;
+            const height = Math.min(board.h * scale, tileW * TILE_MAX_ASPECT);
+            frames.push({ board, left: i * (tileW + TILE_GAP), top, width, height, scale });
+            rowH = Math.max(rowH, height);
+        });
+        top += rowH + TILE_ROW_GAP;
+    }
+    return { width: pane, height: top - TILE_ROW_GAP, frames };
+}
+
+// past this many tabs (All included) the header picks the board from a menu: a row of them crowds out the buttons
+export const MAX_STRIP_TABS = 5;
+
+export function tabsFitStrip(boards: CanvasBoard[]): boolean {
+    return canvasTabs(boards).length <= MAX_STRIP_TABS;
 }
 
 export function boardLabel(name: string): string {

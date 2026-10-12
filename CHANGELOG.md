@@ -58,6 +58,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- **A canvas with many boards stays readable**: past four boards the header picks the board from a menu (with
+  `[` and `]` still stepping), the header's buttons no longer get cut off, and All shows the boards as a grid of
+  tiles at least 560px wide instead of shrinking them all into one picture. A click on a tile opens that board.
 - **One shortcut rule between Windows and Mac:** a chord that works from inside a terminal is ⌘X on a Mac and
   Ctrl+Shift+X on Windows: Search ⌘P / Ctrl+Shift+P, Go to ⌘G / Ctrl+Shift+G, New agent, What's waiting (J), Fold
   (M), Close (W), Clear the terminal (K). On Windows the plain Ctrl+P, Ctrl+G, Ctrl+N, Ctrl+M still work outside a

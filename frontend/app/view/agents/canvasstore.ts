@@ -122,7 +122,7 @@ export function selectCanvasTab(agentId: string, tab: string): void {
     updateCanvas(agentId, (s) => withTab(s, tab));
 }
 
-// a board picked on the All canvas: the view stays, the selection moves
+// a board a route names: the view (All or one board) stays, the selection moves
 
 export function selectCanvasBoard(agentId: string, board: string): void {
     updateCanvas(agentId, (s) => ({ ...s, board, marks: [] }));

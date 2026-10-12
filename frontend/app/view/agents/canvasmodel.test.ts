@@ -19,6 +19,7 @@ import {
     prototypePath,
     shownBoards,
     stepTab,
+    tabsFitStrip,
     updatedAgo,
     type CanvasBoard,
 } from "./canvasmodel";
@@ -108,36 +109,58 @@ describe("boardsFromCanvasJson", () => {
 
 describe("canvasLayout", () => {
     const board = (name: string, x: number, y: number, w: number, h: number) => ({ name, x, y, w, h });
+    const rects = (l: ReturnType<typeof canvasLayout>) => l.frames.map((f) => [f.left, f.top, f.width, f.height]);
 
-    it("draws side-by-side boards at full size when the row fits", () => {
-        const layout = canvasLayout([board("A", 0, 0, 640, 960), board("B", 720, 0, 640, 960)], 1700);
-        expect(layout.scale).toBe(1);
-        expect([layout.width, layout.height]).toEqual([1360, 960]);
-        expect(layout.frames.map((f) => [f.left, f.top, f.width, f.height])).toEqual([
-            [0, 0, 640, 960],
-            [720, 0, 640, 960],
-        ]);
+    it("draws one board at full size when it fits, and shrinks it to the pane when it doesn't", () => {
+        const fits = canvasLayout([board("A", 300, 200, 640, 960)], 1700);
+        expect(rects(fits)).toEqual([[0, 0, 640, 960]]);
+        expect(fits.frames[0].scale).toBe(1);
+        const shrunk = canvasLayout([board("A", 0, 0, 1440, 3000)], 720);
+        expect(shrunk.frames[0]).toMatchObject({ width: 720, height: 1500, scale: 0.5 });
+        expect([shrunk.width, shrunk.height]).toEqual([720, 1500]);
     });
 
-    it("shrinks the whole canvas so its widest row fits the pane", () => {
-        const layout = canvasLayout([board("A", 0, 0, 1440, 900), board("B", 1520, 0, 1440, 900)], 1480);
-        expect(layout.scale).toBe(0.5);
-        expect(layout.frames[1]).toMatchObject({ left: 760, top: 0, width: 720, height: 450 });
-        expect(layout.height).toBe(450);
-    });
-
-    it("stacks rows and shifts the canvas so its top-left board sits at the origin", () => {
-        const layout = canvasLayout([board("A", 100, 50, 640, 400), board("B", 100, 570, 640, 14)], 2000);
+    it("puts as many columns as fit a readable tile, in the boards' order, ignoring canvas.json's x/y", () => {
+        const boards = [board("A", 5000, 0, 1440, 900), board("B", 0, 0, 1440, 900), board("C", 0, 4000, 1440, 900)];
+        const layout = canvasLayout(boards, 1200);
+        // two 580px tiles and a 40px gap fit 1200; the third board starts the next row
+        expect(layout.frames.map((f) => f.board.name)).toEqual(["A", "B", "C"]);
         expect(layout.frames.map((f) => [f.left, f.top])).toEqual([
             [0, 0],
-            [0, 520],
+            [620, 0],
+            [0, 362.5 + 56],
         ]);
-        expect([layout.width, layout.height]).toEqual([640, 534]);
+        expect(layout.frames[0].scale).toBeCloseTo(580 / 1440);
+        expect(layout.height).toBe(2 * 362.5 + 56);
+    });
+
+    it("stacks the boards in one column when the pane is narrower than two tiles", () => {
+        const layout = canvasLayout([board("A", 0, 0, 1440, 900), board("B", 1520, 0, 1440, 900)], 800);
+        expect(layout.frames.map((f) => f.left)).toEqual([0, 0]);
+        expect(layout.frames[0]).toMatchObject({ width: 800, height: 500 });
+    });
+
+    it("cuts a tall board's tile off, keeping its scale, and never grows a small one", () => {
+        const layout = canvasLayout([board("Tall", 0, 0, 1440, 4000), board("Small", 0, 0, 320, 200)], 1200);
+        expect(layout.frames[0]).toMatchObject({ width: 580, height: 580 * 0.9 });
+        expect(layout.frames[0].scale).toBeCloseTo(580 / 1440);
+        expect(layout.frames[1]).toMatchObject({ width: 320, height: 200, scale: 1 });
     });
 
     it("lays out the one Main board before any boards are read", () => {
         const layout = canvasLayout([], 2000);
         expect(layout.frames.map((f) => f.board.name)).toEqual(["Main.dc.html"]);
+    });
+});
+
+describe("tabsFitStrip", () => {
+    const named = (n: number) =>
+        Array.from({ length: n }, (_, i) => ({ name: `B${i}.dc.html`, x: 0, y: 0, w: 1, h: 1 }));
+
+    it("keeps the tab row up to four boards, and moves to the menu past that", () => {
+        expect(tabsFitStrip(named(1))).toBe(true);
+        expect(tabsFitStrip(named(4))).toBe(true);
+        expect(tabsFitStrip(named(5))).toBe(false);
     });
 });
 
