@@ -103,7 +103,15 @@ import { runSessionPrimary, SEG_COLOR, StatusMark } from "./sessionsdetail";
 import { defaultMember, runView, type RunView } from "./sessionsruns";
 import { duplicateSession } from "./session-models/sessionsidebarmodel";
 import { sleepingAge, sleepWithConfirm, wakeAgent, wakeErrorToast } from "./agentsleep";
-import { askingCount, askingLabel, displayAgeMs, formatAgeShort, formatTokens, type AgentVM } from "./agentsviewmodel";
+import {
+    askingCount,
+    askingLabel,
+    displayAgeMs,
+    formatAgeShort,
+    formatTokens,
+    type AgentState,
+    type AgentVM,
+} from "./agentsviewmodel";
 import { parseDocReview } from "./docreview";
 import { openReview } from "./docreviewstore";
 import { reconcileGrid } from "./agentgrid";
@@ -626,8 +634,8 @@ function ParentRow({
     // its last turn committed, you have read it and no run it started is still going: the row offers to close it
     // (donesuggest.ts). A sleeping agent offers no Close even when its last turn committed: it is parked, not finished
     const lineageRuns = useAtomValue(model.lineageAtom).runs;
-    // the shell commands it left running in the background (a build, a dev server): its glyph pulses while any runs,
-    // and Close waits for them, since closing the agent would end them
+    // the shell commands it left running in the background (a build, a dev server): a dot shows while any runs, and
+    // Close waits for them, since closing the agent would end them
     const background = runningBackgroundTasks(useAtomValue(backgroundTasksByIdAtom)[agent.id]);
     const done = !agent.sleeping && doneSuggestion(agent, unreadCount, lineageRuns, background.length);
     // the canvas tag and a worded Close overflow the second line together, so beside the tag Close is its check alone
@@ -706,9 +714,9 @@ function ParentRow({
     const badges = (
         <>
             <CanvasTag model={model} id={agent.id} />
-            {/* a row names its state in words only when it wants something; otherwise the dot says
-                working or idle, and a count says how many finished turns you have not read, or the
-                part a turn stopped on waiting for your reply */}
+            {/* a row names its state in words only when it wants something; otherwise its glyph says working or
+                idle, a dot says background tasks still run, and a count says how many finished turns you have not
+                read, or the part a turn stopped on waiting for your reply */}
             {review ? (
                 // a Spec or Plan review opens its dialog over whatever agent is focused, and a Doc review
                 // focuses its agent in review mode itself, so the click must not reach the row either way
@@ -740,8 +748,8 @@ function ParentRow({
                 </>
             ) : (
                 <>
-                    {/* the count stands in for an idle agent's grey dot, and so does the Close a finished one offers;
-                        a working one keeps its pulse, unless its command waits in the job queue */}
+                    {/* its glyph carries working or idle; this slot holds its queued command, the Close a finished one
+                        offers, the moon of a sleeping one, or the dot of background tasks still running */}
                     {queued ? (
                         <QueuedJobTag job={queued} />
                     ) : done ? (
@@ -772,13 +780,9 @@ function ParentRow({
                             data-agent-sleeping={agent.id}
                             className="flex-none text-muted"
                         />
-                    ) : mark || (unread && agent.state === "idle") ? null : (
-                        <StatusDot
-                            state={agent.state}
-                            pulse={agent.state !== "idle"}
-                            className="!h-[6px] !w-[6px] flex-none"
-                        />
-                    )}
+                    ) : background.length > 0 ? (
+                        <BackgroundDot tasks={background} />
+                    ) : null}
                     {tokens ? <span className={TOKENS_COL}>{formatTokens(tokens)}</span> : null}
                     <span className={AGE_COL}>
                         {agent.sleeping ? sleepingAge(agent, now) : formatAgeShort(displayAgeMs(agent, now))}
@@ -838,7 +842,11 @@ function ParentRow({
                                     className={cn("flex-none", LEAD_MARK_CLASS[mark.tone], mark.pulse && PULSE)}
                                 />
                             ) : (
-                                <RuntimeGlyph runtime={agent.agent} background={background} />
+                                <RuntimeGlyph
+                                    runtime={agent.agent}
+                                    state={agent.state}
+                                    sleeping={agent.sleeping != null}
+                                />
                             )}
                         </DigitHint>
                         <span
@@ -1292,24 +1300,39 @@ const AGE_COL = "min-w-[24px] flex-none whitespace-nowrap text-right text-[11px]
 // a second line starts under the title, past the runtime glyph and the gap after it
 const UNDER_GLYPH = "pl-[18px]";
 
-// the runtime's glyph at the head of a row, in a slot as wide as the run icon so titles line up. It pulses slowly
-// while background tasks the agent started still run, whatever its own state: the dot on the second line says
-// whether it is in a turn, the glyph whether work goes on under it
-function RuntimeGlyph({ runtime, background = [] }: { runtime: string; background?: BackgroundTask[] }) {
+// the runtime's glyph at the head of a row, in a slot as wide as the run icon so titles line up. On an agent's row it
+// also carries the agent's state, where a dot used to: working pulses in the accent, asking in the warning colour, and
+// an idle or sleeping one goes muted, so the rows doing something stand out
+function RuntimeGlyph({ runtime, state, sleeping }: { runtime: string; state?: AgentState; sleeping?: boolean }) {
     const rt = runtimeMeta(runtime);
-    const n = background.length;
-    const title =
-        n > 0
-            ? `${rt.label} · ${n} background ${n === 1 ? "task" : "tasks"} running:\n${background.map((t) => t.label).join("\n")}`
-            : rt.label;
+    const busy = !sleeping && (state === "working" || state === "asking");
     return (
         <span
-            data-agent-background={n > 0 ? n : undefined}
-            className={cn("min-w-[12px] flex-none text-center text-[12px]", rt.text, n > 0 && "pulse-dot-slow")}
-            title={title}
+            data-agent-glyph-state={state}
+            className={cn(
+                "min-w-[12px] flex-none text-center text-[12px] transition-colors duration-200",
+                state == null ? rt.text : sleeping || state === "idle" ? "text-muted" : GLYPH_COLOR[state],
+                busy && PULSE
+            )}
+            title={state == null ? rt.label : `${rt.label} · ${sleeping ? "sleeping" : state}`}
         >
             {rt.glyph}
         </span>
+    );
+}
+
+const GLYPH_COLOR: Record<AgentState, string> = { working: "text-accent", asking: "text-warning", idle: "text-muted" };
+
+// the dot on an agent's second line: shell commands it left running in the background, which outlive its turn
+function BackgroundDot({ tasks }: { tasks: BackgroundTask[] }) {
+    const n = tasks.length;
+    return (
+        <span
+            data-agent-background={n}
+            title={`${n} background ${n === 1 ? "task" : "tasks"} running:\n${tasks.map((t) => t.label).join("\n")}`}
+            aria-label={`${n} background ${n === 1 ? "task" : "tasks"} running`}
+            className="h-[6px] w-[6px] flex-none rounded-full bg-working pulse-dot-slow"
+        />
     );
 }
 

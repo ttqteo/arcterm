@@ -48,11 +48,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
 
 **2026-10-12 (Background tasks on the sidebar glyph)**
 
-- [ ] (arcterm) **An agent's sidebar glyph pulses while its background tasks run, and Close waits for them.** Have a
-  Claude agent run something long with `run_in_background` (a `sleep 120`), let its turn end and commit: its ✳ in the
-  sidebar pulses slowly, hovering it lists the task, and neither the row's ✓ Close, the header's Close nor its key
-  shows. Within ~15 s of the command ending the pulse stops and Close appears. `agenttree.tsx` RuntimeGlyph,
-  `donesuggest.ts`.
+- [ ] (arcterm) **An agent's sidebar ✳ carries its state, and a green dot its background tasks; Close waits for
+  them.** Rows: a working agent's ✳ pulses in the accent colour, an asking one's in yellow, an idle or sleeping one's is
+  grey and still, and the second line has no state dot. Have a Claude agent run something long with
+  `run_in_background` (a `sleep 120`), let its turn end and commit: a green dot pulses slowly on its second line,
+  hovering it lists the task, and neither the row's ✓ Close, the header's Close nor its key shows. Within ~15 s of the
+  command ending the dot goes and Close appears. `agenttree.tsx` RuntimeGlyph / BackgroundDot, `donesuggest.ts`.
+  (The first cut, a pulsing ✳ for background tasks, was seen pulsing in 0.15.10 on 2026-10-12.)
 
 **2026-10-12 (Mouse wheel in a restored Claude fullscreen pane)**
 
