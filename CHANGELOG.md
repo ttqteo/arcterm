@@ -14,8 +14,12 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - **A server running in one of arcterm's terminals says which terminal** in Servers, and its Log opens that terminal
   with its search box.
+- **A run's own actions on its row's right-click menu** in the agent tree: Open in Jarvis, Open the DAG, Open the
+  diff, Workers at once, Resume, Stop a worker, Copy run id and Cancel run, each offered only when it applies, as in
+  the command palette.
 - **Read a past session without resuming it**: in the New dialog's Resume list, **Transcript** on a session (or
-  Shift+Enter) opens its transcript on the Agent surface instead of starting the agent again.
+  Shift+Enter, which the picked session's button shows) opens its transcript on the Agent surface instead of starting
+  the agent again.
 - **A `?` button on the bottom bar** opens the keyboard shortcuts on every surface, also while you type in a
   terminal, where the `?` key itself is text.
 - **⌘⇧Enter toggles terminal fullscreen** (Ctrl+Shift+Enter on Windows), from inside the terminal too: the same
