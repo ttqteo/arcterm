@@ -58,6 +58,8 @@ and 1280×800, the `attention` fixture and live data) found three kinds of troub
 | 9 | Copy: **Accept** replaces Acknowledge everywhere; **Go to agent** replaces Go to it; the autonomy chip names the consequence (**Routine asks: auto** / **All asks: to you**); dates in the Brief read `Oct 9` | DESIGN.md Copy: a button says what happens, names follow what the user manages; `10-09` is ambiguous |
 | 10 | UI copy stays English | Settled with the person |
 | 11 | A region heading is no longer a button. A small **Show only** icon button at its end (`aria-pressed`) does what a click on the heading did | A misclick on a full-width heading hid every other region |
+| 12 | One pure `runStage(run)` derives a run's stage, whether it needs you, and its outcome; the Agent tree, the Brief's Runs rows and the run sheet all read it | Four derivations named one stage four ways (see Run states) |
+| 13 | The task strip gains a three-pip tail (Final check · Wrap-up · Land); only **Landed** (or **Complete**, with nothing to land) reads finished | 4/4 green read as done while the run was still verifying, wrapping up or landing |
 
 ## Design
 
@@ -144,6 +146,68 @@ initiative the button reads **Go to agent** and goes to that agent, as Work on d
   terminal"; `i` and `Esc` work (bug 1).
 - Chips: "attention" reads **N needs you**.
 
+### Run states
+
+Mockup board: `Proposed-RunStates`.
+
+A run carries four state machines: `run.status`, `dag.status`, `dag.final.state` and `run.land.state`. Four
+functions each combine a different subset of them:
+- `dagProgressLabel` / `finishedRunLabel` (`agents/runmodel.ts`) for the Agent tree;
+- `runStatusView` for status pills;
+- `runRowFace` (`jarvis/briefrows.ts`) for the Brief;
+- `sheetStatus` (`jarvis/runsheetmodel.ts`) for the run sheet.
+
+So one stage reads several ways:
+
+| Stage | Agent tree | Run sheet | Brief Runs |
+|---|---|---|---|
+| The final stage runs | `4/4 · final: running Final` | Verifying | running |
+| The lead closes the run | `lead wrapping up` | Landing | running |
+| The branch merges | `landing` | Done | done |
+| The merge is held | `land held` | Done (with an amber dock line) | done |
+
+The strip draws only tasks, so a run in its final stage shows every segment green.
+
+**One derivation.** `frontend/app/view/agents/runstage.ts`, pure, `runStage(run, asking)` over
+`Pick<RunInfo, "status" | "land" | "dag">`, returns:
+
+- **Stage key and label.** One vocabulary: Planning, Plan review, Working, Final check, Wrapping up, Landing, Land
+  held, Landed, Complete (done with nothing to land), Cancelled.
+- **`needsYou`.** True for a question, the human's plan or spec review, a blocked dag, a held land that is not
+  dismissed.
+- **Outcome.** `passed` / `unverified` / `failed` from `dag.final.state`, or `""`.
+- **Tone.** Running, asking, done, error or muted.
+- **`complete`.** True only for Landed and Complete.
+- **Tail.** Three pips, Final check · Wrap-up · Land, each pending, active, done, held, failed or skipped. A run
+  with no dag (a quick run, or a lead that judged its goal bounded) gets the Land pip alone.
+
+**Precedence.** Cancelled wins. Then a done run reads its land (no land: Complete; landed: Landed; held: Land held;
+otherwise Landing). Then a done dag is Wrapping up, a finalizing dag is Final check, a plan-review dag or an
+awaiting-review run is Plan review, any dag or an executing run is Working, and anything else is Planning.
+
+**Tail pips.**
+- **Final check:** active while finalizing; failed when the final state failed (it stays red through the fix
+  round); held when the outcome is unverified; done once past it.
+- **Wrap-up:** active while wrapping up; done once the run is done.
+- **Land:** active while landing; held when held; done when landed; skipped for Complete.
+- Cancelled skips every pip.
+
+**Consumers.**
+
+- **Agent tree:** the second line puts the stage first: `Working · 2/4`, `Final check · running Final`, `Wrapping
+  up · lead`, `Landing`, `Land held · needs you`, `✓ Landed` (`· unverified` when so), `✓ Complete`, `Cancelled ·
+  2/4`. A leadless run keeps its `lead starts if needed` / `lead closed` suffix. The strip draws the tail after a
+  1px divider. `runComplete` is `runStage(...).complete`.
+- **`runStatusView` pills:** executing reads `working`, finalizing `final check`, done with no land `complete`.
+- **Brief Runs rows:** the state word is the stage label in lower case, coloured by tone. A blue `running` tone joins
+  `briefstyle.ts`. The row reads the dag from `model.lineageAtom` when the lineage has the run.
+- **Run sheet:**
+  - Verbs: Executing becomes **Working**, Verifying becomes **Final check**, and the "every task done, the lead is
+    finishing" verb becomes **Wrapping up**.
+  - A done run whose land is pending reads **Landing** ("merging wave/<id> into <base>"), and a held land reads
+    **Waiting on you** with the reason, before the Done face.
+  - The sheet's strip draws the same tail.
+
 ### Keyboard and footer
 
 - Fix `i` / `Esc` to query the composer's real attribute (bug 1).
@@ -161,6 +225,7 @@ same data attributes where the element survives: `data-jarvis-brief-row="initiat
 ## Testing
 
 - **Pure, with vitest:**
+  - `runStage`: a table of status × dag status × final state × land state to stage, `needsYou`, tone and tail.
   - `orderInitiatives`.
   - The Waiting window (first 3, then Show all).
   - `runRowFace` tone with no run.
@@ -174,7 +239,8 @@ same data attributes where the element survives: `data-jarvis-brief-row="initiat
     hints, no tour offer over a control.
   - **New `brief-chunk-panel`**: an initiative expands in place, the panel docks in the side column, and the
     run-gone note line.
-  - **New `brief-run-sheet-order`**: a question card above Tasks.
+  - **New `brief-run-sheet-order`**: a question card above Tasks, a verb from the one vocabulary, and the three-pip
+    tail on the sheet's strip and on the run's row in the Agent tree.
 
 ## Out of scope
 

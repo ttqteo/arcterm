@@ -5,7 +5,8 @@
 **Goal:** Make the Jarvis Brief show what needs you first and fit on one screen, as specified in
 `docs/superpowers/specs/2026-10-12-jarvis-brief-redesign-design.md` (the spec; read it before any task).
 
-**Architecture:** Pure logic changes land in the existing pure `.ts` files beside their `.test.ts` (briefrows,
+**Architecture:** One pure run-stage derivation (`frontend/app/view/agents/runstage.ts`) replaces the four ways the
+Agent tree, the Brief and the run sheet each named a run's stage. Other pure logic changes land in the existing pure `.ts` files beside their `.test.ts` (briefrows,
 briefautonomy, attentionact, attentionrun, initiativework, sidebarnotes, runsheetmodel, briefingmodel). The views
 (`briefsurface.tsx`, `briefrowviews.tsx`, `inlinetrackerview.tsx`, `chunksidebar.tsx`, `runsheet.tsx`) are rearranged
 around them. One Go string changes (`pkg/jarvis/attention.go`). CDP scenarios in `scripts/cdp/scenarios.mjs` show
@@ -15,7 +16,7 @@ every view.
 
 The mockup is a gitignored canvas that a worktree does not have; read it at its absolute path:
 `.superpowers/design/jarvis-overview/project/` (boards `Proposed-Brief.dc.html`,
-`Proposed-ChunkPanel.dc.html`, `Proposed-ChunkPanel-States.dc.html`, `Proposed-RunSheet.dc.html`,
+`Proposed-ChunkPanel.dc.html`, `Proposed-ChunkPanel-States.dc.html`, `Proposed-RunSheet.dc.html`, `Proposed-RunStates.dc.html`,
 `Proposed-AllClear.dc.html`). Its inline hex values are the `@theme` tokens: map them back to token utilities
 (`#262624` → `bg-surface`, `#30302e` → `bg-surface-raised`, `#383734` → `border-edge-mid`, `#2e2d2b` →
 `border-border`, `#282725` → `border-edge-faint`, `#4a4945` → `border-edge-strong`, `#a2a2a2` → `text-ink-mid`,
@@ -33,78 +34,536 @@ touched with `npx prettier --check <files>` and `npx eslint <files>` (never `--w
 
 ---
 
-### Task 1: Small bug fixes (the composer key, the run row tone, the tour offer, stale comments)
+### Task 1: One run stage for every surface, and the strip's three-pip tail
 
 **Depends on:** none
 
-**Files:**
-- Modify: `frontend/app/view/jarvis/briefcomposer.tsx` (the root `div`, around line 128)
-- Modify: `frontend/app/view/jarvis/briefrows.ts` (`runRowFace`, the `run == null` branch, around line 243)
-- Test: `frontend/app/view/jarvis/briefrows.test.ts` (`describe("runRowFace")`, around line 446)
-- Modify: `frontend/app/view/jarvis/jarvistourview.tsx` (`TourOffer`, the `className` at about line 434)
-- Modify: `frontend/app/store/keybindings/bindings.ts` (the comment above `buildJarvisBindings`, about lines 594-601)
-- Modify: `frontend/app/view/jarvis/newinitiativecontrol.tsx` (header comment, lines 4-12)
+Spec section "Run states". Mockup board `Proposed-RunStates.dc.html`.
 
-**Step 1: Write the failing tests** in `briefrows.test.ts`, inside `describe("runRowFace")`:
+**Files:**
+- Create: `frontend/app/view/agents/runstage.ts`
+- Test: `frontend/app/view/agents/runstage.test.ts`
+- Modify: `frontend/app/view/agents/runmodel.ts` (`finishedRunLabel`, `dagProgressLabel`, `runComplete`,
+  `runStatusView`)
+- Test: `frontend/app/view/agents/runmodel.test.ts` (the four `describe`s at lines 54-180)
+- Modify: `frontend/app/view/agents/runstrip.ts` (add `PIP_FILL`)
+- Modify: `frontend/app/view/agents/agenttree.tsx` (`TaskStripBar`, `RunCompleteLabel`, `RunSubline`, about lines
+  352-445)
+- Modify: `frontend/app/view/jarvis/runsheet.tsx` (`SheetBarView`, about line 442; its caller passes the run)
+- Modify: `frontend/app/view/jarvis/runsheetmodel.ts` (verbs: `doneStatus` about 139, `undaggedStatus` /
+  `daggedStatus` at the `Executing`, `Landing` and `Verifying` returns, about 288-400)
+- Test: `frontend/app/view/jarvis/runsheetmodel.test.ts` (verb expectations at 182, 205, 223, 241, 271, 293, 366, 412,
+  445)
+- Modify: `frontend/app/view/jarvis/briefrows.ts` (`runRowFace`) and `frontend/app/view/jarvis/briefstyle.ts`
+  (`Tone`, `TONE_TEXT`)
+- Test: `frontend/app/view/jarvis/briefrows.test.ts` (`describe("runRowFace")`, about line 446)
+- Modify: `frontend/app/view/jarvis/briefsurface.tsx` (`BriefRunRow` only, about lines 507-557)
+- Test (expectations only): `frontend/app/view/agents/leadcardmodel.test.ts` (it reads `finishedRunLabel`)
+
+**Step 1: Write the failing test** `frontend/app/view/agents/runstage.test.ts`:
 
 ```ts
-it("takes a run-less row's tone from its own state, so blocked is never green", () => {
-    const blocked = { ...line, state: "blocked", stateTone: "asking", meta: "waveterm" } as BriefLine;
-    expect(runRowFace({ line: blocked, asking: false, project: "waveterm" })).toMatchObject({
-        type: "agent",
-        state: "blocked",
-        stateTone: "asking",
-        dot: "asking",
+import { describe, expect, it } from "vitest";
+import type { RunInfo } from "./runlineage";
+import { runStage } from "./runstage";
+
+type R = Pick<RunInfo, "status" | "land" | "dag">;
+const dag = (status: string, final?: Partial<FinalStage>): TaskGroup =>
+    ({ status, tasks: [], final: final ? { round: 1, ...final } : undefined }) as unknown as TaskGroup;
+const pips = (r: R, asking = false) => runStage(r, asking).tail.map((p) => p.state);
+
+describe("runStage", () => {
+    it("names each stage once, in the one vocabulary", () => {
+        const cases: [R, string][] = [
+            [{ status: "planning" }, "Planning"],
+            [{ status: "awaiting-review" }, "Plan review"],
+            [{ status: "executing", dag: dag("plan-review") }, "Plan review"],
+            [{ status: "executing", dag: dag("running") }, "Working"],
+            [{ status: "executing" }, "Working"],
+            [{ status: "executing", dag: dag("finalizing", { state: "checking", step: "final" }) }, "Final check"],
+            [{ status: "executing", dag: dag("done", { state: "passed" }) }, "Wrapping up"],
+            [{ status: "done", land: { state: "pending" }, dag: dag("done", { state: "passed" }) }, "Landing"],
+            [{ status: "done", land: { state: "held", reason: "staged changes" }, dag: dag("done") }, "Land held"],
+            [{ status: "done", land: { state: "landed" }, dag: dag("done", { state: "passed" }) }, "Landed"],
+            [{ status: "done", dag: dag("done") }, "Complete"],
+            [{ status: "executing", dag: dag("cancelled") }, "Cancelled"],
+            [{ status: "cancelled" }, "Cancelled"],
+        ];
+        for (const [r, want] of cases) {
+            expect(runStage(r).label, JSON.stringify(r)).toBe(want);
+        }
     });
-    const working = { ...line, state: "working", stateTone: "ok" } as BriefLine;
-    expect(runRowFace({ line: working, asking: false, project: "waveterm" })).toMatchObject({
-        state: "running",
-        stateTone: "ok",
-        dot: "live",
+
+    it("is complete only once nothing is left: landed, or done with nothing to land", () => {
+        expect(runStage({ status: "done", land: { state: "landed" }, dag: dag("done") }).complete).toBe(true);
+        expect(runStage({ status: "done", dag: dag("done") }).complete).toBe(true);
+        expect(runStage({ status: "done", land: { state: "pending" }, dag: dag("done") }).complete).toBe(false);
+        expect(runStage({ status: "done", land: { state: "held" }, dag: dag("done") }).complete).toBe(false);
+        expect(runStage({ status: "executing", dag: dag("done") }).complete).toBe(false);
+        expect(runStage({ status: "executing", dag: dag("finalizing") }).complete).toBe(false);
     });
-    const idle = { ...line, state: "idle", stateTone: "muted" } as BriefLine;
-    expect(runRowFace({ line: idle, asking: false, project: "waveterm" })).toMatchObject({
-        stateTone: "muted",
-        dot: "idle",
+
+    it("says when the run needs you, apart from where it is", () => {
+        expect(runStage({ status: "executing", dag: dag("running") }, true).needsYou).toBe(true);
+        expect(runStage({ status: "executing", dag: dag("blocked") }).needsYou).toBe(true);
+        expect(runStage({ status: "awaiting-review" }).needsYou).toBe(true);
+        expect(runStage({ status: "done", land: { state: "held" }, dag: dag("done") }).needsYou).toBe(true);
+        expect(runStage({ status: "done", land: { state: "held", dismissed: true }, dag: dag("done") }).needsYou).toBe(
+            false
+        );
+        expect(runStage({ status: "executing", dag: dag("finalizing") }).needsYou).toBe(false);
+    });
+
+    it("draws the tail: Final check, Wrap-up, Land", () => {
+        expect(pips({ status: "executing", dag: dag("running") })).toEqual(["pending", "pending", "pending"]);
+        expect(pips({ status: "executing", dag: dag("finalizing", { state: "final" }) })).toEqual([
+            "active",
+            "pending",
+            "pending",
+        ]);
+        expect(pips({ status: "executing", dag: dag("running", { state: "failed" }) })).toEqual([
+            "failed",
+            "pending",
+            "pending",
+        ]);
+        expect(pips({ status: "executing", dag: dag("done", { state: "passed" }) })).toEqual([
+            "done",
+            "active",
+            "pending",
+        ]);
+        expect(pips({ status: "done", land: { state: "pending" }, dag: dag("done", { state: "passed" }) })).toEqual([
+            "done",
+            "done",
+            "active",
+        ]);
+        expect(pips({ status: "done", land: { state: "held" }, dag: dag("done", { state: "passed" }) })).toEqual([
+            "done",
+            "done",
+            "held",
+        ]);
+        expect(
+            pips({ status: "done", land: { state: "landed" }, dag: dag("done", { state: "unverified" }) })
+        ).toEqual(["held", "done", "done"]);
+        expect(pips({ status: "done", dag: dag("done", { state: "passed" }) })).toEqual(["done", "done", "skipped"]);
+        expect(pips({ status: "cancelled", dag: dag("cancelled") })).toEqual(["skipped", "skipped", "skipped"]);
+    });
+
+    it("gives a run with no dag the Land pip alone", () => {
+        expect(runStage({ status: "executing" }).tail).toEqual([{ name: "Land", state: "pending" }]);
+        expect(runStage({ status: "done", land: { state: "landed" } }).tail).toEqual([{ name: "Land", state: "done" }]);
+    });
+
+    it("carries the final outcome and tones by it", () => {
+        const landed = (state: string) =>
+            runStage({ status: "done", land: { state: "landed" }, dag: dag("done", { state }) });
+        expect(landed("passed")).toMatchObject({ outcome: "passed", tone: "done" });
+        expect(landed("unverified")).toMatchObject({ outcome: "unverified", tone: "asking" });
+        expect(runStage({ status: "executing", dag: dag("finalizing", { state: "failed" }) }).tone).toBe("error");
+        expect(runStage({ status: "cancelled" }).tone).toBe("muted");
+        expect(runStage({ status: "executing", dag: dag("running") }).tone).toBe("working");
+        expect(runStage({ status: "executing", dag: dag("finalizing") }).tone).toBe("running");
     });
 });
 ```
 
 **Step 2: Run it and see it fail**
 
-Run: `npx vitest run frontend/app/view/jarvis/briefrows.test.ts -t "run-less row"`
-Expected: FAIL (`stateTone` is `"ok"` for the blocked line).
+Run: `npx vitest run frontend/app/view/agents/runstage.test.ts`
+Expected: FAIL (`./runstage` does not exist).
 
-**Step 3: Implement.** In `runRowFace`, replace the `run == null` branch with:
+**Step 3: Implement** `frontend/app/view/agents/runstage.ts`:
 
 ```ts
-if (run == null) {
-    const asking = i.asking || line.state === "asking";
-    // a direct agent (or a run not loaded yet) has no Run to read, so its line's own tone is the truth
-    const tone: LineTone = asking ? "asking" : line.stateTone;
-    return {
-        type: "agent",
-        meta: line.meta,
-        elapsed: line.age,
-        state: asking ? "asking" : line.state === "working" ? "running" : line.state,
-        stateTone: tone,
-        dot: tone === "asking" ? "asking" : tone === "ok" ? "live" : "idle",
-        asking,
-        canStop: false,
-        stopped: false,
-        chunkLabel: "",
-        effortOref: "",
-        chunk: "",
-    };
+// Copyright 2026, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+//
+// A run's stage, said one way everywhere. A run carries four state machines (run.status, dag.status,
+// dag.final.state, run.land.state), and the Agent tree, the Brief and the run sheet each used to combine a
+// different subset, so one stage read four ways. This is the one combination: where the run is, whether it
+// needs you, how it came out, and the strip's tail. Pure: no React, no Wave runtime imports.
+
+import type { RunInfo } from "./runlineage";
+
+export type RunStageKey =
+    | "planning"
+    | "plan-review"
+    | "working"
+    | "final-check"
+    | "wrapping-up"
+    | "landing"
+    | "land-held"
+    | "landed"
+    | "complete"
+    | "cancelled";
+export type PipState = "pending" | "active" | "done" | "held" | "failed" | "skipped";
+// working is a task at work (green, like an agent); running is the engine moving the run on (blue)
+export type StageTone = "working" | "running" | "asking" | "done" | "error" | "muted";
+export type TailPip = { name: "Final check" | "Wrap-up" | "Land"; state: PipState };
+
+export interface RunStageView {
+    key: RunStageKey;
+    label: string;
+    tone: StageTone;
+    needsYou: boolean;
+    outcome: "" | "passed" | "unverified" | "failed";
+    complete: boolean;
+    tail: TailPip[];
+}
+
+const LABEL: Record<RunStageKey, string> = {
+    planning: "Planning",
+    "plan-review": "Plan review",
+    working: "Working",
+    "final-check": "Final check",
+    "wrapping-up": "Wrapping up",
+    landing: "Landing",
+    "land-held": "Land held",
+    landed: "Landed",
+    complete: "Complete",
+    cancelled: "Cancelled",
+};
+
+// lifecycle order, for "is the run past this stage"; land-held sits with landing
+const ORDER: RunStageKey[] = [
+    "planning",
+    "plan-review",
+    "working",
+    "final-check",
+    "wrapping-up",
+    "landing",
+    "land-held",
+    "landed",
+    "complete",
+];
+
+function stageKey(run: Pick<RunInfo, "status" | "land" | "dag">): RunStageKey {
+    const status = run.status ?? "";
+    const dagStatus = run.dag?.status ?? "";
+    if (status === "cancelled" || dagStatus === "cancelled") {
+        return "cancelled";
+    }
+    if (status === "done") {
+        // a done run on its own branch is not in its base until the branch lands; with no land, nothing to land
+        const land = run.land?.state;
+        return land == null ? "complete" : land === "landed" ? "landed" : land === "held" ? "land-held" : "landing";
+    }
+    if (dagStatus === "done") {
+        return "wrapping-up";
+    }
+    if (dagStatus === "finalizing") {
+        return "final-check";
+    }
+    if (dagStatus === "plan-review" || status === "awaiting-review" || status === "plan-review") {
+        return "plan-review";
+    }
+    if (run.dag != null || status === "executing" || status === "blocked") {
+        return "working";
+    }
+    return "planning";
+}
+
+export function runStage(run: Pick<RunInfo, "status" | "land" | "dag">, asking = false): RunStageView {
+    const key = stageKey(run);
+    const status = run.status ?? "";
+    const dagStatus = run.dag?.status ?? "";
+    const finalState = run.dag?.final?.state ?? "";
+    const outcome =
+        finalState === "passed" || finalState === "unverified" || finalState === "failed" ? finalState : "";
+    const past = (k: RunStageKey) => key !== "cancelled" && ORDER.indexOf(key) > ORDER.indexOf(k);
+    const needsYou =
+        key !== "cancelled" &&
+        (asking ||
+            status === "awaiting-review" ||
+            status === "blocked" ||
+            dagStatus === "blocked" ||
+            dagStatus === "awaiting-review" ||
+            (key === "land-held" && run.land?.dismissed !== true));
+    const complete = key === "landed" || key === "complete";
+    const tone: StageTone =
+        key === "cancelled"
+            ? "muted"
+            : needsYou
+              ? "asking"
+              : finalState === "failed" && !complete
+                ? "error"
+                : complete
+                  ? outcome === "unverified"
+                      ? "asking"
+                      : "done"
+                  : key === "working"
+                    ? "working"
+                    : "running";
+
+    const landPip: PipState =
+        key === "cancelled" || key === "complete"
+            ? "skipped"
+            : key === "landed"
+              ? "done"
+              : key === "land-held"
+                ? "held"
+                : key === "landing"
+                  ? "active"
+                  : "pending";
+    let tail: TailPip[];
+    if (run.dag == null) {
+        tail = [{ name: "Land", state: landPip }];
+    } else {
+        const finalPip: PipState =
+            key === "cancelled"
+                ? "skipped"
+                : finalState === "failed"
+                  ? "failed"
+                  : key === "final-check"
+                    ? "active"
+                    : past("final-check")
+                      ? outcome === "unverified"
+                          ? "held"
+                          : "done"
+                      : "pending";
+        const wrapPip: PipState =
+            key === "cancelled" ? "skipped" : key === "wrapping-up" ? "active" : past("wrapping-up") ? "done" : "pending";
+        tail = [
+            { name: "Final check", state: finalPip },
+            { name: "Wrap-up", state: wrapPip },
+            { name: "Land", state: landPip },
+        ];
+    }
+    return { key, label: LABEL[key], tone, needsYou, outcome, complete, tail };
 }
 ```
 
-**Step 4: Run the test and see it pass**
+**Step 4: Run it and see it pass.** Same command. Expected: PASS. If a case fails, fix the code, not the table: the
+table is the spec's precedence.
 
-Run: `npx vitest run frontend/app/view/jarvis/briefrows.test.ts`
-Expected: PASS (every test in the file).
+**Step 5: The Agent tree's labels** (`runmodel.ts`). Rebuild the three helpers on `runStage`, keeping their
+signatures so the callers do not change:
 
-**Step 5: The composer key.** `bindings.ts`'s `jarvis:focus-composer` and `jarvis:blur-composer` query
+```ts
+/** Pure: what a run whose plan finished is still doing, in the one stage vocabulary (runstage.ts). */
+export function finishedRunLabel(run: Pick<RunInfo, "dag" | "status" | "land">): string {
+    const s = runStage(run);
+    return s.key === "wrapping-up" ? "Wrapping up · lead" : s.label;
+}
+
+/** Pure: a dag run's line in the Agents tree, the stage first so a cut line keeps it. Every task done is not the
+ *  run done: the final stage, the lead's wrap-up and the land still follow. */
+export function dagProgressLabel(
+    run: Pick<RunInfo, "dag" | "status" | "land" | "leadStarted">,
+    leadless: boolean
+): string {
+    const { done, total } = runProgress(run.dag);
+    const s = runStage(run);
+    if (s.key === "final-check") {
+        return `Final check · ${finalStageActivity(run.dag?.final) ?? "verifying the merged result"}`;
+    }
+    if (s.key !== "working" && s.key !== "plan-review" && s.key !== "planning") {
+        return finishedRunLabel(run);
+    }
+    const base = `${s.label} · ${done}/${total}`;
+    if (leadless) {
+        // a plan-path run gets its lead only at its first judgment event, so no lead yet is the normal case
+        return `${base} · ${run.leadStarted ? "lead closed" : "lead starts if needed"}`;
+    }
+    return base;
+}
+
+export function runComplete(run: Pick<RunInfo, "dag" | "status" | "land">): boolean {
+    return runStage(run).complete;
+}
+```
+
+- Delete `COMPLETE_LABELS`. Delete `landView` if nothing else uses it.
+- In `runStatusView`, change three labels: `executing` reads `"working"`, `finalizing` reads `"final check"`, and
+  a done run with no land reads `"complete"`. Tones stay.
+- Import `runStage` from `./runstage`. Check that `runstage.ts` imports only types from `runlineage.ts`, so the two
+  files do not form a value import cycle.
+
+Update `runmodel.test.ts` to the new words:
+- `"lead wrapping up"` → `"Wrapping up · lead"`.
+- `"run complete"` → `"Complete"`.
+- `"landing"` / `"land held"` / `"landed"` → `"Landing"` / `"Land held"` / `"Landed"`.
+- `"run cancelled"` → `"Cancelled"`.
+- `"2/3 done"` → `"Working · 2/3"`.
+- `"2/2 · verifying the merged result"` → `"Final check · verifying the merged result"`.
+- Each `"2/2 · final: <step>"` → `"Final check · <step>"`.
+- The leadless pair → `"Working · 2/3 · lead starts if needed"` / `"Working · 2/3 · lead closed"`.
+- `runStatusView("finalizing")` → `{ label: "final check", tone: "running" }`.
+- `runStatusView("done")` → `{ label: "complete", tone: "done" }`.
+
+Then run `npx vitest run frontend/app/view/agents` and update every other expectation that pinned an old stage
+word (`leadcardmodel.test.ts:448` and any others) to the same new words, and nothing else.
+
+**Step 6: The strip's tail.** In `runstrip.ts`:
+
+```ts
+// the tail after a run's tasks: Final check, Wrap-up, Land (runstage.ts). Pending is the strip's own grey, so a
+// tail with nothing started reads as more of the same road
+export const PIP_FILL: Record<PipState, string> = {
+    pending: "bg-edge-strong",
+    active: "bg-running",
+    done: "bg-success",
+    held: "bg-warning",
+    failed: "bg-error",
+    skipped: "bg-muted/40",
+};
+```
+
+In `agenttree.tsx`, `TaskStripBar` draws the tail after the segments (or the bar):
+
+```tsx
+const tail = runStage(run).tail;
+return (
+    <div
+        role="img"
+        aria-label={`${taskStripLabel(run.dag, run.digest)}; ${tail.map((p) => `${p.name} ${p.state}`).join(", ")}`}
+        className="mt-[6px] flex h-[3px] gap-[5px]"
+    >
+        <span className="flex min-w-0 flex-1 gap-[2px]">{/* the existing segments or bar, unchanged */}</span>
+        <span data-run-strip-tail className="flex flex-none gap-[2px] border-l border-edge-strong pl-[5px]">
+            {tail.map((p) => (
+                <span
+                    key={p.name}
+                    data-pip={p.state}
+                    title={`${p.name}: ${p.state}`}
+                    className={cn("w-3 rounded-[1.5px]", PIP_FILL[p.state])}
+                />
+            ))}
+        </span>
+    </div>
+);
+```
+
+- **`RunCompleteLabel`:** keep the `Check` icon and the success colour. Append ` · unverified` when
+  `runStage(run).outcome === "unverified"`, and colour the label `text-warning` in that case.
+- **`RunSubline`, no-dag branch:** draw the `runStatusView` label as today. It now reads `working` / `complete`.
+- **`RunSubline`, dag branch:** colour `progress` by `runStage(run).tone`: asking → `text-warning`, error →
+  `text-error`, running → `text-running`, working, muted and done → `text-muted`.
+- If the tree draws a run with no dag (a quick run) with no strip today, leave it without one.
+
+**Step 7: The run sheet's strip.** `SheetBarView` takes the run, and its caller in `Reading` passes `run`. After the
+segments, draw the same tail from `runStage({ status: run.status, land: run.land, dag: dag?.group ?? undefined })`,
+with `PIP_FILL`, `data-run-strip-tail` and the same `title`s, at the sheet's `h-1` height and with a `w-4` pip width.
+
+**Step 8: The run sheet's verbs** (`runsheetmodel.ts`). One vocabulary:
+- Every `verb: "Executing"` becomes `verb: "Working"`.
+- `verb: "Verifying"` (the finalizing branch) becomes `verb: "Final check"`.
+- The `digest.next.kind === "terminal" && terminalstatus === "done"` branch becomes `verb: "Wrapping up"`, with
+  `sub: \`all ${plural(total, "task")} done · the lead is writing the report\``.
+- **`doneStatus`:** before it builds the Done face, read the land:
+
+  ```ts
+  if (run.land?.state === "pending") {
+      return { verb: "Landing", sub: `merging wave/${run.id} into ${run.basebranch || "its base"}`, tone: "running", pulse: true, meter: STRIP, meta: [], next: null, retry: false };
+  }
+  if (run.land?.state === "held" && run.land.dismissed !== true) {
+      return { verb: "Waiting on you", sub: `Not merged back: ${run.land.reason || "the engine gave no reason"}`, tone: "warning", pulse: true, meter: STRIP, meta: [], next: "Land again once the reason is cleared", retry: false };
+  }
+  ```
+
+  Match the real `SheetStatus` fields and the tone names `doneStatus` already uses. Check `TONE_BG` in
+  `runsheet.tsx` for the names that exist. The dock keeps its own held line and Land again button.
+
+The attention chip in `daggedStatus` (`` `attention ${digest.counts.attention}` ``, about line 353) reads
+`` `${n} ${n === 1 ? "needs" : "need"} you` ``, so it says what it means (`runsheetmodel.test.ts:295` expects `"2 need you"`).
+
+Update `runsheetmodel.test.ts`: `"Executing"` → `"Working"`, `"Verifying"` → `"Final check"`, and the two
+`"Landing"` expectations at 205 and 241: read each case. The one for a done dag with the lead still finishing becomes
+`"Wrapping up"`. Add one case each for a done run with `land: { state: "pending" }` (`"Landing"`) and with
+`land: { state: "held", reason: "staged changes" }` (`"Waiting on you"`, sub containing "staged changes").
+
+**Step 9: The Brief's Runs rows** (`briefrows.ts`, `briefstyle.ts`, `BriefRunRow`).
+- **`briefstyle.ts`:** add `"running"` to `Tone`, with `running: "text-running"` in `TONE_TEXT`.
+- **`runRowFace`:** gains an optional `dag?: TaskGroup` input. For a run that is present, replace the hand-built
+  status ternary with the stage:
+
+  ```ts
+  const s = runStage({ status: run.status, land: run.land, dag: i.dag }, i.asking);
+  const toneOf: Record<StageTone, LineTone> = { working: "ok", running: "running", asking: "asking", done: "ok", error: "error", muted: "faint" };
+  // state: s.key === "working" ? "working" : s.label.toLowerCase()
+  // stateTone: toneOf[s.tone]
+  // dot: s.needsYou ? "asking" : s.complete ? "done" : s.key === "cancelled" ? "idle" : "live"
+  // canStop stays !terminal; stopped stays status === "cancelled"
+  ```
+
+- **The run-less branch** (a direct agent, or a run not loaded yet) takes its tone from the line, so `blocked` is
+  never green:
+
+  ```ts
+  if (run == null) {
+      const asking = i.asking || line.state === "asking";
+      // a direct agent (or a run not loaded yet) has no Run to read, so its line's own tone is the truth
+      const tone: LineTone = asking ? "asking" : line.stateTone;
+      return {
+          type: "agent",
+          meta: line.meta,
+          elapsed: line.age,
+          state: asking ? "asking" : line.state === "working" ? "running" : line.state,
+          stateTone: tone,
+          dot: tone === "asking" ? "asking" : tone === "ok" ? "live" : "idle",
+          asking,
+          canStop: false,
+          stopped: false,
+          chunkLabel: "",
+          effortOref: "",
+          chunk: "",
+      };
+  }
+  ```
+
+- **Tests** (`briefrows.test.ts`, `describe("runRowFace")`):
+  - The existing orchestrator case now expects `state: "working"`, `stateTone: "ok"`.
+  - Add a run-less case:
+
+    ```ts
+    it("takes a run-less row's tone from its own state, so blocked is never green", () => {
+        const blocked = { ...line, state: "blocked", stateTone: "asking", meta: "waveterm" } as BriefLine;
+        expect(runRowFace({ line: blocked, asking: false, project: "waveterm" })).toMatchObject({
+            type: "agent",
+            state: "blocked",
+            stateTone: "asking",
+            dot: "asking",
+        });
+    });
+    ```
+
+  - Add a case with `dag: { status: "finalizing", tasks: [] }` expecting `state: "final check"` and
+    `stateTone: "running"`.
+  - Add a done run with `land: { state: "held" }` expecting `state: "land held"`, `stateTone: "asking"`,
+    `dot: "asking"`.
+- **`BriefRunRow`** (`briefsurface.tsx`): read the lineage and pass the dag.
+
+  ```tsx
+  const lineage = useAtomValue(model.lineageAtom);
+  // the lineage holds a lead run's dag; a run outside it reads by its own status alone
+  const dag = run != null ? lineage.runs[run.id]?.dag : undefined;
+  ```
+
+  Then pass `dag` to `runRowFace`. Touch nothing else in `briefsurface.tsx`: Task 5 rearranges its layout.
+
+**Step 10: Typecheck, lint, test, commit**
+
+Run: `npx vitest run frontend/app/view/agents frontend/app/view/jarvis` (expected PASS), `task check:ts` (exit 0),
+`npx eslint` on the touched files.
+
+```bash
+git commit -m "feat(runs): one stage vocabulary for the Agent tree, the Brief and the run sheet, and a tail on the strip so only Landed reads finished" -- frontend/app/view/agents/runstage.ts frontend/app/view/agents/runstage.test.ts frontend/app/view/agents/runmodel.ts frontend/app/view/agents/runmodel.test.ts frontend/app/view/agents/runstrip.ts frontend/app/view/agents/agenttree.tsx frontend/app/view/agents/leadcardmodel.test.ts frontend/app/view/jarvis/runsheet.tsx frontend/app/view/jarvis/runsheetmodel.ts frontend/app/view/jarvis/runsheetmodel.test.ts frontend/app/view/jarvis/briefrows.ts frontend/app/view/jarvis/briefrows.test.ts frontend/app/view/jarvis/briefstyle.ts frontend/app/view/jarvis/briefsurface.tsx
+```
+
+(Add any other test file Step 5 changed to the pathspec.)
+
+The CDP steps that show these: `brief-run-sheet-order` steps 4 and 5, and `brief-layout` step 7 (Task 9).
+
+### Task 2: Small bug fixes (the composer key, the tour offer, stale comments)
+
+**Depends on:** none
+
+**Files:**
+- Modify: `frontend/app/view/jarvis/briefcomposer.tsx` (the root `div`, around line 128)
+- Modify: `frontend/app/view/jarvis/jarvistourview.tsx` (`TourOffer`, the `className` at about line 434)
+- Modify: `frontend/app/store/keybindings/bindings.ts` (the comment above `buildJarvisBindings`, about lines 594-601)
+- Modify: `frontend/app/view/jarvis/newinitiativecontrol.tsx` (header comment, lines 4-12)
+
+**Step 1: The composer key.** `bindings.ts`'s `jarvis:focus-composer` and `jarvis:blur-composer` query
 `[data-jarvis-composer]`, which no element carries. Add the attribute to the composer's root in
 `briefcomposer.tsx`:
 
@@ -119,11 +578,11 @@ Expected: PASS (every test in the file).
 `blur-composer` runs in the dispatcher's capture phase, ahead of the textarea's own `onKeyDown`. Once the attribute
 exists, the first `Esc` in the composer blurs it and a second `Esc` closes the sheet, which is what the docs promise.
 
-**Step 6: The tour offer.** In `TourOffer`, change `"absolute right-4 top-[60px] z-30 w-[300px]"` to
+**Step 2: The tour offer.** In `TourOffer`, change `"absolute right-4 top-[60px] z-30 w-[300px]"` to
 `"absolute bottom-4 right-4 z-30 w-[300px]"`. The top-right placement covered the first region's tools (the Waiting
 summary's Review button). The Brief's toast sits at `bottom-6` centred, so the two do not meet.
 
-**Step 7: Stale comments.**
+**Step 3: Stale comments.**
 - The comment block above `buildJarvisBindings` in `bindings.ts` lists "the context rail" and "+ Channel". Neither
   exists since B5. Rewrite the two bullets as "state the registry owns outright (the graph peek, the run switcher)"
   and "a click on a control the surface already draws (New initiative, Work on, the record band's expand)".
@@ -132,17 +591,17 @@ summary's Review button). The Brief's toast sits at `bottom-6` centred, so the t
   Channel." to "This is the mount in the Brief's header. The ⇧N binding presses it by data attribute
   (buildJarvisBindings)."
 
-**Step 8: Typecheck, lint, commit**
+**Step 4: Typecheck, lint, commit**
 
-Run: `task check:ts` (expected exit 0), `npx eslint frontend/app/view/jarvis/briefrows.ts frontend/app/view/jarvis/briefcomposer.tsx frontend/app/view/jarvis/jarvistourview.tsx`.
+Run: `task check:ts` (expected exit 0), `npx eslint frontend/app/view/jarvis/briefcomposer.tsx frontend/app/view/jarvis/jarvistourview.tsx`.
 
 ```bash
-git commit -m "fix(jarvis): i reaches the run sheet composer, a run-less blocked row reads amber, the tour offer stops covering Review" -- frontend/app/view/jarvis/briefrows.ts frontend/app/view/jarvis/briefrows.test.ts frontend/app/view/jarvis/briefcomposer.tsx frontend/app/view/jarvis/jarvistourview.tsx frontend/app/store/keybindings/bindings.ts frontend/app/view/jarvis/newinitiativecontrol.tsx
+git commit -m "fix(jarvis): i reaches the run sheet composer, the tour offer stops covering Review" -- frontend/app/view/jarvis/briefcomposer.tsx frontend/app/view/jarvis/jarvistourview.tsx frontend/app/store/keybindings/bindings.ts frontend/app/view/jarvis/newinitiativecontrol.tsx
 ```
 
-The CDP step that shows these: `brief-layout` steps 6 and 7, and `brief-run-sheet-order` step 3 (Task 8).
+The CDP step that shows these: `brief-layout` step 6, and `brief-run-sheet-order` step 3 (Task 9).
 
-### Task 2: Copy: Accept, the autonomy chip, short dates, "needs you"
+### Task 3: Copy: Accept, the autonomy chip, short dates
 
 **Depends on:** none
 
@@ -158,8 +617,6 @@ The CDP step that shows these: `brief-layout` steps 6 and 7, and `brief-run-shee
 - Test: `frontend/app/view/jarvis/briefautonomy.test.ts` (`describe("autonomySummary")`)
 - Modify: `frontend/app/view/jarvis/initiativework.ts` (add `shortDate`, use it in `initiativeResume`)
 - Test: `frontend/app/view/jarvis/initiativework.test.ts`
-- Modify: `frontend/app/view/jarvis/runsheetmodel.ts:353`
-- Test: `frontend/app/view/jarvis/runsheetmodel.test.ts:295`
 
 **Step 1: Update the tests first.**
 - `attentionact.test.ts:27`: expect `{ label: "Accept", kind: "ack-run" }`.
@@ -168,7 +625,6 @@ The CDP step that shows these: `brief-layout` steps 6 and 7, and `brief-run-shee
   button is Accept".
 - The pet tests (`petactrun.test.ts:117`, `petacts.test.ts:84`, `petpeekmodel.test.ts:209,213`): change the fixture
   `action` / `label` strings `"Acknowledge"` to `"Accept"`. Those labels come from the server's `Action`.
-- `runsheetmodel.test.ts:295`: expect `"2 need you"`.
 - `attention_test.go:478`: `got[0].Action != "Accept"`.
 - `briefautonomy.test.ts`: the labels become `"Routine asks: auto"` (all gatekeeper), `"All asks: to you"` (all
   concierge), `"Mixed · 1 of 3 auto"` and `"Mixed · 2 of 3 auto"`.
@@ -188,7 +644,7 @@ describe("shortDate", () => {
 
 **Step 2: Run them and see them fail**
 
-Run: `npx vitest run frontend/app/view/jarvis/attentionact.test.ts frontend/app/view/jarvis/attentionrun.test.ts frontend/app/view/jarvis/briefautonomy.test.ts frontend/app/view/jarvis/initiativework.test.ts frontend/app/view/jarvis/runsheetmodel.test.ts frontend/app/view/jarvis/briefingmodel.test.ts`
+Run: `npx vitest run frontend/app/view/jarvis/attentionact.test.ts frontend/app/view/jarvis/attentionrun.test.ts frontend/app/view/jarvis/briefautonomy.test.ts frontend/app/view/jarvis/initiativework.test.ts frontend/app/view/jarvis/briefingmodel.test.ts`
 and `go test ./pkg/jarvis -run '^TestAttention'`.
 Expected: FAIL on the changed strings.
 
@@ -198,12 +654,6 @@ Expected: FAIL on the changed strings.
 - **`attentionrun.ts:39`:** `` return `Accepted · ${what}`; ``.
 - **`attention.go`:** `Action: "Accept",`. In `Why`: `"Not verified: %s. Once read, accept it with `+"`wsh runs ack %s`"+`."`
   (the command keeps its name).
-- **`runsheetmodel.ts:353`:**
-
-  ```ts
-  meta.push({ text: `${digest.counts.attention} ${digest.counts.attention === 1 ? "needs" : "need"} you`, tone: "warning" });
-  ```
-
 - **`briefautonomy.ts`:** the chip names the consequence, not the tier.
 
   ```ts
@@ -235,14 +685,14 @@ Expected: FAIL on the changed strings.
 **Step 5: Typecheck, lint, commit**
 
 ```bash
-git commit -m "feat(jarvis): Accept an unverified run, the autonomy chip says what it does, dates read Oct 9" -- pkg/jarvis/attention.go pkg/jarvis/attention_test.go frontend/app/view/jarvis/attentionact.ts frontend/app/view/jarvis/attentionact.test.ts frontend/app/view/jarvis/attentionrun.ts frontend/app/view/jarvis/attentionrun.test.ts frontend/app/view/jarvis/briefingmodel.test.ts frontend/app/view/jarvis/petactrun.test.ts frontend/app/view/jarvis/petacts.test.ts frontend/app/view/jarvis/petpeekmodel.test.ts frontend/app/view/jarvis/briefautonomy.ts frontend/app/view/jarvis/briefautonomy.test.ts frontend/app/view/jarvis/autonomyladderview.tsx frontend/app/view/jarvis/initiativework.ts frontend/app/view/jarvis/initiativework.test.ts frontend/app/view/jarvis/runsheetmodel.ts frontend/app/view/jarvis/runsheetmodel.test.ts
+git commit -m "feat(jarvis): Accept an unverified run, the autonomy chip says what it does, dates read Oct 9" -- pkg/jarvis/attention.go pkg/jarvis/attention_test.go frontend/app/view/jarvis/attentionact.ts frontend/app/view/jarvis/attentionact.test.ts frontend/app/view/jarvis/attentionrun.ts frontend/app/view/jarvis/attentionrun.test.ts frontend/app/view/jarvis/briefingmodel.test.ts frontend/app/view/jarvis/petactrun.test.ts frontend/app/view/jarvis/petacts.test.ts frontend/app/view/jarvis/petpeekmodel.test.ts frontend/app/view/jarvis/briefautonomy.ts frontend/app/view/jarvis/briefautonomy.test.ts frontend/app/view/jarvis/autonomyladderview.tsx frontend/app/view/jarvis/initiativework.ts frontend/app/view/jarvis/initiativework.test.ts
 ```
 
 The CDP steps that show these: `brief-layout` step 2 (the autonomy chip) and `brief-surface` step 4 (Accept).
 
-### Task 3: The chunk panel itself, and Work on this chunk
+### Task 4: The chunk panel itself, and Work on this chunk
 
-**Depends on:** Task 2
+**Depends on:** Task 3
 
 **Files:**
 - Modify: `frontend/app/view/jarvis/sidebarnotes.ts` (add `noteRunFace`)
@@ -365,7 +815,7 @@ task:
 - **Composer:** placeholder `"Add a note…"`; the hint becomes `"Ctrl+Enter adds · Esc clears"`.
 - **Notes empty state:** unchanged.
 
-The panel's place in the grid, and passing `work`, come with Task 5.
+The panel's place in the grid, and passing `work`, come with Task 6.
 
 **Step 6: Typecheck, lint, commit**
 
@@ -373,11 +823,11 @@ The panel's place in the grid, and passing `work`, come with Task 5.
 git commit -m "feat(jarvis): the chunk panel reads at a glance, says when a note's run is gone, and can start work on its chunk" -- frontend/app/view/jarvis/sidebarnotes.ts frontend/app/view/jarvis/sidebarnotes.test.ts frontend/app/view/jarvis/initiativework.ts frontend/app/view/jarvis/initiativework.test.ts frontend/app/view/jarvis/initiativeworkaction.ts frontend/app/view/jarvis/chunksidebar.tsx
 ```
 
-The CDP steps that show these: `brief-chunk-panel` steps 3 to 6 (Task 8).
+The CDP steps that show these: `brief-chunk-panel` steps 3 to 6 (Task 9).
 
-### Task 4: The Brief layout: header, two columns, region order, Waiting window, Since you looked
+### Task 5: The Brief layout: header, two columns, region order, Waiting window, Since you looked
 
-**Depends on:** none
+**Depends on:** Task 1
 
 **Files:**
 - Modify: `frontend/app/view/jarvis/briefingmodel.ts` (add `WAITING_CAP = 3` beside `EFFORT_CAP`, line ~17)
@@ -536,7 +986,7 @@ The skeleton (`firstLoad`) maps over `["waiting", "sessions", "initiatives"]` on
 - Drop the `px-[11px]` group label row's `uppercase tracking-[.09em]` sub-heads only if they now duplicate the
   section head. Keep the day group labels ("Today", "Earlier").
 
-**Step 11: Ideas move to the side column**, unchanged for now (Task 5 makes the jot inline):
+**Step 11: Ideas move to the side column**, unchanged for now (Task 6 makes the jot inline):
 - Move the whole `data-jarvis-ideas` block out of the Initiatives region into the aside, under Shipped.
 - Its head becomes a `REGION_LABEL` row like the other side sections: label, count, rule, `not planned yet`.
 - In the Initiatives region, the `flex flex-wrap` two-column wrapper goes away and the cards' box takes the full
@@ -561,11 +1011,11 @@ the side column must drop under the main column.
 git commit -m "feat(jarvis): the Brief puts Waiting, Runs and Initiatives first, with Since you looked, Shipped and Ideas beside them" -- frontend/app/view/jarvis/briefingmodel.ts frontend/app/view/jarvis/briefingmodel.test.ts frontend/app/view/jarvis/briefrows.ts frontend/app/view/jarvis/briefrows.test.ts frontend/app/view/jarvis/briefsurface.tsx
 ```
 
-The CDP steps that show these: `brief-layout` steps 1 to 5, `brief-surface` steps 2, 3 and 6 (Task 8).
+The CDP steps that show these: `brief-layout` steps 1 to 5, `brief-surface` steps 2, 3 and 6 (Task 9).
 
-### Task 5: Initiatives as rows, in place expansion, the chunk panel in the side column, inline ideas
+### Task 6: Initiatives as rows, in place expansion, the chunk panel in the side column, inline ideas
 
-**Depends on:** Task 3, Task 4
+**Depends on:** Task 4, Task 5
 
 **Files:**
 - Modify: `frontend/app/view/jarvis/initiativework.ts` (add `orderInitiatives`)
@@ -746,11 +1196,11 @@ Run: `npx vitest run frontend/app/view/jarvis` (expected PASS), then `task check
 git commit -m "feat(jarvis): initiatives are one-line rows that open in place, the chunk panel takes the side column, ideas jot inline" -- frontend/app/view/jarvis/initiativework.ts frontend/app/view/jarvis/initiativework.test.ts frontend/app/view/jarvis/briefrowviews.tsx frontend/app/view/jarvis/inlinetrackerview.tsx frontend/app/view/jarvis/effortstore.ts frontend/app/view/jarvis/briefsurface.tsx frontend/app/view/jarvis/briefingmodel.ts frontend/app/view/jarvis/briefingmodel.test.ts
 ```
 
-The CDP steps that show these: `brief-surface` step 7, `brief-chunk-panel` steps 1, 2 and 7 (Task 8).
+The CDP steps that show these: `brief-surface` step 7, `brief-chunk-panel` steps 1, 2 and 7 (Task 9).
 
-### Task 6: The run sheet: the question first, one accent in the dock, the composer's key
+### Task 7: The run sheet: the question first, one accent in the dock, the composer's key
 
-**Depends on:** Task 1, Task 2
+**Depends on:** Task 1, Task 2, Task 3
 
 **Files:**
 - Modify: `frontend/app/view/jarvis/runsheet.tsx` (`RunSheetFrame` about 194-235, `Dock` about 1027-1121)
@@ -798,11 +1248,11 @@ Keep `labels.alt` at the right.
 git commit -m "feat(jarvis): the run sheet leads with its question, keeps one accent in the dock, and shows i on its composer" -- frontend/app/view/jarvis/runsheet.tsx frontend/app/view/jarvis/briefcomposer.tsx
 ```
 
-The CDP steps that show these: `brief-run-sheet-order` steps 1 to 3 (Task 8).
+The CDP steps that show these: `brief-run-sheet-order` steps 1 to 3 (Task 9).
 
-### Task 7: Footer keys, the tour, docs and changelog
+### Task 8: Footer keys, the tour, docs and changelog
 
-**Depends on:** Task 4, Task 5, Task 6
+**Depends on:** Task 1, Task 5, Task 6, Task 7
 
 **Files:**
 - Modify: `frontend/app/cockpit/footerhints.ts` (`SURFACE_HINTS`)
@@ -810,6 +1260,7 @@ The CDP steps that show these: `brief-run-sheet-order` steps 1 to 3 (Task 8).
 - Modify: `frontend/app/view/jarvis/jarvistourcontent.ts`
 - Modify: `docs/keyboard-shortcuts.md` (the `### Jarvis` table, line ~258)
 - Modify: `docs/guide/jarvis.md`
+- Modify: `docs/guide/orchestrator.md` (the run sheet verbs, about line 217; the Agent tree paragraph, about 244; "Land về base", about 412)
 - Modify: `CHANGELOG.md` (top section)
 
 **Step 1: The footer.** Add to `SURFACE_HINTS`:
@@ -855,6 +1306,12 @@ expect PASS. If a `when` hides `list:*` on jarvis, check `footer-visible.ts` and
 - **Run sheet:** remove **Ask Jarvis** from the Dock line; the question comes first. The composer at the bottom
   messages the lead or worker (`i`).
 - **Unverified runs:** "Accept" replaces "acknowledge" wherever the guide names the button.
+- **Run states, in both guides:** the run sheet's verb list in `docs/guide/jarvis.md` (Run sheet) and in
+  `docs/guide/orchestrator.md` (about line 217) becomes Planning, Plan review, Working, Final check, Wrapping up,
+  Landing, Waiting on you, Blocked, Done, Cancelled. In `orchestrator.md`'s Agent paragraph (about line 244), say that
+  the run's strip ends in three pips (Final check · Wrap-up · Land), and that only **✓ Landed** (or **✓ Complete**,
+  with nothing to land) means the run is finished. In "Land về base", say that a held land reads **Land held · needs
+  you** in the tree and **Waiting on you** on the sheet.
 
 **Step 5: `CHANGELOG.md`.** Under the top section (`## Unreleased`; open one above a dated section), add:
 - Changed: "Jarvis: Waiting on you shows its first three items, Runs come before Initiatives, and Since you looked,
@@ -863,20 +1320,21 @@ expect PASS. If a `when` hides `list:*` on jarvis, check `footer-visible.ts` and
 - Added: "Jarvis: a New run button in the header, Work on this chunk in the chunk panel, and ideas you jot down
   inline."
 - Changed: "An unverified run is accepted with Accept (was Acknowledge)."
+- Changed: "Runs read one way everywhere (Working, Final check, Wrapping up, Landing, Landed), and a run's strip ends in three pips for Final check, Wrap-up and Land, so all tasks green no longer reads as finished."
 - Fixed: "Jarvis: `i` focuses the run sheet's composer; a blocked run no longer reads green; the tour's first card no
   longer covers the Waiting controls; a chunk note whose run is gone says so instead of loading forever."
 
 **Step 6: Commit**
 
 ```bash
-git commit -m "docs(jarvis): the Brief's new layout in the tour, the guide, the shortcuts and the changelog; Jarvis keys in the footer" -- frontend/app/cockpit/footerhints.ts frontend/app/view/jarvis/jarvistourcontent.ts docs/keyboard-shortcuts.md docs/guide/jarvis.md CHANGELOG.md
+git commit -m "docs(jarvis): the Brief's new layout and the one run vocabulary in the tour, the guides, the shortcuts and the changelog; Jarvis keys in the footer" -- frontend/app/cockpit/footerhints.ts frontend/app/view/jarvis/jarvistourcontent.ts docs/keyboard-shortcuts.md docs/guide/jarvis.md docs/guide/orchestrator.md CHANGELOG.md
 ```
 
 The CDP step that shows these: `brief-layout` step 5 (footer hints).
 
-### Task 8: CDP scenarios for every changed view
+### Task 9: CDP scenarios for every changed view
 
-**Depends on:** Task 7
+**Depends on:** Task 8
 
 **Files:**
 - Modify: `scripts/cdp/scenarios.mjs` (`briefSurface` about 436-610; new `briefLayout`, `briefChunkPanel`,
@@ -947,6 +1405,11 @@ helper can make an ask, assert the order only on what renders.
 2. The dock has at most one button with the accent class (`bg-accent`).
 3. When a composer shows, pressing `i` (dispatch a keydown on `document`) focuses
    `[data-jarvis-brief-composer="input"]`.
+4. The sheet's verb (`[data-run-sheet-verb]`) is one of Planning, Plan review, Working, Final check, Wrapping up,
+   Landing, Waiting on you, Blocked, Done, Cancelled. The sheet's strip holds `[data-run-strip-tail]` with 3
+   children whose `title`s start `Final check:`, `Wrap-up:`, `Land:`.
+5. `h.goto("agent")`: the fixture run's row in the tree holds a `[data-run-strip-tail]` with the same three
+   `data-pip` children, and its second line does not start with a bare count (`/^\d+\/\d+/` must not match).
 
 Shoot the sheet.
 
