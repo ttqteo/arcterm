@@ -10,7 +10,8 @@ sits on a rooftop when folded; and a Spider theme preset (Claude's palette, a Sp
 **Architecture:** The character is data: grids in `petsprite.ts` (`SPIDEY_POSES` per `PetPose`, plus `SPIDEY_HANG`,
 `SPIDEY_CRAWL`, `SPIDEY_SWING` and the fold scene `spideyFold`), drawn in new identity tokens. Every motion is a pure
 module beside a test (`petfall.ts webLanding`, `petwebswing.ts`, `petwalk.ts`'s `hang` rest, `petledge.ts
-measureCeiling`, `petmini.ts spideyFoldLook`); the views (`petview.tsx`, `petteleportsvg.tsx`, `workingdots.tsx`,
+measureCeiling`, `petmini.ts spideyFoldLook`). The spec's `SPIDEY_FOLD` (the rooftop scene "built by a function") is
+the function `spideyFold(lit, swing)`. The views (`petview.tsx`, `petteleportsvg.tsx`, `workingdots.tsx`,
 `sprout-mini.tsx`, `app-bar.tsx`) only draw what they return. The theme is one more `THEMES` entry. Sprout and the
 Minion are untouched.
 
@@ -1276,9 +1277,19 @@ describe("hang (Spider-Man)", () => {
         expect(step.hang).toBe("hang");
     });
 });
+
+// the DEV force that shows each rest pose on demand (Task 5 Step 7, Task 7's CDP steps)
+describe("restIn", () => {
+    it.each(REST_POSES)("rests now in %s, for the longest rest, where it stands", (pose) => {
+        const s = restIn(walker({ name: "walk", x: 400, target: 900 }), pose, T0);
+        expect([s.name, s.restPose, s.x, s.target, s.due]).toEqual(["rest", pose, 400, null, T0 + REST_MAX_MS]);
+        expect(stepWalker(s, input(), T0, half).state.name).toBe("rest");
+    });
+});
 ```
 
-(`PX`, `LEDGE`, `STEP_PX`, `half`, `walker`, `input` are the file's existing helpers and imports.)
+(`PX`, `LEDGE`, `STEP_PX`, `half`, `walker`, `input` are the file's existing helpers and imports; also import
+`REST_POSES`, `REST_MAX_MS`, `restIn`.)
 
 Run `npx vitest run frontend/app/view/jarvis/petwalk.test.ts frontend/app/view/jarvis/petledge.test.ts` — FAIL.
 
@@ -1443,6 +1454,16 @@ function hangX(s: WalkerState, input: WalkerInput, now: number): number {
 
 10. `view`: `hang: hangPhase(s, now),` beside `lift`.
 
+11. The DEV force's rest, after `rest`:
+
+```ts
+// A rest begun now in this pose, for its longest length: the DEV contract's force({ rest }) (petview.tsx), so a CDP
+// step can show every rest pose without waiting on the random pick.
+export function restIn(s: WalkerState, pose: (typeof REST_POSES)[number], now: number): WalkerState {
+    return { ...still(s, "rest"), due: now + REST_MAX_MS, restPose: pose, hang: undefined };
+}
+```
+
 **Step 4: Tests and typecheck**
 
 `npx vitest run frontend/app/view/jarvis/` — PASS, the existing walker tests too (they never set `hangs`).
@@ -1517,6 +1538,7 @@ The body is still mirrored by `step.flip`. The strand, inside the `motion.div` a
                 // from the app bar to his boots (hanging) or his raised hand (going up, coming down)
                 <motion.span
                     aria-hidden
+                    data-pet-strand
                     className="pointer-events-none absolute bottom-full w-[3px] bg-spidey-web"
                     style={{ left: step.hang === "hang" ? BOOTS_LEFT_PX : HAND_LEFT_PX, height: hangStrand }}
                 />
@@ -1547,6 +1569,7 @@ The body is still mirrored by `step.flip`. The strand, inside the `motion.div` a
 ```tsx
                 <motion.span
                     aria-hidden
+                    data-pet-strand
                     className="pointer-events-none absolute top-0 w-[3px] bg-spidey-web"
                     style={{ left: HAND_LEFT_PX, y: strandTop, height: strandH }}
                 />
@@ -1555,11 +1578,14 @@ The body is still mirrored by `step.flip`. The strand, inside the `motion.div` a
 **Step 5: The web-swing.** `petteleportsvg.tsx`: rename the current `PetTeleportLayers` body to `BeamLayers`; add
 
 ```tsx
-type LayerProps = { run: TeleportRun; sprite: PetSprite; cellPx: number; flip?: boolean };
+// at: a fixed ms into the run in place of its clock — the DEV contract's force({ swing }) (petview.tsx), so a CDP step
+// can show the swing mid-fold
+type LayerProps = { run: TeleportRun; sprite: PetSprite; cellPx: number; flip?: boolean; at?: number };
 
 // Spider-Man's teleport (petwebswing.ts): the strand, and the swing's body moved along it
-function WebSwingLayers({ run, cellPx, flip }: LayerProps) {
-    const t = useTeleportClock(run);
+function WebSwingLayers({ run, cellPx, flip, at }: LayerProps) {
+    const clock = useTeleportClock(run);
+    const t = at ?? clock;
     if (run.kind === "gone") {
         return null;
     }
@@ -1581,12 +1607,14 @@ function WebSwingLayers({ run, cellPx, flip }: LayerProps) {
     );
 }
 
-export function PetTeleportLayers(props: LayerProps & { character: PetCharacter }) {
-    return props.character === "spidey" ? <WebSwingLayers {...props} /> : <BeamLayers {...props} />;
+// character is optional, Sprout's beam by default, so a caller this task does not touch (sprout-mini.tsx) still compiles
+export function PetTeleportLayers({ character = "sprout", ...props }: LayerProps & { character?: PetCharacter }) {
+    return character === "spidey" ? <WebSwingLayers {...props} /> : <BeamLayers {...props} />;
 }
 ```
 
-`PetTeleportSvg` takes and passes `character`. `petview.tsx` passes `character` to `PetTeleportLayers`.
+`PetTeleportSvg` takes an optional `character` (default `"sprout"`) and passes it. `petview.tsx` passes `character`
+to `PetTeleportLayers`. Leave `sprout-mini.tsx` alone: Task 6 passes it there.
 
 **Step 6: The working web.** `workingdots.tsx`: `character?: PetCharacter` (default `"sprout"`); for `"spidey"` draw this
 in place of the three dots:
@@ -1595,7 +1623,7 @@ in place of the three dots:
 // Spider-Man's working mark: a 12px web whose three rings light in turn, as the dots do; still under reduced motion
 function WorkingWeb({ reduce }: { reduce: boolean }) {
     return (
-        <svg width={12} height={12} viewBox="0 0 12 12" aria-hidden className="block">
+        <svg data-working-web width={12} height={12} viewBox="0 0 12 12" aria-hidden className="block">
             {[
                 [6, 0, 6, 12],
                 [0, 6, 12, 6],
@@ -1622,17 +1650,26 @@ function WorkingWeb({ reduce }: { reduce: boolean }) {
 }
 ```
 
-`petview.tsx` passes `character` (~line 707).
+`petview.tsx` passes `character` (~line 707). The footer draws it where it draws the dots today: in Float, while agents
+work.
 
-**Step 7: The DEV contract and a force.** `__jarvisPet` gains `character`, `hang: frame.step.hang`, `ceiling:
-frame.ceiling`. `PetForce` gains `hang?: boolean` ("start the app-bar pastime now; Spider-Man under an app bar only"); in
-`force`, when `o?.hang` and `liveRef.current.character === "spidey"`, set `walkerRef.current = startHang(walkerRef.current
-?? <the walker run() would boot>, <the input run() builds>, Date.now(), Math.random)` before `touch()`.
+**Step 7: The DEV contract and its forces.** `__jarvisPet` gains `character`, `flip: frame.step.flip`, `hang:
+frame.step.hang`, `ceiling: frame.ceiling`; the `<g>` that mirrors the body by `step.flip` (~line 694) gets
+`data-pet-body`, so a CDP step reads the body's cells apart from the unmirrored marks. `PetForce` gains three DEV-only shows, each a one-shot or a hold that
+`force(null)` lifts like the rest:
+
+- `hang?: boolean` — start the app-bar pastime now (Spider-Man under an app bar only): in `force`, when `o?.hang` and
+  `liveRef.current.character === "spidey"`, set `walkerRef.current = startHang(walkerRef.current ?? <the walker run()
+  would boot>, <the input run() builds>, Date.now(), Math.random)` before `touch()`.
+- `rest?: (typeof REST_POSES)[number]` (`"stand" | "sit" | "read" | "music" | "work" | "ball"`) — rest now in that pose (any character): in
+  `force`, when `o?.rest`, set `walkerRef.current = restIn(walkerRef.current ?? <the boot walker>, o.rest, Date.now())`
+  (Task 4's `restIn`) before `touch()`. The pastime's frames alternate as in any rest.
+- `swing?: { kind: "depart" | "arrive"; t: number }` — while held, draw `PetTeleportLayers` in place of the cells as a
+  teleport does, with `run = { kind: o.swing.kind, at: performance.now() }` (a `TeleportRun`, as `teleportstore.ts` builds one)
+  and `at={o.swing.t}`, so the web-swing holds still at that ms. Spider-Man only; ignored for the others.
 
 **Step 8: Check.** `task check:ts` — exit 0. `npx vitest run frontend/app/view/jarvis/ frontend/app/cockpit/` — PASS.
-With a dev app up: pick Spider-Man; drag him (a strand to the pointer, the rappel on release); run
-`window.__jarvisPet.force({ hang: true })` (up, a crawl along the bar's underside, upside down on a strand, down; hover
-him up there and he comes straight down).
+What it draws is shown by Task 7's CDP steps 15–22 (the suit side-on and every pose, the strand and rappel, the hang, the swing, the working web).
 
 **Step 9: Commit**
 
@@ -1725,7 +1762,7 @@ function SpideyRoof({ look, frame }: { look: MiniLook; frame: 0 | 1 }) {
         <rect key={i} x={c.x * PET_CELL_PX} y={c.y * PET_CELL_PX} width={PET_CELL_PX} height={PET_CELL_PX} fill={`var(${c.token})`} />
     );
     return (
-        <svg width={px} height={px} viewBox={`0 0 ${px} ${px}`} shapeRendering="crispEdges" aria-hidden className="block">
+        <svg data-spidey-roof width={px} height={px} viewBox={`0 0 ${px} ${px}`} shapeRendering="crispEdges" aria-hidden className="block">
             {cells.body.map(cell)}
             {cells.overlay.map(cell)}
             {f.sense ? SPIDEY_SENSE.map(({ x, y }, i) => cell({ x, y, token: "--color-asking" }, 1000 + i)) : null}
@@ -1737,13 +1774,31 @@ function SpideyRoof({ look, frame }: { look: MiniLook; frame: 0 | 1 }) {
 - No `-translate-y-1` bob for Spider-Man (`look.bob && character !== "spidey"`): his legs swing instead.
 - The working dots are not drawn for him when folded (the windows carry the count); while `thinking`, draw
   `<WorkingDots count={…} character="spidey" />` where the dots go today.
-- Teleport: `PetTeleportSvg` gets `character` (Task 5 added the prop).
+- Teleport: `PetTeleportSvg` gets `character` (Task 5 added the optional prop).
+- **The waiting chip at the right** (spec §4): the chip span gets `data-mini-chip`, and for Spider-Man it sits at
+  `right-0 top-3` in place of `left-1 top-3` (Sprout and the Minion keep the left). The working web, while thinking,
+  stays at `right-0 top-0`, above it.
 
-**Step 4: Check.** `npx vitest run frontend/app/view/jarvis/ frontend/app/cockpit/` — PASS; `task check:ts` — exit 0.
-With a dev app up: fold the window with Spider-Man picked — the rooftop, legs swinging; start an agent (a window lights);
-make something wait (spider-sense, the chip at the right).
+**Step 4: The DEV contract.** Beside `petview.tsx`'s `__jarvisPet`, and like it only under `import.meta.env.DEV`
+(deleted on unmount), `sprout-mini.tsx` keeps `window.__jarvisMini` current:
 
-**Step 5: Commit**
+```ts
+// the DEV contract's override: replaces those fold-look inputs until force(null), so a CDP step can light windows and
+// raise spider-sense without arranging working agents or an attention item
+type MiniForce = { working?: number | null; waiting?: number; posture?: PetPosture; thinking?: boolean };
+```
+
+- `const [forced, setForced] = useState<MiniForce | null>(null);` — `miniLook` is fed `forced?.posture ??
+  postureFor(signals)`, `forced?.waiting ?? waiting`, `forced?.working !== undefined ? forced.working : working`; for
+  Spider-Man, `forced?.thinking` (when set) replaces `spideyFoldLook(...).thinking`.
+- `window.__jarvisMini = { character, chip: look.chip ?? null, roof: character === "spidey" ? spideyFoldLook(look,
+  frame) : null, force: setForced }`.
+
+**Step 5: Check.** `npx vitest run frontend/app/view/jarvis/ frontend/app/cockpit/` — PASS; `task check:ts` — exit 0.
+What it draws is shown by Task 7's CDP step 22 (the rooftop, its windows, spider-sense, the legs, the chip at the
+right, the working web).
+
+**Step 6: Commit**
 
 ```bash
 git commit -m "feat(pet): folded, Spider-Man sits on a rooftop — lit windows for working agents, spider-sense for what waits" -- frontend/app/view/jarvis/petmini.ts frontend/app/view/jarvis/petmini.test.ts frontend/app/cockpit/sprout-mini.tsx
@@ -1757,27 +1812,90 @@ git commit -m "feat(pet): folded, Spider-Man sits on a rooftop — lit windows f
 
 **Files:** `scripts/cdp/scenarios.mjs`, `docs/guide/settings.md`, `CHANGELOG.md`, `docs/open-issues.md`
 
-**Step 1: The CDP steps.** In `jarvisPet`, after step 14 (the Minion, ~line 5554), following its pattern (a real click
-via `spOpen`/`spClick`, then `window.__jarvisPet`). Add `prevTheme: await h.ev('localStorage.getItem("cockpit.theme.preset")')`
-to the arrange's `ctx` and restore it in teardown beside `prevCharacter` (remove the key when it was null).
+**Step 1: The CDP steps.** In `jarvisPet`, after step 14 (the Minion, ~line 6872–6902), following its pattern: a real
+click via `spOpen`/`spClick` for a setting, then `window.__jarvisPet` (`petForce`, `petWait`, `petSamples`,
+`petDragHold`/`petRelease`) for the creature, `petShot`/`petZoom` for each shot. Every step below takes at least one
+shot, and every check reads the page (rects, boxes) as well as the contract, as steps 1–14 do.
+
+Arrange and teardown: add `prevTheme: await h.ev('localStorage.getItem("cockpit.theme.preset")')` to the arrange's
+`ctx` and restore it in teardown beside `prevCharacter` (remove the key when it was null). Teardown also calls
+`window.__jarvisPet?.force(null)` and `window.__jarvisMini?.force(null)`, and, if `[data-sprout-mini]` is still
+there, restores the window the way step 22's restore does.
+
+New helpers beside `PET_UNREAD_DRAWN`:
+
+- `PET_CELLS` — the body's rects as `[cx, cy, fill]` in cells, measured from each rect's box against the svg's box (so
+  a mirror transform is measured, not assumed). Only the rects under `[data-pet-body]` (the `<g>` that `step.flip` mirrors, Task 5
+  Step 7), so the unmirrored marks (step 7 leaves unread on) stay out; `petMirror(cells)` maps `cx` to `15 - cx`; `petDiff(a, b)` is
+  the count of cells in one set and not the other.
+- `PET_STRAND` — every `[data-pet-strand]`'s box (`left`, `right`, `top`, `bottom`), or `[]`.
+- `petFillCount(selector, token)` — an expression: how many rects under `selector` fill `var(token)`.
+
+Steps (shots named `jarvis-pet-<n>-…`):
 
 - **15. Spider-Man:** Character → "Spider-Man"; `__jarvisPet.character === "spidey"`, its `tokens` include
-  `var(--color-spidey-red)` and `var(--color-spidey-blue)` and not `var(--color-accent)`, and he stands on the ledge (as
-  step 14 checks). Shot `jarvis-pet-15-spidey`.
-- **16. Under the app bar:** `window.__jarvisPet.force({ hang: true })`; poll (≤ 1.5 s) until `__jarvisPet.hang ===
-  "crawl"`, assert the `[data-pet-sprite]` box's top is within 2 px of `__jarvisPet.ceiling`, shot
-  `jarvis-pet-16-crawl`; poll (≤ 4 s) until `hang === "hang"`, assert the box's top is below the ceiling by 6–24 px and a
-  strand element spans the gap, shot `jarvis-pet-16-hang`; move the mouse onto the sprite and poll (≤ 1.5 s) until
-  `hang === null`. `force(null)` after.
-- **17. Folded:** fold the window the way the scenario's fold step does (or `foldToSprout` through the page), wait for
-  the arrival, and assert the mini's svg is 60×60 and its cells include `var(--color-city-brick)`; shot
-  `jarvis-pet-17-rooftop`; restore.
-- **18. The Spider theme:** Settings → Appearance → Theme → "Spider"; assert
+  `var(--color-spidey-red)` and `var(--color-spidey-blue)` and not `var(--color-accent)`, tokens equal the drawn fills,
+  and he stands on the ledge (as step 14 checks). Shot `jarvis-pet-15-spidey`.
+- **16. Walking side-on, both ways:** sample walks (as step 3, but up to 90 s) until one sample with `flip === false`
+  and one with `flip === true` are seen in the same pose (`walk1` or `walk2`), recording `PET_CELLS` with each. Assert:
+  both `walk1` and `walk2` showed; the `flip === false` sample's cells differ from their own mirror in ≥ 6 cells
+  (side-on, not front-on); and the `flip === true` sample's cells equal the mirror of the `flip === false` one
+  (`petDiff === 0`). `petZoom` `jarvis-pet-16-walk-right` and `jarvis-pet-16-walk-left`.
+- **17. The thwip:** `petForce({ ...PET_CALM, speaking: true })`; poll until `pose === "speak"`; assert the drawn
+  fills include `var(--color-spidey-web)` with ≥ 3 such rects (the speak grid's `x` strand) and still the suit's red.
+  `petZoom` `jarvis-pet-17-thwip`.
+- **18. Every other pose, the suit on the job and Peter at rest:** through force, each followed by a poll and a
+  `petZoom` `jarvis-pet-18-<pose>`:
+  - suit (fills include `var(--color-spidey-red)`, none `var(--color-peter-hair)`): `tired` (`expression: "tired"`, as
+    step 5), `work` (`rest: "work"` → `work1` or `work2`), `sit` (`rest: "sit"`); `dangle` is step 19's;
+  - Peter (fills include `var(--color-peter-hair)`): `sleep` (`idle: true`, ≤ 40 s as step 5), `read`, `music`, `ball`
+    (`rest: "<name>"` → `<name>1` or `<name>2`).
+  `force(null)` after.
+- **19. Held on a strand, and the rappel:** a real drag as step 6 does (`petDragHold`). While held: `pose ===
+  "dangle"`; exactly one `PET_STRAND` box; its top within 4 px of the pointer's y, its bottom within 4 px of the
+  sprite's top, and its x inside the sprite's left..right. Shot `jarvis-pet-19-strand`. Then start an in-page sampler
+  (every 30 ms for 1.5 s: `state`, the sprite's top, `PET_STRAND`) without awaiting it, release (`petRelease`), take
+  shot `jarvis-pet-19-rappel` at once, and await the samples. Assert: among the samples after the release, at least two
+  are still `state === "dragged"` with a strand whose bottom is within 4 px of the sprite's top, the sprite's top grows
+  across them (he goes down the strand), and the last sample rests on the ledge (`petOnLedge`) with no strand left.
+- **20. Under the app bar:** `petForce({ ...PET_CALM, hang: true })`; poll (≤ 1.5 s) until `__jarvisPet.hang ===
+  "crawl"`, assert the sprite box's top is within 2 px of `__jarvisPet.ceiling` and no strand is drawn, shot
+  `jarvis-pet-20-crawl`; poll (≤ 4 s) until `hang === "hang"`: the box's top is below the ceiling by 6–24 px, one
+  `PET_STRAND` box runs from the ceiling (top within 2 px) to the sprite's top (bottom within 2 px), and he is upside
+  down (the `var(--color-spidey-eye)` rects sit in the sprite's lower half), shot `jarvis-pet-20-hang`; move the mouse
+  onto the sprite and poll (≤ 1.5 s) until `hang === null`. `force(null)` after.
+- **21. The web-swing, held mid-fold:** for each `kind` of `"depart"` and `"arrive"`, `petForce({ ...PET_CALM, swing:
+  { kind, t: 240 } })` and poll until the sprite's svg draws ≥ 5 rects in `var(--color-spidey-web)`; assert those
+  rects form one strand (sorted along it, each cell touching the last, measured from their boxes) and the body's
+  `var(--color-spidey-red)` rects are drawn too. `petZoom` `jarvis-pet-21-swing-<kind>`. `force(null)` after.
+- **22. Folded: the rooftop.** Fold with the app bar's button as the `jarvis-modes` scenario does (`scenarios.mjs`
+  ~30116–30118: click `[data-app-sprout]`, then `floatMiniWait(h, '!!document.querySelector("[data-sprout-mini]")')`,
+  then wait 900 ms). Before the click, start an in-page sampler (every 20 ms for 1.5 s) of `petFillCount` for
+  `--color-spidey-web` in the footer sprite's svg and in `[data-sprout-mini] svg`, and assert after it that the real
+  fold drew the web (a count above 0 in either). Then, on `window.__jarvisMini` (Task 6 Step 4):
+  - `__jarvisMini.character === "spidey"`, `[data-spidey-roof]` is 60×60 and draws `var(--color-city-brick)`. Shot
+    `jarvis-pet-22-rooftop`.
+  - Legs: `__jarvisMini.force({ working: 0, waiting: 0, posture: "none" })`; sample `[data-spidey-roof]`'s rects every
+    150 ms for 2 s: `__jarvisMini.roof.swing` is seen both true and false, and the rect sets of the two differ.
+  - Lit windows: `force({ working: 3, waiting: 0, posture: "none" })` → 12 rects in `var(--color-city-window-lit)` (3
+    windows of 2×2) and `roof.lit === 3`; `working: 9` → 16 and `lit === 4`; `working: null` → 0. Shot
+    `jarvis-pet-22-windows` at 3.
+  - Spider-sense: `force({ working: 0, waiting: 0, posture: "escalation" })` → 8 rects in `var(--color-asking)`
+    (`SPIDEY_SENSE`), `roof.sense === true`; `force({ working: 0, waiting: 2, posture: "none" })` → still 8, the
+    `[data-mini-chip]` reads `2` and its box's left is right of the roof's horizontal centre (the chip at the right);
+    `waiting: 0, posture: "none"` → 0 asking rects. Shot `jarvis-pet-22-sense` with the chip showing.
+  - The working web: `force({ working: 0, waiting: 0, posture: "none", thinking: true })` → `[data-sprout-mini]
+    [data-working-web]` is drawn. Shot `jarvis-pet-22-thinking`.
+  - `force(null)`; restore as `jarvis-modes` step 4 does (~30138–30139: dblclick `[data-mini-hit="sprout"] button`, wait
+    until `[data-sprout-mini]` is gone and `[data-app-bar]` shows), and assert it.
+- **23. The Spider theme:** Settings → Appearance → Theme → "Spider"; assert
   `getComputedStyle(document.documentElement).getPropertyValue("--color-accent").trim() === "#f05252"` and
-  `--color-background` still `#1f1e1d`; shot `jarvis-pet-18-spider-theme`.
+  `--color-background` still `#1f1e1d`; shot `jarvis-pet-23-spider-theme`.
 
-Run against the running dev app: `task verify:ui -- jarvis-pet` — PASS; the shots show the suit on the footer, the crawl
-and the hang under the app bar, the rooftop, and the red accent on Claude's greys.
+In Float the working web stands in for the footer's dots; that is not its own step (Float needs a floated terminal the
+scenario does not arrange), and step 22's thinking check draws the same `WorkingWeb`.
+
+Run against the running dev app when one is up: `task verify:ui -- jarvis-pet` — PASS; otherwise Final runs it.
 
 **Step 2: Docs.** `docs/guide/settings.md` (Vietnamese, as the page is):
 - the Theme row (~line 89): `… One Dark, Monokai, Spider (bảng màu Claude với accent đỏ).`
@@ -1793,7 +1911,7 @@ and the hang under the app bar, the rooftop, and the red accent on Claude's grey
 - A Spider theme (Settings → Appearance → Theme): Claude's colours with a Spider-Man red accent.
 ```
 
-**Step 4: Hand check** — under "0 · Waiting on a hand check" in `docs/open-issues.md`:
+**Step 4: Hand check** (extra, beside CDP steps 15–23, for the eye on motion a still shot cannot judge) — under "0 · Waiting on a hand check" in `docs/open-issues.md`:
 
 ```markdown
 - [ ] (arcterm) Spider-Man pet: drag and rappel, the crawl and hang under the app bar (hover cuts it), the web-swing on fold and unfold, the rooftop's windows and spider-sense, and the Spider theme — look in the running app.
