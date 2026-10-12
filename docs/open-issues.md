@@ -55,6 +55,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
   selection clears, nothing is interrupted; press it again with nothing selected and it interrupts. After a restart
   of `task dev` (the default lives in wavesrv), highlighting no longer copies unless Copy on select is on.
   `6bb81dd0b`
+- [ ] (arcterm) **Tick a task box in a markdown Preview.** Open a `.md` with `- [ ]` lines in the Agent panel's File
+  tab, Preview: click a box; it ticks, the file on disk now reads `- [x]` on that line, and the scroll stays put.
+  Click again to clear it. `65179f6b8`
 
 ---
 
