@@ -107,7 +107,7 @@ Chế độ bạn chọn áp dụng cho mọi file; file nào không có chế �
 - **source** là Monaco: tô màu theo ngôn ngữ, gồm cả LaTeX và BibTeX. Trình soạn thảo giữ lại con trỏ, vùng chọn, vị trí cuộn và lịch sử undo của mỗi file khi bạn đổi file hay rời surface.
 - **diff** đặt file với `HEAD`, xem [phần so sánh](#diff-của-code-và-surface-diff).
 
-**Wrap** (`Alt+Z`, hoạt động cả khi bạn đang gõ trong trình soạn thảo) bật tắt việc bọc dòng dài, riêng cho từng file. `.tex`, `.bib`, `.md`, `.txt` bọc mặc định; code theo cài đặt `editor:wordwrap`.
+**Wrap** (`Alt+Z`, hoạt động cả khi bạn đang gõ trong trình soạn thảo) bật tắt việc bọc dòng dài, riêng cho từng file. Mọi file đều bọc dòng mặc định.
 
 File lớn hơn 2 MB hiện "File too large to display" kèm nút **Copy path**; file nhị phân hiện "Binary file" với kích thước.
 

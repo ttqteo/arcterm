@@ -68,6 +68,18 @@ export function hasNulByte(text: string): boolean {
 const LATEX_EXT = /\.(?:tex|sty|cls|ltx|latex)$/i;
 const BIB_EXT = /\.bib$/i;
 
+// File names Monaco infers no language for, matched on the base name, each lent the closest language Monaco has.
+// It has no dotenv, TOML or ignore-file language: ini reads their `# comment`, `[section]` and `key = value` lines.
+// Comments in .jsonc (and tsconfig.json) are allowed for every JSON file in monaco-env.ts.
+const NAME_LANGUAGES: [RegExp, string][] = [
+    [/^\.env(?:\..+)?$|.\.env$/i, "ini"],
+    [/\.(?:toml|conf|cfg)$|^\.npmrc$/i, "ini"],
+    [/^\.(?:git|docker|npm|prettier|eslint)ignore$|^CODEOWNERS$/i, "ini"],
+    [/\.(?:jsonc|json5)$/i, "json"],
+    [/^(?:Dockerfile|Containerfile)(?:\..+)?$/i, "dockerfile"],
+    [/\.(?:zsh|ksh)$|^\.(?:bashrc|bash_profile|bash_aliases|zshrc|zprofile|zshenv|profile|envrc)$/i, "shell"],
+];
+
 export function languageForPath(path: string): string | undefined {
     if (LATEX_EXT.test(path)) {
         return "latex";
@@ -75,19 +87,13 @@ export function languageForPath(path: string): string | undefined {
     if (BIB_EXT.test(path)) {
         return "bibtex";
     }
-    return undefined;
+    const name = path.split(/[\\/]/).pop() ?? "";
+    return NAME_LANGUAGES.find(([re]) => re.test(name))?.[1];
 }
 
 // the files that read as a document: a Preview and, with a built PDF, a PDF mode
 export function isTexPath(path: string): boolean {
     return /\.tex$/i.test(path);
-}
-
-// Prose wraps by default whatever editor:wordwrap says: its paragraphs are one line each. Code follows the setting.
-const PROSE_EXT = /\.(?:tex|bib|md|markdown|txt)$/i;
-
-export function defaultWrap(path: string, setting: boolean | undefined): boolean {
-    return PROSE_EXT.test(path) || (setting ?? false);
 }
 
 export type ViewMode = "preview" | "source" | "diff" | "pdf";

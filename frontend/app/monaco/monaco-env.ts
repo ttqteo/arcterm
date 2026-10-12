@@ -60,9 +60,12 @@ export function loadMonaco() {
     monaco.typescript.typescriptDefaults.setDiagnosticsOptions({
         noSemanticValidation: true,
     });
+    // comments pass in every JSON file, because tsconfig.json, .vscode/*.json and .jsonc carry them (a per-file
+    // schema fileMatch is unreliable on the backslash paths the views pass on Windows); a trailing comma stays a warning
     monaco.json.jsonDefaults.setDiagnosticsOptions({
         validate: true,
-        allowComments: false,
+        allowComments: true,
+        trailingCommas: "warning",
         enableSchemaRequest: true,
         schemas: MonacoSchemas,
     });

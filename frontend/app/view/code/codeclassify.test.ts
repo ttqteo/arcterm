@@ -5,7 +5,6 @@
 import { describe, expect, it } from "vitest";
 import {
     classifyFile,
-    defaultWrap,
     hasNulByte,
     isHtmlPath,
     isMarkdownPath,
@@ -106,20 +105,38 @@ describe("languageForPath", () => {
         expect(languageForPath("main.go")).toBeUndefined();
         expect(languageForPath("notes.md")).toBeUndefined();
         expect(languageForPath("texfile.txt")).toBeUndefined();
+        expect(languageForPath("src/environment.ts")).toBeUndefined();
+        expect(languageForPath("tsconfig.json")).toBeUndefined();
+        expect(languageForPath("config.yaml")).toBeUndefined();
+        expect(languageForPath("Makefile")).toBeUndefined();
     });
-});
 
-describe("defaultWrap", () => {
-    it("wraps prose whatever the setting says", () => {
-        for (const p of ["main.tex", "base.bib", "README.md", "a.markdown", "notes.txt"]) {
-            expect(defaultWrap(p, false)).toBe(true);
+    it("lends a language to the config files Monaco does not recognize", () => {
+        const cases: [string, string][] = [
+            [".env", "ini"],
+            ["web/.env.example", "ini"],
+            ["C:\\repo\\.env.local", "ini"],
+            ["deploy/prod.env", "ini"],
+            ["/x/.ENV", "ini"],
+            ["src-tauri/Cargo.toml", "ini"],
+            ["deploy/nginx.conf", "ini"],
+            ["setup.cfg", "ini"],
+            [".npmrc", "ini"],
+            [".gitignore", "ini"],
+            ["C:\\repo\\.dockerignore", "ini"],
+            [".github/CODEOWNERS", "ini"],
+            [".vscode/settings.jsonc", "json"],
+            ["data.json5", "json"],
+            ["Dockerfile.dev", "dockerfile"],
+            ["deploy/Containerfile", "dockerfile"],
+            ["install.zsh", "shell"],
+            ["~/.zshrc", "shell"],
+            [".bash_profile", "shell"],
+            [".envrc", "shell"],
+        ];
+        for (const [p, lang] of cases) {
+            expect(languageForPath(p), p).toBe(lang);
         }
-    });
-
-    it("follows editor:wordwrap for code, off when unset", () => {
-        expect(defaultWrap("main.go", true)).toBe(true);
-        expect(defaultWrap("main.go", false)).toBe(false);
-        expect(defaultWrap("main.go", undefined)).toBe(false);
     });
 });
 

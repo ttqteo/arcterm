@@ -64,6 +64,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - **⌘, / Ctrl+, opens Settings**, as in VS Code, and **⌘⇧E / Ctrl+Shift+E** focuses Code's file tree (VS Code's
   Explorer key; Alt+T still works).
 - The **Launch a Pi tab** shortcut (⌘⇧N / Ctrl+Shift+N) is gone; the New dialog's Pi row starts one.
+- **Every file wraps long lines by default** in Code, Diff and the agent panel's File tab, not only prose; **Wrap**
+  (Alt+Z) still turns it off for a file.
+- **More config files are colored** in Code and the File tab: `.env` and `.env.*`, `.toml`, `.conf`, `.cfg`,
+  `.npmrc`, `.gitignore` and the other ignore files, `.jsonc`, `.json5`, `Dockerfile.*`, `.zshrc`, `.bashrc` and
+  `.envrc`. Comments in `tsconfig.json` and `.vscode/*.json` no longer show as errors.
 - An agent's model shows its version, **opus 5.5** rather than **opus**, in the sidebar, the agent header, the tab
   switcher and a lead card's workers.
 - **Minimize into Sprout** always lands Sprout in the bottom-right corner of the screen (above the Dock on a Mac),

@@ -92,7 +92,7 @@ export function FileTab({
     refNow.current = ref;
     const stickRef = useRef(true); // the view sits at the end, so new output keeps it there
     const bodyRef = useRef<HTMLDivElement>(null);
-    const wrap = useWrap(ref?.abs ?? "", !!ref?.live);
+    const wrap = useWrap(ref?.abs ?? "");
     const options = useMemo(() => ({ ...OPTIONS, wordWrap: wrap ? ("on" as const) : ("off" as const) }), [wrap]);
     useEffect(() => {
         if (ref == null) {
@@ -388,7 +388,7 @@ export function FileTab({
                         data-file-wrap
                         aria-pressed={wrap}
                         title={wrap ? "Stop wrapping long lines" : "Wrap long lines"}
-                        onClick={() => toggleWrap(ref.abs, !!ref.live)}
+                        onClick={() => toggleWrap(ref.abs)}
                         className={cn(BTN, wrap && "border-accent/40 text-accent-soft hover:border-accent/60")}
                     >
                         <WrapText size={11} aria-hidden />

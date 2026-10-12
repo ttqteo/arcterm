@@ -3,35 +3,25 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Word wrap for every Monaco view of a file: the Code surface's editor and diff, and the Agent panel's File tab.
-// A file wraps by its kind (prose on, code per editor:wordwrap — codeclassify.ts defaultWrap) until the reader
-// toggles it; the toggle is kept per absolute path for the session, so it survives surface switches. `wrapped` makes
-// a file wrap until toggled whatever its kind: a background task's output in the File tab.
+// Every file wraps until the reader toggles it; the toggle is kept per absolute path for the session, so it survives
+// surface switches.
 
-import { getSettingsKeyAtom, globalStore } from "@/app/store/global";
+import { globalStore } from "@/app/store/global";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
-import { defaultWrap } from "./codeclassify";
 import { codeFileAtom, codeProjectAtom, draftKey } from "./codestore";
 
 export const codeWrapAtom = atom(new Map<string, boolean>()) as PrimitiveAtom<Map<string, boolean>>;
 
-function wrapFor(
-    abs: string,
-    choices: Map<string, boolean>,
-    setting: boolean | null | undefined,
-    wrapped: boolean
-): boolean {
-    return choices.get(abs) ?? (wrapped || defaultWrap(abs, setting ?? undefined));
+function wrapFor(abs: string, choices: Map<string, boolean>): boolean {
+    return choices.get(abs) ?? true;
 }
 
-export function useWrap(abs: string, wrapped = false): boolean {
-    const choices = useAtomValue(codeWrapAtom);
-    const setting = useAtomValue(getSettingsKeyAtom("editor:wordwrap"));
-    return wrapFor(abs, choices, setting, wrapped);
+export function useWrap(abs: string): boolean {
+    return wrapFor(abs, useAtomValue(codeWrapAtom));
 }
 
-export function toggleWrap(abs: string, wrapped = false): void {
-    const setting = globalStore.get(getSettingsKeyAtom("editor:wordwrap"));
-    globalStore.set(codeWrapAtom, (m) => new Map(m).set(abs, !wrapFor(abs, m, setting, wrapped)));
+export function toggleWrap(abs: string): void {
+    globalStore.set(codeWrapAtom, (m) => new Map(m).set(abs, !wrapFor(abs, m)));
 }
 
 // the Code surface's open file; false when no text file is open, so the key passes on
