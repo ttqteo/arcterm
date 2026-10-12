@@ -3,7 +3,8 @@
 //
 // The float folded into Sprout is a see-through window larger than what it draws. A click on the see-through part
 // must reach the app behind, so the window ignores the cursor unless it is over a drawn element
-// (miniclickthrough.ts polls the cursor and asks this). Pure.
+// (miniclickthrough.ts polls the cursor and asks this), and the hover card opens only on a cursor that rests on Sprout.
+// Pure.
 
 export interface Point {
     x: number;
@@ -38,4 +39,27 @@ export function toPagePoint(
         };
     }
     return { x: (cursor.x - inner.x) / scales.window, y: (cursor.y - inner.y) / scales.window };
+}
+
+// the cursor rests on Sprout this long before the hover card opens, so one passing over it to the app behind opens nothing
+export const HOVER_ENTER_MS = 250;
+// the card stays this long after the cursor leaves Sprout and the card, so the cursor can travel to it
+export const HOVER_LEAVE_MS = 200;
+
+export interface HoverState {
+    shown: boolean;
+    // when the cursor came onto Sprout with the card closed, or left both with it open; null while neither waits
+    since: number | null;
+}
+
+export const HOVER_NONE: HoverState = { shown: false, since: null };
+
+// One poll's step: over is the cursor on Sprout, or on the card while it shows.
+export function nextHover(prev: HoverState, over: boolean, now: number): HoverState {
+    if (over === prev.shown) {
+        return prev.since == null ? prev : { shown: prev.shown, since: null };
+    }
+    const since = prev.since ?? now;
+    const wait = over ? HOVER_ENTER_MS : HOVER_LEAVE_MS;
+    return now - since >= wait ? { shown: over, since: null } : { shown: prev.shown, since };
 }

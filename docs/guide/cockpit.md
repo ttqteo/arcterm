@@ -352,11 +352,13 @@ Một con vật pixel nhỏ đi dọc mép trên của footer trên mọi surfac
   tuần. Con vật đi trong phần gờ ở giữa.
 - **Thu vào Sprout:** nút **Sprout** trên app bar hoặc trên thanh Float, nút minimize (nút vàng trên macOS), hay `⌘M`
   (`Ctrl+M` trên Windows, chạy cả khi đang gõ trong terminal) thu cả cửa sổ vào con vật ngay chỗ nó đang đứng. Nó bay
-  trên mọi app, đeo dấu và số việc đang chờ, chấm "…" cùng số agent đang chạy, kéo đi đâu cũng được. Rê chuột lên nó
-  để thấy mọi agent và trạng thái: bấm một agent để mở Float trên agent đó, **Restore**
-  (hoặc bấm đúp con vật) để về đúng chế độ trước khi thu, đầy đủ hay Float, đúng khung cũ. Bấm vào nó để mở chat (hàng
-  chờ và ô **Ask Jarvis**), `Esc` để thu lại; điều nó nói và câu trả lời đến lúc chat đang thu hiện thành bong bóng
-  cạnh nó. Bấm icon arcterm trên taskbar (Dock trên macOS) cũng đưa cửa sổ về, kể cả khi không thấy con vật đâu.
+  trên mọi app, đeo dấu và số việc đang chờ, chấm "…" cùng số agent đang chạy, kéo đi đâu cũng được; trên macOS nó đi
+  theo bạn sang mọi Space, kể cả cạnh một app toàn màn hình. **Bấm vào nó** (hoặc `⌘M` lần nữa) để về đúng chế độ
+  trước khi thu, đầy đủ hay Float, đúng khung cũ. Để chuột yên trên nó một chút thì hiện thẻ: mọi agent và trạng thái
+  (bấm một agent để mở Float trên agent đó), dòng **Ask Jarvis** (kèm số việc đang chờ) mở chat (hàng chờ và ô **Ask
+  Jarvis**, `Esc` để thu lại), và **Restore**. Chỉ lướt chuột qua thì không hiện gì. Điều nó nói và câu trả lời đến lúc
+  chat đang thu hiện thành bong bóng cạnh nó, nhường chỗ cho thẻ khi bạn rê chuột lên. Bấm icon arcterm trên taskbar
+  (Dock trên macOS) cũng đưa cửa sổ về, kể cả khi không thấy con vật đâu.
   Muốn nút minimize về Dock (taskbar trên Windows) như thường: **Settings → General → Window → Minimize**.
   Muốn cửa sổ tự thu vào Sprout khi bạn chuyển sang một app che gần hết arcterm (từ 80% trở lên: maximize, fullscreen
   hay một cửa sổ to đè lên; app nằm cạnh, ở màn hình khác, chụp màn hình hay khoá máy thì không thu) và tự mở ra khi

@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // What Sprout looks like while the float is folded into it (cockpit/sprout-mini.tsx): the walking pet's posture marks,
-// a count of what waits, how many agents work, the errand's progress and a reply nobody has read. Pure, like petcondition.ts.
+// a count of what waits, how many agents work, the errand's progress and a reply nobody has read; and what its hover
+// card's chat row says. Pure, like petcondition.ts.
 
 import type { PetPosture } from "./petcondition";
 import type { PetMark, PetPose } from "./petsprite";
@@ -50,12 +51,17 @@ export function miniLook(input: MiniLookInput): MiniLook {
                 : working != null
                   ? `${working} ${working === 1 ? "agent" : "agents"} working`
                   : null;
-    const label = input.chatOpen
-        ? "Collapse Jarvis chat"
-        : status == null
-          ? "Open Jarvis chat"
-          : `Open Jarvis chat — ${status}`;
+    // a click on Sprout gives the window back; the chat opens from the hover card
+    const label = status == null ? "Restore the window" : `Restore the window — ${status}`;
     return { pose, marks, chip, working, bob: input.frame === 1, label };
+}
+
+// The hover card's row that opens the chat: what waits on you leads, then a reply nobody has read.
+export function miniChatLabel(waiting: number, unread: boolean): string {
+    if (waiting > 0) {
+        return `${waiting} waiting · Ask Jarvis`;
+    }
+    return unread ? "New reply · Ask Jarvis" : "Ask Jarvis";
 }
 
 // What Spider-Man's rooftop shows for a fold look: lit windows for the working agents, spider-sense for what waits,

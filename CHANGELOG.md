@@ -23,8 +23,13 @@ Add one line in the same commit as any change a user would notice, under `Added`
   colour while working, in yellow while asking, and goes grey when idle or asleep.
 - **Fold when you leave** is simpler: it folds when the app you switch to covers most of arcterm (four fifths of it,
   maximized or not), and grows back as soon as you come back to arcterm, by Alt+Tab, the taskbar button or a click. A
-  fold from the Sprout button or `Ctrl+M` stays until you double-click Sprout, pick **Restore**, or click arcterm's
-  taskbar button (the Dock icon on macOS).
+  fold from the Sprout button or `Ctrl+M` stays until you click Sprout, press `Ctrl+M` again, pick **Restore**, or
+  click arcterm's taskbar button (the Dock icon on macOS).
+- **A click on the folded Sprout brings the window back**, and `⌘M` (`Ctrl+M`) folds and unfolds. The chat opens
+  from the card that shows when the cursor rests on Sprout (its **Ask Jarvis** row, with what waits on you); a cursor
+  that only passes over Sprout no longer pops the card, and the card shows even while Sprout is speaking.
+- **On macOS the folded Sprout follows you to every Space**, beside a full-screen app too, instead of staying on the
+  Desktop you folded it on.
 - The launcher's **Transcript** button on a picked session spells out its key, **Shift+Enter**, in place of ⇧⏎.
 
 ### Fixed

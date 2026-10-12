@@ -341,7 +341,7 @@ fn main() {
             commands::open_external,
             canvas::capture_webview,
             notify::notify_os,
-            macwindow::set_traffic_lights_hidden,
+            macwindow::set_folded_chrome,
             macwindow::redirect_minimize,
             winframe::hold_window_frame,
             foreground::app_foreground

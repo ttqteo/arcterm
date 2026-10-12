@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { hitAny, toPagePoint } from "./minihit";
+import { HOVER_ENTER_MS, HOVER_LEAVE_MS, HOVER_NONE, hitAny, nextHover, toPagePoint, type HoverState } from "./minihit";
 
 const sprout = { left: 260, top: 32, right: 340, bottom: 112 };
 const chip = { left: 40, top: 70, right: 250, bottom: 100 };
@@ -39,5 +39,40 @@ describe("toPagePoint", () => {
         const cursor = { x: 3080, y: 600 }; // points (1540, 300) at the 2x primary's scale
         const inner = { x: 1500, y: 250 }; // points (1500, 250) at the 1x window's scale
         expect(toPagePoint(cursor, inner, { cursor: 2, window: 1 }, true)).toEqual({ x: 40, y: 50 });
+    });
+});
+
+describe("nextHover", () => {
+    // poll the cursor from `start` every 67 ms (15 Hz) for `ms`, over or not
+    const poll = (start: HoverState, over: boolean, ms: number, t0 = 0): { state: HoverState; at: number } => {
+        let state = start;
+        let at = t0;
+        for (; at <= t0 + ms; at += 67) {
+            state = nextHover(state, over, at);
+        }
+        return { state, at };
+    };
+
+    it("opens nothing for a cursor that passes over Sprout", () => {
+        expect(poll(HOVER_NONE, true, HOVER_ENTER_MS - 70).state.shown).toBe(false);
+    });
+    it("opens the card once the cursor has rested on Sprout", () => {
+        expect(poll(HOVER_NONE, true, HOVER_ENTER_MS + 70).state.shown).toBe(true);
+    });
+    it("starts the wait again when the cursor leaves before it is up", () => {
+        const half = poll(HOVER_NONE, true, HOVER_ENTER_MS / 2);
+        const gone = nextHover(half.state, false, half.at);
+        expect(gone).toEqual(HOVER_NONE);
+        expect(nextHover(gone, true, half.at + 67).shown).toBe(false);
+    });
+    it("keeps the card while the cursor travels to it, and closes it after", () => {
+        const open: HoverState = { shown: true, since: null };
+        expect(poll(open, false, HOVER_LEAVE_MS - 70).state.shown).toBe(true);
+        expect(poll(open, false, HOVER_LEAVE_MS + 70).state.shown).toBe(false);
+    });
+    it("keeps the card when the cursor comes back in time", () => {
+        const open: HoverState = { shown: true, since: null };
+        const away = nextHover(open, false, 0);
+        expect(nextHover(away, true, 100)).toEqual(open);
     });
 });

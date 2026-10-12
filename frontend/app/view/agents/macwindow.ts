@@ -1,10 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The window's macOS chrome, from src-tauri/src/macwindow.rs: hide the traffic lights while folded into Sprout, and send
-// the yellow button and ⌘M to Sprout while window:minimize says so (they emit MINIMIZE_EVENT). No-ops elsewhere. A click
-// on the Dock icon emits REOPEN_EVENT (main.rs, macOS reopen), and so does one on the Windows taskbar button
-// (foreground.rs watch_taskbar).
+// The window's macOS chrome, from src-tauri/src/macwindow.rs: while folded into Sprout, hide the traffic lights and show
+// the window on every Space, beside a full-screen app too, so Sprout follows you; and send the yellow button and ⌘M to
+// Sprout while window:minimize says so (they emit MINIMIZE_EVENT). No-ops elsewhere. A click on the Dock icon emits
+// REOPEN_EVENT (main.rs, macOS reopen), and so does one on the Windows taskbar button (foreground.rs watch_taskbar).
 
 import { isMacOS } from "@/util/platformutil";
 import { invoke } from "@tauri-apps/api/core";
@@ -12,9 +12,9 @@ import { invoke } from "@tauri-apps/api/core";
 export const MINIMIZE_EVENT = "window-minimize";
 export const REOPEN_EVENT = "app-reopen";
 
-export async function setTrafficLightsHidden(hidden: boolean): Promise<void> {
+export async function setFoldedChrome(folded: boolean): Promise<void> {
     if (isMacOS()) {
-        await invoke("set_traffic_lights_hidden", { hidden });
+        await invoke("set_folded_chrome", { folded });
     }
 }
 

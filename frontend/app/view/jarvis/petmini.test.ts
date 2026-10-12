@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { miniLook, nextUnread, spideyFoldLook, type MiniLookInput } from "./petmini";
+import { miniChatLabel, miniLook, nextUnread, spideyFoldLook, type MiniLookInput } from "./petmini";
 import type { PetErrand } from "./petstore";
 
 const errand = (status: PetErrand["status"]): PetErrand => ({
@@ -29,41 +29,41 @@ describe("miniLook", () => {
             chip: null,
             working: null,
             bob: false,
-            label: "Open Jarvis chat",
+            label: "Restore the window",
         });
     });
     it("types at the laptop while a reply streams, one frame per tick", () => {
         expect(miniLook({ ...base, errand: errand("streaming") }).pose).toBe("work1");
         expect(miniLook({ ...base, errand: errand("streaming"), frame: 1 }).pose).toBe("work2");
-        expect(miniLook({ ...base, errand: errand("streaming") }).label).toBe("Open Jarvis chat — thinking");
+        expect(miniLook({ ...base, errand: errand("streaming") }).label).toBe("Restore the window — thinking");
     });
     it("speaks with the unread mark when a reply landed while folded", () => {
         expect(miniLook({ ...base, errand: errand("done"), unread: true })).toMatchObject({
             pose: "speak",
             marks: ["unread"],
-            label: "Open Jarvis chat — new reply",
+            label: "Restore the window — new reply",
         });
     });
     it("stops telling once the chat is open", () => {
         expect(miniLook({ ...base, errand: errand("done"), unread: true, chatOpen: true })).toMatchObject({
             pose: "stand",
             marks: [],
-            label: "Collapse Jarvis chat",
+            label: "Restore the window",
         });
     });
     it("wears the review gate's eye and counts what waits", () => {
         expect(miniLook({ ...base, posture: "review-gate", waiting: 2 })).toMatchObject({
             marks: ["gate"],
             chip: 2,
-            label: "Open Jarvis chat — 2 waiting on you",
+            label: "Restore the window — 2 waiting on you",
         });
     });
     it("shows how many agents work, and says so when nothing else does", () => {
         expect(miniLook({ ...base, working: 2 })).toMatchObject({
             working: 2,
-            label: "Open Jarvis chat — 2 agents working",
+            label: "Restore the window — 2 agents working",
         });
-        expect(miniLook({ ...base, working: 1 }).label).toBe("Open Jarvis chat — 1 agent working");
+        expect(miniLook({ ...base, working: 1 }).label).toBe("Restore the window — 1 agent working");
     });
     it("shows no working dots when no agent works", () => {
         expect(miniLook(base).working).toBeNull();
@@ -72,7 +72,7 @@ describe("miniLook", () => {
         expect(miniLook({ ...base, waiting: 1, working: 3 })).toMatchObject({
             chip: 1,
             working: 3,
-            label: "Open Jarvis chat — 1 waiting on you",
+            label: "Restore the window — 1 waiting on you",
         });
     });
     it("counts a plain question with the chip alone", () => {
@@ -90,6 +90,18 @@ describe("miniLook", () => {
     it("bobs up on the second frame", () => {
         expect(miniLook({ ...base, frame: 1 }).bob).toBe(true);
         expect(miniLook(base).bob).toBe(false);
+    });
+});
+
+describe("miniChatLabel", () => {
+    it("leads with what waits on you", () => {
+        expect(miniChatLabel(2, true)).toBe("2 waiting · Ask Jarvis");
+    });
+    it("tells a reply nobody has read when nothing waits", () => {
+        expect(miniChatLabel(0, true)).toBe("New reply · Ask Jarvis");
+    });
+    it("only offers to ask otherwise", () => {
+        expect(miniChatLabel(0, false)).toBe("Ask Jarvis");
     });
 });
 

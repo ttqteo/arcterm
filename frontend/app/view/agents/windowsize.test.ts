@@ -159,13 +159,13 @@ describe("minimize", () => {
         expect(minimizeChoice(42)).toBe("sprout");
         expect(minimizeChoice("dock")).toBe("dock");
     });
-    it("folds from Full and Float, docks when asked, and does nothing folded", () => {
+    it("folds from Full and Float, docks when asked, and gives the window back when folded", () => {
         expect(minimizeAction("sprout", "full")).toBe("fold");
         expect(minimizeAction("sprout", "float")).toBe("fold");
         expect(minimizeAction("dock", "full")).toBe("dock");
         expect(minimizeAction("dock", "float")).toBe("dock");
-        expect(minimizeAction("sprout", "sprout")).toBeNull();
-        expect(minimizeAction("dock", "sprout")).toBeNull();
+        expect(minimizeAction("sprout", "sprout")).toBe("restore");
+        expect(minimizeAction("dock", "sprout")).toBe("restore");
     });
 });
 

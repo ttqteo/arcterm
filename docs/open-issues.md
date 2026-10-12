@@ -27,6 +27,14 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-12 (folded Sprout: a click restores, every Space)**
+
+- [ ] (arcterm) **Folded Sprout on a Mac.** Fold with `⌘M`, then: switch Desktop (Ctrl+→) and go into a full-screen
+  app: Sprout is there on each; click it there: the window comes back on that Space. Fold, `⌘Tab` away and back, press
+  `⌘M`: it comes back. Pass the cursor over Sprout: no card; rest on it: the card (agents, **Ask Jarvis**, **Restore**)
+  shows, also while a bubble is up, and **Ask Jarvis** opens the chat. Restore, then make arcterm full screen (green
+  button): it still works, nothing threw. `macwindow.rs` set_folded_chrome, `sprout-mini.tsx`, `minihit.ts` nextHover.
+
 **2026-10-12 (Spider-Man pet)**
 
 - [ ] (arcterm) Spider-Man pet: drag and rappel, the crawl and hang under the app bar (hover cuts it), the web-swing on fold and unfold, the rooftop's windows and spider-sense, and the Spider theme — look in the running app.

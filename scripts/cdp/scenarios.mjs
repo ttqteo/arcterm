@@ -6477,13 +6477,24 @@ const miniForce = async (h, o, ok, ms = 3000) => {
     await h.ev(`window.__jarvisMini?.force(${JSON.stringify(o)})`);
     return petUntil(() => miniRead(h), ok, ms, 100);
 };
-// the folded window is 320x232, so its shot is small; the 64px box gets the same 4x crop the creature does
+// the folded window is 320x264, so its shot is small; the 64px box gets the same 4x crop the creature does
 async function miniShot(h, name) {
     await h.shot(`cdp-shots/${name}.png`);
     await petCropOf(h, `${name}-zoom`, '[data-mini-hit="sprout"]', 8);
 }
-// the folded Sprout's restore, as jarvis-modes does it: a double-click, then the app bar is back
-const MINI_DBLCLICK = `document.querySelector('[data-mini-hit="sprout"] button')?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))`;
+// the folded Sprout's restore, as jarvis-modes does it: a click, then the app bar is back
+const MINI_CLICK = `document.querySelector('[data-mini-hit="sprout"] button')?.click()`;
+// the chat opens from the folded Sprout's hover card, which the cursor poll opens only for the OS cursor: the DEV
+// contract holds it open for the click (sprout-mini.tsx MiniForce)
+const MINI_OPEN_CHAT = `new Promise((r) => {
+    window.__jarvisMini?.force({ hover: true });
+    setTimeout(() => {
+        document.querySelector("[data-mini-chat]")?.click();
+        window.__jarvisMini?.force(null);
+        r(true);
+    }, 150);
+})`;
+const MINI_CLOSE_CHAT = `document.querySelector('[data-pet-peek] [aria-label="Collapse into Sprout"]')?.click()`;
 
 async function petShot(h, name) {
     await h.shot(`cdp-shots/${name}.png`);
@@ -7666,7 +7677,7 @@ const jarvisPet = {
         await miniShot(h, "jarvis-pet-22-thinking");
         await h.ev(`window.__jarvisMini?.force(null)`);
         // restore, as jarvis-modes step 4 does
-        await h.ev(MINI_DBLCLICK);
+        await h.ev(MINI_CLICK);
         const restored22 = await floatMiniWait(
             h,
             `!document.querySelector("[data-sprout-mini]") && !!document.querySelector("[data-app-bar]")?.offsetParent`
@@ -7769,7 +7780,7 @@ const jarvisPet = {
         // a step that threw while folded leaves the window at Sprout's size: give it back, as step 22 does
         await step("restore the window from Sprout", async () => {
             if (await h.ev(`!!document.querySelector("[data-sprout-mini]")`)) {
-                await h.ev(MINI_DBLCLICK);
+                await h.ev(MINI_CLICK);
                 await floatMiniWait(h, `!document.querySelector("[data-sprout-mini]")`);
                 await polishNap(1200);
             }
@@ -30858,17 +30869,17 @@ const floatMini = {
             .filter(([, bg]) => bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent")`);
         await h.shot("cdp-shots/float-mini-rest.png");
         steps.push({
-            step: "2. Minimize folds the window into Sprout's 320x232 box, see-through around it",
-            ok: folded && rest.w <= 320 && rest.h <= 232 && barGone && painted.length === 0,
+            step: "2. Minimize folds the window into Sprout's 320x264 box, see-through around it",
+            ok: folded && rest.w <= 320 && rest.h <= 264 && barGone && painted.length === 0,
             detail: JSON.stringify({ folded, rest, barGone, painted }),
         });
 
-        await h.ev(`document.querySelector('[data-mini-hit="sprout"] button')?.click()`);
-        const chat = await floatMiniWait(h, `!!document.querySelector("[data-pet-peek]") && window.innerHeight > 232`);
+        await h.ev(MINI_OPEN_CHAT);
+        const chat = await floatMiniWait(h, `!!document.querySelector("[data-pet-peek]") && window.innerHeight > 264`);
         await h.ev("new Promise((r) => setTimeout(r, 600))");
         await h.shot("cdp-shots/float-mini-chat.png");
         steps.push({
-            step: "3. a click on Sprout opens the chat and the window grows for it",
+            step: "3. the hover card's chat row opens the chat and the window grows for it",
             ok: chat,
             detail: JSON.stringify(await h.ev(`({ w: window.innerWidth, h: window.innerHeight })`)),
         });
@@ -30939,8 +30950,6 @@ const jarvisModes = {
         const wait = (expr, ms) => floatMiniWait(h, expr, ms);
         const size = () => h.ev(`({ w: window.innerWidth, h: window.innerHeight })`);
         const shown = (sel) => `!!document.querySelector(${JSON.stringify(sel)})?.offsetParent`;
-        const dblclickSprout = `document.querySelector('[data-mini-hit="sprout"] button')?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))`;
-        const clickSprout = `document.querySelector('[data-mini-hit="sprout"] button')?.click()`;
 
         await h.goto("agent");
         await wait(`!!document.querySelector('[data-agent-row="${term.tabId}"]')`);
@@ -30964,27 +30973,27 @@ const jarvisModes = {
         const barHidden = await h.ev(`!${shown("[data-app-bar]")}`);
         await h.shot("cdp-shots/jarvis-modes-folded-full.png");
         steps.push({
-            step: "2. the app bar's Sprout button folds Full into Sprout's 320x232 box",
-            ok: folded && barHidden && rest.w <= 320 && rest.h <= 232,
+            step: "2. the app bar's Sprout button folds Full into Sprout's 320x264 box",
+            ok: folded && barHidden && rest.w <= 320 && rest.h <= 264,
             detail: JSON.stringify({ folded, barHidden, rest }),
         });
 
-        // 3. the chat opens from the folded Sprout
-        await h.ev(clickSprout);
-        const foldedChat = await wait(`!!document.querySelector("[data-pet-peek]") && window.innerHeight > 232`);
+        // 3. the chat opens from the folded Sprout's hover card
+        await h.ev(MINI_OPEN_CHAT);
+        const foldedChat = await wait(`!!document.querySelector("[data-pet-peek]") && window.innerHeight > 264`);
         await h.shot("cdp-shots/jarvis-modes-folded-chat.png");
-        await h.ev(clickSprout);
-        await wait(`!document.querySelector("[data-pet-peek]") && window.innerHeight <= 232`);
-        steps.push({ step: "3. a click on the folded Sprout opens the chat", ok: foldedChat, detail: "" });
+        await h.ev(MINI_CLOSE_CHAT);
+        await wait(`!document.querySelector("[data-pet-peek]") && window.innerHeight <= 264`);
+        steps.push({ step: "3. the folded Sprout's hover card opens the chat", ok: foldedChat, detail: "" });
 
-        // 4. restore lands in Full, the PTY untouched
-        await h.ev(dblclickSprout);
+        // 4. a click on Sprout restores Full, the PTY untouched
+        await h.ev(MINI_CLICK);
         const backFull = await wait(`!document.querySelector("[data-sprout-mini]") && ${shown("[data-app-bar]")}`);
         await h.ev("new Promise((r) => setTimeout(r, 1200))");
         const fullAfter = await floatMiniTermSize(h, term.blockId);
         await h.shot("cdp-shots/jarvis-modes-restored-full.png");
         steps.push({
-            step: "4. a double-click restores Full, and the PTY size never moved",
+            step: "4. a click on Sprout restores Full, and the PTY size never moved",
             ok: backFull && JSON.stringify(fullAfter) === JSON.stringify(fullBefore),
             detail: JSON.stringify({ backFull, fullBefore, fullAfter }),
         });
@@ -31014,7 +31023,7 @@ const jarvisModes = {
         await h.ev(`document.querySelector("[data-float-minimize]")?.click()`);
         const foldedFloat = await wait(`!!document.querySelector("[data-sprout-mini]")`);
         await h.ev("new Promise((r) => setTimeout(r, 900))");
-        await h.ev(dblclickSprout);
+        await h.ev(MINI_CLICK);
         const backFloat = await wait(`!document.querySelector("[data-sprout-mini]") && ${shown("[data-float-bar]")}`);
         await h.ev("new Promise((r) => setTimeout(r, 1200))");
         const floatAfter = await floatMiniTermSize(h, term.blockId);

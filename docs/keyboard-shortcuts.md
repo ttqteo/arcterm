@@ -51,7 +51,7 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 | `TMod`+`W` | Close the agent or terminal in focus, as a terminal app closes its tab: the pane you are typing in, else the selected agent. Works from inside the terminal and asks first. It has no plain `Ctrl`+`W` form on Windows: that deletes a word in the terminal |
 | `Cmd`+`K` (macOS) | Clear the focused terminal's screen |
 | `Mod`+`=` / `Mod`+`-` / `Mod`+`0` | Zoom the window in / out / back to 100% (`Cmd` on macOS) |
-| `Mod`+`M` | Fold the window into Sprout, from the cockpit or a float, even from inside a terminal. Settings → General → Window → Minimize: Dock sends it to the Dock or taskbar instead |
+| `Mod`+`M` | Fold the window into Sprout, from the cockpit or a float, even from inside a terminal; folded, the same key brings the window back. Settings → General → Window → Minimize: Dock sends it to the Dock or taskbar instead |
 
 Setup and Settings have no `Mod`+number slot — the positions are bound to `SURFACE_ORDER`
 (`frontend/app/view/agents/agents.tsx`), which excludes them. Reach Setup with `Mod`+`G` `.` and Settings with `Mod`+`,` or `Mod`+`G` `,`.

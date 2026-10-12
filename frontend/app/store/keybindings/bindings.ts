@@ -341,11 +341,12 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
         },
         {
             // ⌘M on a Mac, Ctrl+M on Windows: from the cockpit or a float straight into Sprout, or to the Dock when
-            // window:minimize says so (floatstore.ts). Works from a focused terminal, like the yellow button.
+            // window:minimize says so, and folded, back out (floatstore.ts). Works from a focused terminal, like the
+            // yellow button.
             id: "window:fold",
             keys: "Mod:m",
             group: "Global",
-            label: "Fold the window into Sprout",
+            label: "Fold the window into Sprout, or back",
             when: (ctx) => !ctx.modalOpen,
             run: () => minimizeRequested(),
         },

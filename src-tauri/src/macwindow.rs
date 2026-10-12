@@ -1,6 +1,6 @@
-// The window's macOS chrome (floatstore.ts): hide the traffic lights while the window is folded into Sprout, and send
-// the yellow button and ⌘M to Sprout instead of the Dock while window:minimize says so. Tauri can do neither, so this
-// talks to AppKit. Commands that are not async run on the main thread, which AppKit requires; the marker check turns a
+// The window's macOS chrome (floatstore.ts): while the window is folded into Sprout, hide the traffic lights and put it
+// on every Space, beside a full-screen app's too, so Sprout follows you; and send the yellow button and ⌘M to Sprout
+// instead of the Dock while window:minimize says so. Tauri can do none of the three, so this talks to AppKit. Commands that are not async run on the main thread, which AppKit requires; the marker check turns a
 // mistake there into an error instead of undefined behaviour. Both are no-ops on other platforms. It also takes ⌘W off
 // the menu's Close Window, so the key reaches the cockpit, which closes the focused agent with it.
 
@@ -8,13 +8,13 @@ use tauri::WebviewWindow;
 
 #[cfg(target_os = "macos")]
 mod imp {
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::sync::OnceLock;
 
     use objc2::rc::Retained;
     use objc2::runtime::{AnyObject, NSObject, Sel};
     use objc2::{define_class, msg_send, sel, MainThreadMarker, MainThreadOnly};
-    use objc2_app_kit::{NSApplication, NSMenuItem, NSWindow, NSWindowButton};
+    use objc2_app_kit::{NSApplication, NSMenuItem, NSWindow, NSWindowButton, NSWindowCollectionBehavior};
     use objc2_foundation::ns_string;
     use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
@@ -55,6 +55,8 @@ mod imp {
 
     thread_local! {
         static REDIRECT: RefCell<Option<Redirect>> = const { RefCell::new(None) };
+        // the window's collection behavior from before the fold, given back on the way out
+        static UNFOLDED_BEHAVIOR: Cell<Option<NSWindowCollectionBehavior>> = const { Cell::new(None) };
     }
 
     fn ns_window<'a>(window: &'a WebviewWindow, _mtm: MainThreadMarker) -> Result<&'a NSWindow, String> {
@@ -105,13 +107,27 @@ mod imp {
         }
     }
 
-    pub fn set_traffic_lights_hidden(window: &WebviewWindow, hidden: bool) -> Result<(), String> {
+    pub fn set_folded_chrome(window: &WebviewWindow, folded: bool) -> Result<(), String> {
         let mtm = MainThreadMarker::new().ok_or("not on the main thread")?;
         let ns = ns_window(window, mtm)?;
         for kind in [NSWindowButton::CloseButton, NSWindowButton::MiniaturizeButton, NSWindowButton::ZoomButton] {
             if let Some(button) = ns.standardWindowButton(kind) {
-                button.setHidden(hidden);
+                button.setHidden(folded);
             }
+        }
+        // On every Space, and allowed beside a full-screen window. AppKit throws on a behavior that is both full-screen
+        // primary and auxiliary, or both joins all Spaces and moves to the active one, so those come off while folded.
+        if folded {
+            let was = ns.collectionBehavior();
+            UNFOLDED_BEHAVIOR.with(|cell| cell.set(Some(cell.get().unwrap_or(was))));
+            let mut behavior = was;
+            behavior &= !(NSWindowCollectionBehavior::MoveToActiveSpace
+                | NSWindowCollectionBehavior::FullScreenPrimary
+                | NSWindowCollectionBehavior::FullScreenNone);
+            behavior |= NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::FullScreenAuxiliary;
+            ns.setCollectionBehavior(behavior);
+        } else if let Some(was) = UNFOLDED_BEHAVIOR.with(|cell| cell.take()) {
+            ns.setCollectionBehavior(was);
         }
         Ok(())
     }
@@ -170,12 +186,12 @@ pub fn free_close_window_key() {
 }
 
 #[tauri::command]
-pub fn set_traffic_lights_hidden(window: WebviewWindow, hidden: bool) -> Result<(), String> {
+pub fn set_folded_chrome(window: WebviewWindow, folded: bool) -> Result<(), String> {
     #[cfg(target_os = "macos")]
-    return imp::set_traffic_lights_hidden(&window, hidden);
+    return imp::set_folded_chrome(&window, folded);
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (window, hidden);
+        let _ = (window, folded);
         Ok(())
     }
 }

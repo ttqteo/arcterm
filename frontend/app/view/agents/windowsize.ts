@@ -76,10 +76,10 @@ export function minimizeChoice(raw: unknown): MinimizeChoice {
     return raw === "dock" ? "dock" : "sprout";
 }
 
-// what minimize does in a size: folded, nothing, since it is as small as it gets
-export function minimizeAction(choice: MinimizeChoice, size: WindowSize): "fold" | "dock" | null {
+// what minimize does in a size: folded, it gives the window back, so ⌘M is the way out of Sprout as well as in
+export function minimizeAction(choice: MinimizeChoice, size: WindowSize): "fold" | "dock" | "restore" {
     if (size === "sprout") {
-        return null;
+        return "restore";
     }
     return choice === "dock" ? "dock" : "fold";
 }

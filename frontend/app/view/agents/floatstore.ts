@@ -57,7 +57,7 @@ import {
     type Screen,
     type WinRect,
 } from "./floatwindow";
-import { MINIMIZE_EVENT, redirectMinimize, REOPEN_EVENT, setTrafficLightsHidden } from "./macwindow";
+import { MINIMIZE_EVENT, redirectMinimize, REOPEN_EVENT, setFoldedChrome } from "./macwindow";
 import { startClickThrough, stopClickThrough } from "./miniclickthrough";
 import { terminalFullscreenAtom } from "./railstore";
 import { serialQueue } from "./serialqueue";
@@ -168,7 +168,7 @@ async function giveFrameBack(win: Window, restore: FloatRestore | null): Promise
     // a reload mid-fold left the window see-through, frameless and deaf to the cursor
     await win.setIgnoreCursorEvents(false).catch(() => {});
     await win.setShadow(true).catch(() => {});
-    await setTrafficLightsHidden(false).catch(() => {});
+    await setFoldedChrome(false).catch(() => {});
     writeJson(session, MINI_RESTORE_KEY, null);
     if (restore != null) {
         await win.setSize(new PhysicalSize(restore.rect.width, restore.rect.height));
@@ -521,7 +521,7 @@ export function foldToSprout(): Promise<void> {
             }
             // the page goes see-through as the content leaves it; the content paints its own background
             document.documentElement.dataset.floatMini = "";
-            await setTrafficLightsHidden(true);
+            await setFoldedChrome(true);
             await win.setShadow(false);
             if (motion && walkingPetShown()) {
                 // it departs from where it stands, and the content starts to shrink while its beam still stands
@@ -661,7 +661,7 @@ async function showContent(win: Window, unfold: Unfold): Promise<void> {
     clearContentMotion();
     delete document.documentElement.dataset.floatMini;
     await win.setShadow(true);
-    await setTrafficLightsHidden(false);
+    await setFoldedChrome(false);
     if (unfold.fullscreen) {
         await win.setFullscreen(true);
     }
@@ -713,8 +713,11 @@ export function restoreFromSprout(model: AgentsViewModel, agentId?: string): Pro
     });
 }
 
+// the cockpit's model, for a restore asked by a key or the yellow button, which have none (set by setupFloatMode)
+let shellModel: AgentsViewModel | null = null;
+
 /** Minimize, from the window's own button, the yellow button or ⌘M: fold into Sprout, or to the Dock or taskbar when
- *  window:minimize says so; folded, nothing. */
+ *  window:minimize says so; folded, back to the size it was folded from. */
 export function minimizeRequested(): void {
     const size = windowSize(globalStore.get(floatModeAtom), globalStore.get(floatMiniAtom));
     const action = minimizeAction(minimizeChoice(globalStore.get(getSettingsKeyAtom("window:minimize"))), size);
@@ -722,6 +725,8 @@ export function minimizeRequested(): void {
         fireAndForget(() => getCurrentWindow().minimize());
     } else if (action === "fold") {
         void foldToSprout();
+    } else if (shellModel != null) {
+        void restoreFromSprout(shellModel);
     }
 }
 
@@ -765,13 +770,14 @@ function settleMove(): Promise<void> {
     });
 }
 
-// What a reload mid-fold left: a see-through window, deaf to the cursor, with no shadow or traffic lights, pinned on
-// top. It gets the frame of the size it was folded from (a float's then goes on to Full, see setupFloatMode).
+// What a reload mid-fold left: a see-through window, deaf to the cursor, with no shadow or traffic lights, on every
+// Space, pinned on top. It gets the frame of the size it was folded from (a float's then goes on to Full, see
+// setupFloatMode).
 async function recoverFold(win: Window, restore: MiniRestore): Promise<void> {
     writeJson(session, MINI_RESTORE_KEY, null);
     await win.setIgnoreCursorEvents(false);
     await win.setShadow(true);
-    await setTrafficLightsHidden(false);
+    await setFoldedChrome(false);
     await win.setAlwaysOnTop(false);
     await setSpaceFrame(win, restore.rect);
     const min = restore.origin === "full" ? MAIN_MIN_SIZE : FLOAT_MIN_SIZE;
@@ -857,6 +863,7 @@ function setupAutoSprout(model: AgentsViewModel): () => void {
 // float; folded from Full, a surface switch brings the window back (windowsize.ts onSurfaceChange).
 export function setupFloatMode(model: AgentsViewModel): () => void {
     const win = getCurrentWindow();
+    shellModel = model;
     if (!globalStore.get(floatModeAtom) && !globalStore.get(floatMiniAtom)) {
         const strandedFold = parseMiniRestore(readJson(session, MINI_RESTORE_KEY));
         const stranded = parseRestore(readJson(session, RESTORE_KEY));
@@ -916,6 +923,7 @@ export function setupFloatMode(model: AgentsViewModel): () => void {
         })().catch((e) => console.error("growing back from the taskbar failed", e));
     });
     return () => {
+        shellModel = null;
         unsubSurface();
         unsubFullscreen();
         unsubMinimize();

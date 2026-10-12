@@ -4,17 +4,15 @@
 // While folded into Sprout, the window is see-through and larger than what it draws. Fifteen times a
 // second this asks where the cursor is: over a drawn element ([data-mini-hit]) the window takes the cursor, anywhere
 // else it lets it through to the app behind. A window ignoring the cursor gets no mouseenter, so this is also what
-// knows Sprout is hovered.
+// knows Sprout is hovered: once the cursor rests on it (minihit.ts nextHover).
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { isMacOS } from "@/util/platformutil";
 import { cursorPosition, getCurrentWindow, primaryMonitor } from "@tauri-apps/api/window";
 import { atom, type PrimitiveAtom } from "jotai";
-import { hitAny, toPagePoint } from "./minihit";
+import { HOVER_NONE, hitAny, nextHover, toPagePoint, type HoverState } from "./minihit";
 
 const POLL_MS = 1000 / 15;
-// the agent list stays this long after the cursor leaves Sprout, so the cursor can travel to it
-const HOVER_LEAVE_MS = 200;
 
 export const miniHoverAtom = atom(false) as PrimitiveAtom<boolean>;
 
@@ -35,7 +33,7 @@ export function startClickThrough(): void {
     const gen = ++generation;
     let ignoring: boolean | null = null;
     let inFlight = false;
-    let leftAt = 0;
+    let hover: HoverState = HOVER_NONE;
     timer = setInterval(async () => {
         if (inFlight) {
             return;
@@ -58,19 +56,11 @@ export function startClickThrough(): void {
                 ignoring = ignore;
                 await win.setIgnoreCursorEvents(ignore);
             }
-            // the agent list stays while the cursor travels from Sprout to it
-            const onSprout = hitAny(p, boxes('[data-mini-hit="sprout"], [data-mini-hit="agents"]'));
-            if (onSprout) {
-                leftAt = 0;
-                if (!globalStore.get(miniHoverAtom)) {
-                    globalStore.set(miniHoverAtom, true);
-                }
-            } else if (globalStore.get(miniHoverAtom)) {
-                leftAt ||= Date.now();
-                if (Date.now() - leftAt >= HOVER_LEAVE_MS) {
-                    leftAt = 0;
-                    globalStore.set(miniHoverAtom, false);
-                }
+            // the card opens on a cursor resting on Sprout, and stays while the cursor travels to it
+            const over = hitAny(p, boxes('[data-mini-hit="sprout"], [data-mini-hit="agents"]'));
+            hover = nextHover(hover, over, Date.now());
+            if (globalStore.get(miniHoverAtom) !== hover.shown) {
+                globalStore.set(miniHoverAtom, hover.shown);
             }
         } catch (e) {
             console.error("the folded float's cursor poll failed", e);
