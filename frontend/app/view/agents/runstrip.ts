@@ -7,11 +7,13 @@
 import { runProgress } from "./runlineage";
 import { runSegments, type LaneState } from "./runrail";
 
+// working is blue, not the accent: clay and the error red share a lightness, and at the strip's 3px a working task
+// read as a failed one
 export const SEG_FILL: Record<LaneState, string> = {
     done: "bg-success",
-    working: "bg-accent",
+    working: "bg-running",
     asking: "bg-warning",
-    lead: "bg-accent",
+    lead: "bg-running",
     pending: "bg-edge-strong",
     failed: "bg-error",
     muted: "bg-muted",

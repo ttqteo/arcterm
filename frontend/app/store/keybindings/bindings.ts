@@ -1,7 +1,6 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { launchPiTab } from "@/app/cockpit/cockpit-actions";
 import { peekClickLabel } from "@/app/cockpit/ctrlheld";
 import { cheatsheetOpenAtom } from "@/app/cockpit/shortcuts-cheatsheet";
 import { anyModalOpen } from "@/app/modals/modalstack";
@@ -102,6 +101,17 @@ function focusCodeTree(): void {
     }
 }
 
+// the file tree on the Files tab, opening a collapsed sidebar first
+function focusCodeTreeFromAnywhere(): void {
+    globalStore.set(codeSearchModeAtom, "files");
+    // a DOM read in `run` is the established convention here (see files:compare)
+    if (focusCodeSidebarOpener()) {
+        window.requestAnimationFrame(focusCodeTree);
+        return;
+    }
+    focusCodeTree();
+}
+
 function focusCodeSearchInput(): void {
     const input = document.querySelector<HTMLInputElement>("[data-code-search-input]");
     if (input != null) {
@@ -197,6 +207,37 @@ function switcherBindings(model: AgentsViewModel, mod: "ctrl" | "alt"): Binding[
     ];
 }
 
+// Off a Mac, a TMod chord (Ctrl+Shift+P) keeps its plain Ctrl form (Ctrl+P) too, live outside a terminal only: VS Code's
+// and the Mac's habit on a list, a field or the editor, while inside a terminal Ctrl+letter stays the shell's. The
+// peek's Ctrl+J also stands down in a field, where it was the newline before it had a TMod form.
+const WIN_CTRL_ALIAS_GATES: Record<string, (ctx: KeyContext) => boolean> = {
+    palette: (ctx) => !ctx.terminal,
+    "jarvis:peek": (ctx) => !ctx.editable,
+    "new-agent": (ctx) => !ctx.terminal,
+    "window:fold": (ctx) => !ctx.terminal,
+};
+
+function withWinCtrlAliases(bindings: Binding[]): Binding[] {
+    if (isMacOS()) {
+        return bindings;
+    }
+    return bindings.flatMap((b) => {
+        const gate = WIN_CTRL_ALIAS_GATES[b.id];
+        if (gate == null) {
+            return [b];
+        }
+        const alias: Binding = {
+            ...b,
+            id: `${b.id}:ctrl`,
+            keys: b.keys.replace(/^TMod:/, "Ctrl:"),
+            alias: true,
+            paletteHidden: true,
+            when: (ctx) => gate(ctx) && (b.when == null || b.when(ctx)),
+        };
+        return [b, alias];
+    });
+}
+
 export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
     // `[`/`]` cycle the rail order (SURFACE_ORDER). A surface outside the cycle (settings) enters at an end.
     const cycleSurface = (delta: number) => {
@@ -239,7 +280,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
         run: () => (t.history ? showHistory(model) : globalStore.set(model.surfaceAtom, t.surface)),
     }));
 
-    return [
+    return withWinCtrlAliases([
         ...surfaceChords,
         ...agentDigitChords,
         ...goBindings,
@@ -265,7 +306,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             // reachable from inside a text field, and a binding that always matches is also what keeps
             // WebView2's print dialog off this key. `g p` opens it too.
             id: "palette",
-            keys: "Mod:p",
+            keys: "TMod:p",
             group: "Global",
             label: "Search (files on Code)",
             paletteHidden: true, // a palette row that opens the palette
@@ -278,7 +319,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             // sheet can advertise the chord. Same shape as the cockpit-grid documentation bindings.
             // The matcher checks LEADER_ALIASES ahead of the singles pass, so this never wins the key.
             id: "leader:enter",
-            keys: "Mod:g",
+            keys: "TMod:g",
             group: "Navigation",
             label: "Go to… (works inside the agent terminal too)",
             paletteHidden: true, // a palette row for a key the palette itself would swallow
@@ -299,10 +340,10 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             run: () => openPetPeek(),
         },
         {
-            // The same peek in one chord (J for Jarvis), from inside the terminal too on a Mac; the creature shows a J
-            // while Mod is held. The palette keeps showing g w, its label twin (palette-commands.ts chordRank).
+            // The same peek in one chord (J for Jarvis), from inside the terminal too; the creature shows a J while
+            // Mod is held. The palette keeps showing g w, its label twin (palette-commands.ts chordRank).
             id: "jarvis:peek",
-            keys: "Mod:j",
+            keys: "TMod:j",
             group: "Global",
             label: "What's waiting (Jarvis peek)",
             when: peekChordActive,
@@ -319,7 +360,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
         },
         {
             id: "new-agent",
-            keys: "Mod:n",
+            keys: "TMod:n",
             group: "Global",
             label: "New agent",
             // yields to an open modal: unguarded it stacked New Agent on top of whatever was already
@@ -328,10 +369,10 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             run: () => openLauncher(model, "agent"),
         },
         {
-            // ⌘M on a Mac, Ctrl+M on Windows: from the cockpit or a float straight into Sprout, or to the Dock when
+            // ⌘M on a Mac, Ctrl+Shift+M on Windows (Ctrl+M outside a terminal): from the cockpit or a float straight into Sprout, or to the Dock when
             // window:minimize says so (floatstore.ts). Works from a focused terminal, like the yellow button.
             id: "window:fold",
-            keys: "Mod:m",
+            keys: "TMod:m",
             group: "Global",
             label: "Fold the window into Sprout",
             when: (ctx) => !ctx.modalOpen,
@@ -347,11 +388,14 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             run: () => openLauncher(model, "run"),
         },
         {
-            id: "launch:pi",
-            keys: "Mod:Shift:n",
+            // ⌘, / Ctrl+, as in VS Code and every Mac app. A comma is no terminal key, so it is the same chord in a terminal.
+            id: "settings",
+            keys: "Mod:,",
             group: "Global",
-            label: "Launch Pi tab",
-            run: () => void launchPiTab(model),
+            label: "Settings",
+            paletteHidden: true, // duplicates the go-target for Settings
+            when: (ctx) => !ctx.modalOpen,
+            run: () => globalStore.set(model.surfaceAtom, "settings"),
         },
         // Ctrl+Tab opens the switcher over the terminal (tabswitcher.ts): recent first, the plain terminals among its
         // tabs, from inside a terminal too, and the same in a float, in fullscreen and in the plain surface. Like every
@@ -434,7 +478,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
                 globalStore.get(trackerMenuAtom) == null,
             run: () => globalStore.set(model.surfaceAtom, "cockpit"),
         },
-    ];
+    ]);
 }
 
 // One shared set of list-cursor bindings for the plain master-detail surfaces. Active only when the
@@ -894,6 +938,11 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
     const nav = (ctx: KeyContext) => agentNav(ctx) && noCanvas();
     const canvas = () => focusedCanvas(model);
     const inCanvas = (ctx: KeyContext) => agentNav(ctx) && canvas()?.mode === "canvas";
+    // fullscreen's chords (F11, Mod+Shift+Enter) stay live in the terminal, unlike its bare `f`
+    const fullscreenChordActive = (ctx: KeyContext) =>
+        ctx.surface === "agent" && !ctx.modalOpen && centerAtRest() && noCanvas();
+    const toggleTerminalFullscreen = () =>
+        globalStore.set(terminalFullscreenAtom, !globalStore.get(terminalFullscreenAtom));
     const boardReady = (ctx: KeyContext) => inCanvas(ctx) && !canvas()!.marking && paneState(canvas()!) === "board";
     const docReview = () => focusedDocReview(model);
     // the focused agent when the header offers its ✓ Close (donesuggest.ts), else undefined
@@ -1063,8 +1112,19 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             // not show two rows with one label; the parenthetical is what distinguishes this door
             label: "Toggle terminal fullscreen (works inside the terminal)",
             paletteHidden: true, // duplicates agent:fullscreen, which already has a palette row
-            when: (ctx) => ctx.surface === "agent" && !ctx.modalOpen && centerAtRest() && noCanvas(),
-            run: () => globalStore.set(terminalFullscreenAtom, !globalStore.get(terminalFullscreenAtom)),
+            when: fullscreenChordActive,
+            run: toggleTerminalFullscreen,
+        },
+        {
+            // The same door on both platforms (⌘⇧Enter, iTerm's maximize pane; Ctrl+Shift+Enter on Windows): a Mac
+            // keyboard has no F11 of its own, and the system takes Fn+F11 for Show Desktop.
+            id: "agent:fullscreen-mod",
+            keys: "Mod:Shift:Enter",
+            group: "Agent",
+            label: "Toggle terminal fullscreen (works inside the terminal)",
+            paletteHidden: true, // duplicates agent:fullscreen, which already has a palette row
+            when: fullscreenChordActive,
+            run: toggleTerminalFullscreen,
         },
         {
             id: "agent:return-nav",
@@ -1738,15 +1798,17 @@ export function buildCodeBindings(): Binding[] {
             // reaching the tree from a writable editor needs a modified key; a bare letter is
             // swallowed by Monaco, which is why the finder moved to Ctrl+P
             when: (ctx) => ctx.surface === "code" && !ctx.modalOpen,
-            run: () => {
-                globalStore.set(codeSearchModeAtom, "files");
-                // a DOM read in `run` is the established convention here (see files:compare)
-                if (focusCodeSidebarOpener()) {
-                    window.requestAnimationFrame(focusCodeTree);
-                    return;
-                }
-                focusCodeTree();
-            },
+            run: focusCodeTreeFromAnywhere,
+        },
+        {
+            // VS Code's Explorer key, for the same move
+            id: "code:focus-tree-explorer",
+            keys: "Mod:Shift:e",
+            group: "Code",
+            label: "Focus the file tree (VS Code's Explorer key)",
+            paletteHidden: true, // duplicates code:focus-tree
+            when: (ctx) => ctx.surface === "code" && !ctx.modalOpen,
+            run: focusCodeTreeFromAnywhere,
         },
         {
             id: "code:focus-editor",

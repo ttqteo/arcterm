@@ -85,6 +85,16 @@ function parseKeyDescription(keyDescription: string): KeyPressDecl {
             } else {
                 rtn.mods.Ctrl = true;
             }
+        } else if (key == "TMod") {
+            // a chord that works from inside a terminal: Command on a Mac, where no terminal uses it, and Ctrl+Shift
+            // elsewhere, where Ctrl+letter is the terminal's own (Windows Terminal's and VS Code's terminal shape)
+            if (isMacOS()) {
+                rtn.mods.Meta = true;
+                rtn.mods.Cmd = true;
+            } else {
+                rtn.mods.Ctrl = true;
+                rtn.mods.Shift = true;
+            }
         } else if (key == "Cmd") {
             if (PLATFORM == PlatformMacOS) {
                 rtn.mods.Meta = true;

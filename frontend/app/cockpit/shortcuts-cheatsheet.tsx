@@ -21,6 +21,21 @@ function keyChips(keys: string) {
     return formatChord(displayKeys(keys)); // "Ctrl:Shift:Tab" -> ["ctrl","shift","tab"]; "g p" -> ["ctrl+g","p"]
 }
 
+function KeyCaps({ keys }: { keys: string }) {
+    return (
+        <>
+            {keyChips(keys).map((k, i) => (
+                <span
+                    key={i}
+                    className="rounded-[5px] border border-edge-mid px-[6px] py-0.5 font-mono text-[10.5px] text-primary"
+                >
+                    {k}
+                </span>
+            ))}
+        </>
+    );
+}
+
 export function ShortcutsCheatSheet({ model }: { model: AgentsViewModel }) {
     const open = useAtomValue(cheatsheetOpenAtom);
     const bindings = useAtomValue(bindingsAtom);
@@ -30,9 +45,11 @@ export function ShortcutsCheatSheet({ model }: { model: AgentsViewModel }) {
 
     const groups = useMemo(() => {
         const q = query.trim().toLowerCase();
+        // an alias (Ctrl+P beside Ctrl+Shift+P off a Mac) is drawn on its action's row, not as a row of its own
+        const rows = bindings.filter((b) => !b.alias);
         const filtered = q
-            ? bindings.filter((b) => b.label.toLowerCase().includes(q) || b.keys.toLowerCase().includes(q))
-            : bindings;
+            ? rows.filter((b) => b.label.toLowerCase().includes(q) || b.keys.toLowerCase().includes(q))
+            : rows;
         const byGroup = new Map<string, typeof filtered>();
         for (const b of filtered) {
             const arr = byGroup.get(b.group) ?? [];
@@ -41,6 +58,10 @@ export function ShortcutsCheatSheet({ model }: { model: AgentsViewModel }) {
         }
         return [...byGroup.entries()].sort(([a], [b]) => (a === surface ? -1 : b === surface ? 1 : a.localeCompare(b)));
     }, [bindings, query, surface]);
+    const aliasOf = useMemo(
+        () => new Map(bindings.filter((b) => b.alias).map((b) => [b.id.replace(/:ctrl$/, ""), b])),
+        [bindings]
+    );
 
     return (
         <ModalShell open={open} onClose={close} className="flex flex-col w-[min(680px,93vw)] max-h-[74vh]" topClass="pt-[10vh]">
@@ -68,16 +89,14 @@ export function ShortcutsCheatSheet({ model }: { model: AgentsViewModel }) {
                                 <div key={b.id} className="flex items-center justify-between py-[5px] text-[13px]">
                                     <span className="text-secondary">{b.label}</span>
                                     <span className="flex items-center gap-1">
-                                        {keyChips(b.keys).map((k, i) => (
-                                            <span
-                                                key={i}
-                                                className={cn(
-                                                    "rounded-[5px] border border-edge-mid px-[6px] py-0.5 font-mono text-[10.5px] text-primary"
-                                                )}
-                                            >
-                                                {k}
-                                            </span>
-                                        ))}
+                                        <KeyCaps keys={b.keys} />
+                                        {aliasOf.has(b.id) ? (
+                                            <>
+                                                <span className="ml-1.5 text-[11px] text-muted">or</span>
+                                                <KeyCaps keys={aliasOf.get(b.id)!.keys} />
+                                                <span className="text-[11px] text-muted">outside a terminal</span>
+                                            </>
+                                        ) : null}
                                     </span>
                                 </div>
                             ))}

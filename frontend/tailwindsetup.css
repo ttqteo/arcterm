@@ -65,6 +65,8 @@
     --color-warning: #ffc107;
     --color-asking: #ffc107;
     --color-success: #4eba65;
+    /* a running task in a run's strip (runstrip.ts); the Claude theme's terminal blue, mirrored per theme in themes.ts */
+    --color-running: #6a9bcc;
     --color-cacheread: #656565; /* usage split: cache-read segment (low-value, high-volume) */
     /* handoff card-body colors (Wave-cockpit-live.dc.html) */
     --color-on-warning: #1a1301; /* text on the filled needs-you badge */

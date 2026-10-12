@@ -239,7 +239,7 @@ describe("launcherKey", () => {
     const at = (
         zone: LauncherKeyCtx["zone"],
         filter = "",
-        open: { flagMenuOpen?: boolean; branchListOpen?: boolean } = {}
+        open: { flagMenuOpen?: boolean; branchListOpen?: boolean; resumePicked?: boolean } = {}
     ): LauncherKeyCtx => ({
         zone,
         startCount: 4,
@@ -247,6 +247,7 @@ describe("launcherKey", () => {
         filter,
         flagMenuOpen: !!open.flagMenuOpen,
         branchListOpen: !!open.branchListOpen,
+        resumePicked: !!open.resumePicked,
     });
     const key = (k: string, extra: { shift?: boolean; mod?: boolean } = {}) => ({
         key: k,
@@ -300,6 +301,17 @@ describe("launcherKey", () => {
         expect(launcherKey(at("resume"), key("ArrowDown"))).toEqual({ kind: "none" });
         expect(launcherKey(at("resume"), key("ArrowUp"))).toEqual({ kind: "none" });
         expect(launcherKey(at("resume"), key("3"))).toEqual({ kind: "none" });
+    });
+    it("Shift+Enter on a picked session opens its transcript instead of resuming it", () => {
+        const picked = at("resume", "", { resumePicked: true });
+        expect(launcherKey(picked, key("Enter", { shift: true }))).toEqual({ kind: "view-transcript" });
+        expect(launcherKey(picked, key("Enter"))).toEqual({ kind: "launch" });
+        // the New session row has no transcript to read
+        expect(launcherKey(at("resume"), key("Enter", { shift: true }))).toEqual({ kind: "launch" });
+        // outside the list Shift+Enter is still a launch
+        expect(launcherKey(at("project", "", { resumePicked: true }), key("Enter", { shift: true }))).toEqual({
+            kind: "launch",
+        });
     });
     it("Tab is no action: the dialog's focus trap takes it before asking", () => {
         expect(launcherKey(at("textarea"), key("Tab"))).toEqual({ kind: "none" });

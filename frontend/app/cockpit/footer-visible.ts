@@ -44,12 +44,12 @@ export function visibleHints(
 // of ways out. The digit jumps collapse into one chip (their numbers already show where they land: the rail's
 // surfaces, the Active list's agents). On a Mac the held key is Command, so a Control chord (Ctrl+Tab) is not its own.
 export function heldHints(ctx: KeyContext, bindings: Binding[], mod: "ctrl" | "alt", mac: boolean): HintChip[] {
-    const own = (m: string) => (mod === "alt" ? m === "Alt" : m === "Mod" || (!mac && m === "Ctrl"));
-    const other = (m: string) => (mod === "alt" ? m === "Mod" || m === "Ctrl" : m === "Alt");
+    const own = (m: string) => (mod === "alt" ? m === "Alt" : m === "Mod" || m === "TMod" || (!mac && m === "Ctrl"));
+    const other = (m: string) => (mod === "alt" ? m === "Mod" || m === "TMod" || m === "Ctrl" : m === "Alt");
     const out: HintChip[] = [];
     let digits: HintChip | null = null;
     for (const b of bindings) {
-        if (b.keys.includes(" ") || (b.when && !b.when(ctx))) {
+        if (b.alias || b.keys.includes(" ") || (b.when && !b.when(ctx))) {
             continue;
         }
         const parts = b.keys.split(":");

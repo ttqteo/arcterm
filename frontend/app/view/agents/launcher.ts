@@ -208,6 +208,8 @@ export interface LauncherKeyCtx {
     // shown on screen, not just set: a branch list with no branches draws nothing
     flagMenuOpen: boolean;
     branchListOpen: boolean;
+    // a session row of the Resume list is picked, not New session: only a session has a transcript to read
+    resumePicked: boolean;
 }
 
 export interface LauncherKeyIn {
@@ -225,6 +227,7 @@ export type LauncherKeyAction =
     | { kind: "column"; to: "start" | "project" }
     | { kind: "filter"; next: string }
     | { kind: "launch" }
+    | { kind: "view-transcript" }
     | { kind: "dismiss-inner"; what: LauncherInner }
     | { kind: "close" };
 
@@ -250,6 +253,10 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
         return NONE;
     }
     if (k.key === "Enter") {
+        // reading a session back costs nothing; resuming it starts the agent and reloads its whole context
+        if (k.shift && zone === "resume" && ctx.resumePicked) {
+            return { kind: "view-transcript" };
+        }
         return zone === "start" || zone === "project" || zone === "resume" || zone === "input"
             ? { kind: "launch" }
             : NONE;

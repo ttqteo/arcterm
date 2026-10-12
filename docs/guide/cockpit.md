@@ -169,8 +169,8 @@ Các phím này chỉ có tác dụng khi không đang gõ trong ô nhập.
 | `b` | Đẩy xuống nền / gỡ thẻ đã xong |
 | `Space` | Peek agent trong popup |
 | `[` / `]` | Surface trước / sau |
-| `Ctrl+G` rồi một chữ | Nhảy tới surface (xem bên dưới) |
-| `?` | Mở bảng phím tắt đầy đủ |
+| `Ctrl+G` rồi một chữ | Nhảy tới surface (xem bên dưới); trong terminal là `Ctrl+Shift+G` |
+| `?` | Mở bảng phím tắt đầy đủ (hoặc bấm nút `?` ở góc phải thanh dưới cùng) |
 
 HintsBar ở đáy Cockpit liệt kê gần như đúng các phím này; cửa sổ hẹp thì các gợi ý cuối danh sách bị bỏ bớt.
 

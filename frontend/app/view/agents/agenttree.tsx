@@ -491,6 +491,8 @@ function ParentRow({
     // (donesuggest.ts). A sleeping agent offers no Close even when its last turn committed: it is parked, not finished
     const lineageRuns = useAtomValue(model.lineageAtom).runs;
     const done = !agent.sleeping && doneSuggestion(agent, unreadCount, lineageRuns);
+    // the canvas tag and a worded Close overflow the second line together, so beside the tag Close is its check alone
+    const compactClose = useAtomValue(canvasStateAtom(agent.id)) != null;
     // m4: one-shot settle when this agent reaches idle (working/asking -> idle)
     const settling = useSettle(agent.state === "idle");
 
@@ -614,10 +616,14 @@ function ParentRow({
                                 confirmCloseSession(agent, model);
                             }}
                             title={DONE_TITLE}
-                            className="flex flex-none cursor-pointer items-center gap-[3px] rounded-[5px] border border-success/45 px-[5px] py-[1px] text-[10.5px] font-semibold text-success hover:border-success"
+                            aria-label={compactClose ? "Close" : undefined}
+                            className={cn(
+                                "flex flex-none cursor-pointer items-center gap-[3px] rounded-[5px] border border-success/45 py-[1px] text-[10.5px] font-semibold text-success hover:border-success",
+                                compactClose ? "px-[3px]" : "px-[5px]"
+                            )}
                         >
                             <Check size={10} strokeWidth={2.4} aria-hidden />
-                            Close
+                            {compactClose ? null : "Close"}
                         </button>
                     ) : agent.sleeping ? (
                         // not the count's stand-in: the moon is what says it is parked, so an unread count sits beside it

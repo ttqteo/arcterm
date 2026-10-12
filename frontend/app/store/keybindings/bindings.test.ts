@@ -141,10 +141,12 @@ describe("close-agent chord", () => {
             focusIdAtom: atom<string | undefined>("a1"),
         }) as any;
 
-    it("is Mod+W on a Mac and Ctrl+Shift+W on Windows", () => {
-        expect(buildGlobalBindings(model()).find((x) => x.id === "close-agent")!.keys).toBe("Mod:w");
+    it("is the terminal chord TMod+W: ⌘W on a Mac, Ctrl+Shift+W on Windows, with no plain Ctrl+W", () => {
+        expect(buildGlobalBindings(model()).find((x) => x.id === "close-agent")!.keys).toBe("TMod:w");
         setPlatform("win32");
-        expect(buildGlobalBindings(model()).find((x) => x.id === "close-agent")!.keys).toBe("Ctrl:Shift:w");
+        const all = buildGlobalBindings(model());
+        expect(all.find((x) => x.id === "close-agent")!.keys).toBe("TMod:w");
+        expect(all.find((x) => x.id === "close-agent:ctrl")).toBeUndefined();
     });
 
     it("works from inside the terminal on the Agent surface, and asks before closing the focused agent", () => {
@@ -790,9 +792,23 @@ describe("command palette chord", () => {
         return { model, b: buildGlobalBindings(model).find((x) => x.id === "palette")! };
     };
 
-    it("is Mod+P with no `when`, so nothing else can claim the chord", () => {
+    it("keeps plain Ctrl+P on Windows outside a terminal only, and has no second key on a Mac", () => {
+        expect(buildGlobalBindings(build().model).find((x) => x.id === "palette:ctrl")).toBeUndefined();
+        setPlatform("win32");
+        try {
+            const alias = buildGlobalBindings(build().model).find((x) => x.id === "palette:ctrl")!;
+            expect(alias.keys).toBe("Ctrl:p");
+            expect(alias.paletteHidden).toBe(true);
+            expect(alias.when!({ ...ctx("code"), editable: true })).toBe(true); // Monaco: VS Code's Ctrl+P
+            expect(alias.when!({ ...ctx("agent"), editable: true, terminal: true })).toBe(false); // the shell's ^P
+        } finally {
+            setPlatform("darwin");
+        }
+    });
+
+    it("is TMod+P with no `when`, so nothing else can claim the chord", () => {
         const { b } = build();
-        expect(b.keys).toBe("Mod:p");
+        expect(b.keys).toBe("TMod:p");
         // no guard at all: reachable from inside a text field, and an always-matching binding is
         // what stops WebView2's print dialog from taking the key on unhandled surfaces
         expect(b.when).toBeUndefined();
@@ -836,7 +852,7 @@ describe("new agent chord", () => {
     it("is Mod+N and opens the launcher at the agent door", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("cockpit"), launcherAtom: atom<LauncherKind | null>(null) } as any;
         const b = buildGlobalBindings(model).find((x) => x.id === "new-agent")!;
-        expect(b.keys).toBe("Mod:n");
+        expect(b.keys).toBe("TMod:n");
         b.run(ctx());
         expect(globalStore.get(model.launcherAtom)).toBe("agent");
     });
@@ -847,7 +863,7 @@ describe("fold chord", () => {
     it("is Mod+M, works from inside a terminal, and minimizes the way window:minimize says", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("agent") } as any;
         const b = buildGlobalBindings(model).find((x) => x.id === "window:fold")!;
-        expect(b.keys).toBe("Mod:m");
+        expect(b.keys).toBe("TMod:m");
         expect(b.when?.({ ...ctx("agent"), editable: true }) ?? true).toBe(true);
         expect(b.when?.({ ...ctx(), modalOpen: true })).toBe(false);
         vi.mocked(minimizeRequested).mockClear();
@@ -1003,7 +1019,7 @@ describe("leader reachability and the fullscreen chord", () => {
     it("registers a documentation-only leader:enter binding on the alias chord", () => {
         const b = buildGlobalBindings(model).find((x) => x.id === "leader:enter")!;
         expect(b).toBeDefined();
-        expect(b.keys).toBe("Mod:g");
+        expect(b.keys).toBe("TMod:g");
         // documentation only — the matcher performs leader entry, so this must never consume the key
         expect(b.run(inTerm)).toBe(false);
     });
@@ -1034,6 +1050,13 @@ describe("leader reachability and the fullscreen chord", () => {
     it("F11 toggles fullscreen and is live while the terminal holds focus", () => {
         const b = buildAgentBindings(model).find((x) => x.id === "agent:fullscreen-chord")!;
         expect(b.keys).toBe("F11");
+        expect(b.when!(inTerm)).toBe(true);
+        expect(b.when!({ ...inTerm, surface: "cockpit" })).toBe(false);
+    });
+
+    it("Mod+Shift+Enter is fullscreen's door on both platforms, live in the terminal like F11", () => {
+        const b = buildAgentBindings(model).find((x) => x.id === "agent:fullscreen-mod")!;
+        expect(b.keys).toBe("Mod:Shift:Enter");
         expect(b.when!(inTerm)).toBe(true);
         expect(b.when!({ ...inTerm, surface: "cockpit" })).toBe(false);
     });
@@ -1658,21 +1681,26 @@ describe("jarvis:peek", () => {
     const find = () =>
         buildGlobalBindings({ surfaceAtom: atom<SurfaceKey>("agent") } as any).find((x) => x.id === "jarvis:peek")!;
 
-    it("is Mod+J and opens the creature's peek, from inside the terminal too on a Mac", () => {
+    it("is TMod+J and opens the creature's peek, from inside the terminal too", () => {
         const b = find();
-        expect(b.keys).toBe("Mod:j");
+        expect(b.keys).toBe("TMod:j");
         expect(b.when?.({ ...ctx("agent"), editable: true })).toBe(true);
         expect(b.when?.({ ...ctx(), modalOpen: true })).toBe(false);
         b.run(ctx("agent"));
         expect(globalStore.get(petPeekOpenAtom)).toBe(true);
     });
 
-    // Ctrl+J is the terminal's newline, Claude Code's prompt included
-    it("leaves Ctrl+J to the terminal and fields on Windows", () => {
+    // Ctrl+J is the terminal's newline, Claude Code's prompt included: on Windows the plain form is only an alias
+    it("keeps Ctrl+Shift+J live in a terminal on Windows, and leaves plain Ctrl+J to terminals and fields", () => {
         setPlatform("win32");
-        const b = find();
-        expect(b.when?.({ ...ctx("agent"), editable: true })).toBe(false);
-        expect(b.when?.(ctx("agent"))).toBe(true);
+        const all = buildGlobalBindings({ surfaceAtom: atom<SurfaceKey>("agent") } as any);
+        const b = all.find((x) => x.id === "jarvis:peek")!;
+        const alias = all.find((x) => x.id === "jarvis:peek:ctrl")!;
+        expect(b.when?.({ ...ctx("agent"), editable: true, terminal: true })).toBe(true);
+        expect(alias.keys).toBe("Ctrl:j");
+        expect(alias.alias).toBe(true);
+        expect(alias.when?.({ ...ctx("agent"), editable: true })).toBe(false);
+        expect(alias.when?.(ctx("agent"))).toBe(true);
     });
 });
 

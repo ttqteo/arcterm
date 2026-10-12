@@ -63,7 +63,11 @@ export function formatChord(keys: string): string[] {
     if (keys.includes(" ")) {
         return keys.split(" ").map((k) => (k.includes(":") ? formatChordString(k) : (NAMED[k] ?? k)));
     }
-    return keys.split(":").map((k) => modSymbol(k));
+    // TMod (keyutil's terminal chord) is two keys off a Mac: Command there, Ctrl+Shift elsewhere
+    return keys
+        .split(":")
+        .flatMap((k) => (k === "TMod" ? (isMacOS() ? ["Mod"] : ["Ctrl", "Shift"]) : [k]))
+        .map((k) => modSymbol(k));
 }
 
 export function formatChordString(keys: string): string {

@@ -7,7 +7,6 @@
 
 import { globalStore } from "@/app/store/jotaiStore";
 import type { KeyContext } from "@/app/store/keybindings/types";
-import { isMacOS } from "@/util/platformutil";
 import { atom, type PrimitiveAtom } from "jotai";
 import type { OpenTarget } from "./address";
 import { bubbleRowKey } from "./petpeekmodel";
@@ -80,11 +79,11 @@ export function openPetPeek(): void {
     globalStore.set(petBubbleAtom, null);
 }
 
-// Whether ⌘J opens the popup in this posture: the binding's `when`, and the creature's J hint, which shows only where
-// the key works. On a Mac it works from a field or a terminal too; Ctrl+J is the terminal's newline (Claude Code's
-// too), so on Windows it stands down wherever you type.
-export function peekChordActive(ctx: Pick<KeyContext, "editable" | "modalOpen">): boolean {
-    return !ctx.modalOpen && (isMacOS() || !ctx.editable);
+// Whether ⌘J opens the popup in this posture: the binding's `when`, and the creature's J hint. A terminal chord (TMod),
+// so it works from a field or a terminal too: ⌘J on a Mac, Ctrl+Shift+J on Windows. Windows' plain Ctrl+J, the
+// terminal's newline, is only its outside-a-field alias (bindings.ts WIN_CTRL_ALIAS_GATES).
+export function peekChordActive(ctx: Pick<KeyContext, "modalOpen">): boolean {
+    return !ctx.modalOpen;
 }
 
 export function closePeek(): void {

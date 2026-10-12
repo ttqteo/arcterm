@@ -14,8 +14,15 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - **A server running in one of arcterm's terminals says which terminal** in Servers, and its Log opens that terminal
   with its search box.
-- **⌘J opens Jarvis's What's waiting popup** in one chord, from any surface and from inside a terminal (Ctrl+J on
-  Windows, outside a terminal, where it stays the newline). Hold ⌘ on its own and the creature shows a J.
+- **Read a past session without resuming it**: in the New dialog's Resume list, **Transcript** on a session (or
+  Shift+Enter) opens its transcript on the Agent surface instead of starting the agent again.
+- **A `?` button on the bottom bar** opens the keyboard shortcuts on every surface, also while you type in a
+  terminal, where the `?` key itself is text.
+- **⌘⇧Enter toggles terminal fullscreen** (Ctrl+Shift+Enter on Windows), from inside the terminal too: the same
+  chord on both platforms, since a Mac keyboard has no F11 of its own. F11 still works.
+- **⌘J opens Jarvis's What's waiting popup** in one chord, from any surface and from inside a terminal (Ctrl+Shift+J on
+  Windows, or plain Ctrl+J outside a terminal or field, where it is not the newline). Hold ⌘ on its own and the
+  creature shows a J.
 - **@mention another agent** without looking up its id: right-click an agent in the sidebar (or a segment of the split
   row) → **Copy @mention**, its `@` token shown beside the label. Or drag an agent onto a Claude agent's pane holding
   ⌥ (Alt on Windows) to type its token at that prompt; a drag without the key still places it in the split.
@@ -48,6 +55,14 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- **One shortcut rule between Windows and Mac:** a chord that works from inside a terminal is ⌘X on a Mac and
+  Ctrl+Shift+X on Windows: Search ⌘P / Ctrl+Shift+P, Go to ⌘G / Ctrl+Shift+G, New agent, What's waiting (J), Fold
+  (M), Close (W), Clear the terminal (K). On Windows the plain Ctrl+P, Ctrl+G, Ctrl+N, Ctrl+M still work outside a
+  terminal, and inside one they are the shell's again (history, Claude Code's Ctrl+G), and **What's waiting now opens
+  from inside a terminal on Windows too** (Ctrl+Shift+J). The cheat sheet shows both keys.
+- **⌘, / Ctrl+, opens Settings**, as in VS Code, and **⌘⇧E / Ctrl+Shift+E** focuses Code's file tree (VS Code's
+  Explorer key; Alt+T still works).
+- The **Launch a Pi tab** shortcut (⌘⇧N / Ctrl+Shift+N) is gone; the New dialog's Pi row starts one.
 - An agent's model shows its version, **opus 5.5** rather than **opus**, in the sidebar, the agent header, the tab
   switcher and a lead card's workers.
 - **Minimize into Sprout** always lands Sprout in the bottom-right corner of the screen (above the Dock on a Mac),
@@ -101,8 +116,12 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - In the Spec review dialog, **a decision points at its place in the spec** when you rest on it or click it, even when
   the spec is written in another language: it matches the names it shares with a passage (`release_items`,
   FieldPolicy, /infra), and dims the rest down to that one list item. The **SPEC REVIEW** label no longer wraps.
+- **Zoom on a Mac is ⌘= / ⌘- / ⌘0**, as in other Mac apps; it was Control.
 - An agent's model, and a past conversation's in History, no longer reads `<synthetic>` after you interrupt Claude
   or an API error ends a turn: it keeps the model the session last answered with.
+- A run's task strip draws a **working task in blue**, so it no longer looks like a failed task's red.
+- A sidebar row with both a **canvas** tag and **Close** no longer runs past the sidebar's edge: beside the canvas tag
+  Close shows only its check.
 - On macOS, a double-click or right-click on a button, the app bar (its search box too), the surface rail or the
   footer no longer selects a word of its text. Text boxes still select as before.
 - **Float** shows an orchestrator run as one tab, its lead, not a tab for every worker and reviewer it started;

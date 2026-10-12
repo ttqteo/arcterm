@@ -20,9 +20,10 @@ interface ResumeListProps {
     choices: SessionInfo[];
     // null is the "New session" row
     pickedId: string | null;
+    onViewTranscript: (s: SessionInfo) => void;
 }
 
-export function ResumeList({ choices, pickedId }: ResumeListProps) {
+export function ResumeList({ choices, pickedId, onViewTranscript }: ResumeListProps) {
     const groupRef = useRef<HTMLDivElement>(null);
     if (choices.length === 0) {
         return null;
@@ -95,7 +96,7 @@ export function ResumeList({ choices, pickedId }: ResumeListProps) {
                             tabIndex={on ? 0 : -1}
                             data-resume-id={s.id}
                             onClick={() => pickRow(i + 1)}
-                            className={rowClass(on)}
+                            className={cn(rowClass(on), "group")}
                         >
                             {dot(on)}
                             <span className="flex min-w-0 flex-1 flex-col gap-px">
@@ -107,6 +108,23 @@ export function ResumeList({ choices, pickedId }: ResumeListProps) {
                                     {formatTokens(s.tokenstotal)} tok
                                 </span>
                             </span>
+                            {/* out of the tab order: the row's radio is the stop, and Shift+Enter is this button's key */}
+                            <button
+                                type="button"
+                                tabIndex={-1}
+                                data-resume-transcript={s.id}
+                                title="View transcript (Shift+Enter)"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onViewTranscript(s);
+                                }}
+                                className={cn(
+                                    "shrink-0 cursor-pointer rounded-[6px] border border-edge-mid bg-surface-raised px-2 py-[3px] text-[10.5px] font-semibold text-secondary hover:border-edge-strong hover:text-primary",
+                                    on ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                                )}
+                            >
+                                Transcript
+                            </button>
                         </div>
                     );
                 })}

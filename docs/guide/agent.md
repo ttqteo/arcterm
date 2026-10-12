@@ -46,7 +46,6 @@ Nếu bạn đang chọn một project ở app bar mà agent đang xem thuộc p
 | Nút **+ New** ở app bar | Mở theo lựa chọn lần trước |
 | `Ctrl+P` → **Start** → *New agent…* | Như `Ctrl+N` |
 | Nút **Split** ở header → **New agent…** | Như `Ctrl+N` |
-| `Ctrl+Shift+N` | Mở ngay một agent Pi trong thư mục của agent đang focus (không thì project đầu tiên), không qua hộp thoại |
 
 Cùng một hộp thoại dùng cho agent, terminal và run: cột **Start** bên trái chia hai nhóm, **Agent** (các harness, kèm **Terminal**) và **Run** (**Quick run**, **Orchestrate**). Phần Run — mục tiêu, plan file, số worker, model — được mô tả ở [Orchestrator](orchestrator.md).
 
@@ -61,6 +60,8 @@ Cùng một hộp thoại dùng cho agent, terminal và run: cột **Start** bê
 5. Nhấn `Ctrl+Enter` (hoặc `Enter` khi đang ở cột Start / Project / ô một dòng, hoặc bấm **Launch agent**).
 
 Agent mới xuất hiện trong sidebar và được chọn (arcterm chuyển sang surface Agent nếu bạn đang ở surface khác); con trỏ gõ phím nằm sẵn trong terminal của nó, gõ được ngay mà không cần bấm vào.
+
+Khi harness đã chọn có phiên gần đây trong project đó, danh sách **Resume** hiện cạnh ô **Task**: chọn một phiên rồi **Resume agent** (`Enter`) để chạy tiếp nó. Chỉ muốn đọc lại thì bấm **Transcript** trên hàng đó (hoặc `Shift+Enter`): hộp thoại đóng và transcript mở ở giữa surface Agent, không chạy lại agent nên không tốn token. Nút **Resume →** của transcript vẫn ở đó nếu bạn đổi ý.
 
 Chưa có project nào? Cột **Project** hiện *No projects yet* và nút **Register a project**; bạn cũng có thể dùng **New project** ở bộ chọn project (xem [Cockpit](cockpit.md#bộ-chọn-project)).
 
@@ -317,6 +318,8 @@ Phím đơn (`j`, `k`, `d`, `f`, `r`, `c`, `Esc`…) chỉ có tác dụng khi b
 | `Cmd+W` (macOS) / `Ctrl+Shift+W` (Windows) | Đóng agent hoặc terminal đang focus, có hỏi xác nhận (dùng được cả trong terminal; trên Windows `Ctrl+W` vẫn là xóa một từ trong terminal) |
 | `Ctrl+N` / `Ctrl+Shift+R` | Hộp thoại New agent / New run |
 | `Ctrl+G` `s` | Mở Conversation History |
+
+Đang gõ trong terminal trên Windows thì `Ctrl+P`, `Ctrl+N`, `Ctrl+G`, `Ctrl+J`, `Ctrl+M` thuộc về shell (lùi/tiến lịch sử, edit-in-editor của Claude Code…); thêm `Shift` để dùng phím của arcterm: `Ctrl+Shift+P`, `Ctrl+Shift+G`… Trên Mac là `⌘P`, `⌘G`… ở mọi chỗ.
 
 Khi History hoặc transcript của phiên đã kết thúc đang phủ lên terminal, các phím tác động lên agent đang focus (`j`/`k`, `d`, `f`, `r`, `c`…) tạm nhường; trong History `j`/`k` di chuyển con trỏ trong danh sách, `Enter` nhảy tới phiên đang chạy hoặc resume phiên đã kết thúc. Toàn bộ phím: [Phím tắt](../keyboard-shortcuts.md).
 

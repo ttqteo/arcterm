@@ -471,6 +471,8 @@ export function buildThemeVars(
         "--color-on-warning": darken(p.warning, 0.9),
         "--color-askingbg": rgba(p.warning, 0.12),
         "--color-error": p.error,
+        // a running task's blue: the terminal's blue, which is the accent itself in a theme whose accent is a blue
+        "--color-running": ansi.blue,
         // the Claude runtime mark — always emitted, so leaving a theme that tints it puts the clay back
         "--color-rt-claude": claudeMark,
         "--color-rt-claude-soft": rgba(claudeMark, 0.13),

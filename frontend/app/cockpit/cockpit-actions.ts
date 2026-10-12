@@ -9,10 +9,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { showTerminal } from "@/app/view/agents/agentcenter";
 import { AgentsViewModel } from "@/app/view/agents/agents";
 import type { PendingLaunch } from "@/app/view/agents/agentsviewmodel";
-import { resolveCwd } from "@/app/view/agents/agentcwdresolve";
-import { buildLaunchMeta, runtimeCreatesAgentPanel, runtimeStartupCommand, type Runtime } from "@/app/view/agents/launch";
-import { projectsAtom } from "@/app/view/agents/projectsstore";
-import { openLauncher } from "@/app/view/agents/launcherstore";
+import { buildLaunchMeta, runtimeCreatesAgentPanel, type Runtime } from "@/app/view/agents/launch";
 
 export interface LaunchAgentOpts {
     runtime: Runtime;
@@ -140,31 +137,5 @@ export async function attachBackgroundAgent(
         task: "",
         projectPath: bg.cwd,
         projectName: bg.project || "background",
-    });
-}
-
-// launchPiTab launches a Pi tab at the focused agent's cwd (fallback: first registered project),
-// mirroring the new-agent modal's launch shape. No resolvable cwd -> open the modal instead.
-export async function launchPiTab(model: AgentsViewModel): Promise<void> {
-    const focused = globalStore.get(model.agentsAtom).find((a) => a.id === globalStore.get(model.focusIdAtom)) ?? null;
-    let cwd: string | null = null;
-    if (focused?.transcriptPath) {
-        cwd = await resolveCwd(focused.transcriptPath, focused.blockId);
-    }
-    if (!cwd) {
-        const projects = globalStore.get(projectsAtom);
-        cwd = Object.values(projects).find((p) => p.path)?.path ?? null;
-    }
-    if (!cwd) {
-        openLauncher(model, "agent");
-        return;
-    }
-    const projectName = cwd.split(/[\\/]/).filter(Boolean).pop() ?? cwd;
-    await launchAgent(model, {
-        runtime: "pi",
-        startupCommand: runtimeStartupCommand("pi"),
-        task: "",
-        projectPath: cwd,
-        projectName,
     });
 }
