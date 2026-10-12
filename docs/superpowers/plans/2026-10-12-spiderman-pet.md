@@ -2,16 +2,17 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** A third Jarvis creature, Spider-Man (Peter Parker at rest, the suit at work), with spider-web versions of the
-pet's drag, fall, teleport and working dots and a pastime of hanging upside down from the app bar; and a navy + red
-Spider theme preset. Specified in `docs/superpowers/specs/2026-10-12-spiderman-pet-design.md` (the spec; read it before
-any task).
+**Goal:** A third Jarvis creature, Spider-Man in the Homecoming suit (Peter Parker at rest), who walks the footer
+side-on, thwips when he speaks, hangs and rappels on strands, crawls and hangs under the app bar, web-swings to fold and
+sits on a rooftop when folded; and a Spider theme preset (Claude's palette, a Spider-Man red accent). Specified in
+`docs/superpowers/specs/2026-10-12-spiderman-pet-design.md` (the spec; read it before any task).
 
-**Architecture:** The character is data: one 16×16 grid per pose in `petsprite.ts` (`SPIDEY_POSES`), drawn in new
-`--color-spidey-*` / `--color-peter-*` identity tokens. Every web effect is a pure module beside a test
-(`petfall.ts webLanding`, `petwebswing.ts`, `petwalk.ts`'s `hang` rest, `petledge.ts measureCeiling`,
-`petsprite.ts upsideDown`), and the views (`petview.tsx`, `petteleportsvg.tsx`, `workingdots.tsx`, `sprout-mini.tsx`,
-`app-bar.tsx`) only draw what they return. The theme is one more `THEMES` entry. Sprout and the Minion are untouched.
+**Architecture:** The character is data: grids in `petsprite.ts` (`SPIDEY_POSES` per `PetPose`, plus `SPIDEY_HANG`,
+`SPIDEY_CRAWL`, `SPIDEY_SWING` and the fold scene `spideyFold`), drawn in new identity tokens. Every motion is a pure
+module beside a test (`petfall.ts webLanding`, `petwebswing.ts`, `petwalk.ts`'s `hang` rest, `petledge.ts
+measureCeiling`, `petmini.ts spideyFoldLook`); the views (`petview.tsx`, `petteleportsvg.tsx`, `workingdots.tsx`,
+`sprout-mini.tsx`, `app-bar.tsx`) only draw what they return. The theme is one more `THEMES` entry. Sprout and the
+Minion are untouched.
 
 **Tech Stack:** React 19, motion/react, jotai, Tailwind 4 (`@theme` tokens only, never raw hex in components), vitest,
 CDP (`scripts/cdp/scenarios.mjs`).
@@ -20,85 +21,79 @@ CDP (`scripts/cdp/scenarios.mjs`).
 
 **Final:** `if [ "$(uname -s)" = Darwin ]; then echo "unverified: jarvis-pet needs CDP, which WKWebView on macOS does not answer"; exit 3; fi; node scripts/cdp/final-verify.mjs jarvis-pet`
 
+**Prototype:** .superpowers/design/spiderman-pet/project/
+
 Notes for every task:
 
 - No Go changes: Verify names `./pkg/wconfig` only because `scripts/verify.mjs` needs a pattern; it runs the vitest
   suite for the changed frontend files.
+- Final builds a dev app once, on the merged result (the machine lags ~10 minutes then). No task builds: a task checks
+  its view against the running dev app (`task dev`, HMR) when one is up, and otherwise leaves it to Final.
 - Run single test files with `npx vitest run <file>`. Typecheck with `task check:ts` (~2 min, give it a 5-minute
-  timeout; never `npx tsc`). In a worktree call tsc directly:
-  `node --stack-size=4000 node_modules/typescript/lib/tsc.js --noEmit`.
+  timeout; never `npx tsc`). In a worktree call tsc directly: `node --stack-size=4000 node_modules/typescript/lib/tsc.js --noEmit`.
 - Commit with a pathspec (`git commit -m "…" -- <paths>`, after `git add` for new files). No `Co-Authored-By` trailer.
-- Executed inline on `main` (not the engine): `CHANGELOG.md` and `docs/guide/settings.md` already carry the person's
-  uncommitted edits, so in Task 6 stage only this plan's hunks (`git add -p`) and commit without a pathspec for those
-  two; never `git commit -- CHANGELOG.md`. And don't run Final's build: check against the running dev app with
-  `task verify:ui -- jarvis-pet`.
+- The grids below are the canvas's (the Prototype path), checked: every one is the right size, every `PetPose` grid
+  stands on its bottom row and keeps the marks' cells clear, and every code is in `PET_TOKENS`. Paste them as they are.
 
 ---
 
-### Task 1: Spider-Man, the character
+### Task 1: Spider-Man, the character (data, tokens, the setting)
 
 **Depends on:** none
 
-**Files:** `frontend/tailwindsetup.css`, `frontend/app/view/jarvis/petsprite.ts`, `frontend/app/view/jarvis/petcharacter.ts`, `frontend/app/view/agents/settingspages/appearance.tsx`, `frontend/app/view/agents/settingsmodel.ts`, `frontend/app/cockpit/app-bar.tsx`, `frontend/app/view/jarvis/petsprite.test.ts`, `frontend/app/view/jarvis/petcharacter.test.ts`
-
-- Modify: `frontend/tailwindsetup.css` (after the `--color-minion-*` block, ~line 106)
-- Modify: `frontend/app/view/jarvis/petsprite.ts`
-- Modify: `frontend/app/view/jarvis/petcharacter.ts`
-- Modify: `frontend/app/view/agents/settingspages/appearance.tsx:142`
-- Modify: `frontend/app/view/agents/settingsmodel.ts:279`
-- Modify: `frontend/app/cockpit/app-bar.tsx:42-45`
-- Test: `frontend/app/view/jarvis/petsprite.test.ts`, `frontend/app/view/jarvis/petcharacter.test.ts`
+**Files:** `frontend/tailwindsetup.css`, `frontend/app/view/jarvis/petsprite.ts`, `frontend/app/view/jarvis/petsprite.test.ts`, `frontend/app/view/jarvis/petcharacter.ts`, `frontend/app/view/jarvis/petcharacter.test.ts`, `frontend/app/view/agents/settingspages/appearance.tsx`, `frontend/app/view/agents/settingsmodel.ts`, `frontend/app/cockpit/app-bar.tsx`
 
 **Step 1: Write the failing tests**
 
-In `petcharacter.test.ts`, replace the `it.each(["sprout", "minion"] as const)` list with
-`["sprout", "minion", "spidey"] as const`, and the `PET_CHARACTER_NAME` expectation with
-`{ sprout: "Sprout", minion: "Minion", spidey: "Spider-Man" }`. Add `"Spider-Man"` to the fall-back list (a label, not
-an id).
+`petcharacter.test.ts`: the stored-value list becomes `["sprout", "minion", "spidey"] as const`; the name map
+`{ sprout: "Sprout", minion: "Minion", spidey: "Spider-Man" }`; add `"Spider-Man"` to the fall-back list.
 
-In `petsprite.test.ts`:
+`petsprite.test.ts`:
 
-1. Import `SPIDEY_LOOK` and `SPIDEY_POSES` from `./petsprite`.
-2. In `"maps exactly the eight codes of the spec, the flag's two, and the Minion's five"`, rename it to
-   `"... the Minion's five, and Spider-Man's eight"` and add to the expected object:
+1. Import `SPIDEY_CRAWL`, `SPIDEY_HANG`, `SPIDEY_LOOK`, `SPIDEY_POSES`, `SPIDEY_SWING`, `spideyFold`, `spriteOfRows`
+   and `SPIDEY_SENSE` from `./petsprite`.
+2. The "maps exactly …" test gains (rename it to "… the Minion's five, and Spider-Man's fifteen"):
 
 ```ts
             S: "--color-spidey-red",
-            D: "--color-spidey-red-dark",
             B: "--color-spidey-blue",
+            D: "--color-spidey-seam",
             e: "--color-spidey-eye",
+            x: "--color-spidey-web",
             p: "--color-peter-skin",
             H: "--color-peter-hair",
             g: "--color-peter-glasses",
-            v: "--color-peter-sweater",
+            v: "--color-peter-shirt",
+            c: "--color-city-cornice",
+            C: "--color-city-cornice-shade",
+            M: "--color-city-brick",
+            N: "--color-city-brick-light",
+            Q: "--color-city-window",
+            L: "--color-city-window-lit",
 ```
 
-3. Append, after `describe("the Minion's flag shirt", …)`:
+3. Append:
 
 ```ts
+const codesKnown = (rows: readonly string[]) =>
+    rows.every((row) => [...row].every((code) => code === "." || code in PET_TOKENS));
+
 describe("Spider-Man", () => {
-    it("has every pose Sprout has, so the walker can name any of them", () => {
+    it("has every pose Sprout has, and a look for each", () => {
         expect(Object.keys(SPIDEY_POSES).sort()).toEqual([...POSE_NAMES].sort());
         expect(Object.keys(SPIDEY_LOOK).sort()).toEqual([...POSE_NAMES].sort());
     });
 
-    it.each(POSE_NAMES)("%s is 16 rows of 16 cells and stands on the bottom row", (pose) => {
+    it.each(POSE_NAMES)("%s is 16 rows of 16 known cells and stands on the bottom row", (pose) => {
         expect(SPIDEY_POSES[pose]).toHaveLength(PET_GRID);
         for (const row of SPIDEY_POSES[pose]) {
             expect(row).toHaveLength(PET_GRID);
         }
+        expect(codesKnown(SPIDEY_POSES[pose])).toBe(true);
         expect(SPIDEY_POSES[pose][PET_GRID - 1]).not.toBe(".".repeat(PET_GRID));
     });
 
-    it.each(POSE_NAMES)("%s draws only codes PET_TOKENS knows", (pose) => {
-        for (const row of SPIDEY_POSES[pose]) {
-            for (const code of row) {
-                expect(code === "." || code in PET_TOKENS, code).toBe(true);
-            }
-        }
-    });
-
-    // the suit is red with no hair showing; Peter has his hair and no suit red
+    // the suit is red with no hair showing; Peter has his hair
     it.each(POSE_NAMES)("%s is drawn in the look SPIDEY_LOOK names", (pose) => {
         const rows = SPIDEY_POSES[pose].join("");
         if (SPIDEY_LOOK[pose] === "suit") {
@@ -106,17 +101,16 @@ describe("Spider-Man", () => {
             expect(rows).not.toContain("H");
         } else {
             expect(rows).toContain("H");
-            expect(rows).not.toContain("S");
         }
     });
 
-    it("is the suit while it works and Peter Parker at rest", () => {
-        expect(SPIDEY_LOOK.walk1).toBe("suit");
-        expect(SPIDEY_LOOK.dangle).toBe("suit");
-        expect(SPIDEY_LOOK.work1).toBe("suit");
-        expect(SPIDEY_LOOK.sit).toBe("peter");
-        expect(SPIDEY_LOOK.sleep).toBe("peter");
-        expect(SPIDEY_LOOK.read1).toBe("peter");
+    it("is the suit on the job and Peter Parker at rest", () => {
+        for (const pose of ["walk1", "walk2", "stand", "speak", "tired", "dangle", "work1", "work2", "sit"] as const) {
+            expect(SPIDEY_LOOK[pose]).toBe("suit");
+        }
+        for (const pose of ["sleep", "read1", "read2", "music1", "music2", "ball1", "ball2"] as const) {
+            expect(SPIDEY_LOOK[pose]).toBe("peter");
+        }
     });
 
     const stamped: [PetMark, PetPose][] = [
@@ -141,8 +135,7 @@ describe("Spider-Man", () => {
         const { body } = spriteFor(pose, [], null, "spidey");
         expect(body).toHaveLength(drawnCells(SPIDEY_POSES[pose]).size);
         for (const cell of body) {
-            const code = SPIDEY_POSES[pose][cell.y][cell.x];
-            expect(cell.token).toBe(PET_TOKENS[code as keyof typeof PET_TOKENS]);
+            expect(cell.token).toBe(PET_TOKENS[SPIDEY_POSES[pose][cell.y][cell.x] as keyof typeof PET_TOKENS]);
         }
     });
 
@@ -153,47 +146,91 @@ describe("Spider-Man", () => {
         expect(tokens.has("--color-accent")).toBe(false);
     });
 
+    it("thwips when it speaks: the strand leaves the wrist", () => {
+        expect(SPIDEY_POSES.speak.join("")).toContain("x");
+    });
+
     it.each(POSE_NAMES)("holds Sprout's flag behind %s, and leaves its body and marks alone", (pose) => {
         const bare = spriteFor(pose, ["unread"], null, "spidey");
         const flagged = spriteFor(pose, ["unread"], "vn-flag", "spidey");
         expect(flagged.back).toEqual(spriteFor("stand", [], "vn-flag").back);
         expect(flagged.body).toEqual(bare.body);
-        expect(flagged.overlay).toEqual(bare.overlay);
+    });
+
+    it.each(POSE_NAMES)("wears the flag shirt on Peter's shirt only, with no star (%s)", (pose) => {
+        const dressed = outfitRows(pose, "vn-shirt", "spidey");
+        if (SPIDEY_LOOK[pose] === "suit") {
+            expect(dressed).toBe(SPIDEY_POSES[pose]);
+            return;
+        }
+        dressed.forEach((row, y) =>
+            [...row].forEach((code, x) => expect(code).toBe(SPIDEY_POSES[pose][y][x] === "v" ? "R" : SPIDEY_POSES[pose][y][x]))
+        );
     });
 });
 
-describe("Spider-Man's flag shirt", () => {
-    const dressed = (pose: PetPose) => outfitRows(pose, "vn-shirt", "spidey");
-    const suit = POSE_NAMES.filter((pose) => SPIDEY_LOOK[pose] === "suit");
-    const peter = POSE_NAMES.filter((pose) => SPIDEY_LOOK[pose] === "peter");
-
-    it.each(suit)("leaves the suit of %s as it is", (pose) => {
-        expect(dressed(pose)).toBe(SPIDEY_POSES[pose]);
+describe("Spider-Man's other grids", () => {
+    it.each([
+        ["the hang", SPIDEY_HANG],
+        ["the swing", SPIDEY_SWING],
+        ["crawl frame 1", SPIDEY_CRAWL[0]],
+        ["crawl frame 2", SPIDEY_CRAWL[1]],
+    ])("%s is 16x16 of known codes", (_name, rows) => {
+        expect(rows).toHaveLength(PET_GRID);
+        expect(rows.every((r) => r.length === PET_GRID)).toBe(true);
+        expect(codesKnown(rows)).toBe(true);
     });
 
-    it.each(peter)("recolours only Peter's sweater on %s", (pose) => {
-        const bare = SPIDEY_POSES[pose];
-        dressed(pose).forEach((row, y) => {
-            [...row].forEach((code, x) => {
-                const was = bare[y][x];
-                if (was === "v") {
-                    expect(["R", "Y"], `${x},${y}`).toContain(code);
-                } else {
-                    expect(code, `${x},${y}`).toBe(was);
-                }
-            });
-        });
+    it("hangs by its boots on the strand at column 8, head at the bottom", () => {
+        expect(SPIDEY_HANG[0][8]).toBe("x");
+        expect(SPIDEY_HANG[PET_GRID - 1].includes("S")).toBe(true);
     });
 
-    // three rows of sweater hold the 5×3 star; reading, the book covers its legs
-    it.each(["sit", "sleep", "music1", "music2", "ball1", "ball2"] as PetPose[])("draws the whole star on %s", (pose) => {
-        expect(cellsOf(dressed(pose), "Y")).toHaveLength(8);
+    it("draws a grid of rows through the same tokens, with marks", () => {
+        const s = spriteOfRows(SPIDEY_HANG, ["unread"]);
+        expect(s.body).toHaveLength(drawnCells(SPIDEY_HANG).size);
+        expect(s.overlay.length).toBeGreaterThan(0);
+        expect(s.back).toEqual([]);
+    });
+});
+
+describe("the fold's rooftop", () => {
+    const lit = (rows: readonly string[]) => rows.join("").split("L").length - 1;
+
+    it("is 20x20 of known codes in every state", () => {
+        for (const n of [0, 1, 4]) {
+            for (const swing of [false, true]) {
+                const rows = spideyFold(n, swing);
+                expect(rows).toHaveLength(20);
+                expect(rows.every((r) => r.length === 20)).toBe(true);
+                expect(codesKnown(rows)).toBe(true);
+            }
+        }
     });
 
-    it("leaves a pose bare without the shirt, the flag included", () => {
-        for (const pose of POSE_NAMES) {
-            expect(outfitRows(pose, null, "spidey")).toBe(SPIDEY_POSES[pose]);
-            expect(outfitRows(pose, "vn-flag", "spidey")).toBe(SPIDEY_POSES[pose]);
+    // each window is 2x2 cells
+    it.each([
+        [0, 0],
+        [1, 4],
+        [3, 12],
+        [4, 16],
+        [9, 16],
+    ])("lights one window per working agent, four at most: %i working, %i lit cells", (working, cells) => {
+        expect(lit(spideyFold(working, false))).toBe(cells);
+    });
+
+    it("swings only the legs: the head, the ledge and the windows stay put", () => {
+        const a = spideyFold(2, false);
+        const b = spideyFold(2, true);
+        expect(b.slice(0, 12)).toEqual(a.slice(0, 12));
+        expect(b.slice(16)).toEqual(a.slice(16));
+        expect(b).not.toEqual(a);
+    });
+
+    it("sparks the spider-sense clear of him", () => {
+        const rows = spideyFold(0, false);
+        for (const { x, y } of SPIDEY_SENSE) {
+            expect(rows[y][x], `${x},${y}`).toBe(".");
         }
     });
 });
@@ -202,217 +239,230 @@ describe("Spider-Man's flag shirt", () => {
 **Step 2: Run them to see them fail**
 
 Run: `npx vitest run frontend/app/view/jarvis/petsprite.test.ts frontend/app/view/jarvis/petcharacter.test.ts`
-Expected: FAIL — `SPIDEY_POSES` is not exported, `"spidey"` falls back to Sprout.
+Expected: FAIL — the exports are missing.
 
-**Step 3: The tokens**
-
-In `frontend/tailwindsetup.css`, after `--color-minion-hair: #4a4a4a;`:
+**Step 3: The tokens** — `frontend/tailwindsetup.css`, after `--color-minion-hair`:
 
 ```css
 
-    /* The Jarvis pet's Spider-Man (petsprite.ts SPIDEY_POSES): the suit's red and blue, the mask's eyes, Peter Parker's
-       skin, hair, glasses and sweater, and the web it spins (petwebswing.ts, the strands in petview.tsx) are the
-       character itself, identity, never theme-derived */
-    --color-spidey-red: #d6262e;
-    --color-spidey-red-dark: #8f1219;
-    --color-spidey-blue: #2557b8;
+    /* The Jarvis pet's Spider-Man (petsprite.ts SPIDEY_*): the Homecoming suit's red and blue, the mask's seam and eyes,
+       the web he spins, Peter Parker's skin, hair, glasses and shirt, and the brick rooftop he sits on when folded.
+       The character itself, identity, never theme-derived */
+    --color-spidey-red: #d0102a;
+    --color-spidey-blue: #1f4aa8;
+    --color-spidey-seam: #2a0a0d;
     --color-spidey-eye: #f4f6fb;
     --color-spidey-web: #c9ced8;
     --color-peter-skin: #f0c19b;
-    --color-peter-hair: #5a3a22;
+    --color-peter-hair: #4a2f1c;
     --color-peter-glasses: #3a3a40;
-    --color-peter-sweater: #5f8a5a;
+    --color-peter-shirt: #e4e7ee;
+    --color-city-cornice: #6b6f78;
+    --color-city-cornice-shade: #44474f;
+    --color-city-brick: #4a2a26;
+    --color-city-brick-light: #5e3631;
+    --color-city-window: #2a2d33;
+    --color-city-window-lit: #f2c14e;
 ```
 
-**Step 4: The grids and the outfit**
-
-In `petsprite.ts`:
+**Step 4: The grids** — `petsprite.ts`:
 
 - Header comment: "every pose of both creatures (Sprout and the Minion)" → "every pose of each creature (Sprout, the
   Minion and Spider-Man)".
-- `export type PetCharacter = "sprout" | "minion" | "spidey";` and its comment "Both have every pose" → "Each has every
-  pose".
-- Add to `PET_TOKENS`, after `s`:
+- `export type PetCharacter = "sprout" | "minion" | "spidey";` ("Each has every pose").
+- `PET_TOKENS`, after `s`:
 
 ```ts
     S: "--color-spidey-red", // Spider-Man's suit
-    D: "--color-spidey-red-dark", // the mask's web seams, the chest spider's legs
-    B: "--color-spidey-blue", // the suit's sides, arms and legs; Peter's jeans
+    B: "--color-spidey-blue",
+    D: "--color-spidey-seam", // the mask's seam
     e: "--color-spidey-eye", // the mask's eyes, Peter's lenses
+    x: "--color-spidey-web", // a strand
     p: "--color-peter-skin", // Peter Parker
     H: "--color-peter-hair",
     g: "--color-peter-glasses",
-    v: "--color-peter-sweater",
+    v: "--color-peter-shirt",
+    c: "--color-city-cornice", // the fold's rooftop
+    C: "--color-city-cornice-shade",
+    M: "--color-city-brick",
+    N: "--color-city-brick-light",
+    Q: "--color-city-window",
+    L: "--color-city-window-lit",
 ```
 
-- After `MINION_POSES` (before the `MARKS` comment), add:
+- After `MINION_POSES`:
 
 ```ts
-// Spider-Man: the suit while it walks, stands, speaks, is dragged, tires or works, and Peter Parker at rest (SPIDEY_LOOK
-// says which each pose is). The marks' cells are kept clear as Sprout's are.
+// Spider-Man in the Homecoming suit: slim, the head solid red with one seam and the eyes framed at their outer corners,
+// a small black spider on the chest. The suit on the job, Peter Parker at rest (SPIDEY_LOOK). The marks' cells are kept
+// clear as Sprout's are.
 export const SPIDEY_POSES: Record<PetPose, readonly string[]> = {
-    // the suit: web seams down the mask, big white eyes, a small black spider on the chest, red boots
+    // the suit, side-on facing right; the renderer mirrors it to walk left
     walk1: [
         E,
         E,
         E,
-        ".....SSSSSS.....",
-        "....SSSDDSSS....",
-        "....SeeDDeeS....",
-        "....keeSSeek....",
-        "....SSSDDSSS....",
-        ".....SSSSSS.....",
-        "...BBSSSSSSBB...",
-        "...BBSDkkDSBB...",
-        "...SBSDkkDSBS...",
-        "....BSSSSSSB....",
-        "....BBBBBBBB....",
-        "...BBB....BBB...",
-        "...SS......SS...",
+        ".......SSSS.....",
+        "......SSSSSS....",
+        "......SSSkeeS...",
+        "......SSSSeeS...",
+        "......SSSSSSS...",
+        ".......SSSSS....",
+        "......BBSDSS....",
+        ".....BBBSkSSS...",
+        ".....SBBSDSB.S..",
+        "......BBBBB.....",
+        ".....BB...BB....",
+        "....BB.....BB...",
+        "...SS.......SSS.",
     ],
     walk2: [
         E,
         E,
         E,
-        ".....SSSSSS.....",
-        "....SSSDDSSS....",
-        "....SeeDDeeS....",
-        "....keeSSeek....",
-        "....SSSDDSSS....",
-        ".....SSSSSS.....",
-        "...BBSSSSSSBB...",
-        "...BBSDkkDSBB...",
-        "...SBSDkkDSBS...",
-        "....BSSSSSSB....",
-        "....BBBBBBBB....",
-        ".....BB..BB.....",
-        ".....SS..SS.....",
+        ".......SSSS.....",
+        "......SSSSSS....",
+        "......SSSkeeS...",
+        "......SSSSeeS...",
+        "......SSSSSSS...",
+        ".......SSSSS....",
+        "......BBSDSS....",
+        "......BBSkSS....",
+        "......BSSDSS....",
+        "......BBBBB.....",
+        "......BB.BB.....",
+        "......BB.BB.....",
+        ".....SSS.SSS....",
     ],
+    // the suit, front-on: the small black spider on the chest, the eyes framed at their outer corners
     stand: [
         E,
         E,
-        E,
-        ".....SSSSSS.....",
-        "....SSSDDSSS....",
-        "....SeeDDeeS....",
-        "....keeSSeek....",
-        "....SSSDDSSS....",
-        ".....SSSSSS.....",
-        "...BBSSSSSSBB...",
-        "...BBSDkkDSBB...",
-        "...SBSDkkDSBS...",
-        "....BSSSSSSB....",
-        "....BBBBBBBB....",
-        "....BBB..BBB....",
-        "....SSS..SSS....",
+        "......SSSSS.....",
+        ".....SSSDSSS....",
+        ".....keeDeek....",
+        ".....SeeDeeS....",
+        "......SSDSS.....",
+        "....BSSSSSSSB...",
+        "....BSSkSkSSB...",
+        "....BSSSkSSSB...",
+        "....BSSkSkSSB...",
+        "....S.BBBBB.S...",
+        ".....BB...BB....",
+        ".....BB...BB....",
+        ".....BB...BB....",
+        "....SSS...SSS...",
     ],
-    // Peter Parker at rest: brown hair, glasses, green sweater, jeans, his shoes at his feet
+    // the hero landing: one fist down, the other arm back
     sit: [
         E,
         E,
         E,
         E,
-        ".....HHHHHH.....",
-        "....HHHHHHHH....",
-        "....HppppppH....",
-        "....gekggkeg....",
-        "....pppppppp....",
-        "....pppkkppp....",
-        ".....pppppp.....",
-        "...vvvvvvvvvv...",
-        "...pvvvvvvvvp...",
-        "...vvvvvvvvvv...",
-        "...BBBBBBBBBB...",
-        "...BBBBBBBBBBss.",
+        E,
+        E,
+        "......SSSSS.....",
+        ".....SSSDSSS....",
+        ".....keeDeek....",
+        ".....SeeDeeS..BS",
+        "......SSDSS.BB..",
+        "....BSSSSSSB....",
+        "...BSSkSkSSB....",
+        "..SBBSSkSSBBB...",
+        "..S..BBBBB..BB..",
+        "..S.SSS.....SSS.",
     ],
+    // Peter Parker at rest: messy hair, glasses, the shirt open on the suit, jeans
     sleep: [
         E,
         E,
-        E,
-        E,
+        "......H.H.......",
         ".....HHHHHH.....",
-        "....HHHHHHHH....",
-        "....HppppppH....",
-        "....gppggppg....",
-        "....pppppppp....",
-        "....pppppppp....",
-        ".....pppppp.....",
-        "...vvvvvvvvvv...",
-        "...pvvvvvvvvp...",
-        "...vvvvvvvvvv...",
-        "...BBBBBBBBBB...",
-        "...BBBBBBBBBBss.",
+        ".....HHHHHHHH...",
+        ".....HpppppH....",
+        ".....gppgppg....",
+        ".....ppppppp....",
+        ".....ppppppp....",
+        "......ppppp.....",
+        "....vvSSkSSvv...",
+        "....pvSSSSSvp...",
+        ".....vSSSSSv....",
+        "....BBBBBBBBB...",
+        "....BBBBBBBBB...",
+        "....BBBBBBBBBss.",
     ],
+    // lids down, hands on the knees
     tired: [
         E,
         E,
         E,
-        ".....SSSSSS.....",
-        "....SSSDDSSS....",
-        "....SSSDDSSS....",
-        "....keeSSeek....",
-        "....SSSDDSSS....",
-        ".....SSSSSS.....",
-        "...BBSSSSSSBB...",
-        "...BBSDkkDSBB...",
-        "...BBSDkkDSBB...",
-        "...SBSSSSSSBS...",
-        "....BBBBBBBB....",
-        "....BBB..BBB....",
-        "....SSS..SSS....",
+        "......SSSSS.....",
+        ".....SSSDSSS....",
+        ".....kkkDkkk....",
+        ".....SeeDeeS....",
+        "......SSDSS.....",
+        "....BSSSSSSSB...",
+        "....BSSkSkSSB...",
+        "....BSSSkSSSB...",
+        "....BBBBBBBBB...",
+        "....SB.....BS...",
+        "....BB.....BB...",
+        ".....B.....B....",
+        "....SSS...SSS...",
     ],
+    // the thwip: side-on, crouched and leaning into the shot, the back hand on the ground
     speak: [
         E,
         E,
-        E,
-        ".....SSSSSS.....",
-        "....SSSDDSSS....",
-        "....SeeDDeeS....",
-        "....keeSSeek....",
-        "....SSSkkSSS....",
-        ".....SSSSSS.....",
-        "...BBSSSSSSBB...",
-        "...BBSDkkDSBB...",
-        "...SBSDkkDSBS...",
-        "....BSSSSSSB....",
-        "....BBBBBBBB....",
-        "....BBB..BBB....",
-        "....SSS..SSS....",
+        "...............x",
+        "..............x.",
+        ".......SSSS..x..",
+        "......SSkeeSS...",
+        "......SSSeeBS...",
+        ".......SSSBB....",
+        "....BSSSSB......",
+        "...BSSkSSB......",
+        "..B.SSSkB.......",
+        ".S..BBBBB.......",
+        "...BB...BB......",
+        "..BB.....BB.....",
+        ".BB.....BB......",
+        ".SS....SSS......",
     ],
-    // being dragged: hands up on the strand, legs hanging
+    // being dragged: one hand up on the strand (column 12), legs hanging
     dangle: [
-        E,
-        "...S........S...",
-        "...B........B...",
-        "...B.SSSSSS.B...",
-        "...BSSSDDSSSB...",
-        "...BSeeDDeeSB...",
-        "....keeSSeek....",
-        "....SSSDDSSS....",
-        ".....SSSSSS.....",
-        "....SSSSSSSS....",
-        "....SSDkkDSS....",
-        "....SSDkkDSS....",
+        "............S...",
+        "............B...",
+        "......SSSSS.B...",
+        ".....SSSDSSSB...",
+        ".....keeDeekB...",
+        ".....SeeDeeSB...",
+        "......SSDSSB....",
         "....BSSSSSSB....",
-        "....BBBBBBBB....",
+        "....BSSkSkSS....",
+        "....BSSSkSSS....",
+        "....SSSkSkSS....",
+        "......BBBBB.....",
         ".....BB..BB.....",
-        ".....SS..SS.....",
+        ".....BB...BB....",
+        "....BB....BB....",
+        "....SS.....SS...",
     ],
     // Pastimes, as Sprout's. Reading: sat with a book on his lap
     read1: [
         E,
         E,
-        E,
-        E,
+        "......H.H.......",
         ".....HHHHHH.....",
-        "....HHHHHHHH....",
-        "....HppppppH....",
-        "....gkeggkeg....",
-        "....pppppppp....",
-        "....pppkkppp....",
-        ".....pppppp.....",
-        "...vvvvvvvvvv...",
-        "...vvvvvvvvvv...",
+        ".....HHHHHHHH...",
+        ".....HpppppH....",
+        ".....gkegkeg....",
+        ".....ppppppp....",
+        ".....pppkppp....",
+        "......ppppp.....",
+        "....vvSSkSSvv...",
+        "....pvSSSSSvp...",
+        ".....vSSSSSv....",
         "..prwwwwrwwwwrp.",
         "...rmmwwrmmwwr..",
         "...rrrrrrrrrrss.",
@@ -420,147 +470,227 @@ export const SPIDEY_POSES: Record<PetPose, readonly string[]> = {
     read2: [
         E,
         E,
-        E,
-        E,
+        "......H.H.......",
         ".....HHHHHH.....",
-        "....HHHHHHHH....",
-        "....HppppppH....",
-        "....gekggekg....",
-        "....pppppppp....",
-        "....pppkkppp....",
-        ".....pppppp.....",
-        "...vvvvvvvvvv...",
-        "...vvvvvvvvvv...",
+        ".....HHHHHHHH...",
+        ".....HpppppH....",
+        ".....gekgekg....",
+        ".....ppppppp....",
+        ".....pppkppp....",
+        "......ppppp.....",
+        "....vvSSkSSvv...",
+        "....pvSSSSSvp...",
+        ".....vSSSSSv....",
         "..prwwwwrwwwwrp.",
         "...rwwmmrwwmmr..",
         "...rrrrrrrrrrss.",
     ],
-    // listening to music: the headphones' band over his hair, the cups over his ears
+    // listening to music
     music1: [
         "............yy..",
         "..yy........y...",
-        "..y.........y...",
-        ".yy..mmmmmmyy...",
+        ".yy..mmmmmm.yy..",
         "....mHHHHHHm....",
-        "...rrHHHHHHrr...",
-        "...rrpppppprr...",
-        "...rrekggkerr...",
-        "....pppppppp....",
-        "....ppkkkkpp....",
-        ".....pppppp.....",
-        "...vvvvvvvvvv...",
-        "...pvvvvvvvvp...",
-        "....vvvvvvvv....",
-        "....BB....BB....",
+        "...rrHHHHHHHrr..",
+        "...rrHpppppHrr..",
+        "...rrgekgekrr...",
+        ".....ppppppp....",
+        ".....ppkkkpp....",
+        "......ppppp.....",
+        "....vvSSkSSvv...",
+        "....pvSSSSSvp...",
+        ".....vSSSSSv....",
+        ".....BBBBBBB....",
+        ".....BB...BB....",
         "....ss....ss....",
     ],
     music2: [
         "..yy............",
-        "..y..........yy.",
-        ".yy..........y..",
-        ".....mmmmmm.yy..",
+        "..y.........yy..",
+        ".yy..mmmmmm.y...",
         "....mHHHHHHm....",
-        "...rrHHHHHHrr...",
-        "...rrpppppprr...",
-        "...rrekggkerr...",
-        "....pppppppp....",
-        "....ppkkkkpp....",
-        ".....pppppp.....",
-        "...vvvvvvvvvv...",
-        "...pvvvvvvvvp...",
-        "....vvvvvvvv....",
+        "...rrHHHHHHHrr..",
+        "...rrHpppppHrr..",
+        "...rrgekgekrr...",
+        ".....ppppppp....",
+        ".....ppkkkpp....",
+        "......ppppp.....",
+        "....vvSSkSSvv...",
+        "....pvSSSSSvp...",
+        ".....vSSSSSv....",
+        ".....BBBBBBB....",
         ".....BB..BB.....",
-        ".....ss..ss.....",
+        "....ss....ss....",
     ],
-    // working: Spider-Man at a laptop seen side-on, a key lit as it types and the code mark over its head
+    // working at a laptop seen side-on, a key lit as it types and the code mark over his head
     work1: [
         ".......w...w.w..",
         "......w...w...w.",
         ".......w.w...w..",
         E,
-        ".....SSSSSS.....",
-        "....SSSDDSSS..m.",
-        "....SeeDDeeS.lm.",
-        "....keeSSeek.lm.",
-        "....SSSDDSSS.lm.",
-        ".....SSSSSS..lm.",
-        "...BBSDkkDSBBlm.",
-        "...SBSDkkDSBSlm.",
-        "....BSSSSSSB.lm.",
-        "....BBBBBBBBmwmm",
-        "....BBB..BBB....",
-        "....SSS..SSS....",
+        "......SSSSS...m.",
+        ".....SSSDSSS.lm.",
+        ".....keeDeek.lm.",
+        ".....SeeDeeS.lm.",
+        "......SSDSS..lm.",
+        "....BSSSSSSSBlm.",
+        "....BSSkSkSSSlm.",
+        "....BSSSkSSS.lm.",
+        "....BSSkSkSS.lm.",
+        "......BBBBB.mwmm",
+        ".....BB...BB....",
+        "....SSS...SSS...",
     ],
     work2: [
         ".......m...m.m..",
         "......m...m...m.",
         ".......m.m...m..",
         E,
-        ".....SSSSSS.....",
-        "....SSSDDSSS..m.",
-        "....SeeDDeeS.wm.",
-        "....keeSSeek.wm.",
-        "....SSSDDSSS.wm.",
-        ".....SSSSSS..wm.",
-        "...BBSDkkDSBBwm.",
-        "...SBSDkkDSBSwm.",
-        "....BSSSSSSB.wm.",
-        "....BBBBBBBBmmwm",
-        "....BBB..BBB....",
-        "....SSS..SSS....",
+        "......SSSSS...m.",
+        ".....SSSDSSS.wm.",
+        ".....keeDeek.wm.",
+        ".....SeeDeeS.wm.",
+        "......SSDSS..wm.",
+        "....BSSSSSSSBwm.",
+        "....BSSkSkSSSwm.",
+        "....BSSSkSSS.wm.",
+        "....BSSkSkSS.wm.",
+        "......BBBBB.mmwm",
+        ".....BB...BB....",
+        "....SSS...SSS...",
     ],
-    // playing sport: Peter dribbling a ball at his side, high then low
+    // playing sport: dribbling a ball at his side, high then low
     ball1: [
         E,
         E,
-        E,
-        E,
+        "......H.H.......",
         ".....HHHHHH.....",
-        "....HHHHHHHH....",
-        "....HppppppH....",
-        "....gekggkeg....",
-        "....pppppppp.rr.",
-        "....pppkkppprrrr",
-        ".....pppppp.rrrr",
-        "...vvvvvvvvvvrr.",
-        "...pvvvvvvvvp...",
-        "....vvvvvvvv....",
-        "....BB....BB....",
+        ".....HHHHHHHH...",
+        ".....HpppppH....",
+        ".....gekgekg....",
+        ".....ppppppp.rr.",
+        ".....pppkppprrrr",
+        "......ppppp.rrrr",
+        "....vvSSkSSvvrr.",
+        "....pvSSSSSvp...",
+        ".....vSSSSSv....",
+        ".....BBBBBBB....",
+        ".....BB...BB....",
         "....ss....ss....",
     ],
     ball2: [
         E,
         E,
-        E,
-        E,
+        "......H.H.......",
         ".....HHHHHH.....",
-        "....HHHHHHHH....",
-        "....HppppppH....",
-        "....gekggkeg....",
-        "....pppppppp....",
-        "....pppkkppp....",
-        ".....pppppp.....",
-        "...vvvvvvvvvv...",
-        "...pvvvvvvvvprr.",
-        "....vvvvvvvvrrrr",
-        "....BB....BBrrrr",
+        ".....HHHHHHHH...",
+        ".....HpppppH....",
+        ".....gekgekg....",
+        ".....ppppppp....",
+        ".....pppkppp....",
+        "......ppppp.....",
+        "....vvSSkSSvv...",
+        "....pvSSSSSvp...",
+        ".....vSSSSSv.rr.",
+        ".....BBBBBBBrrrr",
+        ".....BB...BBrrrr",
         "....ss....ss.rr.",
     ],
 };
 
+// Upside down already: boots wrapped on the strand (column 8) at the top, knees bent out, hands on the strand, the
+// head at the bottom.
+export const SPIDEY_HANG: readonly string[] = [
+    ".......SxS......",
+    ".......SxS......",
+    "......B.x.B.....",
+    ".....B..x..B....",
+    "....B...x...B...",
+    ".....B..x..B....",
+    "......BSxSB.....",
+    "......BBBBB.....",
+    ".....BSSSSSB....",
+    ".....BSkSkSB....",
+    ".....SSSkSSS....",
+    ".....SSkSkSS....",
+    "......SDSDS.....",
+    ".....SeeDeeS....",
+    ".....keeDeek....",
+    "......SSDSS.....",
+];
+
+// Two frames, upside down, belly to the app bar's underside, side-on facing right.
+export const SPIDEY_CRAWL: readonly (readonly string[])[] = [
+    [
+        "..SS........SS..",
+        "...BB......BB...",
+        "SS..BB....BB.S..",
+        "SBB.BSSSDSB.SS..",
+        ".BBSDSkSDSSDSS..",
+        "..BBSSSBBSSSSee.",
+        "...BBBB..SSSkee.",
+        ".........SDSDSS.",
+        "..........SSSS..",
+        E,
+        E,
+        E,
+        E,
+        E,
+        E,
+        E,
+    ],
+    [
+        "....SS....SS....",
+        "....BB....BB....",
+        "..SSBB....BBS...",
+        "..SBBSSSDSBSS...",
+        ".BBSDSkSDSSDSS..",
+        "..BBSSSBBSSSSee.",
+        "...BBBB..SSSkee.",
+        ".........SDSDSS.",
+        "..........SSSS..",
+        E,
+        E,
+        E,
+        E,
+        E,
+        E,
+        E,
+    ],
+];
+
+// The web-swing's body (petwebswing.ts): slung along the strand, the hand up at column 10, knees tucked.
+export const SPIDEY_SWING: readonly string[] = [
+    "..........S.....",
+    "..........B.....",
+    "....SSS..B......",
+    "...SSSSSB.......",
+    "...SSkeeB.......",
+    "...SSSeeSB......",
+    "....SSSSSB......",
+    "...BSSkSSB......",
+    "..BBSSkkSB......",
+    ".SB.BSSkSB......",
+    "....BBBBBB......",
+    "...BB..BB.......",
+    "..BB..BB........",
+    ".SS..SS.........",
+    E,
+    E,
+];
+
 export type SpideyLook = "suit" | "peter";
 
-// Which look each of Spider-Man's poses is drawn in: the suit on the job, Peter off it.
 export const SPIDEY_LOOK: Record<PetPose, SpideyLook> = {
     walk1: "suit",
     walk2: "suit",
     stand: "suit",
     speak: "suit",
-    dangle: "suit",
     tired: "suit",
+    dangle: "suit",
     work1: "suit",
     work2: "suit",
-    sit: "peter",
+    sit: "suit",
     sleep: "peter",
     read1: "peter",
     read2: "peter",
@@ -569,27 +699,80 @@ export const SPIDEY_LOOK: Record<PetPose, SpideyLook> = {
     ball1: "peter",
     ball2: "peter",
 };
+
+// The fold's rooftop scene, 20x20 cells: he sits front-on on the edge, hands on the ledge, legs over the front.
+const FOLD_TOP: readonly string[] = [
+    "....................",
+    "....................",
+    ".......SSSSS........",
+    "......SSSDSSS.......",
+    "......keeDeek.......",
+    "......SeeDeeS.......",
+    ".......SSDSS........",
+    ".....BSSSSSSSB......",
+    ".....BSSkSkSSB......",
+    ".....BSSSkSSSB......",
+    ".....BSSkSkSSB......",
+    ".....S.BBBBB.S......",
+];
+// the legs over the ledge, two frames of a swing
+const FOLD_LEGS: readonly (readonly string[])[] = [
+    [
+        "..cccccBBcBBccccccc.",
+        "..CCCCCBBCBBCCCCCCC.",
+        "..MMMNMBBMBBMMMNMMM.",
+        "..MMMMMSSMSSMMMMMMM.",
+    ],
+    [
+        "..cccccBBccBBcccccc.",
+        "..CCCCCBBCCBBCCCCCC.",
+        "..MMMNBBMMMMBBMNMMM.",
+        "..MMMMSSMMMMSSMMMMM.",
+    ],
+];
+// the four windows' left columns; each is 2x2, on rows 17 and 18
+const FOLD_WINDOWS = [3, 7, 11, 15];
+
+/** The rooftop scene: the first min(lit, 4) windows lit, the legs in the swing's first or second frame. */
+export function spideyFold(lit: number, swing: boolean): readonly string[] {
+    const wall = [...FOLD_TOP_WALL];
+    const windows = [..."..MMMMMMMMMMMMMMMMM."];
+    FOLD_WINDOWS.forEach((x, i) => {
+        windows[x] = windows[x + 1] = i < lit ? "L" : "Q";
+    });
+    return [...FOLD_TOP, ...FOLD_LEGS[swing ? 1 : 0], wall[0], windows.join(""), windows.join(""), wall[1]];
+}
+
+// the brick rows above and below the windows
+const FOLD_TOP_WALL = ["..MMMMMMMMMMMMMMMMM.", "..MMMNMMMMMMMNMMMMM."];
+
+// Spider-sense: amber jags either side of the head and over it, drawn in --color-asking when something waits on you
+export const SPIDEY_SENSE: readonly { x: number; y: number }[] = [
+    { x: 5, y: 1 },
+    { x: 4, y: 2 },
+    { x: 5, y: 3 },
+    { x: 13, y: 1 },
+    { x: 14, y: 2 },
+    { x: 13, y: 3 },
+    { x: 8, y: 0 },
+    { x: 10, y: 0 },
+];
 ```
 
-- After `dressMinionInFlag`, add:
+  (`FOLD_TOP_WALL` must be declared before `spideyFold` is first called; keep the constants above the function.)
+
+- The outfit, after `dressMinionInFlag`:
 
 ```ts
-// The flag shirt on Spider-Man: Peter's sweater is the shirt, its star the Minion's three rows. A suit is a suit, so a
-// pose in it has no sweater and is left as it is.
+// The flag shirt on Spider-Man: Peter's open shirt turns red, with no star (it has no three-row panel to hold one); a
+// suit is a suit, so a pose in it is left as it is.
 function dressSpideyInFlag(rows: readonly string[]): readonly string[] {
-    const g = rows.map((row) => [...row].map((code) => (code === "v" ? "R" : code)));
-    const top = g.findIndex((row) => row.includes("R"));
-    if (top < 0) {
-        return rows;
-    }
-    stampStar(g, top, MINION_STAR);
-    return g.map((row) => row.join(""));
+    return rows.some((row) => row.includes("v")) ? rows.map((row) => row.replace(/v/g, "R")) : rows;
 }
 ```
 
-- Add `const SPIDEY_DRESSED = {} as Record<PetPose, readonly string[]>;` beside `MINION_DRESSED`, and in the loop
-  `SPIDEY_DRESSED[pose] = dressSpideyInFlag(SPIDEY_POSES[pose]);`.
-- In `outfitRows`, before the Minion branch:
+  `const SPIDEY_DRESSED = {} as Record<PetPose, readonly string[]>;` beside the others, filled in the same loop, and in
+  `outfitRows` before the Minion's branch:
 
 ```ts
     if (character === "spidey") {
@@ -597,58 +780,49 @@ function dressSpideyInFlag(rows: readonly string[]): readonly string[] {
     }
 ```
 
-- In `spriteFor`'s doc comment: "the same for both" → "the same for each".
-
-**Step 5: The name, the setting and the fold button**
-
-`petcharacter.ts`:
+- Name the sprite type and add a drawer for grids outside `PetPose`, after `spriteFor`:
 
 ```ts
-// Which creature Jarvis is drawn as (petsprite.ts draws each). Pure: the renderers read the Settings choice through
-// petCharacter.
-…
-export const PET_CHARACTER_NAME: Record<PetCharacter, string> = {
-    sprout: "Sprout",
-    minion: "Minion",
-    spidey: "Spider-Man",
-};
+export interface PetSprite {
+    back: PetCell[];
+    body: PetCell[];
+    overlay: PetCell[];
+}
 
-/** A stored choice, or Sprout for anything that is not one of the three (a hand-edited value). */
-export function petCharacter(value: unknown): PetCharacter {
-    return value === "sprout" || value === "minion" || value === "spidey" ? value : DEFAULT_PET_CHARACTER;
+/** A grid that is not a PetPose (Spider-Man's hang, crawl, swing) drawn as spriteFor draws a pose: body and marks. */
+export function spriteOfRows(rows: readonly string[], marks: readonly PetMark[]): PetSprite {
+    const body: PetCell[] = [];
+    stamp(rows, 0, 0, body);
+    const overlay: PetCell[] = [];
+    for (const mark of new Set(marks)) {
+        const { x, y, rows: m } = MARKS[mark];
+        stamp(m, x, y, overlay);
+    }
+    return { back: [], body, overlay };
 }
 ```
 
-`appearance.tsx:142`: `(["sprout", "minion", "spidey"] as const)`.
+  and make `spriteFor` return `PetSprite`.
 
-`settingsmodel.ts:279`: `desc: "Who walks the footer as Jarvis. The marks and the outfit work the same for each."`
+**Step 5: The name, the setting, the fold button**
 
-`app-bar.tsx` `FOLD_SPRITE`:
+- `petcharacter.ts`: `PET_CHARACTER_NAME` gains `spidey: "Spider-Man"`; `petCharacter` accepts `"spidey"` ("not one of
+  the three"); the header "draws both" → "draws each".
+- `appearance.tsx:142`: `(["sprout", "minion", "spidey"] as const)`.
+- `settingsmodel.ts:279`: `desc: "Who walks the footer as Jarvis. The marks and the outfit work the same for each."`
+- `app-bar.tsx` `FOLD_SPRITE` gains `spidey: spriteFor("stand", [], null, "spidey"),` with the comment "standing, in the
+  suit: his sitting pose is a crouch, which does not read as the one the window folds into".
 
-```ts
-export const FOLD_SPRITE = {
-    sprout: spriteFor("sit", [], null, "sprout"),
-    minion: spriteFor("sit", [], null, "minion"),
-    // standing, in the suit: sitting is Peter Parker, who does not read as the one the window folds into
-    spidey: spriteFor("stand", [], null, "spidey"),
-};
-```
+**Step 6: Tests and typecheck**
 
-**Step 6: Run the tests and the typecheck**
-
-Run: `npx vitest run frontend/app/view/jarvis/ frontend/app/view/agents/settingsmodel.test.ts`
-Expected: PASS.
-Run: `task check:ts`
-Expected: exit 0. A `Record<PetCharacter, …>` it reports as missing `spidey` gets a `spidey` entry the way the Minion
-has one.
+Run: `npx vitest run frontend/app/view/jarvis/ frontend/app/view/agents/settingsmodel.test.ts` — PASS.
+Run: `task check:ts` — exit 0; a `Record<PetCharacter, …>` it reports gets a `spidey` entry the way the Minion has one.
 
 **Step 7: Commit**
 
 ```bash
-git commit -m "feat(pet): Spider-Man as a third Jarvis character — Peter Parker at rest, the suit at work" -- frontend/tailwindsetup.css frontend/app/view/jarvis/petsprite.ts frontend/app/view/jarvis/petsprite.test.ts frontend/app/view/jarvis/petcharacter.ts frontend/app/view/jarvis/petcharacter.test.ts frontend/app/view/agents/settingspages/appearance.tsx frontend/app/view/agents/settingsmodel.ts frontend/app/cockpit/app-bar.tsx
+git commit -m "feat(pet): Spider-Man as a third Jarvis character — the Homecoming suit at work, Peter Parker at rest" -- frontend/tailwindsetup.css frontend/app/view/jarvis/petsprite.ts frontend/app/view/jarvis/petsprite.test.ts frontend/app/view/jarvis/petcharacter.ts frontend/app/view/jarvis/petcharacter.test.ts frontend/app/view/agents/settingspages/appearance.tsx frontend/app/view/agents/settingsmodel.ts frontend/app/cockpit/app-bar.tsx
 ```
-
-(plus any file the typecheck sent you to.)
 
 ---
 
@@ -658,93 +832,79 @@ git commit -m "feat(pet): Spider-Man as a third Jarvis character — Peter Parke
 
 **Files:** `frontend/app/view/agents/themes.ts`, `frontend/app/view/agents/themes.test.ts`
 
-- Modify: `frontend/app/view/agents/themes.ts` (append to `THEMES`, after `monokai`)
-- Test: `frontend/app/view/agents/themes.test.ts:79,134-135`
-
-**Step 1: Write the failing tests**
-
-In `themes.test.ts`:
-- line 79: `for (const id of [DEFAULT_THEME_PRESET, "graphite", "spider"]) {`
-- line 134-135: `it("THEMES ships the nine dark presets — light mode was declined and removed", () => {` and
-  `expect(THEMES).toHaveLength(9);`
-- add, inside that same `describe`:
+**Step 1: Failing tests** (`themes.test.ts`): the contrast-floor loop (line ~79) becomes
+`for (const id of [DEFAULT_THEME_PRESET, "graphite", "spider"])`; "THEMES ships the eight dark presets" becomes nine and
+`toHaveLength(9)`; add to that `describe`:
 
 ```ts
-    it("Spider's error is not its red accent, so a failure never reads as a selection", () => {
-        const p = activePalette("spider");
-        expect(p.accent).toBe("#e23636");
-        expect(p.error).not.toBe(p.accent);
+    it("Spider is Claude's palette with a red accent and a pinker error", () => {
+        const claude = activePalette(DEFAULT_THEME_PRESET);
+        const spider = activePalette("spider");
+        const { accent, error, claudeMark, ...rest } = spider;
+        const { accent: _a, error: _e, claudeMark: _m, ...claudeRest } = claude;
+        expect(rest).toEqual(claudeRest);
+        expect(accent).toBe("#f05252");
+        expect(error).toBe("#ff6b9a");
+        expect(claudeMark).toBeUndefined();
     });
 ```
 
-(`activePalette` is already imported there; if not, import it from `./themes`.)
+Run `npx vitest run frontend/app/view/agents/themes.test.ts` — FAIL.
 
-**Step 2: Run to see them fail**
-
-Run: `npx vitest run frontend/app/view/agents/themes.test.ts`
-Expected: FAIL — 8 presets, no `spider`.
-
-**Step 3: The preset**
-
-Append to `THEMES` in `themes.ts`:
+**Step 2: The preset** — append to `THEMES`:
 
 ```ts
     {
         id: "spider",
         name: "Spider",
-        // Spider-Man's suit: a navy cut from its blue for the canvas and its red for the accent. The error is a pink, not
-        // a red, so a failure never reads as the accent; the terminal keeps a real blue, the suit's own. Measured:
-        // muted 6.25:1 on bg and 5.18:1 hovered, ink-faint 4.03:1, the weakest ANSI slot (black) 4.03:1.
+        // Claude's palette with Spider-Man's red: the accent lifted from #e23636 (3.81:1 on bg) to clear 4.5:1 as link
+        // text (4.78:1), the error pushed pinker so a failure never reads as the accent. No claudeMark: the accent is not
+        // Claude's clay, so the Claude mark keeps the brand clay as in every other theme.
         palette: {
-            bg: "#0b1020",
-            surface: "#0f1528",
-            surfaceRaised: "#151c33",
-            surfaceHover: "#1a223c",
-            surfaceSelected: "#212b4a",
-            code: "#080c18",
-            border: "#1a2240",
-            edgeMid: "#222b4a",
-            edgeStrong: "#2e3960",
-            edgeFaint: "#131a30",
-            text: "#e8ebf2",
-            secondary: "#c6cbd8",
-            muted: "#8d94a8",
-            inkFaint: "#6b7390",
-            accent: "#e23636",
-            success: "#4fc28f",
-            warning: "#e8b04b",
+            bg: "#1f1e1d",
+            surface: "#262624",
+            surfaceRaised: "#30302e",
+            surfaceHover: "#363532",
+            surfaceSelected: "#3d3c38",
+            code: "#141413",
+            border: "#2e2d2b",
+            edgeMid: "#383734",
+            edgeStrong: "#4a4945",
+            edgeFaint: "#282725",
+            text: "#ece9e0",
+            secondary: "#c2c0b6",
+            muted: "#a3a198",
+            inkFaint: "#7b7972",
+            accent: "#f05252",
+            success: "#4eba65",
+            warning: "#ffc107",
             error: "#ff6b9a",
-            ansiBlue: "#4a8fe7",
+            ansiBlue: "#6a9bcc",
         },
     },
 ```
 
-**Step 4: Run the tests**
+(Check each value against the Claude entry above it; the test holds them equal.)
 
-Run: `npx vitest run frontend/app/view/agents/`
-Expected: PASS, including the per-theme ANSI tests that iterate `THEMES` (hue ranges, 3:1 on bg).
+**Step 3:** `npx vitest run frontend/app/view/agents/` — PASS (the per-theme ANSI tests iterate `THEMES` too).
 
-**Step 5: Commit**
+**Step 4: Commit**
 
 ```bash
-git commit -m "feat(theme): Spider, a navy and red preset" -- frontend/app/view/agents/themes.ts frontend/app/view/agents/themes.test.ts
+git commit -m "feat(theme): Spider, Claude's palette with a Spider-Man red accent" -- frontend/app/view/agents/themes.ts frontend/app/view/agents/themes.test.ts
 ```
 
 ---
 
 ### Task 3: The web, as pure motion (rappel and web-swing)
 
-**Depends on:** Task 1
+**Depends on:** none
 
-**Files:** `frontend/app/view/jarvis/petfall.ts`, `frontend/app/view/jarvis/petwebswing.ts`, `frontend/app/view/jarvis/petfall.test.ts`, `frontend/app/view/jarvis/petwebswing.test.ts`
+**Files:** `frontend/app/view/jarvis/petfall.ts`, `frontend/app/view/jarvis/petfall.test.ts`, `frontend/app/view/jarvis/petwebswing.ts`, `frontend/app/view/jarvis/petwebswing.test.ts`
 
-- Modify: `frontend/app/view/jarvis/petfall.ts`
-- Create: `frontend/app/view/jarvis/petwebswing.ts`
-- Test: `frontend/app/view/jarvis/petfall.test.ts`, create `frontend/app/view/jarvis/petwebswing.test.ts`
+**Step 1: Failing tests**
 
-**Step 1: Write the failing tests**
-
-Append to `petfall.test.ts` (import `webLanding`, `MIN_RAPPEL_S`, `MAX_RAPPEL_S` beside what it imports):
+Append to `petfall.test.ts` (import `webLanding`, `MIN_RAPPEL_S`, `MAX_RAPPEL_S`):
 
 ```ts
 describe("webLanding", () => {
@@ -787,8 +947,8 @@ const touching = (cells: WebCell[]) =>
 
 describe("strandCells", () => {
     it("runs from one end to the other, each cell touching the last", () => {
-        const s = strandCells({ x: 8, y: 1 }, { x: 14, y: -14 });
-        expect(s[0]).toEqual({ x: 8, y: 1 });
+        const s = strandCells({ x: 10, y: 0 }, { x: 14, y: -14 });
+        expect(s[0]).toEqual({ x: 10, y: 0 });
         expect(s[s.length - 1]).toEqual({ x: 14, y: -14 });
         expect(touching(s)).toBe(true);
     });
@@ -806,7 +966,11 @@ describe("webSwingFrame", () => {
         }
     });
 
-    it("departs: the strand shoots from its hands to the anchor, then it is pulled up it and gone", () => {
+    it("holds the strand in SPIDEY_SWING's hand", () => {
+        expect(HANDS).toEqual({ x: 10, y: 0 });
+    });
+
+    it("departs: the strand shoots from its hand to the anchor, then it is pulled up it and gone", () => {
         const start = webSwingFrame("depart", 0);
         expect(start.pet).toEqual({ dx: 0, dy: 0, opacity: 1 });
         expect(start.strand[0]).toEqual(HANDS);
@@ -814,7 +978,6 @@ describe("webSwingFrame", () => {
         expect(shot.strand[shot.strand.length - 1]).toEqual(ANCHOR);
         const mid = webSwingFrame("depart", (SHOOT_MS + TELEPORT_MS.depart) / 2);
         expect(mid.pet.dy).toBeLessThan(0);
-        expect(mid.pet.dx).toBeGreaterThan(0);
         const end = webSwingFrame("depart", TELEPORT_MS.depart);
         expect(end.pet.opacity).toBe(0);
         expect(end.strand).toEqual([]);
@@ -849,24 +1012,19 @@ describe("webSwingFrame", () => {
 });
 ```
 
-**Step 2: Run to see them fail**
+Run both files — FAIL.
 
-Run: `npx vitest run frontend/app/view/jarvis/petfall.test.ts frontend/app/view/jarvis/petwebswing.test.ts`
-Expected: FAIL — `webLanding` not exported, `./petwebswing` missing.
-
-**Step 3: The rappel**
-
-Append to `petfall.ts`:
+**Step 2: The rappel** — append to `petfall.ts`:
 
 ```ts
-// Spider-Man does not drop: it rappels down a strand at this speed, braking (easeOut) into the ledge, within these.
+// Spider-Man does not drop: he rappels down a strand at this speed, braking (easeOut) into the ledge, within these.
 export const RAPPEL_PX_S = 600;
 export const MIN_RAPPEL_S = 0.25;
 export const MAX_RAPPEL_S = 0.6;
 
 /**
  * Spider-Man's way back to the ledge from `offset` px below it: from above a rappel, slower than a fall and braking
- * rather than accelerating, with the same one-cell bounce; from below landing's hop; null when it is already there.
+ * rather than accelerating, with the same one-cell bounce; from below landing's hop; null when he is already there.
  */
 export function webLanding(offset: number): Landing | null {
     if (offset > -1) {
@@ -883,19 +1041,17 @@ export function webLanding(offset: number): Landing | null {
 }
 ```
 
-**Step 4: The web-swing**
-
-Create `petwebswing.ts`:
+**Step 3: The web-swing** — create `petwebswing.ts`:
 
 ```ts
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Spider-Man's teleport (petteleport.ts plays Sprout's and the Minion's): departing, it shoots a strand up and out and
-// is yanked along it out of sight; arriving, a strand drops and it swings in down it to where it stands. It lasts what
-// the teleport lasts (TELEPORT_MS), so teleportstore.ts and the fold's timing do not know which one plays. Drawn on the
-// pet's own cell grid in --color-spidey-web, moving only in whole cells, so it stays pixel art. Pure: the frame at a
-// time; petteleportsvg.tsx draws it.
+// Spider-Man's teleport (petteleport.ts draws Sprout's and the Minion's): departing, he shoots a strand up and out and
+// is yanked along it out of sight; arriving, a strand drops and he swings in down it to where he stands. It lasts what
+// the teleport lasts (TELEPORT_MS), so teleportstore.ts and the fold's timing do not know which one plays. The body is
+// SPIDEY_SWING, moved in whole cells; the strand is cells in --color-spidey-web. Pure: the frame at a time;
+// petteleportsvg.tsx draws it.
 
 import { TELEPORT_MS, type TeleportKind } from "./petteleport";
 
@@ -908,21 +1064,21 @@ export interface WebCell {
 }
 
 export interface WebSwingFrame {
-    // where the pet is drawn, in whole cells from where it stands, and how much of it shows
+    // where the body is drawn, in whole cells from where he stands, and how much of it shows
     pet: { dx: number; dy: number; opacity: number };
-    // the strand, from the pet's hands to where it is stuck; empty when none is drawn
+    // the strand, from his hand to where it is stuck; empty when none is drawn
     strand: WebCell[];
 }
 
 // where the strand sticks: up and out to the right, off the pet's box
 export const ANCHOR: WebCell = { x: 14, y: -14 };
-// the pet's hands, at the top middle of its box (SPIDEY_POSES.dangle, which it is drawn in while it swings)
-export const HANDS: WebCell = { x: 8, y: 1 };
-// where an arriving pet swings in from, in cells from where it lands: up and to the left
+// SPIDEY_SWING's raised hand
+export const HANDS: WebCell = { x: 10, y: 0 };
+// where an arriving swing comes from, in cells from where he lands: up and to the left
 export const SWING_FROM = { dx: -12, dy: -10 };
 // how long the strand takes to shoot out or drop
 export const SHOOT_MS = 120;
-// a departing pet fades over the last part of its pull
+// a departing body fades over the last part of its pull
 const FADE_FROM = 0.6;
 
 const clamp01 = (k: number) => Math.min(1, Math.max(0, k));
@@ -967,7 +1123,7 @@ function depart(t: number): WebSwingFrame {
     if (k >= 1) {
         return { pet: { dx: ANCHOR.x - HANDS.x, dy: ANCHOR.y - HANDS.y, opacity: 0 }, strand: [] };
     }
-    // pulled up the strand, faster as it goes
+    // pulled up the strand, faster as he goes
     const dx = lerp(0, ANCHOR.x - HANDS.x, easeIn(k));
     const dy = lerp(0, ANCHOR.y - HANDS.y, easeIn(k));
     const opacity = k < FADE_FROM ? 1 : 1 - (k - FADE_FROM) / (1 - FADE_FROM);
@@ -985,7 +1141,7 @@ function arrive(t: number): WebSwingFrame {
     if (k >= 1) {
         return { pet: { dx: 0, dy: 0, opacity: 1 }, strand: [] };
     }
-    // a pendulum's arc: it drops first and comes across last, rather than sliding in a line
+    // a pendulum's arc: he drops first and comes across last, rather than sliding in a line
     const dx = lerp(SWING_FROM.dx, 0, easeIn(k));
     const dy = lerp(SWING_FROM.dy, 0, easeOut(k));
     return { pet: { dx, dy, opacity: 1 }, strand: strandCells(at(HANDS, dx, dy), ANCHOR) };
@@ -998,12 +1154,9 @@ export function webSwingFrame(kind: TeleportKind, t: number): WebSwingFrame {
 }
 ```
 
-**Step 5: Run the tests**
+**Step 4:** run both test files — PASS.
 
-Run: `npx vitest run frontend/app/view/jarvis/petfall.test.ts frontend/app/view/jarvis/petwebswing.test.ts`
-Expected: PASS.
-
-**Step 6: Commit**
+**Step 5: Commit**
 
 ```bash
 git add frontend/app/view/jarvis/petwebswing.ts frontend/app/view/jarvis/petwebswing.test.ts
@@ -1012,42 +1165,13 @@ git commit -m "feat(pet): Spider-Man rappels down a strand and web-swings in pla
 
 ---
 
-### Task 4: The hang pastime, the ceiling and the upside-down sprite (pure)
+### Task 4: The app-bar pastime and the ceiling (pure)
 
-**Depends on:** Task 1
+**Depends on:** none
 
-**Files:** `frontend/app/view/jarvis/petwalk.ts`, `frontend/app/view/jarvis/petledge.ts`, `frontend/app/view/jarvis/petsprite.ts`, `frontend/app/view/jarvis/petwalk.test.ts`, `frontend/app/view/jarvis/petledge.test.ts`, `frontend/app/view/jarvis/petsprite.test.ts`, `frontend/app/view/jarvis/petview.tsx`
+**Files:** `frontend/app/view/jarvis/petwalk.ts`, `frontend/app/view/jarvis/petwalk.test.ts`, `frontend/app/view/jarvis/petledge.ts`, `frontend/app/view/jarvis/petledge.test.ts`, `frontend/app/view/jarvis/petview.tsx`
 
-- Modify: `frontend/app/view/jarvis/petwalk.ts`
-- Modify: `frontend/app/view/jarvis/petledge.ts`
-- Modify: `frontend/app/view/jarvis/petsprite.ts` (after `spriteFor`)
-- Test: `frontend/app/view/jarvis/petwalk.test.ts`, `frontend/app/view/jarvis/petledge.test.ts`,
-  `frontend/app/view/jarvis/petsprite.test.ts`
-
-**Step 1: Write the failing tests**
-
-`petsprite.test.ts` — import `upsideDown`; append:
-
-```ts
-describe("upsideDown", () => {
-    it("hangs the body by its feet and leaves the marks and the flag as they are", () => {
-        const s = spriteFor("stand", ["blocked"], "vn-flag", "spidey");
-        const u = upsideDown(s);
-        expect(u.back).toEqual(s.back);
-        expect(u.overlay).toEqual(s.overlay);
-        expect(u.body).toHaveLength(s.body.length);
-        for (const [i, c] of u.body.entries()) {
-            expect(c).toEqual({ ...s.body[i], y: PET_GRID - 1 - s.body[i].y });
-        }
-        expect(Math.min(...u.body.map((c) => c.y))).toBe(0);
-    });
-
-    it("turned twice is the sprite again", () => {
-        const s = spriteFor("stand", [], null, "spidey");
-        expect(upsideDown(upsideDown(s))).toEqual(s);
-    });
-});
-```
+**Step 1: Failing tests**
 
 `petledge.test.ts` — import `measureCeiling`; append:
 
@@ -1055,11 +1179,11 @@ describe("upsideDown", () => {
 describe("measureCeiling", () => {
     const box = (top: number, bottom: number) => ({ left: 0, right: 800, top, bottom });
 
-    it("is the bottom of the app bar it hangs from", () => {
+    it("is the bottom of the app bar he hangs from", () => {
         expect(measureCeiling([box(0, 38)])).toBe(38);
     });
 
-    it("is null with no ceiling shown: Float and the folded window, where it never hangs", () => {
+    it("is null with no ceiling shown: Float and the folded window, where he never hangs", () => {
         expect(measureCeiling([])).toBeNull();
         expect(measureCeiling([{ left: 0, right: 0, top: 0, bottom: 0 }])).toBeNull();
     });
@@ -1070,114 +1194,100 @@ describe("measureCeiling", () => {
 });
 ```
 
-`petwalk.test.ts`:
-- import `HANG_DOWN_MS`, `HANG_EVERY`, `HANG_MIN_MS`, `HANG_UP_MS`, `startHang` from `./petwalk`;
-- in the `input()` helper add `hangs: false,` before `...over`;
-- append:
+`petwalk.test.ts` — import `CRAWL_MIN_MS`, `CRAWL_STEP_MS`, `HANG_DOWN_MS`, `HANG_EVERY`, `HANG_MIN_MS`, `HANG_UP_MS`,
+`startHang`; add `hangs: false,` to the `input()` helper before `...over`; append:
 
 ```ts
 describe("hang (Spider-Man)", () => {
     // a walk one step from its target, so the next step lands and starts a rest
     const arriving = () => walker({ name: "walk", x: 400, target: 400, due: T0 });
     const zero = () => 0;
+    const hanging = input({ hangs: true });
+    // with rand 0: crawl CRAWL_MIN_MS, hang HANG_MIN_MS
+    const DUE = T0 + HANG_UP_MS + CRAWL_MIN_MS + HANG_MIN_MS + HANG_DOWN_MS;
 
-    it("starts about one rest in HANG_EVERY when it can hang, going up first in dangle", () => {
+    it("starts about one rest in HANG_EVERY when it can, going up first in dangle", () => {
         expect(HANG_EVERY).toBe(7);
-        const step = stepWalker(arriving(), input({ hangs: true }), T0, zero);
+        const step = stepWalker(arriving(), hanging, T0, zero);
         expect(step.state.restPose).toBe("hang");
-        expect(step.hang).toBe("up");
-        expect(step.pose).toBe("dangle");
-        expect(step.delayMs).toBe(HANG_UP_MS);
+        expect([step.hang, step.pose, step.delayMs]).toEqual(["up", "dangle", HANG_UP_MS]);
     });
 
     it("rests as before on a draw past one in seven", () => {
-        const step = stepWalker(arriving(), input({ hangs: true }), T0, () => 0.5);
+        const step = stepWalker(arriving(), hanging, T0, () => 0.5);
         expect(step.state.restPose).not.toBe("hang");
         expect(step.hang).toBeNull();
     });
 
-    it("never hangs when it cannot (not Spider-Man, no app bar, the cursor on it), nor tired", () => {
+    it("never hangs when it cannot, nor tired", () => {
         expect(stepWalker(arriving(), input(), T0, zero).hang).toBeNull();
         expect(stepWalker(arriving(), input({ hangs: true, expression: "tired" }), T0, zero).hang).toBeNull();
     });
 
-    it("goes up, hangs upside down in stand, comes down, and walks on", () => {
-        const s = startHang(walker(), T0, zero);
-        expect(s.due).toBe(T0 + HANG_UP_MS + HANG_MIN_MS + HANG_DOWN_MS);
-        const hanging = input({ hangs: true });
+    it("goes up, crawls a cell every CRAWL_STEP_MS toward the roomier side, hangs, comes down, walks on", () => {
+        const s = startHang(walker({ x: 400 }), hanging, T0, zero);
+        expect(s.due).toBe(DUE);
         const up = stepWalker(s, hanging, T0, half);
-        expect([up.hang, up.pose, up.delayMs]).toEqual(["up", "dangle", HANG_UP_MS]);
-        const hang = stepWalker(up.state, hanging, T0 + HANG_UP_MS, half);
+        expect([up.hang, up.pose]).toEqual(["up", "dangle"]);
+        const crawl = stepWalker(up.state, hanging, T0 + HANG_UP_MS, half);
+        expect([crawl.hang, crawl.x, crawl.delayMs]).toEqual(["crawl", 400, CRAWL_STEP_MS]);
+        const on = stepWalker(crawl.state, hanging, T0 + HANG_UP_MS + 2 * CRAWL_STEP_MS, half);
+        // 400 has more room to the right of LEDGE's travel (100..1252)
+        expect([on.hang, on.x, on.flip]).toEqual(["crawl", 400 + 2 * STEP_PX, false]);
+        const hang = stepWalker(on.state, hanging, T0 + HANG_UP_MS + CRAWL_MIN_MS, half);
         expect([hang.hang, hang.pose, hang.delayMs]).toEqual(["hang", "stand", HANG_MIN_MS]);
-        const down = stepWalker(hang.state, hanging, T0 + HANG_UP_MS + HANG_MIN_MS, half);
+        const down = stepWalker(hang.state, hanging, DUE - HANG_DOWN_MS, half);
         expect([down.hang, down.pose, down.delayMs]).toEqual(["down", "dangle", HANG_DOWN_MS]);
-        const after = stepWalker(down.state, hanging, s.due, half);
+        const after = stepWalker(down.state, hanging, DUE, half);
         expect(after.hang).toBeNull();
         expect(after.state.name).toBe("walk");
     });
 
-    it("comes down at once when it can no longer hang, and rests the rest of the time standing", () => {
-        const s = startHang(walker(), T0, zero);
-        const cut = stepWalker(s, input({ hangs: false }), T0 + 1_000, half);
-        expect(cut.hang).toBeNull();
-        expect(cut.pose).toBe("stand");
-        expect(cut.state.name).toBe("rest");
-        expect(cut.state.due).toBe(s.due);
+    it("crawls left from near the right end, mirrored, and never off the ledge", () => {
+        const s = startHang(walker({ x: 1250 }), hanging, T0, zero);
+        let step = stepWalker(s, hanging, T0 + HANG_UP_MS, half);
+        for (let t = T0 + HANG_UP_MS; t < T0 + HANG_UP_MS + CRAWL_MIN_MS; t += CRAWL_STEP_MS) {
+            step = stepWalker(step.state, hanging, t, half);
+            expect(step.x).toBeGreaterThanOrEqual(LEDGE.left);
+            expect(step.x).toBeLessThanOrEqual(LEDGE.right - PX);
+            expect(step.flip).toBe(true);
+        }
+        expect(step.x).toBeLessThan(1250);
+    });
+
+    it("comes down at once when it can no longer hang, and rests the rest of the time standing where it crawled to", () => {
+        const s = startHang(walker({ x: 400 }), hanging, T0, zero);
+        const mid = stepWalker(s, hanging, T0 + HANG_UP_MS + 4 * CRAWL_STEP_MS, half);
+        const cut = stepWalker(mid.state, input({ hangs: false }), T0 + HANG_UP_MS + 4 * CRAWL_STEP_MS, half);
+        expect([cut.hang, cut.pose, cut.state.name, cut.x]).toEqual([null, "stand", "rest", mid.x]);
+        expect(cut.state.due).toBe(DUE);
     });
 
     it("comes down for a posture, and for a drag", () => {
-        const s = startHang(walker(), T0, zero);
-        const held = stepWalker(s, input({ hangs: true, posture: "escalation" }), T0 + 1_000, half);
-        expect(held.hang).toBeNull();
+        const s = startHang(walker(), hanging, T0, zero);
+        expect(stepWalker(s, input({ hangs: true, posture: "escalation" }), T0 + 1_000, half).hang).toBeNull();
         const dragged = stepWalker(s, input({ hangs: true, dragging: true }), T0 + 1_000, half);
-        expect(dragged.hang).toBeNull();
-        expect(dragged.pose).toBe("dangle");
+        expect([dragged.hang, dragged.pose]).toEqual([null, "dangle"]);
     });
 
-    it("stays up when a terminal opens under the spot it left: it is not on the ledge", () => {
-        const s = startHang(walker({ x: 400 }), T0, zero);
-        const step = stepWalker(s, input({ hangs: true, avoid: [[380, 600]] }), T0 + 1_000, half);
+    it("stays up when a terminal opens under the ledge: it is not on the ledge", () => {
+        const s = startHang(walker({ x: 400 }), hanging, T0, zero);
+        const step = stepWalker(s, input({ hangs: true, avoid: [[300, 900]] }), T0 + HANG_UP_MS + CRAWL_MIN_MS + 1_000, half);
         expect(step.hang).toBe("hang");
     });
 });
 ```
 
-**Step 2: Run to see them fail**
+(`PX`, `LEDGE`, `STEP_PX`, `half`, `walker`, `input` are the file's existing helpers and imports.)
 
-Run: `npx vitest run frontend/app/view/jarvis/petwalk.test.ts frontend/app/view/jarvis/petledge.test.ts frontend/app/view/jarvis/petsprite.test.ts`
-Expected: FAIL — `startHang`, `measureCeiling`, `upsideDown` not exported; `input()` has an unknown `hangs`.
+Run `npx vitest run frontend/app/view/jarvis/petwalk.test.ts frontend/app/view/jarvis/petledge.test.ts` — FAIL.
 
-**Step 3: `upsideDown`** (`petsprite.ts`)
-
-Name the sprite type and use it as `spriteFor`'s return type:
-
-```ts
-export interface PetSprite {
-    back: PetCell[];
-    body: PetCell[];
-    overlay: PetCell[];
-}
-```
-
-then, after `spriteFor`:
-
-```ts
-/**
- * A sprite turned upside down, hanging by its feet (Spider-Man's hang, petwalk.ts): the body's rows in reverse, so its
- * feet are on row 0 where the strand meets them. Cells only move, so it stays pixel art; the marks and the flag stay
- * as they are, so a ? still reads as one.
- */
-export function upsideDown(sprite: PetSprite): PetSprite {
-    return { ...sprite, body: sprite.body.map((c) => ({ ...c, y: PET_GRID - 1 - c.y })) };
-}
-```
-
-**Step 4: `measureCeiling`** (`petledge.ts`, after `measureLedge`)
+**Step 2: `measureCeiling`** — `petledge.ts`, after `measureLedge`:
 
 ```ts
 /**
  * The y Spider-Man hangs from: the bottom of the lowest shown `[data-pet-ceiling]` box (the app bar), or null when none
- * is shown — Float and the folded window, where it never hangs.
+ * is shown — Float and the folded window, where he never hangs.
  */
 export function measureCeiling(boxes: readonly Box[]): number | null {
     let best: number | null = null;
@@ -1190,76 +1300,101 @@ export function measureCeiling(boxes: readonly Box[]): number | null {
 }
 ```
 
-**Step 5: The walker** (`petwalk.ts`)
+**Step 3: The walker** — `petwalk.ts`:
 
-1. After `PASTIMES`, add:
+1. After `PASTIMES`:
 
 ```ts
-// Spider-Man's own rest, when WalkerInput.hangs: it shoots a strand to the app bar and goes up it, hangs upside down
-// under the bar, and rappels back to where it left the ledge. About one rest in HANG_EVERY, never tired.
+// Spider-Man's own rest, when WalkerInput.hangs: a strand to the app bar and up it, a crawl along its underside, a hang
+// upside down from it, and a rappel back down where the crawl left him. About one rest in HANG_EVERY, never tired.
 export const HANG_EVERY = 7;
 export const HANG_UP_MS = 400;
-export const HANG_DOWN_MS = 500;
+export const CRAWL_MIN_MS = 1_500;
+export const CRAWL_MAX_MS = 3_000;
+// a cell of crawl this often
+export const CRAWL_STEP_MS = 250;
 export const HANG_MIN_MS = 4_000;
 export const HANG_MAX_MS = 8_000;
+export const HANG_DOWN_MS = 500;
 
-export type HangPhase = "up" | "hang" | "down";
+export type HangPhase = "up" | "crawl" | "hang" | "down";
 ```
 
 2. `export type RestPose = (typeof REST_POSES)[number] | "hang";`
 3. `WalkerInput`, after `home`:
 
 ```ts
-    // Spider-Man, with an app bar to hang from, the cursor not on it, and motion allowed: a rest may be a hang
+    // Spider-Man, with an app bar to hang from, the cursor not on him, and motion allowed: a rest may be a hang
     hangs: boolean;
 ```
 
 4. `WalkerState`, after `posture`:
 
 ```ts
-    // a hang rest: when it began, which times its phases (absent on every other rest)
-    hangAt?: number;
+    // a hang rest: when it began, how long it crawls, where it left the ledge and which way it crawls
+    hang?: { at: number; crawlMs: number; x0: number; dir: 1 | -1 };
 ```
 
 5. `WalkerStep`, after `lift`:
 
 ```ts
-    // Spider-Man's hang, by phase: going up the strand, hanging under the app bar, coming down; null otherwise
+    // Spider-Man's app-bar pastime, by phase; null otherwise. The renderer draws the crawl and the hang from their own
+    // grids (SPIDEY_CRAWL, SPIDEY_HANG), and the pose stands in for them
     hang: HangPhase | null;
 ```
 
-6. Replace `rest` and add `startHang` and `hangPhase`:
+6. Replace `rest`, and add `startHang`, `hangPhase`, `hangX`:
 
 ```ts
 function rest(s: WalkerState, input: WalkerInput, now: number, rand: () => number): WalkerState {
-    // the extra draw only when it can hang, so every other creature's walk is the walk it always was
+    // the extra draw only when he can hang, so every other creature's walk is the walk it always was
     if (input.hangs && !wearsTired(input.expression) && rand() < 1 / HANG_EVERY) {
-        return startHang(s, now, rand);
+        return startHang(s, input, now, rand);
     }
     const length = REST_MIN_MS + rand() * (REST_MAX_MS - REST_MIN_MS);
     return {
         ...still(s, "rest"),
         due: now + (wearsTired(input.expression) ? 2 * length : length),
         restPose: REST_POSES[Math.min(REST_POSES.length - 1, Math.floor(rand() * REST_POSES.length))],
-        hangAt: undefined,
+        hang: undefined,
     };
 }
 
-/** A hang rest starting now: up, HANG_MIN_MS..HANG_MAX_MS hanging, down. Exported for the DEV force (petview.tsx). */
-export function startHang(s: WalkerState, now: number, rand: () => number): WalkerState {
-    const length = HANG_MIN_MS + rand() * (HANG_MAX_MS - HANG_MIN_MS);
-    return { ...still(s, "rest"), restPose: "hang", hangAt: now, due: now + HANG_UP_MS + length + HANG_DOWN_MS };
+/** A hang rest starting now, crawling toward the roomier side. Exported for the DEV force (petview.tsx). */
+export function startHang(s: WalkerState, input: WalkerInput, now: number, rand: () => number): WalkerState {
+    const crawlMs = CRAWL_MIN_MS + rand() * (CRAWL_MAX_MS - CRAWL_MIN_MS);
+    const hangMs = HANG_MIN_MS + rand() * (HANG_MAX_MS - HANG_MIN_MS);
+    const [lo, hi] = travel(input.ledge);
+    const dir = hi - s.x >= s.x - lo ? 1 : -1;
+    return {
+        ...still(s, "rest"),
+        restPose: "hang",
+        flip: dir < 0,
+        hang: { at: now, crawlMs, x0: s.x, dir },
+        due: now + HANG_UP_MS + crawlMs + hangMs + HANG_DOWN_MS,
+    };
 }
 
-/** Which phase of its hang a state is in at `now`, or null when it is not hanging. */
+/** Which phase of his hang a state is in at `now`, or null when he is not hanging. */
 export function hangPhase(s: WalkerState, now: number): HangPhase | null {
-    if (s.name !== "rest" || s.restPose !== "hang" || s.hangAt == null) {
+    if (s.name !== "rest" || s.restPose !== "hang" || s.hang == null) {
         return null;
     }
-    if (now < s.hangAt + HANG_UP_MS) {
+    const t = now - s.hang.at;
+    if (t < HANG_UP_MS) {
         return "up";
     }
+    if (t < HANG_UP_MS + s.hang.crawlMs) {
+        return "crawl";
+    }
     return now >= s.due - HANG_DOWN_MS ? "down" : "hang";
+}
+
+// where the crawl has taken him by now: a cell every CRAWL_STEP_MS from where he went up, kept on the ledge's span
+function hangX(s: WalkerState, input: WalkerInput, now: number): number {
+    const h = s.hang!;
+    const t = Math.min(Math.max(0, now - h.at - HANG_UP_MS), h.crawlMs);
+    return clampX(h.x0 + h.dir * Math.floor(t / CRAWL_STEP_MS) * STEP_PX, input.ledge);
 }
 ```
 
@@ -1268,70 +1403,71 @@ export function hangPhase(s: WalkerState, now: number): HangPhase | null {
 ```ts
     const phase = hangPhase(s, now);
     if (phase != null) {
-        // hands on the strand going up and coming down; stood on its head under the bar (the renderer turns it over)
-        return phase === "hang" ? "stand" : "dangle";
+        // hands on the strand going up and coming down; the crawl and the hang are drawn from their own grids
+        return phase === "up" || phase === "down" ? "dangle" : "stand";
     }
 ```
 
 8. `restDelay`, first lines:
 
 ```ts
-    if (s.restPose === "hang" && s.hangAt != null) {
-        const next = [s.hangAt + HANG_UP_MS, s.due - HANG_DOWN_MS, s.due].filter((b) => b > now);
+    if (s.restPose === "hang" && s.hang != null) {
+        const h = s.hang;
+        const crawlEnd = h.at + HANG_UP_MS + h.crawlMs;
+        const bounds = [h.at + HANG_UP_MS, crawlEnd, s.due - HANG_DOWN_MS, s.due];
+        if (now >= h.at + HANG_UP_MS && now < crawlEnd) {
+            const into = now - h.at - HANG_UP_MS;
+            bounds.push(h.at + HANG_UP_MS + (Math.floor(into / CRAWL_STEP_MS) + 1) * CRAWL_STEP_MS);
+        }
+        const next = bounds.filter((b) => b > now);
         return next.length === 0 ? 0 : Math.min(...next) - now;
     }
 ```
 
-9. In `stepWalker`'s `else if (s.name === "rest")` branch, before the `blocked` check, and make that check skip a
-   hang:
+9. `stepWalker`'s rest branch:
 
 ```ts
     } else if (s.name === "rest") {
-        if (s.restPose === "hang" && !input.hangs) {
-            // the cursor came onto it, or the app bar went: it comes down and spends the rest of the time standing
-            s = { ...s, restPose: "stand", hangAt: undefined };
+        if (s.restPose === "hang" && s.hang != null) {
+            if (input.hangs) {
+                s = { ...s, x: hangX(s, input, now) };
+            } else {
+                // the cursor came onto him, or the app bar went: he comes down where he is and rests the rest standing
+                s = { ...s, restPose: "stand", hang: undefined };
+            }
         }
         if (s.restPose !== "hang" && blocked(s.x, avoid) && clearSpot(s.x, ledge, avoid) !== s.x) {
 ```
 
    (the rest of the branch as it is.)
 
-10. `view`: add `hang: hangPhase(s, now),` beside `lift`.
+10. `view`: `hang: hangPhase(s, now),` beside `lift`.
 
-**Step 6: Run the tests and the typecheck**
+**Step 4: Tests and typecheck**
 
-Run: `npx vitest run frontend/app/view/jarvis/`
-Expected: PASS — the existing walker tests too (they never set `hangs`, so no draw changes).
-Run: `task check:ts`
-Expected: errors only where a `WalkerInput` is built without `hangs` (`petview.tsx`'s `run`) or a `WalkerStep` without
-`hang`. Add `hangs: false,` / `hang: null,` there for now (Task 5 wires `petview.tsx`), and re-run: exit 0. Commit
-whichever of those files you touched too.
+`npx vitest run frontend/app/view/jarvis/` — PASS, the existing walker tests too (they never set `hangs`).
+`task check:ts` — the errors are where a `WalkerInput` is built without `hangs` (`petview.tsx`'s `run`): add
+`hangs: false,` there for now (Task 5 wires it). Exit 0.
 
-**Step 7: Commit**
+**Step 5: Commit**
 
 ```bash
-git commit -m "feat(pet): Spider-Man's hang rest, the app bar as its ceiling, and the upside-down sprite (pure)" -- frontend/app/view/jarvis/petwalk.ts frontend/app/view/jarvis/petwalk.test.ts frontend/app/view/jarvis/petledge.ts frontend/app/view/jarvis/petledge.test.ts frontend/app/view/jarvis/petsprite.ts frontend/app/view/jarvis/petsprite.test.ts frontend/app/view/jarvis/petview.tsx
+git commit -m "feat(pet): Spider-Man's app-bar pastime — up, crawl, hang, down — and the app bar as his ceiling (pure)" -- frontend/app/view/jarvis/petwalk.ts frontend/app/view/jarvis/petwalk.test.ts frontend/app/view/jarvis/petledge.ts frontend/app/view/jarvis/petledge.test.ts frontend/app/view/jarvis/petview.tsx
 ```
 
 ---
 
-### Task 5: Draw the web: drag, rappel, hang, web-swing, the working web
+### Task 5: Draw the web on the footer and the app bar
 
-**Depends on:** Task 3, Task 4
+**Depends on:** Task 1, Task 3, Task 4
 
-**Files:** `frontend/app/view/jarvis/petview.tsx`, `frontend/app/view/jarvis/petteleportsvg.tsx`, `frontend/app/view/jarvis/workingdots.tsx`, `frontend/app/cockpit/sprout-mini.tsx`, `frontend/app/cockpit/app-bar.tsx`
+**Files:** `frontend/app/view/jarvis/petview.tsx`, `frontend/app/view/jarvis/petteleportsvg.tsx`, `frontend/app/view/jarvis/workingdots.tsx`, `frontend/app/cockpit/app-bar.tsx`
 
-- Modify: `frontend/app/view/jarvis/petview.tsx`
-- Modify: `frontend/app/view/jarvis/petteleportsvg.tsx`
-- Modify: `frontend/app/view/jarvis/workingdots.tsx`
-- Modify: `frontend/app/cockpit/sprout-mini.tsx`
-- Modify: `frontend/app/cockpit/app-bar.tsx` (the root `<div data-app-bar …>`, ~line 80)
+Views over the pure modules Tasks 1, 3 and 4 tested (no render tests, by repo rule); Task 7's CDP steps show them.
+Read `petview.tsx` whole first; line numbers below are from before this plan.
 
-No unit test: these are views over the pure modules Tasks 3–4 tested (repo rule: no render tests). Task 6's CDP steps
-show them. Read `petview.tsx` whole before editing it; the line numbers below are from before this plan.
-
-**Step 1: The ceiling.** In `app-bar.tsx` add `data-pet-ceiling` to the root `<div data-app-bar data-tauri-drag-region …>`.
-In `petview.tsx`, beside `readLedge`:
+**Step 1: The ceiling.** `app-bar.tsx`: add `data-pet-ceiling` to the root `<div data-app-bar …>`. `petview.tsx`, beside
+`readLedge`:
 
 ```ts
 // the app bar Spider-Man hangs from (petledge.ts measureCeiling), absent in Float and folded
@@ -1340,139 +1476,106 @@ function readCeiling(): number | null {
 }
 ```
 
-Add `ceiling: number | null` to `PetFrame` and set it in `run` (`setFrame({ step, ledge, avoid, ceiling })`).
+`PetFrame` gains `ceiling: number | null`, set in `run`.
 
-**Step 2: Who it is, read by the walker.** Move `const character = petCharacter(useAtomValue(petCharacterAtom));` from
-the render (~line 566) up beside `teleport` (~line 346), and add `character` to `liveRef` (both the initial object and
-the per-render assignment). Add `const hangCutRef = useRef(false);`. In `run`, compute `const ceiling = readCeiling();`
-and set the input:
+**Step 2: Who he is, read by the walker.** Move `const character = petCharacter(useAtomValue(petCharacterAtom));` up
+beside `teleport` (~line 346) and add it to `liveRef`. Add `const hangCutRef = useRef(false);`. In `run`:
+`hangs: live.character === "spidey" && ceiling != null && !live.reduce && !hangCutRef.current,` and after
+`stepWalker`, `if (step.hang == null) { hangCutRef.current = false; }`. The effect that re-runs the walker when its
+live inputs change also depends on `character`. In `onHoverStart`, before `touch()`:
+`if (frame?.step.hang != null) { hangCutRef.current = true; }`.
 
-```ts
-            // Spider-Man hangs from the app bar; not under reduced motion, and not once the cursor has come onto it
-            hangs: live.character === "spidey" && ceiling != null && !live.reduce && !hangCutRef.current,
-```
-
-After `stepWalker`, `if (step.hang == null) { hangCutRef.current = false; }`. Make the effect that re-runs the walker
-when its live inputs change also depend on `character` (find the `useEffect` that calls `run()` on
-`expression`/`posture`/… changes and add it to the deps).
-
-In `onHoverStart`, before `touch`: `if (frame?.step.hang != null) { hangCutRef.current = true; }` (then `touch()`,
-which re-runs the walker).
-
-**Step 3: Up to the bar and back.** Add motion values and the animation:
+**Step 3: Up, along and down the bar.** Module constants:
 
 ```ts
-    // Spider-Man's hang: how far above its ledge spot it is drawn, and the strand above it
-    const hangY = useMotionValue(0);
-    const hangAnimRef = useRef<AnimationPlaybackControls | null>(null);
-    // the gap from the bar to its ledge-top, so the strand's height follows hangY without a render
-    const hangBase = useMotionValue(0);
-    const hangStrand = useTransform([hangY, hangBase], ([y, base]: number[]) => Math.max(0, base + y));
+// Spider-Man under the app bar: the strand between the bar and his boots while he hangs
+const HANG_STRAND_PX = 4 * PET_CELL_PX;
+// the strand's column: his raised hand in dangle, his boots in the hang
+const HAND_LEFT_PX = 12 * PET_CELL_PX;
+const BOOTS_LEFT_PX = 8 * PET_CELL_PX;
 ```
 
-```ts
-    // the hang's three phases (petwalk.ts): up the strand to just under the bar, held there, and down again — and down
-    // too whenever the hang is cut (the cursor came onto it, a posture, a drag)
-    const hang = frame?.step.hang ?? null;
-    const hangTo =
-        frame?.ceiling != null ? frame.ceiling + HANG_STRAND_PX - (frame.ledge.top - PET_PX - frame.step.lift) : 0;
-    useEffect(() => {
-        if (frame?.ceiling != null) {
-            hangBase.set(frame.ledge.top - PET_PX - frame.ceiling);
-        }
-        hangAnimRef.current?.stop();
-        if (hang === "up") {
-            hangAnimRef.current = animate(hangY, hangTo, { duration: HANG_UP_MS / 1000, ease: "easeOut" });
-        } else if (hang === "hang") {
-            hangY.set(hangTo);
-        } else if (hangY.get() !== 0) {
-            hangAnimRef.current = animate(hangY, 0, { duration: HANG_DOWN_MS / 1000, ease: "easeOut" });
-        }
-    }, [hang, hangTo, hangY, hangBase, frame?.ceiling, frame?.ledge.top]);
-```
+Motion values: `hangY` (px above his ledge spot), `hangBase` (`ledge.top - PET_PX - ceiling`, set each frame) and
+`hangStrand = useTransform([hangY, hangBase], ([y, base]: number[]) => Math.max(0, base + y))`. On the root
+`motion.div`'s `style`, `marginTop: hangY` (the hit box goes up with him, so a hover on him cuts the hang). An effect on
+the phase:
 
-with `const HANG_STRAND_PX = 4 * PET_CELL_PX;` at module level (comment: "the strand between the bar and its feet") and
-`hangAnimRef.current?.stop()` in the unmount cleanup beside `slideAnimRef`. On the root `motion.div`'s `style`, add
-`marginTop: hangY` (so the hit box goes up with it and a hover on the hanging pet cuts the hang).
+- `up`: `animate(hangY, -(frame.ledge.top - PET_PX - frame.ceiling), { duration: HANG_UP_MS / 1000, ease: "easeOut" })`
+  — to the bar's underside;
+- `crawl`: `hangY.set` to the same (he is at the bar);
+- `hang`: `animate(hangY, -(…) + HANG_STRAND_PX, { duration: 0.15, ease: "easeOut" })` — drops a few cells on the strand;
+- `down`, or null after a phase: `animate(hangY, 0, { duration: HANG_DOWN_MS / 1000, ease: "easeOut" })`.
 
-Draw it turned over: `const drawn = step.hang === "hang" ? upsideDown(sprite) : sprite;` and render `drawn` in place of
-`sprite` in the non-teleport branch. Inside the `motion.div`, after the svg:
+Stop it on unmount beside `slideAnimRef`.
+
+What he is drawn as: `up`/`down` the walker's `dangle`; `crawl`
+`spriteOfRows(SPIDEY_CRAWL[Math.round(step.x / STEP_PX) % 2], marks)`; `hang` `spriteOfRows(SPIDEY_HANG, marks)`.
+The body is still mirrored by `step.flip`. The strand, inside the `motion.div` after the svg:
 
 ```tsx
-            {step.hang != null && frame.ceiling != null ? (
-                // the strand from the app bar to its feet (hanging) or its hands (going up, coming down)
+            {step.hang != null && step.hang !== "crawl" && frame.ceiling != null ? (
+                // from the app bar to his boots (hanging) or his raised hand (going up, coming down)
                 <motion.span
                     aria-hidden
-                    className="pointer-events-none absolute bottom-full left-[21px] w-[3px] bg-spidey-web"
-                    style={{ height: hangStrand }}
+                    className="pointer-events-none absolute bottom-full w-[3px] bg-spidey-web"
+                    style={{ left: step.hang === "hang" ? BOOTS_LEFT_PX : HAND_LEFT_PX, height: hangStrand }}
                 />
             ) : null}
 ```
 
-**Step 4: Held by a strand, and the rappel.** Spider-Man only (`character === "spidey" && !reduce`):
+(With `step.flip`, mirror the column: `PET_PX - PET_CELL_PX - left`.)
+
+**Step 4: Held by a strand, and the rappel** (Spider-Man, not under reduced motion):
 
 ```ts
-    // Spider-Man held by the pointer hangs this far under it on a strand (and rappels down a strand when let go)
+    // held, he hangs this far under the pointer on a strand, and rappels down one when let go
     const dropY = useMotionValue(0);
-    // dragY where the pointer let go, so the rappel's strand stays stuck there while the pet goes down it
+    // dragY where the strand is stuck: the pointer while held, the release point while he rappels
     const releaseY = useMotionValue(0);
     const svgY = useTransform([ledgeY, dropY], ([a, b]: number[]) => a + b);
-    // the strand runs from the release point (or the pointer, while held) down to its hands
     const strandTop = useTransform([releaseY, dragY], ([r, y]: number[]) => r - y);
     const strandH = useTransform([releaseY, dragY, dropY], ([r, y, d]: number[]) => Math.max(0, y - r + d));
 ```
 
-- svg `style={{ x: slideX, y: svgY }}` in place of `y: ledgeY`.
-- `onDragStart` (Spider-Man): `releaseY.set(dragY.get()); animate(dropY, DRAG_DROP_PX, { duration: 0.12, ease: "easeOut" });`
-  with module-level `const DRAG_DROP_PX = 4 * PET_CELL_PX;` ("held, it hangs four cells under the pointer").
-  `onDrag` (new handler, Spider-Man): `releaseY.set(dragY.get())` — while held, the strand's top is the pointer.
-- `onDragEnd`: `const way = reduce ? null : (character === "spidey" ? webLanding : landing)(dragY.get());`, and before
-  the fall starts `releaseY.set(dragY.get())`. In `land()`, `dropY.set(0)` beside `dragX.set(0)`.
-- Draw the strand while held or rappelling:
+- The svg's `style` uses `y: svgY` in place of `y: ledgeY`.
+- `onDragStart`: `releaseY.set(dragY.get()); animate(dropY, DRAG_DROP_PX, { duration: 0.12, ease: "easeOut" });` with
+  `const DRAG_DROP_PX = 4 * PET_CELL_PX;`. A new `onDrag`: `releaseY.set(dragY.get())`.
+- `onDragEnd`: `const way = reduce ? null : (character === "spidey" ? webLanding : landing)(dragY.get());`, and
+  `releaseY.set(dragY.get())` before the fall starts; `land()` also does `dropY.set(0)`.
+- While `character === "spidey" && draggingNowRef.current`:
 
 ```tsx
-            {character === "spidey" && draggingNowRef.current ? (
                 <motion.span
                     aria-hidden
-                    className="pointer-events-none absolute left-[21px] top-0 w-[3px] bg-spidey-web"
-                    style={{ y: strandTop, height: strandH }}
+                    className="pointer-events-none absolute top-0 w-[3px] bg-spidey-web"
+                    style={{ left: HAND_LEFT_PX, y: strandTop, height: strandH }}
                 />
-            ) : null}
 ```
 
-**Step 5: The web-swing.** In `petteleportsvg.tsx`:
-
-- Rename the current body of `PetTeleportLayers` to `function BeamLayers(props)` (unchanged).
-- Add:
+**Step 5: The web-swing.** `petteleportsvg.tsx`: rename the current `PetTeleportLayers` body to `BeamLayers`; add
 
 ```tsx
-// Spider-Man's teleport (petwebswing.ts): the strand, and the pet drawn moved along it
-function WebSwingLayers({ run, sprite, cellPx, flip }: LayerProps) {
+type LayerProps = { run: TeleportRun; sprite: PetSprite; cellPx: number; flip?: boolean };
+
+// Spider-Man's teleport (petwebswing.ts): the strand, and the swing's body moved along it
+function WebSwingLayers({ run, cellPx, flip }: LayerProps) {
     const t = useTeleportClock(run);
     if (run.kind === "gone") {
         return null;
     }
     const f = webSwingFrame(run.kind, t);
     const px = PET_GRID * cellPx;
+    const body = spriteOfRows(SPIDEY_SWING, []).body;
     const cell = (c: PetCell, i: number) => (
         <rect key={i} x={c.x * cellPx} y={c.y * cellPx} width={cellPx} height={cellPx} fill={`var(${c.token})`} />
     );
     return (
         <>
             {f.strand.map((c, i) => (
-                <rect
-                    key={`web${i}`}
-                    x={c.x * cellPx}
-                    y={c.y * cellPx}
-                    width={cellPx}
-                    height={cellPx}
-                    fill={`var(${WEB_TOKEN})`}
-                />
+                <rect key={`web${i}`} x={c.x * cellPx} y={c.y * cellPx} width={cellPx} height={cellPx} fill={`var(${WEB_TOKEN})`} />
             ))}
             <g opacity={f.pet.opacity} transform={`translate(${f.pet.dx * cellPx} ${f.pet.dy * cellPx})`}>
-                {sprite.back.map(cell)}
-                <g transform={flip ? `matrix(-1 0 0 1 ${px} 0)` : undefined}>{sprite.body.map(cell)}</g>
-                {sprite.overlay.map(cell)}
+                <g transform={flip ? `matrix(-1 0 0 1 ${px} 0)` : undefined}>{body.map(cell)}</g>
             </g>
         </>
     );
@@ -1483,14 +1586,10 @@ export function PetTeleportLayers(props: LayerProps & { character: PetCharacter 
 }
 ```
 
-  with `type LayerProps = { run: TeleportRun; sprite: PetSprite; cellPx: number; flip?: boolean };`. `PetTeleportSvg`
-  takes and passes `character` too.
-- Callers draw Spider-Man in `dangle` while it swings: in `petview.tsx` pass
-  `sprite={character === "spidey" ? spriteFor("dangle", marks, outfit, character) : sprite}` and `character`; in
-  `sprout-mini.tsx` (~line 219) the same with its own `look.marks` and outfit.
+`PetTeleportSvg` takes and passes `character`. `petview.tsx` passes `character` to `PetTeleportLayers`.
 
-**Step 6: The working web.** In `workingdots.tsx`, take `character?: PetCharacter` (default `"sprout"`) and for
-`"spidey"` draw this in place of the three dots:
+**Step 6: The working web.** `workingdots.tsx`: `character?: PetCharacter` (default `"sprout"`); for `"spidey"` draw this
+in place of the three dots:
 
 ```tsx
 // Spider-Man's working mark: a 12px web whose three rings light in turn, as the dots do; still under reduced motion
@@ -1523,90 +1622,185 @@ function WorkingWeb({ reduce }: { reduce: boolean }) {
 }
 ```
 
-Pass `character` from `petview.tsx` (~line 707) and `sprout-mini.tsx` (~line 230).
+`petview.tsx` passes `character` (~line 707).
 
-**Step 7: The DEV contract and a force.** In `petview.tsx`:
-- `__jarvisPet` gains `character`, `hang: frame.step.hang`, `ceiling: frame.ceiling`, and
-  `upsideDown: frame.step.hang === "hang"`.
-- `PetForce` gains `hang?: boolean` (comment: "start a hang now, Spider-Man under an app bar only"). In `force`, when
-  `o?.hang` and `liveRef.current.character === "spidey"`, set
-  `walkerRef.current = startHang(walkerRef.current ?? <the walker run() would boot>, Date.now(), Math.random)` before
-  `touch()`. A force with `hang` must not also block the walker's normal inputs, so leave `forceRef` as it is.
+**Step 7: The DEV contract and a force.** `__jarvisPet` gains `character`, `hang: frame.step.hang`, `ceiling:
+frame.ceiling`. `PetForce` gains `hang?: boolean` ("start the app-bar pastime now; Spider-Man under an app bar only"); in
+`force`, when `o?.hang` and `liveRef.current.character === "spidey"`, set `walkerRef.current = startHang(walkerRef.current
+?? <the walker run() would boot>, <the input run() builds>, Date.now(), Math.random)` before `touch()`.
 
-**Step 8: Typecheck, tests, and a look**
-
-Run: `task check:ts` — exit 0.
-Run: `npx vitest run frontend/app/view/jarvis/ frontend/app/cockpit/` — PASS.
-In the running dev app (`task dev` already up; don't build): Settings → Appearance → Character → Spider-Man; drag it
-(a strand to the pointer, a slower rappel on release); in the devtools console run
-`window.__jarvisPet.force({ hang: true })` (up the strand, upside down under the app bar, down again; hover it while
-up there and it comes straight down); fold the window (the web-swing) and unfold.
+**Step 8: Check.** `task check:ts` — exit 0. `npx vitest run frontend/app/view/jarvis/ frontend/app/cockpit/` — PASS.
+With a dev app up: pick Spider-Man; drag him (a strand to the pointer, the rappel on release); run
+`window.__jarvisPet.force({ hang: true })` (up, a crawl along the bar's underside, upside down on a strand, down; hover
+him up there and he comes straight down).
 
 **Step 9: Commit**
 
 ```bash
-git commit -m "feat(pet): Spider-Man hangs from the app bar, dangles and rappels on a strand, web-swings to fold, and spins a working web" -- frontend/app/view/jarvis/petview.tsx frontend/app/view/jarvis/petteleportsvg.tsx frontend/app/view/jarvis/workingdots.tsx frontend/app/cockpit/sprout-mini.tsx frontend/app/cockpit/app-bar.tsx
+git commit -m "feat(pet): Spider-Man crawls and hangs under the app bar, dangles and rappels on a strand, web-swings to fold, and spins a working web" -- frontend/app/view/jarvis/petview.tsx frontend/app/view/jarvis/petteleportsvg.tsx frontend/app/view/jarvis/workingdots.tsx frontend/app/cockpit/app-bar.tsx
 ```
 
 ---
 
-### Task 6: CDP steps, docs and changelog
+### Task 6: Folded: the rooftop
 
-**Depends on:** Task 2, Task 5
+**Depends on:** Task 5
+
+**Files:** `frontend/app/view/jarvis/petmini.ts`, `frontend/app/view/jarvis/petmini.test.ts`, `frontend/app/cockpit/sprout-mini.tsx`
+
+**Step 1: Failing test** — append to `petmini.test.ts` (import `spideyFoldLook`; build a `MiniLook` with the file's
+existing helpers, or with `miniLook({...})`):
+
+```ts
+describe("spideyFoldLook", () => {
+    const base = miniLook({ posture: "none", waiting: 0, working: 0, errand: null, unread: false, chatOpen: false, frame: 0 });
+
+    it("lights a window per working agent, four at most", () => {
+        expect(spideyFoldLook({ ...base, working: null }, 0).lit).toBe(0);
+        expect(spideyFoldLook({ ...base, working: 3 }, 0).lit).toBe(3);
+        expect(spideyFoldLook({ ...base, working: 9 }, 0).lit).toBe(4);
+    });
+
+    it("feels it, spider-sense, when something waits: a posture or the waiting chip", () => {
+        expect(spideyFoldLook(base, 0).sense).toBe(false);
+        expect(spideyFoldLook({ ...base, chip: 2 }, 0).sense).toBe(true);
+        expect(spideyFoldLook({ ...base, marks: ["escalation"] }, 0).sense).toBe(true);
+        expect(spideyFoldLook({ ...base, marks: ["unread"] }, 0).sense).toBe(false);
+    });
+
+    it("swings his legs on the bob's second frame, and holds still while sensing", () => {
+        expect(spideyFoldLook(base, 0).swing).toBe(false);
+        expect(spideyFoldLook(base, 1).swing).toBe(true);
+        expect(spideyFoldLook({ ...base, chip: 1 }, 1).swing).toBe(false);
+    });
+
+    it("keeps the unread mark, and shows thinking while Jarvis types", () => {
+        expect(spideyFoldLook({ ...base, marks: ["unread"] }, 0).unread).toBe(true);
+        expect(spideyFoldLook({ ...base, pose: "work1" }, 0).thinking).toBe(true);
+        expect(spideyFoldLook(base, 0).thinking).toBe(false);
+    });
+});
+```
+
+Run `npx vitest run frontend/app/view/jarvis/petmini.test.ts` — FAIL.
+
+**Step 2: The look** — `petmini.ts`:
+
+```ts
+// What Spider-Man's rooftop shows for a fold look: lit windows for the working agents, spider-sense for what waits,
+// swinging legs on the bob's beat, the unread mark, and the working web while Jarvis types.
+export interface SpideyFoldLook {
+    lit: number;
+    sense: boolean;
+    swing: boolean;
+    unread: boolean;
+    thinking: boolean;
+}
+
+const WAITING_MARKS: readonly PetMark[] = ["gate", "escalation", "blocked"];
+
+export function spideyFoldLook(look: MiniLook, frame: 0 | 1): SpideyFoldLook {
+    const sense = look.chip != null || look.marks.some((m) => WAITING_MARKS.includes(m));
+    return {
+        lit: Math.min(look.working ?? 0, 4),
+        sense,
+        swing: frame === 1 && !sense,
+        unread: look.marks.includes("unread"),
+        thinking: look.pose === "work1" || look.pose === "work2",
+    };
+}
+```
+
+**Step 3: The scene** — `sprout-mini.tsx`, where it draws `SproutSvg` (~line 219): for `character === "spidey"` (and no
+teleport playing) draw the rooftop instead, centred in the 64px box (`MINI_SPROUT_BOX` unchanged):
+
+```tsx
+// Spider-Man folded: the rooftop scene, 20x20 cells, in the same box as Sprout's 16x16
+function SpideyRoof({ look, frame }: { look: MiniLook; frame: 0 | 1 }) {
+    const f = spideyFoldLook(look, frame);
+    const rows = spideyFold(f.lit, f.swing);
+    const px = 20 * PET_CELL_PX;
+    const cells = spriteOfRows(rows, f.unread ? ["unread"] : []);
+    const cell = (c: PetCell, i: number) => (
+        <rect key={i} x={c.x * PET_CELL_PX} y={c.y * PET_CELL_PX} width={PET_CELL_PX} height={PET_CELL_PX} fill={`var(${c.token})`} />
+    );
+    return (
+        <svg width={px} height={px} viewBox={`0 0 ${px} ${px}`} shapeRendering="crispEdges" aria-hidden className="block">
+            {cells.body.map(cell)}
+            {cells.overlay.map(cell)}
+            {f.sense ? SPIDEY_SENSE.map(({ x, y }, i) => cell({ x, y, token: "--color-asking" }, 1000 + i)) : null}
+        </svg>
+    );
+}
+```
+
+- No `-translate-y-1` bob for Spider-Man (`look.bob && character !== "spidey"`): his legs swing instead.
+- The working dots are not drawn for him when folded (the windows carry the count); while `thinking`, draw
+  `<WorkingDots count={…} character="spidey" />` where the dots go today.
+- Teleport: `PetTeleportSvg` gets `character` (Task 5 added the prop).
+
+**Step 4: Check.** `npx vitest run frontend/app/view/jarvis/ frontend/app/cockpit/` — PASS; `task check:ts` — exit 0.
+With a dev app up: fold the window with Spider-Man picked — the rooftop, legs swinging; start an agent (a window lights);
+make something wait (spider-sense, the chip at the right).
+
+**Step 5: Commit**
+
+```bash
+git commit -m "feat(pet): folded, Spider-Man sits on a rooftop — lit windows for working agents, spider-sense for what waits" -- frontend/app/view/jarvis/petmini.ts frontend/app/view/jarvis/petmini.test.ts frontend/app/cockpit/sprout-mini.tsx
+```
+
+---
+
+### Task 7: CDP steps, docs and changelog
+
+**Depends on:** Task 2, Task 6
 
 **Files:** `scripts/cdp/scenarios.mjs`, `docs/guide/settings.md`, `CHANGELOG.md`, `docs/open-issues.md`
 
-- Modify: `scripts/cdp/scenarios.mjs` (the `jarvisPet` scenario, after step 14 "the Minion", ~line 5554)
-- Modify: `docs/guide/settings.md:89,93`
-- Modify: `CHANGELOG.md` (the top `## Unreleased` → `Added`)
-- Modify: `docs/open-issues.md` ("0 · Waiting on a hand check")
+**Step 1: The CDP steps.** In `jarvisPet`, after step 14 (the Minion, ~line 5554), following its pattern (a real click
+via `spOpen`/`spClick`, then `window.__jarvisPet`). Add `prevTheme: await h.ev('localStorage.getItem("cockpit.theme.preset")')`
+to the arrange's `ctx` and restore it in teardown beside `prevCharacter` (remove the key when it was null).
 
-**Step 1: The CDP steps.** Follow step 14's pattern (a real click in Settings via `spOpen`/`spClick`, then read
-`window.__jarvisPet`). Add to the arrange's `ctx` `prevTheme: await h.ev('localStorage.getItem("cockpit.theme.preset")')`
-and restore it in teardown beside `prevCharacter` (remove the key when it was null).
+- **15. Spider-Man:** Character → "Spider-Man"; `__jarvisPet.character === "spidey"`, its `tokens` include
+  `var(--color-spidey-red)` and `var(--color-spidey-blue)` and not `var(--color-accent)`, and he stands on the ledge (as
+  step 14 checks). Shot `jarvis-pet-15-spidey`.
+- **16. Under the app bar:** `window.__jarvisPet.force({ hang: true })`; poll (≤ 1.5 s) until `__jarvisPet.hang ===
+  "crawl"`, assert the `[data-pet-sprite]` box's top is within 2 px of `__jarvisPet.ceiling`, shot
+  `jarvis-pet-16-crawl`; poll (≤ 4 s) until `hang === "hang"`, assert the box's top is below the ceiling by 6–24 px and a
+  strand element spans the gap, shot `jarvis-pet-16-hang`; move the mouse onto the sprite and poll (≤ 1.5 s) until
+  `hang === null`. `force(null)` after.
+- **17. Folded:** fold the window the way the scenario's fold step does (or `foldToSprout` through the page), wait for
+  the arrival, and assert the mini's svg is 60×60 and its cells include `var(--color-city-brick)`; shot
+  `jarvis-pet-17-rooftop`; restore.
+- **18. The Spider theme:** Settings → Appearance → Theme → "Spider"; assert
+  `getComputedStyle(document.documentElement).getPropertyValue("--color-accent").trim() === "#f05252"` and
+  `--color-background` still `#1f1e1d`; shot `jarvis-pet-18-spider-theme`.
 
-- **15. Spider-Man:** click Character → "Spider-Man"; assert `__jarvisPet.character === "spidey"`, its `tokens`
-  include `var(--color-spidey-red)` and `var(--color-spidey-blue)` and not `var(--color-accent)`, and the sprite still
-  stands on the ledge (same check as step 14). Shot `jarvis-pet-15-spidey`.
-- **16. The hang:** `window.__jarvisPet.force({ hang: true })`; poll until `__jarvisPet.hang === "hang"` (≤ 1.5 s);
-  assert `__jarvisPet.upsideDown === true` and that the `[data-pet-sprite]` box's top lies between
-  `__jarvisPet.ceiling` and `__jarvisPet.ceiling + 24` px; shot `jarvis-pet-16-hang`; then dispatch a mouse move onto
-  the sprite and poll until `__jarvisPet.hang === null` (≤ 1.5 s). `force(null)` after.
-- **17. The Spider theme:** Settings → Appearance → Theme → "Spider"; assert
-  `getComputedStyle(document.documentElement).getPropertyValue("--color-accent").trim() === "#e23636"`; shot
-  `jarvis-pet-17-spider-theme` with Spider-Man on the ledge.
+Run against the running dev app: `task verify:ui -- jarvis-pet` — PASS; the shots show the suit on the footer, the crawl
+and the hang under the app bar, the rooftop, and the red accent on Claude's greys.
 
-Run against the running dev app: `task verify:ui -- jarvis-pet`. Expected: PASS, and the three shots in
-`cdp-shots/index.html` show the suit on the footer, the pet upside down under the app bar on a strand, and the navy +
-red app.
-
-**Step 2: Docs.** `docs/guide/settings.md` (Vietnamese, as the rest of the page):
-- line 89, the Theme row: `… One Dark, Monokai, Spider.`
-- line 93, the Character row: `**Sprout** (mặc định), **Minion** hoặc **Spider-Man**: con vật đi trên footer, con
+**Step 2: Docs.** `docs/guide/settings.md` (Vietnamese, as the page is):
+- the Theme row (~line 89): `… One Dark, Monokai, Spider (bảng màu Claude với accent đỏ).`
+- the Character row (~line 93): `**Sprout** (mặc định), **Minion** hoặc **Spider-Man**: con vật đi trên footer, con
   Sprout thu nhỏ của Float và dấu trên thanh Float đều vẽ theo nhân vật này. Dấu và trang phục giống nhau cho cả ba.
-  Spider-Man là Peter Parker lúc rảnh và mặc suit lúc làm việc, đu tơ khi bị kéo, rơi hay gập cửa sổ, và thỉnh thoảng
-  treo ngược dưới app bar (rê chuột vào là nó xuống).`
+  Spider-Man mặc bộ Homecoming khi làm việc và là Peter Parker khi rảnh; đi nghiêng trên footer, bắn tơ khi nói, treo trên
+  tơ khi bị kéo, thỉnh thoảng bò ngược và treo dưới app bar (rê chuột vào là xuống), và ngồi trên nóc nhà khi gập cửa sổ.`
 
-**Step 3: Changelog.** Under the top `## Unreleased` → `### Added`:
+**Step 3: Changelog** — top `## Unreleased` → `### Added`:
 
 ```markdown
-- Spider-Man as a third Jarvis character (Settings → Appearance → Character): Peter Parker at rest and the suit at work. He hangs from a strand when you drag him, rappels down when you let go, web-swings out and back when the window folds, and now and then hangs upside down under the app bar until your cursor comes near.
-- A Spider theme (Settings → Appearance → Theme): navy with a Spider-Man red accent.
+- Spider-Man as a third Jarvis character (Settings → Appearance → Character): the Homecoming suit at work, Peter Parker at rest. He walks the footer side-on, thwips when he speaks, hangs from a strand when you drag him and rappels down when you let go, now and then crawls along under the app bar and hangs upside down until your cursor comes near, web-swings out and back when the window folds, and folded sits on a rooftop whose windows light up for each running agent.
+- A Spider theme (Settings → Appearance → Theme): Claude's colours with a Spider-Man red accent.
 ```
 
-**Step 4: Hand check.** Add under "0 · Waiting on a hand check" in `docs/open-issues.md`:
+**Step 4: Hand check** — under "0 · Waiting on a hand check" in `docs/open-issues.md`:
 
 ```markdown
-- [ ] (arcterm) Spider-Man pet: drag, rappel, hang under the app bar (hover cuts it), web-swing on fold/unfold, the working web in Float, and the Spider theme — look in the running app.
+- [ ] (arcterm) Spider-Man pet: drag and rappel, the crawl and hang under the app bar (hover cuts it), the web-swing on fold and unfold, the rooftop's windows and spider-sense, and the Spider theme — look in the running app.
 ```
 
 **Step 5: Commit**
 
-On the engine (a clean worktree):
-
 ```bash
 git commit -m "test(cdp),docs: Spider-Man pet and Spider theme — jarvis-pet steps, settings guide, changelog" -- scripts/cdp/scenarios.mjs docs/guide/settings.md CHANGELOG.md docs/open-issues.md
 ```
-
-Inline on `main`: `git add -p CHANGELOG.md docs/guide/settings.md` (only these hunks), `git add scripts/cdp/scenarios.mjs
-docs/open-issues.md`, then `git commit -m "…"` with no pathspec.

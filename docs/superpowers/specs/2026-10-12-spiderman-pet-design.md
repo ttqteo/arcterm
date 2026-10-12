@@ -112,8 +112,9 @@ four windows below. What the fold already shows maps onto it:
 - `task check:ts`.
 - CDP: `jarvis-pet` gains steps — pick Spider-Man with a real click and check his tokens; drag him and find the strand;
   force the hang and check each phase (crawl under `[data-pet-ceiling]`, then upside down on a strand); fold and check the
-  rooftop scene, its lit windows and spider-sense; pick the Spider theme. Run against the running dev app (`task verify:ui
-  -- jarvis-pet`).
+  rooftop scene, its lit windows and spider-sense; pick the Spider theme. A task checks against the running dev app
+  (`task verify:ui -- jarvis-pet`) when one is up; the engine's Final runs `final-verify jarvis-pet` once, on the merged
+  result.
 
 ## 6. Docs
 
