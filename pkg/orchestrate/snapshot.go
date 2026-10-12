@@ -50,6 +50,15 @@ func SnapshotDocs(ctx context.Context, landTree, runID, title string, paths ...s
 	if _, err := git(ctx, landTree, append([]string{"add", "--"}, staged...)...); err != nil {
 		return nil, err
 	}
+	// a doc that differs only in line endings shows as modified, then `git add` normalises it back to the
+	// committed blob and leaves nothing to commit
+	diff, err := git(ctx, landTree, append([]string{"diff", "--cached", "--name-only", "--"}, staged...)...)
+	if err != nil {
+		return nil, err
+	}
+	if diff == "" {
+		return rels, nil
+	}
 	args := []string{"commit", "-m", snapshotSubjectPrefix + changeTitle(title), "-m", runTrailer + ": " + runID}
 	// a resubmit after a failed plan review revises docs no lane has read yet, so it replaces their snapshot
 	// rather than adding a second commit with the same subject

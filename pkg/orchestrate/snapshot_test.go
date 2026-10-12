@@ -85,6 +85,31 @@ func TestSnapshotDocsWithUnchangedDocsCommitsNothing(t *testing.T) {
 	}
 }
 
+// a doc that differs from its committed copy only in line endings shows as modified, but `git add` normalises it
+// back to the committed blob: run 33711a7e cancelled at submit on "nothing to commit" after a Windows tool wrote
+// the plan with CRLF
+func TestSnapshotDocsWithOnlyLineEndingChangesCommitsNothing(t *testing.T) {
+	tree, spec, plan := snapshotFixture(t)
+	writeDoc(t, filepath.Join(tree, ".gitattributes"), "* text=auto eol=lf\n")
+	writeDoc(t, filepath.Join(tree, "docs", "specs", "s.md"), "# spec\nbody\n")
+	writeDoc(t, plan, "# plan\nbody\n")
+	gitCmd(t, tree, "add", ".")
+	gitCmd(t, tree, "commit", "-m", "the lead commits its docs")
+	before := commitCount(t, tree)
+	writeDoc(t, spec, "# spec\r\nbody\r\n")
+	writeDoc(t, plan, "# plan\r\nbody\r\n")
+	rels, err := SnapshotDocs(context.Background(), tree, "run-1", "coupons", spec, plan)
+	if err != nil {
+		t.Fatalf("a snapshot that only changes line endings must succeed: %v", err)
+	}
+	if want := []string{"docs/specs/s.md", "docs/plans/p.md"}; !reflect.DeepEqual(rels, want) {
+		t.Fatalf("paths = %v, want %v", rels, want)
+	}
+	if after := commitCount(t, tree); after != before {
+		t.Fatalf("commits went from %s to %s", before, after)
+	}
+}
+
 // a resubmit after a failed plan review carries revised docs, including a spec edited outside the tree. No lane
 // has been cut from the first snapshot yet, so the revision replaces it: run 33880f82 left two commits with the
 // same subject on main.

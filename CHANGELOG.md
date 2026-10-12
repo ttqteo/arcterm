@@ -28,6 +28,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- A plan run no longer cancels itself at submit when its plan or spec differs from the committed copy only in line
+  endings (a file saved with Windows CRLF).
 - **Fold when you leave** no longer folds arcterm for a screenshot, the lock screen, Alt+Tab's switcher or the Start
   menu.
 - The mouse wheel scrolls Claude Code's fullscreen view again after arcterm restarts or reloads its pane.
