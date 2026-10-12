@@ -225,7 +225,7 @@ export function OutlineButton(p: {
                                     title={it.text}
                                     style={{ paddingLeft: 10 + it.depth * 14 }}
                                     className={cn(
-                                        "w-full cursor-pointer truncate rounded-[6px] py-[5px] pr-2.5 text-left text-[12.5px] leading-[1.4] outline-none hover:bg-surface-hover focus-visible:bg-surface-hover",
+                                        "w-full shrink-0 cursor-pointer truncate rounded-[6px] py-[5px] pr-2.5 text-left text-[12.5px] leading-[1.4] outline-none hover:bg-surface-hover focus-visible:bg-surface-hover",
                                         it.depth === 0 ? "font-semibold text-primary" : "text-secondary",
                                         i === active &&
                                             "bg-accentbg text-primary shadow-[inset_2px_0_0_var(--color-accent)]"

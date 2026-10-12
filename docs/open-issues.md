@@ -27,6 +27,12 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-12 (Outline with many headings)**
+
+- [ ] (arcterm) **A long document's Outline scrolls instead of squeezing.** Open a markdown file with 30+ headings
+  in the Agent panel's File tab (Preview), click Outline: each row is full height and readable, and the list
+  scrolls. `docoutlineview.tsx`.
+
 **2026-10-12 (Final check viewer arrows)**
 
 - [ ] (arcterm) **← → walk every screenshot of a Final check round.** Open a run's Final check screenshots on a

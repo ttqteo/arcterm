@@ -148,6 +148,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- **A long document's Outline is readable again**: with many headings, the list squeezed every row down to a sliver
+  instead of scrolling.
 - Jarvis: `i` focuses the run sheet's composer; a blocked run no longer reads green; the tour's first card no longer
   covers the Waiting controls; a chunk note whose run is gone says so instead of loading forever.
 - **← → in the Final check viewer walk every screenshot**: past a scenario's last shot they go on to the next
