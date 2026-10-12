@@ -17,7 +17,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Moon, TriangleAlert } from "lucide-react";
+import { ArrowRight, Moon, Square, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { confirmCloseSession } from "./agentactions";
 import type { AgentsViewModel } from "./agents";
@@ -27,12 +27,14 @@ import {
     holdOrder,
     PANEL_WIDTH,
     panelPlacement,
+    ramBar,
     ramLabel,
     staleLine,
     STATE_DOT,
     stopWorkerMessage,
     switchToastText,
     type ConsumerRow,
+    type ConsumersView,
 } from "./consumers";
 import { consumersOpenAtom, consumersOpenerAtom, consumersReadingAtom, useConsumersPoll } from "./consumersstore";
 import { usePlanDonuts } from "./usagemeters";
@@ -97,8 +99,18 @@ function toSonnet(row: ConsumerRow): void {
     });
 }
 
-const ROW_ACTION =
-    "cursor-pointer rounded border border-edge-mid px-1.5 py-[1px] text-[11px] text-secondary hover:border-edge-strong hover:bg-surface-hover disabled:cursor-default disabled:opacity-50";
+// the columns after the name, shared by the header row and every agent row so they line up down the panel
+const COL_MODEL = "w-[60px] flex-none";
+const COL_RAM = "w-[54px] flex-none text-right";
+const COL_TOKENS = "w-[46px] flex-none text-right";
+const COL_SPEND = "w-[46px] flex-none text-right";
+// room for → Sonnet, Sleep and Stop side by side, so a row's numbers never move when its actions show
+const COL_ACTIONS = "w-[104px] flex-none";
+
+const ICON_ACTION =
+    "flex h-[22px] w-[22px] flex-none cursor-pointer items-center justify-center rounded text-muted hover:bg-surface-selected hover:text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent disabled:cursor-default disabled:opacity-50";
+const TEXT_ACTION =
+    "flex h-[22px] flex-none cursor-pointer items-center gap-0.5 whitespace-nowrap rounded border border-edge-mid px-1.5 text-[11px] text-secondary hover:border-edge-strong hover:bg-surface-selected hover:text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent disabled:cursor-default disabled:opacity-50";
 
 function Row({ row, model }: { row: ConsumerRow; model: AgentsViewModel }) {
     // the call in flight; a sleep or a wake takes seconds, and a second press would only be refused by the server
@@ -122,7 +134,10 @@ function Row({ row, model }: { row: ConsumerRow; model: AgentsViewModel }) {
             }
         });
     return (
-        <div data-consumer-row={row.id} className="flex items-center gap-2 px-3 py-[5px] hover:bg-surface-hover">
+        <div
+            data-consumer-row={row.id}
+            className="group mx-1 flex h-[30px] items-center gap-2.5 rounded-md px-2 hover:bg-surface-hover"
+        >
             {row.sleeping ? (
                 // 10px against the dot's 7px: the margins keep the name where the dot's rows have it
                 <Moon data-consumer-moon size={10} className="-mx-[1.5px] flex-none text-muted" aria-label="sleeping" />
@@ -135,77 +150,79 @@ function Row({ row, model }: { row: ConsumerRow; model: AgentsViewModel }) {
             <button
                 type="button"
                 data-consumer-open
-                title={`Open ${row.name}`}
+                title={row.project ? `Open ${row.name} (${row.project})` : `Open ${row.name}`}
                 onClick={() => {
                     close();
                     fireAndForget(() => openTarget(model, { kind: "agent", tabId: row.id }));
                 }}
-                className="min-w-0 flex-1 cursor-pointer truncate text-left text-[12.5px] text-primary"
+                className={cn(
+                    "min-w-0 flex-1 cursor-pointer truncate text-left text-[12.5px] hover:underline",
+                    row.sleeping ? "text-muted" : "text-primary"
+                )}
             >
                 {row.name}
-                {row.project ? <span className="ml-1.5 text-[11px] text-muted">{row.project}</span> : null}
+                {row.project ? <span className="ml-1.5 text-[11px] text-ink-faint">{row.project}</span> : null}
             </button>
-            {/* every column after the name has a fixed width, so the columns line up down the panel whichever
-                rows have a model, a burn mark or which actions */}
             <span
                 data-consumer-opus={row.opus ? "" : undefined}
                 title={row.opus ? "Runs on Opus" : undefined}
-                className={cn(
-                    "w-[62px] flex-none truncate text-[11px] font-semibold",
-                    row.opus ? "text-warning" : "text-muted"
-                )}
+                className={cn(COL_MODEL, "truncate text-[11px]", row.opus ? "text-warning" : "text-muted")}
             >
                 {row.model}
             </span>
-            <span
-                data-consumer-ram
-                title="RAM"
-                className="w-[56px] flex-none text-right text-[12px] tabular-nums text-secondary"
-            >
+            <span data-consumer-ram title="RAM" className={cn(COL_RAM, "text-[12px] tabular-nums text-secondary")}>
                 {row.ramBytes === undefined ? "—" : ramLabel(row.ramBytes)}
             </span>
-            <span
-                data-consumer-tokens
-                title="Tokens and estimated spend, last 10 minutes"
-                className="flex w-[104px] flex-none items-center justify-end gap-1 text-[12px] tabular-nums text-secondary"
-            >
-                {row.burn ? (
-                    <TriangleAlert
-                        data-consumer-burn
-                        size={12}
-                        className="text-warning"
-                        aria-label="Spending fastest"
-                    />
-                ) : null}
-                {row.tokens === undefined ? "—" : `${fmt(row.tokens)} · ${usd(row.spendUsd ?? 0)}`}
+            {/* one element for both numbers, split into the two columns */}
+            <span data-consumer-tokens className="flex flex-none items-center gap-2.5 text-[12px] tabular-nums">
+                <span title="Tokens, last 10 minutes" className={cn(COL_TOKENS, "text-secondary")}>
+                    {row.burn ? (
+                        <TriangleAlert
+                            data-consumer-burn
+                            size={11}
+                            className="mr-1 inline align-[-1px] text-warning"
+                            aria-label="Spending fastest"
+                        />
+                    ) : null}
+                    {row.tokens === undefined ? "—" : fmt(row.tokens)}
+                </span>
+                <span
+                    title="Estimated spend, last 10 minutes"
+                    className={cn(COL_SPEND, row.spendUsd ? "text-secondary" : "text-ink-faint")}
+                >
+                    {row.tokens === undefined ? "—" : usd(row.spendUsd ?? 0)}
+                </span>
             </span>
-            {/* one slot per action, kept when empty, so each kind of button stands in its own column */}
-            <span className="flex w-[62px] flex-none">
-                {row.canSonnet ? (
-                    <button
-                        type="button"
-                        data-consumer-sonnet
-                        title="Switch this session to Sonnet (/model sonnet)"
-                        onClick={() => toSonnet(row)}
-                        className={cn(ROW_ACTION, "w-full")}
-                    >
-                        → Sonnet
-                    </button>
-                ) : null}
-            </span>
-            <span className="flex w-[58px] flex-none">
-                {row.canSleep ? (
-                    <button
-                        type="button"
-                        data-consumer-sleep
-                        title="End this agent's process to free its RAM; Wake or a message resumes it"
-                        disabled={pending != null}
-                        onClick={() => run("sleep", () => sleepWithConfirm(row.vm))}
-                        className={cn(ROW_ACTION, "w-full")}
-                    >
-                        Sleep
-                    </button>
-                ) : null}
+            {/* shown on hover or keyboard focus, so a panel of ten agents is not thirty buttons; Wake stays, the one
+                thing to do with a sleeping agent */}
+            <span className={cn(COL_ACTIONS, "flex items-center justify-end gap-0.5")}>
+                <span className="flex items-center gap-0.5 opacity-0 transition-opacity duration-100 group-focus-within:opacity-100 group-hover:opacity-100">
+                    {row.canSonnet ? (
+                        <button
+                            type="button"
+                            data-consumer-sonnet
+                            title="Switch this session to Sonnet (/model sonnet)"
+                            onClick={() => toSonnet(row)}
+                            className={cn(TEXT_ACTION, "mr-0.5")}
+                        >
+                            <ArrowRight size={11} aria-hidden />
+                            Sonnet
+                        </button>
+                    ) : null}
+                    {row.canSleep ? (
+                        <button
+                            type="button"
+                            data-consumer-sleep
+                            title="Sleep: end this agent's process to free its RAM; Wake or a message resumes it"
+                            aria-label="Sleep"
+                            disabled={pending != null}
+                            onClick={() => run("sleep", () => sleepWithConfirm(row.vm))}
+                            className={ICON_ACTION}
+                        >
+                            <Moon size={13} />
+                        </button>
+                    ) : null}
+                </span>
                 {row.sleeping ? (
                     <button
                         type="button"
@@ -213,21 +230,121 @@ function Row({ row, model }: { row: ConsumerRow; model: AgentsViewModel }) {
                         title="Relaunch this agent where its conversation left off"
                         disabled={pending != null}
                         onClick={wake}
-                        className={cn(ROW_ACTION, "w-full")}
+                        className={cn(TEXT_ACTION, "mr-0.5")}
                     >
                         {pending === "wake" ? "Waking…" : "Wake"}
                     </button>
                 ) : null}
+                <button
+                    type="button"
+                    data-consumer-stop
+                    title={row.dag ? "Stop this worker; its task is not retried" : "Stop: end this agent's session"}
+                    aria-label="Stop"
+                    onClick={() => stop(row, model)}
+                    className={cn(
+                        ICON_ACTION,
+                        "opacity-0 transition-opacity duration-100 hover:text-error group-focus-within:opacity-100 group-hover:opacity-100"
+                    )}
+                >
+                    <Square size={10} className="fill-current" />
+                </button>
             </span>
-            <button
-                type="button"
-                data-consumer-stop
-                title={row.dag ? "Stop this worker; its task is not retried" : "End this agent's session"}
-                onClick={() => stop(row, model)}
-                className="w-[40px] flex-none cursor-pointer rounded border border-edge-mid px-1.5 py-[1px] text-[11px] text-error hover:border-edge-strong hover:bg-surface-hover"
-            >
-                Stop
-            </button>
+        </div>
+    );
+}
+
+const SECTION_LABEL = "text-[10.5px] font-semibold uppercase tracking-wide text-ink-faint";
+
+function ColumnHeads() {
+    return (
+        <div aria-hidden className={cn(SECTION_LABEL, "mx-1 flex items-center gap-2.5 px-2 pb-1 pt-1.5")}>
+            <span className="w-[7px] flex-none" />
+            <span className="min-w-0 flex-1">Agent</span>
+            <span className={COL_MODEL}>Model</span>
+            <span className={COL_RAM}>RAM</span>
+            <span className="flex flex-none gap-2.5" title="Last 10 minutes">
+                <span className={COL_TOKENS}>Tokens</span>
+                <span className={COL_SPEND}>Spend</span>
+            </span>
+            <span className={COL_ACTIONS} />
+        </div>
+    );
+}
+
+// free RAM in words, and a bar of all RAM: arcterm with its agents, everything else in use, and free
+function MemoryHeader({
+    view,
+    fiveHour,
+    onOpenUsage,
+}: {
+    view: ConsumersView | null;
+    fiveHour?: number;
+    onOpenUsage: () => void;
+}) {
+    const bar = view ? ramBar(view) : null;
+    return (
+        <div className="flex flex-col gap-1.5 border-b border-border px-3 pb-2.5 pt-2">
+            <div className="flex items-baseline gap-3">
+                <div data-consumers-header className="flex flex-1 items-baseline gap-3">
+                    <span className="flex-1 text-[12px] text-muted">
+                        {view ? (
+                            <>
+                                <span className="text-[13px] font-semibold text-primary">
+                                    {formatGB(view.freeBytes)}
+                                </span>
+                                {` free of ${formatGB(view.totalBytes)}`}
+                            </>
+                        ) : (
+                            "Reading…"
+                        )}
+                    </span>
+                    {fiveHour != null ? (
+                        <span className="text-[11.5px] text-muted" title="Claude's 5-hour plan window used">
+                            5h quota <span className="tabular-nums text-secondary">{`${Math.round(fiveHour)}%`}</span>
+                        </span>
+                    ) : null}
+                </div>
+                <button
+                    type="button"
+                    data-consumers-open-usage
+                    onClick={onOpenUsage}
+                    className="flex cursor-pointer items-center gap-0.5 text-[11.5px] text-accent hover:underline"
+                >
+                    Open Usage
+                    <ArrowRight size={11} aria-hidden />
+                </button>
+            </div>
+            <div className="flex h-[5px] overflow-hidden rounded-full bg-surface">
+                {bar ? (
+                    <>
+                        <span className="h-full bg-accent" style={{ width: `${bar.appPct}%` }} />
+                        <span className="h-full bg-ink-faint" style={{ width: `${bar.otherPct}%` }} />
+                    </>
+                ) : null}
+            </div>
+            {bar && view ? (
+                <div className="flex items-center gap-3 text-[10.5px] text-muted">
+                    <span className="flex items-center gap-1">
+                        <span className="h-[6px] w-[6px] rounded-full bg-accent" />
+                        arcterm {view.appBytes === undefined ? "—" : ramLabel(view.appBytes)}
+                    </span>
+                    <span className="flex items-center gap-1">
+                        <span className="h-[6px] w-[6px] rounded-full bg-ink-faint" />
+                        other apps {ramLabel(bar.otherBytes)}
+                    </span>
+                </div>
+            ) : null}
+        </div>
+    );
+}
+
+function Stat({ label, bytes, ...rest }: { label: string; bytes?: number } & Record<`data-${string}`, string>) {
+    return (
+        <div {...rest} className="flex min-w-0 flex-col">
+            <span className="text-[10.5px] text-ink-faint">{label}</span>
+            <span className="text-[12px] tabular-nums text-secondary">
+                {bytes === undefined ? "—" : ramLabel(bytes)}
+            </span>
         </div>
     );
 }
@@ -292,12 +409,14 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                 className="fixed z-[60] overflow-hidden rounded-lg border border-edge-strong bg-surface-raised shadow-popover"
             >
                 <div data-consumers-panel data-sort={sort ?? ""} role="dialog" aria-label="Consumers">
-                    <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-                        <span data-consumers-header className="flex-1 text-[12px] text-secondary">
-                            {view ? `${formatGB(view.freeBytes)} free of ${formatGB(view.totalBytes)}` : "Reading…"}
-                            {fiveHour != null ? ` · 5h quota ${Math.round(fiveHour)}%` : ""}
-                        </span>
-                    </div>
+                    <MemoryHeader
+                        view={view}
+                        fiveHour={fiveHour}
+                        onOpenUsage={() => {
+                            close();
+                            globalStore.set(model.surfaceAtom, "usage");
+                        }}
+                    />
                     {reading.failed ? (
                         <div data-consumers-stale className="px-3 py-1.5 text-[11.5px] text-warning">
                             {staleLine(reading.lastOkMs)}
@@ -305,76 +424,57 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                     ) : null}
                     <div
                         data-consumers-list
-                        className={cn("max-h-[56vh] overflow-y-auto py-1", reading.failed && "opacity-60")}
+                        className={cn("max-h-[56vh] overflow-y-auto pb-1.5", reading.failed && "opacity-60")}
                     >
                         {view == null ? (
-                            <div data-consumers-loading className="flex flex-col gap-2 px-3 py-2">
+                            <div data-consumers-loading className="flex flex-col gap-2 px-3 py-2.5">
                                 <SkeletonLine className="w-3/4" />
                                 <SkeletonLine className="w-2/3" />
                             </div>
                         ) : view.groups.length === 0 ? (
-                            <div data-consumers-empty className="px-3 py-2 text-[12px] text-muted">
+                            <div data-consumers-empty className="px-3 py-3 text-[12px] text-muted">
                                 No agents running.
                             </div>
                         ) : (
-                            view.groups.map((g) => (
-                                <div key={g.key}>
-                                    {g.label ? (
-                                        <div className="px-3 pb-0.5 pt-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-muted">
-                                            {g.label}
-                                        </div>
-                                    ) : null}
-                                    {g.rows.map((r) => (
-                                        <Row key={r.id} row={r} model={model} />
-                                    ))}
-                                </div>
-                            ))
+                            <>
+                                <ColumnHeads />
+                                {view.groups.map((g) => (
+                                    <div key={g.key}>
+                                        {g.label ? (
+                                            <div className={cn(SECTION_LABEL, "mt-1.5 px-3 pb-0.5 pt-1")}>
+                                                {g.label}
+                                            </div>
+                                        ) : null}
+                                        {g.rows.map((r) => (
+                                            <Row key={r.id} row={r} model={model} />
+                                        ))}
+                                    </div>
+                                ))}
+                            </>
                         )}
                     </div>
-                    <div className="border-t border-border px-3 py-1.5">
-                        <div className="text-[10.5px] font-semibold uppercase tracking-wide text-muted">arcterm</div>
-                        {(view?.own ?? []).map((o) => (
-                            <div
-                                key={o.label}
-                                data-consumers-own={o.label}
-                                className="flex items-center justify-between py-[2px] text-[12px] text-secondary"
+                    <div className="flex flex-col gap-1.5 border-t border-border bg-surface px-3 pb-2 pt-2">
+                        <div className="flex items-center gap-2">
+                            <span className={cn(SECTION_LABEL, "flex-1")}>arcterm</span>
+                            <span
+                                className="text-[11.5px] text-muted"
+                                title="Everything arcterm runs: its own processes and every agent"
                             >
-                                <span>{o.label}</span>
-                                <span className="tabular-nums">{o.bytes === undefined ? "—" : ramLabel(o.bytes)}</span>
-                            </div>
-                        ))}
-                        <div
-                            data-consumers-agents
-                            className="flex items-center justify-between py-[2px] text-[12px] text-secondary"
-                        >
-                            <span>Agents</span>
-                            <span className="tabular-nums">
-                                {view?.agentsBytes === undefined ? "—" : ramLabel(view.agentsBytes)}
+                                Total, with agents{" "}
+                                <span
+                                    data-consumers-app-total
+                                    className="text-[12px] font-semibold tabular-nums text-primary"
+                                >
+                                    {view?.appBytes === undefined ? "—" : ramLabel(view.appBytes)}
+                                </span>
                             </span>
                         </div>
-                        <div
-                            data-consumers-app-total
-                            title="Everything arcterm runs: the rows above"
-                            className="mt-[3px] flex items-center justify-between border-t border-border pt-[4px] text-[12px] font-semibold text-primary"
-                        >
-                            <span>Total, with agents</span>
-                            <span className="tabular-nums">
-                                {view?.appBytes === undefined ? "—" : ramLabel(view.appBytes)}
-                            </span>
+                        <div className="grid grid-cols-5 gap-2">
+                            <Stat data-consumers-agents="" label="Agents" bytes={view?.agentsBytes} />
+                            {(view?.own ?? []).map((o) => (
+                                <Stat key={o.label} data-consumers-own={o.label} label={o.label} bytes={o.bytes} />
+                            ))}
                         </div>
-                    </div>
-                    <div className="flex justify-end border-t border-border px-3 py-1.5">
-                        <button
-                            type="button"
-                            data-consumers-open-usage
-                            onClick={() => {
-                                close();
-                                globalStore.set(model.surfaceAtom, "usage");
-                            }}
-                            className="cursor-pointer text-[11.5px] text-accent hover:underline"
-                        >
-                            Open Usage
-                        </button>
                     </div>
                 </div>
             </PopoverReveal>

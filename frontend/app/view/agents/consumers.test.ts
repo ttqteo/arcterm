@@ -10,6 +10,7 @@ import {
     holdOrder,
     PANEL_WIDTH,
     panelPlacement,
+    ramBar,
     ramLabel,
     staleLine,
     stopWorkerMessage,
@@ -437,5 +438,29 @@ describe("copy", () => {
     it("staleLine names when the last reading landed", () => {
         expect(staleLine(new Date(2026, 9, 8, 12, 3).getTime())).toBe("Couldn't read usage · last at 12:03");
         expect(staleLine(null)).toBe("Couldn't read usage");
+    });
+});
+
+describe("ramBar", () => {
+    it("splits the used RAM into arcterm's share and the rest", () => {
+        const bar = ramBar({ totalBytes: 32 * GB, freeBytes: 8 * GB, appBytes: 4 * GB });
+        expect(bar.appPct).toBeCloseTo(12.5);
+        expect(bar.otherPct).toBeCloseTo(62.5);
+        expect(bar.otherBytes).toBe(20 * GB);
+    });
+
+    it("caps arcterm's share at what is in use", () => {
+        const bar = ramBar({ totalBytes: 16 * GB, freeBytes: 14 * GB, appBytes: 3 * GB });
+        expect(bar.appPct).toBeCloseTo(12.5);
+        expect(bar.otherPct).toBe(0);
+    });
+
+    it("draws nothing before arcterm's RAM is read, or with no total", () => {
+        expect(ramBar({ totalBytes: 16 * GB, freeBytes: 8 * GB }).appPct).toBe(0);
+        expect(ramBar({ totalBytes: 0, freeBytes: 0, appBytes: GB })).toEqual({
+            appPct: 0,
+            otherPct: 0,
+            otherBytes: 0,
+        });
     });
 });

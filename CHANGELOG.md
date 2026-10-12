@@ -83,6 +83,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - **An agent in a worktree reads clearly in the Agent panel**: the branch moves to its own line beside the
   worktree's short name, so the project name keeps its width, and a run's long id shows as its first 8 digits (the
   full name is in the tooltip).
+- **The RAM and tokens panel is redrawn**: a bar of your RAM (arcterm, other apps, free) under the free-memory line,
+  column heads, tokens and spend in their own columns, and a row's Stop, Sleep and → Sonnet only when you point at it,
+  so agent names get the room. arcterm's own processes fit on one line.
 - **Ctrl+C copies in a terminal on Windows while text is selected**, as in Windows Terminal and VS Code; with nothing
   selected it is the interrupt as before. **Copy on select is now off by default**, so highlighting what you read no
   longer replaces what you copied; Settings → Terminal turns it back on.

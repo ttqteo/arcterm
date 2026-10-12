@@ -211,7 +211,24 @@ export function holdOrder(view: ConsumersView, held: string[] | null): { view: C
     return { view: { ...view, groups }, order: flat(groups) };
 }
 
-/** "300 MB" under a gigabyte, "2.5 GB" above. */
+export interface RamBar {
+    appPct: number; // arcterm and its agents, of all RAM
+    otherPct: number; // everything else in use
+    otherBytes: number;
+}
+
+/** The header's memory bar. arcterm's sum can pass what the OS counts as used (a shared page is counted in every
+ * process that maps it), so its share is capped at the used part. */
+export function ramBar(view: Pick<ConsumersView, "freeBytes" | "totalBytes" | "appBytes">): RamBar {
+    if (view.totalBytes <= 0) {
+        return { appPct: 0, otherPct: 0, otherBytes: 0 };
+    }
+    const used = Math.max(0, view.totalBytes - view.freeBytes);
+    const app = Math.min(view.appBytes ?? 0, used);
+    const pct = (b: number) => (b / view.totalBytes) * 100;
+    return { appPct: pct(app), otherPct: pct(used - app), otherBytes: used - app };
+}
+
 export interface Box {
     top: number;
     bottom: number;
@@ -243,6 +260,7 @@ export function panelPlacement(opener: Box | null, view: { width: number; height
         : { right, top: opener.bottom + PANEL_GAP, origin: "top right" };
 }
 
+/** "300 MB" under a gigabyte, "2.5 GB" above. */
 export function ramLabel(bytes: number): string {
     return bytes < 2 ** 30 ? `${Math.round(bytes / 2 ** 20)} MB` : formatGB(bytes);
 }
