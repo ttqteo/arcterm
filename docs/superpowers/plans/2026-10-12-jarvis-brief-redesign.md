@@ -357,6 +357,13 @@ export function dagProgressLabel(
     if (s.key === "final-check") {
         return `Final check · ${finalStageActivity(run.dag?.final) ?? "verifying the merged result"}`;
     }
+    if (s.key === "cancelled") {
+        // a cancelled run says how far it got
+        return `Cancelled · ${done}/${total}`;
+    }
+    if (s.key === "land-held") {
+        return s.needsYou ? "Land held · needs you" : "Land held";
+    }
     if (s.key !== "working" && s.key !== "plan-review" && s.key !== "planning") {
         return finishedRunLabel(run);
     }
@@ -390,6 +397,10 @@ Update `runmodel.test.ts` to the new words:
 - The leadless pair → `"Working · 2/3 · lead starts if needed"` / `"Working · 2/3 · lead closed"`.
 - `runStatusView("finalizing")` → `{ label: "final check", tone: "running" }`.
 - `runStatusView("done")` → `{ label: "complete", tone: "done" }`.
+- Add two `dagProgressLabel` cases (spec "Run states", Agent tree): a done run with `land: { state: "held" }` and a
+  dag of 4 tasks reads `"Land held · needs you"` (and `"Land held"` with `dismissed: true`); a cancelled run with 2 of
+  4 tasks done reads `"Cancelled · 2/4"`. `finishedRunLabel` keeps the bare `"Land held"` / `"Cancelled"`: the
+  suffixes belong to the tree line only.
 
 Then run `npx vitest run frontend/app/view/agents` and update every other expectation that pinned an old stage
 word (`leadcardmodel.test.ts:448` and any others) to the same new words, and nothing else.
@@ -435,7 +446,8 @@ return (
 ```
 
 - **`RunCompleteLabel`:** keep the `Check` icon and the success colour. Append ` · unverified` when
-  `runStage(run).outcome === "unverified"`, and colour the label `text-warning` in that case.
+  `runStage(run).outcome === "unverified"`, and colour the label `text-warning` in that case. Its root carries
+  `data-run-complete={outcome === "unverified" ? "unverified" : "done"}` for the scenario.
 - **`RunSubline`, no-dag branch:** draw the `runStatusView` label as today. It now reads `working` / `complete`.
 - **`RunSubline`, dag branch:** colour `progress` by `runStage(run).tone`: asking → `text-warning`, error →
   `text-error`, running → `text-running`, working, muted and done → `text-muted`.
@@ -454,15 +466,16 @@ with `PIP_FILL`, `data-run-strip-tail` and the same `title`s, at the sheet's `h-
 
   ```ts
   if (run.land?.state === "pending") {
-      return { verb: "Landing", sub: `merging wave/${run.id} into ${run.basebranch || "its base"}`, tone: "running", pulse: true, meter: STRIP, meta: [], next: null, retry: false };
+      return { verb: "Landing", sub: `merging wave/${run.id} into ${run.basebranch || "its base"}`, tone: "success", pulse: true, meter: STRIP, meta: [], next: null, retry: false };
   }
   if (run.land?.state === "held" && run.land.dismissed !== true) {
       return { verb: "Waiting on you", sub: `Not merged back: ${run.land.reason || "the engine gave no reason"}`, tone: "warning", pulse: true, meter: STRIP, meta: [], next: "Land again once the reason is cleared", retry: false };
   }
   ```
 
-  Match the real `SheetStatus` fields and the tone names `doneStatus` already uses. Check `TONE_BG` in
-  `runsheet.tsx` for the names that exist. The dock keeps its own held line and Land again button.
+  Match the real `SheetStatus` fields. The tones are `SheetTone` names (`runsheetmodel.ts:41`): Landing takes
+  `"success"`, the tone the Executing face already uses for a run moving on; the held face takes `"warning"`.
+  `SheetTone` has no `"running"`. The dock keeps its own held line and Land again button.
 
 The attention chip in `daggedStatus` (`` `attention ${digest.counts.attention}` ``, about line 353) reads
 `` `${n} ${n === 1 ? "needs" : "need"} you` ``, so it says what it means (`runsheetmodel.test.ts:295` expects `"2 need you"`).
@@ -474,6 +487,9 @@ Update `runsheetmodel.test.ts`: `"Executing"` → `"Working"`, `"Verifying"` →
 
 **Step 9: The Brief's Runs rows** (`briefrows.ts`, `briefstyle.ts`, `BriefRunRow`).
 - **`briefstyle.ts`:** add `"running"` to `Tone`, with `running: "text-running"` in `TONE_TEXT`.
+- **`briefrows.ts`:** add `"running"` to `LineTone` too (`briefrows.ts:31`), since `toneOf` below yields it and
+  `stateTone` is a `LineTone`. Grep `LineTone` for any `Record<LineTone, …>` or exhaustive switch and give it a
+  `running` entry (`text-running`), so `task check:ts` stays clean.
 - **`runRowFace`:** gains an optional `dag?: TaskGroup` input. For a run that is present, replace the hand-built
   status ternary with the stage:
 
@@ -552,30 +568,78 @@ git commit -m "feat(runs): one stage vocabulary for the Agent tree, the Brief an
 
 (Add any other test file Step 5 changed to the pathspec.)
 
-The CDP steps that show these: `brief-run-sheet-order` steps 4 and 5, and `brief-layout` step 7 (Task 9).
+The CDP steps that show these: `brief-run-sheet-order` steps 4, 5 and 7 (`RunCompleteLabel`), and `brief-layout`
+step 7 (Task 9).
 
 ### Task 2: Small bug fixes (the composer key, the tour offer, stale comments)
 
 **Depends on:** none
-**Files:** `frontend/app/view/jarvis/briefcomposer.tsx`, `frontend/app/view/jarvis/jarvistourview.tsx`, `frontend/app/store/keybindings/bindings.ts`, `frontend/app/view/jarvis/newinitiativecontrol.tsx`
+**Files:** `frontend/app/view/jarvis/composerkey.ts`, `frontend/app/view/jarvis/composerkey.test.ts`, `frontend/app/view/jarvis/briefcomposer.tsx`, `frontend/app/view/jarvis/jarvistourview.tsx`, `frontend/app/store/keybindings/bindings.ts`, `frontend/app/view/jarvis/newinitiativecontrol.tsx`
 
 **Where:**
+- Create: `frontend/app/view/jarvis/composerkey.ts` (the composer's attribute and the selector the bindings use)
+- Test: `frontend/app/view/jarvis/composerkey.test.ts`
 - Modify: `frontend/app/view/jarvis/briefcomposer.tsx` (the root `div`, around line 128)
 - Modify: `frontend/app/view/jarvis/jarvistourview.tsx` (`TourOffer`, the `className` at about line 434)
 - Modify: `frontend/app/store/keybindings/bindings.ts` (the comment above `buildJarvisBindings`, about lines 594-601)
 - Modify: `frontend/app/view/jarvis/newinitiativecontrol.tsx` (header comment, lines 4-12)
 
 **Step 1: The composer key.** `bindings.ts`'s `jarvis:focus-composer` and `jarvis:blur-composer` query
-`[data-jarvis-composer]`, which no element carries. Add the attribute to the composer's root in
-`briefcomposer.tsx`:
+`[data-jarvis-composer]`, which no element carries. One constant now names the attribute for both sides.
+
+First the failing test, `frontend/app/view/jarvis/composerkey.test.ts` (spec Testing: "the `i` binding's selector
+against the composer's attribute"). There is no render harness, so it reads the two source files and checks that each
+uses the shared constant, which is the regression that shipped (the bindings named an attribute the composer never
+drew):
+
+```ts
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { describe, expect, it } from "vitest";
+import { COMPOSER_ATTR, COMPOSER_FIELDS, COMPOSER_SELECTOR } from "./composerkey";
+
+const src = (p: string) => readFileSync(resolve(__dirname, p), "utf8");
+
+describe("the composer key", () => {
+    it("builds the bindings' selectors from the attribute the composer draws", () => {
+        expect(COMPOSER_SELECTOR).toBe(`[${COMPOSER_ATTR}]`);
+        expect(COMPOSER_FIELDS).toBe(`[${COMPOSER_ATTR}] input, [${COMPOSER_ATTR}] textarea`);
+    });
+    it("is the attribute on the composer's root and the selector in i / Esc", () => {
+        expect(src("./briefcomposer.tsx")).toContain("[COMPOSER_ATTR]: \"\"");
+        const bindings = src("../../store/keybindings/bindings.ts");
+        expect(bindings).toContain("COMPOSER_FIELDS");
+        expect(bindings).toContain("COMPOSER_SELECTOR");
+        expect(bindings).not.toMatch(/["'`]\[data-jarvis-composer\]/);
+    });
+});
+```
+
+Run `npx vitest run frontend/app/view/jarvis/composerkey.test.ts`. Expected: FAIL (`./composerkey` does not exist).
+
+Then `frontend/app/view/jarvis/composerkey.ts` (pure, no imports):
+
+```ts
+// the run sheet composer's attribute, and the selectors i / Esc find it by (bindings.ts). One constant, so the
+// binding cannot name an attribute the composer does not draw again
+export const COMPOSER_ATTR = "data-jarvis-composer";
+export const COMPOSER_SELECTOR = `[${COMPOSER_ATTR}]`;
+export const COMPOSER_FIELDS = `${COMPOSER_SELECTOR} input, ${COMPOSER_SELECTOR} textarea`;
+```
+
+In `bindings.ts`, replace the `"[data-jarvis-composer] input, [data-jarvis-composer] textarea"` literal (about line 797)
+with `COMPOSER_FIELDS` and the `closest("[data-jarvis-composer]")` (about line 831) with `closest(COMPOSER_SELECTOR)`,
+importing both from `@/app/view/jarvis/composerkey`. In `briefcomposer.tsx`, put the attribute on the root:
 
 ```tsx
 <div
-    data-jarvis-composer=""
+    {...{ [COMPOSER_ATTR]: "" }}
     data-jarvis-brief-band="composer"
     className="flex flex-col gap-1.5 border-t border-edge-faint px-4 pb-3 pt-2.5"
 >
 ```
+
+Run the test again. Expected: PASS.
 
 `blur-composer` runs in the dispatcher's capture phase, ahead of the textarea's own `onKeyDown`. Once the attribute
 exists, the first `Esc` in the composer blurs it and a second `Esc` closes the sheet, which is what the docs promise.
@@ -595,13 +659,15 @@ summary's Review button). The Brief's toast sits at `bottom-6` centred, so the t
 
 **Step 4: Typecheck, lint, commit**
 
-Run: `task check:ts` (expected exit 0), `npx eslint frontend/app/view/jarvis/briefcomposer.tsx frontend/app/view/jarvis/jarvistourview.tsx`.
+Run: `npx vitest run frontend/app/view/jarvis/composerkey.test.ts` (PASS), `task check:ts` (expected exit 0),
+`npx eslint frontend/app/view/jarvis/composerkey.ts frontend/app/view/jarvis/composerkey.test.ts frontend/app/view/jarvis/briefcomposer.tsx frontend/app/view/jarvis/jarvistourview.tsx frontend/app/store/keybindings/bindings.ts`.
 
 ```bash
-git commit -m "fix(jarvis): i reaches the run sheet composer, the tour offer stops covering Review" -- frontend/app/view/jarvis/briefcomposer.tsx frontend/app/view/jarvis/jarvistourview.tsx frontend/app/store/keybindings/bindings.ts frontend/app/view/jarvis/newinitiativecontrol.tsx
+git commit -m "fix(jarvis): i reaches the run sheet composer, the tour offer stops covering Review" -- frontend/app/view/jarvis/composerkey.ts frontend/app/view/jarvis/composerkey.test.ts frontend/app/view/jarvis/briefcomposer.tsx frontend/app/view/jarvis/jarvistourview.tsx frontend/app/store/keybindings/bindings.ts frontend/app/view/jarvis/newinitiativecontrol.tsx
 ```
 
-The CDP step that shows these: `brief-layout` step 6, and `brief-run-sheet-order` step 3 (Task 9).
+The CDP step that shows these: `brief-layout` step 6, and `brief-run-sheet-order` step 3 (Task 9). The `i` selector
+is also pinned by `composerkey.test.ts`.
 
 ### Task 3: Copy: Accept, the autonomy chip, short dates
 
@@ -610,7 +676,7 @@ The CDP step that shows these: `brief-layout` step 6, and `brief-run-sheet-order
 
 **Where:**
 - Modify: `pkg/jarvis/attention.go:573` and `:577` (the `run-unverified` item's `Action` and `Why`)
-- Test: `pkg/jarvis/attention_test.go:478`
+- Test: `pkg/jarvis/attention_test.go:478` (inside `TestUnverifiedRunNamesEachReasonUntilAcknowledged`, line 452)
 - Modify: `frontend/app/view/jarvis/attentionact.ts` (the label union and the `ack-run` label)
 - Test: `frontend/app/view/jarvis/attentionact.test.ts:27`
 - Modify: `frontend/app/view/jarvis/attentionrun.ts:39`
@@ -648,7 +714,9 @@ describe("shortDate", () => {
 **Step 2: Run them and see them fail**
 
 Run: `npx vitest run frontend/app/view/jarvis/attentionact.test.ts frontend/app/view/jarvis/attentionrun.test.ts frontend/app/view/jarvis/briefautonomy.test.ts frontend/app/view/jarvis/initiativework.test.ts frontend/app/view/jarvis/briefingmodel.test.ts`
-and `go test ./pkg/jarvis -run '^TestAttention'`.
+and `go test ./pkg/jarvis -run '^TestUnverifiedRunNamesEachReasonUntilAcknowledged$'` (the test at
+`attention_test.go:452` that holds the `:478` assertion; check the run prints `ok` with that test, not `no tests to
+run`).
 Expected: FAIL on the changed strings.
 
 **Step 3: Implement.**
@@ -827,7 +895,8 @@ The panel's place in the grid, and passing `work`, come with Task 6.
 git commit -m "feat(jarvis): the chunk panel reads at a glance, says when a note's run is gone, and can start work on its chunk" -- frontend/app/view/jarvis/sidebarnotes.ts frontend/app/view/jarvis/sidebarnotes.test.ts frontend/app/view/jarvis/initiativework.ts frontend/app/view/jarvis/initiativework.test.ts frontend/app/view/jarvis/initiativeworkaction.ts frontend/app/view/jarvis/chunksidebar.tsx
 ```
 
-The CDP steps that show these: `brief-chunk-panel` steps 3 to 6 (Task 9).
+The CDP steps that show these: `brief-chunk-panel` steps 3 to 6 (header, title, composer placeholder and hint, the
+gone run) and 8 (the one-row status radios, Edit / Delete) (Task 9).
 
 ### Task 5: The Brief layout: header, two columns, region order, Waiting window, Since you looked
 
@@ -869,6 +938,12 @@ describe("sinceEmptyLine", () => {
         expect(sinceEmptyLine(false)).toBe("Nothing new since you last looked.");
     });
 });
+
+describe("SHIPPED_EMPTY", () => {
+    it("says the window it looked at", () => {
+        expect(SHIPPED_EMPTY).toBe("Nothing shipped in the last seven days.");
+    });
+});
 ```
 
 **Step 2: Run them and see them fail**
@@ -884,6 +959,8 @@ Expected: FAIL (not exported).
   - Add:
 
     ```ts
+    export const SHIPPED_EMPTY = "Nothing shipped in the last seven days.";
+
     export function sinceEmptyLine(firstVisit: boolean): string {
         return firstVisit ? "Runs that land show up here." : "Nothing new since you last looked.";
     }
@@ -924,6 +1001,7 @@ Expected: FAIL (not exported).
   ```tsx
   <button
       type="button"
+      data-jarvis-region-only
       aria-pressed={only}
       aria-label={only ? "Show every region" : `Show only ${label}`}
       title={only ? "Show every region" : "Show only this region"}
@@ -987,7 +1065,10 @@ The skeleton (`firstLoad`) maps over `["waiting", "sessions", "initiatives"]` on
     `sinceLabel(...)` and **Mark seen** (capitalized) when `deltaRowsN > 0`. Then the delta groups and their
     `MoreControl` as today. When `deltaRowsN === 0`, render `sinceEmptyLine(visitCursor == null)`.
   - `<section data-jarvis-brief-region="shipped">`: the head is `SHIPPED_LABEL` with its count and `7 days` as
-    meta, then the shipped rows and the `+N more` control as today.
+    meta, then the shipped rows and the `+N more` control as today. The section always renders; with no shipped
+    rows it shows `<p data-jarvis-brief-empty="shipped" className="m-0 text-[11.5px] text-muted">{SHIPPED_EMPTY}</p>`
+    (spec "Side column"). The Since you looked empty line takes the same recipe with
+    `data-jarvis-brief-empty="behind"`.
 - Drop the `px-[11px]` group label row's `uppercase tracking-[.09em]` sub-heads only if they now duplicate the
   section head. Keep the day group labels ("Today", "Earlier").
 
@@ -999,8 +1080,9 @@ The skeleton (`firstLoad`) maps over `["waiting", "sessions", "initiatives"]` on
 
 **Step 12: Empty states (board `Proposed-AllClear`).** In `Region`'s `empty` box, when `id` is `sessions` or
 `initiatives`, add the starting control at the right:
-- **New run** (the secondary button recipe, `r` keycap) calls `openLauncher(model, "run")`.
-- **New initiative** sets `model.newInitiativeOpenAtom` true.
+- **New run** (the secondary button recipe, `r` keycap, `data-jarvis-empty-act="run"`) calls
+  `openLauncher(model, "run")`.
+- **New initiative** (`data-jarvis-empty-act="initiative"`) sets `model.newInitiativeOpenAtom` true.
 
 `Region` needs an optional `act?: ReactNode` prop for this.
 
@@ -1016,7 +1098,8 @@ the side column must drop under the main column.
 git commit -m "feat(jarvis): the Brief puts Waiting, Runs and Initiatives first, with Since you looked, Shipped and Ideas beside them" -- frontend/app/view/jarvis/briefingmodel.ts frontend/app/view/jarvis/briefingmodel.test.ts frontend/app/view/jarvis/briefrows.ts frontend/app/view/jarvis/briefrows.test.ts frontend/app/view/jarvis/briefsurface.tsx
 ```
 
-The CDP steps that show these: `brief-layout` steps 1 to 5, `brief-surface` steps 2, 3 and 6 (Task 9).
+The CDP steps that show these: `brief-layout` steps 1 to 5, 8 (Show only), 9 (empty states, the first-visit Since
+line, the Shipped empty line), `brief-surface` steps 2, 3, 4 and 6 (Task 9).
 
 ### Task 6: Initiatives as rows, in place expansion, the chunk panel in the side column, inline ideas
 
@@ -1105,7 +1188,7 @@ there so it still overflows by one.
      (`text-[10.5px] text-muted`).
   2. `<SegmentBar>` plus `done/total` (`text-[11px] font-semibold text-secondary`, `w-[34px] text-right`).
   3. The `noteLabel` and `note` on one truncated line.
-  4. The status cell: `● blocked` (`text-asking`) when there are blocked chunks; `● agent open` (`text-success`) when
+  4. The status cell (`data-jarvis-initiative-status`): `● blocked` (`text-asking`) when there are blocked chunks; `● agent open` (`text-success`) when
      `resume.kind === "go"`; else `resume.when` (`text-ink-mid`). The `line.state` pill (paused, archived) goes here
      in place of the date.
   5. `WorkOnButton` (keep `always`), then `MenuButton`.
@@ -1202,7 +1285,8 @@ Run: `npx vitest run frontend/app/view/jarvis` (expected PASS), then `task check
 git commit -m "feat(jarvis): initiatives are one-line rows that open in place, the chunk panel takes the side column, ideas jot inline" -- frontend/app/view/jarvis/initiativework.ts frontend/app/view/jarvis/initiativework.test.ts frontend/app/view/jarvis/briefrowviews.tsx frontend/app/view/jarvis/inlinetrackerview.tsx frontend/app/view/jarvis/effortstore.ts frontend/app/view/jarvis/briefsurface.tsx frontend/app/view/jarvis/briefingmodel.ts frontend/app/view/jarvis/briefingmodel.test.ts
 ```
 
-The CDP steps that show these: `brief-surface` step 7, `brief-chunk-panel` steps 1, 2 and 7 (Task 9).
+The CDP steps that show these: `brief-surface` step 7, `brief-chunk-panel` steps 1, 2, 7, 9 (chunk rows) and 10
+(order and the status cell), `brief-layout` step 10 (inline ideas, Enter and Esc) (Task 9).
 
 ### Task 7: The run sheet: the question first, one accent in the dock, the composer's key
 
@@ -1255,7 +1339,7 @@ Keep `labels.alt` at the right.
 git commit -m "feat(jarvis): the run sheet leads with its question, keeps one accent in the dock, and shows i on its composer" -- frontend/app/view/jarvis/runsheet.tsx frontend/app/view/jarvis/briefcomposer.tsx
 ```
 
-The CDP steps that show these: `brief-run-sheet-order` steps 1 to 3 (Task 9).
+The CDP steps that show these: `brief-run-sheet-order` steps 1 to 3 and 6 (the dock's Open group) (Task 9).
 
 ### Task 8: Footer keys, the tour, docs and changelog
 
@@ -1295,8 +1379,8 @@ expect PASS. If a `when` hides `list:*` on jarvis, check `footer-visible.ts` and
 - **The step at ~96:** title "Since you looked"; mention Shipped beside it and Mark seen.
 - **The keys step (~120/124):** drop "i: vào ô composer" / "i: into the composer". Add "r: run mới" / "r: new run".
 - **Initiatives tour (~148):** rows, not cards. Mention the order (blocked first, then ones with an agent open).
-- **Add one step** after the initiative detail step: target `["[data-jarvis-chunk-sidebar]"]`. It is about the chunk
-  panel and Work on this chunk. Copy the shape of the neighbouring steps, including both languages.
+- **Add one step** after the initiative detail step: id `chunk-panel`, target `["[data-jarvis-chunk-sidebar]"]`. It is
+  about the chunk panel and Work on this chunk. Copy the shape of the neighbouring steps, including both languages.
 - Run `npx vitest run frontend/app/view/jarvis/jarvistour.test.ts`. Expected: PASS (it checks step shape).
 
 **Step 3: `docs/keyboard-shortcuts.md`, Jarvis table.**
@@ -1338,72 +1422,135 @@ expect PASS. If a `when` hides `list:*` on jarvis, check `footer-visible.ts` and
 git commit -m "docs(jarvis): the Brief's new layout and the one run vocabulary in the tour, the guides, the shortcuts and the changelog; Jarvis keys in the footer" -- frontend/app/cockpit/footerhints.ts frontend/app/view/jarvis/jarvistourcontent.ts docs/keyboard-shortcuts.md docs/guide/jarvis.md docs/guide/orchestrator.md CHANGELOG.md
 ```
 
-The CDP step that shows these: `brief-layout` step 5 (footer hints).
+The CDP steps that show these: `brief-layout` step 5 (footer hints), `brief-chunk-panel` step 11 (the new tour step).
 
 ### Task 9: CDP scenarios for every changed view
 
 **Depends on:** Task 8
-**Files:** `scripts/cdp/scenarios.mjs`, `frontend/app/view/jarvis/runsheet.tsx`
+**Files:** `scripts/cdp/scenarios.mjs`, `frontend/app/view/jarvis/runsheet.tsx`, `frontend/app/view/jarvis/briefingfixtures.ts`, `frontend/app/view/jarvis/briefingmodel.test.ts`, `frontend/app/view/jarvis/briefrows.test.ts`
 
 **Where:**
 - Modify: `scripts/cdp/scenarios.mjs` (`briefSurface` about 436-610; new `briefLayout`, `briefChunkPanel`,
   `briefRunSheetOrder`; register all three in `SCENARIOS` near `briefSurface`, about line 29397)
+- Modify: `frontend/app/view/jarvis/briefingfixtures.ts` (`attentionItems`, about line 192: one `run-unverified` item)
+- Test (expectations only, if a count moved): `briefingmodel.test.ts`, `briefrows.test.ts`
 
 Hand-format: 4-space indent, no prettier on this file. Copy helpers and shapes from the scenarios around it:
 `h.goto`, `h.ev`, the fixture-bar clicks, `press(key)`, and `steps.push({ step, ok, detail })`. For an arrange that
 creates an effort, `peekItemViews` (about line 1331) shows `h.rpc("effortcreate")`, `"effortmutate"` and the teardown
 `"effortdelete"`.
 
+**Step 0: The attention fixture gains an unverified run.** In `briefingfixtures.ts`, append to `attentionItems`, in
+the shape `pkg/jarvis/attention.go` composes for `run-unverified` (after Task 3's copy):
+
+```ts
+    {
+        kind: "run-unverified",
+        key: "run-unverified:r-briefing-3",
+        channelid: "ch-briefing",
+        channelname: "waveterm",
+        runid: "r-briefing-3",
+        source: "usage charts",
+        text: "Finished, but 1 thing was not verified.",
+        action: "Accept",
+        phaseidx: 0,
+        waitingsince: NOW - 3 * 60 * 60 * 1000,
+        why: "Not verified: brief-layout needs CDP. Once read, accept it with `wsh runs ack r-briefing-3`.",
+    },
+```
+
+Fix the fields to the real `AttentionItem` type (`frontend/types/gotypes.d.ts`) if `tsc` disagrees. Then run
+`npx vitest run frontend/app/view/jarvis` and update only the expectations that counted the fixture's items.
+
+**Accent checks, everywhere below.** Never match an accent with `[class*=…]`: header buttons carry
+`hover:bg-accenthover` and the dock's accent is `bg-accent/12`. In the header, a button is the accent when
+`b.classList.contains("bg-accent")`. In the dock, a button is the accent when its `classList` contains every class
+of `DOCK_ACCENT` that `DOCK_BTN` lacks (`runsheet.tsx:83`, today `border-accent/50`, `bg-accent/12`,
+`text-accent-soft`).
+
 **Step 1: `brief-surface`.**
 - **Step 2:** the regions are now `["waiting", "sessions", "initiatives", "behind", "shipped"]`.
 - **Step 3** becomes "3. Waiting shows its first three rows under the summary while the other seeded regions stay
-  visible". Use the `attention` fixture (5 items): `queueRows === 3`, the summary present, the toggle
-  `[data-jarvis-brief-attention-summary]` reads `Show all 5` with `aria-expanded="false"`, and the other row kinds
-  (`initiative`, `session`, `delta`, `shipped`) are all present. Normalize first: click the toggle if
-  `aria-expanded="true"`.
-- **Step 4** clicks the toggle and expects 5 queue rows, each with one `[data-jarvis-queue-act]`. The one for the
-  unverified item reads `Accept`.
+  visible". Use the `attention` fixture. Normalize first: click the toggle if `aria-expanded="true"`. Derive the
+  count, never hard-code it: `N` is the number in the toggle's `Show all N` text, and it must be greater than 3 (the
+  fixture holds four items after Step 0; fail with "the attention fixture no longer overflows Waiting" otherwise).
+  Assert `queueRows === 3`, the summary present, `aria-expanded="false"`, and the other row kinds (`initiative`,
+  `session`, `delta`, `shipped`) are all present.
+- **Step 4** clicks the toggle and expects `N` queue rows (the `N` from step 3), each with one
+  `[data-jarvis-queue-act]`. The row whose act reads `Accept` exists (the Step 0 item), and no act reads
+  `Acknowledge`.
 - **Step 6:** the cursor still starts on a queue row (`trail[0].row === "queue"`).
 - **Step 7:** "an initiative row expands in place and opens no sheet". Assert that the opened row's
   `data-jarvis-initiative-card === "open"`, that no `[data-jarvis-brief-sheet]` exists, and that the expanded detail
   `[data-jarvis-initiative-detail]` is inside the clicked row. Drop the "nests no control" check: a row now carries
   Work on and its menu.
 
-**Step 2: New `brief-layout`** (surface `jarvis`, arrange `{}`, the `normal` and `attention` fixtures; at 1600×1000 via
-`h.cdp("Emulation.setDeviceMetricsOverride", …)`, cleared in teardown):
-1. The header has `[data-jarvis-new-run]` reading `New run`, and it is the only `bg-accent` button in the header.
+**Step 2: New `brief-layout`** (surface `jarvis`, arrange `{}`, the `normal`, `attention` and `empty` fixtures; at
+1600×1000 via `h.cdp("Emulation.setDeviceMetricsOverride", …)`, cleared in teardown; teardown also restores every
+`localStorage` key a step changed and deletes any effort titled `verify-jot-idea` with `h.rpc("effortlist")` /
+`"effortdelete"`):
+1. The `<header>` has `[data-jarvis-new-run]` reading `New run`, and it is the only header button whose
+   `classList.contains("bg-accent")`.
 2. The autonomy chip's text matches `/^(All asks: to you|Routine asks: auto|Mixed · \d+ of \d+ auto)/` (skip the
    step when the chip is absent: no projects).
 3. `[data-jarvis-brief-side]` exists and holds the `behind`, `shipped` regions and `[data-jarvis-ideas]`, in that
    order. Its left is greater than the main column's right.
 4. In the main column, `sessions` comes before `initiatives` (compare `getBoundingClientRect().top`).
 5. The footer shows chips reading `new run` and `work on` while on Jarvis.
-6. With the tour offer showing (clear `localStorage` key the offer uses, see `jarvistourstore.ts`, then reload),
-   `document.elementFromPoint` at the centre of `[data-jarvis-brief-attention-summary]` is that element or inside
-   it. Restore the key afterwards.
+6. With the tour offer showing (remove the `localStorage` key `OFFERED_KEY` in `jarvistour.ts`,
+   `"jarvis.tour.offered"`, then reload), `document.elementFromPoint` at the centre of
+   `[data-jarvis-brief-attention-summary]` is that element or inside it. Restore the key afterwards.
 7. With the `attention` fixture, a session row whose state reads `blocked` has `text-asking` on its state cell.
    Skip with a note when the fixture has no blocked row.
+8. **Show only.** Click the `sessions` region's `[data-jarvis-region-only]` button: it has `aria-pressed="true"` and
+   `aria-label="Show every region"`, and `sessions` is the only `[data-jarvis-brief-region]` left. Click it again:
+   every region of step 3 and 4 is back, and `aria-pressed="false"`.
+9. **Empty states and the Since line** (the `empty` fixture). The `sessions` region's empty box holds a button
+   `[data-jarvis-empty-act="run"]` reading `New run`, and the `initiatives` one a `[data-jarvis-empty-act="initiative"]`
+   reading `New initiative`; clicking the latter shows `[data-jarvis-new-initiative]`'s form (whatever
+   `NewInitiativeControl` renders open; close it with `Esc`). `[data-jarvis-brief-empty="shipped"]` reads
+   `Nothing shipped in the last seven days.`. Then remove `localStorage` `"jarvis.briefing.lastseen"`, reload, pick
+   `empty` again: `[data-jarvis-brief-empty="behind"]` reads `Runs that land show up here.`. Set the key to
+   `String(Date.now())`, reload, pick `empty`: it reads `Nothing new since you last looked.`.
+10. **Inline ideas.** In `[data-jarvis-jot-idea] input`, set the value `verify-esc` (the native value setter, then an
+    `input` event, so React sees it) and dispatch `Escape` on it: the value is `""` and it is no longer
+    `document.activeElement`. Then set `verify-jot-idea` and dispatch `Enter`: the value is `""`, and within 3 s
+    `h.rpc("effortlist")` lists an effort titled `verify-jot-idea`.
 
-Shoot after steps 1, 3 and 6.
+Shoot after steps 1, 3, 6 and 9.
 
 **Step 3: New `brief-chunk-panel`** (arrange: an effort `verify-chunk-panel` with chunks `One`, `Two`, `Three`;
 `One` done with the note "Fixture note."; a second note on `One` written as the agent with a `runoid` that does not
-exist, if `effortmutate` takes a run on a note (check `pkg/wshrpc` for `EffortOp`; skip that part if not); reload;
-teardown deletes the effort):
-1. Click the initiative's row; `[data-jarvis-initiative-card="open"]` is the same element that was clicked (the
-   expansion did not move it to another row).
+exist, if `effortmutate` takes a run on a note (check `pkg/wshrpc` for `EffortOp`; skip that part if not); a second
+effort `verify-chunk-blocked` with one chunk `Stuck` set to blocked; reload; teardown deletes both efforts):
+1. Click the `verify-chunk-panel` row; `[data-jarvis-initiative-card="open"]` is the same element that was clicked
+   (the expansion did not move it to another row).
 2. At 1600 wide, click chunk `One`. `[data-jarvis-chunk-sidebar]` shows, and `[data-jarvis-brief-side]` is hidden
    (`offsetParent === null`).
 3. The panel header holds a button reading `Work on this chunk` (or `Go to agent`), and a button reading
    `Copy wsh command` whose `title` starts with `wsh effort note`.
 4. The panel title's computed `font-size` is `14.5px`.
-5. The note box placeholder is `Add a note…`.
+5. The note box placeholder is `Add a note…`, and the panel's text contains `Ctrl+Enter adds · Esc clears`.
 6. If the gone-run note was seeded: after 3 s, the panel contains "The run's report is no longer available." and no
    `[aria-hidden="true"]` skeleton inside that note.
 7. At 1280×800 the panel floats (the side column shows under it or is covered; assert only that the panel is
    visible and the Brief still renders).
+8. **The panel's controls** (back at 1600 wide, chunk `One` open). Every `[role="radio"]` in the status radiogroup
+   has the same `getBoundingClientRect().top` (one row), and each holds its word (`done`, …) beside its glyph. The
+   "Fixture note." card holds buttons reading `Edit` and `Delete` (not `edit` / `delete`).
+9. **Chunk rows.** In the expanded `verify-chunk-panel` row, each chunk's label element has the class `line-clamp-2`
+   and not `truncate`, and each `[data-jarvis-chunk-status]` button's text is its status word and its `classList`
+   holds no `w-[86px]`.
+10. **Initiative order and status cell.** In the Initiatives box, the `verify-chunk-blocked` row comes before
+    `verify-chunk-panel`, and its `[data-jarvis-initiative-status]` reads `● blocked`. Every row's status cell reads
+    `● blocked`, `● agent open`, a short date (`/^[A-Z][a-z]{2} \d{1,2}$/`) or a state pill (`paused`, `archived`);
+    no row whose cell reads `● blocked` comes after one that does not.
+11. **The tour's chunk panel step.** With chunk `One` open, start the Initiatives tour from the header's Tour button
+    and go forward (read `jarvistourview.tsx` for its start and next controls) until
+    `[data-jarvis-tour-card][data-jarvis-tour-step="chunk-panel"]` shows, at most 15 steps. Its
+    `[data-jarvis-tour-spot]` overlaps `[data-jarvis-chunk-sidebar]`'s rectangle. Close the tour.
 
-Shoot after steps 2 and 7.
+Shoot after steps 2, 7 and 11.
 
 **Step 4: New `brief-run-sheet-order`.** Arrange a fixture run with a lead question using the existing helper the
 `peek-item-views` scenario uses (`arrangeFixtureRun`). Read how it seeds a lead and whether it can seed an ask. If no
@@ -1411,25 +1558,33 @@ helper can make an ask, assert the order only on what renders.
 1. In the open run sheet, any `[data-run-sheet-timing]` (or the Timing section's root; add a
    `data-run-sheet-timing` attribute in `runsheet.tsx` if none exists, and commit it with this task) sits below
    `[data-run-sheet-rows]` or `[data-run-sheet-empty]`.
-2. The dock has at most one button with the accent class (`bg-accent`).
+2. The dock (its root; add `data-run-sheet-dock` in `runsheet.tsx` if none exists) has at most one accent button,
+   by the dock rule above.
 3. When a composer shows, pressing `i` (dispatch a keydown on `document`) focuses
-   `[data-jarvis-brief-composer="input"]`.
-4. The sheet's verb (`[data-run-sheet-verb]`) is one of Planning, Plan review, Working, Final check, Wrapping up,
-   Landing, Waiting on you, Blocked, Done, Cancelled. The sheet's strip holds `[data-run-strip-tail]` with 3
-   children whose `title`s start `Final check:`, `Wrap-up:`, `Land:`.
+   `[data-jarvis-brief-composer="input"]`, and the composer's label row holds a `kbd` reading `i`.
+4. The sheet's verb (`[data-run-sheet-verb]`) is one of Planning, Plan review, Starting, Working, Final check,
+   Wrapping up, Landing, Waiting on you, Blocked, Done, Cancelled, Status is stale. The sheet's strip holds
+   `[data-run-strip-tail]` with 3 children whose `title`s start `Final check:`, `Wrap-up:`, `Land:`.
 5. `h.goto("agent")`: the fixture run's row in the tree holds a `[data-run-strip-tail]` with the same three
    `data-pip` children, and its second line does not start with a bare count (`/^\d+\/\d+/` must not match).
+6. **The dock's Open group.** When the dock shows Open lead or Open in Agent, both sit inside one
+   `[role="group"][aria-label="Open"]`, and neither button inside it carries its own `rounded-*` class. Skip with a
+   note when the run has neither.
+7. **Complete, unverified.** If `arrangeFixtureRun` can seed a run that landed with `dag.final.state` `unverified`
+   (read it; add the option only if it is a field on what it already writes), its tree row's `[data-run-complete]`
+   reads `unverified`, its text ends `· unverified`, and it carries `text-warning`. Otherwise SKIP with that reason.
 
-Shoot the sheet.
+Shoot the sheet, and the tree after step 5.
 
 **Step 5: Run them.**
 
-Run: `node --check scripts/cdp/scenarios.mjs` (a syntax check). Then, with the dev app up:
+Run: `node --check scripts/cdp/scenarios.mjs` (a syntax check), `npx vitest run frontend/app/view/jarvis` (PASS) and
+`task check:ts` (exit 0, for the fixture). Then, with the dev app up:
 `task verify:ui -- brief-surface brief-layout brief-chunk-panel brief-run-sheet-order`.
 Expected: all PASS. A step that cannot be arranged prints SKIP with its reason, not FAIL.
 
 **Step 6: Commit**
 
 ```bash
-git commit -m "test(cdp): brief-layout, brief-chunk-panel and brief-run-sheet-order; brief-surface follows the new Brief" -- scripts/cdp/scenarios.mjs frontend/app/view/jarvis/runsheet.tsx
+git commit -m "test(cdp): brief-layout, brief-chunk-panel and brief-run-sheet-order; brief-surface follows the new Brief" -- scripts/cdp/scenarios.mjs frontend/app/view/jarvis/runsheet.tsx frontend/app/view/jarvis/briefingfixtures.ts frontend/app/view/jarvis/briefingmodel.test.ts frontend/app/view/jarvis/briefrows.test.ts
 ```
