@@ -15,6 +15,12 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - **An agent's glyph in the sidebar pulses while background tasks it started still run** (a build, a dev server), even
   after its turn has ended; hover it to see which.
 
+### Changed
+
+- **Fold when you leave** also folds when the app you switch to covers most of arcterm (four fifths of it), not only
+  when it is maximized or full screen. On Windows a click on arcterm's taskbar button now grows the folded window back,
+  as the Dock icon does on macOS; Alt+Tab still only focuses Sprout.
+
 ### Fixed
 
 - The mouse wheel scrolls Claude Code's fullscreen view again after arcterm restarts or reloads its pane.

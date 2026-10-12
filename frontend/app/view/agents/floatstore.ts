@@ -775,8 +775,8 @@ async function recoverFold(win: Window, restore: MiniRestore): Promise<void> {
 }
 
 // window:autosprout: Full folds into Sprout once you have been for AUTO_FOLD_DELAY_MS in another app whose window hides
-// arcterm (maximized or full screen on its screen); one beside it leaves the cockpit in sight. A return to
-// arcterm (Alt+Tab, the taskbar) only focuses Sprout; it grows back the way a button's fold does, from Sprout itself.
+// most of arcterm (maximized, full screen, or a big window over it); one beside it leaves the cockpit in sight. Alt+Tab
+// back only focuses Sprout; a click on the taskbar button or the Dock icon grows it back (REOPEN_EVENT).
 function setupAutoSprout(): () => void {
     const win = getCurrentWindow();
     const setting = getSettingsKeyAtom("window:autosprout");
@@ -859,11 +859,18 @@ export function setupFloatMode(model: AgentsViewModel): () => void {
     const unsubMinimize = globalStore.sub(minimizeSetting, syncRedirect);
     const unlistenMinimize = listen(MINIMIZE_EVENT, minimizeRequested);
     const stopAutoSprout = setupAutoSprout();
-    // the Dock icon brings a folded window back: Sprout may be on another Space, or lost from sight
+    // the Dock icon or the taskbar button brings a folded window back: Sprout may be on another Space, or lost from
+    // sight. A click on the button of a Sprout already in front minimized it first (foreground.rs watch_taskbar).
     const unlistenReopen = listen(REOPEN_EVENT, () => {
-        if (onReopen(currentSize()) === "restore") {
-            void restoreFromSprout(model);
+        if (onReopen(currentSize()) !== "restore") {
+            return;
         }
+        void (async () => {
+            if (await win.isMinimized()) {
+                await win.unminimize();
+            }
+            await restoreFromSprout(model);
+        })().catch((e) => console.error("growing back from the taskbar failed", e));
     });
     return () => {
         unsubSurface();
