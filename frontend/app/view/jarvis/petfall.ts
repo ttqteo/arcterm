@@ -85,3 +85,28 @@ export function landing(offset: number): Landing | null {
         duration,
     };
 }
+
+// Spider-Man does not drop: he rappels down a strand at this speed, braking (easeOut) into the ledge, within these.
+// Below 2v²/g = 115 px a fall is under MIN_RAPPEL_S anyway, and above it d/v outruns the fall's √(2d/g), so a rappel
+// is slower than a fall at every distance (a faster v, 600, makes it quicker than one for a drop of about 150-180 px).
+export const RAPPEL_PX_S = 480;
+export const MIN_RAPPEL_S = 0.25;
+export const MAX_RAPPEL_S = 0.6;
+
+/**
+ * Spider-Man's way back to the ledge from `offset` px below it: from above a rappel, slower than a fall and braking
+ * rather than accelerating, with the same one-cell bounce; from below landing's hop; null when he is already there.
+ */
+export function webLanding(offset: number): Landing | null {
+    if (offset > -1) {
+        return landing(offset);
+    }
+    const down = Math.min(MAX_RAPPEL_S, Math.max(MIN_RAPPEL_S, -offset / RAPPEL_PX_S));
+    const duration = down + 2 * BOUNCE_S;
+    return {
+        y: [offset, 0, -BOUNCE_PX, 0],
+        times: [0, down / duration, (down + BOUNCE_S) / duration, 1],
+        ease: ["easeOut", "easeOut", "easeIn"],
+        duration,
+    };
+}
