@@ -407,6 +407,8 @@ function PetSprite({
             lastActivityAt: f?.idle ? 0 : lastActivityRef.current,
             // read from the store, not a prop: a drop persists home and steps in the same handler
             home: globalStore.get(petHomeAtom),
+            // Spider-Man's app-bar hang is wired in a later task
+            hangs: false,
         };
         const step = stepWalker(walkerRef.current ?? initialWalker(input, now, Math.random), input, now, Math.random);
         walkerRef.current = step.state;

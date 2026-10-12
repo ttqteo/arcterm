@@ -85,6 +85,20 @@ export function measureLedge(
 }
 
 /**
+ * The y Spider-Man hangs from: the bottom of the lowest shown `[data-pet-ceiling]` box (the app bar), or null when none
+ * is shown — Float and the folded window, where he never hangs.
+ */
+export function measureCeiling(boxes: readonly Box[]): number | null {
+    let best: number | null = null;
+    for (const b of boxes) {
+        if (shown(b) && (best == null || b.bottom > best)) {
+            best = b.bottom;
+        }
+    }
+    return best;
+}
+
+/**
  * The horizontal spans of the shown boxes (every `.xterm` and `[data-pet-avoid]`) that come within 80 px above
  * the ledge: a box whose bottom is below `top - 80` and whose top is above the ledge.
  */

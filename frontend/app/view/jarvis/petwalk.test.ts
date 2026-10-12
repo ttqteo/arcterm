@@ -4,8 +4,14 @@
 import { describe, expect, it } from "vitest";
 import {
     clearSpot,
+    CRAWL_MIN_MS,
+    CRAWL_STEP_MS,
     dropAt,
     FRAME_MS,
+    HANG_DOWN_MS,
+    HANG_EVERY,
+    HANG_MIN_MS,
+    HANG_UP_MS,
     homeFraction,
     homeX,
     HOP_LIFT_PX,
@@ -15,8 +21,10 @@ import {
     REST_MAX_MS,
     REST_MIN_MS,
     REST_POSES,
+    restIn,
     SLEEP_AFTER_MS,
     slideFrom,
+    startHang,
     STEP_PX,
     stepWalker,
     TIRED_FRAME_MS,
@@ -44,6 +52,7 @@ function input(over: Partial<WalkerInput> = {}): WalkerInput {
         reduce: false,
         lastActivityAt: T0,
         home: 0.5,
+        hangs: false,
         ...over,
     };
 }
@@ -419,6 +428,100 @@ describe("rest", () => {
         const step = stepWalker(resting, input({ avoid: [[420, 600]] }), T0 + 1_000, half);
         expect(step.state.name).toBe("walk");
         expect(overlaps(step.state.target!, [[420, 600]])).toBe(false);
+    });
+});
+
+describe("hang (Spider-Man)", () => {
+    // a walk one step from its target, so the next step lands and starts a rest
+    const arriving = () => walker({ name: "walk", x: 400, target: 400, due: T0 });
+    const zero = () => 0;
+    const hanging = input({ hangs: true });
+    // with rand 0: crawl CRAWL_MIN_MS, hang HANG_MIN_MS
+    const DUE = T0 + HANG_UP_MS + CRAWL_MIN_MS + HANG_MIN_MS + HANG_DOWN_MS;
+
+    it("starts about one rest in HANG_EVERY when it can, going up first in dangle", () => {
+        expect(HANG_EVERY).toBe(7);
+        const step = stepWalker(arriving(), hanging, T0, zero);
+        expect(step.state.restPose).toBe("hang");
+        expect([step.hang, step.pose, step.delayMs]).toEqual(["up", "dangle", HANG_UP_MS]);
+    });
+
+    it("rests as before on a draw past one in seven", () => {
+        const step = stepWalker(arriving(), hanging, T0, () => 0.5);
+        expect(step.state.restPose).not.toBe("hang");
+        expect(step.hang).toBeNull();
+    });
+
+    it("never hangs when it cannot, nor tired", () => {
+        expect(stepWalker(arriving(), input(), T0, zero).hang).toBeNull();
+        expect(stepWalker(arriving(), input({ hangs: true, expression: "tired" }), T0, zero).hang).toBeNull();
+    });
+
+    it("goes up, crawls a cell every CRAWL_STEP_MS toward the roomier side, hangs, comes down, walks on", () => {
+        const s = startHang(walker({ x: 400 }), hanging, T0, zero);
+        expect(s.due).toBe(DUE);
+        const up = stepWalker(s, hanging, T0, half);
+        expect([up.hang, up.pose]).toEqual(["up", "dangle"]);
+        const crawl = stepWalker(up.state, hanging, T0 + HANG_UP_MS, half);
+        expect([crawl.hang, crawl.x, crawl.delayMs]).toEqual(["crawl", 400, CRAWL_STEP_MS]);
+        const on = stepWalker(crawl.state, hanging, T0 + HANG_UP_MS + 2 * CRAWL_STEP_MS, half);
+        // 400 has more room to the right of LEDGE's travel (100..1252)
+        expect([on.hang, on.x, on.flip]).toEqual(["crawl", 400 + 2 * STEP_PX, false]);
+        const hang = stepWalker(on.state, hanging, T0 + HANG_UP_MS + CRAWL_MIN_MS, half);
+        expect([hang.hang, hang.pose, hang.delayMs]).toEqual(["hang", "stand", HANG_MIN_MS]);
+        const down = stepWalker(hang.state, hanging, DUE - HANG_DOWN_MS, half);
+        expect([down.hang, down.pose, down.delayMs]).toEqual(["down", "dangle", HANG_DOWN_MS]);
+        const after = stepWalker(down.state, hanging, DUE, half);
+        expect(after.hang).toBeNull();
+        expect(after.state.name).toBe("walk");
+    });
+
+    it("crawls left from near the right end, mirrored, and never off the ledge", () => {
+        const s = startHang(walker({ x: 1250 }), hanging, T0, zero);
+        let step = stepWalker(s, hanging, T0 + HANG_UP_MS, half);
+        for (let t = T0 + HANG_UP_MS; t < T0 + HANG_UP_MS + CRAWL_MIN_MS; t += CRAWL_STEP_MS) {
+            step = stepWalker(step.state, hanging, t, half);
+            expect(step.x).toBeGreaterThanOrEqual(LEDGE.left);
+            expect(step.x).toBeLessThanOrEqual(LEDGE.right - PX);
+            expect(step.flip).toBe(true);
+        }
+        expect(step.x).toBeLessThan(1250);
+    });
+
+    it("comes down at once when it can no longer hang, and rests the rest of the time standing where it crawled to", () => {
+        const s = startHang(walker({ x: 400 }), hanging, T0, zero);
+        const mid = stepWalker(s, hanging, T0 + HANG_UP_MS + 4 * CRAWL_STEP_MS, half);
+        const cut = stepWalker(mid.state, input({ hangs: false }), T0 + HANG_UP_MS + 4 * CRAWL_STEP_MS, half);
+        expect([cut.hang, cut.pose, cut.state.name, cut.x]).toEqual([null, "stand", "rest", mid.x]);
+        expect(cut.state.due).toBe(DUE);
+    });
+
+    it("comes down for a posture, an utterance, and for a drag", () => {
+        const s = startHang(walker(), hanging, T0, zero);
+        expect(stepWalker(s, input({ hangs: true, posture: "escalation" }), T0 + 1_000, half).hang).toBeNull();
+        expect(stepWalker(s, input({ hangs: true, speaking: true }), T0 + 1_000, half).hang).toBeNull();
+        const dragged = stepWalker(s, input({ hangs: true, dragging: true }), T0 + 1_000, half);
+        expect([dragged.hang, dragged.pose]).toEqual([null, "dangle"]);
+    });
+
+    it("stays up when a terminal opens under the ledge: it is not on the ledge", () => {
+        const s = startHang(walker({ x: 400 }), hanging, T0, zero);
+        const step = stepWalker(
+            s,
+            input({ hangs: true, avoid: [[300, 900]] }),
+            T0 + HANG_UP_MS + CRAWL_MIN_MS + 1_000,
+            half
+        );
+        expect(step.hang).toBe("hang");
+    });
+});
+
+// the DEV force that shows each rest pose on demand (Task 5 Step 7, Task 7's CDP steps)
+describe("restIn", () => {
+    it.each(REST_POSES)("rests now in %s, for the longest rest, where it stands", (pose) => {
+        const s = restIn(walker({ name: "walk", x: 400, target: 900 }), pose, T0);
+        expect([s.name, s.restPose, s.x, s.target, s.due]).toEqual(["rest", pose, 400, null, T0 + REST_MAX_MS]);
+        expect(stepWalker(s, input(), T0, half).state.name).toBe("rest");
     });
 });
 

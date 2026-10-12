@@ -40,6 +40,8 @@ export interface WalkerInput {
     lastActivityAt: number;
     // where the creature lives, as a 0..1 fraction of the ledge (petstore's petHomeAtom)
     home: number;
+    // Spider-Man, with an app bar to hang from, the cursor not on him, and motion allowed: a rest may be a hang
+    hangs: boolean;
 }
 
 export interface WalkerState {
@@ -58,6 +60,8 @@ export interface WalkerState {
     restPose: RestPose;
     // the posture seen at the last step, so a posture's arrival can be told from its standing
     posture: PetPosture;
+    // a hang rest: when it began, how long it crawls, where it left the ledge and which way it crawls
+    hang?: { at: number; crawlMs: number; x0: number; dir: 1 | -1 };
 }
 
 export interface WalkerStep {
@@ -69,6 +73,9 @@ export interface WalkerStep {
     flip: boolean;
     // px the sprite stands above the ledge: HOP_LIFT_PX during a hop, else 0
     lift: number;
+    // Spider-Man's app-bar pastime, by phase; null otherwise. The renderer draws the crawl and the hang from their own
+    // grids (SPIDEY_CRAWL, SPIDEY_HANG), and the pose stands in for them
+    hang: HangPhase | null;
     // when to step again; null while the creature is still, until an input changes
     delayMs: number | null;
 }
@@ -90,7 +97,7 @@ export const REST_MAX_MS = 15_000;
 // What a rest is spent doing, picked at random as it starts: standing or sitting still, or a pastime — studying,
 // music, work, sport — whose frames loop for the length of the rest.
 export const REST_POSES = ["stand", "sit", "read", "music", "work", "ball"] as const;
-export type RestPose = (typeof REST_POSES)[number];
+export type RestPose = (typeof REST_POSES)[number] | "hang";
 
 export const PASTIMES: Partial<Record<RestPose, { frames: readonly PetPose[]; frameMs: number }>> = {
     read: { frames: ["read1", "read2"], frameMs: 1_200 },
@@ -98,6 +105,20 @@ export const PASTIMES: Partial<Record<RestPose, { frames: readonly PetPose[]; fr
     work: { frames: ["work1", "work2"], frameMs: 250 },
     ball: { frames: ["ball1", "ball2"], frameMs: 300 },
 };
+
+// Spider-Man's own rest, when WalkerInput.hangs: a strand to the app bar and up it, a crawl along its underside, a hang
+// upside down from it, and a rappel back down where the crawl left him. About one rest in HANG_EVERY, never tired.
+export const HANG_EVERY = 7;
+export const HANG_UP_MS = 400;
+export const CRAWL_MIN_MS = 1_500;
+export const CRAWL_MAX_MS = 3_000;
+// a cell of crawl this often
+export const CRAWL_STEP_MS = 250;
+export const HANG_MIN_MS = 4_000;
+export const HANG_MAX_MS = 8_000;
+export const HANG_DOWN_MS = 500;
+
+export type HangPhase = "up" | "crawl" | "hang" | "down";
 
 // No utterance, posture change or interaction for this long, and it goes to sleep.
 export const SLEEP_AFTER_MS = 10 * 60_000;
@@ -243,12 +264,60 @@ function still(s: WalkerState, name: WalkerStateName): WalkerState {
 }
 
 function rest(s: WalkerState, input: WalkerInput, now: number, rand: () => number): WalkerState {
+    // the extra draw only when he can hang, so every other creature's walk is the walk it always was
+    if (input.hangs && !wearsTired(input.expression) && rand() < 1 / HANG_EVERY) {
+        return startHang(s, input, now, rand);
+    }
     const length = REST_MIN_MS + rand() * (REST_MAX_MS - REST_MIN_MS);
     return {
         ...still(s, "rest"),
         due: now + (wearsTired(input.expression) ? 2 * length : length),
         restPose: REST_POSES[Math.min(REST_POSES.length - 1, Math.floor(rand() * REST_POSES.length))],
+        hang: undefined,
     };
+}
+
+// A rest begun now in this pose, for its longest length: the DEV contract's force({ rest }) (petview.tsx), so a CDP
+// step can show every rest pose without waiting on the random pick.
+export function restIn(s: WalkerState, pose: (typeof REST_POSES)[number], now: number): WalkerState {
+    return { ...still(s, "rest"), due: now + REST_MAX_MS, restPose: pose, hang: undefined };
+}
+
+/** A hang rest starting now, crawling toward the roomier side. Exported for the DEV force (petview.tsx). */
+export function startHang(s: WalkerState, input: WalkerInput, now: number, rand: () => number): WalkerState {
+    const crawlMs = CRAWL_MIN_MS + rand() * (CRAWL_MAX_MS - CRAWL_MIN_MS);
+    const hangMs = HANG_MIN_MS + rand() * (HANG_MAX_MS - HANG_MIN_MS);
+    const [lo, hi] = travel(input.ledge);
+    const dir = hi - s.x >= s.x - lo ? 1 : -1;
+    return {
+        ...still(s, "rest"),
+        restPose: "hang",
+        flip: dir < 0,
+        hang: { at: now, crawlMs, x0: s.x, dir },
+        due: now + HANG_UP_MS + crawlMs + hangMs + HANG_DOWN_MS,
+    };
+}
+
+/** Which phase of his hang a state is in at `now`, or null when he is not hanging. */
+export function hangPhase(s: WalkerState, now: number): HangPhase | null {
+    if (s.name !== "rest" || s.restPose !== "hang" || s.hang == null) {
+        return null;
+    }
+    const t = now - s.hang.at;
+    if (t < HANG_UP_MS) {
+        return "up";
+    }
+    if (t < HANG_UP_MS + s.hang.crawlMs) {
+        return "crawl";
+    }
+    return now >= s.due - HANG_DOWN_MS ? "down" : "hang";
+}
+
+// where the crawl has taken him by now: a cell every CRAWL_STEP_MS from where he went up, kept on the ledge's span
+function hangX(s: WalkerState, input: WalkerInput, now: number): number {
+    const h = s.hang!;
+    const t = Math.min(Math.max(0, now - h.at - HANG_UP_MS), h.crawlMs);
+    return clampX(h.x0 + h.dir * Math.floor(t / CRAWL_STEP_MS) * STEP_PX, input.ledge);
 }
 
 // A rest's pastime, unless tired (which rests in its own still pose).
@@ -259,6 +328,11 @@ function pastimeOf(s: WalkerState, input: WalkerInput) {
 // A pastime's frame is counted back from the rest's end, so it needs no clock of its own and an early step
 // draws the frame already showing.
 function restPoseAt(s: WalkerState, input: WalkerInput, now: number): PetPose {
+    const phase = hangPhase(s, now);
+    if (phase != null) {
+        // hands on the strand going up and coming down; the crawl and the hang are drawn from their own grids
+        return phase === "up" || phase === "down" ? "dangle" : "stand";
+    }
     const pastime = pastimeOf(s, input);
     if (pastime == null) {
         return wearsTired(input.expression) ? "tired" : (s.restPose as "stand" | "sit");
@@ -269,6 +343,17 @@ function restPoseAt(s: WalkerState, input: WalkerInput, now: number): PetPose {
 
 // Until the rest ends, or until a pastime's next frame when that comes first.
 function restDelay(s: WalkerState, input: WalkerInput, now: number): number {
+    if (s.restPose === "hang" && s.hang != null) {
+        const h = s.hang;
+        const crawlEnd = h.at + HANG_UP_MS + h.crawlMs;
+        const bounds = [h.at + HANG_UP_MS, crawlEnd, s.due - HANG_DOWN_MS, s.due];
+        if (now >= h.at + HANG_UP_MS && now < crawlEnd) {
+            const into = now - h.at - HANG_UP_MS;
+            bounds.push(h.at + HANG_UP_MS + (Math.floor(into / CRAWL_STEP_MS) + 1) * CRAWL_STEP_MS);
+        }
+        const next = bounds.filter((b) => b > now);
+        return next.length === 0 ? 0 : Math.min(...next) - now;
+    }
     const left = Math.max(0, s.due - now);
     const pastime = pastimeOf(s, input);
     if (pastime == null || left === 0) {
@@ -354,6 +439,7 @@ function view(s: WalkerState, input: WalkerInput, now: number, delayMs: number |
         x: s.x,
         flip: s.flip,
         lift: s.name === "hop" ? HOP_LIFT_PX : 0,
+        hang: hangPhase(s, now),
         delayMs,
     };
 }
@@ -464,7 +550,15 @@ export function stepWalker(state: WalkerState, input: WalkerInput, now: number, 
         }
         s = s.name === "walk" ? { ...s, target: spot } : startWalk(s, spot, input, now);
     } else if (s.name === "rest") {
-        if (blocked(s.x, avoid) && clearSpot(s.x, ledge, avoid) !== s.x) {
+        if (s.restPose === "hang" && s.hang != null) {
+            if (input.hangs) {
+                s = { ...s, x: hangX(s, input, now) };
+            } else {
+                // the cursor came onto him, or the app bar went: he comes down where he is and rests the rest standing
+                s = { ...s, restPose: "stand", hang: undefined };
+            }
+        }
+        if (s.restPose !== "hang" && blocked(s.x, avoid) && clearSpot(s.x, ledge, avoid) !== s.x) {
             // a terminal opened under it: a rest is never spent on one
             s = startWalk(s, clearSpot(s.x, ledge, avoid), input, now);
         } else if (now < s.due) {

@@ -2,7 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { avoidSpans, cornerFor, LEDGE_HOLD_PAD_PX, lowestLedge, measureLedge, type Box } from "./petledge";
+import {
+    avoidSpans,
+    cornerFor,
+    LEDGE_HOLD_PAD_PX,
+    lowestLedge,
+    measureCeiling,
+    measureLedge,
+    type Box,
+} from "./petledge";
 
 const box = (left: number, top: number, right: number, bottom: number): Box => ({ left, top, right, bottom });
 const VIEWPORT = { width: 1600, height: 900 };
@@ -100,5 +108,22 @@ describe("a ledge that holds the sprite", () => {
     });
     it("is an edge like any other without the mark", () => {
         expect(measureLedge([{ ...ledge, holds: false }], null, { width: 720, height: 460 }).top).toBe(408);
+    });
+});
+
+describe("measureCeiling", () => {
+    const box = (top: number, bottom: number) => ({ left: 0, right: 800, top, bottom });
+
+    it("is the bottom of the app bar he hangs from", () => {
+        expect(measureCeiling([box(0, 38)])).toBe(38);
+    });
+
+    it("is null with no ceiling shown: Float and the folded window, where he never hangs", () => {
+        expect(measureCeiling([])).toBeNull();
+        expect(measureCeiling([{ left: 0, right: 0, top: 0, bottom: 0 }])).toBeNull();
+    });
+
+    it("takes the lowest of several", () => {
+        expect(measureCeiling([box(0, 38), box(38, 70)])).toBe(70);
     });
 });
