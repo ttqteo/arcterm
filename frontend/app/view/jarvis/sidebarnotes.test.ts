@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FeedEntry } from "./effortfeed";
-import { sidebarNotes } from "./sidebarnotes";
+import { noteRunFace, sidebarNotes } from "./sidebarnotes";
 
 const e = (seq: number, text: string, over: Partial<FeedEntry> = {}): FeedEntry => ({
     seq,
@@ -43,5 +43,18 @@ describe("sidebarNotes", () => {
         expect(cards[0]).toMatchObject({ sessionTab: "tab9", runOid: "r1", editable: false });
         expect(cards[1].editable).toBe(true);
         expect(cards[2].editable).toBe(true);
+    });
+});
+
+describe("noteRunFace", () => {
+    it("draws the skeleton only while the run is being read", () => {
+        expect(noteRunFace({ run: undefined, loading: true, error: false })).toBe("loading");
+    });
+    it("says a run is gone once the read settles empty or fails, instead of a skeleton that never resolves", () => {
+        expect(noteRunFace({ run: undefined, loading: false, error: false })).toBe("gone");
+        expect(noteRunFace({ run: undefined, loading: false, error: true })).toBe("gone");
+    });
+    it("shows a run that loaded", () => {
+        expect(noteRunFace({ run: { oid: "r1" } as Run, loading: false, error: false })).toBe("ready");
     });
 });

@@ -38,6 +38,11 @@ export function dueChunkPrompt(title: string, effortOid: string, chunk: string):
     return `the chunk "${chunk}" of the initiative ${title} (effort:${effortOid}) has come due. Read its notes for what to check and what the result decides, do that, add the result as a chunk note, then mark the chunk done, or move its date with \`wsh effort chunk due\``;
 }
 
+// Work on one chunk from the chunk panel: the agent does that chunk only and closes the loop on it
+export function chunkPrompt(title: string, effortOid: string, chunk: string): string {
+    return `work on the chunk "${chunk}" of the initiative ${title} (effort:${effortOid}): read its notes, do it, add the result as a chunk note, then mark it done with \`wsh effort chunk status\``;
+}
+
 const STATE_RANK: Record<AgentVM["state"], number> = { asking: 0, working: 1, idle: 2 };
 
 // A run's agents answer to their run, and a terminal is not an agent session: neither is "the session on

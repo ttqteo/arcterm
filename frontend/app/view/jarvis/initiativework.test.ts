@@ -1,6 +1,7 @@
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { describe, expect, it } from "vitest";
 import {
+    chunkPrompt,
     dueChunkPrompt,
     initiativeLinkText,
     initiativeResume,
@@ -165,5 +166,15 @@ describe("dueChunkPrompt", () => {
         expect(p).toContain('the chunk "re-measure" of the initiative Nav rail (effort:e1) has come due');
         expect(p).toContain("mark the chunk done");
         expect(p).toContain("wsh effort chunk due");
+    });
+});
+
+describe("chunkPrompt", () => {
+    it("names the chunk and closes the loop on it", () => {
+        const p = chunkPrompt("Diff redesign", "e1", "Commit tab");
+        expect(p).toContain('the chunk "Commit tab"');
+        expect(p).toContain("(effort:e1)");
+        expect(p).toContain("add the result as a chunk note");
+        expect(p).toContain("mark it done");
     });
 });
