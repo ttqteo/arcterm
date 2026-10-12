@@ -25,11 +25,7 @@ the terminal's `TerminalView` takes, opening the xterm search box it already ren
 
 **Depends on:** none
 
-**Files:**
-- Modify: `pkg/devservers/devservers.go` (`Select`)
-- Modify: `pkg/devservers/devservers_os.go` (`List`)
-- Modify: `pkg/wshrpc/wshserver/wshserver_devservers.go` (`ListDevServersCommand`)
-- Test: `pkg/devservers/devservers_test.go`
+**Files:** `pkg/devservers/devservers.go`, `pkg/devservers/devservers_os.go`, `pkg/wshrpc/wshserver/wshserver_devservers.go`, `pkg/devservers/devservers_test.go`
 
 **Step 1: Write the failing tests.** Append to `pkg/devservers/devservers_test.go`:
 
@@ -118,10 +114,7 @@ func (ws *WshServer) ListDevServersCommand(ctx context.Context, data wshrpc.Comm
 
 **Depends on:** none
 
-**Files:**
-- Modify: `frontend/app/view/agents/devserversmodel.ts` (`ownerLabel`, new `terminalLog`)
-- Modify: `frontend/app/view/agents/machineservers.ts` (`MachineRow.termLog`)
-- Test: `frontend/app/view/agents/devserversmodel.test.ts`, `frontend/app/view/agents/machineservers.test.ts`
+**Files:** `frontend/app/view/agents/devserversmodel.ts`, `frontend/app/view/agents/machineservers.ts`, `frontend/app/view/agents/devserversmodel.test.ts`, `frontend/app/view/agents/machineservers.test.ts`
 
 **Step 1: Write the failing tests.** In `devserversmodel.test.ts`, import `terminalLog` and add:
 
@@ -187,12 +180,7 @@ Update the file's header comment (it now also says which terminal holds a row). 
 
 **Depends on:** Task 2
 
-**Files:**
-- Create: `frontend/app/view/term/termsearch.ts`
-- Create: `frontend/app/view/agents/terminallog.ts`
-- Modify: `frontend/app/view/term/term.tsx` (take the pending search)
-- Modify: `frontend/app/view/agents/railservers.tsx`, `frontend/app/view/agents/machineserverspanel.tsx` (Log button)
-- Modify: `CHANGELOG.md`
+**Files:** `frontend/app/view/term/termsearch.ts`, `frontend/app/view/agents/terminallog.ts`, `frontend/app/view/term/term.tsx`, `frontend/app/view/agents/railservers.tsx`, `frontend/app/view/agents/machineserverspanel.tsx`, `frontend/app/element/search.tsx`, `frontend/app/element/search.scss`, `CHANGELOG.md`
 
 **Step 1: The pending search.** `frontend/app/view/term/termsearch.ts`:
 
@@ -283,8 +271,7 @@ which terminal in Servers, and its Log opens that terminal with its search box."
 
 **Depends on:** Task 1, Task 3
 
-**Files:**
-- Modify: `scripts/cdp/scenarios.mjs` (`machine-servers`, `rail-servers`)
+**Files:** `scripts/cdp/scenarios.mjs`
 
 **Step 1: machine-servers.** Its arrange already creates a real throwaway terminal tab (`ctx.termTabId`) and its
 mocked `vite` row is owned by it (`machineServersFixture`). Keep the terminal's block id on `ctx` (`ctx.termBlockId`)
