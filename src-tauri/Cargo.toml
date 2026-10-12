@@ -37,11 +37,11 @@ tauri-winrt-notification = "0.7"
 # Notification Center banners that report their click (notify.rs), which tauri-plugin-notification, built on this crate,
 # does not pass on. Pinned to the version that plugin pulled into the tree.
 mac-notification-sys = "0.6.15"
-# the window's traffic lights, yellow button, ⌘M and ⌘W (macwindow.rs), which Tauri cannot hide or redirect. Pinned to the
-# versions already in the tree via tao.
+# the window's traffic lights, yellow button, ⌘M and ⌘W (macwindow.rs), which Tauri cannot hide or redirect, and the key
+# a folded window takes when arcterm comes to the front. Pinned to the versions already in the tree via tao.
 objc2 = "=0.6.4"
 objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSApplication", "NSButton", "NSControl", "NSMenu", "NSMenuItem", "NSResponder", "NSView", "NSWindow"] }
-objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSString"] }
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSNotification", "NSString"] }
 # the window list behind the fold that follows you out of the app (foreground.rs), which AppKit's occlusion state could
 # not answer. Pinned to the versions already in the tree via tao.
 objc2-core-foundation = { version = "=0.3.2", default-features = false, features = ["std", "CFArray", "CFCGTypes", "CFDictionary", "CFNumber", "CFString"] }

@@ -353,6 +353,7 @@ fn main() {
                 use_resource_window_icons(hwnd.0 as isize);
             }
             macwindow::free_close_window_key();
+            macwindow::watch_arrivals(app.handle());
             if let Some(w) = app.get_webview_window("main") {
                 winframe::restore_and_track(&w);
                 #[cfg(windows)]

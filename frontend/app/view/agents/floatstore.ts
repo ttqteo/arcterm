@@ -827,11 +827,19 @@ function setupAutoSprout(model: AgentsViewModel): () => void {
         if (autoRestoreOnReturn({ autoFolded, size: currentSize().size, pressGapMs, chatOpen })) {
             foldLog("back in arcterm: growing back");
             void restoreFromSprout(model);
+        } else if (currentSize().size === "sprout") {
+            foldLog(
+                `back in arcterm: staying folded (auto ${autoFolded}, press gap ${pressGapMs}, chat open ${chatOpen})`
+            );
         }
     };
     const unlistenFocus = win.onFocusChanged(({ payload: focused }) => {
         clearTimeout(leaveTimer);
         clearTimeout(returnTimer);
+        if (currentSize().size === "sprout") {
+            // with the host's arrival line (macwindow.rs), says which way a return that left it folded went
+            foldLog(`folded window ${focused ? "focused" : "lost the focus"} (armed ${armed}, auto ${autoFolded})`);
+        }
         if (!focused) {
             armed = autoFolded;
             if (autoSproutOn(globalStore.get(setting)) && currentSize().size === "full") {

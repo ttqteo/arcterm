@@ -3,8 +3,31 @@
 // instead of the Dock while window:minimize says so. Tauri can do none of the three, so this talks to AppKit. Commands that are not async run on the main thread, which AppKit requires; the marker check turns a
 // mistake there into an error instead of undefined behaviour. Both are no-ops on other platforms. It also takes ⌘W off
 // the menu's Close Window, so the key reaches the cockpit, which closes the focused agent with it.
+//
+// A folded window grows back on its own focus (floatstore.ts setupAutoSprout). ⌘Tab back to arcterm sometimes left it
+// folded while a click on the Dock icon grew it back, so each arrival while folded is logged with what AppKit gave, and
+// a folded arcterm that comes to the front with no key window makes its window key itself (takes_key).
 
 use tauri::WebviewWindow;
+
+// What a folded arcterm finds once it has come to the front: ⌘Tab, the Dock icon, a click on Sprout.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[derive(Clone, Copy, Debug)]
+struct Arrival {
+    active: bool,
+    folded: bool,
+    // the app has a key window: the main one, or a sheet or dialog of it
+    has_key: bool,
+    visible: bool,
+    minimized: bool,
+}
+
+// Whether the window takes the key itself: arcterm is in front and folded, but no window of it has the key, so no focus
+// reaches the page to grow it back and keys typed go nowhere. A minimized or hidden window is left to the Dock.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn takes_key(a: Arrival) -> bool {
+    a.active && a.folded && !a.has_key && a.visible && !a.minimized
+}
 
 #[cfg(target_os = "macos")]
 mod imp {
@@ -14,11 +37,20 @@ mod imp {
     use objc2::rc::Retained;
     use objc2::runtime::{AnyObject, NSObject, Sel};
     use objc2::{define_class, msg_send, sel, MainThreadMarker, MainThreadOnly};
-    use objc2_app_kit::{NSApplication, NSMenuItem, NSWindow, NSWindowButton, NSWindowCollectionBehavior};
-    use objc2_foundation::ns_string;
+    use objc2_app_kit::{
+        NSApplication, NSApplicationDidBecomeActiveNotification, NSMenuItem, NSWindow, NSWindowButton,
+        NSWindowCollectionBehavior,
+    };
+    use objc2_foundation::{ns_string, NSNotificationCenter};
     use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
+    use super::{takes_key, Arrival};
+    use crate::applog;
+
     static APP: OnceLock<AppHandle> = OnceLock::new();
+
+    // AppKit may hand the key back after it posts that the app became active, so the window is looked at a moment later
+    const ARRIVAL_CHECK_DELAY_S: f64 = 0.15;
 
     define_class!(
         // SAFETY: NSObject has no subclassing requirements, and this class does not implement Drop.
@@ -43,6 +75,40 @@ mod imp {
         }
     }
 
+    define_class!(
+        // SAFETY: NSObject has no subclassing requirements, and this class does not implement Drop.
+        #[unsafe(super(NSObject))]
+        #[thread_kind = MainThreadOnly]
+        #[name = "ArcArrivalObserver"]
+        struct ArrivalObserver;
+
+        impl ArrivalObserver {
+            #[unsafe(method(appDidBecomeActive:))]
+            fn app_did_become_active(&self, _note: Option<&AnyObject>) {
+                // SAFETY: checkArrival: is this class's own method, taking one object it ignores
+                unsafe {
+                    let _: () = msg_send![
+                        self,
+                        performSelector: sel!(checkArrival:),
+                        withObject: None::<&AnyObject>,
+                        afterDelay: ARRIVAL_CHECK_DELAY_S
+                    ];
+                }
+            }
+
+            #[unsafe(method(checkArrival:))]
+            fn check_arrival(&self, _: Option<&AnyObject>) {
+                check_arrival();
+            }
+        }
+    );
+
+    impl ArrivalObserver {
+        fn new(mtm: MainThreadMarker) -> Retained<Self> {
+            unsafe { msg_send![Self::alloc(mtm), init] }
+        }
+    }
+
     // A button or a menu item holds its target weakly, so the redirect keeps it alive here, with the target and action
     // each gets back when the redirect ends.
     struct Redirect {
@@ -57,6 +123,10 @@ mod imp {
         static REDIRECT: RefCell<Option<Redirect>> = const { RefCell::new(None) };
         // the window's collection behavior from before the fold, given back on the way out
         static UNFOLDED_BEHAVIOR: Cell<Option<NSWindowCollectionBehavior>> = const { Cell::new(None) };
+        // set_folded_chrome's last word, for the arrival check
+        static FOLDED: Cell<bool> = const { Cell::new(false) };
+        // the notification center holds its observer weakly
+        static ARRIVAL_OBSERVER: RefCell<Option<Retained<ArrivalObserver>>> = const { RefCell::new(None) };
     }
 
     fn ns_window<'a>(window: &'a WebviewWindow, _mtm: MainThreadMarker) -> Result<&'a NSWindow, String> {
@@ -110,6 +180,7 @@ mod imp {
     pub fn set_folded_chrome(window: &WebviewWindow, folded: bool) -> Result<(), String> {
         let mtm = MainThreadMarker::new().ok_or("not on the main thread")?;
         let ns = ns_window(window, mtm)?;
+        FOLDED.with(|cell| cell.set(folded));
         for kind in [NSWindowButton::CloseButton, NSWindowButton::MiniaturizeButton, NSWindowButton::ZoomButton] {
             if let Some(button) = ns.standardWindowButton(kind) {
                 button.setHidden(folded);
@@ -130,6 +201,64 @@ mod imp {
             ns.setCollectionBehavior(was);
         }
         Ok(())
+    }
+
+    pub fn watch_arrivals(app: &AppHandle) {
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let _ = APP.set(app.clone());
+        let observer = ArrivalObserver::new(mtm);
+        let as_object: &AnyObject = &observer;
+        // SAFETY: the observer is kept alive in ARRIVAL_OBSERVER for the app's life, and appDidBecomeActive: is its
+        // method taking the notification
+        unsafe {
+            NSNotificationCenter::defaultCenter().addObserver_selector_name_object(
+                as_object,
+                sel!(appDidBecomeActive:),
+                Some(NSApplicationDidBecomeActiveNotification),
+                None,
+            );
+        }
+        ARRIVAL_OBSERVER.with(|cell| *cell.borrow_mut() = Some(observer));
+    }
+
+    fn check_arrival() {
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        if !FOLDED.with(|cell| cell.get()) {
+            return;
+        }
+        let Some(window) = APP.get().and_then(|app| app.get_webview_window("main")) else {
+            return;
+        };
+        let Ok(ns) = ns_window(&window, mtm) else {
+            return;
+        };
+        let app = NSApplication::sharedApplication(mtm);
+        let arrival = Arrival {
+            active: app.isActive(),
+            folded: true,
+            has_key: app.keyWindow().is_some(),
+            visible: ns.isVisible(),
+            minimized: ns.isMiniaturized(),
+        };
+        let mut line = format!(
+            "[tauri] [fold] arcterm in front while folded: active {}, key window {}, main window key {}, visible {}, \
+             minimized {}, ignores mouse {}",
+            arrival.active,
+            arrival.has_key,
+            ns.isKeyWindow(),
+            arrival.visible,
+            arrival.minimized,
+            ns.ignoresMouseEvents()
+        );
+        if takes_key(arrival) {
+            ns.makeKeyWindow();
+            line.push_str(&format!("; made it key: {}", ns.isKeyWindow()));
+        }
+        applog::log_line(&line);
     }
 
     pub fn redirect_minimize(window: &WebviewWindow, on: bool) -> Result<(), String> {
@@ -185,6 +314,14 @@ pub fn free_close_window_key() {
     imp::free_close_window_key();
 }
 
+// Runs from setup, on the main thread.
+pub fn watch_arrivals(app: &tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    imp::watch_arrivals(app);
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
+}
+
 #[tauri::command]
 pub fn set_folded_chrome(window: WebviewWindow, folded: bool) -> Result<(), String> {
     #[cfg(target_os = "macos")]
@@ -204,5 +341,40 @@ pub fn redirect_minimize(window: WebviewWindow, on: bool) -> Result<(), String> 
     {
         let _ = (window, on);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn folded_in_front() -> Arrival {
+        Arrival { active: true, folded: true, has_key: false, visible: true, minimized: false }
+    }
+
+    #[test]
+    fn a_folded_window_in_front_with_no_key_takes_it() {
+        assert!(takes_key(folded_in_front()));
+    }
+
+    #[test]
+    fn a_key_already_given_is_left_alone() {
+        assert!(!takes_key(Arrival { has_key: true, ..folded_in_front() }));
+    }
+
+    #[test]
+    fn only_a_folded_window_takes_it() {
+        assert!(!takes_key(Arrival { folded: false, ..folded_in_front() }));
+    }
+
+    #[test]
+    fn not_while_another_app_is_in_front() {
+        assert!(!takes_key(Arrival { active: false, ..folded_in_front() }));
+    }
+
+    #[test]
+    fn a_minimized_or_hidden_window_is_left_to_the_dock() {
+        assert!(!takes_key(Arrival { minimized: true, ..folded_in_front() }));
+        assert!(!takes_key(Arrival { visible: false, ..folded_in_front() }));
     }
 }
