@@ -4,7 +4,7 @@ Jarvis là surface điều phối (`Ctrl+2`, `Ctrl+G` `j`): một **Brief** cho 
 
 Các trang liên quan: [Orchestrator](orchestrator.md) (cách một run chạy), [Plan file](plan-format.md), [Cockpit](cockpit.md) (thẻ agent và dải **Needs you**), [Agent](agent.md) (terminal của lead và worker), [Phím tắt](../keyboard-shortcuts.md#jarvis).
 
-<!-- shot: jarvis-brief.png | Brief của Jarvis với vùng Waiting on you, các thẻ initiative có thanh chunk và cột Ideas | Demo store, project acme-store; tạo một initiative bằng `wsh effort` và một run Quick đang chạy, rồi mở Jarvis -->
+<!-- shot: jarvis-brief.png | Brief của Jarvis với vùng Waiting on you, các hàng initiative có thanh chunk và cột bên cạnh (Since you looked, Shipped, Ideas) | Demo store, project acme-store; tạo một initiative bằng `wsh effort` và một run Quick đang chạy, rồi mở Jarvis -->
 
 ## Tour
 
@@ -16,42 +16,60 @@ chưa có run nào, hiện thẻ ở giữa màn hình. Lần đầu mở Jarvis
 
 ## Brief
 
-Brief là một cột các vùng (region), mỗi vùng chỉ hiện khi có gì để hiện:
+Header của Brief có: chip **N waiting** hoặc **all clear**, ô lọc (`/`), chip autonomy (**All asks: to you**, **Routine asks: auto** hoặc **Mixed · K of N auto**; bấm để đổi mức), **Profile**, **?**, **New initiative** (`Shift+N`) và **New run** (`r`), nút nhấn mạnh duy nhất của surface, mở hộp khởi chạy run.
 
-- **Waiting on you**: câu hỏi, cổng duyệt, task bị chặn, run cần acknowledge. Ẩn khi không có gì chờ. Huy hiệu trên nav rail đếm cùng các mục này.
-- **Since you looked**: run đã land từ lần bạn nhìn gần nhất.
-- Các run đang chạy, theo project (mỗi project có một channel; `c` tạo channel mới). `Shift+J` / `Shift+K` chuyển giữa các run của channel.
-- **Initiatives**: mỗi initiative là một thẻ với thanh các chunk và chunk nên làm tiếp. Ý tưởng chưa có chunk nằm ở cột **Ideas** bên cạnh.
+Dưới header, Brief có hai cột. Cột chính, từ trên xuống, mỗi vùng chỉ hiện khi có gì để hiện:
 
-Tiêu đề mỗi vùng có menu **Show only this region** / **Show every region**. `/` lọc các hàng của Brief (`Esc` xóa lọc), `Enter` mở hàng dưới con trỏ, `d` bật rail ngữ cảnh, `e` mở rộng dải record, `Shift+G` mở graph peek.
+- **Waiting on you**: câu hỏi, cổng duyệt, task bị chặn, run cần accept. Dòng tóm tắt ở đầu vùng, rồi ba việc gấp nhất hiện sẵn, mỗi hàng có nút hành động ngay tại chỗ (**Approve**, **Answer**, **Open**, **Accept**); **Show all N** mở phần còn lại, **Show fewer** gập lại. Khi có hơn một run unverified, **Accept K unverified** ở đầu vùng nhận hết một lượt. Ẩn khi không có gì chờ (header ghi **all clear**). Huy hiệu trên nav rail đếm cùng các mục này.
+- **Runs**: các run đang chạy, theo project (mỗi project có một channel). `Shift+J` / `Shift+K` chuyển giữa các run của channel.
+- **Initiatives**: mỗi initiative là một hàng; xem [Initiatives](#initiatives).
 
-Ô composer ở đầu Brief (`i` để vào, `Esc` để rời) nhận một mục tiêu hay một câu nhắn: tùy mục đang chọn, nó bắt đầu run mới hoặc nhắn cho lead / worker của session đó.
+Cột bên cạnh (340px) giữ phần đã qua:
+
+- **Since you looked**: run bắt đầu, run xong, quyết định đã ghi và cập nhật record kể từ lần bạn nhìn gần nhất. **Mark seen** (hoàn tác được) làm vùng này gọn lại.
+- **Shipped · 7 days**: những gì đã ship trong bảy ngày qua, hiện ba mục rồi `+N more`.
+- **Ideas**: ý tưởng chưa có chunk. Gõ vào ô **Jot down an idea** rồi `Enter` để ghi nhanh một ý (`Esc` xóa ô); không cần form.
+
+Brief hẹp hơn 1100px thì cột bên cạnh rớt xuống dưới cột chính. Khi **Runs** hay **Initiatives** trống, vùng đó hiện một khung nét đứt với một câu và nút bắt đầu (**New run**, **New initiative**).
+
+Cuối tiêu đề mỗi vùng có nút biểu tượng nhỏ **Show only** (bấm lại: **Show every region**) để xem riêng vùng đó; tiêu đề chỉ là nhãn, bấm vào không làm gì. `/` lọc các hàng của Brief (`Esc` xóa lọc), `j` / `k` đi giữa các hàng, `Enter` mở hàng dưới con trỏ, `r` mở run mới, `e` mở rộng dải record, `Shift+G` mở graph peek; footer liệt kê các phím này khi bạn ở Jarvis. Ô composer nhắn cho lead / worker nằm trong run sheet đang mở, không ở Brief ([Run sheet](#run-sheet)).
 
 ## Initiatives
 
 Việc lớn hơn một run sống thành initiative (effort): một danh sách chunk, mỗi chunk có trạng thái và chuỗi ghi chú. Agent tạo và cập nhật chúng bằng `wsh effort` (skill `effort-tracking` dạy agent cách dùng; xem [Tích hợp agent](agent-integration.md#skills-đi-kèm)).
 
-- Bấm một thẻ để mở initiative: các chunk theo stage, ghi chú, run đã gắn. `Alt+↑` / `Alt+↓` đổi thứ tự chunk trong stage.
-- **Work on** (`w`) mở một agent mới làm initiative, hoặc nhảy tới agent đã mở trên nó. Bắt đầu run từ đó thì run được gắn vào chunk lúc tạo.
-- Menu của thẻ (luôn hiện): **Rename**, **Edit details…**, **Pause** / **Resume**, **Archive**, **Delete**.
-- Một ý tưởng (initiative chưa có chunk) mở ra với **Plan it** (một agent chia ý tưởng thành chunk) và **Add first chunk** (biến nó thành thẻ initiative).
+- Mỗi initiative là một hàng: tên và project, thanh các chunk kèm `done/total`, ghi chú **Next** hoặc **Blocked on**, ô trạng thái (**● blocked**, **● agent open**, hoặc ngày hoạt động gần nhất), nút **Work on** / **Go to agent** và menu ⋯.
+- Thứ tự cho biết nên làm gì trước: initiative có chunk bị chặn hoặc có blocker lên đầu, rồi đến những cái đang có agent mở, rồi theo hoạt động gần nhất; initiative tạm dừng xuống cuối. Brief hiện tám hàng rồi `+N more`; **Show K archived** hiện các initiative đã lưu trữ.
+- Bấm một hàng (hoặc `Enter`) để mở initiative ngay tại chỗ, không nhảy đi đâu: các chunk theo stage hiện dưới hàng, mỗi chunk một dòng gồm trạng thái, nhãn (tối đa hai dòng), số ghi chú và chữ trạng thái. Bấm chữ trạng thái để đổi trạng thái chunk; **Add chunk** và **New stage** ở cuối. `Alt+↑` / `Alt+↓` đổi thứ tự chunk trong stage, `Enter` mở chunk.
+- **Work on** (`w`) mở một agent mới làm initiative, hoặc nhảy tới agent đã mở trên nó (nút khi đó đọc **Go to agent**). Bắt đầu run từ đó thì run được gắn vào chunk lúc tạo.
+- Menu của hàng (luôn hiện): **Rename**, **Edit details…**, **Pause** / **Resume**, **Archive**, **Delete**.
+- Một ý tưởng (initiative chưa có chunk) mở ra với **Plan it** (một agent chia ý tưởng thành chunk) và **Add first chunk** (biến nó thành initiative).
+
+### Panel của chunk
+
+Bấm một chunk (hoặc `Enter` trên nó) mở panel của chunk. Khi Brief rộng từ 1281px, panel thế chỗ cột bên cạnh và cột chính giữ nguyên bề rộng; hẹp hơn, panel nổi lên trên Brief. `Esc` đóng panel (một ghi chú đang mở thì `Esc` gập nó trước).
+
+- **Header**: `n / tổng`, ↑ ↓ (`k` / `j`) đổi chunk, **Work on this chunk**, **Copy wsh command** (lệnh `wsh effort note …` đầy đủ nằm trong tooltip) và ✕.
+- **Thân**: initiative (và stage, với plan chia stage) ở dòng nhỏ phía trên, nhãn chunk, dòng `N notes · last Oct 9 · Activity ↗`, hàng sáu trạng thái, rồi chuỗi ghi chú. Ô ghi chú ghi **Add a note…**; `Ctrl+Enter` thêm, `Esc` xóa. Một ghi chú gắn với run không còn đọc được hiện "The run's report is no longer available."
+- **Work on this chunk** mở một agent chỉ làm chunk này: đọc ghi chú của nó, làm, ghi kết quả thành một ghi chú của chunk và đánh dấu xong. Khi đã có agent mở trên initiative, nút đọc **Go to agent** và chỉ nhảy tới agent đó.
 
 Run và chunk nối với nhau thế nào, và ai đóng chunk khi run xong: [Orchestrator → Initiative qua nhiều run](orchestrator.md#initiative-qua-nhiều-run).
 
 ## Run sheet
 
-Mở một run từ **Waiting on you**, danh sách run, Conversation History, hoặc ngay sau **Start run**. Từ trên xuống:
+Mở một run từ **Waiting on you**, **Runs**, **Shipped**, Conversation History, hoặc ngay sau **Start run**. Từ trên xuống:
 
-- **Verb** và dòng phụ: Planning, Starting, Executing, Waiting on you, Landing, Blocked, Done, Cancelled.
-- **Thanh tiến độ** (mỗi task một đoạn) và các chip: thời gian đã trôi, worker-time, landed, answered, forwarded, unverified, attention.
+- **Verb** và dòng phụ: Planning, Starting, Working, Final check, Wrapping up, Landing, Waiting on you, Blocked, Done, Cancelled. Một run Done mà land đang chờ đọc **Landing**; land bị giữ đọc **Waiting on you** kèm lý do.
+- **Thanh tiến độ** (mỗi task một đoạn, rồi ba chấm cuối cho **Final check**, **Wrap-up** và **Land**: mọi task xanh mà ba chấm chưa xong thì run chưa xong) và các chip: thời gian đã trôi, worker-time, landed, answered, forwarded, unverified, **N needs you**.
+- **Dòng cấu hình**: `engine · orchestrator · lead … · parallelism … · workers …` với **Adjust** để đổi độ rộng và route cho các dispatch sau.
 - Dòng **started from** *tên session*, dưới goal, khi run do một session bắt đầu bằng `wsh runs start`: bấm để về session đó (terminal khi còn sống, transcript khi đã kết thúc).
-- **Timing** (run orchestrator): mỗi hoạt động một thanh (Planning, Execution, Task review, Merge & Verify, Final verification, Landing / wrap-up) trên trục tính từ lúc khởi chạy. Thu gọn khi run đang chạy, mở khi run đã xong. Các hoạt động chồng lên nhau nên cộng lại không bằng tổng.
-- **Questions for you**, khi bạn đang giữ câu hỏi.
+- **Questions for you**, khi bạn đang giữ câu hỏi: câu hỏi đứng đầu phần thân của sheet, trên cả Tasks, để việc cần bạn không bị đẩy xuống dưới các số đo.
 - **Tasks**: mỗi task một hàng với trạng thái và một hành động: **Open in Agent ↗** cho worker đang sống, **View child run** cho task đã xong, **Open DAG ↗** cho task kẹt ở merge. Sau đó là dòng `next:` nói run đang đợi gì.
 - **▸ timeline**: mọi sự kiện của run, mới nhất trước; **open the full timeline ↗** mở nó trong DAG view. Khi run cần bạn, timeline là phần hữu ích nhất.
+- **Timing** (run orchestrator): mỗi hoạt động một thanh (Planning, Execution, Task review, Merge & Verify, Final verification, Landing / wrap-up) trên trục tính từ lúc khởi chạy. Thu gọn khi run đang chạy, mở khi run đã xong. Các hoạt động chồng lên nhau nên cộng lại không bằng tổng.
 - **Final check**: ảnh chụp của vòng final stage gần nhất, khi plan có lệnh Final (xem [Final check](#final-check)).
-- **Dòng cấu hình**: `engine · orchestrator · lead … · parallelism … · workers …` với **Adjust** để đổi độ rộng và route cho các dispatch sau.
-- **Dock**: **Open DAG**, **Open lead ↗**, **Ask Jarvis**, **Cancel run**.
+- **Dock**: **Open DAG**, **Open lead ↗** và **Open in Agent ↗** (hai nút liền nhau trong một nhóm **Open**), **Cancel run**. Dock có nhiều nhất một nút nhấn mạnh, là việc đầu tiên đưa run đi tiếp: **Land again**, **Resume**, hoặc **Open DAG** cho một merge bị giữ.
+- **Composer** dưới dock, khi run đang sống: nhãn **Message the lead** (hoặc **the worker**) kèm phím `i`, nhắn thẳng vào terminal của lead hay worker. `i` vào ô, `Esc` rời ô, `Esc` lần hai đóng sheet.
 
 `j` / `k` chuyển sang run kế / trước trong danh sách mà sheet đang đếm. Khi run xong, sheet thành mặt **Done**: báo cáo của lead hoặc **what landed** cùng bằng chứng đã niêm phong ([Orchestrator → Kết thúc run](orchestrator.md#kết-thúc-run)).
 
@@ -115,7 +133,7 @@ Thay đổi chưa lưu ghi **Unsaved changes · apply to future runs**; lưu b�
 
 Con vật pixel đi dọc footer trên mọi surface là cách nhìn nhanh Waiting on you: nét mặt và tư thế đổi theo tình hình, nhưng không hiện số. Nó mệt khi quota 5 giờ hoặc quota tuần sắp cạn, và nói một lần khi một cửa sổ vượt 85% và một lần khi hết hẳn; RAM đầy chỉ là một dòng trong popup, không làm nó mệt. Khi máy ngủ trong lúc agent đang chạy, lúc thức dậy nó nói máy đã ngủ bao lâu, từ mấy giờ đến mấy giờ và bao nhiêu agent bị dừng theo. Thỉnh thoảng (45 đến 90 phút một lần), khi không có gì chờ bạn, nó nói một câu danh ngôn về lập trình; tắt ở **Settings → Appearance → Jarvis quotes**. Nó tránh chỗ có toast, và khi bạn thả nó ra thì nó rơi về footer.
 
-- Bấm vào nó, hoặc `Ctrl+G` `w`, mở **popup việc chờ**: duyệt cổng, retry task hỏng, acknowledge kết quả unverified, land lại một run bị giữ (hoặc **Dismiss** nó), và trả lời câu hỏi của agent ngay tại chỗ. Câu hỏi một lựa chọn trả lời bằng `1`–`9`. Câu hỏi nhiều câu hoặc chọn nhiều có nút **Answer** (hoặc `Enter`) mở form trả lời dưới hàng, giống form trên thẻ Cockpit: `1`–`9` chọn, `←` / `→` chuyển câu, `Enter` gửi khi mọi câu đã có đáp án, `Esc` thu form. Doc review vẫn mở bằng **Open**.
+- Bấm vào nó, hoặc `Ctrl+G` `w`, mở **popup việc chờ**: duyệt cổng, retry task hỏng, accept kết quả unverified, land lại một run bị giữ (hoặc **Dismiss** nó), và trả lời câu hỏi của agent ngay tại chỗ. Câu hỏi một lựa chọn trả lời bằng `1`–`9`. Câu hỏi nhiều câu hoặc chọn nhiều có nút **Answer** (hoặc `Enter`) mở form trả lời dưới hàng, giống form trên thẻ Cockpit: `1`–`9` chọn, `←` / `→` chuyển câu, `Enter` gửi khi mọi câu đã có đáp án, `Esc` thu form. Doc review vẫn mở bằng **Open**.
 - Bấm vào bong bóng **Needs you** (hoặc mở popup khi bong bóng đang hiện) thì con trỏ nằm sẵn trên câu hỏi đó, form của nó mở sẵn.
 - **Peek**: `Space` trên một hàng, hoặc `Ctrl`+bấm một liên kết, mở run, agent, record hay initiative trong popup mà không đổi lựa chọn ở surface dưới. `Backspace` về màn đầu, `Enter` mở mục đó ở chỗ của nó.
 - Nó "nói" khi một run land, khi có bản Claude Code mới (một lần), và khi một việc mới cần bạn.

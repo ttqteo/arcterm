@@ -1053,7 +1053,7 @@ function Dock({
         });
     };
     return (
-        <div className="flex flex-col gap-1.5 border-t border-edge-faint px-4 py-[11px]">
+        <div data-run-sheet-dock className="flex flex-col gap-1.5 border-t border-edge-faint px-4 py-[11px]">
             {held ? (
                 <span
                     data-run-sheet-land-held

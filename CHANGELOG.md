@@ -12,6 +12,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- Jarvis: a **New run** button in the header, **Work on this chunk** in the chunk panel, and ideas you jot down
+  inline.
 - **A server running in one of arcterm's terminals says which terminal** in Servers, and its Log opens that terminal
   with its search box.
 - **Read a past session without resuming it**: in the New dialog's Resume list, **Transcript** on a session (or
@@ -58,6 +60,12 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- Jarvis: **Waiting on you** shows its first three items, **Runs** come before **Initiatives**, and **Since you
+  looked**, **Shipped** and **Ideas** sit in a column beside them.
+- Jarvis: initiatives are one-line rows, blocked ones first, that open in place.
+- An unverified run is accepted with **Accept** (was Acknowledge).
+- Runs read one way everywhere (Working, Final check, Wrapping up, Landing, Landed), and a run's strip ends in three
+  pips for Final check, Wrap-up and Land, so all tasks green no longer reads as finished.
 - **A canvas with many boards stays readable**: past four boards the header picks the board from a menu (with
   `[` and `]` still stepping), the header's buttons no longer get cut off, and All shows the boards as a grid of
   tiles at least 560px wide instead of shrinking them all into one picture. A click on a tile opens that board.
@@ -120,6 +128,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- Jarvis: `i` focuses the run sheet's composer; a blocked run no longer reads green; the tour's first card no longer
+  covers the Waiting controls; a chunk note whose run is gone says so instead of loading forever.
 - The **RAM and tokens panel lines up in columns**: the model, RAM, tokens and each button (→ Sonnet, Sleep or
   Wake, Stop) keep one place down the list instead of moving row to row.
 - **No more red spellcheck underlines** in text fields (the New dialog's Task, the composer, comments): the

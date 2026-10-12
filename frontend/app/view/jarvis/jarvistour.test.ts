@@ -181,7 +181,7 @@ describe("the content", () => {
                 .slice(1)
                 .every((p) => p === "profile")
         ).toBe(true);
-        expect(prep("initiatives")).toEqual([null, null, null, "firstInitiative", null, null]);
+        expect(prep("initiatives")).toEqual([null, null, null, "firstInitiative", "firstInitiative", null, null]);
         expect(prep("brief").every((p) => p === null)).toBe(true);
     });
     it("ends the Brief track on a card with no spotlight", () => {

@@ -35,7 +35,7 @@ export const GLOBAL_HINTS: FooterHint[] = [
     { ids: ["help"], glyph: "?", label: "help" }, // Shift+?; drops in the terminal
 ];
 
-// The agent surface and the Diff surface have surface-specific bindings; the rest fall back to
+// The agent, Diff and Jarvis surfaces have surface-specific bindings; the rest fall back to
 // GLOBAL_HINTS only.
 export const SURFACE_HINTS: Partial<Record<SurfaceKey, FooterHint[]>> = {
     agent: [
@@ -83,5 +83,14 @@ export const SURFACE_HINTS: Partial<Record<SurfaceKey, FooterHint[]>> = {
         { ids: ["files:switch-side"], glyph: "⇥", label: "side" }, // compare-only via its binding
         { ids: ["files:clear-filters"], glyph: "esc", label: "clear filters" }, // filtered-only via its binding
         { ids: ["files:exit-compare"], glyph: "esc", label: "leave compare" }, // compare-only via its binding
+    ],
+    // peek and help come from GLOBAL_HINTS; the list cursor is the Brief's (briefsurface.tsx useSurfaceListNav)
+    jarvis: [
+        { ids: ["list:next-j", "list:prev-k", "list:next", "list:prev"], glyph: "j k", label: "move" },
+        { ids: ["list:activate"], glyph: "⏎", label: "open" },
+        { ids: ["jarvis:new-run"], glyph: "r", label: "new run" },
+        { ids: ["jarvis:work-on"], glyph: "w", label: "work on" },
+        { ids: ["jarvis:filter"], glyph: "/", label: "filter" },
+        { ids: ["jarvis:graph-peek"], keys: "Shift:g", label: "graph" },
     ],
 };
