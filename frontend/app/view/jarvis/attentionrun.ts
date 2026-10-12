@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // How a waiting item's in-place button runs (the button attentionact.ts chose): Approve and Retry act on the
-// exact task the server named, Acknowledge and Land again on the run. The Brief's Waiting list and the Cockpit's
+// exact task the server named, Accept and Land again on the run. The Brief's Waiting list and the Cockpit's
 // Needs-you strip both call this, so the two cannot drift apart; each brings its own feedback, because the
 // Brief answers in its undo bar and the Cockpit has none. The creature's peek has its own runner (petactrun.ts),
 // which keeps its failures on the act that caused them.
@@ -36,7 +36,7 @@ export function attentionDoneText(
         case "retry-dag":
             return `Retrying ${row.taskId}`;
         case "ack-run":
-            return `Acknowledged · ${what}`;
+            return `Accepted · ${what}`;
         case "land-run":
             return `Landed · ${what}`;
         default:

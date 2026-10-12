@@ -131,7 +131,7 @@ describe("buildNeedsYouRows — the row", () => {
         const act = (over: Partial<AttentionItem>) => buildNeedsYouRows({ ...base, attention: [item(over)] })[0].act;
         expect(act({ kind: "dag-gate" })).toEqual({ label: "Approve", kind: "approve-dag" });
         expect(act({ kind: "dag-blocked", retry: true })).toEqual({ label: "Retry", kind: "retry-dag" });
-        expect(act({ kind: "run-unverified", taskid: "" })).toEqual({ label: "Acknowledge", kind: "ack-run" });
+        expect(act({ kind: "run-unverified", taskid: "" })).toEqual({ label: "Accept", kind: "ack-run" });
         expect(act({ kind: "run-land-held", taskid: "" })).toEqual({ label: "Land again", kind: "land-run" });
     });
 

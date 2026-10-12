@@ -475,7 +475,7 @@ func TestUnverifiedRunNamesEachReasonUntilAcknowledged(t *testing.T) {
 	if !strings.Contains(got[1].Why, "merged onto 2 commits") {
 		t.Fatalf("r2 why = %q, want the land note named", got[1].Why)
 	}
-	if got[0].Key != "run-unverified:r1" || got[0].ChannelId != "c1" || got[0].Action != "Acknowledge" || !strings.Contains(got[0].Why, "wsh runs ack r1") {
+	if got[0].Key != "run-unverified:r1" || got[0].ChannelId != "c1" || got[0].Action != "Accept" || !strings.Contains(got[0].Why, "wsh runs ack r1") {
 		t.Fatalf("r1 item = %+v", got[0])
 	}
 }

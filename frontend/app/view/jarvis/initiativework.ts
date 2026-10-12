@@ -16,6 +16,11 @@ export function noteStamp(ts: number): string {
     return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// "Oct 9": a day for a person to read; noteStamp stays for prompts, which must match `wsh effort show`
+export function shortDate(ts: number): string {
+    return new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 export function workOnPrompt(title: string, effortOid: string, lastNote?: { ts: number }): string {
     const base = `check the initiative ${title} (effort:${effortOid}), where are we`;
     return lastNote != null ? `${base}. Pick up from the newest note (${noteStamp(lastNote.ts)}).` : base;
@@ -61,7 +66,7 @@ export function initiativeResume(
     if (lastNote == null) {
         return { kind: "work", status: "no notes yet", when: "", note: "" };
     }
-    return { kind: "work", status: "last note", when: noteStamp(lastNote.ts), note: lastNote.text };
+    return { kind: "work", status: "last note", when: shortDate(lastNote.ts), note: lastNote.text };
 }
 
 // wshserver_effort.go stamps every new effort with this note, so it says nothing about where work was left

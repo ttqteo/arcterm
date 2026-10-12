@@ -14,7 +14,7 @@ export interface AttentionActInput {
 }
 
 export type AttentionAct = {
-    label: "Approve" | "Retry" | "Acknowledge" | "Land again" | "Work on" | "Open";
+    label: "Approve" | "Retry" | "Accept" | "Land again" | "Work on" | "Open";
     kind: "approve-dag" | "retry-dag" | "ack-run" | "land-run" | "work-on" | "open";
 };
 
@@ -29,7 +29,7 @@ export function attentionAct(x: AttentionActInput): AttentionAct {
         return { label: "Retry", kind: "retry-dag" };
     }
     if (x.wireKind === "run-unverified" && x.channelId !== "" && x.runId != null) {
-        return { label: "Acknowledge", kind: "ack-run" };
+        return { label: "Accept", kind: "ack-run" };
     }
     // a held land: the retry `wsh runs land` makes, once the human has cleared the reason the row names
     if (x.wireKind === "run-land-held" && x.channelId !== "" && x.runId != null) {

@@ -811,12 +811,12 @@ describe("design queue wording", () => {
             kind: "open",
         });
         expect(queueAction(q({ wireKind: "ask" }))).toEqual({ label: "Open", kind: "open" });
-        expect(queueAction(q({ wireKind: "run-unverified" }))).toEqual({ label: "Acknowledge", kind: "ack-run" });
+        expect(queueAction(q({ wireKind: "run-unverified" }))).toEqual({ label: "Accept", kind: "ack-run" });
         expect(queueAction(q({ wireKind: "run-unverified", runId: null }))).toEqual({ label: "Open", kind: "open" });
         expect(queueAction(q({ wireKind: "run-land-held" }))).toEqual({ label: "Land again", kind: "land-run" });
         expect(queueAction(q({ wireKind: "run-land-held", runId: null }))).toEqual({ label: "Open", kind: "open" });
     });
-    it("acknowledges all only the rows whose own button is Acknowledge", () => {
+    it("accepts all only the rows whose own button is Accept", () => {
         const rows = [
             q({ wireKind: "run-unverified", channelId: "c1", runId: "r1" }),
             q({ wireKind: "dag-gate", runId: "r2" }),

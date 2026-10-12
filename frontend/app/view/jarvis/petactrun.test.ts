@@ -114,7 +114,7 @@ describe("runAct — ack", () => {
     const act: PetAct = {
         id: "run-unverified:r1:ack",
         verb: "ack",
-        label: "Acknowledge",
+        label: "Accept",
         channelId: "ch1",
         runId: "r1",
     };

@@ -9,6 +9,7 @@ import {
     planIdeaPrompt,
     projectPathFor,
     resumeIsBlank,
+    shortDate,
     workOnPrompt,
 } from "./initiativework";
 
@@ -40,6 +41,13 @@ describe("planIdeaPrompt", () => {
 describe("noteStamp", () => {
     it("reads as month-day hour:minute, the way wsh effort show prints notes", () => {
         expect(noteStamp(new Date(2026, 0, 5, 9, 3).getTime())).toBe("01-05 09:03");
+    });
+});
+
+describe("shortDate", () => {
+    it("reads a day as month and day, so 10-09 is never read as the 10th of September", () => {
+        expect(shortDate(new Date(2026, 9, 9, 23, 26).getTime())).toBe("Oct 9");
+        expect(shortDate(new Date(2026, 0, 5, 9, 3).getTime())).toBe("Jan 5");
     });
 });
 
@@ -90,7 +98,7 @@ describe("initiativeResume", () => {
         expect(initiativeResume("e1", { ts, text: "merged to LOCAL DEV" }, [], NOW)).toEqual({
             kind: "work",
             status: "last note",
-            when: "09-29 16:17",
+            when: shortDate(ts),
             note: "merged to LOCAL DEV",
         });
     });

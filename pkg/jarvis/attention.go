@@ -570,11 +570,11 @@ func unverifiedItem(ch AttentionChannel, run *waveobj.Run) (wshrpc.AttentionItem
 		RunId:        run.ID,
 		Source:       goalHeadline(run.Goal),
 		Text:         fmt.Sprintf("Finished, but %d %s not verified.", len(reasons), pluralThings(len(reasons))),
-		Action:       "Acknowledge",
+		Action:       "Accept",
 		WaitingSince: run.CompletedTs,
 		EffortOID:    effortOID,
 		ChunkLabel:   chunkLabel,
-		Why:          fmt.Sprintf("Not verified: %s. Once read, acknowledge it with `wsh runs ack %s`.", strings.TrimRight(strings.Join(reasons, "; "), "."), run.ID),
+		Why:          fmt.Sprintf("Not verified: %s. Once read, accept it with `wsh runs ack %s`.", strings.TrimRight(strings.Join(reasons, "; "), "."), run.ID),
 	}, true
 }
 

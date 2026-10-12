@@ -43,12 +43,12 @@ describe("attentionDoneText", () => {
 
     it("falls back to the title when the item names no source", () => {
         expect(attentionDoneText("approve-dag", row({ source: "" }))).toBe("Approved t-1 · approve the plan");
-        expect(attentionDoneText("ack-run", row({ source: "" }))).toBe("Acknowledged · approve the plan");
+        expect(attentionDoneText("ack-run", row({ source: "" }))).toBe("Accepted · approve the plan");
     });
 
     it("keeps each act's own verb", () => {
         expect(attentionDoneText("retry-dag", row())).toBe("Retrying t-1");
-        expect(attentionDoneText("ack-run", row())).toBe("Acknowledged · ship the thing");
+        expect(attentionDoneText("ack-run", row())).toBe("Accepted · ship the thing");
         expect(attentionDoneText("land-run", row())).toBe("Landed · ship the thing");
     });
 });
@@ -82,12 +82,12 @@ describe("runAttentionAct", () => {
         expect(fb.done).toHaveBeenCalledWith("Retrying t-1");
     });
 
-    it("acknowledges an unverified run", async () => {
+    it("accepts an unverified run", async () => {
         const fb = feedback();
         const r = row({ wireKind: "run-unverified", taskId: "" });
         await runAttentionAct(attentionAct(r), r, fb);
         expect(ackRun).toHaveBeenCalledWith(expect.anything(), { channelid: "ch1", runid: "r1" });
-        expect(fb.done).toHaveBeenCalledWith("Acknowledged · ship the thing");
+        expect(fb.done).toHaveBeenCalledWith("Accepted · ship the thing");
     });
 
     it("lands a held run again", async () => {

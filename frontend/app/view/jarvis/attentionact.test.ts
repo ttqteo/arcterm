@@ -24,7 +24,7 @@ describe("attentionAct", () => {
     });
 
     it("acknowledges an unverified run and lands a held one again", () => {
-        expect(attentionAct(a({ wireKind: "run-unverified" }))).toEqual({ label: "Acknowledge", kind: "ack-run" });
+        expect(attentionAct(a({ wireKind: "run-unverified" }))).toEqual({ label: "Accept", kind: "ack-run" });
         expect(attentionAct(a({ wireKind: "run-land-held" }))).toEqual({ label: "Land again", kind: "land-run" });
     });
 

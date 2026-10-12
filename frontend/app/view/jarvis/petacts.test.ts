@@ -77,11 +77,11 @@ describe("actsForAttention", () => {
         expect(actsForAttention(finalFailed).map((a) => a.verb)).toEqual(["open"]);
     });
 
-    // the button used to be an Open relabelled "Acknowledge", so pressing it never cleared the row
-    it("acknowledges an unverified run in place, and still escorts to it for reading first", () => {
+    // the button used to be an Open relabelled "Accept", so pressing it never cleared the row
+    it("accepts an unverified run in place, and still escorts to it for reading first", () => {
         const unverified = { ...gate(), kind: "run-unverified", key: "run-unverified:run1" } as AttentionItem;
         expect(actsForAttention(unverified)).toEqual([
-            { id: "run-unverified:run1:ack", verb: "ack", label: "Acknowledge", channelId: "ch1", runId: "run1" },
+            { id: "run-unverified:run1:ack", verb: "ack", label: "Accept", channelId: "ch1", runId: "run1" },
             {
                 id: "run-unverified:run1:open",
                 verb: "open",
