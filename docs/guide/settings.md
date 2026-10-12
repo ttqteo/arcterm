@@ -105,7 +105,7 @@ Cả ba công tắc thông báo mặc định bật.
 | **Cursor** | **Cursor style**: Block, Bar, Underline | Bar |
 | | **Cursor blink** | Bật |
 | **Behavior** | **Scrollback** (số dòng lịch sử mỗi terminal, bước 250) | 1000 nếu chưa đặt |
-| | **Copy on select** | Bật |
+| | **Copy on select** (bôi đen là copy luôn) | Tắt: bôi đen chỉ để đánh dấu chỗ đang đọc; copy bằng `Ctrl+C` khi đang có vùng bôi đen (`⌘C` trên Mac), không có vùng bôi đen thì `Ctrl+C` vẫn là interrupt |
 
 ### Agents
 

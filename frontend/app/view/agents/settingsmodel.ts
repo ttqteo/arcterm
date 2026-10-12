@@ -362,7 +362,7 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                         {
                             id: "terminal.copyonselect",
                             title: "Copy on select",
-                            desc: "Copy highlighted text to the clipboard automatically.",
+                            desc: "Copy highlighted text to the clipboard automatically. Off, highlighting only marks what you read; copy with Ctrl+C while text is selected (⌘C on a Mac), and with nothing selected Ctrl+C stays the interrupt.",
                             key: "term:copyonselect",
                             scope: "synced",
                             config: true,

@@ -64,6 +64,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- **Ctrl+C copies in a terminal on Windows while text is selected**, as in Windows Terminal and VS Code; with nothing
+  selected it is the interrupt as before. **Copy on select is now off by default**, so highlighting what you read no
+  longer replaces what you copied; Settings → Terminal turns it back on.
 - **A double-click on a sidebar row opens the agent**, typing in its terminal; it used to fold a run's workers or an
   agent's subagents, which their chip still does.
 - **A canvas with many boards stays readable**: past four boards the header picks the board from a menu (with

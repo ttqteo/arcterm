@@ -44,7 +44,7 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import { runningAfterProcStatus, setCommandRunning } from "./lastcommand";
-import { trimTerminalSelection } from "./termutil";
+import { ctrlCCopies, trimTerminalSelection } from "./termutil";
 import { TermWrap, WebGLSupported } from "./termwrap";
 
 // term-model.ts is a .ts file (no JSX), so leading menu icons are built via createElement.
@@ -392,6 +392,18 @@ export class TermViewModel implements ViewModel {
         return false;
     }
 
+    // the terminal's selection to the clipboard, trailing spaces trimmed unless term:trimtrailingwhitespace is off
+    copySelection() {
+        let sel = this.termRef.current?.terminal.getSelection();
+        if (!sel) {
+            return;
+        }
+        if (globalStore.get(getSettingsKeyAtom("term:trimtrailingwhitespace")) !== false) {
+            sel = trimTerminalSelection(sel);
+        }
+        navigator.clipboard.writeText(sel);
+    }
+
     shouldHandleCtrlVPaste(): boolean {
         // macOS never uses Ctrl-V for paste (uses Cmd-V)
         if (isMacOS()) {
@@ -464,14 +476,17 @@ export class TermViewModel implements ViewModel {
         } else if (keyutil.checkKeyPressed(waveEvent, "Ctrl:Shift:c")) {
             event.preventDefault();
             event.stopPropagation();
-            let sel = this.termRef.current?.terminal.getSelection();
-            if (!sel) {
-                return false;
-            }
-            if (globalStore.get(getSettingsKeyAtom("term:trimtrailingwhitespace")) !== false) {
-                sel = trimTerminalSelection(sel);
-            }
-            navigator.clipboard.writeText(sel);
+            this.copySelection();
+            return false;
+        } else if (
+            keyutil.checkKeyPressed(waveEvent, "Ctrl:c") &&
+            ctrlCCopies(isMacOS(), this.termRef.current?.terminal.hasSelection() ?? false)
+        ) {
+            event.preventDefault();
+            event.stopPropagation();
+            this.copySelection();
+            // the selection goes with the copy, so the next Ctrl+C is the interrupt again
+            this.termRef.current?.terminal.clearSelection();
             return false;
         } else if (keyutil.checkKeyPressed(waveEvent, "TMod:k")) {
             event.preventDefault();

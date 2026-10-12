@@ -194,6 +194,7 @@ A link inside an item view does a full open, even with `Mod` held.
 | `r` | Review: open the focused lead's Spec review or Plan review dialog, or show the focused agent's Doc review in place of its terminal |
 | `Esc` | Back to Cockpit, or exit fullscreen first; from Conversation History or a session transcript, back to the terminal |
 | `Shift`+`Esc` | Return focus to the nav (from inside the terminal) |
+| `Ctrl`+`C` | In a terminal on Windows: copy while text is selected (the selection goes with it), else the interrupt as always. `Cmd`+`C` copies on a Mac. `Ctrl`+`Shift`+`C` copies too |
 | `←` / `→` / `Home` / `End` | Move between the panel's tabs (Overview, Files, File) while its tab strip has focus; the agent keys stand down there |
 | `↑` / `↓`, `←` / `→`, `Enter` | In the panel's Files tab: move the cursor, collapse / expand a folder, open a folder or open a file in the File tab |
 | `Esc` | In the panel's File tab: cancel the comment being written, else close the file |
