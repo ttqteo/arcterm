@@ -6143,6 +6143,8 @@ const PET_PX = 48;
 const PET_HOME_KEY = "wave:pet.home";
 // the character Settings → Appearance picks (petstore.ts petCharacterAtom)
 const PET_CHARACTER_KEY = "jarvis.pet.character";
+// the preset Settings → Appearance → Theme picks (themestore.ts themePresetAtom)
+const PET_THEME_KEY = "cockpit.theme.preset";
 const PET_PROJECT = "verify-jarvis-pet";
 const PET_FIXTURE_AGENT = "fx-jarvis-pet";
 const PET_NOTIFY_TITLE = "cdp jarvis-pet";
@@ -6201,6 +6203,10 @@ const PET_SNAPSHOT = `(() => {
                       avoid: (p.avoid ?? []).map((s) => [s[0], s[1]]),
                       tokens: [...(p.tokens ?? [])],
                       force: typeof p.force === "function",
+                      flip: p.flip ?? null,
+                      hang: p.hang ?? null,
+                      ceiling: p.ceiling ?? null,
+                      character: p.character ?? null,
                   },
         sprite: b == null ? null : { left: b.left, right: b.right, top: b.top, bottom: b.bottom },
         fills: [...new Set([...(svg?.querySelectorAll("rect") ?? [])].map(fill))],
@@ -6236,6 +6242,70 @@ const PET_UNREAD_DRAWN = `(() => {
         );
     });
 })()`;
+
+// The body's rects as [cx, cy, fill] in cells, each measured from its own box against the svg's, so a mirror transform is
+// measured rather than assumed. Only the rects under [data-pet-body] (the <g> petview.tsx mirrors when he faces left):
+// the marks are drawn outside it, unmirrored, and stay out.
+const PET_CELLS = `(() => {
+    const svg = ${PET_SVG};
+    if (svg == null) return null;
+    const fill = ${PET_FILL};
+    const box = svg.getBoundingClientRect();
+    const cell = box.width / 16;
+    return [...svg.querySelectorAll("[data-pet-body] rect")].map((r) => {
+        const b = r.getBoundingClientRect();
+        return [Math.round((b.left - box.left) / cell), Math.round((b.top - box.top) / cell), fill(r)];
+    });
+})()`;
+// the cells as they would be drawn facing the other way round: a column cx goes to 15 - cx
+const petMirror = (cells) => cells.map(([cx, cy, f]) => [15 - cx, cy, f]);
+const petCellKey = ([cx, cy, f]) => `${cx},${cy},${f}`;
+// how many cells are in one set and not the other
+const petDiff = (a, b) => {
+    const ka = new Set(a.map(petCellKey));
+    const kb = new Set(b.map(petCellKey));
+    return [...ka].filter((k) => !kb.has(k)).length + [...kb].filter((k) => !ka.has(k)).length;
+};
+// one frame's identity, whatever order its rects came in
+const petCellsSig = (cells) => cells.map(petCellKey).sort().join("|");
+// every [data-pet-strand] box (Spider-Man's strands: held, rappelling, hanging), or []
+const PET_STRAND = `[...document.querySelectorAll("[data-pet-strand]")].map((e) => {
+    const r = e.getBoundingClientRect();
+    return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+})`;
+// an expression: how many rects under the selector are filled with var(token)
+const petFillCount = (selector, token) => `(() => {
+    const fill = ${PET_FILL};
+    return [...document.querySelectorAll(${JSON.stringify(`${selector} rect`)})].filter(
+        (r) => fill(r) === ${JSON.stringify(`var(${token})`)}
+    ).length;
+})()`;
+// the creature's own svg, as a selector (the sprite's root also holds the chip and the working mark)
+const PET_SVG_SELECTOR = "[data-pet-sprite] > svg";
+// One read of the contract, the boxes, the body's cells and the strands, in the same task, so a frame agrees with itself
+const PET_FRAME = `(() => {
+    const p = window.__jarvisPet;
+    const box = (r) => (r == null ? null : { left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+    return {
+        pet:
+            p == null
+                ? null
+                : {
+                      state: p.state,
+                      pose: p.pose,
+                      x: p.x,
+                      flip: p.flip ?? null,
+                      hang: p.hang ?? null,
+                      ceiling: p.ceiling ?? null,
+                      character: p.character ?? null,
+                  },
+        sprite: box(${PET_SVG}?.getBoundingClientRect()),
+        root: box(${PET}?.getBoundingClientRect()),
+        cells: ${PET_CELLS},
+        strands: ${PET_STRAND},
+    };
+})()`;
+const petFrame = (h) => h.ev(PET_FRAME);
 
 const petSnap = (h) => h.ev(PET_SNAPSHOT);
 const petMarked = (s, mark) => (s?.pet?.marks ?? []).includes(mark);
@@ -6300,7 +6370,19 @@ const petSamples = (h, count, everyMs) =>
         const out = [];
         const take = () => {
             const p = window.__jarvisPet;
-            out.push(p == null ? null : { state: p.state, pose: p.pose, x: p.x });
+            out.push(
+                p == null
+                    ? null
+                    : {
+                          state: p.state,
+                          pose: p.pose,
+                          x: p.x,
+                          flip: p.flip ?? null,
+                          hang: p.hang ?? null,
+                          ceiling: p.ceiling ?? null,
+                          character: p.character ?? null,
+                      }
+            );
             if (out.length >= ${count}) {
                 clearInterval(timer);
                 resolve(out);
@@ -6319,15 +6401,89 @@ async function petZoom(h, name) {
     const size = PET_PX + 2 * pad;
     const x = Math.max(0, Math.min(s.vw - size, Math.round(s.sprite.left) - pad));
     const y = Math.max(0, Math.min(s.vh - size, Math.round(s.sprite.top) - pad));
-    const { data } = await h.cdp("Page.captureScreenshot", {
-        format: "png",
-        clip: { x, y, width: size, height: size, scale: 4 },
-    });
+    await petClip(h, name, { x, y, width: size, height: size });
+}
+
+// a 4x capture of a clip, recorded as h.shot records a shot
+async function petClip(h, name, clip) {
+    const { data } = await h.cdp("Page.captureScreenshot", { format: "png", clip: { ...clip, scale: 4 } });
     const path = `cdp-shots/${name}.png`;
     mkdirSync("cdp-shots", { recursive: true });
     writeFileSync(path, Buffer.from(data, "base64"));
     h.shots.push({ name, png: `${name}.png`, path });
 }
+
+// the same 4x crop around an element's box, for what is not the walking creature (the fold button, the folded box).
+// False when nothing matches.
+async function petCropOf(h, name, selector, pad = 6) {
+    const r = await h.ev(`(() => {
+        const b = document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect();
+        return b == null || b.width === 0 ? null : { x: b.left, y: b.top, w: b.width, h: b.height, vw: window.innerWidth, vh: window.innerHeight };
+    })()`);
+    if (r == null) return false;
+    const x = Math.max(0, Math.floor(r.x) - pad);
+    const y = Math.max(0, Math.floor(r.y) - pad);
+    await petClip(h, name, {
+        x,
+        y,
+        width: Math.min(r.vw - x, Math.ceil(r.w) + 2 * pad),
+        height: Math.min(r.vh - y, Math.ceil(r.h) + 2 * pad),
+    });
+    return true;
+}
+
+// reads until ok(frame), or ms has passed: the frames (petFrame) a step catches a moment in
+const petCatch = (h, ok, ms, every = 60) => petUntil(() => petFrame(h), ok, ms, every);
+
+// whether cells ({ cx, cy }) are one strand: sorted along their longer axis, each touches the one before and none shares
+// its place on that axis (a line of cells, with no gap and no doubling back)
+const petChain = (cells) => {
+    if (cells.length < 2) return false;
+    const xs = cells.map((c) => c.cx);
+    const ys = cells.map((c) => c.cy);
+    const along = Math.max(...ys) - Math.min(...ys) >= Math.max(...xs) - Math.min(...xs) ? "cy" : "cx";
+    const across = along === "cy" ? "cx" : "cy";
+    const sorted = [...cells].sort((a, b) => a[along] - b[along] || a[across] - b[across]);
+    return sorted.every(
+        (c, i) =>
+            i === 0 ||
+            (Math.abs(c.cx - sorted[i - 1].cx) <= 1 && Math.abs(c.cy - sorted[i - 1].cy) <= 1 && c[along] !== sorted[i - 1][along])
+    );
+};
+
+// The folded Sprout in one read: the contract (sprout-mini.tsx's window.__jarvisMini) and what the rooftop drew
+const MINI_READ = `(() => {
+    const m = window.__jarvisMini;
+    const box = (e) => {
+        const r = e?.getBoundingClientRect();
+        return r == null ? null : { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height };
+    };
+    const chip = document.querySelector("[data-mini-chip]");
+    return {
+        character: m?.character ?? null,
+        look: m?.roof ?? null,
+        roof: box(document.querySelector("[data-spidey-roof]")),
+        chipText: chip?.textContent?.trim() ?? null,
+        chipBox: box(chip),
+        web: !!document.querySelector("[data-sprout-mini] [data-working-web]"),
+        brick: ${petFillCount("[data-spidey-roof]", "--color-city-brick")},
+        lit: ${petFillCount("[data-spidey-roof]", "--color-city-window-lit")},
+        asking: ${petFillCount("[data-spidey-roof]", "--color-asking")},
+    };
+})()`;
+const miniRead = (h) => h.ev(MINI_READ);
+// force the folded look (null returns it to live data), then read until ok(read) or ms has passed; the last read
+const miniForce = async (h, o, ok, ms = 3000) => {
+    await h.ev(`window.__jarvisMini?.force(${JSON.stringify(o)})`);
+    return petUntil(() => miniRead(h), ok, ms, 100);
+};
+// the folded window is 320x232, so its shot is small; the 64px box gets the same 4x crop the creature does
+async function miniShot(h, name) {
+    await h.shot(`cdp-shots/${name}.png`);
+    await petCropOf(h, `${name}-zoom`, '[data-mini-hit="sprout"]', 8);
+}
+// the folded Sprout's restore, as jarvis-modes does it: a double-click, then the app bar is back
+const MINI_DBLCLICK = `document.querySelector('[data-mini-hit="sprout"] button')?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))`;
 
 async function petShot(h, name) {
     await h.shot(`cdp-shots/${name}.png`);
@@ -6387,6 +6543,7 @@ const jarvisPet = {
             terminals: [],
             prevHome: await h.ev(`localStorage.getItem(${JSON.stringify(PET_HOME_KEY)})`),
             prevCharacter: await h.ev(`localStorage.getItem(${JSON.stringify(PET_CHARACTER_KEY)})`),
+            prevTheme: await h.ev(`localStorage.getItem(${JSON.stringify(PET_THEME_KEY)})`),
             // a fixture the developer had active goes back in teardown rather than away
             prevFixture: existsSync(TREE_RAIL_FIXTURE) ? readFileSync(TREE_RAIL_FIXTURE, "utf8") : null,
         };
@@ -6916,6 +7073,680 @@ const jarvisPet = {
                 ledgeTop: minion14?.ledgeTop,
             }
         );
+
+        // Steps 15-23: Spider-Man (docs/superpowers/specs/2026-10-12-spiderman-pet-design.md). Each reads the page as well as
+        // the contract. A hang he starts on his own (one rest in seven, under the app bar) is left to run: a step waits for the
+        // state it needs rather than assuming one.
+        const RED = "var(--color-spidey-red)";
+        const BLUE = "var(--color-spidey-blue)";
+        const WEB = "var(--color-spidey-web)";
+        const EYE = "var(--color-spidey-eye)";
+        const HAIR = "var(--color-peter-hair)";
+        const spideyWebs = () => h.ev(petFillCount(PET_SVG_SELECTOR, "--color-spidey-web"));
+        const spideyReds = () => h.ev(petFillCount(PET_SVG_SELECTOR, "--color-spidey-red"));
+        const isWalk = (pose) => pose === "walk1" || pose === "walk2";
+        // a frame of him walking with his body drawn
+        const walking = (f) => f.pet?.state === "walk" && isWalk(f.pet.pose) && f.pet.flip != null && (f.cells?.length ?? 0) > 0;
+        // side-on: his cells differ from their own mirror (a front-on one would not)
+        const sideOn = (cells) => petDiff(cells, petMirror(cells)) >= 6;
+
+        // 15. Spider-Man: picked with a real click, drawn in his own tokens (never the accent), standing on the ledge, and the
+        // app bar's fold button wears him too
+        await h.goto("settings");
+        const opened15 = await spOpen(h, "appearance");
+        const picked15 =
+            opened15 &&
+            (await spClick(
+                h,
+                `[...(${spRow("appearance.petcharacter")}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Spider-Man")`
+            ));
+        await h.goto("agent");
+        const spidey15 = await petWait(
+            h,
+            (s) => s?.pet?.character === "spidey" && (s.pet.tokens ?? []).includes(RED) && petOnLedge(s),
+            15_000
+        );
+        const tokens15 = (spidey15?.pet?.tokens ?? []).map((t) => String(t).replace(/\s+/g, "")).sort();
+        const fills15 = [...(spidey15?.fills ?? [])].sort();
+        const fold15 = await h.ev(`(() => {
+            const b = document.querySelector("[data-app-sprout]");
+            const fill = ${PET_FILL};
+            return b == null
+                ? null
+                : { label: b.getAttribute("aria-label"), fills: [...new Set([...b.querySelectorAll("svg rect")].map(fill))] };
+        })()`);
+        await petShot(h, "jarvis-pet-15-spidey");
+        const foldCrop15 = await petCropOf(h, "jarvis-pet-15-fold-button", "[data-app-sprout]");
+        rec(
+            "15. picking Spider-Man in Settings draws the creature in his own tokens (suit red and blue, never the accent), each a var(--color-…) and equal to the fills drawn, standing on the ledge; the app bar's fold button wears him too",
+            picked15 === true &&
+                spidey15?.pet?.character === "spidey" &&
+                tokens15.includes(RED) &&
+                tokens15.includes(BLUE) &&
+                !tokens15.includes("var(--color-accent)") &&
+                tokens15.every((t) => PET_TOKEN.test(t)) &&
+                JSON.stringify(tokens15) === JSON.stringify(fills15) &&
+                petOnLedge(spidey15) &&
+                fold15?.label === "Fold into Spider-Man" &&
+                fold15.fills.includes(RED) &&
+                fold15.fills.includes(BLUE) &&
+                foldCrop15 === true,
+            {
+                opened: opened15,
+                picked: picked15,
+                character: spidey15?.pet?.character,
+                tokens: tokens15,
+                fills: fills15,
+                bottom: spidey15?.sprite?.bottom,
+                ledgeTop: spidey15?.ledgeTop,
+                foldButton: fold15,
+            }
+        );
+
+        // 15b. the working mark beside the footer creature (Float's, which a DEV force draws on the footer too): a web in
+        // place of the dots, with the count
+        await petForce(h, { ...PET_CALM, working: 2 });
+        const web15b = await petUntil(
+            () =>
+                h.ev(`(() => {
+                    const web = document.querySelector("[data-pet-sprite] [data-working-web]");
+                    const root = ${PET}?.getBoundingClientRect();
+                    const b = web?.getBoundingClientRect();
+                    return web == null || root == null || b == null
+                        ? null
+                        : {
+                              w: b.width,
+                              h: b.height,
+                              dTop: b.top - root.top,
+                              dRight: b.right - root.right,
+                              count: web.parentElement?.textContent?.trim() ?? null,
+                              strokes: [...new Set([...web.querySelectorAll("line")].map((l) => l.getAttribute("stroke")))],
+                          };
+                })()`),
+            (v) => v != null && v.w > 0,
+            3000,
+            100
+        );
+        await petZoom(h, "jarvis-pet-15b-working-web");
+        await petForce(h, null);
+        rec(
+            "15b. with Spider-Man picked, the working mark beside the footer creature is the 12px web in the web token, with its count, at his top right corner",
+            web15b != null &&
+                web15b.w === 12 &&
+                web15b.h === 12 &&
+                web15b.count === "2" &&
+                web15b.strokes.includes(WEB) &&
+                web15b.dTop >= -8 &&
+                web15b.dTop <= 8 &&
+                web15b.dRight >= -16 &&
+                web15b.dRight <= 8,
+            web15b
+        );
+
+        // 16. side-on, both ways. A walk window that caught a turn is retried on the next one, up to 90 s: the frames are
+        // kept by (flip, pose), and the left-facing one must be the right-facing one's mirror
+        const seen16 = new Map();
+        const poses16 = new Set();
+        const zoomed16 = new Set();
+        const mirrored16 = () => {
+            for (const pose of ["walk1", "walk2"]) {
+                const rights = [...seen16.values()].filter((f) => f.flip === false && f.pose === pose);
+                const lefts = [...seen16.values()].filter((f) => f.flip === true && f.pose === pose);
+                for (const r of rights) {
+                    for (const l of lefts) {
+                        if (petDiff(l.cells, petMirror(r.cells)) === 0) return { pose, right: r, left: l };
+                    }
+                }
+            }
+            return null;
+        };
+        let pair16 = null;
+        const end16 = Date.now() + 90_000;
+        while (Date.now() < end16 && (pair16 == null || !poses16.has("walk1") || !poses16.has("walk2"))) {
+            const f = await petCatch(h, walking, end16 - Date.now());
+            if (!walking(f)) break;
+            poses16.add(f.pet.pose);
+            seen16.set(`${f.pet.flip}|${f.pet.pose}|${petCellsSig(f.cells)}`, {
+                flip: f.pet.flip,
+                pose: f.pet.pose,
+                cells: f.cells,
+            });
+            const facing = f.pet.flip ? "left" : "right";
+            if (!zoomed16.has(facing)) {
+                zoomed16.add(facing);
+                await petZoom(h, `jarvis-pet-16-walk-${facing}`);
+            }
+            pair16 = mirrored16();
+            await polishNap(40);
+        }
+        const rights16 = [...seen16.values()].filter((f) => f.flip === false);
+        rec(
+            "16. walking side-on, both ways: walk1 and walk2 both show, every right-facing frame differs from its own mirror in ≥ 6 cells, and a left-facing frame in the same pose is exactly that frame's mirror",
+            poses16.has("walk1") &&
+                poses16.has("walk2") &&
+                rights16.length > 0 &&
+                rights16.every((f) => sideOn(f.cells)) &&
+                pair16 != null,
+            {
+                poses: [...poses16],
+                frames: [...seen16.values()].map((f) => ({ flip: f.flip, pose: f.pose, cells: f.cells.length })),
+                ownMirrorDiff: rights16.map((f) => petDiff(f.cells, petMirror(f.cells))),
+                mirroredIn: pair16?.pose ?? null,
+                zoomed: [...zoomed16],
+            }
+        );
+
+        // 17. the thwip: speaking shoots a strand (the speak grid's `x` cells, in the web token) from the suit, and he faces
+        // where he last walked, so each way is caught walking and made to speak
+        const thwips17 = {};
+        for (const flip of [false, true]) {
+            for (let attempt = 0; attempt < 4 && thwips17[flip] == null; attempt++) {
+                await petForce(h, PET_CALM);
+                const going = await petCatch(h, (f) => f.pet?.state === "walk" && f.pet.flip === flip, 60_000);
+                if (going.pet?.state !== "walk" || going.pet.flip !== flip) continue;
+                await petForce(h, { ...PET_CALM, speaking: true });
+                // the hold may first walk him off a terminal, which can turn him: only a speak facing this way counts
+                const f = await petCatch(
+                    h,
+                    (f) => f.pet?.pose === "speak" && f.pet.flip === flip && (f.cells?.length ?? 0) > 0,
+                    5000,
+                    50
+                );
+                if (f.pet?.pose === "speak" && f.pet.flip === flip && (f.cells?.length ?? 0) > 0) {
+                    thwips17[flip] = { ...f, webs: await spideyWebs(), reds: await spideyReds() };
+                    await petZoom(h, flip ? "jarvis-pet-17-thwip-left" : "jarvis-pet-17-thwip");
+                }
+            }
+        }
+        await petForce(h, null);
+        const right17 = thwips17[false];
+        const left17 = thwips17[true];
+        rec(
+            "17. speaking draws the thwip: ≥ 3 rects in the web token and the suit's red, side-on facing right, and facing left exactly its mirror",
+            right17 != null &&
+                left17 != null &&
+                right17.webs >= 3 &&
+                left17.webs >= 3 &&
+                right17.reds > 0 &&
+                left17.reds > 0 &&
+                sideOn(right17.cells) &&
+                petDiff(left17.cells, petMirror(right17.cells)) === 0,
+            {
+                right: right17 == null ? null : { pose: right17.pet.pose, webs: right17.webs, reds: right17.reds },
+                left: left17 == null ? null : { pose: left17.pet.pose, webs: left17.webs, reds: left17.reds },
+                ownMirrorDiff: right17 == null ? null : petDiff(right17.cells, petMirror(right17.cells)),
+                mirrorDiff: right17 == null || left17 == null ? null : petDiff(left17.cells, petMirror(right17.cells)),
+            }
+        );
+
+        // 18. every other pose: the suit on the job (his red, none of Peter's hair) and Peter at rest (his hair)
+        const forced18 = {};
+        const poses18 = [
+            ["tired", { expression: "tired" }, (s) => s.pet.pose === "tired", "suit", 60_000],
+            ["work", { rest: "work" }, (s) => s.pet.pose === "work1" || s.pet.pose === "work2", "suit", 5000],
+            ["sit", { rest: "sit" }, (s) => s.pet.pose === "sit", "suit", 5000],
+            ["sleep", { idle: true }, (s) => s.pet.state === "sleep" && s.pet.pose === "sleep", "peter", 40_000],
+            ["read", { rest: "read" }, (s) => s.pet.pose === "read1" || s.pet.pose === "read2", "peter", 5000],
+            ["music", { rest: "music" }, (s) => s.pet.pose === "music1" || s.pet.pose === "music2", "peter", 5000],
+            ["ball", { rest: "ball" }, (s) => s.pet.pose === "ball1" || s.pet.pose === "ball2", "peter", 5000],
+        ];
+        for (const [label, o, posed, look, ms] of poses18) {
+            await petForce(h, { ...PET_CALM, ...o });
+            const dressed = (s) => (look === "suit" ? s.fills.includes(RED) && !s.fills.includes(HAIR) : s.fills.includes(HAIR));
+            const s = await petWait(h, (s) => s?.pet != null && posed(s) && dressed(s), ms);
+            forced18[label] = {
+                ok: s?.pet != null && posed(s) && dressed(s),
+                pose: s?.pet?.pose,
+                look,
+                fills: s?.fills,
+            };
+            await petZoom(h, `jarvis-pet-18-${label}`);
+        }
+        await petForce(h, null);
+        rec(
+            "18. the suit on the job (tired, work, sit: his red, none of Peter's hair) and Peter at rest (sleep, read, music, ball: his hair), each through force",
+            Object.values(forced18).every((f) => f.ok),
+            forced18
+        );
+
+        // 19. held on a strand, and the rappel. Forced tired, so that he never starts his app-bar pastime as he lands (a rest
+        // in seven would, which takes him off the ledge before the last sample reads it)
+        await petForce(h, { ...PET_CALM, expression: "tired" });
+        const before19 = await petWait(h, (s) => s?.pet != null && s.pet.hang == null && petOnLedge(s), 20_000);
+        const ledge19 = before19?.pet?.ledge ?? { left: 0, right: before19?.vw ?? 0 };
+        const mid19 = Math.round((ledge19.left + ledge19.right) / 2);
+        const to19 = {
+            x: petClearRelease(ledge19, before19?.pet?.avoid, mid19) ?? mid19,
+            y: Math.round((before19?.ledgeTop ?? before19?.vh ?? 0) - 160),
+        };
+        const held19 = await petDragHold(h, ctx, to19);
+        // the strand eases out over 120ms as he is picked up
+        await polishNap(300);
+        const heldFrame19 = await petFrame(h);
+        await petShot(h, "jarvis-pet-19-strand");
+        // sampled in the page from before the release, so the rappel's 0.47s is not lost to round trips
+        const sampler19 = h.ev(`new Promise((resolve) => {
+            const out = [];
+            const t0 = performance.now();
+            const svg = () => ${PET_SVG};
+            const take = () => {
+                const p = window.__jarvisPet;
+                const b = svg()?.getBoundingClientRect();
+                const ledges = [...document.querySelectorAll("[data-pet-ledge]")]
+                    .map((e) => e.getBoundingClientRect())
+                    .filter((r) => r.width > 0 && r.height > 0);
+                out.push({
+                    state: p?.state ?? null,
+                    top: b?.top ?? null,
+                    bottom: b?.bottom ?? null,
+                    ledgeTop: ledges.reduce((a, r) => (a == null || r.top > a ? r.top : a), null),
+                    strands: ${PET_STRAND},
+                });
+                if (performance.now() - t0 >= 1500) {
+                    clearInterval(timer);
+                    resolve(out);
+                }
+            };
+            const timer = setInterval(take, 30);
+            take();
+        })`);
+        await petMouse(h, "mouseReleased", to19.x, to19.y, { button: "left", buttons: 0, clickCount: 1 });
+        ctx.mouseDown = null;
+        await petZoom(h, "jarvis-pet-19-rappel");
+        const samples19 = await sampler19;
+        await petForce(h, null);
+        const strand19 = heldFrame19?.strands?.[0];
+        const heldTop19 = heldFrame19?.sprite?.top;
+        // the held strand runs from the root's top (where he was picked up) to the svg's top, which hangs 4 cells under it
+        const heldOk19 =
+            held19?.pet?.state === "dragged" &&
+            heldFrame19?.pet?.pose === "dangle" &&
+            heldFrame19.strands.length === 1 &&
+            Math.abs(strand19.top - heldFrame19.root.top) <= 2 &&
+            Math.abs(strand19.bottom - heldFrame19.sprite.top) <= 4 &&
+            strand19.left >= heldFrame19.sprite.left - 1 &&
+            strand19.right <= heldFrame19.sprite.right + 1 &&
+            to19.y >= heldFrame19.root.top &&
+            to19.y <= heldFrame19.root.bottom;
+        // from the release the strand stays stuck where he was let go while he goes down it
+        const down19 = samples19.filter((s) => s.state === "dragged" && s.top != null && heldTop19 != null && s.top > heldTop19 + 6);
+        const lastDown19 = down19.length === 0 ? -1 : samples19.lastIndexOf(down19[down19.length - 1]);
+        const landed19 = samples19.slice(lastDown19 + 1).find((s) => s.state !== "dragged");
+        const final19 = samples19[samples19.length - 1];
+        const onLedge19 = (s) => s != null && s.ledgeTop != null && s.bottom != null && Math.abs(s.bottom - s.ledgeTop) <= 1;
+        rec(
+            "19. held (a real drag): dangle with one strand from where he was picked up to his raised hand; let go, he rappels down it with the strand stuck where he was released, and lands on the ledge with no strand left",
+            heldOk19 &&
+                down19.length >= 2 &&
+                down19.every((s) => s.strands.length === 1 && Math.abs(s.strands[0].bottom - s.top) <= 4) &&
+                down19.every((s) => Math.abs(s.strands[0].top - strand19.top) <= 3) &&
+                down19[down19.length - 1].top - down19[0].top >= 8 &&
+                landed19 != null &&
+                onLedge19(landed19) &&
+                landed19.strands.length === 0 &&
+                onLedge19(final19) &&
+                final19.strands.length === 0,
+            {
+                held: petBrief(held19),
+                pose: heldFrame19?.pet?.pose,
+                strand: strand19,
+                strands: heldFrame19?.strands?.length,
+                root: heldFrame19?.root,
+                sprite: heldFrame19?.sprite,
+                pointerY: to19.y,
+                samples: samples19.length,
+                descent: down19.map((s) => [Math.round(s.top), s.strands.length, Math.round(s.strands[0]?.top ?? 0)]),
+                landed: landed19 == null ? null : { bottom: landed19.bottom, ledgeTop: landed19.ledgeTop, strands: landed19.strands.length },
+                final: { bottom: final19?.bottom, ledgeTop: final19?.ledgeTop, strands: final19?.strands?.length },
+            }
+        );
+
+        // 20. under the app bar: up a strand, a crawl along its underside (his belly to the bar), a hang upside down on a
+        // strand, and the cursor on him brings him down. Twice: dragged to each end of the ledge first, since he crawls toward
+        // the roomier side, so from the right end he crawls left (his body mirrored) and from the left end right.
+        const cutHang20 = async (frame) => {
+            const at = petCentre({ sprite: frame.sprite });
+            await petMouse(h, "mouseMoved", at.x, at.y);
+            const cut = await petWait(h, (s) => s?.pet != null && s.pet.hang == null, 1500, 50);
+            const down = await petWait(h, petOnLedge, 3000, 100);
+            await mouseAway();
+            return { cut: cut?.pet != null && cut.pet.hang == null, down: petOnLedge(down) };
+        };
+        const runCrawl20 = async (end) => {
+            await petForce(h, PET_CALM);
+            await mouseAway();
+            const before = await petWait(h, (s) => s?.pet?.ledge != null && s.pet.hang == null && petOnLedge(s), 30_000);
+            if (before?.pet?.ledge == null) return { end, error: "he never stood on the ledge" };
+            const to = {
+                x: Math.round(end === "right" ? before.pet.ledge.right - 24 : before.pet.ledge.left + 24),
+                y: Math.round((before.ledgeTop ?? before.vh) - 160),
+            };
+            const dragged = await petDragHold(h, ctx, to);
+            await petRelease(h, ctx, to);
+            const landed = await petWait(h, petOnLedge, 2000, 50);
+            // the pointer was let go above where he stands, and his climb would pass under it
+            await mouseAway();
+            await petForce(h, { ...PET_CALM, hang: true });
+            const run = { end, dragged: dragged?.pet?.state === "dragged", landedAt: landed?.pet?.x, frames: new Map() };
+            let after = null;
+            const stop = Date.now() + 6000;
+            // The contract is published from an effect, after the commit that draws it, so at the crawl's end a read can
+            // pair "crawl" with the hang's cells. The crawl's grids fill rows 0-8 and the hang's reach row 15, so a crawl
+            // frame is one whose own cells say so too.
+            const crawling = (f) =>
+                f.pet?.hang === "crawl" && (f.cells?.length ?? 0) > 0 && f.cells.every(([, cy]) => cy <= 8);
+            while (Date.now() < stop) {
+                const f = await petFrame(h);
+                if (crawling(f)) {
+                    if (run.first == null) {
+                        run.first = f;
+                        await petZoom(h, end === "right" ? "jarvis-pet-20-crawl" : "jarvis-pet-20-crawl-right");
+                    }
+                    run.last = f;
+                    run.frames.set(petCellsSig(f.cells), f.cells);
+                } else if (run.last != null) {
+                    after = f;
+                    break;
+                }
+                await polishNap(50);
+            }
+            if (end === "right") {
+                // the hang: below the bar by a few cells, on one strand from the bar to him, upside down (his eyes low)
+                const hung = await petCatch(h, (f) => f.pet?.hang === "hang", 4000);
+                await polishNap(300);
+                const f = await petFrame(h);
+                run.hang = {
+                    phase: f.pet?.hang,
+                    below: f.sprite == null || f.pet?.ceiling == null ? null : f.sprite.top - f.pet.ceiling,
+                    strands: f.strands.length,
+                    strandTop: f.strands[0]?.top,
+                    strandBottom: f.strands[0]?.bottom,
+                    spriteTop: f.sprite?.top,
+                    ceiling: f.pet?.ceiling,
+                    eyeRows: (f.cells ?? []).filter(([, , fill]) => fill === EYE).map(([, cy]) => cy),
+                    caught: hung.pet?.hang === "hang",
+                };
+                await petZoom(h, "jarvis-pet-20-hang");
+                run.cut = await cutHang20(f);
+            } else if (after != null || run.last != null) {
+                run.cut = await cutHang20(after?.sprite != null ? after : run.last);
+            }
+            await petForce(h, null);
+            return run;
+        };
+        const right20 = await runCrawl20("right");
+        const left20 = await runCrawl20("left");
+        const crawlOk20 = (run, flip) =>
+            run.first != null &&
+            run.first.pet.flip === flip &&
+            Math.abs(run.first.sprite.top - run.first.pet.ceiling) <= 2 &&
+            run.first.strands.length === 0 &&
+            run.frames.size >= 2 &&
+            (flip ? run.last.pet.x < run.first.pet.x : run.last.pet.x > run.first.pet.x);
+        const hang20 = right20.hang;
+        const hangOk20 =
+            hang20?.phase === "hang" &&
+            hang20.below >= 6 &&
+            hang20.below <= 24 &&
+            hang20.strands === 1 &&
+            Math.abs(hang20.strandTop - hang20.ceiling) <= 2 &&
+            Math.abs(hang20.strandBottom - hang20.spriteTop) <= 2 &&
+            hang20.eyeRows.length > 0 &&
+            hang20.eyeRows.every((cy) => cy >= 8);
+        const framesRight20 = left20.frames == null ? [] : [...left20.frames.values()];
+        const framesLeft20 = right20.frames == null ? [] : [...right20.frames.values()];
+        // each crawl frame facing left is a frame facing right, mirrored, and the other way round
+        const mirrored20 =
+            framesLeft20.length >= 2 &&
+            framesRight20.length >= 2 &&
+            framesLeft20.every((a) => framesRight20.some((b) => petDiff(a, petMirror(b)) === 0)) &&
+            framesRight20.every((b) => framesLeft20.some((a) => petDiff(a, petMirror(b)) === 0));
+        rec(
+            "20. under the app bar: up a strand, a crawl with his belly to the bar and no strand (from the right end crawling left, mirrored, from the left end right, the same frames), then a hang upside down on a strand from the bar, and the cursor on him brings him down",
+            right20.error == null &&
+                left20.error == null &&
+                crawlOk20(right20, true) &&
+                crawlOk20(left20, false) &&
+                framesRight20.every(sideOn) &&
+                mirrored20 &&
+                hangOk20 &&
+                right20.cut?.cut === true &&
+                right20.cut.down === true &&
+                left20.cut?.down === true,
+            {
+                right: right20.error ?? {
+                    flip: right20.first?.pet?.flip,
+                    x: [right20.first?.pet?.x, right20.last?.pet?.x],
+                    top: right20.first?.sprite?.top,
+                    ceiling: right20.first?.pet?.ceiling,
+                    strands: right20.first?.strands?.length,
+                    frames: framesLeft20.length,
+                    landedAt: right20.landedAt,
+                    cut: right20.cut,
+                },
+                left: left20.error ?? {
+                    flip: left20.first?.pet?.flip,
+                    x: [left20.first?.pet?.x, left20.last?.pet?.x],
+                    top: left20.first?.sprite?.top,
+                    ceiling: left20.first?.pet?.ceiling,
+                    strands: left20.first?.strands?.length,
+                    frames: framesRight20.length,
+                    landedAt: left20.landedAt,
+                    cut: left20.cut,
+                },
+                hang: hang20,
+                ownMirrorDiff: framesRight20.map((c) => petDiff(c, petMirror(c))),
+                mirrored: mirrored20,
+            }
+        );
+
+        // 21. the web-swing, held mid-fold: a strand of web cells (one line, each touching the last) and his suit
+        const swings21 = {};
+        for (const kind of ["depart", "arrive"]) {
+            await petForce(h, { ...PET_CALM, swing: { kind, t: 240 } });
+            const got21 = await petUntil(
+                () =>
+                    h.ev(`(() => {
+                        const svg = document.querySelector(${JSON.stringify(PET_SVG_SELECTOR)});
+                        if (svg == null) return null;
+                        const fill = ${PET_FILL};
+                        const box = svg.getBoundingClientRect();
+                        const cell = box.width / 16;
+                        const rects = [...svg.querySelectorAll("rect")].map((r) => {
+                            const b = r.getBoundingClientRect();
+                            return {
+                                cx: Math.round((b.left - box.left) / cell),
+                                cy: Math.round((b.top - box.top) / cell),
+                                fill: fill(r),
+                            };
+                        });
+                        return {
+                            web: rects.filter((r) => r.fill === "var(--color-spidey-web)"),
+                            red: rects.filter((r) => r.fill === "var(--color-spidey-red)").length,
+                        };
+                    })()`),
+                (v) => v != null && v.web.length >= 5,
+                3000,
+                100
+            );
+            await petZoom(h, `jarvis-pet-21-swing-${kind}`);
+            swings21[kind] = {
+                web: got21?.web?.length ?? 0,
+                red: got21?.red ?? 0,
+                chain: got21?.web != null && petChain(got21.web),
+                from: got21?.web?.[0],
+            };
+        }
+        await petForce(h, null);
+        rec(
+            "21. a web-swing held at 240ms, departing and arriving: ≥ 5 cells in the web token forming one strand, and his suit's red drawn",
+            ["depart", "arrive"].every((k) => swings21[k].web >= 5 && swings21[k].chain && swings21[k].red > 0),
+            swings21
+        );
+
+        // 22. folded: the rooftop. The fold is the app bar's button, as jarvis-modes does it; the web is sampled in the page
+        // from before the click, on the footer's creature (his departure) and on the folded one (his arrival)
+        await h.goto("agent");
+        const sampler22 = h.ev(`new Promise((resolve) => {
+            const out = { footer: 0, mini: 0 };
+            const t0 = performance.now();
+            const take = () => {
+                out.footer = Math.max(out.footer, ${petFillCount(PET_SVG_SELECTOR, "--color-spidey-web")});
+                out.mini = Math.max(out.mini, ${petFillCount("[data-sprout-mini] svg", "--color-spidey-web")});
+                if (performance.now() - t0 >= 2500) {
+                    clearInterval(timer);
+                    resolve(out);
+                }
+            };
+            const timer = setInterval(take, 20);
+            take();
+        })`);
+        await h.ev(`document.querySelector("[data-app-sprout]")?.click()`);
+        const folded22 = await floatMiniWait(h, `!!document.querySelector("[data-sprout-mini]")`);
+        await polishNap(900);
+        const roofShown22 = await floatMiniWait(h, `!!document.querySelector("[data-spidey-roof]")`);
+        const web22 = await sampler22;
+        const roof22 = await miniRead(h);
+        await miniShot(h, "jarvis-pet-22-rooftop");
+        // the legs: swinging on the bob's beat, with nothing lit and nothing waiting
+        await h.ev(`window.__jarvisMini?.force(${JSON.stringify({ working: 0, waiting: 0, posture: "none" })})`);
+        const legs22 = await h.ev(`new Promise((resolve) => {
+            const out = [];
+            const t0 = performance.now();
+            const take = () => {
+                const rects = [...document.querySelectorAll("[data-spidey-roof] rect")].map((r) =>
+                    [r.getAttribute("x"), r.getAttribute("y"), r.getAttribute("fill")].join(",")
+                );
+                out.push({ swing: window.__jarvisMini?.roof?.swing ?? null, sig: rects.sort().join("|") });
+                if (performance.now() - t0 >= 2000) {
+                    clearInterval(timer);
+                    resolve(out);
+                }
+            };
+            const timer = setInterval(take, 150);
+            take();
+        })`);
+        // the rects each beat drew: a sample caught between a render and the contract's update would mislabel one, so each
+        // beat is the sets it drew most often
+        const modeSig = (list) => {
+            const n = new Map();
+            for (const s of list) n.set(s.sig, (n.get(s.sig) ?? 0) + 1);
+            return [...n.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+        };
+        const swung22 = legs22.filter((s) => s.swing === true);
+        const still22 = legs22.filter((s) => s.swing === false);
+        // the windows: 2x2 each, the first min(working, 4) lit
+        const lit3 = await miniForce(h, { working: 3, waiting: 0, posture: "none" }, (r) => r.lit === 12 && r.look?.lit === 3);
+        await miniShot(h, "jarvis-pet-22-windows");
+        const lit9 = await miniForce(h, { working: 9, waiting: 0, posture: "none" }, (r) => r.lit === 16 && r.look?.lit === 4);
+        const lit0 = await miniForce(h, { working: null, waiting: 0, posture: "none" }, (r) => r.lit === 0 && r.look?.lit === 0);
+        // spider-sense: the eight amber jags for a posture or a count waiting, the chip at the right
+        const sense1 = await miniForce(
+            h,
+            { working: 0, waiting: 0, posture: "escalation" },
+            (r) => r.look?.sense === true && r.asking === 8
+        );
+        const sense2 = await miniForce(
+            h,
+            { working: 0, waiting: 2, posture: "none" },
+            (r) => r.asking === 8 && r.chipText === "2" && r.chipBox != null
+        );
+        await miniShot(h, "jarvis-pet-22-sense");
+        const sense0 = await miniForce(
+            h,
+            { working: 0, waiting: 0, posture: "none" },
+            (r) => r.asking === 0 && r.look?.sense === false
+        );
+        // the working web, while Jarvis thinks
+        const think22 = await miniForce(
+            h,
+            { working: 0, waiting: 0, posture: "none", thinking: true },
+            (r) => r.web === true
+        );
+        await miniShot(h, "jarvis-pet-22-thinking");
+        await h.ev(`window.__jarvisMini?.force(null)`);
+        // restore, as jarvis-modes step 4 does
+        await h.ev(MINI_DBLCLICK);
+        const restored22 = await floatMiniWait(
+            h,
+            `!document.querySelector("[data-sprout-mini]") && !!document.querySelector("[data-app-bar]")?.offsetParent`
+        );
+        await polishNap(1200);
+        rec(
+            "22. folded, Spider-Man sits on a rooftop: the fold drew his web (departing or arriving), the rooftop is 60x60 in brick, the legs swing, 3 working agents light 3 windows (12 rects, 9 cap at 4), a posture or a waiting count raises 8 jags of spider-sense with the chip at the right, Jarvis thinking draws the web, and a double-click restores",
+            folded22 === true &&
+                roofShown22 === true &&
+                (web22.footer > 0 || web22.mini > 0) &&
+                roof22.character === "spidey" &&
+                Math.abs(roof22.roof?.width - 60) <= 0.5 &&
+                Math.abs(roof22.roof?.height - 60) <= 0.5 &&
+                roof22.brick > 0 &&
+                swung22.length > 0 &&
+                still22.length > 0 &&
+                modeSig(swung22) !== modeSig(still22) &&
+                lit3.lit === 12 &&
+                lit3.look?.lit === 3 &&
+                lit9.lit === 16 &&
+                lit9.look?.lit === 4 &&
+                lit0.lit === 0 &&
+                sense1.asking === 8 &&
+                sense1.look?.sense === true &&
+                sense2.asking === 8 &&
+                sense2.chipText === "2" &&
+                sense2.chipBox.left > sense2.roof.left + sense2.roof.width / 2 &&
+                sense0.asking === 0 &&
+                think22.web === true &&
+                restored22 === true,
+            {
+                folded: folded22,
+                roofShown: roofShown22,
+                web: web22,
+                roof: { character: roof22.character, box: roof22.roof, brick: roof22.brick },
+                legs: { swung: swung22.length, still: still22.length, differ: modeSig(swung22) !== modeSig(still22) },
+                lit: { three: [lit3.lit, lit3.look?.lit], nine: [lit9.lit, lit9.look?.lit], none: [lit0.lit, lit0.look?.lit] },
+                sense: {
+                    posture: [sense1.asking, sense1.look?.sense],
+                    waiting: [sense2.asking, sense2.chipText, sense2.chipBox?.left, sense2.roof?.left, sense2.roof?.width],
+                    none: [sense0.asking, sense0.look?.sense],
+                },
+                thinking: think22.web,
+                restored: restored22,
+            }
+        );
+
+        // 23. the Spider theme: Claude's palette (its background kept) with a Spider-Man red accent
+        await h.goto("settings");
+        const opened23 = await spOpen(h, "appearance");
+        const picked23 =
+            opened23 &&
+            (await spClick(
+                h,
+                `[...document.querySelectorAll("[data-theme-presets] button")].find((b) => b.textContent.trim() === "Spider")`
+            ));
+        const themed23 = await polishWaitFor(
+            h,
+            `getComputedStyle(document.documentElement).getPropertyValue("--color-accent").trim() === "#f05252"`,
+            5000
+        );
+        const theme23 = await h.ev(`(() => {
+            const css = getComputedStyle(document.documentElement);
+            const on = [...document.querySelectorAll("[data-theme-presets] button")].find((b) => b.textContent.trim() === "Spider");
+            return {
+                accent: css.getPropertyValue("--color-accent").trim(),
+                background: css.getPropertyValue("--color-background").trim(),
+                pressed: on?.getAttribute("aria-pressed") ?? null,
+            };
+        })()`);
+        await h.shot("cdp-shots/jarvis-pet-23-spider-theme.png");
+        rec(
+            "23. picking Spider in Settings → Appearance → Theme sets --color-accent to #f05252 and keeps --color-background at Claude's #1f1e1d",
+            picked23 === true &&
+                themed23 === true &&
+                theme23.accent === "#f05252" &&
+                theme23.background === "#1f1e1d" &&
+                theme23.pressed === "true",
+            { opened: opened23, picked: picked23, themed: themed23, ...theme23 }
+        );
         return steps;
     },
     // best-effort, so one failed step does not strand the rest
@@ -6934,6 +7765,15 @@ const jarvisPet = {
             );
         }
         await step("release the forced inputs", () => petForce(h, null));
+        await step("release the folded Sprout's forced look", () => h.ev(`window.__jarvisMini?.force(null)`));
+        // a step that threw while folded leaves the window at Sprout's size: give it back, as step 22 does
+        await step("restore the window from Sprout", async () => {
+            if (await h.ev(`!!document.querySelector("[data-sprout-mini]")`)) {
+                await h.ev(MINI_DBLCLICK);
+                await floatMiniWait(h, `!document.querySelector("[data-sprout-mini]")`);
+                await polishNap(1200);
+            }
+        });
         await step("reset the emulated media", () => h.cdp("Emulation.setEmulatedMedia", PET_MEDIA_RESET));
         for (const t of ctx.terminals ?? []) {
             await step(`close the terminal tab ${t.tabId}`, () =>
@@ -6949,10 +7789,13 @@ const jarvisPet = {
         }
         // the drags moved home; the home atom is read at module load, so this lands with the reload below
         await step("restore the creature's home", () => h.ev(restoreStorageKey(PET_HOME_KEY, ctx.prevHome)));
-        // step 14 picked the Minion; the atom reads its key at load, so this too lands with the reload below
+        // step 14 picked the Minion and step 15 Spider-Man; the atom reads its key at load, so this too lands with the
+        // reload below
         await step("restore the creature's character", () =>
             h.ev(restoreStorageKey(PET_CHARACTER_KEY, ctx.prevCharacter))
         );
+        // step 23 picked the Spider theme; the key goes back, or away when the run found none
+        await step("restore the theme preset", () => h.ev(restoreStorageKey(PET_THEME_KEY, ctx.prevTheme)));
         // the fixture roster is read once at boot
         await step("reload onto the live roster", async () => {
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");

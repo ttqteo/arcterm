@@ -2,7 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { BOUNCE_PX, fallSeconds, landing, ledgeShift, MAX_FALL_S, MIN_FALL_S } from "./petfall";
+import {
+    BOUNCE_PX,
+    fallSeconds,
+    landing,
+    ledgeShift,
+    MAX_FALL_S,
+    MAX_RAPPEL_S,
+    MIN_FALL_S,
+    MIN_RAPPEL_S,
+    webLanding,
+} from "./petfall";
 
 describe("fallSeconds", () => {
     it("takes longer the farther it falls, as under gravity: four times the height, twice the time", () => {
@@ -76,5 +86,35 @@ describe("landing", () => {
             expect(l.times).toHaveLength(l.y.length);
             expect(l.ease).toHaveLength(l.y.length - 1);
         }
+    });
+});
+
+describe("webLanding", () => {
+    it.each([-30, -160, -300, -1000])("rappels %s px slower than a fall, braking into the ledge", (offset) => {
+        const web = webLanding(offset)!;
+        expect(web.duration).toBeGreaterThan(landing(offset)!.duration);
+        expect(web.y[0]).toBe(offset);
+        expect(web.y[web.y.length - 1]).toBe(0);
+        expect(web.ease[0]).toBe("easeOut");
+        expect(web.times[0]).toBe(0);
+        expect(web.times[web.times.length - 1]).toBe(1);
+    });
+
+    it("is slower than a fall from every height, not only the ones above", () => {
+        for (let px = 1; px <= 2000; px++) {
+            expect(webLanding(-px)!.duration).toBeGreaterThan(landing(-px)!.duration);
+        }
+    });
+
+    it("takes MIN_RAPPEL_S..MAX_RAPPEL_S to reach the ledge, before its bounce", () => {
+        const reach = (o: number) => webLanding(o)!.duration * webLanding(o)!.times[1];
+        expect(reach(-3)).toBeCloseTo(MIN_RAPPEL_S, 5);
+        expect(reach(-5000)).toBeCloseTo(MAX_RAPPEL_S, 5);
+    });
+
+    it("hops up like landing from below, and is nothing when already there", () => {
+        expect(webLanding(20)).toEqual(landing(20));
+        expect(webLanding(0)).toBeNull();
+        expect(webLanding(-0.5)).toBeNull();
     });
 });

@@ -58,6 +58,29 @@ export function miniLook(input: MiniLookInput): MiniLook {
     return { pose, marks, chip, working, bob: input.frame === 1, label };
 }
 
+// What Spider-Man's rooftop shows for a fold look: lit windows for the working agents, spider-sense for what waits,
+// swinging legs on the bob's beat, the unread mark, and the working web while Jarvis types.
+export interface SpideyFoldLook {
+    lit: number;
+    sense: boolean;
+    swing: boolean;
+    unread: boolean;
+    thinking: boolean;
+}
+
+const WAITING_MARKS: readonly PetMark[] = ["gate", "escalation", "blocked"];
+
+export function spideyFoldLook(look: MiniLook, frame: 0 | 1): SpideyFoldLook {
+    const sense = look.chip != null || look.marks.some((m) => WAITING_MARKS.includes(m));
+    return {
+        lit: Math.min(look.working ?? 0, 4),
+        sense,
+        swing: frame === 1 && !sense,
+        unread: look.marks.includes("unread"),
+        thinking: look.pose === "work1" || look.pose === "work2",
+    };
+}
+
 // A reply that lands, or fails, while the chat is folded stays unread until the chat opens or its bubble is dismissed:
 // a folded window is where a reply is easiest to miss.
 export function nextUnread(

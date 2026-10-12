@@ -77,7 +77,7 @@ describe("buildThemeVars — the default preset equals the @theme literals", () 
     }
 });
 
-for (const id of [DEFAULT_THEME_PRESET, "graphite"]) {
+for (const id of [DEFAULT_THEME_PRESET, "graphite", "spider"]) {
     describe(`${id} — contrast floor (DESIGN.md)`, () => {
         const p = activePalette(id);
         it("muted clears 4.5:1 on the background and on a hovered row", () => {
@@ -131,9 +131,19 @@ describe("helpers", () => {
         expect(colorOf(p, {}, "accent")).toBe("#5e9cff");
         expect(colorOf(p, { accent: "#123456" }, "accent")).toBe("#123456");
     });
-    it("THEMES ships the eight dark presets — light mode was declined and removed", () => {
-        expect(THEMES).toHaveLength(8);
+    it("THEMES ships the nine dark presets — light mode was declined and removed", () => {
+        expect(THEMES).toHaveLength(9);
         expect(THEMES[0].id).toBe(DEFAULT_THEME_PRESET);
+    });
+    it("Spider is Claude's palette with a red accent and a pinker error", () => {
+        const claude = activePalette(DEFAULT_THEME_PRESET);
+        const spider = activePalette("spider");
+        const { accent, error, claudeMark, ...rest } = spider;
+        const { accent: _a, error: _e, claudeMark: _m, ...claudeRest } = claude;
+        expect(rest).toEqual(claudeRest);
+        expect(accent).toBe("#f05252");
+        expect(error).toBe("#ff6b9a");
+        expect(claudeMark).toBeUndefined();
     });
     it("ACCENT_SWATCHES has 10 hex values", () => {
         expect(ACCENT_SWATCHES).toHaveLength(10);

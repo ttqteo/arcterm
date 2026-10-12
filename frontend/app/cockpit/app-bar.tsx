@@ -42,6 +42,8 @@ import { versionInfoAtom } from "./versioninfo";
 export const FOLD_SPRITE = {
     sprout: spriteFor("sit", [], null, "sprout"),
     minion: spriteFor("sit", [], null, "minion"),
+    // standing, in the suit: his sitting pose is a crouch, which does not read as the one the window folds into
+    spidey: spriteFor("stand", [], null, "spidey"),
 };
 
 // The fold buttons' tooltip, here and on the float bar: on a Mac, ⌘M folds too while window:minimize says Sprout
@@ -79,6 +81,8 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
     return (
         <div
             data-app-bar
+            // the underside Spider-Man crawls along and hangs from (petledge.ts measureCeiling)
+            data-pet-ceiling
             data-tauri-drag-region
             className={clsx(
                 "flex h-[38px] shrink-0 select-none items-center gap-4 border-b border-border bg-surface",

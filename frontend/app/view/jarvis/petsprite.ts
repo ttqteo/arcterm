@@ -1,9 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Jarvis's pixels: every pose of both creatures (Sprout and the Minion) and every mark as data, and the one function
-// that turns them into cells. The grids live here and nowhere else (sprout spec §2, §4). Pure — no React, no atoms —
-// so the walker can name a pose without knowing what it looks like, and the renderer can draw one without knowing why.
+// Jarvis's pixels: every pose of each creature (Sprout, the Minion and Spider-Man) and every mark as data, and the
+// one function that turns them into cells. The grids live here and nowhere else (sprout spec §2, §4). Pure — no React,
+// no atoms — so the walker can name a pose without knowing what it looks like, and the renderer can draw one without
+// knowing why.
 //
 // A grid is 16 rows of 16 cell codes, `.` empty. Each code is a theme token rather than a colour, so a
 // runtime theme repaints the creature through the same --color-* properties it overrides everywhere else.
@@ -33,9 +34,9 @@ export type PetMark = "gate" | "escalation" | "blocked" | "z" | "drop" | "unread
 // its hand behind one.
 export type PetOutfit = "vn-shirt" | "vn-flag";
 
-// Which creature Jarvis is drawn as, chosen in Settings (petcharacter.ts). Both have every pose, and the marks and
-// outfits fit either.
-export type PetCharacter = "sprout" | "minion";
+// Which creature Jarvis is drawn as, chosen in Settings (petcharacter.ts). Each has every pose, and the marks and
+// outfits fit any.
+export type PetCharacter = "sprout" | "minion" | "spidey";
 
 export const PET_GRID = 16;
 export const PET_CELL_PX = 3;
@@ -58,6 +59,21 @@ export const PET_TOKENS = {
     o: "--color-minion-denim", // its overalls
     O: "--color-minion-denim-dark", // the bib pocket
     s: "--color-minion-hair", // its hair and shoes
+    S: "--color-spidey-red", // Spider-Man's suit
+    B: "--color-spidey-blue",
+    D: "--color-spidey-seam", // the mask's seam
+    e: "--color-spidey-eye", // the mask's eyes, Peter's lenses
+    x: "--color-spidey-web", // a strand
+    p: "--color-peter-skin", // Peter Parker
+    H: "--color-peter-hair",
+    g: "--color-peter-glasses",
+    v: "--color-peter-shirt",
+    c: "--color-city-cornice", // the fold's rooftop
+    C: "--color-city-cornice-shade",
+    M: "--color-city-brick",
+    N: "--color-city-brick-light",
+    Q: "--color-city-window",
+    L: "--color-city-window-lit",
 } as const satisfies Record<string, `--color-${string}`>;
 
 type PetCode = keyof typeof PET_TOKENS;
@@ -666,6 +682,460 @@ export const MINION_POSES: Record<PetPose, readonly string[]> = {
     ],
 };
 
+// Spider-Man in the Homecoming suit: slim, the head solid red with one seam and the eyes framed at their outer corners,
+// a small black spider on the chest. The suit on the job, Peter Parker at rest (SPIDEY_LOOK). The marks' cells are kept
+// clear as Sprout's are.
+export const SPIDEY_POSES: Record<PetPose, readonly string[]> = {
+    // the suit, side-on facing right; the renderer mirrors it to walk left
+    walk1: [
+        E,
+        E,
+        E,
+        ".......SSSS.....",
+        "......SSSSSS....",
+        "......SSSkeeS...",
+        "......SSSSeeS...",
+        "......SSSSSSS...",
+        ".......SSSSS....",
+        "......BBSDSS....",
+        ".....BBBSkSSS...",
+        ".....SBBSDSB.S..",
+        "......BBBBB.....",
+        ".....BB...BB....",
+        "....BB.....BB...",
+        "...SS.......SSS.",
+    ],
+    walk2: [
+        E,
+        E,
+        E,
+        ".......SSSS.....",
+        "......SSSSSS....",
+        "......SSSkeeS...",
+        "......SSSSeeS...",
+        "......SSSSSSS...",
+        ".......SSSSS....",
+        "......BBSDSS....",
+        "......BBSkSS....",
+        "......BSSDSS....",
+        "......BBBBB.....",
+        "......BB.BB.....",
+        "......BB.BB.....",
+        ".....SSS.SSS....",
+    ],
+    // the suit, front-on: the small black spider on the chest, the eyes framed at their outer corners
+    stand: [
+        E,
+        E,
+        "......SSSSS.....",
+        ".....SSSDSSS....",
+        ".....keeDeek....",
+        ".....SeeDeeS....",
+        "......SSDSS.....",
+        "....BSSSSSSSB...",
+        "....BSSkSkSSB...",
+        "....BSSSkSSSB...",
+        "....BSSkSkSSB...",
+        "....S.BBBBB.S...",
+        ".....BB...BB....",
+        ".....BB...BB....",
+        ".....BB...BB....",
+        "....SSS...SSS...",
+    ],
+    // the hero landing: one fist down, the other arm back
+    sit: [
+        E,
+        E,
+        E,
+        E,
+        E,
+        E,
+        "......SSSSS.....",
+        ".....SSSDSSS....",
+        ".....keeDeek....",
+        ".....SeeDeeS..BS",
+        "......SSDSS.BB..",
+        "....BSSSSSSB....",
+        "...BSSkSkSSB....",
+        "..SBBSSkSSBBB...",
+        "..S..BBBBB..BB..",
+        "..S.SSS.....SSS.",
+    ],
+    // Peter Parker at rest: messy hair, glasses, the shirt open on the suit, jeans
+    sleep: [
+        E,
+        E,
+        "......H.H.......",
+        ".....HHHHHH.....",
+        ".....HHHHHHHH...",
+        ".....HpppppH....",
+        ".....gppgppg....",
+        ".....ppppppp....",
+        ".....ppppppp....",
+        "......ppppp.....",
+        "....vvSSkSSvv...",
+        "....pvSSSSSvp...",
+        ".....vSSSSSv....",
+        "....BBBBBBBBB...",
+        "....BBBBBBBBB...",
+        "....BBBBBBBBBss.",
+    ],
+    // lids down, hands on the knees
+    tired: [
+        E,
+        E,
+        E,
+        "......SSSSS.....",
+        ".....SSSDSSS....",
+        ".....kkkDkkk....",
+        ".....SeeDeeS....",
+        "......SSDSS.....",
+        "....BSSSSSSSB...",
+        "....BSSkSkSSB...",
+        "....BSSSkSSSB...",
+        "....BBBBBBBBB...",
+        "....SB.....BS...",
+        "....BB.....BB...",
+        ".....B.....B....",
+        "....SSS...SSS...",
+    ],
+    // the thwip: side-on, crouched and leaning into the shot, the back hand on the ground
+    speak: [
+        E,
+        E,
+        "...............x",
+        "..............x.",
+        ".......SSSS..x..",
+        "......SSkeeSS...",
+        "......SSSeeBS...",
+        ".......SSSBB....",
+        "....BSSSSB......",
+        "...BSSkSSB......",
+        "..B.SSSkB.......",
+        ".S..BBBBB.......",
+        "...BB...BB......",
+        "..BB.....BB.....",
+        ".BB.....BB......",
+        ".SS....SSS......",
+    ],
+    // being dragged: one hand up on the strand (column 12), legs hanging
+    dangle: [
+        "............S...",
+        "............B...",
+        "......SSSSS.B...",
+        ".....SSSDSSSB...",
+        ".....keeDeekB...",
+        ".....SeeDeeSB...",
+        "......SSDSSB....",
+        "....BSSSSSSB....",
+        "....BSSkSkSS....",
+        "....BSSSkSSS....",
+        "....SSSkSkSS....",
+        "......BBBBB.....",
+        ".....BB..BB.....",
+        ".....BB...BB....",
+        "....BB....BB....",
+        "....SS.....SS...",
+    ],
+    // Pastimes, as Sprout's. Reading: sat with a book on his lap
+    read1: [
+        E,
+        E,
+        "......H.H.......",
+        ".....HHHHHH.....",
+        ".....HHHHHHHH...",
+        ".....HpppppH....",
+        ".....gkegkeg....",
+        ".....ppppppp....",
+        ".....pppkppp....",
+        "......ppppp.....",
+        "....vvSSkSSvv...",
+        "....pvSSSSSvp...",
+        ".....vSSSSSv....",
+        "..prwwwwrwwwwrp.",
+        "...rmmwwrmmwwr..",
+        "...rrrrrrrrrrss.",
+    ],
+    read2: [
+        E,
+        E,
+        "......H.H.......",
+        ".....HHHHHH.....",
+        ".....HHHHHHHH...",
+        ".....HpppppH....",
+        ".....gekgekg....",
+        ".....ppppppp....",
+        ".....pppkppp....",
+        "......ppppp.....",
+        "....vvSSkSSvv...",
+        "....pvSSSSSvp...",
+        ".....vSSSSSv....",
+        "..prwwwwrwwwwrp.",
+        "...rwwmmrwwmmr..",
+        "...rrrrrrrrrrss.",
+    ],
+    // listening to music
+    music1: [
+        "............yy..",
+        "..yy........y...",
+        ".yy..mmmmmm.yy..",
+        "....mHHHHHHm....",
+        "...rrHHHHHHHrr..",
+        "...rrHpppppHrr..",
+        "...rrgekgekrr...",
+        ".....ppppppp....",
+        ".....ppkkkpp....",
+        "......ppppp.....",
+        "....vvSSkSSvv...",
+        "....pvSSSSSvp...",
+        ".....vSSSSSv....",
+        ".....BBBBBBB....",
+        ".....BB...BB....",
+        "....ss....ss....",
+    ],
+    music2: [
+        "..yy............",
+        "..y.........yy..",
+        ".yy..mmmmmm.y...",
+        "....mHHHHHHm....",
+        "...rrHHHHHHHrr..",
+        "...rrHpppppHrr..",
+        "...rrgekgekrr...",
+        ".....ppppppp....",
+        ".....ppkkkpp....",
+        "......ppppp.....",
+        "....vvSSkSSvv...",
+        "....pvSSSSSvp...",
+        ".....vSSSSSv....",
+        ".....BBBBBBB....",
+        ".....BB..BB.....",
+        "....ss....ss....",
+    ],
+    // working at a laptop seen side-on, a key lit as it types and the code mark over his head
+    work1: [
+        ".......w...w.w..",
+        "......w...w...w.",
+        ".......w.w...w..",
+        E,
+        "......SSSSS...m.",
+        ".....SSSDSSS.lm.",
+        ".....keeDeek.lm.",
+        ".....SeeDeeS.lm.",
+        "......SSDSS..lm.",
+        "....BSSSSSSSBlm.",
+        "....BSSkSkSSSlm.",
+        "....BSSSkSSS.lm.",
+        "....BSSkSkSS.lm.",
+        "......BBBBB.mwmm",
+        ".....BB...BB....",
+        "....SSS...SSS...",
+    ],
+    work2: [
+        ".......m...m.m..",
+        "......m...m...m.",
+        ".......m.m...m..",
+        E,
+        "......SSSSS...m.",
+        ".....SSSDSSS.wm.",
+        ".....keeDeek.wm.",
+        ".....SeeDeeS.wm.",
+        "......SSDSS..wm.",
+        "....BSSSSSSSBwm.",
+        "....BSSkSkSSSwm.",
+        "....BSSSkSSS.wm.",
+        "....BSSkSkSS.wm.",
+        "......BBBBB.mmwm",
+        ".....BB...BB....",
+        "....SSS...SSS...",
+    ],
+    // playing sport: dribbling a ball at his side, high then low
+    ball1: [
+        E,
+        E,
+        "......H.H.......",
+        ".....HHHHHH.....",
+        ".....HHHHHHHH...",
+        ".....HpppppH....",
+        ".....gekgekg....",
+        ".....ppppppp.rr.",
+        ".....pppkppprrrr",
+        "......ppppp.rrrr",
+        "....vvSSkSSvvrr.",
+        "....pvSSSSSvp...",
+        ".....vSSSSSv....",
+        ".....BBBBBBB....",
+        ".....BB...BB....",
+        "....ss....ss....",
+    ],
+    ball2: [
+        E,
+        E,
+        "......H.H.......",
+        ".....HHHHHH.....",
+        ".....HHHHHHHH...",
+        ".....HpppppH....",
+        ".....gekgekg....",
+        ".....ppppppp....",
+        ".....pppkppp....",
+        "......ppppp.....",
+        "....vvSSkSSvv...",
+        "....pvSSSSSvp...",
+        ".....vSSSSSv.rr.",
+        ".....BBBBBBBrrrr",
+        ".....BB...BBrrrr",
+        "....ss....ss.rr.",
+    ],
+};
+
+// Upside down already: boots wrapped on the strand (column 8) at the top, knees bent out, hands on the strand, the
+// head at the bottom.
+export const SPIDEY_HANG: readonly string[] = [
+    ".......SxS......",
+    ".......SxS......",
+    "......B.x.B.....",
+    ".....B..x..B....",
+    "....B...x...B...",
+    ".....B..x..B....",
+    "......BSxSB.....",
+    "......BBBBB.....",
+    ".....BSSSSSB....",
+    ".....BSkSkSB....",
+    ".....SSSkSSS....",
+    ".....SSkSkSS....",
+    "......SDSDS.....",
+    ".....SeeDeeS....",
+    ".....keeDeek....",
+    "......SSDSS.....",
+];
+
+// Two frames, upside down, belly to the app bar's underside, side-on facing right.
+export const SPIDEY_CRAWL: readonly (readonly string[])[] = [
+    [
+        "..SS........SS..",
+        "...BB......BB...",
+        "SS..BB....BB.S..",
+        "SBB.BSSSDSB.SS..",
+        ".BBSDSkSDSSDSS..",
+        "..BBSSSBBSSSSee.",
+        "...BBBB..SSSkee.",
+        ".........SDSDSS.",
+        "..........SSSS..",
+        E,
+        E,
+        E,
+        E,
+        E,
+        E,
+        E,
+    ],
+    [
+        "....SS....SS....",
+        "....BB....BB....",
+        "..SSBB....BBS...",
+        "..SBBSSSDSBSS...",
+        ".BBSDSkSDSSDSS..",
+        "..BBSSSBBSSSSee.",
+        "...BBBB..SSSkee.",
+        ".........SDSDSS.",
+        "..........SSSS..",
+        E,
+        E,
+        E,
+        E,
+        E,
+        E,
+        E,
+    ],
+];
+
+// The web-swing's body (petwebswing.ts): slung along the strand, the hand up at column 10, knees tucked.
+export const SPIDEY_SWING: readonly string[] = [
+    "..........S.....",
+    "..........B.....",
+    "....SSS..B......",
+    "...SSSSSB.......",
+    "...SSkeeB.......",
+    "...SSSeeSB......",
+    "....SSSSSB......",
+    "...BSSkSSB......",
+    "..BBSSkkSB......",
+    ".SB.BSSkSB......",
+    "....BBBBBB......",
+    "...BB..BB.......",
+    "..BB..BB........",
+    ".SS..SS.........",
+    E,
+    E,
+];
+
+export type SpideyLook = "suit" | "peter";
+
+export const SPIDEY_LOOK: Record<PetPose, SpideyLook> = {
+    walk1: "suit",
+    walk2: "suit",
+    stand: "suit",
+    speak: "suit",
+    tired: "suit",
+    dangle: "suit",
+    work1: "suit",
+    work2: "suit",
+    sit: "suit",
+    sleep: "peter",
+    read1: "peter",
+    read2: "peter",
+    music1: "peter",
+    music2: "peter",
+    ball1: "peter",
+    ball2: "peter",
+};
+
+// The fold's rooftop scene, 20x20 cells: he sits front-on on the edge, hands on the ledge, legs over the front.
+const FOLD_TOP: readonly string[] = [
+    "....................",
+    "....................",
+    ".......SSSSS........",
+    "......SSSDSSS.......",
+    "......keeDeek.......",
+    "......SeeDeeS.......",
+    ".......SSDSS........",
+    ".....BSSSSSSSB......",
+    ".....BSSkSkSSB......",
+    ".....BSSSkSSSB......",
+    ".....BSSkSkSSB......",
+    ".....S.BBBBB.S......",
+];
+// the legs over the ledge, two frames of a swing
+const FOLD_LEGS: readonly (readonly string[])[] = [
+    ["..cccccBBcBBccccccc.", "..CCCCCBBCBBCCCCCCC.", "..MMMNMBBMBBMMMNMMM.", "..MMMMMSSMSSMMMMMMM."],
+    ["..cccccBBccBBcccccc.", "..CCCCCBBCCBBCCCCCC.", "..MMMNBBMMMMBBMNMMM.", "..MMMMSSMMMMSSMMMMM."],
+];
+// the four windows' left columns; each is 2x2, on rows 17 and 18
+const FOLD_WINDOWS = [3, 7, 11, 15];
+// the brick rows above and below the windows
+const FOLD_TOP_WALL = ["..MMMMMMMMMMMMMMMMM.", "..MMMNMMMMMMMNMMMMM."];
+
+/** The rooftop scene: the first min(lit, 4) windows lit, the legs in the swing's first or second frame. */
+export function spideyFold(lit: number, swing: boolean): readonly string[] {
+    const windows = [..."..MMMMMMMMMMMMMMMMM."];
+    FOLD_WINDOWS.forEach((x, i) => {
+        windows[x] = windows[x + 1] = i < lit ? "L" : "Q";
+    });
+    const row = windows.join("");
+    return [...FOLD_TOP, ...FOLD_LEGS[swing ? 1 : 0], FOLD_TOP_WALL[0], row, row, FOLD_TOP_WALL[1]];
+}
+
+// Spider-sense: amber jags either side of the head and over it, drawn in --color-asking when something waits on you
+export const SPIDEY_SENSE: readonly { x: number; y: number }[] = [
+    { x: 5, y: 1 },
+    { x: 4, y: 2 },
+    { x: 5, y: 3 },
+    { x: 13, y: 1 },
+    { x: 14, y: 2 },
+    { x: 13, y: 3 },
+    { x: 8, y: 0 },
+    { x: 10, y: 0 },
+];
+
 // Each mark is a shape stamped at a fixed cell, never a count: the creature does not draw a number (pet spec
 // §3), and each pairs its colour with a shape because status is never colour alone (DESIGN.md). Every one
 // sits clear of the body of the pose it is stamped on (sprout spec §2), so stamping never hides a pixel.
@@ -744,11 +1214,19 @@ function dressMinionInFlag(rows: readonly string[]): readonly string[] {
     return g.map((row) => row.join(""));
 }
 
+// The flag shirt on Spider-Man: Peter's open shirt turns red, with no star (it has no three-row panel to hold one); a
+// suit is a suit, so a pose in it is left as it is.
+function dressSpideyInFlag(rows: readonly string[]): readonly string[] {
+    return rows.some((row) => row.includes("v")) ? rows.map((row) => row.replace(/v/g, "R")) : rows;
+}
+
 const DRESSED = {} as Record<PetPose, readonly string[]>;
 const MINION_DRESSED = {} as Record<PetPose, readonly string[]>;
+const SPIDEY_DRESSED = {} as Record<PetPose, readonly string[]>;
 for (const pose of Object.keys(POSES) as PetPose[]) {
     DRESSED[pose] = dressInFlag(POSES[pose]);
     MINION_DRESSED[pose] = dressMinionInFlag(MINION_POSES[pose]);
+    SPIDEY_DRESSED[pose] = dressSpideyInFlag(SPIDEY_POSES[pose]);
 }
 
 /** A pose's grid in an outfit: dressed in the shirt, else the pose itself (the flag is held, not worn). */
@@ -757,6 +1235,9 @@ export function outfitRows(
     outfit: PetOutfit | null,
     character: PetCharacter = "sprout"
 ): readonly string[] {
+    if (character === "spidey") {
+        return outfit === "vn-shirt" ? SPIDEY_DRESSED[pose] : SPIDEY_POSES[pose];
+    }
     if (character === "minion") {
         return outfit === "vn-shirt" ? MINION_DRESSED[pose] : MINION_POSES[pose];
     }
@@ -807,14 +1288,14 @@ function stamp(rows: readonly string[], x0: number, y0: number, out: PetCell[]):
  * creature walks left: a `?` drawn inside the mirrored group would read backwards. Marks are a set — naming
  * one twice draws it once — so there is no way to stack them into a tally. `back` is drawn under the body and,
  * like the marks, never mirrored: the flag in hand, whose cloth rises above row 0 (PET_FLAG_RISE). `character` picks
- * whose grids the pose is drawn from; the marks and the flag are the same for both.
+ * whose grids the pose is drawn from; the marks and the flag are the same for each.
  */
 export function spriteFor(
     pose: PetPose,
     marks: readonly PetMark[],
     outfit: PetOutfit | null = null,
     character: PetCharacter = "sprout"
-): { back: PetCell[]; body: PetCell[]; overlay: PetCell[] } {
+): PetSprite {
     // drawn first, under the body: the flag in hand
     const back = outfit === "vn-flag" ? [...FLAG_CELLS] : [];
     const body: PetCell[] = [];
@@ -825,4 +1306,22 @@ export function spriteFor(
         stamp(rows, x, y, overlay);
     }
     return { back, body, overlay };
+}
+
+export interface PetSprite {
+    back: PetCell[];
+    body: PetCell[];
+    overlay: PetCell[];
+}
+
+/** A grid that is not a PetPose (Spider-Man's hang, crawl, swing) drawn as spriteFor draws a pose: body and marks. */
+export function spriteOfRows(rows: readonly string[], marks: readonly PetMark[]): PetSprite {
+    const body: PetCell[] = [];
+    stamp(rows, 0, 0, body);
+    const overlay: PetCell[] = [];
+    for (const mark of new Set(marks)) {
+        const { x, y, rows: m } = MARKS[mark];
+        stamp(m, x, y, overlay);
+    }
+    return { back: [], body, overlay };
 }

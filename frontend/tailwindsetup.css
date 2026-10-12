@@ -105,6 +105,25 @@
     --color-minion-denim-dark: #2b4f8a;
     --color-minion-hair: #4a4a4a;
 
+    /* The Jarvis pet's Spider-Man (petsprite.ts SPIDEY_*): the Homecoming suit's red and blue, the mask's seam and eyes,
+       the web he spins, Peter Parker's skin, hair, glasses and shirt, and the brick rooftop he sits on when folded.
+       The character itself, identity, never theme-derived */
+    --color-spidey-red: #d0102a;
+    --color-spidey-blue: #1f4aa8;
+    --color-spidey-seam: #2a0a0d;
+    --color-spidey-eye: #f4f6fb;
+    --color-spidey-web: #c9ced8;
+    --color-peter-skin: #f0c19b;
+    --color-peter-hair: #4a2f1c;
+    --color-peter-glasses: #3a3a40;
+    --color-peter-shirt: #e4e7ee;
+    --color-city-cornice: #6b6f78;
+    --color-city-cornice-shade: #44474f;
+    --color-city-brick: #4a2a26;
+    --color-city-brick-light: #5e3631;
+    --color-city-window: #2a2d33;
+    --color-city-window-lit: #f2c14e;
+
     /* The Jarvis pet's teleport as the window folds into it and back (petteleport.ts): a game's recall blue for its
        ring, beam and light, identity like the Minion's, never theme-derived, so it reads as the same effect on every
        theme */
