@@ -259,6 +259,34 @@ export const THEMES: ThemeDef[] = [
             error: "#f92672",
         },
     },
+    {
+        id: "spider",
+        name: "Spider",
+        // Claude's palette with Spider-Man's red: the accent lifted from #e23636 (3.81:1 on bg) to clear 4.5:1 as link
+        // text (4.78:1), the error pushed pinker so a failure never reads as the accent. No claudeMark: the accent is not
+        // Claude's clay, so the Claude mark keeps the brand clay as in every other theme.
+        palette: {
+            bg: "#1f1e1d",
+            surface: "#262624",
+            surfaceRaised: "#30302e",
+            surfaceHover: "#363532",
+            surfaceSelected: "#3d3c38",
+            code: "#141413",
+            border: "#2e2d2b",
+            edgeMid: "#383734",
+            edgeStrong: "#4a4945",
+            edgeFaint: "#282725",
+            text: "#ece9e0",
+            secondary: "#c2c0b6",
+            muted: "#a3a198",
+            inkFaint: "#7b7972",
+            accent: "#f05252",
+            success: "#4eba65",
+            warning: "#ffc107",
+            error: "#ff6b9a",
+            ansiBlue: "#6a9bcc",
+        },
+    },
 ];
 
 // Accent quick-picks for the Custom colors card (ports the mockup accentPalette; the first
