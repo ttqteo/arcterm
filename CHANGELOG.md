@@ -13,7 +13,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 ### Added
 
 - Spider-Man as a third Jarvis character (Settings → Appearance → Character): the Homecoming suit at work, Peter Parker at rest. He walks the footer side-on, thwips when he speaks, hangs from a strand when you drag him and rappels down when you let go, now and then crawls along under the app bar and hangs upside down until your cursor comes near, web-swings out and back when the window folds, and folded sits on a rooftop whose windows light up for each running agent.
-- A Spider theme (Settings → Appearance → Theme): Claude's colours with a Spider-Man red accent.
+- A Spider theme (Settings → Appearance → Theme): Claude's colours with a Spider-Man red accent, a spider in place of
+  the arcterm logo, a small spider that drops on its thread over the agent list, and webs in two corners. Picking
+  Spider-Man as Jarvis asks whether to switch to it.
 - **A green dot on an agent's sidebar row while background tasks it started still run** (a build, a dev server), even
   after its turn has ended; hover it to see which.
 - **Usage → Insights answers in English or Vietnamese**: an EN / VI switch beside Analyze picks the language, and

@@ -11,6 +11,7 @@ import { foldToSprout, minimizeRequested } from "@/app/view/agents/floatstore";
 import { reopenLauncher } from "@/app/view/agents/launcherstore";
 import { ProjectSwitcher } from "@/app/view/agents/projectswitcher";
 import { writeConfig } from "@/app/view/agents/settingsui";
+import { SpiderMark, useSpiderDecor } from "@/app/view/agents/themedecorview";
 import { HeaderUsageMeters } from "@/app/view/agents/usagemeters";
 import { autoSproutOn, minimizeChoice } from "@/app/view/agents/windowsize";
 import { WorkerCapacityChip } from "@/app/view/agents/workercapacitychip";
@@ -78,6 +79,8 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
     // the lights hide in macOS fullscreen, so their room goes with them
     const fullscreen = useAtomValue(atoms.isFullScreen);
     const newAgentKeys = useBindingKeys("new-agent");
+    // the Spider theme swaps the t> mark for its spider, in the theme's red (themedecorview.tsx)
+    const spider = useSpiderDecor();
     return (
         <div
             data-app-bar
@@ -91,8 +94,8 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
             )}
         >
             <div data-tauri-drag-region className="flex items-center gap-[9px]">
-                <span data-tauri-drag-region className="flex shrink-0 text-primary">
-                    <ArctermMark />
+                <span data-tauri-drag-region className={clsx("flex shrink-0", spider ? "text-accent" : "text-primary")}>
+                    {spider ? <SpiderMark /> : <ArctermMark />}
                 </span>
                 <span data-tauri-drag-region className="text-[14.5px] font-bold tracking-[-0.01em] text-primary">
                     arcterm

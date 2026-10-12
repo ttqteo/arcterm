@@ -11,9 +11,12 @@ import { petCharacterAtom, petOutfitChoiceAtom, petQuotesOnAtom } from "@/app/vi
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { Check } from "lucide-react";
+import { useContext, useState } from "react";
 import { MONO_FONTS, SANS_FONTS } from "../fonts";
 import { fontMonoAtom, fontSansAtom } from "../fontstore";
-import { Segmented, SettingCard, SettingRow, Toggle } from "../settingsui";
+import { RowCtx, Segmented, SettingCard, SettingRow, Toggle } from "../settingsui";
+import { offersSpiderTheme, SPIDER_THEME } from "../themedecor";
+import { SmallSpider } from "../themedecorview";
 import { ACCENT_SWATCHES, activePalette, colorOf, THEMES, type OverrideRole } from "../themes";
 import { themeOverridesAtom, themePresetAtom } from "../themestore";
 
@@ -66,6 +69,7 @@ function ThemeChips() {
                             <Swatch color={t.palette.success} />
                         </span>
                         <span className="min-w-0 flex-1 truncate">{t.name}</span>
+                        {t.id === SPIDER_THEME ? <SmallSpider /> : null}
                         {on ? <Check size={13} className="flex-none" aria-hidden /> : null}
                     </button>
                 );
@@ -148,14 +152,68 @@ const PET_CHARACTER_OPTIONS: { id: PetCharacter; label: string }[] = (["sprout",
 
 function PetCharacterRow() {
     const [character, setCharacter] = useAtom(petCharacterAtom);
+    const [preset, setPreset] = useAtom(themePresetAtom);
+    // asked on the pick itself, never on a later visit: local state, gone when Settings closes
+    const [offer, setOffer] = useState(false);
+    const ctx = useContext(RowCtx);
+    const rowShown = ctx.visible == null || ctx.visible.has("appearance.petcharacter");
     return (
-        <SettingRow id="appearance.petcharacter">
-            <Segmented<PetCharacter>
-                options={PET_CHARACTER_OPTIONS}
-                value={petCharacter(character)}
-                onChange={(id) => setCharacter(id)}
-            />
-        </SettingRow>
+        <>
+            <SettingRow id="appearance.petcharacter">
+                <Segmented<PetCharacter>
+                    options={PET_CHARACTER_OPTIONS}
+                    value={petCharacter(character)}
+                    onChange={(id) => {
+                        setCharacter(id);
+                        setOffer(offersSpiderTheme(id, preset));
+                    }}
+                />
+            </SettingRow>
+            {offer && rowShown && offersSpiderTheme(petCharacter(character), preset) ? (
+                <SpiderThemeOffer
+                    onSwitch={() => {
+                        setPreset(SPIDER_THEME);
+                        setOffer(false);
+                    }}
+                    onDismiss={() => setOffer(false)}
+                />
+            ) : null}
+        </>
+    );
+}
+
+// Under the Character row once Spider-Man is picked: the theme that goes with him, one click away. A step down in
+// tone from the card, so it reads as the row's follow-up rather than a setting of its own.
+function SpiderThemeOffer({ onSwitch, onDismiss }: { onSwitch: () => void; onDismiss: () => void }) {
+    return (
+        <div
+            role="group"
+            aria-label="Spider theme"
+            data-spider-theme-offer
+            className="flex items-center gap-3 border-t border-edge-mid bg-surface px-4 py-2.5"
+        >
+            <SmallSpider />
+            <div className="min-w-0 flex-1">
+                <div className="text-[13px] font-medium text-primary">Switch to the Spider theme too?</div>
+                <div className="mt-0.5 text-[12px] leading-[1.45] text-muted">
+                    The red accent, a spider logo and webs in two corners. Theme above puts it back.
+                </div>
+            </div>
+            <button
+                type="button"
+                onClick={onSwitch}
+                className="h-[26px] flex-none cursor-pointer whitespace-nowrap rounded-[7px] bg-accent px-2.5 text-[12px] font-semibold text-background hover:bg-accenthover"
+            >
+                Switch theme
+            </button>
+            <button
+                type="button"
+                onClick={onDismiss}
+                className="h-[26px] flex-none cursor-pointer whitespace-nowrap rounded-[7px] border border-edge-mid bg-surface-raised px-2.5 text-[12px] font-semibold text-muted hover:border-edge-strong hover:bg-surface-hover"
+            >
+                Not now
+            </button>
+        </div>
     );
 }
 

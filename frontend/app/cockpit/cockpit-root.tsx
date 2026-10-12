@@ -27,6 +27,7 @@ import { NewInitiativeHost } from "@/app/view/jarvis/newinitiativecontrol";
 import { NewProjectModal } from "@/app/view/agents/newprojectmodal";
 import { trackRecentTabs } from "@/app/view/agents/tabswitcherstore";
 import { TabSwitcher } from "@/app/view/agents/tabswitcherview";
+import { CornerWebs } from "@/app/view/agents/themedecorview";
 import { PetSources } from "@/app/view/jarvis/petsources";
 import { PetView } from "@/app/view/jarvis/petview";
 import { WaveEnv, WaveEnvContext } from "@/app/waveenv/waveenv";
@@ -193,6 +194,8 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
                 <div className="min-h-0 flex-1">
                     <CockpitShell model={model} tabId={tabIdRef.current} />
                 </div>
+                {/* the Spider theme's corner webs: over the surfaces, under the panels and modals after them */}
+                {floating ? null : <CornerWebs />}
                 {floating ? <FloatLedge model={model} /> : <HintsFooter model={model} />}
                 {/* opened from the app bar's RAM chip and usage meters: one panel for both */}
                 <ConsumersPanel model={model} />
