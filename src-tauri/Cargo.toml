@@ -42,3 +42,7 @@ mac-notification-sys = "0.6.15"
 objc2 = "=0.6.4"
 objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSApplication", "NSButton", "NSControl", "NSMenu", "NSMenuItem", "NSResponder", "NSView", "NSWindow"] }
 objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSString"] }
+# the window list behind the fold that follows you out of the app (foreground.rs), which AppKit's occlusion state could
+# not answer. Pinned to the versions already in the tree via tao.
+objc2-core-foundation = { version = "=0.3.2", default-features = false, features = ["std", "CFArray", "CFCGTypes", "CFDictionary", "CFNumber", "CFString"] }
+objc2-core-graphics = { version = "=0.3.2", default-features = false, features = ["std", "CGGeometry", "CGWindow"] }

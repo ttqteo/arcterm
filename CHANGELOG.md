@@ -43,6 +43,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   endings (a file saved with Windows CRLF).
 - **Fold when you leave** no longer folds arcterm for a screenshot, the lock screen, Alt+Tab's switcher or the Start
   menu.
+- **Fold when you leave works on macOS**: switching to an app whose window covers most of arcterm, such as a maximized
+  Chrome, folds it into Sprout. Before, nothing folded it on a Mac.
 - The mouse wheel scrolls Claude Code's fullscreen view again after arcterm restarts or reloads its pane.
 - An agent with a background task still running is no longer offered **✓ Close**: closing it would end that task.
 - Agent sidebar: clicking the top row of a run started from a plan (it has no lead) now shows the terminal of the run's

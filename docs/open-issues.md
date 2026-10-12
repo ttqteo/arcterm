@@ -134,9 +134,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) **Auto fold, Windows** (Settings → General → Window → Fold when you leave, on): a maximized or full-screen
   app on arcterm's screen folds it after ~1 s; a small window, a half-screen snap, the Start menu or a window on the
   other screen leaves it be. `d80e14b74`
-- [ ] (arcterm) **Auto fold, Mac — compile first.** `foreground.rs`'s macOS branch (`NSWindow.occlusionState`) was
-  never compiled: build on the Mac, then the same check as Windows (a full-screen app folds it, a window beside it
-  does not). `d80e14b74`
+- [ ] (arcterm) **Auto fold, Mac.** `foreground.rs`'s macOS branch now reads the window list (`CGWindowListCopyWindowInfo`)
+  and folds when the frontmost other window above arcterm covers 80% of it; the first one, `NSWindow.occlusionState`,
+  never folded (a zoomed Chrome right over arcterm left it "visible"). Unit-tested, and checked once against the live
+  window list. Left, by hand on a Mac build: a maximized Chrome over arcterm folds it after ~1 s, and so does a
+  full-screen app (its own Space: if the Space animation outlasts the 800 ms wait, it does not, and the wait wants a
+  second look); a window beside it, one on another screen, and a screenshot leave it be.
 - [ ] (arcterm) **Canvas board picker.** With more boards than fit the tab row, open the picker: the board before the
   shown one wears `[`, the one after it `]`. `d80e14b74`
 - [ ] (arcterm) **Double-click a sidebar row** (a run's lead row too): it selects the agent and typing goes into its
