@@ -150,12 +150,14 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - Jarvis: `i` focuses the run sheet's composer; a blocked run no longer reads green; the tour's first card no longer
   covers the Waiting controls; a chunk note whose run is gone says so instead of loading forever.
-- **A file an agent names from another folder opens on Ctrl+click**: when an agent writes a path relative to the
-  folder it is working in (`huong_C/plan.md` rather than `notes/huong_C/plan.md`), the link now finds the file it
-  read or wrote there, in its terminal and in its transcript. Before, it was not a link at all.
 - **← → in the Final check viewer walk every screenshot**: past a scenario's last shot they go on to the next
   scenario, so a round of plain screenshots (one per tab) no longer leaves the arrows doing nothing, and the selected
   tab scrolls into view.
+- **A file an agent names from another folder opens on Ctrl+click**: when an agent writes a path relative to the
+  folder it is working in (`huong_C/plan.md` rather than `notes/huong_C/plan.md`), the link now finds the file it
+  read or wrote there, in its terminal and in its transcript. Before, it was not a link at all.
+- **Images pasted into the New dialog's Task show in the transcript again**, live and when you read the session
+  back, instead of "no longer on disk". In the New dialog itself a click on a pasted image now shows it larger.
 - The **RAM and tokens panel lines up in columns**: the model, RAM, tokens and each button (→ Sonnet, Sleep or
   Wake, Stop) keep one place down the list instead of moving row to row.
 - **No more red spellcheck underlines** in text fields (the New dialog's Task, the composer, comments): the

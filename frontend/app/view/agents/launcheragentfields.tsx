@@ -125,11 +125,15 @@ function dropIntoTask(e: DragEvent<HTMLTextAreaElement>): void {
     addTaskImages(imageFilesOf(e.dataTransfer.files), "drop");
 }
 
+// a click on a thumbnail shows that image larger under the row, another click (on either) shrinks it back
 function TaskImages() {
     const images = useAtomValue(launcherImagesAtom);
+    const [openId, setOpenId] = useState<string | null>(null);
     if (images.length === 0) {
         return null;
     }
+    const shown = images.find((i) => i.id === openId);
+    const toggle = (id: string) => setOpenId((cur) => (cur === id ? null : id));
     return (
         <>
             <div className="flex flex-wrap gap-2">
@@ -145,9 +149,15 @@ function TaskImages() {
                             <img
                                 src={img.previewUrl}
                                 alt=""
+                                onClick={() => toggle(img.id)}
                                 className={cn(
                                     "h-full w-full rounded-[8px] border object-cover",
-                                    state === "error" ? "border-warning" : "border-edge-mid"
+                                    img.id === openId ? "cursor-zoom-out" : "cursor-zoom-in",
+                                    state === "error"
+                                        ? "border-warning"
+                                        : img.id === openId
+                                          ? "border-accent"
+                                          : "border-edge-mid"
                                 )}
                             />
                             {state === "pending" ? (
@@ -170,6 +180,15 @@ function TaskImages() {
                     );
                 })}
             </div>
+            {shown != null ? (
+                <img
+                    data-task-image-open
+                    src={shown.previewUrl}
+                    alt=""
+                    onClick={() => setOpenId(null)}
+                    className="max-h-[40vh] max-w-full cursor-zoom-out self-start rounded-[8px] border border-edge-mid object-contain"
+                />
+            ) : null}
             {images.map((img) =>
                 img.error != null ? (
                     <span key={img.id} data-task-image-error className="text-[12px] text-warning">
