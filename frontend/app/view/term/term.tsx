@@ -17,6 +17,7 @@ import debug from "debug";
 import * as jotai from "jotai";
 import * as React from "react";
 import { TermLinkTooltip } from "./term-tooltip";
+import { pendingTermSearchAtom } from "./termsearch";
 import { TermStickers } from "./termsticker";
 import { TermThemeUpdater } from "./termtheme";
 import { normalizeCursorStyle } from "./termutil";
@@ -106,6 +107,16 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
         model.termRef.current?.searchAddon.clearDecorations();
         searchProps.onSearch(searchVal);
     }, [searchOpts]);
+    // a server's Log asks for this terminal's search box (termsearch.ts)
+    const pendingSearch = jotai.useAtomValue(pendingTermSearchAtom);
+    React.useEffect(() => {
+        if (pendingSearch !== blockId) {
+            return;
+        }
+        globalStore.set(pendingTermSearchAtom, null);
+        globalStore.set(searchProps.isOpen, true);
+        globalStore.set(searchProps.focusInput, (n: number) => n + 1);
+    }, [pendingSearch, blockId]);
     // end search
 
     React.useEffect(() => {

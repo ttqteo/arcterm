@@ -4,7 +4,8 @@
 // The details rail's Servers section: the processes listening in the agent's project (pkg/devservers), one row each,
 // a failed read as one muted line above them. Polled by devserversstore.ts; labels and log matching are
 // devserversmodel.ts. A row opens a port in the browser and, for a server this agent started with a background
-// command, that command's output; it also copies and stops the process.
+// command, that command's output, or, for one running in an arcterm terminal, that terminal with its search box
+// open (terminallog.ts); it also copies and stops the process.
 
 import { getApi } from "@/app/store/global";
 import { fireAndForget } from "@/util/util";
@@ -19,10 +20,13 @@ import {
     portsLabel,
     serverLabel,
     serverUrl,
+    terminalLog,
     uptimeLabel,
     type DevServerRow,
+    type TerminalLog,
 } from "./devserversmodel";
 import { stopDevServer } from "./devserversstore";
+import { openTerminalLog } from "./terminallog";
 import type { BackgroundTask } from "./transcriptprojection";
 
 // how long a first click on Stop waits for the second
@@ -96,11 +100,15 @@ function DevServerItem({
     now,
     logTask,
     onOpenLog,
+    termLog,
+    onOpenTermLog,
 }: {
     row: DevServerRow;
     now: number;
     logTask: BackgroundTask | undefined;
     onOpenLog: (task: BackgroundTask, title: string) => void;
+    termLog: TerminalLog | null;
+    onOpenTermLog: (log: TerminalLog) => void;
 }) {
     const [confirming, setConfirming] = useState(false);
     return (
@@ -141,13 +149,18 @@ function DevServerItem({
                                 : "-my-[2px] flex shrink-0 items-center gap-[2px] opacity-0 focus-within:opacity-100 group-hover/server:opacity-100"
                         }
                     >
-                        {logTask != null ? (
+                        {logTask != null || termLog != null ? (
                             <button
                                 type="button"
                                 data-dev-server-log
+                                data-dev-server-termlog={logTask == null ? "" : undefined}
                                 title="Open its log"
                                 aria-label="Open its log"
-                                onClick={() => onOpenLog(logTask, `${portsLabel(row.ports)} ${serverLabel(row)}`)}
+                                onClick={() =>
+                                    logTask != null
+                                        ? onOpenLog(logTask, `${portsLabel(row.ports)} ${serverLabel(row)}`)
+                                        : onOpenTermLog(termLog!)
+                                }
                                 className={ACTION_BTN}
                             >
                                 <FileText size={12} aria-hidden />
@@ -208,6 +221,8 @@ export function ServersSection({
                     now={now}
                     logTask={matchLogTask(row, bgTasks)}
                     onOpenLog={openLog}
+                    termLog={terminalLog(row)}
+                    onOpenTermLog={(log) => openTerminalLog(model, log)}
                 />
             ))}
         </div>

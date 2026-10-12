@@ -54,7 +54,7 @@ describe("buildMachineServers", () => {
         ports: [5174],
         cmdline: "node vite",
         repo: "D:\\work\\arcterm",
-        owner: { kind: "terminal", tabid: "tab-t", name: "dev" },
+        owner: { kind: "terminal", tabid: "tab-t", blockid: "blk-t", name: "dev" },
     });
     const code = row({
         pid: 41656,
@@ -115,6 +115,9 @@ describe("buildMachineServers", () => {
         expect(byPid[291124].badge).toEqual({ kind: "agent", text: "claude · portal", tabId: "tab-p" });
         expect(byPid[456180].badge).toEqual({ kind: "terminal", text: "terminal · dev", tabId: "tab-t" });
         expect(byPid[41656].badge).toEqual({ kind: "app", text: "Code" });
+        expect(byPid[456180].termLog).toEqual({ tabId: "tab-t", blockId: "blk-t" });
+        expect(byPid[291124].termLog).toBeUndefined();
+        expect(byPid[41656].termLog).toBeUndefined();
     });
 
     it("Stop on an app's server names the app", () => {

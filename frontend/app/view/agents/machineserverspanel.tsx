@@ -20,7 +20,7 @@ import { ChevronRight, Copy, FileText } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { openFileInPanel } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
-import { copyText, portsLabel, serverUrl, uptimeLabel } from "./devserversmodel";
+import { copyText, portsLabel, serverUrl, uptimeLabel, type TerminalLog } from "./devserversmodel";
 import { buildMachineServers, type MachineBadge, type MachineRow } from "./machineservers";
 import {
     forgetMachineServer,
@@ -31,6 +31,7 @@ import {
 } from "./machineserversstore";
 import { ACTION_BTN, ServerStopButton } from "./railservers";
 import { backgroundTasksByIdAtom } from "./subagentsstore";
+import { openTerminalLog } from "./terminallog";
 
 // how often the uptimes are recomputed while the popover is open
 const NOW_TICK_MS = 30_000;
@@ -116,6 +117,11 @@ function ServerRow({ row, model, now }: { row: MachineRow; model: AgentsViewMode
         fireAndForget(() => openTarget(model, { kind: "agent", tabId: log.agentId }));
         close();
     };
+    // a server in an arcterm terminal: that terminal, with its search box open
+    const openTermLog = (log: TerminalLog) => {
+        openTerminalLog(model, log);
+        close();
+    };
     return (
         <div
             data-machine-server={s.pid}
@@ -156,13 +162,14 @@ function ServerRow({ row, model, now }: { row: MachineRow; model: AgentsViewMode
                             !confirming && "opacity-0 focus-within:opacity-100 group-hover/server:opacity-100"
                         )}
                     >
-                        {row.log != null ? (
+                        {row.log != null || row.termLog != null ? (
                             <button
                                 type="button"
                                 data-machine-server-log
+                                data-machine-server-termlog={row.log == null ? "" : undefined}
                                 title="Open its log"
                                 aria-label="Open its log"
-                                onClick={() => openLog(row.log!)}
+                                onClick={() => (row.log != null ? openLog(row.log) : openTermLog(row.termLog!))}
                                 className={ACTION_BTN}
                             >
                                 <FileText size={12} aria-hidden />
