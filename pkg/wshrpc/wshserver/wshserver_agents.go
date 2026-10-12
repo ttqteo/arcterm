@@ -83,11 +83,15 @@ func sessionUsageToWire(s usagestats.SessionUsage) wshrpc.UsageSession {
 			CacheCreate: m.CacheCreate, CacheCreate1h: m.CacheCreate1h,
 		}
 	}
+	var big []wshrpc.UsageBigResults
+	for _, b := range s.BigResults {
+		big = append(big, wshrpc.UsageBigResults{Tool: b.Tool, Sub: b.Sub, Count: b.Count, Chars: b.Chars})
+	}
 	return wshrpc.UsageSession{
 		ID: s.ID, Title: s.Title, Project: s.Project, Models: models,
 		Turns: s.Turns, SubTurns: s.SubTurns, AvgCtx: s.AvgCtx, MaxCtx: s.MaxCtx,
 		ColdResumes: s.ColdResumes, ColdTokens: s.ColdTokens,
-		FirstTs: s.FirstTs, LastTs: s.LastTs,
+		FirstTs: s.FirstTs, LastTs: s.LastTs, BigResults: big,
 	}
 }
 

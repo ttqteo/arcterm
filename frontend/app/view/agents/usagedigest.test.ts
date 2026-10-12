@@ -63,6 +63,7 @@ const row = (i: number, over: Partial<SessionRow> = {}): SessionRow => ({
     coldResumes: 0,
     coldSpendUsd: 0,
     lifetimeMs: 2 * HOUR,
+    bigResults: [],
     chips: [],
     ...over,
 });
@@ -208,6 +209,57 @@ describe("buildUsageDigest", () => {
             row(2, { spendUsd: 40, subSpendUsd: 25, share: 0.4 }),
         ];
         expect(section(digestOf(rows), "Subagents").join("\n")).toContain("40%"); // (15 + 25) / 100
+    });
+
+    it("sums oversized tool results by tool and who read them, largest first", () => {
+        const rows = [
+            row(1, {
+                bigResults: [
+                    { tool: "Read", count: 3, chars: 4_000_000 },
+                    { tool: "Bash", count: 1, chars: 400_000 },
+                ],
+            }),
+            row(2, {
+                bigResults: [
+                    { tool: "Read", count: 2, chars: 2_000_000 },
+                    { tool: "Read", sub: true, count: 1, chars: 100_000 },
+                ],
+            }),
+        ];
+        const lines = section(digestOf(rows), "Oversized tool results").filter(
+            (l) => l.startsWith("| ") && !l.startsWith("| tool")
+        );
+        expect(lines).toHaveLength(3);
+        expect(lines[0]).toBe("| Read | main conversation | 5 | ≈1.5M | ≈17% |"); // 6M chars / 4, of 8.8M cache-write tokens
+        expect(lines[1]).toContain("| Bash | main conversation | 1 | ≈100K |");
+        expect(lines[2]).toContain("| Read | subagent | 1 | ≈25K |");
+    });
+
+    it("folds the tools past the eighth into one row", () => {
+        const bigResults = Array.from({ length: 10 }, (_, i) => ({
+            tool: `mcp_tool_${i}`,
+            count: 1,
+            chars: 100_000 - i,
+        }));
+        const lines = section(digestOf([row(1, { bigResults })]), "Oversized tool results").filter(
+            (l) => l.startsWith("| ") && !l.startsWith("| tool")
+        );
+        expect(lines).toHaveLength(8);
+        expect(lines[7]).toContain("other tools (3)");
+        expect(lines[7]).toContain("| 3 |");
+    });
+
+    it("says when no tool result was oversized", () => {
+        expect(section(digestOf(manyRows(2)), "Oversized tool results")).toEqual(["No oversized tool results."]);
+    });
+
+    it("gives each top session its oversized results", () => {
+        const digest = digestOf([
+            row(1, { title: "Big reads", bigResults: [{ tool: "Read", count: 4, chars: 200_000 }] }),
+            row(2, { title: "Clean tab" }),
+        ]);
+        expect(digest.split("\n").find((l) => l.includes("Big reads"))).toContain("| 4 (≈50K) |");
+        expect(digest.split("\n").find((l) => l.includes("Clean tab"))).toContain("| 0 |");
     });
 
     it("still builds when there are no sessions", () => {

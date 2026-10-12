@@ -153,9 +153,19 @@ type UsageSession struct {
 	ColdTokens  int                 `json:"coldtokens"`
 	FirstTs     int64               `json:"firstts"`
 	LastTs      int64               `json:"lastts"`
+	BigResults  []UsageBigResults   `json:"bigresults,omitempty"` // most characters first
 
 	FiveHourTokens int `json:"fivehourtokens"` // this session's tokens since FiveHourCutoff, subagents included
 	WeekTokens     int `json:"weektokens"`
+}
+
+// UsageBigResults is one tool's oversized results in a session: tool results over usagestats.BigResultChars
+// characters, a subagent's apart from the main conversation's.
+type UsageBigResults struct {
+	Tool  string `json:"tool"`
+	Sub   bool   `json:"sub,omitempty"`
+	Count int    `json:"count"`
+	Chars int    `json:"chars"`
 }
 
 type CommandGetSessionUsageData struct {

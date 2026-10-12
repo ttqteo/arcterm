@@ -3286,6 +3286,7 @@ const uiCard = (h) =>
             stale: !!s.querySelector("[data-usage-insights-stale]"),
             held: !!s.querySelector("[data-usage-insights-held]"),
             buttons: s.querySelectorAll("[data-usage-analyze]").length,
+            lang: s.querySelector("[data-usage-insights-lang]")?.getAttribute("data-usage-insights-lang") ?? null,
             button: b
                 ? {
                       label: [...b.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join("").trim(),
@@ -3451,8 +3452,9 @@ const usageInsights = {
                 `document.querySelector("[data-usage-sessions]")?.querySelector("h3")?.parentElement?.textContent?.trim() ?? ""`
             );
             rec(
-                "1a. usage-insights-main: the tabs open on Claude with All last, and the card shows the analysis with its side tile",
+                "1a. usage-insights-main: the tabs open on Claude with All last, and the card shows the analysis with its side tile and the EN / VI switch",
                 ready === true &&
+                    (card?.lang === "en" || card?.lang === "vi") &&
                     tabs.selected.length === 1 &&
                     tabs.selected[0] === "claude" &&
                     tabs.tabs[0] === "claude" &&
@@ -3586,8 +3588,9 @@ const usageInsights = {
             const neverCard = await uiCard(h);
             await h.shot("cdp-shots/usage-insights-never.png");
             rec(
-                "7. usage-insights-never: with no saved analysis the card invites one, Analyze the primary button inside it",
+                "7. usage-insights-never: with no saved analysis the card invites one, Analyze the primary button inside it, the EN / VI switch on the rule",
                 never === true &&
+                    neverCard?.lang != null &&
                     neverCard?.buttons === 1 &&
                     neverCard.button.label === "Analyze" &&
                     neverCard.button.primary &&

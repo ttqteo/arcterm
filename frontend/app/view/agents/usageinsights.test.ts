@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { INSIGHTS_HELD_PCT, INSIGHTS_STALE_MS, insightsCard, insightsHeld, splitInsights } from "./usageinsights";
+import {
+    INSIGHTS_HELD_PCT,
+    INSIGHTS_STALE_MS,
+    insightsCard,
+    insightsHeld,
+    insightsLangOf,
+    splitInsights,
+} from "./usageinsights";
 
 const HOUR = 3600_000;
 const NOW = 1_800_000_000_000;
@@ -195,5 +202,15 @@ describe("splitInsights", () => {
         const { main, side } = splitInsights("## One\nA\n### sub\nx\n\n## Two\nB");
         expect(main).toBe("## One\nA\n### sub\nx");
         expect(side).toBe("## Two\nB");
+    });
+});
+
+describe("insightsLangOf", () => {
+    it("reads Vietnamese and takes everything else as English", () => {
+        expect(insightsLangOf("vi")).toBe("vi");
+        expect(insightsLangOf("en")).toBe("en");
+        expect(insightsLangOf(undefined)).toBe("en");
+        expect(insightsLangOf(null)).toBe("en");
+        expect(insightsLangOf("fr")).toBe("en");
     });
 });

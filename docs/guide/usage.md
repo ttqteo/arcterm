@@ -77,15 +77,18 @@ Transcript được đọc ở: Claude `~/.claude/projects`, Codex `~/.codex/ses
 Tab Claude có thêm mục **Insights**. Nó nhờ Claude đọc một bản tóm tắt chỉ chứa **con số theo từng tab** (không phải nội dung hội thoại) và nói quota đi đâu và nên đổi gì.
 
 1. Mở tab **Claude** của Usage và chọn khoảng thời gian cần phân tích (7 days hoặc All time).
-2. Bấm **Analyze** (hoặc `a`). Mất khoảng 30 giây; trong lúc đó thẻ ghi "Analysing…".
-3. Đọc kết quả. Phần lớn nằm ở cột trái; mục `##` cuối cùng (thường là "What to change") nằm ở ô riêng bên phải. Dòng phụ đề ghi giờ phân tích, khoảng thời gian và model (`analysed 14:30 · 7 days · sonnet`).
-4. Muốn phân tích lại thì bấm **Re-analyze**. Nếu lần chạy lỗi, nút đổi thành **Try again** và kết quả trước (nếu có) vẫn nằm bên dưới thông báo lỗi.
+2. Chọn ngôn ngữ trả lời bằng nút **EN** / **VI** cạnh nút Analyze (setting `usage:insightslang`). Đổi ngôn ngữ không tự phân tích lại: lần **Analyze** hay **Re-analyze** kế tiếp sẽ trả lời bằng ngôn ngữ đó.
+3. Bấm **Analyze** (hoặc `a`). Mất khoảng 30 giây; trong lúc đó thẻ ghi "Analysing…".
+4. Đọc kết quả. Phần lớn nằm ở cột trái; mục `##` cuối cùng (thường là "What to change") nằm ở ô riêng bên phải. Dòng phụ đề ghi giờ phân tích, khoảng thời gian và model (`analysed 14:30 · 7 days · sonnet`).
+5. Muốn phân tích lại thì bấm **Re-analyze**. Nếu lần chạy lỗi, nút đổi thành **Try again** và kết quả trước (nếu có) vẫn nằm bên dưới thông báo lỗi.
 
 <!-- shot: usage-insights-sessions.png | Tab Claude với thẻ Insights đã có kết quả (cột chính và ô "What to change") và bảng By session bên dưới, vài hàng có chip | Dùng scenario CDP `usage-insights` (nó nạp session giả và một kết quả Insights đã lưu); Usage → tab Claude, selector `[data-usage-insights="done"]` và `[data-usage-sessions]` -->
 
 Cần biết:
 
 - Đây là một lần gọi `claude -p --model sonnet` và tốn quota Claude của bạn.
+- Ngoài token theo loại, theo model, theo ngày, theo cỡ context, cold resume và subagent, bản tóm tắt còn đếm các **tool result quá lớn** (một kết quả hơn 20k ký tự, khoảng 5k token) theo tool, tách phần của cuộc hội thoại chính và của subagent, kèm ước tính chúng chiếm bao nhiêu phần cache write. Một kết quả như vậy (đọc cả file bằng `Read`, một lệnh in hết mọi dòng PASS) được ghi vào cache một lần rồi đọc lại ở mọi lượt sau.
+- Mục "What to change" chỉ chọn trong một danh sách cách sửa có sẵn (đọc file theo đoạn, cho lệnh chỉ in lỗi, `/clear` giữa các việc, `/compact` trước khi rời máy khi cache còn nóng, chọn model từ đầu tab, chuyển quy trình riêng từ CLAUDE.md sang skill…), và chỉ khi số liệu cho thấy chỗ đó tốn.
 - Kết quả được lưu trên đĩa, chỉ giữ lần mới nhất. Nó bị đánh dấu cũ khi quá 24 giờ, hoặc khi khoảng thời gian đang xem khác khoảng đã phân tích ("This analysis covers 7 days; the window shown is all time…"). Thẻ vẫn hiện kết quả cũ cùng lời nhắc phân tích lại.
 - **Analyze bị giữ khi cửa sổ 5 giờ hoặc tuần của Claude đạt 95% trở lên**, để phân tích không ăn nốt phần quota cuối. Tooltip nói rõ: `Claude quota is at 96%, resets in 44m`. Bảng **By session** vẫn dùng được.
 - Không có tab Claude nào trong khoảng đang chọn thì thẻ ghi "No Claude tabs yet, so there is nothing to analyse".

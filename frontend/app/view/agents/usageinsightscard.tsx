@@ -7,13 +7,14 @@
 // usage-insights prototype. Spec: 2026-10-08-usage-insights-design.md, section 3.
 
 import { Markdown } from "@/app/element/markdown";
+import { Segmented } from "@/app/element/segmented";
 import { SkeletonLine } from "@/app/element/skeleton";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn } from "@/util/util";
 import { CircleAlert, Clock, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 import { formatAge } from "./agentsviewmodel";
-import { splitInsights, type InsightsCard } from "./usageinsights";
+import { splitInsights, type InsightsCard, type InsightsLang } from "./usageinsights";
 
 const PANEL = "rounded-[14px] border border-border bg-surface-raised";
 const BUTTON =
@@ -203,14 +204,22 @@ function HeldNote({ held }: { held: string }) {
     );
 }
 
+const LANG_OPTIONS: { key: InsightsLang; label: string; title: string }[] = [
+    { key: "en", label: "EN", title: "The next analysis answers in English" },
+    { key: "vi", label: "VI", title: "The next analysis answers in Vietnamese" },
+];
+
 // `held` is the insightsHeld tooltip, or null when Analyze may run. `windowDays` is the surface's window (7, or 0
-// for all time), against which a result is stale.
+// for all time), against which a result is stale. `lang` is the language the next analysis answers in; changing it
+// does not re-run one.
 export function UsageInsightsCard({
     card,
     held,
     sessionCount,
     windowDays,
     now,
+    lang,
+    onLang,
     onAnalyze,
 }: {
     card: InsightsCard;
@@ -218,6 +227,8 @@ export function UsageInsightsCard({
     sessionCount: number;
     windowDays: number;
     now: number;
+    lang: InsightsLang;
+    onLang: (lang: InsightsLang) => void;
     onAnalyze: () => void;
 }) {
     const shown = card.kind === "done" ? card.ins : card.kind === "error" ? card.prev : undefined;
@@ -242,7 +253,25 @@ export function UsageInsightsCard({
 
     return (
         <section data-usage-insights={card.kind} className="mb-[22px] min-w-0">
-            <Rule meta={meta} action={card.kind === "no-sessions" || primaryInCard ? null : button(false)} />
+            <Rule
+                meta={meta}
+                action={
+                    card.kind === "no-sessions" ? null : (
+                        <>
+                            <div data-usage-insights-lang={lang}>
+                                <Segmented<InsightsLang>
+                                    value={lang}
+                                    onChange={onLang}
+                                    options={LANG_OPTIONS}
+                                    role="group"
+                                    ariaLabel="Analysis language"
+                                />
+                            </div>
+                            {primaryInCard ? null : button(false)}
+                        </>
+                    )
+                }
+            />
 
             {card.kind === "no-sessions" ? (
                 <p className="rounded-[11px] border border-border bg-surface px-4 py-3 text-[11px] leading-[1.55] text-muted">

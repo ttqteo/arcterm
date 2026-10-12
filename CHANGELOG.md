@@ -16,6 +16,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - A Spider theme (Settings → Appearance → Theme): Claude's colours with a Spider-Man red accent.
 - **A green dot on an agent's sidebar row while background tasks it started still run** (a build, a dev server), even
   after its turn has ended; hover it to see which.
+- **Usage → Insights answers in English or Vietnamese**: an EN / VI switch beside Analyze picks the language of the
+  next analysis.
 
 ### Changed
 
@@ -31,6 +33,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - **On macOS the folded Sprout follows you to every Space**, beside a full-screen app too, instead of staying on the
   Desktop you folded it on.
 - The launcher's **Transcript** button on a picked session spells out its key, **Shift+Enter**, in place of ⇧⏎.
+- **Usage → Analyze now sees oversized tool results**: whole-file reads and long command output (over 20k characters)
+  are counted per tool and per tab, and its advice names concrete fixes such as reading a file by range, making a
+  command print only failures, or compacting before you step away.
 
 ### Fixed
 

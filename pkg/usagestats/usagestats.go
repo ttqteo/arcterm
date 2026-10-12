@@ -375,9 +375,7 @@ var aiTitleMarker = []byte(`"ai-title"`)
 // readClaudeLines reads a Claude transcript, keeping only usage-bearing lines (see filterUsageLines)
 // and ai-title lines as they stream past, so the rest of the file is never held.
 func readClaudeLines(path string) []string {
-	return scanLines(path, func(line []byte) bool {
-		return bytes.Contains(line, usageMarker) || bytes.Contains(line, aiTitleMarker)
-	})
+	return scanLines(path, isClaudeLine)
 }
 
 // inWindow reports whether the file at path was modified at/after cutoff. A zero cutoff
@@ -478,11 +476,22 @@ func walkOpencodeFiles(root string, cutoff time.Time) []scanFile {
 // again), bounded to NumCPU workers, and returns each file's records at its index in files: uncut, and shared with
 // the cache, so not to be modified.
 func parseEach(files []scanFile) [][]Record {
+	parses := parseEachFile(files)
+	results := make([][]Record, len(parses))
+	for i, p := range parses {
+		results[i] = p.records
+	}
+	return results
+}
+
+// parseEachFile is parseEach with each file's whole parse: its records and, for a Claude file, its oversized tool
+// results.
+func parseEachFile(files []scanFile) []fileParse {
 	workers := runtime.NumCPU()
 	if workers < 1 {
 		workers = 1
 	}
-	results := make([][]Record, len(files))
+	results := make([]fileParse, len(files))
 	sem := make(chan struct{}, workers)
 	var wg sync.WaitGroup
 	for i, f := range files {
@@ -491,7 +500,7 @@ func parseEach(files []scanFile) [][]Record {
 		go func(i int, f scanFile) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			results[i] = cachedFileRecords(f)
+			results[i] = cachedFileParse(f)
 		}(i, f)
 	}
 	wg.Wait()
@@ -523,46 +532,51 @@ func parseFiles(files []scanFile) []Record {
 // parseFile reads one transcript into its records, whatever their age: the window is applied by the
 // caller, so one parse serves every window. Records are deduped within the file, which a later
 // corpus-wide dedupe leaves unchanged (it keeps the largest output per ID either way) and which
-// keeps the streaming snapshots out of the cache.
-func parseFile(f scanFile) []Record {
+// keeps the streaming snapshots out of the cache. A Claude file also gives its oversized tool results.
+func parseFile(f scanFile) ([]Record, []BigToolResult) {
 	switch f.kind {
 	case scanCodex:
-		return extractCodex(readLines(f.path))
+		return extractCodex(readLines(f.path)), nil
 	case scanOpencode:
 		data, err := os.ReadFile(f.path)
 		if err != nil {
-			return nil
+			return nil, nil
 		}
 		rec, ok := extractOpencode(data)
 		if !ok {
-			return nil
+			return nil, nil
 		}
-		return []Record{rec}
+		return []Record{rec}, nil
 	case scanPi:
 		file, err := pisession.Read(f.path)
 		if err != nil {
-			return nil
+			return nil, nil
 		}
-		return extractPi(file, time.Time{})
+		return extractPi(file, time.Time{}), nil
 	case scanAgy:
-		return extractAgy(readAgyLines(f.path))
+		return extractAgy(readAgyLines(f.path)), nil
 	default:
-		lines := readClaudeLines(f.path)
+		lines, big := readClaudeFile(f.path)
 		recs := dedupe(extractClaude(lines))
 		session, sub := claudeSessionOf(f.path)
 		title := lastAiTitle(lines)
 		for i := range recs {
 			recs[i].Session, recs[i].Sub, recs[i].Title = session, sub, title
 		}
-		return recs
+		nameTools(lines, big)
+		for i := range big {
+			big[i].Session, big[i].Sub = session, sub
+		}
+		return recs, big
 	}
 }
 
-// fileParse is one file's parsed records and the modtime and size they were read at.
+// fileParse is one file's parsed records and oversized tool results, and the modtime and size they were read at.
 type fileParse struct {
 	mod     time.Time
 	size    int64
 	records []Record
+	big     []BigToolResult
 }
 
 // parseCache holds each scanned file's records by path. Reading and parsing the transcripts is nearly
@@ -572,22 +586,23 @@ type fileParse struct {
 // entries no recent scan read if its memory matters.
 var parseCache sync.Map
 
-// cachedFileRecords returns f's records, parsing the file only when its modtime or size differs from
-// the cached parse. The returned slice is shared with the cache and must not be modified.
-func cachedFileRecords(f scanFile) []Record {
+// cachedFileParse returns f's parse, parsing the file only when its modtime or size differs from the
+// cached parse. The returned slices are shared with the cache and must not be modified.
+func cachedFileParse(f scanFile) fileParse {
 	info, err := os.Stat(f.path)
 	if err != nil {
 		parseCache.Delete(f.path)
-		return nil
+		return fileParse{}
 	}
 	if v, ok := parseCache.Load(f.path); ok {
 		if c := v.(fileParse); c.size == info.Size() && c.mod.Equal(info.ModTime()) {
-			return c.records
+			return c
 		}
 	}
-	records := parseFile(f)
-	parseCache.Store(f.path, fileParse{mod: info.ModTime(), size: info.Size(), records: records})
-	return records
+	records, big := parseFile(f)
+	p := fileParse{mod: info.ModTime(), size: info.Size(), records: records, big: big}
+	parseCache.Store(f.path, p)
+	return p
 }
 
 // scanRoots walks the Claude, Codex, OpenCode, Pi, and agy transcript roots, prunes Claude/Codex files by

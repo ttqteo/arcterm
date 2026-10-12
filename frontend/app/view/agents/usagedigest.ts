@@ -3,13 +3,18 @@
 //
 // Pure builder for the digest the Analyze button sends to Claude (AnalyzeUsageCommand): the window's
 // Claude usage as numbers in small markdown tables. It is built here, not in Go, because spend needs
-// the one price table (usagepricing.ts), and it carries numbers, session titles and project names only,
+// the one price table (usagepricing.ts), and it carries numbers, session titles, project names and tool names only,
 // never conversation text. Same input, same string. No React, no Wave runtime imports.
 
 import { SESSION_ROWS, type SessionRow } from "./usagesessions";
 import { fmt, usd, type UsageStats } from "./usagestats";
 
 const TITLE_MAX = 80;
+
+// A tool result over this many characters is oversized: mirrors BigResultChars in pkg/usagestats/toolresults.go.
+export const BIG_RESULT_CHARS = 20_000;
+const CHARS_PER_TOKEN = 4; // the digest's estimate; a tool result carries no token count of its own
+const BIG_TOOL_ROWS = 8;
 
 // average-context bands, [from, to) in tokens; the last has no upper edge
 const BANDS: { label: string; from: number; to: number }[] = [
@@ -35,9 +40,50 @@ function cell(text: string): string {
     return flat.length > TITLE_MAX ? `${flat.slice(0, TITLE_MAX - 1)}…` : flat;
 }
 
+// A session's oversized tool results as "<count> (≈<tokens>)", or "0".
+function oversized(r: SessionRow): string {
+    const count = r.bigResults.reduce((sum, b) => sum + b.count, 0);
+    const chars = r.bigResults.reduce((sum, b) => sum + b.chars, 0);
+    return count === 0 ? "0" : `${count} (${approxTokens(chars)})`;
+}
+
 function lifetime(ms: number): string {
     const mins = Math.round(ms / 60_000);
     return mins < 60 ? `${mins}m` : `${Math.round(mins / 60)}h`;
+}
+
+function approxTokens(chars: number): string {
+    return `≈${fmt(chars / CHARS_PER_TOKEN)}`;
+}
+
+// The window's oversized tool results by (tool, read by), most characters first; past BIG_TOOL_ROWS the rest fold
+// into one "other tools" row.
+function bigResultRows(rows: SessionRow[]): { tool: string; by: string; count: number; chars: number }[] {
+    const byKey = new Map<string, { tool: string; by: string; count: number; chars: number }>();
+    for (const r of rows) {
+        for (const b of r.bigResults) {
+            const by = b.sub ? "subagent" : "main conversation";
+            const key = `${b.tool}\u0000${by}`;
+            const g = byKey.get(key) ?? { tool: b.tool, by, count: 0, chars: 0 };
+            g.count += b.count;
+            g.chars += b.chars;
+            byKey.set(key, g);
+        }
+    }
+    const sorted = [...byKey.values()].sort(
+        (a, b) => b.chars - a.chars || a.tool.localeCompare(b.tool) || a.by.localeCompare(b.by)
+    );
+    if (sorted.length <= BIG_TOOL_ROWS) return sorted;
+    const rest = sorted.slice(BIG_TOOL_ROWS - 1);
+    return [
+        ...sorted.slice(0, BIG_TOOL_ROWS - 1),
+        {
+            tool: `other tools (${rest.length})`,
+            by: "—",
+            count: rest.reduce((sum, g) => sum + g.count, 0),
+            chars: rest.reduce((sum, g) => sum + g.chars, 0),
+        },
+    ];
 }
 
 function table(header: string[], body: string[][]): string[] {
@@ -155,6 +201,34 @@ export function buildUsageDigest(input: {
             : "No spend to attribute to subagents."
     );
 
+    const big = bigResultRows(rows);
+    const cacheWrite = stats.split.find((c) => c.cls === "cacheWrite")?.tokens ?? 0;
+    out.push(
+        "",
+        `## Oversized tool results (one result over ${fmt(BIG_RESULT_CHARS)} characters, ` +
+            `about ${fmt(BIG_RESULT_CHARS / CHARS_PER_TOKEN)} tokens)`
+    );
+    if (big.length === 0) {
+        out.push("No oversized tool results.");
+    } else {
+        out.push(
+            "A tool result enters its session's context once, is written to the prompt cache, and is read back on " +
+                `every later turn. Tokens are estimated as characters / ${CHARS_PER_TOKEN}.`
+        );
+        out.push(
+            ...table(
+                ["tool", "read by", "results", "tokens", "share of cache writes"],
+                big.map((g) => [
+                    cell(g.tool),
+                    g.by,
+                    String(g.count),
+                    approxTokens(g.chars),
+                    cacheWrite > 0 ? `≈${pct(g.chars / CHARS_PER_TOKEN / cacheWrite)}` : "—",
+                ])
+            )
+        );
+    }
+
     const top = rows.slice(0, SESSION_ROWS);
     out.push("", `## Top ${plural(top.length, "session")} by spend (of ${rows.length})`);
     out.push(
@@ -170,6 +244,7 @@ export function buildUsageDigest(input: {
                 "peak ctx",
                 "cold resumes",
                 "subagent share",
+                "oversized results",
                 "lifetime",
             ],
             top.map((r, i) => [
@@ -183,6 +258,7 @@ export function buildUsageDigest(input: {
                 fmt(r.maxCtx),
                 String(r.coldResumes),
                 pct(r.spendUsd > 0 ? r.subSpendUsd / r.spendUsd : 0),
+                oversized(r),
                 lifetime(r.lifetimeMs),
             ])
         )

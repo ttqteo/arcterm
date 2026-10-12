@@ -39,6 +39,7 @@ export interface SessionRow {
     coldResumes: number;
     coldSpendUsd: number; // coldTokens at the main model's 1h cache-write rate
     lifetimeMs: number;
+    bigResults: UsageBigResults[]; // oversized tool results by tool, most characters first
     chips: ChipKey[];
     liveTabId?: string; // set when an open agent tab runs this session
 }
@@ -150,6 +151,7 @@ export function buildSessionRows(
             coldResumes: s.coldresumes,
             coldSpendUsd: (s.coldtokens * coldRate) / 1_000_000,
             lifetimeMs,
+            bigResults: s.bigresults ?? [],
             fiveHourPct: quota
                 ? windowSharePct(
                       s.fivehourtokens ?? 0,

@@ -3,7 +3,7 @@
 //
 // Pure model for the Usage surface's Insights card: which of its states shows (insightsCard), whether
 // Analyze is held because Claude's quota window is nearly spent (insightsHeld), and how a result's
-// markdown is laid out (splitInsights). Spec: 2026-10-08-usage-insights-design.md, section 3. No React,
+// markdown is laid out (splitInsights), and which language the next analysis answers in (insightsLangOf). Spec: 2026-10-08-usage-insights-design.md, section 3. No React,
 // no Wave runtime imports.
 
 import { formatReset } from "./agentsviewmodel";
@@ -11,6 +11,14 @@ import type { DonutWindow } from "./ratelimitstore";
 
 export const INSIGHTS_STALE_MS = 24 * 3600_000;
 export const INSIGHTS_HELD_PCT = 95;
+
+// The languages the analysis can answer in (usageinsights.langName on the server); "en" is the default.
+export type InsightsLang = "en" | "vi";
+
+// The language the "usage:insightslang" setting names: unset, or one the card has no toggle for, is English.
+export function insightsLangOf(setting: string | null | undefined): InsightsLang {
+    return setting === "vi" ? "vi" : "en";
+}
 
 export type InsightsCard =
     | { kind: "no-sessions" }

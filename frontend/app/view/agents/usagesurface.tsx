@@ -18,6 +18,7 @@ import { useDidBecomeTrue } from "@/app/element/motionhooks";
 import { cardVariants } from "@/app/element/motiontokens";
 import { Segmented } from "@/app/element/segmented";
 import { SkeletonLine } from "@/app/element/skeleton";
+import { getSettingsKeyAtom } from "@/app/store/global";
 import { buildUsageBindings } from "@/app/store/keybindings/bindings";
 import { useSurfaceListNav, type ListNavController } from "@/app/store/keybindings/listnav";
 import { useKeybindings } from "@/app/store/keybindings/store";
@@ -45,7 +46,7 @@ import { sessionKey } from "./sessionsruns";
 import { SubagentCostCard } from "./subagentcostcard";
 import { SurfaceError, SurfaceHeader } from "./surfacescaffold";
 import { buildUsageDigest } from "./usagedigest";
-import { insightsCard, insightsHeld } from "./usageinsights";
+import { insightsCard, insightsHeld, insightsLangOf } from "./usageinsights";
 import { UsageInsightsCard } from "./usageinsightscard";
 import {
     analyzeUsage,
@@ -60,6 +61,7 @@ import {
     sessionUsageAtom,
     sessionUsageLoadedAtom,
     sessionWindowTokensAtom,
+    setInsightsLang,
     subagentCostsAtom,
     subagentCostsLoadedAtom,
     usageSessionCursorAtom,
@@ -626,6 +628,7 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
         claudeDonut?.week ?? {},
     ];
     const held = insightsHeld(heldWindows, now);
+    const insightsLang = insightsLangOf(useAtomValue(getSettingsKeyAtom("usage:insightslang")));
 
     // The digest is built when Analyze runs, not on every render. It does nothing off the Claude tab, with no
     // sessions to read, or while an analysis runs or is held. The `a` key reaches it through a ref, since the
@@ -925,6 +928,8 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                                     sessionCount={sessionRows.length}
                                     windowDays={windowDays}
                                     now={now}
+                                    lang={insightsLang}
+                                    onLang={setInsightsLang}
                                     onAnalyze={analyze}
                                 />
                                 {sessionRows.length > 0 ? (

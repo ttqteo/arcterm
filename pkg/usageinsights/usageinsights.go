@@ -79,10 +79,37 @@ language: where the quota goes; the most expensive tabs; habits that waste quota
 Cite the numbers you rely on and name tabs by their titles. The last section is a numbered list of at
 most four concrete habits, most effective first. Under 350 words, no preamble.
 
+%s
+
 <digest>
 %s
-</digest>`, langName(lang), digest)
+</digest>`, langName(lang), levers, digest)
 }
+
+// levers is what the analysis may advise, so a tip names a fix that works in Claude Code rather than a general
+// "use fewer tokens". The model picks the ones the digest's numbers show a cost for.
+const levers = `How the cost works and the fixes that move it. Advise a fix only where the digest shows its cost,
+and say which numbers show it:
+- Everything that enters a tab's context is written to the prompt cache once (the 1-hour write costs
+  twice the input rate) and read back on every later turn, so a long context or a big tool result is
+  paid for on every turn after it.
+- Oversized Read results: search first (Grep, Glob), then read the part needed with an offset and
+  limit instead of whole files; hand a sweep across many files to a subagent on a small model that
+  returns only its findings.
+- Oversized Bash results: make the command print only failures or a summary (a quiet flag, a
+  failures-only reporter, a filter or tail), and write that form of the command into CLAUDE.md so
+  every session runs it.
+- Large average context or long-lived tabs: one task per tab; /clear between unrelated tasks;
+  /rewind past a wrong turn instead of correcting it in more turns.
+- Cold resumes: /compact before stepping away for more than an hour, while the cache is warm;
+  compacting or resuming after it went cold re-reads the whole conversation at the full input rate.
+- Model mix: choose the model and effort when the tab opens and keep them, since switching mid-tab
+  re-writes the cache. Clear, precisely described work runs on Sonnet; Opus is for unclear problems.
+  A strong model can plan a repeated task once as a skill that a cheaper model then follows.
+- Subagents: they keep bulk reading out of the main context but cost tokens of their own; heavy
+  subagent spend calls for smaller models or narrower tasks for them, not for dropping them.
+- CLAUDE.md is sent on every turn: keep only what every task needs and move task-specific
+  procedures into skills.`
 
 // Analyze asks the model about the digest and saves the answer. One analysis runs at a time: a second
 // call while one is running returns ErrBusy without starting another. A failed or empty answer leaves

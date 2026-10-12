@@ -35,6 +35,12 @@ export const sessionShowAllAtom = atom<boolean>(false) as PrimitiveAtom<boolean>
 // the By session table's cursor (j / k), a session id
 export const usageSessionCursorAtom = atom<string | undefined>(undefined) as PrimitiveAtom<string | undefined>;
 
+// Sets the language the next analysis answers in. English deletes the key (a null value), so the default is unset.
+export function setInsightsLang(lang: "en" | "vi"): void {
+    const patch = { "usage:insightslang": lang === "en" ? null : lang };
+    void RpcApi.SetConfigCommand(TabRpcClient, patch as Parameters<typeof RpcApi.SetConfigCommand>[1]);
+}
+
 // How long the Analyze RPC may take: the backend gives Claude 120 s, and the call needs room beyond that.
 const ANALYZE_TIMEOUT_MS = 150_000;
 

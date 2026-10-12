@@ -3422,6 +3422,14 @@ declare global {
         actions: UiAction[];
     };
 
+    // wshrpc.UsageBigResults
+    type UsageBigResults = {
+        tool: string;
+        sub?: boolean;
+        count: number;
+        chars: number;
+    };
+
     // wshrpc.UsageBucket
     type UsageBucket = {
         harness: string;
@@ -3474,6 +3482,7 @@ declare global {
         coldtokens: number;
         firstts: number;
         lastts: number;
+        bigresults?: UsageBigResults[];
         fivehourtokens: number;
         weektokens: number;
     };

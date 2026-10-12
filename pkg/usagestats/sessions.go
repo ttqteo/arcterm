@@ -41,6 +41,16 @@ type SessionUsage struct {
 	ColdTokens  int
 	FirstTs     int64 // unix ms
 	LastTs      int64
+	BigResults  []SessionBigResults // most characters first
+}
+
+// SessionBigResults is one tool's oversized results in a session (see BigResultChars), a subagent's apart from the
+// main conversation's.
+type SessionBigResults struct {
+	Tool  string
+	Sub   bool
+	Count int
+	Chars int
 }
 
 const (
@@ -67,17 +77,29 @@ func scanSessionRoot(root string, windowDays int) []SessionUsage {
 		since = windowStart(time.Now(), windowDays)
 	}
 	var records []Record
-	for _, r := range parseFiles(walkClaudeFiles(root, cutoff)) {
-		if since.IsZero() || !r.TS.Before(since) {
-			records = append(records, r)
+	var big []BigToolResult
+	seen := map[string]bool{} // a forked transcript carries its parent's results again
+	for _, p := range parseEachFile(walkClaudeFiles(root, cutoff)) {
+		for _, r := range p.records {
+			if since.IsZero() || !r.TS.Before(since) {
+				records = append(records, r)
+			}
+		}
+		for _, b := range p.big {
+			if (!since.IsZero() && b.TS.Before(since)) || (b.UseID != "" && seen[b.UseID]) {
+				continue
+			}
+			seen[b.UseID] = true
+			big = append(big, b)
 		}
 	}
-	return foldSessions(dedupe(records))
+	return foldSessions(dedupe(records), big)
 }
 
 // foldSessions groups deduped Claude records by Session. Records are taken in time order, which the
-// context and cold-resume rules need; the result is newest session first.
-func foldSessions(recs []Record) []SessionUsage {
+// context and cold-resume rules need; the result is newest session first. Each oversized tool result
+// is counted on its session, by tool; one whose session has no records is dropped.
+func foldSessions(recs []Record, big []BigToolResult) []SessionUsage {
 	sort.SliceStable(recs, func(i, j int) bool { return recs[i].TS.Before(recs[j].TS) })
 	type modelKey struct {
 		model string
@@ -139,6 +161,43 @@ func foldSessions(recs []Record) []SessionUsage {
 			a.s.ColdTokens += r.CacheCreate
 		}
 		a.lastMain = r.TS
+	}
+	type bigKey struct {
+		tool string
+		sub  bool
+	}
+	bigBySession := map[string]map[bigKey]*SessionBigResults{}
+	for _, b := range big {
+		if bySession[b.Session] == nil {
+			continue
+		}
+		byTool := bigBySession[b.Session]
+		if byTool == nil {
+			byTool = map[bigKey]*SessionBigResults{}
+			bigBySession[b.Session] = byTool
+		}
+		k := bigKey{b.Tool, b.Sub}
+		if byTool[k] == nil {
+			byTool[k] = &SessionBigResults{Tool: b.Tool, Sub: b.Sub}
+		}
+		byTool[k].Count++
+		byTool[k].Chars += b.Chars
+	}
+	for id, byTool := range bigBySession {
+		a := bySession[id]
+		for _, g := range byTool {
+			a.s.BigResults = append(a.s.BigResults, *g)
+		}
+		sort.Slice(a.s.BigResults, func(i, j int) bool {
+			x, y := a.s.BigResults[i], a.s.BigResults[j]
+			if x.Chars != y.Chars {
+				return x.Chars > y.Chars
+			}
+			if x.Tool != y.Tool {
+				return x.Tool < y.Tool
+			}
+			return !x.Sub && y.Sub
+		})
 	}
 	out := make([]SessionUsage, 0, len(bySession))
 	for _, a := range bySession {

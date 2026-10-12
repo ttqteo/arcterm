@@ -37,6 +37,14 @@ func TestPromptCarriesDigestAndLanguage(t *testing.T) {
 			t.Errorf("prompt must ask for %q, got:\n%s", want, got)
 		}
 	}
+	for _, lever := range []string{"Oversized Read results", "Oversized Bash results", "/compact before stepping away", "/clear"} {
+		if !strings.Contains(got, lever) {
+			t.Errorf("prompt must offer the lever %q, got:\n%s", lever, got)
+		}
+	}
+	if strings.Index(got, "Oversized Read results") > strings.Index(got, "\n<digest>\n") {
+		t.Errorf("the levers are instructions and must sit before the digest, got:\n%s", got)
+	}
 	if en := Prompt("x", ""); !strings.Contains(en, "English") || strings.Contains(en, "Vietnamese") {
 		t.Errorf("prompt for an empty language must name English only, got:\n%s", en)
 	}
