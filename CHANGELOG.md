@@ -12,6 +12,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- **Type straight into the task in the New dialog**: with focus on the Start column, a letter moves you into the Task
+  box (or a run's Goal) with that letter in it, so a digit, then the task, then Enter launches.
 - **Images open in the Agent panel's File tab and in Code**: a `.png`, `.jpg`, `.gif`, `.webp`, `.svg` or other image
   shows fitted to the pane, with its size underneath; click it to see it at its own size. It showed "Binary file"
   before.

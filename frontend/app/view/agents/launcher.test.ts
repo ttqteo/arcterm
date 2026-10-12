@@ -248,6 +248,7 @@ describe("launcherKey", () => {
         flagMenuOpen: !!open.flagMenuOpen,
         branchListOpen: !!open.branchListOpen,
         resumePicked: !!open.resumePicked,
+        textField: true,
     });
     const key = (k: string, extra: { shift?: boolean; mod?: boolean } = {}) => ({
         key: k,
@@ -279,10 +280,22 @@ describe("launcherKey", () => {
         expect(launcherKey(at("project"), key("ArrowRight"))).toEqual({ kind: "none" });
         expect(launcherKey(at("input"), key("ArrowLeft"))).toEqual({ kind: "none" });
     });
-    it("letters filter the Project column, and only there", () => {
+    it("letters filter the Project column", () => {
         expect(launcherKey(at("project", "ok"), key("i"))).toEqual({ kind: "filter", next: "oki" });
         expect(launcherKey(at("project"), key("-"))).toEqual({ kind: "filter", next: "-" });
-        expect(launcherKey(at("start"), key("i"))).toEqual({ kind: "none" });
+        expect(launcherKey(at("start"), key("i"))).toEqual({ kind: "write" });
+    });
+    it("a letter in the Start column writes into the pick's Task or Goal box, when it has one", () => {
+        expect(launcherKey(at("start"), key("F", { shift: true }))).toEqual({ kind: "write" });
+        expect(launcherKey(at("start"), key("-"))).toEqual({ kind: "write" });
+        expect(launcherKey({ ...at("start"), textField: false }, key("f"))).toEqual({ kind: "none" });
+        // a space starts no task; a key held with Cmd, Ctrl or Alt, a named key, or an IME's key is not a letter
+        expect(launcherKey(at("start"), key(" "))).toEqual({ kind: "none" });
+        expect(launcherKey(at("start"), key("f", { mod: true }))).toEqual({ kind: "none" });
+        expect(launcherKey(at("start"), key("Process"))).toEqual({ kind: "none" });
+        expect(launcherKey(at("start"), key("Dead"))).toEqual({ kind: "none" });
+        // the digits still pick
+        expect(launcherKey(at("start"), key("2"))).toEqual({ kind: "pick-start", index: 1 });
     });
     it("Backspace shortens the filter and does nothing on an empty one", () => {
         expect(launcherKey(at("project", "oki"), key("Backspace"))).toEqual({ kind: "filter", next: "ok" });

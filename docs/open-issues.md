@@ -27,6 +27,14 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-12 (type into the task from the New dialog's Start column)**
+
+- [ ] (arcterm) **A letter in the Start column starts the task.** Mod+N, `1`, type `fix`: focus is in Task and it
+  reads `fix`, a saved draft kept before it. With Unikey/EVKey Telex, typing `vieets` from the Start column gives
+  `viết`, the first letter included; with the Windows Vietnamese IME the first key may do nothing (it is skipped on
+  purpose). Pick Orchestrate → A plan file: letters do nothing; pick Terminal: nothing; the footer shows `a–z task`
+  only when a letter would write. (`launcher.ts` `launcherKey` "write", `launchermodal.tsx`)
+
 **2026-10-12 (path links from another folder)**
 
 - [ ] (arcterm) **A path an agent names from a subfolder is a link.** In an agent that worked on

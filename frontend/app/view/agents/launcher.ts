@@ -210,6 +210,8 @@ export interface LauncherKeyCtx {
     branchListOpen: boolean;
     // a session row of the Resume list is picked, not New session: only a session has a transcript to read
     resumePicked: boolean;
+    // the pick has a Task box (an agent that takes one) or a Goal box (a run started from a goal)
+    textField: boolean;
 }
 
 export interface LauncherKeyIn {
@@ -226,6 +228,7 @@ export type LauncherKeyAction =
     | { kind: "move"; column: "start" | "project"; delta: 1 | -1 }
     | { kind: "column"; to: "start" | "project" }
     | { kind: "filter"; next: string }
+    | { kind: "write" }
     | { kind: "launch" }
     | { kind: "view-transcript" }
     | { kind: "dismiss-inner"; what: LauncherInner }
@@ -280,6 +283,12 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
     }
     if (k.key === "ArrowLeft") {
         return zone === "project" ? { kind: "column", to: "start" } : NONE;
+    }
+    // a letter in the Start column starts the task: the dialog moves focus to the Task or Goal box and lets the key land
+    // there, so a Telex or IME key that follows edits it. A space, a named key ("Process", "Dead") and a digit are not
+    // letters.
+    if (zone === "start") {
+        return ctx.textField && k.key.length === 1 && !/[0-9 ]/.test(k.key) ? { kind: "write" } : NONE;
     }
     if (zone === "project") {
         if (k.key === "Backspace") {

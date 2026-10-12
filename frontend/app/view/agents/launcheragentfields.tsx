@@ -16,7 +16,7 @@ import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ChevronDown, Loader2, Lock, Plus, TriangleAlert, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useState, type ClipboardEvent, type DragEvent } from "react";
+import { useEffect, useState, type ClipboardEvent, type DragEvent, type RefObject } from "react";
 import {
     ASK_SETTINGS_ARG,
     launcherFlagCatalog,
@@ -212,6 +212,8 @@ export function AgentFields({
     const worktreeOn = useAtomValue(launcherWorktreeAtom);
     const branchPick = useAtomValue(launcherBranchAtom);
     const flagMenuOpen = useAtomValue(launcherFlagMenuAtom);
+    // a letter typed in the Start column moves focus here
+    taskRef: RefObject<HTMLTextAreaElement>;
     const branchListOpen = useAtomValue(launcherBranchListAtom);
     const setFlagMenuOpen = (open: boolean) => globalStore.set(launcherFlagMenuAtom, open);
     const setBranchListOpen = (open: boolean) => globalStore.set(launcherBranchListAtom, open);
@@ -223,6 +225,7 @@ export function AgentFields({
     const setStartup = (value: string) =>
         globalStore.set(launcherCommandAtom, (prev) => ({ ...prev, [runtime]: value }));
     // flag state is per runtime: read and write only the picked runtime's record
+    taskRef,
     const flagCatalog = launcherFlagCatalog(runtime, home);
     const runtimeFlags = naFlags[runtime] ?? {};
     // a resume runs the session's own command, which the field previews and does not take edits to
@@ -282,6 +285,7 @@ export function AgentFields({
             ) : null}
             <div className="flex flex-col gap-2">
                 <label htmlFor="launcher-cmd" className={LAUNCHER_LABEL}>
+                            ref={taskRef}
                     Command
                 </label>
                 <div className="flex min-h-[38px] flex-wrap items-center gap-[6px] rounded-[8px] border border-edge-mid bg-surface py-[5px] pl-3 pr-[6px] focus-within:border-accent-700">
