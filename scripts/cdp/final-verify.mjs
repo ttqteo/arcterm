@@ -1,6 +1,8 @@
-// This repo's **Final:** command. The engine runs it in the final tree with ARC_FINAL_OUT set: it starts a dev
-// app from that tree, runs verify.mjs against it, and copies the shots and contact sheet into ARC_FINAL_OUT, with a
-// shots.json manifest at its top.
+// This repo's **Final:** command. The engine runs it in the final tree with ARC_FINAL_OUT set: it starts an app from
+// that tree, runs verify.mjs against it, and copies the shots and contact sheet into ARC_FINAL_OUT, with a
+// shots.json manifest at its top. On windows the app is the Tauri dev app (CDP through WebView2); elsewhere it is
+// `task dev:browser`, the cockpit in headless Chrome (scripts/cdp/browser-app.mjs), since macOS's WKWebView answers no
+// CDP. ARC_FINAL_BROWSER (1 or 0) picks one by hand.
 // A dev app from the main checkout is usually running, so this one shares nothing it uses: its own CDP and Vite
 // ports, WebView2 profile, store, cargo target dir and dist/bin, and it installs no global agent hooks or skills.
 // Exit 0 passes, verify.mjs's nonzero code fails, and EXIT_UNVERIFIED with the reason as the last stdout line means
@@ -8,7 +10,7 @@
 //
 //   ARC_FINAL_OUT=<dir> node scripts/cdp/final-verify.mjs [scenario...]
 //
-// ARC_FINAL_DEV_CMD (default `task dev` with the port override), ARC_FINAL_BOOT_MS (default 10 min, a cold cargo
+// ARC_FINAL_DEV_CMD (default `task dev` with the port override, or `task dev:browser`), ARC_FINAL_BOOT_MS (default 10 min, a cold cargo
 // build), ARC_FINAL_VITE_PORT (the first port tried) and ARC_FINAL_LOCK_WAIT_MS (default 10 min) exist so the test
 // can drive the boot path without a real app.
 //
@@ -141,6 +143,30 @@ export function unverified(reason) {
     process.exit(EXIT_UNVERIFIED);
 }
 
+// windows starts the Tauri dev app, whose WebView2 answers CDP; elsewhere the browser app, since macOS's WKWebView
+// answers none. ARC_FINAL_BROWSER (1 or 0) picks one by hand
+export function finalMode(platform = process.platform, env = process.env) {
+    if (env.ARC_FINAL_BROWSER === "1") return "browser";
+    if (env.ARC_FINAL_BROWSER === "0") return "tauri";
+    return platform === "win32" ? "tauri" : "browser";
+}
+
+// the chosen scenarios (every one when none is named) that drive the Tauri host itself, which the browser app has not
+export function hostOnlyScenarios(scenarios, names) {
+    return scenarios.filter((s) => s.host && (names.length === 0 || names.includes(s.name))).map((s) => s.name);
+}
+
+// the dev app's last log line, which says why it stopped. Task's own `task: Failed to run task …` line, which it
+// writes after that into the same log, only says the command failed
+export function lastLine(path) {
+    try {
+        const lines = readFileSync(path, "utf8").split(/\r?\n/).map((l) => l.trim());
+        return lines.filter((l) => l && !l.startsWith("task: ")).at(-1) ?? "";
+    } catch {
+        return "";
+    }
+}
+
 function isFree(port) {
     return new Promise((resolve) => {
         const srv = createServer();
@@ -265,7 +291,8 @@ export function writeFinalManifest(shotsDir, out) {
 function runVerify(port, scenarios) {
     const script = fileURLToPath(new URL("./verify.mjs", import.meta.url));
     return new Promise((resolve) => {
-        const child = spawn(process.execPath, [script, ...scenarios], {
+        // node 20 (what a Mac often has) has no global WebSocket without the flag, which attach.mjs needs; later nodes take it
+        const child = spawn(process.execPath, ["--experimental-websocket", script, ...scenarios], {
             stdio: "inherit",
             env: { ...process.env, CDP_PORT: String(port) },
         });
@@ -285,21 +312,34 @@ async function main() {
     const lock = await acquireBuildLock(buildLockPath(FINAL_BASE), lockWaitMs);
     if (!lock) unverified(`another final stage held the shared build for ${Math.round(lockWaitMs / 1000)}s`);
     const vitePort = await pickVitePort(Number(process.env.ARC_FINAL_VITE_PORT) || FIRST_VITE_PORT);
+    const mode = finalMode();
     mkdirSync(out, { recursive: true });
-    const configPath = join(out, "tauri.final.json");
-    writeFileSync(configPath, JSON.stringify(tauriConfig(vitePort), null, 2));
-    const devCmd = process.env.ARC_FINAL_DEV_CMD || `task dev -- --config "${configPath}"`;
     unlinkBuildJunctions(process.cwd());
     const store = storeDir(out);
     sweepStaleStores(STORES_DIR);
-
     const port = await pickPort();
-    const profile = join(out, "webview2-profile");
-    mkdirSync(profile, { recursive: true });
+
+    let devCmd;
+    let devEnv;
+    if (mode === "browser") {
+        devCmd = process.env.ARC_FINAL_DEV_CMD || "task dev:browser";
+        devEnv = { ARC_BROWSER_CDP_PORT: String(port), ARC_BROWSER_VITE_PORT: String(vitePort) };
+    } else {
+        const configPath = join(out, "tauri.final.json");
+        writeFileSync(configPath, JSON.stringify(tauriConfig(vitePort), null, 2));
+        devCmd = process.env.ARC_FINAL_DEV_CMD || `task dev -- --config "${configPath}"`;
+        const profile = join(out, "webview2-profile");
+        mkdirSync(profile, { recursive: true });
+        devEnv = {
+            WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
+            WEBVIEW2_USER_DATA_FOLDER: profile,
+            CARGO_TARGET_DIR: FINAL_TARGET_DIR,
+        };
+    }
     // the dev app's output goes to a file so the last stdout line stays ours for the engine to read
     const logPath = join(out, "dev-app.log");
     const log = openSync(logPath, "a");
-    console.log(`starting \`${devCmd}\` on :${port}, vite :${vitePort} (log: ${logPath})`);
+    console.log(`starting \`${devCmd}\` (${mode}) on :${port}, vite :${vitePort} (log: ${logPath})`);
 
     // stdin stays an open pipe: `task dev` exits when its stdin closes
     const dev = spawn(devCmd, {
@@ -309,10 +349,8 @@ async function main() {
         stdio: ["pipe", log, log],
         env: {
             ...process.env,
-            WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
-            WEBVIEW2_USER_DATA_FOLDER: profile,
-            CARGO_TARGET_DIR: FINAL_TARGET_DIR,
-            // read by a debug build of the dev host (src-tauri/src/paths.rs) and by sync:piartifacts
+            ...devEnv,
+            // read by a debug build of the dev host (src-tauri/src/paths.rs), by sync:piartifacts and by browser-app.mjs
             ARC_DEV_DATA_DIR: store,
             ARC_DEV_NO_GLOBAL_INSTALL: "1",
         },
@@ -332,12 +370,20 @@ async function main() {
     let reason;
     try {
         if (!(await waitForCdp(port, dev, bootMs))) {
+            const said = lastLine(logPath);
             reason =
-                dev.exitCode === null
+                (dev.exitCode === null
                     ? `dev app did not answer on :${port}`
-                    : `dev app exited with code ${dev.exitCode} before answering on :${port}`;
+                    : `dev app exited with code ${dev.exitCode} before answering on :${port}`) + (said ? `: ${said}` : "");
         } else {
             code = await runVerify(port, scenarios);
+            if (mode === "browser" && code === 0) {
+                const { SCENARIOS } = await import("./scenarios.mjs");
+                const hostOnly = hostOnlyScenarios(SCENARIOS, scenarios);
+                if (hostOnly.length) {
+                    reason = `${hostOnly.join(", ")} need the Tauri host, which the browser app on ${process.platform} has not: run them on Windows`;
+                }
+            }
             if (existsSync(SHOTS_DIR)) {
                 cpSync(SHOTS_DIR, join(out, SHOTS_DIR), { recursive: true });
                 writeFinalManifest(SHOTS_DIR, out);

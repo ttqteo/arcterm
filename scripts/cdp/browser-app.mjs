@@ -140,9 +140,16 @@ async function main() {
     const start = (name, file, args, opts) => {
         // a .js/.cjs/.mjs file (vite's bin, the test's stand-ins) runs under this node
         const [cmd, argv] = /\.[cm]?js$/.test(file) ? [process.execPath, [file, ...args]] : [file, args];
-        const child = spawn(cmd, argv, opts);
+        let child;
+        try {
+            child = spawn(cmd, argv, opts);
+        } catch (e) {
+            // spawn throws instead of emitting 'error' for a file the os cannot run (a wrong format or arch)
+            stop(`${name} could not start: ${e.message}`);
+            return null;
+        }
         children.push(child);
-        // a part that cannot be spawned (not executable, wrong arch, a directory) emits 'error' and no reliable 'exit'
+        // a part that is missing or not executable emits 'error' and no reliable 'exit'
         child.on("error", (e) => stop(`${name} could not start: ${e.message}`));
         child.on("exit", (code, signal) => {
             const how = code === null ? `on ${signal}` : `with code ${code}`;

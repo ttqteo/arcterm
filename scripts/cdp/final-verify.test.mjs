@@ -10,13 +10,17 @@ import {
     acquireBuildLock,
     buildLockPath,
     finalManifest,
+    finalMode,
+    hostOnlyScenarios,
     inUse,
+    lastLine,
     pickPort,
     pickVitePort,
     sweepStaleStores,
     unlinkBuildJunctions,
     writeFinalManifest,
 } from "./final-verify.mjs";
+import { SCENARIOS } from "./scenarios.mjs";
 
 const SCRIPT = fileURLToPath(new URL("./final-verify.mjs", import.meta.url));
 
@@ -169,6 +173,7 @@ fs.writeFileSync(path.join(data, "waveapp.log"), "boot log");
                 ARC_FINAL_BOOT_MS: "3000",
                 ARC_FINAL_DEV_CMD: `node "${fakeDev}"`,
                 ARC_FINAL_VITE_PORT: String(heldPort),
+                ARC_FINAL_BROWSER: "0",
             });
             expect(r.code).toBe(EXIT_UNVERIFIED);
             expect(r.last).toMatch(/^dev app exited with code 0 before answering on :\d+$/);
@@ -193,6 +198,88 @@ fs.writeFileSync(path.join(data, "waveapp.log"), "boot log");
         expect(readFileSync(join(out, "waveapp.log"), "utf8")).toBe("boot log");
         expect(env.ARC_DEV_NO_GLOBAL_INSTALL).toBe("1");
         expect(env.WEBVIEW2_USER_DATA_FOLDER).toBe(join(out, "webview2-profile"));
+    });
+
+    it("in browser mode starts dev:browser's stand-in on its own CDP and vite ports and store, with no tauri config", async () => {
+        dir = mkdtempSync(join(tmpdir(), "final-verify-"));
+        const out = join(dir, "out");
+        const envFile = join(dir, "env.json");
+        const fakeDev = join(dir, "fake-dev.cjs");
+        writeFileSync(fakeDev, `require("fs").writeFileSync(${JSON.stringify(envFile)}, JSON.stringify(process.env));\n`);
+        const vitePort = await freePort();
+        const r = await run({
+            ...process.env,
+            LOCALAPPDATA: join(dir, "localappdata"),
+            ARC_FINAL_OUT: out,
+            ARC_FINAL_BOOT_MS: "3000",
+            ARC_FINAL_DEV_CMD: `node "${fakeDev}"`,
+            ARC_FINAL_VITE_PORT: String(vitePort),
+            ARC_FINAL_BROWSER: "1",
+        });
+        expect(r.code).toBe(EXIT_UNVERIFIED);
+        const env = JSON.parse(readFileSync(envFile, "utf8"));
+        expect(Number(env.ARC_BROWSER_CDP_PORT)).toBeGreaterThan(0);
+        expect(Number(env.ARC_BROWSER_VITE_PORT)).toBeGreaterThanOrEqual(vitePort);
+        expect(dirname(env.ARC_DEV_DATA_DIR)).toBe(join(dir, "localappdata", "arc-final", "stores"));
+        expect(env.ARC_DEV_NO_GLOBAL_INSTALL).toBe("1");
+        expect(env.WEBVIEW2_USER_DATA_FOLDER).toBeUndefined();
+        expect(existsSync(join(out, "tauri.final.json"))).toBe(false);
+    });
+
+    it("ends with the dev app's own last line when it exits before answering", async () => {
+        dir = mkdtempSync(join(tmpdir(), "final-verify-"));
+        const fakeDev = join(dir, "fake-dev.cjs");
+        // a real Final runs it through Task, which writes its own failure line after the reason
+        writeFileSync(
+            fakeDev,
+            `console.log("starting");\nconsole.log("no Chrome found: install Google Chrome or set CHROME_PATH");\nconsole.error('task: Failed to run task "dev:browser": exit status 1');\nprocess.exit(1);\n`
+        );
+        const r = await run({
+            ...process.env,
+            LOCALAPPDATA: join(dir, "localappdata"),
+            ARC_FINAL_OUT: join(dir, "out"),
+            ARC_FINAL_BOOT_MS: "3000",
+            ARC_FINAL_DEV_CMD: `node "${fakeDev}"`,
+            ARC_FINAL_VITE_PORT: String(await freePort()),
+            ARC_FINAL_BROWSER: "1",
+        });
+        expect(r.code).toBe(EXIT_UNVERIFIED);
+        expect(r.last).toMatch(/^dev app exited with code 1 before answering on :\d+: no Chrome found: install Google Chrome or set CHROME_PATH$/);
+    });
+});
+
+describe("finalMode", () => {
+    it("runs WebView2 on windows and the browser app elsewhere, unless ARC_FINAL_BROWSER says", () => {
+        expect(finalMode("win32", {})).toBe("tauri");
+        expect(finalMode("darwin", {})).toBe("browser");
+        expect(finalMode("linux", {})).toBe("browser");
+        expect(finalMode("darwin", { ARC_FINAL_BROWSER: "0" })).toBe("tauri");
+        expect(finalMode("win32", { ARC_FINAL_BROWSER: "1" })).toBe("browser");
+    });
+});
+
+describe("hostOnlyScenarios", () => {
+    const list = [{ name: "a" }, { name: "b", host: true }, { name: "c", host: true }];
+    it("names the chosen scenarios that need the Tauri host, every one when none is chosen", () => {
+        expect(hostOnlyScenarios(list, ["a", "b"])).toEqual(["b"]);
+        expect(hostOnlyScenarios(list, [])).toEqual(["b", "c"]);
+        expect(hostOnlyScenarios(list, ["a"])).toEqual([]);
+    });
+    it("marks notify-toast, which drives the host's IPC itself", () => {
+        expect(hostOnlyScenarios(SCENARIOS, ["notify-toast", "surface-smoke"])).toEqual(["notify-toast"]);
+    });
+});
+
+describe("lastLine", () => {
+    it("is the last non-empty line that is not Task's own, or empty when the file is missing", () => {
+        const d = mkdtempSync(join(tmpdir(), "last-line-"));
+        try {
+            writeFileSync(join(d, "log"), 'one\r\ntwo\ntask: Failed to run task "dev:browser": exit status 1\n\n');
+            expect(lastLine(join(d, "log"))).toBe("two");
+            expect(lastLine(join(d, "missing"))).toBe("");
+        } finally {
+            rmSync(d, { recursive: true, force: true });
+        }
     });
 });
 

@@ -24,6 +24,22 @@ import { fileURLToPath } from "node:url";
 import { SURFACE_LABEL } from "./attach.mjs";
 import { narrationFeed } from "./narrationfeed.mjs";
 
+// Mod is Command on a Mac and Control elsewhere (keyutil.ts parseKeyDescription), and the app reads the platform off the
+// machine it runs on, which is this one: a scenario that presses a Mod binding sends what a person there would. A
+// binding written Ctrl in bindings.ts (Ctrl+Tab) and a handler that takes ctrlKey or metaKey (Ctrl+Enter) stay as they are
+const ON_MAC = process.platform === "darwin";
+// a KeyboardEvent's init flags, and the same text for a page expression
+const MOD_KEY = ON_MAC ? { metaKey: true } : { ctrlKey: true };
+const MOD_KEY_JS = ON_MAC ? "metaKey: true" : "ctrlKey: true";
+// Input.dispatchKeyEvent's modifiers bitmask: Alt=1, Ctrl=2, Meta=4, Shift=8
+const MOD_BIT = ON_MAC ? 4 : 2;
+// the peek gesture is Command on a Mac, where Control+click is the right click (ctrlheld.ts), and Control elsewhere
+const PEEK_BIT = MOD_BIT;
+const PEEK_KEY = ON_MAC
+    ? { key: "Meta", code: "MetaLeft", windowsVirtualKeyCode: 91 }
+    : { key: "Control", code: "ControlLeft", windowsVirtualKeyCode: 17 };
+const PEEK_GLYPH = `space · ${ON_MAC ? "⌘-click" : "ctrl+click"}`;
+
 // A step this profile cannot run: no scan report to cite, no pi session focused. Neither a pass nor a
 // failure — report.mjs tallies it apart and exitCode ignores it. The detail must name what to seed, so a
 // skip stays a standing invitation to make the step real rather than a permanent shrug.
@@ -1724,7 +1740,7 @@ const briefPeek = {
         // only Recent and Go to until something is typed, so the Records scope chip is what lists records.
         // The entity sources load lazily on open, hence the settle before the group is looked for.
         await h.ev(
-            `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', code: 'KeyP', ctrlKey: true, bubbles: true }))`
+            `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', code: 'KeyP', ${MOD_KEY_JS}, bubbles: true }))`
         );
         await h.ev("new Promise((r) => setTimeout(r, 300))");
         await h.ev(`document.querySelector('[data-palette-scope="records"]')?.click()`);
@@ -1809,7 +1825,7 @@ const briefPeek = {
             );
             await settle(300);
             await h.ev(
-                `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', code: 'KeyP', ctrlKey: true, bubbles: true }))`
+                `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', code: 'KeyP', ${MOD_KEY_JS}, bubbles: true }))`
             );
             await settle(300);
             await h.ev(`document.querySelector('[data-palette-scope="records"]')?.click()`);
@@ -2046,8 +2062,8 @@ const peekCtrlClick = {
         // Ctrl held over a peekable link (ctrlheld.ts): the [data-peek] rule in tailwindsetup.css underlines it in the
         // accent and turns the cursor to zoom-in, and the footer lights its peek chip. Colors are compared resolved,
         // against a probe painted with the accent token.
-        const ctrlMod = 2;
-        const ctrlKey = { key: "Control", code: "ControlLeft", windowsVirtualKeyCode: 17 };
+        const ctrlMod = PEEK_BIT;
+        const ctrlKey = PEEK_KEY;
         const affordance = () =>
             h.ev(`(() => {
                 const region = ${PEEK_CTRL_BRIEF};
@@ -2060,7 +2076,7 @@ const peekCtrlClick = {
                 const accent = getComputedStyle(probe).color;
                 probe.remove();
                 const cs = row ? getComputedStyle(row) : null;
-                const glyph = [...document.querySelectorAll("span")].find((s) => s.textContent.trim() === "space · ctrl+click");
+                const glyph = [...document.querySelectorAll("span")].find((s) => s.textContent.trim() === ${JSON.stringify(PEEK_GLYPH)});
                 return {
                     flag: document.documentElement.hasAttribute("data-ctrl-held"),
                     hovered: row?.matches(":hover") ?? false,
@@ -8618,13 +8634,13 @@ const codeSidebar = {
             type: "keyDown",
             key: "f",
             code: "KeyF",
-            modifiers: 10,
+            modifiers: MOD_BIT | 8,
         });
         await h.cdp("Input.dispatchKeyEvent", {
             type: "keyUp",
             key: "f",
             code: "KeyF",
-            modifiers: 10,
+            modifiers: MOD_BIT | 8,
         });
         await sleep(200);
         const searchShortcut = await h.ev(`(() => {
@@ -9191,7 +9207,7 @@ const tuiLeader = {
             detail: `probe saw ${JSON.stringify(seenG)}, which-key=${wkBare}`,
         });
 
-        const seenCtrlG = await pressKey(h, { key: "g", code: "KeyG", keyCode: 71, modifiers: CTRL });
+        const seenCtrlG = await pressKey(h, { key: "g", code: "KeyG", keyCode: 71, modifiers: MOD_BIT });
         const wkChord = await whichKeyOpen(h);
         steps.push({
             step: "3. Ctrl+G opens the which-key bar and is consumed (no ^G to the PTY)",
@@ -9211,7 +9227,7 @@ const tuiLeader = {
 
         // sequence continuation from inside the terminal
         await focusTui(h);
-        await pressKey(h, { key: "g", code: "KeyG", keyCode: 71, modifiers: CTRL });
+        await pressKey(h, { key: "g", code: "KeyG", keyCode: 71, modifiers: MOD_BIT });
         const seenC = await pressKey(h, { key: "c", code: "KeyC", keyCode: 67 });
         const surfC = await h.activeSurfaceLabel();
         steps.push({
@@ -9222,7 +9238,7 @@ const tuiLeader = {
 
         // Escape means cancel while the which-key bar is showing — never navigate (spec decision 8)
         await focusTui(h);
-        await pressKey(h, { key: "g", code: "KeyG", keyCode: 71, modifiers: CTRL });
+        await pressKey(h, { key: "g", code: "KeyG", keyCode: 71, modifiers: MOD_BIT });
         const wkOn = await whichKeyOpen(h);
         const escFrom = await h.activeSurfaceLabel();
         await pressKey(h, { key: "Escape", code: "Escape", keyCode: 27 });
@@ -9619,7 +9635,7 @@ const codeMarkdown = {
 
         // Ctrl+P on Code opens the search on its Files scope; Enter opens the top-ranked match
         await h.ev(
-            `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', code: 'KeyP', ctrlKey: true, bubbles: true }))`
+            `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', code: 'KeyP', ${MOD_KEY_JS}, bubbles: true }))`
         );
         await sleep(300);
         const typed = await setFinderQuery(h, "README.md");
@@ -9912,7 +9928,7 @@ const codeSideColumn = {
         await h.rpc("eventpublish", { event: "openfile", data: { path: join(ctx.cwd, "main.tex") } });
         await wait(`document.querySelector('[data-tex-preview]')`, 8000);
         await h.ev(
-            `document.dispatchEvent(new KeyboardEvent('keydown', { key: String.fromCharCode(92), code: 'Backslash', ctrlKey: true, bubbles: true }))`
+            `document.dispatchEvent(new KeyboardEvent('keydown', { key: String.fromCharCode(92), code: 'Backslash', ${MOD_KEY_JS}, bubbles: true }))`
         );
         const opened = await wait(`${SIDE}?.querySelector('iframe[data-code-side-pdf]')`, 6000);
         const pressed1 = await h.ev(`${SIDE}?.querySelector('[data-code-side-mode][aria-pressed="true"]')?.textContent ?? null`);
@@ -10534,7 +10550,7 @@ const briefContextualMap = {
         // the palette is the only in-app route from the Brief to a record (see brief-peek for the full
         // explanation): nothing on the Brief itself names one.
         await h.ev(
-            `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', code: 'KeyP', ctrlKey: true, bubbles: true }))`
+            `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', code: 'KeyP', ${MOD_KEY_JS}, bubbles: true }))`
         );
         await settle(300);
         await h.ev(`document.querySelector('[data-palette-scope="records"]')?.click()`);
@@ -13215,7 +13231,7 @@ const agentHistory = {
             rec("10. Esc closes History", closed === true, `closed=${closed}`);
 
             // Ctrl+g is the leader alias that works wherever focus is, even if the terminal took it back
-            await ahKey(h, "g", "KeyG", { ctrlKey: true });
+            await ahKey(h, "g", "KeyG", MOD_KEY);
             await ahNap(150);
             await ahKey(h, "s", "KeyS");
             const viaLeader = await ahWait(h, `document.querySelector("[data-agent-history]")`, 3000);
@@ -13224,7 +13240,7 @@ const agentHistory = {
             await ahNap(400);
 
             const nav = await h.ev(`[...document.querySelectorAll("nav button")].map((b) => b.getAttribute("aria-label"))`);
-            await ahKey(h, "7", "Digit7", { ctrlKey: true });
+            await ahKey(h, "7", "Digit7", MOD_KEY);
             await ahNap(800);
             const afterChord = await h.activeSurfaceLabel();
             rec(
@@ -13266,7 +13282,7 @@ const agentHistory = {
                 const reopened = await ahWait(h, `document.querySelector("[data-agent-history]")`, 4000);
                 await ahNap(300);
                 const owner = await ahListNavSurface(h, modules.urls);
-                await ahKey(h, "7", "Digit7", { ctrlKey: true });
+                await ahKey(h, "7", "Digit7", MOD_KEY);
                 await ahNap(800);
                 const elsewhere = await h.activeSurfaceLabel();
                 const withdrawn = await ahListNavSurface(h, modules.urls);
@@ -19749,7 +19765,7 @@ const paletteKey = (key) => `(() => {
     el.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, code: ${JSON.stringify(key)}, bubbles: true }));
     return true;
 })()`;
-const PALETTE_TOGGLE = `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', code: 'KeyP', ctrlKey: true, bubbles: true }))`;
+const PALETTE_TOGGLE = `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', code: 'KeyP', ${MOD_KEY_JS}, bubbles: true }))`;
 // the listbox's children are its groups, each led by its label; a row is a data-idx button
 const PALETTE_STATE = `(() => {
     const d = ${PALETTE};
@@ -22912,7 +22928,7 @@ const agentRailTabs = {
         // (palette-scope.ts typeQuery)
         await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('button[aria-label="Close file"]')?.click()`);
         await h.ev(`document.activeElement?.blur?.()`);
-        await railTabsKey(h, "p", "KeyP", 80, 2);
+        await railTabsKey(h, "p", "KeyP", 80, MOD_BIT);
         const paletteUp = await polishWaitFor(h, `document.activeElement?.tagName === "INPUT"`, 5000);
         if (paletteUp) await h.cdp("Input.insertText", { text: "f:a.txt" });
         await railTabsNap(1500);
@@ -22931,8 +22947,8 @@ const agentRailTabs = {
             await railTabsMouse(h, "mouseMoved", at.x - 4, at.y);
             await railTabsMouse(h, "mouseMoved", at.x, at.y);
             hint = await polishWaitFor(h, `document.body.innerText.includes("click to open a.txt at line 2")`, 3000);
-            await railTabsMouse(h, "mousePressed", at.x, at.y, { modifiers: 2 });
-            await railTabsMouse(h, "mouseReleased", at.x, at.y, { modifiers: 2 });
+            await railTabsMouse(h, "mousePressed", at.x, at.y, { modifiers: MOD_BIT });
+            await railTabsMouse(h, "mouseReleased", at.x, at.y, { modifiers: MOD_BIT });
         }
         // Monaco marks the cursor's line number .active-line-number; only a visible editor counts, since the hidden
         // Agent surface stays mounted ahead of Code in the DOM
@@ -22950,7 +22966,7 @@ const agentRailTabs = {
         const divider = await h.ev(`!!document.querySelector("nav [data-nav-divider]")`);
         const height = (label) => nav.find((n) => n.label === label)?.h ?? 0;
         await h.ev(`document.activeElement?.blur?.()`);
-        await railTabsKey(h, "4", "Digit4", 52, 2);
+        await railTabsKey(h, "4", "Digit4", 52, MOD_BIT);
         await railTabsNap(500);
         const afterChord = await h.activeSurfaceLabel();
         await h.shot("cdp-shots/agent-rail-tabs-nav.png");
@@ -23687,9 +23703,10 @@ const gridBar = (id) => `[data-agent-cell-bar="${id}"]`;
 const gridNear = (a, b, tol = 4) => Math.abs(a - b) <= tol;
 const gridSameSize = (a, b) => gridNear(a.w, b.w) && gridNear(a.h, b.h);
 const gridFocused = (lay) => lay.cells.find((c) => c.focused)?.id ?? null;
-// every id has its tree row and a pane with its xterm mounted
+// every id has its tree row, and a pane with its xterm is mounted. Only the panes that show mount after the reload
+// (panemounts.ts: the first load's agents mount the first time they show), so not every id has one yet
 const gridReady = (ids) =>
-    `${JSON.stringify(ids)}.every((id) => !!document.querySelector('[data-agent-row="' + id + '"]') && !!document.querySelector('[data-agent-terminal="' + id + '"] .xterm'))`;
+    `${JSON.stringify(ids)}.every((id) => !!document.querySelector('[data-agent-row="' + id + '"]')) && !!document.querySelector('[data-agent-terminal] .xterm')`;
 // the cell wrappers on screen, in cell order; a hidden pane has no data-agent-cell
 const GRID_CELLS = `[...document.querySelectorAll("[data-agent-cell]")]
     .sort((a, b) => Number(a.getAttribute("data-agent-cell")) - Number(b.getAttribute("data-agent-cell")))`;
@@ -23940,7 +23957,7 @@ const agentGrid = {
         };
 
         rec(
-            "0. five live agents are in the tree and each has a pane",
+            "0. five live agents are in the tree and a pane is up",
             ctx.arrangeError == null && ctx.inRoster === true && ctx.agents.length === GRID_NAMES.length,
             ctx.arrangeError ?? JSON.stringify({ agents: ctx.agents.length, inRoster: ctx.inRoster, missing: ctx.missing })
         );
@@ -28742,6 +28759,8 @@ const notifyActivate = (h, target) =>
 
 const notifyToast = {
     name: "notify-toast",
+    // it catches notify_os at Tauri's IPC fetch and emits through __TAURI_INTERNALS__: the browser app has neither
+    host: true,
     surface: "cockpit",
     async arrange(h) {
         const ctx = { prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`) };
@@ -30825,6 +30844,8 @@ async function floatMiniTermSize(h, blockId) {
 
 const floatMini = {
     name: "float-mini",
+    // it asserts the native window shrinking to Sprout's box (innerWidth <= 320): the browser's window never resizes
+    host: true,
     surface: "agent",
     async arrange(h) {
         const ctx = { terminals: [] };
@@ -30929,6 +30950,8 @@ const JARVIS_MODES_PROJECT = "verify-jarvis-modes";
 
 const jarvisModes = {
     name: "jarvis-modes",
+    // it asserts the native window shrinking to Sprout's box and the float's ledge: the browser's window never resizes
+    host: true,
     surface: "agent",
     async arrange(h) {
         const ctx = { terminals: [] };
