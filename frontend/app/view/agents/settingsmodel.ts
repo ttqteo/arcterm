@@ -276,7 +276,7 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                         {
                             id: "appearance.petcharacter",
                             title: "Character",
-                            desc: "Who walks the footer as Jarvis. The marks and the outfit work the same for either.",
+                            desc: "Who walks the footer as Jarvis. The marks and the outfit work the same for each.",
                             key: "jarvis.pet.character",
                             scope: "local",
                         },

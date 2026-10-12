@@ -13,7 +13,15 @@ import {
     PET_PX,
     PET_TOKENS,
     POSES,
+    SPIDEY_CRAWL,
+    SPIDEY_HANG,
+    SPIDEY_LOOK,
+    SPIDEY_POSES,
+    SPIDEY_SENSE,
+    SPIDEY_SWING,
+    spideyFold,
     spriteFor,
+    spriteOfRows,
     type PetCell,
     type PetMark,
     type PetPose,
@@ -114,7 +122,7 @@ describe("tokens", () => {
         expect(THEME_BLOCK).toMatch(new RegExp(`(?:^|[\\s;{])${token}\\s*:`, "m"));
     });
 
-    it("maps exactly the eight codes of the spec, the flag's two, and the Minion's five", () => {
+    it("maps exactly the eight codes of the spec, the flag's two, the Minion's five, and Spider-Man's fifteen", () => {
         expect(PET_TOKENS).toEqual({
             b: "--color-accent",
             d: "--color-accent-600",
@@ -131,6 +139,21 @@ describe("tokens", () => {
             o: "--color-minion-denim",
             O: "--color-minion-denim-dark",
             s: "--color-minion-hair",
+            S: "--color-spidey-red",
+            B: "--color-spidey-blue",
+            D: "--color-spidey-seam",
+            e: "--color-spidey-eye",
+            x: "--color-spidey-web",
+            p: "--color-peter-skin",
+            H: "--color-peter-hair",
+            g: "--color-peter-glasses",
+            v: "--color-peter-shirt",
+            c: "--color-city-cornice",
+            C: "--color-city-cornice-shade",
+            M: "--color-city-brick",
+            N: "--color-city-brick-light",
+            Q: "--color-city-window",
+            L: "--color-city-window-lit",
         });
     });
 });
@@ -465,5 +488,167 @@ describe("the Minion's flag shirt", () => {
         expect(tokens.has("--color-flag-star")).toBe(true);
         expect(tokens.has("--color-minion-denim")).toBe(false);
         expect(shirt.body).toHaveLength(bare.body.length);
+    });
+});
+
+const codesKnown = (rows: readonly string[]) =>
+    rows.every((row) => [...row].every((code) => code === "." || code in PET_TOKENS));
+
+describe("Spider-Man", () => {
+    it("has every pose Sprout has, and a look for each", () => {
+        expect(Object.keys(SPIDEY_POSES).sort()).toEqual([...POSE_NAMES].sort());
+        expect(Object.keys(SPIDEY_LOOK).sort()).toEqual([...POSE_NAMES].sort());
+    });
+
+    it.each(POSE_NAMES)("%s is 16 rows of 16 known cells and stands on the bottom row", (pose) => {
+        expect(SPIDEY_POSES[pose]).toHaveLength(PET_GRID);
+        for (const row of SPIDEY_POSES[pose]) {
+            expect(row).toHaveLength(PET_GRID);
+        }
+        expect(codesKnown(SPIDEY_POSES[pose])).toBe(true);
+        expect(SPIDEY_POSES[pose][PET_GRID - 1]).not.toBe(".".repeat(PET_GRID));
+    });
+
+    // the suit is red with no hair showing; Peter has his hair
+    it.each(POSE_NAMES)("%s is drawn in the look SPIDEY_LOOK names", (pose) => {
+        const rows = SPIDEY_POSES[pose].join("");
+        if (SPIDEY_LOOK[pose] === "suit") {
+            expect(rows).toContain("S");
+            expect(rows).not.toContain("H");
+        } else {
+            expect(rows).toContain("H");
+        }
+    });
+
+    it("is the suit on the job and Peter Parker at rest", () => {
+        for (const pose of ["walk1", "walk2", "stand", "speak", "tired", "dangle", "work1", "work2", "sit"] as const) {
+            expect(SPIDEY_LOOK[pose]).toBe("suit");
+        }
+        for (const pose of ["sleep", "read1", "read2", "music1", "music2", "ball1", "ball2"] as const) {
+            expect(SPIDEY_LOOK[pose]).toBe("peter");
+        }
+    });
+
+    const stamped: [PetMark, PetPose][] = [
+        ["gate", "stand"],
+        ["escalation", "stand"],
+        ["blocked", "stand"],
+        ["z", "sleep"],
+        ["drop", "tired"],
+        ...POSE_NAMES.map((pose): [PetMark, PetPose] => ["unread", pose]),
+    ];
+
+    it.each(stamped)("%s on %s never lands on a drawn body cell", (mark, pose) => {
+        const body = drawnCells(SPIDEY_POSES[pose]);
+        const { overlay } = spriteFor(pose, [mark], null, "spidey");
+        expect(overlay.length).toBeGreaterThan(0);
+        for (const cell of overlay) {
+            expect(body.has(`${cell.x},${cell.y}`), `${mark} at ${cell.x},${cell.y}`).toBe(false);
+        }
+    });
+
+    it.each(POSE_NAMES)("is what spriteFor draws for %s when chosen", (pose) => {
+        const { body } = spriteFor(pose, [], null, "spidey");
+        expect(body).toHaveLength(drawnCells(SPIDEY_POSES[pose]).size);
+        for (const cell of body) {
+            expect(cell.token).toBe(PET_TOKENS[SPIDEY_POSES[pose][cell.y][cell.x] as keyof typeof PET_TOKENS]);
+        }
+    });
+
+    it("wears its own red and blue, not the accent", () => {
+        const tokens = new Set(spriteFor("stand", [], null, "spidey").body.map((c) => c.token));
+        expect(tokens.has("--color-spidey-red")).toBe(true);
+        expect(tokens.has("--color-spidey-blue")).toBe(true);
+        expect(tokens.has("--color-accent")).toBe(false);
+    });
+
+    it("thwips when it speaks: the strand leaves the wrist", () => {
+        expect(SPIDEY_POSES.speak.join("")).toContain("x");
+    });
+
+    it.each(POSE_NAMES)("holds Sprout's flag behind %s, and leaves its body and marks alone", (pose) => {
+        const bare = spriteFor(pose, ["unread"], null, "spidey");
+        const flagged = spriteFor(pose, ["unread"], "vn-flag", "spidey");
+        expect(flagged.back).toEqual(spriteFor("stand", [], "vn-flag").back);
+        expect(flagged.body).toEqual(bare.body);
+    });
+
+    it.each(POSE_NAMES)("wears the flag shirt on Peter's shirt only, with no star (%s)", (pose) => {
+        const dressed = outfitRows(pose, "vn-shirt", "spidey");
+        if (SPIDEY_LOOK[pose] === "suit") {
+            expect(dressed).toBe(SPIDEY_POSES[pose]);
+            return;
+        }
+        dressed.forEach((row, y) =>
+            [...row].forEach((code, x) =>
+                expect(code).toBe(SPIDEY_POSES[pose][y][x] === "v" ? "R" : SPIDEY_POSES[pose][y][x])
+            )
+        );
+    });
+});
+
+describe("Spider-Man's other grids", () => {
+    it.each([
+        ["the hang", SPIDEY_HANG],
+        ["the swing", SPIDEY_SWING],
+        ["crawl frame 1", SPIDEY_CRAWL[0]],
+        ["crawl frame 2", SPIDEY_CRAWL[1]],
+    ])("%s is 16x16 of known codes", (_name, rows) => {
+        expect(rows).toHaveLength(PET_GRID);
+        expect(rows.every((r) => r.length === PET_GRID)).toBe(true);
+        expect(codesKnown(rows)).toBe(true);
+    });
+
+    it("hangs by its boots on the strand at column 8, head at the bottom", () => {
+        expect(SPIDEY_HANG[0][8]).toBe("x");
+        expect(SPIDEY_HANG[PET_GRID - 1].includes("S")).toBe(true);
+    });
+
+    it("draws a grid of rows through the same tokens, with marks", () => {
+        const s = spriteOfRows(SPIDEY_HANG, ["unread"]);
+        expect(s.body).toHaveLength(drawnCells(SPIDEY_HANG).size);
+        expect(s.overlay.length).toBeGreaterThan(0);
+        expect(s.back).toEqual([]);
+    });
+});
+
+describe("the fold's rooftop", () => {
+    const lit = (rows: readonly string[]) => rows.join("").split("L").length - 1;
+
+    it("is 20x20 of known codes in every state", () => {
+        for (const n of [0, 1, 4]) {
+            for (const swing of [false, true]) {
+                const rows = spideyFold(n, swing);
+                expect(rows).toHaveLength(20);
+                expect(rows.every((r) => r.length === 20)).toBe(true);
+                expect(codesKnown(rows)).toBe(true);
+            }
+        }
+    });
+
+    // each window is 2x2 cells
+    it.each([
+        [0, 0],
+        [1, 4],
+        [3, 12],
+        [4, 16],
+        [9, 16],
+    ])("lights one window per working agent, four at most: %i working, %i lit cells", (working, cells) => {
+        expect(lit(spideyFold(working, false))).toBe(cells);
+    });
+
+    it("swings only the legs: the head, the ledge and the windows stay put", () => {
+        const a = spideyFold(2, false);
+        const b = spideyFold(2, true);
+        expect(b.slice(0, 12)).toEqual(a.slice(0, 12));
+        expect(b.slice(16)).toEqual(a.slice(16));
+        expect(b).not.toEqual(a);
+    });
+
+    it("sparks the spider-sense clear of him", () => {
+        const rows = spideyFold(0, false);
+        for (const { x, y } of SPIDEY_SENSE) {
+            expect(rows[y][x], `${x},${y}`).toBe(".");
+        }
     });
 });

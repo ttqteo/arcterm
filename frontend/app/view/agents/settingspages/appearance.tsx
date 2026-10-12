@@ -139,10 +139,12 @@ function ColorRows() {
     );
 }
 
-const PET_CHARACTER_OPTIONS: { id: PetCharacter; label: string }[] = (["sprout", "minion"] as const).map((id) => ({
-    id,
-    label: PET_CHARACTER_NAME[id],
-}));
+const PET_CHARACTER_OPTIONS: { id: PetCharacter; label: string }[] = (["sprout", "minion", "spidey"] as const).map(
+    (id) => ({
+        id,
+        label: PET_CHARACTER_NAME[id],
+    })
+);
 
 function PetCharacterRow() {
     const [character, setCharacter] = useAtom(petCharacterAtom);

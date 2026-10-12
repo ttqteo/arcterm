@@ -42,6 +42,8 @@ import { versionInfoAtom } from "./versioninfo";
 export const FOLD_SPRITE = {
     sprout: spriteFor("sit", [], null, "sprout"),
     minion: spriteFor("sit", [], null, "minion"),
+    // standing, in the suit: his sitting pose is a crouch, which does not read as the one the window folds into
+    spidey: spriteFor("stand", [], null, "spidey"),
 };
 
 // The fold buttons' tooltip, here and on the float bar: on a Mac, ⌘M folds too while window:minimize says Sprout
