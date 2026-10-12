@@ -37,10 +37,11 @@ touched with `npx prettier --check <files>` and `npx eslint <files>` (never `--w
 ### Task 1: One run stage for every surface, and the strip's three-pip tail
 
 **Depends on:** none
+**Files:** `frontend/app/view/agents/runstage.ts`, `frontend/app/view/agents/runstage.test.ts`, `frontend/app/view/agents/runmodel.ts`, `frontend/app/view/agents/runmodel.test.ts`, `frontend/app/view/agents/runstrip.ts`, `frontend/app/view/agents/agenttree.tsx`, `frontend/app/view/agents/leadcardmodel.test.ts`, `frontend/app/view/jarvis/runsheet.tsx`, `frontend/app/view/jarvis/runsheetmodel.ts`, `frontend/app/view/jarvis/runsheetmodel.test.ts`, `frontend/app/view/jarvis/briefrows.ts`, `frontend/app/view/jarvis/briefrows.test.ts`, `frontend/app/view/jarvis/briefstyle.ts`, `frontend/app/view/jarvis/briefsurface.tsx`
 
 Spec section "Run states". Mockup board `Proposed-RunStates.dc.html`.
 
-**Files:**
+**Where:**
 - Create: `frontend/app/view/agents/runstage.ts`
 - Test: `frontend/app/view/agents/runstage.test.ts`
 - Modify: `frontend/app/view/agents/runmodel.ts` (`finishedRunLabel`, `dagProgressLabel`, `runComplete`,
@@ -556,8 +557,9 @@ The CDP steps that show these: `brief-run-sheet-order` steps 4 and 5, and `brief
 ### Task 2: Small bug fixes (the composer key, the tour offer, stale comments)
 
 **Depends on:** none
+**Files:** `frontend/app/view/jarvis/briefcomposer.tsx`, `frontend/app/view/jarvis/jarvistourview.tsx`, `frontend/app/store/keybindings/bindings.ts`, `frontend/app/view/jarvis/newinitiativecontrol.tsx`
 
-**Files:**
+**Where:**
 - Modify: `frontend/app/view/jarvis/briefcomposer.tsx` (the root `div`, around line 128)
 - Modify: `frontend/app/view/jarvis/jarvistourview.tsx` (`TourOffer`, the `className` at about line 434)
 - Modify: `frontend/app/store/keybindings/bindings.ts` (the comment above `buildJarvisBindings`, about lines 594-601)
@@ -604,8 +606,9 @@ The CDP step that shows these: `brief-layout` step 6, and `brief-run-sheet-order
 ### Task 3: Copy: Accept, the autonomy chip, short dates
 
 **Depends on:** none
+**Files:** `pkg/jarvis/attention.go`, `pkg/jarvis/attention_test.go`, `frontend/app/view/jarvis/attentionact.ts`, `frontend/app/view/jarvis/attentionact.test.ts`, `frontend/app/view/jarvis/attentionrun.ts`, `frontend/app/view/jarvis/attentionrun.test.ts`, `frontend/app/view/jarvis/briefingmodel.test.ts`, `frontend/app/view/jarvis/petactrun.test.ts`, `frontend/app/view/jarvis/petacts.test.ts`, `frontend/app/view/jarvis/petpeekmodel.test.ts`, `frontend/app/view/jarvis/briefautonomy.ts`, `frontend/app/view/jarvis/briefautonomy.test.ts`, `frontend/app/view/jarvis/autonomyladderview.tsx`, `frontend/app/view/jarvis/initiativework.ts`, `frontend/app/view/jarvis/initiativework.test.ts`
 
-**Files:**
+**Where:**
 - Modify: `pkg/jarvis/attention.go:573` and `:577` (the `run-unverified` item's `Action` and `Why`)
 - Test: `pkg/jarvis/attention_test.go:478`
 - Modify: `frontend/app/view/jarvis/attentionact.ts` (the label union and the `ack-run` label)
@@ -693,8 +696,9 @@ The CDP steps that show these: `brief-layout` step 2 (the autonomy chip) and `br
 ### Task 4: The chunk panel itself, and Work on this chunk
 
 **Depends on:** Task 3
+**Files:** `frontend/app/view/jarvis/sidebarnotes.ts`, `frontend/app/view/jarvis/sidebarnotes.test.ts`, `frontend/app/view/jarvis/initiativework.ts`, `frontend/app/view/jarvis/initiativework.test.ts`, `frontend/app/view/jarvis/initiativeworkaction.ts`, `frontend/app/view/jarvis/chunksidebar.tsx`
 
-**Files:**
+**Where:**
 - Modify: `frontend/app/view/jarvis/sidebarnotes.ts` (add `noteRunFace`)
 - Test: `frontend/app/view/jarvis/sidebarnotes.test.ts`
 - Modify: `frontend/app/view/jarvis/initiativework.ts` (add `chunkPrompt`)
@@ -827,9 +831,10 @@ The CDP steps that show these: `brief-chunk-panel` steps 3 to 6 (Task 9).
 
 ### Task 5: The Brief layout: header, two columns, region order, Waiting window, Since you looked
 
-**Depends on:** Task 1
+**Depends on:** Task 1, Task 3
+**Files:** `frontend/app/view/jarvis/briefingmodel.ts`, `frontend/app/view/jarvis/briefingmodel.test.ts`, `frontend/app/view/jarvis/briefrows.ts`, `frontend/app/view/jarvis/briefrows.test.ts`, `frontend/app/view/jarvis/briefsurface.tsx`
 
-**Files:**
+**Where:**
 - Modify: `frontend/app/view/jarvis/briefingmodel.ts` (add `WAITING_CAP = 3` beside `EFFORT_CAP`, line ~17)
 - Test: `frontend/app/view/jarvis/briefingmodel.test.ts`
 - Modify: `frontend/app/view/jarvis/briefrows.ts` (`SHIPPED_LABEL`, add `sinceEmptyLine`)
@@ -1016,8 +1021,9 @@ The CDP steps that show these: `brief-layout` steps 1 to 5, `brief-surface` step
 ### Task 6: Initiatives as rows, in place expansion, the chunk panel in the side column, inline ideas
 
 **Depends on:** Task 4, Task 5
+**Files:** `frontend/app/view/jarvis/initiativework.ts`, `frontend/app/view/jarvis/initiativework.test.ts`, `frontend/app/view/jarvis/briefrowviews.tsx`, `frontend/app/view/jarvis/inlinetrackerview.tsx`, `frontend/app/view/jarvis/effortstore.ts`, `frontend/app/view/jarvis/briefsurface.tsx`, `frontend/app/view/jarvis/briefingmodel.ts`, `frontend/app/view/jarvis/briefingmodel.test.ts`
 
-**Files:**
+**Where:**
 - Modify: `frontend/app/view/jarvis/initiativework.ts` (add `orderInitiatives`)
 - Test: `frontend/app/view/jarvis/initiativework.test.ts`
 - Modify: `frontend/app/view/jarvis/briefrowviews.tsx` (`InitiativeCard` becomes `InitiativeRow`;
@@ -1201,8 +1207,9 @@ The CDP steps that show these: `brief-surface` step 7, `brief-chunk-panel` steps
 ### Task 7: The run sheet: the question first, one accent in the dock, the composer's key
 
 **Depends on:** Task 1, Task 2, Task 3
+**Files:** `frontend/app/view/jarvis/runsheet.tsx`, `frontend/app/view/jarvis/briefcomposer.tsx`
 
-**Files:**
+**Where:**
 - Modify: `frontend/app/view/jarvis/runsheet.tsx` (`RunSheetFrame` about 194-235, `Dock` about 1027-1121)
 - Modify: `frontend/app/view/jarvis/briefcomposer.tsx` (the label row, about 132-142)
 
@@ -1253,8 +1260,9 @@ The CDP steps that show these: `brief-run-sheet-order` steps 1 to 3 (Task 9).
 ### Task 8: Footer keys, the tour, docs and changelog
 
 **Depends on:** Task 1, Task 5, Task 6, Task 7
+**Files:** `frontend/app/cockpit/footerhints.ts`, `frontend/app/view/jarvis/jarvistourcontent.ts`, `docs/keyboard-shortcuts.md`, `docs/guide/jarvis.md`, `docs/guide/orchestrator.md`, `CHANGELOG.md`
 
-**Files:**
+**Where:**
 - Modify: `frontend/app/cockpit/footerhints.ts` (`SURFACE_HINTS`)
 - Test: `frontend/app/cockpit/footerhints.test.ts` (it asserts every referenced id exists; run it)
 - Modify: `frontend/app/view/jarvis/jarvistourcontent.ts`
@@ -1335,8 +1343,9 @@ The CDP step that shows these: `brief-layout` step 5 (footer hints).
 ### Task 9: CDP scenarios for every changed view
 
 **Depends on:** Task 8
+**Files:** `scripts/cdp/scenarios.mjs`, `frontend/app/view/jarvis/runsheet.tsx`
 
-**Files:**
+**Where:**
 - Modify: `scripts/cdp/scenarios.mjs` (`briefSurface` about 436-610; new `briefLayout`, `briefChunkPanel`,
   `briefRunSheetOrder`; register all three in `SCENARIOS` near `briefSurface`, about line 29397)
 
