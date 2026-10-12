@@ -41,6 +41,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   Select Opened File); Collapse All closes every folder.
 - The agent panel's file tab has a **Pin** button, as Code's path bar does: it pins the file in the agent's folder, to
   the same Pinned list the Files tab and Code show.
+- **Outline on the agent panel's File tab**: a markdown file in Preview lists its headings, as Code does; pick one to
+  scroll there.
 
 ### Changed
 
@@ -90,6 +92,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- In the Spec review dialog, **a decision points at its place in the spec** when you rest on it or click it, even when
+  the spec is written in another language: it matches the names it shares with a passage (`release_items`,
+  FieldPolicy, /infra), and dims the rest down to that one list item. The **SPEC REVIEW** label no longer wraps.
 - An agent's model, and a past conversation's in History, no longer reads `<synthetic>` after you interrupt Claude
   or an API error ends a turn: it keeps the model the session last answered with.
 - On macOS, a double-click or right-click on a button, the app bar (its search box too), the surface rail or the

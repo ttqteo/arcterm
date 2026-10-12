@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { findingRef, taskOfHeading } from "./docreviewlinks";
+import { bestPassage, findingRef, taskOfHeading } from "./docreviewlinks";
 
 describe("findingRef", () => {
     it("reads one task", () => {
@@ -26,6 +26,40 @@ describe("findingRef", () => {
         expect(findingRef("Pull reports `rev-list old..HEAD` after `a` and `rev-list old..HEAD`").terms).toEqual([
             "rev-list old..HEAD",
         ]);
+    });
+
+    it("reads identifier-like words outside inline code", () => {
+        expect(
+            findingRef("ChangeSpec and artifacts are FieldPolicy fields of release_items; see `x.y_z`, e.g. /infra")
+                .words
+        ).toEqual(["ChangeSpec", "FieldPolicy", "release_items", "/infra"]);
+    });
+
+    it("reads no word from plain prose", () => {
+        expect(findingRef("Bump the version before the build, i.e. first").words).toEqual([]);
+    });
+});
+
+describe("bestPassage", () => {
+    const ref = findingRef("ChangeSpec and artifacts are FieldPolicy fields of release_items");
+
+    it("picks the passage sharing the most identifiers, across languages", () => {
+        const texts = [
+            "Phạm vi: ChangeSpec, registry phiên bản",
+            "ChangeSpec và artifact là trường FieldPolicy của release_items",
+            "Ngoài phạm vi: GitHub",
+        ];
+        expect(bestPassage(texts, ref)).toBe(1);
+    });
+
+    it("prefers the list item over the list that holds it", () => {
+        const item = "ChangeSpec là trường FieldPolicy";
+        expect(bestPassage([`Quyết định: ${item} và nhiều thứ khác`, item], ref)).toBe(1);
+    });
+
+    it("is -1 when nothing shares a term", () => {
+        expect(bestPassage(["Ngày: 2026-10-12"], ref)).toBe(-1);
+        expect(bestPassage(["anything"], findingRef("plain prose only"))).toBe(-1);
     });
 });
 

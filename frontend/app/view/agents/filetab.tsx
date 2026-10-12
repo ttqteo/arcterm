@@ -29,6 +29,7 @@ import {
 import { currentFileView, fileLabel, filePinTarget, fileViews, type FileHistory } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
+import { OUTLINE_SELECTOR, OutlineButton } from "./docoutlineview";
 import { savedScroll, saveScroll } from "./filescroll";
 import { FileTabDiff } from "./filetabdiff";
 import { formatSize, readPanelFile, type PanelFile } from "./filetabload";
@@ -90,6 +91,7 @@ export function FileTab({
     const refNow = useRef(ref);
     refNow.current = ref;
     const stickRef = useRef(true); // the view sits at the end, so new output keeps it there
+    const bodyRef = useRef<HTMLDivElement>(null);
     const wrap = useWrap(ref?.abs ?? "", !!ref?.live);
     const options = useMemo(() => ({ ...OPTIONS, wordWrap: wrap ? ("on" as const) : ("off" as const) }), [wrap]);
     useEffect(() => {
@@ -377,6 +379,9 @@ export function FileTab({
                         ))}
                     </div>
                 ) : null}
+                {markdown && preview && state.kind === "text" ? (
+                    <OutlineButton rootRef={bodyRef} selector={OUTLINE_SELECTOR.markdown} textKey={state.text} />
+                ) : null}
                 {diffable || (state.kind === "text" && !preview) ? (
                     <button
                         type="button"
@@ -465,7 +470,10 @@ export function FileTab({
                     </button>
                 )}
             </div>
-            <div className={cn("flex min-h-0 flex-1 flex-col", preview ? "bg-background" : "bg-surface-code")}>
+            <div
+                ref={bodyRef}
+                className={cn("flex min-h-0 flex-1 flex-col", preview ? "bg-background" : "bg-surface-code")}
+            >
                 {body}
             </div>
             {markdown || drafts.comments.length > 0 || drafts.lastSend != null || drafts.box != null ? (

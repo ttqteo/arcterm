@@ -25,7 +25,7 @@ import { parseCanvasPath } from "./canvasmodel";
 import { canvasOwner } from "./canvasstore";
 import { OUTLINE_SELECTOR, OutlineButton } from "./docoutlineview";
 import { docReviewAtom, parseDocReview, type DocReview, type DocReviewKind } from "./docreview";
-import { findingRef, taskOfHeading, type FindingRef } from "./docreviewlinks";
+import { bestPassage, findingRef, taskOfHeading, type FindingRef } from "./docreviewlinks";
 import {
     addNote,
     composeAnswer,
@@ -84,8 +84,8 @@ const SCROLL_MARGIN = 12;
 
 const headingLevel = (el: Element) => (/^H[1-6]$/.test(el.tagName) ? Number(el.tagName[1]) : null);
 
-// The rendered markdown's top-level blocks a finding names: each task's heading through the line before the next
-// heading at its level or above, or else the first block that mentions one of its code terms.
+// The rendered markdown's blocks a finding names: each task's heading through the line before the next heading at
+// its level or above, or else the top-level block or list item sharing the most of its terms.
 function focusBlocks(md: Element, ref: FindingRef): Element[] {
     const top = [...md.children];
     const out: Element[] = [];
@@ -107,13 +107,32 @@ function focusBlocks(md: Element, ref: FindingRef): Element[] {
     if (out.length > 0) {
         return out;
     }
-    for (const term of ref.terms) {
-        const block = top.find((el) => el.textContent?.includes(term));
-        if (block) {
-            return [block];
+    const candidates = [...top, ...md.querySelectorAll("li")];
+    const at = bestPassage(
+        candidates.map((el) => el.textContent ?? ""),
+        ref
+    );
+    return at < 0 ? [] : [candidates[at]];
+}
+
+// Marks the blocks in focus and dims the rest: a list item keeps its own lists and the blocks holding them, and
+// only its siblings at each level dim.
+function markFocus(md: Element, blocks: Element[]): () => void {
+    const focused = new Set<Element>();
+    const focusing = new Set<Element>([md]);
+    for (const b of blocks) {
+        focused.add(b);
+        for (let el = b.parentElement; el != null && el !== md; el = el.parentElement) {
+            focused.add(el);
+            focusing.add(el);
         }
     }
-    return [];
+    focusing.forEach((el) => el.setAttribute(FOCUSING_ATTR, ""));
+    focused.forEach((el) => el.setAttribute(FOCUS_ATTR, ""));
+    return () => {
+        focusing.forEach((el) => el.removeAttribute(FOCUSING_ATTR));
+        focused.forEach((el) => el.removeAttribute(FOCUS_ATTR));
+    };
 }
 
 function scrollToBlock(scroller: HTMLElement, el: Element) {
@@ -141,13 +160,9 @@ function useFindingFocus(
         if (blocks.length === 0) {
             return;
         }
-        md.setAttribute(FOCUSING_ATTR, "");
-        blocks.forEach((b) => b.setAttribute(FOCUS_ATTR, ""));
+        const unmark = markFocus(md, blocks);
         scrollToBlock(scroller, blocks[0]);
-        return () => {
-            md.removeAttribute(FOCUSING_ATTR);
-            blocks.forEach((b) => b.removeAttribute(FOCUS_ATTR));
-        };
+        return unmark;
     }, [focus, textKey]);
 }
 
@@ -399,8 +414,10 @@ function Header({ agent, review }: { agent: AgentVM; review: DialogReview }) {
         >
             <div className="flex items-center gap-2">
                 <span className="h-[7px] w-[7px] rounded-full bg-warning" aria-hidden />
-                <span className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-warning">{copy.eyebrow}</span>
-                <span className="truncate text-[10.5px] text-muted">· waiting on you · {agent.name}</span>
+                <span className="flex-none whitespace-nowrap text-[10.5px] font-bold uppercase tracking-[0.1em] text-warning">
+                    {copy.eyebrow}
+                </span>
+                <span className="min-w-0 truncate text-[10.5px] text-muted">· waiting on you · {agent.name}</span>
                 <div className="flex-1" />
                 <button
                     type="button"

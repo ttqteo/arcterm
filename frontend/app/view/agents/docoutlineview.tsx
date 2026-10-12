@@ -156,6 +156,12 @@ export function OutlineButton(p: {
     };
 
     const onListKey = (e: KeyboardEvent) => {
+        // the list is portalled, but React still bubbles its keys to the pane, whose own Escape closes the file
+        if (e.key === "Escape") {
+            e.stopPropagation();
+            setOpen(false);
+            return;
+        }
         if (e.key !== "ArrowDown" && e.key !== "ArrowUp") {
             return;
         }
