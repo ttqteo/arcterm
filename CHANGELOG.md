@@ -14,11 +14,13 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - Spider-Man as a third Jarvis character (Settings → Appearance → Character): the Homecoming suit at work, Peter Parker at rest. He walks the footer side-on, thwips when he speaks, hangs from a strand when you drag him and rappels down when you let go, now and then crawls along under the app bar and hangs upside down until your cursor comes near, web-swings out and back when the window folds, and folded sits on a rooftop whose windows light up for each running agent.
 - A Spider theme (Settings → Appearance → Theme): Claude's colours with a Spider-Man red accent.
-- **An agent's glyph in the sidebar pulses while background tasks it started still run** (a build, a dev server), even
+- **A green dot on an agent's sidebar row while background tasks it started still run** (a build, a dev server), even
   after its turn has ended; hover it to see which.
 
 ### Changed
 
+- **An agent's ✳ in the sidebar now shows its state** in place of the dot on its second line: it pulses in the accent
+  colour while working, in yellow while asking, and goes grey when idle or asleep.
 - **Fold when you leave** is simpler: it folds when the app you switch to covers most of arcterm (four fifths of it,
   maximized or not), and grows back as soon as you come back to arcterm, by Alt+Tab, the taskbar button or a click. A
   fold from the Sprout button or `Ctrl+M` stays until you double-click Sprout, pick **Restore**, or click arcterm's
