@@ -132,7 +132,7 @@ Click the creature on the footer, or press `Mod`+`G` `w`, to open it.
 | Keys | Action |
 |---|---|
 | `j` / `k` (or `↓` / `↑`) | Move between the waiting rows |
-| `Enter` | The focused row's button: approve, retry, acknowledge, land again, open, or open its answer form |
+| `Enter` | The focused row's button: approve, retry, accept, land again, open, or open its answer form |
 | `1`…`9` | Answer the focused row's question with that option (a one-question, single-pick ask); on a question with several parts or several picks, open its answer form and pick that option |
 | `Space` | Peek where the focused row's Open would go |
 | `/` | Ask Jarvis (the composer at the bottom) |
@@ -269,20 +269,20 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 
 | Keys | Action |
 |---|---|
-| `i` | Focus the composer |
+| `r` | New run |
+| `Shift`+`N` | New initiative |
+| `i` | With a live run sheet open: focus its composer |
 | `/` | Filter the Brief's rows (`Esc` clears) |
 | `Enter` | Open the row under the cursor |
 | `w` | Work on the initiative under the cursor in a new agent, or go to the agent already open on it |
 | `Alt`+`↑` / `Alt`+`↓` | Move the chunk under the cursor up / down within its stage |
-| `d` | Toggle the context rail |
 | `e` | Expand / collapse the record band |
-| `c` | New channel |
 | `Shift`+`G` | Graph peek (`Esc` closes) |
 | `Shift`+`J` / `Shift`+`K` | Next / previous run in this channel |
 | `j` / `k` | With a run sheet open: next / previous run in the list it counts (Runs, or Shipped for a finished run) |
 | `1`…`9` | Answer an ask option on a run body |
 | `Enter` | Submit the answer |
-| `Esc` | Leave the composer |
+| `Esc` | Leave the composer (a second `Esc` closes the sheet) |
 | `→` / `Enter` | While a Jarvis tour shows: next step |
 | `←` | While a Jarvis tour shows: previous step |
 | `Esc` | While a Jarvis tour shows: end the tour |

@@ -15,6 +15,9 @@ import {
     runRowFace,
     sessionLine,
     sessionWindow,
+    SHIPPED_EMPTY,
+    SHIPPED_LABEL,
+    sinceEmptyLine,
     sinceLabel,
     splitIdeas,
     type BriefLine,
@@ -384,7 +387,8 @@ describe("behindGroups", () => {
             NOW
         );
         expect(groups).toHaveLength(1);
-        expect(groups[0].label).toBe("Shipped · 7 days");
+        // the Brief tells this group from the delta groups by this label, so the test names the constant
+        expect(groups[0].label).toBe(SHIPPED_LABEL);
         expect(groups[0].lines[0]).toMatchObject({
             id: "behind:shipped:run:r2",
             kind: "Shipped",
@@ -464,7 +468,7 @@ describe("runRowFace", () => {
             type: "orchestrator",
             meta: "lead · arc-infra",
             elapsed: "2h",
-            state: "running",
+            state: "working",
             stateTone: "ok",
             dot: "live",
             canStop: true,
@@ -495,9 +499,47 @@ describe("runRowFace", () => {
         });
         expect(f).toMatchObject({ type: "agent", meta: "claude · waveterm", canStop: false, state: "running" });
     });
+    it("takes a run-less row's tone from its own state, so blocked is never green", () => {
+        const blocked = { ...line, state: "blocked", stateTone: "asking", meta: "waveterm" } as BriefLine;
+        expect(runRowFace({ line: blocked, asking: false, project: "waveterm" })).toMatchObject({
+            type: "agent",
+            state: "blocked",
+            stateTone: "asking",
+            dot: "asking",
+        });
+    });
     it("a cancelled run reads stopped, faint, and cannot be stopped again", () => {
         const f = runRowFace({ line, run: { ...run, status: "cancelled" } as Run, asking: false, project: "p" });
         expect(f).toMatchObject({ state: "stopped", stateTone: "faint", dot: "idle", canStop: false, stopped: true });
+    });
+    it("reads a run's final stage in blue, from the dag the lineage holds", () => {
+        const dag = { status: "finalizing", tasks: [] } as unknown as TaskGroup;
+        const f = runRowFace({ line, run, dag, asking: false, project: "p" });
+        expect(f).toMatchObject({ state: "final check", stateTone: "running", dot: "live", canStop: true });
+    });
+    it("reads a done run whose land is held as waiting on you, not done", () => {
+        const held = { ...run, status: "done", land: { state: "held", reason: "staged changes" } } as unknown as Run;
+        const f = runRowFace({ line, run: held, asking: false, project: "p" });
+        expect(f).toMatchObject({ state: "land held", stateTone: "asking", dot: "asking", canStop: false });
+    });
+    it("reads a landed run as done and a done run still landing as live", () => {
+        const done = { ...run, status: "done" } as Run;
+        const landed = { ...done, land: { state: "landed" } } as unknown as Run;
+        const landing = { ...done, land: { state: "pending" } } as unknown as Run;
+        expect(runRowFace({ line, run: landed, asking: false, project: "p" })).toMatchObject({
+            state: "landed",
+            stateTone: "ok",
+            dot: "done",
+        });
+        expect(runRowFace({ line, run: landing, asking: false, project: "p" })).toMatchObject({
+            state: "landing",
+            stateTone: "running",
+            dot: "live",
+        });
+    });
+    it("keeps the word blocked for a run whose worker died", () => {
+        const f = runRowFace({ line, run: { ...run, status: "blocked" } as Run, asking: false, project: "p" });
+        expect(f).toMatchObject({ state: "blocked", stateTone: "asking", dot: "asking" });
     });
 });
 
@@ -586,5 +628,18 @@ describe("lineOpenTarget", () => {
         expect(lineOpenTarget(null)).toBeNull();
         expect(lineOpenTarget({ oref: "" })).toBeNull();
         expect(lineOpenTarget({ oref: "nonsense:x" })).toBeNull();
+    });
+});
+
+describe("sinceEmptyLine", () => {
+    it("never says 'since you last looked' on a first visit, where there was no last look", () => {
+        expect(sinceEmptyLine(true)).toBe("Runs that land show up here.");
+        expect(sinceEmptyLine(false)).toBe("Nothing new since you last looked.");
+    });
+});
+
+describe("SHIPPED_EMPTY", () => {
+    it("says the window it looked at", () => {
+        expect(SHIPPED_EMPTY).toBe("Nothing shipped in the last seven days.");
     });
 });

@@ -185,10 +185,11 @@ const loaded = (state: WorkState): BriefingLoadState => ({
     error: null,
 });
 
-// one of each shape the queue can take: a gate with a run to land on, an escalation, and a
-// dag-blocked row carrying the error tone. The attribution, why-line and citations are written the way
-// pkg/jarvis/attention.go composes them for these shapes — a fixture whose why-line no server would
-// emit would verify a row the app cannot actually produce.
+// one of each shape the queue can take: a gate with a run to land on, an escalation, a
+// dag-blocked row carrying the error tone, and a run that finished unverified. The attribution,
+// why-line and citations are written the way pkg/jarvis/attention.go composes them for these
+// shapes — a fixture whose why-line no server would emit would verify a row the app cannot
+// actually produce.
 const attentionItems: AttentionItem[] = [
     {
         kind: "dag-gate",
@@ -235,12 +236,26 @@ const attentionItems: AttentionItem[] = [
         waitingsince: NOW - DAY,
         why: "5 of 9 tasks done. The group stays stopped until you retry or skip.",
     },
+    {
+        kind: "run-unverified",
+        key: "run-unverified:r-briefing-3",
+        channelid: "ch-briefing",
+        channelname: "waveterm",
+        runid: "r-briefing-3",
+        source: "usage charts",
+        text: "Finished, but 1 thing was not verified.",
+        action: "Accept",
+        phaseidx: 0,
+        waitingsince: NOW - 3 * 60 * 60 * 1000,
+        why: "Not verified: brief-layout needs CDP. Once read, accept it with `wsh runs ack r-briefing-3`.",
+    },
 ];
 
 export const BRIEFING_FIXTURES: Record<BriefingFixtureName, BriefingFixture> = {
     normal: { load: loaded(normalState), agents, attention: [] },
     attention: { load: loaded(attentionState), agents, attention: attentionItems },
-    empty: { load: loaded(emptyState), agents, attention: [] },
+    // no roster agent either: the Runs region draws its empty box only when nothing is running
+    empty: { load: loaded(emptyState), agents: [], attention: [] },
     partial: { load: loaded(partialState), agents, attention: [] },
     failed: { load: { snapshot: null, loading: false, error: "fixture failure" }, agents: [], attention: [] },
 };

@@ -206,11 +206,11 @@ describe("peekActForCommand", () => {
 });
 
 describe("queueRows — an unverified run settles in place", () => {
-    const UNVERIFIED = item({ kind: "run-unverified", key: "run-unverified:" + RUN, action: "Acknowledge" });
+    const UNVERIFIED = item({ kind: "run-unverified", key: "run-unverified:" + RUN, action: "Accept" });
 
     it("puts the ack on the button and the escort beside it", () => {
         const row = queueRows([UNVERIFIED])[0];
-        expect(row.primary).toMatchObject({ verb: "ack", label: "Acknowledge", channelId: CH, runId: RUN });
+        expect(row.primary).toMatchObject({ verb: "ack", label: "Accept", channelId: CH, runId: RUN });
         expect(row.links).toMatchObject([{ verb: "open", target: { kind: "oref", ref: `run:${RUN}` } }]);
     });
 

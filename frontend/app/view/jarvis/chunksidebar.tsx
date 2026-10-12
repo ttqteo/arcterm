@@ -7,38 +7,47 @@
 // the Brief is the whole surface, the window is not).
 
 import { SkeletonLine } from "@/app/element/skeleton";
+import * as WOS from "@/app/store/wos";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { runAtom } from "@/app/view/agents/channelsstore";
 import { SectionLabel } from "@/app/view/agents/sectionlabel";
 import { cn } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
-import { ArrowUpRight, ChevronDown, ChevronUp, Copy } from "lucide-react";
+import { ArrowUpRight, ChevronDown, ChevronUp, Copy, X } from "lucide-react";
 import { useState } from "react";
-import { SHEET_BTN } from "./briefrunsheet";
 import { REGION_LABEL } from "./briefstyle";
 import { type FeedEntry } from "./effortfeed";
 import { chunkTone } from "./effortmodel";
+import { shortDate } from "./initiativework";
 import { STATUSES, TONE_FG, ToneIcon } from "./inlinetrackerview";
 import { runRecordRows } from "./runrecord";
 import { RunReportView } from "./runreportview";
-import { sidebarNotes, type NoteCard } from "./sidebarnotes";
+import { noteRunFace, sidebarNotes, type NoteCard } from "./sidebarnotes";
 
 const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 const NAV_BUTTON =
     "inline-flex h-[22px] w-6 cursor-pointer items-center justify-center rounded-[6px] border border-border bg-surface-raised hover:border-edge-strong disabled:cursor-default";
 
 const NO_RUN = atom<Run | undefined>(undefined);
+const NO_FLAG = atom(false);
 // the report a finished run left on this chunk (Task 2): the structured report when the lead filed one,
 // else the sealed summary; then the dag's record sealed with it
 function NoteRun({ model, runOid }: { model: AgentsViewModel; runOid: string }) {
+    const oref = WOS.makeORef("run", runOid);
     const run = useAtomValue((runOid ? runAtom(runOid) : NO_RUN) as Atom<Run | undefined>);
-    if (run == null) {
+    const loading = useAtomValue(runOid ? WOS.getWaveObjectLoadingAtom(oref) : NO_FLAG);
+    const error = useAtomValue(runOid ? WOS.getWaveObjectErrorAtom(oref) : NO_FLAG);
+    const face = noteRunFace({ run, loading, error });
+    if (face === "loading") {
         return (
             <div aria-hidden="true" className="flex flex-col gap-2">
                 <SkeletonLine className="h-[10px] w-[85%]" />
                 <SkeletonLine className="h-[10px] w-[60%]" />
             </div>
         );
+    }
+    if (run == null) {
+        return <p className="m-0 text-[11.5px] text-muted">The run's report is no longer available.</p>;
     }
     return (
         <div className="flex flex-col gap-3">
@@ -95,6 +104,7 @@ export function ChunkSidebar({
     now,
     handle,
     error,
+    work,
     onPrev,
     onNext,
     onToggle,
@@ -119,6 +129,8 @@ export function ChunkSidebar({
     now: number;
     handle: string;
     error: string | null;
+    // "Work on this chunk", or "Go to agent" when an agent is open on the initiative; left out, no button
+    work?: { label: string; onWork: () => void };
     onPrev: (() => void) | null;
     onNext: (() => void) | null;
     onToggle: (key: string) => void;
@@ -157,9 +169,9 @@ export function ChunkSidebar({
             data-jarvis-chunk-sidebar
             className="absolute inset-y-0 right-0 z-[4] flex w-[460px] flex-col overflow-hidden border-l border-border bg-background @max-[1280px]:shadow-[-18px_0_44px_var(--color-background)] @max-[980px]:w-[min(460px,92cqw)]"
         >
-            <div className="flex flex-none items-center gap-2 border-b border-edge-faint px-[13px] py-[9px]">
+            <div className="flex h-[42px] flex-none items-center gap-2 border-b border-edge-faint px-[13px]">
                 <span className={cn(REGION_LABEL, "text-ink-mid")}>Chunk</span>
-                <span className="text-[10.5px] tabular-nums text-muted">
+                <span className="flex-none whitespace-nowrap text-[10.5px] tabular-nums text-muted">
                     {position.n} / {position.total}
                 </span>
                 <div className="flex gap-1">
@@ -184,14 +196,49 @@ export function ChunkSidebar({
                         <ChevronDown size={13} aria-hidden />
                     </button>
                 </div>
-                <span className="font-mono text-[10.5px] text-muted">j / k</span>
-                <button type="button" onClick={onClose} className={cn(SHEET_BTN, "ml-auto")}>
-                    Close
+                {work != null ? (
+                    <button
+                        type="button"
+                        data-jarvis-chunk-work
+                        title={work.label === "Go to agent" ? "Go to the agent open on this initiative" : work.label}
+                        onClick={work.onWork}
+                        className={cn(
+                            "ml-auto inline-flex h-6 min-w-0 cursor-pointer items-center rounded-[6px] border border-accent/45 bg-accentbg px-2.5 text-[11px] font-semibold text-accent-soft hover:text-accent-50",
+                            FOCUS
+                        )}
+                    >
+                        <span className="truncate">{work.label}</span>
+                    </button>
+                ) : null}
+                <button
+                    type="button"
+                    aria-label="Copy wsh command"
+                    title={handle}
+                    onClick={() => void navigator.clipboard?.writeText(handle)}
+                    className={cn(
+                        "inline-flex h-6 w-6 flex-none cursor-pointer items-center justify-center rounded-[6px] text-ink-mid hover:text-ink-hi",
+                        FOCUS,
+                        work == null && "ml-auto"
+                    )}
+                >
+                    <Copy size={13} aria-hidden />
+                </button>
+                <button
+                    type="button"
+                    aria-label="Close"
+                    title="Close (Esc)"
+                    onClick={onClose}
+                    className={cn(
+                        "inline-flex h-6 w-6 flex-none cursor-pointer items-center justify-center rounded-[6px] text-ink-mid hover:text-ink-hi",
+                        FOCUS
+                    )}
+                >
+                    <X size={14} aria-hidden />
                 </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
                 <div className="flex flex-col gap-1.5 px-[18px] pb-3.5 pt-[15px]">
-                    <div className="flex flex-wrap items-center gap-[7px] text-[10.5px] uppercase tracking-[.06em] text-ink-mid">
+                    <div className="flex flex-wrap items-center gap-[7px] text-[10.5px] text-ink-mid">
                         <span>{initiative}</span>
                         {flat ? null : (
                             <>
@@ -200,30 +247,22 @@ export function ChunkSidebar({
                             </>
                         )}
                     </div>
-                    <div className="text-pretty text-[16px] font-semibold leading-[1.35] text-primary">{label}</div>
-                    <div className="flex items-center gap-2.5">
-                        <button
-                            type="button"
-                            title={handle}
-                            onClick={() => void navigator.clipboard?.writeText(handle)}
-                            className={cn(
-                                "flex min-w-0 cursor-pointer items-center gap-1.5 text-left font-mono text-[10.5px] text-muted hover:text-ink-hi",
-                                FOCUS
-                            )}
-                        >
-                            <span className="truncate">{handle}</span>
-                            <Copy size={11} aria-hidden className="flex-none" />
-                        </button>
+                    <div className="text-pretty text-[14.5px] font-semibold leading-[1.45] text-primary">{label}</div>
+                    <div className="flex items-center gap-3 text-[11px] text-muted">
+                        <span>
+                            {cards.length} {cards.length === 1 ? "note" : "notes"}
+                            {cards.length > 0 ? ` · last ${shortDate(Math.max(...cards.map((c) => c.entry.ts)))}` : ""}
+                        </span>
                         <button
                             type="button"
                             data-peek
                             onClick={onActivity}
                             className={cn(
-                                "inline-flex flex-none cursor-pointer items-center gap-1 text-[10.5px] text-accent-soft hover:underline",
+                                "inline-flex flex-none cursor-pointer items-center gap-1 text-accent-soft hover:underline",
                                 FOCUS
                             )}
                         >
-                            activity
+                            Activity
                             <ArrowUpRight size={11} aria-hidden />
                         </button>
                     </div>
@@ -245,13 +284,13 @@ export function ChunkSidebar({
                                     aria-checked={on}
                                     onClick={() => !on && onSetStatus(s)}
                                     className={cn(
-                                        "flex min-w-0 cursor-pointer flex-col items-center gap-0.5 rounded-[6px] border px-0.5 py-[5px] hover:bg-surface-hover",
+                                        "flex h-[26px] min-w-0 cursor-pointer flex-row items-center justify-center gap-1 rounded-[6px] border px-0.5 py-0 hover:bg-surface-hover",
                                         on ? "border-edge-mid bg-surface-selected" : "border-transparent",
                                         FOCUS
                                     )}
                                 >
                                     <ToneIcon tone={tone} className={on ? undefined : "text-ink-mid"} />
-                                    <span className={cn("text-[10.5px]", on ? TONE_FG[tone] : "text-ink-mid")}>
+                                    <span className={cn("truncate text-[10.5px]", on ? TONE_FG[tone] : "text-ink-mid")}>
                                         {s}
                                     </span>
                                 </button>
@@ -384,7 +423,7 @@ export function ChunkSidebar({
                                                     FOCUS
                                                 )}
                                             >
-                                                edit
+                                                Edit
                                             </button>
                                             <button
                                                 type="button"
@@ -395,7 +434,7 @@ export function ChunkSidebar({
                                                     FOCUS
                                                 )}
                                             >
-                                                delete
+                                                Delete
                                             </button>
                                         </div>
                                     ) : null}
@@ -413,7 +452,7 @@ export function ChunkSidebar({
                                                     FOCUS
                                                 )}
                                             >
-                                                {c.sessionTab !== "" ? "open agent session" : "open run"}
+                                                {c.sessionTab !== "" ? "Open agent session" : "Open run"}
                                                 <ArrowUpRight size={11} aria-hidden />
                                             </button>
                                         </div>
@@ -439,12 +478,12 @@ export function ChunkSidebar({
                                 setDraft("");
                             }
                         }}
-                        placeholder={`note on ${label}`}
+                        placeholder="Add a note…"
                         aria-label="New note"
                         className="w-full resize-none bg-transparent text-[12.5px] leading-[1.6] text-primary outline-none"
                     />
                     <div className="flex items-center gap-2">
-                        <span className="flex-1 text-[10.5px] text-muted">ctrl+enter to add</span>
+                        <span className="flex-1 text-[10.5px] text-muted">Ctrl+Enter adds · Esc clears</span>
                         <button
                             type="button"
                             disabled={draft.trim() === ""}

@@ -11,7 +11,6 @@
 import { partitionChannels } from "@/app/view/agents/channelderive";
 import { tierFromMeta, type JarvisTier } from "@/app/view/agents/channelmessages";
 import { rowsWithChannel, type ProjectRow } from "@/app/view/agents/projectsstore";
-import { LADDER } from "./autonomyladder";
 
 export interface ChannelAutonomy {
     channelId: string;
@@ -19,18 +18,13 @@ export interface ChannelAutonomy {
     tier: JarvisTier;
 }
 
-// what the tier means for the queue, in the mockup's own words. The ladder's blurbs say what a tier
-// includes; these say what it costs you, which is the thing a one-line chip has room for.
-const CONSEQUENCE: Record<JarvisTier, string> = {
-    concierge: "asks you everything",
-    gatekeeper: "answers routine asks",
+// the chip names what the tier does to your queue; the popover keeps the rung names that explain it
+const CHIP: Record<JarvisTier, string> = {
+    concierge: "All asks: to you",
+    gatekeeper: "Routine asks: auto",
 };
 
 const RANK: Record<JarvisTier, number> = { concierge: 0, gatekeeper: 1 };
-
-function tierLabel(tier: JarvisTier): string {
-    return LADDER.find((r) => r.tier === tier)?.label ?? tier;
-}
 
 /** Pure: the per-project autonomy rows behind the chip, one per project in the shared list. Archived
  *  channels are not work you have a policy over, so they are excluded. */
@@ -62,7 +56,8 @@ export function autonomySummary(rows: ChannelAutonomy[]): AutonomySummary | null
     const top = rows.reduce((a, r) => (RANK[r.tier] > RANK[a] ? r.tier : a), rows[0].tier);
     const atTop = rows.filter((r) => r.tier === top).length;
     if (atTop === rows.length) {
-        return { label: `${tierLabel(top)} · ${CONSEQUENCE[top]}`, tier: top, mixed: false };
+        return { label: CHIP[top], tier: top, mixed: false };
     }
-    return { label: `Mixed · ${atTop} of ${rows.length} ${tierLabel(top).toLowerCase()}`, tier: top, mixed: true };
+    // with two tiers a mixed top is always gatekeeper, so "auto" is the count of projects answering without you
+    return { label: `Mixed · ${atTop} of ${rows.length} auto`, tier: top, mixed: true };
 }

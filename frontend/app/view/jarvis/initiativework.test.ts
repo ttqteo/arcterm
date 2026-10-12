@@ -1,14 +1,17 @@
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { describe, expect, it } from "vitest";
 import {
+    chunkPrompt,
     dueChunkPrompt,
     initiativeLinkText,
     initiativeResume,
     noteStamp,
     openAgentFor,
+    orderInitiatives,
     planIdeaPrompt,
     projectPathFor,
     resumeIsBlank,
+    shortDate,
     workOnPrompt,
 } from "./initiativework";
 
@@ -40,6 +43,13 @@ describe("planIdeaPrompt", () => {
 describe("noteStamp", () => {
     it("reads as month-day hour:minute, the way wsh effort show prints notes", () => {
         expect(noteStamp(new Date(2026, 0, 5, 9, 3).getTime())).toBe("01-05 09:03");
+    });
+});
+
+describe("shortDate", () => {
+    it("reads a day as month and day, so 10-09 is never read as the 10th of September", () => {
+        expect(shortDate(new Date(2026, 9, 9, 23, 26).getTime())).toBe("Oct 9");
+        expect(shortDate(new Date(2026, 0, 5, 9, 3).getTime())).toBe("Jan 5");
     });
 });
 
@@ -90,7 +100,7 @@ describe("initiativeResume", () => {
         expect(initiativeResume("e1", { ts, text: "merged to LOCAL DEV" }, [], NOW)).toEqual({
             kind: "work",
             status: "last note",
-            when: "09-29 16:17",
+            when: shortDate(ts),
             note: "merged to LOCAL DEV",
         });
     });
@@ -157,5 +167,41 @@ describe("dueChunkPrompt", () => {
         expect(p).toContain('the chunk "re-measure" of the initiative Nav rail (effort:e1) has come due');
         expect(p).toContain("mark the chunk done");
         expect(p).toContain("wsh effort chunk due");
+    });
+});
+
+describe("chunkPrompt", () => {
+    it("names the chunk and closes the loop on it", () => {
+        const p = chunkPrompt("Diff redesign", "e1", "Commit tab");
+        expect(p).toContain('the chunk "Commit tab"');
+        expect(p).toContain("(effort:e1)");
+        expect(p).toContain("add the result as a chunk note");
+        expect(p).toContain("mark it done");
+    });
+});
+
+describe("orderInitiatives", () => {
+    const card = (oref: string, o: Partial<{ status: string; blockedChunks: string[]; updatedts: number }> = {}) => ({
+        oref,
+        status: o.status ?? "active",
+        blockedChunks: o.blockedChunks ?? [],
+        updatedts: o.updatedts ?? 0,
+    });
+    it("puts blocked first, then those with an agent open, then the freshest, and paused last", () => {
+        const cards = [
+            card("effort:old", { updatedts: 1 }),
+            card("effort:paused", { status: "paused", updatedts: 9 }),
+            card("effort:new", { updatedts: 5 }),
+            card("effort:open", { updatedts: 2 }),
+            card("effort:blocked", { blockedChunks: ["Phase 5"], updatedts: 0 }),
+        ];
+        const agents = [agent({ id: "a1", effortId: "open", state: "working" })];
+        expect(orderInitiatives(cards, agents).map((c) => c.oref)).toEqual([
+            "effort:blocked",
+            "effort:open",
+            "effort:new",
+            "effort:old",
+            "effort:paused",
+        ]);
     });
 });

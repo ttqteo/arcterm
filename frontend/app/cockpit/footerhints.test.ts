@@ -6,6 +6,7 @@ import {
     buildCockpitBindings,
     buildFilesBindings,
     buildGlobalBindings,
+    buildJarvisBindings,
     buildListNavBindings,
 } from "@/app/store/keybindings/bindings";
 import { describe, expect, it } from "vitest";
@@ -23,6 +24,7 @@ describe("footer hints reference real bindings", () => {
                 ...buildFilesBindings(),
                 ...buildListNavBindings(model),
                 ...buildCockpitBindings(),
+                ...buildJarvisBindings(model), // includes the graph peek
             ].map((b) => b.id)
         );
         const referenced = [...GLOBAL_HINTS, ...Object.values(SURFACE_HINTS).flat()].flatMap((h) => h.ids);

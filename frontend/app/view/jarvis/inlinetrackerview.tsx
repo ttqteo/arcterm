@@ -196,12 +196,9 @@ export function InitiativeDetail({
     }
 
     return (
-        // flush with the row above and sharing its corner radius, so an open initiative reads as one
-        // card rather than a row with a second block stepped in beneath it
-        <div
-            data-jarvis-initiative-detail="true"
-            className="mb-3 rounded-b-[10px] border border-t-0 border-border bg-surface pb-2.5 pl-2.5 pr-3.5 pt-3"
-        >
+        // no box of its own: the opened row's raised box holds it, so an open initiative reads as one
+        // box rather than a row with a second block stepped in beneath it
+        <div data-jarvis-initiative-detail="true" className="pb-2.5 pl-2.5 pr-3.5 pt-2">
             {rows.map((row, i) => {
                 const tail = addAfter.get(i);
                 const add =
@@ -329,7 +326,7 @@ export function InitiativeDetail({
                                 onDoubleClick={() => startEdit(row.id, label)}
                                 data-jarvis-tracker-chunk={label}
                                 className={cn(
-                                    "my-px flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-[6px] py-[5px] pl-[7px] pr-1.5 text-left",
+                                    "group/chunk my-px flex w-full min-w-0 cursor-pointer items-start gap-2 rounded-[6px] py-[5px] pl-[7px] pr-1.5 text-left",
                                     selected ? "bg-surface-selected" : "hover:bg-surface-hover"
                                 )}
                             >
@@ -342,7 +339,7 @@ export function InitiativeDetail({
                                 ) ?? (
                                     <span
                                         className={cn(
-                                            "min-w-0 flex-1 truncate text-[12px] leading-[1.4]",
+                                            "min-w-0 flex-1 line-clamp-2 text-[12px] leading-[1.4]",
                                             selected
                                                 ? "font-semibold text-primary"
                                                 : row.row.status === "active"
@@ -382,14 +379,17 @@ export function InitiativeDetail({
                                         setMenu(menu === menuId ? null : menuId);
                                     }}
                                     className={cn(
-                                        "flex w-[86px] flex-none cursor-pointer items-center justify-between gap-1 rounded-[5px] border px-[7px] py-0.5 text-[11px] font-medium hover:border-edge-mid",
-                                        menu === menuId ? "border-edge-strong" : "border-border",
+                                        "flex min-w-[72px] flex-none cursor-pointer items-center justify-end gap-1 rounded-[5px] px-1.5 py-0.5 text-[10.5px] font-semibold hover:bg-surface-hover",
                                         TONE_FG[row.row.tone],
                                         FOCUS
                                     )}
                                 >
                                     {row.row.status}
-                                    <ChevronDown size={11} aria-hidden className="text-muted" />
+                                    <ChevronDown
+                                        size={11}
+                                        aria-hidden
+                                        className="text-muted opacity-0 group-hover/chunk:opacity-100"
+                                    />
                                 </button>
                             </div>
                             {menu === menuId ? (

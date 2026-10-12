@@ -244,7 +244,7 @@ describe("buildLeadCard", () => {
     it("reads a finished run with no dag as complete, not planning", () => {
         const done: RunInfo = { runId: "R", channelId: "C", title: "t", project: "arc", status: "done" };
         const vm = buildLeadCard(input({ ...done, land: { state: "landed" } as RunLand }));
-        expect(vm).toMatchObject({ planning: false, finished: true, complete: true, activity: "landed" });
+        expect(vm).toMatchObject({ planning: false, finished: true, complete: true, activity: "Landed" });
     });
 
     it("is planning with no dag, and names lead and worker models in the settings line", () => {
@@ -445,7 +445,12 @@ describe("leadActivity", () => {
         expect(leadActivity(run(), lead, true)).toBe("lead down · its events come to you");
     });
     it("names a finished run's end", () => {
-        expect(leadActivity(run("done"), { ...lead, atPrompt: true } as AgentVM, false)).toBe("run complete");
+        const done = { ...run("done"), status: "done" };
+        expect(leadActivity(done, { ...lead, atPrompt: true } as AgentVM, false)).toBe("Complete");
+    });
+    it("says the lead is wrapping up while the run itself is still open", () => {
+        const open = { ...run("done"), status: "executing" };
+        expect(leadActivity(open, { ...lead, atPrompt: true } as AgentVM, false)).toBe("Wrapping up · lead");
     });
 });
 

@@ -429,17 +429,33 @@ const surfaceSmoke = {
 
 // --- brief surface: the Brief is the Jarvis surface ----------------------------------------------
 // B5 retired the three-pane composition, so the Brief is the whole surface. Against the briefing fixtures
-// this walks its four regions, the compact Waiting summary and the queue rows it reveals (each opens what
-// it names and carries the design's one action), the j/k cursor, an initiative expanding in place, and
-// a blocked chunk opening its initiative's sheet.
+// this walks its five regions, Waiting's first three rows and the Show all that reveals the rest (each row
+// opens what it names and carries the design's one action), the j/k cursor, an initiative expanding in
+// place, and a blocked chunk opening its initiative's sheet.
+
+// step 8's initiative: a fixture's initiative is not in the store, and the router checks that before it opens
+// one, so a blocked chunk that opens its sheet needs a real initiative holding one
+const BRIEF_SURFACE_BLOCKED = "verify-brief-surface-blocked";
 
 const briefSurface = {
     name: "brief-surface",
     surface: "jarvis",
-    async arrange() {
-        return {};
+    async arrange(h) {
+        const ctx = {};
+        try {
+            const effort = await h.rpc("effortcreate", { title: BRIEF_SURFACE_BLOCKED, chunks: [{ label: "Stuck" }] });
+            ctx.effortId = effort.effortoid;
+            await h.rpc("effortmutate", {
+                effortoid: ctx.effortId,
+                author: "you",
+                ops: [{ op: "setChunkStatus", chunk: "Stuck", status: "blocked" }],
+            });
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
     },
-    async assert(h) {
+    async assert(h, ctx) {
         const steps = [];
         await h.goto("jarvis");
 
@@ -464,12 +480,16 @@ const briefSurface = {
             `[...document.querySelectorAll('[data-jarvis-brief-region]')].map((s) => s.dataset.jarvisBriefRegion)`
         );
         steps.push({
-            step: "2. the Brief renders its four regions",
-            ok: ["waiting", "initiatives", "sessions", "behind"].every((r) => regions.includes(r)),
+            step: "2. the Brief renders its five regions",
+            ok: ["waiting", "sessions", "initiatives", "behind", "shipped"].every((r) => regions.includes(r)),
             detail: JSON.stringify(regions),
         });
 
-        // the disclosure is module state, so normalize it closed before asserting the compact default.
+        // Waiting draws its first three rows under the summary line, and Show all N folds the rest in. The
+        // fold is module state, so it is normalized closed first, and N is read off the toggle rather than
+        // hard-coded: the attention fixture is what makes it overflow.
+        await h.ev(`document.querySelector('[data-briefing-fixture="attention"]')?.click()`);
+        await h.ev("new Promise((r) => setTimeout(r, 900))");
         await h.ev(`document.querySelector('[data-jarvis-brief-attention-summary][aria-expanded="true"]')?.click()`);
         await h.ev("new Promise((r) => setTimeout(r, 300))");
         const seeded = await h.ev(`(() => {
@@ -478,44 +498,59 @@ const briefSurface = {
                 const k = r.dataset.jarvisBriefRow;
                 m[k] = (m[k] || 0) + 1;
             });
-            const summary = document.querySelector('[data-jarvis-brief-attention-summary]');
+            const toggle = document.querySelector('[data-jarvis-brief-attention-summary]');
             return {
                 rows: m,
-                summary: summary != null,
-                open: summary?.getAttribute('aria-expanded') ?? null,
+                toggle: toggle != null,
+                open: toggle?.getAttribute('aria-expanded') ?? null,
+                n: Number(/Show all (\\d+)/.exec(toggle?.textContent ?? '')?.[1] ?? 0),
                 queueRows: document.querySelectorAll('[data-jarvis-brief-row="queue"]').length,
             };
         })()`);
+        const waitingN = seeded.n;
         steps.push({
-            step: "3. attention starts compact while the other seeded regions stay visible",
+            step: "3. Waiting shows its first three rows under the summary while the other seeded regions stay visible",
             ok:
-                seeded.summary === true &&
+                waitingN > 3 &&
+                seeded.toggle === true &&
                 seeded.open === "false" &&
-                seeded.queueRows === 0 &&
+                seeded.queueRows === 3 &&
                 ["initiative", "session", "delta", "shipped"].every((kind) => (seeded.rows[kind] ?? 0) > 0),
-            detail: JSON.stringify(seeded),
+            detail:
+                waitingN > 3
+                    ? JSON.stringify(seeded)
+                    : `the attention fixture no longer overflows Waiting: ${JSON.stringify(seeded)}`,
         });
 
-        // Review reveals the existing actionable rows; the disclosure changes presentation, not where a
+        // Show all N reveals the rest of the actionable rows; the fold changes presentation, not where a
         // decision lands. A row opens what it names, and carries the design's one action (Approve, Open,
-        // Retry) as its only control.
+        // Retry, Accept) as its only control. Accept replaced Acknowledge, so no act may read it.
         await h.ev(`document.querySelector('[data-jarvis-brief-attention-summary]')?.click()`);
         await h.ev("new Promise((r) => setTimeout(r, 300))");
         const q = await h.ev(`(() => {
-            const summary = document.querySelector('[data-jarvis-brief-attention-summary]');
+            const toggle = document.querySelector('[data-jarvis-brief-attention-summary]');
             const rows = [...document.querySelectorAll('[data-jarvis-brief-row="queue"]')];
             const controls = (r) => r.querySelectorAll('button, a, input, select, textarea');
+            const acts = rows.map((r) => (r.querySelector('[data-jarvis-queue-act]')?.textContent ?? '').trim());
             return {
-                expanded: summary?.getAttribute('aria-expanded') ?? null,
+                expanded: toggle?.getAttribute('aria-expanded') ?? null,
                 rows: rows.length,
                 openable: rows.filter((r) => r.classList.contains('cursor-pointer')).length,
-                oneAction: rows.filter((r) => controls(r).length === 1 && r.querySelector('[data-jarvis-queue-act]')).length,
+                oneAction: rows.filter((r) => controls(r).length === 1 && r.querySelectorAll('[data-jarvis-queue-act]').length === 1)
+                    .length,
+                acts,
             };
         })()`);
         steps.push({
-            step: "4. Review reveals queue rows that open what they name, each with its one action",
-            ok: q.expanded === "true" && q.rows > 0 && q.openable === q.rows && q.oneAction === q.rows,
-            detail: JSON.stringify(q),
+            step: "4. Show all reveals every queue row, each opening what it names with its one action; Accept, never Acknowledge",
+            ok:
+                q.expanded === "true" &&
+                q.rows === waitingN &&
+                q.openable === q.rows &&
+                q.oneAction === q.rows &&
+                q.acts.includes("Accept") &&
+                !q.acts.includes("Acknowledge"),
+            detail: JSON.stringify({ n: waitingN, ...q }),
         });
 
         const fleet = await h.ev(
@@ -568,56 +603,71 @@ const briefSurface = {
             detail: JSON.stringify(trail.map((t) => (t == null ? null : `${t.row}/${t.text}`))),
         });
 
-        // An initiative row is one line, and a click expands its plan in place (cd1a9ce4): it has no sheet to
-        // open any more. A row nesting no control of its own is the point: the row is the one affordance.
+        // An initiative row is one line, and a click on its toggle expands its plan in place (cd1a9ce4): it has
+        // no sheet to open. The row now carries Work on and its menu, so it nests controls; the toggle is the
+        // row's own [role=button] child, and the open state sits on the row as data-jarvis-initiative-card.
         // The expansion and the sheet are module state, so whatever a previous run left open is closed first.
+        const TOGGLE = `:scope > [role="button"]`;
         await h.ev(`[...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Close detail sheet')?.click()`);
-        await h.ev(`document.querySelector('[data-jarvis-brief-row="initiative"][aria-expanded="true"]')?.click()`);
+        await h.ev(`document.querySelector('[data-jarvis-initiative-card="open"]')?.querySelector('${TOGGLE}')?.click()`);
         await h.ev("new Promise((r) => setTimeout(r, 300))");
-        await h.ev(`document.querySelector('[data-jarvis-brief-row="initiative"]')?.click()`);
+        await h.ev(`document.querySelector('[data-jarvis-brief-row="initiative"]')?.querySelector('${TOGGLE}')?.click()`);
         await h.ev("new Promise((r) => setTimeout(r, 900))");
         const card = await h.ev(`(() => {
             const rows = [...document.querySelectorAll('[data-jarvis-brief-row="initiative"]')];
+            const open = rows.filter((r) => r.dataset.jarvisInitiativeCard === 'open');
             return {
                 rows: rows.length,
-                buttons: rows.filter((r) => r.getAttribute('role') === 'button').length,
-                nested: rows.reduce((n, r) => n + r.querySelectorAll('button, a, input, select, textarea').length, 0),
-                expanded: rows[0]?.getAttribute('aria-expanded') ?? null,
+                toggles: rows.filter((r) => r.querySelector(':scope > [role="button"]') != null).length,
+                open: open.length,
+                openIsFirst: open[0] === rows[0],
+                expanded: rows[0]?.querySelector(':scope > [role="button"]')?.getAttribute('aria-expanded') ?? null,
+                detailInside: open[0]?.querySelector('[data-jarvis-initiative-detail]') != null,
                 sheet: !!document.querySelector('[data-jarvis-brief-sheet]'),
             };
         })()`);
         steps.push({
-            step: "7. an initiative row is one line that expands in place and opens no sheet",
+            step: "7. an initiative row expands in place and opens no sheet",
             ok:
                 card.rows > 0 &&
-                card.buttons === card.rows &&
-                card.nested === 0 &&
+                card.toggles === card.rows &&
+                card.open === 1 &&
+                card.openIsFirst === true &&
                 card.expanded === "true" &&
+                card.detailInside === true &&
                 card.sheet === false,
             detail: JSON.stringify(card),
         });
-        await h.ev(`document.querySelector('[data-jarvis-brief-row="initiative"][aria-expanded="true"]')?.click()`);
+        await h.ev(`document.querySelector('[data-jarvis-initiative-card="open"]')?.querySelector('${TOGGLE}')?.click()`);
         await h.ev("new Promise((r) => setTimeout(r, 300))");
 
-        // The sideways arm into the effort sheet is still the one a blocked chunk takes, and it is still
-        // the only arm the fixture can drive end to end: the sheet's own chrome names the record it is
-        // showing whether or not the detail behind it resolves.
-        await h.ev(`document.querySelector('[data-jarvis-brief-row="queue"]')?.click()`);
-        await h.ev("new Promise((r) => setTimeout(r, 500))");
-        const sheet = await h.ev(`(() => {
-            const el = document.querySelector('[data-jarvis-brief-sheet]');
-            return {
-                face: el ? el.dataset.jarvisBriefSheet : null,
-                label: el ? (el.innerText || "").replace(/\\s+/g, " ").trim().slice(0, 10).toLowerCase() : null,
-            };
-        })()`);
-        steps.push({
-            step: "8. a blocked chunk still opens the initiative's own sheet",
-            ok: sheet.face === "effort" && sheet.label === "initiative",
-            detail: JSON.stringify(sheet),
-        });
-        await h.ev(`[...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Close detail sheet')?.click()`);
-        await h.ev("new Promise((r) => setTimeout(r, 300))");
+        // The sideways arm into the effort sheet is still the one a blocked chunk takes. It runs on live data: a
+        // fixture's initiative is not in the store, so the router answers "no longer exists" and opens nothing.
+        // Arrange made a real initiative with one blocked chunk, and a reload puts the Brief on it.
+        const blockedRow = `[...document.querySelectorAll('[data-jarvis-brief-row="queue"]')].find((r) => r.innerText.includes(${JSON.stringify(BRIEF_SURFACE_BLOCKED)}))`;
+        if (ctx.arrangeError != null) {
+            steps.push(skipStep("8. a blocked chunk still opens the initiative's own sheet", `arrange: ${ctx.arrangeError}`));
+        } else {
+            await briefReload(h);
+            const found = await polishWaitFor(h, `!!(${blockedRow})`, 20000);
+            await h.ev(`(${blockedRow})?.click()`);
+            await h.ev("new Promise((r) => setTimeout(r, 600))");
+            const sheet = await h.ev(`(() => {
+                const el = document.querySelector('[data-jarvis-brief-sheet]');
+                return {
+                    found: ${found},
+                    face: el ? el.dataset.jarvisBriefSheet : null,
+                    label: el ? (el.innerText || "").replace(/\\s+/g, " ").trim().slice(0, 10).toLowerCase() : null,
+                };
+            })()`);
+            steps.push({
+                step: "8. a blocked chunk still opens the initiative's own sheet",
+                ok: sheet.found === true && sheet.face === "effort" && sheet.label === "initiative",
+                detail: JSON.stringify(sheet),
+            });
+            await h.ev(`[...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Close detail sheet')?.click()`);
+            await h.ev("new Promise((r) => setTimeout(r, 300))");
+        }
 
         // F8: the row states what it is waiting on and what it belongs to, on its one line. The "attention"
         // fixture is the one that carries wire attention items; "normal" has none, so the queue there is only
@@ -625,7 +675,7 @@ const briefSurface = {
         // nested control is its action. A one-line row has no room for cites, so it no longer draws them.
         await h.ev(`document.querySelector('[data-briefing-fixture="attention"]')?.click()`);
         await h.ev("new Promise((r) => setTimeout(r, 600))");
-        const ctx = await h.ev(`(() => {
+        const named = await h.ev(`(() => {
             const rows = [...document.querySelectorAll('[data-jarvis-brief-row="queue"]')];
             const txt = (e) => (e.innerText || "").replace(/\\s+/g, " ").trim();
             return {
@@ -639,13 +689,13 @@ const briefSurface = {
         steps.push({
             step: "9. a queue row names its initiative and why it is waiting, on one line",
             ok:
-                ctx.rows >= 3 &&
-                ctx.oneAction === ctx.rows &&
+                named.rows >= 3 &&
+                named.oneAction === named.rows &&
                 // the effort title is joined on the frontend from the efforts already on the surface,
                 // so a raw oid here would mean the join silently failed
-                (ctx.first ?? "").includes("Scenario gate clearance \u00b7 Phase 3") &&
-                /2 of 4 tasks done/.test(ctx.first ?? ""),
-            detail: JSON.stringify(ctx),
+                (named.first ?? "").includes("Scenario gate clearance \u00b7 Phase 3") &&
+                /2 of 4 tasks done/.test(named.first ?? ""),
+            detail: JSON.stringify(named),
         });
         await h.shot("cdp-shots/brief-queue-context.png");
 
@@ -653,8 +703,955 @@ const briefSurface = {
         await h.ev(`document.querySelector('[data-jarvis-brief-attention-summary][aria-expanded="true"]')?.click()`);
         return steps;
     },
-    async teardown(h) {
+    async teardown(h, ctx) {
+        if (ctx.effortId != null) {
+            await h.rpc("effortdelete", { effortoid: ctx.effortId }).catch(() => {});
+        }
         await h.goto("cockpit");
+    },
+};
+
+// --- the redesigned Brief (docs/superpowers/specs/2026-10-12-jarvis-brief-redesign-design.md) ----------------------
+// brief-layout, brief-chunk-panel and brief-run-sheet-order show every view that spec changed. Their shared helpers:
+const briefNap = (ms) => new Promise((r) => setTimeout(r, ms));
+const briefViewport = (h, width, height) =>
+    h.cdp("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
+
+// Reloads the app and lands on Jarvis once its fixture bar is up. A fixture is atom state, so a reload also puts the
+// Brief back on live data.
+async function briefReload(h) {
+    try {
+        await h.ev("location.reload()");
+    } catch {
+        // the evaluate is cut off by the navigation it just started
+    }
+    // the old document can still answer for a moment after the reload starts
+    await briefNap(1500);
+    for (let waited = 0; waited < 40000; waited += 500) {
+        const up = await h.ev("!!window.TabRpcClient && !!document.querySelector('nav button')").catch(() => false);
+        if (up) break;
+        await briefNap(500);
+    }
+    await h.goto("jarvis");
+    for (let waited = 0; waited < 10000; waited += 250) {
+        if (await h.ev(`!!document.querySelector('[data-briefing-fixture]')`).catch(() => false)) break;
+        await briefNap(250);
+    }
+}
+
+// picks a briefing fixture and lets the surface settle
+async function briefFixture(h, name, ms = 800) {
+    await h.ev(`document.querySelector('[data-briefing-fixture="${name}"]')?.click()`);
+    await briefNap(ms);
+}
+
+// a button is the dock's accent when it carries every class DOCK_ACCENT adds to DOCK_BTN (runsheet.tsx): never
+// matched by [class*=accent], which header buttons (hover:bg-accenthover) and the dock's accent-soft text also hit
+const DOCK_ACCENT_CLASSES = ["border-accent/50", "bg-accent/12", "text-accent-soft"];
+const BRIEF_STORAGE_KEYS = ["jarvis.tour.offered", "jarvis.briefing.lastseen"];
+
+// the initiative row whose text names the title, as an expression
+const briefInitiativeRow = (title) =>
+    `[...document.querySelectorAll('[data-jarvis-brief-row="initiative"]')].find((r) => r.innerText.includes(${JSON.stringify(title)}))`;
+
+// puts the localStorage keys a scenario changed back the way arrange found them
+const briefRestoreKeys = (h, prev) =>
+    h.ev(`(() => {
+        const prev = ${JSON.stringify(prev ?? {})};
+        for (const k of ${JSON.stringify(BRIEF_STORAGE_KEYS)}) {
+            try {
+                if (prev[k] == null) localStorage.removeItem(k);
+                else localStorage.setItem(k, prev[k]);
+            } catch {}
+        }
+        return true;
+    })()`);
+
+const briefReadKeys = (h) =>
+    h.ev(`(() => {
+        const out = {};
+        for (const k of ${JSON.stringify(BRIEF_STORAGE_KEYS)}) {
+            try {
+                out[k] = localStorage.getItem(k);
+            } catch {
+                out[k] = null;
+            }
+        }
+        return out;
+    })()`);
+
+// every effort of this title, so a jot that landed after its step gave up is still cleaned up
+async function briefDeleteEfforts(h, title) {
+    const { efforts = [] } = (await h.rpc("effortlist", {})) ?? {};
+    for (const e of efforts.filter((x) => x.title === title)) {
+        await h.rpc("effortdelete", { effortoid: e.oref.replace(/^effort:/, "") }).catch(() => {});
+    }
+}
+
+// --- brief-layout: the header, the two columns, the footer keys, the empty states, ideas ---------------------------
+// The Brief at 1600x1000 against the briefing fixtures: New run is the one accent button, the side column holds Since
+// you looked, Shipped and Ideas, Runs sit above Initiatives, the footer teaches r and w, the first-visit offer covers no
+// control, a blocked run reads amber, Show only hides and restores the other regions, the empty boxes carry the button
+// that starts what they say is missing, and an idea saves from its input without a form.
+const BRIEF_JOT_IDEA = "verify-jot-idea";
+
+const briefLayout = {
+    name: "brief-layout",
+    surface: "jarvis",
+    async arrange(h) {
+        return { prev: await briefReadKeys(h) };
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        await briefViewport(h, 1600, 1000);
+        await h.goto("jarvis");
+        await briefDeleteEfforts(h, BRIEF_JOT_IDEA);
+        await briefFixture(h, "attention", 900);
+        // focus in an input dims and filters the footer's chips
+        await h.ev(`document.activeElement?.blur?.()`);
+
+        // 1. New run is the header's one accent button
+        const header = await h.ev(`(() => {
+            const btn = document.querySelector('[data-jarvis-new-run]');
+            const header = btn?.closest('header');
+            if (!header) return null;
+            const accents = [...header.querySelectorAll('button')].filter((b) => b.classList.contains('bg-accent'));
+            return {
+                text: (btn.textContent || '').replace(/\\s+/g, ' ').trim(),
+                accents: accents.length,
+                accentIsNewRun: accents[0] === btn,
+            };
+        })()`);
+        rec(
+            "1. the header's New run is its one accent button",
+            header != null && header.text.startsWith("New run") && header.accents === 1 && header.accentIsNewRun === true,
+            JSON.stringify(header)
+        );
+        await h.shot("cdp-shots/brief-layout-header.png");
+
+        // 2. the autonomy chip names the consequence
+        const chip = await h.ev(
+            `document.querySelector('[data-jarvis-autonomy="chip"]')?.textContent.replace(/\\s+/g, ' ').trim() ?? null`
+        );
+        steps.push(
+            chip == null
+                ? skipStep("2. the autonomy chip names the consequence", "no project in this profile, so the chip is not drawn")
+                : {
+                      step: "2. the autonomy chip names the consequence",
+                      ok: /^(All asks: to you|Routine asks: auto|Mixed · \d+ of \d+ auto)/.test(chip),
+                      detail: JSON.stringify(chip),
+                  }
+        );
+
+        // 3. the side column: Since you looked, Shipped, Ideas, to the right of the main column
+        const side = await h.ev(`(() => {
+            const side = document.querySelector('[data-jarvis-brief-side]');
+            if (!side) return null;
+            const main = side.previousElementSibling;
+            return {
+                order: [...side.children].map(
+                    (c) => c.dataset.jarvisBriefRegion ?? (c.hasAttribute('data-jarvis-ideas') ? 'ideas' : '?')
+                ),
+                sideLeft: Math.round(side.getBoundingClientRect().left),
+                mainRight: main ? Math.round(main.getBoundingClientRect().right) : null,
+            };
+        })()`);
+        rec(
+            "3. the side column holds Since you looked, Shipped and Ideas, to the right of the main column",
+            side != null &&
+                JSON.stringify(side.order) === JSON.stringify(["behind", "shipped", "ideas"]) &&
+                side.mainRight != null &&
+                side.sideLeft > side.mainRight,
+            JSON.stringify(side)
+        );
+        await h.shot("cdp-shots/brief-layout-columns.png");
+
+        // 3b. Since you looked rows are compact: the kind and age on one line, the title under it at nearly the row's
+        // width (a side-column row that kept the old three columns left the title about 150px of 340)
+        const deltas = await h.ev(`(() => {
+            const rows = [...document.querySelectorAll('[data-jarvis-brief-side] [data-jarvis-brief-row="delta"]')];
+            return rows.map((row) => {
+                const kind = row.querySelector('[data-jarvis-delta-kind]')?.getBoundingClientRect();
+                const title = row.querySelector('[data-jarvis-delta-title]')?.getBoundingClientRect();
+                const box = row.getBoundingClientRect();
+                return kind && title
+                    ? {
+                          kindBottom: Math.round(kind.bottom),
+                          titleTop: Math.round(title.top),
+                          titleShare: Math.round((title.width / box.width) * 100) / 100,
+                      }
+                    : null;
+            });
+        })()`);
+        steps.push(
+            deltas.length === 0
+                ? skipStep("3b. a Since you looked row puts the kind and age over a full-width title", "the attention fixture has no Since you looked row")
+                : {
+                      step: "3b. a Since you looked row puts the kind and age over a full-width title",
+                      ok: deltas.every((d) => d != null && d.kindBottom <= d.titleTop && d.titleShare >= 0.8),
+                      detail: JSON.stringify(deltas),
+                  }
+        );
+        // the shot is the whole viewport, which at 1600 wide holds the side column to the right
+        await h.shot("cdp-shots/brief-layout-side.png");
+
+        // 3c. the Waiting head says what orders the queue, and how old its oldest item is when there is one
+        const waitingHead = await h.ev(`(() => {
+            const head = document.querySelector('[data-jarvis-brief-region="waiting"]')?.firstElementChild;
+            return head ? (head.innerText || '').replace(/\\s+/g, ' ').trim() : null;
+        })()`);
+        steps.push(
+            waitingHead == null
+                ? skipStep("3c. the Waiting head reads gates first, with the oldest item's age", "the attention fixture draws no Waiting region")
+                : {
+                      step: "3c. the Waiting head reads gates first, with the oldest item's age",
+                      ok:
+                          waitingHead.includes("gates first") &&
+                          !waitingHead.includes("gates before asks") &&
+                          (!waitingHead.includes("oldest") || /gates first · oldest \S+/.test(waitingHead)),
+                      detail: JSON.stringify(waitingHead),
+                  }
+        );
+
+        // 4. Runs above Initiatives
+        const tops = await h.ev(`(() => {
+            const top = (id) => document.querySelector('[data-jarvis-brief-region="' + id + '"]')?.getBoundingClientRect().top ?? null;
+            return { waiting: top('waiting'), sessions: top('sessions'), initiatives: top('initiatives') };
+        })()`);
+        rec(
+            "4. Runs sit above Initiatives in the main column",
+            tops.sessions != null && tops.initiatives != null && tops.sessions < tops.initiatives,
+            JSON.stringify(tops)
+        );
+
+        // 5. the footer teaches r and w while on Jarvis
+        const chips = await h.ev(`(() => {
+            const bars = [...document.querySelectorAll('[data-pet-ledge]')];
+            return bars.map((b) => (b.innerText || '').replace(/\\s+/g, ' ').trim()).join(' | ');
+        })()`);
+        rec(
+            "5. the footer shows the new run and work on chips",
+            /\br new run\b/.test(chips) && /\bw work on\b/.test(chips),
+            JSON.stringify(chips)
+        );
+
+        // 6. the first-visit offer sits where it covers no control: bottom right, clear of Waiting's Show all
+        await h.ev(`localStorage.removeItem("jarvis.tour.offered")`);
+        await briefReload(h);
+        await briefFixture(h, "attention", 900);
+        const offer = await h.ev(`(() => {
+            const offer = document.querySelector('[data-jarvis-tour-offer]');
+            const toggle = document.querySelector('[data-jarvis-brief-attention-summary]');
+            if (!offer || !toggle) return { offer: !!offer, toggle: !!toggle };
+            const r = toggle.getBoundingClientRect();
+            const o = offer.getBoundingClientRect();
+            const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+            return {
+                offer: true,
+                toggle: true,
+                hit: hit != null && (hit === toggle || toggle.contains(hit)),
+                overlap: !(o.right <= r.left || o.left >= r.right || o.bottom <= r.top || o.top >= r.bottom),
+            };
+        })()`);
+        rec(
+            "6. the tour offer covers no control: Show all stays hittable and clear of it",
+            offer.offer === true && offer.toggle === true && offer.hit === true && offer.overlap === false,
+            JSON.stringify(offer)
+        );
+        await h.shot("cdp-shots/brief-layout-offer.png");
+        // answering it marks the key, which teardown puts back
+        await h.ev(`document.querySelector('[data-jarvis-tour-offer-later]')?.click()`);
+        await briefNap(300);
+
+        // 7. a blocked run reads amber, not the green a run with no object used to get
+        const blocked = await h.ev(`(() => {
+            const rows = [...document.querySelectorAll('[data-jarvis-brief-row="session"]')];
+            const cell = (r) => [...r.querySelectorAll(':scope > span')].find((s) => s.textContent.trim() === 'blocked');
+            const hit = rows.map(cell).find((c) => c != null);
+            return hit
+                ? { rows: rows.length, asking: hit.classList.contains('text-asking'), success: hit.classList.contains('text-success') }
+                : null;
+        })()`);
+        steps.push(
+            blocked == null
+                ? skipStep("7. a blocked run's state reads amber", "the attention fixture has no run row whose state reads blocked")
+                : {
+                      step: "7. a blocked run's state reads amber",
+                      ok: blocked.asking === true && blocked.success === false,
+                      detail: JSON.stringify(blocked),
+                  }
+        );
+
+        // 8. Show only hides every other region, and a second press brings them back
+        const regionIds = `[...document.querySelectorAll('[data-jarvis-brief-region]')].map((s) => s.dataset.jarvisBriefRegion)`;
+        const onlyBtn = `document.querySelector('[data-jarvis-brief-region="sessions"] [data-jarvis-region-only]')`;
+        const allRegions = await h.ev(regionIds);
+        await h.ev(`${onlyBtn}?.click()`);
+        await briefNap(500);
+        const alone = await h.ev(`(() => {
+            const b = ${onlyBtn};
+            return { pressed: b?.getAttribute('aria-pressed') ?? null, label: b?.getAttribute('aria-label') ?? null, regions: ${regionIds} };
+        })()`);
+        await h.ev(`${onlyBtn}?.click()`);
+        await briefNap(500);
+        const back = await h.ev(`(() => {
+            const b = ${onlyBtn};
+            return { pressed: b?.getAttribute('aria-pressed') ?? null, regions: ${regionIds} };
+        })()`);
+        rec(
+            "8. Show only keeps one region and a second press brings every region back",
+            alone.pressed === "true" &&
+                alone.label === "Show every region" &&
+                JSON.stringify(alone.regions) === JSON.stringify(["sessions"]) &&
+                back.pressed === "false" &&
+                JSON.stringify(back.regions) === JSON.stringify(allRegions),
+            JSON.stringify({ allRegions, alone, back })
+        );
+
+        // 9. the empty boxes carry the button that starts what they say is missing; Since you looked tells a first visit
+        // from a quiet one. The empty fixture has no run and no initiative; a live archived initiative still fills the
+        // Initiatives box, which is then not empty.
+        await briefFixture(h, "empty", 700);
+        const empty = await h.ev(`(() => {
+            const act = (k) => document.querySelector('[data-jarvis-empty-act="' + k + '"]');
+            const txt = (e) => (e?.textContent || '').replace(/\\s+/g, ' ').trim();
+            return {
+                run: txt(act('run')),
+                runIn: act('run')?.closest('[data-jarvis-brief-region]')?.dataset.jarvisBriefRegion ?? null,
+                initiative: act('initiative') != null ? txt(act('initiative')) : null,
+                archived: document.querySelector('[data-jarvis-brief-archived]') != null,
+                shipped: txt(document.querySelector('[data-jarvis-brief-empty="shipped"]')),
+            };
+        })()`);
+        rec(
+            "9. the empty Runs box holds New run, and Shipped says its week is empty",
+            empty.run.startsWith("New run") &&
+                empty.runIn === "sessions" &&
+                empty.shipped === "Nothing shipped in the last seven days.",
+            JSON.stringify(empty)
+        );
+        if (empty.initiative == null && empty.archived) {
+            steps.push(
+                skipStep(
+                    "9b. the empty Initiatives box holds New initiative, which opens the form",
+                    "this profile has archived initiatives, so the Initiatives box is not empty; archive none to see it"
+                )
+            );
+        } else {
+            await h.ev(`document.querySelector('[data-jarvis-empty-act="initiative"]')?.click()`);
+            await briefNap(500);
+            const form = await h.ev(`(() => {
+                const d = document.querySelector('[role="dialog"]');
+                return d ? (d.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 40) : null;
+            })()`);
+            await h.ev(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))`);
+            await briefNap(400);
+            const closed = await h.ev(`document.querySelector('[role="dialog"]') == null`);
+            rec(
+                "9b. the empty Initiatives box holds New initiative, which opens the form",
+                (empty.initiative ?? "").startsWith("New initiative") && /New initiative/.test(form ?? "") && closed === true,
+                JSON.stringify({ initiative: empty.initiative, form, closed })
+            );
+        }
+        // Since you looked: no last look reads as a first visit. The dwell ack writes the key a few seconds after a
+        // load, so the line is read right after the fixture is picked, which restarts that dwell.
+        await h.ev(`localStorage.removeItem("jarvis.briefing.lastseen")`);
+        await briefReload(h);
+        await briefFixture(h, "empty", 500);
+        const first = await h.ev(`document.querySelector('[data-jarvis-brief-empty="behind"]')?.textContent.trim() ?? null`);
+        await h.ev(`localStorage.setItem("jarvis.briefing.lastseen", String(Date.now()))`);
+        await briefReload(h);
+        await briefFixture(h, "empty", 500);
+        const later = await h.ev(`document.querySelector('[data-jarvis-brief-empty="behind"]')?.textContent.trim() ?? null`);
+        rec(
+            "9c. Since you looked says what shows up on a first visit, and that nothing is new after one",
+            first === "Runs that land show up here." && later === "Nothing new since you last looked.",
+            JSON.stringify({ first, later })
+        );
+        await h.shot("cdp-shots/brief-layout-empty.png");
+
+        // 10. an idea saves from its input: Esc clears and blurs, Enter saves, and no form opens
+        const jot = `document.querySelector('[data-jarvis-jot-idea] input')`;
+        const setJot = (v) =>
+            h.ev(`(() => {
+                const el = ${jot};
+                if (!el) return false;
+                el.focus();
+                Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ${JSON.stringify(v)});
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                return true;
+            })()`);
+        const jotKey = (k) =>
+            h.ev(`${jot}?.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(k)}, bubbles: true, cancelable: true }))`);
+        await setJot("verify-esc");
+        await briefNap(200);
+        await jotKey("Escape");
+        await briefNap(300);
+        const escaped = await h.ev(`(() => ({ value: ${jot}?.value ?? null, focused: document.activeElement === ${jot} }))()`);
+        await setJot(BRIEF_JOT_IDEA);
+        await briefNap(200);
+        await jotKey("Enter");
+        await briefNap(300);
+        const entered = await h.ev(`${jot}?.value ?? null`);
+        let saved = false;
+        for (let waited = 0; waited < 3000 && !saved; waited += 250) {
+            const { efforts = [] } = (await h.rpc("effortlist", {})) ?? {};
+            saved = efforts.some((e) => e.title === BRIEF_JOT_IDEA);
+            if (!saved) await briefNap(250);
+        }
+        rec(
+            "10. Esc clears the idea input and leaves it, Enter saves the idea and clears it",
+            escaped.value === "" && escaped.focused === false && entered === "" && saved === true,
+            JSON.stringify({ escaped, entered, saved })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await h.cdp("Emulation.clearDeviceMetricsOverride").catch(() => {});
+        await briefRestoreKeys(h, ctx.prev).catch(() => {});
+        await briefDeleteEfforts(h, BRIEF_JOT_IDEA).catch(() => {});
+        await h.goto("cockpit");
+    },
+};
+
+// --- brief-chunk-panel: an initiative opens in place, its chunk panel takes the side column's place --------------
+// Two real initiatives (a chunk done with a note, and a blocked one) on live data at 1600 wide: the row expands where
+// it is, a chunk opens the panel in the side column's place with its Work on this chunk and Copy wsh command, the
+// controls read at a glance, the rows are ordered by what needs you, and the tour's chunk-panel step lights the panel.
+const CHUNK_PANEL_TITLE = "verify-chunk-panel";
+const CHUNK_BLOCKED_TITLE = "verify-chunk-blocked";
+const CHUNK_PANEL_NOTE = "Fixture note.";
+
+const briefChunkPanel = {
+    name: "brief-chunk-panel",
+    surface: "jarvis",
+    async arrange(h) {
+        const ctx = { efforts: [] };
+        try {
+            const panel = await h.rpc("effortcreate", {
+                title: CHUNK_PANEL_TITLE,
+                chunks: [{ label: "One" }, { label: "Two" }, { label: "Three" }],
+            });
+            ctx.efforts.push(panel.effortoid);
+            await h.rpc("effortmutate", {
+                effortoid: panel.effortoid,
+                author: "you",
+                // appendNote, not a note on the status change: only a plain note is yours to edit and delete
+                ops: [
+                    { op: "setChunkStatus", chunk: "One", status: "done" },
+                    { op: "appendNote", chunk: "One", note: CHUNK_PANEL_NOTE },
+                ],
+            });
+            const blocked = await h.rpc("effortcreate", { title: CHUNK_BLOCKED_TITLE, chunks: [{ label: "Stuck" }] });
+            ctx.efforts.push(blocked.effortoid);
+            await h.rpc("effortmutate", {
+                effortoid: blocked.effortoid,
+                author: "you",
+                ops: [{ op: "setChunkStatus", chunk: "Stuck", status: "blocked" }],
+            });
+            await briefViewport(h, 1600, 1000);
+            // the Brief reads a boot-primed snapshot, so the RPC-created initiatives need a reload
+            await briefReload(h);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        await h.goto("jarvis");
+        // a profile with many initiatives caps the list at eight and folds the rest behind +N more
+        const rowShown = async (title) => {
+            for (let i = 0; i < 60; i++) {
+                if (await h.ev(`!!(${briefInitiativeRow(title)})`)) return true;
+                await h.ev(
+                    `document.querySelector('[data-jarvis-brief-region="initiatives"] [data-jarvis-brief-more="more"]')?.click()`
+                );
+                await briefNap(250);
+            }
+            return false;
+        };
+        const there = ctx.arrangeError == null && (await rowShown(CHUNK_PANEL_TITLE)) && (await rowShown(CHUNK_BLOCKED_TITLE));
+        rec(
+            "0. both initiatives are arranged and on the Brief",
+            there,
+            ctx.arrangeError ?? JSON.stringify({ efforts: ctx.efforts })
+        );
+        if (!there) return steps;
+        const SIDEBAR = `document.querySelector('[data-jarvis-chunk-sidebar]')`;
+        const ROW = briefInitiativeRow(CHUNK_PANEL_TITLE);
+
+        // 1. the row expands where it is
+        const opened = await h.ev(`(async () => {
+            const row = ${ROW};
+            window.__chunkPanelRow = row;
+            row.querySelector(':scope > [role="button"]').click();
+            await new Promise((r) => setTimeout(r, 900));
+            const open = [...document.querySelectorAll('[data-jarvis-initiative-card="open"]')];
+            return { open: open.length, same: open[0] === row, connected: row.isConnected };
+        })()`);
+        rec(
+            "1. clicking an initiative expands that row, which does not move to another place",
+            opened.open === 1 && opened.same === true && opened.connected === true,
+            JSON.stringify(opened)
+        );
+
+        // 2. a chunk opens the panel, which takes the side column's place at 1600 wide
+        const clickedChunk = await polishWaitFor(
+            h,
+            `(() => {
+                const c = (${ROW})?.querySelector('[data-jarvis-tracker-chunk="One"]');
+                if (!c) return false;
+                c.click();
+                return true;
+            })()`,
+            10000
+        );
+        await briefNap(700);
+        const docked = await h.ev(`(() => {
+            const sb = ${SIDEBAR};
+            const side = document.querySelector('[data-jarvis-brief-side]');
+            const r = sb?.getBoundingClientRect();
+            return {
+                clicked: ${clickedChunk},
+                sidebar: sb != null,
+                right: r ? Math.round(r.right) : null,
+                width: r ? Math.round(r.width) : 0,
+                sidePresent: side != null,
+                sideHidden: side != null && side.offsetParent === null,
+            };
+        })()`);
+        rec(
+            "2. a chunk opens the chunk panel in the side column's place",
+            docked.clicked && docked.sidebar && docked.sidePresent && docked.sideHidden,
+            JSON.stringify(docked)
+        );
+        await h.shot("cdp-shots/brief-chunk-panel-docked.png");
+
+        // 3. the header fits its 460px on one line: n / total does not wrap, Work on this chunk (or Go to agent) is not
+        // cut, and Copy wsh command is an icon button (aria-label) whose title is the command
+        const header = await h.ev(`(() => {
+            const sb = ${SIDEBAR};
+            const head = sb?.firstElementChild;
+            const work = sb?.querySelector('[data-jarvis-chunk-work]');
+            const workLabel = work?.querySelector('span');
+            const pos = [...(head?.querySelectorAll('span') ?? [])].find((s) => /^\\d+ \\/ \\d+$/.test(s.textContent.trim()));
+            const copy = sb?.querySelector('button[aria-label="Copy wsh command"]');
+            return {
+                work: workLabel ? workLabel.textContent.trim() : null,
+                workCut: workLabel ? workLabel.scrollWidth > workLabel.clientWidth : null,
+                headScroll: head ? head.scrollWidth : null,
+                headClient: head ? head.clientWidth : null,
+                posHeight: pos ? Math.round(pos.getBoundingClientRect().height) : null,
+                copyTitle: copy ? copy.getAttribute('title') : null,
+            };
+        })()`);
+        rec(
+            "3. the header fits on one line and holds Work on this chunk (or Go to agent) in full and a Copy wsh command icon",
+            (header.work === "Work on this chunk" || header.work === "Go to agent") &&
+                header.workCut === false &&
+                header.headScroll != null &&
+                header.headScroll <= header.headClient &&
+                header.posHeight != null &&
+                header.posHeight < 20 &&
+                (header.copyTitle ?? "").startsWith("wsh effort note"),
+            JSON.stringify(header)
+        );
+
+        // 4. the chunk's label is the panel's title at 14.5px
+        const title = await h.ev(`(() => {
+            const sb = ${SIDEBAR};
+            const el = [...(sb?.querySelectorAll('div') ?? [])].find((d) => d.children.length === 0 && d.textContent.trim() === 'One');
+            return el ? { fontSize: getComputedStyle(el).fontSize } : null;
+        })()`);
+        rec("4. the panel title reads at 14.5px", title?.fontSize === "14.5px", JSON.stringify(title));
+
+        // 5. the note box says what it does
+        const composer = await h.ev(`(() => {
+            const sb = ${SIDEBAR};
+            return {
+                placeholder: sb?.querySelector('textarea[aria-label="New note"]')?.getAttribute('placeholder') ?? null,
+                hint: (sb?.innerText ?? '').includes('Ctrl+Enter adds · Esc clears'),
+            };
+        })()`);
+        rec(
+            "5. the note box asks for a note and shows its keys",
+            composer.placeholder === "Add a note…" && composer.hint === true,
+            JSON.stringify(composer)
+        );
+
+        // 6. a note whose run is gone says so. effortmutate stamps a note `you`: an agent note and the run it names come
+        // from the calling terminal, so no scenario can write one for a run that does not exist.
+        steps.push(
+            skipStep(
+                "6. a note whose run is gone reads \"The run's report is no longer available.\"",
+                "effortmutate takes no run on a note (an agent note's run comes from its terminal); seed an agent note on a deleted run to see it"
+            )
+        );
+
+        // 7. at 1280 wide the panel floats over the Brief, which still renders
+        await briefViewport(h, 1280, 800);
+        await briefNap(800);
+        const floating = await h.ev(`(() => {
+            const sb = ${SIDEBAR};
+            const r = sb?.getBoundingClientRect();
+            return {
+                panelVisible: sb != null && sb.offsetParent != null && r.width > 0 && r.right <= window.innerWidth + 1,
+                regions: document.querySelectorAll('[data-jarvis-brief-region]').length,
+            };
+        })()`);
+        rec(
+            "7. at 1280 wide the panel floats over a Brief that still renders",
+            floating.panelVisible === true && floating.regions > 0,
+            JSON.stringify(floating)
+        );
+        await h.shot("cdp-shots/brief-chunk-panel-floating.png");
+        await briefViewport(h, 1600, 1000);
+        await briefNap(800);
+
+        // 8. the status row is one row of glyph and word, and the note's own actions read as words
+        const controls = await h.ev(`(async () => {
+            const sb = ${SIDEBAR};
+            const radios = [...(sb?.querySelectorAll('[role="radiogroup"] [role="radio"]') ?? [])];
+            const card = [...(sb?.querySelectorAll('[data-jarvis-note-card]') ?? [])].find((c) => c.innerText.includes(${JSON.stringify(CHUNK_PANEL_NOTE)}));
+            let edit = card?.querySelector('[data-jarvis-note-edit]');
+            if (card != null && edit == null) {
+                // a collapsed card shows no actions: open it
+                card.querySelector(':scope > button')?.click();
+                await new Promise((r) => setTimeout(r, 300));
+                edit = card.querySelector('[data-jarvis-note-edit]');
+            }
+            const del = card?.querySelector('[data-jarvis-note-delete]');
+            return {
+                tops: [...new Set(radios.map((r) => Math.round(r.getBoundingClientRect().top)))],
+                words: radios.map((r) => r.textContent.trim()),
+                glyphs: radios.every((r) => r.querySelector('svg') != null),
+                edit: edit ? edit.textContent.trim() : null,
+                del: del ? del.textContent.trim() : null,
+            };
+        })()`);
+        rec(
+            "8. the status radios share one row, each a glyph beside its word, and the note offers Edit and Delete",
+            controls.words.length === 6 &&
+                controls.tops.length === 1 &&
+                controls.words.every((w) => /^[a-z]+$/.test(w)) &&
+                controls.glyphs === true &&
+                controls.edit === "Edit" &&
+                controls.del === "Delete",
+            JSON.stringify(controls)
+        );
+
+        // 9. a chunk row wraps to two lines and shows its status word
+        const chunks = await h.ev(`(() => {
+            const row = ${ROW};
+            const rows = [...(row?.querySelectorAll('[data-jarvis-tracker-chunk]') ?? [])];
+            return rows.map((c) => {
+                const label = c.getAttribute('data-jarvis-tracker-chunk');
+                const span = [...c.children].find((s) => s.tagName === 'SPAN' && s.textContent.trim() === label);
+                const status = c.querySelector('[data-jarvis-chunk-status]');
+                return {
+                    label,
+                    clamp: span != null && span.classList.contains('line-clamp-2') && !span.classList.contains('truncate'),
+                    word: status != null && status.textContent.trim() === status.getAttribute('data-jarvis-chunk-status'),
+                    fixedWidth: status != null && status.classList.contains('w-[86px]'),
+                };
+            });
+        })()`);
+        rec(
+            "9. each chunk label clamps to two lines and each status button reads its word without a fixed width",
+            chunks.length === 3 && chunks.every((c) => c.clamp && c.word && !c.fixedWidth),
+            JSON.stringify(chunks)
+        );
+
+        // 10. blocked initiatives come first, and a row's status cell is a blocked mark, an open agent, a date or a state
+        const order = await h.ev(`(() => {
+            const rows = [...document.querySelectorAll('[data-jarvis-brief-row="initiative"]')].map((r) => ({
+                text: r.innerText,
+                status: (r.querySelector('[data-jarvis-initiative-status]')?.innerText ?? '').trim(),
+            }));
+            const at = (title) => rows.findIndex((r) => r.text.includes(title));
+            const blockedMark = '● blocked';
+            const firstOther = rows.findIndex((r) => r.status !== blockedMark);
+            return {
+                blocked: at(${JSON.stringify(CHUNK_BLOCKED_TITLE)}),
+                panel: at(${JSON.stringify(CHUNK_PANEL_TITLE)}),
+                blockedStatus: rows[at(${JSON.stringify(CHUNK_BLOCKED_TITLE)})]?.status ?? null,
+                statuses: rows.map((r) => r.status),
+                blockedAfterOther: firstOther >= 0 && rows.slice(firstOther).some((r) => r.status === blockedMark),
+            };
+        })()`);
+        const statusOk = (s) =>
+            /^(● blocked|● agent open|[A-Z][a-z]{2} \d{1,2}|paused|archived|done|deferred)$/.test(s);
+        rec(
+            "10. blocked initiatives come first, and every status cell is a mark, a date or a state",
+            order.blocked >= 0 &&
+                order.panel >= 0 &&
+                order.blocked < order.panel &&
+                order.blockedStatus === "● blocked" &&
+                order.statuses.every(statusOk) &&
+                order.blockedAfterOther === false,
+            JSON.stringify(order)
+        );
+
+        // 11. the tour's chunk panel step lights the panel
+        await h.ev(`document.querySelector('[data-jarvis-tour-button]')?.click()`);
+        await briefNap(300);
+        await h.ev(`document.querySelector('[data-jarvis-tour-track="initiatives"]')?.click()`);
+        await briefNap(600);
+        const stepId = () => h.ev(`document.querySelector('[data-jarvis-tour-card]')?.dataset.jarvisTourStep ?? null`);
+        let reached = false;
+        const walked = [];
+        for (let i = 0; i < 15 && !reached; i++) {
+            const id = await stepId();
+            walked.push(id);
+            if (id === "chunk-panel") {
+                reached = true;
+                break;
+            }
+            await h.ev(`document.querySelector('[data-jarvis-tour-next]')?.click()`);
+            await briefNap(500);
+        }
+        await briefNap(500);
+        const spot = await h.ev(`(() => {
+            const sb = ${SIDEBAR}?.getBoundingClientRect();
+            const spots = [...document.querySelectorAll('[data-jarvis-tour-spot]')].map((s) => s.getBoundingClientRect());
+            const hit = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+            return { sidebar: sb != null, spots: spots.length, overlaps: sb != null && spots.some((r) => hit(r, sb)) };
+        })()`);
+        rec(
+            "11. the tour's chunk panel step lights the open panel",
+            reached && spot.overlaps === true,
+            JSON.stringify({ walked, ...spot })
+        );
+        await h.shot("cdp-shots/brief-chunk-panel-tour.png");
+        await h.ev(`document.querySelector('[data-jarvis-tour-skip]')?.click()`);
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await h.ev(`document.querySelector('[data-jarvis-tour-skip]')?.click()`).catch(() => {});
+        // the panel's Close has no text, only its label
+        await h.ev(
+            `[...(document.querySelector('[data-jarvis-chunk-sidebar]')?.querySelectorAll('button') ?? [])].find((b) => b.getAttribute('aria-label') === 'Close')?.click()`
+        ).catch(() => {});
+        await h.ev(`document.querySelector('[data-jarvis-initiative-card="open"]')?.querySelector(':scope > [role="button"]')?.click()`).catch(() => {});
+        for (const oid of ctx.efforts ?? []) {
+            await h.rpc("effortdelete", { effortoid: oid }).catch(() => {});
+        }
+        await h.cdp("Emulation.clearDeviceMetricsOverride").catch(() => {});
+        await h.goto("cockpit");
+    },
+};
+
+// --- brief-run-sheet-order: the question first, the Timing under the tasks, one accent, the one run vocabulary ------
+// A real orchestrator run held by deferstart and given a chained plan (so a task group exists), its roster lead a dev
+// fixture. The run has no live lead, so the sheet has no composer and no Open group, and nothing can make it ask or
+// land: those steps SKIP and say what to seed.
+const BRIEF_RUN_ORDER_LEAD = "run-order lead";
+const RUN_SHEET_VERBS = [
+    "Planning",
+    "Plan review",
+    "Starting",
+    "Working",
+    "Final check",
+    "Wrapping up",
+    "Landing",
+    "Waiting on you",
+    "Blocked",
+    "Done",
+    "Cancelled",
+    "Status is stale",
+];
+
+const briefRunSheetOrder = {
+    name: "brief-run-sheet-order",
+    surface: "jarvis",
+    async arrange(h) {
+        const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-run-order-")) };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            await arrangeFixtureRun(h, ctx, "run-order", BRIEF_RUN_ORDER_LEAD);
+            await h.rpc("dagsubmit", {
+                channelid: ctx.channelId,
+                runid: ctx.runId,
+                title: "verify run-order",
+                parallelism: 1,
+                tasks: RUN_SHEET_POLISH_TASKS,
+            });
+            // a queued task folds away, so the dispatch is awaited to have one worker for teardown to delete
+            await waitForDispatch(h, ctx, "t-1");
+            await briefViewport(h, 1600, 1000);
+            // the roster fixture is read once at boot, and the Brief reads a boot-primed snapshot
+            await briefReload(h);
+            ctx.opened = await h.ev(`(async () => {
+                for (let i = 0; i < 20 && typeof window.__openAddress !== "function"; i++) {
+                    await new Promise((r) => setTimeout(r, 250));
+                }
+                if (typeof window.__openAddress !== "function") return { ok: false, why: "no __openAddress hook" };
+                return window.__openAddress(${JSON.stringify(`run:${ctx.runId}`)});
+            })()`);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        rec(
+            "0. the run's sheet opened on the Brief",
+            ctx.arrangeError == null && ctx.opened?.ok === true,
+            ctx.arrangeError ?? JSON.stringify({ runId: ctx.runId, opened: ctx.opened })
+        );
+        if (ctx.arrangeError != null || ctx.opened?.ok !== true) return steps;
+        const SHEET = `document.querySelector('[data-run-sheet]')`;
+        await polishWaitFor(h, `!!${SHEET}?.querySelector('[data-run-timing]') && !!${SHEET}?.querySelector('[data-run-sheet-rows]')`, 20000);
+        await h.shot("cdp-shots/brief-run-sheet-order.png");
+
+        // 1. Timing sits under the tasks, so a question and the work come first
+        const order = await h.ev(`(() => {
+            const sheet = ${SHEET};
+            const timing = sheet?.querySelector('[data-run-timing]');
+            const body = sheet?.querySelector('[data-run-sheet-rows], [data-run-sheet-empty]');
+            if (!timing || !body) return { timing: !!timing, body: !!body };
+            return {
+                timing: true,
+                body: true,
+                timingTop: Math.round(timing.getBoundingClientRect().top),
+                bodyBottom: Math.round(body.getBoundingClientRect().bottom),
+            };
+        })()`);
+        rec(
+            "1. the Timing section sits below the tasks",
+            order.timingTop != null && order.bodyBottom != null && order.timingTop >= order.bodyBottom - 1,
+            JSON.stringify(order)
+        );
+
+        // 2. the dock has at most one accent button
+        const dock = await h.ev(`(() => {
+            const dock = document.querySelector('[data-run-sheet-dock]');
+            if (!dock) return null;
+            const accents = [...dock.querySelectorAll('button')].filter((b) =>
+                ${JSON.stringify(DOCK_ACCENT_CLASSES)}.every((c) => b.classList.contains(c))
+            );
+            return { buttons: dock.querySelectorAll('button').length, accents: accents.map((b) => b.textContent.trim()) };
+        })()`);
+        rec("2. the dock draws at most one accent button", dock != null && dock.accents.length <= 1, JSON.stringify(dock));
+
+        // 3. i focuses the composer, and the composer shows its keycap and says who it messages. A composer needs a live
+        // lead; briefcompose.test.ts covers the words for every target, so a run with no composer loses nothing here.
+        const composer = await h.ev(`!!document.querySelector('[data-jarvis-brief-composer="input"]')`);
+        if (composer !== true) {
+            steps.push(
+                skipStep(
+                    "3. i focuses the composer, which shows an i keycap and says who it messages",
+                    "the fixture run has no live lead, so its sheet has no composer (briefcompose.test.ts covers the words); seed a run whose lead is a phase worker to see it"
+                )
+            );
+        } else {
+            await h.ev(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'i', bubbles: true }))`);
+            await briefNap(300);
+            const focus = await h.ev(`(() => {
+                const input = document.querySelector('[data-jarvis-brief-composer="input"]');
+                const band = document.querySelector('[data-jarvis-brief-band="composer"]');
+                const text = (k) => band?.querySelector('[data-jarvis-brief-composer="' + k + '"]')?.textContent.trim() ?? null;
+                return {
+                    focused: document.activeElement === input,
+                    keycap: [...(band?.querySelectorAll('kbd') ?? [])].some((k) => k.textContent.trim() === 'i'),
+                    who: text('who'),
+                    scope: text('scope'),
+                };
+            })()`);
+            rec(
+                "3. i focuses the composer, which shows an i keycap and says who it messages",
+                focus.focused &&
+                    focus.keycap &&
+                    (focus.who === "Message the lead" || focus.who === "Message the worker") &&
+                    focus.scope === "goes straight to its terminal",
+                JSON.stringify(focus)
+            );
+        }
+
+        // 4. the sheet's verb is one word of the one vocabulary, and its strip ends in the three-pip tail
+        const verb = await h.ev(`document.querySelector('[data-run-sheet-verb]')?.textContent.trim() ?? null`);
+        const sheetTail = await h.ev(`(() => {
+            const tail = ${SHEET}?.querySelector('[data-run-strip-tail]');
+            if (!tail) return null;
+            return { titles: [...tail.children].map((c) => c.getAttribute('title') ?? ''), strip: tail.closest('[role="img"]') != null };
+        })()`);
+        rec(
+            "4. the verb is one of the run vocabulary and the strip ends in Final check, Wrap-up and Land",
+            RUN_SHEET_VERBS.includes(verb) &&
+                sheetTail != null &&
+                sheetTail.strip === true &&
+                sheetTail.titles.length === 3 &&
+                sheetTail.titles[0].startsWith("Final check:") &&
+                sheetTail.titles[1].startsWith("Wrap-up:") &&
+                sheetTail.titles[2].startsWith("Land:"),
+            JSON.stringify({ verb, sheetTail })
+        );
+
+        // 5. the same tail on the run's row in the Agent tree, and its second line leads with the stage
+        await h.goto("agent");
+        const leadRow = `(() => {
+            const tree = document.querySelector('[data-agent-tree]');
+            const name = tree && [...tree.querySelectorAll('*')].find(
+                (d) => d.textContent.trim() === ${JSON.stringify(BRIEF_RUN_ORDER_LEAD)} && d.children.length === 0
+            );
+            return name ? name.closest('.relative') : null;
+        })()`;
+        await polishWaitFor(h, `!!(${leadRow})?.querySelector('[data-run-strip-tail]')`, 15000);
+        const tree = await h.ev(`(() => {
+            const row = ${leadRow};
+            const tail = row?.querySelector('[data-run-strip-tail]');
+            if (!tail) return { row: !!row };
+            const strip = tail.closest('[role="img"]');
+            const line = strip?.previousElementSibling;
+            const progress = line?.querySelector('span[title]');
+            return {
+                row: true,
+                pips: [...tail.children].map((c) => c.getAttribute('data-pip')),
+                titles: [...tail.children].map((c) => c.getAttribute('title') ?? ''),
+                strip: strip?.getAttribute('aria-label') ?? null,
+                progress: progress ? progress.textContent.trim() : null,
+            };
+        })()`);
+        const PIPS = ["pending", "active", "done", "held", "failed", "skipped"];
+        rec(
+            "5. the run's row in the Agent tree has the same three pips, and its second line leads with the stage",
+            tree.pips?.length === 3 &&
+                tree.pips.every((p) => PIPS.includes(p)) &&
+                tree.titles[0].startsWith("Final check:") &&
+                tree.titles[1].startsWith("Wrap-up:") &&
+                tree.titles[2].startsWith("Land:") &&
+                /^\d+ of 3 tasks done/.test(tree.strip ?? "") &&
+                tree.progress != null &&
+                !/^\d+\/\d+/.test(tree.progress),
+            JSON.stringify(tree)
+        );
+        await h.shot("cdp-shots/brief-run-sheet-order-tree.png");
+
+        // 6. the dock's Open lead and Open in Agent are one segmented group. They need a live lead or worker.
+        steps.push(
+            skipStep(
+                "6. Open lead and Open in Agent sit in one Open group with no corners of their own",
+                "the fixture run has no live lead or worker, so the dock has no Open group; seed a run with a live phase worker to see it"
+            )
+        );
+
+        // 7. a landed run whose final check was unverified reads unverified in the tree
+        steps.push(
+            skipStep(
+                "7. a run that landed unverified reads · unverified, in amber",
+                "no RPC seeds dag.final.state unverified: the engine writes it when a final stage ends; land a run with an unverified final check to see it"
+            )
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await h.cdp("Emulation.clearDeviceMetricsOverride").catch(() => {});
+        await teardownFixtureRun(h, ctx, "brief-run-sheet-order");
     },
 };
 
@@ -7440,6 +8437,9 @@ const tuiFullscreen = {
 // Drives the Launch composer's harness picker and the shared preference atom. No worker is ever spawned:
 // the goal stays a draft, and the one real Run this scenario creates is a legacy object injected via
 // eventpublish (missing runtime), so the header/summary labels are exercised without a harness.
+// The Launch composer's own textarea. Not COMPOSER_SELECTOR: that names the run sheet composer, and a live run's
+// open sheet would answer to it.
+const HARNESS_TEXTAREA = "[data-launcher] textarea";
 const harnessPicker = {
     name: "harness-picker",
     surface: "jarvis",
@@ -7569,7 +8569,7 @@ const harnessPicker = {
         // bare ask uses the preferred runtime; an explicit @ask override is one-off
         const ta = () =>
             h.ev(`(() => {
-                const t = document.querySelector('[data-jarvis-composer] textarea');
+                const t = document.querySelector('${HARNESS_TEXTAREA}');
                 if (!t) return false;
                 const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
                 setter.call(t, ${JSON.stringify("inspect the auth path")});
@@ -7588,7 +8588,7 @@ const harnessPicker = {
             `footer=${footerText.slice(0, 80)}`
         );
         const oneOff = await h.ev(`(() => {
-            const t = document.querySelector('[data-jarvis-composer] textarea');
+            const t = document.querySelector('${HARNESS_TEXTAREA}');
             const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
             setter.call(t, ${JSON.stringify("@ask codex inspect")});
             t.dispatchEvent(new Event('input', { bubbles: true }));
@@ -7646,13 +8646,13 @@ const harnessPicker = {
 
         // blocked submission preserves draft + attachment: attach a file, submit, then assert both remain
         await h.ev(`(() => {
-            const t = document.querySelector('[data-jarvis-composer] textarea');
+            const t = document.querySelector('${HARNESS_TEXTAREA}');
             const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
             setter.call(t, ${JSON.stringify("this must not dispatch")});
             t.dispatchEvent(new Event('input', { bubbles: true }));
             return true;
         })()`);
-        const draftBefore = await h.ev(`document.querySelector('[data-jarvis-composer] textarea')?.value || ''`);
+        const draftBefore = await h.ev(`document.querySelector('${HARNESS_TEXTAREA}')?.value || ''`);
         await h.ev(`(() => {
             const a = document.querySelector('[data-testid="composer-attachment"] input');
             if (!a) return false;
@@ -7665,7 +8665,7 @@ const harnessPicker = {
             return true;
         })()`);
         await settle(300);
-        const draftAfter = await h.ev(`document.querySelector('[data-jarvis-composer] textarea')?.value || ''`);
+        const draftAfter = await h.ev(`document.querySelector('${HARNESS_TEXTAREA}')?.value || ''`);
         rec(
             "10. a blocked dispatch preserves the draft",
             draftBefore.includes("this must not dispatch") && draftAfter === draftBefore,
@@ -9223,12 +10223,12 @@ const briefInlineTracker = {
             rows: document.querySelectorAll('[data-jarvis-brief-row="initiative"]').length,
             expanded: !!document.querySelector('[data-jarvis-initiative-detail]'),
         }))()`);
-        await h.ev(`${row}?.click()`);
+        await h.ev(`${row}?.querySelector(':scope > [role="button"]')?.click()`);
         await h.ev("new Promise((r) => setTimeout(r, 700))");
         const after = await h.ev(`(() => ({
             detail: !!document.querySelector('[data-jarvis-initiative-detail]'),
             sheet: !!document.querySelector('[data-jarvis-brief-sheet-face]'),
-            aria: document.querySelector('[data-jarvis-brief-row="initiative"]')?.getAttribute('aria-expanded') ?? null,
+            aria: document.querySelector('[data-jarvis-brief-row="initiative"] > [role="button"]')?.getAttribute('aria-expanded') ?? null,
         }))()`);
         steps.push({
             step: "1. clicking an initiative expands it in place and opens no sheet",
@@ -9390,7 +10390,7 @@ const briefInlineTracker = {
         }
 
         // 9. collapsing removes the chunk rows again, so a stale cursor cannot survive on one
-        await h.ev(`[...document.querySelectorAll('[data-jarvis-brief-row="initiative"]')][0]?.click()`);
+        await h.ev(`[...document.querySelectorAll('[data-jarvis-brief-row="initiative"]')][0]?.querySelector(':scope > [role="button"]')?.click()`);
         await h.ev("new Promise((r) => setTimeout(r, 500))");
         const collapsed = await h.ev(`(() => ({
             detail: !!document.querySelector('[data-jarvis-initiative-detail]'),
@@ -9454,15 +10454,17 @@ const briefDesignParity = {
         }
         await parityNap(h, 900);
 
-        // (a) the four region labels, as rendered (uppercase comes from CSS, which innerText applies).
-        // a region's head is its first child: a button for waiting/initiatives, the button beside the kind
-        // filter for runs, a div for behind; the label is its first span with text
+        // (a) the five region labels, as rendered (uppercase comes from CSS, which innerText applies).
+        // a region's head is its first child, a div whose first span with text is the label; Since you looked and
+        // Shipped sit in the side column, after the three main regions
         const labels = await h.ev(`[...document.querySelectorAll('section[data-jarvis-brief-region]')].map((s) =>
             [...s.querySelectorAll(':scope > :first-child span')].map((x) => x.innerText.trim()).find((t) => t !== '') ?? null)`);
         await h.shot("cdp-shots/brief-design-parity-a-regions.png");
         steps.push({
-            step: "a. the region labels read WAITING ON YOU, INITIATIVES, RUNS, BEHIND YOU",
-            ok: JSON.stringify(labels) === JSON.stringify(["WAITING ON YOU", "INITIATIVES", "RUNS", "BEHIND YOU"]),
+            step: "a. the region labels read WAITING ON YOU, RUNS, INITIATIVES, SINCE YOU LOOKED, SHIPPED",
+            ok:
+                JSON.stringify(labels) ===
+                JSON.stringify(["WAITING ON YOU", "RUNS", "INITIATIVES", "SINCE YOU LOOKED", "SHIPPED"]),
             detail: JSON.stringify(labels),
         });
 
@@ -9492,8 +10494,8 @@ const briefDesignParity = {
         // plan beneath does not repeat them; its stages carry n/m fractions
         const ROW = `[...document.querySelectorAll('[data-jarvis-brief-row="initiative"]')].find((r) => r.innerText.includes(${JSON.stringify(PARITY_INITIATIVE)}))`;
         const DETAIL = `${ROW}?.parentElement?.querySelector('[data-jarvis-initiative-detail="true"]')`;
-        ctx.wasExpanded = (await h.ev(`${ROW}?.getAttribute('aria-expanded') ?? null`)) === "true";
-        if (!ctx.wasExpanded) await h.ev(`${ROW}?.click()`);
+        ctx.wasExpanded = (await h.ev(`${ROW}?.dataset.jarvisInitiativeCard ?? null`)) === "open";
+        if (!ctx.wasExpanded) await h.ev(`${ROW}?.querySelector(':scope > [role="button"]')?.click()`);
         for (let waited = 0; waited < 3000 && !(await h.ev(`!!${DETAIL}`)); waited += 250) await parityNap(h, 250);
         const card = await h.ev(`(() => {
             const d = ${DETAIL};
@@ -9591,11 +10593,11 @@ const briefDesignParity = {
     },
     async teardown(h, ctx) {
         await h.ev(
-            `[...(document.querySelector('[data-jarvis-chunk-sidebar]')?.querySelectorAll('button') ?? [])].find((b) => b.innerText.trim() === 'Close')?.click()`
+            `[...(document.querySelector('[data-jarvis-chunk-sidebar]')?.querySelectorAll('button') ?? [])].find((b) => b.getAttribute('aria-label') === 'Close')?.click()`
         );
         if (ctx.wasExpanded === false) {
             await h.ev(
-                `[...document.querySelectorAll('[data-jarvis-brief-row="initiative"][aria-expanded="true"]')].find((r) => r.innerText.includes(${JSON.stringify(PARITY_INITIATIVE)}))?.click()`
+                `[...document.querySelectorAll('[data-jarvis-initiative-card="open"]')].find((r) => r.innerText.includes(${JSON.stringify(PARITY_INITIATIVE)}))?.querySelector(':scope > [role="button"]')?.click()`
             );
         }
         await h.goto("cockpit");
@@ -16223,7 +17225,7 @@ const briefInitiativesPolish = {
         if (!rows) return steps;
 
         // 1. the staged plan keeps its stage header
-        await h.ev(`${polishRow(POLISH_STAGED)}?.click()`);
+        await h.ev(`${polishRow(POLISH_STAGED)}?.querySelector(':scope > [role="button"]')?.click()`);
         await polishWaitFor(h, `!!${polishDetail(POLISH_STAGED)}`, 3000);
         await polishNap(400);
         const stagedHeads = await h.ev(`${polishDetail(POLISH_STAGED)}?.querySelectorAll('[data-jarvis-tracker-stage]').length ?? 0`);
@@ -16236,7 +17238,7 @@ const briefInitiativesPolish = {
         );
 
         // 2. the flat plan draws no header, every chunk, and "+ Add chunk" after the last one
-        await h.ev(`${polishRow(POLISH_FLAT)}?.click()`);
+        await h.ev(`${polishRow(POLISH_FLAT)}?.querySelector(':scope > [role="button"]')?.click()`);
         await polishWaitFor(h, `!!${polishDetail(POLISH_FLAT)}`, 3000);
         await polishNap(400);
         const flat = await h.ev(`(() => {
@@ -16336,7 +17338,7 @@ const briefInitiativesPolish = {
             .catch(() => {});
         await h
             .ev(
-                `[...(document.querySelector('[data-jarvis-chunk-sidebar]')?.querySelectorAll('button') ?? [])].find((b) => b.innerText.trim() === 'Close')?.click()`
+                `[...(document.querySelector('[data-jarvis-chunk-sidebar]')?.querySelectorAll('button') ?? [])].find((b) => b.getAttribute('aria-label') === 'Close')?.click()`
             )
             .catch(() => {});
         for (const effortoid of ctx.oids ?? []) {
@@ -29711,6 +30713,9 @@ export const SCENARIOS = [
     codeSideColumn,
     jarvisPet,
     briefSurface,
+    briefLayout,
+    briefChunkPanel,
+    briefRunSheetOrder,
     briefPeek,
     peekCtrlClick,
     peekItemViews,

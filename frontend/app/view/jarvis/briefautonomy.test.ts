@@ -53,18 +53,18 @@ describe("channelAutonomy", () => {
 describe("autonomySummary", () => {
     const row = (tier: string, name: string) => ({ channelId: name, name, tier }) as never;
 
-    it("states the tier and what it costs you when every project agrees", () => {
+    it("states what the tier does to your queue when every project agrees", () => {
         expect(autonomySummary([row("gatekeeper", "a"), row("gatekeeper", "b")])).toEqual({
-            label: "Gatekeeper · answers routine asks",
+            label: "Routine asks: auto",
             tier: "gatekeeper",
             mixed: false,
         });
-        expect(autonomySummary([row("concierge", "a")])?.label).toBe("Concierge · asks you everything");
+        expect(autonomySummary([row("concierge", "a")])?.label).toBe("All asks: to you");
     });
 
-    it("names the highest tier in force when they disagree, because that is the one acting without you", () => {
+    it("counts the projects acting without you when they disagree, because that is the tier that matters", () => {
         expect(autonomySummary([row("concierge", "a"), row("gatekeeper", "b"), row("concierge", "c")])).toEqual({
-            label: "Mixed · 1 of 3 gatekeeper",
+            label: "Mixed · 1 of 3 auto",
             tier: "gatekeeper",
             mixed: true,
         });
@@ -72,7 +72,7 @@ describe("autonomySummary", () => {
 
     it("counts every project at the top tier, not just one", () => {
         expect(autonomySummary([row("gatekeeper", "a"), row("gatekeeper", "b"), row("concierge", "c")])?.label).toBe(
-            "Mixed · 2 of 3 gatekeeper"
+            "Mixed · 2 of 3 auto"
         );
     });
 

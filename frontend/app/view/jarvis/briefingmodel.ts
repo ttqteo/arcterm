@@ -14,7 +14,9 @@ export const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 // The window a region opens at. This projection produces every row it knows about; the caps are what
 // the Brief shows before its regions are expanded, so the hidden rows stay addressable rather than
 // being discarded here. capRegion applies them.
-export const EFFORT_CAP = 6;
+export const EFFORT_CAP = 8;
+// Waiting shows its most urgent three; a longer queue folds behind Show all (spec 2026-10-12 decision 1)
+export const WAITING_CAP = 3;
 // the ideas column caps on its own, so a pile of ideas never hides a live tracker
 export const IDEA_CAP = 6;
 export const ACTIVE_CAP = 8;

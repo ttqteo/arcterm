@@ -59,23 +59,23 @@ export const TOUR_TRACKS: TourTrack[] = [
                 target: ['[data-jarvis-brief-region="waiting"]', '[data-jarvis-brief-band="waiting"]'],
                 vi: {
                     title: "Việc đang chờ bạn",
-                    body: "Câu hỏi của lead và worker, cổng duyệt, task bị chặn và run cần acknowledge gom về đây. Khi không có gì chờ, chỉ còn chip «all clear» trên header. Huy hiệu Jarvis trên nav rail đếm cùng các mục này.",
+                    body: "Câu hỏi của lead và worker, cổng duyệt, task bị chặn và run cần accept gom về đây. Ba việc gấp nhất hiện sẵn, Show all mở phần còn lại. Khi không có gì chờ, chỉ còn chip «all clear» trên header. Huy hiệu Jarvis trên nav rail đếm cùng các mục này.",
                 },
                 en: {
                     title: "What waits on you",
-                    body: "Questions from leads and workers, review gates, blocked tasks and runs to acknowledge gather here. With nothing waiting, only the «all clear» chip in the header shows. The Jarvis badge on the nav rail counts the same items.",
+                    body: "Questions from leads and workers, review gates, blocked tasks and runs to accept gather here. The first three show here, Show all opens the rest. With nothing waiting, only the «all clear» chip in the header shows. The Jarvis badge on the nav rail counts the same items.",
                 },
             },
             {
                 id: "brief:regions",
-                target: ["[data-jarvis-brief-region] button[aria-pressed]"],
+                target: ["[data-jarvis-region-only]"],
                 vi: {
                     title: "Các vùng của Brief",
-                    body: "Brief là một cột các vùng: Waiting on you, Initiatives, Runs, Behind you. Bấm tiêu đề một vùng để chỉ xem vùng đó; bấm lại để hiện tất cả.",
+                    body: "Brief có hai cột. Cột chính: Waiting on you, Runs, Initiatives. Cột bên cạnh: Since you looked, Shipped, Ideas. Nút nhỏ ở cuối tiêu đề mỗi vùng (Show only) chỉ hiện vùng đó; bấm lại để hiện tất cả.",
                 },
                 en: {
                     title: "The Brief's regions",
-                    body: "The Brief is a column of regions: Waiting on you, Initiatives, Runs, Behind you. Click a region's title to show only that region; click it again to show them all.",
+                    body: "The Brief has two columns. The main one holds Waiting on you, Runs and Initiatives; the one beside it holds Since you looked, Shipped and Ideas. The small Show only button at the end of a region's heading shows that region alone; press it again to show them all.",
                 },
             },
             {
@@ -84,24 +84,24 @@ export const TOUR_TRACKS: TourTrack[] = [
                 also: ["[data-jarvis-run-kind]"],
                 vi: {
                     title: "Run đang chạy",
-                    body: "Các run tự chạy, theo project. Nút lọc phía trên chọn loại run. Bấm một hàng để mở run sheet của nó; tour «Run sheet» giải thích sheet đó.",
+                    body: "Các run tự chạy, theo project, nằm trên Initiatives. Nút lọc phía trên chọn loại run. Bấm một hàng để mở run sheet của nó; tour «Run sheet» giải thích sheet đó.",
                 },
                 en: {
                     title: "Runs going on",
-                    body: "Runs working on their own, by project. The toggle above picks which kind to show. Click a row to open its run sheet; the «Run sheet» tour walks through it.",
+                    body: "Runs working on their own, by project, above Initiatives. The toggle above picks which kind to show. Click a row to open its run sheet; the «Run sheet» tour walks through it.",
                 },
             },
             {
                 id: "brief:behind",
                 target: ['[data-jarvis-brief-region="behind"]'],
-                also: ["[data-jarvis-brief-mark-seen]"],
+                also: ["[data-jarvis-brief-mark-seen]", '[data-jarvis-brief-region="shipped"]'],
                 vi: {
                     title: "Từ lần bạn nhìn",
-                    body: "Run đã land và việc đã xong kể từ lần cuối bạn xem. «mark seen» đánh dấu đã xem để vùng này gọn lại.",
+                    body: "Run đã land và việc đã xong kể từ lần cuối bạn xem, ở cột bên cạnh. Ngay dưới là Shipped: những gì đã ship trong 7 ngày qua. «Mark seen» đánh dấu đã xem để Since you looked gọn lại.",
                 },
                 en: {
                     title: "Since you looked",
-                    body: "Runs that landed and work that finished since you last looked. «mark seen» clears them so the region stays short.",
+                    body: "Runs that landed and work that finished since you last looked, in the column beside the work. Shipped sits under it with what shipped in the last seven days. Mark seen clears Since you looked so it stays short.",
                 },
             },
             {
@@ -117,11 +117,11 @@ export const TOUR_TRACKS: TourTrack[] = [
                 id: "brief:keys",
                 vi: {
                     title: "Phím tắt của Brief",
-                    body: "j / k: lên xuống giữa các hàng · Enter: mở hàng · e: mở hoặc gập dải record · Shift+G: graph peek · i: vào ô composer. Shift+? mở danh sách phím đầy đủ.",
+                    body: "j / k: lên xuống giữa các hàng · Enter: mở hàng · r: run mới · e: mở hoặc gập dải record · Shift+G: graph peek. Shift+? mở danh sách phím đầy đủ.",
                 },
                 en: {
                     title: "The Brief's keys",
-                    body: "j / k: move between rows · Enter: open the row · e: open or fold the record band · Shift+G: graph peek · i: into the composer. Shift+? lists every key.",
+                    body: "j / k: move between rows · Enter: open the row · r: new run · e: open or fold the record band · Shift+G: graph peek. Shift+? lists every key.",
                 },
             },
         ],
@@ -148,12 +148,12 @@ export const TOUR_TRACKS: TourTrack[] = [
                 target: ['[data-jarvis-brief-row="initiative"]'],
                 also: ["[data-jarvis-segment-bar]"],
                 vi: {
-                    title: "Thẻ initiative",
-                    body: "Mỗi initiative là một thẻ. Thanh màu có một đoạn cho mỗi chunk: thấy ngay bao nhiêu đã xong và chunk nào nên làm tiếp.",
+                    title: "Hàng initiative",
+                    body: "Mỗi initiative là một hàng. Thanh màu có một đoạn cho mỗi chunk: thấy ngay bao nhiêu đã xong và chunk nào nên làm tiếp. Thứ tự cho biết nên làm gì trước: initiative bị chặn lên đầu, rồi đến những cái đang có agent mở, rồi theo hoạt động gần nhất.",
                 },
                 en: {
-                    title: "An initiative's card",
-                    body: "Each initiative is a card. Its bar has one segment per chunk: how much is done and which chunk comes next, at a glance.",
+                    title: "An initiative's row",
+                    body: "Each initiative is one row. Its bar has one segment per chunk: how much is done and which chunk comes next, at a glance. The order says where to look first: blocked ones on top, then ones with an agent open, then by latest activity.",
                 },
             },
             {
@@ -175,11 +175,25 @@ export const TOUR_TRACKS: TourTrack[] = [
                 prepare: "firstInitiative",
                 vi: {
                     title: "Bên trong một initiative",
-                    body: "Mở thẻ ra là thấy các stage và chunk. Bấm pill trạng thái để đổi trạng thái chunk, Add chunk để thêm, Alt+↑ / Alt+↓ để đổi thứ tự trong stage. Bấm một chunk để đọc chuỗi ghi chú của nó.",
+                    body: "Bấm một hàng để mở ra ngay tại chỗ: các stage và chunk hiện bên dưới hàng đó. Bấm chữ trạng thái của chunk để đổi trạng thái, Add chunk để thêm, Alt+↑ / Alt+↓ để đổi thứ tự trong stage.",
                 },
                 en: {
                     title: "Inside an initiative",
-                    body: "An open card shows its stages and chunks. Click a status pill to change a chunk's state, Add chunk to add one, Alt+↑ / Alt+↓ to reorder within a stage. Click a chunk to read its notes.",
+                    body: "Click a row to open it in place: its stages and chunks show right under it. Click a chunk's status word to change its state, Add chunk to add one, Alt+↑ / Alt+↓ to reorder within a stage.",
+                },
+            },
+            {
+                id: "chunk-panel",
+                target: ["[data-jarvis-chunk-sidebar]"],
+                // the step before opened the initiative; keeping it open keeps the chunk the panel shows
+                prepare: "firstInitiative",
+                vi: {
+                    title: "Panel của chunk",
+                    body: "Bấm một chunk (hoặc Enter) để mở panel của nó. Trên Brief rộng, panel thế chỗ cột bên cạnh; trên Brief hẹp, panel nổi lên trên. Panel có chuỗi ghi chú, ô thêm ghi chú, hàng trạng thái và Work on this chunk: mở một agent chỉ làm chunk này (Go to agent nếu đã có agent đang làm initiative). Esc để đóng.",
+                },
+                en: {
+                    title: "The chunk panel",
+                    body: "Click a chunk (or press Enter) to open its panel. On a wide Brief it takes the side column's place; on a narrow one it floats over the Brief. It holds the chunk's notes, a box to add one, a status row and Work on this chunk, which starts an agent on just this chunk (Go to agent when one is already on the initiative). Esc closes it.",
                 },
             },
             {
@@ -188,11 +202,11 @@ export const TOUR_TRACKS: TourTrack[] = [
                 also: ["[data-jarvis-jot-idea]"],
                 vi: {
                     title: "Ideas",
-                    body: "Ý tưởng chưa có chunk nằm ở cột này. «Jot down an idea» ghi nhanh một ý; mở ý tưởng ra, Plan it nhờ một agent chia nó thành chunk.",
+                    body: "Ý tưởng chưa có chunk nằm ở cột bên cạnh. Gõ vào ô «Jot down an idea» rồi Enter để ghi nhanh một ý (Esc xóa ô); mở ý tưởng ra, Plan it nhờ một agent chia nó thành chunk.",
                 },
                 en: {
                     title: "Ideas",
-                    body: "Ideas with no chunks yet live in this column. «Jot down an idea» notes one quickly; open an idea and Plan it has an agent split it into chunks.",
+                    body: "Ideas with no chunks yet live in the column beside the work. Type into «Jot down an idea» and press Enter to note one (Esc clears the box); open an idea and Plan it has an agent split it into chunks.",
                 },
             },
             {
@@ -221,11 +235,11 @@ export const TOUR_TRACKS: TourTrack[] = [
                 prepare: "newestRun",
                 vi: {
                     title: "Run đang ở đâu",
-                    body: "Động từ cho biết trạng thái: Planning, Executing, Waiting on you, Landing, Done… Thanh bên dưới có một đoạn cho mỗi task, kèm các chip thời gian và số task đã land. Chưa có run nào thì các bước này chỉ là lời giải thích.",
+                    body: "Động từ cho biết trạng thái: Planning, Working, Final check, Wrapping up, Landing, Waiting on you, Done… Thanh bên dưới có một đoạn cho mỗi task và ba chấm cuối cho Final check, Wrap-up và Land: mọi task xanh mà ba chấm chưa xong thì run chưa xong. Kèm các chip thời gian và số task đã land. Chưa có run nào thì các bước này chỉ là lời giải thích.",
                 },
                 en: {
                     title: "Where the run stands",
-                    body: "The verb says where it is: Planning, Executing, Waiting on you, Landing, Done… The bar below has one segment per task, with chips for time and tasks landed. With no run yet, these steps only explain.",
+                    body: "The verb says where it is: Planning, Working, Final check, Wrapping up, Landing, Waiting on you, Done… The bar below has one segment per task and three pips at the end for Final check, Wrap-up and Land: all tasks green is not finished until the pips are. Chips show time and tasks landed. With no run yet, these steps only explain.",
                 },
             },
             {
@@ -234,11 +248,11 @@ export const TOUR_TRACKS: TourTrack[] = [
                 prepare: "newestRun",
                 vi: {
                     title: "Tasks",
-                    body: "Mỗi task một hàng với trạng thái và một hành động: Open in Agent cho worker đang sống, View child run cho task đã xong, Open DAG cho task kẹt ở merge. Dòng next: bên dưới nói run đang đợi gì.",
+                    body: "Mỗi task một hàng với trạng thái và một hành động: Open in Agent cho worker đang sống, View child run cho task đã xong, Open DAG cho task kẹt ở merge. Dòng next: bên dưới nói run đang đợi gì. Khi lead hay worker đang hỏi, câu hỏi nằm ngay trên các task.",
                 },
                 en: {
                     title: "Tasks",
-                    body: "One row per task with its state and an action: Open in Agent for a live worker, View child run for a finished task, Open DAG for one stuck at a merge. The next: line below says what the run waits on.",
+                    body: "One row per task with its state and an action: Open in Agent for a live worker, View child run for a finished task, Open DAG for one stuck at a merge. The next: line below says what the run waits on. When the lead or a worker is asking, its question sits right above the tasks.",
                 },
             },
             {
@@ -301,11 +315,11 @@ export const TOUR_TRACKS: TourTrack[] = [
                 prepare: "newestRun",
                 vi: {
                     title: "Run kế / trước",
-                    body: "j / k (hoặc hai mũi tên này) chuyển sang run kế hoặc trước mà không đóng sheet. Khi run đang sống, ô composer ở đáy nhắn thẳng cho lead hay worker.",
+                    body: "j / k (hoặc hai mũi tên này) chuyển sang run kế hoặc trước mà không đóng sheet. Khi run đang sống, ô composer ở đáy (phím i) nhắn thẳng cho lead hay worker.",
                 },
                 en: {
                     title: "Next and previous run",
-                    body: "j / k (or these arrows) move to the next or previous run without closing the sheet. While a run is live, the composer at the bottom messages its lead or worker directly.",
+                    body: "j / k (or these arrows) move to the next or previous run without closing the sheet. While a run is live, the composer at the bottom (key i) messages its lead or worker directly.",
                 },
             },
         ],

@@ -22,6 +22,18 @@ export type NoteCard = {
     sessionTab: string;
 };
 
+// a note's run read: WOS settles a missing object as no value and no error, so "not loading" is what says gone
+export function noteRunFace(r: {
+    run: Run | undefined;
+    loading: boolean;
+    error: boolean;
+}): "loading" | "gone" | "ready" {
+    if (r.run != null) {
+        return "ready";
+    }
+    return r.loading && !r.error ? "loading" : "gone";
+}
+
 export function sidebarNotes(feed: FeedEntry[], label: string, now: number, expanded: Set<string>): NoteCard[] {
     const entries = feed.filter((f) => f.chunk === label && noteBody(f) !== "");
     return entries.map((f, i) => {

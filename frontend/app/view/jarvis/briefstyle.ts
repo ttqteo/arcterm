@@ -16,10 +16,12 @@ export const LINK_BTN =
 export const SMALL_BTN =
     "cursor-pointer rounded-[6px] border border-border bg-surface-raised px-2 py-[3px] text-[10.5px] font-semibold text-secondary hover:border-edge-strong hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
-export type Tone = "ok" | "active" | "asking" | "error" | "muted" | "faint";
+export type Tone = "ok" | "active" | "running" | "asking" | "error" | "muted" | "faint";
 export const TONE_TEXT: Record<Tone, string> = {
     ok: "text-success",
     active: "text-accent-soft",
+    // the engine moving a run on (a final check, a land), apart from a task at work
+    running: "text-running",
     asking: "text-asking",
     error: "text-error",
     muted: "text-ink-mid",

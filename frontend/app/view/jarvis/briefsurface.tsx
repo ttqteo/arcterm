@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The Brief: the queue-first Jarvis surface that replaces the Subjects · Stage · rail composition.
-// Four bounded regions — waiting on you, initiatives, runs, behind you — over the briefing
-// snapshot, under a header whose fleet line comes off the live agent roster.
+// A main column of three bounded regions — waiting on you, runs, initiatives — beside a side column for the
+// past and the not yet planned (since you looked, shipped, ideas), over the briefing snapshot, under a header
+// whose fleet line comes off the live agent roster.
 //
 // Two rules shape every region. Absence is a written sentence, never a heading over an empty frame:
 // a region renders rows or it says what is not there, and the `empty` flag on Region makes that
@@ -30,15 +31,18 @@ import { useKeybindings } from "@/app/store/keybindings/store";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { formatAge } from "@/app/view/agents/agentsviewmodel";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
 import { jumpToAgent } from "@/app/view/agents/channelsprimitives";
 import { channelsAtom, createChannel, loadChannels, runAtom } from "@/app/view/agents/channelsstore";
+import { openLauncher } from "@/app/view/agents/launcherstore";
 import { projectsAtom } from "@/app/view/agents/projectsstore";
 import { RollingCount } from "@/app/view/agents/rollingcount";
 import { confirmCancelRun, pendingRunDraftAtom } from "@/app/view/agents/runactions";
 import { leadAsker, leadWorker, liveWorkers } from "@/app/view/agents/runmodel";
 import { DagModal } from "@/app/view/orchestrate/dagmodal";
 import { setDagModalAgentsContext } from "@/app/view/orchestrate/dagmodalstate";
+import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue, useSetAtom, type Atom, type PrimitiveAtom } from "jotai";
 import {
@@ -46,6 +50,8 @@ import {
     ArchiveRestore,
     ArrowUpRight,
     Copy,
+    Maximize2,
+    Minimize2,
     Pause,
     Pencil,
     Play,
@@ -74,6 +80,7 @@ import {
     SEVEN_DAYS_MS,
     SHIPPED_CAP,
     summarizeAttentionQueue,
+    WAITING_CAP,
     type QueueRow,
     type QueueSummary,
 } from "./briefingmodel";
@@ -105,14 +112,16 @@ import {
     runRowFace,
     sessionLine,
     sessionWindow,
+    SHIPPED_EMPTY,
     SHIPPED_LABEL,
+    sinceEmptyLine,
     sinceLabel,
     splitIdeas,
     type BriefLine,
     type LineTarget,
     type RunKindFilter,
 } from "./briefrows";
-import { DeltaRowView, IdeaRow, InitiativeCard, RunRowView, ShippedRowView, WaitingRow } from "./briefrowviews";
+import { DeltaRowView, IdeaRow, InitiativeRow, RunRowView, ShippedRowView, WaitingRow } from "./briefrowviews";
 import { BriefSheet } from "./briefsheet";
 import { FAINT_TEXT, LINK_BTN, REGION_LABEL, SMALL_BTN } from "./briefstyle";
 import { BriefToastView } from "./brieftoast";
@@ -125,6 +134,7 @@ import {
     addChunkAt,
     appendChunkNote,
     archivedEffortsAtom,
+    createIdea,
     deleteEffort,
     editNote,
     effortChunkRows,
@@ -145,7 +155,7 @@ import {
 import { freshKeys } from "./freshrows";
 import { type PeekFocus } from "./graphfocus";
 import { GraphPeek } from "./graphpeek";
-import { initiativeResume, noteStamp, type InitiativeResume } from "./initiativework";
+import { initiativeResume, noteStamp, openAgentFor, orderInitiatives, type InitiativeResume } from "./initiativework";
 import { workOnDueChunk, workOnInitiative } from "./initiativeworkaction";
 import {
     chunkRowId,
@@ -192,15 +202,23 @@ const REGIONS = {
         absent: "Nothing is waiting on you. The next gate or ask arrives here.",
         ok: true,
     },
-    initiatives: { label: "Initiatives", absent: "No initiative is active.", ok: false },
-    sessions: { label: "Runs", absent: "Nothing is running on its own.", ok: false },
-    behind: { label: "Behind you", absent: "Nothing has landed since you last looked.", ok: false },
+    sessions: {
+        label: "Runs",
+        absent: "Nothing is running. A run takes a goal or a plan file and lands its work on its own branch.",
+        ok: false,
+    },
+    initiatives: {
+        label: "Initiatives",
+        absent: "No initiative yet. Work bigger than one run lives here as a list of chunks that agents tick off.",
+        ok: false,
+    },
+    behind: { label: "Since you looked", absent: "Nothing new since you last looked.", ok: false },
 } as const;
 type RegionId = keyof typeof REGIONS;
+const SKELETON_REGIONS: RegionId[] = ["waiting", "sessions", "initiatives"];
 
-// A heading is also how one region is read alone: pressing it hides the other regions, pressing it again
-// brings them back. The count is a plain label inside it, because a bordered pill inside a button would
-// read as a second control.
+// A region heading is a label. Reading one region alone is its own small icon button at the heading's end: a
+// full-width heading that hid every other region on a misclick was the trap (spec 2026-10-12 decision 11).
 function RegionHead({
     id,
     label,
@@ -219,13 +237,7 @@ function RegionHead({
     onOnly: () => void;
 }) {
     return (
-        <button
-            type="button"
-            aria-pressed={only}
-            title={only ? "Show every region" : "Show only this region"}
-            onClick={onOnly}
-            className="flex w-full cursor-pointer items-center gap-[9px] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        >
+        <div className="flex w-full items-center gap-[9px]">
             {alert ? <span className="h-1.5 w-1.5 flex-none pulse-soft rounded-full bg-asking" /> : null}
             <span
                 className={cn(
@@ -239,12 +251,28 @@ function RegionHead({
                 <span className="flex-none text-[10.5px] font-medium tabular-nums text-ink-mid">{count}</span>
             ) : null}
             <span className="h-px min-w-3 flex-1 bg-edge-faint" />
-            <span className={cn("flex-none", FAINT_TEXT)}>{only ? "showing only this · press to show all" : meta}</span>
-        </button>
+            <span className={cn("flex-none", FAINT_TEXT)}>{only ? `${meta} · only this region` : meta}</span>
+            <button
+                type="button"
+                data-jarvis-region-only
+                aria-pressed={only}
+                aria-label={only ? "Show every region" : `Show only ${label}`}
+                title={only ? "Show every region" : "Show only this region"}
+                onClick={onOnly}
+                className="flex h-5 w-5 flex-none cursor-pointer items-center justify-center rounded-[5px] border border-border text-muted hover:border-edge-strong hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+                {only ? <Minimize2 size={11} aria-hidden /> : <Maximize2 size={11} aria-hidden />}
+            </button>
+        </div>
     );
 }
 
-// Which kind of run Runs and Shipped show. Sits beside the region head, not in it: the head is a button.
+// The starting control an empty Runs or Initiatives box carries: the secondary button recipe, as the header's
+// New initiative wears it, so the page's one accent button stays the header's New run.
+const EMPTY_ACT =
+    "flex h-[26px] flex-none cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[7px] border border-edge-mid bg-surface-raised px-2.5 text-[11.5px] font-semibold text-ink-hi hover:border-edge-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+
+// Which kind of run Runs and Shipped show. Sits beside the region head, not in it.
 function RunKindToggle({ value, onChange }: { value: RunKindFilter; onChange: (v: RunKindFilter) => void }) {
     return (
         <div
@@ -284,6 +312,7 @@ function Region({
     only,
     onOnly,
     tools,
+    act,
     children,
 }: {
     id: RegionId;
@@ -296,31 +325,34 @@ function Region({
     only: boolean;
     onOnly: () => void;
     tools?: ReactNode;
+    // the control that starts what the empty box says is missing
+    act?: ReactNode;
     children: ReactNode;
 }) {
     const region = REGIONS[id];
-    const head = (
-        <RegionHead id={id} label={region.label} meta={meta} count={count} alert={alert} only={only} onOnly={onOnly} />
-    );
     return (
         <section data-jarvis-brief-region={id} className={cn("flex flex-col", gap)}>
-            {tools != null ? (
-                // a control cannot nest inside the head, which is itself a button
-                <div className="flex items-center gap-2.5">
-                    {head}
-                    {tools}
-                </div>
-            ) : (
-                head
-            )}
+            <div className="flex items-center gap-2.5">
+                <RegionHead
+                    id={id}
+                    label={region.label}
+                    meta={meta}
+                    count={count}
+                    alert={alert}
+                    only={only}
+                    onOnly={onOnly}
+                />
+                {tools}
+            </div>
             {empty ? (
-                <div className="flex items-center gap-[11px] rounded-[10px] border border-dashed border-edge-strong bg-surface px-4 py-3">
+                <div className="flex items-center gap-3 rounded-[10px] border border-dashed border-edge-strong bg-surface px-4 py-3">
                     {region.ok ? (
                         <span aria-hidden className="flex-none text-[12px] font-bold text-success">
                             ✓
                         </span>
                     ) : null}
-                    <span className="text-[13px] text-secondary">{absent ?? region.absent}</span>
+                    <span className="min-w-0 flex-1 text-[13px] text-secondary">{absent ?? region.absent}</span>
+                    {act}
                 </div>
             ) : (
                 children
@@ -349,36 +381,16 @@ function MoreControl({ n, expanded, onToggle }: { n: number; expanded: boolean; 
     );
 }
 
-function QueueSummaryView({
-    summary,
-    count,
-    expanded,
-    error,
-    onToggle,
-}: {
-    summary: QueueSummary;
-    count: number;
-    expanded: boolean;
-    error: boolean;
-    onToggle: () => void;
-}) {
+// The first line of the Waiting box: what is waiting, in one sentence. It is a label, not a control; the rows
+// under it carry the actions, and Show all N folds the rest in.
+function QueueSummaryView({ summary, error }: { summary: QueueSummary; error: boolean }) {
     return (
-        <div className="grid w-full grid-cols-[3px_minmax(0,1fr)_auto] items-center gap-3 rounded-[10px] border border-border bg-surface py-[9px] pl-3 pr-[11px]">
-            <span className={cn("self-stretch rounded-[2px]", error ? "bg-error" : "bg-asking")} />
+        <div className="mb-0.5 flex w-full items-center gap-3 border-b border-border px-2.5 pb-2 pt-[7px]">
+            <span className={cn("w-[3px] flex-none self-stretch rounded-[2px]", error ? "bg-error" : "bg-asking")} />
             <span className="min-w-0">
                 <span className="block truncate text-[13px] font-semibold text-ink-hi">{summary.title}</span>
                 <span className="mt-0.5 block truncate text-[10.5px] tabular-nums text-ink-mid">{summary.detail}</span>
             </span>
-            <button
-                type="button"
-                aria-expanded={expanded}
-                aria-controls="jarvis-attention-details"
-                onClick={onToggle}
-                data-jarvis-brief-attention-summary
-                className="flex-none cursor-pointer rounded-[7px] border border-edge-mid bg-surface-raised px-2.5 py-1 text-[10.5px] font-semibold text-ink-mid hover:border-edge-strong hover:bg-surface-hover hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            >
-                {expanded ? "Hide" : `Review ${count}`}
-            </button>
         </div>
     );
 }
@@ -472,7 +484,7 @@ const briefCursorAtom = atom<string | undefined>(undefined) as PrimitiveAtom<str
 
 // The inline tracker's state, module scope for the cursor's reason: the Brief unmounts on every surface
 // switch, and an initiative that silently re-collapsed while you were away would be worse than none.
-// Keyed by BRIEF LINE id rather than oref, because the same effort can also sit in Behind you and only
+// Keyed by BRIEF LINE id rather than oref, because the same effort can also sit in Since you looked and only
 // its Initiatives row expands.
 const openInitiativeAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 const stageOverridesAtom = atom<Record<string, boolean>>({});
@@ -480,7 +492,7 @@ const stageOverridesAtom = atom<Record<string, boolean>>({});
 // Which regions the user has opened past their window. Module scope for the same reason as the cursor:
 // the Brief unmounts on every surface switch, and a region that silently re-collapsed while you were
 // reading a record would be worse than one that never opened.
-// the ideas column folds on its own, beside the Initiatives region it sits in
+// the ideas section folds on its own, in the side column
 type FoldId = RegionId | "ideas";
 const briefExpandedAtom = atom<Partial<Record<FoldId, boolean>>>({});
 
@@ -524,10 +536,14 @@ function BriefRunRow({
     const agents = useAtomValue(model.agentsAtom);
     const projects = useAtomValue(projectsAtom);
     const index = useAtomValue(briefEffortIndexAtom);
+    const lineage = useAtomValue(model.lineageAtom);
     const asking = run != null ? leadAsker(run, agents) != null : line.state === "asking";
+    // the lineage holds a lead run's dag; a run outside it reads by its own status alone
+    const dag = run != null ? lineage.runs[run.id]?.dag : undefined;
     const face = runRowFace({
         line,
         run,
+        dag,
         asking,
         project: projectName(run?.projectpath ?? "", projects),
         effort: run?.effortref != null ? index.get(run.effortref.effortoid) : undefined,
@@ -704,9 +720,10 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     const queueSummary = useMemo(() => summarizeAttentionQueue(queue, Date.now()), [queue]);
 
     const effortGroups = useMemo(() => splitIdeas(efforts), [efforts]);
+    // ordered before the cap, so the eight shown are the ones that need the next hour
     const effortWindow = useMemo(
-        () => capRegion(effortGroups.trackers, EFFORT_CAP, initiativesOpen),
-        [effortGroups, initiativesOpen]
+        () => capRegion(orderInitiatives(effortGroups.trackers, agents), EFFORT_CAP, initiativesOpen),
+        [effortGroups, agents, initiativesOpen]
     );
     const ideaWindow = useMemo(() => capRegion(effortGroups.ideas, IDEA_CAP, ideasOpen), [effortGroups, ideasOpen]);
     const [runKind, setRunKind] = useAtom(briefRunKindAtom);
@@ -770,6 +787,8 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     );
     // archived initiatives come off the effort list, not the briefing, and show only on request
     const [showArchived, setShowArchived] = useState(false);
+    // the Ideas column's inline input
+    const [jot, setJot] = useState("");
     const archivedSummaries = useAtomValue(archivedEffortsAtom);
     const archivedCards = useMemo(() => archivedSummaries.map(buildEffortCard), [archivedSummaries]);
     useEffect(() => {
@@ -789,17 +808,20 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     }, []);
     const lines = useMemo(() => {
         const now = Date.now();
+        // trackers and ideas are drawn apart (an ideas section in the side column), so j/k has to read them apart
+        const initiatives = filterLines(
+            [...effortWindow.rows, ...(showArchived ? archivedCards : []), ...ideaWindow.rows]
+                .filter((r) => !pendingDeletes.has(effortKey(r.oref)))
+                .map(initiativeLine),
+            query
+        );
         return {
             waiting: filterLines(
                 queue.map((q) => queueLine(q, now)),
                 query
             ),
-            initiatives: filterLines(
-                [...effortWindow.rows, ...(showArchived ? archivedCards : []), ...ideaWindow.rows]
-                    .filter((r) => !pendingDeletes.has(effortKey(r.oref)))
-                    .map(initiativeLine),
-                query
-            ),
+            trackers: initiatives.filter((l) => !l.idea),
+            ideas: initiatives.filter((l) => l.idea),
             sessions: filterLines(
                 sessions.rows.map((r) => sessionLine(r, now)),
                 query
@@ -821,19 +843,31 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         pendingDeletes,
     ]);
     const staleCount = lines.sessions.filter((l) => l.stale).length;
-    const waitingShown = waitingOpen || filtering;
+    // Waiting's window: the first three rows, the rest behind Show all; a filter shows every match
+    const waitingWindow = useMemo(
+        () => capRegion(lines.waiting, WAITING_CAP, waitingOpen || filtering),
+        [lines.waiting, waitingOpen, filtering]
+    );
     const view = useMemo(() => {
         const shows = (id: RegionId) => only == null || only === id;
+        // the side column and its ideas are drawn only when no one region is being read alone
+        const sideShown = only == null;
         // a search reaches the folded runs too: a match hidden behind the fold would read as no match
         const sessionLines = staleOpen || filtering ? lines.sessions : lines.sessions.filter((l) => !l.stale);
+        const behindLines = lines.behind.filter((g) => g.label !== SHIPPED_LABEL).flatMap((g) => g.lines);
+        const shippedLines = lines.behind.find((g) => g.label === SHIPPED_LABEL)?.lines ?? NO_LINES;
+        // j/k walks the rows in the order they are drawn: the main column (Waiting, Runs, Initiatives), then the
+        // side column (Since you looked, Shipped, Ideas)
         const visible: BriefLine[] = [
-            ...(shows("waiting") && waitingShown ? lines.waiting : []),
-            ...(shows("initiatives") ? lines.initiatives : []),
+            ...(shows("waiting") ? waitingWindow.rows : []),
             ...(shows("sessions") ? sessionLines : []),
-            ...(shows("behind") ? lines.behind.flatMap((g) => g.lines) : []),
+            ...(shows("initiatives") ? lines.trackers : []),
+            ...(shows("behind") ? behindLines : []),
+            ...(sideShown ? shippedLines : []),
+            ...(sideShown ? lines.ideas : []),
         ];
-        return { shows, sessionLines, visible };
-    }, [lines, only, staleOpen, filtering, waitingShown]);
+        return { shows, sideShown, sessionLines, shippedLines, visible };
+    }, [lines, only, staleOpen, filtering, waitingWindow]);
 
     // --- inline tracker -----------------------------------------------------------------------------
     // The expanded initiative's plan is spliced into the SAME row list the cursor walks, so j/k falls
@@ -900,6 +934,18 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     );
     const selected = tracker.rows.find((r) => r.kind === "chunk" && r.id === noteChunk);
     const selectedChunk = selected?.kind === "chunk" ? selected : null;
+    // Work on this chunk, or Go to agent when one is already open on the initiative (workOnInitiative goes there first)
+    const chunkWork =
+        selectedChunk != null && openCard != null
+            ? {
+                  label:
+                      openAgentFor(openCard.oref.replace(/^effort:/, ""), agents) != null
+                          ? "Go to agent"
+                          : "Work on this chunk",
+                  onWork: () => void workOnInitiative(model, openCard, { chunk: selectedChunk.row.label }),
+              }
+            : undefined;
+    const chunkPanel = selectedChunk != null && openInitiative != null;
     const closeNotes = useCallback(() => {
         setNoteChunk(null);
         setReadingNote(new Set());
@@ -1096,7 +1142,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
             openLine(cursorTarget);
         }
     }, [cursorRow, cursorTarget, openLine, setNoteChunk, setReadingNote, toggleInitiative]);
-    const shippedLines = lines.behind.find((g) => g.label === SHIPPED_LABEL)?.lines ?? NO_LINES;
+    const shippedLines = view.shippedLines;
     const stageRun = useAtomValue(stageRunAtom);
     const runList = useAtomValue(briefRunListAtom);
     // With a run sheet open on a run of the published list, j/k step the sheet through that list (design
@@ -1147,7 +1193,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
             [runNav, tracker.navIds, cursor, setCursor, openLine, sheetOpen, cursorRow, activateCursor, cursorTarget]
         )
     );
-    // the four regions scroll as one column, so a cursor moved off-screen has to be brought back
+    // the regions scroll as one page, so a cursor moved off-screen has to be brought back
     useEffect(() => {
         document.querySelector('[data-jarvis-brief-cursor="true"]')?.scrollIntoView({ block: "nearest" });
     }, [cursor]);
@@ -1201,9 +1247,8 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         const c = cardOf(l);
         return c != null ? initiativeResume(c.oref.replace(/^effort:/, ""), c.lastnote, agents, Date.now()) : undefined;
     };
-    // cards on the left, ideas in their own column; lines.initiatives keeps that order for j/k
-    const trackerLines = lines.initiatives.filter((l) => !l.idea);
-    const ideaLines = lines.initiatives.filter((l) => l.idea);
+    const trackerLines = lines.trackers;
+    const ideaLines = lines.ideas;
     // the row menu's edits reach archived initiatives too (unarchive, delete), so they read both lists
     const allCards = useMemo(
         () => new Map([...efforts, ...archivedCards].map((e) => [e.oref, e])),
@@ -1288,7 +1333,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     };
     const queueOf = (l: BriefLine) => queue.find((q) => "waiting:" + q.key === l.id)!;
     const ackable = ackableRuns(queue);
-    // every run is acked on its own, so one refused ack leaves the rest acked and names how many failed
+    // every run is accepted on its own, so one refused ack leaves the rest accepted and names how many failed
     const ackAll = () =>
         fireAndForget(async () => {
             const results = await Promise.allSettled(
@@ -1296,9 +1341,9 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
             );
             const failed = results.filter((r) => r.status === "rejected").length;
             if (failed > 0) {
-                briefUndo.error(`${failed} of ${results.length} acknowledgements failed`);
+                briefUndo.error(`${failed} of ${results.length} runs could not be accepted`);
             } else {
-                briefUndo.notify(`Acknowledged ${results.length} unverified runs`);
+                briefUndo.notify(`Accepted ${results.length} unverified runs`);
             }
         });
 
@@ -1468,7 +1513,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 <span className="flex-1" />
                 <label
                     className={cn(
-                        "flex h-[28px] w-[220px] flex-none items-center gap-2 rounded-[8px] border bg-surface-raised pl-2.5 focus-within:border-accent/60",
+                        "flex h-[28px] w-[200px] flex-none items-center gap-2 rounded-[8px] border bg-surface-raised pl-2.5 focus-within:border-accent/60",
                         filtering ? "border-accent/60 pr-1" : "border-edge-mid pr-1.5"
                     )}
                 >
@@ -1512,24 +1557,38 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                         </kbd>
                     )}
                 </label>
-                <AutonomyLadder />
-                {/* A real control with the control recipe's border: invariant 4 forbids camouflaging it among
-                    the status chips above, which are borderless labels. */}
-                <button
-                    type="button"
-                    data-jarvis-brief-profile
-                    aria-haspopup="dialog"
-                    aria-expanded={profileTarget != null}
-                    aria-label="Profile — run defaults"
-                    title="Profile — run defaults"
-                    onClick={() => setProfileTarget("")}
-                    className="flex h-[28px] w-[28px] flex-none cursor-pointer items-center justify-center rounded-[8px] border border-edge-mid bg-surface-raised text-ink-mid hover:border-edge-strong hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                    <SlidersHorizontal aria-hidden size={14} strokeWidth={1.8} />
-                </button>
-                <TourButton />
+                {/* the settings group: three quiet controls, one size */}
+                <div className="flex flex-none items-center gap-1">
+                    <AutonomyLadder />
+                    {/* A real control with the control recipe's border: invariant 4 forbids camouflaging it among
+                        the status chips above, which are borderless labels. */}
+                    <button
+                        type="button"
+                        data-jarvis-brief-profile
+                        aria-haspopup="dialog"
+                        aria-expanded={profileTarget != null}
+                        aria-label="Profile — run defaults"
+                        title="Profile — run defaults"
+                        onClick={() => setProfileTarget("")}
+                        className="flex h-[28px] w-[28px] flex-none cursor-pointer items-center justify-center rounded-[8px] border border-edge-mid bg-surface-raised text-ink-mid hover:border-edge-strong hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                        <SlidersHorizontal aria-hidden size={14} strokeWidth={1.8} />
+                    </button>
+                    <TourButton />
+                </div>
                 <span aria-hidden className="mx-0.5 h-[18px] w-px flex-none bg-border" />
                 <NewInitiativeControl model={model} />
+                {/* the surface's one accent button; r opens the same launcher (buildJarvisBindings) */}
+                <button
+                    type="button"
+                    data-jarvis-new-run
+                    title="New run (r)"
+                    onClick={() => openLauncher(model, "run")}
+                    className="flex h-[28px] flex-none cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[8px] bg-accent px-[11px] text-[12px] font-bold text-background shadow-inset-highlight hover:bg-accenthover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                    New run
+                    <kbd className="font-mono text-[10px] font-normal text-accent-900">r</kbd>
+                </button>
             </header>
             {/* both bands push the surface down, so height belongs in the animation rather than a cut */}
             <AnimatePresence initial={false}>
@@ -1554,8 +1613,9 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 <div
                     className={cn(
                         "flex min-h-0 flex-1 flex-col gap-[26px] overflow-y-auto px-[22px] pb-2.5 pt-5",
-                        // the sidebar docks only in the wide band; below it, it floats over the index
-                        selectedChunk != null && "@min-[1281px]:pr-[480px]"
+                        // the panel docks only in the wide band, where it takes the side column's place and the
+                        // scroller keeps a gutter for it (460px and the 22px edge); below it, it floats over the index
+                        selectedChunk != null && "@min-[1281px]:pr-[482px]"
                     )}
                     aria-live="polite"
                 >
@@ -1598,9 +1658,10 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                 data-jarvis-brief-state="loading"
                                 className="flex min-h-0 flex-1 flex-col gap-[26px]"
                             >
-                                {Object.entries(REGIONS).map(([id, r]) => (
+                                {/* the main regions only: the side column's sections are records of the past */}
+                                {SKELETON_REGIONS.map((id) => (
                                     <div key={id} className="flex min-h-0 flex-1 flex-col gap-2">
-                                        <span className={cn(REGION_LABEL, "text-feed-label")}>{r.label}</span>
+                                        <span className={cn(REGION_LABEL, "text-feed-label")}>{REGIONS[id].label}</span>
                                         <div className="min-h-12 flex-1 animate-pulse rounded-[10px] bg-edge-strong motion-reduce:animate-none" />
                                     </div>
                                 ))}
@@ -1613,59 +1674,232 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                 animate={{ opacity: 1 }}
                                 exit={{ opacity: 0 }}
                                 transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
-                                className="flex flex-col gap-[26px]"
+                                // main column (minmax 1fr) and side column (340px); below a container width of
+                                // 1100px the side column drops under the main one. A region read alone has no
+                                // side column to make room for, and neither has a chunk panel docked in its place.
+                                className={cn(
+                                    "grid grid-cols-1 items-start gap-7",
+                                    view.sideShown && "@min-[1100px]:grid-cols-[minmax(0,1fr)_340px]",
+                                    view.sideShown && chunkPanel && "@min-[1281px]:grid-cols-[minmax(0,1fr)]"
+                                )}
                             >
-                                {/* nothing waiting is said once, by the header chip; the region comes back
+                                <div className="flex min-w-0 flex-col gap-6">
+                                    {/* nothing waiting is said once, by the header chip; the region comes back
                                     with the first gate or ask, or when a filter or the one-region view asks */}
-                                {view.shows("waiting") && (queue.length > 0 || filtering || only === "waiting") ? (
-                                    <Region
-                                        id="waiting"
-                                        alert={queue.length > 0}
-                                        count={queue.length || undefined}
-                                        empty={queue.length === 0}
-                                        gap="gap-[9px]"
-                                        meta="gates before asks"
-                                        only={only === "waiting"}
-                                        onOnly={() => toggleOnly("waiting")}
-                                        tools={
-                                            ackable.length > 1 ? (
+                                    {view.shows("waiting") && (queue.length > 0 || filtering || only === "waiting") ? (
+                                        <Region
+                                            id="waiting"
+                                            alert={queue.length > 0}
+                                            count={queue.length || undefined}
+                                            empty={queue.length === 0}
+                                            gap="gap-[9px]"
+                                            meta={
+                                                queueSummary?.oldestTs != null
+                                                    ? `gates first · oldest ${formatAge(Date.now() - queueSummary.oldestTs)}`
+                                                    : "gates first"
+                                            }
+                                            only={only === "waiting"}
+                                            onOnly={() => toggleOnly("waiting")}
+                                            tools={
+                                                ackable.length > 1 ? (
+                                                    <button
+                                                        type="button"
+                                                        data-jarvis-queue-ack-all
+                                                        onClick={ackAll}
+                                                        className={cn(SMALL_BTN, "flex-none")}
+                                                    >
+                                                        Accept {ackable.length} unverified
+                                                    </button>
+                                                ) : undefined
+                                            }
+                                        >
+                                            {queueSummary != null ? (
+                                                // the summary line, then the first three rows, in one box
+                                                <div
+                                                    id="jarvis-attention-details"
+                                                    className="flex flex-col rounded-[10px] border border-edge-mid bg-surface p-1"
+                                                >
+                                                    <QueueSummaryView
+                                                        summary={queueSummary}
+                                                        error={queue.some((q) => q.tone === "error")}
+                                                    />
+                                                    {lines.waiting.length === 0 ? <NoMatch /> : null}
+                                                    <MotionConfig reducedMotion="user">
+                                                        <AnimatePresence initial={false}>
+                                                            {waitingWindow.rows.map((l) => (
+                                                                <motion.div
+                                                                    key={l.id}
+                                                                    layout
+                                                                    variants={cardVariants}
+                                                                    initial={entering.has(keyOf(l)) ? "initial" : false}
+                                                                    animate="animate"
+                                                                    exit="exit"
+                                                                    transition={{
+                                                                        duration: MOTION.durMacro,
+                                                                        ease: MOTION.easeFluid,
+                                                                    }}
+                                                                >
+                                                                    <WaitingRow
+                                                                        line={l}
+                                                                        focused={cursor === l.id}
+                                                                        act={queueAction(queueOf(l))}
+                                                                        onOpen={
+                                                                            l.target != null
+                                                                                ? (e) => openLine(l.target, e)
+                                                                                : undefined
+                                                                        }
+                                                                        onAct={() => actOnQueue(queueOf(l), l)}
+                                                                    />
+                                                                </motion.div>
+                                                            ))}
+                                                        </AnimatePresence>
+                                                    </MotionConfig>
+                                                    {/* what the window hid, and the way to it: the rows past the third fold
+                                                    here rather than behind a summary button */}
+                                                    {lines.waiting.length > WAITING_CAP && !filtering ? (
+                                                        <button
+                                                            type="button"
+                                                            data-jarvis-brief-attention-summary
+                                                            aria-expanded={waitingOpen}
+                                                            aria-controls="jarvis-attention-details"
+                                                            onClick={() => toggleRegion("waiting")}
+                                                            className={cn(LINK_BTN, "mx-2 mb-1.5 mt-1")}
+                                                        >
+                                                            {waitingOpen
+                                                                ? "Show fewer"
+                                                                : `Show all ${lines.waiting.length}`}
+                                                        </button>
+                                                    ) : null}
+                                                </div>
+                                            ) : null}
+                                        </Region>
+                                    ) : null}
+                                    {view.shows("sessions") ? (
+                                        <Region
+                                            id="sessions"
+                                            empty={sessions.rows.length === 0}
+                                            absent={runKind === "all" ? undefined : `No ${runKind} run is going.`}
+                                            gap="gap-[9px]"
+                                            meta={`${liveN} live`}
+                                            only={only === "sessions"}
+                                            onOnly={() => toggleOnly("sessions")}
+                                            tools={<RunKindToggle value={runKind} onChange={setRunKind} />}
+                                            act={
                                                 <button
                                                     type="button"
-                                                    data-jarvis-queue-ack-all
-                                                    onClick={ackAll}
-                                                    className={cn(SMALL_BTN, "flex-none")}
+                                                    data-jarvis-empty-act="run"
+                                                    onClick={() => openLauncher(model, "run")}
+                                                    className={EMPTY_ACT}
                                                 >
-                                                    Acknowledge {ackable.length} unverified
+                                                    New run
+                                                    <kbd className="font-mono text-[10px] font-normal text-muted">
+                                                        r
+                                                    </kbd>
                                                 </button>
-                                            ) : undefined
-                                        }
-                                    >
-                                        {queueSummary != null ? (
-                                            <div className="flex flex-col gap-[9px]">
-                                                <QueueSummaryView
-                                                    summary={queueSummary}
-                                                    count={queue.length}
-                                                    expanded={waitingOpen}
-                                                    error={queue.some((q) => q.tone === "error")}
-                                                    onToggle={() => toggleRegion("waiting")}
-                                                />
+                                            }
+                                        >
+                                            <div className="flex flex-col">
+                                                {filtering && view.sessionLines.length === 0 ? <NoMatch /> : null}
                                                 <MotionConfig reducedMotion="user">
                                                     <AnimatePresence initial={false}>
-                                                        {waitingShown ? (
+                                                        {view.sessionLines.map((l) => (
                                                             <motion.div
-                                                                id="jarvis-attention-details"
-                                                                key="attention-details"
-                                                                variants={paneReveal}
-                                                                initial="initial"
+                                                                key={l.id}
+                                                                layout
+                                                                variants={cardVariants}
+                                                                initial={entering.has(keyOf(l)) ? "initial" : false}
                                                                 animate="animate"
                                                                 exit="exit"
-                                                                className="flex flex-col overflow-hidden"
+                                                                transition={{
+                                                                    duration: MOTION.durMacro,
+                                                                    ease: MOTION.easeFluid,
+                                                                }}
                                                             >
-                                                                {lines.waiting.length === 0 ? <NoMatch /> : null}
-                                                                {lines.waiting.map((l) => (
+                                                                <BriefRunRow
+                                                                    model={model}
+                                                                    line={l}
+                                                                    focused={cursor === l.id}
+                                                                    selected={sheetOpen && stageRun?.id === l.runOid}
+                                                                    onOpenSheet={
+                                                                        l.target != null
+                                                                            ? (e) => openLine(l.target, e)
+                                                                            : undefined
+                                                                    }
+                                                                    onOpenChunk={revealChunk}
+                                                                />
+                                                            </motion.div>
+                                                        ))}
+                                                    </AnimatePresence>
+                                                </MotionConfig>
+                                                {/* runs the lead marked executing and then never touched again: they are
+                                            real rows, but a week of silence reads as dead, so they fold */}
+                                                {staleCount > 0 && !filtering ? (
+                                                    <button
+                                                        type="button"
+                                                        aria-expanded={staleOpen}
+                                                        data-jarvis-brief-stale
+                                                        onClick={() => setStaleOpen(!staleOpen)}
+                                                        className={cn(LINK_BTN, "mt-0.5")}
+                                                    >
+                                                        {staleOpen ? `Hide ${staleCount}` : `+${staleCount}`}{" "}
+                                                        {staleCount === 1 ? "run" : "runs"} older than 7 days
+                                                    </button>
+                                                ) : null}
+                                                <MoreControl
+                                                    n={sessions.more}
+                                                    expanded={sessionsOpen}
+                                                    onToggle={() => toggleRegion("sessions")}
+                                                />
+                                            </div>
+                                        </Region>
+                                    ) : null}
+                                    {view.shows("initiatives") ? (
+                                        <Region
+                                            id="initiatives"
+                                            count={trackerLines.length}
+                                            empty={efforts.length === 0 && archivedCards.length === 0}
+                                            gap="gap-[9px]"
+                                            meta={paused > 0 ? `${paused} paused` : "all moving"}
+                                            only={only === "initiatives"}
+                                            onOnly={() => toggleOnly("initiatives")}
+                                            act={
+                                                <button
+                                                    type="button"
+                                                    data-jarvis-empty-act="initiative"
+                                                    onClick={() => globalStore.set(model.newInitiativeOpenAtom, true)}
+                                                    className={EMPTY_ACT}
+                                                >
+                                                    New initiative
+                                                    <kbd className="font-mono text-[10px] font-normal text-muted">
+                                                        {formatChordString("Shift:n")}
+                                                    </kbd>
+                                                </button>
+                                            }
+                                        >
+                                            <div className="flex min-w-0 flex-col gap-2">
+                                                {trackerLines.length === 0 ? (
+                                                    filtering ? (
+                                                        <NoMatch />
+                                                    ) : (
+                                                        <span className="px-[11px] py-[7px] text-[12.5px] text-ink-mid">
+                                                            {REGIONS.initiatives.absent}
+                                                        </span>
+                                                    )
+                                                ) : null}
+                                                {trackerLines.length > 0 ||
+                                                effortWindow.more > 0 ||
+                                                initiativesOpen ||
+                                                archivedCards.length > 0 ? (
+                                                    <div className="flex flex-col rounded-[10px] border border-edge-mid bg-surface p-1">
+                                                        <MotionConfig reducedMotion="user">
+                                                            <AnimatePresence initial={false}>
+                                                                {trackerLines.map((l) => (
                                                                     <motion.div
                                                                         key={l.id}
-                                                                        layout
+                                                                        // position, not full layout: the opened row detail owns
+                                                                        // its own height animation, and a size-animating parent
+                                                                        // would re-project that growth as a scale
+                                                                        layout="position"
                                                                         variants={cardVariants}
                                                                         initial={
                                                                             entering.has(keyOf(l)) ? "initial" : false
@@ -1676,357 +1910,290 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                                             duration: MOTION.durMacro,
                                                                             ease: MOTION.easeFluid,
                                                                         }}
+                                                                        // the opened row expands where it is; lifted so a plan menu
+                                                                        // hanging past it paints over the rows after it
+                                                                        className={cn(
+                                                                            "min-w-0",
+                                                                            l.id === openInitiative && "relative z-10"
+                                                                        )}
                                                                     >
-                                                                        <WaitingRow
+                                                                        <InitiativeRow
                                                                             line={l}
                                                                             focused={cursor === l.id}
-                                                                            act={queueAction(queueOf(l))}
-                                                                            onOpen={
-                                                                                l.target != null
-                                                                                    ? (e) => openLine(l.target, e)
-                                                                                    : undefined
+                                                                            fresh={freshInitiatives.has(keyOf(l))}
+                                                                            expanded={l.id === openInitiative}
+                                                                            resume={resumeOf(l)}
+                                                                            onWork={() => {
+                                                                                const c = cardOf(l);
+                                                                                if (c != null) {
+                                                                                    void workOnInitiative(model, c);
+                                                                                }
+                                                                            }}
+                                                                            onContextMenu={(ev) =>
+                                                                                showInitiativeMenu(
+                                                                                    l,
+                                                                                    ev,
+                                                                                    (oref) => openLine({ oref }),
+                                                                                    manageOf(l)
+                                                                                )
                                                                             }
-                                                                            onAct={() => actOnQueue(queueOf(l), l)}
-                                                                        />
+                                                                            onOpen={() => {
+                                                                                setCursor(l.id);
+                                                                                toggleInitiative(l.id);
+                                                                            }}
+                                                                            titleSlot={titleSlotOf(l)}
+                                                                        >
+                                                                            {detailOf(l)}
+                                                                        </InitiativeRow>
                                                                     </motion.div>
                                                                 ))}
-                                                            </motion.div>
-                                                        ) : null}
-                                                    </AnimatePresence>
-                                                </MotionConfig>
-                                            </div>
-                                        ) : null}
-                                    </Region>
-                                ) : null}
-                                {view.shows("initiatives") ? (
-                                    <Region
-                                        id="initiatives"
-                                        count={trackerLines.length}
-                                        empty={efforts.length === 0 && archivedCards.length === 0}
-                                        gap="gap-[9px]"
-                                        meta={paused > 0 ? `${paused} paused` : "all moving"}
-                                        only={only === "initiatives"}
-                                        onOnly={() => toggleOnly("initiatives")}
-                                    >
-                                        {/* doing on the left, kept for later on the right; the ideas column drops
-                                            under the cards when the surface is too narrow for both */}
-                                        <div className="flex flex-wrap items-start gap-x-7 gap-y-5">
-                                            <div className="flex min-w-0 flex-[2_1_520px] flex-col gap-2">
-                                                {trackerLines.length === 0 ? (
-                                                    filtering ? (
-                                                        <NoMatch />
-                                                    ) : (
-                                                        <span className="px-[11px] py-[7px] text-[12.5px] text-ink-mid">
-                                                            {REGIONS.initiatives.absent}
-                                                        </span>
-                                                    )
-                                                ) : null}
-                                                <MotionConfig reducedMotion="user">
-                                                    <div className="grid grid-cols-2 gap-3">
-                                                        <AnimatePresence initial={false}>
-                                                            {trackerLines.map((l) => (
-                                                                <motion.div
-                                                                    key={l.id}
-                                                                    // position, not full layout: the opened card's detail owns
-                                                                    // its own height animation, and a size-animating parent
-                                                                    // would re-project that growth as a scale
-                                                                    layout="position"
-                                                                    variants={cardVariants}
-                                                                    initial={entering.has(keyOf(l)) ? "initial" : false}
-                                                                    animate="animate"
-                                                                    exit="exit"
-                                                                    transition={{
-                                                                        duration: MOTION.durMacro,
-                                                                        ease: MOTION.easeFluid,
-                                                                    }}
-                                                                    // the opened card takes the whole row, so its chunk editor
-                                                                    // keeps its width; lifted so a plan menu hanging past it
-                                                                    // paints over the cards after it
-                                                                    className={cn(
-                                                                        "min-w-0",
-                                                                        l.id === openInitiative &&
-                                                                            "relative z-10 col-span-full"
-                                                                    )}
+                                                            </AnimatePresence>
+                                                        </MotionConfig>
+                                                        {/* what the cap hid, and the archived ones, close the box */}
+                                                        <div className="flex flex-wrap items-center gap-2 px-1.5 pb-1 pt-0.5 empty:hidden">
+                                                            <MoreControl
+                                                                n={effortWindow.more}
+                                                                expanded={initiativesOpen}
+                                                                onToggle={() => toggleRegion("initiatives")}
+                                                            />
+                                                            {archivedCards.length > 0 ? (
+                                                                <button
+                                                                    type="button"
+                                                                    data-jarvis-brief-archived={
+                                                                        showArchived ? "hide" : "show"
+                                                                    }
+                                                                    onClick={() => setShowArchived(!showArchived)}
+                                                                    className={LINK_BTN}
                                                                 >
-                                                                    <InitiativeCard
+                                                                    {showArchived
+                                                                        ? "Hide archived"
+                                                                        : `Show ${archivedCards.length} archived`}
+                                                                </button>
+                                                            ) : null}
+                                                        </div>
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                        </Region>
+                                    ) : null}
+                                </div>
+                                {/* the side column: the past (what happened, what shipped) and what is not
+                                    planned yet. Drawn only when no one region is being read alone. */}
+                                {view.sideShown ? (
+                                    <aside
+                                        data-jarvis-brief-side
+                                        className={cn(
+                                            "flex min-w-0 flex-col gap-[22px]",
+                                            // the chunk panel takes its place on a wide Brief
+                                            chunkPanel && "@min-[1281px]:hidden"
+                                        )}
+                                    >
+                                        {view.shows("behind") ? (
+                                            <section
+                                                data-jarvis-brief-region="behind"
+                                                className="flex flex-col gap-[9px]"
+                                            >
+                                                <div className="flex items-center gap-[9px]">
+                                                    <span className={cn(REGION_LABEL, "text-ink-mid")}>
+                                                        {REGIONS.behind.label}
+                                                    </span>
+                                                    <span className="h-px min-w-3 flex-1 bg-edge-faint" />
+                                                    <span className={FAINT_TEXT}>
+                                                        {sinceLabel(
+                                                            cursorTs,
+                                                            snapshot?.queryStartedAt ?? Date.now(),
+                                                            visitCursor == null
+                                                        )}
+                                                    </span>
+                                                    {deltaRowsN > 0 ? (
+                                                        <button
+                                                            type="button"
+                                                            data-jarvis-brief-mark-seen
+                                                            onClick={() => {
+                                                                const undo = markBriefingSeen();
+                                                                briefUndo.notify("Marked seen", undo);
+                                                            }}
+                                                            className="cursor-pointer text-[10.5px] text-accent-soft hover:underline"
+                                                        >
+                                                            Mark seen
+                                                        </button>
+                                                    ) : null}
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    {deltaRowsN === 0 ? (
+                                                        // a first visit has no last look to be "since", so it says what will show up
+                                                        <p
+                                                            data-jarvis-brief-empty="behind"
+                                                            className="m-0 text-[11.5px] text-muted"
+                                                        >
+                                                            {sinceEmptyLine(visitCursor == null)}
+                                                        </p>
+                                                    ) : null}
+                                                    {lines.behind
+                                                        .filter((g) => g.label !== SHIPPED_LABEL)
+                                                        .map((g) => (
+                                                            <div key={g.label} className="flex flex-col">
+                                                                <div className="px-[11px] pb-0.5 pt-1.5 text-[10.5px] font-bold uppercase tracking-[.09em] text-muted">
+                                                                    {g.label}
+                                                                </div>
+                                                                {g.lines.map((l) => (
+                                                                    <DeltaRowView
+                                                                        key={l.id}
                                                                         line={l}
                                                                         focused={cursor === l.id}
-                                                                        fresh={freshInitiatives.has(keyOf(l))}
-                                                                        expanded={l.id === openInitiative}
-                                                                        resume={resumeOf(l)}
-                                                                        onWork={() => {
-                                                                            const c = cardOf(l);
-                                                                            if (c != null) {
-                                                                                void workOnInitiative(model, c);
-                                                                            }
-                                                                        }}
-                                                                        onContextMenu={(ev) =>
-                                                                            showInitiativeMenu(
-                                                                                l,
-                                                                                ev,
-                                                                                (oref) => openLine({ oref }),
-                                                                                manageOf(l)
-                                                                            )
+                                                                        onOpen={
+                                                                            l.target != null
+                                                                                ? (e) => openLine(l.target, e)
+                                                                                : undefined
                                                                         }
-                                                                        onOpen={() => {
-                                                                            setCursor(l.id);
-                                                                            toggleInitiative(l.id);
-                                                                        }}
-                                                                        titleSlot={titleSlotOf(l)}
-                                                                    >
-                                                                        {detailOf(l)}
-                                                                    </InitiativeCard>
-                                                                </motion.div>
-                                                            ))}
-                                                        </AnimatePresence>
-                                                    </div>
-                                                </MotionConfig>
-                                                <MoreControl
-                                                    n={effortWindow.more}
-                                                    expanded={initiativesOpen}
-                                                    onToggle={() => toggleRegion("initiatives")}
-                                                />
-                                                {archivedCards.length > 0 ? (
+                                                                    />
+                                                                ))}
+                                                            </div>
+                                                        ))}
+                                                    <MoreControl
+                                                        n={deltaWindow.more}
+                                                        expanded={behindOpen}
+                                                        onToggle={() => toggleRegion("behind")}
+                                                    />
+                                                </div>
+                                            </section>
+                                        ) : null}
+                                        {/* its own section, because the two have different time bases: events since your
+                                    last visit, and the last seven days' landed runs. Always drawn, so an empty
+                                    week says so. */}
+                                        <section data-jarvis-brief-region="shipped" className="flex flex-col gap-[9px]">
+                                            <div className="flex items-center gap-[9px]">
+                                                <span className={cn(REGION_LABEL, "text-ink-mid")}>
+                                                    {SHIPPED_LABEL}
+                                                </span>
+                                                <span className="flex-none text-[10.5px] font-medium tabular-nums text-ink-mid">
+                                                    {shippedAll.length}
+                                                </span>
+                                                <span className="h-px min-w-3 flex-1 bg-edge-faint" />
+                                                <span className={FAINT_TEXT}>7 days</span>
+                                            </div>
+                                            <div className="flex flex-col">
+                                                {shippedAll.length === 0 ? (
+                                                    <p
+                                                        data-jarvis-brief-empty="shipped"
+                                                        className="m-0 text-[11.5px] text-muted"
+                                                    >
+                                                        {SHIPPED_EMPTY}
+                                                    </p>
+                                                ) : null}
+                                                {shippedLines.map((l) => (
+                                                    <ShippedRowView
+                                                        key={l.id}
+                                                        line={l}
+                                                        focused={cursor === l.id}
+                                                        selected={
+                                                            sheetOpen &&
+                                                            stageRun != null &&
+                                                            l.target != null &&
+                                                            "oref" in l.target &&
+                                                            l.target.oref === "run:" + stageRun.id
+                                                        }
+                                                        onOpen={
+                                                            l.target != null ? (e) => openLine(l.target, e) : undefined
+                                                        }
+                                                    />
+                                                ))}
+                                                {shippedAll.length > SHIPPED_CAP && !filtering ? (
                                                     <button
                                                         type="button"
-                                                        data-jarvis-brief-archived={showArchived ? "hide" : "show"}
-                                                        onClick={() => setShowArchived(!showArchived)}
-                                                        className={cn(LINK_BTN, "self-start")}
+                                                        data-jarvis-brief-shipped-more
+                                                        onClick={() => setShippedOpen(!shippedOpen)}
+                                                        className="cursor-pointer self-start px-[11px] py-[7px] text-[10.5px] text-accent-soft hover:underline"
                                                     >
-                                                        {showArchived
-                                                            ? "Hide archived"
-                                                            : `Show ${archivedCards.length} archived`}
+                                                        {shippedOpen
+                                                            ? "show less"
+                                                            : `+${shippedAll.length - SHIPPED_CAP} more`}
                                                     </button>
                                                 ) : null}
                                             </div>
-                                            {ideaLines.length > 0 || !filtering ? (
+                                        </section>
+                                        {ideaLines.length > 0 || !filtering ? (
+                                            <section data-jarvis-ideas className="flex min-w-0 flex-col gap-[9px]">
+                                                <div data-jarvis-ideas-label className="flex items-center gap-[9px]">
+                                                    <span className={cn(REGION_LABEL, "text-ink-mid")}>Ideas</span>
+                                                    <span className="flex-none text-[10.5px] font-medium tabular-nums text-ink-mid">
+                                                        {ideaLines.length}
+                                                    </span>
+                                                    <span className="h-px min-w-3 flex-1 bg-edge-faint" />
+                                                    <span className={FAINT_TEXT}>not planned yet</span>
+                                                </div>
                                                 <div
-                                                    data-jarvis-ideas
-                                                    className="flex min-w-0 flex-[1_1_300px] flex-col gap-2"
+                                                    className={cn(
+                                                        "flex flex-col",
+                                                        ideaLines.length > 0 &&
+                                                            "rounded-[10px] border border-border bg-surface p-1"
+                                                    )}
                                                 >
-                                                    <div
-                                                        data-jarvis-ideas-label
-                                                        className="flex items-center gap-[9px] text-[10.5px] text-ink-mid"
-                                                    >
-                                                        <span className={REGION_LABEL}>Ideas</span>
-                                                        <span className="font-medium tabular-nums">
-                                                            {ideaLines.length}
-                                                        </span>
-                                                        <span className="h-px min-w-3 flex-1 bg-edge-faint" />
-                                                        <span className={FAINT_TEXT}>not planned yet</span>
-                                                    </div>
-                                                    <div className="flex flex-col rounded-[10px] border border-border bg-surface p-1">
-                                                        {ideaLines.map((l) => (
-                                                            <IdeaRow
-                                                                key={l.id}
-                                                                line={l}
-                                                                focused={cursor === l.id}
-                                                                fresh={freshInitiatives.has(keyOf(l))}
-                                                                expanded={l.id === openInitiative}
-                                                                onContextMenu={(ev) =>
-                                                                    showInitiativeMenu(
-                                                                        l,
-                                                                        ev,
-                                                                        (oref) => openLine({ oref }),
-                                                                        manageOf(l)
-                                                                    )
-                                                                }
-                                                                onOpen={() => {
-                                                                    setCursor(l.id);
-                                                                    toggleInitiative(l.id);
-                                                                }}
-                                                                titleSlot={titleSlotOf(l)}
-                                                            >
-                                                                {ideaDetailOf(l)}
-                                                            </IdeaRow>
-                                                        ))}
-                                                        <button
-                                                            type="button"
-                                                            data-jarvis-jot-idea
-                                                            title="Write an initiative down without a plan"
-                                                            onClick={() =>
-                                                                globalStore.set(model.newInitiativeOpenAtom, true)
-                                                            }
-                                                            className="flex cursor-pointer items-center gap-[7px] rounded-[8px] px-2.5 py-[9px] text-left text-[12px] text-ink-mid hover:bg-surface-hover hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                                                        >
-                                                            <Plus size={12} aria-hidden />
-                                                            Jot down an idea
-                                                        </button>
-                                                    </div>
-                                                    <MoreControl
-                                                        n={ideaWindow.more}
-                                                        expanded={ideasOpen}
-                                                        onToggle={() => toggleRegion("ideas")}
-                                                    />
-                                                </div>
-                                            ) : null}
-                                        </div>
-                                    </Region>
-                                ) : null}
-                                {view.shows("sessions") ? (
-                                    <Region
-                                        id="sessions"
-                                        empty={sessions.rows.length === 0}
-                                        absent={runKind === "all" ? undefined : `No ${runKind} run is going.`}
-                                        gap="gap-[9px]"
-                                        meta={`${liveN} live`}
-                                        only={only === "sessions"}
-                                        onOnly={() => toggleOnly("sessions")}
-                                        tools={<RunKindToggle value={runKind} onChange={setRunKind} />}
-                                    >
-                                        <div className="flex flex-col">
-                                            {filtering && view.sessionLines.length === 0 ? <NoMatch /> : null}
-                                            <MotionConfig reducedMotion="user">
-                                                <AnimatePresence initial={false}>
-                                                    {view.sessionLines.map((l) => (
-                                                        <motion.div
+                                                    {ideaLines.map((l) => (
+                                                        <IdeaRow
                                                             key={l.id}
-                                                            layout
-                                                            variants={cardVariants}
-                                                            initial={entering.has(keyOf(l)) ? "initial" : false}
-                                                            animate="animate"
-                                                            exit="exit"
-                                                            transition={{
-                                                                duration: MOTION.durMacro,
-                                                                ease: MOTION.easeFluid,
+                                                            line={l}
+                                                            focused={cursor === l.id}
+                                                            fresh={freshInitiatives.has(keyOf(l))}
+                                                            expanded={l.id === openInitiative}
+                                                            onContextMenu={(ev) =>
+                                                                showInitiativeMenu(
+                                                                    l,
+                                                                    ev,
+                                                                    (oref) => openLine({ oref }),
+                                                                    manageOf(l)
+                                                                )
+                                                            }
+                                                            onOpen={() => {
+                                                                setCursor(l.id);
+                                                                toggleInitiative(l.id);
                                                             }}
+                                                            titleSlot={titleSlotOf(l)}
                                                         >
-                                                            <BriefRunRow
-                                                                model={model}
-                                                                line={l}
-                                                                focused={cursor === l.id}
-                                                                selected={sheetOpen && stageRun?.id === l.runOid}
-                                                                onOpenSheet={
-                                                                    l.target != null
-                                                                        ? (e) => openLine(l.target, e)
-                                                                        : undefined
-                                                                }
-                                                                onOpenChunk={revealChunk}
-                                                            />
-                                                        </motion.div>
+                                                            {ideaDetailOf(l)}
+                                                        </IdeaRow>
                                                     ))}
-                                                </AnimatePresence>
-                                            </MotionConfig>
-                                            {/* runs the lead marked executing and then never touched again: they are
-                                            real rows, but a week of silence reads as dead, so they fold */}
-                                            {staleCount > 0 && !filtering ? (
-                                                <button
-                                                    type="button"
-                                                    aria-expanded={staleOpen}
-                                                    data-jarvis-brief-stale
-                                                    onClick={() => setStaleOpen(!staleOpen)}
-                                                    className={cn(LINK_BTN, "mt-0.5")}
-                                                >
-                                                    {staleOpen ? `Hide ${staleCount}` : `+${staleCount}`}{" "}
-                                                    {staleCount === 1 ? "run" : "runs"} older than 7 days
-                                                </button>
-                                            ) : null}
-                                            <MoreControl
-                                                n={sessions.more}
-                                                expanded={sessionsOpen}
-                                                onToggle={() => toggleRegion("sessions")}
-                                            />
-                                        </div>
-                                    </Region>
-                                ) : null}
-                                {view.shows("behind") ? (
-                                    <section data-jarvis-brief-region="behind" className="flex flex-col gap-[9px]">
-                                        <div className="flex items-center gap-[9px]">
-                                            <span className={cn(REGION_LABEL, "text-ink-mid")}>Behind you</span>
-                                            <span className="h-px min-w-3 flex-1 bg-edge-faint" />
-                                            <span className={FAINT_TEXT}>
-                                                {sinceLabel(
-                                                    cursorTs,
-                                                    snapshot?.queryStartedAt ?? Date.now(),
-                                                    visitCursor == null
-                                                )}
-                                            </span>
-                                            {deltaRowsN > 0 ? (
-                                                <button
-                                                    type="button"
-                                                    data-jarvis-brief-mark-seen
-                                                    onClick={() => {
-                                                        const undo = markBriefingSeen();
-                                                        briefUndo.notify("Marked seen", undo);
-                                                    }}
-                                                    className="cursor-pointer text-[10.5px] text-accent-soft hover:underline"
-                                                >
-                                                    mark seen
-                                                </button>
-                                            ) : null}
-                                        </div>
-                                        <div className="flex flex-col">
-                                            {deltaRowsN === 0 ? (
-                                                <div className="px-[11px] py-[7px] text-[12.5px] text-ink-mid">
-                                                    Nothing new since you last looked.
-                                                </div>
-                                            ) : null}
-                                            {lines.behind
-                                                .filter((g) => g.label !== SHIPPED_LABEL)
-                                                .map((g) => (
-                                                    <div key={g.label} className="flex flex-col">
-                                                        <div className="px-[11px] pb-0.5 pt-1.5 text-[10.5px] font-bold uppercase tracking-[.09em] text-muted">
-                                                            {g.label}
-                                                        </div>
-                                                        {g.lines.map((l) => (
-                                                            <DeltaRowView
-                                                                key={l.id}
-                                                                line={l}
-                                                                focused={cursor === l.id}
-                                                                onOpen={
-                                                                    l.target != null
-                                                                        ? (e) => openLine(l.target, e)
-                                                                        : undefined
+                                                    <label
+                                                        data-jarvis-jot-idea
+                                                        className={cn(
+                                                            "flex h-8 items-center gap-2 rounded-[8px] border border-dashed border-edge-strong px-2.5 focus-within:border-accent/60",
+                                                            ideaLines.length > 0 && "mt-1"
+                                                        )}
+                                                    >
+                                                        <Plus size={12} aria-hidden className="flex-none text-muted" />
+                                                        <input
+                                                            aria-label="Jot down an idea"
+                                                            placeholder="Jot down an idea — Enter saves"
+                                                            value={jot}
+                                                            onChange={(e) => setJot(e.target.value)}
+                                                            onKeyDown={(e) => {
+                                                                if (
+                                                                    e.key === "Enter" &&
+                                                                    !e.nativeEvent.isComposing &&
+                                                                    jot.trim() !== ""
+                                                                ) {
+                                                                    const t = jot.trim();
+                                                                    setJot("");
+                                                                    runMutation(() => createIdea(t));
+                                                                    briefUndo.notify(`Jotted “${t}”`);
+                                                                } else if (e.key === "Escape") {
+                                                                    e.stopPropagation();
+                                                                    setJot("");
+                                                                    e.currentTarget.blur();
                                                                 }
-                                                            />
-                                                        ))}
-                                                    </div>
-                                                ))}
-                                            <MoreControl
-                                                n={deltaWindow.more}
-                                                expanded={behindOpen}
-                                                onToggle={() => toggleRegion("behind")}
-                                            />
-                                            <div className="flex items-center gap-2 px-[11px] pb-0.5 pt-3 text-[10.5px] font-bold uppercase tracking-[.09em] text-muted">
-                                                <span>{SHIPPED_LABEL}</span>
-                                                <span className="font-normal tracking-[.04em] tabular-nums">
-                                                    {shippedAll.length}
-                                                </span>
-                                            </div>
-                                            {shippedAll.length === 0 ? (
-                                                <div className="px-[11px] py-[7px] text-[12.5px] text-ink-mid">
-                                                    Nothing shipped in the last seven days.
+                                                            }}
+                                                            className="min-w-0 flex-1 bg-transparent text-[12px] text-ink-hi outline-none placeholder:text-muted"
+                                                        />
+                                                    </label>
                                                 </div>
-                                            ) : null}
-                                            {shippedLines.map((l) => (
-                                                <ShippedRowView
-                                                    key={l.id}
-                                                    line={l}
-                                                    focused={cursor === l.id}
-                                                    selected={
-                                                        sheetOpen &&
-                                                        stageRun != null &&
-                                                        l.target != null &&
-                                                        "oref" in l.target &&
-                                                        l.target.oref === "run:" + stageRun.id
-                                                    }
-                                                    onOpen={l.target != null ? (e) => openLine(l.target, e) : undefined}
+                                                <MoreControl
+                                                    n={ideaWindow.more}
+                                                    expanded={ideasOpen}
+                                                    onToggle={() => toggleRegion("ideas")}
                                                 />
-                                            ))}
-                                            {shippedAll.length > SHIPPED_CAP && !filtering ? (
-                                                <button
-                                                    type="button"
-                                                    data-jarvis-brief-shipped-more
-                                                    onClick={() => setShippedOpen(!shippedOpen)}
-                                                    className="cursor-pointer self-start px-[11px] py-[7px] text-[10.5px] text-accent-soft hover:underline"
-                                                >
-                                                    {shippedOpen
-                                                        ? "show less"
-                                                        : `+${shippedAll.length - SHIPPED_CAP} more`}
-                                                </button>
-                                            ) : null}
-                                        </div>
-                                    </section>
+                                            </section>
+                                        ) : null}
+                                    </aside>
                                 ) : null}
                             </motion.div>
                         ) : null}
@@ -2049,6 +2216,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                         now={Date.now()}
                         handle={`wsh effort note ${selectedChunk.oref.replace(/^effort:/, "")} "${selectedChunk.row.label}"`}
                         error={mutateError}
+                        work={chunkWork}
                         onPrev={stepTo("prev")}
                         onNext={stepTo("next")}
                         onToggle={(key) =>

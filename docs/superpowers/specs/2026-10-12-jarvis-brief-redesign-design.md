@@ -122,7 +122,8 @@ skeleton draws the main regions only.
 ### Chunk panel
 
 It opens as today (Enter on a chunk, or a click). On a Brief container ≥ 1281px it takes the side column's place: the
-grid becomes `minmax(0, 1fr) 460px`. Below 1281px it floats over the Brief as today.
+side column hides and the panel floats over the space that frees (the scroller keeps a 482px right gutter for it).
+Below 1281px it floats over the Brief as today.
 
 - **Header (42px):** `Chunk`, `n / total`, ↑ ↓ (`k` / `j`), a gap, **Work on this chunk** (decision 8), **Copy wsh
   command** (the full `wsh effort note …` in the `title`), ✕ (Esc).

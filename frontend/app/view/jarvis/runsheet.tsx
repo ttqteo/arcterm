@@ -35,7 +35,8 @@ import {
     liveWorkers,
 } from "@/app/view/agents/runmodel";
 import { openRunOrigin, useRunOrigin } from "@/app/view/agents/runoriginstore";
-import { SEG_FILL, STRIP_MAX, taskStrip, taskStripLabel } from "@/app/view/agents/runstrip";
+import { runStage } from "@/app/view/agents/runstage";
+import { PIP_FILL, SEG_FILL, STRIP_MAX, taskStrip, taskStripLabel } from "@/app/view/agents/runstrip";
 import { eventTitle, tsLabel } from "@/app/view/agents/runtimeline";
 import { SectionLabel } from "@/app/view/agents/sectionlabel";
 import { attentionQueue, type QueueEntry } from "@/app/view/orchestrate/attentionqueue";
@@ -81,6 +82,11 @@ const LINK =
     "cursor-pointer text-[10.5px] text-accent-soft hover:text-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent";
 const DOCK_BTN = cn(SHEET_BTN, "bg-transparent px-3 py-1.5 text-[11.5px]");
 const DOCK_ACCENT = cn(DOCK_BTN, "border-accent/50 bg-accent/12 text-accent-soft");
+// a button inside the dock's Open group: the group draws the border and the corners, the ring stays inside them
+const DOCK_SEGMENT = cn(
+    DOCK_BTN,
+    "inline-flex items-center gap-1 rounded-none border-0 bg-surface-raised focus-visible:ring-inset"
+);
 const ROW_BTN =
     "inline-flex h-[22px] flex-none cursor-pointer items-center gap-1 rounded-[5px] border border-edge-mid px-[7px] text-[10.5px] text-secondary hover:border-edge-strong hover:text-ink-hi focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent";
 
@@ -201,12 +207,7 @@ function RunSheetFrame({ ctx, dag }: { ctx: SheetCtx; dag: SheetDagRead | null }
                 onRetry={dag?.digest.retry}
             />
             <div className="sc min-h-0 flex-1 overflow-y-auto px-4 pb-2.5">
-                {dag != null ? (
-                    <RunTimingSection run={run} digest={dag.digest.digest} tasks={dag.group?.tasks} now={now} />
-                ) : null}
-                {group != null && finalEntry != null ? (
-                    <FinalCheckRow key={run.id} group={group} entry={finalEntry} onOpen={setShotsAt} />
-                ) : null}
+                {/* what needs the human leads: the questions, then the body, then the measures under it */}
                 {survivors > 0 ? (
                     <CancelSurvivorsCard model={ctx.model} channelId={channel.oid} run={run} agents={agents} />
                 ) : null}
@@ -226,6 +227,14 @@ function RunSheetFrame({ ctx, dag }: { ctx: SheetCtx; dag: SheetDagRead | null }
                 ) : (
                     <Tasks ctx={ctx} dag={dag} status={status} asks={asks} />
                 )}
+                {dag != null ? (
+                    <div className="mt-3.5">
+                        <RunTimingSection run={run} digest={dag.digest.digest} tasks={dag.group?.tasks} now={now} />
+                    </div>
+                ) : null}
+                {group != null && finalEntry != null ? (
+                    <FinalCheckRow key={run.id} group={group} entry={finalEntry} onOpen={setShotsAt} />
+                ) : null}
             </div>
             {/* the settings face's selector is kept on the dock: checks read it as "a run face is showing". The
                 configuration moved up into the reading; the composer sits under the dock (design L571-587). */}
@@ -374,7 +383,7 @@ function Reading({
                 </span>
                 <span className="min-w-0 text-[13px] leading-[1.35] text-ink-mid">{status.sub}</span>
             </div>
-            <SheetBarView bar={status.meter} dag={dag} />
+            <SheetBarView bar={status.meter} dag={dag} run={run} />
             <RunSettingsPanel
                 run={run}
                 inline
@@ -437,9 +446,9 @@ function Reading({
     );
 }
 
-// the shared task strip (the agent tree, the rail and the Cockpit draw the same one); a stale read keeps the
-// dated count in the dim tone
-function SheetBarView({ bar, dag }: { bar: SheetBar | null; dag: SheetDagRead | null }) {
+// the shared task strip (the agent tree, the rail and the Cockpit draw the same one) and the tail every run ends
+// in, Final check, Wrap-up, Land; a stale read keeps the dated count in the dim tone
+function SheetBarView({ bar, dag, run }: { bar: SheetBar | null; dag: SheetDagRead | null; run: Run }) {
     if (bar == null) {
         return null;
     }
@@ -468,21 +477,38 @@ function SheetBarView({ bar, dag }: { bar: SheetBar | null; dag: SheetDagRead | 
     if (strip == null) {
         return null;
     }
+    const tail = runStage({ status: run.status, land: run.land, dag: group }).tail;
     return (
-        <div role="img" aria-label={taskStripLabel(group, digest)} className="flex h-1 gap-[3px]">
-            {strip.kind === "segments" ? (
-                strip.states.map((st, i) => (
-                    <span key={i} className={cn("h-full min-w-[2px] flex-1 rounded-[2px]", SEG_FILL[st])} />
-                ))
-            ) : (
-                <>
-                    <span className="h-full min-w-0 rounded-[2px] bg-success" style={{ flexGrow: strip.done }} />
+        <div
+            role="img"
+            aria-label={`${taskStripLabel(group, digest)}; ${tail.map((p) => `${p.name} ${p.state}`).join(", ")}`}
+            className="flex h-1 gap-[7px]"
+        >
+            <span className="flex h-full min-w-0 flex-1 gap-[3px]">
+                {strip.kind === "segments" ? (
+                    strip.states.map((st, i) => (
+                        <span key={i} className={cn("h-full min-w-[2px] flex-1 rounded-[2px]", SEG_FILL[st])} />
+                    ))
+                ) : (
+                    <>
+                        <span className="h-full min-w-0 rounded-[2px] bg-success" style={{ flexGrow: strip.done }} />
+                        <span
+                            className="h-full min-w-0 rounded-[2px] bg-edge-strong"
+                            style={{ flexGrow: strip.total - strip.done }}
+                        />
+                    </>
+                )}
+            </span>
+            <span data-run-strip-tail className="flex h-full flex-none gap-[3px] border-l border-edge-strong pl-[7px]">
+                {tail.map((p) => (
                     <span
-                        className="h-full min-w-0 rounded-[2px] bg-edge-strong"
-                        style={{ flexGrow: strip.total - strip.done }}
+                        key={p.name}
+                        data-pip={p.state}
+                        title={`${p.name}: ${p.state}`}
+                        className={cn("h-full w-4 rounded-[2px]", PIP_FILL[p.state])}
                     />
-                </>
-            )}
+                ))}
+            </span>
         </div>
     );
 }
@@ -997,6 +1023,8 @@ function Dock({
     // a blocked run's stopped worker, restarted in its own session (the palette's run:resume)
     const resumePhase = currentPhaseIndex(run);
     const resumable = run.status === "blocked" && canResume(run, resumePhase);
+    // one accent per dock: the first action that moves the run on, the rest read as secondary
+    const accent: "land" | "resume" | "dag" | null = held ? "land" : resumable ? "resume" : run.dagoref ? "dag" : null;
     const [resuming, setResuming] = useState(false);
     const resume = () => {
         setResuming(true);
@@ -1025,7 +1053,7 @@ function Dock({
         });
     };
     return (
-        <div className="flex flex-col gap-1.5 border-t border-edge-faint px-4 py-[11px]">
+        <div data-run-sheet-dock className="flex flex-col gap-1.5 border-t border-edge-faint px-4 py-[11px]">
             {held ? (
                 <span
                     data-run-sheet-land-held
@@ -1042,7 +1070,7 @@ function Dock({
                         data-run-sheet-resume
                         disabled={resuming}
                         onClick={resume}
-                        className={DOCK_ACCENT}
+                        className={accent === "resume" ? DOCK_ACCENT : DOCK_BTN}
                     >
                         {resuming ? "Resuming…" : run.mode === "orchestrator" ? "Resume lead" : "Resume worker"}
                     </button>
@@ -1053,7 +1081,7 @@ function Dock({
                         data-run-sheet-land-again
                         disabled={landing}
                         onClick={land}
-                        className={DOCK_ACCENT}
+                        className={accent === "land" ? DOCK_ACCENT : DOCK_BTN}
                     >
                         {landing ? "Landing…" : "Land again"}
                     </button>
@@ -1062,7 +1090,7 @@ function Dock({
                     <button
                         type="button"
                         onClick={() => openDagLive(channel.oid, run.id, "dag:" + run.dagoref)}
-                        className={held ? DOCK_BTN : DOCK_ACCENT}
+                        className={accent === "dag" ? DOCK_ACCENT : DOCK_BTN}
                     >
                         Open DAG
                     </button>
@@ -1088,25 +1116,29 @@ function Dock({
                         End final stage
                     </button>
                 ) : null}
-                {lead != null ? (
-                    <button
-                        type="button"
-                        onClick={() => jumpToAgent(model, lead.id)}
-                        className={cn(DOCK_BTN, "inline-flex items-center gap-1")}
+                {lead != null || worker != null ? (
+                    <div
+                        role="group"
+                        aria-label="Open"
+                        className="flex overflow-hidden rounded-[7px] border border-edge-mid"
                     >
-                        Open lead
-                        <ArrowUpRight size={11} aria-hidden />
-                    </button>
-                ) : null}
-                {worker != null ? (
-                    <button
-                        type="button"
-                        onClick={() => jumpToAgent(model, worker.id)}
-                        className={cn(DOCK_BTN, "inline-flex items-center gap-1")}
-                    >
-                        Open in Agent
-                        <ArrowUpRight size={11} aria-hidden />
-                    </button>
+                        {lead != null ? (
+                            <button type="button" onClick={() => jumpToAgent(model, lead.id)} className={DOCK_SEGMENT}>
+                                Open lead
+                                <ArrowUpRight size={11} aria-hidden />
+                            </button>
+                        ) : null}
+                        {worker != null ? (
+                            <button
+                                type="button"
+                                onClick={() => jumpToAgent(model, worker.id)}
+                                className={cn(DOCK_SEGMENT, lead != null && "border-l border-edge-mid")}
+                            >
+                                Open in Agent
+                                <ArrowUpRight size={11} aria-hidden />
+                            </button>
+                        ) : null}
+                    </div>
                 ) : null}
                 <span className="flex-1" />
                 {!isTerminal(run.status) ? (

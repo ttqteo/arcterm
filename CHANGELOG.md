@@ -12,6 +12,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- Jarvis: a **New run** button in the header, **Work on this chunk** in the chunk panel, and ideas you jot down
+  inline.
 - **Type straight into the task in the New dialog**: with focus on the Start column, a letter moves you into the Task
   box (or a run's Goal) with that letter in it, so a digit, then the task, then Enter launches.
 - **Images open in the Agent panel's File tab and in Code**: a `.png`, `.jpg`, `.gif`, `.webp`, `.svg` or other image
@@ -71,6 +73,12 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- Jarvis: **Waiting on you** shows its first three items, **Runs** come before **Initiatives**, and **Since you
+  looked**, **Shipped** and **Ideas** sit in a column beside them.
+- Jarvis: initiatives are one-line rows, blocked ones first, that open in place.
+- An unverified run is accepted with **Accept** (was Acknowledge).
+- Runs read one way everywhere (Working, Final check, Wrapping up, Landing, Landed), and a run's strip ends in three
+  pips for Final check, Wrap-up and Land, so all tasks green no longer reads as finished.
 - **Tidier file headers**: in the Agent panel's File tab, Outline, Wrap and Pin are icon buttons now, and so are Wrap,
   Pin and Copy path above Code's editor; a pinned file shows a filled pin instead of the word "Pinned".
 - **Ctrl+C copies in a terminal on Windows while text is selected**, as in Windows Terminal and VS Code; with nothing
@@ -137,6 +145,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- Jarvis: `i` focuses the run sheet's composer; a blocked run no longer reads green; the tour's first card no longer
+  covers the Waiting controls; a chunk note whose run is gone says so instead of loading forever.
 - **A file an agent names from another folder opens on Ctrl+click**: when an agent writes a path relative to the
   folder it is working in (`huong_C/plan.md` rather than `notes/huong_C/plan.md`), the link now finds the file it
   read or wrote there, in its terminal and in its transcript. Before, it was not a link at all.

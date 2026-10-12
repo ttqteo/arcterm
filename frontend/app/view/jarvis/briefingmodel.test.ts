@@ -19,6 +19,7 @@ import {
     queueOpenTarget,
     SHIPPED_CAP,
     summarizeAttentionQueue,
+    WAITING_CAP,
     type AgentRow,
     type BlockerRow,
     type BriefingModelInput,
@@ -264,10 +265,10 @@ describe("briefing projection", () => {
         state.efforts = EFFORT_FIXTURES;
         const m = projectBriefing(input(state));
         expect(m.efforts.map((e) => e.title)).toEqual(["Scenario gate clearance", "Reflux state-layer migration"]);
-        // 8 efforts in, 7 projected (archived never counts), and the cap is what the region opens at
+        // 10 efforts in, 9 projected (archived never counts), and the cap is what the region opens at
         const many = [
             ...EFFORT_FIXTURES,
-            ...Array.from({ length: 6 }, (_, i) => ({
+            ...Array.from({ length: 8 }, (_, i) => ({
                 oref: `effort:e${i}`,
                 title: `effort ${i}`,
                 status: i === 0 ? "archived" : "active",
@@ -278,10 +279,10 @@ describe("briefing projection", () => {
             })),
         ] as WorkState["efforts"];
         const m2 = projectBriefing(input({ ...state, efforts: many }));
-        expect(m2.efforts).toHaveLength(7);
+        expect(m2.efforts).toHaveLength(9);
         expect(m2.efforts.some((e) => e.title === "effort 0")).toBe(false); // archived excluded
         expect(capRegion(m2.efforts, EFFORT_CAP, false)).toMatchObject({ more: 1 });
-        expect(capRegion(m2.efforts, EFFORT_CAP, true).rows).toHaveLength(7);
+        expect(capRegion(m2.efforts, EFFORT_CAP, true).rows).toHaveLength(9);
     });
 
     it("folds blocked chunks into the queue", () => {
@@ -725,6 +726,15 @@ describe("capRegion", () => {
     });
 });
 
+describe("the Waiting window", () => {
+    it("shows the first three items and folds the rest", () => {
+        const q = ["a", "b", "c", "d", "e"];
+        expect(WAITING_CAP).toBe(3);
+        expect(capRegion(q, WAITING_CAP, false)).toEqual({ rows: ["a", "b", "c"], more: 2 });
+        expect(capRegion(q, WAITING_CAP, true)).toEqual({ rows: q, more: 0 });
+    });
+});
+
 // The queue is the one region whose rows are INERT without this: the decision a row waits on is resolved by
 // the run body, so a row that cannot open its run cannot be acted on at all.
 describe("queueOpenTarget", () => {
@@ -811,12 +821,12 @@ describe("design queue wording", () => {
             kind: "open",
         });
         expect(queueAction(q({ wireKind: "ask" }))).toEqual({ label: "Open", kind: "open" });
-        expect(queueAction(q({ wireKind: "run-unverified" }))).toEqual({ label: "Acknowledge", kind: "ack-run" });
+        expect(queueAction(q({ wireKind: "run-unverified" }))).toEqual({ label: "Accept", kind: "ack-run" });
         expect(queueAction(q({ wireKind: "run-unverified", runId: null }))).toEqual({ label: "Open", kind: "open" });
         expect(queueAction(q({ wireKind: "run-land-held" }))).toEqual({ label: "Land again", kind: "land-run" });
         expect(queueAction(q({ wireKind: "run-land-held", runId: null }))).toEqual({ label: "Open", kind: "open" });
     });
-    it("acknowledges all only the rows whose own button is Acknowledge", () => {
+    it("accepts all only the rows whose own button is Accept", () => {
         const rows = [
             q({ wireKind: "run-unverified", channelId: "c1", runId: "r1" }),
             q({ wireKind: "dag-gate", runId: "r2" }),

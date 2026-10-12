@@ -16,6 +16,11 @@ export function noteStamp(ts: number): string {
     return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// "Oct 9": a day for a person to read; noteStamp stays for prompts, which must match `wsh effort show`
+export function shortDate(ts: number): string {
+    return new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 export function workOnPrompt(title: string, effortOid: string, lastNote?: { ts: number }): string {
     const base = `check the initiative ${title} (effort:${effortOid}), where are we`;
     return lastNote != null ? `${base}. Pick up from the newest note (${noteStamp(lastNote.ts)}).` : base;
@@ -33,6 +38,11 @@ export function dueChunkPrompt(title: string, effortOid: string, chunk: string):
     return `the chunk "${chunk}" of the initiative ${title} (effort:${effortOid}) has come due. Read its notes for what to check and what the result decides, do that, add the result as a chunk note, then mark the chunk done, or move its date with \`wsh effort chunk due\``;
 }
 
+// Work on one chunk from the chunk panel: the agent does that chunk only and closes the loop on it
+export function chunkPrompt(title: string, effortOid: string, chunk: string): string {
+    return `work on the chunk "${chunk}" of the initiative ${title} (effort:${effortOid}): read its notes, do it, add the result as a chunk note, then mark it done with \`wsh effort chunk status\``;
+}
+
 const STATE_RANK: Record<AgentVM["state"], number> = { asking: 0, working: 1, idle: 2 };
 
 // A run's agents answer to their run, and a terminal is not an agent session: neither is "the session on
@@ -41,6 +51,21 @@ export function openAgentFor(effortOid: string, agents: AgentVM[]): AgentVM | un
     return agents
         .filter((a) => a.effortId === effortOid && a.runId == null && a.kind !== "terminal")
         .sort((a, b) => STATE_RANK[a.state] - STATE_RANK[b.state] || (b.idleSince ?? 0) - (a.idleSince ?? 0))[0];
+}
+
+type Orderable = { oref: string; status: string; blockedChunks: string[]; updatedts: number };
+
+// where the next hour goes: what is stuck, then what an agent is already on, then the freshest; paused last
+export function orderInitiatives<T extends Orderable>(cards: T[], agents: AgentVM[]): T[] {
+    const rank = (c: T) =>
+        c.status === "paused"
+            ? 3
+            : c.blockedChunks.length > 0
+              ? 0
+              : openAgentFor(c.oref.replace(/^effort:/, ""), agents) != null
+                ? 1
+                : 2;
+    return [...cards].sort((a, b) => rank(a) - rank(b) || b.updatedts - a.updatedts);
 }
 
 export type InitiativeResume =
@@ -61,7 +86,7 @@ export function initiativeResume(
     if (lastNote == null) {
         return { kind: "work", status: "no notes yet", when: "", note: "" };
     }
-    return { kind: "work", status: "last note", when: noteStamp(lastNote.ts), note: lastNote.text };
+    return { kind: "work", status: "last note", when: shortDate(lastNote.ts), note: lastNote.text };
 }
 
 // wshserver_effort.go stamps every new effort with this note, so it says nothing about where work was left

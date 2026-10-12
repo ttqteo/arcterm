@@ -17,6 +17,7 @@ import { useState } from "react";
 import { resolveComposerLabels } from "./briefcompose";
 import { resolveBriefComposerTarget } from "./briefcomposertarget";
 import { briefDraftAtom } from "./briefingstore";
+import { COMPOSER_ATTR } from "./composerkey";
 import { reducePrinciplePatch } from "./profilemodel";
 
 export function RunComposer({
@@ -126,19 +127,20 @@ export function RunComposer({
     const placeholder = orchestrator ? "Message the lead of this session" : "Message the worker on this run";
     return (
         <div
+            {...{ [COMPOSER_ATTR]: "" }}
             data-jarvis-brief-band="composer"
             className="flex flex-col gap-1.5 border-t border-edge-faint px-4 pb-3 pt-2.5"
         >
-            <div className="flex items-center gap-2 text-[10.5px]">
-                <span className="text-success">{orchestrator ? "lead" : target.workerName}</span>
-                <span data-jarvis-brief-composer="scope" className="text-muted">
+            <div className="flex items-center gap-2 text-[11px] text-muted">
+                <span data-jarvis-brief-composer="who">{orchestrator ? "Message the lead" : "Message the worker"}</span>
+                {/* the key that focuses this field (bindings.ts `i`), seen where it works */}
+                <kbd className="rounded-[4px] border border-edge-strong px-1 font-mono text-[10px] leading-4 text-ink-mid">
+                    i
+                </kbd>
+                <span data-jarvis-brief-composer="scope" className="ml-auto">
                     {labels.scope}
                 </span>
-                {labels.alt != null ? (
-                    <span data-jarvis-brief-composer="alt" className="ml-auto text-muted">
-                        {labels.alt}
-                    </span>
-                ) : null}
+                {labels.alt != null ? <span data-jarvis-brief-composer="alt">{labels.alt}</span> : null}
             </div>
             <div className="flex items-end gap-2 rounded-[8px] border border-edge-mid bg-background py-[7px] pl-2.5 pr-[7px] focus-within:border-edge-strong">
                 <textarea

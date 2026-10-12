@@ -109,7 +109,7 @@ export function runGraphRef(run: Run): string | null {
 }
 
 // skipped counts as finished: a run that skipped a task and landed the rest has nothing left to dispatch,
-// and a meter stuck one short would contradict the Landing verb beside it.
+// and a meter stuck one short would contradict the Wrapping up verb beside it.
 const FINISHED_TASK_STATES = new Set(["done", "skipped"]);
 
 function finishedCount(group: TaskGroup): number {
@@ -138,6 +138,31 @@ export function sheetStatus(read: SheetRead): SheetStatus {
 
 function doneStatus(read: SheetRead): SheetStatus {
     const { run, nowMs } = read;
+    // a done run on its own branch is not in its base until the branch lands: the sheet says so before it says Done
+    if (run.land?.state === "pending") {
+        return {
+            verb: "Landing",
+            sub: `merging wave/${run.id} into ${run.basebranch || "its base"}`,
+            tone: "success",
+            pulse: true,
+            meter: read.dag?.group != null ? STRIP : null,
+            meta: [],
+            next: null,
+            retry: false,
+        };
+    }
+    if (run.land?.state === "held" && run.land.dismissed !== true) {
+        return {
+            verb: "Waiting on you",
+            sub: `Not merged back: ${run.land.reason || "the engine gave no reason"}`,
+            tone: "warning",
+            pulse: true,
+            meter: read.dag?.group != null ? STRIP : null,
+            meta: [],
+            next: "Land again once the reason is cleared",
+            retry: false,
+        };
+    }
     const group = read.dag?.group ?? null;
     const report = read.dag?.digest.digest?.report;
     const wallMs = run.evidence?.durationms || (run.completedts ? run.completedts - run.createdts : 0);
@@ -285,7 +310,7 @@ function undaggedStatus(read: SheetRead): SheetStatus {
             next: null,
         };
     }
-    return { ...quiet, verb: "Executing", sub: "one worker, no plan", tone: "success", pulse: true, meta, next: null };
+    return { ...quiet, verb: "Working", sub: "one worker, no plan", tone: "success", pulse: true, meta, next: null };
 }
 
 function daggedStatus(read: SheetRead, dag: SheetDagRead): SheetStatus {
@@ -298,7 +323,7 @@ function daggedStatus(read: SheetRead, dag: SheetDagRead): SheetStatus {
     };
     if (dag.groupRead === "loading" || (dag.groupRead === "ready" && digest == null && state.loading)) {
         return {
-            verb: "Executing",
+            verb: "Working",
             sub: "reading the task graph…",
             tone: "muted",
             pulse: true,
@@ -310,7 +335,7 @@ function daggedStatus(read: SheetRead, dag: SheetDagRead): SheetStatus {
     }
     if (dag.groupRead !== "ready" || dag.group == null || digest == null) {
         return {
-            verb: "Executing",
+            verb: "Working",
             sub: "the run is live, but its task graph could not be read",
             tone: "error",
             pulse: false,
@@ -350,7 +375,8 @@ function daggedStatus(read: SheetRead, dag: SheetDagRead): SheetStatus {
         meta.push({ text: chip, tone: chip === "unverified" ? "warning" : "muted" });
     }
     if (digest.counts.attention > 0) {
-        meta.push({ text: `attention ${digest.counts.attention}`, tone: "warning" });
+        const n = digest.counts.attention;
+        meta.push({ text: `${n} ${n === 1 ? "needs" : "need"} you`, tone: "warning" });
     }
     if (digest.counts.mergeready > 0) {
         meta.push({ text: `merge ${digest.counts.mergeready}`, tone: "warning" });
@@ -378,8 +404,8 @@ function daggedStatus(read: SheetRead, dag: SheetDagRead): SheetStatus {
     }
     if (digest.next.kind === "terminal" && digest.next.terminalstatus === "done") {
         return {
-            verb: "Landing",
-            sub: `all ${plural(total, "task")} done, nothing left to dispatch`,
+            verb: "Wrapping up",
+            sub: `all ${plural(total, "task")} done · the lead is writing the report`,
             tone: "warning",
             pulse: true,
             meter,
@@ -388,12 +414,12 @@ function daggedStatus(read: SheetRead, dag: SheetDagRead): SheetStatus {
             retry: false,
         };
     }
-    // every task merged, the final stage checking the merged result: not "Executing", which read as workers still on it
+    // every task merged, the final stage checking the merged result: not "Working", which read as workers still on it
     if (group.status === "finalizing") {
         const activity = finalStageActivity(group.final);
         const step = group.final?.stepts ? ` (${since(nowMs, group.final.stepts)})` : "";
         return {
-            verb: "Verifying",
+            verb: "Final check",
             sub: `all ${plural(total, "task")} done · final: ${activity ? activity + step : "starting"}`,
             tone: "success",
             pulse: true,
@@ -420,7 +446,7 @@ function daggedStatus(read: SheetRead, dag: SheetDagRead): SheetStatus {
         const needing = digest.counts.attention || (digest.next.taskids?.length ?? 0);
         const needs = `${plural(needing, "task")} need${needing === 1 ? "s" : ""} you`;
         return {
-            verb: running > 0 ? "Executing" : "Waiting on you",
+            verb: running > 0 ? "Working" : "Waiting on you",
             sub: running > 0 ? `${finished} of ${total} done · ${needs}` : `${needs}; nothing else is running`,
             tone: "warning",
             pulse: true,
@@ -431,7 +457,7 @@ function daggedStatus(read: SheetRead, dag: SheetDagRead): SheetStatus {
         };
     }
     return {
-        verb: "Executing",
+        verb: "Working",
         sub:
             `${finished} of ${plural(total, "task")} done` + (running > 0 ? `, ${plural(running, "worker")} live` : ""),
         tone: "success",

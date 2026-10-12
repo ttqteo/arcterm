@@ -58,11 +58,11 @@ describe("runStatusView", () => {
     it("maps a dag's plan-review to a review tone", () => {
         expect(runStatusView("plan-review")).toEqual({ label: "reviewing plan", tone: "review" });
     });
-    it("maps a dag's finalizing to verifying with a running tone", () => {
-        expect(runStatusView("finalizing")).toEqual({ label: "verifying", tone: "running" });
+    it("maps a dag's finalizing to final check with a running tone", () => {
+        expect(runStatusView("finalizing")).toEqual({ label: "final check", tone: "running" });
     });
-    it("maps executing to a running tone", () => {
-        expect(runStatusView("executing").tone).toBe("running");
+    it("maps executing to working with a running tone", () => {
+        expect(runStatusView("executing")).toEqual({ label: "working", tone: "running" });
     });
     it("falls back to the raw status with a planning tone", () => {
         expect(runStatusView("weird")).toEqual({ label: "weird", tone: "planning" });
@@ -74,7 +74,7 @@ describe("runStatusView", () => {
             tone: "blocked",
         });
         expect(runStatusView("done", { state: "landed" })).toEqual({ label: "landed", tone: "done" });
-        expect(runStatusView("done")).toEqual({ label: "done", tone: "done" });
+        expect(runStatusView("done")).toEqual({ label: "complete", tone: "done" });
     });
 });
 
@@ -89,16 +89,16 @@ describe("finishedRunLabel", () => {
         dag: { status: dagStatus } as TaskGroup,
     });
     it("says the lead is wrapping up until it completes the run", () => {
-        expect(finishedRunLabel(info("executing"))).toBe("lead wrapping up");
+        expect(finishedRunLabel(info("executing"))).toBe("Wrapping up · lead");
     });
     it("follows the land once the run is done", () => {
-        expect(finishedRunLabel(info("done"))).toBe("run complete");
-        expect(finishedRunLabel(info("done", { state: "pending" }))).toBe("landing");
-        expect(finishedRunLabel(info("done", { state: "held" }))).toBe("land held");
-        expect(finishedRunLabel(info("done", { state: "landed" }))).toBe("landed");
+        expect(finishedRunLabel(info("done"))).toBe("Complete");
+        expect(finishedRunLabel(info("done", { state: "pending" }))).toBe("Landing");
+        expect(finishedRunLabel(info("done", { state: "held" }))).toBe("Land held");
+        expect(finishedRunLabel(info("done", { state: "landed" }))).toBe("Landed");
     });
     it("says a cancelled run is cancelled", () => {
-        expect(finishedRunLabel(info("executing", undefined, "cancelled"))).toBe("run cancelled");
+        expect(finishedRunLabel(info("executing", undefined, "cancelled"))).toBe("Cancelled");
     });
 });
 
@@ -114,12 +114,12 @@ describe("dagProgressLabel", () => {
         dag: { status: dagStatus, tasks: taskList } as TaskGroup,
     });
     it("counts done tasks while the plan executes", () => {
-        expect(dagProgressLabel(info("running"), false)).toBe("2/3 done");
+        expect(dagProgressLabel(info("running"), false)).toBe("Working · 2/3");
     });
     it("does not read as done while the final stage verifies, even with every task done", () => {
         const allDone = [{ state: "done" }, { state: "done" }] as TaskGroup["tasks"];
-        expect(dagProgressLabel(info("finalizing", allDone), false)).toBe("2/2 · verifying the merged result");
-        expect(dagProgressLabel(info("finalizing", allDone), true)).toBe("2/2 · verifying the merged result");
+        expect(dagProgressLabel(info("finalizing", allDone), false)).toBe("Final check · verifying the merged result");
+        expect(dagProgressLabel(info("finalizing", allDone), true)).toBe("Final check · verifying the merged result");
     });
     it("names the final stage's running step", () => {
         const allDone = [{ state: "done" }, { state: "done" }] as TaskGroup["tasks"];
@@ -128,27 +128,47 @@ describe("dagProgressLabel", () => {
             return { ...run, dag: { ...run.dag, final } as TaskGroup };
         };
         const cases: [FinalStage, string][] = [
-            [{ state: "checking", round: 1 }, "2/2 · final: starting"],
-            [{ state: "checking", round: 1, step: "tree" }, "2/2 · final: preparing the tree"],
-            [{ state: "checking", round: 1, step: "check" }, "2/2 · final: running Check"],
-            [{ state: "checking", round: 1, step: "verify" }, "2/2 · final: running Verify"],
+            [{ state: "checking", round: 1 }, "Final check · starting"],
+            [{ state: "checking", round: 1, step: "tree" }, "Final check · preparing the tree"],
+            [{ state: "checking", round: 1, step: "check" }, "Final check · running Check"],
+            [{ state: "checking", round: 1, step: "verify" }, "Final check · running Verify"],
             [
                 { state: "checking", round: 1, step: "verify", verifierrunid: "v" },
-                "2/2 · final: running Verify · verifier alongside",
+                "Final check · running Verify · verifier alongside",
             ],
-            [{ state: "final", round: 1, step: "final", verifierrunid: "v" }, "2/2 · final: running Final"],
-            [{ state: "verifying", round: 1 }, "2/2 · final: verifier reviewing"],
+            [{ state: "final", round: 1, step: "final", verifierrunid: "v" }, "Final check · running Final"],
+            [{ state: "verifying", round: 1 }, "Final check · verifier reviewing"],
         ];
         for (const [final, want] of cases) {
             expect(dagProgressLabel(at(final), false)).toBe(want);
         }
     });
     it("says whether a leadless run's lead has started", () => {
-        expect(dagProgressLabel(info("running"), true)).toBe("2/3 · lead starts if needed");
-        expect(dagProgressLabel(info("running", tasks, true), true)).toBe("2/3 · lead closed");
+        expect(dagProgressLabel(info("running"), true)).toBe("Working · 2/3 · lead starts if needed");
+        expect(dagProgressLabel(info("running", tasks, true), true)).toBe("Working · 2/3 · lead closed");
     });
     it("hands a done dag to the finished-run label", () => {
-        expect(dagProgressLabel(info("done"), false)).toBe("lead wrapping up");
+        expect(dagProgressLabel(info("done"), false)).toBe("Wrapping up · lead");
+    });
+    // the suffixes belong to the tree line: finishedRunLabel keeps the bare stage word
+    it("says a held land needs you, until it is dismissed", () => {
+        const four = [{ state: "done" }, { state: "done" }, { state: "done" }, { state: "done" }] as TaskGroup["tasks"];
+        const held = (land: RunLand): RunInfo => ({ ...info("done", four), status: "done", land });
+        expect(dagProgressLabel(held({ state: "held", reason: "staged changes" }), false)).toBe(
+            "Land held · needs you"
+        );
+        expect(dagProgressLabel(held({ state: "held", dismissed: true }), false)).toBe("Land held");
+        expect(finishedRunLabel(held({ state: "held" }))).toBe("Land held");
+    });
+    it("says how far a cancelled run got", () => {
+        const four = [
+            { state: "done" },
+            { state: "done" },
+            { state: "pending" },
+            { state: "pending" },
+        ] as TaskGroup["tasks"];
+        expect(dagProgressLabel(info("cancelled", four), false)).toBe("Cancelled · 2/4");
+        expect(finishedRunLabel(info("cancelled", four))).toBe("Cancelled");
     });
 });
 
@@ -177,7 +197,7 @@ describe("runComplete", () => {
     // a human can land a run whose final stage failed: the dag stays blocked, but the run is over and in its base
     it("is complete once a run landed past a failed final stage, its dag still blocked", () => {
         expect(runComplete(info("done", { state: "landed" }, "blocked"))).toBe(true);
-        expect(finishedRunLabel(info("done", { state: "landed" }, "blocked"))).toBe("landed");
+        expect(finishedRunLabel(info("done", { state: "landed" }, "blocked"))).toBe("Landed");
         expect(runComplete(info("done", undefined, "blocked"))).toBe(false);
         expect(runComplete(info("done", { state: "held" }, "blocked"))).toBe(false);
     });
