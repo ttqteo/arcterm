@@ -12631,6 +12631,12 @@ const ahKey = (h, key, code, mods = {}) =>
         `(document.activeElement || document.body).dispatchEvent(new KeyboardEvent("keydown", ${JSON.stringify({ key, code, ...mods, bubbles: true, cancelable: true })}))`
     );
 
+// the keyup that lets go of a modifier: the tab switcher picks on it, not on the keydown that opened it
+const ahKeyUp = (h, key, code) =>
+    h.ev(
+        `(document.activeElement || document.body).dispatchEvent(new KeyboardEvent("keyup", ${JSON.stringify({ key, code, bubbles: true, cancelable: true })}))`
+    );
+
 const ahTurn = (type, content) => JSON.stringify({ type, message: { role: type, content } }) + "\n";
 
 // Reloads and waits for the new document's nav rail. A bare wait for the nav can be answered by the old document before the
@@ -23699,6 +23705,8 @@ const GRID_FIT_SLACK_PX = 40;
 // where in the overlay each zone's point sits (an edge is the outer quarter)
 const GRID_ZONE_AT = { center: [0.5, 0.5], left: [0.1, 0.5], right: [0.9, 0.5], top: [0.5, 0.1], bottom: [0.5, 0.9] };
 const gridRow = (id) => `[data-agent-row="${id}"]`;
+// an agent the grid shows has no row of its own: the tree draws the split as one row with a segment per cell
+const gridSplitCell = (id) => `[data-agent-split-cell="${id}"]`;
 const gridBar = (id) => `[data-agent-cell-bar="${id}"]`;
 const gridNear = (a, b, tol = 4) => Math.abs(a - b) <= tol;
 const gridSameSize = (a, b) => gridNear(a.w, b.w) && gridNear(a.h, b.h);
@@ -24117,11 +24125,11 @@ const agentGrid = {
                 order(lay) === want(D, B, A) && cellAt(lay, B).focused === true,
                 lay
             );
-            await click(gridRow(D));
+            await click(gridSplitCell(D));
             await settle();
             lay = await gridLayout(h);
             rec(
-                "8b. a row whose agent has a cell focuses that cell and leaves the list alone",
+                "8b. the split row's segment for an agent that has a cell focuses that cell and leaves the list alone",
                 order(lay) === want(D, B, A) && cellAt(lay, D).focused === true,
                 lay
             );
@@ -24265,9 +24273,10 @@ const agentGrid = {
                 focused: gridFocused(lay),
             });
 
-            // 13. Ctrl+Tab from a cell's terminal. It only writes the selected agent; the surface turns that into the focus
-            // rule and hands the keyboard to the new focused cell. Where it lands depends on the roster's order, so the
-            // assertion is that the focus moved and that the keyboard is in the cell that now holds it
+            // 13. Ctrl+Tab from a cell's terminal opens the tab switcher, and letting go of Ctrl picks the next agent. The
+            // surface then turns the selected agent into the focus rule and hands the keyboard to the new focused cell.
+            // Where it lands depends on the roster's order, so the assertion is that the focus moved and that the
+            // keyboard is in the cell that now holds it
             const tabFrom = gridFocused(lay);
             if (lay.cells.length < 2 || tabFrom == null) {
                 return bail("13. the grid has no focused cell among several: Ctrl+Tab is not pressed", {
@@ -24283,6 +24292,7 @@ const agentGrid = {
                 });
             }
             await ahKey(h, "Tab", "Tab", { ctrlKey: true });
+            await ahKeyUp(h, "Control", "ControlLeft");
             await settle();
             lay = await gridLayout(h);
             active = await gridActiveCell(h);
