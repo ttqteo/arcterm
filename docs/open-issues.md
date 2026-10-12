@@ -92,6 +92,15 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) **Tick a task box in a markdown Preview.** Open a `.md` with `- [ ]` lines in the Agent panel's File
   tab, Preview: click a box; it ticks, the file on disk now reads `- [x]` on that line, and the scroll stays put.
   Click again to clear it. `65179f6b8`
+- [ ] (arcterm) **Worktree facts in the Agent panel.** Select an agent working in a linked worktree (a run worker):
+  Overview's session block reads `project · model`, then `⑂ wave/ae9e6a71 · 📁 ae9e6a71` (ids cut to 8 digits) with
+  the full branch and path in the tooltips; an agent in the main checkout keeps `project · ⑂ branch · model`. `7c5074e8f`
+- [ ] (arcterm) **The redrawn RAM and tokens panel.** Open it from the app bar: a RAM bar (arcterm, other apps, free)
+  under the free-memory line, column heads, tokens and spend in their own columns, and a row's Stop, Sleep and
+  → Sonnet only while you point at it; arcterm's own processes on one line. `70bfd1cd9`
+- [ ] (arcterm) **Pasted images in the transcript.** Paste an image into the New dialog's Task and start the agent:
+  the image shows in the transcript, live and when the session is read back, not "no longer on disk". In the New
+  dialog a click on the thumbnail shows it larger under the row, and another click shrinks it. `78fad34cf`
 
 ---
 
