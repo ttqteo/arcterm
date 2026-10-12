@@ -25,7 +25,7 @@ Goal and Architecture are the design.
 
 ## Global Constraints
 
-- The shipping Tauri build does not change: `frontend/tauri/vite.config.ts`, `frontend/tauri/main.tsx`, `frontend/tauri/api.ts` and everything under `frontend/app/` stay untouched; only the browser config imports the stand-ins.
+- The shipping Tauri build does not change: `frontend/tauri/vite.config.ts`, `frontend/tauri/main.tsx`, `frontend/tauri/api.ts` and everything under `frontend/app/` stay untouched; only the browser config imports the stand-ins. This wins over any step that says to fix a bug the browser shows: a fix goes only in Task 1's or Task 2's files or under `scripts/cdp/`, and an app bug (one whose cause is in the shipping frontend: under `frontend/`, outside Task 1's files) is reported, not fixed (Task 3 Step 8 says where).
 - Never run prettier on `scripts/*.mjs` (hand-formatted, 4-space; `.editorconfig` omits `.mjs`). Check only the TS files you touched: `npx prettier --check <paths>` and `npx eslint <paths>`.
 - Typecheck with `NODE_OPTIONS=--max-old-space-size=4096 task check:ts` (about 2 minutes: give the command a longer timeout), never `npx tsc`. The baseline is clean.
 - Stop a dev app, wavesrv, vite or Chrome you started by its PID, never by image name: the person's own arcterm and Chrome are running.
@@ -37,7 +37,7 @@ Goal and Architecture are the design.
 
 1. A frontend file later imports a new name from a shimmed Tauri module, or invokes a new Tauri command: the browser app must fail a unit test, not boot to a blank page. Task 1's drift tests pin it.
 2. A public asset or module whose path only starts with `/wave` or `/ws` (`/wave-logo.png`, `/wsh.svg`) must be served by vite, not proxied to wavesrv. Task 1's `browserProxy` test pins it.
-3. A missing or stale `dist/bin/wavesrv.*` that exits before its `WAVESRV-ESTART` line: the browser app exits nonzero with the reason as its last line, and the Final's unverified reason carries that line. Task 2 and Task 3 tests pin it.
+3. A missing or stale `dist/bin/wavesrv.*` that exits before its `WAVESRV-ESTART` line: the browser app exits nonzero with the reason as its last line, and the Final's unverified reason carries that line, not the `task: Failed to run task "dev:browser": exit status 1` line Task writes after it into the same log. Task 2 and Task 3 tests pin it.
 4. A stopped or killed Final leaves no orphaned wavesrv, vite or Chrome: when any part exits, the browser app stops the rest. Task 2's test pins it.
 5. A scenario that ends focus emulation (`agent-grid`) leaves headless Chrome, which has no focused window, unfocused for every later scenario. Task 3's `verify.mjs` change re-enables it after each scenario; Task 3's live step runs `agent-grid` then `surface-smoke`.
 
@@ -594,8 +594,8 @@ export default defineConfig(() =>
 
 - [ ] **Step 10: Check the config loads**
 
-Run: `ARC_BROWSER_WEB=127.0.0.1:1 ARC_BROWSER_WS=127.0.0.1:2 ARC_BROWSER_AUTHKEY=k ARC_BROWSER_VERSION=0 node -e "import('vite').then(v => v.resolveConfig({ configFile: 'frontend/tauri/vite.browser.config.ts' }, 'serve')).then(c => console.log(Object.keys(c.server.proxy), c.resolve.alias.filter(a => String(a.find).includes('tauri-apps')).length, c.resolve.alias.some(a => a.find === '@/store')))"`
-Expected: prints the three proxy keys, `6` (the stand-ins) and `true` (the base config's aliases survived the merge).
+Run: `ARC_BROWSER_WEB=127.0.0.1:1 ARC_BROWSER_WS=127.0.0.1:2 ARC_BROWSER_AUTHKEY=k ARC_BROWSER_VERSION=0 node -e "import('vite').then(v => v.resolveConfig({ configFile: 'frontend/tauri/vite.browser.config.ts' }, 'serve')).then(c => console.log(Object.keys(c.server.proxy), c.resolve.alias.filter(a => String(a.find).includes('tauri')).length, c.resolve.alias.some(a => a.find === '@/store')))"`
+Expected: prints the three proxy keys, `6` (the stand-ins: each `find` stringifies as an escaped regex, `/^@tauri\-apps\/api\/core$/`, so the filter matches `tauri`, which no base alias contains) and `true` (the base config's aliases survived the merge).
 
 - [ ] **Step 11: Typecheck, lint and format the touched files**
 
@@ -1052,7 +1052,7 @@ Note: the test's last-line checks read stdout. `stop()` prints through `fail()` 
 - [ ] **Step 4: Run the tests to see them pass**
 
 Run: `npx vitest run scripts/cdp/browser-app.test.mjs`
-Expected: PASS (11 tests; the SIGTERM one skips on Windows).
+Expected: PASS (12 tests; the SIGTERM one skips on Windows).
 
 - [ ] **Step 5: Add `task dev:browser`**
 
@@ -1132,7 +1132,11 @@ Add at the end of the `describe("final-verify.mjs", …)` block:
     it("ends with the dev app's own last line when it exits before answering", async () => {
         dir = mkdtempSync(join(tmpdir(), "final-verify-"));
         const fakeDev = join(dir, "fake-dev.cjs");
-        writeFileSync(fakeDev, `console.log("starting");\nconsole.log("no Chrome found: install Google Chrome or set CHROME_PATH");\nprocess.exit(1);\n`);
+        // a real Final runs it through Task, which writes its own failure line after the reason
+        writeFileSync(
+            fakeDev,
+            `console.log("starting");\nconsole.log("no Chrome found: install Google Chrome or set CHROME_PATH");\nconsole.error('task: Failed to run task "dev:browser": exit status 1');\nprocess.exit(1);\n`
+        );
         const r = await run({
             ...process.env,
             LOCALAPPDATA: join(dir, "localappdata"),
@@ -1173,10 +1177,10 @@ describe("hostOnlyScenarios", () => {
 });
 
 describe("lastLine", () => {
-    it("is the last non-empty line, or empty when the file is missing", () => {
+    it("is the last non-empty line that is not Task's own, or empty when the file is missing", () => {
         const d = mkdtempSync(join(tmpdir(), "last-line-"));
         try {
-            writeFileSync(join(d, "log"), "one\r\ntwo\n\n");
+            writeFileSync(join(d, "log"), 'one\r\ntwo\ntask: Failed to run task "dev:browser": exit status 1\n\n');
             expect(lastLine(join(d, "log"))).toBe("two");
             expect(lastLine(join(d, "missing"))).toBe("");
         } finally {
@@ -1211,10 +1215,12 @@ export function hostOnlyScenarios(scenarios, names) {
     return scenarios.filter((s) => s.host && (names.length === 0 || names.includes(s.name))).map((s) => s.name);
 }
 
-// the dev app's last log line, which says why it stopped
+// the dev app's last log line, which says why it stopped. Task's own `task: Failed to run task …` line, which it
+// writes after that into the same log, only says the command failed
 export function lastLine(path) {
     try {
-        return readFileSync(path, "utf8").split(/\r?\n/).filter((l) => l.trim()).at(-1)?.trim() ?? "";
+        const lines = readFileSync(path, "utf8").split(/\r?\n/).map((l) => l.trim());
+        return lines.filter((l) => l && !l.startsWith("task: ")).at(-1) ?? "";
     } catch {
         return "";
     }
@@ -1342,7 +1348,7 @@ and in the loop's `finally`, after the `Emulation.setDeviceMetricsOverride` rest
 First drop this worktree's `dist/bin` and `src-tauri/target` links, so the build below writes here and not into the main checkout through them: `node -e "import('./scripts/cdp/final-verify.mjs').then(m => m.unlinkBuildJunctions(process.cwd()))"`.
 Run in the background: `task dev:browser` (first run builds the backend; allow 10 minutes), and wait for its line `browser app ready: http://localhost:5180/ (CDP :9222, …)`. Note its PID.
 Then: `node scripts/cdp-shot.mjs "$(mktemp -d)/arc-browser.png" 9222` and look at the PNG.
-Expected: the cockpit with the nav rail and app bar, no `BOOT ERROR`. If it shows one, read the console with a CDP `Runtime.evaluate` of `document.body.innerText` and fix the cause in Task 1's or Task 2's files (this task may edit them, since it runs after both).
+Expected: the cockpit with the nav rail and app bar, no `BOOT ERROR`. If it shows one, read the console with a CDP `Runtime.evaluate` of `document.body.innerText` and fix the cause in Task 1's or Task 2's files (this task may edit them, since it runs after both). A cause under `frontend/app/` or elsewhere in the shipping build is an app bug: report it as Step 8 says, don't fix it.
 
 - [ ] **Step 8: Run scenarios against it**
 
@@ -1350,7 +1356,7 @@ Run: `node scripts/cdp/verify.mjs agent-grid surface-smoke`
 Expected: `attached to the browser app …`, both PASS (skips allowed where the scenario already skips for its own reasons). `surface-smoke` running after `agent-grid` proves focus is re-emulated.
 
 Run: `node scripts/cdp/verify.mjs notify-toast float-mini canvas-swap agent-uploads`
-Expected: `notify-toast` SKIP with "needs the Tauri host". For each other one that fails: if its failing step's detail comes from a Tauri-only path (a stand-in returning a no-op the step asserts on, a native window move or capture), mark it `host: true` with a one-line comment naming that path, as in Step 6; if it fails for any other reason, it is an app or harness bug: fix it, or report it in the task's summary. Never mark a scenario `host: true` to hide a failure the Windows dev app would also show.
+Expected: `notify-toast` SKIP with "needs the Tauri host". For each other one that fails: if its failing step's detail comes from a Tauri-only path (a stand-in returning a no-op the step asserts on, a native window move or capture), mark it `host: true` with a one-line comment naming that path, as in Step 6; if it fails for any other reason, it is a harness or app bug. A harness bug (its cause in Task 1's or Task 2's files or under `scripts/cdp/`) is fixed here. An app bug (its cause in the shipping frontend, under `frontend/` outside Task 1's files, which Global Constraints keep untouched) is not fixed: name it, with the failing scenario and step, in the task's summary and in its own `docs/open-issues.md` row (Step 10). Never mark a scenario `host: true` to hide a failure the Windows dev app would also show.
 
 Stop the browser app by its PID (`kill <pid>`), never by name.
 
@@ -1374,6 +1380,8 @@ In `AGENTS.md`, "Visual verification (dev)": add a bullet after **Capture:**:
 In `docs/open-issues.md`, add a row to the table whose header is `| Item | Kind | Effort | Source / notes |`, in that table's style:
 
 > `| (arcterm) Final on a Mac checks Chromium, not WKWebView: \`task dev:browser\` runs the scenarios in headless Chrome, so WebKit-only behaviour (the File tab Source view's Ctrl+Enter, IME, scrolling) and the scenarios marked \`host: true\` (notify-toast, plus each one Step 8 marked, by name) still need a hand check in the real app or a Windows run | verification gap | S | \`docs/superpowers/plans/2026-10-12-browser-cdp-harness.md\` |`
+
+For each app bug Step 7 or Step 8 found, add one more row to that table: `| (arcterm) <what fails> in the browser app: <scenario> step "<step>" (<cause, path:line>); found by the browser CDP harness, not fixed since that run kept frontend/ untouched | bug | S | \`docs/superpowers/plans/2026-10-12-browser-cdp-harness.md\` |`. None found, no row.
 
 - [ ] **Step 11: Run the whole frontend suite**
 
