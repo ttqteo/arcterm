@@ -19,19 +19,19 @@ Modelled on the Minion (commit `33fa01f16`, 21 files).
 - `PetCharacter` becomes `"sprout" | "minion" | "spidey"` (`petsprite.ts`); `PET_CHARACTER_NAME.spidey = "Spider-Man"`
   (`petcharacter.ts`), so "Fold into Spider-Man" and the float bar name it for free; `petCharacter()` accepts it.
   Settings → Appearance → Jarvis → Character offers it (`settingspages/appearance.tsx`).
-- Two grid sets in `petsprite.ts`, each covering all 16 `PetPose`s so no pose is ever missing:
-  - `SPIDEY_POSES`: the red/blue suit, big white eyes, web lines on the mask.
-  - `PETER_POSES`: Peter Parker — brown hair, glasses, sweater.
-  - `SPIDEY_LOOK: Record<PetPose, "suit" | "peter">` decides which is drawn. Suit: `walk1/2`, `stand`, `speak`,
-    `dangle`, `tired`, `work1/2`. Peter: `sit`, `sleep`, `read1/2`, `music1/2`, `ball1/2`. Changing a pose's look is
-    a one-line edit to this table.
-- New cell codes and tokens in `tailwindsetup.css`, beside `--color-minion-*`, fixed across themes (identity colours):
+- One grid per pose in `petsprite.ts`, `SPIDEY_POSES` (all 16 `PetPose`s), each drawn in one of two looks:
+  - the suit: red/blue, big white eyes, web seams on the mask, a small black spider on the chest;
+  - Peter Parker: brown hair, glasses, green sweater, jeans.
+  - `SPIDEY_LOOK: Record<PetPose, "suit" | "peter">` names the look, and a test holds each grid to it. Suit: `walk1/2`,
+    `stand`, `speak`, `dangle`, `tired`, `work1/2`. Peter: `sit`, `sleep`, `read1/2`, `music1/2`, `ball1/2`.
+  - Draft grids (rendered and checked against the marks' cells) are in the plan.
+- New cell codes (`S D B e p H g v`) and tokens in `tailwindsetup.css`, beside `--color-minion-*`, fixed across themes (identity colours):
   `--color-spidey-red`, `--color-spidey-red-dark`, `--color-spidey-blue`, `--color-spidey-eye`, `--color-spidey-web`,
   `--color-peter-skin`, `--color-peter-hair`, `--color-peter-glasses`, `--color-peter-sweater`.
-- The VN outfit: `dressSpideyInFlag` like `dressMinionInFlag` — the shirt over the suit, and over the sweater for
-  Peter; the held flag reuses `FLAG_CELLS`.
-- Every `character === "minion"` branch gains `spidey`: `outfitRows`, `app-bar.tsx`'s per-character sprite map,
-  `sprout-mini.tsx`, `petfloat.ts`, `petfloatmark.tsx`.
+- The VN outfit: `dressSpideyInFlag` like `dressMinionInFlag` — Peter's sweater becomes the shirt with the star; a
+  suit pose is left bare (a suit is a suit). The held flag reuses `FLAG_CELLS` for every pose.
+- Every per-character branch gains `spidey`: `outfitRows`, and `app-bar.tsx`'s `FOLD_SPRITE` (Spider-Man's is the
+  suit standing, not Peter sitting, so the fold button shows the hero); `task check:ts` finds any other.
 - Original pixel fan art; no Marvel logo or asset.
 
 ## 2. Web effects (Spider-Man only)
@@ -44,8 +44,9 @@ art.
 2. **Fall: rappels down.** `webLanding(offset)` in `petfall.ts`, same `Landing` shape as `landing`: a slower `easeOut`
    descent (~0.5 s) with one small bounce, and a strand from the release point to the head that goes on touchdown. A
    hop up (the ledge rose) stays as it is.
-3. **Teleport: web-swing.** `petwebswing.ts` exports `webSwingFrame(kind, t)` returning the same frame shape as
-   `teleportFrame`, over the same `TELEPORT_MS`, so `teleportstore.ts` and the fold timing do not change. Depart: a
+3. **Teleport: web-swing.** `petwebswing.ts` exports `webSwingFrame(kind, t)` (its own frame shape: the pet's offset
+   and opacity, and the strand's cells), over the same `TELEPORT_MS`, so `teleportstore.ts` and the fold timing do not
+   change. The pet is drawn in `dangle` while it swings. Depart: a
    strand shoots up and out, the pet is yanked along it and gone. Arrive: a strand drops, the pet swings in on an arc,
    lands stretched, squashes, settles. `petteleportsvg.tsx` picks the frame by character.
 4. **Working dots → a web.** `WorkingDots` takes `character`; for Spider-Man the three dots become a 12 px web (4
@@ -55,8 +56,8 @@ art.
      the folded window have no ceiling, so the pastime is never picked there.
    - `petwalk.ts`: rest poses depend on the character; Spider-Man adds `hang`, ~1 rest in 7. The rest has three timed
      phases, reported on `WalkerStep.hang`: **up** (~400 ms, shoot a strand to the ceiling and zip up), **hang**
-     (4–8 s, `stand` flipped upside down by reversing the grid's rows — data, not CSS — swaying ±1 cell, a strand from
-     the feet to the ceiling), **down** (the rappel of item 2).
+     (4–8 s, `stand` turned upside down by `upsideDown(sprite)` — cells moved, not CSS — a strand from the feet to the
+     ceiling; `dangle` while going up and coming down), **down** (the rappel of item 2).
    - It comes down at once when the cursor enters it (giving back the header it covers), when a posture or utterance
      arrives (so the bubble still opens from the bottom), or when a drag starts.
    - It ignores terminals and never touches the bubble, peek or Float.
