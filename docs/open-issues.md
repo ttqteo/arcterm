@@ -27,6 +27,12 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-12 (Final check viewer arrows)**
+
+- [ ] (arcterm) **← → walk every screenshot of a Final check round.** Open a run's Final check screenshots on a
+  round of plain PNGs (one tab per file): → and ← move tab to tab, and the selected tab scrolls into view; on a
+  manifest round, → past a scenario's last shot opens the next scenario's first. ↑ ↓ still step scenarios.
+
 **2026-10-12 (type into the task from the New dialog's Start column)**
 
 - [ ] (arcterm) **A letter in the Start column starts the task.** Mod+N, `1`, type `fix`: focus is in Task and it

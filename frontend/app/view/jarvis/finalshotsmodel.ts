@@ -124,6 +124,22 @@ export function clampSelection(r: ShotRound, s: number, k: number): { s: number;
     return { s: si, k: clamp(k, r.scenarios[si]?.files.length ?? 0) };
 }
 
+// ← → walk every screenshot of the round: past a scenario's last shot into the next scenario's first, before its first
+// into the previous one's last. A plain listing is one shot per scenario, where stopping at the edge did nothing at all.
+// Null at the round's ends.
+export function stepShot(r: ShotRound, s: number, k: number, d: 1 | -1): { s: number; k: number } | null {
+    if (k + d >= 0 && k + d < (r.scenarios[s]?.files.length ?? 0)) {
+        return { s, k: k + d };
+    }
+    for (let si = s + d; si >= 0 && si < r.scenarios.length; si += d) {
+        const n = r.scenarios[si].files.length;
+        if (n > 0) {
+            return { s: si, k: d === 1 ? 0 : n - 1 };
+        }
+    }
+    return null;
+}
+
 function failedScenarios(r: ShotRound): ShotScenario[] {
     return r.scenarios.filter((s) => s.verdict === "fail");
 }

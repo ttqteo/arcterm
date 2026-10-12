@@ -10,6 +10,7 @@ import {
     scenarioTally,
     shotPath,
     shotRounds,
+    stepShot,
     type ShotRound,
 } from "./finalshotsmodel";
 
@@ -282,5 +283,38 @@ describe("clampSelection", () => {
         expect(clampSelection({ ...round, scenarios: [], shotCount: 0 }, 2, 2)).toEqual({ s: 0, k: 0 });
         const empty: ShotRound = { ...round, scenarios: [{ name: "x", files: [], steps: [], verdict: "pass" }] };
         expect(clampSelection(empty, 0, 3)).toEqual({ s: 0, k: 0 });
+    });
+});
+
+describe("stepShot", () => {
+    const [round] = shotRounds(group(stage("passed", 2, boardShots(2))));
+
+    it("moves within a scenario's shots", () => {
+        expect(stepShot(round, 0, 3, 1)).toEqual({ s: 0, k: 4 });
+        expect(stepShot(round, 3, 2, -1)).toEqual({ s: 3, k: 1 });
+    });
+
+    it("crosses into the next scenario's first shot and the previous one's last", () => {
+        // surface-smoke's ninth shot → brief-peek; jarvis-peek's first ← peek-ctrl-click
+        expect(stepShot(round, 0, 8, 1)).toEqual({ s: 1, k: 0 });
+        expect(stepShot(round, 4, 0, -1)).toEqual({ s: 3, k: 3 });
+        expect(stepShot(round, 1, 0, -1)).toEqual({ s: 0, k: 8 });
+    });
+
+    it("walks a plain listing, one shot per scenario", () => {
+        const listing = [1, 2, 3].map((i) => ({ name: `${i}.png`, files: [`${i}.png`] }));
+        const [plain] = shotRounds(group(stage("failed", 1, listing, false)));
+        expect(stepShot(plain, 0, 0, 1)).toEqual({ s: 1, k: 0 });
+        expect(stepShot(plain, 2, 0, -1)).toEqual({ s: 1, k: 0 });
+    });
+
+    it("skips a scenario with no shots and stops at the round's ends", () => {
+        const gap: ShotRound = {
+            ...round,
+            scenarios: [round.scenarios[1], { name: "x", files: [], steps: [], verdict: "pass" }, round.scenarios[2]],
+        };
+        expect(stepShot(gap, 0, 0, 1)).toEqual({ s: 2, k: 0 });
+        expect(stepShot(round, 0, 0, -1)).toBeNull();
+        expect(stepShot(round, 4, 0, 1)).toBeNull();
     });
 });

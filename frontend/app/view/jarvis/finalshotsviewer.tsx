@@ -19,6 +19,7 @@ import {
     scenarioTally,
     shotPath,
     shotRounds,
+    stepShot,
     type ShotRound,
     type ShotScenario,
     type ShotVerdict,
@@ -101,9 +102,13 @@ export function FinalShotsViewer({
             }
         },
         shot: (d: 1 | -1) => {
-            const next = k + d;
-            if (scenario && next >= 0 && next < scenario.files.length) {
-                setSel({ s, k: next });
+            const next = round ? stepShot(round, s, k, d) : null;
+            if (next == null) {
+                return;
+            }
+            setSel(next);
+            if (next.s !== s) {
+                setStepsToggle(null);
             }
         },
         zoom: () => setZoom((z) => !z),
@@ -305,8 +310,16 @@ function ViewerHeader({
 }
 
 function ScenarioTabs({ round, current, onPick }: { round: ShotRound; current: number; onPick: (i: number) => void }) {
+    const stripRef = useRef<HTMLDivElement>(null);
+    // the keys move the selection past the strip's visible width (a plain listing is a tab per screenshot)
+    useEffect(() => {
+        stripRef.current
+            ?.querySelector<HTMLElement>('[aria-selected="true"]')
+            ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }, [current, round]);
     return (
         <div
+            ref={stripRef}
             role="tablist"
             aria-label="Scenarios"
             className="flex flex-none gap-1.5 overflow-x-auto border-b border-edge-mid px-3 py-2"
