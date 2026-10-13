@@ -23,18 +23,13 @@ import {
     type Entry,
     type Release,
     type Section,
-    type ShownRelease,
 } from "./whatsnew";
-import { closeWhatsNew, loadReleases, runTry, seedWhatsNewSeen, tryBinding, whatsNewSinceAtom } from "./whatsnewstore";
+import { closeWhatsNew, loadReleases, runTry, tryBinding, whatsNewOpenAtom } from "./whatsnewstore";
 
 export function WhatsNewSheet({ model }: { model: AgentsViewModel }) {
-    const since = useAtomValue(whatsNewSinceAtom);
+    const open = useAtomValue(whatsNewOpenAtom);
     const current = useAtomValue(versionInfoAtom).app;
-    const open = since != null;
     const [releases, setReleases] = useState<Release[] | null>(null);
-
-    // the version is read at boot, after the first render; a first launch starts at it (whatsnewstore.ts)
-    useEffect(seedWhatsNewSeen, [current]);
 
     useEffect(() => {
         if (open && releases == null) {
@@ -42,7 +37,7 @@ export function WhatsNewSheet({ model }: { model: AgentsViewModel }) {
         }
     }, [open, releases]);
 
-    const shown = releases == null || since == null ? null : releasesToShow(releases, current, since);
+    const shown = releases == null ? null : releasesToShow(releases, current);
     return (
         <ModalShell
             open={open}
@@ -74,17 +69,12 @@ export function WhatsNewSheet({ model }: { model: AgentsViewModel }) {
     );
 }
 
-function ReleaseNotes({ release, model }: { release: ShownRelease; model: AgentsViewModel }) {
+function ReleaseNotes({ release, model }: { release: Release; model: AgentsViewModel }) {
     return (
         <section data-release={release.version} className="border-b border-border pt-4 pb-3 last:border-b-0">
             <div className="mb-1 flex items-baseline gap-2">
                 <span className="text-[13.5px] font-semibold tabular-nums text-primary">{release.version}</span>
                 <span className="text-[12px] tabular-nums text-muted">{formatReleaseDate(release.date)}</span>
-                {release.unseen ? (
-                    <span className="rounded-full bg-accent/15 px-1.5 py-px text-[10.5px] font-semibold text-accent">
-                        New
-                    </span>
-                ) : null}
             </div>
             {release.sections.map((s) =>
                 s.kind === "Fixed" ? (

@@ -111,25 +111,13 @@ export function compareVersions(a: string, b: string): number {
 
 const VERSION_RE = /^\d+\.\d+\.\d+$/;
 
-// The dot on the footer's version: a build newer than the one whose notes were last opened. An empty seen is a first
-// launch, which the store seeds with the running version, so a new install starts with nothing to read.
-export function hasUnseen(current: string, seen: string): boolean {
-    return VERSION_RE.test(current) && VERSION_RE.test(seen) && compareVersions(current, seen) > 0;
-}
-
-export interface ShownRelease extends Release {
-    unseen: boolean;
-}
-
-// The releases the sheet lists: none newer than the running build (a dev checkout's changelog runs ahead of its
-// version), every unseen one, and at least `min` in all, so an up-to-date user still finds the recent notes.
-export function releasesToShow(releases: Release[], current: string, since: string, min = 3): ShownRelease[] {
+// The releases the sheet lists: the latest `count`, none newer than the running build (a dev checkout's changelog runs
+// ahead of its version). Headlines are short, so a few releases back still fit a glance.
+export function releasesToShow(releases: Release[], current: string, count = 5): Release[] {
     const inBuild = VERSION_RE.test(current)
         ? releases.filter((r) => compareVersions(r.version, current) <= 0)
         : releases;
-    const shown = inBuild.map((r) => ({ ...r, unseen: hasUnseen(r.version, since) }));
-    const unseen = shown.filter((r) => r.unseen).length;
-    return shown.slice(0, Math.max(unseen, min));
+    return inBuild.slice(0, count);
 }
 
 export type Span = { kind: "text" | "bold" | "em" | "code"; text: string };

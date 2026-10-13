@@ -37008,28 +37008,15 @@ const toolsWorktreeGone = {
 };
 
 // --- What's new (frontend/app/cockpit/whatsnewsheet.tsx) -------------------------------------------------------------
-// The footer's version opens the release notes read from CHANGELOG.md. An older seen version makes the build read as just
-// updated: the version says What's new until the notes open, they list the releases since, and Try it lands on its feature.
-const WN_SEEN_KEY = "whatsnew.seen";
-const WN_OLD_SEEN = "0.15.0";
-
+// The footer's version opens the release notes read from CHANGELOG.md: the latest releases, a headline per note until it
+// is clicked open, and Try it on a note lands on its feature.
 const whatsNew = {
     name: "whats-new",
     surface: "cockpit",
-    async arrange(h) {
-        const ctx = {};
-        try {
-            ctx.prevSeen = await h.ev(`localStorage.getItem(${JSON.stringify(WN_SEEN_KEY)})`);
-            // atomWithStorage keeps the value as JSON, and reads it once at boot
-            await h.ev(`localStorage.setItem(${JSON.stringify(WN_SEEN_KEY)}, ${JSON.stringify(JSON.stringify(WN_OLD_SEEN))})`);
-            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
-        } catch (e) {
-            ctx.arrangeError = String(e?.message ?? e);
-        }
-        return ctx;
+    async arrange() {
+        return {};
     },
-    async assert(h, ctx) {
-        if (ctx.arrangeError) return [{ step: "arrange", ok: false, detail: ctx.arrangeError }];
+    async assert(h) {
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
         await h.goto("cockpit");
@@ -37038,6 +37025,7 @@ const whatsNew = {
             const v = document.querySelector("[data-app-version]");
             const help = document.querySelector('button[aria-label="Keyboard shortcuts"]');
             return {
+                tag: v?.tagName ?? null,
                 text: v?.textContent ?? null,
                 font: v ? getComputedStyle(v).fontFamily : null,
                 helpIcon: !!help?.querySelector("svg"),
@@ -37045,8 +37033,8 @@ const whatsNew = {
             };
         })()`);
         rec(
-            "1. after an update the footer's version reads What's new, in the UI font",
-            footer.text?.includes("What's new") && !/mono/i.test(footer.font ?? ""),
+            "1. the footer's version is a button in the UI font, and reads only the version",
+            footer.tag === "BUTTON" && /^v\d/.test(footer.text ?? "") && !/mono/i.test(footer.font ?? ""),
             JSON.stringify(footer)
         );
         rec("2. the shortcuts button is a round help icon, not a boxed ?", footer.helpIcon && footer.helpText === "", JSON.stringify(footer));
@@ -37054,21 +37042,15 @@ const whatsNew = {
 
         await h.ev(`document.querySelector("[data-app-version]").click()`);
         await polishWaitFor(h, `!!document.querySelector("[data-whats-new] [data-release]")`, 8000);
-        const sheet = await h.ev(`(() => {
-            const rs = [...document.querySelectorAll("[data-whats-new] [data-release]")];
-            return {
-                releases: rs.map((r) => r.dataset.release),
-                marked: rs.filter((r) => [...r.querySelectorAll("span")].some((s) => s.textContent === "New")).length,
-                tries: [...document.querySelectorAll("[data-whats-new-try]")].map((b) => b.dataset.whatsNewTry),
-                version: document.querySelector("[data-app-version]")?.textContent ?? null,
-            };
-        })()`);
+        const sheet = await h.ev(`(() => ({
+            releases: [...document.querySelectorAll("[data-whats-new] [data-release]")].map((r) => r.dataset.release),
+            tries: document.querySelectorAll("[data-whats-new-try]").length,
+        }))()`);
         rec(
-            "3. the notes list every release since the seen one, each marked New, with Try it buttons",
-            sheet.releases.length > 1 && !sheet.releases.includes(WN_OLD_SEEN) && sheet.marked === sheet.releases.length && sheet.tries.length > 0,
-            JSON.stringify({ ...sheet, tries: sheet.tries.length })
+            "3. the version opens the latest releases' notes, with Try it buttons",
+            sheet.releases.length > 1 && sheet.releases.length <= 5 && sheet.tries > 0,
+            JSON.stringify(sheet)
         );
-        rec("4. opening the notes takes What's new off the footer", sheet.version != null && !sheet.version.includes("What's new"), sheet.version);
         await h.shot("cdp-shots/whats-new-2-sheet.png");
 
         // headlines first: an entry is its bold lead until it is clicked open
@@ -37078,11 +37060,11 @@ const whatsNew = {
         await briefNap(200);
         const after = await h.ev(`(() => { const b = ${ENTRY}; return { open: b.getAttribute("aria-expanded"), len: b.textContent.length } })()`);
         rec(
-            "4b. an entry shows only its headline until clicked, then the whole note",
+            "4. an entry shows only its headline until clicked, then the whole note",
             before?.open === "false" && after.open === "true" && after.len > before.len,
             JSON.stringify({ before, after })
         );
-        await h.shot("cdp-shots/whats-new-2b-opened.png");
+        await h.shot("cdp-shots/whats-new-3-opened.png");
 
         const hasUsage = await h.ev(`!!document.querySelector('[data-whats-new-try="go:usage"]')`);
         if (!hasUsage) {
@@ -37093,15 +37075,10 @@ const whatsNew = {
         await polishWaitFor(h, `!document.querySelector("[data-whats-new]")`, 4000);
         const landed = { surface: await h.activeSurfaceLabel(), open: await h.ev(`!!document.querySelector("[data-whats-new]")`) };
         rec("5. Try it on a Usage note goes to Usage and closes the notes", landed.surface === SURFACE_LABEL.usage && !landed.open, JSON.stringify(landed));
-        await h.shot("cdp-shots/whats-new-3-tried.png");
+        await h.shot("cdp-shots/whats-new-4-tried.png");
         return steps;
     },
-    async teardown(h, ctx) {
-        await h.ev(
-            ctx.prevSeen == null
-                ? `localStorage.removeItem(${JSON.stringify(WN_SEEN_KEY)})`
-                : `localStorage.setItem(${JSON.stringify(WN_SEEN_KEY)}, ${JSON.stringify(ctx.prevSeen)})`
-        );
+    async teardown(h) {
         await h.goto("cockpit");
     },
 };

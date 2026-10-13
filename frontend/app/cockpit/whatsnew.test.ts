@@ -11,7 +11,6 @@ import {
     compareVersions,
     entryLead,
     formatReleaseDate,
-    hasUnseen,
     inlineSpans,
     parseChangelog,
     releasesToShow,
@@ -109,35 +108,19 @@ describe("versions", () => {
         expect(compareVersions("v0.15.9", "0.15.9")).toBe(0);
         expect(compareVersions("0.16.0", "0.15.11")).toBeGreaterThan(0);
     });
-
-    it("has something unseen only for a newer build than the seen one", () => {
-        expect(hasUnseen("0.15.12", "0.15.11")).toBe(true);
-        expect(hasUnseen("0.15.11", "0.15.11")).toBe(false);
-        expect(hasUnseen("0.15.10", "0.15.11")).toBe(false);
-        // a first launch has no seen version: the store seeds it, nothing shows meanwhile
-        expect(hasUnseen("0.15.11", "")).toBe(false);
-        expect(hasUnseen("unknown", "0.15.1")).toBe(false);
-    });
 });
 
 describe("releasesToShow", () => {
     const rel = (version: string) => ({ version, date: "2026-10-01", sections: [] });
     const all = ["0.5.0", "0.4.0", "0.3.0", "0.2.0", "0.1.0"].map(rel);
 
-    it("lists every unseen release, and nothing newer than the running build", () => {
-        const shown = releasesToShow(all, "0.4.0", "0.1.0");
-        expect(shown.map((r) => [r.version, r.unseen])).toEqual([
-            ["0.4.0", true],
-            ["0.3.0", true],
-            ["0.2.0", true],
-        ]);
-        expect(releasesToShow(all, "0.5.0", "0.1.0").length).toBe(4);
+    it("lists the latest few, and nothing newer than the running build", () => {
+        expect(releasesToShow(all, "0.4.0", 2).map((r) => r.version)).toEqual(["0.4.0", "0.3.0"]);
+        expect(releasesToShow(all, "0.5.0", 3).map((r) => r.version)).toEqual(["0.5.0", "0.4.0", "0.3.0"]);
     });
 
-    it("still lists the recent ones when everything was seen", () => {
-        const shown = releasesToShow(all, "0.5.0", "0.5.0");
-        expect(shown.map((r) => r.version)).toEqual(["0.5.0", "0.4.0", "0.3.0"]);
-        expect(shown.every((r) => !r.unseen)).toBe(true);
+    it("lists from the newest when the running version is unknown", () => {
+        expect(releasesToShow(all, "unknown", 2).map((r) => r.version)).toEqual(["0.5.0", "0.4.0"]);
     });
 });
 

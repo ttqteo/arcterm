@@ -22,9 +22,8 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
   closed agents' conversations stay under Conversations. A run's lead and workers still close with their run.
 - **Pick one project's sleeping agents in the Consumers panel**: when the agents asleep come from more than one
   project, Sleeping lists them under a head per project, with a tick that picks just that project's.
-- **What's new**: after an update, the version at the bottom right reads What's new, with a dot, until you open it.
-  Click the version any time for the latest release notes; **Try it** on a note takes you to that feature. The
-  shortcuts button beside it is now a round help icon.
+- **What's new**: click the version at the bottom right for the latest release notes, a headline each (click one for
+  the rest); **Try it** on a note takes you to that feature. The shortcuts button beside it is now a round help icon.
 
 ### Changed
 
