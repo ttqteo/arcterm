@@ -1632,6 +1632,12 @@ declare global {
         forceland?: boolean;
     };
 
+    // wshrpc.CommandReportRunPhaseRtnData
+    type CommandReportRunPhaseRtnData = {
+        land?: RunLand;
+        landerror?: string;
+    };
+
     // wshrpc.CommandResMonKillChildrenData
     type CommandResMonKillChildrenData = {
         ownerid: string;
@@ -3059,6 +3065,8 @@ declare global {
         commit?: string;
         notes?: string[];
         dismissed?: boolean;
+        dirty?: boolean;
+        force?: boolean;
     };
 
     // waveobj.RunPhase

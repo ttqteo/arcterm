@@ -115,15 +115,18 @@ func SealDoneRunEvidenceAsync(channelId, runId string) {
 // sealThenLand seals a done run, then merges its branch back. The land comes second so the seal reads the
 // branch before the land deletes it, and it is not gated on the seal: a seal left to the backfill is no reason
 // to leave the run's work off its base. force lands past a failed final stage: the human's answer, which the
-// lead carries on complete because the land runs after its tab has closed.
-func sealThenLand(channelId, runId string, force bool) {
+// lead carries on complete. A lead's complete waits on it and reports the outcome; every other caller dispatches
+// it with sealAsync.
+func sealThenLand(channelId, runId string, force bool) (*waveobj.RunLand, error) {
 	sealDoneRunEvidence(channelId, runId)
 	ctx, cancel := context.WithTimeout(context.Background(), orchestrate.LandTimeout)
 	defer cancel()
 	// a held land is on the run with its reason and raises an attention item; `wsh runs land` retries it
-	if _, err := landRun(ctx, channelId, runId, force); err != nil {
+	land, err := landRun(ctx, channelId, runId, force)
+	if err != nil {
 		log.Printf("landing run %s: %v", runId, err)
 	}
+	return land, err
 }
 
 // tabTranscriptPath is the transcript of the agent session in a tab, "" when it has none (a plain shell, or a tab
@@ -758,11 +761,22 @@ func resumeRun(ctx context.Context, channelId, runId string, phaseIdx int) error
 }
 
 func (ws *WshServer) AdvanceRunCommand(ctx context.Context, data wshrpc.CommandAdvanceRunData) error {
+	sealDue, err := advanceRun(ctx, data)
+	if sealDue {
+		channelId, runId, force := data.ChannelId, data.RunId, data.ForceLand
+		sealAsync(func() { sealThenLand(channelId, runId, force) })
+	}
+	return err
+}
+
+// advanceRun applies a run action. sealDue is set when it took the run to done with no evidence yet: the caller
+// owes the run its seal and land (sealThenLand), whatever the error, since the transition is durable by then.
+func advanceRun(ctx context.Context, data wshrpc.CommandAdvanceRunData) (sealDue bool, err error) {
 	if data.ChannelId == "" || data.RunId == "" {
-		return fmt.Errorf("channelid and runid are required")
+		return false, fmt.Errorf("channelid and runid are required")
 	}
 	if data.Action == jarvis.RunAction_Resume {
-		return resumeRun(ctx, data.ChannelId, data.RunId, data.PhaseIdx)
+		return false, resumeRun(ctx, data.ChannelId, data.RunId, data.PhaseIdx)
 	}
 	preStatus := ""
 	var preRun *waveobj.Run
@@ -773,7 +787,7 @@ func (ws *WshServer) AdvanceRunCommand(ctx context.Context, data wshrpc.CommandA
 	// the engine already closed this run (its lead could not be woken when the DAG finished), so the
 	// done transition's side effects have run: only the report is new
 	if data.Action == jarvis.RunAction_Complete && data.Report != "" && preStatus == jarvis.RunStatus_Done {
-		return attachLateReport(ctx, data)
+		return false, attachLateReport(ctx, data)
 	}
 	// a lead ends its plan run with a bare `wsh jarvis complete`. Every task landed through the engine's
 	// merges, so the head of the tree they land in is the run's work, as it is for a run the engine closes with no lead
@@ -786,24 +800,24 @@ func (ws *WshServer) AdvanceRunCommand(ctx context.Context, data wshrpc.CommandA
 	}
 	if data.Action == jarvis.RunAction_Complete && preRun != nil && preRun.TaskId != "" && !preRun.Review && strings.TrimSpace(data.Report) == "" {
 		path := orchestrate.WorkerReportPath(preRun.DagORef, preRun.TaskId)
-		return fmt.Errorf("%s: write your report to %s as:\n%s\nthen run wsh jarvis complete --commit <sha> --report %s", ErrWorkerReportRequired, path, jarvis.WorkerReportTemplate, path)
+		return false, fmt.Errorf("%s: write your report to %s as:\n%s\nthen run wsh jarvis complete --commit <sha> --report %s", ErrWorkerReportRequired, path, jarvis.WorkerReportTemplate, path)
 	}
 	if data.Action == jarvis.RunAction_Complete && preRun != nil && preRun.TaskId != "" && !preRun.Review {
 		if _, perr := jarvis.ParseWorkerReport(data.Report); perr != nil {
 			path := orchestrate.WorkerReportPath(preRun.DagORef, preRun.TaskId)
-			return fmt.Errorf("%s: %s: %v. Rewrite it as:\n%s\nthen run wsh jarvis complete --commit <sha> --report %s", ErrWorkerReportRequired, path, perr, jarvis.WorkerReportTemplate, path)
+			return false, fmt.Errorf("%s: %s: %v. Rewrite it as:\n%s\nthen run wsh jarvis complete --commit <sha> --report %s", ErrWorkerReportRequired, path, perr, jarvis.WorkerReportTemplate, path)
 		}
 	}
-	// the land runs after complete has closed the lead's tab, so a conflict it would hold on is the lead's to fix now
+	// a conflict the land would hold on is the lead's to fix, and only while the run is not yet done
 	if data.Action == jarvis.RunAction_Complete && !data.HoldLand && preRun != nil && preRun.TaskId == "" && preStatus != jarvis.RunStatus_Done {
 		if files, cerr := orchestrate.LandConflicts(ctx, preRun); cerr != nil {
 			log.Printf("AdvanceRun: run %s: %v", preRun.ID, cerr)
 		} else if len(files) > 0 {
-			return fmt.Errorf("run %s would not land: wave/%s conflicts with %s in %s. Merge %s into this tree, resolve, commit, then complete again. If the human decides to leave the conflict for later, complete with --hold-land", preRun.ID, preRun.ID, preRun.BaseBranch, strings.Join(files, ", "), preRun.BaseBranch)
+			return false, fmt.Errorf("run %s would not land: wave/%s conflicts with %s in %s. Merge %s into this tree, resolve, commit, then complete again. If the human decides to leave the conflict for later, complete with --hold-land", preRun.ID, preRun.ID, preRun.BaseBranch, strings.Join(files, ", "), preRun.BaseBranch)
 		}
 	}
 	ts := time.Now().UnixMilli()
-	err := wstore.UpdateRun(ctx, data.ChannelId, data.RunId, func(r *waveobj.Run) error {
+	err = wstore.UpdateRun(ctx, data.ChannelId, data.RunId, func(r *waveobj.Run) error {
 		next, e := applyRunAction(*r, data, ts)
 		if e != nil {
 			return e
@@ -812,7 +826,7 @@ func (ws *WshServer) AdvanceRunCommand(ctx context.Context, data wshrpc.CommandA
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("advancing run: %w", err)
+		return false, fmt.Errorf("advancing run: %w", err)
 	}
 	post, _ := wstore.GetRun(ctx, data.ChannelId, data.RunId)
 	switch data.Action {
@@ -832,18 +846,15 @@ func (ws *WshServer) AdvanceRunCommand(ctx context.Context, data wshrpc.CommandA
 			}
 		}
 	}
-	// on the non-done -> done transition: dispatch the evidence seal off the RPC budget, then notify the
-	// parent lead (if this is a child run). The notify is keyed on Done, not on evidence, so an empty-diff
-	// run still wakes its parent. Reached once per run: applyRunAction errors on an already-done run.
+	// on the non-done -> done transition: the evidence seal falls due, then notify the parent lead (if this is a
+	// child run). The notify is keyed on Done, not on evidence, so an empty-diff run still wakes its parent.
+	// Reached once per run: applyRunAction errors on an already-done run.
 	if run, gerr := wstore.GetRun(ctx, data.ChannelId, data.RunId); gerr == nil && run.Status == jarvis.RunStatus_Done {
-		if run.Evidence == nil {
-			// the seal runs a git diff + transcript reads that can outlast the caller's short client timeout;
-			// blocking the handler on it surfaced as EC-TIME even though the transition above had already
-			// persisted. It's best-effort and idempotent, with SealRunEvidenceCommand as the backfill — so
-			// dispatch it off-band and let the RPC return as soon as the transition is durable.
-			channelId, runId, force := data.ChannelId, data.RunId, data.ForceLand
-			sealAsync(func() { sealThenLand(channelId, runId, force) })
-		}
+		// the seal runs a git diff + transcript reads that can outlast the caller's short client timeout;
+		// blocking the handler on it surfaced as EC-TIME even though the transition above had already
+		// persisted. It's best-effort and idempotent, with SealRunEvidenceCommand as the backfill — so the
+		// caller dispatches it off-band, except for a lead whose complete waits on its land.
+		sealDue = run.Evidence == nil
 		// parent-notify stays synchronous: it's a cheap PTY input send, and a child's parent must learn its
 		// child is done as soon as the transition lands, not whenever the background seal happens to finish.
 		if line, ok := jarvis.ParentNotifyLine(run); ok {
@@ -906,11 +917,11 @@ func (ws *WshServer) AdvanceRunCommand(ctx context.Context, data wshrpc.CommandA
 	}
 	ch, err := wstore.DBMustGet[*waveobj.Channel](ctx, data.ChannelId)
 	if err != nil {
-		return fmt.Errorf("loading channel: %w", err)
+		return sealDue, fmt.Errorf("loading channel: %w", err)
 	}
 	if err := spawnRunWorkers(ctx, data.ChannelId, data.RunId, ch.Name); err != nil {
 		publishRunUpdate(data.ChannelId, data.RunId)
-		return fmt.Errorf("spawning next worker: %w", err)
+		return sealDue, fmt.Errorf("spawning next worker: %w", err)
 	}
 	publishRunUpdate(data.ChannelId, data.RunId)
 	// auto-close orchestrator lead when both run and DAG are terminal
@@ -919,7 +930,7 @@ func (ws *WshServer) AdvanceRunCommand(ctx context.Context, data wshrpc.CommandA
 			_, _ = orchestrate.MaybeCloseOrchestratorLead(ctx, freshRun, dag)
 		}
 	}
-	return nil
+	return sealDue, nil
 }
 
 func attachLateReport(ctx context.Context, data wshrpc.CommandAdvanceRunData) error {
@@ -944,16 +955,19 @@ func attachLateReport(ctx context.Context, data wshrpc.CommandAdvanceRunData) er
 	return nil
 }
 
-func (ws *WshServer) ReportRunPhaseCommand(ctx context.Context, data wshrpc.CommandReportRunPhaseData) error {
+// ReportRunPhaseCommand is a worker's own hold or complete. A lead completing a branch-landed run waits for its
+// land and gets the outcome back: the land runs after the run is done, and once complete returns the lead exits
+// and its tab closes, so this is the last moment it can tell anyone a hold (run 1409ee43 sat held, unannounced).
+func (ws *WshServer) ReportRunPhaseCommand(ctx context.Context, data wshrpc.CommandReportRunPhaseData) (*wshrpc.CommandReportRunPhaseRtnData, error) {
 	if data.ORef == "" {
-		return fmt.Errorf("oref is required")
+		return nil, fmt.Errorf("oref is required")
 	}
 	m := jarvis.ResolveRunWorkerFromMeta(ctx, data.ORef)
 	if m == nil {
 		log.Printf("ReportRunPhase: no run owns oref %q (ignoring)", data.ORef)
-		return nil // fail safe: a stray report is a no-op, not an error
+		return nil, nil // fail safe: a stray report is a no-op, not an error
 	}
-	return ws.AdvanceRunCommand(ctx, wshrpc.CommandAdvanceRunData{
+	adv := wshrpc.CommandAdvanceRunData{
 		ChannelId: m.Channel.OID,
 		RunId:     m.Run.ID,
 		PhaseIdx:  m.PhaseIdx,
@@ -965,7 +979,22 @@ func (ws *WshServer) ReportRunPhaseCommand(ctx context.Context, data wshrpc.Comm
 		Report:    data.Report,
 		HoldLand:  data.HoldLand,
 		ForceLand: data.ForceLand,
-	})
+	}
+	sealDue, err := advanceRun(ctx, adv)
+	if !sealDue {
+		return nil, err
+	}
+	// a task's worker lands through the engine's merge, and its reviewer waits on the seal, not on it
+	if m.Run.TaskId != "" || m.Run.LandPath == "" {
+		sealAsync(func() { sealThenLand(adv.ChannelId, adv.RunId, adv.ForceLand) })
+		return nil, err
+	}
+	land, lerr := sealThenLand(adv.ChannelId, adv.RunId, adv.ForceLand)
+	rtn := &wshrpc.CommandReportRunPhaseRtnData{Land: land}
+	if lerr != nil {
+		rtn.LandError = lerr.Error()
+	}
+	return rtn, err
 }
 
 func (ws *WshServer) CancelRunCommand(ctx context.Context, data wshrpc.CommandCancelRunData) error {

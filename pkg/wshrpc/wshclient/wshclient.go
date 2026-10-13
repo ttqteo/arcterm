@@ -1020,9 +1020,9 @@ func RemoveBackgroundAgentCommand(w *wshutil.WshRpc, data wshrpc.CommandRemoveBa
 }
 
 // command "reportrunphase", wshserver.ReportRunPhaseCommand
-func ReportRunPhaseCommand(w *wshutil.WshRpc, data wshrpc.CommandReportRunPhaseData, opts *wshrpc.RpcOpts) error {
-	_, err := sendRpcRequestCallHelper[any](w, "reportrunphase", data, opts)
-	return err
+func ReportRunPhaseCommand(w *wshutil.WshRpc, data wshrpc.CommandReportRunPhaseData, opts *wshrpc.RpcOpts) (*wshrpc.CommandReportRunPhaseRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandReportRunPhaseRtnData](w, "reportrunphase", data, opts)
+	return resp, err
 }
 
 // command "rescanstorage", wshserver.RescanStorageCommand

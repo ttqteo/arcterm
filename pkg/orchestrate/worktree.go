@@ -1,6 +1,7 @@
 package orchestrate
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -28,15 +29,20 @@ func git(ctx context.Context, dir string, args ...string) (string, error) {
 	// without it the call waits for the pipe, not the process: a descendant git left behind (a hook, a helper)
 	// holds the pipe open past git's exit and past the context, and most callers hold a dag lock
 	cmd.WaitDelay = gitWaitDelay
-	out, err := cmd.CombinedOutput()
+	// a caller parses stdout; git's warnings go to stderr, and mixed in they corrupt a parsed list (an autocrlf
+	// warning hid an unstaged edit from the land's overlap check). A failure carries both: a caller matches
+	// git's stdout too, such as merge's CONFLICT lines.
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
 	// git itself exited 0 and its output is read; only the abandoned pipe was cut
 	if errors.Is(err, exec.ErrWaitDelay) {
 		err = nil
 	}
 	if err != nil {
-		return "", fmt.Errorf("git %v: %w: %s", args, err, dropProgress(string(out)))
+		return "", fmt.Errorf("git %v: %w: %s", args, err, dropProgress(stdout.String()+"\n"+stderr.String()))
 	}
-	return strings.TrimSpace(string(out)), nil
+	return strings.TrimSpace(stdout.String()), nil
 }
 
 var gitProgressLine = regexp.MustCompile(`^\s*[A-Za-z ]+:\s+\d+% \(\d+/\d+\)`)

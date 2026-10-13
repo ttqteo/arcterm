@@ -371,9 +371,9 @@ func TestLandKeepsUncommittedEdits(t *testing.T) {
 		head := gitCmd(t, f.project, "rev-parse", "main")
 
 		land := f.landRun(t, false)
-		f.assertHeld(t, land, head, "unstaged edits to files the run changes: base.txt;")
-		if want := "commit or stash them, then run `wsh runs land " + f.ownerID + "`"; !strings.Contains(land.Reason, want) {
-			t.Fatalf("held reason %q, want it to contain %q", land.Reason, want)
+		f.assertHeld(t, land, head, "unstaged edits to files the run changes: base.txt")
+		if !land.Dirty {
+			t.Fatalf("land = %+v, want a dirty hold the engine retries", land)
 		}
 		if _, err := os.Stat(filepath.Join(out, "verify")); !os.IsNotExist(err) {
 			t.Fatalf("Verify ran before the hold: %v", err)
@@ -751,4 +751,76 @@ func TestLandRecognizesAHandMergedBranch(t *testing.T) {
 	if branchExists(f.project, "wave/"+f.ownerID) {
 		t.Fatal("the run's branch was not deleted")
 	}
+}
+
+// run 1409ee43: another session's edits held the land, that session then committed them, and the run sat held
+// until the human asked how to land it. A hold made only by uncommitted changes retries once they are gone.
+func TestADirtyHoldLandsOnceTheCheckoutIsClean(t *testing.T) {
+	t.Run("a staged change another session then commits", func(t *testing.T) {
+		f, _ := landFixture(t)
+		writeFile(t, filepath.Join(f.project, "other.txt"), "another session's work\n")
+		gitCmd(t, f.project, "add", "other.txt")
+		head := gitCmd(t, f.project, "rev-parse", "main")
+		land := f.landRun(t, false)
+		f.assertHeld(t, land, head, "staged changes")
+		if !land.Dirty {
+			t.Fatalf("land = %+v, want a dirty hold", land)
+		}
+
+		retryDirtyLands(f.ctx)
+		waitStages(t)
+		f.assertHeld(t, f.owner(t).Land, head, "staged changes")
+
+		gitCmd(t, f.project, "commit", "-m", "another session's work")
+		retryDirtyLands(f.ctx)
+		waitStages(t)
+		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed || got.Commit != gitCmd(t, f.project, "rev-parse", "HEAD") {
+			t.Fatalf("land = %+v, want landed on the checkout's new head", got)
+		}
+	})
+	t.Run("an unstaged edit another session then reverts", func(t *testing.T) {
+		f, tree := landFixture(t)
+		commitOnBranch(t, tree, "base.txt", "branch\n")
+		f.setFinal(t, &waveobj.FinalStage{State: FinalState_Passed, Round: 1, Commit: gitCmd(t, tree, "rev-parse", "HEAD")})
+		writeFile(t, filepath.Join(f.project, "base.txt"), "another session's edit\n")
+		if land := f.landRun(t, false); land.State != LandState_Held || !land.Dirty {
+			t.Fatalf("land = %+v, want a dirty hold", land)
+		}
+
+		gitCmd(t, f.project, "checkout", "--", "base.txt")
+		retryDirtyLands(f.ctx)
+		waitStages(t)
+		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed {
+			t.Fatalf("land = %+v, want landed", got)
+		}
+	})
+	t.Run("a forced land keeps its force", func(t *testing.T) {
+		f, _ := landFixture(t)
+		f.setFinal(t, &waveobj.FinalStage{State: FinalState_Failed, Round: 2, Detail: "Check failed"})
+		writeFile(t, filepath.Join(f.project, "other.txt"), "staged\n")
+		gitCmd(t, f.project, "add", "other.txt")
+		if land := f.landRun(t, true); land.State != LandState_Held || !land.Dirty || !land.Force {
+			t.Fatalf("land = %+v, want a forced dirty hold", land)
+		}
+
+		gitCmd(t, f.project, "commit", "-m", "staged")
+		retryDirtyLands(f.ctx)
+		waitStages(t)
+		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed {
+			t.Fatalf("land = %+v, want landed past the failed final stage", got)
+		}
+	})
+	t.Run("a hold that is not a dirty checkout waits for the human", func(t *testing.T) {
+		f, _ := landFixture(t)
+		gitCmd(t, f.project, "checkout", "-b", "x")
+		head := gitCmd(t, f.project, "rev-parse", "main")
+		if land := f.landRun(t, false); land.State != LandState_Held || land.Dirty {
+			t.Fatalf("land = %+v, want a hold that is not dirty", land)
+		}
+
+		gitCmd(t, f.project, "checkout", "main")
+		retryDirtyLands(f.ctx)
+		waitStages(t)
+		f.assertHeld(t, f.owner(t).Land, head, "checkout is on x, not main")
+	})
 }

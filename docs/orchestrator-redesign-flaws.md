@@ -412,6 +412,40 @@ Recovery, by the human's session:
 4. Revise the plan from the reviewer's full findings (`abcccd05`).
 5. Start run `fe95d11e`, then cancel it during its own plan review, before any worker spawned: the installed build
    would have cut the workers' prompts too.
+## Incident — run 1409ee43's land held after its lead completed, and nobody was told (2026-10-13)
+
+Run 1409ee43 (Shared Surface Toolbar, dag 00aecdae) finished, but its branch sat at `land=held` until the human
+asked "how do we land this".
+
+- The run-finished wake named one land blocker, a conflict in `codesurface.tsx` with `main`. The lead merged
+  `main`, resolved it, and ran `wsh jarvis complete`.
+- The land then held: "the checkout has unstaged edits to files the run changes: scripts/cdp/scenarios.mjs". The
+  edits were another session's. `complete` had already returned, and the lead's tab closed with it.
+- That session later committed its edits, so the reason went stale. A manual `wsh runs land` merged as
+  `9910d928`, subject "Shared Surface Toolbar", not a conventional one.
+
+Gaps and fixes:
+
+- **The wake checked only conflicts.** **Fixed:** `landBlockerLines` (`queue.go`) runs the land's own cheap
+  checkout checks (`landPrecheck`, `land.go`) as well as `LandConflicts`, one line per blocker. For uncommitted
+  changes it tells the lead they are not its own: report them, never commit, stash, restore or delete them.
+- **The land ran after `complete` returned.** **Fixed:** a lead's `complete` on a branch-landed run seals and lands
+  before it returns (`ReportRunPhaseCommand`), and `wsh jarvis complete` prints `landed <sha>` or
+  `held: <reason>`. `--force-land` and the failed-final hold are unchanged.
+- **A dirty-checkout hold waited for a human.** **Fixed:** such a hold is marked `RunLand.Dirty`, and the watchdog
+  (`retryDirtyLands`) lands the run once the land's checkout check passes, keeping its force. The land-held
+  attention item says so.
+- **The unstaged-edit check could miss an edit.** Found while testing: the engine's `git` helper read combined
+  output, so an autocrlf warning on stderr ran into the `git diff --name-only` list, and an LF-edited file was not
+  matched. The land then re-ran Check and Verify only for `git merge` to refuse. **Fixed:** `git` returns stdout
+  only, with both streams in its error.
+- **The non-conventional subject.** **Not a code path:** the manual land runs the same `LandRun` as the engine,
+  which types its subject since `d5321b43` (09:58). The packaged `wavesrv` that made the merge was built at 09:00,
+  before it. `TestAManualLandGetsAConventionalSubject` pins the manual path.
+
+None of the fixes has run live; they are unit-tested (`TestRunFinishedWakeNamesTheConflictsTheLandWouldHoldOn`,
+`TestLeadCompleteReportsTheLandItWaitedOn`, `TestADirtyHoldLandsOnceTheCheckoutIsClean`,
+`TestAManualLandGetsAConventionalSubject`).
 
 ## Constraints carried into the redesign
 

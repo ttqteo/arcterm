@@ -236,10 +236,18 @@ func TestRunFinishedWakeNamesTheConflictsTheLandWouldHoldOn(t *testing.T) {
 	cases := []struct {
 		name     string
 		conflict bool
+		checkout func(t *testing.T, project string)
 		want     string
 	}{
-		{"a conflict the lead can still fix", true, passed + "\nThe land into main will conflict in base.txt: merge main into this tree, resolve, commit, then complete."},
-		{"a clean land adds nothing", false, passed},
+		{"a conflict the lead can still fix", true, nil, passed + "\nThe land into main will conflict in base.txt: merge main into this tree, resolve, commit, then complete."},
+		{"a clean land adds nothing", false, nil, passed},
+		// run 1409ee43: another session's unstaged edit held the land after the lead had completed
+		{"another session's unstaged edit is reported, not fixed", false, func(t *testing.T, project string) {
+			writeFile(t, filepath.Join(project, "base.txt"), "another session's edit\n")
+		}, passed + "\nThe land will hold: the checkout has unstaged edits to files the run changes: base.txt. Those changes are not yours: they belong to another session or the human. Do not commit, stash, restore or delete them; say in your report that the land waits on them. The engine lands the run by itself once they are gone."},
+		{"a checkout on another branch is the human's", false, func(t *testing.T, project string) {
+			gitCmd(t, project, "checkout", "-b", "x")
+		}, passed + "\nThe land will hold: the checkout is on x, not main. That is the human's to clear, not yours: leave the checkout as it is and say it in your report."},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -255,6 +263,9 @@ func TestRunFinishedWakeNamesTheConflictsTheLandWouldHoldOn(t *testing.T) {
 			commitOnBranch(t, tree, "base.txt", "branch\n")
 			if c.conflict {
 				commitOnBase(t, f.project, "base.txt", "main\n")
+			}
+			if c.checkout != nil {
+				c.checkout(t, f.project)
 			}
 
 			runFinal(t, f)

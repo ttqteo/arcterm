@@ -331,6 +331,11 @@ type RunLand struct {
 	// Dismissed is the human dropping a held land's attention item. A retry writes a fresh RunLand, so a new
 	// hold shows again.
 	Dismissed bool `json:"dismissed,omitempty"`
+	// Dirty is a hold made only by uncommitted changes in the checkout, another session's or the human's: the
+	// engine lands the run by itself once they are gone.
+	Dirty bool `json:"dirty,omitempty"`
+	// Force is a held land that was asked to go past a failed final stage, so the engine's retry of it does too.
+	Force bool `json:"force,omitempty"`
 }
 
 // TaskNode.ModelSource values: who set the task's RunSpec model.
