@@ -44,6 +44,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   image copied, a thumbnail appears under it. On a run picked from a goal it lands in the Goal. `launcher.ts`
   launcherKey `paste`, `launchermodal.tsx` onKeyDown.
 
+**2026-10-13 (Background tasks: one green dot, with a count)**
+
+- [ ] (arcterm) **The sidebar's background dot and the rail's running row match.** Have an agent start a command with
+  run_in_background: its sidebar row shows a pulsing green dot with the count beside it (`● 1`), and the rail's
+  Background tasks shows that task with the same pulsing green dot, not the accent colour. `agenttree.tsx`
+  BackgroundDot, `agentdetailsrail.tsx` BG_DOT.
+
 **2026-10-13 (Fold when you leave: stricter, on top; Sprout click opens the chat)**
 
 - [ ] (arcterm) **Auto fold only for a maximized or full-screen app, and Sprout on top of it.** Windows, Fold when you

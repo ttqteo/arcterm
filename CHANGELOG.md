@@ -17,8 +17,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
   the terminal, a spider in place of the arcterm logo, a small spider that drops on its thread over the agent list and
   senses an agent asking you, another hanging over the empty Agent screen, and webs in two corners. Picking
   Spider-Man as Jarvis asks whether to switch to it, and as Jarvis he now and then says a line from his films.
-- **A green dot on an agent's sidebar row while background tasks it started still run** (a build, a dev server), even
-  after its turn has ended; hover it to see which.
+- **A green dot and a count on an agent's sidebar row while background tasks it started still run** (a build, a dev
+  server), even after its turn has ended; hover it to see which. The rail's Background tasks marks a running one with
+  the same green dot.
 - **Usage → Insights answers in English or Vietnamese**: an EN / VI switch beside Analyze picks the language, and
   re-runs an analysis that is on screen in the other one.
 

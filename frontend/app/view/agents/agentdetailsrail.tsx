@@ -381,8 +381,9 @@ function FileRow({
     );
 }
 
+// running is the sidebar row's background dot: the same green and slow pulse, so the two read as one state
 const BG_DOT: Record<BgTaskLabel, string> = {
-    running: "bg-accent",
+    running: "bg-working pulse-dot-slow",
     completed: "bg-success",
     failed: "bg-error",
     stopped: "bg-muted",

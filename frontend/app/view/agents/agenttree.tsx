@@ -1324,16 +1324,23 @@ function RuntimeGlyph({ runtime, state, sleeping }: { runtime: string; state?: A
 
 const GLYPH_COLOR: Record<AgentState, string> = { working: "text-accent", asking: "text-warning", idle: "text-muted" };
 
-// the dot on an agent's second line: shell commands it left running in the background, which outlive its turn
+// the dot on an agent's second line, with their count: shell commands it left running in the background, which outlive
+// its turn. Same green and pulse as a running row in the rail's Background tasks, so the two read as one state
 function BackgroundDot({ tasks }: { tasks: BackgroundTask[] }) {
     const n = tasks.length;
+    const title = `${n} background ${n === 1 ? "task" : "tasks"} running:\n${tasks.map((t) => t.label).join("\n")}`;
     return (
-        <span
-            data-agent-background={n}
-            title={`${n} background ${n === 1 ? "task" : "tasks"} running:\n${tasks.map((t) => t.label).join("\n")}`}
-            aria-label={`${n} background ${n === 1 ? "task" : "tasks"} running`}
-            className="h-[6px] w-[6px] flex-none rounded-full bg-working pulse-dot-slow"
-        />
+        <span title={title} className="flex flex-none items-center gap-[3px]">
+            <span
+                data-agent-background={n}
+                title={title}
+                aria-label={`${n} background ${n === 1 ? "task" : "tasks"} running`}
+                className="h-[6px] w-[6px] flex-none rounded-full bg-working pulse-dot-slow"
+            />
+            <span aria-hidden className="text-[10.5px] tabular-nums text-working">
+                {n}
+            </span>
+        </span>
     );
 }
 
