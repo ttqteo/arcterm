@@ -155,6 +155,14 @@ describe("footerLine", () => {
         });
         expect(footerLine({ ...base, resume: { title: "fix the build", branch: "" } }).tail).toBe("");
     });
+    it("names the Claude account an agent launch runs on, when there is one to name", () => {
+        expect(footerLine({ ...base, account: "Max 2" }).tail).toBe(" · on main · Claude: Max 2");
+        expect(footerLine({ ...base, branchNote: "", account: "Max 2" }).tail).toBe(" · Claude: Max 2");
+        expect(footerLine({ ...base, account: "Max 2", resume: { title: "x", branch: "main" } }).tail).toBe(
+            " · main · Claude: Max 2"
+        );
+        expect(footerLine({ ...base, account: "" }).tail).toBe(" · on main");
+    });
     it("a resume does not hide a missing project", () => {
         expect(footerLine({ ...base, project: null, resume: { title: "x", branch: "" } }).blocked).toBe(true);
     });

@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (New agent: Claude account)**
+
+- [ ] (arcterm) **The New agent footer names the Claude account.** With a token account added in Settings → Agents →
+  Claude account, open New agent and pick Claude Code: the footer reads "Starts in <path> · on main · Claude: <label>"
+  (or the /login email while Default is active), and a resume adds it after the branch. Pick Codex or Terminal: the
+  account part goes. With only /login it never shows. Not yet seen in the running app.
+
 **2026-10-13 (App bar usage button)**
 
 - [ ] (arcterm) **RAM and plan meters, one button.** In the app bar, the free RAM and the 5h / wk meters sit in one

@@ -10,6 +10,12 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ## Unreleased
 
+### Added
+
+- **The New agent dialog says which Claude account a Claude Code launch runs on** ("· Claude: Max 2", or your
+  /login email for Default), once you have added a token account in Settings → Agents → Claude account. With only
+  /login, the footer is unchanged.
+
 ### Changed
 
 - **The free RAM and the plan-usage meters in the app bar are now one button**, since both open the same panel: click

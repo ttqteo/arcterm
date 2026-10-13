@@ -30,6 +30,7 @@ import { showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { SLEEPABLE_AGENTS } from "./agentsleep";
 import { channelsAtom, primeChannels } from "./channelsstore";
+import { launchAccountName } from "./claudeaccount";
 import { harnessesAtom, harnessPreferenceAtom, resolveDefaultRuntime } from "./harnessstore";
 import {
     askStartupCommand,
@@ -109,6 +110,7 @@ import {
 import { ToolFields } from "./launchertoolfields";
 import { naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
 import { noteRecentProject, projectListAtom, recentFirst, recentProjectsAtom, type ProjectRow } from "./projectsstore";
+import { activeClaudeAccountAtom, claudeIdentityAtom } from "./ratelimitstore";
 import { leadRouteSeed } from "./route";
 import { cancelRun, channelOverrideAtom, loadResolvedProfile, resolvedProfileAtom } from "./runactions";
 import { launchBlocker, type RunShape } from "./runconfig";
@@ -325,6 +327,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         : isTool
           ? toolBlocker(tool, toolLoad)
           : null;
+    const activeAccount = useAtomValue(activeClaudeAccountAtom);
+    const claudeIdentity = useAtomValue(claudeIdentityAtom);
     const footer = footerLine({
         kind,
         shape,
@@ -333,6 +337,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         branchNote,
         blocker,
         resume: resume && { title: resume.task || "(untitled session)", branch: resume.branch },
+        account: isAgent && runtime === "claude" ? launchAccountName(activeAccount, claudeIdentity) : "",
     });
     const config: RunConfig = {
         shape,

@@ -73,6 +73,17 @@ export function defaultAccountName(loginEmail: string | undefined): string {
     return email ? email : "Claude login";
 }
 
+// The account a new claude launch runs on, for the New dialog's footer: the active token account's label, else
+// Default's name. "" while /login is the only account (no account holds a token), so nothing is shown.
+// `activeId` is activeClaudeAccountAtom ("" for Default).
+export function launchAccountName(activeId: string, identity: ClaudeIdentity): string {
+    if (!identity.accounts.some((a) => !a.notoken)) {
+        return "";
+    }
+    const account = identity.accounts.find((a) => a.id === activeId);
+    return account != null ? account.label : defaultAccountName(identity.loginEmail);
+}
+
 // A window at or past this is about to run out.
 export const QUOTA_WARN_PCT = 90;
 

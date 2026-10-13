@@ -7,6 +7,7 @@ import {
     addAccountStep,
     defaultAccountName,
     knownClaudeEmails,
+    launchAccountName,
     quotaLine,
     restartCandidates,
     rowQuota,
@@ -159,6 +160,27 @@ describe("defaultAccountName", () => {
         expect(defaultAccountName("quang.tt@mozox.com")).toBe("quang.tt@mozox.com");
         expect(defaultAccountName(undefined)).toBe("Claude login");
         expect(defaultAccountName("  ")).toBe("Claude login");
+    });
+});
+
+describe("launchAccountName", () => {
+    const identity = {
+        loginEmail: "quang.tt@mozox.com",
+        accounts: [
+            { id: "a1", label: "Max 2" },
+            { id: "a2", label: "Gone", notoken: true },
+        ],
+    };
+    it("is empty when /login is the only account", () => {
+        expect(launchAccountName("", { loginEmail: "quang.tt@mozox.com", accounts: [] })).toBe("");
+        expect(launchAccountName("", { loginEmail: "", accounts: [{ id: "a2", label: "Gone", notoken: true }] })).toBe(
+            ""
+        );
+    });
+    it("names the active token account by its label, Default by its /login email", () => {
+        expect(launchAccountName("a1", identity)).toBe("Max 2");
+        expect(launchAccountName("", identity)).toBe("quang.tt@mozox.com");
+        expect(launchAccountName("", { ...identity, loginEmail: "" })).toBe("Claude login");
     });
 });
 

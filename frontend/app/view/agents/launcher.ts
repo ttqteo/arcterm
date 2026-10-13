@@ -102,6 +102,8 @@ export interface FooterInput {
     blocker: string | null;
     // the session an agent launch resumes; null or left out starts a new one
     resume?: { title: string; branch: string } | null;
+    // the Claude account a claude launch runs on (launchAccountName); "" or left out names none
+    account?: string;
 }
 
 export interface FooterLine {
@@ -119,16 +121,17 @@ export function footerLine(input: FooterInput): FooterLine {
     if (input.blocker != null) {
         return { lead: input.blocker, strong: "", tail: "", blocked: true };
     }
+    const accountTail = input.kind === "agent" && input.account ? ` · Claude: ${input.account}` : "";
     if (input.kind === "agent" && input.resume) {
         return {
             lead: "Resumes ",
             strong: input.resume.title,
-            tail: input.resume.branch ? ` · ${input.resume.branch}` : "",
+            tail: (input.resume.branch ? ` · ${input.resume.branch}` : "") + accountTail,
             blocked: false,
         };
     }
     if (input.kind === "agent" || input.kind === "tool") {
-        const tail = input.branchNote ? ` · ${input.branchNote}` : "";
+        const tail = (input.branchNote ? ` · ${input.branchNote}` : "") + accountTail;
         return {
             lead: input.kind === "tool" ? "Opens in " : "Starts in ",
             strong: input.project.path,
