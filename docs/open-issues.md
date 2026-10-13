@@ -36,9 +36,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
 
 **2026-10-13 (Sidebar: a plan run's line drops the lead suffix)**
 
-- [ ] (arcterm) **A plan run's line shows its count.** Start a run from a plan file and look at its row in the
-  sidebar: the line under the title reads `1 worker  Plan review · 0/N` (later `Working · k/N`) without being cut;
-  hovering it shows `… · lead starts if needed` (or `lead closed`).
+- [ ] (arcterm) **A run's line shows its count.** Start a run from a plan file and look at its row, and its lead's
+  row (with tokens and age), in a narrow sidebar: the line reads `⌄ 1  Plan review · 0/N` (later `Working · k/N`)
+  without being cut; widen the sidebar and the chip reads `1 worker` again. Hovering the progress shows
+  `… · lead starts if needed` (or `lead closed`), hovering the chip `1 worker`.
 
 **2026-10-13 (Click a file's path to copy it)**
 

@@ -390,10 +390,12 @@ function Guides({ depth }: { depth: 1 | 2 }) {
     );
 }
 
-// `word` follows the label only where its @container line has room for it, so a narrow sidebar keeps just the count
+// `word` follows the label only where its @container line has room for it, so a narrow sidebar keeps just the count;
+// `wide` asks for more room, for a line that also holds a run's progress and badges
 function FoldChip({
     label,
     word,
+    wide,
     open,
     onToggle,
     ariaShow,
@@ -401,6 +403,7 @@ function FoldChip({
 }: {
     label: string;
     word?: string;
+    wide?: boolean;
     open: boolean;
     onToggle: () => void;
     ariaShow: string;
@@ -420,7 +423,7 @@ function FoldChip({
         >
             {open ? <ChevronDown size={10} aria-hidden /> : <ChevronRight size={10} aria-hidden />}
             {label}
-            {word ? <span className="hidden @[200px]:inline">{word}</span> : null}
+            {word ? <span className={cn("hidden", wide ? "@[250px]:inline" : "@[200px]:inline")}>{word}</span> : null}
         </button>
     );
 }
@@ -573,13 +576,16 @@ function RunSubline({
     }
     const { done, total } = runProgress(run.dag);
     // not "N done": the done fold under the run says that, and this chip folds the whole run
-    const chip = live > 0 || done === 0 ? `${live} ${live === 1 ? "worker" : "workers"}` : `${total} tasks`;
+    const workers = live > 0 || done === 0;
     const progress = dagProgressLabel(run, leadless ?? false);
     return (
         <>
-            <div className="mt-[3px] flex min-w-0 items-center gap-[6px] text-[10.5px] tabular-nums">
+            {/* @container: a narrow line keeps the chip's count and drops its word, so the progress is not cut */}
+            <div className="@container mt-[3px] flex min-w-0 items-center gap-[6px] text-[10.5px] tabular-nums">
                 <FoldChip
-                    label={chip}
+                    label={String(workers ? live : total)}
+                    word={workers ? (live === 1 ? "worker" : "workers") : "tasks"}
+                    wide
                     open={open}
                     onToggle={() => toggleRunCollapsed(run.runId)}
                     ariaShow="Show workers"
