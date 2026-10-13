@@ -27,7 +27,7 @@ import type { LineComment } from "@/app/view/agents/linecomments";
 import { activeReviewKeyAtom, lineReviewsAtom, type LineReviewState } from "@/app/view/agents/linecommentstore";
 import { confirmCloseSession } from "@/app/view/agents/agentactions";
 import { floatModeAtom, minimizeRequested } from "@/app/view/agents/floatstore";
-import { terminalFullscreenAtom } from "@/app/view/agents/railstore";
+import { dockedTerminalAtom, terminalDockFoldedAtom, terminalFullscreenAtom } from "@/app/view/agents/railstore";
 import { NO_LINEAGE } from "@/app/view/agents/runlineage";
 import { closeSwitcher, tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
@@ -1045,6 +1045,27 @@ describe("leader reachability and the fullscreen chord", () => {
         expect(b.keys).toBe("Mod:Shift:Enter");
         expect(b.when!(inTerm)).toBe(true);
         expect(b.when!({ ...inTerm, surface: "cockpit" })).toBe(false);
+    });
+
+    it("Mod+` folds or opens the terminal panel, live in the terminal, and only while a terminal is docked", () => {
+        const b = buildAgentBindings(model).find((x) => x.id === "agent:terminal-panel")!;
+        expect(b.keys).toBe("Mod:c{Backquote}");
+        expect(b.label).toBe("Fold or open the terminal panel");
+        globalStore.set(dockedTerminalAtom, null);
+        expect(b.when!(inTerm)).toBe(false);
+        globalStore.set(dockedTerminalAtom, "t1");
+        try {
+            expect(b.when!(inTerm)).toBe(true);
+            expect(b.when!({ ...inTerm, surface: "cockpit" })).toBe(false);
+            expect(b.when!({ ...inTerm, modalOpen: true })).toBe(false);
+            globalStore.set(terminalDockFoldedAtom, false);
+            b.run(inTerm);
+            expect(globalStore.get(terminalDockFoldedAtom)).toBe(true);
+            b.run(inTerm);
+            expect(globalStore.get(terminalDockFoldedAtom)).toBe(false);
+        } finally {
+            globalStore.set(dockedTerminalAtom, null);
+        }
     });
 });
 

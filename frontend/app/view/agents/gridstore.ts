@@ -40,19 +40,21 @@ export const agentGridAtom = atom(
 export interface GridModel {
     focusIdAtom: PrimitiveAtom<string | undefined>;
     agentsAtom: Atom<ReadonlyArray<{ id: string; blockId?: string }>>;
+    terminalsAtom: Atom<ReadonlyArray<{ id: string; blockId?: string }>>;
 }
 
-// The agents that can be cells: those with a terminal. The one place that rule lives (the surface reuses it).
-export function eligibleIds(agents: ReadonlyArray<{ id: string; blockId?: string }>): Set<string> {
-    return new Set(agents.filter((a) => a.blockId != null).map((a) => a.id));
+// The tabs that can be cells: agents and plain terminals that have a terminal (pass both rosters, agents first). The
+// one place that rule lives (the surface and the tree reuse it).
+export function eligibleIds(roster: ReadonlyArray<{ id: string; blockId?: string }>): Set<string> {
+    return new Set(roster.filter((a) => a.blockId != null).map((a) => a.id));
 }
 
 function liveIds(model: GridModel): Set<string> {
-    return eligibleIds(globalStore.get(model.agentsAtom));
+    return eligibleIds([...globalStore.get(model.agentsAtom), ...globalStore.get(model.terminalsAtom)]);
 }
 
-// The grid as the surface would show it right now: the stored one pruned against the live roster, with the
-// agent in focus applied. Operations start from this, never from the raw stored value.
+// The grid as the surface would show it right now: the stored one pruned against the live roster (agents and
+// terminals), with the tab in focus applied. Operations start from this, never from the raw stored value.
 // `seeded: true` assumes the operations run on a fully loaded roster, which holds: they are user actions on rows
 // and cells that are already on screen. Before the roster is seeded they would prune the cells whose agents have
 // not arrived yet (the surface itself passes the real flag to reconcileGrid and waits).

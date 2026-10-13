@@ -36,7 +36,12 @@ import { anyFilterActive } from "@/app/view/agents/historyquery";
 import { openLauncher, type LauncherModel } from "@/app/view/agents/launcherstore";
 import { activeReviewKeyAtom, canSendKey, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
 import { canRequest } from "@/app/view/agents/proseanchor";
-import { railVisibleAtom, terminalFullscreenAtom } from "@/app/view/agents/railstore";
+import {
+    dockedTerminalAtom,
+    railVisibleAtom,
+    terminalDockFoldedAtom,
+    terminalFullscreenAtom,
+} from "@/app/view/agents/railstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { resolveActiveRunId } from "@/app/view/agents/runmodel";
 import { backgroundTasksByIdAtom, focusSubagentAtom } from "@/app/view/agents/subagentsstore";
@@ -1097,6 +1102,17 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             paletteHidden: true, // duplicates agent:fullscreen, which already has a palette row
             when: fullscreenChordActive,
             run: toggleTerminalFullscreen,
+        },
+        {
+            // The terminal panel under the agent folds to a strip and opens again, from inside the terminal too like the
+            // other Mod chords. By code, so it is the same key on every layout (the backtick sits elsewhere on some).
+            // Active only while a terminal is docked: with none, the key is the terminal's own.
+            id: "agent:terminal-panel",
+            keys: "Mod:c{Backquote}",
+            group: "Agent",
+            label: "Fold or open the terminal panel",
+            when: (ctx) => ctx.surface === "agent" && !ctx.modalOpen && globalStore.get(dockedTerminalAtom) != null,
+            run: () => globalStore.set(terminalDockFoldedAtom, !globalStore.get(terminalDockFoldedAtom)),
         },
         {
             id: "agent:return-nav",

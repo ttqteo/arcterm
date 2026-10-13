@@ -2117,7 +2117,13 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     // lifted before the folds apply, so a collapsed folder stops counting what it lost
     const gridState = useAtomValue(agentGridAtom);
     const seeded = useAtomValue(rosterSeededAtom);
-    const cells = reconcileGrid(gridState, { focusId, eligible: eligibleIds(agents), seeded }).ids;
+    // a terminal can be a cell too (the surface reconciles with both), though this section's split row only names agents
+    const rosterTerminals = useAtomValue(model.terminalsAtom);
+    const cells = reconcileGrid(gridState, {
+        focusId,
+        eligible: eligibleIds([...agents, ...rosterTerminals]),
+        seeded,
+    }).ids;
     const { split, rows: unsplit } = splitActive(tree, cells, agents);
     const active = activeView(unsplit, filter, collapsed);
     const visibleRows = active.rows;

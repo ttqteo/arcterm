@@ -30,7 +30,7 @@ export interface ShownAgentInput<T extends { id: string }> {
     terminals: readonly T[];
     firstInOrder: string | undefined; // the roster's first agent in display order (orderAtom)
     grid: GridState; // the saved grid, as stored
-    eligible: ReadonlySet<string>; // live agents that have a terminal (gridstore eligibleIds)
+    eligible: ReadonlySet<string>; // live agents and terminals that have a terminal (gridstore eligibleIds)
     seeded: boolean; // the roster has been read once (rosterSeededAtom)
 }
 
@@ -39,11 +39,12 @@ export interface ShownAgent<T> {
     hold: boolean; // loading with a saved grid none of whose cells has arrived: show nothing yet
 }
 
-// The agent the Agent surface shows. The focused one wins. With nothing in focus (a launch, or the focused agent
-// just exited) it is, in order: the grid's focused cell, else the grid's first live cell, then the roster's first
+// The agent the Agent surface shows. The focused one wins, a plain terminal included even while agents exist (picking
+// one takes the centre, terminaldock.ts). With nothing in focus (a launch, or the focused tab just exited) it is, in
+// order: the grid's focused cell, else the grid's first live cell (an agent or a terminal), then the roster's first
 // agent in order, then agents[0], then terminals[0] (a plain terminal only when there is no agent). The grid comes
 // before the roster so the surface resumes on a saved cell rather than on an agent the focus rule would then swap
-// into one. Once the roster is read the grid is pruned first, so a cell whose agent exited hands over to its
+// into one. Once the roster is read the grid is pruned first, so a cell whose tab exited hands over to its
 // neighbour; before that the raw grid is used, since pruning it would drop cells that have not arrived yet.
 export function resolveShownAgent<T extends { id: string }>(input: ShownAgentInput<T>): ShownAgent<T> {
     const { focused, agents, terminals, firstInOrder, grid, eligible, seeded } = input;
@@ -55,7 +56,10 @@ export function resolveShownAgent<T extends { id: string }>(input: ShownAgentInp
     }
     const fromGrid = gridFallbackFocus(seeded ? pruneMissing(grid, eligible) : grid, eligible);
     const agent =
-        agents.find((a) => a.id === fromGrid) ?? agents.find((a) => a.id === firstInOrder) ?? agents[0] ?? terminals[0];
+        [...agents, ...terminals].find((a) => a.id === fromGrid) ??
+        agents.find((a) => a.id === firstInOrder) ??
+        agents[0] ??
+        terminals[0];
     return { agent, hold: false };
 }
 

@@ -241,21 +241,23 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const showDialogButton = review != null && review.kind !== "doc" && !dialogOpen;
     const view: AgentView = docReview?.mode === "review" ? "review" : canvas?.mode === "canvas" ? "canvas" : "terminal";
 
-    // The grid's cells, to tell the Split button whether a split is showing. Only agents with a terminal can be cells
-    // (gridstore.eligibleIds); a plain terminal has no Split button.
+    // The grid's cells, to tell the Split button whether a split is showing. Only agents and terminals with a terminal
+    // can be cells (gridstore.eligibleIds).
     const gridState = useAtomValue(agentGridAtom);
     const rosterSeeded = useAtomValue(rosterSeededAtom);
     const rosterAgents = useAtomValue(model.agentsAtom);
-    const cellCount = gridState.ids.filter((id) => eligibleIds(rosterAgents).has(id)).length;
+    const rosterTerminals = useAtomValue(model.terminalsAtom);
+    const cellIds = eligibleIds([...rosterAgents, ...rosterTerminals]);
+    const cellCount = gridState.ids.filter((id) => cellIds.has(id)).length;
     const splitShown = cellCount > 1;
-    const canSplit = blockId != null && agent.kind !== "terminal" && !ended;
+    const canSplit = blockId != null && !ended;
 
     // The visible way to a second cell: every other live agent, and what to do with none (dragging a sidebar row onto
     // the terminal works too, but nothing on screen says so). Built when opened, from the grid as it is then.
     const openSplitMenu = (e: React.MouseEvent) => {
         const grid = currentGrid(model);
         const s = splitMenuState(
-            globalStore.get(model.agentsAtom).map((a) => ({
+            [...globalStore.get(model.agentsAtom), ...globalStore.get(model.terminalsAtom)].map((a) => ({
                 id: a.id,
                 name: a.name,
                 blockId: a.blockId,
@@ -267,7 +269,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
         if (s.full) {
             items.push({ label: `The grid is full (${s.cells} of 4)`, enabled: false });
         } else if (s.targets.length === 0) {
-            items.push({ label: "No other agent is running", enabled: false });
+            items.push({ label: "No other agent or terminal is running", enabled: false });
         } else {
             for (const t of s.targets) {
                 items.push({

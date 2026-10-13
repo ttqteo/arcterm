@@ -1,0 +1,62 @@
+// Copyright 2026, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+import { describe, expect, it } from "vitest";
+import type { AgentVM } from "./agentsviewmodel";
+import { previousTab, terminalPaneHead } from "./terminalpanehead";
+
+function vm(over: Partial<AgentVM>): AgentVM {
+    return { id: "x", name: "claude", task: "", state: "idle", ...over };
+}
+const term = (over: Partial<AgentVM> = {}) =>
+    vm({ id: "t1", name: "lazygit", kind: "terminal", project: "arcterm", cwd: "D:\\work\\arcterm", ...over });
+const roots = new Map([["arcterm", "D:\\work\\arcterm"]]);
+
+describe("terminalPaneHead", () => {
+    it("names the terminal and says nothing of a folder that is the project's root", () => {
+        expect(terminalPaneHead(term(), undefined, roots)).toEqual({
+            name: "lazygit",
+            place: undefined,
+            backTo: undefined,
+        });
+    });
+
+    it("places a terminal that runs in another folder, by that folder's name", () => {
+        const head = terminalPaneHead(term({ cwd: "D:\\work\\arcterm\\.worktrees\\fix-login" }), undefined, roots);
+        expect(head.place).toBe("fix-login");
+    });
+
+    it("has no place for a project with no root, or a terminal with no cwd", () => {
+        expect(terminalPaneHead(term({ project: "other" }), undefined, roots).place).toBeUndefined();
+        expect(terminalPaneHead(term({ cwd: undefined }), undefined, roots).place).toBeUndefined();
+    });
+
+    it("goes back to the agent that was in view before", () => {
+        const head = terminalPaneHead(term(), vm({ id: "a1", name: "fix-login" }), roots);
+        expect(head.backTo).toBe("fix-login");
+    });
+
+    it("has nothing to go back to when the previous tab was a terminal, or there was none", () => {
+        expect(
+            terminalPaneHead(term(), vm({ id: "t2", name: "btop", kind: "terminal" }), roots).backTo
+        ).toBeUndefined();
+        expect(terminalPaneHead(term(), undefined, roots).backTo).toBeUndefined();
+    });
+});
+
+describe("previousTab", () => {
+    const roster = [vm({ id: "a1", name: "fix-login" }), vm({ id: "a2", name: "docs" }), term()];
+
+    it("is the newest recent tab other than the current one", () => {
+        expect(previousTab(["t1", "a2", "a1"], "t1", roster)?.id).toBe("a2");
+    });
+
+    it("passes over a tab that is no longer on the roster", () => {
+        expect(previousTab(["t1", "gone", "a1"], "t1", roster)?.id).toBe("a1");
+    });
+
+    it("is undefined when nothing else was in view", () => {
+        expect(previousTab(["t1"], "t1", roster)).toBeUndefined();
+        expect(previousTab([], "t1", roster)).toBeUndefined();
+    });
+});
