@@ -8,6 +8,14 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
+## Unreleased
+
+### Changed
+
+- **The free RAM and the plan-usage meters in the app bar are now one button**, since both open the same panel: click
+  the RAM figure for the list ranked by RAM, the meters for it ranked by tokens. Hovering a meter now says when the
+  window resets ("resets at 14:30", "resets Tue 09:00") instead of repeating the countdown.
+
 ## 0.15.11 — 2026-10-13
 
 ### Added

@@ -12,9 +12,8 @@ import { reopenLauncher } from "@/app/view/agents/launcherstore";
 import { ProjectSwitcher } from "@/app/view/agents/projectswitcher";
 import { writeConfig } from "@/app/view/agents/settingsui";
 import { SpiderMark, useSpiderDecor } from "@/app/view/agents/themedecorview";
-import { HeaderUsageMeters } from "@/app/view/agents/usagemeters";
+import { HeaderUsage } from "@/app/view/agents/usagemeters";
 import { autoSproutOn, minimizeChoice } from "@/app/view/agents/windowsize";
-import { WorkerCapacityChip } from "@/app/view/agents/workercapacitychip";
 import { PET_CHARACTER_NAME, petCharacter } from "@/app/view/jarvis/petcharacter";
 import { spriteFor } from "@/app/view/jarvis/petsprite";
 import { petCharacterAtom } from "@/app/view/jarvis/petstore";
@@ -129,8 +128,8 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
             <div data-tauri-drag-region className="relative flex h-full shrink-0 items-center gap-2.5">
                 <VersionMismatchPill />
                 <JobQueueChip />
-                <WorkerCapacityChip />
-                <HeaderUsageMeters model={model} />
+                {/* the free RAM and the plan meters: one button, since both open the one Consumers panel */}
+                <HeaderUsage model={model} />
                 {/* one button, one dialog: it opens on whatever the last open left picked, and the digits switch
                     between an agent and a run. Cmd+N and Cmd+Shift+R open it on an agent or a run row. */}
                 <button

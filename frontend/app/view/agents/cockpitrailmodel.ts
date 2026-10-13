@@ -47,7 +47,8 @@ export function usageBarVisible(pct: number | undefined, stale: boolean, reset: 
     return pct != null && !(stale && pct === 0 && !reset);
 }
 
-/** Pure: a meter's hover text, the detail the compact meter leaves out. */
+/** Pure: a meter's hover text, the detail the compact meter leaves out. The bar already shows the 5-hour countdown,
+ *  so the reset here is the clock time it lands on (formatResetClock). */
 export function meterTitle(
     label: string,
     pct: number,
@@ -58,10 +59,28 @@ export function meterTitle(
     return [
         `${label} · ${Math.round(pct)}%`,
         used != null ? `${formatTokens(used)} tok` : "",
-        reset ? `resets ${formatReset(reset, now)}` : "",
+        reset ? `resets ${formatResetClock(reset, now)}` : "",
     ]
         .filter(Boolean)
         .join(" · ");
+}
+
+const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** Pure: an epoch-seconds reset as the local time it lands on: "at 14:30" today, "Tue 09:00" within the week,
+ *  "Oct 20 09:00" past it. */
+export function formatResetClock(resetSec: number, now: number): string {
+    const at = new Date(resetSec * 1000);
+    const today = new Date(now);
+    const hhmm = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
+    if (at.toDateString() === today.toDateString()) {
+        return `at ${hhmm}`;
+    }
+    if (resetSec * 1000 - now < 6 * 24 * 60 * 60 * 1000) {
+        return `${WEEKDAY[at.getDay()]} ${hhmm}`;
+    }
+    return `${MONTH[at.getMonth()]} ${at.getDate()} ${hhmm}`;
 }
 
 /** Pure: the share of a window already passed (0..1), from its reset (epoch seconds) and its length; undefined

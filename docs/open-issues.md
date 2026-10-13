@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (App bar usage button)**
+
+- [ ] (arcterm) **RAM and plan meters, one button.** In the app bar, the free RAM and the 5h / wk meters sit in one
+  bordered button with a divider between them. Click the RAM figure: Consumers opens ranked by RAM; click a meter: it
+  opens ranked by tokens; a second click closes it. Hover a meter: the tooltip says "resets at HH:MM" for the 5-hour
+  window and "resets <Day> HH:MM" for the weekly one, not a countdown. Not yet seen in the running app.
+
 **2026-10-13 (Sync from the kaeltran16 fork)**
 
 - [ ] (arcterm) **Claude mod after the merge.** In a Claude session in arcterm, ask a question with AskUserQuestion,

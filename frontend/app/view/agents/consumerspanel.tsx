@@ -404,7 +404,7 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
             <PopoverReveal
                 open={open}
                 origin={placement.origin}
-                // it hangs from the control that opened it (the RAM chip, the usage meters), wherever that sits
+                // it hangs from the control that opened it (the app bar's usage button), wherever that sits
                 style={{ right: placement.right, top: placement.top, bottom: placement.bottom, width: PANEL_WIDTH }}
                 className="fixed z-[60] overflow-hidden rounded-lg border border-edge-strong bg-surface-raised shadow-popover"
             >

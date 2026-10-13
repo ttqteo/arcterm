@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    formatResetClock,
     formatResetShort,
     meterTitle,
     providerDot,
@@ -74,14 +75,30 @@ describe("usageBarVisible", () => {
 });
 
 describe("meterTitle", () => {
-    const NOW = 1_700_000_000_000;
-    it("spells out the window, its use, its tokens and its reset", () => {
-        expect(meterTitle("5-hour window", 74.4, 175_700_000, NOW / 1000 + 540, NOW)).toBe(
-            "5-hour window · 74% · 175.7M tok · resets 9m"
+    // local time, so the clock reads the same in any timezone: Mon 2026-10-12 10:00
+    const NOW = new Date(2026, 9, 12, 10, 0).getTime();
+    it("spells out the window, its use, its tokens and the time it resets", () => {
+        expect(meterTitle("5-hour window", 74.4, 175_700_000, NOW / 1000 + 4.5 * 3600, NOW)).toBe(
+            "5-hour window · 74% · 175.7M tok · resets at 14:30"
         );
     });
     it("leaves out tokens and reset when unknown", () => {
         expect(meterTitle("Weekly", 38, undefined, undefined, NOW)).toBe("Weekly · 38%");
+    });
+});
+
+describe("formatResetClock", () => {
+    const NOW = new Date(2026, 9, 12, 22, 0).getTime(); // Mon 22:00
+    const at = (d: Date) => d.getTime() / 1000;
+    it("is the time alone when it resets today", () => {
+        expect(formatResetClock(at(new Date(2026, 9, 12, 23, 5)), NOW)).toBe("at 23:05");
+    });
+    it("names the weekday when it resets on another day this week", () => {
+        expect(formatResetClock(at(new Date(2026, 9, 13, 2, 0)), NOW)).toBe("Tue 02:00");
+        expect(formatResetClock(at(new Date(2026, 9, 17, 9, 30)), NOW)).toBe("Sat 09:30");
+    });
+    it("names the date a week or more out", () => {
+        expect(formatResetClock(at(new Date(2026, 9, 19, 9, 0)), NOW)).toBe("Oct 19 09:00");
     });
 });
 

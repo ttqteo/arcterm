@@ -1,12 +1,13 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The app bar's plan-usage meters, beside the RAM chip: each provider's logo, then its 5-hour and weekly windows as two
-// small bars, and after them any model's own weekly window (a Team seat's Fable share) under that model's name
-// (planWindows), each with a tick at how much of its window has passed and coloured by how much is used (usageLevel, not
-// by pace: a fast start read red at 27%), and the 5-hour window's countdown. Tokens and the weekly reset are on hover;
-// the button opens the Consumers panel sorted by tokens (consumerspanel.tsx). Float has no app bar: its ledge shows
-// FloatUsage, each provider's first window alone (the 5-hour one), the rest in its tooltip.
+// The app bar's usage button: the free RAM (WorkerCapacityChip), then the plan-usage meters: each provider's logo, then
+// its 5-hour and weekly windows as two small bars, and after them any model's own weekly window (a Team seat's Fable
+// share) under that model's name (planWindows), each with a tick at how much of its window has passed and coloured by
+// how much is used (usageLevel, not by pace: a fast start read red at 27%), and the 5-hour window's countdown. Tokens
+// and the time each window resets are on hover. RAM and tokens open the one Consumers panel (consumerspanel.tsx), so
+// they are one button: a click on the RAM half ranks it by RAM, anywhere else by tokens. Float has no app bar: its
+// ledge shows FloatUsage, each provider's first window alone (the 5-hour one), the rest in its tooltip.
 
 import { Meter } from "@/app/element/meter";
 import { cn, fireAndForget } from "@/util/util";
@@ -32,6 +33,8 @@ import {
 } from "./ratelimitstore";
 import { RuntimeMark } from "./runtimemark";
 import { loadWindowTokens, windowTokensAtom, type WindowTokens } from "./windowtokenstore";
+import { WorkerCapacityChip } from "./workercapacitychip";
+import { useWorkerCapacity } from "./workercapacitystore";
 
 // neutral while ok, as on the Usage surface: amber and red are the signal, and the accent stays the New button's
 const LEVEL_BAR: Record<"ok" | "warn" | "hot", string> = { ok: "bg-muted", warn: "bg-warning", hot: "bg-error" };
@@ -84,9 +87,31 @@ function useMeterItems(model: AgentsViewModel): MeterItem[] {
     return meterItems(donuts, windowTokens, now);
 }
 
-export function HeaderUsageMeters({ model }: { model: AgentsViewModel }) {
+export function HeaderUsage({ model }: { model: AgentsViewModel }) {
     const items = useMeterItems(model);
-    return <UsageMeters items={items} onOpen={(opener) => toggleConsumers("tokens", opener)} />;
+    const cap = useWorkerCapacity();
+    // nothing until there is a reading of either
+    if (cap == null && items.length === 0) {
+        return null;
+    }
+    return (
+        <button
+            type="button"
+            data-app-usage
+            aria-haspopup="dialog"
+            onClick={(e) =>
+                toggleConsumers(
+                    (e.target as Element).closest("[data-worker-capacity]") != null ? "ram" : "tokens",
+                    e.currentTarget
+                )
+            }
+            className="flex h-[26px] shrink-0 cursor-pointer items-center gap-2.5 rounded border border-edge-mid bg-transparent px-2.5 hover:border-edge-strong hover:bg-surface-raised"
+        >
+            {cap != null ? <WorkerCapacityChip cap={cap} /> : null}
+            {cap != null && items.length > 0 ? <span className="h-3.5 w-px bg-edge-mid" /> : null}
+            <UsageMeters items={items} />
+        </button>
+    );
 }
 
 /** Float's usage, on the ledge (float-ledge.tsx): each provider's first window, its logo, a short bar, the percent and
@@ -155,20 +180,17 @@ function meterItems(
     );
 }
 
-function UsageMeters({ items, onOpen }: { items: MeterItem[]; onOpen: (opener: Element) => void }) {
+function UsageMeters({ items }: { items: MeterItem[] }) {
     // no refresh button here: the poll keeps the reading current and an account switch asks at once
     // (claudequota.ts); the Usage surface keeps the manual one
     if (items.length === 0) {
         return null;
     }
     return (
-        <button
-            type="button"
+        <span
             data-usage-meters
-            aria-haspopup="dialog"
-            onClick={(e) => onOpen(e.currentTarget)}
             title={[...items.map((m) => m.title), "Token use by agent"].join("\n")}
-            className="flex h-[26px] shrink-0 cursor-pointer items-center gap-2.5 rounded border border-edge-mid bg-transparent px-2.5 hover:border-edge-strong hover:bg-surface-raised"
+            className="flex items-center gap-2.5"
         >
             {items.map((m, i) => {
                 const lvl = usageLevel(m.pct);
@@ -204,6 +226,6 @@ function UsageMeters({ items, onOpen }: { items: MeterItem[]; onOpen: (opener: E
                     </Fragment>
                 );
             })}
-        </button>
+        </span>
     );
 }

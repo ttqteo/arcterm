@@ -198,7 +198,7 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
                     <CockpitShell model={model} tabId={tabIdRef.current} />
                 </div>
                 {floating ? <FloatLedge model={model} /> : <HintsFooter model={model} />}
-                {/* opened from the app bar's RAM chip and usage meters: one panel for both */}
+                {/* opened from the app bar's usage button (free RAM and plan meters) */}
                 <ConsumersPanel model={model} />
                 {/* the app bar's Jobs chip opens this; it also owns the one feed of the heavy-job queue the chip reads */}
                 <JobQueuePanel model={model} />
