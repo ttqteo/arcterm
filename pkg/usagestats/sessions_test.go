@@ -264,3 +264,38 @@ func TestScanSessionUsageMatchesScanUsage(t *testing.T) {
 		t.Fatal("corpus produced no tokens")
 	}
 }
+
+func TestFoldSessionsRereadTokens(t *testing.T) {
+	t0 := time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
+	turn := func(min int, ctx int) Record {
+		return Record{TS: t0.Add(time.Duration(min) * time.Minute), Harness: "claude", Provider: "anthropic",
+			Model: "claude-opus-5-5", CacheRead: ctx, Session: "s1"}
+	}
+	recs := []Record{
+		turn(0, 50_000),
+		turn(2, 80_000), // writes the 40k-char result read at minute 1
+		turn(3, 82_000), // reads it
+		turn(4, 84_000), // reads it
+		turn(5, 20_000), // context fell by more than the result: compacted, stop
+		turn(6, 22_000),
+	}
+	big := []BigToolResult{
+		{TS: t0.Add(1 * time.Minute), Tool: "Read", Chars: 40_000, Session: "s1"},
+		{TS: t0.Add(1 * time.Minute), Tool: "Read", Chars: 40_000, Session: "s1", Sub: true},
+	}
+	s := foldSessions(recs, big)[0]
+	var main, sub SessionBigResults
+	for _, b := range s.BigResults {
+		if b.Sub {
+			sub = b
+		} else {
+			main = b
+		}
+	}
+	if main.RereadTokens != 2*10_000 {
+		t.Fatalf("main RereadTokens = %d, want %d", main.RereadTokens, 2*10_000)
+	}
+	if sub.RereadTokens != 0 {
+		t.Fatalf("sub RereadTokens = %d, want 0", sub.RereadTokens)
+	}
+}

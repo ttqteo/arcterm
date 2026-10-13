@@ -8,6 +8,7 @@
 
 import { formatReset } from "./agentsviewmodel";
 import type { DonutWindow } from "./ratelimitstore";
+import { hasInsights } from "./usagelevers";
 
 export const INSIGHTS_STALE_MS = 24 * 3600_000;
 export const INSIGHTS_HELD_PCT = 95;
@@ -40,14 +41,14 @@ export type InsightsCard =
 // result beside it. `windowDays` is the surface's window (7, or 0 for all time).
 export function insightsCard(input: {
     sessionCount: number;
-    saved?: UsageInsights; // markdown "" counts as none
+    saved?: UsageInsights; // no markdown and no headline counts as none
     running: boolean;
     error?: string;
     windowDays: number; // 7, or 0 for all time
     now: number;
 }): InsightsCard {
     const { sessionCount, running, error, windowDays, now } = input;
-    const saved = input.saved && input.saved.markdown !== "" ? input.saved : undefined;
+    const saved = hasInsights(input.saved) ? input.saved : undefined;
     if (sessionCount <= 0) {
         return { kind: "no-sessions" };
     }

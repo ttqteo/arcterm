@@ -28,6 +28,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- **Usage → Insights ranks what to change by what it would save**: each fix (long context, oversized reads, noisy
+  Bash output, Opus on clear work, cold resumes) shows at most how much of the window's spend it recovers, the tabs
+  behind it open with a click, and a General tips row holds advice your numbers do not measure. Re-analyze once to
+  get the new card.
 - **The sidebar's sections and project folders open and close smoothly**: folding Active, Conversations or Terminals,
   or a project's folder in Conversations or Terminals, slides its rows closed instead of dropping them at once.
 - **A run's line in the sidebar fits again**: it reads `Plan review · 0/11` and no longer cuts off at the count;
