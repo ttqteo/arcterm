@@ -28,8 +28,6 @@ export type FinalCheckEntry = {
 };
 
 const FINISHED_STATES = new Set(["passed", "unverified", "failed"]);
-// while a round's commands or verifier run, the reading row and the DAG chip already say so
-const RUNNING_STATES = new Set(["checking", "final", "verifying"]);
 const TONES: Record<string, FinalCheckEntry["tone"]> = { passed: "pass", failed: "fail", unverified: "warn" };
 
 function plural(n: number, word: string): string {
@@ -186,7 +184,7 @@ function failCaption(r: ShotRound): string {
 }
 
 export function finalCheckEntry(group: TaskGroup | null): FinalCheckEntry | null {
-    if (!group?.finalcmd || RUNNING_STATES.has(group.final?.state ?? "")) {
+    if (!group?.finalcmd) {
         return null;
     }
     const rounds = shotRounds(group);
@@ -194,7 +192,8 @@ export function finalCheckEntry(group: TaskGroup | null): FinalCheckEntry | null
         return null;
     }
     const latest = rounds[rounds.length - 1];
-    // a fix round's tasks are running: the final stage is there but has not started its round yet
+    // a fix round's tasks are running, or the next round's commands or verifier are: the latest finished round
+    // stays on show, named by its number, since a round can run for many minutes
     const pending = group.final != null && !FINISHED_STATES.has(group.final.state);
     const earlierFailed = rounds
         .slice(0, -1)

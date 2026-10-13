@@ -95,6 +95,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
   return to arcterm grows it back even when the fold came while that app was in front.
 - The mouse wheel scrolls Claude Code's fullscreen view again after arcterm restarts or reloads its pane.
 - An agent with a background task still running is no longer offered **✓ Close**: closing it would end that task.
+- Jarvis: opening a long run goal with **Show more** no longer pushes the run's tasks and its bottom bar (with the
+  screenshots button) out of the sheet; the goal scrolls on its own instead.
+- Jarvis: a run's **Screenshots** button and Final check row no longer vanish while a later Final round runs; they
+  keep showing the last finished round, marked with its number.
 - Agent sidebar: clicking the top row of a run started from a plan (it has no lead) now shows the terminal of the run's
   agent that is asking or working, such as its plan reviewer or a worker, and a double-click lets you type into it.
   The click used to fold and unfold the run, so a double-click did nothing; the workers chip still folds it.

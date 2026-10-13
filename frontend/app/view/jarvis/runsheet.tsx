@@ -365,7 +365,10 @@ function Reading({
     const effort = ref != null ? index.get(ref.effortoid) : undefined;
     const origin = useRunOrigin(model, run);
     return (
-        <div className="flex flex-none flex-col gap-[11px] border-b border-edge-faint px-4 pb-3.5 pt-4">
+        // capped and scrolling on its own: a long goal opened with Show more stood taller than the sheet, which
+        // squeezed the body to nothing and pushed the dock (and its screenshots button) out of the sheet's clip.
+        // Its rows keep their height ([&>*]:flex-none) so the overflow scrolls instead of crushing one of them.
+        <div className="sc flex max-h-[50%] min-h-0 flex-none flex-col gap-[11px] overflow-y-auto border-b border-edge-faint px-4 pb-3.5 pt-4 [&>*]:flex-none">
             <div className="flex items-center gap-[9px]">
                 <span
                     className={cn(
