@@ -27,6 +27,14 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (Spider theme: the web sits behind the sidebar)**
+
+- [ ] (arcterm) **The web is behind the icons.** Under the Spider theme on the Agent surface, the top-left web shows
+  through the gaps of the nav rail and the agent tree, under the Cockpit/Jarvis icons and the Conversation History row,
+  and reads as one web across the rail's border (also after narrowing the window until the rail drops its labels); no
+  web at the bottom right over the terminal or the Stop button. `frontend/app/view/agents/themedecorview.tsx`
+  (`PanelWeb`).
+
 **2026-10-13 (Folded Spider-Man shows how many agents work)**
 
 - [ ] (arcterm) **Folded Spider-Man carries the count.** With Spider-Man as Jarvis and two or more agents working,

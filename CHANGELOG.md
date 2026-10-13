@@ -15,8 +15,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - Spider-Man as a third Jarvis character (Settings → Appearance → Character): the Homecoming suit at work, Peter Parker at rest. He walks the footer side-on, thwips when he speaks, hangs from a strand when you drag him and rappels down when you let go, now and then crawls along under the app bar and hangs upside down until your cursor comes near, web-swings out and back when the window folds, and folded sits on a rooftop whose windows light up for each running agent, with his web and the count of agents at work beside it.
 - A Spider theme (Settings → Appearance → Theme): Claude's colours with Spider-Man's red accent and the suit's blue in
   the terminal, a spider in place of the arcterm logo, a small spider that drops on its thread over the agent list and
-  senses an agent asking you, another hanging over the empty Agent screen, and webs in two corners. Picking
-  Spider-Man as Jarvis asks whether to switch to it, and as Jarvis he now and then says a line from his films.
+  senses an agent asking you, another hanging over the empty Agent screen, and a web in the top-left corner behind
+  the sidebar's icons. Picking Spider-Man as Jarvis asks whether to switch to it, and as Jarvis he now and then says a
+  line from his films.
 - **A green dot and a count on an agent's sidebar row while background tasks it started still run** (a build, a dev
   server), even after its turn has ended; hover it to see which. The rail's Background tasks marks a running one with
   the same green dot.

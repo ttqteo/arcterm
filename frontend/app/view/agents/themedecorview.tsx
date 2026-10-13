@@ -8,6 +8,7 @@ import { MOTION } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { motion, MotionConfig } from "motion/react";
+import { useLayoutEffect, useRef, useState } from "react";
 import {
     cellsPath,
     cobwebPath,
@@ -26,7 +27,6 @@ const SENSE_JAGS = cellsPath(SPIDER_SENSE, "y", 2);
 const HERO_BODY = cellsPath(SPIDER_SMALL, "S", 3);
 const HERO_EYES = cellsPath(SPIDER_SMALL, "e", 3);
 const WEB_TOP = cobwebPath(132, [20, 42, 68, 98, 128]);
-const WEB_BOTTOM = cobwebPath(150, [22, 46, 76, 108, 144]);
 
 export function useSpiderDecor(): boolean {
     return hasSpiderDecor(useAtomValue(themePresetAtom));
@@ -142,41 +142,56 @@ export function HeroSpider() {
     );
 }
 
-// Webs in two corners of the window: under the app bar (38px) on the left, over the footer (h-7) on the right. fixed,
-// so no layout box changes for them; over the surfaces and under every panel, popover and modal, which come later in
-// the window content or sit on a z-index.
-export function CornerWebs() {
+// where the web's corner sits in the window: just under the app bar (38px), at the left edge
+const WEB_ORIGIN = { x: 0, y: 38 };
+
+// One web in the window's top-left corner, drawn as the background of each panel it crosses (the nav rail, then the
+// agent tree): the panel's icons and rows paint over it, and a panel in the way hides it rather than being crossed by
+// it. Each piece is placed at its panel's offset from the web's corner, so the pieces read as one web across the
+// border. The panel must be `relative isolate`, so the piece's -z-10 lands between the panel's background and its
+// content. Measured again on a window resize, which can narrow the rail and move the tree.
+export function PanelWeb() {
     const on = useSpiderDecor();
+    const ref = useRef<HTMLDivElement>(null);
+    const [offset, setOffset] = useState({ x: 0, y: 0 });
+    useLayoutEffect(() => {
+        if (!on) {
+            return;
+        }
+        const measure = () => {
+            const box = ref.current?.getBoundingClientRect();
+            if (box) {
+                setOffset({ x: box.left - WEB_ORIGIN.x, y: box.top - WEB_ORIGIN.y });
+            }
+        };
+        measure();
+        let frame = 0;
+        // after the rail's own resize handler has rendered its new width
+        const onResize = () => {
+            cancelAnimationFrame(frame);
+            frame = requestAnimationFrame(measure);
+        };
+        window.addEventListener("resize", onResize);
+        return () => {
+            cancelAnimationFrame(frame);
+            window.removeEventListener("resize", onResize);
+        };
+    }, [on]);
     if (!on) {
         return null;
     }
     return (
-        <>
+        <div ref={ref} aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
             <svg
                 width="170"
                 height="150"
                 viewBox="0 0 170 150"
                 fill="none"
-                aria-hidden="true"
-                className="pointer-events-none fixed left-0 top-[38px] text-spidey-web opacity-[0.14]"
+                className="absolute text-spidey-web opacity-[0.14]"
+                style={{ left: -offset.x, top: -offset.y }}
             >
                 <path d={WEB_TOP} stroke="currentColor" strokeWidth={1} />
             </svg>
-            <svg
-                width="190"
-                height="170"
-                viewBox="0 0 190 170"
-                fill="none"
-                aria-hidden="true"
-                className="pointer-events-none fixed bottom-7 right-0 text-spidey-web opacity-[0.14]"
-            >
-                <path
-                    d={WEB_BOTTOM}
-                    transform="translate(190 170) scale(-1 -1)"
-                    stroke="currentColor"
-                    strokeWidth={1}
-                />
-            </svg>
-        </>
+        </div>
     );
 }

@@ -27,6 +27,7 @@ import { DigitHint } from "./digithint";
 import { answeredAskIdsAcross } from "./jarvisderive";
 import { navRailCollapsed } from "./navrailwidth";
 import { focusSubagentAtom } from "./subagentsstore";
+import { PanelWeb } from "./themedecorview";
 import { latestUnreadId, unreadLabel } from "./unreadagents";
 import { unreadAgentsAtom } from "./unreadagentsstore";
 
@@ -166,10 +167,11 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
     return (
         <nav
             className={cn(
-                "flex shrink-0 select-none flex-col gap-[3px] border-r border-border bg-surface py-2.5",
+                "relative isolate flex shrink-0 select-none flex-col gap-[3px] border-r border-border bg-surface py-2.5",
                 narrow ? "w-[56px]" : "w-[78px]"
             )}
         >
+            <PanelWeb />
             {CORE_ITEMS.map(({ key, label }) => renderItem(key, label, badges[key] ?? 0))}
             {/* a div, not a button: CDP scenarios count the surfaces as `nav button` */}
             <div data-nav-divider aria-hidden="true" className="mx-auto my-1.5 h-px w-8 shrink-0 bg-edge-mid" />
