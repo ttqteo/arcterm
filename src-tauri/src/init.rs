@@ -49,9 +49,16 @@ pub fn wait_for_endpoints(data: &Arc<Mutex<InitData>>, ready: &Condvar, timeout:
     d.clone()
 }
 
+// async and off the main thread: tauri builds every config window before running our setup hook
+// (which spawns wavesrv), and building the attention-popup pumps the message loop, so the main
+// page can call get_init that early. a sync command would block the main thread there, setup
+// could never spawn wavesrv, and the wait would always time out to empty endpoints.
 #[tauri::command]
-pub fn get_init(state: tauri::State<InitState>) -> InitData {
-    wait_for_endpoints(&state.0, &state.1, ENDPOINT_WAIT)
+pub async fn get_init(state: tauri::State<'_, InitState>) -> Result<InitData, String> {
+    let (data, ready) = (state.0.clone(), state.1.clone());
+    tauri::async_runtime::spawn_blocking(move || wait_for_endpoints(&data, &ready, ENDPOINT_WAIT))
+        .await
+        .map_err(|e| format!("get_init wait failed: {}", e))
 }
 
 // backs both getApi().sendLog and the harness's hlog. Renamed from harness_log:
