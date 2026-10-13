@@ -18,11 +18,18 @@ import { openDiff, projectDiffScope } from "./agentdiffnav";
 import type { AgentsViewModel } from "./agents";
 import { formatAgeShort, formatTokens } from "./agentsviewmodel";
 import { CompactTranscript } from "./compacttranscript";
-import type { Runtime } from "./launch";
 import { runtimeMeta } from "./runtimemeta";
 import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "./sessiondelete";
 import type { LiveSession } from "./sessionsarchivestore";
-import { LEAD_MEMBER, sessionPrimary, type RunMember, type RunView, type Status, type StatusKey } from "./sessionsruns";
+import {
+    LEAD_MEMBER,
+    resumeLaunchOpts,
+    sessionPrimary,
+    type RunMember,
+    type RunView,
+    type Status,
+    type StatusKey,
+} from "./sessionsruns";
 import { atBottom } from "./transcriptfollow";
 import { useTranscriptRead } from "./transcriptread";
 import { TranscriptSkeleton } from "./transcriptskeleton";
@@ -96,20 +103,10 @@ export function runSessionPrimary(model: AgentsViewModel, session: LiveSession) 
     }
 }
 
-// Resume an ended session into a new tab on the same transcript; message, when given, goes in as its next message
+// Resume an ended session into a new tab on the same transcript, named after the session; message, when given, goes
+// in as its next message
 async function resumeSession(model: AgentsViewModel, session: LiveSession, message = ""): Promise<void> {
-    const piResume =
-        session.runtime === "pi" && session.resumeargs?.length
-            ? { startupArgs: session.resumeargs, resumePath: session.transcriptpath }
-            : {};
-    await launchAgent(model, {
-        runtime: session.runtime as Runtime,
-        startupCommand: session.resumecommand,
-        task: message.trim(),
-        projectPath: session.projectpath,
-        projectName: session.projectname || "agent",
-        ...piResume,
-    });
+    await launchAgent(model, { ...resumeLaunchOpts(session), task: message.trim() });
 }
 
 function PrimaryButton({ model, session, strong }: { model: AgentsViewModel; session: LiveSession; strong?: boolean }) {

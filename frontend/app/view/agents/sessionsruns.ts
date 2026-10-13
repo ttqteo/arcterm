@@ -5,7 +5,9 @@
 // run, task and role) folds into one entry for that run; the entry lists the lead, every task of the run's
 // dag and its stage sessions, and surfaces only the members that need you. No React, no Wave runtime.
 
+import type { LaunchAgentOpts } from "@/app/cockpit/cockpit-actions";
 import { formatAge, type AgentVM } from "./agentsviewmodel";
+import type { Runtime } from "./launch";
 import { runTitle, stageLabel, unmetDeps } from "./runlineage";
 import { runComplete } from "./runmodel";
 import type { LiveSession } from "./sessionsarchivestore";
@@ -378,6 +380,21 @@ export function sessionPrimary(s: Pick<LiveSession, "live" | "resumecommand">): 
         return "jump";
     }
     return s.resumecommand ? "resume" : null;
+}
+
+// resumeLaunchOpts launches an ended session again under its own name; an empty task replays no prompt
+export function resumeLaunchOpts(s: LiveSession): LaunchAgentOpts {
+    const piResume =
+        s.runtime === "pi" && s.resumeargs?.length ? { startupArgs: s.resumeargs, resumePath: s.transcriptpath } : {};
+    return {
+        runtime: s.runtime as Runtime,
+        startupCommand: s.resumecommand,
+        task: "",
+        projectPath: s.projectpath,
+        projectName: s.projectname || "agent",
+        label: s.task?.trim() || undefined,
+        ...piResume,
+    };
 }
 
 // sessionLabel names a session in the merged feed: its run and place in it, else its own task
