@@ -951,7 +951,7 @@ describe("treeNavIds", () => {
     it("skips a worker row whose session is gone, and rows that are not a session", () => {
         const gone = { kind: "worker", project: "p", run: {}, task: {} } as unknown as ProjectTreeRow;
         const rows: ProjectTreeRow[] = [
-            { kind: "group", project: "p", agents: 1, terminals: 0, attn: 0, open: true },
+            { kind: "group", project: "p", agents: 1, terminals: 0, attn: 0, running: 0, open: true },
             gone,
             { kind: "divider", project: "p" },
         ];

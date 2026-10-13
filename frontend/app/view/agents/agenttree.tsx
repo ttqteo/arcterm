@@ -183,7 +183,7 @@ import { unreadAgentsAtom } from "./unreadagentsstore";
 import { showTerminalMenu, ToolGlyph } from "./terminalsrail";
 import { PanelWeb, TreeSpider } from "./themedecorview";
 import { toolIcon, toolTerminalName, type ToolIconName } from "./toolsmodel";
-import { failedAtom, installingAtom, loadTools, openToolPicker, toolsStatusAtom } from "./toolsstore";
+import { failedAtom, installingAtom, loadTools, toolsStatusAtom } from "./toolsstore";
 import { folderName } from "./worktreegone";
 import { goneTerminalIdsAtom } from "./worktreegonestore";
 
@@ -470,6 +470,20 @@ function CanvasTag({ model, id }: { model: AgentsViewModel; id: string }) {
                 <span aria-label="updated since you last looked" className="h-[5px] w-[5px] rounded-full bg-accent" />
             ) : null}
         </button>
+    );
+}
+
+// A folder's agents working now, folded or open: the working dot and the count
+function RunningBadge({ n }: { n: number }) {
+    return (
+        <span
+            data-folder-running={n}
+            aria-label={`${n} running`}
+            className="flex flex-none items-center gap-[4px] whitespace-nowrap text-[11px] tabular-nums text-muted"
+        >
+            <StatusDot state="working" pulse className="!h-[6px] !w-[6px]" />
+            {n} running
+        </span>
     );
 }
 
@@ -1948,26 +1962,6 @@ function NewTerminalButton({ model, project, path }: { model: AgentsViewModel; p
     );
 }
 
-// The small "tool" button of a folder row: opens "Open a tool" (toolsstore.ts) for this project, in its root rather than
-// an agent's folder
-function FolderToolButton({ model, project }: { model: AgentsViewModel; project: string }) {
-    return (
-        <button
-            type="button"
-            data-folder-tool={project}
-            title={`Open a tool in ${project}`}
-            aria-label={`Open a tool in ${project}`}
-            onClick={(e) => {
-                e.stopPropagation();
-                openToolPicker(model, project);
-            }}
-            className="flex h-[20px] flex-none cursor-pointer items-center rounded-[5px] bg-surface px-[5px] text-[11px] text-muted hover:bg-surface-hover hover:text-primary"
-        >
-            tool
-        </button>
-    );
-}
-
 // The words after a terminal row's name that say it is an install terminal (Install glow): a spinner and "installing"
 // while it runs, "install failed" in the danger token once it exited non-zero and was kept with its output
 function InstallState({ state }: { state: Exclude<TerminalRowState, "removed"> }) {
@@ -2399,22 +2393,21 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                                         toggleFold(collapsedList, r.project)
                                                     )
                                                 }
-                                                // the tool and + buttons only where the project is registered with a path to
-                                                // open in (ungrouped, Home and unregistered folders have none)
+                                                // the + only where the project is registered with a path to open in
+                                                // (ungrouped, Home and unregistered folders have none); a tool opens
+                                                // from New
                                                 action={
                                                     path ? (
-                                                        <>
-                                                            <FolderToolButton model={model} project={r.project} />
-                                                            <NewTerminalButton
-                                                                model={model}
-                                                                project={r.project}
-                                                                path={path}
-                                                            />
-                                                        </>
+                                                        <NewTerminalButton
+                                                            model={model}
+                                                            project={r.project}
+                                                            path={path}
+                                                        />
                                                     ) : null
                                                 }
                                                 trailing={
                                                     <>
+                                                        {r.running > 0 ? <RunningBadge n={r.running} /> : null}
                                                         {r.open ? null : (
                                                             <span
                                                                 data-folder-counts

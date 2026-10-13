@@ -328,7 +328,12 @@ function liftFromFolders(
             took = true;
             const g = folder >= 0 ? out[folder] : undefined;
             if (g?.kind === "group") {
-                out[folder] = { ...g, count: g.count - 1, attn: g.attn - (r.agent.state === "asking" ? 1 : 0) };
+                out[folder] = {
+                    ...g,
+                    count: g.count - 1,
+                    attn: g.attn - (r.agent.state === "asking" ? 1 : 0),
+                    running: g.running - (r.agent.state === "working" ? 1 : 0),
+                };
             }
         } else {
             out.push(r);
@@ -350,9 +355,17 @@ function cellProject(a: AgentVM): string {
 type AgentBodyRow = Exclude<AgentTreeRow, { kind: "group" }>;
 
 export type ProjectTreeRow =
-    // a project's folder: the agents it holds (done workers aside; what the split took is out) and the terminals, and the
-    // agents among them waiting on you
-    | { kind: "group"; project: string; agents: number; terminals: number; attn: number; open: boolean }
+    // a project's folder: the agents it holds (done workers aside; what the split took is out) and the terminals, the
+    // agents among them waiting on you, and those working now
+    | {
+          kind: "group";
+          project: string;
+          agents: number;
+          terminals: number;
+          attn: number;
+          running: number;
+          open: boolean;
+      }
     // the split as one row; `project` is the one every cell is in, null across projects
     | { kind: "split"; project: string | null; cells: AgentVM[]; crossProject: boolean }
     // the thin line between a project's agents and its terminals
@@ -458,6 +471,7 @@ export function projectTree(input: {
             agents: folder?.group.count ?? 0,
             terminals: list.length,
             attn: folder?.group.attn ?? 0,
+            running: folder?.group.running ?? 0,
             open,
         });
         const hostsSplit = splitRow != null && splitProject === project;

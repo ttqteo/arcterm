@@ -36532,21 +36532,19 @@ const toolsTree = {
 
         // the hover action is display:none until the folder is hovered, so the move is real
         const hovered = await ttMouse(h, `[data-project-folder="${TT_PROJECT}"]`, "move");
-        const toolShown = await h.ev(`(() => {
-            const b = document.querySelector('[data-folder-tool="${TT_PROJECT}"]');
-            return !!b && getComputedStyle(b.parentElement).display !== "none";
+        const hoverAction = await h.ev(`(() => {
+            const b = document.querySelector('[data-agent-new-terminal="${TT_PROJECT}"]');
+            return {
+                plus: !!b && getComputedStyle(b.parentElement).display !== "none",
+                buttons: b?.parentElement?.querySelectorAll("button").length ?? 0,
+            };
         })()`);
-        await ttMouse(h, `[data-folder-tool="${TT_PROJECT}"]`);
-        const picker = await polishWaitFor(h, `!!${TT_PICKER}`, 5000);
-        const context = await h.ev(`${TT_FLAT}(document.querySelector("[data-tool-picker-context]"))`);
-        await h.shot("cdp-shots/tools-tree-3-folder-tool.png");
+        await h.shot("cdp-shots/tools-tree-3-folder-hover.png");
         rec(
-            "5. folder-tool: hovering the folder shows its tool button, which opens the picker with a context line naming the project",
-            hovered && toolShown && picker && context.includes(TT_PROJECT),
-            JSON.stringify({ hovered, toolShown, picker, context })
+            "5. folder-hover: hovering the folder shows only its + (a tool opens from New)",
+            hovered && hoverAction.plus && hoverAction.buttons === 1,
+            JSON.stringify({ hovered, hoverAction })
         );
-        await h.ev(PEEKS_ESC);
-        rec("5b. Esc closes the picker", await polishWaitFor(h, `!${TT_PICKER}`, 3000), "");
         // the pointer off the folder, so its tooltip is not in the shots that follow
         await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 900, y: 600 });
 

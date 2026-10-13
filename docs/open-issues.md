@@ -27,6 +27,15 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (folder running count, Spider-Man web)**
+
+- [ ] (arcterm) **A project folder counts its running agents.** With an agent working in a project, its folder row in
+  the Agent sidebar reads a pulsing dot and `1 running`, open or folded, and drops it when the agent goes idle; hovering
+  the folder shows only the `+` (no `tool` button). commit "project folders count running agents".
+- [ ] (arcterm) **Spider-Man's web stays one piece.** Theme Spider-Man, restart on the Cockpit surface, then open
+  Agent: the corner web runs across the rail and the tree as one, with no second corner at the tree's left edge.
+  commit "project folders count running agents".
+
 **2026-10-13 (server whose launcher exited)**
 
 - [ ] (arcterm) **A daemonized dev server keeps its agent.** Have a Claude agent start Astro 7 in the background

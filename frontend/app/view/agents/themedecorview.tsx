@@ -149,7 +149,9 @@ const WEB_ORIGIN = { x: 0, y: 38 };
 // agent tree): the panel's icons and rows paint over it, and a panel in the way hides it rather than being crossed by
 // it. Each piece is placed at its panel's offset from the web's corner, so the pieces read as one web across the
 // border. The panel must be `relative isolate`, so the piece's -z-10 lands between the panel's background and its
-// content. Measured again on a window resize, which can narrow the rail and move the tree.
+// content. Measured again on a window resize, which can narrow the rail and move the tree, and when the panel's own box
+// changes: the Agent surface is display:none while another surface shows, so the tree's piece mounted there measures
+// an empty box at 0,0 (a second web corner at the tree's edge) until it shows.
 export function PanelWeb() {
     const on = useSpiderDecor();
     const ref = useRef<HTMLDivElement>(null);
@@ -160,7 +162,8 @@ export function PanelWeb() {
         }
         const measure = () => {
             const box = ref.current?.getBoundingClientRect();
-            if (box) {
+            // a hidden panel has no box to place the piece by; keep the last offset until it shows
+            if (box && box.width > 0 && box.height > 0) {
                 setOffset({ x: box.left - WEB_ORIGIN.x, y: box.top - WEB_ORIGIN.y });
             }
         };
@@ -172,9 +175,14 @@ export function PanelWeb() {
             frame = requestAnimationFrame(measure);
         };
         window.addEventListener("resize", onResize);
+        const observer = new ResizeObserver(onResize);
+        if (ref.current) {
+            observer.observe(ref.current);
+        }
         return () => {
             cancelAnimationFrame(frame);
             window.removeEventListener("resize", onResize);
+            observer.disconnect();
         };
     }, [on]);
     if (!on) {

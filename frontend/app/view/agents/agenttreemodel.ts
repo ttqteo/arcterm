@@ -13,7 +13,7 @@ import { endedWorkerId, holdsTask, NO_LINEAGE, workerAsk, type Lineage, type Run
 export const UNGROUPED_PROJECT = "ungrouped";
 
 export type AgentTreeRow =
-    | { kind: "group"; project: string; count: number; attn: number }
+    | { kind: "group"; project: string; count: number; attn: number; running: number }
     | { kind: "parent"; agent: AgentVM; project: string }
     // an orchestrator lead; `live` counts its workers that are not done
     | { kind: "lead"; agent: AgentVM; project: string; run: RunInfo; open: boolean; live: number }
@@ -132,7 +132,7 @@ function runRows(
     stages: StageAgent[],
     folds: TreeFolds,
     focusId: string | undefined
-): { rows: AgentTreeRow[]; members: number; attn: number } {
+): { rows: AgentTreeRow[]; members: number; attn: number; running: number } {
     const { run, project } = item;
     const tasks = run.dag?.tasks ?? [];
     // a task past its worker is still under way: verifying its merge, or failed and waiting on a judgment. Cleanup
@@ -222,13 +222,19 @@ function runRows(
     const attn = live.filter((t) => workerNeedsYou(run, t.id, workers.get(t.id)?.[0])).length;
     const agents =
         live.filter((t) => workers.has(t.id)).length + judging.length + (finalRunning && verifier != null ? 1 : 0);
-    return { rows, members: agents, attn };
+    const working = (a: AgentVM | undefined) => (a?.state === "working" ? 1 : 0);
+    const running =
+        live.reduce((n, t) => n + working(workers.get(t.id)?.[0]), 0) +
+        judging.reduce((n, s) => n + working(s.agent), 0) +
+        (finalRunning ? working(verifier) : 0);
+    return { rows, members: agents, attn, running };
 }
 
 /** Pure: roster + anchored order -> [group, ...rows] per project. Projects appear in the first-seen order
  *  of `order`; top-level rows within a group follow `order` (ids absent from `order` sort last). A run's
  *  workers follow its lead in plan order, and a run with no lead in the roster takes the place of its first
- *  worker. `count` is the group's visible agents, done workers aside; `attn` is how many wait on the human. */
+ *  worker. `count` is the group's visible agents, done workers aside; `attn` is how many wait on the human; `running`
+ *  is how many are working now. */
 export function buildAgentTree(
     agents: AgentVM[],
     order: string[],
@@ -303,11 +309,13 @@ export function buildAgentTree(
         const body: AgentTreeRow[] = [];
         let count = 0;
         let attn = 0;
+        let running = 0;
         for (const item of g.items) {
             if (item.kind === "parent") {
                 body.push(item);
                 count++;
                 attn += item.agent.state === "asking" ? 1 : 0;
+                running += item.agent.state === "working" ? 1 : 0;
                 continue;
             }
             const r = runRows(
@@ -320,8 +328,9 @@ export function buildAgentTree(
             body.push(...r.rows);
             count += r.members + (item.kind === "lead" ? 1 : 0);
             attn += r.attn + (item.kind === "lead" && item.agent.state === "asking" ? 1 : 0);
+            running += r.running + (item.kind === "lead" && item.agent.state === "working" ? 1 : 0);
         }
-        rows.push({ kind: "group", project: g.project, count, attn }, ...body);
+        rows.push({ kind: "group", project: g.project, count, attn, running }, ...body);
     }
     return rows;
 }
