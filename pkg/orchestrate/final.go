@@ -646,10 +646,10 @@ func finishFinal(ctx context.Context, g *waveobj.TaskGroup, judged bool, afterCo
 	if f.State != FinalState_Failed {
 		return
 	}
-	round, detail, last := f.Round, f.Detail, f.Round >= MaxFinalRounds
+	round, detail, last, autonomous := f.Round, f.Detail, f.Round >= MaxFinalRounds, g.Autonomous
 	channelID, runID := g.ChannelId, g.RunID
 	*afterCommit = append(*afterCommit, func() {
-		PostWake(context.Background(), channelID, runID, finalFailedWake(round, runID, detail, last))
+		PostWake(context.Background(), channelID, runID, finalFailedWake(round, runID, detail, last, autonomous))
 	})
 }
 

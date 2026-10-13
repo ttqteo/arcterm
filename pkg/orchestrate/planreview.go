@@ -44,6 +44,10 @@ const MaxPlanReviewRounds = 2
 // spawned the task (run 6c7652be).
 const proceedPastPlanReview = "as one ask with the header `Plan review`, the plan's absolute path as the question's first line, one line saying what you propose, then one `- ` line per finding you would accept, and the options `Accept all and proceed` and `Request changes`; the human can quote passages of the plan with a note on each, so an answer that starts with `Accept all and proceed` is an approval, and its `> ` quoted notes are applied before proceeding, while any other text is a change request; if they say to proceed, carry each finding you accept into the pending tasks it affects with `wsh jarvis dag amend <task> \"<note>\"` first, then run `wsh jarvis dag planreview accept \"<the human's reason>\"`"
 
+// autonomousPastPlanReview is what an autonomous run's lead does after the last round instead of putting it to the
+// human: the same amend-then-accept, on its own call.
+const autonomousPastPlanReview = "The run is autonomous and nobody is at the cockpit, so the call is yours: carry each finding into the pending tasks it affects with `wsh jarvis dag amend <task> \"<note>\"` first, then run `wsh jarvis dag planreview accept \"autonomous run\"`, and record in your report that you proceeded and why; a finding no pending task can take is an open issue in your report"
+
 // NewPlanReview is the review a plan-file submit starts with.
 func NewPlanReview() *waveobj.PlanReviewStage {
 	return &waveobj.PlanReviewStage{State: PlanReviewState_Reviewing, Round: 1}
@@ -75,7 +79,7 @@ func advancePlanReview(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owne
 	round, findings, last := pr.Round, pr.Findings, pr.Round >= MaxPlanReviewRounds
 	*afterCommit = append(*afterCommit, func() {
 		appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindPlanReviewed, nil, map[string]any{"state": PlanReviewState_Failed, "round": round, "findings": findings})
-		PostWake(ctx, g.ChannelId, g.RunID, planReviewLostWake(round, reason, last))
+		PostWake(ctx, g.ChannelId, g.RunID, planReviewLostWake(round, reason, last, g.Autonomous))
 	})
 }
 
@@ -260,7 +264,7 @@ func RecordPlanReviewVerdict(ctx context.Context, dagID, reviewerRunID, verdict,
 		detail["state"] = PlanReviewState_Failed
 		*afterCommit = append(*afterCommit, func() {
 			appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindPlanReviewed, nil, detail)
-			PostWake(ctx, g.ChannelId, g.RunID, planReviewFailedWake(round, text, last))
+			PostWake(ctx, g.ChannelId, g.RunID, planReviewFailedWake(round, text, last, g.Autonomous))
 		})
 		return nil
 	})
@@ -309,6 +313,9 @@ func ReplacePlanReviewProposal(ctx context.Context, dagID string, proposed *wave
 	err := mutatePlanReview(ctx, dagID, func(g *waveobj.TaskGroup, pr *waveobj.PlanReviewStage, _ *[]func()) error {
 		if !PlanReviewReplaceable(g) {
 			return fmt.Errorf("dag conflict: run %s's plan review is %s, so its dag can no longer be replaced", g.RunID, pr.State)
+		}
+		if pr.Round >= MaxPlanReviewRounds && g.Autonomous {
+			return fmt.Errorf("the plan review failed %d rounds, the most it gets. %s", pr.Round, autonomousPastPlanReview)
 		}
 		if pr.Round >= MaxPlanReviewRounds {
 			return fmt.Errorf("the plan review failed %d rounds, the most it gets; put it to the human, and %s", pr.Round, proceedPastPlanReview)

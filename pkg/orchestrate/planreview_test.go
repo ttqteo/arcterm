@@ -204,6 +204,63 @@ func TestPlanReviewAfterTheLastRoundGoesToTheHuman(t *testing.T) {
 	}
 }
 
+const autonomousAccept = "`wsh jarvis dag planreview accept \"autonomous run\"`"
+
+func TestPlanReviewWakesAutonomous(t *testing.T) {
+	for _, w := range []string{planReviewFailedWake(2, "no task for 4.1", true, true), planReviewLostWake(2, "exited", true, true)} {
+		if !strings.Contains(w, "`wsh jarvis dag amend <task> \"<note>\"`") || !strings.Contains(w, autonomousAccept) || !strings.Contains(w, "record in your report") {
+			t.Fatalf("an autonomous last round amends, accepts and records, got %q", w)
+		}
+		if strings.Contains(strings.ToLower(w), "put it to the human") {
+			t.Fatalf("an autonomous last round never goes to the human, got %q", w)
+		}
+	}
+	if w := planReviewFailedWake(1, "no task for 4.1", false, true); strings.Contains(w, "to the human") || !strings.Contains(w, "run `wsh jarvis dag submit` again") {
+		t.Fatalf("an autonomous earlier round revises and makes spec changes itself, got %q", w)
+	}
+	if planReviewLostWake(1, "exited", false, true) != planReviewLostWake(1, "exited", false, false) {
+		t.Fatal("a lost reviewer before the last round is resubmitted either way")
+	}
+
+	// off, the texts are what they were before the setting existed
+	for _, c := range []struct{ got, want string }{
+		{planReviewFailedWake(2, "no task for 4.1", true, false), "wake: plan review failed in round 2, the last: no task for 4.1. Put it to the human; " + proceedPastPlanReview + "."},
+		{planReviewFailedWake(1, "no task for 4.1", false, false), "wake: plan review failed in round 1: no task for 4.1. Revise the plan (put spec changes to the human) and run `wsh jarvis dag submit` again."},
+		{planReviewLostWake(2, "exited", true, false), "wake: the plan reviewer did not finish in round 2, the last (exited). Put it to the human; " + proceedPastPlanReview + "."},
+		{planReviewLostWake(1, "exited", false, false), "wake: the plan reviewer did not finish in round 1 (exited). Run `wsh jarvis dag submit` again to review the plan once more."},
+	} {
+		if c.got != c.want {
+			t.Fatalf("off:\n got %q\nwant %q", c.got, c.want)
+		}
+	}
+}
+
+// the verdict's caller reads the group's setting: an autonomous last round never reaches the human, and the refusal
+// of a resubmit past it names the accept
+func TestPlanReviewLastRoundAutonomous(t *testing.T) {
+	ctx, dag := seedPlanReviewDag(t)
+	if err := wstore.UpdateDag(ctx, dag.OID, func(g *waveobj.TaskGroup) error {
+		g.PlanReview.Round, g.Autonomous = MaxPlanReviewRounds, true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	captureSpawns(t)
+	f := newFakeLead(t)
+	reviewer := startPlanReview(t, ctx, dag.OID)
+	if err := RecordPlanReviewVerdict(ctx, dag.OID, reviewer, ReviewVerdict_Fail, "still no task for 4.1", nil); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(f.sends, "\n")
+	if !strings.Contains(joined, autonomousPastPlanReview) || strings.Contains(joined, "Put it to the human") {
+		t.Fatalf("an autonomous last round wakes the lead to amend and accept, got %q", f.sends)
+	}
+	_, err := ReplacePlanReviewProposal(ctx, dag.OID, &waveobj.TaskGroup{PlanPath: "p.md", Tasks: []waveobj.TaskNode{{ID: "t-0", Label: "a", State: TaskState_Pending}}})
+	if err == nil || !strings.Contains(err.Error(), autonomousAccept) || strings.Contains(err.Error(), "put it to the human") {
+		t.Fatalf("a resubmit past the last round on an autonomous run is refused with the accept, got %v", err)
+	}
+}
+
 func TestResubmitReplacesAFailedPlanAndOpensTheNextRound(t *testing.T) {
 	ctx, dag := seedPlanReviewDag(t)
 	captureSpawns(t)

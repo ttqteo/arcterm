@@ -97,8 +97,14 @@ func landBlockerLines(ctx context.Context, run *waveobj.Run) string {
 // finalFailedWake carries the final stage's failure whole: the lead writes its fix plan from it. After the
 // last round the call is the human's, and the lead must say the land will hold: the land runs after complete
 // closes the lead's tab, so nobody else can warn the human first (run dc7d6de0 completed held and unannounced).
-func finalFailedWake(round int, runID, detail string, last bool) string {
-	if last {
+// An autonomous run has nobody to put it to: the lead completes with the land held, and its report is the warning.
+func finalFailedWake(round int, runID, detail string, last, autonomous bool) string {
+	switch {
+	case last && autonomous:
+		return fmt.Sprintf("wake: the final stage failed on the merged result in round %d, the last. The run is autonomous and nobody is at the cockpit, so the call is yours: complete with the plain `wsh jarvis complete --report <file>`, never `--force-land`. A failed final stage holds the land, so the branch stays unmerged until `wsh runs land %s --force`, the human's call once the run is done; say in your report that the land is held and why:\n%s", round, runID, detail)
+	case autonomous:
+		return fmt.Sprintf("wake: the final stage failed on the merged result in round %d. Write a fix plan and run `wsh jarvis dag submit --round --plan <fix plan>`; if the fix is a product call, make the call you would recommend and record it and why in your report:\n%s", round, detail)
+	case last:
 		return fmt.Sprintf("wake: the final stage failed on the merged result in round %d, the last. Put it to the human, and say that completing will not merge the branch: a failed final stage holds the land, and only `wsh runs land %s --force`, the human's call once the run is done, lands it:\n%s", round, runID, detail)
 	}
 	return fmt.Sprintf("wake: the final stage failed on the merged result in round %d. Write a fix plan and run `wsh jarvis dag submit --round --plan <fix plan>`, or put it to the human if the fix is a product call:\n%s", round, detail)
@@ -180,9 +186,14 @@ func reviewFailedWake(taskID string) string {
 }
 
 // planReviewFailedWake carries the plan reviewer's findings whole: the lead revises the plan from them. After
-// the last round the call is the human's.
-func planReviewFailedWake(round int, findings string, last bool) string {
-	if last {
+// the last round the call is the human's, or on an autonomous run the lead's.
+func planReviewFailedWake(round int, findings string, last, autonomous bool) string {
+	switch {
+	case last && autonomous:
+		return fmt.Sprintf("wake: plan review failed in round %d, the last: %s. %s.", round, flatLine(findings), autonomousPastPlanReview)
+	case autonomous:
+		return fmt.Sprintf("wake: plan review failed in round %d: %s. Revise the plan (make any spec change yourself and record it in your report) and run `wsh jarvis dag submit` again.", round, flatLine(findings))
+	case last:
 		return fmt.Sprintf("wake: plan review failed in round %d, the last: %s. Put it to the human; %s.", round, flatLine(findings), proceedPastPlanReview)
 	}
 	return fmt.Sprintf("wake: plan review failed in round %d: %s. Revise the plan (put spec changes to the human) and run `wsh jarvis dag submit` again.", round, flatLine(findings))
@@ -190,8 +201,11 @@ func planReviewFailedWake(round int, findings string, last bool) string {
 
 // planReviewLostWake is for a plan reviewer that twice ended without a verdict: there are no findings to act
 // on, so the same plan can be submitted again.
-func planReviewLostWake(round int, reason string, last bool) string {
-	if last {
+func planReviewLostWake(round int, reason string, last, autonomous bool) string {
+	switch {
+	case last && autonomous:
+		return fmt.Sprintf("wake: the plan reviewer did not finish in round %d, the last (%s). %s.", round, reason, autonomousPastPlanReview)
+	case last:
 		return fmt.Sprintf("wake: the plan reviewer did not finish in round %d, the last (%s). Put it to the human; %s.", round, reason, proceedPastPlanReview)
 	}
 	return fmt.Sprintf("wake: the plan reviewer did not finish in round %d (%s). Run `wsh jarvis dag submit` again to review the plan once more.", round, reason)
@@ -281,7 +295,17 @@ func sweepAsks(ctx context.Context) {
 	now := wakeNow()
 	for oref, p := range agentask.GlobalRegistry.List() {
 		if p.Owner == agentask.AskOwner_Lead && p.Deadline > 0 && now >= p.Deadline {
-			forwardAskToUser(ctx, oref, p, askDeadlineNote)
+			if !askDagAutonomous(ctx, p) {
+				forwardAskToUser(ctx, oref, p, askDeadlineNote)
+				continue
+			}
+			// nobody is at the cockpit to take it: the lead keeps it and is told again
+			agentask.GlobalRegistry.Update(oref, p.AskId, func(cur *agentask.PendingAsk) {
+				cur.Deadline = now + LeadAskDeadline.Milliseconds()
+			})
+			publishChildAsk(p)
+			reannounceAsk(p)
+			PokeWake(ctx, p.ChannelId, p.RunId)
 		}
 	}
 	for oref, p := range expireClearsFn(now) {
@@ -302,6 +326,15 @@ func sweepAsks(ctx context.Context) {
 	}
 }
 
+// askDagAutonomous reports a dag child's question whose run is autonomous. A dag that cannot be loaded is not.
+func askDagAutonomous(ctx context.Context, p agentask.PendingAsk) bool {
+	if p.DagOID == "" {
+		return false
+	}
+	g, err := wstore.GetDag(ctx, p.DagOID)
+	return err == nil && g.Autonomous
+}
+
 // ForwardTask hands a task's open judgment to the human with the lead's note (`dag forward`): its
 // pending question when it has one, otherwise the failure, stall or merge conflict the lead was woken
 // for, which then waits on the timeline for the human.
@@ -313,6 +346,9 @@ func ForwardTask(ctx context.Context, dagID, taskID, note string) error {
 	g, err := wstore.GetDag(ctx, dagID)
 	if err != nil {
 		return fmt.Errorf("loading dag: %w", err)
+	}
+	if g.Autonomous {
+		return fmt.Errorf("run %s is autonomous and nobody is at the cockpit, so nothing is forwarded: decide task %s yourself (answer, retry, escalate, skip or send back) and record the call and why in your report", g.RunID, taskID)
 	}
 	task := taskByID(g, taskID)
 	if task == nil {

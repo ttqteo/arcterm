@@ -143,7 +143,7 @@ func TestAFailingFinalVerifyAfterASkippedOneBlocksTheRun(t *testing.T) {
 	if !strings.Contains(g.Final.Detail, "Verify `"+verifyCmd+"` failed on the merged result (exit 1)") {
 		t.Fatalf("the failure is the final stage's, as any final Verify failure, got %q", g.Final.Detail)
 	}
-	want := finalFailedWake(1, g.RunID, g.Final.Detail, false)
+	want := finalFailedWake(1, g.RunID, g.Final.Detail, false, false)
 	if len(lead.sends) == 0 || lead.sends[len(lead.sends)-1] != want {
 		t.Fatalf("the lead is woken for a fix round, want %q, got %q", want, lead.sends)
 	}

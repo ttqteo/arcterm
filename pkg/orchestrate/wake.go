@@ -29,6 +29,9 @@ const (
 	LeadAskDeadline = 10 * time.Minute
 	// WakeConfirmTimeout is how long a typed wake may go without the lead turning working.
 	WakeConfirmTimeout = 30 * time.Second
+	// MaxAutoRelaunches is how many times the engine brings back an autonomous run's dead lead by itself before
+	// its questions go to the human: a lead that keeps dying is not a flake.
+	MaxAutoRelaunches = 3
 )
 
 // why a lead stopped getting wakes; each lands on the lead-wake-failed row and on every ask it hands over.
@@ -85,6 +88,14 @@ var launchLeadFn = func(ctx context.Context, channelId, runId, wake string) {
 	}()
 }
 
+// relaunchLeadFn brings back an autonomous run's dead lead. A var for tests, set in init: RelaunchLead reaches
+// leadDiedLocked, which calls it, and a package-level initializer may not refer back to itself.
+var relaunchLeadFn func(ctx context.Context, channelId, runId string) error
+
+func init() {
+	relaunchLeadFn = RelaunchLead
+}
+
 // SetLaunchLeadForTest replaces the lead launch for tests in other packages and returns the restore.
 func SetLaunchLeadForTest(fn func(ctx context.Context, channelId, runId, wake string)) func() {
 	old := launchLeadFn
@@ -118,6 +129,9 @@ type runWake struct {
 	launchedAt int64
 	// missed is the judgment a dead lead left unread, kept so a relaunched lead can be told what it missed.
 	missed []string
+	// autoRelaunches counts the engine's own relaunches of an autonomous run's lead; autoRelaunching is one in flight.
+	autoRelaunches  int
+	autoRelaunching bool
 }
 
 type waker struct {
@@ -203,12 +217,22 @@ func PokeWake(ctx context.Context, channelId, runId string) {
 	defer wakes.lock.Unlock()
 	rw := wakes.runLocked(channelId, runId)
 	if rw.dead {
+		if wakes.autoRelaunchLocked(ctx, runId, rw) {
+			return
+		}
 		for oref, p := range leadAsks(runId) {
 			forwardAskToUser(ctx, oref, p, leadDeadNote)
 		}
 		return
 	}
 	wakes.flushLocked(ctx, runId, rw)
+}
+
+// reannounceAsk makes a question the lead was already told about news again, so the next flush wakes the lead for it.
+func reannounceAsk(p agentask.PendingAsk) {
+	wakes.lock.Lock()
+	defer wakes.lock.Unlock()
+	delete(wakes.runLocked(p.ChannelId, p.RunId).told, askTold(p))
 }
 
 // PostHandoff queues runId's handoff compaction, typed the next time the lead is at its prompt. It is
@@ -550,9 +574,57 @@ func (w *waker) leadDiedLocked(ctx context.Context, runId string, rw *runWake, r
 	rw.missed = append(rw.missed, lines...)
 	rw.lines, rw.sentAt, rw.retried, rw.dead, rw.handoff = nil, 0, false, true, false
 	appendRunEvent(ctx, rw.channelId, runId, waveobj.RunEventKindLeadWakeFailed, nil, map[string]any{"reason": reason, "lines": lines})
+	if w.autoRelaunchLocked(ctx, runId, rw) {
+		return
+	}
 	for oref, p := range leadAsks(runId) {
 		forwardAskToUser(ctx, oref, p, reason)
 	}
+}
+
+// autoRelaunchLocked brings back an autonomous run's dead lead on the engine's own call, since nobody is at the
+// cockpit to relaunch it, and reports whether the lead keeps its questions meanwhile. A lead that dies before its
+// plan is submitted, or past MaxAutoRelaunches, is the human's as before. The relaunch takes the waker lock, so it
+// runs on its own goroutine.
+func (w *waker) autoRelaunchLocked(ctx context.Context, runId string, rw *runWake) bool {
+	if rw.autoRelaunching {
+		return true
+	}
+	if rw.autoRelaunches >= MaxAutoRelaunches || !runAutonomousWithDag(ctx, rw.channelId, runId) {
+		return false
+	}
+	rw.autoRelaunches++
+	rw.autoRelaunching = true
+	channelId := rw.channelId
+	goStage("lead relaunch "+runId, func() {
+		lctx := context.WithoutCancel(ctx)
+		w.autoRelaunched(lctx, channelId, runId, relaunchLeadFn(lctx, channelId, runId))
+	})
+	return true
+}
+
+// autoRelaunched settles an automatic relaunch. One that failed hands the lead's questions to the human (G8).
+func (w *waker) autoRelaunched(ctx context.Context, channelId, runId string, err error) {
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	w.runLocked(channelId, runId).autoRelaunching = false
+	if err == nil {
+		return
+	}
+	log.Printf("run %s: automatic lead relaunch failed: %v", runId, err)
+	for oref, p := range leadAsks(runId) {
+		forwardAskToUser(ctx, oref, p, leadLaunchFailedNote+": "+err.Error())
+	}
+}
+
+// runAutonomousWithDag reports a run whose plan is submitted and whose Approvals are autonomous.
+func runAutonomousWithDag(ctx context.Context, channelId, runId string) bool {
+	run, err := wstore.GetRun(ctx, channelId, runId)
+	if err != nil || run.DagORef == "" {
+		return false
+	}
+	g, err := wstore.GetDag(ctx, run.DagORef)
+	return err == nil && jarvis.EffectiveAutonomous(run, g)
 }
 
 // leadAsks is runId's lead-owned questions, keyed by the oref each child waits on.
