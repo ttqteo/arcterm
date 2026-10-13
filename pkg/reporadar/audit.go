@@ -273,19 +273,11 @@ func buildAuditPrompt(commit, gitShow string) string {
 	return b.String()
 }
 
-// parseAuditReply parses the session's final message, tolerating a ```json fence.
+// parseAuditReply parses the session's final message, tolerating a fence or prose around the object.
 func parseAuditReply(raw string) (*auditReply, error) {
-	s := strings.TrimSpace(raw)
-	if rest, ok := strings.CutPrefix(s, "```"); ok {
-		rest = strings.TrimPrefix(rest, "json")
-		rest, ok = strings.CutSuffix(strings.TrimSpace(rest), "```")
-		if !ok {
-			return nil, fmt.Errorf("malformed audit reply: unclosed code fence")
-		}
-		s = strings.TrimSpace(rest)
-	}
-	// unmarshal alone would accept `null` as an empty reply
-	if !strings.HasPrefix(s, "{") {
+	// an object is required: unmarshal alone would accept `null` as an empty reply
+	s, err := extractJSONObject(raw)
+	if err != nil {
 		return nil, fmt.Errorf("malformed audit reply: not a JSON object")
 	}
 	var reply auditReply
@@ -314,6 +306,32 @@ func auditCommit(ctx context.Context, route auditRoute, projectPath, commit stri
 	reply, err := parseAuditReply(res.Reply)
 	if err != nil {
 		return nil, res, fmt.Errorf("audit of %s: %w", commit, err)
+	}
+	return reply, res, nil
+}
+
+// runTargetAudit runs one audit of any kind under AuditTimeout: the kind's prompt, session, parse. Errors name
+// the commit, or for hotspot the file. The session result is returned even when parsing fails, so the caller
+// can store the raw reply.
+func runTargetAudit(ctx context.Context, route auditRoute, projectPath string, t auditTarget, known []knownSite) (*auditReply, auditSessionResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, AuditTimeout)
+	defer cancel()
+	kind := kindOf(t.Kind)
+	label := kind.label(t)
+	prompt, err := kind.prompt(ctx, projectPath, t, known)
+	if err != nil {
+		return nil, auditSessionResult{}, err
+	}
+	res, err := runAuditSession(ctx, route, projectPath, prompt)
+	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, res, fmt.Errorf("audit of %s timed out after %s", label, AuditTimeout)
+		}
+		return nil, res, fmt.Errorf("audit of %s: %w", label, err)
+	}
+	reply, err := parseAuditReply(res.Reply)
+	if err != nil {
+		return nil, res, fmt.Errorf("audit of %s: %w", label, err)
 	}
 	return reply, res, nil
 }

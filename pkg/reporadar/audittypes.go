@@ -11,6 +11,15 @@ const (
 	AuditTimeout     = 10 * time.Minute
 	MaxFixDiffBytes  = 60 * 1024
 
+	SiblingAuditsPerScan    = 8
+	IntroducedAuditsPerScan = 3
+	HotspotAuditsPerScan    = 2
+
+	IntroducedMinLines = 50   // below this a change rarely carries a defect worth a session
+	IntroducedMaxLines = 1500 // above this the diff passes MaxFixDiffBytes and the session reads instead of reviewing
+	HotspotMinFixes    = 2
+	HotspotMaxLines    = 1500 // the probe's 1101-line file already cost 123k tokens
+
 	AuditQueued  = "queued"
 	AuditRunning = "running"
 	AuditOK      = "ok"
@@ -46,6 +55,7 @@ type auditHit struct {
 type auditReply struct {
 	RootCause string     `json:"rootcause"`
 	Siblings  []string   `json:"siblings"`
+	Checked   []string   `json:"checked"`
 	Hits      []auditHit `json:"hits"`
 }
 

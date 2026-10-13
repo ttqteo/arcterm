@@ -6,6 +6,7 @@ package reporadar
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -206,10 +207,14 @@ func TestBuildAuditPrompt(t *testing.T) {
 func TestParseAuditReply(t *testing.T) {
 	const body = `{"rootcause":"nil row","siblings":["store.Get"],"hits":[{"file":"pkg/a.go","line":12,"title":"t","trigger":"empty id","actual":"panic","expected":"error","whynotcovered":"other caller","severity":"high"}]}`
 	for name, raw := range map[string]string{
-		"bare":            body,
-		"padded":          "\n  " + body + "\n",
-		"json fence":      "```json\n" + body + "\n```",
-		"unlabeled fence": "```\n" + body + "\n```\n",
+		"bare":               body,
+		"padded":             "\n  " + body + "\n",
+		"json fence":         "```json\n" + body + "\n```",
+		"unlabeled fence":    "```\n" + body + "\n```\n",
+		"prose before":       "Here is the audit:\n" + body,
+		"prose after":        body + "\nLet me know if you need more.",
+		"prose around fence": "Result:\n```json\n" + body + "\n```",
+		"prose after fence":  "```json\n" + body + "\n```\nDone.",
 	} {
 		reply, err := parseAuditReply(raw)
 		if err != nil {
@@ -227,10 +232,6 @@ func TestParseAuditReply(t *testing.T) {
 	}
 
 	for name, raw := range map[string]string{
-		"prose before":         "Here is the audit:\n" + body,
-		"prose after":          body + "\nLet me know if you need more.",
-		"prose around fence":   "Result:\n```json\n" + body + "\n```",
-		"prose after fence":    "```json\n" + body + "\n```\nDone.",
 		"truncated":            body[:len(body)-20],
 		"truncated in fence":   "```json\n" + body[:len(body)-20],
 		"empty":                "",
@@ -349,4 +350,113 @@ func TestAuditCommit(t *testing.T) {
 			t.Fatal("auditCommit did not return after its context was cancelled")
 		}
 	})
+}
+
+func TestParseAuditReplyTolerant(t *testing.T) {
+	const body = `{"rootcause":"intent","checked":["callers of Get"],"hits":[{"file":"a.go","line":3,"trigger":"t"}]}`
+	for name, raw := range map[string]string{
+		"prose around object": "I read the callers.\n" + body + "\nThat is all.",
+		"fenced block":        "Here it is:\n```json\n" + body + "\n```\nDone.",
+	} {
+		reply, err := parseAuditReply(raw)
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		if reply.RootCause != "intent" || len(reply.Hits) != 1 || len(reply.Checked) != 1 {
+			t.Errorf("%s: parsed %+v", name, reply)
+		}
+	}
+	for name, raw := range map[string]string{
+		"no object":     "No sibling has this bug.",
+		"null":          "null",
+		"fenced null":   "```json\nnull\n```",
+		"broken braces": "the answer is {not json}",
+	} {
+		if reply, err := parseAuditReply(raw); err == nil {
+			t.Errorf("%s: want an error, got %+v", name, reply)
+		}
+	}
+}
+
+func fakeAuditSession(t *testing.T, fn func(ctx context.Context, route auditRoute, projectPath, prompt string) (auditSessionResult, error)) {
+	t.Helper()
+	orig := runAuditSession
+	runAuditSession = fn
+	t.Cleanup(func() { runAuditSession = orig })
+}
+
+func TestRunTargetAuditHotspotNoDiff(t *testing.T) {
+	dir := t.TempDir() // not a repository: any git call would fail
+	writeFile(t, dir, "pkg/hot.go", "package hot\n")
+	route := auditRoute{Runtime: AuditRuntimeClaude, Model: DefaultAuditModel}
+	target := auditTarget{Kind: KindHotspot, Commit: "0123456789abcdef", Subject: "chore: x", Files: []string{"pkg/hot.go"}, FixSubjects: []string{"fix: a", "fix: b"}}
+
+	var prompt string
+	fakeAuditSession(t, func(_ context.Context, _ auditRoute, _, p string) (auditSessionResult, error) {
+		prompt = p
+		return auditSessionResult{Reply: `{"rootcause":"retries","hits":[]}`}, nil
+	})
+	reply, _, err := runTargetAudit(context.Background(), route, dir, target, []knownSite{{Line: 1, Risk: "known"}})
+	if err != nil || reply.RootCause != "retries" {
+		t.Fatalf("reply = %+v, err = %v", reply, err)
+	}
+	if strings.Contains(prompt, auditDiffBegin) || !strings.Contains(prompt, fixSubjectsBegin) || !strings.Contains(prompt, "- line 1: known") {
+		t.Errorf("hotspot prompt must carry subjects and known sites, no diff:\n%s", prompt)
+	}
+
+	fakeAuditSession(t, func(context.Context, auditRoute, string, string) (auditSessionResult, error) {
+		return auditSessionResult{TotalTokens: 4}, errors.New("rate limited")
+	})
+	_, res, err := runTargetAudit(context.Background(), route, dir, target, nil)
+	if err == nil || !strings.Contains(err.Error(), "pkg/hot.go") || !strings.Contains(err.Error(), "rate limited") || res.TotalTokens != 4 {
+		t.Errorf("err = %v, res = %+v; want the file named and the session result kept", err, res)
+	}
+
+	fakeAuditSession(t, func(context.Context, auditRoute, string, string) (auditSessionResult, error) {
+		t.Error("no session for a file that is gone")
+		return auditSessionResult{}, nil
+	})
+	gone := target
+	gone.Files = []string{"pkg/gone.go"}
+	if _, _, err := runTargetAudit(context.Background(), route, dir, gone, nil); err == nil || !strings.Contains(err.Error(), "pkg/gone.go") {
+		t.Errorf("err = %v, want one naming the missing file", err)
+	}
+}
+
+func TestRunTargetAuditScopedDiff(t *testing.T) {
+	root := t.TempDir()
+	gitCmd(t, root, "init", "-q")
+	writeFile(t, root, "proj/app.go", "package app\n\nfunc Run() {}\n")
+	writeFile(t, root, "sibling/other.go", "package other\n\nfunc Leak() {}\n")
+	gitCmd(t, root, "add", ".")
+	gitCmd(t, root, "commit", "-q", "-m", "feat: add both")
+	commit, err := gitHead(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proj := filepath.Join(root, "proj")
+
+	var gotPath, prompt string
+	fakeAuditSession(t, func(_ context.Context, _ auditRoute, projectPath, p string) (auditSessionResult, error) {
+		gotPath, prompt = projectPath, p
+		return auditSessionResult{Reply: `{"hits":[]}`}, nil
+	})
+	target := auditTarget{Kind: KindIntroduced, Commit: commit, Subject: "feat: add both", Files: []string{"app.go"}}
+	if _, _, err := runTargetAudit(context.Background(), auditRoute{Runtime: AuditRuntimeClaude}, proj, target, nil); err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != proj {
+		t.Errorf("session ran in %q, want the project %q", gotPath, proj)
+	}
+	for _, want := range []string{"You are reviewing commit " + commit, "b/app.go", "+func Run() {}"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt is missing %q", want)
+		}
+	}
+	for _, banned := range []string{"proj/app.go", "other.go", "Leak"} {
+		if strings.Contains(prompt, banned) {
+			t.Errorf("the scoped diff must not carry %q:\n%s", banned, prompt)
+		}
+	}
 }

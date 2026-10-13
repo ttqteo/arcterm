@@ -153,3 +153,99 @@ func TestStillDetected(t *testing.T) {
 		t.Error("deleted file should be false")
 	}
 }
+
+func TestTargetFingerprint(t *testing.T) {
+	sib := auditTarget{Kind: KindSibling, Commit: "abc", Files: []string{"a/b.go"}}
+	base := targetFingerprint("/p", sib, "a/b.go")
+	// pinned from siblingFingerprint before the kinds landed: existing findings keep their identity
+	if base != "RAD-7061b549" || base != siblingFingerprint("/p", "abc", "a/b.go") {
+		t.Errorf("sibling fingerprint = %s, want RAD-7061b549", base)
+	}
+	if got := targetFingerprint("/p", auditTarget{Commit: "abc"}, "a/b.go"); got != base {
+		t.Errorf("an empty kind fingerprints as sibling: %s", got)
+	}
+	intro := targetFingerprint("/p", auditTarget{Kind: KindIntroduced, Commit: "abc"}, "a/b.go")
+	hot := targetFingerprint("/p", auditTarget{Kind: KindHotspot, Commit: "abc", Files: []string{"a/b.go"}}, "a/b.go")
+	if intro == base || hot == base || intro == hot {
+		t.Errorf("kinds must not share a fingerprint: sibling %s introduced %s hotspot %s", base, intro, hot)
+	}
+	for _, fp := range []string{intro, hot} {
+		if !strings.HasPrefix(fp, "RAD-") || len(fp) != len("RAD-")+8 {
+			t.Errorf("fingerprint shape: %s", fp)
+		}
+	}
+	if got := targetFingerprint("/p", auditTarget{Kind: KindHotspot, Commit: "abd", Files: []string{"a/b.go"}}, "a/b.go"); got == hot {
+		t.Error("a hotspot fingerprint must change with the revision")
+	}
+	if got := targetFingerprint("/p", auditTarget{Kind: KindIntroduced, Commit: "abc"}, `a\b.go`); got != intro {
+		t.Error("backslash path differs")
+	}
+}
+
+func TestTargetFindingsPerKind(t *testing.T) {
+	p := hitsProject(t)
+	hit := func(line int) auditHit {
+		return auditHit{File: "a.go", Line: line, Title: "t", Trigger: "when x", Actual: "act", Expected: "exp", WhyNotCovered: "why", Severity: "low"}
+	}
+	reply := &auditReply{RootCause: "rc.", Hits: []auditHit{hit(1), hit(2)}}
+	sib := auditTarget{Kind: KindSibling, Commit: "deadbeefcafe", Subject: "fix x", Files: []string{"a.go"}}
+	intro := auditTarget{Kind: KindIntroduced, Commit: "feedface0000", Subject: "feat: y", Files: []string{"a.go"}}
+	hot := auditTarget{Kind: KindHotspot, Commit: "abcabc123456", Subject: "chore: z", Files: []string{"a.go"}, FixSubjects: []string{"fix: a", "fix: b"}}
+	hot2 := hot
+	hot2.Files = []string{"b.go"}
+
+	cases := []struct {
+		target   auditTarget
+		risk     string
+		missions []string
+	}{
+		{sib, RiskSiblingBug, []string{"Fix commit deadbee (fix x) fixed a bug; root cause: rc.", "The same bug may remain at:"}},
+		{intro, RiskIntroducedBug, []string{"Commit feedfac (feat: y) changed behavior: rc.", "It introduced a defect still present at:"}},
+		{hot, RiskHotspotBug, []string{"a.go took 2 fix commits in the last 30 days (fix: a; fix: b). Fragility: rc.", "A latent bug remains at:"}},
+	}
+	for _, c := range cases {
+		f, kept := targetFindings(p, c.target, reply)
+		if len(f) != 1 || kept != 2 || len(f[0].Sites) != 2 {
+			t.Fatalf("%s: two hits in one file: %d findings, kept %d", c.target.Kind, len(f), kept)
+		}
+		got := f[0]
+		if got.RiskKind != c.risk || got.SourceCommit != c.target.Commit || got.SourceSubject != c.target.Subject || got.Group != GroupNew {
+			t.Errorf("%s fields: %+v", c.target.Kind, got)
+		}
+		if got.Fingerprint != targetFingerprint(p, c.target, "a.go") || len(got.SignalIDs) != 1 || got.SignalIDs[0] != targetSignal(c.target).ID {
+			t.Errorf("%s identity: %s %v", c.target.Kind, got.Fingerprint, got.SignalIDs)
+		}
+		for _, want := range append(c.missions, "- a.go:1 trigger: when x; actual: act; expected: exp", "- a.go:2 trigger") {
+			if !strings.Contains(got.Mission, want) {
+				t.Errorf("%s mission lacks %q:\n%s", c.target.Kind, want, got.Mission)
+			}
+		}
+		if wantSubjects := c.target.FixSubjects; strings.Join(got.FixSubjects, "|") != strings.Join(wantSubjects, "|") {
+			t.Errorf("%s fix subjects = %q, want %q", c.target.Kind, got.FixSubjects, wantSubjects)
+		}
+	}
+	if f, _ := targetFindings(p, sib, reply); f[0].FixSubjects != nil {
+		t.Error("commit kinds carry no fix subjects")
+	}
+	if f, k := targetFindings(p, hot, nil); f != nil || k != 0 {
+		t.Error("nil reply")
+	}
+
+	if targetSignal(sib).ID != commitSignal(fixCommit{Hash: sib.Commit, Subject: sib.Subject, Files: sib.Files}).ID {
+		t.Error("sibling signal ids must stay as before")
+	}
+	ids := map[string]string{}
+	for _, tg := range []auditTarget{sib, intro, {Kind: KindIntroduced, Commit: sib.Commit}, hot, hot2} {
+		id := targetSignal(tg).ID
+		if prev, dup := ids[id]; dup {
+			t.Errorf("%s and %s share signal id %s", prev, tg.Kind+" "+tg.Commit+" "+targetFile(tg), id)
+		}
+		ids[id] = tg.Kind + " " + tg.Commit + " " + targetFile(tg)
+	}
+	if s := targetSignal(hot); !strings.HasPrefix(s.Summary, "revision of a.go abcabc1: chore: z") {
+		t.Errorf("hotspot signal summary = %q", s.Summary)
+	}
+	if s := targetSignal(intro); !strings.HasPrefix(s.Summary, "commit feedfac: ") {
+		t.Errorf("introduced signal summary = %q", s.Summary)
+	}
+}
