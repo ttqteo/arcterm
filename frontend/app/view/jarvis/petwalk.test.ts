@@ -496,6 +496,18 @@ describe("hang (Spider-Man)", () => {
         expect(cut.state.due).toBe(DUE);
     });
 
+    it("idle mid-hang, plays the hang out and comes down before he sleeps, where the crawl left him", () => {
+        const s = startHang(walker({ x: 400 }), hanging, T0, zero);
+        // idle from just after the crawl ends
+        const idle = input({ hangs: true, lastActivityAt: T0 + HANG_UP_MS + CRAWL_MIN_MS + 1_000 - SLEEP_AFTER_MS });
+        const hang = stepWalker(s, idle, T0 + HANG_UP_MS + CRAWL_MIN_MS + 1_000, half);
+        expect([hang.hang, hang.state.name]).toEqual(["hang", "rest"]);
+        const down = stepWalker(hang.state, idle, DUE - HANG_DOWN_MS, half);
+        expect(down.hang).toBe("down");
+        const asleep = stepWalker(down.state, idle, DUE, half);
+        expect([asleep.hang, asleep.state.name, asleep.x]).toEqual([null, "sleep", hang.x]);
+    });
+
     it("comes down for a posture, an utterance, and for a drag", () => {
         const s = startHang(walker(), hanging, T0, zero);
         expect(stepWalker(s, input({ hangs: true, posture: "escalation" }), T0 + 1_000, half).hang).toBeNull();

@@ -7390,17 +7390,18 @@ const jarvisPet = {
         await petForce(h, null);
         const strand19 = heldFrame19?.strands?.[0];
         const heldTop19 = heldFrame19?.sprite?.top;
-        // the held strand runs from the root's top (where he was picked up) to the svg's top, which hangs 4 cells under it
+        // the held strand runs from the pointer down to his raised hand at the svg's top, which hangs 4 cells (12px) under
+        // the pointer with the hand right under it
         const heldOk19 =
             held19?.pet?.state === "dragged" &&
             heldFrame19?.pet?.pose === "dangle" &&
             heldFrame19.strands.length === 1 &&
-            Math.abs(strand19.top - heldFrame19.root.top) <= 2 &&
+            Math.abs(strand19.top - to19.y) <= 2 &&
             Math.abs(strand19.bottom - heldFrame19.sprite.top) <= 4 &&
+            Math.abs(heldFrame19.sprite.top - to19.y - 12) <= 3 &&
+            Math.abs((strand19.left + strand19.right) / 2 - to19.x) <= 3 &&
             strand19.left >= heldFrame19.sprite.left - 1 &&
-            strand19.right <= heldFrame19.sprite.right + 1 &&
-            to19.y >= heldFrame19.root.top &&
-            to19.y <= heldFrame19.root.bottom;
+            strand19.right <= heldFrame19.sprite.right + 1;
         // from the release the strand stays stuck where he was let go while he goes down it
         const down19 = samples19.filter((s) => s.state === "dragged" && s.top != null && heldTop19 != null && s.top > heldTop19 + 6);
         const lastDown19 = down19.length === 0 ? -1 : samples19.lastIndexOf(down19[down19.length - 1]);
@@ -7408,7 +7409,7 @@ const jarvisPet = {
         const final19 = samples19[samples19.length - 1];
         const onLedge19 = (s) => s != null && s.ledgeTop != null && s.bottom != null && Math.abs(s.bottom - s.ledgeTop) <= 1;
         rec(
-            "19. held (a real drag): dangle with one strand from where he was picked up to his raised hand; let go, he rappels down it with the strand stuck where he was released, and lands on the ledge with no strand left",
+            "19. held (a real drag): dangle 4 cells under the pointer with one strand from it to his raised hand; let go, he rappels down it with the strand stuck where he was released, and lands on the ledge with no strand left",
             heldOk19 &&
                 down19.length >= 2 &&
                 down19.every((s) => s.strands.length === 1 && Math.abs(s.strands[0].bottom - s.top) <= 4) &&
@@ -7426,7 +7427,7 @@ const jarvisPet = {
                 strands: heldFrame19?.strands?.length,
                 root: heldFrame19?.root,
                 sprite: heldFrame19?.sprite,
-                pointerY: to19.y,
+                pointer: to19,
                 samples: samples19.length,
                 descent: down19.map((s) => [Math.round(s.top), s.strands.length, Math.round(s.strands[0]?.top ?? 0)]),
                 landed: landed19 == null ? null : { bottom: landed19.bottom, ledgeTop: landed19.ledgeTop, strands: landed19.strands.length },

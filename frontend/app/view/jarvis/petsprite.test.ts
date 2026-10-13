@@ -599,6 +599,14 @@ describe("Spider-Man's other grids", () => {
         expect(codesKnown(rows)).toBe(true);
     });
 
+    it("crawls with boots and gloves on the bar's underside (row 0), clear of the unread mark", () => {
+        const { x, y, rows } = MARKS.unread;
+        for (const frame of SPIDEY_CRAWL) {
+            expect(frame[0].includes("S")).toBe(true);
+            rows.forEach((r, dy) => [...r].forEach((_, dx) => expect(frame[y + dy][x + dx]).toBe(".")));
+        }
+    });
+
     it("hangs by its boots on the strand at column 8, head at the bottom", () => {
         expect(SPIDEY_HANG[0][8]).toBe("x");
         expect(SPIDEY_HANG[PET_GRID - 1].includes("S")).toBe(true);

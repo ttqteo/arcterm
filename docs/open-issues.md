@@ -27,6 +27,15 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (Spider-Man pet: held strand, crawl art, a grab mid-descent, idle mid-hang)**
+
+- [ ] (arcterm) **Spider-Man hangs under the pointer.** With Spider-Man as Jarvis, press him anywhere and drag: he
+  eases 4 cells under the pointer with his raised hand right under it, and the strand runs from the pointer to that
+  hand; let go and the strand stays where you let go while he rappels down, his hand drifting back to centre.
+  Hover him while he hangs under the app bar and grab him at once, while he is still coming down: he stays under the
+  pointer instead of sliding off it. Under the app bar, the crawl reads as one body (boots and gloves on the bar, the
+  head with its eye in front). `petview.tsx`, `petsprite.ts` SPIDEY_CRAWL.
+
 **2026-10-13 (Spider theme: the web sits behind the sidebar)**
 
 - [ ] (arcterm) **The web is behind the icons.** Under the Spider theme on the Agent surface, the top-left web shows
