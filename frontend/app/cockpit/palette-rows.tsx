@@ -34,7 +34,7 @@ import type { CappedGroup, GroupKind } from "./palette-groups";
 import type { LaunchIcon } from "./palette-launch";
 import { fuzzyMatch, highlightRuns } from "./palette-match";
 
-export type StatusTone = "asking" | "working" | "muted";
+export type StatusTone = "asking" | "working" | "muted" | "accent";
 
 export interface PaletteItem {
     key: string;
@@ -88,8 +88,18 @@ const LAUNCH_ICONS: Record<LaunchIcon, LucideIcon> = {
     ask: MessageCircleQuestionMark,
 };
 
-const TONE_TEXT: Record<StatusTone, string> = { asking: "text-asking", working: "text-working", muted: "text-muted" };
-const TONE_DOT: Record<StatusTone, string> = { asking: "bg-asking", working: "bg-working", muted: "bg-muted" };
+const TONE_TEXT: Record<StatusTone, string> = {
+    asking: "text-asking",
+    working: "text-working",
+    muted: "text-muted",
+    accent: "text-accent-soft",
+};
+const TONE_DOT: Record<StatusTone, string> = {
+    asking: "bg-asking",
+    working: "bg-working",
+    muted: "bg-muted",
+    accent: "bg-accent-400",
+};
 
 // Positions index the string that was matched, and item.search is not what a row displays — for an
 // agent it is name + task + project while the title is "name — task". So the row re-matches against

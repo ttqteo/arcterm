@@ -1,8 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// Pure pieces of the palette's actions: a thing's action list (→ on a row) and the rule for when a verb
-// row ("Cancel run · <run>") counts as matching what was typed.
+// Pure pieces of the palette's actions: a thing's action list (→ on a row), how one action's row reads, and
+// the rule for when a verb row ("Cancel run · <run>") counts as matching what was typed.
 
 import {
     ACTION_GROUPS,
@@ -14,6 +14,7 @@ import {
 } from "./actions/types";
 import { meetsNameFloor } from "./palette-groups";
 import { rankPaletteItems } from "./palette-match";
+import type { StatusTone } from "./palette-rows";
 
 const GROUP_LABELS: Record<ActionGroup, string> = { open: "Open", steer: "Steer", stop: "Stop" };
 
@@ -35,6 +36,38 @@ export function actionListGroups<T>(
     })).filter((g) => g.actions.length > 0);
     const notNow = list.notNow.length > 0 ? `Not now: ${list.notNow.map((a) => a.label).join(", ")}` : null;
     return { groups, notNow };
+}
+
+// the input level's chip and placeholder add their own "…"
+export const bareLabel = (a: ThingAction<any>) => a.label.replace(/…$/, "");
+
+export interface ActionRowView {
+    title: string;
+    verb: string; // what Enter does, shown on the selected row
+    status?: { label: string; tone: StatusTone };
+    echo: string; // the footer line
+}
+
+// How an action's row reads for one thing. An action that does not say otherwise is named by its label,
+// Enter's verb is "Write" or "Pick" when it takes a value, else the label's own first word.
+export function resolveActionRow<T>(action: ThingAction<T>, entry: ThingEntry<T>): ActionRowView {
+    const { thing } = entry;
+    const bare = bareLabel(action);
+    let verb = action.label.split(" ", 1)[0];
+    let echo = `${bare}: “${entry.title}”`;
+    if (action.input?.kind === "pick") {
+        verb = "Pick";
+        echo = `Lists the choices, for “${entry.title}”`;
+    } else if (action.input?.kind === "text") {
+        verb = "Write";
+        echo = `Takes the text here, for “${entry.title}”`;
+    }
+    return {
+        title: action.title?.(thing) ?? (action.input?.kind === "text" ? `${bare}…` : action.label),
+        verb: action.verb?.(thing) ?? verb,
+        status: action.status?.(thing),
+        echo: action.echo?.(thing) ?? echo,
+    };
 }
 
 // A verb row's search text is its label plus the thing's title, so the title alone would match it too,

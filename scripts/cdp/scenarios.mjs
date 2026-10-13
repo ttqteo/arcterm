@@ -22908,9 +22908,9 @@ async function paletteStateWhen(h, ok, ms) {
     return state;
 }
 
-// A run held in planning by deferstart is only a record: no worker spawns, so no lead joins the roster and none
-// of Steer's actions (message, focus, workers, relaunch, resume) applies. Its list is Open and Stop, and Steer's
-// actions are named on the Not now line instead.
+// A run held in planning by deferstart is only a record: no worker spawns, so no lead joins the roster and of
+// Steer's actions only Go autonomous applies, the run sheet being editable. The rest (message, focus, workers,
+// relaunch, resume) are named on the Not now line instead.
 const paletteActions = {
     name: "palette-actions",
     surface: "jarvis",
@@ -22976,14 +22976,15 @@ const paletteActions = {
         const labels = acts?.groups.map((g) => g.label) ?? [];
         const rows = acts?.groups.flatMap((g) => g.rows) ?? [];
         rec(
-            "4. → opens the run's actions: Open then Stop, Cancel run among them, Steer's under Not now",
+            "4. → opens the run's actions: Open, Steer, Stop, Go autonomous and Cancel run among them, the rest of Steer's under Not now",
             acts != null &&
                 acts.token == null &&
                 acts.drill.startsWith("Run") &&
                 acts.drill.includes(ctx.stamp) &&
                 acts.placeholder === "Filter Run actions…" &&
-                labels.join(",") === "Open,Stop" &&
+                labels.join(",") === "Open,Steer,Stop" &&
                 rows.some((r) => r.startsWith("Open in Jarvis")) &&
+                rows.some((r) => r.startsWith("Go autonomous")) &&
                 rows.some((r) => r.startsWith("Cancel run")) &&
                 /Not now: .*Message the lead/.test(acts.text),
             JSON.stringify({ drill: acts?.drill, placeholder: acts?.placeholder, groups: acts?.groups })

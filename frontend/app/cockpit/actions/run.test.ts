@@ -142,6 +142,84 @@ describe("run actions", () => {
         ]);
     });
 
+    describe("go autonomous", () => {
+        const engine = (over: Partial<Run> = {}) => orchestrator({ orchestration: "engine", ...over });
+        const routes = {
+            workerroute: { runtime: "claude", model: "sonnet" },
+            reviewerroute: { runtime: "pi", model: "opus" },
+        };
+        const autonomous = RUN_KIND.actions.find((a) => a.id === "run:autonomous");
+        const row = (t: RunThing) => ({
+            title: autonomous.title(t),
+            verb: autonomous.verb(t),
+            status: autonomous.status(t),
+            echo: autonomous.echo(t),
+        });
+
+        it("sits in Steer right after workers at once", () => {
+            const steer = RUN_KIND.actions.filter((a) => a.group === "steer").map((a) => a.id);
+            expect(steer.indexOf("run:autonomous")).toBe(steer.indexOf("run:workers") + 1);
+            expect(autonomous.label).toBe("Go autonomous");
+        });
+
+        it("applies to an editable engine run before its dag and after", () => {
+            const pending = engine({ dagoref: undefined });
+            expect(applies("run:autonomous", thing(pending))).toBe(true);
+            expect(applies("run:autonomous", thing(engine(), [lead], lineage(info())))).toBe(true);
+        });
+
+        it("does not apply to a quick, done, cancelled or adaptive run, or one whose dag has not loaded", () => {
+            expect(applies("run:autonomous", thing(run({ orchestration: "engine" })))).toBe(false);
+            expect(applies("run:autonomous", thing(engine({ status: "done" }), [lead], lineage(info())))).toBe(false);
+            expect(applies("run:autonomous", thing(engine({ status: "cancelled" }), [lead], lineage(info())))).toBe(
+                false
+            );
+            expect(applies("run:autonomous", thing(orchestrator(), [lead], lineage(info())))).toBe(false);
+            expect(applies("run:autonomous", thing(engine()))).toBe(false);
+        });
+
+        it("offers going autonomous while the run asks you", () => {
+            expect(row(thing(engine({ dagoref: undefined })))).toEqual({
+                title: "Go autonomous",
+                verb: "Go",
+                status: { label: "asks you", tone: "muted" },
+                echo: "The lead answers everything from now on.",
+            });
+        });
+
+        it("names the lead question it hands back", () => {
+            const asking = agent("lead", {
+                runId: "r1",
+                state: "asking",
+                ask: { questions: [{ question: "Approve the spec?", header: "Spec review" }] },
+            });
+            expect(autonomous.echo(thing(engine({ dagoref: undefined }), [asking]))).toBe(
+                "The lead answers everything from now on, starting with the Spec review it is waiting on."
+            );
+        });
+
+        it("offers asking again once the group is autonomous", () => {
+            const lin = lineage(info({ dag: { ...info().dag, autonomous: true } }));
+            expect(row(thing(engine(), [lead], lin))).toEqual({
+                title: "Ask me again",
+                verb: "Ask me",
+                status: { label: "autonomous", tone: "accent" },
+                echo: "The lead asks you again from its next decision. Calls it already made stand.",
+            });
+        });
+
+        it("flips the setting and sends the other dials as they stand", async () => {
+            const save = vi.spyOn(RpcApi, "SetRunSettingsCommand").mockResolvedValue(undefined);
+            const base = { channelid: "c1", runid: "r1", reviewerpicks: false, ...routes };
+            await autonomous.run(thing(engine({ dagoref: undefined, parallelism: 2, ...routes })), { model: null });
+            expect(save.mock.lastCall[1]).toEqual({ ...base, parallelism: 2, autonomous: true });
+            const lin = lineage(info({ dag: { ...info().dag, ...routes, autonomous: true } }));
+            await autonomous.run(thing(engine(), [lead], lin), { model: null });
+            expect(save.mock.lastCall[1]).toEqual({ ...base, parallelism: 3, autonomous: false });
+            save.mockRestore();
+        });
+    });
+
     it("relaunch applies only while the lead is down", () => {
         const down = { events: [ev("lead-wake-failed", 10)] };
         expect(applies("run:relaunch", thing(orchestrator(), [lead], lineage(), down))).toBe(true);
