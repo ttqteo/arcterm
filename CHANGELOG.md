@@ -26,6 +26,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
   Close is a green check alone, and the Later bookmark is grey instead of yellow.
 - **Choose what an agent row shows**: Settings → Appearance → Agent sidebar turns its model, branch, tokens and age on
   or off. All stay on unless you turn one off.
+- **A split no longer moves anything in the sidebar.** Its agents and terminals keep their rows in their own folders,
+  each marked with a split icon, so the row you click stays under the pointer (Remove from split and End split are on
+  the row's menu). Moving between a split's cells keeps the agent's header and details panel, so the panes no longer
+  jump in size when a terminal in the split takes the focus.
 - The app bar's usage meters keep to Claude's 5-hour and weekly windows: a model's own weekly window (Fable wk) is
   only on the Usage surface now.
 - **The New dialog lists everything in three columns and keeps one height**: Agent, Project, and the pick's own list

@@ -55,3 +55,23 @@ export function previousTab(
     }
     return undefined;
 }
+
+/** Pure: whose header and details rail the Agent surface shows. The focused item's own, except a terminal focused in a
+ *  split that also holds an agent: then that agent (of several, the one in view most recently, `recent` newest first,
+ *  else the first in cell order), so moving the focus between the cells of a split never swaps the header or drops the
+ *  rail. `cells` are the visible cells' ids; one cell is no split. */
+export function headSubject(
+    focused: AgentVM,
+    cells: readonly string[],
+    recent: readonly string[],
+    roster: readonly AgentVM[]
+): AgentVM {
+    if (focused.kind !== "terminal" || cells.length < 2 || !cells.includes(focused.id)) {
+        return focused;
+    }
+    const agents = cells.flatMap((id) => roster.find((a) => a.id === id && a.kind !== "terminal") ?? []);
+    if (agents.length === 0) {
+        return focused;
+    }
+    return recent.flatMap((id) => agents.find((a) => a.id === id) ?? [])[0] ?? agents[0];
+}

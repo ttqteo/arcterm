@@ -6,12 +6,9 @@
 // (fullscreen) too.
 
 import { globalStore } from "@/app/store/jotaiStore";
-import { reconcileGrid } from "./agentgrid";
 import type { AgentsViewModel } from "./agents";
 import { projectTree, treeNavIds } from "./agentsidebarmodel";
 import { buildAgentTree } from "./agenttreemodel";
-import { agentGridAtom, eligibleIds } from "./gridstore";
-import { rosterSeededAtom } from "./liveagents";
 import { collapsedProjectsAtom } from "./projectfoldstore";
 import { projectsAtom } from "./projectsstore";
 import { treeFoldsAtom } from "./runlineagestore";
@@ -27,12 +24,6 @@ export function activeNavOrder(model: AgentsViewModel): string[] {
         globalStore.get(treeFoldsAtom),
         focusId
     );
-    const roster = [...agents, ...terminals];
-    const cells = reconcileGrid(globalStore.get(agentGridAtom), {
-        focusId,
-        eligible: eligibleIds(roster),
-        seeded: globalStore.get(rosterSeededAtom),
-    }).ids;
     const roots = new Map<string, string>();
     for (const [name, project] of Object.entries(globalStore.get(projectsAtom))) {
         if (project?.path) {
@@ -43,8 +34,6 @@ export function activeNavOrder(model: AgentsViewModel): string[] {
         projectTree({
             tree,
             terminals,
-            cells,
-            roster,
             filter: globalStore.get(model.projectFilterAtom),
             collapsed: globalStore.get(collapsedProjectsAtom),
             roots,

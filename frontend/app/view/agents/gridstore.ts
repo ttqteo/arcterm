@@ -98,7 +98,14 @@ export function removeFromGrid(model: GridModel, id: string): void {
     commit(model, removeCell(s, id));
 }
 
-// "End split" (the sidebar's split row): the other cells go and the focused agent fills the area. Their agents keep
+// Whether `id` is a cell of a split (a grid of one cell is no split): its row's menu then offers Remove from split and
+// End split where it would offer Open in split.
+export function isInSplit(model: GridModel, id: string): boolean {
+    const s = currentGrid(model);
+    return s.ids.length > 1 && s.ids.includes(id);
+}
+
+// "End split" (a split cell's row menu): the other cells go and the focused agent fills the area. Their agents keep
 // running. A grid that is not split is left alone, so the call does not reach for the centre either.
 export function endSplit(model: GridModel): void {
     const s = currentGrid(model);

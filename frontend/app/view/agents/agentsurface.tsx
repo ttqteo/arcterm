@@ -82,8 +82,10 @@ import { SleepingCard } from "./sleepingcard";
 import { SleepingTranscript } from "./sleepingtranscript";
 import { SubagentInterior } from "./subagentinterior";
 import { focusSubagentAtom } from "./subagentsstore";
+import { recentTabsAtom } from "./tabswitcherstore";
 import { clampDockHeight, splitDock } from "./terminaldock";
 import { DOCK_STRIP_PX, TerminalDockBar, TerminalDockStrip } from "./terminaldockbar";
+import { headSubject } from "./terminalpanehead";
 import { TerminalPaneHead } from "./terminalpaneheadview";
 import { useSessionsScan } from "./usesessionsscan";
 import { WorktreeGoneCard } from "./worktreegonecard";
@@ -201,6 +203,18 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const cells = terminalShown ? visibleCells(reconciled, { focusId: agent?.id, collapsed: fullscreen }) : [];
     const cellOf = new Map(cells.map((cell, index) => [cell.id, { cell, index }] as const));
     const multi = cells.length > 1;
+    // whose header, ask bar and rail show: a terminal focused in a split keeps the split's agent's, so moving between
+    // the cells never swaps the header or drops the rail (which would also resize every cell)
+    const recent = useAtomValue(recentTabsAtom);
+    const subject =
+        agent != null
+            ? headSubject(
+                  agent,
+                  cells.map((cell) => cell.id),
+                  recent,
+                  mountable
+              )
+            : undefined;
     // a visible cell with no pane (a launch with no terminal yet) leaves the grid hidden so the fallback below shows
     const gridShown = mountable.some((a) => a.blockId != null && cellOf.has(a.id));
     // The docked terminal is a third grid row under the cells, spanning both columns, so its pane stays under the same
@@ -598,13 +612,25 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                             would name an agent that is not on screen */}
                         {dockMax ? null : (
                             <>
-                                {floating ? null : agent.kind === "terminal" ? (
-                                    <TerminalPaneHead model={model} terminal={agent} />
+                                {floating ? null : subject!.kind === "terminal" ? (
+                                    <TerminalPaneHead model={model} terminal={subject!} />
                                 ) : (
-                                    <AgentHeader model={model} agent={agent} />
+                                    // the split's agent's header stays while its terminal has the focus: a press on it
+                                    // chooses that agent first, so what the header opens shows in its own cell. One
+                                    // wrapper either way, so that choice never remounts the button being pressed.
+                                    <div
+                                        className="contents"
+                                        onPointerDownCapture={() => {
+                                            if (subject!.id !== agent.id) {
+                                                globalStore.set(model.focusIdAtom, subject!.id);
+                                            }
+                                        }}
+                                    >
+                                        <AgentHeader model={model} agent={subject!} />
+                                    </div>
                                 )}
                                 <DivergenceBanner decision={decision} onRejoin={rejoin} />
-                                <HeldAskBar model={model} agent={agent} />
+                                <HeldAskBar model={model} agent={subject!} />
                                 {/* keyed: the card's pending wake and its failure belong to one agent */}
                                 <SleepingCard key={agent.id} agent={agent} />
                             </>
@@ -758,11 +784,12 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                     ) : null}
                     {centerMode !== "terminal" ? <AgentCenterPane model={model} mode={centerMode} /> : null}
                 </div>
-                {/* a plain terminal has no details of its own: no rail, the tree's Terminals section reaches the others.
-                    Nor does a maximized dock, which is a terminal on screen alone. A canvas or a review in the
-                    terminal's place keeps it, so swapping never moves the header's controls. */}
-                {!fullscreen && centerMode === "terminal" && agent.kind !== "terminal" && !dockMax ? (
-                    <AgentDetailsRail model={model} agent={agent} />
+                {/* a plain terminal alone has no details of its own: no rail, the tree reaches the others. In a split
+                    with an agent it keeps that agent's (headSubject). Nor does a maximized dock, which is a terminal on
+                    screen alone. A canvas or a review in the terminal's place keeps it, so swapping never moves the
+                    header's controls. */}
+                {!fullscreen && centerMode === "terminal" && subject!.kind !== "terminal" && !dockMax ? (
+                    <AgentDetailsRail model={model} agent={subject!} />
                 ) : null}
             </div>
         </MotionConfig>

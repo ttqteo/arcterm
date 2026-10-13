@@ -50,10 +50,12 @@ Design rule from the review: **compact by default.** One pane in focus; anything
 
 - Folder order and agent rows are as today. Under a divider: terminals and tools, most recent first.
 - A terminal row: icon, name (the tool's name, else the last command as today), branch chip when not at the root, and
-  `panel` when it is docked under the agent; nothing otherwise. A terminal in a split is not a row of its own: it shows
-  as a segment of the split row, as the Main board draws it. A running command keeps the pulsing dot.
-- The split row (`SplitRow` in `agenttree.tsx`) moves inside its project folder when every cell is in that project. A
-  split across projects keeps it at the top, each segment naming its project.
+  `panel` when it is docked under the agent; nothing otherwise. A running command keeps the pulsing dot.
+- A split moves no row (changed 2026-10-13, after the split row shipped): every cell, agent or terminal, keeps its row in
+  its own folder and wears a split mark (`SplitMark` in `terminalsrail.tsx`); the row's menu has Remove from split and
+  End split. The split row that lifted the cells out jumped to the top when its cells spanned projects, and the row you
+  picked left from under the pointer, so it went. A terminal focused in a split keeps the split's agent's header and
+  rail (`headSubject` in `terminalpanehead.ts`), so the cells never change size as the focus moves between them.
 - A folded folder says what it holds: `2 agents · 1 terminal`.
 - Home holds terminals and tools with no project (btop).
 - The project switcher in the app bar filters as today.

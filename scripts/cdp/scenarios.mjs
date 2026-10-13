@@ -27350,9 +27350,8 @@ const GRID_SETTLE_MS = 800;
 const GRID_FIT_SLACK_PX = 40;
 // where in the overlay each zone's point sits (an edge is the outer quarter)
 const GRID_ZONE_AT = { center: [0.5, 0.5], left: [0.1, 0.5], right: [0.9, 0.5], top: [0.5, 0.1], bottom: [0.5, 0.9] };
+// an agent the grid shows keeps its row in its folder, marked as in the split
 const gridRow = (id) => `[data-agent-row="${id}"]`;
-// an agent the grid shows has no row of its own: the tree draws the split as one row with a segment per cell
-const gridSplitCell = (id) => `[data-agent-split-cell="${id}"]`;
 const gridBar = (id) => `[data-agent-cell-bar="${id}"]`;
 const gridNear = (a, b, tol = 4) => Math.abs(a - b) <= tol;
 const gridSameSize = (a, b) => gridNear(a.w, b.w) && gridNear(a.h, b.h);
@@ -27771,11 +27770,11 @@ const agentGrid = {
                 order(lay) === want(D, B, A) && cellAt(lay, B).focused === true,
                 lay
             );
-            await click(gridSplitCell(D));
+            await click(gridRow(D));
             await settle();
             lay = await gridLayout(h);
             rec(
-                "8b. the split row's segment for an agent that has a cell focuses that cell and leaves the list alone",
+                "8b. the row of an agent that has a cell focuses that cell and leaves the list alone",
                 order(lay) === want(D, B, A) && cellAt(lay, D).focused === true,
                 lay
             );
@@ -35631,16 +35630,15 @@ const TT_TERM_ROW = (id) => `document.querySelector('[data-tree-terminal-row="${
 const TT_PICKER = `document.querySelector("[data-tool-picker]")`;
 const TT_FLAT = `((el) => (el?.textContent ?? "").replace(/\\s+/g, " ").trim())`;
 
-// the tree's rows in order, each as folder:<project>, agent:<id>, divider:<project>, split or terminal:<tab id>
+// the tree's rows in order, each as folder:<project>, agent:<id>, divider:<project> or terminal:<tab id>
 const TT_TREE_SHAPE = `(() => {
     const root = ${TT_ROWS};
     if (!root) return null;
-    const sel = "[data-project-folder], [data-agent-row], [data-project-divider], [data-tree-terminal-row], [data-agent-split-row]";
+    const sel = "[data-project-folder], [data-agent-row], [data-project-divider], [data-tree-terminal-row]";
     return [...root.querySelectorAll(sel)].map((el) => {
         if (el.hasAttribute("data-project-folder")) return "folder:" + el.getAttribute("data-project-folder");
         if (el.hasAttribute("data-agent-row")) return "agent:" + el.getAttribute("data-agent-row");
         if (el.hasAttribute("data-project-divider")) return "divider:" + el.getAttribute("data-project-divider");
-        if (el.hasAttribute("data-agent-split-row")) return "split";
         return "terminal:" + el.getAttribute("data-tree-terminal-row");
     });
 })()`;
@@ -36119,9 +36117,9 @@ const TT_GRID = `(() => {
 })()`;
 const TT_PLACE = (id) => `(${TT_FLAT})(${TT_TERM_ROW(id)}?.querySelector("[data-terminal-place]")) || null`;
 
-// --- tools-split: a terminal opened beside the agent (board Main). Two cells, one a terminal; the terminal's row reads
-// split and the split row sits inside the project's folder; a split whose cells are in different projects moves to the
-// top of the tree, flagged, each segment naming its project.
+// --- tools-split: a terminal opened beside the agent (board Main). Two cells, one a terminal. Nothing in the tree moves:
+// each cell keeps its row in its folder, marked as in the split, and the focused terminal keeps the agent's header and
+// rail, so the cells keep their size. A Home terminal taking the focused cell leaves the tree's order as it was.
 const toolsSplit = {
     name: "tools-split",
     surface: "agent",
@@ -36141,6 +36139,21 @@ const toolsSplit = {
         rec("0. the fixture agent and two terminals are in the tree", arranged, ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster }));
         if (!arranged) return steps;
         const [a, home] = ctx.terminals;
+        const before = await h.ev(TT_TREE_SHAPE);
+        // the split marks, the header and the rail as the surface draws them now
+        const look = `(() => {
+            const marked = [...document.querySelectorAll("[data-agent-tree] [data-row-in-split]")].map(
+                (m) => m.closest("[data-agent-row], [data-tree-terminal-row]")?.getAttribute(m.closest("[data-agent-row]") ? "data-agent-row" : "data-tree-terminal-row")
+            );
+            const cell = document.querySelector('[data-agent-terminal="${TT_AGENT_ID}"]')?.getBoundingClientRect();
+            return {
+                marked,
+                agentHeader: !!document.querySelector("[data-agent-header]"),
+                termHeader: !!document.querySelector("[data-terminal-pane-head]"),
+                rail: !!document.querySelector('aside[aria-label="Agent details"]'),
+                cellW: cell ? Math.round(cell.width) : null,
+            };
+        })()`;
 
         await ttClick(h, `[data-tree-terminal-row="${a.tabId}"]`);
         await polishWaitFor(h, `!!document.querySelector('[data-terminal-pane-head="${a.tabId}"] [data-terminal-open-split]')`, 5000);
@@ -36151,59 +36164,56 @@ const toolsSplit = {
         const two = await polishWaitFor(h, `(${TT_GRID}).cells.length === 2`, 5000);
         await polishNap(400);
         const grid = await h.ev(TT_GRID);
-        // the board draws a split's terminal as a segment of the split row alone: the terminal leaves its folder's list
-        // (projectTree lifts it out with the agent), so its own row, and the where-it-shows word on it, are not drawn
-        const seg = await h.ev(`(() => {
-            const row = document.querySelector("[data-agent-split-row]");
-            return {
-                cells: [...(row?.querySelectorAll("[data-agent-split-cell]") ?? [])].map((x) => x.getAttribute("data-agent-split-cell")),
-                ownRow: !!${TT_TERM_ROW(a.tabId)},
-            };
-        })()`);
         const shape = await h.ev(TT_TREE_SHAPE);
-        const iFolder = shape.indexOf(`folder:${TT_PROJECT}`);
-        const iSplit = shape.indexOf("split");
-        const iHome = shape.findIndex((r) => r.startsWith("folder:") && r !== `folder:${TT_PROJECT}`);
+        const onTerm = await h.ev(look);
         await h.shot("cdp-shots/tools-split-1-beside.png");
         rec(
-            "1. Open beside the agent: two cells, one of them the terminal, shown as a segment of the split row, which is inside the project's folder",
+            "1. Open beside the agent: two cells, the tree's rows where they were, both marked, and the focused terminal under the agent's header and rail",
             beside === `Open beside ${TT_AGENT_NAME}` &&
                 two &&
                 grid.cells.length === 2 &&
                 grid.cells.includes(a.tabId) &&
                 grid.cells.includes(TT_AGENT_ID) &&
-                seg.cells.length === 2 &&
-                seg.cells.includes(a.tabId) &&
-                seg.cells.includes(TT_AGENT_ID) &&
-                !seg.ownRow &&
-                iSplit > iFolder &&
-                (iHome < 0 || iSplit < iHome),
-            JSON.stringify({ beside, grid, seg, shape })
+                JSON.stringify(shape) === JSON.stringify(before) &&
+                onTerm.marked.includes(a.tabId) &&
+                onTerm.marked.includes(TT_AGENT_ID) &&
+                onTerm.agentHeader &&
+                onTerm.rail &&
+                !onTerm.termHeader,
+            JSON.stringify({ beside, grid, shape, before, onTerm })
         );
 
-        // a Home terminal takes the focused cell (a pick replaces it): the split now spans two projects
+        // the agent's cell takes the focus: same header, same rail, same cell width
+        await ttClick(h, `[data-agent-row="${TT_AGENT_ID}"]`);
+        await polishNap(600);
+        const onAgent = await h.ev(look);
+        rec(
+            "1b. focusing the agent's cell changes neither the header, the rail nor the cells' width",
+            onAgent.agentHeader === onTerm.agentHeader &&
+                onAgent.rail === onTerm.rail &&
+                onAgent.termHeader === false &&
+                onAgent.cellW != null &&
+                Math.abs(onAgent.cellW - (onTerm.cellW ?? 0)) <= 2,
+            JSON.stringify({ onTerm, onAgent })
+        );
+
+        // a Home terminal takes the focused cell (a pick replaces it): every row stays where it was
+        await ttClick(h, `[data-tree-terminal-row="${a.tabId}"]`);
+        await polishNap(300);
         await ttClick(h, `[data-tree-terminal-row="${home.tabId}"]`);
-        const crossUp = await polishWaitFor(h, `!!document.querySelector("[data-split-cross]")`, 5000);
+        const homeIn = await polishWaitFor(h, `(${TT_GRID}).cells.includes("${home.tabId}")`, 5000);
         await polishNap(400);
-        const cross = await h.ev(`(() => {
-            const row = document.querySelector("[data-agent-split-row]");
-            return {
-                cross: row?.getAttribute("data-split-cross") ?? null,
-                projects: [...(row?.querySelectorAll("[data-split-project]") ?? [])].map((x) => ${TT_FLAT}(x)),
-                cells: [...(row?.querySelectorAll("[data-agent-split-cell]") ?? [])].map((x) => x.getAttribute("data-agent-split-cell")),
-            };
-        })()`);
         const crossShape = await h.ev(TT_TREE_SHAPE);
+        const cross = await h.ev(look);
         await h.shot("cdp-shots/tools-split-2-cross-project.png");
         rec(
-            "2. cross-project: a Home terminal in the split moves the split row to the top, flagged, each segment naming its project",
-            crossUp &&
-                crossShape[0] === "split" &&
-                cross.cross === "true" &&
-                cross.projects.length === 2 &&
-                cross.projects.includes("Home") &&
-                cross.cells.includes(home.tabId),
-            JSON.stringify({ cross, top: crossShape[0] })
+            "2. cross-project: a Home terminal in the split stays in Home, marked; no row moves",
+            homeIn &&
+                JSON.stringify(crossShape) === JSON.stringify(before) &&
+                cross.marked.includes(home.tabId) &&
+                cross.marked.includes(TT_AGENT_ID) &&
+                cross.agentHeader,
+            JSON.stringify({ cross, crossShape, before })
         );
         return steps;
     },

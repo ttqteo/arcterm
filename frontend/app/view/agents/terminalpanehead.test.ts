@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
-import { previousTab, terminalPaneHead } from "./terminalpanehead";
+import { headSubject, previousTab, terminalPaneHead } from "./terminalpanehead";
 
 function tool(over: Partial<ToolStatus> = {}): ToolStatus {
     return {
@@ -107,5 +107,34 @@ describe("previousTab", () => {
     it("is undefined when nothing else was in view", () => {
         expect(previousTab(["t1"], "t1", roster)).toBeUndefined();
         expect(previousTab([], "t1", roster)).toBeUndefined();
+    });
+});
+
+describe("headSubject", () => {
+    const a = vm({ id: "a", name: "alpha" });
+    const b = vm({ id: "b", name: "beta" });
+    const t = term();
+    const t2 = term({ id: "t2" });
+    const all = [a, b, t, t2];
+
+    it("is the focused agent itself", () => {
+        expect(headSubject(a, ["a", "t1"], [], all)).toBe(a);
+    });
+
+    it("is a terminal's own when it is alone", () => {
+        expect(headSubject(t, ["t1"], ["a"], all)).toBe(t);
+    });
+
+    it("is the split's agent while a terminal in it has the focus", () => {
+        expect(headSubject(t, ["a", "t1"], [], all)).toBe(a);
+    });
+
+    it("is the split's agent seen last, else its first", () => {
+        expect(headSubject(t, ["a", "b", "t1"], ["t1", "b", "a"], all)).toBe(b);
+        expect(headSubject(t, ["b", "a", "t1"], [], all)).toBe(b);
+    });
+
+    it("is the terminal's own in a split of terminals only", () => {
+        expect(headSubject(t, ["t1", "t2"], [], all)).toBe(t);
     });
 });
