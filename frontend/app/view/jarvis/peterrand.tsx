@@ -18,6 +18,7 @@ import { channelProjectLabel } from "@/app/view/agents/projectlabel";
 import { projectsAtom } from "@/app/view/agents/projectsstore";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
+import { ChevronDown } from "lucide-react";
 import { useState } from "react";
 import { sendErrand } from "./petactrun";
 import { petErrandState } from "./peterrandmodel";
@@ -59,6 +60,7 @@ export function PetErrand({
     onPick,
     compact = false,
     showPrompt = false,
+    askable = true,
 }: {
     dest: Channel | null;
     channels: Channel[] | null;
@@ -66,6 +68,8 @@ export function PetErrand({
     compact?: boolean;
     // folded float: the chat shows what you asked above the reply
     showPrompt?: boolean;
+    // false: no field, only a reply already under way (folded, where you look rather than ask)
+    askable?: boolean;
 }) {
     const errand = useAtomValue(petErrandAtom);
     const pref = useAtomValue(harnessPreferenceAtom);
@@ -103,6 +107,10 @@ export function PetErrand({
         fireAndForget(() => sendErrand(dest.oid, state.runtime, prompt));
     };
 
+    if (!askable && errand == null) {
+        return null;
+    }
+
     return (
         <div data-pet-composer className="flex flex-none flex-col gap-1.5 border-t border-border p-2.5">
             {showPrompt && errand != null ? (
@@ -112,68 +120,82 @@ export function PetErrand({
             ) : null}
             {errand != null ? <ErrandReply errand={errand} /> : null}
 
-            {/* Two rows, by frequency rather than by symmetry. Typing happens constantly; the harness and
-                the destination are picked once and then left alone. Sharing one row made the three compete
-                for a 420px panel, and the field you use every time lost — it kept ~130px while a channel
-                name like "git-compare-parity-81920" truncated to "#git-compa" anyway. The design drew them
-                on one row against a 10-character "#wave-core", which real per-task names do not resemble. */}
-            <div className="flex items-center gap-1.5">
-                <input
-                    data-pet-errand-input
-                    aria-label="Ask Jarvis"
-                    value={draft}
-                    onChange={(event) => setDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                            event.preventDefault();
-                            send();
-                        }
-                    }}
-                    disabled={state.inputDisabled}
-                    placeholder={placeholder}
-                    className="h-8 min-w-0 flex-1 rounded-[8px] border border-border bg-background px-2.5 text-[11.5px] text-secondary placeholder:text-muted focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-default disabled:opacity-70"
-                />
-                <button
-                    type="button"
-                    onClick={send}
-                    disabled={state.submitDisabled}
-                    className="h-8 flex-none rounded-[8px] bg-accent px-3.5 text-[11px] font-bold text-background hover:bg-accenthover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:bg-surface-hover disabled:text-muted"
-                >
-                    Ask
-                </button>
-            </div>
+            {askable ? (
+                <>
+                    {/* The field gets the whole row: typing happens constantly, while the harness and the
+                        destination are picked once and left alone, so they sit under it as one line of muted text
+                        that only says where the question goes. */}
+                    <div className="flex items-center gap-1.5">
+                        <input
+                            data-pet-errand-input
+                            aria-label="Ask Jarvis"
+                            value={draft}
+                            onChange={(event) => setDraft(event.target.value)}
+                            onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                    event.preventDefault();
+                                    send();
+                                }
+                            }}
+                            disabled={state.inputDisabled}
+                            placeholder={placeholder}
+                            className="h-8 min-w-0 flex-1 rounded-[8px] border border-border bg-background px-2.5 text-[11.5px] text-secondary placeholder:text-muted focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-default disabled:opacity-70"
+                        />
+                        <button
+                            type="button"
+                            onClick={send}
+                            disabled={state.submitDisabled}
+                            className="h-8 flex-none rounded-[8px] bg-accent px-3.5 text-[11px] font-bold text-background hover:bg-accenthover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:bg-surface-hover disabled:text-muted"
+                        >
+                            Ask
+                        </button>
+                    </div>
 
-            <div className="flex min-w-0 items-center gap-1.5">
-                <HarnessPicker operation="consult" placement="top-start" />
-                {options.length > 0 ? (
-                    <select
-                        data-pet-errand-dest
-                        aria-label="Where the reply lands"
-                        // still titled: the longest per-task names outrun even a full row
-                        title={dest != null ? `Reply lands in ${channelProjectLabel(dest, projects)}` : undefined}
-                        value={dest?.oid ?? ""}
-                        onChange={(event) => onPick(event.target.value)}
-                        className={cn(
-                            "h-6 min-w-0 flex-none truncate rounded-[7px] border border-border bg-surface px-2 text-[10.5px] text-ink-mid hover:border-edge-mid hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                            compact ? "max-w-[142px]" : "max-w-[240px]"
-                        )}
-                    >
-                        {/* no "→" glyph: the project name already reads as a destination and the arrow
-                            only costs width */}
-                        {options.map((channel) => (
-                            <option key={channel.oid} value={channel.oid}>
-                                {channelProjectLabel(channel, projects)}
-                            </option>
-                        ))}
-                    </select>
-                ) : null}
-                {blocker != null ? (
-                    <span className="flex min-w-0 flex-1 items-center gap-[5px] text-[10.5px] text-warning-soft">
-                        <span className="h-[5px] w-[5px] flex-none rounded-full bg-warning" />
-                        <span className="truncate">{blocker}</span>
-                    </span>
-                ) : null}
-            </div>
+                    <div className="-ml-1 flex min-w-0 items-center gap-0.5 text-[10.5px] text-muted">
+                        <HarnessPicker operation="consult" placement="top-start" bare />
+                        {options.length > 0 ? (
+                            <>
+                                <span aria-hidden>·</span>
+                                <label className="relative flex min-w-0 items-center text-muted hover:text-primary">
+                                    <select
+                                        data-pet-errand-dest
+                                        aria-label="Where the reply lands"
+                                        // still titled: the longest per-task names outrun the line
+                                        title={
+                                            dest != null
+                                                ? `Reply lands in ${channelProjectLabel(dest, projects)}`
+                                                : undefined
+                                        }
+                                        value={dest?.oid ?? ""}
+                                        onChange={(event) => onPick(event.target.value)}
+                                        className={cn(
+                                            "min-w-0 cursor-pointer appearance-none truncate rounded-[5px] bg-transparent py-0.5 pl-1 pr-4 font-medium text-inherit focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                                            compact ? "max-w-[142px]" : "max-w-[240px]"
+                                        )}
+                                    >
+                                        {options.map((channel) => (
+                                            <option key={channel.oid} value={channel.oid}>
+                                                {channelProjectLabel(channel, projects)}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <ChevronDown
+                                        size={11}
+                                        aria-hidden
+                                        className="pointer-events-none absolute right-1 flex-none"
+                                    />
+                                </label>
+                            </>
+                        ) : null}
+                        {blocker != null ? (
+                            <span className="ml-1 flex min-w-0 flex-1 items-center gap-[5px] text-warning-soft">
+                                <span className="h-[5px] w-[5px] flex-none rounded-full bg-warning" />
+                                <span className="truncate">{blocker}</span>
+                            </span>
+                        ) : null}
+                    </div>
+                </>
+            ) : null}
         </div>
     );
 }

@@ -27,6 +27,18 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (Jarvis popup: folded chat closes on a click away, no Ask while folded, compact composer)**
+
+- [ ] Fold into Sprout, click it to open the Jarvis chat, then click another app (or the desktop): the chat closes.
+  Clicking inside the chat, or the chat resizing the folded window, must not close it. `sprout-mini.tsx`.
+- [ ] Folded, the chat has no Ask field; the hover card's row reads "N waiting on you" / "New reply" / "Nothing
+  waiting". Ask Jarvis from the full window, fold before the reply lands: the "New reply" bubble opens the chat
+  with the reply in it. `petpeek.tsx`, `peterrand.tsx`.
+- [ ] Full window, Jarvis popup (Sprout in the footer): under the field one muted line `Claude Code ⌄ · <project> ⌄`;
+  each part opens its picker and the choice sticks. `peterrand.tsx`, `harnesspicker.tsx` (`bare`).
+- [ ] Folded hover card's pause row: the box reads "Custom…"; clicking in shows "e.g. 2h, 30m, or until 14:30";
+  typing `2h` turns it into "until <time>". `sprout-mini.tsx`.
+
 **2026-10-13 (Spider theme: blue accent)**
 
 - [ ] (arcterm) **The Spider theme's accent is the suit's blue (#7a9ce6), not red.** Setup → Appearance → Theme →

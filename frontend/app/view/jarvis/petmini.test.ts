@@ -95,13 +95,13 @@ describe("miniLook", () => {
 
 describe("miniChatLabel", () => {
     it("leads with what waits on you", () => {
-        expect(miniChatLabel(2, true)).toBe("2 waiting · Ask Jarvis");
+        expect(miniChatLabel(2, true)).toBe("2 waiting on you");
     });
     it("tells a reply nobody has read when nothing waits", () => {
-        expect(miniChatLabel(0, true)).toBe("New reply · Ask Jarvis");
+        expect(miniChatLabel(0, true)).toBe("New reply");
     });
-    it("only offers to ask otherwise", () => {
-        expect(miniChatLabel(0, false)).toBe("Ask Jarvis");
+    it("says nothing waits otherwise", () => {
+        expect(miniChatLabel(0, false)).toBe("Nothing waiting");
     });
 });
 

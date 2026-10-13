@@ -661,6 +661,8 @@ export function PetPeek({
     const answerTab = useAtomValue(model.answerTabAtom);
     const entranceRef = useRef(initialEntranceState());
 
+    // folded into Sprout the chat is for looking, not asking: no field, only a reply already under way
+    const folded = onRestore != null;
     const close = useCallback(() => {
         returnFocusRef.current = anchor;
         setReturnFocusEnabled(true);
@@ -957,7 +959,7 @@ export function PetPeek({
                               },
                           ]
                         : []),
-                    { keys: ["/"], label: "ask" },
+                    ...(folded ? [] : [{ keys: ["/"], label: "ask" }]),
                     { keys: ["esc"], label: "close" },
                 ];
 
@@ -1242,7 +1244,8 @@ export function PetPeek({
                                                     dest={dest}
                                                     channels={channels}
                                                     compact={quiet}
-                                                    showPrompt={onRestore != null}
+                                                    showPrompt={folded}
+                                                    askable={!folded}
                                                     onPick={(oid) => globalStore.set(petPeekDestAtom, oid)}
                                                 />
                                             </>

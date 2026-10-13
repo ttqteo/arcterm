@@ -39,7 +39,7 @@ import { miniHoverAtom } from "@/app/view/agents/miniclickthrough";
 import { writeConfig } from "@/app/view/agents/settingsui";
 import { foldedList, workingCount } from "@/app/view/agents/sproutroster";
 import { StatusDot } from "@/app/view/agents/statusdot";
-import { autoSproutOn } from "@/app/view/agents/windowsize";
+import { autoSproutOn, type Foreground } from "@/app/view/agents/windowsize";
 import { closePeek, openPetPeek } from "@/app/view/jarvis/peekstore";
 import { PetBubble } from "@/app/view/jarvis/petbubble";
 import { petCharacter } from "@/app/view/jarvis/petcharacter";
@@ -70,6 +70,7 @@ import { WorkingDots } from "@/app/view/jarvis/workingdots";
 import { isMacOS } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
 import type { Placement } from "@floating-ui/react";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { CornerDownLeft, MessageCircle, Pause, PictureInPicture2, X } from "lucide-react";
@@ -176,6 +177,8 @@ function FoldPauseRow({ onPause, onTyping }: { onPause: () => void; onTyping: (t
     const on = autoSproutOn(useAtomValue(getSettingsKeyAtom("window:autosprout")));
     const until = useAtomValue(getSettingsKeyAtom("window:autosproutpauseuntil"));
     const [text, setText] = useState("");
+    // the box explains what it takes only once you are in it
+    const [focused, setFocused] = useState(false);
     // the chat opening hides the card and drops the text: it must not hold the card open after
     useEffect(() => () => onTyping(false), [onTyping]);
     if (!on) {
@@ -244,13 +247,15 @@ function FoldPauseRow({ onPause, onTyping }: { onPause: () => void; onTyping: (t
                             setText(e.target.value);
                             onTyping(e.target.value !== "");
                         }}
+                        onFocus={() => setFocused(true)}
+                        onBlur={() => setFocused(false)}
                         onKeyDown={(e) => {
                             if (e.key === "Escape") {
                                 setText("");
                                 onTyping(false);
                             }
                         }}
-                        placeholder="2h, 14:30"
+                        placeholder="Custom…"
                         aria-label="Don't fold for a while, or until a time"
                         className="min-w-0 flex-1 bg-transparent px-1.5 text-[11px] text-primary outline-none placeholder:text-muted"
                     />
@@ -264,9 +269,9 @@ function FoldPauseRow({ onPause, onTyping }: { onPause: () => void; onTyping: (t
                     </button>
                 </form>
             </div>
-            {text.trim() !== "" ? (
+            {focused || text.trim() !== "" ? (
                 <span className="text-[10.5px] text-muted">
-                    {typed != null ? `until ${pauseEndLabel(typed, now)}` : "a length (2h, 30m) or a time (14:30)"}
+                    {typed != null ? `until ${pauseEndLabel(typed, now)}` : "e.g. 2h, 30m, or until 14:30"}
                 </span>
             ) : null}
         </div>
@@ -347,6 +352,32 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
             unOpen();
         };
     }, []);
+
+    // a click away from the open chat: the see-through window lets it through to the app behind, so the peek's
+    // backdrop never sees it. The window losing the focus to another app closes the chat instead; the fold's own
+    // window changes blur it too while arcterm stays in front (floatstore.ts), so the host says which it was.
+    useEffect(() => {
+        if (!chatOpen) {
+            return;
+        }
+        let live = true;
+        const unlisten = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+            if (focused) {
+                return;
+            }
+            void invoke<Foreground>("app_foreground")
+                .catch((): Foreground => "beside")
+                .then((foreground) => {
+                    if (live && foreground !== "ours" && globalStore.get(petPeekOpenAtom)) {
+                        closePeek();
+                    }
+                });
+        });
+        return () => {
+            live = false;
+            void unlisten.then((fn) => fn());
+        };
+    }, [chatOpen]);
 
     // Dev-only: the CDP harness reads the rooftop's look and forces its inputs through this, like petview.tsx's
     // __jarvisPet. Folded out of production builds — import.meta.env.DEV is statically false there.

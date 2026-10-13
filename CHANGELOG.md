@@ -8,6 +8,21 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
+## Unreleased
+
+### Changed
+
+- **A smaller Jarvis popup**: the harness and the project a question goes to are one line of small text under the
+  field instead of two dropdowns. Folded into Sprout, the popup only shows what waits on you and a reply already on
+  its way, with no field to ask in; restore the window to ask.
+- **The folded Sprout's "don't fold" box says what it takes**: it reads "Custom…", and shows "e.g. 2h, 30m, or until
+  14:30" once you click into it.
+
+### Fixed
+
+- **The folded Sprout's Jarvis chat closes when you click away** to another app, as a popup should, instead of
+  staying open over it.
+
 ## 0.15.11 — 2026-10-13
 
 ### Added

@@ -56,12 +56,13 @@ export function miniLook(input: MiniLookInput): MiniLook {
     return { pose, marks, chip, working, bob: input.frame === 1, label };
 }
 
-// The hover card's row that opens the chat: what waits on you leads, then a reply nobody has read.
+// The hover card's row that opens the chat: what waits on you leads, then a reply nobody has read. Folded, the chat
+// has no field to ask in, so the row names only what it shows.
 export function miniChatLabel(waiting: number, unread: boolean): string {
     if (waiting > 0) {
-        return `${waiting} waiting · Ask Jarvis`;
+        return `${waiting} waiting on you`;
     }
-    return unread ? "New reply · Ask Jarvis" : "Ask Jarvis";
+    return unread ? "New reply" : "Nothing waiting";
 }
 
 // What Spider-Man's rooftop shows for a fold look: lit windows for the working agents, spider-sense for what waits,

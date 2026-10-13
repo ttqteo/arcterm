@@ -102,9 +102,17 @@ interface HarnessPickerProps {
     className?: string;
     // bumped by a blocked composer submission to focus and open the picker
     openRequest?: number;
+    // plain muted text instead of a bordered chip, for a line that only says where something goes
+    bare?: boolean;
 }
 
-export function HarnessPicker({ operation, placement = "top-start", className, openRequest = 0 }: HarnessPickerProps) {
+export function HarnessPicker({
+    operation,
+    placement = "top-start",
+    className,
+    openRequest = 0,
+    bare = false,
+}: HarnessPickerProps) {
     const pref = useAtomValue(harnessPreferenceAtom);
     const harnesses = useAtomValue(harnessesAtom);
     const loading = useAtomValue(harnessesLoadingAtom);
@@ -150,16 +158,25 @@ export function HarnessPicker({ operation, placement = "top-start", className, o
                 aria-expanded={open}
                 title="Harness — which coding agent runs this"
                 className={cn(
-                    "flex cursor-pointer items-center gap-2 rounded-[7px] border bg-surface px-2.5 py-1 text-[11px] font-semibold",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                    open ? "border-accent-700 text-primary" : "border-border text-secondary hover:text-primary"
+                    "flex cursor-pointer items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                    bare
+                        ? cn(
+                              "gap-0.5 rounded-[5px] px-1 py-0.5 text-[10.5px] font-medium",
+                              open ? "text-primary" : "text-muted hover:text-primary"
+                          )
+                        : cn(
+                              "gap-2 rounded-[7px] border bg-surface px-2.5 py-1 text-[11px] font-semibold",
+                              open
+                                  ? "border-accent-700 text-primary"
+                                  : "border-border text-secondary hover:text-primary"
+                          )
                 )}
             >
                 <span className="min-w-0 flex-1 truncate text-left">{face.label}</span>
                 {pref.saving ? (
                     <span className="text-[10.5px] font-normal text-muted">saving</span>
                 ) : (
-                    <ChevronDown size={12} className={cn("flex-none text-muted", open && "rotate-180")} />
+                    <ChevronDown size={bare ? 11 : 12} className={cn("flex-none text-muted", open && "rotate-180")} />
                 )}
             </button>
             <FloatingPortal>
