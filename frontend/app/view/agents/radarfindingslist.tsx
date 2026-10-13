@@ -11,12 +11,12 @@ import { AnimatePresence, motion } from "motion/react";
 import { useMemo } from "react";
 import {
     findingSite,
+    findingSourceLine,
     groupForList,
     investigationView,
     isNewFinding,
     LIST_GROUP_ORDER,
     listGroupMeta,
-    shortSha,
     type RadarListGroup,
 } from "./radarmodel";
 import { radarOpenListGroupsAtom } from "./radarstore";
@@ -199,9 +199,7 @@ function FindingRow({
                 >
                     {f.severity}
                 </span>
-                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted">
-                    fix {shortSha(f.sourcecommit)}
-                </span>
+                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted">{findingSourceLine(f)}</span>
                 {iv ? (
                     <span className={cn("flex-none text-[11px] font-semibold", INVESTIGATION_TEXT[iv.tone])}>
                         {iv.rowLabel}

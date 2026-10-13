@@ -13,9 +13,11 @@ export const RADAR_SCENARIOS = [
     "never-scanned",
     "live",
     "selecting",
+    "classifying",
     "scanning",
     "results",
     "partial",
+    "classify-failed",
     "carried",
     "failed",
     "clean",
@@ -40,6 +42,7 @@ const AUDIT_TIMEOUT_ERROR = "Timed out after 10 minutes.";
 interface Commit {
     sha: string;
     subject: string;
+    // a fix's root cause, a behavior change's intent
     rootcause: string;
     // month is 1-based
     date: [month: number, day: number];
@@ -128,7 +131,51 @@ const COMMITS: Commit[] = [
         rootcause: "Claude runs no Stop hook for a turn that ends without an answer, so the cockpit read working.",
         date: [10, 4],
     },
+    {
+        sha: "6d1e8f3c",
+        subject: "feat(usage): count a transcript's tokens toward the run that launched it",
+        rootcause:
+            "Each transcript's tokens now count toward the run whose worktree launched the session, so Usage can group spend by work.",
+        date: [10, 3],
+    },
+    {
+        sha: "2f7a9c10",
+        subject: "perf(agents): reuse a transcript's parse while its size and mtime are unchanged",
+        rootcause:
+            "The usage reader keeps the last parse of each transcript and reads the file again only when it grows or is rewritten.",
+        date: [10, 4],
+    },
+    {
+        // the hot files' revision: one commit last touched both
+        sha: "5be0d7a1",
+        subject: "refactor(orchestrate): move worktree setup out of the engine loop",
+        rootcause: "",
+        date: [10, 5],
+    },
 ];
+
+const HOT_REVISION = "5be0d7a1";
+
+interface HotFile {
+    file: string;
+    fixes: string[];
+    fragility: string;
+}
+
+const subjectOf = (sha: string): string => commit(sha).subject;
+
+const HOT_ENGINE: HotFile = {
+    file: "pkg/orchestrate/engine.go",
+    fixes: ["90f4b49e", "084b21f2", "cc065522", "b0c32c74"].map(subjectOf),
+    fragility:
+        "A lane's worktree and branch are written by both the engine loop and the merge helpers, and no one owner decides when a tree is ready to use.",
+};
+
+const HOT_LAND: HotFile = {
+    file: "pkg/orchestrate/land.go",
+    fixes: ["cc065522", "b0c32c74", "90f4b49e"].map(subjectOf),
+    fragility: "Landing trusts the branch and tree as the lane left them, not as they are when the merge starts.",
+};
 
 const FIXTURE_YEAR = 2026;
 const SHA_LEN = 40;
@@ -160,13 +207,37 @@ function audit(sha: string, status: string, extra: Partial<RadarAudit> = {}): Ra
 
 const failedAudit = (sha: string): RadarAudit => audit(sha, "failed", { error: AUDIT_TIMEOUT_ERROR });
 
+const introducedAudit = (sha: string, status: string, extra: Partial<RadarAudit> = {}): RadarAudit =>
+    audit(sha, status, { kind: "introduced", ...extra });
+
+// a hotspot audit is the file at its revision: the revision's commit, the one file and the fixes that touched it
+function hotspotAudit(hot: HotFile, status: string, extra: Partial<RadarAudit> = {}): RadarAudit {
+    return audit(HOT_REVISION, status, {
+        kind: "hotspot",
+        files: [hot.file],
+        fixsubjects: hot.fixes,
+        rootcause: status === "ok" ? hot.fragility : undefined,
+        ...extra,
+    });
+}
+
+const kept = (n: number): Partial<RadarAudit> => ({ hitcount: n, keptcount: n });
+
 // the audit list of Main.dc.html: eight commits, two with kept hits
 const MAIN_AUDITS = ["34f60b82", "f9bae3b9", "90f4b49e", "084b21f2", "4ab685f0", "a663c1af", "7927fb68", "9caee0d3"];
 const MAIN_KEPT: Record<string, number> = { "34f60b82": 2, f9bae3b9: 1 };
 const PARTIAL_FAILED = new Set(["7927fb68", "9caee0d3"]);
 
-const mainAudit = (sha: string): RadarAudit =>
-    audit(sha, "ok", MAIN_KEPT[sha] ? { hitcount: MAIN_KEPT[sha], keptcount: MAIN_KEPT[sha] } : {});
+const mainAudit = (sha: string): RadarAudit => audit(sha, "ok", MAIN_KEPT[sha] ? kept(MAIN_KEPT[sha]) : {});
+
+// the other kinds' audits of the results scan: each kind has one with a finding and one clean, and the two
+// hot files share one revision
+const resultsKindAudits = (landFailed = false): RadarAudit[] => [
+    introducedAudit("6d1e8f3c", "ok", kept(1)),
+    introducedAudit("2f7a9c10", "ok"),
+    hotspotAudit(HOT_ENGINE, "ok", kept(2)),
+    landFailed ? hotspotAudit(HOT_LAND, "failed", { error: AUDIT_TIMEOUT_ERROR }) : hotspotAudit(HOT_LAND, "ok"),
+];
 
 interface FindingSpec {
     id: string;
@@ -178,6 +249,9 @@ interface FindingSpec {
     sha: string;
     sites: RadarSite[];
     rootcause?: string;
+    // a sibling finding when unset; a hotspot's sha is its revision
+    kind?: "introduced" | "hotspot";
+    hot?: HotFile;
     extra?: Partial<RadarFinding>;
 }
 
@@ -189,34 +263,47 @@ const site = (line: number, trigger: string, actual: string, expected: string, w
     whynotcovered,
 });
 
-// mirrors buildSiblingFinding (pkg/reporadar/hits.go), so the composer shows what a real finding hands it
-function mission(c: Commit, rootcause: string, file: string, sites: RadarSite[]): string {
-    const lines = sites.map(
-        (s) => `- ${file}:${s.line} trigger: ${s.trigger}; actual: ${s.actual}; expected: ${s.expected}\n`
-    );
-    return `Fix commit ${c.sha} (${c.subject}) fixed a bug; root cause: ${rootcause}\n\nThe same bug may remain at:\n${lines.join("")}`;
+// mirrors targetFindings and each kind's mission (pkg/reporadar/kinds.go), so the composer shows what a real
+// finding hands it
+function mission(spec: FindingSpec, c: Commit, rootcause: string): string {
+    const lines = spec.sites
+        .map((s) => `- ${spec.file}:${s.line} trigger: ${s.trigger}; actual: ${s.actual}; expected: ${s.expected}\n`)
+        .join("");
+    switch (spec.kind) {
+        case "introduced":
+            return `Commit ${c.sha} (${c.subject}) changed behavior: ${rootcause}\n\nIt introduced a defect still present at:\n${lines}`;
+        case "hotspot": {
+            const fixes = spec.hot?.fixes ?? [];
+            return `${spec.file} took ${fixes.length} fix commits in the last 30 days (${fixes.join("; ")}). Fragility: ${rootcause}\n\nA latent bug remains at:\n${lines}`;
+        }
+        default:
+            return `Fix commit ${c.sha} (${c.subject}) fixed a bug; root cause: ${rootcause}\n\nThe same bug may remain at:\n${lines}`;
+    }
 }
+
+const RISK_KIND = { introduced: "introduced-bug", hotspot: "hotspot-bug" } as const;
 
 function finding(spec: FindingSpec): RadarFinding {
     const c = commit(spec.sha);
-    const rootcause = spec.rootcause ?? c.rootcause;
+    const rootcause = spec.rootcause ?? spec.hot?.fragility ?? c.rootcause;
     const dir = spec.file.slice(0, spec.file.lastIndexOf("/"));
     return {
         id: spec.id,
         fingerprint: spec.fingerprint,
         group: spec.group,
-        riskkind: "sibling-bug",
+        riskkind: spec.kind ? RISK_KIND[spec.kind] : "sibling-bug",
         subsystem: dir,
         risk: spec.title,
         why: spec.sites[0].whynotcovered,
         severity: spec.severity,
         signalids: [signalId(spec.sha)],
         files: [spec.file],
-        mission: mission(c, rootcause, spec.file, spec.sites),
+        mission: mission(spec, c, rootcause),
         sourcecommit: fullSha(spec.sha),
         sourcesubject: c.subject,
         rootcause,
         sites: spec.sites,
+        ...(spec.hot ? { fixsubjects: spec.hot.fixes } : {}),
         ...spec.extra,
     };
 }
@@ -328,6 +415,52 @@ function mainFindings(now: number): RadarFinding[] {
             ],
         }),
         finding({
+            id: "g",
+            group: "recurring",
+            severity: "medium",
+            kind: "introduced",
+            file: "frontend/app/view/agents/runusage.ts",
+            fingerprint: "RAD-3fa81c07",
+            title: "A resumed session's tokens count toward the run it was resumed from",
+            sha: "6d1e8f3c",
+            sites: [
+                site(
+                    64,
+                    "A session resumed with --resume from a different run's worktree.",
+                    "Its tokens land on the run that first launched the transcript.",
+                    "Each turn counts toward the run whose worktree it ran in.",
+                    "The change keys attribution on the transcript's first cwd, and a resumed transcript keeps its first line."
+                ),
+            ],
+        }),
+        finding({
+            id: "h",
+            group: "recurring",
+            severity: "high",
+            kind: "hotspot",
+            hot: HOT_ENGINE,
+            file: HOT_ENGINE.file,
+            fingerprint: "RAD-b72e4d19",
+            title: "A lane retried after a failed setup reuses the half-created worktree",
+            sha: HOT_REVISION,
+            sites: [
+                site(
+                    412,
+                    "A lane whose setup command fails after git worktree add succeeded.",
+                    "The retry finds the tree on disk and skips add, so it runs in a tree with no branch checked out.",
+                    "The retry removes the tree, or checks the branch out again, before it runs.",
+                    "Each fix made one step of the lane's tree lifecycle safe; none covers a retry that starts from a half-made tree."
+                ),
+                site(
+                    468,
+                    "The same lane, cancelled during its setup.",
+                    "The tree stays registered and the next run's list counts it as live.",
+                    "A cancelled setup leaves no registered tree.",
+                    "The registry lock serializes the calls but does not undo the add."
+                ),
+            ],
+        }),
+        finding({
             id: "e",
             group: "dismissed",
             severity: "low",
@@ -423,7 +556,10 @@ function report(opts: ScenarioOpts, now: number, extra: Partial<RadarReport>): R
 export function buildScenario(name: string, opts: ScenarioOpts = {}): RadarReport | "none" | null {
     const now = Date.now();
     const results = () =>
-        finished(now, 4 * MINUTE, { audits: MAIN_AUDITS.map(mainAudit), findings: mainFindings(now) });
+        finished(now, 4 * MINUTE, {
+            audits: [...MAIN_AUDITS.map(mainAudit), ...resultsKindAudits()],
+            findings: mainFindings(now),
+        });
     switch (name) {
         case "never-scanned":
             return "none";
@@ -431,6 +567,8 @@ export function buildScenario(name: string, opts: ScenarioOpts = {}): RadarRepor
             return null;
         case "selecting":
             return report(opts, now, { status: "collecting", phase: "collecting", startedts: now - 4 * SECOND });
+        case "classifying":
+            return report(opts, now, { status: "collecting", phase: "classifying", startedts: now - 9 * SECOND });
         case "scanning":
             return report(opts, now, {
                 status: "clustering",
@@ -442,10 +580,14 @@ export function buildScenario(name: string, opts: ScenarioOpts = {}): RadarRepor
                     audit("90f4b49e", "ok"),
                     audit("084b21f2", "ok"),
                     audit("f9bae3b9", "running"),
-                    audit("4ab685f0", "running"),
-                    audit("a663c1af", "running"),
+                    audit("4ab685f0", "queued"),
+                    audit("a663c1af", "queued"),
                     audit("7927fb68", "queued"),
                     audit("9caee0d3", "queued"),
+                    introducedAudit("6d1e8f3c", "running"),
+                    introducedAudit("2f7a9c10", "queued"),
+                    hotspotAudit(HOT_ENGINE, "running"),
+                    hotspotAudit(HOT_LAND, "queued"),
                 ],
             });
         case "results":
@@ -454,7 +596,16 @@ export function buildScenario(name: string, opts: ScenarioOpts = {}): RadarRepor
             return report(opts, now, {
                 ...results(),
                 status: "partial",
-                audits: MAIN_AUDITS.map((sha) => (PARTIAL_FAILED.has(sha) ? failedAudit(sha) : mainAudit(sha))),
+                audits: [
+                    ...MAIN_AUDITS.map((sha) => (PARTIAL_FAILED.has(sha) ? failedAudit(sha) : mainAudit(sha))),
+                    ...resultsKindAudits(true),
+                ],
+            });
+        case "classify-failed":
+            return report(opts, now, {
+                ...results(),
+                classifyerror: "classifier session failed: claude exited with status 1",
+                classifycount: 14,
             });
         case "carried":
             return report(
@@ -473,7 +624,11 @@ export function buildScenario(name: string, opts: ScenarioOpts = {}): RadarRepor
                 opts,
                 now,
                 finished(now, 2 * MINUTE, {
-                    audits: ["f8db878a", "4ab685f0", "084b21f2", "a663c1af", "90f4b49e"].map((sha) => audit(sha, "ok")),
+                    audits: [
+                        ...["f8db878a", "4ab685f0", "084b21f2", "a663c1af", "90f4b49e"].map((sha) => audit(sha, "ok")),
+                        introducedAudit("2f7a9c10", "ok"),
+                        hotspotAudit(HOT_LAND, "ok"),
+                    ],
                 })
             );
         case "no-commits":

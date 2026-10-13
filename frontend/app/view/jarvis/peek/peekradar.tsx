@@ -3,6 +3,7 @@
 
 import * as WOS from "@/app/store/wos";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { findingKind, KIND_WORDS } from "@/app/view/agents/radarmodel";
 import { INVESTIGATION_DOT, INVESTIGATION_TEXT, severityPill } from "@/app/view/agents/radarstyles";
 import { cn, fireAndForget } from "@/util/util";
 import { useEffect } from "react";
@@ -36,6 +37,7 @@ function Header({ title, severity }: { title: string; severity?: string }) {
 function FindingBody({ model, finding }: { model: AgentsViewModel; finding: RadarFinding }) {
     const sites = peekSites(finding);
     const inv = peekInvestigation(finding);
+    const words = KIND_WORDS[findingKind(finding)];
     // depth 1: a link inside a peek opens in full, never peeks again
     const openRun = (runId: string) => fireAndForget(() => openTarget(model, { kind: "run", runId }));
     return (
@@ -44,7 +46,7 @@ function FindingBody({ model, finding }: { model: AgentsViewModel; finding: Rada
             <div className="flex flex-col gap-3.5 px-3.5 py-3">
                 {finding.rootcause ? (
                     <div className="flex flex-col gap-1">
-                        <span className={LABEL}>Root cause</span>
+                        <span className={LABEL}>{words.rootCauseHeading}</span>
                         <p className="text-[13px] leading-[1.6] text-secondary">{finding.rootcause}</p>
                     </div>
                 ) : null}
@@ -54,7 +56,7 @@ function FindingBody({ model, finding }: { model: AgentsViewModel; finding: Rada
                         className="flex flex-col overflow-hidden rounded-[9px] border border-border bg-background"
                     >
                         <div className="flex items-center gap-2.5 border-b border-border px-3 py-2">
-                            <span className={cn(REGION_LABEL, "text-ink-mid")}>Sibling sites</span>
+                            <span className={cn(REGION_LABEL, "text-ink-mid")}>{words.siteHeading(sites.length)}</span>
                             <span className="h-px flex-1 bg-border" />
                             <span className="flex-none text-[10.5px] tabular-nums text-muted">
                                 {sites.length} {sites.length === 1 ? "site" : "sites"}

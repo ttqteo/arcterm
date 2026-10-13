@@ -12,6 +12,7 @@ import {
     auditsPanel,
     auditTally,
     plural,
+    selectingText,
     type AuditTally,
     type RadarView,
 } from "./radarmodel";
@@ -20,7 +21,7 @@ import { SurfaceEmptyState } from "./surfacescaffold";
 
 const GLYPH = "mb-[18px] h-[30px] w-[30px]";
 
-const AUDIT_ONCE_NOTE = "A commit is audited once. The next scan picks up fix commits made after these.";
+const AUDIT_ONCE_NOTE = "A target is audited once. The next scan picks up commits and file changes made after these.";
 
 // ticks once a second, with seconds past the first minute, so a multi-minute audit visibly moves
 function Elapsed({ since }: { since: number }) {
@@ -34,10 +35,10 @@ function Elapsed({ since }: { since: number }) {
     return <> · {text} elapsed</>;
 }
 
-// commit selection (status collecting) has no rows yet, so there is nothing to count
-function ScanTally({ tally, since }: { tally: AuditTally; since?: number }) {
+// classifying and selecting (status collecting) have no rows yet, so there is nothing to count
+function ScanTally({ report, tally, since }: { report: RadarReport | null; tally: AuditTally; since?: number }) {
     if (tally.total === 0) {
-        return <>selecting fix commits</>;
+        return <>{selectingText(report)}</>;
     }
     return (
         <>
@@ -75,7 +76,7 @@ function AuditsPanel({ report }: { report: RadarReport }) {
             title={panel.title}
             body={
                 panel.kind === "clean"
-                    ? "Radar read the code around each fix and found the same bug nowhere else. Most scans end this way."
+                    ? "Radar read each fix commit, behavior change and hot file and found no bug worth reporting. Most scans end this way."
                     : undefined
             }
         >
@@ -110,7 +111,7 @@ export function RadarScanStatePanel({
                 <SurfaceEmptyState
                     glyph={<Radar className={cn(GLYPH, "text-accent-soft")} strokeWidth={1.8} />}
                     title={`${subject} hasn't been scanned`}
-                    body="Radar picks the recent fix commits and runs one read-only session on each, looking for the same bug at sibling sites. Nothing runs until you scan."
+                    body="Radar picks recent fix commits, behavior changes and hot files, and runs one read-only session on each: the same bug at a fix's sibling sites, a bug a change introduced, a latent bug in a file fixes keep touching. Nothing runs until you scan."
                     action={{ label: "Scan repository", onClick: scan, disabled: !scopePath }}
                 />
             );
@@ -118,14 +119,14 @@ export function RadarScanStatePanel({
             const rows = auditRows(report);
             return (
                 <SurfaceEmptyState
-                    title="Auditing fix commits"
-                    body="One read-only session per commit reads the code around the fix and looks for the same bug at sibling sites. Three run at a time, about a minute each."
+                    title="Auditing recent changes"
+                    body="One read-only session per target: fix commits for the same bug at sibling sites, behavior changes for a bug they introduced, hot files for a latent bug. Three run at a time, about a minute each."
                     secondaryAction={{ label: "Cancel scan", onClick: cancel }}
                 >
                     <RadarAuditList
                         rows={rows}
-                        title="Fix commits"
-                        tally={<ScanTally tally={auditTally(rows)} since={report?.clusterstartedts} />}
+                        title="Audits"
+                        tally={<ScanTally report={report} tally={auditTally(rows)} since={report?.clusterstartedts} />}
                         live
                     />
                 </SurfaceEmptyState>

@@ -17,9 +17,11 @@ import { AmbientTags, RelevantDecisions } from "./ambientviews";
 import {
     dismissReasons,
     dispositionLabel,
+    findingKind,
     findingSite,
     investigationView,
     isNewFinding,
+    KIND_WORDS,
     listGroupMeta,
     listGroupOf,
     primaryAction,
@@ -110,8 +112,7 @@ function DismissMenu({ finding, onPick }: { finding: RadarFinding; onPick: (entr
                         </button>
                     ))}
                     <div className="mt-1 border-t border-edge-mid px-2 pb-1 pt-[7px] text-[11.5px] leading-[1.45] text-muted">
-                        Closes this finding. Its fix commit is audited once, so it stays closed until you reopen it from
-                        Dismissed.
+                        Closes this finding. It stays closed until you reopen it from Dismissed.
                     </div>
                 </div>
             </PopoverReveal>
@@ -119,7 +120,7 @@ function DismissMenu({ finding, onPick }: { finding: RadarFinding; onPick: (entr
     );
 }
 
-function SiteCard({ site }: { site: RadarSite }) {
+function SiteCard({ site, whyLabel }: { site: RadarSite; whyLabel: string }) {
     return (
         <div
             data-radar-site-card
@@ -140,7 +141,9 @@ function SiteCard({ site }: { site: RadarSite }) {
                 </div>
             </div>
             <div className="grid grid-cols-[84px_minmax(0,1fr)] items-baseline gap-3 bg-background px-3.5 pb-[9px] pt-2">
-                <span className={LABEL}>Fix gap</span>
+                <span data-radar-site-why-label className={LABEL}>
+                    {whyLabel}
+                </span>
                 <span className="text-[12.5px] leading-normal text-ink-mid">{site.whynotcovered}</span>
             </div>
         </div>
@@ -160,6 +163,8 @@ export function RadarFindingDetail({
     const site = findingSite(finding);
     const sites = finding.sites ?? [];
     const fix = sourceFix(finding, report);
+    const kind = findingKind(finding);
+    const words = KIND_WORDS[kind];
     const inv = finding.investigation;
     const iv = investigationView(finding);
     const disposition = finding.disposition;
@@ -201,6 +206,9 @@ export function RadarFindingDetail({
                         >
                             {finding.severity} severity
                         </span>
+                        <span data-radar-kind={kind} className="text-[11.5px] text-ink-mid">
+                            {words.label}
+                        </span>
                         {subsystemLabel(finding.subsystem) ? (
                             <span className="text-[11.5px] text-ink-mid">{finding.subsystem}</span>
                         ) : null}
@@ -210,7 +218,7 @@ export function RadarFindingDetail({
                         <button
                             type="button"
                             data-radar-site-link
-                            aria-label="Open the sibling site in Code"
+                            aria-label="Open the site in Code"
                             onClick={() =>
                                 fireAndForget(() =>
                                     openInCode(model, {
@@ -300,17 +308,17 @@ export function RadarFindingDetail({
                         {sites.length > 0 ? (
                             <div className="flex flex-col gap-2">
                                 <div className="flex items-baseline gap-2.5">
-                                    <h3 className={LABEL}>{sites.length > 1 ? "Sibling sites" : "Sibling site"}</h3>
+                                    <h3 className={LABEL}>{words.siteHeading(sites.length)}</h3>
                                     <span className="text-[11px] text-muted">{site?.file}</span>
                                 </div>
                                 {sites.map((s, i) => (
-                                    <SiteCard key={i} site={s} />
+                                    <SiteCard key={i} site={s} whyLabel={words.siteWhyLabel} />
                                 ))}
                             </div>
                         ) : null}
 
                         <div className="flex flex-col gap-2">
-                            <h3 className={LABEL}>Root cause</h3>
+                            <h3 className={LABEL}>{words.rootCauseHeading}</h3>
                             <p className="max-w-[72ch] text-[13.5px] leading-[1.65] text-pretty text-muted-foreground">
                                 {finding.rootcause}
                             </p>
@@ -322,11 +330,12 @@ export function RadarFindingDetail({
                     <aside className="flex flex-col gap-[22px] @min-[1300px]:sticky @min-[1300px]:top-6 @min-[1300px]:w-[340px] @min-[1300px]:flex-none">
                         {fix ? (
                             <div data-radar-source-fix className="flex flex-col gap-2">
-                                <h3 className={LABEL}>Found by auditing this fix</h3>
+                                <h3 className={LABEL}>{words.sourceHeading}</h3>
                                 <div className="flex items-baseline gap-3 rounded-[10px] border border-edge-mid bg-surface px-3.5 py-2.5">
                                     <span className="flex-none font-mono text-xs text-ink-hi">{fix.sha}</span>
+                                    {/* a hotspot's revision is just where the file stood; its fixes say why it was read */}
                                     <span className="min-w-0 flex-1 text-[13px] leading-[1.45] text-secondary">
-                                        {fix.subject}
+                                        {kind === "hotspot" ? null : fix.subject}
                                     </span>
                                     {fix.ts ? (
                                         <span className="flex-none text-[11px] tabular-nums text-muted">
@@ -334,6 +343,15 @@ export function RadarFindingDetail({
                                         </span>
                                     ) : null}
                                 </div>
+                                {kind === "hotspot" && fix.fixSubjects.length > 0 ? (
+                                    <ul data-radar-fix-subjects className="flex flex-col gap-1.5 px-1">
+                                        {fix.fixSubjects.map((s, i) => (
+                                            <li key={i} className="text-[12.5px] leading-[1.45] text-ink-mid">
+                                                {s}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : null}
                             </div>
                         ) : null}
 

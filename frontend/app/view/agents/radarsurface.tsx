@@ -22,7 +22,8 @@ import {
     auditSummary,
     auditTally,
     auditTallyText,
-    failedAuditShas,
+    classifyWarning,
+    failedAuditLabels,
     failedAuditsSentence,
     plural,
     primaryAction,
@@ -143,10 +144,10 @@ function MetaLine({ report, view }: { report: RadarReport; view: RadarView }) {
     );
 }
 
-// A failed audit read nothing, so its commit's sibling bugs are unknown rather than absent.
+// A failed audit read nothing, so the bugs it targets are unknown rather than absent.
 function FailedAuditsStrip({ report }: { report: RadarReport }) {
-    const shas = failedAuditShas(report);
-    if (shas.length === 0) {
+    const labels = failedAuditLabels(report);
+    if (labels.length === 0) {
         return null;
     }
     return (
@@ -156,8 +157,8 @@ function FailedAuditsStrip({ report }: { report: RadarReport }) {
         >
             <AlertTriangle className="h-[15px] w-[15px] flex-none text-warning" />
             <span className="min-w-0 flex-1 text-[12.5px] text-secondary">
-                {failedAuditsSentence(shas).map((part, i) =>
-                    part.sha ? (
+                {failedAuditsSentence(labels).map((part, i) =>
+                    part.mono ? (
                         <span key={i} className="font-mono text-[11.5px] text-ink-hi">
                             {part.text}
                         </span>
@@ -174,6 +175,23 @@ function FailedAuditsStrip({ report }: { report: RadarReport }) {
             >
                 Retry failed audits
             </button>
+        </div>
+    );
+}
+
+// Retry re-runs audits and cannot re-run a selection, so this line has no button: Re-scan classifies again.
+function ClassifyWarningLine({ report }: { report: RadarReport }) {
+    const warning = classifyWarning(report);
+    if (warning == null) {
+        return null;
+    }
+    return (
+        <div
+            data-radar-classify-warning
+            className="flex flex-none items-center gap-[11px] border-t border-edge-faint bg-warning/5 px-[18px] pb-[11px] pt-2.5"
+        >
+            <AlertTriangle className="h-[15px] w-[15px] flex-none text-warning" />
+            <span className="min-w-0 flex-1 text-[12.5px] text-secondary">{warning}</span>
         </div>
     );
 }
@@ -293,6 +311,7 @@ export function RadarSurface({ model }: { model: AgentsViewModel }) {
                 </div>
 
                 {phase === "ready" && isReport && report ? <FailedAuditsStrip report={report} /> : null}
+                {phase === "ready" && isReport && report ? <ClassifyWarningLine report={report} /> : null}
                 <div data-radar-view={phase === "ready" ? view : undefined} className="min-h-0 flex-1">
                     <AnimatePresence mode="wait" initial={false}>
                         {phase === "loading" ? (
