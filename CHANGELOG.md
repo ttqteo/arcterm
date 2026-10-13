@@ -19,6 +19,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   Close is a green check alone, and the Later bookmark is grey instead of yellow.
 - **Choose what an agent row shows**: Settings → Appearance → Agent sidebar turns its model, branch, tokens and age on
   or off. All stay on unless you turn one off.
+- The app bar's usage meters keep to Claude's 5-hour and weekly windows: a model's own weekly window (Fable wk) is
+  only on the Usage surface now.
 
 ## 0.15.11 — 2026-10-13
 

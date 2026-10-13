@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The app bar's usage button: the free RAM (WorkerCapacityChip), then the plan-usage meters: each provider's logo, then
-// its 5-hour and weekly windows as two small bars, and after them any model's own weekly window (a Team seat's Fable
-// share) under that model's name (planWindows), each with a tick at how much of its window has passed and coloured by
+// its 5-hour and weekly windows as two small bars (a model's own weekly window, a Team seat's Fable share, is left to
+// the Usage surface), each with a tick at how much of its window has passed and coloured by
 // how much is used (usageLevel, not by pace: a fast start read red at 27%), and the 5-hour window's countdown. Tokens
 // and the time each window resets are on hover. RAM and tokens open the one Consumers panel (consumerspanel.tsx), so
 // they are one button: a click on the RAM half ranks it by RAM, anywhere else by tokens. Float has no app bar: its
@@ -165,6 +165,8 @@ function meterItems(
 ): MeterItem[] {
     return donuts.flatMap((d) =>
         planWindows(d)
+            // a model's own weekly window (Fable wk) stays on the Usage surface: the app bar keeps to 5h and wk
+            .filter((p) => !p.key.startsWith("scoped:"))
             .filter((p) => usageBarVisible(p.w.pct, d.stale != null, p.w.reset))
             .map((p, i) => {
                 const reset = p.w.reset;
