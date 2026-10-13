@@ -49,6 +49,7 @@ type WshRpcInterface interface {
 	RadarCommands
 	JarvisCommands
 	EffortCommands
+	NoteCommands
 	SecretCommands
 	ClaudeAccountCommands
 	AskCommands
@@ -57,6 +58,7 @@ type WshRpcInterface interface {
 	UiCommands
 	StreamCommands
 	DocCommands
+	ResMonCommands
 	WshRpcRemoteFileInterface
 	WshRpcFileInterface
 }
@@ -223,6 +225,7 @@ type UsageBucket struct {
 	Provider        string   `json:"provider"`
 	Model           string   `json:"model"`
 	Day             string   `json:"day"`
+	Session         string   `json:"session,omitempty"`
 	Input           int      `json:"input"`
 	Output          int      `json:"output"`
 	Reasoning       int      `json:"reasoning"`
@@ -301,18 +304,23 @@ type StreamMeta struct {
 	WriterRouteId string `json:"writerrouteid"`
 }
 
-// ProcessInfo holds per-process information for the process viewer.
+// ProcessInfo holds per-process information for the Resource Manager (a row of a ResMonGroup).
 // Mem, MemPct, Cpu, and NumThreads are set to -1 when the data is unavailable
-// (e.g. permission denied reading another user's process on macOS).
+// (e.g. access denied opening an elevated process).
 type ProcessInfo struct {
 	Pid        int32   `json:"pid"`
 	Ppid       int32   `json:"ppid,omitempty"`
-	Command    string  `json:"command,omitempty"`
+	Name       string  `json:"name,omitempty"`     // image name, e.g. claude.exe
+	Command    string  `json:"command,omitempty"`  // full command line
+	CreateTs   int64   `json:"createts,omitempty"` // epoch ms
+	Depth      int     `json:"depth"`              // tree depth in its group, 0 = root
+	Role       string  `json:"role,omitempty"`     // Arc role name
+	Tag        string  `json:"tag,omitempty"`      // agent | launcher | console | shell
 	Status     string  `json:"status,omitempty"`
 	User       string  `json:"user,omitempty"`
-	Mem        int64   `json:"mem"`        // resident set size in bytes; -1 if unavailable
+	Mem        int64   `json:"mem"`        // working set (resident set size) in bytes; -1 if unavailable
 	MemPct     float64 `json:"mempct"`     // memory percent; -1 if unavailable
-	Cpu        float64 `json:"cpu"`        // cpu percent; -1 if unavailable
+	Cpu        float64 `json:"cpu"`        // % of the whole machine; -1 if unavailable
 	NumThreads int32   `json:"numthreads"` // -1 if unavailable
 	Gone       bool    `json:"gone,omitempty"`
 }

@@ -93,6 +93,13 @@ describe("buildRunPeek: an orchestrator run", () => {
         expect(view.tasks).toBeNull();
     });
 
+    it("drops the phase strip when the lead finished the work without a plan", () => {
+        const view = buildRunPeek(input({ run: run({ status: "done" }), group: null }));
+        expect(view.phases).toBeNull();
+        expect(view.tasks).toBeNull();
+        expect(view.meta[0]).toEqual({ text: "orchestrator" });
+    });
+
     it("prints the unverified line only when the final stage ended unverified", () => {
         expect(buildRunPeek(input()).unverified).toBe("the verifier did not open Settings > Memory.");
         const passed = group({ final: { state: "passed", round: 1 } });
@@ -124,6 +131,21 @@ describe("buildRunPeek: an orchestrator run", () => {
             { text: "32.4M tok" },
             { text: "2h0m ago", faint: true },
         ]);
+    });
+
+    it("adds the api-equivalent estimate to the run's tokens, and leaves task rows as tokens", () => {
+        // 1,455,500 output tokens on opus-5-5 at $20 per million
+        const priced: UsageRow = { ...usage("t-1", 0), model: "claude-opus-5-5", output: 1_455_500 };
+        const view = buildRunPeek(input({ usage: [priced] }));
+        expect(view.meta.map((m) => m.text)).toContain("1.5M tok · ≈ $29.11");
+        expect(view.tasks?.[0].tokens).toBe("1.5M");
+    });
+
+    it("prints tokens alone when no model of the run is priced", () => {
+        const unpriced: UsageRow = { ...usage("t-1", 1_500_000), model: "mystery-1" };
+        const texts = buildRunPeek(input({ usage: [unpriced] })).meta.map((m) => m.text);
+        expect(texts).toContain("1.5M tok");
+        expect(texts.some((t) => t.includes("≈"))).toBe(false);
     });
 
     it("takes the title from the goal's first line and keeps the goal text", () => {

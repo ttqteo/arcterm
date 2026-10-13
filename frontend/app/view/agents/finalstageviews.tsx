@@ -1,0 +1,304 @@
+// Copyright 2026, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+//
+// The final stage's shared views: the Agent surface's pane and rails and the DAG's node and rail all draw the
+// stage with these, from the one view finalstage.ts derives. Nothing here decides a state, a time or a label.
+
+import * as WOS from "@/app/store/wos";
+import { finalCheckEntry } from "@/app/view/jarvis/finalshotsmodel";
+import { FinalShotsViewer } from "@/app/view/jarvis/finalshotsviewer";
+import { finalStageEndable } from "@/app/view/jarvis/runsheetmodel";
+import { cn } from "@/util/util";
+import { atom, useAtomValue, type Atom } from "jotai";
+import { useState } from "react";
+import { dockButtonClass, EndFinalForm } from "./endfinalform";
+import {
+    finalStageView,
+    outputTail,
+    type FinalRoundLine,
+    type FinalStageView,
+    type FinalStep,
+    type FinalTone,
+} from "./finalstage";
+import { useRunEvents } from "./runeventstore";
+
+const NO_RUN: Atom<Run | undefined> = atom(undefined as Run | undefined);
+
+// useFinalStageView is the stage's view for a site that draws it, with the run's events and the current
+// round's verifier Run read here so no site wires them itself.
+export function useFinalStageView(
+    group: TaskGroup | undefined,
+    runId: string,
+    channelId: string,
+    now: number
+): FinalStageView {
+    const events = useRunEvents(runId, channelId);
+    const verifierRunId = group?.final?.verifierrunid;
+    const verifierRun = useAtomValue(
+        verifierRunId ? WOS.getWaveObjectAtom<Run>(WOS.makeORef("run", verifierRunId)) : NO_RUN
+    );
+    return finalStageView(group, events, now, verifierRun ?? undefined);
+}
+
+const MARK: Record<FinalTone, string> = {
+    wait: "border border-muted",
+    run: "bg-accent",
+    pass: "bg-success",
+    fail: "bg-error",
+    warn: "bg-warning",
+};
+const SEGMENT: Record<FinalTone, string> = { ...MARK, wait: "bg-edge-strong" };
+const STATE_INK: Record<FinalTone, string> = {
+    wait: "text-muted",
+    run: "text-accent-soft",
+    pass: "text-secondary",
+    fail: "text-error",
+    warn: "text-warning",
+};
+const LINK = "cursor-pointer font-mono text-[10.5px] font-semibold text-accent-soft hover:text-accent";
+
+function StepMark({ tone }: { tone: FinalTone }) {
+    return <span aria-hidden className={cn("size-[7px] flex-none rounded-full", MARK[tone])} />;
+}
+
+function StepLabel({ step }: { step: FinalStep }) {
+    return (
+        <span
+            className={cn("font-mono text-[11.5px] font-medium", step.tone === "wait" ? "text-ink-mid" : "text-ink-hi")}
+        >
+            {step.label}
+        </span>
+    );
+}
+
+function StepText({ step }: { step: FinalStep }) {
+    return (
+        <span className={cn("flex-none whitespace-nowrap font-mono text-[10.5px] font-medium", STATE_INK[step.tone])}>
+            {step.text}
+        </span>
+    );
+}
+
+// One row per step: mark, label, state text.
+export function FinalStepList({ steps }: { steps: FinalStep[] }) {
+    return (
+        <div className="flex flex-col">
+            {steps.map((step) => (
+                <div
+                    key={step.key}
+                    data-final-step={step.key}
+                    data-final-step-state={step.state}
+                    className="flex items-center gap-[9px] border-b border-edge-faint py-1.5"
+                >
+                    <StepMark tone={step.tone} />
+                    <StepLabel step={step} />
+                    <span className="flex-1" />
+                    <StepText step={step} />
+                </div>
+            ))}
+        </div>
+    );
+}
+
+// The pipeline: one bordered cell per step, the running one accented. showCommand adds each step's command.
+export function FinalStepCells({ steps, showCommand }: { steps: FinalStep[]; showCommand?: boolean }) {
+    return (
+        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
+            {steps.map((step) => (
+                <div
+                    key={step.key}
+                    data-final-step={step.key}
+                    data-final-step-state={step.state}
+                    className={cn(
+                        "flex min-w-0 flex-col gap-1 rounded-[8px] border px-2.5 py-2",
+                        step.state === "running" ? "border-accent/50 bg-lane" : "border-edge-mid"
+                    )}
+                >
+                    {showCommand ? (
+                        <>
+                            <span className="flex items-center gap-1.5">
+                                <StepMark tone={step.tone} />
+                                <StepLabel step={step} />
+                                <span className="flex-1" />
+                                <StepText step={step} />
+                            </span>
+                            <span title={step.command} className="truncate font-mono text-[10.5px] text-muted">
+                                {step.command}
+                            </span>
+                        </>
+                    ) : (
+                        <>
+                            <span className="flex items-center gap-1.5">
+                                <StepMark tone={step.tone} />
+                                <StepLabel step={step} />
+                            </span>
+                            <StepText step={step} />
+                        </>
+                    )}
+                </div>
+            ))}
+        </div>
+    );
+}
+
+// The 3px strip: one segment per step.
+export function FinalStepStrip({ view }: { view: FinalStageView }) {
+    const label = view.stepIndex > 0 ? `step ${view.stepIndex} of ${view.steps.length}` : view.headline;
+    return (
+        <span role="img" aria-label={label} className="flex h-[3px] gap-0.5">
+            {view.steps.map((step) => (
+                <span
+                    key={step.key}
+                    data-final-step={step.key}
+                    data-final-step-state={step.state}
+                    className={cn("flex-1 rounded-[1.5px]", SEGMENT[step.tone])}
+                />
+            ))}
+        </span>
+    );
+}
+
+// A running command's output tail, its last `lines` lines when given. Draws nothing with no output.
+export function FinalOutput({ output, lines, className }: { output: string; lines?: number; className?: string }) {
+    const text = lines == null ? output.trimEnd() : outputTail(output, lines);
+    if (text === "") {
+        return null;
+    }
+    return (
+        <div
+            data-final-output
+            className={cn(
+                "overflow-hidden whitespace-pre rounded-[6px] border border-edge-mid bg-surface-code px-[9px] py-[7px] font-mono text-[10.5px] leading-[1.55] text-ink-mid",
+                className
+            )}
+        >
+            {text}
+        </div>
+    );
+}
+
+function PastRound({ line }: { line: FinalRoundLine }) {
+    return (
+        <div data-final-past-round={line.round} className="flex items-center gap-[9px] py-1">
+            <StepMark tone={line.tone} />
+            <span className="font-mono text-[10.5px] text-ink-mid">{line.text}</span>
+        </div>
+    );
+}
+
+// a line per earlier round, oldest first
+export function FinalPastRounds({ past }: { past: FinalRoundLine[] }) {
+    if (past.length === 0) {
+        return null;
+    }
+    return (
+        <div className="flex flex-col">
+            {past.map((line) => (
+                <PastRound key={line.round} line={line} />
+            ))}
+        </div>
+    );
+}
+
+// What an ended stage came to: a failure's detail whole, every unverified reason, and a line per earlier
+// round. Long text scrolls inside it, never cut.
+export function FinalOutcome({ view, className }: { view: FinalStageView; className?: string }) {
+    if (view.detail === "" && view.unverified.length === 0 && view.past.length === 0) {
+        return null;
+    }
+    return (
+        <div className={cn("sc flex min-h-0 flex-col gap-2 overflow-y-auto", className)}>
+            {view.detail !== "" ? (
+                <div className="whitespace-pre-wrap break-words rounded-[6px] border border-edge-mid bg-surface-code px-[9px] py-[7px] font-mono text-[10.5px] leading-[1.55] text-ink-hi">
+                    {view.detail}
+                </div>
+            ) : null}
+            {view.unverified.length > 0 ? (
+                <ul className="flex flex-col gap-1">
+                    {view.unverified.map((reason, i) => (
+                        <li key={i} className="flex items-baseline gap-[9px] text-[12px] leading-[1.5] text-secondary">
+                            <span aria-hidden className="size-[7px] flex-none rounded-full bg-warning" />
+                            <span className="min-w-0 whitespace-pre-wrap break-words">{reason}</span>
+                        </li>
+                    ))}
+                </ul>
+            ) : null}
+            <FinalPastRounds past={view.past} />
+        </div>
+    );
+}
+
+// The Final command's screenshots, opened in the run sheet's viewer. Draws nothing when there are none.
+export function FinalShotsLink({ group }: { group: TaskGroup | undefined }) {
+    const [open, setOpen] = useState(false);
+    const entry = finalCheckEntry(group ?? null);
+    if (group == null || entry == null || entry.dockDisabled) {
+        return null;
+    }
+    return (
+        <>
+            <button
+                type="button"
+                data-final-shots-link
+                onClick={() => setOpen(true)}
+                className={cn(LINK, "self-start")}
+            >
+                {entry.dockLabel}
+            </button>
+            {/* the viewer mounts only while open: mounting is what claims the keys and the modal stack */}
+            {open ? (
+                <FinalShotsViewer group={group} initial={{ round: entry.latestRound }} onClose={() => setOpen(false)} />
+            ) : null}
+        </>
+    );
+}
+
+// End final stage, while the stage runs. The form opens under the button, and a refusal from the engine
+// stays beside it.
+export function EndFinalStage({
+    group,
+    channelId,
+    runId,
+}: {
+    group: TaskGroup | undefined;
+    channelId: string;
+    runId: string;
+}) {
+    const [ending, setEnding] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const endable = finalStageEndable(group ?? null);
+    // a stage that stops being endable closes the form, or a later round's final stage would open on it
+    if (ending && !endable) {
+        setEnding(false);
+    }
+    if (!endable) {
+        return null;
+    }
+    return (
+        <div className="relative flex flex-none items-center gap-2">
+            {error != null ? <span className="text-[11px] text-error">{error}</span> : null}
+            <button
+                type="button"
+                data-final-end
+                aria-expanded={ending}
+                onClick={() => {
+                    setError(null);
+                    setEnding(true);
+                }}
+                className={dockButtonClass()}
+            >
+                End final stage
+            </button>
+            {ending ? (
+                <div className="absolute right-0 top-full z-10 mt-1.5 w-[340px] rounded-[9px] border border-edge-mid bg-surface-raised p-2.5">
+                    <EndFinalForm
+                        channelId={channelId}
+                        runId={runId}
+                        onClose={() => setEnding(false)}
+                        onError={setError}
+                    />
+                </div>
+            ) : null}
+        </div>
+    );
+}

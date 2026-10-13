@@ -125,7 +125,7 @@ describe("dagProgressLabel", () => {
             "Final check · verifying the merged result"
         );
     });
-    it("names the final stage's running step", () => {
+    it("leaves the final stage's running step to the stage's own row", () => {
         const allDone = [{ state: "done" }, { state: "done" }] as TaskGroup["tasks"];
         const at = (final: FinalStage): RunInfo => {
             const run = info("finalizing", allDone);

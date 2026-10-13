@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SEG_FILL, STRIP_MAX, taskStrip, taskStripLabel } from "./runstrip";
+import { FINAL_FILL, finalSlot, SEG_FILL, STRIP_MAX, taskStrip, taskStripLabel, treeStripLabel } from "./runstrip";
 
 const task = (id: string, state: string): TaskNode => ({ id, label: id, state }) as TaskNode;
 const dagOf = (...states: string[]) => ({ tasks: states.map((s, i) => task(`t-${i + 1}`, s)) }) as TaskGroup;
@@ -39,6 +39,40 @@ describe("taskStripLabel", () => {
     });
     it("names the questions waiting on you", () => {
         expect(taskStripLabel(dagOf("done", "running"), askingYou("t-2"))).toBe("1 of 2 tasks done, 1 asking you");
+    });
+});
+
+describe("finalSlot and treeStripLabel", () => {
+    const staged = (status: string, final?: FinalStage) => ({ ...dagOf("done", "done"), status, final }) as TaskGroup;
+    it("has no slot before the stage has a row, and the label is the tasks' alone", () => {
+        const dag = { ...dagOf("done", "running"), status: "running" } as TaskGroup;
+        expect(finalSlot(undefined)).toBeUndefined();
+        expect(finalSlot(dag)).toBeUndefined();
+        expect(treeStripLabel(dag, undefined)).toBe(taskStripLabel(dag, undefined));
+        expect(treeStripLabel(dag, askingYou("t-2"))).toBe(taskStripLabel(dag, askingYou("t-2")));
+    });
+    it("is the stage's state once the row exists", () => {
+        expect(finalSlot(staged("finalizing"))).toBe("wait");
+        expect(finalSlot(staged("finalizing", { state: "checking", round: 1, step: "verify" }))).toBe("run");
+        expect(finalSlot(staged("finalizing", { state: "verifying", round: 1 }))).toBe("run");
+        expect(finalSlot(staged("finalizing", { state: "failed", round: 1 }))).toBe("fail");
+        expect(finalSlot(staged("done", { state: "unverified", round: 1 }))).toBe("warn");
+        expect(finalSlot(staged("done", { state: "passed", round: 1 }))).toBe("pass");
+        // a fix round under way: the dag is running again, and the stage waits
+        expect(finalSlot(staged("running", { state: "", round: 2 }))).toBe("wait");
+    });
+    it("names the stage's state after the tasks", () => {
+        const label = (final: FinalStage) => treeStripLabel(staged("finalizing", final), undefined);
+        expect(label({ state: "checking", round: 1 })).toBe("2 of 2 tasks done, final verification running");
+        expect(label({ state: "failed", round: 1 })).toBe("2 of 2 tasks done, final verification failed");
+        expect(label({ state: "unverified", round: 1 })).toBe("2 of 2 tasks done, final verification unverified");
+        expect(label({ state: "passed", round: 1 })).toBe("2 of 2 tasks done, final verification passed");
+        expect(label({ state: "", round: 2 })).toBe("2 of 2 tasks done, final verification waiting");
+    });
+    it("has a fill for every state of the slot", () => {
+        for (const tone of ["wait", "run", "pass", "fail", "warn"] as const) {
+            expect(FINAL_FILL[tone]).toMatch(/^bg-[a-z-]+$/);
+        }
     });
 });
 

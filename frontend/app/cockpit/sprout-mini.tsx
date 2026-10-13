@@ -454,11 +454,12 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
 
             <PetBubble
                 event={speaking ? bubble : null}
+                agents={agents}
                 anchor={anchor}
                 corner="bottom-right"
                 placement={openPlacement(sides)}
                 flat
-                onOpen={openPetBubble}
+                onOpen={() => openPetBubble(model)}
                 onDismiss={dismissPetBubble}
             />
 

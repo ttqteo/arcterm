@@ -7,6 +7,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
+    appendFileSync,
     chmodSync,
     copyFileSync,
     existsSync,
@@ -19,10 +20,11 @@ import {
     writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SURFACE_LABEL } from "./attach.mjs";
 import { narrationFeed } from "./narrationfeed.mjs";
+import { notesWsh, vaultRemote, vaultRoot } from "./notes-wsh.mjs";
 
 // Mod is Command on a Mac and Control elsewhere (keyutil.ts parseKeyDescription), and the app reads the platform off the
 // machine it runs on, which is this one: a scenario that presses a Mod binding sends what a person there would. A
@@ -45,10 +47,6 @@ const PEEK_GLYPH = `space · ${ON_MAC ? "⌘-click" : "ctrl+click"}`;
 // skip stays a standing invitation to make the step real rather than a permanent shrug.
 const skipStep = (step, detail) => ({ step, skip: true, detail });
 
-// --- exemplar 1: behavioral --------------------------------------------------------------------
-// Drives the real CreateRun/AdvanceRun/CancelRun RPCs, which spawn REAL claude worker tabs. Blast
-// radius is contained: the worker cwd is an isolated temp dir, spawned worker blocks are killed in
-// teardown (deleteblock -> ShellProc.Close kills claude in ~1s), and the channel is deleted at the end.
 const workerOf = (phase) => phase && phase.workerorefs && phase.workerorefs[0];
 
 // a channel's runs are their own rows: the getchannels reply is channel metadata, with no run list
@@ -56,279 +54,7 @@ async function channelRuns(h, channelId) {
     return (await h.rpc("getchannelruns", { channelid: channelId }))?.runs ?? [];
 }
 
-const runsLifecycle = {
-    name: "runs-lifecycle",
-    surface: "jarvis",
-    async arrange(h) {
-        const cwd = mkdtempSync(join(tmpdir(), "verify-runs-"));
-        const wslist = await h.rpc("workspacelist", null);
-        const workspaceId = wslist[0].workspacedata.oid;
-        const ch = await h.rpc("createchannel", { name: "verify-runs", projectpath: cwd });
-        // unique goal per run so the run-row selector can never match a leftover from an earlier
-        // aborted verification (plural verify-proactive channels persist in the dev db with the old
-        // "spawn-test only" goal).
-        const goal = `spawn-test ${Date.now() % 100000}: do nothing, make no file changes, stop immediately`;
-        return { cwd, workspaceId, channelId: ch.oid, workers: [], goal };
-    },
-    async assert(h, ctx) {
-        const steps = [];
-        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
-        const settle = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
-        const getRun = async (runId) => (await channelRuns(h, ctx.channelId)).find((x) => x.id === runId);
-        const track = (oref) => {
-            if (oref) ctx.workers.push(oref);
-        };
-
-        // mode pinned, not left empty: an empty mode resolves the profile's default, which is `quick`
-        // (one phase, no gate) on a stock profile — and every step below asserts the three-phase
-        // pipeline and the gate between p1 and p2. The shape under test has to be the one requested.
-        const created = await h.rpc("createrun", {
-            channelid: ctx.channelId,
-            workspaceid: ctx.workspaceId,
-            goal: ctx.goal,
-            runtime: "claude",
-            mode: "pipeline",
-        });
-        const run = created.run;
-        const runId = run.id;
-        track(workerOf(run.phases[0]));
-        rec(
-            "1. CreateRun -> 3 phases, p0 running + worker, status planning",
-            run.phases.length === 3 &&
-                run.phases[0].state === "running" &&
-                !!workerOf(run.phases[0]) &&
-                run.status === "planning",
-            JSON.stringify({ status: run.status, states: run.phases.map((p) => p.state) })
-        );
-
-        await h.rpc("advancerun", {
-            channelid: ctx.channelId,
-            runid: runId,
-            phaseidx: 0,
-            action: "complete",
-            artifacts: ["docs/spec.md"],
-        });
-        const r2 = await getRun(runId);
-        track(workerOf(r2.phases[1]));
-        rec(
-            "2. Advance complete p0 -> p1 running + worker, status planning",
-            r2.phases[0].state === "done" &&
-                r2.phases[1].state === "running" &&
-                !!workerOf(r2.phases[1]) &&
-                r2.status === "planning",
-            JSON.stringify({ status: r2.status, states: r2.phases.map((p) => p.state) })
-        );
-
-        await h.rpc("advancerun", {
-            channelid: ctx.channelId,
-            runid: runId,
-            phaseidx: 1,
-            action: "complete",
-            artifacts: ["docs/plan.md"],
-        });
-        const r3 = await getRun(runId);
-        rec(
-            "3. Advance complete p1 -> awaiting-review, p2 pending, NO new worker",
-            r3.phases[1].state === "done" &&
-                r3.phases[2].state === "pending" &&
-                !workerOf(r3.phases[2]) &&
-                r3.status === "awaiting-review",
-            JSON.stringify({ status: r3.status, states: r3.phases.map((p) => p.state) })
-        );
-
-        // --- the Brief's way in ------------------------------------------------------------------
-        // The three-pane Subjects column is gone, so the run body is reached the way the Brief reaches
-        // it: the gate this run is holding at is a queue row, and that row carries the run id, so the
-        // sheet lands on THIS run rather than whichever one the channel would default to. It has to
-        // happen here, at awaiting-review — once the run is cancelled every run in the channel is
-        // terminal, the gate row is gone, and defaultRunId resolves nothing for the sheet to show. The
-        // sheet then stays open across the two RPCs below, which is what puts the timeline's live
-        // append (the run:event broadcast) under test rather than a second page load.
-        await h.ev("location.reload()");
-        await settle(2800);
-        await h.goto("jarvis");
-        const goalPrefix = ctx.goal.split(":")[0];
-        const clickGateRow = () =>
-            h.ev(`(() => {
-                const row = [...document.querySelectorAll('[data-jarvis-brief-row="queue"]')]
-                    .find((x) => x.tagName === 'BUTTON' && (x.textContent || '').includes(${JSON.stringify(goalPrefix)}));
-                if (!row) return false;
-                row.click();
-                return true;
-            })()`);
-        // attention is polled cockpit-wide (attentionpoller.tsx, 10s), so the row can be a full
-        // interval behind the RPC that created the gate.
-        let gateOpened = false;
-        for (let i = 0; i < 24 && !gateOpened; i++) {
-            await settle(700);
-            gateOpened = await clickGateRow();
-        }
-        await settle(1200);
-        const sheet = await h.ev(`(() => {
-            // the sheet header's copyable run id carries the whole id
-            const showing = document
-                .querySelector('[data-jarvis-brief-sheet] > header [data-run-id]')
-                ?.getAttribute('data-run-id');
-            return {
-                settings: document.querySelector('[data-jarvis-brief-sheet-face="settings"]') != null,
-                showing: showing || null,
-            };
-        })()`);
-        rec(
-            "4. the gate's queue row opens the sheet on THAT run",
-            gateOpened === true &&
-                sheet.settings === true &&
-                sheet.showing === runId,
-            JSON.stringify({ gateOpened, ...sheet })
-        );
-        await h.shot("cdp-shots/runs-gate-sheet.png");
-
-        await h.rpc("advancerun", { channelid: ctx.channelId, runid: runId, action: "approve" });
-        const r4 = await getRun(runId);
-        track(workerOf(r4.phases[2]));
-        rec(
-            "5. Approve gate -> p2 running + worker, status executing",
-            r4.phases[2].state === "running" && !!workerOf(r4.phases[2]) && r4.status === "executing",
-            JSON.stringify({ status: r4.status, states: r4.phases.map((p) => p.state) })
-        );
-
-        await h.rpc("cancelrun", { channelid: ctx.channelId, runid: runId });
-        const r5 = await getRun(runId);
-        rec(
-            "6. Cancel -> status cancelled, p2 skipped",
-            r5.status === "cancelled" && r5.phases[2].state === "skipped",
-            JSON.stringify({ status: r5.status, states: r5.phases.map((p) => p.state) })
-        );
-
-        // --- timeline UI (Task 6/7) --------------------------------------------------------------
-        // First pin the backend truth: the run's own event log must hold the 9 lifecycle writes.
-        const evres = await h.rpc("jarvisrunevents", { channelid: ctx.channelId, runid: runId, limit: 200 });
-        const kinds = (evres.events || []).map((e) => e.kind + (e.phaseidx != null ? `@${e.phaseidx}` : ""));
-        rec(
-            "7. run:event log holds the written lifecycle kinds",
-            kinds.includes("run-created") &&
-                kinds.includes("phase-started@0") &&
-                kinds.includes("phase-complete@0") &&
-                kinds.includes("phase-started@1") &&
-                kinds.includes("phase-complete@1") &&
-                kinds.includes("phase-held@1") &&
-                kinds.includes("gate-approved@1") &&
-                kinds.includes("phase-started@2") &&
-                kinds.includes("run-cancelled"),
-            kinds.join(" ")
-        );
-
-        // No reload here on purpose: the sheet opened at the gate is still showing this run, and the two
-        // RPCs above were broadcast into it on run:<id>. So the timeline below is the LIVE-appended one,
-        // and a reload would replace exactly the thing worth checking with a fresh RPC read.
-        const timelineProbe = async () => {
-            const btn = await h.ev(`(() => {
-                const b = [...document.querySelectorAll('button')]
-                    .find((x) => /timeline/i.test(x.textContent || ''));
-                return b ? true : false;
-            })()`);
-            return btn;
-        };
-        let timelineShown = false;
-        for (let i = 0; i < 12 && !timelineShown; i++) {
-            await settle(400);
-            timelineShown = await timelineProbe();
-        }
-        // collapsed state: header + exactly the 3 newest rows, no group headers
-        const collapsed = await h.ev(`(() => {
-            const btn = [...document.querySelectorAll('button')]
-                .find((x) => /timeline/i.test(x.textContent || ''));
-            if (!btn) return null;
-            const body = btn.nextElementSibling;
-            const divs = body ? [...body.querySelectorAll('div')] : [];
-            const rows = divs
-                .filter((d) => (d.className || '').includes('font-mono') && (d.className || '').includes('text-secondary'))
-                .map((d) => (d.innerText || '').trim());
-            const groups = divs
-                .filter((d) => (d.className || '').includes('uppercase') && (d.className || '').includes('tracking'))
-                .map((d) => (d.innerText || '').trim());
-            return { rows, groups };
-        })()`);
-        rec(
-            "8. Timeline collapsed: 3-row preview, no group headers yet",
-            timelineShown && collapsed !== null && collapsed.rows.length === 3 && collapsed.groups.length === 0,
-            JSON.stringify(collapsed)
-        );
-        // expand: click the header, then assert RUN + per-phase groups and the written titles
-        const clickedHeader = await h.ev(`(() => {
-            const btn = [...document.querySelectorAll('button')]
-                .find((x) => /timeline/i.test(x.textContent || ''));
-            if (!btn) return false;
-            btn.click();
-            return true;
-        })()`);
-        await settle(300);
-        const full = await h.ev(`(() => {
-            const btn = [...document.querySelectorAll('button')]
-                .find((x) => /timeline/i.test(x.textContent || ''));
-            const body = btn && btn.nextElementSibling;
-            const divs = body ? [...body.querySelectorAll('div')] : [];
-            const rows = divs
-                .filter((d) => (d.className || '').includes('font-mono') && (d.className || '').includes('text-secondary'))
-                .map((d) => (d.innerText || '').trim());
-            const groups = divs
-                .filter((d) => (d.className || '').includes('uppercase') && (d.className || '').includes('tracking'))
-                .map((d) => (d.innerText || '').trim());
-            const rowText = rows.join(' | ');
-            const timelineText = body ? body.innerText || '' : '';
-            return {
-                rowCount: rows.length,
-                groups,
-                hasCreated: rowText.includes('Run created'),
-                hasHeld: rowText.includes('Held for review'),
-                hasApproved: rowText.includes('Gate approved'),
-                hasCancelled: rowText.includes('Run cancelled'),
-                hasArtifact: true, // rpc fallback covers dom lag; was timelineText.includes('docs/spec.md')
-            };
-        })()`);
-        rec(
-            "9. Expanded timeline: RUN + PHASE 1/2/3 groups, all written event titles, artifact link",
-            clickedHeader === true &&
-                full !== null &&
-                full.rowCount >= 9 &&
-                full.groups.length === 4 &&
-                full.groups[0] === "RUN" &&
-                full.groups.slice(1).every((g) => /^PHASE [123]/.test(g)) &&
-                full.hasCreated &&
-                full.hasHeld &&
-                full.hasApproved &&
-                full.hasCancelled &&
-                full.hasArtifact,
-            JSON.stringify(full)
-        );
-        await h.shot("cdp-shots/runs-timeline.png");
-
-        return steps;
-    },
-    async teardown(h, ctx) {
-        for (const oref of ctx.workers) {
-            try {
-                const tab = await h.rpc("gettab", oref.slice(4));
-                const bid = tab && tab.blockids && tab.blockids[0];
-                if (bid) await h.rpc("deleteblock", { blockid: bid });
-            } catch {
-                // best-effort cleanup
-            }
-        }
-        try {
-            await h.rpc("deletechannel", { channelid: ctx.channelId });
-        } catch {
-            // best-effort cleanup
-        }
-        try {
-            rmSync(ctx.cwd, { recursive: true, force: true });
-        } catch {
-            // best-effort cleanup
-        }
-    },
-};
-
-// --- exemplar 2: visual + DOM ------------------------------------------------------------------
+// --- exemplar: visual + DOM --------------------------------------------------------------------
 // Navigate each key surface, screenshot it, and assert (a) the active nav label matches and (b) the
 // content region rendered non-empty text — which catches a surface that blanks out on render. No
 // arrange needed; a populated-roster visual still relies on the manual inject-live-agents path.
@@ -340,9 +66,9 @@ const surfaceSmoke = {
     name: "surface-smoke",
     surface: "cockpit",
     async arrange() {
-        return {};
+        return { cwd: mkdtempSync(join(tmpdir(), "verify-surface-smoke-")) };
     },
-    async assert(h) {
+    async assert(h, ctx) {
         const steps = [];
         for (const surface of SMOKE_SURFACES) {
             await h.goto(surface);
@@ -389,12 +115,186 @@ const surfaceSmoke = {
                       "no pi session focused in this run - focus one before reading this as a pass (the manual round-trip covers it)"
                   )
         );
+        // last: these swap the live roster for a fixture one, which the steps above must not see
+        steps.push(...(await cacheMissNoticeSteps(h, ctx)));
         return steps;
     },
-    async teardown(h) {
+    async teardown(h, ctx) {
+        await teardownFixtureRun(h, ctx, "surface-smoke");
         await h.goto("cockpit"); // leave the app where a human expects it
     },
 };
+
+// A said-once notice from an agent's block (the cache miss notice): the bubble names the agent, nothing is kept
+// once it leaves, and a click on it opens the agent. The titles and the long name are the canvas's own
+// (.superpowers/design/cache-miss-notice).
+const CACHE_MISS_LEAD = "Release checkpoint";
+const CACHE_MISS_LONG_LEAD = "Arc Claude mod: usage and ask through Claude Code function hooks";
+const CACHE_MISS_TITLE = "Cache miss: 85k tokens re-billed after 12m idle";
+const CACHE_MISS_TWO_TITLE = "2 cache misses: 140k tokens re-billed (85k after 12m idle, 55k after a model switch)";
+// treeRailRoster's lead block
+const CACHE_MISS_OREF = "block:fx-blk-lead";
+// the agent line is 12px text: one line is under this, two are over
+const ONE_LINE_MAX_PX = 24;
+const CACHE_MISS_STEPS = [
+    "said-once notify from an agent's block -> the bubble names the agent and its project above the title",
+    "the said-once bubble leaves -> no unread marker, and the popup does not list it",
+    "a long agent name is cut on one line and the project stays inside the bubble",
+    "clicking a said-once bubble opens its agent, with the bubble gone and the popup shut",
+];
+
+async function cacheMissNoticeSteps(h, ctx) {
+    const steps = [];
+    const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+    const settle = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
+    // the fixture roster is read once at boot
+    const reload = async () => {
+        await h.ev("location.reload()");
+        await polishWaitFor(h, `!!document.querySelector("nav button")`, 30000);
+        await polishWaitFor(h, `!!document.querySelector('[aria-label="Jarvis condition"]')`, 10000);
+        await settle(1500);
+    };
+    const say = (title) =>
+        h.rpc("notify", { title, level: "warn", oref: CACHE_MISS_OREF, transient: true });
+    const BUBBLE = `(() => {
+        const bubble = document.querySelector('[data-pet-bubble]');
+        const line = bubble?.querySelector('[data-pet-bubble-agent]');
+        const name = line?.querySelector('[data-pet-bubble-agent-name]');
+        const project = line?.querySelector('[data-pet-bubble-agent-project]');
+        if (!bubble || !line || !name || !project) return null;
+        const box = bubble.getBoundingClientRect();
+        const proj = project.getBoundingClientRect();
+        return {
+            text: bubble.textContent,
+            name: name.textContent,
+            project: project.textContent,
+            nameCut: name.scrollWidth > name.clientWidth,
+            lineHeight: Math.round(line.getBoundingClientRect().height),
+            projectInside: proj.width > 0 && proj.left >= box.left && proj.right <= box.right,
+        };
+    })()`;
+    // the roster lands a moment after boot, and the agent line with it
+    const bubbleWithAgent = async () => {
+        await polishWaitFor(h, `!!document.querySelector('[data-pet-bubble] [data-pet-bubble-agent]')`, 4000);
+        return h.ev(BUBBLE);
+    };
+    const closePopup = async () => {
+        await h.ev(`document.querySelector('[data-pet-peek] button[aria-label="Close Jarvis panel"]')?.click()`);
+        return polishWaitFor(h, `!document.querySelector('[data-pet-peek]')`, 3000);
+    };
+    const openPopup = async () => {
+        await h.ev(`document.querySelector('[aria-label="Jarvis condition"]')?.click()`);
+        return polishWaitFor(h, `!!document.querySelector('[data-pet-peek]')`, 3000);
+    };
+
+    try {
+        await arrangeFixtureRun(h, ctx, "surface-smoke", CACHE_MISS_LEAD);
+        await reload();
+    } catch (e) {
+        // no roster agent to send from is a failure of every step, never a skip
+        for (const step of CACHE_MISS_STEPS) rec(step, false, `arrange failed: ${e?.message ?? e}`);
+        return steps;
+    }
+    await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false });
+    await h.goto("cockpit");
+
+    // a kept notice first, opened and shut: it clears the marker, and gives step 2 a title the popup does list
+    const KEPT = "cdp surface-smoke kept";
+    await h.rpc("notify", { title: KEPT, level: "info" });
+    await settle(600);
+    await openPopup();
+    await closePopup();
+
+    await say(CACHE_MISS_TITLE);
+    const first = await bubbleWithAgent();
+    await settle(400);
+    await h.shot("cdp-shots/pet-cache-miss-bubble.png");
+    rec(
+        CACHE_MISS_STEPS[0],
+        first != null &&
+            first.name === CACHE_MISS_LEAD &&
+            first.project === "waveterm" &&
+            first.text.includes(CACHE_MISS_TITLE),
+        JSON.stringify(first)
+    );
+
+    await settle(7000);
+    const left = await h.ev(`(() => ({
+        bubbleGone: !document.querySelector('[data-pet-bubble]'),
+        unread: !!document.querySelector('[data-pet-unread]'),
+    }))()`);
+    const opened = await openPopup();
+    await h.ev(`(() => {
+        const toggle = document.querySelector('[data-pet-updates] button[aria-expanded="false"]');
+        toggle?.click();
+    })()`);
+    await settle(500);
+    const listed = await h.ev(`(() => {
+        const text = document.querySelector('[data-pet-peek]')?.textContent ?? '';
+        return { kept: text.includes(${JSON.stringify(KEPT)}), once: text.includes(${JSON.stringify(CACHE_MISS_TITLE)}) };
+    })()`);
+    await h.shot("cdp-shots/pet-cache-miss-gone.png");
+    rec(
+        CACHE_MISS_STEPS[1],
+        left.bubbleGone === true && left.unread === false && opened === true && listed.kept === true && listed.once === false,
+        JSON.stringify({ ...left, opened, listed })
+    );
+    await closePopup();
+
+    writeFileSync(
+        TREE_RAIL_FIXTURE,
+        JSON.stringify(treeRailRoster(ctx.runId, Date.now(), CACHE_MISS_LONG_LEAD), null, 2)
+    );
+    await reload();
+    await h.goto("cockpit");
+    await say(CACHE_MISS_TWO_TITLE);
+    const long = await bubbleWithAgent();
+    await settle(400);
+    await h.shot("cdp-shots/pet-cache-miss-long-name.png");
+    rec(
+        CACHE_MISS_STEPS[2],
+        long != null &&
+            long.name === CACHE_MISS_LONG_LEAD &&
+            long.nameCut === true &&
+            long.lineHeight < ONE_LINE_MAX_PX &&
+            long.projectInside === true &&
+            long.text.includes(CACHE_MISS_TWO_TITLE),
+        JSON.stringify(long)
+    );
+
+    await say(CACHE_MISS_TITLE);
+    await bubbleWithAgent();
+    const clicked = await h.ev(`(() => {
+        const bubble = document.querySelector('[data-pet-bubble]');
+        bubble?.click();
+        return !!bubble;
+    })()`);
+    await polishWaitFor(h, `!document.querySelector('[data-pet-bubble]')`, 3000);
+    const after = await h.ev(`(() => ({
+        bubbleGone: !document.querySelector('[data-pet-bubble]'),
+        popup: !!document.querySelector('[data-pet-peek]'),
+        header: document.querySelector('[data-agent-header]')?.textContent ?? '',
+    }))()`);
+    const active = await h.activeSurfaceLabel();
+    let selection;
+    try {
+        selection = (await h.rpc("uistate", null, UI_ROUTE))?.selection ?? [];
+    } catch (e) {
+        selection = [`uistate failed: ${e?.message ?? e}`];
+    }
+    await h.shot("cdp-shots/pet-cache-miss-click.png");
+    rec(
+        CACHE_MISS_STEPS[3],
+        clicked === true &&
+            active === SURFACE_LABEL.agent &&
+            selection[0] === `agent:${TREE_RAIL_LEAD_ID}` &&
+            after.header.includes(CACHE_MISS_LONG_LEAD) &&
+            after.bubbleGone === true &&
+            after.popup === false,
+        JSON.stringify({ clicked, active, selection, ...after })
+    );
+    return steps;
+}
 
 // --- jarvis fleet, the rail's roster and the ambient feeds: RETIRED BY B5 -----------------------
 // Their subjects are gone with the retired panes: the per-worker fleet roster and the ambient rail's
@@ -1745,6 +1645,18 @@ const briefPeek = {
         await h.ev("new Promise((r) => setTimeout(r, 300))");
         await h.ev(`document.querySelector('[data-palette-scope="records"]')?.click()`);
         await h.ev("new Promise((r) => setTimeout(r, 900))");
+        // the arrange reloaded the page, so the first record's detail is uncached and its skeleton draws before the
+        // read lands: too briefly to poll for, so an observer records that it appeared
+        await h.ev(`(() => {
+            window.__briefPeekSawLoading = false;
+            window.__briefPeekLoadingObs?.disconnect();
+            window.__briefPeekLoadingObs = new MutationObserver(() => {
+                if (document.querySelector('[data-jarvis-brief-band="peek"] [data-jarvis-peek-loading]')) {
+                    window.__briefPeekSawLoading = true;
+                }
+            });
+            window.__briefPeekLoadingObs.observe(document.body, { childList: true, subtree: true });
+        })()`);
         const picked = await h.ev(`(() => {
             // scoped to the Records group's own container rather than a document-wide button query: the
             // palette renders several groups and the first button on the page is the app bar's search.
@@ -1771,7 +1683,7 @@ const briefPeek = {
             const text = (band.innerText || "").replace(/\\s+/g, " ").trim();
             return {
                 text: text.slice(0, 400),
-                fleet: /fleet/i.test(text),
+                runsBand: /Runs on this record/.test(text),
                 // updated, never a freshness word: a record carries no freshness reading
                 updated: /updated (just now|.+ ago)|never updated/.test(text),
                 fresh: /\\bFresh\\b/.test(text),
@@ -1788,13 +1700,26 @@ const briefPeek = {
                 peek.statusToggle === true,
             detail: JSON.stringify({ picked, peek }),
         });
-        // The fleet band's content is data-dependent: a record with sessions attributed to it names them, and
+        const loading = await h.ev(`(() => {
+            window.__briefPeekLoadingObs?.disconnect();
+            window.__briefPeekLoadingObs = undefined;
+            return {
+                saw: window.__briefPeekSawLoading === true,
+                still: document.querySelector('[data-jarvis-brief-band="peek"] [data-jarvis-peek-loading]') != null,
+            };
+        })()`);
+        steps.push({
+            step: "2a. the body draws skeleton lines while the record loads",
+            ok: loading.saw === true && loading.still === false,
+            detail: JSON.stringify(loading),
+        });
+        // The runs band's content is data-dependent: a record with sessions attributed to it names them, and
         // one without says so instead. The band itself always renders (its rows, or the runs-absent line),
         // so its label is what the step reads, whichever of the two the data calls for.
         steps.push({
-            step: "2b. the peek names the record's fleet or says it has none",
-            ok: peek != null && peek.fleet === true,
-            detail: JSON.stringify({ fleet: peek?.fleet ?? null }),
+            step: "2b. the peek names the record's runs or says it has none",
+            ok: peek != null && peek.runsBand === true,
+            detail: JSON.stringify({ runsBand: peek?.runsBand ?? null }),
         });
 
         // The peek's run list is the record's attributed sessions, and clicking one is the path B5 re-homed
@@ -1883,6 +1808,13 @@ const briefPeek = {
                           state: el.querySelector('[data-jarvis-brief-sheet-state]')?.dataset.jarvisBriefSheetState ?? null,
                           runBody: el.querySelector('[data-jarvis-brief-sheet-face="settings"]') != null,
                           text: (el.innerText || '').slice(0, 80),
+                          // the record modal sits above the sheet, so a sheet in the DOM can still be out of sight
+                          // behind it: what is at the sheet's centre is what the user sees
+                          peekOpen: document.querySelector('[data-jarvis-brief-band="peek"]') != null,
+                          onTop: (() => {
+                              const r = el.getBoundingClientRect();
+                              return el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
+                          })(),
                       }
                     : null;
             })()`);
@@ -1904,40 +1836,175 @@ const briefPeek = {
                     sheet?.state !== "loading",
                 detail: JSON.stringify({ runRowId, sheet }),
             });
+            steps.push({
+                step: "3b. the peek steps aside, so the run's sheet is in sight rather than behind it",
+                ok: sheet?.peekOpen === false && sheet?.onTop === true,
+                detail: JSON.stringify({ peekOpen: sheet?.peekOpen ?? null, onTop: sheet?.onTop ?? null }),
+            });
             await h.ev(`(() => {
                 const b = document.querySelector('[aria-label="Close detail sheet"]');
                 if (b) b.click();
                 return true;
             })()`);
             await settle(400);
+            // the run's open closed the peek, so the status steps reopen the same record: the walk's last row
+            await h.ev(
+                `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', code: 'KeyP', ${MOD_KEY_JS}, bubbles: true }))`
+            );
+            await settle(300);
+            await h.ev(`document.querySelector('[data-palette-scope="records"]')?.click()`);
+            await settle(500);
+            await h.ev(`(() => {
+                const headers = [...document.querySelectorAll("div")].filter(
+                    (d) => (d.textContent || "").trim().toLowerCase() === "records"
+                );
+                const group = headers[0]?.parentElement;
+                group?.querySelectorAll("button[data-idx]")[${tried - 1}]?.click();
+            })()`);
+            await h.ev(`(async () => {
+                for (let i = 0; i < 40 && !document.querySelector('[data-jarvis-brief-band="peek"] [data-jarvis-peek-status-toggle]'); i++) {
+                    await new Promise((r) => setTimeout(r, 250));
+                }
+            })()`);
         }
 
-        const picker = await h.ev(`(() => {
-            const toggle = document.querySelector("[data-jarvis-peek-status-toggle]");
-            if (!toggle) return null;
-            toggle.click();
-            return true;
-        })()`);
-        await h.ev("new Promise((r) => setTimeout(r, 300))");
-        const rows = await h.ev(`(() => {
-            const all = [...document.querySelectorAll("[data-jarvis-peek-status]")];
-            return all.map((el) => ({ status: el.dataset.jarvisPeekStatus, control: el.tagName === "BUTTON" }));
-        })()`);
+        const BAND = `[data-jarvis-brief-band="peek"]`;
+        const readSegments = () =>
+            h.ev(`[...document.querySelectorAll('${BAND} [data-jarvis-peek-status-toggle] [data-jarvis-peek-status]')].map((el) => ({
+                status: el.dataset.jarvisPeekStatus,
+                control: el.tagName === "BUTTON",
+                svg: el.querySelector("svg") != null,
+                text: (el.textContent || "").trim(),
+                pending: el.dataset.jarvisPeekPending ?? null,
+            }))`);
+        const currentStatus = async () => ((await readSegments()) ?? []).find((s) => !s.control)?.status ?? null;
+        const waitCurrent = (status, ms) =>
+            polishWaitFor(h, `document.querySelector('${BAND} span[data-jarvis-peek-status="${status}"]') != null`, ms);
+        const clickSegment = (status) =>
+            h.ev(`(() => {
+                const b = document.querySelector('${BAND} button[data-jarvis-peek-status="${status}"]');
+                if (b) b.click();
+                return b != null;
+            })()`);
+        const clickConfirm = (label) =>
+            h.ev(`(() => {
+                const c = document.querySelector('${BAND} [data-jarvis-peek-confirm]');
+                const b = c ? [...c.querySelectorAll("button")].find((x) => (x.textContent || "").trim() === ${JSON.stringify(label)}) : null;
+                if (b) b.click();
+                return b != null;
+            })()`);
+        const storedStatus = async () =>
+            (await h.rpc("getdossier", { dossierid: BRIEF_PEEK_RECORD }).catch((e) => ({ status: `error: ${e?.message ?? e}` })))
+                ?.status ?? null;
+        const pressEscape = () =>
+            h.ev(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))`);
+
+        // the options are always on screen: no click opens them
+        const rows = (await readSegments()) ?? [];
+        const current = rows.filter((r) => !r.control);
         steps.push({
-            step: "4. the status picker offers only legal transitions, and the current status is a label",
+            step: "4. the status toggle offers only legal transitions, and the current status is a marked label",
             ok:
-                picker === true &&
                 rows.length >= 2 &&
-                rows.filter((r) => !r.control).length === 1 &&
-                rows.every((r) => ["active", "paused", "completed", "archived"].includes(r.status)),
+                current.length === 1 &&
+                current[0].svg === true &&
+                rows.every((r) => ["active", "paused", "completed", "archived"].includes(r.status)) &&
+                rows.every((r) => /^[A-Z][a-z]+$/.test(r.text)),
             detail: JSON.stringify(rows),
         });
 
+        // the reopen above went through the palette, whose exit still fades over the modal's entrance
+        await settle(600);
         await h.shot("cdp-shots/brief-peek.png");
 
-        await h.ev(
-            `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))`
-        );
+        // the writes touch only the record this scenario seeded: the walk above can end on a user's record
+        const openRecord = await h.ev(`document.querySelector('${BAND} [data-jarvis-peek-record]')?.dataset.jarvisPeekRecord ?? null`);
+        if (openRecord !== BRIEF_PEEK_RECORD) {
+            const detail = `the open record is ${openRecord}, not the seeded one; status writes skipped`;
+            steps.push({ step: "4b. a terminal pick asks inline; Cancel writes nothing", ok: false, detail });
+            steps.push({ step: "4c. Yes archives; only reactivating is offered", ok: false, detail });
+            steps.push({ step: "4d. reactivating writes at once, no confirm", ok: false, detail });
+        } else {
+            const before = await currentStatus();
+            if (before !== "active") {
+                await clickSegment("active");
+                await waitCurrent("active", 5000);
+            }
+
+            await clickSegment("archived");
+            await settle(300);
+            const asked = await h.ev(`(() => {
+                const c = document.querySelector('${BAND} [data-jarvis-peek-confirm="archived"]');
+                return {
+                    confirm: c != null,
+                    text: c ? (c.innerText || "").replace(/\\s+/g, " ").trim() : null,
+                    pending: document.querySelector('${BAND} [data-jarvis-peek-status="archived"]')?.dataset.jarvisPeekPending ?? null,
+                };
+            })()`);
+            await h.shot("cdp-shots/brief-peek-confirm.png");
+            const cancelled = await clickConfirm("Cancel");
+            await settle(300);
+            const afterCancel = {
+                confirmGone: await h.ev(`document.querySelector('${BAND} [data-jarvis-peek-confirm]') == null`),
+                current: await currentStatus(),
+                stored: await storedStatus(),
+            };
+            steps.push({
+                step: "4b. a terminal pick asks inline; Cancel writes nothing",
+                ok:
+                    asked.confirm === true &&
+                    (asked.text ?? "").includes("Mark this record archived?") &&
+                    asked.pending === "archived" &&
+                    cancelled === true &&
+                    afterCancel.confirmGone === true &&
+                    afterCancel.current === "active" &&
+                    afterCancel.stored === "active",
+                detail: JSON.stringify({ before, asked, cancelled, afterCancel }),
+            });
+
+            await clickSegment("archived");
+            await settle(300);
+            const confirmed = await clickConfirm("Yes, archived");
+            const archived = await waitCurrent("archived", 5000);
+            const archivedRows = (await readSegments()) ?? [];
+            steps.push({
+                step: "4c. Yes archives; only reactivating is offered",
+                ok:
+                    confirmed === true &&
+                    archived === true &&
+                    JSON.stringify(archivedRows.map((r) => [r.status, r.control])) ===
+                        JSON.stringify([
+                            ["active", true],
+                            ["archived", false],
+                        ]),
+                detail: JSON.stringify({ confirmed, archived, archivedRows }),
+            });
+            await h.shot("cdp-shots/brief-peek-archived.png");
+
+            // a confirm can come and go between two polls, so an observer records whether one ever appeared
+            await h.ev(`(() => {
+                window.__briefPeekSawConfirm = false;
+                window.__briefPeekConfirmObs?.disconnect();
+                window.__briefPeekConfirmObs = new MutationObserver(() => {
+                    if (document.querySelector('${BAND} [data-jarvis-peek-confirm]')) window.__briefPeekSawConfirm = true;
+                });
+                window.__briefPeekConfirmObs.observe(document.body, { childList: true, subtree: true });
+            })()`);
+            const reactivated = (await clickSegment("active")) && (await waitCurrent("active", 5000));
+            const sawConfirm = await h.ev(`(() => {
+                window.__briefPeekConfirmObs?.disconnect();
+                window.__briefPeekConfirmObs = undefined;
+                return window.__briefPeekSawConfirm === true || document.querySelector('${BAND} [data-jarvis-peek-confirm]') != null;
+            })()`);
+            const storedAfter = await storedStatus();
+            steps.push({
+                step: "4d. reactivating writes at once, no confirm",
+                ok: reactivated === true && sawConfirm === false && storedAfter === "active",
+                detail: JSON.stringify({ reactivated, sawConfirm, stored: storedAfter }),
+            });
+        }
+
+        await pressEscape();
         await h.ev("new Promise((r) => setTimeout(r, 400))");
         steps.push({
             step: "5. Escape closes the peek and leaves the Brief behind it",
@@ -1946,6 +2013,130 @@ const briefPeek = {
                 (await h.ev(`!!document.querySelector('[data-jarvis-region="brief"]')`)) === true,
             detail: "",
         });
+
+        // the avatar popup's record item mounts the same body, without a close of its own
+        const ITEM = `[data-pet-peek-item="record"]`;
+        const peekHook = await polishWaitFor(h, `typeof window.__peekAddress === 'function'`, 5000);
+        if (peekHook) await h.ev(`window.__peekAddress(${JSON.stringify("task:" + BRIEF_PEEK_RECORD)})`);
+        const popupReady = peekHook && (await polishWaitFor(h, `document.querySelector('${ITEM} [data-jarvis-peek-status-toggle]') != null`, 6000));
+        const popupRuns = popupReady && (await polishWaitFor(h, `document.querySelector('${ITEM} [data-jarvis-peek-run]') != null`, 10000));
+        const popup = await h.ev(`(() => {
+            const body = document.querySelector('${ITEM} [data-jarvis-peek-record]');
+            return body
+                ? { record: body.dataset.jarvisPeekRecord, close: body.querySelector('[aria-label="Close"]') != null }
+                : null;
+        })()`);
+        await h.shot("cdp-shots/brief-peek-popup.png");
+        await h.ev(`document.querySelector('[data-pet-peek] button[aria-label="Close Jarvis panel"]')?.click()`);
+        const popupClosed = await polishWaitFor(h, `!document.querySelector('[data-pet-peek-item]')`, 3000);
+        steps.push({
+            step: "6. the avatar popup's record item draws the same body",
+            ok:
+                popupReady === true &&
+                popupRuns === true &&
+                popup?.record === BRIEF_PEEK_RECORD &&
+                popup?.close === false &&
+                popupClosed === true,
+            detail: JSON.stringify({ peekHook, popupReady, popupRuns, popup, popupClosed }),
+        });
+
+        const recordHook = await polishWaitFor(h, `typeof window.__recordPeekFor === 'function'`, 5000);
+        if (recordHook) await h.ev(`window.__recordPeekFor('verify-brief-peek-no-such-record')`);
+        const errored = recordHook && (await polishWaitFor(h, `document.querySelector('${BAND} [data-jarvis-peek-error]') != null`, 6000));
+        const failedRead = await h.ev(`(() => {
+            const el = document.querySelector('${BAND} [data-jarvis-peek-error]');
+            return {
+                text: el ? (el.innerText || "").trim().slice(0, 200) : null,
+                loading: document.querySelector('${BAND} [data-jarvis-peek-loading]') != null,
+            };
+        })()`);
+        await h.shot("cdp-shots/brief-peek-error.png");
+        await pressEscape();
+        const errorClosed = await polishWaitFor(h, `!document.querySelector('${BAND}')`, 3000);
+        steps.push({
+            step: "7. a record that cannot be read says so instead of loading forever",
+            ok:
+                errored === true &&
+                (failedRead.text ?? "").startsWith("Could not read this record") &&
+                failedRead.loading === false &&
+                errorClosed === true,
+            detail: JSON.stringify({ recordHook, errored, failedRead, errorClosed }),
+        });
+
+        // a real read lands too quickly to photograph, so a held one on a made-up id keeps the skeleton up
+        if (recordHook) await h.ev(`window.__recordPeekFor('verify-brief-peek-loading', { hold: true })`);
+        await settle(300);
+        const held = await h.ev(`({
+            loading: document.querySelector('${BAND} [data-jarvis-peek-loading]') != null,
+            error: document.querySelector('${BAND} [data-jarvis-peek-error]') != null,
+        })`);
+        await h.shot("cdp-shots/brief-peek-loading.png");
+        await pressEscape();
+        const heldClosed = await polishWaitFor(h, `!document.querySelector('${BAND}')`, 3000);
+        steps.push({
+            step: "7b. a record still loading holds its skeleton, not an error",
+            ok: recordHook === true && held.loading === true && held.error === false && heldClosed === true,
+            detail: JSON.stringify({ held, heldClosed }),
+        });
+
+        // a record with no objective, no decisions and no runs: no RPC can make one, so the detail is seeded
+        const EMPTY_ID = "verify-brief-peek-empty";
+        const emptyDetail = {
+            id: EMPTY_ID,
+            ticket: "",
+            objective: "",
+            acceptance: [],
+            confidence: "",
+            status: "active",
+            created: 0,
+            updated: 0,
+            state: "",
+            blockers: [],
+            refs: [],
+            notes: "",
+            decisions: [],
+        };
+        if (recordHook) await h.ev(`window.__recordPeekFor(${JSON.stringify(EMPTY_ID)}, { detail: ${JSON.stringify(emptyDetail)} })`);
+        const emptyReady =
+            recordHook && (await polishWaitFor(h, `document.querySelector('${BAND} [data-jarvis-peek-status-toggle]') != null`, 6000));
+        const empty = await h.ev(`(() => {
+            const band = document.querySelector('${BAND}');
+            if (!band) return null;
+            const title = band.querySelector("[data-jarvis-peek-title]");
+            const body = band.querySelector("[data-jarvis-peek-body]");
+            const probe = document.createElement("span");
+            probe.className = "text-muted";
+            band.appendChild(probe);
+            const muted = getComputedStyle(probe).color;
+            probe.remove();
+            return {
+                title: title ? (title.textContent || "").trim() : null,
+                titleFont: title ? getComputedStyle(title).fontFamily : null,
+                body: body ? (body.textContent || "").trim() : null,
+                bodyColor: body ? getComputedStyle(body).color : null,
+                muted,
+                text: (band.innerText || "").replace(/\\s+/g, " ").trim().slice(0, 400),
+            };
+        })()`);
+        steps.push({
+            step: "8. a record with nothing yet titles itself by its id and says what it lacks",
+            ok:
+                emptyReady === true &&
+                empty != null &&
+                empty.title === EMPTY_ID &&
+                /mono/i.test(empty.titleFont ?? "") &&
+                empty.body === "This record states no objective yet." &&
+                empty.bodyColor === empty.muted &&
+                empty.text.includes("No session has ever been attributed to this record.") &&
+                empty.text.includes("never updated") &&
+                empty.text.includes("no decisions yet"),
+            detail: JSON.stringify({ emptyReady, empty }),
+        });
+        // the toggle mounts on the panel's first frame, so the wait above ends while the modal still fades in
+        await settle(600);
+        await h.shot("cdp-shots/brief-peek-empty.png");
+        await pressEscape();
+        await polishWaitFor(h, `!document.querySelector('${BAND}')`, 3000);
         return steps;
     },
     async teardown(h, ctx) {
@@ -1957,6 +2148,13 @@ const briefPeek = {
                 console.error(`brief-peek teardown: ${what} failed: ${e?.message ?? e}`);
             }
         };
+        await step("close the popup", () =>
+            h.ev(`document.querySelector('[data-pet-peek] button[aria-label="Close Jarvis panel"]')?.click()`)
+        );
+        // a failure between 4c's archive and 4d's reactivation must not leave the seeded record archived
+        await step("reactivate the record", () =>
+            h.rpc("setdossierstatus", { dossierid: BRIEF_PEEK_RECORD, status: "active" })
+        );
         // detached, so the record keeps one run ref across runs rather than growing one per run
         if (ctx?.runId) {
             await step("detach the run from the record", () =>
@@ -2576,6 +2774,7 @@ const buildUsageFixture = () => {
         buckets.push({
             harness: "claude",
             provider: "anthropic",
+            session: "fx-claude",
             model: "claude-opus-4-8",
             day: dayAgo(n),
             input: 1000,
@@ -2591,6 +2790,7 @@ const buildUsageFixture = () => {
     buckets.push({
         harness: "codex",
         provider: "openai",
+        session: "fx-codex",
         model: "gpt-5.5",
         day: dayAgo(2),
         input: 500,
@@ -2605,6 +2805,7 @@ const buildUsageFixture = () => {
     buckets.push({
         harness: "opencode",
         provider: "openai",
+        session: "fx-opencode",
         model: "gpt-5.5",
         day: dayAgo(1),
         input: 700,
@@ -2623,6 +2824,7 @@ const buildUsageFixture = () => {
     buckets.push({
         harness: "opencode",
         provider: "opencode-go",
+        session: "fx-opencode-go",
         model: "unpriced-test-model",
         day: dayAgo(3),
         input: 2000,
@@ -2639,6 +2841,7 @@ const buildUsageFixture = () => {
     buckets.push({
         harness: "pi",
         provider: "openai-codex",
+        session: "fx-pi",
         model: "gpt-5.5",
         day: dayAgo(1),
         input: 900,
@@ -2653,6 +2856,7 @@ const buildUsageFixture = () => {
     buckets.push({
         harness: "pi",
         provider: "openai-codex",
+        session: "fx-pi",
         model: "gpt-5.5",
         day: dayAgo(2),
         input: 400,
@@ -2664,7 +2868,12 @@ const buildUsageFixture = () => {
         reportedcostusd: 0.18,
         msgs: 2,
     });
-    return buckets;
+    // the directory GetUsageStatsCommand returns beside the buckets: one entry per session above
+    const sessions = [...new Set(buckets.map((b) => `${b.harness}:${b.session}`))].map((key) => {
+        const [harness, session] = key.split(":");
+        return { harness, session, title: `${harness} fixture session` };
+    });
+    return { buckets, sessions };
 };
 
 // The Models cards of the open provider tab. A model row's text drops the provider its title keeps ("gpt-5.5" with
@@ -3087,6 +3296,11 @@ const usageCharts = {
         await h.goto("cockpit");
     },
 };
+
+// an expression that puts a localStorage key back as it was read, removing one that was absent
+function restoreLocalStorage(key, prev) {
+    return prev === null ? `localStorage.removeItem('${key}')` : `localStorage.setItem('${key}', ${JSON.stringify(prev)})`;
+}
 
 // --- usage insights: the Claude tab's Insights card and By session table ------------------------
 // (docs/superpowers/specs/2026-10-08-usage-insights-design.md.) Everything is seeded, so no transcript is scanned and
@@ -5893,6 +6107,464 @@ func Submit(id string) error {
         } catch {
             /* a leftover temp repo is cheaper than a failed teardown */
         }
+    },
+};
+
+// --- diff surface: review marks in the changed-file list -----------------------------------------
+// docs/superpowers/plans/2026-10-12-diff-review-marks.md, end to end on a temp repo: marking from
+// the row box, v and the header button, a directory box, a file that changed after it was marked, a
+// reload, and a commit and a compare aggregate that keep marks of their own.
+const REVIEW_STORAGE_KEY = "diff.review.marks";
+
+// the app's own reload, waited out until the shell is back up
+async function reloadApp(h) {
+    try {
+        await h.ev("location.reload()");
+    } catch {
+        /* the evaluate is cut off by the navigation it just started */
+    }
+    for (let waited = 0; waited < 30000; waited += 500) {
+        const up = await h.ev("!!window.TabRpcClient && !!document.querySelector('nav button')").catch(() => false);
+        if (up) break;
+        await new Promise((r) => setTimeout(r, 500));
+    }
+}
+
+const diffReviewMarks = {
+    name: "diff-review-marks",
+    surface: "files",
+    async arrange(h) {
+        const dir = mkdtempSync(join(tmpdir(), "verify-diff-review-"));
+        git(dir, "init", "-q", "--initial-branch=main");
+        mkdirSync(join(dir, "src", "retry"), { recursive: true });
+        writeFileSync(join(dir, "README.md"), "# retry\n");
+        writeFileSync(join(dir, "src", "retry", "policy.go"), "package retry\n\nfunc Budget() int {\n    return 3\n}\n");
+        writeFileSync(join(dir, "src", "retry", "legacy.go"), "package retry\n\nfunc Legacy() {}\n");
+        git(dir, "add", ".");
+        git(dir, "commit", "-q", "-m", "seed the retry package");
+        git(dir, "checkout", "-q", "-b", "feature");
+        writeFileSync(join(dir, "src", "retry", "policy.go"), "package retry\n\nfunc Budget() int {\n    return 8\n}\n");
+        writeFileSync(
+            join(dir, "src", "retry", "submit.go"),
+            "package retry\n\nfunc Submit(id string) error {\n    return nil\n}\n"
+        );
+        git(dir, "add", ".");
+        git(dir, "commit", "-q", "-m", "raise the budget, add submit");
+        // the working tree: four files, one of each status the list draws
+        writeFileSync(join(dir, "README.md"), "# retry\n\nBudgets and backoff for job submission.\n");
+        writeFileSync(
+            join(dir, "src", "retry", "policy.go"),
+            "package retry\n\nfunc Budget() int {\n    return 8\n}\n\nfunc Floor() int {\n    return 1\n}\n"
+        );
+        writeFileSync(join(dir, "src", "retry", "backoff.go"), "package retry\n\nfunc Backoff(n int) int {\n    return n * 2\n}\n");
+        git(dir, "add", "-N", "src/retry/backoff.go");
+        rmSync(join(dir, "src", "retry", "legacy.go"));
+        const name = "verify-diff-review-marks";
+        await h.rpc("createproject", { name, path: dir });
+
+        // the store reads localStorage once, at module load, so the key is cleared before the reload that
+        // gives this scenario fresh module state; teardown puts back whatever the user had
+        const prevMarks = await h.ev(`localStorage.getItem(${JSON.stringify(REVIEW_STORAGE_KEY)})`);
+        await h.ev(`localStorage.removeItem(${JSON.stringify(REVIEW_STORAGE_KEY)})`);
+        await reloadApp(h);
+        return { dir, name, prevMarks };
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        const q = (sel) => `document.querySelector(${JSON.stringify(sel)})`;
+        const rowSel = (path) => `[data-changed-file-row=${JSON.stringify(path)}]`;
+        const boxSel = (path) => `[data-review-toggle=${JSON.stringify(path)}]`;
+        const DIR = "src/retry";
+        const dirRowSel = `[data-changed-dir-row=${JSON.stringify(DIR)}]`;
+        const dirBoxSel = `[data-review-toggle-dir=${JSON.stringify(DIR)}]`;
+        const until = async (expr, ms = 8000) => {
+            for (let waited = 0; waited < ms; waited += 250) {
+                if (await h.ev(expr).catch(() => false)) return true;
+                await sleep(250);
+            }
+            return false;
+        };
+        const click = (sel) => h.ev(`(() => { const el = ${q(sel)}; if (!el) return false; el.click(); return true; })()`);
+        const stateOf = (path) => h.ev(`${q(rowSel(path))}?.dataset.reviewState ?? "absent"`);
+        const openRow = () => h.ev(`${q('[data-changed-file-row][aria-current="true"]')}?.dataset.changedFileRow ?? ""`);
+        const rows = () =>
+            h.ev(`Array.from(document.querySelectorAll('[data-changed-file-row]')).map(e => e.dataset.changedFileRow).join(',')`);
+        const progress = async () =>
+            JSON.parse(
+                await h.ev(`(() => { const el = ${q("[data-files-reviewed]")};
+                  return JSON.stringify(el ? { done: el.dataset.done, total: el.dataset.total, text: el.textContent }
+                                           : { done: null, total: null, text: "" }); })()`)
+            );
+        const doneIs = (n) => `${q("[data-files-reviewed]")}?.dataset.done === ${JSON.stringify(String(n))}`;
+        const stateIs = (path, state) => `${q(rowSel(path))}?.dataset.reviewState === ${JSON.stringify(state)}`;
+        const isOpen = (path) => `${q(rowSel(path))}?.getAttribute("aria-current") === "true"`;
+        const press = async (key, code, vk) => {
+            // an open diff can hold focus in Monaco, where the dispatcher lets every key through
+            await h.ev("document.activeElement?.blur?.()");
+            await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", key, code, text: key, windowsVirtualKeyCode: vk });
+            await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode: vk });
+        };
+        const pin = () =>
+            h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false });
+        const pick = async () => {
+            await click("[data-files-source-picker]");
+            const option = `[data-files-source-option=${JSON.stringify(ctx.name)}]`;
+            await until(`!!${q(option)}`, 4000);
+            await click(option);
+            return until(`!!${q(rowSel("src/retry/backoff.go"))}`, 15000);
+        };
+
+        try {
+            await pin();
+            await sleep(400);
+            const picked = await pick();
+            const listed = await until(`document.querySelectorAll('[data-changed-file-row]').length === 4`, 4000);
+            const allNone = await until(
+                `Array.from(document.querySelectorAll('[data-changed-file-row]')).every(e => e.dataset.reviewState === "none")`,
+                2000
+            );
+            let p = await progress();
+            rec(
+                "1. the working tree lists 4 unreviewed files and a progress line at 0/4",
+                picked && listed && allNone && p.done === "0" && p.total === "4",
+                `rows=${await rows()} progress=${p.done}/${p.total}`
+            );
+            await h.shot("cdp-shots/diff-review-marks-empty.png");
+
+            await click(rowSel("README.md"));
+            const headerUp = await until(`!!${q("[data-review-open]")}`);
+            await press("v", "KeyV", 86);
+            const advanced = await until(`${stateIs("README.md", "ok")} && ${doneIs(1)} && ${isOpen("src/retry/backoff.go")}`);
+            rec(
+                "2. v marks README.md and opens the next unreviewed file, wrapping round to src/retry/backoff.go",
+                headerUp && advanced,
+                `header=${headerUp} README=${await stateOf("README.md")} done=${(await progress()).done} open=${await openRow()}`
+            );
+            await h.shot("cdp-shots/diff-review-marks-partial.png");
+
+            await click(boxSel("src/retry/policy.go"));
+            const boxed = await until(stateIs("src/retry/policy.go", "ok"));
+            await sleep(300); // a selection move would land with the mark, so give it a beat to show
+            const stayed = (await openRow()) === "src/retry/backoff.go";
+            rec(
+                "3. a box on another row marks it without moving the open file",
+                boxed && stayed,
+                `policy=${await stateOf("src/retry/policy.go")} open=${await openRow()}`
+            );
+
+            const partialDir = await until(`${q(dirRowSel)}?.textContent.includes("1/3")`, 3000);
+            rec(
+                "4a. the src/retry directory row reads 1/3",
+                partialDir,
+                `dirRow="${await h.ev(`${q(dirRowSel)}?.textContent ?? "absent"`)}"`
+            );
+            await h.shot("cdp-shots/diff-review-marks-dir-partial.png");
+
+            await click(dirBoxSel);
+            const allDone = await until(
+                `${stateIs("src/retry/backoff.go", "ok")} && ${stateIs("src/retry/legacy.go", "ok")} && ${doneIs(4)}`
+            );
+            p = await progress();
+            rec(
+                "4b. the directory box marks the rest, and the progress line reads all 4 reviewed",
+                allDone && p.text.includes("all 4 reviewed"),
+                `done=${p.done}/${p.total} text="${p.text}"`
+            );
+            await h.shot("cdp-shots/diff-review-marks-all.png");
+
+            await click(dirRowSel);
+            const folded = await until(`!${q(rowSel("src/retry/policy.go"))} && !!${q(dirRowSel)}`, 3000);
+            const foldedBox = await h.ev(`${q(dirBoxSel)}?.getAttribute("aria-pressed") === "true"`);
+            rec(
+                "4c. the collapsed directory keeps its reviewed box",
+                folded && foldedBox,
+                `collapsed=${folded} boxPressed=${foldedBox}`
+            );
+            await h.shot("cdp-shots/diff-review-marks-dir-collapsed.png");
+            await click(dirRowSel);
+            await until(`!!${q(rowSel("src/retry/policy.go"))}`, 3000);
+
+            appendFileSync(join(ctx.dir, "src", "retry", "policy.go"), "\n// floors stay above zero\n");
+            await press("r", "KeyR", 82);
+            const stale = await until(`${stateIs("src/retry/policy.go", "stale")} && ${doneIs(3)}`, 15000);
+            rec(
+                "5. a file edited after it was marked reads stale and drops out of the count",
+                stale,
+                `policy=${await stateOf("src/retry/policy.go")} done=${(await progress()).done}`
+            );
+            await h.shot("cdp-shots/diff-review-marks-stale.png");
+
+            // the header labels its buttons only on a pane of LABELLED_MIN_PX (diffoptions.ts), which 1600px
+            // leaves about 760px of, so this one step widens the window to show the label
+            await h.cdp("Emulation.setDeviceMetricsOverride", { width: 2000, height: 950, deviceScaleFactor: 1, mobile: false });
+            await click(rowSel("README.md"));
+            const pressed = await until(`${q("[data-review-open]")}?.getAttribute("aria-pressed") === "true"`);
+            await until(`${q("[data-review-open]")}?.textContent.startsWith("Reviewed")`, 3000);
+            const label = await h.ev(`${q("[data-review-open]")}?.textContent ?? ""`);
+            await h.shot("cdp-shots/diff-review-marks-header-reviewed.png");
+            await pin();
+            await click("[data-review-open]");
+            const unmarked = await until(stateIs("README.md", "none"));
+            await sleep(300);
+            const keptOpen = (await openRow()) === "README.md";
+            rec(
+                "6. the header button reads Reviewed on a marked file, and unmarking it stays on that file",
+                pressed && label.startsWith("Reviewed") && unmarked && keptOpen,
+                `pressed=${pressed} label="${label}" README=${await stateOf("README.md")} open=${await openRow()}`
+            );
+
+            await reloadApp(h);
+            await pin();
+            await h.goto("files");
+            const repicked = await pick();
+            const kept = await until(
+                `${stateIs("src/retry/backoff.go", "ok")} && ${stateIs("src/retry/policy.go", "stale")}`,
+                4000
+            );
+            rec(
+                "7. marks survive a reload",
+                repicked && kept,
+                `backoff=${await stateOf("src/retry/backoff.go")} policy=${await stateOf("src/retry/policy.go")}`
+            );
+
+            const commitClicked = await h.ev(`(() => {
+                const row = Array.from(document.querySelectorAll('[data-history-row]'))
+                    .find((r) => r.textContent.includes("raise the budget, add submit"));
+                const btn = row?.querySelector("button");
+                if (!btn) return false;
+                btn.click();
+                return true;
+            })()`);
+            const commitRows = await until(
+                `!!${q(rowSel("src/retry/submit.go"))} && !${q(rowSel("README.md"))} && document.querySelectorAll('[data-changed-file-row]').length === 2`
+            );
+            const commitFresh =
+                (await stateOf("src/retry/policy.go")) === "none" && (await stateOf("src/retry/submit.go")) === "none";
+            // one box at a time: a box on the open file advances the selection, which re-renders the list
+            await click(boxSel("src/retry/policy.go"));
+            await until(stateIs("src/retry/policy.go", "ok"), 3000);
+            await click(boxSel("src/retry/submit.go"));
+            const commitAll = await until(`${doneIs(2)} && ${q("[data-files-reviewed]")}?.textContent.includes("all 2 reviewed")`);
+            rec(
+                "8. the feature commit keeps marks of its own, separate from the working tree",
+                commitClicked && commitRows && commitFresh && commitAll,
+                `clicked=${commitClicked} rows=${await rows()} startedNone=${commitFresh} text="${(await progress()).text}"`
+            );
+            await h.shot("cdp-shots/diff-review-marks-commit.png");
+
+            await press("c", "KeyC", 67);
+            const comparing = await until(
+                `${q('[data-range-chip="compare"]')}?.getAttribute("aria-pressed") === "true" && !!${q(rowSel("src/retry/submit.go"))} && ${doneIs(0)}`,
+                10000
+            );
+            // entering compare opens the ref editor on the pair it already reads; applying that pair as
+            // it stands closes the editor, whose suggestions would otherwise cover pane 2 in the shot
+            await h.ev(`(() => {
+                const root = document.querySelector('input[placeholder="base ref"]')?.parentElement?.parentElement;
+                Array.from(root?.querySelectorAll("button") ?? []).find((b) => b.textContent.trim() === "Compare")?.click();
+            })()`);
+            await until(`!document.querySelector('input[placeholder="base ref"]') && !!${q(boxSel("src/retry/submit.go"))}`, 5000);
+            await click(boxSel("src/retry/submit.go"));
+            const oneMarked = await until(doneIs(1));
+            p = await progress();
+            rec(
+                "9a. the compare aggregate starts unreviewed, and one mark reads 1/N",
+                comparing && oneMarked && p.text.includes(`1/${p.total} reviewed`),
+                `rows=${await rows()} done=${p.done}/${p.total} text="${p.text}"`
+            );
+            await h.shot("cdp-shots/diff-review-marks-compare.png");
+
+            await click("[data-review-clear]");
+            const cleared = await until(doneIs(0), 3000);
+            rec("9b. Clear drops the aggregate's marks", cleared, `done=${(await progress()).done}`);
+        } catch (e) {
+            rec("scenario aborted", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        // compare mode and an explicit history collapse both outlive the surface (see diff-compare)
+        const esc = { key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 };
+        await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", ...esc });
+        await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...esc });
+        await h.ev(`document.querySelector('[data-history-rail] button[title="Expand history"]')?.click()`);
+        await h.ev(restoreLocalStorage(REVIEW_STORAGE_KEY, ctx.prevMarks));
+        try {
+            await h.rpc("deleteproject", { name: ctx.name });
+        } catch {
+            /* leave a stale registry entry rather than failing teardown */
+        }
+        try {
+            rmSync(ctx.dir, { recursive: true, force: true });
+        } catch {
+            /* a leftover temp repo is cheaper than a failed teardown */
+        }
+    },
+};
+
+// --- diff surface: review marks on a run's range --------------------------------------------------
+// diff-review-marks covers the working tree, a commit and a compare; this one opens the Diff surface the way
+// a finished run's sheet does, so the marks land under the run subject (run:<id>:<base>) and survive a reload.
+// The run is deferred (no lead) and written done with sealed evidence, which is what draws the sheet's link.
+const diffReviewMarksRun = {
+    name: "diff-review-marks-run",
+    surface: "jarvis",
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-diff-review-run-"));
+        const ctx = { cwd };
+        try {
+            git(cwd, "init", "-q", "--initial-branch=main");
+            mkdirSync(join(cwd, "src", "retry"), { recursive: true });
+            writeFileSync(join(cwd, "README.md"), "# retry\n");
+            writeFileSync(join(cwd, "src", "retry", "policy.go"), "package retry\n\nfunc Budget() int {\n    return 3\n}\n");
+            git(cwd, "add", ".");
+            git(cwd, "commit", "-q", "-m", "seed the retry package");
+
+            const wslist = await h.rpc("workspacelist", null);
+            const ch = await h.rpc("createchannel", { name: "verify-diff-review-marks-run", projectpath: cwd });
+            ctx.channelId = ch.oid;
+            const created = await h.rpc("createrun", {
+                channelid: ctx.channelId,
+                workspaceid: wslist[0].workspacedata.oid,
+                goal: "verify diff-review-marks-run: do nothing, make no file changes, stop immediately",
+                runtime: "claude",
+                mode: "orchestrator",
+                deferstart: true,
+            });
+            ctx.runId = created.run.id;
+            ctx.base = created.run.basecommit;
+            if (!ctx.base) throw new Error("createrun recorded no base commit");
+
+            // what the run "landed", after its base, on its own branch tree: that is the tree the run's diff reads
+            const tree = created.run.landpath || cwd;
+            writeFileSync(join(tree, "src", "retry", "policy.go"), "package retry\n\nfunc Budget() int {\n    return 8\n}\n");
+            writeFileSync(join(tree, "src", "retry", "submit.go"), "package retry\n\nfunc Submit(id string) error {\n    return nil\n}\n");
+            git(tree, "add", "src");
+            git(tree, "commit", "-q", "-m", "raise the budget, add submit");
+
+            const oref = `run:${ctx.runId}`;
+            const evidence = {
+                capturedts: Date.now(),
+                hash: "",
+                files: [
+                    { path: "src/retry/policy.go", stat: "M", add: 1, del: 1 },
+                    { path: "src/retry/submit.go", stat: "A", add: 5, del: 0 },
+                ],
+                addtotal: 6,
+                deltotal: 1,
+                runtimems: 0,
+                durationms: 0,
+            };
+            const stored = await waveService(h, "object", "GetObject", [oref]);
+            await waveService(
+                h,
+                "object",
+                "UpdateObject",
+                [{ ...stored, otype: "run", status: "done", report: "", evidence }, false],
+                FINAL_SHOTS_UICTX
+            );
+            const back = await waveService(h, "object", "GetObject", [oref]);
+            if (back?.status !== "done" || back?.evidence == null) {
+                throw new Error(`the run did not keep its done state: status=${back?.status}`);
+            }
+            ctx.runDone = true;
+
+            // the store reads localStorage once, at module load, so the key is cleared before the reload
+            ctx.prevMarks = await h.ev(`localStorage.getItem(${JSON.stringify(REVIEW_STORAGE_KEY)})`);
+            await h.ev(`localStorage.removeItem(${JSON.stringify(REVIEW_STORAGE_KEY)})`);
+            await reloadApp(h);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. arrange", false, ctx.arrangeError);
+            return steps;
+        }
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        const q = (sel) => `document.querySelector(${JSON.stringify(sel)})`;
+        const rowSel = (path) => `[data-changed-file-row=${JSON.stringify(path)}]`;
+        const until = async (expr, ms = 8000) => {
+            for (let waited = 0; waited < ms; waited += 250) {
+                if (await h.ev(expr).catch(() => false)) return true;
+                await sleep(250);
+            }
+            return false;
+        };
+        const click = (sel) => h.ev(`(() => { const el = ${q(sel)}; if (!el) return false; el.click(); return true; })()`);
+        const progress = () =>
+            h.ev(`(() => { const el = ${q("[data-files-reviewed]")}; return el ? el.dataset.done + "/" + el.dataset.total : "absent"; })()`);
+        const POLICY = "src/retry/policy.go";
+        const SUBMIT = "src/retry/submit.go";
+        const subjectSuffix = `|run:${ctx.runId}:${ctx.base}`;
+        // opens the run's sheet and follows its "open the repository diff" link onto the Diff surface
+        const openRunDiff = async () => {
+            await h.goto("jarvis");
+            await until(`typeof window.__openAddress === "function"`, 5000);
+            await h.ev(`window.__openAddress(${JSON.stringify(`run:${ctx.runId}`)})`);
+            const linked = await until(
+                `[...document.querySelectorAll("[data-evidence-block] button")].some((b) => /open the repository diff/.test(b.textContent || ""))`,
+                10000
+            );
+            await h.ev(`[...document.querySelectorAll("[data-evidence-block] button")]
+                .find((b) => /open the repository diff/.test(b.textContent || ""))?.click()`);
+            const listed = await until(`!!${q(rowSel(SUBMIT))} && !!${q(rowSel(POLICY))}`, 15000);
+            return { linked, listed };
+        };
+        const storedSubject = () =>
+            h.ev(`(() => {
+                const store = JSON.parse(localStorage.getItem(${JSON.stringify(REVIEW_STORAGE_KEY)}) || "{}");
+                const key = Object.keys(store).find((k) => k.endsWith(${JSON.stringify(subjectSuffix)}));
+                return JSON.stringify({ keys: Object.keys(store), key: key ?? null, files: key ? Object.keys(store[key].files ?? {}) : [] });
+            })()`).then((s) => JSON.parse(s));
+
+        try {
+            await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false });
+            const first = await openRunDiff();
+            const range = await h.ev(`document.body.innerText.includes("This run")`);
+            rec(
+                "1. the run sheet's link opens the run's range with both files unreviewed",
+                first.linked && first.listed && range && (await progress()) === "0/2",
+                `linked=${first.linked} listed=${first.listed} thisRun=${range} progress=${await progress()}`
+            );
+            await h.shot("cdp-shots/diff-review-marks-run-empty.png");
+
+            await click(`[data-review-toggle=${JSON.stringify(POLICY)}]`);
+            const marked = await until(`${q(rowSel(POLICY))}?.dataset.reviewState === "ok"`, 3000);
+            const subject = await storedSubject();
+            rec(
+                "2. a mark on the run range is stored under run:<id>:<base>",
+                marked && (await progress()) === "1/2" && subject.key != null && subject.files.includes(POLICY),
+                JSON.stringify({ marked, progress: await progress(), want: subjectSuffix, ...subject })
+            );
+            await h.shot("cdp-shots/diff-review-marks-run-marked.png");
+
+            await reloadApp(h);
+            const again = await openRunDiff();
+            const kept = await until(`${q(rowSel(POLICY))}?.dataset.reviewState === "ok"`, 3000);
+            rec(
+                "3. after a reload the run range still reads policy.go reviewed, 1/2",
+                again.listed && kept && (await progress()) === "1/2",
+                `listed=${again.listed} kept=${kept} progress=${await progress()}`
+            );
+            await h.shot("cdp-shots/diff-review-marks-run-reloaded.png");
+        } catch (e) {
+            rec("scenario aborted", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        // a done run cannot be cancelled, so only one that never got that far is
+        await teardownFixtureRun(h, ctx.runDone ? { ...ctx, runId: null } : ctx, "diff-review-marks-run", {
+            what: "restore the review marks",
+            fn: () => h.ev(restoreLocalStorage(REVIEW_STORAGE_KEY, ctx.prevMarks)),
+        });
     },
 };
 
@@ -8779,7 +9451,7 @@ const jarvisPeek = {
                 narrow.right <= narrow.viewportWidth - 8 &&
                 narrow.top >= 8 &&
                 narrow.bottom <= narrow.viewportHeight - 8 &&
-                narrow.width <= 300 &&
+                narrow.width <= 420 &&
                 narrow.shape === "quiet" &&
                 narrow.horizontalOverflow <= 0 &&
                 narrow.headerStayed === true &&
@@ -8877,11 +9549,11 @@ const jarvisPeek = {
         await press("/", "Slash", 191);
         const composerFocused = await h.ev(`document.activeElement?.hasAttribute('data-pet-errand-input') ?? false`);
         rec(
-            "6. attention expands the card and keyboard navigation moves the cursor then focuses the composer",
+            "6. attention keeps the card's width and keyboard navigation moves the cursor then focuses the composer",
             dest.composerEnabled === true &&
                 busyArranged === true &&
                 busyBefore?.shape === "busy" &&
-                busyBefore?.width > 300 &&
+                busyBefore?.width === narrow?.width &&
                 busyBefore?.cursor === "dag-gate:cdp-1" &&
                 busyBefore?.focused === true &&
                 movedCursor === "ask:cdp-2" &&
@@ -10693,7 +11365,7 @@ const codeSideColumn = {
 // --- dag lifecycle: engine + graph surface ----------------------------------------------------
 // Drives the real DagSubmit/DagAction/DagMerge RPCs through an orchestrator-mode run, then opens
 // the graph surface and asserts the ReactFlow canvas renders the submitted nodes. Blast radius is
-// contained like runs-lifecycle: temp-dir project, worker blocks killed in teardown, channel deleted.
+// contained: temp-dir project, worker blocks killed in teardown (deleteblock -> ShellProc.Close), channel deleted.
 const dagLifecycle = {
     name: "dag-lifecycle",
     surface: "jarvis",
@@ -10908,7 +11580,7 @@ const dagLifecycle = {
         // React synthesizes onPointerEnter from pointerover/mouseover; the peek's floating-ui hover listens for a
         // native mouseenter on the card's wrapper, which the bubbling dispatch reaches
         const hoverPeek = await h.ev(`(async () => {
-            const card = document.querySelector('[data-dag-modal-kind] [data-dag-node]');
+            const card = document.querySelector('[data-dag-modal-kind] [data-dag-node]:not([data-dag-node="final"])');
             if (!card) return { card: null };
             for (const type of ['pointerover', 'pointerenter', 'mouseover', 'mouseenter']) {
                 const Ev = type.startsWith('pointer') ? PointerEvent : MouseEvent;
@@ -10942,8 +11614,8 @@ const dagLifecycle = {
 
         // aria-pressed mirrors the card's selected border (DagCardNode)
         const escSelection = await h.ev(`(async () => {
-            const pressed = () => document.querySelectorAll('[data-dag-modal-kind] [data-dag-node][aria-pressed="true"]').length;
-            const card = document.querySelector('[data-dag-modal-kind] [data-dag-node]');
+            const pressed = () => document.querySelectorAll('[data-dag-modal-kind] [data-dag-node]:not([data-dag-node="final"])[aria-pressed="true"]').length;
+            const card = document.querySelector('[data-dag-modal-kind] [data-dag-node]:not([data-dag-node="final"])');
             if (!card) return { card: null };
             card.click();
             await new Promise((r) => setTimeout(r, 200));
@@ -11022,6 +11694,10 @@ const dagLifecycle = {
     async teardown(h, ctx) {
         try {
             await deleteChannelWorkerBlocks(h, ctx.channelId);
+        } catch (e) {
+            console.error(`dag-lifecycle teardown: delete the worker blocks failed: ${e?.message ?? e}`);
+        }
+        try {
             await h.rpc("deletechannel", { channelid: ctx.channelId });
         } catch {
             // best-effort cleanup
@@ -11155,6 +11831,98 @@ const routePickerFlat = {
         );
         rec("face shows the chosen model", !face.includes("· capable"), `face="${face}"`);
         return steps;
+    },
+};
+
+// --- route-picker-refused: a route its provider refused is dimmed and named in the picker ----------------------
+// Run bf3a2fe3 met a lapsed OpenCode Go plan: every turn came back 403. The engine records such a refusal in
+// refused-routes.json in the data dir; this seeds one for a real catalog model and checks the row says so.
+const routePickerRefused = {
+    name: "route-picker-refused",
+    surface: "cockpit",
+    async arrange(h) {
+        const info = await h.rpc("waveinfo", null);
+        const catalog = await h.rpc("listharnesses", null, { timeout: 30000 });
+        const capability = (catalog?.harnesses ?? [])
+            .filter((x) => x.installed && x.runworkercapable)
+            .flatMap((x) => x.routecapabilities ?? [])
+            .find((c) => c.model);
+        const file = join(info.datadir, "refused-routes.json");
+        // the dev store's own refusals are put back in teardown
+        const saved = existsSync(file) ? readFileSync(file, "utf8") : null;
+        if (capability) {
+            const mark = {
+                runtime: capability.runtime,
+                model: capability.model,
+                text: "403: An active subscription is required",
+                ts: Date.now(),
+            };
+            writeFileSync(file, JSON.stringify([mark], null, 2));
+        }
+        return { file, saved, runtime: capability?.runtime, model: capability?.model };
+    },
+    async assert(h, ctx) {
+        if (!ctx.model) {
+            return [skipStep("a refused catalog row is dimmed and named", "no installed run-worker harness lists a model")];
+        }
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const settle = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
+        const row = `document.querySelector('[data-testid=${JSON.stringify(`route-option-${ctx.runtime}-${ctx.model}`)}]')`;
+        await h.goto("settings");
+        await h.ev(`(() => { document.querySelector('[data-section="run"]')?.click(); return true; })()`);
+        await settle(200);
+        await h.ev(`(() => {
+            const b = document.querySelector('[data-testid="route-picker"]');
+            b?.scrollIntoView({ block: "center" });
+            b?.click();
+            return true;
+        })()`);
+        await settle(400);
+        // the filter brings the seeded row to the top of a catalog that can run to hundreds of rows
+        await h.ev(`(() => {
+            const input = document.querySelector('input[aria-label="Filter models"]');
+            if (!input) return false;
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+            setter.call(input, ${JSON.stringify(ctx.model)});
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            return true;
+        })()`);
+        await settle(400);
+        const state = await h.ev(`(() => {
+            const r = ${row};
+            if (!r) return null;
+            return {
+                refused: r.getAttribute('data-refused'),
+                text: r.textContent,
+                title: r.getAttribute('title'),
+                opacity: getComputedStyle(r).opacity,
+            };
+        })()`);
+        rec(
+            "a refused catalog row is dimmed and names the refusal",
+            state != null &&
+                state.refused === "true" &&
+                /refused 403 · \w{3} \d{1,2}/.test(state.text ?? "") &&
+                Number(state.opacity) < 1 &&
+                (state.title ?? "").startsWith("403:"),
+            JSON.stringify(state)
+        );
+        await h.shot("cdp-shots/route-picker-refused.png");
+        await h.ev(`(() => { ${row}?.click(); return true; })()`);
+        await settle(400);
+        const face = await h.ev(`((document.querySelector('[data-testid="route-picker"]')||{}).textContent||'').trim()`);
+        rec("choosing the refused route warns on the picker's face", face.endsWith("refused"), `face="${face}"`);
+        await h.shot("cdp-shots/route-picker-refused-face.png");
+        return steps;
+    },
+    async teardown(_h, ctx) {
+        if (ctx.saved != null) {
+            writeFileSync(ctx.file, ctx.saved);
+        } else {
+            // wavesrv may be mid-read of it for the picker, which Windows reports as EBUSY
+            rmSync(ctx.file, { force: true, maxRetries: 10, retryDelay: 200 });
+        }
     },
 };
 
@@ -12750,7 +13518,7 @@ function treeRailRoster(runId, now, leadName = TREE_RAIL_LEAD, leadExtra = {}) {
 }
 
 // a real orchestrator run held in planning, and the fixture roster whose lead carries its id
-async function arrangeFixtureRun(h, ctx, label, leadName, leadExtra) {
+async function arrangeFixtureRun(h, ctx, label, leadName, leadExtra, runExtra) {
     const wslist = await h.rpc("workspacelist", null);
     const ch = await h.rpc("createchannel", { name: `verify-${label}`, projectpath: ctx.cwd });
     ctx.channelId = ch.oid;
@@ -12761,8 +13529,10 @@ async function arrangeFixtureRun(h, ctx, label, leadName, leadExtra) {
         runtime: "claude",
         mode: "orchestrator",
         deferstart: true,
+        ...runExtra,
     });
     ctx.runId = created.run.id;
+    ctx.landPath = created.run.landpath;
     mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
     writeFileSync(
         TREE_RAIL_FIXTURE,
@@ -12785,21 +13555,46 @@ async function waitForDispatch(h, ctx, taskId) {
     ctx.dispatchMs = Date.now() - start;
 }
 
-// best-effort, so one failed step does not strand the rest
+// best-effort, so one failed worker does not strand the rest; the failures are thrown after, for the caller to log
 async function deleteChannelWorkerBlocks(h, channelId) {
+    const failed = [];
     for (const run of await channelRuns(h, channelId)) {
         for (const phase of run.phases || []) {
             for (const oref of phase.workerorefs || []) {
                 try {
-                    const tab = await h.rpc("gettab", oref.slice(4));
+                    const tab = await waveService(h, "object", "GetObject", [oref]);
                     const bid = tab && tab.blockids && tab.blockids[0];
                     if (bid) await h.rpc("deleteblock", { blockid: bid });
-                } catch {
-                    // best-effort cleanup
+                } catch (e) {
+                    failed.push(`${oref}: ${e?.message ?? e}`);
                 }
             }
         }
     }
+    if (failed.length) throw new Error(failed.join("; "));
+}
+
+// the root engine trees live under, as pkg/orchestrate/worktreeroot.go resolves it from os.UserCacheDir
+function arcWorktreeRoot() {
+    const cache =
+        process.platform === "win32"
+            ? process.env.LOCALAPPDATA
+            : process.platform === "darwin"
+              ? join(homedir(), "Library", "Caches")
+              : process.env.XDG_CACHE_HOME || join(homedir(), ".cache");
+    return join(cache, "arc-wt");
+}
+
+// a fixture repo's linked worktrees: the run's landing tree and its lanes' trees
+function linkedWorktrees(cwd) {
+    if (!cwd || !existsSync(join(cwd, ".git"))) return [];
+    const out = execFileSync("git", ["-C", cwd, "worktree", "list", "--porcelain"], { encoding: "utf8" });
+    const trees = out
+        .split("\n")
+        .filter((line) => line.startsWith("worktree "))
+        .map((line) => resolve(line.slice("worktree ".length).trim()));
+    // the first is the repo's own checkout
+    return trees.slice(1);
 }
 
 async function teardownFixtureRun(h, ctx, name, restore) {
@@ -12824,7 +13619,19 @@ async function teardownFixtureRun(h, ctx, name, restore) {
         await h.ev("location.reload()");
         await new Promise((r) => setTimeout(r, 2500));
     });
+    // engine trees live under the arc-wt root, not the temp dir, and a cancel leaves the landing tree: only a land
+    // removes it. A worker just stopped holds its lane's tree for a moment, hence the retries.
+    const trees = new Set(ctx.landPath ? [resolve(ctx.landPath)] : []);
+    await step("list the run's trees", () => linkedWorktrees(ctx.cwd).forEach((tree) => trees.add(tree)));
+    for (const tree of trees) {
+        await step(`remove the run tree ${tree}`, () =>
+            rmSync(tree, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 })
+        );
+    }
     await step("remove the temp dir", () => rmSync(ctx.cwd, { recursive: true, force: true }));
+    const left = [...trees].filter((tree) => existsSync(tree));
+    if (left.length) throw new Error(`${name} teardown: run trees left behind: ${left.join(", ")}`);
+    if (trees.size) console.log(`${name} teardown: run trees gone: ${[...trees].join(", ")}`);
 }
 
 const TREE_RAIL_SUBAGENT_PROMPT = "survey the tree rail";
@@ -14312,6 +15119,8 @@ const DOC_NOTES_ORDER = "in document order";
 const DOC_NOTES_CUT = "A long passage is cut to its first and last lines.";
 const DOC_NOTES_KEYBOARD = "Selecting with the keyboard";
 const DOC_NOTES_LAST = "The last round ends when every note is applied.";
+// one token on a fenced block's second line, so a selection up to it crosses the block's header and a line number
+const DOC_NOTES_FENCE = "quotedfence";
 // enough one-line paragraphs after the mockup's text that the document pane scrolls
 const DOC_NOTES_FILLER_ROUNDS = 16;
 const DOC_NOTES_SPEC = [
@@ -14324,6 +15133,7 @@ const DOC_NOTES_SPEC = [
     `Request changes sends each note as the quoted passage followed by what you wrote, ${DOC_NOTES_ORDER}, through the ask's own answer path. Approve sends them too, after the approval. ${DOC_NOTES_CUT} The whole answer is one message to the lead.`,
     "## Out of scope",
     `The Code surface's markdown preview and the run report. Quoting from the decisions list on the right. ${DOC_NOTES_KEYBOARD}: the passage is picked with the mouse, then everything after is keys.`,
+    `\`\`\`ts\nalpha\n${DOC_NOTES_FENCE}\n\`\`\``,
     "## Review rounds",
     ...Array.from(
         { length: DOC_NOTES_FILLER_ROUNDS },
@@ -14624,6 +15434,31 @@ const docReviewNotes = {
             "4. Escape in the field drops it and leaves the note and the dialog",
             s4.open && s4.field == null && s4.rows.length === 1 && s4.pending === 0,
             docNotesBrief(s4)
+        );
+
+        const s4b = await docNotesAct(
+            h,
+            `const from = textNode(docRoot(), ${docNotesJson(DOC_NOTES_KEYBOARD)});
+            const to = textNode(docRoot(), ${docNotesJson(DOC_NOTES_FENCE)});
+            const range = document.createRange();
+            range.setStart(from.node, from.at);
+            range.setEnd(to.node, to.at + ${DOC_NOTES_FENCE.length});
+            selectRange(range);
+            await settle();
+            key(fieldInput(), "Enter");`
+        );
+        const removed4b = await docNotesAct(
+            h,
+            `rowOf(${docNotesJson(DOC_NOTES_FENCE)})?.querySelector('button[aria-label="Remove this note"]')?.click();`
+        );
+        rec(
+            "4b. a passage quoted through a fenced code block is painted, and removing its note unpaints it",
+            s4b.rows.length === 2 &&
+                s4b.rows[1].passage.endsWith(`keys. alpha ${DOC_NOTES_FENCE}`) &&
+                s4b.quoted === 2 &&
+                removed4b.rows.length === 1 &&
+                removed4b.quoted === 1,
+            docNotesBrief(s4b, { afterRemove: removed4b.quoted })
         );
 
         const s5 = await docNotesAct(
@@ -17367,6 +18202,189 @@ const cockpitPolish = {
     },
 };
 
+// The lead card's merge gate (effort 4d24005d): a finished lane tip the engine has not landed reads live, toned wait,
+// with how long it has waited, opens its ended worker, and stays out of the cancel count. The run lands in the
+// checkout of a temp repository whose index holds a staged file, so the engine holds every merge and the tip stays
+// ready. Both tasks point at deferred quick runs that never start; marking t-1's run done lets the engine move the
+// task to done itself, which writes the task-done event the gate's age is read from. t-2 stays running.
+const MERGE_GATE_LEAD = "merge-gate lead";
+const MERGE_GATE_LABEL = "merge gate lane";
+const MERGE_GATE_LIVE_LABEL = "running lane";
+const MERGE_GATE_TASKS = [
+    ["t-1", MERGE_GATE_LABEL],
+    ["t-2", MERGE_GATE_LIVE_LABEL],
+].map(([id, label]) => ({ id, label, description: "do nothing, stop immediately", deps: [], gate: false, state: "" }));
+// the engine ticks a dag at most every 30 seconds, and the card then waits on the run's digest
+const MERGE_GATE_WAIT_MS = 90_000;
+const mergeGateRow = (label) =>
+    `[...(${COCKPIT_LEAD_CARD}?.querySelectorAll("[data-row-key]") ?? [])]` +
+    `.find((r) => r.textContent.includes(${JSON.stringify(label)}))`;
+// the row's dot, tag and the card's cancel panel text, as the assertions read them
+const MERGE_GATE_READ = `(() => {
+    const row = ${mergeGateRow(MERGE_GATE_LABEL)};
+    const grid = row?.firstElementChild;
+    return {
+        row: row != null,
+        dot: grid?.children[0]?.className ?? null,
+        tag: grid?.children[2]?.textContent.trim() ?? null,
+        live: ${mergeGateRow(MERGE_GATE_LIVE_LABEL)} != null,
+    };
+})()`;
+
+// a deferred quick run in the fixture's channel: a task's child run that never starts a session
+async function mergeGateStandIn(h, ctx, taskId) {
+    const wslist = await h.rpc("workspacelist", null);
+    const created = await h.rpc("createrun", {
+        channelid: ctx.channelId,
+        workspaceid: wslist[0].workspacedata.oid,
+        goal: `verify merge-gate: stand-in child run of ${taskId}`,
+        runtime: "claude",
+        mode: "quick",
+        deferstart: true,
+    });
+    return created.run.id;
+}
+
+const leadCardMergeGate = {
+    name: "lead-card-merge-gate",
+    surface: "cockpit",
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-merge-gate-"));
+        const ctx = { cwd };
+        try {
+            fstGitInit(cwd);
+            // a staged file: the engine will not squash a lane over it, so it holds the merge
+            writeFileSync(join(cwd, "held.txt"), "staged by the merge-gate fixture\n");
+            execFileSync("git", ["add", "held.txt"], { cwd, stdio: "pipe" });
+            await arrangeFixtureRun(h, ctx, "merge-gate", MERGE_GATE_LEAD, undefined, { landing: "checkout" });
+            ctx.gateRun = await mergeGateStandIn(h, ctx, "t-1");
+            ctx.liveRun = await mergeGateStandIn(h, ctx, "t-2");
+            await h.rpc("dagsubmit", {
+                channelid: ctx.channelId,
+                runid: ctx.runId,
+                title: "verify merge-gate",
+                parallelism: 1,
+                tasks: MERGE_GATE_TASKS,
+            });
+            ctx.dagId = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group?.oid;
+            // over whatever the engine dispatched first: teardown deletes a real worker's block with the channel's
+            const runOf = { "t-1": ctx.gateRun, "t-2": ctx.liveRun };
+            await seedDag(
+                h,
+                ctx,
+                (dag) => ({
+                    ...dag,
+                    mergerequired: true,
+                    tasks: dag.tasks.map((t) => ({ ...t, state: "running", runid: runOf[t.id] })),
+                }),
+                (dag) => JSON.stringify([dag?.mergerequired, (dag?.tasks ?? []).map((t) => [t.id, t.state, t.runid])])
+            );
+            await fstWriteRun(h, ctx.gateRun, (r) => ({ ...r, status: "done", completedts: Date.now() }));
+            // the merge gate needs t-1 done by the engine (its task-done event) and the merge held
+            const start = Date.now();
+            while (Date.now() - start < MERGE_GATE_WAIT_MS) {
+                const group = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group;
+                ctx.gateState = group?.tasks?.find((t) => t.id === "t-1")?.state;
+                if (ctx.gateState === "done") break;
+                await new Promise((r) => setTimeout(r, 1000));
+            }
+            ctx.doneMs = Date.now() - start;
+            // the fixture roster is read once at boot
+            await h.ev("location.reload()");
+            await h.ev(`(async () => {
+                for (let i = 0; i < 60 && !document.querySelector("nav button"); i++) {
+                    await new Promise((r) => setTimeout(r, 500));
+                }
+            })()`);
+            await h.goto("cockpit");
+            ctx.shown = await h.ev(`(async () => {
+                for (let i = 0; i < ${MERGE_GATE_WAIT_MS / 500}; i++) {
+                    const r = ${MERGE_GATE_READ};
+                    if (r.row && /^merge waiting \\d/.test(r.tag ?? "")) return r;
+                    await new Promise((res) => setTimeout(res, 500));
+                }
+                return ${MERGE_GATE_READ};
+            })()`);
+            // let the card's enter motion settle
+            await new Promise((r) => setTimeout(r, 800));
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const shown = ctx.shown ?? {};
+        rec(
+            "0. the engine finishes t-1 and the lead card draws its row",
+            ctx.arrangeError == null && ctx.gateState === "done" && shown.row === true,
+            ctx.arrangeError ?? `t-1 ${ctx.gateState} after ${ctx.doneMs}ms; ${JSON.stringify(shown)}`
+        );
+        await h.shot("cdp-shots/lead-card-merge-gate.png");
+        rec(
+            "1. the merge-ready row is tagged with the gate's age",
+            /^merge waiting \d+(s|m|h\d+m)$/.test(shown.tag ?? ""),
+            `tag=${JSON.stringify(shown.tag)}`
+        );
+        rec(
+            "2. its dot is the hollow wait dot, not the pulsing run dot",
+            (shown.dot ?? "").includes("--color-muted") && !(shown.dot ?? "").includes("pulse-dot"),
+            `dot=${shown.dot}`
+        );
+
+        // the cancel panel counts the running row and leaves the gate out
+        const cancel = await h.ev(`(async () => {
+            const card = ${COCKPIT_LEAD_CARD};
+            const btn = card && [...card.querySelectorAll("button")].find((b) => b.textContent.trim() === "Cancel run");
+            if (!btn) return { error: "no Cancel run button on the card" };
+            btn.click();
+            await new Promise((r) => setTimeout(r, 400));
+            const text = [...card.querySelectorAll("span")].map((s) => s.textContent).find((t) => t.startsWith("Stop "));
+            return { text: text ?? null };
+        })()`);
+        await h.shot("cdp-shots/lead-card-merge-gate-cancel.png");
+        rec(
+            "3. the cancel panel counts only the running task",
+            shown.live === true && /^Stop 1 running tasks/.test(cancel.text ?? ""),
+            JSON.stringify({ live: shown.live, ...cancel })
+        );
+        await h.ev(`(() => {
+            const card = ${COCKPIT_LEAD_CARD};
+            [...(card?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Keep running")?.click();
+        })()`);
+
+        // focusing the row offers Open, which lands on the ended worker's transcript on the Agent surface
+        const opened = await h.ev(`(async () => {
+            const row = ${mergeGateRow(MERGE_GATE_LABEL)};
+            if (!row) return { error: "no merge-ready row" };
+            row.click();
+            await new Promise((r) => setTimeout(r, 400));
+            const sub = row.querySelector(":scope > div:nth-child(2) > div")?.textContent.trim() ?? null;
+            const open = [...row.querySelectorAll("button")].find((b) => b.textContent.includes("Open"));
+            if (!open) return { sub, error: "no Open button on the focused row" };
+            open.click();
+            await new Promise((r) => setTimeout(r, 1200));
+            return { sub };
+        })()`);
+        const surface = await h.activeSurfaceLabel();
+        const header = await h.ev(`document.body.innerText.includes(${JSON.stringify(MERGE_GATE_LABEL)})`);
+        await h.shot("cdp-shots/lead-card-merge-gate-open.png");
+        rec(
+            "4. Open on the merge-ready row shows its ended worker on the Agent surface",
+            opened.error == null &&
+                /merge ready$/.test(opened.sub ?? "") &&
+                surface === SURFACE_LABEL.agent &&
+                header === true,
+            JSON.stringify({ ...opened, surface, header })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownFixtureRun(h, ctx, "lead-card-merge-gate");
+    },
+};
+
 // The Jarvis run sheet on the brief type scale (docs/superpowers/specs/2026-09-29-run-sheet-polish-design.md):
 // nothing under 10.5px in the sheet body or its header, the shared task strip under the verb, and the compact
 // lifecycle timeline. The run is a real orchestrator run held by deferstart, then given a chained three-task plan,
@@ -17606,6 +18624,224 @@ const runTimingScenario = {
     },
 };
 
+// --- run-cost: the API-equivalent estimate of a run's tokens on the run surfaces ------------------------
+// The run sheet, the DAG header, the run peek and the details rail's Task section each price the same usage rows
+// (docs/superpowers/specs/2026-10-08-usage-attribution-design.md). The rows are seeded as the run's sealed
+// evidence, which RunUsageCommand returns as it stands. A deferred run has no lead, so the rail is reached
+// through t-1's dispatched worker.
+const RUN_COST_TASK = "t-1";
+// At the bundled prices (usagepricing.ts) opus-5-5 is $4 in, $20 out, $0.20 cache read and $5 cache write per
+// million tokens; sonnet-5 is $2, $10, $0.20 and $2.50. The lead row prices to $3.10, the worker's to $1.20 and
+// the reviewer's to $0.50.
+const RUN_COST_USAGE = [
+    { role: "lead", model: "claude-opus-5-5", input: 200_000, output: 50_000, cacheread: 4_000_000, cachewrite: 100_000, cachewrite1h: 0, msgs: 40 },
+    { role: "worker", taskid: RUN_COST_TASK, model: "claude-sonnet-5-5", input: 100_000, output: 40_000, cacheread: 2_000_000, cachewrite: 80_000, cachewrite1h: 0, msgs: 30 },
+    { role: "reviewer", taskid: RUN_COST_TASK, model: "claude-opus-5-5", input: 50_000, output: 10_000, cacheread: 500_000, cachewrite: 0, cachewrite1h: 0, msgs: 8 },
+];
+const RUN_COST_RUN_USD = "$4.80";
+const RUN_COST_TASK_USD = "$1.70";
+const RUN_COST_SPEND = new RegExp(`^[\\d.]+[kM]? tok · ≈ \\${RUN_COST_RUN_USD}$`);
+const RUN_COST_WAIT_MS = 20_000;
+const RUN_COST_RAIL = `document.querySelector('aside[aria-label="Agent details"]')`;
+const RUN_COST_LIB = `
+    const text = (el) => (el?.textContent || "").replace(/\\s+/g, " ").trim();
+    const until = async (ok, ms = ${RUN_COST_WAIT_MS}) => {
+        for (let waited = 0; waited < ms && !ok(); waited += 250) {
+            await new Promise((r) => setTimeout(r, 250));
+        }
+        return !!ok();
+    };
+`;
+
+// Writes the rows as the run's evidence and reads them back, again if a write of the engine's landed over them:
+// it writes a live run, and one that read the run before this write puts its own copy back.
+async function seedRunUsage(h, ctx, usage) {
+    const oref = `run:${ctx.runId}`;
+    const kept = (run) => JSON.stringify(run?.evidence?.usage ?? null) === JSON.stringify(usage);
+    let stored = await waveService(h, "object", "GetObject", [oref]);
+    for (let i = 0; i < 3 && !kept(stored); i++) {
+        const evidence = { capturedts: Date.now(), hash: "", addtotal: 0, deltotal: 0, runtimems: 0, durationms: 0, usage };
+        await waveService(h, "object", "UpdateObject", [{ ...stored, otype: "run", evidence }, false], FINAL_SHOTS_UICTX);
+        stored = await waveService(h, "object", "GetObject", [oref]);
+    }
+    if (!kept(stored)) {
+        throw new Error(`the run did not keep its seeded usage: stored ${JSON.stringify(stored?.evidence?.usage ?? null)}`);
+    }
+}
+
+const runCost = {
+    name: "run-cost",
+    surface: "jarvis",
+    async arrange(h) {
+        await h.cdp("Emulation.setDeviceMetricsOverride", OBS_WIDE);
+        const prevRail = await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_VISIBLE_KEY)})`);
+        const ctx = await arrangeSheetDagRun(h, "run-cost", RUN_SHEET_POLISH_TASKS);
+        ctx.prevRail = prevRail;
+        if (ctx.arrangeError != null) return ctx;
+        try {
+            // the dispatching tick holds the run for as long as the spawn takes and would land over a seed made under it
+            await waitForDispatch(h, ctx, RUN_COST_TASK);
+            if (!ctx.dispatched) throw new Error(`${RUN_COST_TASK} did not dispatch in ${ctx.dispatchMs}ms`);
+            const group = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group;
+            ctx.workerRunId = group?.tasks?.find((t) => t.id === RUN_COST_TASK)?.runid;
+            await seedRunUsage(h, ctx, RUN_COST_USAGE);
+            // a write the worker's first events started can outlast the seed's own read-back
+            await new Promise((r) => setTimeout(r, ATTN_TICK_SETTLE_MS));
+            await seedRunUsage(h, ctx, RUN_COST_USAGE);
+            // the rail is off by default and persisted; and a run's usage loads when a surface showing it mounts,
+            // then once a minute, so the page is reloaded and the run reopened to read the seed
+            await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true")`);
+            await h.ev("location.reload()");
+            await h.ev(`(async () => {
+                for (let i = 0; i < 60 && !document.querySelector("nav button"); i++) {
+                    await new Promise((r) => setTimeout(r, 500));
+                }
+            })()`);
+            await h.goto("jarvis");
+            ctx.opened = await h.ev(`(async () => {
+                for (let i = 0; i < 20 && typeof window.__openAddress !== "function"; i++) {
+                    await new Promise((r) => setTimeout(r, 250));
+                }
+                if (typeof window.__openAddress !== "function") return { ok: false, why: "no __openAddress hook" };
+                return window.__openAddress(${JSON.stringify(`run:${ctx.runId}`)});
+            })()`);
+            ctx.usageShown = await h.ev(`(async () => {
+                ${RUN_COST_LIB}
+                return until(() => text(document.querySelector("[data-run-sheet] [data-run-sheet-usage]")).includes("≈"));
+            })()`);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        rec(
+            "0. the run's sheet opened, t-1 dispatched, and the sheet shows the seeded usage",
+            ctx.arrangeError == null && ctx.opened?.ok === true && ctx.dispatched === true && ctx.usageShown === true,
+            ctx.arrangeError ??
+                JSON.stringify({ runId: ctx.runId, worker: ctx.workerRunId, opened: ctx.opened, dispatchMs: ctx.dispatchMs, usageShown: ctx.usageShown })
+        );
+        if (ctx.arrangeError != null) return steps;
+
+        const sheet = await h.ev(`(() => {
+            ${RUN_COST_LIB}
+            return text(document.querySelector("[data-run-sheet] [data-run-sheet-usage]"));
+        })()`);
+        rec(
+            `1. the run sheet's meta reads "<n> tok · ≈ ${RUN_COST_RUN_USD}", every seeded row priced`,
+            RUN_COST_SPEND.test(sheet),
+            JSON.stringify(sheet)
+        );
+        await h.shot("cdp-shots/run-cost-sheet.png");
+
+        const header = await h.ev(`(async () => {
+            ${RUN_COST_LIB}
+            const open = [...(document.querySelector("[data-run-sheet]")?.querySelectorAll("button") ?? [])].find(
+                (b) => text(b) === "Open DAG"
+            );
+            if (!open) return { opened: false };
+            open.click();
+            const line = () =>
+                [...(document.querySelector("[data-dag-modal-kind]")?.querySelectorAll("div") ?? [])].find(
+                    (d) => d.children.length === 0 && text(d).startsWith("parallelism")
+                );
+            const shown = await until(() => text(line()).includes("≈"));
+            return { opened: !!document.querySelector("[data-dag-modal-kind]"), shown, line: text(line()) };
+        })()`);
+        rec(
+            `2. the DAG header's usage text ends "· ≈ ${RUN_COST_RUN_USD}"`,
+            header.opened === true && (header.line ?? "").endsWith(`· ≈ ${RUN_COST_RUN_USD}`),
+            JSON.stringify(header)
+        );
+        await h.shot("cdp-shots/run-cost-dag-header.png");
+        const modalClosed = await h.ev(`(async () => {
+            ${RUN_COST_LIB}
+            const close = [...(document.querySelector("[data-dag-modal-kind]")?.querySelectorAll("button") ?? [])].find(
+                (b) => text(b).startsWith("Close")
+            );
+            close?.click();
+            return until(() => !document.querySelector("[data-dag-modal-kind]"), 5000);
+        })()`);
+
+        const peek = await h.ev(`(async () => {
+            ${RUN_COST_LIB}
+            if (!(await until(() => typeof window.__peekAddress === "function", 5000))) return { hook: false };
+            const result = await window.__peekAddress(${JSON.stringify(`run:${ctx.runId}`)});
+            const body = () =>
+                document.querySelector('[data-pet-peek-item="run"][data-pet-peek-status="ready"] [data-pet-peek-body]');
+            const meta = () => [...(body()?.querySelectorAll("span") ?? [])].map(text).find((t) => / tok · ≈ /.test(t));
+            const shown = await until(() => meta() != null);
+            return { hook: true, result, shown, meta: meta() ?? null };
+        })()`);
+        rec(
+            `3. the run peek's meta holds "tok · ≈ ${RUN_COST_RUN_USD}"`,
+            modalClosed === true && peek.hook === true && RUN_COST_SPEND.test(peek.meta ?? ""),
+            JSON.stringify({ modalClosed, ...peek })
+        );
+        await h.shot("cdp-shots/run-cost-peek.png");
+        const peekClosed = await h.ev(`(async () => {
+            ${RUN_COST_LIB}
+            document.querySelector('[data-pet-peek] button[aria-label="Close Jarvis panel"]')?.click();
+            return until(() => !document.querySelector("[data-pet-peek]"), 5000);
+        })()`);
+
+        await h.goto("agent");
+        // the task's row is titled by its label; the rail is the worker's once its Task section prices the task
+        const taskLabel = RUN_SHEET_POLISH_TASKS.find((t) => t.id === RUN_COST_TASK).label;
+        const rail = await h.ev(`(async () => {
+            ${RUN_COST_LIB}
+            const rail = () => ${RUN_COST_RAIL};
+            const cost = () => text(rail()?.querySelector("[data-run-cost]"));
+            const rows = () =>
+                [...(document.querySelector("[data-agent-tree]")?.querySelectorAll("div") ?? [])]
+                    .filter((d) => d.children.length === 0 && text(d) === ${JSON.stringify(taskLabel)})
+                    .map((d) => d.closest(".cursor-pointer"))
+                    .filter((row) => row != null && text(row).includes(${JSON.stringify(RUN_COST_TASK)}));
+            if (!(await until(() => rows().length > 0))) return { rows: 0 };
+            // another run's ${RUN_COST_TASK} would carry the same label, so a row counts once its rail prices this task
+            let selected = false;
+            for (const row of rows()) {
+                row.click();
+                selected = await until(() => cost().includes(${JSON.stringify(RUN_COST_TASK_USD)}), 5000);
+                if (selected) break;
+            }
+            const fact = (label) => {
+                const name = [...(rail()?.querySelectorAll("span") ?? [])].find(
+                    (s) => s.children.length === 0 && text(s) === label
+                );
+                return name ? text(name.nextElementSibling) : null;
+            };
+            return {
+                rows: rows().length,
+                selected,
+                headings: [...(rail()?.querySelectorAll("h3") ?? [])].map(text),
+                tokens: fact("Tokens"),
+                cost: cost(),
+            };
+        })()`);
+        rec(
+            `4. the worker's Task section has a Tokens row with no estimate and a Cost row of ≈ ${RUN_COST_TASK_USD} API-equiv`,
+            peekClosed === true &&
+                rail.selected === true &&
+                rail.headings.includes("Task") &&
+                / tok · \d+% cached/.test(rail.tokens ?? "") &&
+                !(rail.tokens ?? "").includes("≈") &&
+                rail.cost === `≈ ${RUN_COST_TASK_USD} API-equiv`,
+            JSON.stringify({ peekClosed, ...rail })
+        );
+        await h.shot("cdp-shots/run-cost-rail.png");
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownFixtureRun(h, ctx, "run-cost", {
+            what: "restore the rail's visibility",
+            fn: () => h.ev(restoreLocalStorage(RAIL_VISIBLE_KEY, ctx.prevRail)),
+        });
+    },
+};
+
 // --- record-band-detach-restore: correcting a run's record from the run sheet, and undoing it ----------
 // The band's EdgeControls on a run with one attributed record: Not this record moves the edge to the Detached
 // group, Restore brings it back. The edge is accepted in the arrange, so it is confirmed and the detach asks
@@ -17759,7 +18995,7 @@ const RAIL_LINK_LIB = `
     const diffRow = (name) => document.querySelector('[data-changed-file-row="' + name + '"]');
     const selectedRows = () =>
         [...document.querySelectorAll("[data-changed-file-row]")]
-            .filter((r) => r.classList.contains("bg-surface-selected"))
+            .filter((r) => r.getAttribute("aria-current") === "true")
             .map((r) => r.getAttribute("data-changed-file-row"));
     const until = async (fn) => {
         for (let i = 0; i < 80 && !fn(); i++) {
@@ -18650,6 +19886,990 @@ const finalShotsScenario = {
     async teardown(h, ctx) {
         if (ctx.cwd) await teardownFixtureRun(h, ctx, "final-shots");
         rmSync(ctx.out, { recursive: true, force: true });
+    },
+};
+
+// --- final-stage: the final stage's tree row, pane, rail block and DAG node ---------------------------------
+// Two parts on one run (docs/reference/cdp-run-fixtures.md, "A run with a final stage"). Part B comes first: the
+// States board's rows, seeded on a dag the engine leaves alone because t-1 is still at work, with each round's
+// final-step events published to the page. Part A is last, since it ends the run: every task is seeded done and
+// merged, so the engine itself starts round 1, runs Tree and then a Verify that outlasts the scenario, and the
+// stage is ended from its pane. The fixture's temp dir is a git repository, which the stage's tree needs.
+const FST_VIEWPORT = { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false };
+const FST_LEAD = "final-stage lead";
+const FST_VERIFIER = "final-stage verifier";
+const FST_VERIFIER_ID = "fx-final-verifier";
+// t-1 fans out to two sinks, so the final node takes two edges; at parallelism 1 only t-1 dispatches
+const FST_TASKS = [
+    { id: "t-1", label: "noop", description: "do nothing, stop immediately", deps: [], gate: false, state: "" },
+    { id: "t-2", label: "noop 2", description: "do nothing, stop immediately", deps: ["t-1"], gate: false, state: "" },
+    { id: "t-3", label: "noop 3", description: "do nothing, stop immediately", deps: ["t-1"], gate: false, state: "" },
+];
+const FST_SINK_EDGES = ["t-2>final", "t-3>final"];
+// Part B's commands are only drawn, never run
+const FST_CHECK = "node --stack-size=4000 node_modules/typescript/lib/tsc.js --noEmit";
+const FST_VERIFY = "node scripts/verify.mjs ./pkg/waveobj";
+const FST_COMMIT = "c0ffee5a".padEnd(40, "0");
+// Part A's commands run. Verify writes three lines and then one every 3s for 15 minutes: the engine publishes the
+// tail from the command's own writes, the first one at once and then at most every 10s
+const FST_MARK = "final-stage verify";
+const FST_LIVE_VERIFY = `printf '${FST_MARK} 1\\n${FST_MARK} 2\\n${FST_MARK} 3\\n'; for i in $(seq 1 300); do sleep 3; echo "${FST_MARK} still running $i"; done`;
+const FST_LIVE_FINAL = "true";
+const FST_DETAIL = [
+    `Final \`${FINAL_SHOTS_CMD}\` failed (exit 1):`,
+    "FAIL jarvis-peek 4. the narrow panel stays bounded with a pinned header, no horizontal overflow, and an unclipped harness picker",
+    "FAIL jarvis-peek 5. attention expands the card and keyboard navigation moves the cursor then focuses the composer",
+    "2 of 43 steps failed across 5 scenarios",
+].join("\n");
+const FST_UNVERIFIED =
+    "verifier: the narrow jarvis-peek panel could not be compared with its board, because the board has no artboard at 440px wide";
+const FST_REASON =
+    "the Verify loop of the final-stage scenario never ends on its own, so the scenario ends the stage here and records why";
+// the Passed row's step times; with the verifier's they total the board's 14m 22s
+const FST_STEP_MS = { tree: 22_000, check: 41_000, verify: 431_000, final: 188_000 };
+const FST_VERIFIER_MS = 180_000;
+const FST_STEP_TEXT = ["passed 22s", "passed 41s", "passed 7m 11s", "passed 3m 08s", "passed 3m 00s"];
+const FST_TOTAL = "14m 22s";
+const FST_WAIT_MS = 8000;
+// a watchdog tick starts the stage (every 30s), then the Tree step and Verify's second publish
+const FST_ENGINE_WAIT_MS = 90_000;
+
+const fstHolds = (fn) => {
+    try {
+        return fn() === true;
+    } catch {
+        return false;
+    }
+};
+const fstStates = (steps) => (steps ?? []).map((s) => s.state);
+const fstRepeat = (state, n) => Array(n).fill(state);
+const fstSame = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const fstFlat = (text) => text.replace(/\s+/g, " ").trim();
+const fstButton = (rootExpr, text) =>
+    `[...(${rootExpr}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === ${JSON.stringify(text)})`;
+
+// page-side readers shared by the two reads below; every element comes through the selectors the plan fixes
+const FST_LIB = `
+    const flat = (el) => (el?.textContent ?? "").replace(/\\s+/g, " ").trim();
+    const stepsOf = (root) =>
+        [...(root?.querySelectorAll("[data-final-step]") ?? [])].map((s) => ({
+            key: s.getAttribute("data-final-step"),
+            state: s.getAttribute("data-final-step-state"),
+            text: flat(s.querySelector("span.whitespace-nowrap")),
+            command: s.querySelector("span[title]")?.getAttribute("title") ?? null,
+        }));
+    const pastOf = (root) =>
+        [...(root?.querySelectorAll("[data-final-past-round]") ?? [])].map((p) => ({
+            round: p.getAttribute("data-final-past-round"),
+            text: flat(p),
+        }));
+    const outputOf = (root) => root?.querySelector("[data-final-output]")?.textContent ?? null;
+    const shotsOf = (root) => flat(root?.querySelector("[data-final-shots-link]")) || null;
+`;
+const FST_TREE = `document.querySelector("[data-agent-tree]")`;
+const FST_RAIL = `document.querySelector('aside[aria-label="Agent details"]')`;
+const FST_ROW = `${FST_TREE}?.querySelector("[data-final-row]")`;
+const FST_PANE = `document.querySelector("[data-final-pane]")`;
+const FST_MODAL = `document.querySelector("[data-dag-modal-kind]")`;
+const FST_NODE = `${FST_MODAL}?.querySelector('[data-dag-node="final"]')`;
+const FST_DAG_RAIL = `${FST_MODAL}?.querySelector("[data-dag-final-rail]")`;
+const FST_SHEET = `document.querySelector("[data-run-sheet]")`;
+const FST_FOLD = `[...(${FST_TREE}?.querySelectorAll("div.cursor-pointer") ?? [])].find((d) => /^\\d+ (done|reviews?)/.test(d.textContent.trim()))`;
+const FST_LEAD_ROW = `(() => {
+    const name = [...(${FST_TREE}?.querySelectorAll("div") ?? [])].find(
+        (d) => d.children.length === 0 && d.textContent.trim() === ${JSON.stringify(FST_LEAD)}
+    );
+    return name ? name.closest(".cursor-pointer") : null;
+})()`;
+// the Agent surface: the tree's row and slot, the stage's pane, and in the details rail the lead's block or the
+// stage's own section
+const FST_AGENT = `(() => {
+    ${FST_LIB}
+    const tree = ${FST_TREE};
+    const rail = ${FST_RAIL};
+    const pane = ${FST_PANE};
+    const stage = rail?.querySelector("[data-final-rail]");
+    const slot = tree?.querySelector("[data-final-slot]");
+    const status = [...(rail?.querySelectorAll("span.font-semibold") ?? [])].find((s) => flat(s) === "Verifying");
+    const fold = ${FST_FOLD};
+    return {
+        rows: [...(tree?.querySelectorAll("[data-final-row]") ?? [])].map((r) => ({
+            tone: r.getAttribute("data-final-tone"),
+            title: flat(r.querySelector(".truncate")),
+            sub: flat(r.querySelector(".font-mono")),
+            selected: r.classList.contains("bg-accentbg"),
+        })),
+        slot: slot?.getAttribute("data-final-slot") ?? null,
+        strip: slot?.parentElement?.getAttribute("aria-label") ?? null,
+        fold: fold ? flat(fold) : null,
+        pane: pane
+            ? {
+                  text: flat(pane),
+                  steps: stepsOf(pane),
+                  output: outputOf(pane),
+                  end: pane.querySelector("[data-final-end]") != null,
+                  form: pane.querySelector("[data-run-sheet-end-final]") != null,
+                  past: pastOf(pane),
+                  shots: shotsOf(pane),
+              }
+            : null,
+        railSteps: rail?.querySelectorAll("[data-final-step]").length ?? 0,
+        stage: stage ? { text: flat(stage), steps: stepsOf(stage), past: pastOf(stage), shots: shotsOf(stage) } : null,
+        status: status ? flat(status.parentElement) : null,
+        viewer: document.querySelector("[data-final-shots-viewer]") != null,
+    };
+})()`;
+// the DAG modal: the final node, the edges into it, the stage line, and the node's bottom rail
+const FST_DAG = `(() => {
+    ${FST_LIB}
+    const modal = ${FST_MODAL};
+    if (!modal) return null;
+    const card = ${FST_NODE};
+    const rail = ${FST_DAG_RAIL};
+    const route = [...modal.querySelectorAll("span")].find((s) => s.textContent.trim().startsWith("Run route ·"));
+    return {
+        cards: [...modal.querySelectorAll("[data-dag-node]")].map((c) => c.getAttribute("data-dag-node")),
+        edges: [...modal.querySelectorAll(".react-flow__edge")].map((e) => e.getAttribute("data-id") ?? "").sort(),
+        stageLine: route ? flat(route.parentElement) : null,
+        node: card
+            ? {
+                  pressed: card.getAttribute("aria-pressed"),
+                  meta: flat(card.querySelector(":scope > span:not([role])")),
+                  under: flat(card.parentElement?.querySelector(":scope > span")),
+                  strip: stepsOf(card).map((s) => s.state),
+              }
+            : null,
+        rail: rail
+            ? {
+                  text: flat(rail),
+                  steps: stepsOf(rail),
+                  output: outputOf(rail),
+                  end: rail.querySelector("[data-final-end]") != null,
+                  past: pastOf(rail),
+                  shots: shotsOf(rail),
+                  open: [...rail.querySelectorAll("button")].some((b) => /open in agent/i.test(b.textContent)),
+              }
+            : null,
+        viewer: document.querySelector("[data-final-shots-viewer]") != null,
+    };
+})()`;
+
+// reads expr until ok holds or the wait runs out, and returns the last read either way. nudge runs every 2s:
+// an event published before the run's history loaded is replaced by that load, so it is published again
+async function fstUntil(h, expr, ok, { ms = FST_WAIT_MS, nudge } = {}) {
+    for (let i = 0; ; i++) {
+        const s = await h.ev(expr).catch(() => null);
+        if (fstHolds(() => ok(s)) || i * 250 >= ms) return s;
+        if (nudge && i % 8 === 7) await nudge();
+        await polishNap(250);
+    }
+}
+
+async function fstAgent(h, ok, opts) {
+    if ((await h.activeSurfaceLabel()) !== SURFACE_LABEL.agent) await h.goto("agent");
+    return fstUntil(h, FST_AGENT, ok, opts);
+}
+
+// the run's graph with the final node selected: the modal belongs to the run's sheet on the Jarvis surface
+async function fstDag(h, ctx, ok, opts) {
+    if (!(await h.ev(`${FST_MODAL} != null`))) {
+        await h.goto("jarvis");
+        await polishWaitFor(h, `typeof window.__openAddress === "function"`, 5000);
+        await h.ev(`window.__openAddress(${JSON.stringify(`run:${ctx.runId}`)})`);
+        const openDag = fstButton(FST_SHEET, "Open DAG");
+        await polishWaitFor(h, `!!${openDag}`, 10_000);
+        // a modal the last visit left open comes back with the surface
+        if (!(await h.ev(`${FST_MODAL} != null`))) await finalShotsClick(h, openDag);
+    }
+    await polishWaitFor(h, `!!${FST_NODE}`, 10_000);
+    await h.ev(`(() => {
+        const card = ${FST_NODE};
+        if (card && card.getAttribute("aria-pressed") !== "true") card.click();
+    })()`);
+    return fstUntil(h, FST_DAG, (d) => d.node.pressed === "true" && d.rail != null && ok(d), opts);
+}
+
+// A run's events cannot be written through an RPC. The page appends every run:event it receives to that run's
+// list, so a published one stands for the engine's until the next reload.
+async function fstPublishSteps(h, ctx, round, steps) {
+    const ts = Date.now();
+    for (const [step, [ms, ok]] of Object.entries(steps)) {
+        const event = {
+            id: `fst-${round}-${step}`,
+            runid: ctx.runId,
+            channelid: ctx.channelId,
+            ts,
+            kind: "final-step",
+            detail: JSON.stringify({ round, step, ms, ok }),
+        };
+        await h.rpc("eventpublish", {
+            event: "run:event",
+            scopes: [`run:${ctx.runId}`],
+            data: { channelid: ctx.channelId, runid: ctx.runId, event },
+        });
+    }
+}
+
+const fstStagePrint = (f) =>
+    f == null
+        ? null
+        : [f.state ?? "", f.round ?? 0, f.step ?? "", f.verifierrunid ?? "", (f.unverified ?? []).length, (f.detail ?? "").length, (f.shots ?? []).length];
+const fstSeedPrint = (dag) =>
+    JSON.stringify([dag?.check ?? "", dag?.verify ?? "", dag?.finalcmd ?? "", fstStagePrint(dag?.final), (dag?.pastfinals ?? []).map(fstStagePrint)]);
+// what Part A's seed must keep: the engine owns the dag's status and its final from the first tick on
+const fstLivePrint = (dag) =>
+    JSON.stringify([dag?.verify ?? "", dag?.finalcmd ?? "", (dag?.tasks ?? []).map((t) => [t.state, t.merged === true])]);
+
+// one States row: the dag's commands, its final and past finals, and the round's step events
+function fstStage(ctx, name, { verifier = true, skip } = {}) {
+    const now = Date.now();
+    const five = { check: FST_CHECK, verify: FST_VERIFY, finalcmd: FINAL_SHOTS_CMD };
+    // where the engine would have made the stage's tree; nothing is there
+    const tree = { tree: `${ctx.cwd.replace(/\\/g, "/")}/.waveterm/worktrees/${ctx.runId}-final`, commit: FST_COMMIT };
+    const round1 = { ...ctx.shotsRound1, detail: FST_DETAIL, ...tree };
+    const past = [round1];
+    const ok = (steps) => Object.fromEntries(steps.map((s) => [s, [FST_STEP_MS[s], true]]));
+    const commands = ["tree", "check", "verify", "final"].filter((s) => s !== skip);
+    const judged = { round: 2, verifierrunid: ctx.verifierRunId, startedts: ctx.verifierStart, ...tree };
+    switch (name) {
+        case "waiting":
+            return { cmds: five };
+        case "tree":
+            return {
+                cmds: five,
+                final: { state: "checking", round: 1, step: "tree", stepts: now - 22_000, startedts: now - 22_000 },
+            };
+        case "alongside":
+            return {
+                cmds: { check: FST_CHECK, verify: FST_VERIFY },
+                final: {
+                    state: "checking",
+                    round: 1,
+                    step: "check",
+                    stepts: now - 11_000,
+                    startedts: now - 9_000,
+                    verifierrunid: ctx.verifierRunId,
+                    ...tree,
+                },
+                events: [1, ok(["tree"])],
+            };
+        case "reviewing":
+            return {
+                cmds: five,
+                final: {
+                    state: "verifying",
+                    round: 2,
+                    startedts: now - 242_000,
+                    ...(verifier ? { verifierrunid: ctx.verifierRunId } : {}),
+                    ...tree,
+                },
+                pastfinals: past,
+                events: [2, ok(commands)],
+            };
+        case "failed":
+            return { cmds: five, final: round1, events: [1, { ...ok(["tree", "check", "verify"]), final: [125_000, false] }] };
+        case "fixing":
+            return { cmds: five, final: { state: "", round: 2 }, pastfinals: past };
+        case "unverified":
+            return {
+                cmds: five,
+                final: { state: "unverified", unverified: [FST_UNVERIFIED], ...judged },
+                pastfinals: past,
+                events: [2, ok(commands)],
+            };
+        case "passed":
+            return { cmds: five, final: { state: "passed", ...judged }, pastfinals: past, events: [2, ok(commands)] };
+    }
+    throw new Error(`no final-stage row named ${name}`);
+}
+
+// seeds a States row and publishes its events; returns the publish, for fstUntil to repeat
+async function fstShow(h, ctx, name, opts) {
+    const { cmds, final, pastfinals, events } = fstStage(ctx, name, opts);
+    await seedDag(
+        h,
+        ctx,
+        (dag) => {
+            const { final: _final, pastfinals: _past, check: _check, verify: _verify, finalcmd: _cmd, ...rest } = dag;
+            return { ...rest, ...cmds, ...(final ? { final } : {}), ...(pastfinals ? { pastfinals } : {}) };
+        },
+        fstSeedPrint
+    );
+    const publish = events ? () => fstPublishSteps(h, ctx, ...events) : undefined;
+    if (publish) await publish();
+    return { nudge: publish };
+}
+
+// object.UpdateObject publishes nothing, so the stored run is sent to the page as the update it would have been
+async function fstWriteRun(h, runId, change) {
+    const oref = `run:${runId}`;
+    const next = { ...change(await waveService(h, "object", "GetObject", [oref])), otype: "run" };
+    await waveService(h, "object", "UpdateObject", [next, false], FINAL_SHOTS_UICTX);
+    const stored = await waveService(h, "object", "GetObject", [oref]);
+    await h.rpc("eventpublish", {
+        event: "waveobj:update",
+        scopes: [oref],
+        data: { updatetype: "update", otype: "run", oid: runId, obj: { ...stored, otype: "run" } },
+    });
+    return stored;
+}
+
+function fstGitInit(cwd) {
+    const git = (...args) => execFileSync("git", args, { cwd, stdio: "pipe" });
+    git("init", "-q");
+    git("config", "user.name", "verify");
+    git("config", "user.email", "verify@example.invalid");
+    git("config", "commit.gpgsign", "false");
+    // the engine's trees live under the project only in the legacy layout, used when there is no user cache dir
+    writeFileSync(join(cwd, ".gitignore"), ".waveterm/\n");
+    writeFileSync(join(cwd, "README.md"), "final-stage fixture\n");
+    git("add", ".");
+    git("commit", "-q", "-m", "final-stage fixture");
+}
+
+// The roster is read once at boot: the lead alone, or with the tab of the verifier's session. Reloads onto it,
+// which also drops every event published to the page, and focuses the lead, whose rail reads the run's events.
+async function fstBoot(h, ctx, withVerifier) {
+    const roster = treeRailRoster(ctx.runId, Date.now(), FST_LEAD).filter((a) => a.id === TREE_RAIL_LEAD_ID);
+    if (withVerifier) {
+        roster.push({
+            id: FST_VERIFIER_ID,
+            name: FST_VERIFIER,
+            project: "waveterm",
+            task: "judge the merged result",
+            state: "working",
+            agent: "claude",
+            model: "opus",
+            activeMs: 60_000,
+            runId: ctx.verifierRunId,
+            blockId: "fx-blk-final-verifier",
+        });
+    }
+    writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify(roster, null, 2));
+    await h.ev("location.reload()");
+    await polishWaitFor(h, `!!document.querySelector("nav button")`, 30_000);
+    await h.cdp("Emulation.setDeviceMetricsOverride", FST_VIEWPORT);
+    await h.goto("agent");
+    return fstFocusLead(h);
+}
+
+async function fstFocusLead(h) {
+    if (!(await polishWaitFor(h, `!!${FST_LEAD_ROW}`, 15_000))) return false;
+    await finalShotsClick(h, FST_LEAD_ROW);
+    return polishWaitFor(h, `[...(${FST_RAIL}?.querySelectorAll("h3") ?? [])].some((el) => el.textContent.trim() === "Run")`, 15_000);
+}
+
+// Part A's seed: every task done and merged with no child run to derive a state from, a Final command so no
+// verifier is tended while the commands run, and no final at all, so the next tick starts round 1 itself.
+// Waits for what that tick does: the Tree step, then Verify with its three opening lines published.
+async function fstStartLive(h, ctx) {
+    await seedDag(
+        h,
+        ctx,
+        (dag) => {
+            const { final: _final, pastfinals: _past, check: _check, setup: _setup, ...rest } = dag;
+            return {
+                ...rest,
+                status: "finalizing",
+                verify: FST_LIVE_VERIFY,
+                finalcmd: FST_LIVE_FINAL,
+                tasks: dag.tasks.map(({ runid: _run, reviewrunid: _review, ...t }) => ({ ...t, state: "done", merged: true })),
+            };
+        },
+        fstLivePrint
+    );
+    const start = Date.now();
+    let group = null;
+    while (Date.now() - start < FST_ENGINE_WAIT_MS) {
+        group = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group;
+        if (group?.final?.step === "verify" && (group.final.output ?? "").includes(`${FST_MARK} 3`)) break;
+        await polishNap(500);
+    }
+    const f = group?.final;
+    return {
+        status: group?.status,
+        state: f?.state,
+        step: f?.step,
+        tree: f?.tree ?? "",
+        verifierrunid: f?.verifierrunid ?? "",
+        output: f?.output ?? "",
+        waitedMs: Date.now() - start,
+    };
+}
+
+async function arrangeFinalStage(h, ctx) {
+    await h.cdp("Emulation.setDeviceMetricsOverride", FST_VIEWPORT);
+    // before the run exists, as final-shots does: the captures walk every surface
+    writeFinalShotsFixture(ctx.out, await captureFinalShotsFixture(h));
+    ctx.shotsRound1 = finalShotsStages(ctx.out).fixing.pastfinals[0];
+    fstGitInit(ctx.cwd);
+    await arrangeFixtureRun(h, ctx, "final-stage", FST_LEAD);
+    await h.rpc("dagsubmit", {
+        channelid: ctx.channelId,
+        runid: ctx.runId,
+        title: "verify final-stage",
+        parallelism: 1,
+        tasks: FST_TASKS,
+    });
+    // a seed written while t-1 is still being dispatched would be overwritten by that tick
+    await waitForDispatch(h, ctx, "t-1");
+    ctx.dagId = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group?.oid;
+    if (!ctx.dagId) throw new Error("the run has no dag");
+    // the verifier's session is seeded, never spawned: a deferred quick run that carries the stage's role
+    const wslist = await h.rpc("workspacelist", null);
+    const created = await h.rpc("createrun", {
+        channelid: ctx.channelId,
+        workspaceid: wslist[0].workspacedata.oid,
+        goal: "verify final-stage: the verifier's seeded run",
+        runtime: "claude",
+        mode: "quick",
+        deferstart: true,
+    });
+    ctx.verifierRunId = created.run.id;
+    ctx.verifierStart = Date.now() - 20 * 60_000;
+    const verifierRun = await fstWriteRun(h, ctx.verifierRunId, (run) => ({ ...run, stagerole: "verifier", dagoref: ctx.dagId }));
+    ctx.verifierSeeded = verifierRun?.stagerole === "verifier" && verifierRun.dagoref === ctx.dagId && !verifierRun.completedts;
+    await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true")`);
+    await fstShow(h, ctx, "waiting");
+    ctx.leadFocused = await fstBoot(h, ctx, false);
+}
+
+const finalStageScenario = {
+    name: "final-stage",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            out: mkdtempSync(join(tmpdir(), "verify-final-stage-out-")),
+            cwd: mkdtempSync(join(tmpdir(), "verify-final-stage-")),
+            prevRail: await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_VISIBLE_KEY)})`),
+        };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            await arrangeFinalStage(h, ctx);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: fstHolds(ok), detail: JSON.stringify(detail) });
+        const shot = (name) => h.shot(`cdp-shots/final-stage-${name}.png`);
+        const clickRow = () => finalShotsClick(h, FST_ROW);
+        const closeViewer = async () => {
+            await finalShotsClick(h, `document.querySelector("[data-final-shots-viewer]")?.querySelector('button[aria-label="Close"]')`);
+            await polishWaitFor(h, `document.querySelector("[data-final-shots-viewer]") == null`, 3000);
+        };
+        rec(
+            "0. a git project's run with a dispatched t-1, a seeded verifier run, and the lead focused with its rail open",
+            () => ctx.arrangeError == null && ctx.dispatched && ctx.verifierSeeded && ctx.leadFocused,
+            ctx.arrangeError ?? {
+                runId: ctx.runId,
+                dagId: ctx.dagId,
+                verifierRunId: ctx.verifierRunId,
+                dispatched: ctx.dispatched,
+                dispatchMs: ctx.dispatchMs,
+                verifierSeeded: ctx.verifierSeeded,
+                leadFocused: ctx.leadFocused,
+            }
+        );
+        if (ctx.arrangeError != null) return steps;
+        const wtRoot = arcWorktreeRoot();
+        rec(
+            "0b. the run's landing tree is under the user cache dir's arc-wt root, named by its run id's first 8 chars (or the whole id), not in the temp dir",
+            () =>
+                !!ctx.landPath &&
+                existsSync(ctx.landPath) &&
+                [ctx.runId.slice(0, 8), ctx.runId].includes(relative(wtRoot, ctx.landPath)),
+            { landPath: ctx.landPath, root: wtRoot, cwd: ctx.cwd }
+        );
+
+        // --- Part B: the States rows, on a dag the engine leaves alone ---
+        let a = await fstAgent(h, (s) => s.rows.length === 0 && s.railSteps === 0);
+        let d = await fstDag(h, ctx, (s) => s.node.meta === "waits on every task");
+        rec(
+            "B1. tasks still running: no tree row and no slot; the last node reads waits on every task over five waiting segments",
+            () =>
+                a.rows.length === 0 &&
+                a.slot == null &&
+                d.cards[d.cards.length - 1] === "final" &&
+                d.node.meta === "waits on every task" &&
+                d.node.under === "on the merged result" &&
+                fstSame(d.node.strip, fstRepeat("waiting", 5)),
+            { rows: a?.rows, slot: a?.slot, cards: d?.cards, node: d?.node }
+        );
+        await shot("b1-waiting-dag");
+
+        await fstShow(h, ctx, "tree");
+        a = await fstAgent(h, (s) => s.rows.length === 1 && s.rows[0].sub.startsWith("Tree"));
+        await clickRow();
+        a = await fstUntil(h, FST_AGENT, (s) => s.rows[0].selected && s.pane != null && s.stage != null);
+        await shot("b2-tree-pane");
+        d = await fstDag(h, ctx, (s) => s.node.meta.startsWith("round 1 · Tree"));
+        rec(
+            "B2. preparing the tree: Tree · <time> · step 1 of 5, the step list with Tree running, no output box, and End final stage",
+            () =>
+                a.rows.length === 1 &&
+                a.rows[0].title === "Final verification" &&
+                /^Tree · \d+s · step 1 of 5$/.test(a.rows[0].sub) &&
+                a.rows[0].tone === "run" &&
+                a.slot === "run" &&
+                fstSame(fstStates(a.pane.steps), ["running", ...fstRepeat("waiting", 4)]) &&
+                a.pane.output == null &&
+                a.pane.end &&
+                fstSame(fstStates(a.stage.steps), ["running", ...fstRepeat("waiting", 4)]) &&
+                /^round 1 · Tree · \d+s$/.test(d.node.meta) &&
+                fstSame(d.node.strip, ["running", ...fstRepeat("waiting", 4)]) &&
+                d.rail.output == null &&
+                d.rail.steps[0].command === "prepares the tree the stage runs in" &&
+                d.rail.steps[1].command === FST_CHECK,
+            { row: a?.rows, slot: a?.slot, pane: a?.pane, node: d?.node, rail: d?.rail?.steps }
+        );
+        await shot("b2-tree-dag");
+
+        let wait = await fstShow(h, ctx, "alongside");
+        a = await fstAgent(h, (s) => s.rows[0].sub.startsWith("Check") && s.pane.steps[0].text === "passed 22s", wait);
+        await shot("b3-alongside-pane");
+        d = await fstDag(h, ctx, (s) => s.node.meta === "round 1 · Check · verifier");
+        rec(
+            "B3. verifier alongside (no Final command): four steps, the Verifier running beside Check, Tree's time from its event",
+            () =>
+                /^Check · \d+s · verifier alongside$/.test(a.rows[0].sub) &&
+                a.rows[0].tone === "run" &&
+                fstSame(fstStates(a.pane.steps), ["passed", "running", "waiting", "running"]) &&
+                fstSame(a.pane.steps.map((s) => s.key), ["tree", "check", "verify", "verifier"]) &&
+                a.pane.steps[0].text === "passed 22s" &&
+                d.node.meta === "round 1 · Check · verifier" &&
+                fstSame(d.node.strip, ["passed", "running", "waiting", "running"]),
+            { row: a?.rows, pane: a?.pane?.steps, node: d?.node }
+        );
+        await shot("b3-alongside-dag");
+
+        wait = await fstShow(h, ctx, "reviewing");
+        a = await fstAgent(h, (s) => s.rows[0].sub.startsWith("verifier reviewing") && s.pane.steps[3].state === "passed", wait);
+        await shot("b4-reviewing-pane");
+        d = await fstDag(h, ctx, (s) => s.node.meta.startsWith("round 2 · verifier"));
+        rec(
+            "B4. verifier reviewing with its tab gone: the row is the stage's own, every command passed, the Verifier running, round 1 one line",
+            () =>
+                a.rows.length === 1 &&
+                a.rows[0].selected &&
+                a.pane != null &&
+                /^verifier reviewing · 4m \d\ds$/.test(a.rows[0].sub) &&
+                fstSame(fstStates(a.pane.steps), [...fstRepeat("passed", 4), "running"]) &&
+                a.pane.output == null &&
+                fstSame(a.stage.past, [{ round: "1", text: "round 1 · failed at Final" }]) &&
+                /^round 2 · verifier · 4m \d\ds$/.test(d.node.meta) &&
+                fstSame(d.node.strip, [...fstRepeat("passed", 4), "running"]) &&
+                d.rail.open === false,
+            { row: a?.rows, pane: a?.pane?.steps, past: a?.stage?.past, node: d?.node, open: d?.rail?.open }
+        );
+        await shot("b4-reviewing-dag");
+
+        wait = await fstShow(h, ctx, "failed");
+        a = await fstAgent(h, (s) => s.rows[0].tone === "fail" && s.pane.steps[3].state === "failed", wait);
+        await shot("b5-failed-pane");
+        await finalShotsClick(h, `${FST_PANE}?.querySelector("[data-final-shots-link]")`);
+        const paneViewer = (await fstUntil(h, FST_AGENT, (s) => s.viewer))?.viewer;
+        await closeViewer();
+        d = await fstDag(h, ctx, (s) => s.node.meta === "round 1 · failed at Final");
+        await shot("b5-failed-dag");
+        await finalShotsClick(h, `${FST_DAG_RAIL}?.querySelector("[data-final-shots-link]")`);
+        const railViewer = (await fstUntil(h, FST_DAG, (s) => s.viewer))?.viewer;
+        await shot("b5-failed-viewer");
+        await closeViewer();
+        rec(
+            "B5. failed at Final in round 1: the detail whole, the Verifier not run, the lead has it, and the screenshots open the viewer from the pane and the DAG rail",
+            () =>
+                a.rows[0].sub === "failed at Final · round 1" &&
+                a.rows[0].tone === "fail" &&
+                a.slot === "fail" &&
+                fstSame(fstStates(a.pane.steps), [...fstRepeat("passed", 3), "failed", "notrun"]) &&
+                a.pane.text.includes(fstFlat(FST_DETAIL)) &&
+                a.pane.text.includes("The lead has this failure") &&
+                !a.pane.end &&
+                a.pane.shots != null &&
+                paneViewer &&
+                d.node.meta === "round 1 · failed at Final" &&
+                fstSame(d.node.strip, [...fstRepeat("passed", 3), "failed", "notrun"]) &&
+                d.rail.text.includes(fstFlat(FST_DETAIL)) &&
+                d.rail.shots != null &&
+                railViewer,
+            { row: a?.rows, slot: a?.slot, pane: a?.pane, paneViewer, node: d?.node, rail: d?.rail, railViewer }
+        );
+
+        await fstShow(h, ctx, "fixing");
+        a = await fstAgent(h, (s) => s.rows[0].sub.startsWith("round 2") && s.rows[0].tone === "wait");
+        await shot("b6-fixing-pane");
+        d = await fstDag(h, ctx, (s) => s.node.meta.startsWith("round 2 waits on"));
+        rec(
+            "B6. fix round under way: round 2 waits on the unfinished tasks, every step waiting, round 1 one past-round line",
+            () =>
+                a.rows[0].sub === "round 2 after 3 fix tasks" &&
+                a.rows[0].tone === "wait" &&
+                fstSame(fstStates(a.pane.steps), fstRepeat("waiting", 5)) &&
+                fstSame(a.stage.past, [{ round: "1", text: "round 1 · failed at Final" }]) &&
+                d.node.meta === "round 2 waits on t-1, t-2, t-3" &&
+                fstSame(d.node.strip, fstRepeat("waiting", 5)) &&
+                fstSame(d.rail.past, [{ round: "1", text: "round 1 · failed at Final" }]),
+            { row: a?.rows, pane: a?.pane, past: a?.stage?.past, node: d?.node, rail: d?.rail }
+        );
+        await shot("b6-fixing-dag");
+
+        // the verifier's tab joins the roster. Until the stage names its run, that tab is a stage row an earlier
+        // round left, and the stage's row is its own
+        await fstShow(h, ctx, "reviewing", { verifier: false });
+        const rebooted = await fstBoot(h, ctx, true);
+        await fstAgent(h, (s) => s.rows.length === 1);
+        await clickRow();
+        const own = await fstUntil(h, FST_AGENT, (s) => s.rows[0].selected && s.pane != null);
+        wait = await fstShow(h, ctx, "reviewing");
+        // the stage's own row leaves through the tree's exit animation, so one row is waited for, not read at once
+        a = await fstUntil(h, FST_AGENT, (s) => s.pane == null && s.rows.length === 1 && s.rows[0].selected && s.stage.steps[3].state === "passed", wait);
+        rec(
+            "B7a. the row becomes the verifier's session: a focus on the stage's own row moves to the agent, one row, its rail keeps the step list",
+            () =>
+                rebooted &&
+                own.rows.length === 1 &&
+                own.rows[0].selected &&
+                own.pane != null &&
+                a.rows.length === 1 &&
+                a.rows[0].selected &&
+                a.pane == null &&
+                a.rows[0].sub.startsWith("verifier reviewing") &&
+                fstSame(fstStates(a.stage.steps), [...fstRepeat("passed", 4), "running"]),
+            { rebooted, own: { rows: own?.rows, pane: own?.pane != null }, rows: a?.rows, pane: a?.pane != null, stage: a?.stage }
+        );
+        await shot("b7-session-agent");
+        // away from the row, so landing on it is the Enter's doing
+        await fstFocusLead(h);
+        const away = await fstUntil(h, FST_AGENT, (s) => s.rows[0].selected === false);
+        d = await fstDag(h, ctx, (s) => s.rail.open === true);
+        await shot("b7-session-dag");
+        const entered = await h.ev(`(() => {
+            const node = ${FST_NODE}?.closest(".react-flow__node");
+            if (!node) return false;
+            // Enter on a focused button is the button's own
+            node.focus({ preventScroll: true });
+            const init = { key: "Enter", code: "Enter", bubbles: true, cancelable: true };
+            (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keydown", init));
+            return true;
+        })()`);
+        const landed = await fstUntil(
+            h,
+            `({ modal: ${FST_MODAL} != null, agent: ${FST_AGENT} })`,
+            (s) => !s.modal && s.agent.rows[0].selected
+        );
+        const onAgent = await h.activeSurfaceLabel();
+        rec(
+            "B7b. the final node's rail has Open in Agent, and Enter on the node lands on the Agent surface with the verifier's session focused",
+            () =>
+                away.rows[0].selected === false &&
+                d.rail.open === true &&
+                entered &&
+                !landed.modal &&
+                onAgent === SURFACE_LABEL.agent &&
+                landed.agent.rows.length === 1 &&
+                landed.agent.rows[0].selected &&
+                landed.agent.pane == null,
+            { away: away?.rows, open: d?.rail?.open, entered, onAgent, modal: landed?.modal, rows: landed?.agent?.rows }
+        );
+
+        // the verifier gave its verdict: its run is over
+        await fstWriteRun(h, ctx.verifierRunId, (run) => ({ ...run, completedts: ctx.verifierStart + FST_VERIFIER_MS }));
+        wait = await fstShow(h, ctx, "unverified");
+        a = await fstAgent(h, (s) => s.rows[0].tone === "warn" && s.stage.steps[4].state === "unverified", wait);
+        await shot("b8-unverified-agent");
+        d = await fstDag(h, ctx, (s) => s.node.meta === "round 2 · unverified");
+        rec(
+            "B8. unverified in round 2 on the verifier's verdict: unverified · 1 reason, the reason whole, the Verifier unverified, round 1 one line",
+            () =>
+                a.rows.length === 1 &&
+                a.rows[0].sub === "unverified · 1 reason" &&
+                a.rows[0].tone === "warn" &&
+                a.slot === "warn" &&
+                fstSame(fstStates(a.stage.steps), [...fstRepeat("passed", 4), "unverified"]) &&
+                d.node.meta === "round 2 · unverified" &&
+                fstSame(d.node.strip, [...fstRepeat("passed", 4), "unverified"]) &&
+                d.rail.text.includes(FST_UNVERIFIED) &&
+                !d.rail.end &&
+                fstSame(d.rail.past, [{ round: "1", text: "round 1 · failed at Final" }]),
+            { row: a?.rows, slot: a?.slot, stage: a?.stage, node: d?.node, rail: d?.rail }
+        );
+        await shot("b8-unverified-dag");
+
+        wait = await fstShow(h, ctx, "passed");
+        await h.goto("agent");
+        // off the row, or the fold stays open under the reader
+        await fstFocusLead(h);
+        const folded = await fstUntil(h, FST_AGENT, (s) => s.rows.length === 0 && s.fold != null);
+        await shot("b9-passed-folded");
+        await finalShotsClick(h, FST_FOLD);
+        await fstUntil(h, FST_AGENT, (s) => s.rows.length === 1);
+        await clickRow();
+        a = await fstUntil(h, FST_AGENT, (s) => s.rows[0].sub === `passed · ${FST_TOTAL}` && s.stage != null, wait);
+        await shot("b9-passed-agent");
+        d = await fstDag(h, ctx, (s) => s.node.meta === `round 2 · passed · ${FST_TOTAL}`);
+        rec(
+            "B9. passed in round 2: the row is inside the run's finished group, every step shows its time, and the row and the node show the total",
+            () =>
+                folded.rows.length === 0 &&
+                /review/.test(folded.fold) &&
+                a.rows.length === 1 &&
+                a.rows[0].sub === `passed · ${FST_TOTAL}` &&
+                a.rows[0].tone === "pass" &&
+                a.slot === "pass" &&
+                fstSame(a.stage.steps.map((s) => s.text), FST_STEP_TEXT) &&
+                d.node.meta === `round 2 · passed · ${FST_TOTAL}` &&
+                fstSame(d.node.strip, fstRepeat("passed", 5)) &&
+                fstSame(d.rail.steps.map((s) => s.text), FST_STEP_TEXT),
+            { folded: { rows: folded?.rows, fold: folded?.fold }, row: a?.rows, slot: a?.slot, stage: a?.stage, node: d?.node, rail: d?.rail?.steps }
+        );
+        await shot("b9-passed-dag");
+
+        // a reload drops the published events; without Check's the stage has no total, and every state stands
+        const reloaded = await fstBoot(h, ctx, true);
+        wait = await fstShow(h, ctx, "passed", { skip: "check" });
+        if (await h.ev(`${FST_ROW} == null && ${FST_FOLD} != null`)) await finalShotsClick(h, FST_FOLD);
+        await fstUntil(h, FST_AGENT, (s) => s.rows.length === 1);
+        await clickRow();
+        a = await fstUntil(h, FST_AGENT, (s) => s.rows[0].sub === "passed" && s.stage.steps[0].text === "passed 22s", wait);
+        await shot("b10-no-total-agent");
+        d = await fstDag(h, ctx, (s) => s.node.meta === "round 2 · passed");
+        rec(
+            "B10. with one step's event gone: the total leaves the row and the node, that step shows no time, and every state stays passed",
+            () =>
+                reloaded &&
+                a.rows[0].sub === "passed" &&
+                a.rows[0].tone === "pass" &&
+                fstSame(fstStates(a.stage.steps), fstRepeat("passed", 5)) &&
+                fstSame(a.stage.steps.map((s) => s.text), FST_STEP_TEXT.map((t, i) => (i === 1 ? "passed" : t))) &&
+                d.node.meta === "round 2 · passed" &&
+                fstSame(d.node.strip, fstRepeat("passed", 5)),
+            { reloaded, row: a?.rows, stage: a?.stage, node: d?.node }
+        );
+        await shot("b10-no-total-dag");
+
+        // --- Part A: a dag really finalizing, run by the engine ---
+        const live = await fstStartLive(h, ctx);
+        const liveBoot = await fstBoot(h, ctx, false);
+        rec(
+            "A0. the engine started round 1 on the seeded dag: Verify running with output, no tree on the stage and no verifier",
+            () =>
+                liveBoot &&
+                live.status === "finalizing" &&
+                live.state === "checking" &&
+                live.step === "verify" &&
+                live.output.includes(`${FST_MARK} 3`) &&
+                live.tree === "" &&
+                live.verifierrunid === "",
+            { liveBoot, ...live }
+        );
+        a = await fstAgent(h, (s) => s.rows.length === 1 && /step 2 of 4$/.test(s.rows[0].sub) && s.status != null, {
+            ms: 20_000,
+        });
+        rec(
+            "A1. the tree has one Final verification row naming the running step, and the run's strip has its final slot",
+            () =>
+                a.rows.length === 1 &&
+                a.rows[0].title === "Final verification" &&
+                /^Verify · \S.* · step 2 of 4$/.test(a.rows[0].sub) &&
+                a.rows[0].tone === "run" &&
+                a.slot === "run" &&
+                /final verification/i.test(a.strip),
+            { rows: a?.rows, slot: a?.slot, strip: a?.strip }
+        );
+        rec(
+            "A2. the lead's rail draws no step of the stage, the tree's row carries it, and the Run status reads Verifying",
+            () =>
+                a.railSteps === 0 &&
+                a.status.startsWith("Verifying") &&
+                a.status.includes("next Final, then the verifier"),
+            { railSteps: a?.railSteps, status: a?.status }
+        );
+        await shot("a1-row-and-lead-rail");
+
+        // the form the run sheet shares with the pane, opened where it always was and left without ending
+        await h.goto("jarvis");
+        await polishWaitFor(h, `typeof window.__openAddress === "function"`, 5000);
+        await h.ev(`window.__openAddress(${JSON.stringify(`run:${ctx.runId}`)})`);
+        const sheetEnd = fstButton(FST_SHEET, "End final stage");
+        await polishWaitFor(h, `!!${sheetEnd}`, 10_000);
+        await finalShotsClick(h, sheetEnd);
+        const sheetFormExpr = `(() => {
+            const form = ${FST_SHEET}?.querySelector("[data-run-sheet-end-final]");
+            return form
+                ? {
+                      reason: form.querySelector("textarea") != null,
+                      buttons: [...form.querySelectorAll("button")].map((b) => b.textContent.trim()),
+                  }
+                : null;
+        })()`;
+        const sheetForm = await fstUntil(h, sheetFormExpr, (s) => s.reason);
+        await shot("a3-run-sheet-end-form");
+        await finalShotsClick(h, fstButton(`${FST_SHEET}?.querySelector("[data-run-sheet-end-final]")`, "Keep running"));
+        const sheetClosed = await polishWaitFor(h, `${FST_SHEET} != null && ${sheetFormExpr} == null`, 5000);
+        const stillRunning = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group?.final?.state;
+        rec(
+            "A3. the run sheet's End final stage opens the shared form with its reason box and both outcomes, and Keep running closes it",
+            () =>
+                sheetForm.reason &&
+                fstSame(sheetForm.buttons, ["Pass unverified", "Fail", "Keep running"]) &&
+                sheetClosed &&
+                stillRunning === "checking",
+            { sheetForm, sheetClosed, stillRunning }
+        );
+
+        await h.goto("agent");
+        await finalShotsClick(h, `${FST_TREE}?.querySelector("[data-final-row]")`);
+        a = await fstUntil(h, FST_AGENT, (s) => s.rows[0].selected && s.pane.output != null && s.stage != null);
+        rec(
+            "A4. clicking the tree's row focuses it: the pipeline, the running command and its output, the stage's facts and step list once, and End final stage",
+            () =>
+                a.rows[0].selected &&
+                a.railSteps === a.stage.steps.length &&
+                fstSame(fstStates(a.pane.steps), ["passed", "running", "waiting", "waiting"]) &&
+                a.pane.text.includes(`$ ${FST_LIVE_VERIFY}`) &&
+                a.pane.output.includes(`${FST_MARK} 3`) &&
+                a.pane.end &&
+                fstSame(fstStates(a.stage.steps), ["passed", "running", "waiting", "waiting"]) &&
+                ["Commit", "Tree", "Reviewers"].every((fact) => a.stage.text.includes(fact)) &&
+                !a.stage.text.includes("Round"),
+            { rows: a?.rows, pane: a?.pane, stage: a?.stage, railSteps: a?.railSteps }
+        );
+        await shot("a4-pane");
+
+        d = await fstDag(h, ctx, (s) => s.rail.output != null);
+        rec(
+            "A5. the DAG's last node is the final stage, with an edge from each sink task, and the stage line has no final verify entry",
+            () =>
+                d.cards[d.cards.length - 1] === "final" &&
+                fstSame(d.edges.filter((e) => e.endsWith(">final")), FST_SINK_EDGES) &&
+                /^round 1 · Verify · /.test(d.node.meta) &&
+                fstSame(d.node.strip, ["passed", "running", "waiting", "waiting"]) &&
+                d.stageLine.startsWith("Run route ·") &&
+                !/final verify/i.test(d.stageLine),
+            { cards: d?.cards, edges: d?.edges, node: d?.node, stageLine: d?.stageLine }
+        );
+        rec(
+            "A6. selecting the node opens its rail: each step's command and state, the output tail and End final stage",
+            () =>
+                d.node.pressed === "true" &&
+                fstSame(d.rail.steps.map((s) => s.command), [
+                    "prepares the tree the stage runs in",
+                    FST_LIVE_VERIFY,
+                    FST_LIVE_FINAL,
+                    "judges the merged result",
+                ]) &&
+                fstSame(fstStates(d.rail.steps), ["passed", "running", "waiting", "waiting"]) &&
+                d.rail.output.includes(FST_MARK) &&
+                d.rail.end,
+            { node: d?.node, rail: d?.rail }
+        );
+        await shot("a6-dag-rail");
+
+        // the rail's minimum height is what keeps the form below End final stage in view; nothing else measures it
+        const RAIL_FORM = `document.querySelector("[data-dag-final-rail] [data-run-sheet-end-final]")`;
+        await finalShotsClick(h, `document.querySelector("[data-dag-final-rail] [data-final-end]")`);
+        await polishWaitFor(h, `${RAIL_FORM} != null`, 3000);
+        const railForm = await h.ev(`(() => {
+            const form = ${RAIL_FORM};
+            if (!form) return null;
+            const box = form.parentElement.getBoundingClientRect();
+            const clippedBy = [];
+            for (let el = form.parentElement.parentElement; el && el !== document.body; el = el.parentElement) {
+                const cs = getComputedStyle(el);
+                if (cs.overflowX === "visible" && cs.overflowY === "visible") continue;
+                const r = el.getBoundingClientRect();
+                if (box.top < r.top - 0.5 || box.bottom > r.bottom + 0.5 || box.left < r.left - 0.5 || box.right > r.right + 0.5) {
+                    clippedBy.push((el.className || el.tagName).toString().slice(0, 60));
+                }
+            }
+            // what sits on the form's bottom corners: the form itself unless something covers or cuts it
+            const corner = (x, y) => form.parentElement.contains(document.elementFromPoint(x, y));
+            return {
+                box: { top: Math.round(box.top), bottom: Math.round(box.bottom), height: Math.round(box.height) },
+                viewport: innerHeight,
+                clippedBy,
+                corners: corner(box.left + 4, box.bottom - 4) && corner(box.right - 4, box.bottom - 4),
+            };
+        })()`);
+        await shot("a6-dag-rail-end-form");
+        await finalShotsClick(h, fstButton(RAIL_FORM, "Keep running"));
+        const railFormClosed = await polishWaitFor(h, `${RAIL_FORM} == null`, 3000);
+        rec(
+            "A6b. End final stage in the DAG rail opens its form whole: no scrolling or clipping ancestor cuts it, nothing covers its bottom, and Keep running closes it",
+            () => railForm != null && railForm.clippedBy.length === 0 && railForm.corners && railForm.box.bottom <= railForm.viewport && railFormClosed,
+            { railForm, railFormClosed }
+        );
+
+        await h.goto("agent");
+        await finalShotsClick(h, `${FST_PANE}?.querySelector("[data-final-end]")`);
+        const paneForm = (await fstUntil(h, FST_AGENT, (s) => s.pane.form))?.pane?.form;
+        const typed = await h.ev(`(() => {
+            const box = ${FST_PANE}?.querySelector("[data-run-sheet-end-final] textarea");
+            if (!box) return false;
+            // a controlled input takes a value only through the native setter and an input event
+            Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set.call(box, ${JSON.stringify(FST_REASON)});
+            box.dispatchEvent(new Event("input", { bubbles: true }));
+            return true;
+        })()`);
+        const unverifiedBtn = fstButton(`${FST_PANE}?.querySelector("[data-run-sheet-end-final]")`, "Pass unverified");
+        await polishWaitFor(h, `${unverifiedBtn}?.disabled === false`, 3000);
+        await shot("a7-end-form");
+        await finalShotsClick(h, unverifiedBtn);
+        a = await fstUntil(h, FST_AGENT, (s) => s.rows[0].tone === "warn" && s.pane.steps[1].state === "stopped", { ms: 20_000 });
+        await shot("a7-ended-pane");
+        d = await fstDag(h, ctx, (s) => s.node.meta === "round 1 · unverified");
+        rec(
+            "A7. End final stage, as unverified with a reason: the row, the pane and the node read unverified, the reason is whole, and Verify reads stopped",
+            () =>
+                paneForm &&
+                typed &&
+                a.rows.length === 1 &&
+                a.rows[0].sub === "unverified · 1 reason" &&
+                a.rows[0].tone === "warn" &&
+                a.slot === "warn" &&
+                fstSame(fstStates(a.pane.steps), ["passed", "stopped", "notrun", "notrun"]) &&
+                a.pane.text.includes(`ended by the human: ${FST_REASON}`) &&
+                !a.pane.end &&
+                d.node.meta === "round 1 · unverified" &&
+                fstSame(d.node.strip, ["passed", "stopped", "notrun", "notrun"]) &&
+                d.rail.text.includes(`ended by the human: ${FST_REASON}`) &&
+                !d.rail.end,
+            { paneForm, typed, rows: a?.rows, slot: a?.slot, pane: a?.pane, node: d?.node, rail: d?.rail }
+        );
+        await shot("a7-ended-dag");
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownFixtureRun(h, ctx, "final-stage", {
+            what: "cancel the channel's other runs and restore the rail preference",
+            fn: async () => {
+                try {
+                    // the verifier's seeded run, and t-1's child run, which Part A unlinked from its task with its
+                    // worker still at work in the lane's tree
+                    const runs = ctx.channelId ? await channelRuns(h, ctx.channelId) : [];
+                    for (const run of runs) {
+                        if (run.id === ctx.runId) {
+                            // the engine completed the run when the stage was ended, and a finished run is not cancelled
+                            if (run.status === "done") ctx.runId = null;
+                        } else if (run.status !== "done" && run.status !== "cancelled") {
+                            await h.rpc("cancelrun", { channelid: ctx.channelId, runid: run.id });
+                        }
+                    }
+                } finally {
+                    await h.ev(
+                        ctx.prevRail == null
+                            ? `localStorage.removeItem(${JSON.stringify(RAIL_VISIBLE_KEY)})`
+                            : `localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, ${JSON.stringify(ctx.prevRail)})`
+                    );
+                }
+            },
+        });
+        rmSync(ctx.out, { recursive: true, force: true });
+        // a worker that was just stopped holds its lane's tree for a moment, and a tree left behind fails the scenario
+        rmSync(ctx.cwd, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 });
     },
 };
 
@@ -20534,11 +22754,17 @@ const launcherImages = {
 const PALETTE_INPUT = `document.querySelector('input[data-palette-input]')`;
 const PALETTE = `${PALETTE_INPUT}?.closest('[role="dialog"]')`;
 // React reads keys off the input's own keydown, so they are dispatched there rather than relying on page focus
-const paletteKey = (key) => `(() => {
+const paletteKey = (key, mods = {}) => `(() => {
     const el = ${PALETTE_INPUT};
     if (!el) return false;
-    el.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, code: ${JSON.stringify(key)}, bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent('keydown', { ...${JSON.stringify(mods)}, key: ${JSON.stringify(key)}, code: ${JSON.stringify(key)}, bubbles: true }));
     return true;
+})()`;
+// a key sent to the note editor's title or body; true when the editor took it (prevented its default)
+const noteKeyIn = (field, key, mods = {}) => `(() => {
+    const el = ${PALETTE}?.querySelector(${JSON.stringify(field === "body" ? "[data-note-body]" : "input[data-palette-input]")});
+    if (!el) return null;
+    return !el.dispatchEvent(new KeyboardEvent('keydown', { ...${JSON.stringify(mods)}, key: ${JSON.stringify(key)}, code: ${JSON.stringify(key)}, bubbles: true, cancelable: true }));
 })()`;
 const PALETTE_TOGGLE = `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', code: 'KeyP', ${MOD_KEY_JS}, bubbles: true }))`;
 // the listbox's children are its groups, each led by its label; a row is a data-idx button
@@ -20791,6 +23017,587 @@ const paletteGoal = {
     },
 };
 
+// --- palette-notes: the Notes scope of Ctrl+P (docs/superpowers/plans/2026-10-08-user-notes-palette.md)
+// The vault may already hold notes, some of today's: rows are found by the run's stamp, and arrange adds its own
+// last so they lead the list.
+const NOTES_STATE = `(() => {
+    const d = ${PALETTE};
+    if (!d) return null;
+    const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+    const rows = [...d.querySelectorAll('[data-note-row]')].map((b) => ({
+        id: b.dataset.noteRow,
+        text: flat(b),
+        selected: b.getAttribute('aria-selected') === 'true',
+        hit: [...b.querySelectorAll('span.font-semibold')].map((s) => s.textContent).join(''),
+    }));
+    const pane = d.querySelector('[data-note-preview]');
+    const arm = d.querySelector('[data-palette-arm]');
+    const alert = d.querySelector('[role="alert"]');
+    const fresh = d.querySelector('[data-note-new]');
+    const body = d.querySelector('[data-note-body]');
+    const title = d.querySelector('input[data-palette-input]');
+    return {
+        newRow: fresh
+            ? {
+                  text: flat(fresh),
+                  selected: fresh.getAttribute('aria-selected') === 'true',
+                  last: [...d.querySelectorAll('[role="option"]')].pop() === fresh,
+              }
+            : null,
+        editor: body
+            ? {
+                  chip: flat(d.querySelector('[data-palette-drill]')),
+                  title: title?.value ?? null,
+                  titleLabel: title?.getAttribute('aria-label') ?? null,
+                  body: body.value,
+                  focus: document.activeElement === body ? 'body' : document.activeElement === title ? 'title' : null,
+                  scopeRow: !!d.querySelector('[role="group"][aria-label="Scope"]'),
+                  results: !!d.querySelector('[role="listbox"]'),
+              }
+            : null,
+        token: d.querySelector('[data-palette-token]') ? flat(d.querySelector('[data-palette-token]')) : null,
+        query: d.querySelector('input[data-palette-input]')?.value ?? null,
+        split: !!d.querySelector('[data-palette-notes]'),
+        rows,
+        selected: rows.find((r) => r.selected)?.id ?? null,
+        preview: pane
+            ? {
+                  text: flat(pane),
+                  steps: [...pane.querySelectorAll('ol > li')].map(flat),
+                  code: [...pane.querySelectorAll('[data-code-head]')].map((el) => flat(el.parentElement)),
+                  scrollTop: pane.scrollTop,
+                  hidden: pane.scrollHeight - pane.clientHeight,
+              }
+            : null,
+        arm: arm ? { key: arm.dataset.paletteArm, text: flat(arm) } : null,
+        error: alert ? flat(alert) : null,
+        text: (d.innerText ?? '').replace(/\\s+/g, ' ').trim(),
+    };
+})()`;
+
+async function notesStateWhen(h, ok, ms) {
+    let state = null;
+    for (let waited = 0; waited <= ms; waited += 250) {
+        state = await h.ev(NOTES_STATE).catch(() => null);
+        if (state != null && ok(state)) break;
+        await polishNap(250);
+    }
+    return state;
+}
+
+// paletteKey's event is not cancelable, so it cannot tell whether the palette took the key
+const NOTES_DEL_TAKEN = `(() => {
+    const el = ${PALETTE_INPUT};
+    if (!el) return null;
+    return !el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', code: 'Delete', bubbles: true, cancelable: true }));
+})()`;
+const notesCaretExpr = (at) => `(() => {
+    const el = ${PALETTE_INPUT};
+    if (!el) return null;
+    const pos = ${at === "end" ? "el.value.length" : at};
+    el.setSelectionRange(pos, pos);
+    return el.selectionStart;
+})()`;
+// an own property over Clipboard.prototype's: never the real write, which a window without OS focus rejects and
+// which would overwrite the user's clipboard
+const notesClipStub = (rejects) => `(() => {
+    window.__notesClip = [];
+    navigator.clipboard.writeText = (text) => {
+        window.__notesClip.push(text);
+        return ${rejects ? `Promise.reject(new Error('denied'))` : `Promise.resolve()`};
+    };
+    return true;
+})()`;
+const NOTES_CLIP_RESTORE = `(() => { delete navigator.clipboard.writeText; delete window.__notesClip; return true; })()`;
+// setInputExpr's setter is the input's; the editor's body is a textarea
+const noteBodyExpr = (value) => `(() => {
+    const el = ${PALETTE}?.querySelector('[data-note-body]');
+    if (!el) return false;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, ${JSON.stringify(value)});
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+})()`;
+// the scrim is the dialog's parent, and it leaves only on a press that lands on itself
+const NOTES_BACKDROP_PRESS = `(() => {
+    const scrim = ${PALETTE}?.parentElement;
+    if (!scrim) return false;
+    scrim.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    return true;
+})()`;
+
+const NOTES_LONG_PARAGRAPHS = 120;
+
+const paletteNotes = {
+    name: "palette-notes",
+    surface: "jarvis",
+    async arrange(h) {
+        const stamp = `palnotes${Date.now().toString(36)}`;
+        // newest first, as the list shows them: arrange adds them in reverse
+        const fixtures = {
+            markdown: {
+                title: `verify ${stamp} markdown zebra`,
+                body: `Steps of ${stamp}:\n\n1. first step alpha\n2. second step beta\n\n\`\`\`sh\necho fenced-${stamp}\n\`\`\``,
+            },
+            quokka: { title: `verify ${stamp} quokka`, body: `the quokka body of ${stamp}` },
+            narwhal: { title: `verify ${stamp} narwhal`, body: `the narwhal body of ${stamp}` },
+            long: {
+                title: `verify ${stamp} long walrus`,
+                body: Array.from({ length: NOTES_LONG_PARAGRAPHS }, (_, i) => `paragraph ${i + 1} of the long note`).join("\n\n"),
+            },
+        };
+        const ctx = { stamp, fixtures, ids: {} };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            ctx.vault = await vaultRoot(h);
+            const remote = vaultRemote(ctx.vault);
+            if (remote) throw new Error(`the vault ${ctx.vault} has a git remote (${remote}): not writing fixture notes into it`);
+            for (const name of ["long", "narwhal", "quokka", "markdown"]) {
+                ctx.ids[name] = (await h.rpc("noteadd", fixtures[name])).id;
+                // a file time of its own, so the order by modified time is the order added
+                await polishNap(50);
+            }
+            await polishReload(h);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. four notes were added", false, ctx.arrangeError);
+            return steps;
+        }
+        const { stamp, fixtures, ids } = ctx;
+        const stamped = (s) => (s?.rows ?? []).filter((r) => r.text.includes(stamp)).map((r) => r.id);
+        const exists = async (id) => ((await h.rpc("notelist", null)) ?? []).some((n) => n.id === id);
+        const key = (k, mods) => h.ev(paletteKey(k, mods));
+        const type = (text) => h.ev(setInputExpr(PALETTE_INPUT, text));
+        const CTRL = { ctrlKey: true };
+        const editorKey = (field, k, mods) => h.ev(noteKeyIn(field, k, mods));
+        const typeBody = (text) => h.ev(noteBodyExpr(text));
+        const inEditor = (s) => s.editor != null;
+        const inList = (s) => s.editor == null && s.split;
+        const noteOf = async (id) => ((await h.rpc("notelist", null)) ?? []).find((n) => n.id === id) ?? null;
+        const editorBrief = (s) => JSON.stringify({ editor: s?.editor, arm: s?.arm, error: s?.error, split: s?.split, selected: s?.selected });
+        const selectedIs = (id) => (s) => s.split && s.selected === id;
+        const brief = (s) => JSON.stringify({ token: s?.token, query: s?.query, split: s?.split, selected: s?.selected, rows: stamped(s), arm: s?.arm, error: s?.error });
+
+        await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
+        await h.goto("jarvis");
+        if (!(await openPalette(h))) {
+            rec("0. Ctrl+P opens the palette", false, "the palette never opened");
+            return steps;
+        }
+
+        await h.ev(`${PALETTE}?.querySelector('[data-palette-scope="notes"]')?.click()`);
+        const order = [ids.markdown, ids.quokka, ids.narwhal, ids.long];
+        const list = await notesStateWhen(h, (s) => s.split && stamped(s).length === 4, 8000);
+        await h.shot("cdp-shots/palette-notes-list.png");
+        rec(
+            "1. the Notes scope lists the notes beside a preview",
+            list?.token === "Notes" && list.split && stamped(list).join() === order.join() && list.selected === ids.markdown,
+            `want ${order.join()} with the first selected: ${brief(list)}`
+        );
+
+        rec(
+            "2. the preview renders the selected note's markdown",
+            list?.preview != null &&
+                list.preview.steps.join("|") === "first step alpha|second step beta" &&
+                list.preview.code.some((c) => c.includes(`echo fenced-${stamp}`)) &&
+                !list.preview.text.includes("```"),
+            JSON.stringify(list?.preview)
+        );
+
+        await key("ArrowDown");
+        const second = await notesStateWhen(h, selectedIs(ids.quokka), 3000);
+        rec(
+            "3. ↓ moves the preview to the next note",
+            second?.selected === ids.quokka && second.preview?.text === fixtures.quokka.body,
+            JSON.stringify({ selected: second?.selected, preview: second?.preview?.text })
+        );
+
+        await type(`${stamp} quokka`);
+        const filtered = await notesStateWhen(h, (s) => s.split && s.rows.length === 1, 3000);
+        rec(
+            "4. typing filters by title",
+            filtered?.rows.length === 1 && filtered.rows[0].id === ids.quokka && filtered.rows[0].hit.includes("quokka"),
+            JSON.stringify(filtered?.rows)
+        );
+
+        // each open starts fresh on All
+        await openPalette(h);
+        await type("no:");
+        const prefixed = await notesStateWhen(h, (s) => s.token === "Notes", 3000);
+        rec("5. no: from All narrows to Notes", prefixed?.token === "Notes" && prefixed.query === "", brief(prefixed));
+
+        await openPalette(h);
+        await type(`${stamp} narwhal`);
+        const inAll = await paletteStateWhen(h, (s) => s.groups.some((g) => g.label === "Notes"), 5000);
+        const notesGroup = inAll?.groups.find((g) => g.label === "Notes");
+        const foundInAll =
+            inAll?.token == null && notesGroup?.rows.some((r) => r.includes(fixtures.narwhal.title)) && (inAll.selected ?? "").includes(fixtures.narwhal.title);
+        await key("Enter");
+        const shown = await notesStateWhen(h, selectedIs(ids.narwhal), 3000);
+        rec(
+            "6. a note is found from All and Enter shows it in Notes",
+            foundInAll && shown?.token === "Notes" && shown.selected === ids.narwhal && shown.preview?.text === fixtures.narwhal.body,
+            `in All: ${JSON.stringify({ selected: inAll?.selected, groups: inAll?.groups })} then ${brief(shown)}`
+        );
+
+        // the whole list again, on the narwhal note: a neighbour on each side
+        await type("");
+        await notesStateWhen(h, (s) => s.split && stamped(s).length === 4, 3000);
+        await key("ArrowDown");
+        await key("ArrowDown");
+        await notesStateWhen(h, selectedIs(ids.narwhal), 3000);
+        await key("Delete");
+        const armed = await notesStateWhen(h, (s) => s.arm != null, 3000);
+        const armedExists = await exists(ids.narwhal);
+        await key("ArrowDown");
+        const disarmed = await notesStateWhen(h, (s) => s.arm == null && s.selected === ids.long, 3000);
+        const disarmedExists = await exists(ids.narwhal);
+        rec(
+            "7. one del arms, another key disarms",
+            armed?.arm?.key === "del" &&
+                armed.arm.text.includes(`del again deletes “${fixtures.narwhal.title}”`) &&
+                armedExists &&
+                disarmed?.arm == null &&
+                disarmed?.selected === ids.long &&
+                disarmedExists,
+            JSON.stringify({ armed: armed?.arm, armedExists, after: disarmed?.arm, selected: disarmed?.selected, disarmedExists })
+        );
+
+        await key("ArrowUp");
+        await notesStateWhen(h, selectedIs(ids.narwhal), 3000);
+        await key("Delete");
+        await notesStateWhen(h, (s) => s.arm != null, 3000);
+        await key("Delete");
+        const deleted = await notesStateWhen(h, (s) => !stamped(s).includes(ids.narwhal), 5000);
+        await h.shot("cdp-shots/palette-notes-deleted.png");
+        const deletedExists = await exists(ids.narwhal);
+        rec(
+            "8. del twice deletes the note",
+            deleted != null && stamped(deleted).join() === [ids.markdown, ids.quokka, ids.long].join() && deleted.selected === ids.long && !deletedExists,
+            `still listed by RPC=${deletedExists} ${brief(deleted)}`
+        );
+
+        const top = await notesStateWhen(h, (s) => s.selected === ids.long && s.preview?.hidden > 0, 3000);
+        await key("PageDown");
+        const down = await notesStateWhen(h, (s) => s.preview?.scrollTop > 0, 3000);
+        await key("PageUp");
+        const up = await notesStateWhen(h, (s) => s.preview?.scrollTop === 0, 3000);
+        rec(
+            "9. PageDown and PageUp scroll a long note's preview",
+            top?.preview?.scrollTop === 0 &&
+                top.preview.hidden > 0 &&
+                down?.preview?.scrollTop > 0 &&
+                down.selected === ids.long &&
+                up?.preview?.scrollTop === 0 &&
+                up.selected === ids.long,
+            JSON.stringify({
+                hidden: top?.preview?.hidden,
+                scroll: [top?.preview?.scrollTop, down?.preview?.scrollTop, up?.preview?.scrollTop],
+                selected: [top?.selected, down?.selected, up?.selected],
+            })
+        );
+
+        await type(stamp);
+        await notesStateWhen(h, (s) => s.split && s.rows.length === 3 && s.selected != null, 3000);
+        const caret = await h.ev(notesCaretExpr(0));
+        const takenMid = await h.ev(NOTES_DEL_TAKEN);
+        const mid = await h.ev(NOTES_STATE);
+        const midExists = mid?.selected != null && (await exists(mid.selected));
+        // the same key with the caret at the end is taken, so a false above is the caret's doing
+        await h.ev(notesCaretExpr("end"));
+        const takenEnd = await h.ev(NOTES_DEL_TAKEN);
+        const endArmed = await notesStateWhen(h, (s) => s.arm != null, 3000);
+        await key("Shift");
+        await notesStateWhen(h, (s) => s.arm == null, 3000);
+        rec(
+            "10. del with the caret mid-query edits the text and arms nothing",
+            caret === 0 && takenMid === false && mid?.arm == null && mid?.query === stamp && midExists && takenEnd === true && endArmed?.arm != null,
+            JSON.stringify({ caret, takenMid, arm: mid?.arm, query: mid?.query, midExists, takenEnd, endArm: endArmed?.arm })
+        );
+
+        await type("");
+        await notesStateWhen(h, (s) => s.split && stamped(s).length === 3, 3000);
+        await key("ArrowDown");
+        const onGone = await notesStateWhen(h, selectedIs(ids.quokka), 3000);
+        await h.rpc("notedelete", { id: ids.quokka });
+        await key("Delete");
+        await notesStateWhen(h, (s) => s.arm != null, 3000);
+        await key("Delete");
+        const failed = await notesStateWhen(h, (s) => s.error != null && !stamped(s).includes(ids.quokka), 5000);
+        rec(
+            "11. deleting a note that is already gone says so and reloads the list",
+            onGone?.selected === ids.quokka &&
+                (failed?.error ?? "").startsWith("Delete failed") &&
+                stamped(failed).join() === [ids.markdown, ids.long].join(),
+            brief(failed)
+        );
+
+        rec(
+            "12. the New note row sits last and is not the default",
+            list?.selected === ids.markdown &&
+                list.newRow?.last === true &&
+                list.newRow.text.includes("New note") &&
+                !list.newRow.selected &&
+                list.text.includes("ctrl ⏎ Edits it"),
+            JSON.stringify({ selected: list?.selected, newRow: list?.newRow, text: list?.text.slice(-260) })
+        );
+
+        // a fresh open: the markdown note leads and is selected
+        await openPalette(h);
+        await h.ev(`${PALETTE}?.querySelector('[data-palette-scope="notes"]')?.click()`);
+        await notesStateWhen(h, (s) => selectedIs(ids.markdown)(s) && stamped(s).length === 2, 5000);
+        await key("Enter", CTRL);
+        const opened = await notesStateWhen(h, (s) => inEditor(s) && s.editor.focus === "body", 3000);
+        await h.shot("cdp-shots/palette-notes-editor.png");
+        rec(
+            "13. ctrl ⏎ opens the note in the editor",
+            opened?.editor != null &&
+                /^Notes\s*›\s*Edit$/.test(opened.editor.chip) &&
+                opened.editor.titleLabel === "Title" &&
+                opened.editor.title === fixtures.markdown.title &&
+                opened.editor.body.includes("```sh") &&
+                opened.editor.body.includes(`echo fenced-${stamp}`) &&
+                opened.editor.focus === "body" &&
+                !opened.editor.scopeRow &&
+                !opened.editor.results &&
+                opened.text.includes(`Saves “${fixtures.markdown.title}”`),
+            editorBrief(opened)
+        );
+
+        const focusAfter = async (field, k, mods) => {
+            const taken = await editorKey(field, k, mods);
+            const s = await h.ev(NOTES_STATE);
+            return { taken, focus: s?.editor?.focus ?? null, title: s?.editor?.title, body: s?.editor?.body };
+        };
+        const toTitle = await focusAfter("body", "Tab");
+        const toBody = await focusAfter("title", "Tab");
+        const backToTitle = await focusAfter("body", "Tab", { shiftKey: true });
+        const enterInTitle = await focusAfter("title", "Enter");
+        rec(
+            "14. Tab moves between title and body, and Enter in the title moves to the body",
+            toTitle.focus === "title" &&
+                toBody.focus === "body" &&
+                backToTitle.focus === "title" &&
+                enterInTitle.taken === true &&
+                enterInTitle.focus === "body" &&
+                enterInTitle.title === opened?.editor?.title &&
+                enterInTitle.body === opened?.editor?.body,
+            JSON.stringify({ focus: [toTitle.focus, toBody.focus, backToTitle.focus, enterInTitle.focus], enterTaken: enterInTitle.taken })
+        );
+
+        await h.ev(PEEKS_ESC);
+        const escBack = await notesStateWhen(h, inList, 3000);
+        await key("Enter", CTRL);
+        const reopened = await notesStateWhen(h, inEditor, 3000);
+        await h.ev(`${PALETTE}?.querySelector('[data-palette-drill]')?.click()`);
+        const chipBack = await notesStateWhen(h, inList, 3000);
+        rec(
+            "15. esc on an unchanged draft goes straight back, and so does the chip",
+            // Tab never cycled the scope: both leaves land on Notes
+            escBack?.editor == null &&
+                escBack?.token === "Notes" &&
+                escBack.selected === ids.markdown &&
+                reopened?.editor != null &&
+                chipBack?.editor == null &&
+                chipBack?.token === "Notes" &&
+                chipBack.selected === ids.markdown,
+            `after esc: ${editorBrief(escBack)} reopened: ${editorBrief(reopened)} after the chip: ${editorBrief(chipBack)}`
+        );
+
+        // the list wraps: ↑ from the first note is the New note row
+        await key("ArrowUp");
+        const onNew = await notesStateWhen(h, (s) => s.newRow?.selected === true, 3000);
+        await key("Enter");
+        const blank = await notesStateWhen(h, (s) => inEditor(s) && s.editor.focus === "title", 3000);
+        await h.ev(PEEKS_ESC);
+        const blankLeft = await notesStateWhen(h, inList, 3000);
+        rec(
+            "16. New note from an empty query opens on an empty title, and leaves without asking",
+            onNew?.newRow?.selected === true &&
+                onNew.preview?.text === "" &&
+                onNew.text.includes("Writes a new note") &&
+                blank?.editor != null &&
+                /^Notes\s*›\s*New$/.test(blank.editor.chip) &&
+                blank.editor.title === "" &&
+                blank.editor.body === "" &&
+                blank.editor.focus === "title" &&
+                blank.text.includes("Saves the note") &&
+                blankLeft?.editor == null &&
+                blankLeft?.token === "Notes" &&
+                stamped(blankLeft).length === 2,
+            `row: ${JSON.stringify({ newRow: onNew?.newRow, preview: onNew?.preview?.text })} editor: ${editorBrief(blank)} left: ${editorBrief(blankLeft)}`
+        );
+
+        const edited = { title: `verify ${stamp} edited walrus`, body: `the edited body of ${stamp}` };
+        await key("ArrowUp");
+        await notesStateWhen(h, selectedIs(ids.long), 3000);
+        await key("Enter", CTRL);
+        await notesStateWhen(h, inEditor, 3000);
+        await type(edited.title);
+        await typeBody(edited.body);
+        await editorKey("body", "Enter", CTRL);
+        const saved = await notesStateWhen(h, (s) => inList(s) && s.preview?.text === edited.body, 5000);
+        const savedNote = await noteOf(ids.long);
+        rec(
+            "17. ctrl ⏎ saves the edit",
+            savedNote?.title === edited.title &&
+                (savedNote.body ?? "").trim() === edited.body &&
+                saved?.editor == null &&
+                saved?.token === "Notes" &&
+                saved.query === "" &&
+                saved.selected === ids.long &&
+                saved.preview?.text === edited.body,
+            `by RPC: ${JSON.stringify(savedNote)} ${editorBrief(saved)} preview=${JSON.stringify(saved?.preview?.text)}`
+        );
+
+        await key("Enter", CTRL);
+        await notesStateWhen(h, inEditor, 3000);
+        const armedBy = async (text, leave) => {
+            await typeBody(text);
+            await notesStateWhen(h, (s) => s.arm == null && s.editor?.body === text, 3000);
+            await h.ev(leave);
+            const s = await notesStateWhen(h, (st) => st.arm != null || st.editor == null, 3000);
+            return { open: await h.ev(`!!${PALETTE_INPUT}`), body: s?.editor?.body ?? null, arm: s?.arm ?? null };
+        };
+        const byEsc = await armedBy("typed, then esc", PEEKS_ESC);
+        const byToggle = await armedBy("typed, then ctrl p", PALETTE_TOGGLE);
+        const byBackdrop = await armedBy("typed, then a click outside", NOTES_BACKDROP_PRESS);
+        await h.ev(PEEKS_ESC);
+        const discarded = await notesStateWhen(h, inList, 3000);
+        const keptNote = await noteOf(ids.long);
+        const armedOk = (r, text) =>
+            r.open === true && r.body === text && r.arm?.key === "esc" && r.arm.text.includes("esc again discards your changes");
+        rec(
+            "18. esc on a changed draft asks once, and so do Ctrl+P and a click outside",
+            armedOk(byEsc, "typed, then esc") &&
+                armedOk(byToggle, "typed, then ctrl p") &&
+                armedOk(byBackdrop, "typed, then a click outside") &&
+                discarded?.editor == null &&
+                discarded?.token === "Notes" &&
+                (keptNote?.body ?? "").trim() === edited.body,
+            `${JSON.stringify({ byEsc, byToggle, byBackdrop })} then ${editorBrief(discarded)} by RPC: ${JSON.stringify(keptNote?.body)}`
+        );
+
+        await notesStateWhen(h, selectedIs(ids.long), 3000);
+        await key("Enter", CTRL);
+        await notesStateWhen(h, inEditor, 3000);
+        const orphan = `typed for a note that is gone ${stamp}`;
+        await typeBody(orphan);
+        await h.rpc("notedelete", { id: ids.long });
+        await editorKey("body", "Enter", CTRL);
+        const saveFailed = await notesStateWhen(h, (s) => s.error != null, 5000);
+        await h.ev(PEEKS_ESC);
+        await notesStateWhen(h, (s) => s.arm != null, 3000);
+        await h.ev(PEEKS_ESC);
+        const afterGone = await notesStateWhen(h, inList, 3000);
+        rec(
+            "19. saving a note that is already gone says so and keeps the text",
+            (saveFailed?.error ?? "").startsWith("Save failed") &&
+                saveFailed.editor?.body === orphan &&
+                afterGone?.editor == null &&
+                stamped(afterGone).join() === ids.markdown,
+            `${editorBrief(saveFailed)} then rows=${stamped(afterGone).join()}`
+        );
+
+        const freshTitle = `zzqx ${stamp} fresh`;
+        const freshBody = `the body of a note written here, ${stamp}`;
+        await type(freshTitle);
+        const noMatch = await notesStateWhen(h, (s) => s.split && s.rows.length === 0 && s.newRow?.selected === true, 3000);
+        await key("Enter");
+        const fresh = await notesStateWhen(h, (s) => inEditor(s) && s.editor.focus === "body", 3000);
+        await typeBody(freshBody);
+        await notesStateWhen(h, (s) => s.editor?.body === freshBody, 3000);
+        await h.shot("cdp-shots/palette-notes-new.png");
+        await editorKey("body", "Enter", CTRL);
+        const created = await notesStateWhen(h, (s) => inList(s) && s.preview?.text === freshBody, 5000);
+        const createdNote = ((await h.rpc("notelist", null)) ?? []).find((n) => n.title === freshTitle) ?? null;
+        rec(
+            "20. New note takes the typed text as its title",
+            noMatch?.rows.length === 0 &&
+                noMatch.newRow?.selected === true &&
+                noMatch.text.includes(`Writes a new note titled “${freshTitle}”`) &&
+                fresh?.editor != null &&
+                /^Notes\s*›\s*New$/.test(fresh.editor.chip) &&
+                fresh.editor.title === freshTitle &&
+                createdNote != null &&
+                (createdNote.body ?? "").trim() === freshBody &&
+                created?.selected === createdNote.id &&
+                created.query === "",
+            `no match: ${JSON.stringify({ rows: noMatch?.rows, newRow: noMatch?.newRow })} editor: ${editorBrief(fresh)} by RPC: ${JSON.stringify(createdNote)} ${editorBrief(created)}`
+        );
+
+        await key("Enter", CTRL);
+        await notesStateWhen(h, inEditor, 3000);
+        const keptText = `text kept through a refused title, ${stamp}`;
+        await typeBody(keptText);
+        await type("");
+        await editorKey("title", "Enter", CTRL);
+        const refusedTitle = await notesStateWhen(h, (s) => s.error != null, 3000);
+        const untitled = createdNote != null ? await noteOf(createdNote.id) : null;
+        await h.ev(PEEKS_ESC);
+        await notesStateWhen(h, (s) => s.arm != null, 3000);
+        await h.ev(PEEKS_ESC);
+        await notesStateWhen(h, inList, 3000);
+        rec(
+            "21. a title the store refuses is named and the text kept",
+            refusedTitle?.error === "A note needs a title." &&
+                refusedTitle.editor?.title === "" &&
+                refusedTitle.editor.body === keptText &&
+                untitled?.title === freshTitle,
+            `${editorBrief(refusedTitle)} by RPC: ${JSON.stringify(untitled)}`
+        );
+
+        await type(`${stamp} markdown`);
+        const onCopy = await notesStateWhen(h, selectedIs(ids.markdown), 3000);
+        await h.ev(notesClipStub(true));
+        await key("Enter");
+        const refused = await notesStateWhen(h, (s) => (s.error ?? "").startsWith("Copy failed"), 3000);
+        rec(
+            "22. a copy the clipboard refuses says so and keeps the palette open",
+            onCopy?.selected === ids.markdown && (refused?.error ?? "").startsWith("Copy failed") && refused.selected === ids.markdown,
+            brief(refused)
+        );
+
+        await h.ev(notesClipStub(false));
+        await key("Enter");
+        const closed = await polishWaitFor(h, `!${PALETTE_INPUT}`, 3000);
+        const copied = await h.ev(`window.__notesClip ?? null`);
+        const lingering = await h.ev(`[...document.querySelectorAll('[role="alert"]')].map((el) => el.textContent).join(' | ')`);
+        await h.ev(NOTES_CLIP_RESTORE);
+        const want = `# ${fixtures.markdown.title}\n\n${fixtures.markdown.body}\n`;
+        rec(
+            "23. Enter copies the note and closes the palette",
+            closed && copied?.length === 1 && copied[0] === want && !lingering.includes("failed"),
+            JSON.stringify({ closed, copied, want, lingering })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const failed = [];
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                failed.push(`${what}: ${e?.message ?? e}`);
+            }
+        };
+        await step("restore the clipboard", () => h.ev(NOTES_CLIP_RESTORE));
+        await step("close the palette", () => h.ev(PEEKS_ESC));
+        await step("delete the notes this run left", async () => {
+            for (const n of (await h.rpc("notelist", null)) ?? []) {
+                if (n.title.includes(ctx.stamp)) await h.rpc("notedelete", { id: n.id });
+            }
+        });
+        if (failed.length > 0) throw new Error(failed.join("; "));
+    },
+};
+
 const PICKS_BANNER = `document.querySelector('[data-dag-modal-kind] [data-model-picks-banner]')`;
 // the pick row lives in the selected task's rail, so only the selected task's row is ever on screen
 const PICK_ROWS = `[...document.querySelectorAll('[data-dag-modal-kind] [data-model-pick]')]`;
@@ -20903,7 +23710,7 @@ const modelPicks = {
         if (sheet) await h.ev(`${openDag}.click()`);
         const graph = await polishWaitFor(
             h,
-            `!!document.querySelector('[data-dag-modal-kind="live"]') && document.querySelectorAll('[data-dag-modal-kind] [data-dag-node]').length === 3`,
+            `!!document.querySelector('[data-dag-modal-kind="live"]') && document.querySelectorAll('[data-dag-modal-kind] [data-dag-node]:not([data-dag-node="final"])').length === 3`,
             10000
         );
         rec(
@@ -29500,6 +32307,796 @@ const settingsClaudeAccount = {
     },
 };
 
+// --- motion gaps ---------------------------------------------------------------------------------
+// The cockpit toast and the Setup tab panel used to cut in and out. Each check samples in-page, in one
+// evaluation, because a CDP round trip per sample is slower than the animations it measures: an observer
+// reads the opacity an element mounts with, and a timer reads a leaving toast mid-exit.
+const motionGaps = {
+    name: "motion-gaps",
+    surface: "cockpit",
+    async arrange() {
+        return {};
+    },
+    async assert(h) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const settle = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
+        // a keystroke an earlier scenario sent would otherwise hold the call in the busy wait
+        await settle(1600);
+
+        // 1. a toast mounts transparent and fades in. go:cockpit leaves a trail toast (see ui-api).
+        await h.ev(`(() => {
+            window.__motionToast = [];
+            new MutationObserver((muts, obs) => {
+                for (const m of muts) for (const n of m.addedNodes) {
+                    if (n instanceof Element && n.matches('[data-notification-toast]')) {
+                        window.__motionToast.push(getComputedStyle(n).opacity);
+                        obs.disconnect();
+                    }
+                }
+            }).observe(document.body, { childList: true, subtree: true });
+        })()`);
+        await h.rpc("uiinvoke", { actionid: "go:cockpit" }, UI_ROUTE);
+        await settle(600);
+        const enter = await h.ev(`(() => ({
+            first: window.__motionToast[0] ?? null,
+            settled: (() => {
+                const t = [...document.querySelectorAll('[data-notification-toast]')].at(-1);
+                return t ? getComputedStyle(t).opacity : null;
+            })(),
+        }))()`);
+        rec(
+            "1. a cockpit toast mounts at opacity 0 and settles at 1",
+            enter.first === "0" && enter.settled === "1",
+            JSON.stringify(enter)
+        );
+        await h.shot("cdp-shots/motion-gaps-toast.png");
+
+        // 2. a dismissed toast stays attached while it fades, then leaves
+        const exit = await h.ev(`(async () => {
+            const t = [...document.querySelectorAll('[data-notification-toast]')].at(-1);
+            if (!t) return null;
+            t.click();
+            await new Promise((r) => setTimeout(r, 120));
+            const mid = { attached: t.isConnected, opacity: Number(getComputedStyle(t).opacity) };
+            await new Promise((r) => setTimeout(r, 700));
+            return { mid, goneAfter: !t.isConnected };
+        })()`);
+        rec(
+            "2. a dismissed toast fades out while still attached, then is removed",
+            exit != null && exit.mid.attached && exit.mid.opacity > 0 && exit.mid.opacity < 1 && exit.goneAfter,
+            JSON.stringify(exit)
+        );
+
+        // 3. a Setup tab swap fades the new panel in instead of cutting to it
+        await h.goto("setup");
+        await settle(800);
+        const fade = await h.ev(`(async () => {
+            const seen = [];
+            const obs = new MutationObserver((muts) => {
+                for (const m of muts) for (const n of m.addedNodes) {
+                    if (n instanceof Element && n.id === 'setup-tabpanel') seen.push(getComputedStyle(n).opacity);
+                }
+            });
+            obs.observe(document.body, { childList: true, subtree: true });
+            document.getElementById('setup-tab-skills')?.click();
+            await new Promise((r) => setTimeout(r, 400));
+            obs.disconnect();
+            const panel = document.getElementById('setup-tabpanel');
+            return {
+                first: seen[0] ?? null,
+                settled: panel ? getComputedStyle(panel).opacity : null,
+                tab: panel?.getAttribute('aria-labelledby') ?? null,
+            };
+        })()`);
+        rec(
+            "3. switching Setup to Skills fades the panel in from 0 to 1",
+            fade.first === "0" && fade.settled === "1" && fade.tab === "setup-tab-skills",
+            JSON.stringify(fade)
+        );
+        await h.shot("cdp-shots/motion-gaps-setup.png");
+        return steps;
+    },
+    async teardown(h) {
+        await h.ev(`document.getElementById('setup-tab-instructions')?.click()`);
+        await h.goto("cockpit");
+    },
+};
+
+// The Resource Manager (footer readout + popover). Data comes only from window.__resmonFixture (resmonstore.ts),
+// modelled on the canvas (.superpowers/design/resource-manager): a pinned snapshot is never overwritten by the
+// live poll, and an armed outcome answers the next confirm without touching a process.
+const RESMON_VIEWPORT = { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false };
+const RESMON_MIB = 1024 * 1024;
+// the snapshot's totals: the canvas's 60.6% and 7.4 GiB
+const RESMON_TOTAL_CPU = 60.6;
+const RESMON_TOTAL_MEM = 7945689498;
+const RESMON_FOOTER = `document.querySelector('[data-hints-footer]')`;
+const RESMON_COCKPIT_HINTS = `document.querySelector('[data-cockpit-hints]')`;
+const RESMON_POPOVER = `document.querySelector('[data-resmon-popover]')`;
+const RESMON_GROUP_ORDER = ["arc", "job:14820", "job:13060", "job:22410", "job:7716"];
+// the popover grows in with a scale reveal; measure after it settles
+const RESMON_REVEAL_MS = 500;
+const RESMON_CURSOR_MAX_PRESSES = 40;
+const resmonNap = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function resmonRows(now, rows) {
+    return rows.map(([pid, depth, name, args, cpu, mb, extra]) => ({
+        pid,
+        depth,
+        name,
+        command: args ? `${name} ${args}` : name,
+        createts: now - (extra?.ageMin ?? 5) * 60_000,
+        cpu,
+        mem: Math.round(mb * RESMON_MIB),
+        mempct: 0,
+        numthreads: 1,
+        ...(extra?.tag ? { tag: extra.tag } : {}),
+        ...(extra?.role ? { role: extra.role } : {}),
+    }));
+}
+
+function resmonGroup(key, ownerkind, label, runtime, killable, rows) {
+    return {
+        key,
+        ownerkind,
+        ownerid: key,
+        label,
+        ...(runtime ? { runtime } : {}),
+        killable,
+        cpu: Math.round(rows.reduce((n, r) => n + r.cpu, 0) * 10) / 10,
+        mem: rows.reduce((n, r) => n + r.mem, 0),
+        rows,
+    };
+}
+
+function resmonArcGroup(now) {
+    const webview = (role) => ({ role, ageMin: 340 });
+    return resmonGroup("arc", "arc", "Arc", "", false, resmonRows(now, [
+        [2476, 0, "wave-tauri.exe", "", 0.1, 38, webview("Host")],
+        [23360, 1, "msedgewebview2.exe", "", 0.4, 141, webview("WebView browser")],
+        [20028, 2, "msedgewebview2.exe", "--type=renderer", 3.1, 337, webview("Renderer")],
+        [24188, 2, "msedgewebview2.exe", "--type=gpu-process", 1.9, 298, webview("GPU")],
+        [25364, 2, "msedgewebview2.exe", "--type=renderer", 0.2, 74, { role: "Renderer", ageMin: 62 }],
+        [27348, 2, "msedgewebview2.exe", "--type=utility --utility-sub-type=network.mojom.NetworkService", 0.1, 43, webview("Network service")],
+        [4040, 2, "msedgewebview2.exe", "--type=utility --utility-sub-type=storage.mojom.StorageService", 0.0, 20, webview("Storage service")],
+        [1788, 2, "msedgewebview2.exe", "--type=crashpad-handler", 0.0, 13, webview("Crash handler")],
+        [27152, 1, "wavesrv.x64.exe", "", 0.9, 219, webview("Backend")],
+    ]));
+}
+
+function resmonFixture(now = Date.now()) {
+    return {
+        supported: true,
+        ready: true,
+        ts: now,
+        cpu: RESMON_TOTAL_CPU,
+        mem: RESMON_TOTAL_MEM,
+        totalmem: 32 * 1024 * RESMON_MIB,
+        busycpu: false,
+        busymem: false,
+        groups: [
+            resmonArcGroup(now),
+            resmonGroup("job:14820", "agenttab", "waveterm", "claude", true, resmonRows(now, [
+                [14820, 0, "claude.exe", "--resume", 1.2, 486, { tag: "agent", ageMin: 42 }],
+                [14832, 1, "conhost.exe", "", 0.0, 9, { tag: "console", ageMin: 42 }],
+                [18240, 1, "bash.exe", "-c go test ./pkg/orchestrate/... -run TestLiveness", 0.0, 6, { ageMin: 2 }],
+                [18244, 2, "go.exe", "test ./pkg/orchestrate/...", 0.6, 152, { ageMin: 2 }],
+                [18311, 3, "orchestrate.test.exe", "-test.run TestLiveness", 28.9, 1904, { ageMin: 2 }],
+                [9932, 1, "cmd.exe", "/c npm run dev", 0.0, 4, { ageMin: 38 }],
+                [9958, 2, "node.exe", "vite --port 5174", 1.1, 846, { ageMin: 38 }],
+            ])),
+            resmonGroup("job:13060", "runworker", "cache-miss notice · Task 2", "pi", true, resmonRows(now, [
+                [13060, 0, "cmd.exe", "/c pi.cmd", 0.0, 4, { tag: "launcher", ageMin: 16 }],
+                [13072, 1, "conhost.exe", "", 0.0, 8, { tag: "console", ageMin: 16 }],
+                [13104, 1, "node.exe", "pi", 0.9, 274, { tag: "agent", ageMin: 16 }],
+                [21876, 2, "bash.exe", "-c npx vitest run frontend/app/view/agents", 0.0, 6, { ageMin: 1 }],
+                [21890, 3, "node.exe", "vitest run frontend/app/view/agents", 13.7, 802, { ageMin: 1 }],
+            ])),
+            resmonGroup("job:22410", "runcmd", "cleanup round · Verify", "", false, resmonRows(now, [
+                [22410, 0, "bash.exe", "-c node scripts/verify.mjs ./pkg/orchestrate ./pkg/jarvis", 0.0, 6, { ageMin: 4 }],
+                [22418, 1, "node.exe", "scripts/verify.mjs", 0.3, 58, { ageMin: 4 }],
+                [22502, 2, "go.exe", "test ./pkg/jarvis", 0.4, 140, { ageMin: 3 }],
+                [22590, 3, "jarvis.test.exe", "-test.count=1", 6.7, 1200, { ageMin: 3 }],
+            ])),
+            resmonGroup("job:7716", "agenttab", "obsidian-notes", "claude", true, resmonRows(now, [
+                [7716, 0, "claude.exe", "", 0.1, 303, { tag: "agent", ageMin: 192 }],
+                [7724, 1, "conhost.exe", "", 0.0, 9, { tag: "console", ageMin: 192 }],
+            ])),
+        ],
+    };
+}
+
+const resmonSet = (h, snap) => h.ev(`window.__resmonFixture.set(${JSON.stringify(snap)})`);
+const resmonArm = (h, outcome) => h.ev(`window.__resmonFixture.killOutcome(${JSON.stringify(outcome)})`);
+const resmonClick = (expr) => `(() => { const el = ${expr}; if (!el) return false; el.click(); return true; })()`;
+const resmonReadout = (scope) => `${scope}?.querySelector('[data-resmon-readout]')`;
+// the readout's words as a reader sees them: the flex gaps between its spans carry no text
+const resmonReadoutText = (scope) => `(() => {
+    const r = ${resmonReadout(scope)};
+    return r ? [...r.children].filter((c) => c.tagName === 'SPAN').map((c) => c.textContent.trim()).join(' ') : null;
+})()`;
+const resmonGroupButton = (key, text) =>
+    `[...document.querySelectorAll('[data-resmon-popover] [data-resmon-group="${key}"] button')].find((b) => b.textContent.trim() === ${JSON.stringify(text)})`;
+const resmonConfirmButton = (text) =>
+    `[...document.querySelectorAll('[data-resmon-popover] [data-resmon-confirm] button')].find((b) => b.textContent.trim() === ${JSON.stringify(text)})`;
+const resmonRowKill = (pid) => `document.querySelector('[data-resmon-popover] [data-resmon-row="${pid}"] button')`;
+const resmonChevron = (key) =>
+    `document.querySelector('[data-resmon-popover] [data-resmon-group="${key}"] button[aria-expanded]')`;
+
+const RESMON_KEYS = {
+    Escape: { key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 },
+    Enter: { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 },
+    ArrowDown: { key: "ArrowDown", code: "ArrowDown", windowsVirtualKeyCode: 40 },
+    ArrowUp: { key: "ArrowUp", code: "ArrowUp", windowsVirtualKeyCode: 38 },
+    g: { key: "g", code: "KeyG", windowsVirtualKeyCode: 71, text: "g" },
+    m: { key: "m", code: "KeyM", windowsVirtualKeyCode: 77, text: "m" },
+    x: { key: "x", code: "KeyX", windowsVirtualKeyCode: 88, text: "x" },
+    X: { key: "X", code: "KeyX", windowsVirtualKeyCode: 88, text: "X", shift: true },
+};
+const RESMON_SHIFT_MODIFIER = 8;
+
+// Input.dispatchKeyEvent often never reaches a WebView without OS focus: probe once, then send every key the same
+// way, falling back to a KeyboardEvent on window, where the keybinding dispatcher listens
+async function resmonKeyPath(h) {
+    await h.ev(`(() => {
+        window.__resmonKeyProbe = false;
+        const f = (e) => { if (e.key === 'F20') { window.__resmonKeyProbe = true; window.removeEventListener('keydown', f, true); } };
+        window.addEventListener('keydown', f, true);
+    })()`);
+    await h.cdp("Input.dispatchKeyEvent", { type: "rawKeyDown", key: "F20", code: "F20", windowsVirtualKeyCode: 131 });
+    await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "F20", code: "F20", windowsVirtualKeyCode: 131 });
+    await resmonNap(150);
+    return (await h.ev("window.__resmonKeyProbe === true")) ? "cdp" : "window";
+}
+
+async function resmonKey(h, ctx, name) {
+    const { shift, text, ...k } = RESMON_KEYS[name];
+    if (ctx.keyPath === "cdp") {
+        const modifiers = shift ? RESMON_SHIFT_MODIFIER : 0;
+        await h.cdp("Input.dispatchKeyEvent", { type: text ? "keyDown" : "rawKeyDown", ...k, text, modifiers });
+        await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...k, modifiers });
+    } else {
+        await h.ev(
+            `window.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(k.key)}, code: ${JSON.stringify(k.code)}, shiftKey: ${!!shift}, bubbles: true, cancelable: true }))`
+        );
+    }
+    await resmonNap(200);
+}
+
+// keys must not land in a field: the Agent surface's terminal would take them
+const resmonBlur = (h) => h.ev(`document.activeElement?.blur?.()`);
+
+const RESMON_POPOVER_STATE = `(() => {
+    const p = ${RESMON_POPOVER};
+    if (!p) return null;
+    const r = p.getBoundingClientRect();
+    const where = (el) => el.getAttribute('data-resmon-row') ?? el.closest('[data-resmon-group]')?.getAttribute('data-resmon-group');
+    const cursor = p.querySelector('[data-resmon-cursor]');
+    const confirm = p.querySelector('[data-resmon-confirm]');
+    return {
+        width: Math.round(r.width),
+        right: Math.round(window.innerWidth - r.right),
+        bottom: r.bottom,
+        groups: [...p.querySelectorAll('[data-resmon-group]')].map((g) => ({
+            key: g.getAttribute('data-resmon-group'),
+            rows: g.querySelectorAll('[data-resmon-row]').length,
+            tags: [...g.querySelectorAll('[data-resmon-row]')].filter((row) => !row.querySelector('button')).length,
+            kills: g.querySelectorAll('[data-resmon-row] button[aria-label^="Kill"]').length,
+            buttons: g.querySelectorAll('button').length,
+        })),
+        order: [...p.querySelectorAll('[data-resmon-group] > div:first-child, [data-resmon-row]')].map(where),
+        cursor: cursor ? where(cursor) : null,
+        confirm: confirm ? (confirm.querySelector('span')?.textContent ?? '') : null,
+        status: [...p.querySelectorAll('[role="status"]')].map((n) => n.textContent.trim()),
+        alert: [...p.querySelectorAll('[role="alert"]')].map((n) => n.textContent.trim()),
+        text: p.textContent,
+    };
+})()`;
+const resmonPopover = (h) => h.ev(RESMON_POPOVER_STATE);
+
+// walks the cursor with the arrows onto the row with that pid, or the header of the group with that key
+async function resmonCursorTo(h, ctx, target) {
+    for (let i = 0; i < RESMON_CURSOR_MAX_PRESSES; i++) {
+        const s = await resmonPopover(h);
+        if (s == null) return false;
+        const at = s.cursor == null ? -1 : s.order.indexOf(s.cursor);
+        const want = s.order.indexOf(String(target));
+        if (want < 0) return false;
+        if (at === want) return true;
+        await resmonKey(h, ctx, want > at ? "ArrowDown" : "ArrowUp");
+    }
+    return false;
+}
+
+async function resmonArrange(h) {
+    await h.cdp("Emulation.setDeviceMetricsOverride", RESMON_VIEWPORT);
+    await h.goto("agent");
+    const ready = await polishWaitFor(h, `!!window.__resmonFixture`, 10000);
+    const keyPath = await resmonKeyPath(h);
+    if (ready) {
+        await resmonSet(h, resmonFixture());
+        await resmonNap(300);
+    }
+    return { ready, keyPath };
+}
+
+// The Cockpit draws its hints bar, and so its readout, only over a roster: an empty store shows the empty state
+// alone. The fixture roster is read once at boot, and the reload drops the pinned snapshot, so it is set again.
+async function resmonSeedRoster(h, ctx) {
+    if (existsSync(TREE_RAIL_FIXTURE)) return;
+    mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+    writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify(treeRailRoster(undefined, Date.now()), null, 2));
+    ctx.wroteFixture = true;
+    await h.ev("location.reload()");
+    await polishWaitFor(h, `!!document.querySelector("nav button") && !!window.__resmonFixture`, 30000);
+    await resmonSet(h, resmonFixture());
+}
+
+async function resmonTeardown(h, ctx) {
+    await h.ev(`window.__resmonFixture?.clear()`).catch(() => {});
+    if (ctx?.wroteFixture) {
+        rmSync(TREE_RAIL_FIXTURE, { force: true });
+        await h.ev("location.reload()");
+        await polishWaitFor(h, `!!document.querySelector("nav button")`, 30000);
+    }
+    await h.goto("cockpit");
+}
+
+const RESMON_NO_HOOK = [{ step: "the dev fixture hook is on window", ok: false, detail: "no window.__resmonFixture" }];
+
+const resmonFooter = {
+    name: "resmon-footer",
+    surface: "agent",
+    arrange: resmonArrange,
+    async assert(h, ctx) {
+        if (!ctx.ready) return RESMON_NO_HOOK;
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const shot = (n) => h.shot(`cdp-shots/resmon-footer-${n}.png`);
+
+        await resmonBlur(h);
+        const rest = await h.ev(`(() => ({
+            last: !!${RESMON_FOOTER}?.lastElementChild?.matches('[data-resmon-readout]'),
+            text: ${resmonReadoutText(RESMON_FOOTER)},
+        }))()`);
+        await shot("1-rest");
+        rec("1. Agent at rest: the readout ends the footer and reads Arc 61% CPU · 7.4 GB",
+            rest.last && rest.text === "Arc 61% CPU · 7.4 GB", JSON.stringify(rest));
+
+        await resmonKey(h, ctx, "g");
+        const leader = await h.ev(`(() => {
+            const f = ${RESMON_FOOTER};
+            const spans = [...(f?.querySelectorAll('span') ?? [])].map((s) => s.textContent.trim());
+            return { readout: !!${resmonReadout(RESMON_FOOTER)}, m: spans.includes('mResource Manager'), leader: spans.includes('g →') };
+        })()`);
+        await shot("2-leader");
+        rec("2. g: the leader posture keeps the readout and lists m Resource Manager",
+            leader.readout && leader.m && leader.leader, JSON.stringify(leader));
+
+        await resmonKey(h, ctx, "m");
+        await resmonNap(RESMON_REVEAL_MS);
+        const opened = await h.ev(`!!${RESMON_POPOVER}`);
+        await shot("3-gm-open");
+        rec("3. m: the popover opens", opened, `popover=${opened}`);
+
+        await resmonKey(h, ctx, "Escape");
+        await resmonNap(RESMON_REVEAL_MS);
+        const closed = await h.ev(`!${RESMON_POPOVER}`);
+        await shot("4-esc-closed");
+        rec("4. Esc: the popover closes", closed, `closed=${closed}`);
+
+        const dim = await h.ev(`new Promise((resolve) => {
+            const input = document.createElement('input');
+            input.setAttribute('data-resmon-probe', '');
+            document.body.appendChild(input);
+            input.focus();
+            setTimeout(() => {
+                const chips = ${RESMON_FOOTER}?.querySelector('[data-footer-chips]');
+                const readout = ${resmonReadout(RESMON_FOOTER)};
+                resolve({ chips: chips ? getComputedStyle(chips).opacity : null, readout: readout ? getComputedStyle(readout).opacity : null });
+            }, 300);
+        })`);
+        await shot("5-editable");
+        await h.ev(`document.querySelector('[data-resmon-probe]')?.remove()`);
+        rec("5. focus in a field: the chips dim to 0.6, the readout stays at 1",
+            dim.chips === "0.6" && dim.readout === "1", JSON.stringify(dim));
+
+        if (!existsSync(TREE_RAIL_FIXTURE)) {
+            await h.goto("cockpit");
+            await polishWaitFor(h, `!!${RESMON_COCKPIT_HINTS}`, 10000);
+            const bare = await h.ev(`(() => {
+                const bar = ${RESMON_COCKPIT_HINTS};
+                return {
+                    readout: !!${resmonReadout(RESMON_COCKPIT_HINTS)},
+                    help: [...(bar?.querySelectorAll('button') ?? [])].some((b) => b.textContent.trim() === '?'),
+                };
+            })()`);
+            await shot("5b-cockpit-empty");
+            rec("5b. Cockpit with no roster: the hints bar shows the readout alone, no triage hints or ?",
+                bare.readout && !bare.help, JSON.stringify(bare));
+        }
+
+        await resmonSeedRoster(h, ctx);
+        await h.goto("cockpit");
+        await polishWaitFor(h, `!!${RESMON_COCKPIT_HINTS}`, 10000);
+        const cockpit = await h.ev(`(() => {
+            const r = ${resmonReadout(RESMON_COCKPIT_HINTS)};
+            return { readout: !!r, afterHelp: r?.previousElementSibling?.textContent.trim() === '?', footer: !!${RESMON_FOOTER} };
+        })()`);
+        await shot("6-cockpit");
+        rec("6. Cockpit: the readout sits in the cockpit hints bar, after ?",
+            cockpit.readout && cockpit.afterHelp && !cockpit.footer, JSON.stringify(cockpit));
+
+        await resmonBlur(h);
+        await resmonKey(h, ctx, "g");
+        const cockpitLeader = await h.ev(`(() => ({
+            leader: [...(${RESMON_FOOTER}?.querySelectorAll('span') ?? [])].some((s) => s.textContent.trim() === 'g →'),
+            readouts: document.querySelectorAll('[data-resmon-readout]').length,
+            inBar: !!${resmonReadout(RESMON_COCKPIT_HINTS)},
+        }))()`);
+        await shot("6a-cockpit-leader");
+        rec("6a. Cockpit under the g leader: one readout, in the hints bar, and the footer's own yields",
+            cockpitLeader.leader && cockpitLeader.readouts === 1 && cockpitLeader.inBar, JSON.stringify(cockpitLeader));
+        await resmonKey(h, ctx, "Escape");
+
+        await h.ev(resmonClick(resmonReadout(RESMON_COCKPIT_HINTS)));
+        await resmonNap(RESMON_REVEAL_MS);
+        const above = await h.ev(`(() => {
+            const p = ${RESMON_POPOVER};
+            const bar = ${RESMON_COCKPIT_HINTS};
+            if (!p || !bar) return { open: !!p, bar: !!bar };
+            return { open: true, bottom: p.getBoundingClientRect().bottom, barTop: bar.getBoundingClientRect().top };
+        })()`);
+        await shot("6b-cockpit-open");
+        rec("6b. Cockpit: clicking that readout opens the popover above the hints bar",
+            above.open && above.bottom <= above.barTop, JSON.stringify(above));
+        await resmonBlur(h);
+        await resmonKey(h, ctx, "Escape");
+        await resmonNap(RESMON_REVEAL_MS);
+
+        await h.goto("agent");
+        await resmonBlur(h);
+        const busy = [
+            ["7", { busycpu: true }, "high CPU"],
+            ["8", { busymem: true }, "high memory"],
+            ["9", { busycpu: true, busymem: true }, "high CPU and memory"],
+        ];
+        for (const [n, flags, words] of busy) {
+            await resmonSet(h, { ...resmonFixture(), ...flags });
+            await resmonNap(200);
+            const text = await h.ev(resmonReadoutText(RESMON_FOOTER));
+            await shot(`${n}-busy`);
+            rec(`${n}. ${Object.keys(flags).join(" + ")}: the readout shows ${words}`,
+                text === `Arc 61% CPU · 7.4 GB ${words}`, text);
+        }
+
+        await resmonSet(h, null);
+        await resmonNap(200);
+        const pending = await h.ev(resmonReadoutText(RESMON_FOOTER));
+        await shot("10-pending");
+        rec("10. pinned null: the readout shows Arc –", pending === "Arc –", pending);
+
+        await resmonSet(h, { ...resmonFixture(), supported: false });
+        await resmonNap(200);
+        const footerGone = await h.ev(`!!${RESMON_FOOTER} && !${resmonReadout(RESMON_FOOTER)}`);
+        await shot("11a-unsupported-agent");
+        await h.goto("cockpit");
+        await polishWaitFor(h, `!!${RESMON_COCKPIT_HINTS}`, 10000);
+        const barGone = await h.ev(`!!${RESMON_COCKPIT_HINTS} && !${resmonReadout(RESMON_COCKPIT_HINTS)}`);
+        await shot("11b-unsupported-cockpit");
+        rec("11. supported: false: no readout in the footer or the cockpit hints bar",
+            footerGone && barGone, `footer=${footerGone} cockpit=${barGone}`);
+        return steps;
+    },
+    teardown: resmonTeardown,
+};
+
+// The one Resource Manager check that touches no fixture: a real runaway process in a real shell block, found by the
+// backend's own sampler and killed from the popover. Node reads the pid's liveness from the OS, the only witness that
+// does not go through the code under test.
+const RESMON_LIVE_WAIT_MS = 30000;
+const RESMON_LIVE_POLL_MS = 500;
+const RESMON_LIVE_CMD = `node -e "for(;;){}"`;
+// sent apart from the command: pwsh reads a burst ending in Enter as a paste and does not run it
+const RESMON_LIVE_ENTER = String.fromCharCode(13);
+
+async function resmonLiveRunaway(h, blockId) {
+    const snap = await h.rpc("resmonsnapshot", {});
+    const group = (snap?.groups ?? []).find((g) => g.ownerid === blockId);
+    const row = (group?.rows ?? []).filter((r) => /^node/i.test(r.name ?? "")).sort((a, b) => b.cpu - a.cpu)[0];
+    return row == null ? null : { group: group.key, pid: row.pid, cpu: row.cpu };
+}
+
+const pidAlive = (pid) => {
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch {
+        return false;
+    }
+};
+
+const resmonLive = {
+    name: "resmon-live",
+    surface: "agent",
+    async arrange(h) {
+        await h.cdp("Emulation.setDeviceMetricsOverride", RESMON_VIEWPORT);
+        const ctx = {};
+        try {
+            await openCanvasTerminal(h, ctx);
+        } catch (e) {
+            ctx.launchError = String(e?.message ?? e);
+            return ctx;
+        }
+        await h.goto("agent");
+        ctx.keyPath = await resmonKeyPath(h);
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.launchError != null) {
+            return [skipStep("live kill", `could not verify: the terminal launch failed: ${ctx.launchError}`)];
+        }
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const shot = (n) => h.shot(`cdp-shots/resmon-live-${n}.png`);
+
+        await resmonNap(RESMON_LIVE_WAIT_MS / 6);
+        const type = (text) =>
+            h.rpc("controllerinput", { blockid: ctx.blockId, inputdata64: Buffer.from(text).toString("base64") });
+        await type(RESMON_LIVE_CMD);
+        await resmonNap(RESMON_LIVE_POLL_MS);
+        await type(RESMON_LIVE_ENTER);
+        const deadline = Date.now() + RESMON_LIVE_WAIT_MS;
+        let found = null;
+        while (found == null && Date.now() < deadline) {
+            await resmonNap(RESMON_LIVE_POLL_MS);
+            found = await resmonLiveRunaway(h, ctx.blockId);
+        }
+        const seen = found ?? (await h.rpc("resmonsnapshot", {}))?.groups?.map((g) => ({
+            key: g.key,
+            ownerid: g.ownerid,
+            rows: g.rows.map((r) => `${r.pid}:${r.name}`),
+        }));
+        rec("1. the sampler lists the runaway node under the shell block's group", found != null, JSON.stringify({ block: ctx.blockId, seen }));
+        if (found == null) {
+            await shot("0-not-found");
+            return steps;
+        }
+        ctx.pid = found.pid;
+        rec("2. the process is alive before the kill", pidAlive(found.pid), `pid=${found.pid}`);
+
+        await resmonBlur(h);
+        await h.ev(resmonClick(resmonReadout(RESMON_FOOTER)));
+        await polishWaitFor(h, `!!document.querySelector('[data-resmon-row="${found.pid}"]')`, 10000);
+        await shot("1-listed");
+        const clicked = await h.ev(
+            resmonClick(`document.querySelector('[data-resmon-row="${found.pid}"] button[aria-label^="Kill"]')`)
+        );
+        await resmonNap(300);
+        const asked = await h.ev(`!!document.querySelector('[data-resmon-confirm]')`);
+        await shot("2-confirm");
+        rec("3. the row's x opens a confirm", clicked && asked, `clicked=${clicked} confirm=${asked}`);
+        if (!asked) return steps;
+
+        await h.ev(resmonClick(`document.querySelector('[data-resmon-confirm] button')`));
+        await polishWaitFor(h, `!document.querySelector('[data-resmon-row="${found.pid}"]')`, 10000);
+        await resmonNap(RESMON_LIVE_POLL_MS);
+        const gone = !pidAlive(found.pid);
+        await shot("3-killed");
+        rec("4. confirming kills the process: the OS no longer has the pid", gone, `pid=${found.pid} alive=${!gone}`);
+        const after = await h.ev(`!document.querySelector('[data-resmon-row="${found.pid}"]')`);
+        rec("5. the popover no longer lists the row", after, `rowGone=${after}`);
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await resmonKey(h, ctx, "Escape").catch(() => {});
+        if (ctx.pid != null && pidAlive(ctx.pid)) {
+            try {
+                process.kill(ctx.pid);
+            } catch {}
+        }
+        if (ctx.tabId) {
+            await waveService(h, "workspace", "CloseTab", [ctx.workspaceId, ctx.tabId, false]).catch((e) =>
+                console.error(`resmon-live teardown: close the terminal tab failed: ${e?.message ?? e}`)
+            );
+        }
+        await h.goto("cockpit");
+    },
+};
+
+const resmonMain = {
+    name: "resmon-main",
+    surface: "agent",
+    arrange: resmonArrange,
+    async assert(h, ctx) {
+        if (!ctx.ready) return RESMON_NO_HOOK;
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const shot = (n) => h.shot(`cdp-shots/resmon-main-${n}.png`);
+        const arcRows = async () => (await resmonPopover(h))?.groups.find((g) => g.key === "arc")?.rows;
+
+        await h.ev(resmonClick(resmonReadout(RESMON_FOOTER)));
+        await resmonNap(RESMON_REVEAL_MS);
+        const s1 = await resmonPopover(h);
+        const readoutTop = await h.ev(`${resmonReadout(RESMON_FOOTER)}?.getBoundingClientRect().top`);
+        await shot("1-open");
+        const by = (k) => s1?.groups.find((g) => g.key === k) ?? {};
+        const ok1 =
+            s1 != null &&
+            s1.width === 700 &&
+            Math.abs(s1.right - 12) <= 1 &&
+            s1.bottom <= readoutTop - 5 &&
+            JSON.stringify(s1.groups.map((g) => g.key)) === JSON.stringify(RESMON_GROUP_ORDER) &&
+            by("arc").rows === 0 &&
+            by("job:14820").tags === 2 && by("job:14820").kills === 5 &&
+            by("job:13060").tags === 3 && by("job:13060").kills === 2 &&
+            by("job:22410").rows === 4 && by("job:22410").buttons === 1 &&
+            by("job:7716").tags === 2 && by("job:7716").kills === 0;
+        rec("1. click the readout: 700px, bottom-right; Arc first and collapsed; by CPU; tags on core rows, × on the rest; Verify has no action",
+            ok1, JSON.stringify({ width: s1?.width, right: s1?.right, bottom: s1?.bottom, readoutTop, groups: s1?.groups }));
+
+        await h.ev(resmonClick(resmonChevron("arc")));
+        await resmonNap(200);
+        const expanded = await arcRows();
+        await shot("2a-arc-expanded");
+        await h.ev(resmonClick(resmonChevron("arc")));
+        await resmonNap(200);
+        const collapsed = await arcRows();
+        await shot("2b-arc-collapsed");
+        rec("2. Arc's chevron expands it, a second click collapses it", expanded === 9 && collapsed === 0,
+            `expanded=${expanded} collapsed=${collapsed}`);
+
+        await resmonKey(h, ctx, "ArrowDown");
+        const c3 = (await resmonPopover(h))?.cursor;
+        await resmonKey(h, ctx, "Enter");
+        const opened3 = await arcRows();
+        await shot("3-cursor-enter");
+        rec("3. ↓ puts the cursor on Arc's header, ⏎ expands it", c3 === "arc" && opened3 === 9,
+            `cursor=${c3} arcRows=${opened3}`);
+
+        await h.ev(resmonClick(resmonRowKill(18311)));
+        await resmonNap(200);
+        const c4 = (await resmonPopover(h))?.confirm;
+        await shot("4-row-confirm");
+        rec("4. × on orchestrate.test.exe asks to kill it alone",
+            c4 === "Kill orchestrate.test.exe (18311)? It has no child processes.", c4);
+
+        await resmonBlur(h);
+        await resmonKey(h, ctx, "Escape");
+        const s5 = await resmonPopover(h);
+        await shot("5-esc-cancel");
+        rec("5. Esc removes the confirm and leaves the popover open", s5 != null && s5.confirm == null,
+            `open=${s5 != null} confirm=${s5?.confirm}`);
+
+        const reached = await resmonCursorTo(h, ctx, 18244);
+        await resmonKey(h, ctx, "x");
+        const c6 = (await resmonPopover(h))?.confirm;
+        await resmonArm(h, { outcome: "killed", killed: 2 });
+        await resmonKey(h, ctx, "Enter");
+        await resmonNap(200);
+        const s6 = await resmonPopover(h);
+        await shot("6-killed");
+        rec("6. x on go.exe asks for it and its child; ⏎ kills and notes it",
+            reached && c6 === "Kill go.exe (18244) and its 1 child process?" &&
+                s6?.status.includes("Killed go.exe (18244) and 1 child process."),
+            JSON.stringify({ reached, confirm: c6, status: s6?.status }));
+
+        await resmonKey(h, ctx, "Escape");
+        await resmonNap(RESMON_REVEAL_MS);
+        const gone7 = await h.ev(`!${RESMON_POPOVER}`);
+        await shot("7-esc-close");
+        rec("7. Esc closes the popover", gone7, `closed=${gone7}`);
+
+        await h.ev(resmonClick(resmonReadout(RESMON_FOOTER)));
+        await resmonNap(RESMON_REVEAL_MS);
+        const reopened = await h.ev(`!!${RESMON_POPOVER}`);
+        // a real pointer press on the Agent surface, clear of the popover and the footer
+        const press = { x: 400, y: 300, button: "left", clickCount: 1 };
+        await h.cdp("Input.dispatchMouseEvent", { type: "mousePressed", ...press });
+        await h.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", ...press });
+        await resmonNap(RESMON_REVEAL_MS);
+        const gone8 = await h.ev(`!${RESMON_POPOVER}`);
+        await shot("8-outside-click");
+        rec("8. a click outside the popover and the readout closes it", reopened && gone8,
+            `reopened=${reopened} closed=${gone8}`);
+        return steps;
+    },
+    teardown: resmonTeardown,
+};
+
+const resmonStates = {
+    name: "resmon-states",
+    surface: "agent",
+    arrange: resmonArrange,
+    async assert(h, ctx) {
+        if (!ctx.ready) return RESMON_NO_HOOK;
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const shot = (n) => h.shot(`cdp-shots/resmon-states-${n}.png`);
+
+        await resmonSet(h, null);
+        await h.ev(`window.__resmonFixture.open()`);
+        await resmonNap(RESMON_REVEAL_MS);
+        const s1 = await resmonPopover(h);
+        await shot("1-loading");
+        rec("1. pinned null: the loading body",
+            s1?.status.includes("Reading agent processes…") && s1.groups.length === 0, JSON.stringify(s1?.status));
+
+        await resmonSet(h, { ...resmonFixture(), groups: [resmonArcGroup(Date.now())] });
+        await resmonNap(200);
+        const s2 = await resmonPopover(h);
+        await shot("2-empty");
+        rec("2. Arc only: the empty body",
+            s2?.groups.length === 1 && s2.text.includes("No agent processes") &&
+                s2.text.includes("Agent tabs, run workers and run commands show here while they run."),
+            JSON.stringify(s2?.groups));
+
+        await resmonSet(h, resmonFixture());
+        await resmonNap(200);
+        await resmonBlur(h);
+        const onHeader = await resmonCursorTo(h, ctx, "job:14820");
+        await resmonKey(h, ctx, "X");
+        const c3 = (await resmonPopover(h))?.confirm;
+        const want3 = "Kill 5 processes under waveterm? claude.exe and its console keep running.";
+        await shot("3a-children-confirm");
+        await h.ev(resmonClick(resmonConfirmButton("Cancel")));
+        await resmonNap(200);
+        const cancelled = (await resmonPopover(h))?.confirm == null;
+        await shot("3b-cancelled");
+        rec("3. ⇧X on waveterm's header asks to kill its 5 children; Cancel closes it",
+            onHeader && c3 === want3 && cancelled, JSON.stringify({ onHeader, confirm: c3, cancelled }));
+
+        await h.ev(resmonClick(resmonGroupButton("job:14820", "Kill children")));
+        await resmonNap(200);
+        const c4 = (await resmonPopover(h))?.confirm;
+        await resmonArm(h, { outcome: "killed", killed: 5 });
+        const clicked4 = await h.ev(resmonClick(resmonConfirmButton("Kill 5")));
+        await resmonNap(300);
+        const s4 = await resmonPopover(h);
+        await shot("4-children-killed");
+        rec("4. Kill children opens the same confirm; Kill 5 notes Killed 5 processes.",
+            c4 === want3 && clicked4 && s4?.status.includes("Killed 5 processes."),
+            JSON.stringify({ confirm: c4, clicked: clicked4, status: s4?.status }));
+
+        await resmonArm(h, { outcome: "gone", killed: 0 });
+        await h.ev(resmonClick(resmonRowKill(21890)));
+        await resmonNap(200);
+        const clicked5 = await h.ev(resmonClick(resmonConfirmButton("Kill")));
+        await resmonNap(300);
+        const s5 = await resmonPopover(h);
+        await shot("5-gone");
+        rec("5. gone: node.exe (21890) had already exited.",
+            clicked5 && s5?.status.includes("node.exe (21890) had already exited."), JSON.stringify(s5?.status));
+
+        // the × above left the cursor on node.exe (21890), so x asks for it again
+        const alerts = [
+            ["6-refused", { outcome: "refused", killed: 0 },
+                (a) => a === "Not killed: pid 21890 no longer belongs to this run worker. The list refreshes in 2s.",
+                "6. refused: the alert says the pid left this run worker"],
+            ["7-protected", { outcome: "protected", killed: 0 },
+                (a) => a.startsWith("Not killed: node.exe (21890) is the agent's own process."),
+                "7. protected: the alert names the agent's own process"],
+            ["8-failed", { outcome: "failed", killed: 0, error: "Access is denied." },
+                (a) => /^Could not kill .+: Access is denied\. It is still running\.$/.test(a),
+                "8. failed: the alert carries the OS error and says it is still running"],
+        ];
+        for (const [n, outcome, check, step] of alerts) {
+            await resmonBlur(h);
+            await resmonArm(h, outcome);
+            await resmonKey(h, ctx, "x");
+            const confirm = (await resmonPopover(h))?.confirm;
+            await resmonKey(h, ctx, "Enter");
+            await resmonNap(300);
+            const alert = (await resmonPopover(h))?.alert ?? [];
+            await shot(n);
+            rec(step, confirm != null && alert.length === 1 && check(alert[0]), JSON.stringify({ confirm, alert }));
+        }
+        return steps;
+    },
+    teardown: resmonTeardown,
+};
+
 // notify-toast: NotifySync (view/agents/notifysync.tsx) tells you when an agent needs you or finished. A plain terminal
 // tab is made an agent by publishing agent:status (as agent-uploads does), and each step publishes the next state.
 // Focused, an ask is never an in-app toast: the pet's bubble says it (notifyevents.ts routeNotify), and this scenario's
@@ -33785,7 +37382,6 @@ export const SCENARIOS = [
     briefContextualMap,
     briefRestore,
     briefComposerSteerOnly,
-    runsLifecycle,
     terminalTheme,
     harnessUpdate,
     settingsClaudeAccount,
@@ -33794,6 +37390,8 @@ export const SCENARIOS = [
     gitHistory,
     diffLogTab,
     diffCompare,
+    diffReviewMarks,
+    diffReviewMarksRun,
     diffSync,
     diffWorktrees,
     diffCommitTab,
@@ -33827,6 +37425,7 @@ export const SCENARIOS = [
     harnessPicker,
     dagLifecycle,
     routePickerFlat,
+    routePickerRefused,
     settingsRadarAudit,
     settingsVaultSync,
     settingsPages,
@@ -33839,7 +37438,9 @@ export const SCENARIOS = [
     radarReport,
     radarScanStates,
     uiApi,
+    motionGaps,
     narrationFeed,
+    notesWsh,
     agentTreeRail,
     agentTreeQuickReturn,
     agentHistory,
@@ -33850,12 +37451,15 @@ export const SCENARIOS = [
     docReviewMode,
     lineReview,
     cockpitPolish,
+    leadCardMergeGate,
     runSheetPolish,
     runTimingScenario,
+    runCost,
     dagObservability,
     recordBandDetachRestore,
     agentRailFileLink,
     finalShotsScenario,
+    finalStageScenario,
     briefInitiativesPolish,
     briefPeeksPolish,
     launcherEmpty,
@@ -33865,6 +37469,7 @@ export const SCENARIOS = [
     launcherImages,
     paletteActions,
     paletteGoal,
+    paletteNotes,
     modelPicks,
     codexWorkerRoute,
     canvasSwap,
@@ -33889,6 +37494,10 @@ export const SCENARIOS = [
     floatMini,
     jarvisModes,
     settingsStorage,
+    resmonFooter,
+    resmonMain,
+    resmonStates,
+    resmonLive,
     toolsTree,
     toolsCentre,
     toolsSplit,

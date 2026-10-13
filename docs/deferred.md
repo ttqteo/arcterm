@@ -382,7 +382,16 @@ slice 1 deliberately, and the ones that do not need focus still stand:
   session row naming the run it produced. All the source data exists (`finding.files`, roster cwd and
   changed files, `Run.RadarOrigin`/`EffortRef`/`DagORef`, `jarvisattrib` edges) and nothing derives
   markers from it. Cheapest of the three ideas and the most likely to degrade into noise, so it wants
-  the surfaces to agree first and a mockup per `DESIGN.md`. **Revive after slice 1.**
+  the surfaces to agree first and a mockup per `DESIGN.md`. **Mocked up and declined on 2026-10-08 as
+  noise; revive only on a concrete case where a missing marker cost something.** What the session found,
+  measured on the packaged store (921 runs): Radar findings are not stable enough to mark other surfaces
+  with (a recurring finding kept a stale line, a fixed one still read as open); a session row already names
+  its run (`sessionsruns.ts`); nothing records note citations; two lanes of one dag running at once on the
+  same file happened in 5 of 54 dags, and agents sharing a checkout cannot be told apart from its changed
+  files. The markers drawn were a running lane's task on the files it is changing (Code), the tasks that
+  changed each file of a landed run (Diff), and the effort chunk on a run's land commit (History), from
+  `Run.EndCommit`, `Run.Land`, `EffortRef` and each task's `Evidence.Files`. The canvas was local and never
+  committed; these lines are the whole design.
 - **Companion split** — pinning a second surface beside the current one. Needs a second mount slot,
   since only the Agent surface stays mounted. **Revive if peek proves insufficient** for sustained
   side-by-side work.
@@ -390,11 +399,18 @@ slice 1 deliberately, and the ones that do not need focus still stand:
   post-mortem** that peek cannot serve.
 - **Drag courier** — dragging a finding or file onto an agent in the roster. Shares machinery with the
   pet's deferred courier gestures; **build the store and the gestures together or not at all.**
-- **Usage project support.** Held at `unsupported` because `UsageBucket` carries no attribution
-  dimension at all; blocked on the usage scanner gaining per-session or per-run attribution, not on a
-  design decision. **Revive together with that.**
+- **Usage project support.** Resolved 2026-10-08: the usage scan keys buckets by session and the
+  Usage surface's By work lens scopes to a project, run or session
+  (`docs/superpowers/specs/2026-10-08-usage-attribution-design.md`). The Focus switcher this row
+  served was removed 2026-10-06.
 
-## Composer attachments (2026-09-18)
+## Composer attachments (2026-09-18) — PARTLY RESOLVED 2026-10-12
+
+**Revived for the New run goal (2026-10-12).** `composerattachments.ts` and `attachmenttray.tsx` are back,
+mounted by `newruncontrol.tsx`: an image pasted on the goal is copied to a temp file, a file picked through the
+paperclip's native dialog is referenced in place, and both reach the run as paths appended to its goal. Still
+deferred: the Steer composer, drag-drop onto the goal, and WSL path translation. Revive the Steer half when
+attaching a file to a steer is wanted; the hook and tray are reusable as they stand.
 
 Composer attachments (paste / attach / drag-drop onto a run goal or steer, `875967bf`) were mounted only
 by the deleted `channelcomposers.tsx` and went with it in `5eac07ed`. Image paste into an agent's own
@@ -437,7 +453,9 @@ review; everything else it designed waits for evidence, with each settled decisi
   - Structured resource refs on the wire (file revisions, nested parents) — nothing persists a file revision yet.
   - File, diff, commit and session targets in `openTarget`; `openInCode` and `openDiff` stay the landings.
   - A shared contextual-action builder across buttons, menus and the palette.
-  - Usage-to-work links, which need per-session or per-run attribution in the usage scanner first.
+  - Usage-to-work links: built 2026-10-08 for runs
+    (`docs/superpowers/specs/2026-10-08-usage-attribution-design.md`): a run page on Usage opens its
+    run. A session page has no open button; that waits on the session target in `openTarget` above.
   - Unifying the attachment oref namespace (`resolveAttached`'s `run:`/`memory:`/`radar:`) with addresses.
   - Cross-surface Back is the entry below.
 - **Why:** no flow has yet shown the need; each item names its trigger in the spec.
@@ -735,8 +753,15 @@ written if the need reappears.
   5h/weekly `%` is Anthropic's opaque server-side number, unrelated to any transcript token sum. The
   cockpit now shows a real *used*-token count with **no denominator** (see the resolved usage-bar
   entry); a "used / limit" ratio would require a cap Anthropic does not publish.
-- **Plan-tier badge** (handoff "Max 20×" / "Tier 4"): not carried by the statusLine; the provider
-  label is shown without a tier badge. No source to derive it from.
+
+**Deferred, source exists (corrected 2026-10-12):**
+- **Plan-tier badge** (handoff "Max 20×" / "Tier 4"): not carried by the statusLine, so the Usage
+  surface shows the provider label without a tier badge. It was filed above as having no source, which
+  was wrong: `~/.claude/.credentials.json` → `claudeAiOauth` carries `subscriptionType` (`max`) and
+  `rateLimitTier` (`default_claude_max_5x`). Account switching already reads `subscriptionType` as an
+  account's `Plan` (`pkg/jarvis/claudeaccount.go`) for the Settings account list; `rateLimitTier` is
+  not read yet and its format is undocumented, so a badge should fall back to the plan alone on an
+  unrecognized value. Deferred because a single known account gains little from it.
 
 **Resolved 2026-07-01 (deferred-token-truth-usage-polish):**
 - **Model-id prettifying** — DONE. `prettyModel` (`modellabel.ts`) turns raw ids into friendly labels

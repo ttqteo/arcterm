@@ -88,7 +88,7 @@ export function EndedTranscript({ model, agent }: { model: AgentsViewModel; agen
                         <TranscriptSkeleton />
                     )}
                 </div>
-                {!atBottom ? <JumpToLatestPill onClick={jumpToBottom} /> : null}
+                <JumpToLatestPill show={!atBottom} onClick={jumpToBottom} />
             </div>
         </div>
     );

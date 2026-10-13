@@ -9,7 +9,7 @@ import { formatTokens } from "@/app/view/agents/agentsviewmodel";
 import { shortModel } from "@/app/view/agents/modelname";
 import { runProgress, runTitle } from "@/app/view/agents/runlineage";
 import { isOrchestrator, runStatusView, type RunStatusTone } from "@/app/view/agents/runmodel";
-import { summarizeUsage } from "@/app/view/agents/runusage";
+import { spendText, summarizeUsage } from "@/app/view/agents/runusage";
 import { formatElapsed } from "@/app/view/orchestrate/dagdigest";
 import type { PeekFacts } from "../peekstore";
 
@@ -27,7 +27,7 @@ export type PeekRunView = {
     meta: PeekRunMeta[];
     // null when the title already says all of it
     goal: string | null;
-    // null for a quick run, which has no plan, review or final stage
+    // null for a quick run and for a run that ended without a plan: neither has a plan, review or final stage
     phases: PeekPhase[] | null;
     // what the final stage could not verify, only when it ended unverified
     unverified: string | null;
@@ -72,18 +72,15 @@ function runMeta(input: PeekRunInput): PeekRunMeta[] {
     meta.push({ text: formatElapsed(wallMs(run, now)) });
     const spent = summarizeUsage(usage);
     if (spent != null) {
-        meta.push({ text: `${formatTokens(spent.total)} tok` });
+        meta.push({ text: spendText(spent) });
     }
     meta.push({ text: `${formatElapsed(Math.max(0, now - (run.completedts || run.createdts)))} ago`, faint: true });
     return meta;
 }
 
-function planPhase(run: Run, group: TaskGroup | null): PeekPhase {
+function planPhase(group: TaskGroup | null): PeekPhase {
     if (group != null) {
         return { label: "Plan", state: "passed", tone: "done" };
-    }
-    if (TERMINAL.has(run.status)) {
-        return { label: "Plan", state: "none", tone: "pending" };
     }
     return { label: "Plan", state: "writing", tone: "running" };
 }
@@ -192,6 +189,8 @@ export function buildRunPeek(input: PeekRunInput): PeekRunView {
     // a quick run carries its parent's dagoref when it works a task, so only an orchestrator reads a graph
     const orchestrated = isOrchestrator(run);
     const group = orchestrated ? input.group : null;
+    // a lead that ended without submitting a plan did the work itself, so no stage is still to come
+    const staged = orchestrated && (group != null || !TERMINAL.has(run.status));
     const title = runTitle(run, group ?? undefined);
     const goal = run.goal?.trim() ?? "";
     return {
@@ -199,7 +198,7 @@ export function buildRunPeek(input: PeekRunInput): PeekRunView {
         status: runStatusView(run.status, run.land),
         meta: runMeta(input),
         goal: goal !== "" && goal !== title ? goal : null,
-        phases: orchestrated ? [planPhase(run, group), reviewPhase(group), tasksPhase(group), finalPhase(group)] : null,
+        phases: staged ? [planPhase(group), reviewPhase(group), tasksPhase(group), finalPhase(group)] : null,
         unverified: unverifiedLine(group),
         tasks: group != null ? taskRows(group, usage) : null,
         commits: orchestrated ? commitLine(run, commitCount) : null,

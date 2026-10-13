@@ -59,6 +59,8 @@ import { mentionTarget } from "./griddrop";
 import { GridDropOverlay } from "./griddropoverlay";
 import { HeldAskBar } from "./heldaskbar";
 import { agentGridAtom, currentGrid, eligibleIds, openInSplit, removeFromGrid } from "./gridstore";
+import { finalRowFocusId } from "./finalstage";
+import { FinalStagePane } from "./finalstagepane";
 import { rosterSeededAtom } from "./liveagents";
 import { agentFocusFallback } from "./modalfocusfallback";
 import { NO_PANES, nextPaneMounts } from "./panemounts";
@@ -94,6 +96,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const fullscreen = useAtomValue(terminalFullscreenAtom);
     const focusSub = useAtomValue(focusSubagentAtom);
     const ended = useAtomValue(model.endedWorkerAtom);
+    const stage = useAtomValue(model.finalStageAtom);
     const seeded = useAtomValue(rosterSeededAtom);
     const gridState = useAtomValue(agentGridAtom);
     // what the centre column shows: the terminal, one session's transcript, or Conversation History (agentcenter.ts).
@@ -105,9 +108,9 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     // order is documented there; a terminal only when there is no agent), and holds the skeleton while the roster
     // loads and none of a saved grid's agents has arrived. focusId is kept "always real" (initialized to a
     // default, never empty). A done task's worker has no terminal to mount, so it is focusable without being
-    // mountable.
+    // mountable; so is a run's final stage before a verifier session stands for it.
     const mountable = [...agents, ...terminals];
-    const chosen = focusId != null ? (mountable.find((a) => a.id === focusId) ?? ended?.agent) : undefined;
+    const chosen = focusId != null ? (mountable.find((a) => a.id === focusId) ?? ended?.agent ?? stage?.agent) : undefined;
     // A terminal chosen takes the centre, as an agent does, and focusIdAtom keeps its id (Ctrl+Tab's recent list follows
     // it, which is how the quick flip returns to the agent). The terminal in the panel (moved there by "Move to the
     // panel") is the one thing splitDock keeps out of the centre; the effect below writes the dock atom to what it says.
@@ -242,6 +245,15 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const dockHeight = clampDockHeight(dragDockHeight ?? storedDockHeight, gridHeight);
     // folded, the row is the strip; untiled it keeps a 6px margin around it, as the cells do when tiled
     const dockRowPx = dockFolded ? DOCK_STRIP_PX + (tiled ? 0 : 12) : dockHeight;
+
+
+    // the stage's row becomes its verifier's session once that is in the roster, and the focus goes with the row
+    const stageFocusId = stage ? finalRowFocusId(stage.run, agents) : undefined;
+    useEffect(() => {
+        if (stageFocusId != null && stageFocusId !== focusId) {
+            globalStore.set(model.focusIdAtom, stageFocusId);
+        }
+    }, [stageFocusId, focusId, model]);
 
     // a stale interior (its parent is no longer focused) closes so the terminal returns
     useEffect(() => {
@@ -717,6 +729,8 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                         </div>
                         {isEndedWorkerId(agent.id) ? (
                             <EndedTranscript model={model} agent={agent} />
+                        ) : stage != null && agent.id === stage.agent.id ? (
+                            <FinalStagePane model={model} run={stage.run} />
                         ) : reviewMode ? (
                             <DocReviewPane model={model} agent={agent} />
                         ) : canvasMode ? (

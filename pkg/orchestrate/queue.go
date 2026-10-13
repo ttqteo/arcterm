@@ -38,15 +38,30 @@ func RunFinishedWake(f *waveobj.FinalStage) string {
 	if f == nil {
 		return runFinishedWake
 	}
-	if f.State != FinalState_Unverified {
+	if f.State != FinalState_Passed && f.State != FinalState_Unverified {
 		return runFinishedWake + "\nThe final stage " + f.State + " on the merged result."
 	}
-	lines := []string{runFinishedWake, "The final stage finished unverified. What it could not verify:"}
-	for _, r := range f.Unverified {
-		lines = append(lines, "- "+r)
+	lines := []string{runFinishedWake, "The final stage passed on the merged result."}
+	if f.State == FinalState_Unverified {
+		lines = []string{runFinishedWake, "The final stage finished unverified. What it could not verify:"}
+		for _, r := range f.Unverified {
+			lines = append(lines, "- "+r)
+		}
+	}
+	if f.Round < MaxFinalRounds {
+		lines = append(lines, roundLeftLine)
+	} else {
+		lines = append(lines, noRoundLeftLine)
 	}
 	return strings.Join(lines, "\n")
 }
+
+// roundLeftLine and noRoundLeftLine end a passed or unverified run-finished wake: the engine counts the rounds,
+// so the lead only judges which open issues are round work.
+const (
+	roundLeftLine   = "One round is left for the open issues inside the run's goal that a worker can fix: `wsh jarvis dag submit --round --plan <fix plan>`."
+	noRoundLeftLine = "No round is left: every open issue is an effort chunk."
+)
 
 // landConflictLine goes after the run-finished wake's outcome when the land would hold on a conflict, so the lead
 // fixes it before complete closes its tab. Empty when the land merges cleanly or cannot be predicted: the land
@@ -92,6 +107,12 @@ func taskHungWake(taskID string, silentMin int64) string {
 // landed (an EC-TIME), or it stopped on a question asked in prose. Only its last message says which.
 func taskTurnEndedWake(taskID string) string {
 	return fmt.Sprintf("wake: task %s's worker ended its turn without completing and is idle; its complete may not have landed or it stopped on a question. wsh jarvis dag status", taskID)
+}
+
+// taskTurnFailedWake is for a worker idle after its provider refused its last turn. A lapsed subscription or a model
+// the account cannot run refuses a retry on the same route too, so the lead needs the provider's own words.
+func taskTurnFailedWake(taskID, failure string) string {
+	return fmt.Sprintf("wake: task %s's worker is idle after its last turn failed: %s. wsh jarvis dag status", taskID, strings.TrimRight(failure, ". "))
 }
 
 // taskWorkerGoneWake is for a worker whose process is gone while its task still runs: the exit hook that would

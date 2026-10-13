@@ -177,3 +177,27 @@ func branchIDs(branch []Entry) []string {
 	}
 	return ids
 }
+
+func TestBranchMetaPrefersLatestNameOverFirstUserText(t *testing.T) {
+	named, err := Parse("named.jsonl", []byte(`{"type":"session","version":3,"id":"s","cwd":"/repo"}`+"\n"+
+		`{"type":"message","id":"u1","parentId":null,"message":{"role":"user","content":[{"type":"text","text":" ship it "}]}}`+"\n"+
+		`{"type":"session_info","id":"i1","parentId":"u1","name":"older"}`+"\n"+
+		`{"type":"session_info","id":"i2","parentId":"i1","name":" newer "}`+"\n"))
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	branch, err := named.ActiveBranch()
+	if err != nil {
+		t.Fatalf("ActiveBranch error: %v", err)
+	}
+	if title, firstUser := BranchMeta(branch); title != "newer" || firstUser != "" {
+		t.Errorf("BranchMeta = %q, %q; want the latest name alone", title, firstUser)
+	}
+	// with no name, the first user text stands in
+	if title, firstUser := BranchMeta(branch[:1]); title != "" || firstUser != "ship it" {
+		t.Errorf("BranchMeta = %q, %q; want the first user text", title, firstUser)
+	}
+	if got := UserText([]byte(`{"role":"assistant","content":"not human"}`)); got != "" {
+		t.Errorf("UserText(assistant) = %q, want empty", got)
+	}
+}

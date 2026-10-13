@@ -7,10 +7,11 @@
 // instead, the surface renders the shipped CommitPane — a compare commit row is a HistoryRow, so no
 // adapter is needed.
 
-import { ChangedFileList, TreeModeToggle } from "./changedfilelist";
+import { ChangedFileList, ReviewProgress, TreeModeToggle } from "./changedfilelist";
 import { formSentence } from "./comparerows";
 import type { CompareForm } from "./diffcontent";
 import type { GitChanges } from "./gitstatus";
+import type { ReviewSubject } from "./reviewmarks";
 
 export function AggregatePane({
     base,
@@ -20,6 +21,7 @@ export function AggregatePane({
     changes,
     selectedFile,
     onSelectFile,
+    review,
 }: {
     base: string;
     head: string;
@@ -28,6 +30,7 @@ export function AggregatePane({
     changes: GitChanges | null;
     selectedFile: string | null;
     onSelectFile: (path: string) => void;
+    review: ReviewSubject | null;
 }) {
     const count = changes?.files.length ?? 0;
     return (
@@ -49,9 +52,15 @@ export function AggregatePane({
                     <div className="flex-1" />
                     <TreeModeToggle />
                 </div>
+                <ReviewProgress review={review} changes={changes} />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-[6px] pb-[12px] pt-[6px]">
-                <ChangedFileList changes={changes} selectedFile={selectedFile} onSelectFile={onSelectFile} />
+                <ChangedFileList
+                    changes={changes}
+                    selectedFile={selectedFile}
+                    onSelectFile={onSelectFile}
+                    review={review}
+                />
             </div>
         </div>
     );

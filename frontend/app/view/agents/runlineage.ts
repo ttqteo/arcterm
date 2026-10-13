@@ -7,6 +7,7 @@
 
 import { modelLabel } from "@/app/view/agents/session-models/sessionviewmodel";
 import { formatAgeShort, projectOf, type AgentVM } from "./agentsviewmodel";
+import { finalStageId, finalStageView } from "./finalstage";
 
 // a stage session judges the whole run rather than one task: its plan reviewer, its final verifier
 export type RunRole =
@@ -199,6 +200,26 @@ export function endedWorkerVM(runId: string, task: TaskNode, child: Run | undefi
     };
 }
 
+const VERIFIER_ROLE = "verifier";
+
+// finalStageRoles gives each run in view whose final stage has a row a stage role under the stage's own id, so
+// the header and the rail place the stage as they place its verifier's session.
+export function finalStageRoles(runs: Record<string, RunInfo>): Record<string, RunRole> {
+    const roles: Record<string, RunRole> = {};
+    for (const run of Object.values(runs)) {
+        if (finalStageView(run.dag, [], 0).visible) {
+            roles[finalStageId(run.runId)] = { kind: "stage", leadRunId: run.runId, stageRole: VERIFIER_ROLE };
+        }
+    }
+    return roles;
+}
+
+// finalStageVM is a run's final stage as the Agent surface shows it while no verifier session stands for it:
+// focusable under the stage's own id, with no terminal to mount.
+export function finalStageVM(runId: string): AgentVM {
+    return { id: finalStageId(runId), name: stageLabel(VERIFIER_ROLE), task: "", state: "idle" };
+}
+
 // runTitle names a run by its plan's title, else the first line of its goal.
 export function runTitle(run: Run | undefined, dag: TaskGroup | undefined): string {
     const title = dag?.title?.trim();
@@ -329,42 +350,6 @@ export function leadStandingBy(agent: Pick<AgentVM, "atPrompt">, run: RunInfo): 
 const TASK_IN_FLIGHT = new Set(["running", "reviewing", "verifying"]);
 const PLAN_REVIEW_IN_FLIGHT = "reviewing";
 const FINAL_IN_FLIGHT = new Set(["checking", "final", "verifying"]);
-
-// final.step: the plan command the final stage is running
-const FINAL_STEP_LABELS: Record<string, string> = {
-    tree: "preparing the tree",
-    check: "running Check",
-    verify: "running Verify",
-    final: "running Final",
-};
-
-/** Pure: what a running final stage is doing, or undefined when it is not running. With no Final command the
- *  verifier works alongside Check and Verify, so both show. */
-export function finalStageActivity(final: FinalStage | undefined): string | undefined {
-    if (final?.state === "verifying") {
-        return "verifier reviewing";
-    }
-    if (final?.state !== "checking" && final?.state !== "final") {
-        return undefined;
-    }
-    const step = FINAL_STEP_LABELS[final.step ?? ""] ?? "starting";
-    return final.state === "checking" && final.verifierrunid ? `${step} · verifier alongside` : step;
-}
-
-/** Pure: the plan's own command behind the final stage's running step, so the label stays generic and the
- *  detail is whatever this project runs. */
-export function finalStepCommand(group: Pick<TaskGroup, "check" | "verify" | "finalcmd" | "final">): string {
-    switch (group.final?.step) {
-        case "check":
-            return group.check ?? "";
-        case "verify":
-            return group.verify ?? "";
-        case "final":
-            return group.finalcmd ?? "";
-        default:
-            return "";
-    }
-}
 
 // runEngineBusy reports the engine at work on a run while its lead may be idle: a worker or reviewer on a task, a
 // merge under Verify, the plan's review, or the final stage. A task waiting on a judgment does not count.

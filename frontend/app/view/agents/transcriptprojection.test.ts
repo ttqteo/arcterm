@@ -575,3 +575,85 @@ describe("extractBackgroundTasks", () => {
         ]);
     });
 });
+
+describe("projectTranscript AskUserQuestion", () => {
+    const store = {
+        question: "Which store?",
+        header: "Store",
+        multiSelect: false,
+        options: [
+            { label: "SQLite", description: "Reuse the object store" },
+            { label: "In-memory map", description: "" },
+        ],
+    };
+    const checks = {
+        question: "Which checks?",
+        header: "Checks",
+        multiSelect: true,
+        options: [{ label: "Go tests" }, { label: "CDP scenario" }, { label: "Lint" }],
+    };
+    const ask = (questions: unknown[]) =>
+        JSON.stringify({
+            type: "assistant",
+            message: { content: [{ type: "tool_use", id: "q1", name: "AskUserQuestion", input: { questions } }] },
+        });
+    const result = (toolUseResult: unknown, isError = false) =>
+        JSON.stringify({
+            type: "user",
+            toolUseResult,
+            message: { content: [{ type: "tool_result", tool_use_id: "q1", is_error: isError, content: "x" }] },
+        });
+
+    it("shows the question as the target and lists the options before an answer comes", () => {
+        expect(projectTranscript([ask([store])])).toEqual([
+            {
+                kind: "action",
+                verb: "asked",
+                target: "Which store?",
+                detail: {
+                    kind: "ask",
+                    questions: [
+                        {
+                            question: "Which store?",
+                            header: "Store",
+                            options: [{ label: "SQLite", description: "Reuse the object store" }, { label: "In-memory map" }],
+                            picked: [],
+                        },
+                    ],
+                },
+            },
+        ]);
+    });
+
+    it("puts a single answer in the summary and marks the picked option", () => {
+        const [action] = projectTranscript([ask([store]), result({ answers: { "Which store?": "SQLite" } })]) as any[];
+        expect(action.summary).toBe("SQLite");
+        expect(action.outcome).toBeUndefined();
+        expect(action.detail.questions[0].picked).toEqual(["SQLite"]);
+        expect(action.detail.questions[0].typed).toBeUndefined();
+    });
+
+    it("splits several picks from a typed answer, and counts answers across questions", () => {
+        const [action] = projectTranscript([
+            ask([store, checks]),
+            result({ answers: { "Which store?": "a bolt file", "Which checks?": "Go tests, CDP scenario, a soak run" } }),
+        ]) as any[];
+        expect(action.summary).toBe("2 answers");
+        expect(action.detail.questions[0]).toMatchObject({ picked: [], typed: "a bolt file" });
+        expect(action.detail.questions[1]).toMatchObject({ picked: ["Go tests", "CDP scenario"], typed: "a soak run" });
+    });
+
+    it("cuts a long single answer so the summary cannot push the question out", () => {
+        const long = "x".repeat(60);
+        const [action] = projectTranscript([ask([store]), result({ answers: { "Which store?": long } })]) as any[];
+        expect(action.summary).toBe("x".repeat(31) + "…");
+        expect(action.detail.questions[0].typed).toBe(long);
+    });
+
+    it("fails a rejected question and leaves it unanswered", () => {
+        const [action] = projectTranscript([ask([store]), result("User rejected tool use", true)]) as any[];
+        expect(action.outcome).toBe("fail");
+        expect(action.summary).toBeUndefined();
+        expect(action.detail.questions[0].picked).toEqual([]);
+    });
+});

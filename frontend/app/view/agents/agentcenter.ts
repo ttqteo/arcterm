@@ -14,6 +14,7 @@
 // on the model keep their names rather than churn a rename.
 
 import { globalStore } from "@/app/store/jotaiStore";
+import { landOn } from "@/app/view/jarvis/returnsurface";
 import { atom, type PrimitiveAtom } from "jotai";
 import type { AgentsViewModel } from "./agents";
 import { runIdOfSel } from "./sessionsruns";
@@ -39,7 +40,7 @@ export function showTerminal(): void {
 /** Open Conversation History in the Agent surface. */
 export function showHistory(model: Pick<AgentsViewModel, "surfaceAtom">): void {
     globalStore.set(centerModeAtom, "history");
-    globalStore.set(model.surfaceAtom, "agent");
+    landOn(model.surfaceAtom, "agent");
 }
 
 /** Open one session in the Agent surface: its own transcript, or its run's detail. `member` is the run member in
@@ -50,5 +51,5 @@ export function showSession(model: CenterOpener, sel: string, member?: string): 
         globalStore.set(model.sessionsMemberAtom, member);
     }
     globalStore.set(centerModeAtom, centerForSelection(sel));
-    globalStore.set(model.surfaceAtom, "agent");
+    landOn(model.surfaceAtom, "agent");
 }

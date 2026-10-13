@@ -107,19 +107,25 @@ agent's header, the `tool` button on a project folder in the tree (opens in the 
 | `Mod`+`G` `,` | Settings |
 | `Mod`+`G` `p` | Search |
 | `Mod`+`G` `w` | What's waiting — the avatar popup (Jarvis peek), on any surface |
+| `Mod`+`G` `m` | Resource Manager (the popover over the footer's `Arc … CPU` readout) |
 
 ## Search (`Mod`+`P`)
 
-One overlay with scopes: All, Needs you, Go to, Agents, Runs, Sessions, Records, Projects, Files, Commands.
+One overlay with scopes: All, Needs you, Go to, Agents, Runs, Sessions, Records, Notes, Projects, Files, Commands.
 
 | Keys | Action |
 |---|---|
 | `Tab` / `Shift`+`Tab` | Next / previous scope |
-| `n:` `g:` `a:` `r:` `s:` `re:` `p:` `f:` `c:` typed first in All | Narrow to Needs you, Go to, Agents, Runs, Sessions, Records, Projects, Files, Commands. A `\` or `/` right after the colon keeps it as text, so a pasted `c:\path` stays a query |
+| `n:` `g:` `a:` `r:` `s:` `re:` `no:` `p:` `f:` `c:` typed first in All | Narrow to Needs you, Go to, Agents, Runs, Sessions, Records, Notes, Projects, Files, Commands. A `\` or `/` right after the colon keeps it as text, so a pasted `c:\path` stays a query |
 | `@` `/` `#` `>` typed first in All | Jump to Agents, Sessions, Projects, Commands (the older sigils) |
 | `→` with the caret at the end of the query | Open the selected row's actions (a run, agent, session, record, initiative or project). Mid-query, `→` moves the caret |
 | `←` or `Backspace` on an empty action filter | Leave an action's input, then the action list, back to the results with the query and selection as they were |
 | `1`…`9` in Needs you | Answer the selected ask with that option, in place |
+| `Enter` in Notes | Copy the selected note as markdown and close |
+| `Del` twice in Notes, caret at the end of the query | Delete the selected note. Any other key after the first `Del` cancels |
+| `Ctrl`+`Enter` on a note in Notes | Edit it: the palette becomes the editor |
+| `Enter` on "New note", the last row in Notes | Write a note; the query becomes its title |
+| In the note editor: `Ctrl`+`Enter` / `Tab` / `Esc` | Save / move between title and body (`Enter` in the title moves to the body) / back to the Notes list, pressed twice when there are unsaved changes. `Ctrl`+`P` and a click outside go back the same way |
 | `Mod`+`Enter` | The selected row's alternate action, named in the footer. On the goal block, open an orchestrator run instead of a Quick one |
 | `Backspace` on an empty query | Leave a picker, then drop back to All |
 | `path:123` in Files | Open the file at that line; a bare `:123` on Code moves the open file |
@@ -143,7 +149,7 @@ cancelled now, in All and in Commands, so it never starts a run named "cancel".
 | `j` / `k` (or `↓` / `↑`) | Move the cursor within the active region |
 | `Enter` | Open / activate the item under the cursor |
 | `Space` | Peek the item under the cursor in the avatar popup, without leaving the surface (see Peek below) |
-| `Esc` | On a deep surface (Jarvis, Radar, Files, Usage, Code), return to the Cockpit. In a composer or text field, leave Type posture first. |
+| `Esc` | On a deep surface (Jarvis, Radar, Files, Usage, Code), go back to the surface you jumped from (opening a run, file, diff or agent from elsewhere), else return to the Cockpit. In a composer or text field, leave Type posture first. |
 
 ## The avatar popup (what's waiting)
 
@@ -168,6 +174,19 @@ The answer form (a question with several parts or several picks; `Enter` or **An
 | `←` / `→` | Previous / next question |
 | `Enter` | Send once every question has an answer, else go to the first one still unanswered |
 | `Esc` | Fold the form, from its text field too; a second `Esc` closes the popup |
+
+## Resource Manager (the popover opened from the footer's readout or `g` `m`)
+
+| Keys | Action |
+|---|---|
+| `↑` / `↓` | Move the cursor through the groups and their processes |
+| `Enter` | Confirm an open kill, else expand or collapse the cursor's group |
+| `x` | Kill the process under the cursor and its children (asks first; never the agent itself) |
+| `Shift`+`X` | Kill every process the cursor's group started, keeping the agent and its console (asks first) |
+| `Esc` | Cancel an open kill, else close the popover |
+
+While the popover is open its keys take precedence: the surface underneath does not move. A click outside it
+closes it.
 
 ## Peek (the avatar popup's item view)
 
@@ -213,7 +232,7 @@ A link inside an item view does a full open, even with `Mod` held.
 | `Mod`+`Shift`+`Enter` (or `F11`) | Toggle terminal fullscreen from inside the terminal too. A Mac keyboard has no `F11` of its own, so `Cmd`+`Shift`+`Enter` is the one to use there |
 | `Shift`+`F` | Toggle float: the window shrinks to the focused terminal, and its pin keeps it on top of other apps |
 | `r` | Review: open the focused lead's Spec review or Plan review dialog, or show the focused agent's Doc review in place of its terminal |
-| `Esc` | Back to Cockpit, or exit fullscreen first; from Conversation History or a session transcript, back to the terminal |
+| `Esc` | Back to where you jumped from, else to Cockpit; exits fullscreen first; from Conversation History or a session transcript, back to the terminal |
 | `Shift`+`Esc` | Return focus to the nav (from inside the terminal) |
 | `Ctrl`+`C` | In a terminal on Windows: copy while text is selected (the selection goes with it), else the interrupt as always. `Cmd`+`C` copies on a Mac. `Ctrl`+`Shift`+`C` copies too |
 | `←` / `→` / `Home` / `End` | Move between the panel's tabs (Overview, Files, File) while its tab strip has focus; the agent keys stand down there |
@@ -343,6 +362,7 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `Shift`+`D` | Split / unified |
 | `Shift`+`W` | Ignore whitespace |
 | `Alt`+`Z` | Toggle word wrap for the open file (shared with Code) |
+| `v` | Mark the open file reviewed (or unmark it) and open the next unreviewed file |
 | `r` | Refresh changes, history and the source tree |
 | `c` | In the log: compare refs (the Log tab's Compare…). In compare: change the compared refs |
 | `Shift`+`S` | Swap compare refs (in compare) |

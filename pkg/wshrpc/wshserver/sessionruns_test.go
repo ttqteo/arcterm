@@ -15,6 +15,43 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
+func seedLeadRun(t *testing.T, prefix string) {
+	t.Helper()
+	ch, err := wstore.CreateChannel(context.Background(), prefix+"-ch", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := waveobj.Run{ID: uuid.NewString(), Mode: "orchestrator", SessionId: prefix + "-2", LeadSessionIds: []string{prefix + "-1", prefix + "-2"}}
+	if err := wstore.AppendRun(context.Background(), ch.OID, run); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRunsBySession(t *testing.T) {
+	seedLeadRun(t, "rbs")
+	got, err := runsBySession(context.Background(), []string{"rbs-1", "rbs-2", "rbs-unlinked"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["rbs-1"] == nil || got["rbs-1"] != got["rbs-2"] {
+		t.Fatalf("want the earlier and current lead session on one run, got %+v", got)
+	}
+	if got["rbs-unlinked"] != nil || len(got) != 2 {
+		t.Fatalf("an unlinked id maps to nothing, got %+v", got)
+	}
+}
+
+func TestLinkSessionsToRunsLeadSessionIds(t *testing.T) {
+	seedLeadRun(t, "lsr")
+	sessions := []wshrpc.SessionActivity{{ID: "lsr-1"}}
+	if err := linkSessionsToRuns(context.Background(), sessions); err != nil {
+		t.Fatal(err)
+	}
+	if sessions[0].RunId == "" || sessions[0].Role != "lead" {
+		t.Fatalf("an earlier lead session links to its run as lead, got %+v", sessions[0])
+	}
+}
+
 func TestRunLinkOf(t *testing.T) {
 	dag := &waveobj.TaskGroup{RunID: "lead", ChannelId: "ch", Tasks: []waveobj.TaskNode{
 		{ID: "t-1", RunID: "w1-retry"},

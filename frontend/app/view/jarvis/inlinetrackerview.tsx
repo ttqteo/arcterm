@@ -7,6 +7,7 @@
 // to the Chunk sidebar (chunksidebar.tsx), because an initiative's notes here average ~1.1k characters and
 // the sheet this replaces could not hold plan and prose at 640px.
 
+import { PopoverReveal } from "@/app/element/popoverreveal";
 import { cn } from "@/util/util";
 import { useAtom } from "jotai";
 import {
@@ -279,31 +280,29 @@ export function InitiativeDetail({
                                 >
                                     <Ellipsis size={14} aria-hidden />
                                 </button>
-                                {menu === menuId ? (
-                                    <Menu className="right-1 top-[calc(100%-2px)] w-40">
-                                        {/* the unstaged run has no name to rename or label to delete */}
-                                        {row.stage === "" ? (
+                                <Menu open={menu === menuId} className="right-1 top-[calc(100%-2px)] w-40">
+                                    {/* the unstaged run has no name to rename or label to delete */}
+                                    {row.stage === "" ? (
+                                        <MenuItem onClick={() => startEdit(row.id, row.stage)}>
+                                            Name this stage
+                                        </MenuItem>
+                                    ) : (
+                                        <>
                                             <MenuItem onClick={() => startEdit(row.id, row.stage)}>
-                                                Name this stage
+                                                Rename stage
                                             </MenuItem>
-                                        ) : (
-                                            <>
-                                                <MenuItem onClick={() => startEdit(row.id, row.stage)}>
-                                                    Rename stage
-                                                </MenuItem>
-                                                <MenuItem
-                                                    danger
-                                                    onClick={() => {
-                                                        setMenu(null);
-                                                        edits.onDeleteStage(row.at);
-                                                    }}
-                                                >
-                                                    Delete stage
-                                                </MenuItem>
-                                            </>
-                                        )}
-                                    </Menu>
-                                ) : null}
+                                            <MenuItem
+                                                danger
+                                                onClick={() => {
+                                                    setMenu(null);
+                                                    edits.onDeleteStage(row.at);
+                                                }}
+                                            >
+                                                Delete stage
+                                            </MenuItem>
+                                        </>
+                                    )}
+                                </Menu>
                             </div>
                             {add}
                         </Fragment>
@@ -392,78 +391,76 @@ export function InitiativeDetail({
                                     />
                                 </button>
                             </div>
-                            {menu === menuId ? (
-                                <Menu className="right-1 top-[calc(100%+2px)] w-[184px]">
-                                    <MenuHead>Status</MenuHead>
-                                    {STATUSES.map((s) => (
-                                        <MenuItem
-                                            key={s}
-                                            active={s === row.row.status}
-                                            glyph={<ToneIcon tone={chunkTone(s)} />}
-                                            onClick={() => {
-                                                setMenu(null);
-                                                if (s !== row.row.status) {
-                                                    edits.onSetStatus(label, s);
-                                                }
-                                            }}
-                                        >
-                                            {s}
-                                        </MenuItem>
-                                    ))}
-                                    <MenuRule />
-                                    <MenuItem onClick={() => startEdit(row.id, label)}>Rename</MenuItem>
+                            <Menu open={menu === menuId} className="right-1 top-[calc(100%+2px)] w-[184px]">
+                                <MenuHead>Status</MenuHead>
+                                {STATUSES.map((s) => (
                                     <MenuItem
-                                        glyph={<ArrowUp size={12} aria-hidden />}
-                                        hint="alt ↑"
-                                        disabled={!edits.canMove(label, "up")}
+                                        key={s}
+                                        active={s === row.row.status}
+                                        glyph={<ToneIcon tone={chunkTone(s)} />}
                                         onClick={() => {
                                             setMenu(null);
-                                            edits.onMoveChunk(label, "up");
+                                            if (s !== row.row.status) {
+                                                edits.onSetStatus(label, s);
+                                            }
                                         }}
                                     >
-                                        Move up
+                                        {s}
                                     </MenuItem>
-                                    <MenuItem
-                                        glyph={<ArrowDown size={12} aria-hidden />}
-                                        hint="alt ↓"
-                                        disabled={!edits.canMove(label, "down")}
-                                        onClick={() => {
-                                            setMenu(null);
-                                            edits.onMoveChunk(label, "down");
-                                        }}
-                                    >
-                                        Move down
-                                    </MenuItem>
-                                    {otherStages.length > 0 ? (
-                                        <>
-                                            <MenuRule />
-                                            <MenuHead>Move to stage</MenuHead>
-                                            {otherStages.map((s) => (
-                                                <MenuItem
-                                                    key={s || "~"}
-                                                    glyph={<ArrowRight size={12} aria-hidden />}
-                                                    onClick={() => {
-                                                        setMenu(null);
-                                                        edits.onMoveToStage(label, s);
-                                                    }}
-                                                >
-                                                    {s || "unstaged"}
-                                                </MenuItem>
-                                            ))}
-                                        </>
-                                    ) : null}
-                                    <MenuRule />
-                                    <MenuItem
-                                        danger
-                                        onClick={() => {
-                                            setMenu(null);
-                                            edits.onDeleteChunk(label);
-                                        }}
-                                    >
-                                        Delete chunk
-                                    </MenuItem>
-                                </Menu>
-                            ) : null}
+                                ))}
+                                <MenuRule />
+                                <MenuItem onClick={() => startEdit(row.id, label)}>Rename</MenuItem>
+                                <MenuItem
+                                    glyph={<ArrowUp size={12} aria-hidden />}
+                                    hint="alt ↑"
+                                    disabled={!edits.canMove(label, "up")}
+                                    onClick={() => {
+                                        setMenu(null);
+                                        edits.onMoveChunk(label, "up");
+                                    }}
+                                >
+                                    Move up
+                                </MenuItem>
+                                <MenuItem
+                                    glyph={<ArrowDown size={12} aria-hidden />}
+                                    hint="alt ↓"
+                                    disabled={!edits.canMove(label, "down")}
+                                    onClick={() => {
+                                        setMenu(null);
+                                        edits.onMoveChunk(label, "down");
+                                    }}
+                                >
+                                    Move down
+                                </MenuItem>
+                                {otherStages.length > 0 ? (
+                                    <>
+                                        <MenuRule />
+                                        <MenuHead>Move to stage</MenuHead>
+                                        {otherStages.map((s) => (
+                                            <MenuItem
+                                                key={s || "~"}
+                                                glyph={<ArrowRight size={12} aria-hidden />}
+                                                onClick={() => {
+                                                    setMenu(null);
+                                                    edits.onMoveToStage(label, s);
+                                                }}
+                                            >
+                                                {s || "unstaged"}
+                                            </MenuItem>
+                                        ))}
+                                    </>
+                                ) : null}
+                                <MenuRule />
+                                <MenuItem
+                                    danger
+                                    onClick={() => {
+                                        setMenu(null);
+                                        edits.onDeleteChunk(label);
+                                    }}
+                                >
+                                    Delete chunk
+                                </MenuItem>
+                            </Menu>
                         </div>
                         {add}
                     </Fragment>
@@ -606,18 +603,18 @@ function StageBar({ done, total }: { done: number; total: number }) {
     );
 }
 
-function Menu({ className, children }: { className: string; children: React.ReactNode }) {
+// the menus drop from the row's right edge, so they scale from the top right
+function Menu({ open, className, children }: { open: boolean; className: string; children: React.ReactNode }) {
     return (
-        <div
-            data-jarvis-tracker-menu
-            onClick={(e) => e.stopPropagation()}
-            className={cn(
-                "absolute z-30 rounded-[8px] border border-edge-strong bg-surface-raised p-[5px] shadow-[0_12px_34px_var(--color-background)]",
-                className
-            )}
-        >
-            {children}
-        </div>
+        <PopoverReveal open={open} origin="top right" className={cn("absolute z-30", className)}>
+            <div
+                data-jarvis-tracker-menu
+                onClick={(e) => e.stopPropagation()}
+                className="rounded-[8px] border border-edge-strong bg-surface-raised p-[5px] shadow-[0_12px_34px_var(--color-background)]"
+            >
+                {children}
+            </div>
+        </PopoverReveal>
     );
 }
 

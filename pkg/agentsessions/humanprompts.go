@@ -160,7 +160,7 @@ func piHumanPrompts(file *pisession.File) []HumanPrompt {
 	}
 	var out []HumanPrompt
 	for _, e := range branch {
-		if text := piUserText(e.Message); text != "" && !agentmsg.IsAgentMessage(text) {
+		if text := pisession.UserText(e.Message); text != "" && !agentmsg.IsAgentMessage(text) {
 			out = append(out, HumanPrompt{Ts: parseTs(e.Timestamp), Text: text})
 		}
 	}

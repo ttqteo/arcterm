@@ -35,11 +35,13 @@ import {
 } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import { openTarget } from "./openref";
 import { closePeek, openPetPeek, peekChordActive } from "./peekstore";
 import { PetBubble } from "./petbubble";
 import { petCharacter } from "./petcharacter";
 import { expressionFor, postureFor, type PetExpression, type PetPosture, type PetSignals } from "./petcondition";
 import { landing, ledgeShift, webLanding, type LedgeAt } from "./petfall";
+import { bubbleClick } from "./petjoin";
 import {
     avoidSpans,
     cornerFor,
@@ -88,7 +90,7 @@ import {
 } from "./petstore";
 import type { TeleportKind } from "./petteleport";
 import { PetTeleportLayers } from "./petteleportsvg";
-import { nextUtterance } from "./petvoice";
+import { nextUtterance, unreadAfterLeaving, unreadAfterSaying } from "./petvoice";
 import {
     dropAt,
     HANG_DOWN_MS,
@@ -164,21 +166,32 @@ export function useWaitingCount(model: AgentsViewModel): number {
     return useMemo(() => queueRows(items, agents, messages).length, [items, agents, messages]);
 }
 
-// A click on the bubble: a quote is not news, so clicking it only puts it away; anything else opens the chat.
-export function openPetBubble(): void {
-    if (globalStore.get(petBubbleAtom)?.kind === "quote") {
+// A click on the bubble: a quote is not news, so clicking it only puts it away; a line said once for an agent opens
+// that agent (petjoin.ts bubbleClick); anything else opens the chat.
+export function openPetBubble(model?: AgentsViewModel): void {
+    const said = globalStore.get(petBubbleAtom);
+    if (said?.kind === "quote") {
         globalStore.set(petBubbleAtom, null);
         return;
+    }
+    if (model != null) {
+        const click = bubbleClick(said, globalStore.get(model.agentsAtom));
+        if ("tabId" in click) {
+            globalStore.set(petBubbleAtom, null);
+            void openTarget(model, { kind: "agent", tabId: click.tabId });
+            return;
+        }
     }
     openPetPeek();
 }
 
-// The bubble's time ran out or its × was pressed: what it said stays unread, a quote leaves nothing behind.
+// The bubble's time ran out or its × was pressed: what it said stays unread, unless it was said once; a quote leaves
+// nothing behind.
 export function dismissPetBubble(): void {
     const said = globalStore.get(petBubbleAtom);
     globalStore.set(petBubbleAtom, null);
     if (said?.kind !== "quote") {
-        globalStore.set(petUnreadAtom, true);
+        globalStore.set(petUnreadAtom, unreadAfterLeaving(said, globalStore.get(petUnreadAtom)));
     }
 }
 
@@ -275,6 +288,7 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     const peekOpen = useAtomValue(petPeekOpenAtom);
     const events = useAtomValue(petEventsAtom);
     const watermark = useAtomValue(petWatermarkAtom);
+    const agents = useAtomValue(model.agentsAtom);
     const surface = useAtomValue(model.surfaceAtom);
     // folded, the shell is hidden but this stays mounted (its voice keeps running); the bubble and the peek portal to
     // the body, past the hidden shell, so the folded Sprout draws its own (cockpit/sprout-mini.tsx)
@@ -302,8 +316,10 @@ export function PetView({ model }: { model: AgentsViewModel }) {
             rememberSaid(event);
         }
         if (speech.utterance != null) {
+            // the bubble itself is the notice, unless it is said once and so stands for nothing kept
+            const unread = unreadAfterSaying(speech, globalStore.get(petBubbleAtom), globalStore.get(petUnreadAtom));
             globalStore.set(petBubbleAtom, speech.utterance);
-            globalStore.set(petUnreadAtom, false); // the bubble itself is the notice
+            globalStore.set(petUnreadAtom, unread);
         }
     }, [events, watermark]);
 
@@ -345,7 +361,7 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     }, [quotesOn]);
 
     // a quote is not news: clicking it only puts it away, and it leaves no unread marker behind
-    const openPeek = useCallback(openPetBubble, []);
+    const openPeek = useCallback(() => openPetBubble(model), [model]);
 
     return (
         <>
@@ -366,6 +382,7 @@ export function PetView({ model }: { model: AgentsViewModel }) {
             {folded ? null : (
                 <PetBubble
                     event={bubble}
+                    agents={agents}
                     anchor={anchor}
                     corner={corner}
                     onOpen={openPeek}

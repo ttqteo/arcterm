@@ -1,9 +1,12 @@
 // arcterm's Claude Code mod. `wsh install-agent-hooks` writes it to ~/.arc/claude-mod with the wsh path
 // substituted and lists that folder in CLAUDE_CODE_PLUGIN_DIRS, so every claude launch loads it.
 // outside an arcterm block every hook passes straight through.
+import { atom, read, update } from "claude-code";
 import type { EngineInterface, Register } from "claude-code";
 import type { AskQuestion } from "./ask-core";
 import { askPayload, cardAnswer, cardCanAsk, parseAskReply } from "./ask-core";
+import { drawCacheMiss } from "./cache-band";
+import { cacheMissNotice, transcriptEntries } from "./cache-core";
 import { controlMsg, deliver, endTurn, steerNotice, takeLines } from "./control-core";
 import type { Turn } from "./control-core";
 import { denial } from "./guard-core";
@@ -35,6 +38,41 @@ function racesCard(questions: readonly AskQuestion[]): boolean {
 
 // the tool_use_ids of the calls the card is racing right now, so the PostToolUse hook below knows them
 const racing = new Set<string>();
+
+// set when a question goes up in claude's dialog this turn. a question dismissed there runs no PostToolUse and
+// no Stop hook, so the turn's end reports idle, or the cockpit reads asking until the next prompt
+let isAskInDialog = false;
+
+// the last turn's cache miss, shown above the prompt until the next turn starts; null when none is
+const cacheMiss = atom({ plugin: "arc", key: "cacheMiss" } as const, null);
+
+// tells the person, and inside arcterm the cockpit, what the turn that just ended re-billed for a missed
+// prompt cache. the transcript comes through wsh, found by the session's id: the hook events that carry its
+// path never reach this mod, and the mod's own file read rejects a file over 4 MiB
+async function reportCacheMiss($: EngineInterface) {
+    try {
+        const tail = await $.process.run([WSH, "transcript-tail", await $.session.id()]);
+        if (tail.exitCode !== 0) {
+            // a session can end a turn before its transcript is first written
+            $.ui.log(`arc: wsh transcript-tail exited ${tail.exitCode}: ${tail.stderr.trim()}`, { to: "debug" });
+            return;
+        }
+        const notice = cacheMissNotice(transcriptEntries(tail.stdout));
+        if (!notice) {
+            return;
+        }
+        await update($, cacheMiss, () => notice);
+        if (!active) {
+            return;
+        }
+        const ran = await $.process.run([WSH, "notify", notice, "--level", "warn", "--transient"]);
+        if (ran.exitCode !== 0) {
+            $.ui.log(`arc: wsh notify exited ${ran.exitCode}: ${ran.stderr.trim()}`, { to: "debug" });
+        }
+    } catch (err) {
+        $.ui.log(`arc: reporting a cache miss failed: ${String(err)}`, { to: "debug" });
+    }
+}
 
 // ponytail: turn.start does not say whose turn it is, so a background subagent starting one while the
 // session is idle reads as open, and a mid-turn text sent then waits for the next turn. track turn ids
@@ -252,9 +290,15 @@ export const register: Register = (on) => {
         return next(e);
     });
 
-    on("turn.start", ($, e, next) => {
+    on("turn.start", async ($, e, next) => {
         turn.isOpen = true;
+        await update($, cacheMiss, () => null);
         return next(e);
+    });
+
+    on("ui.render", { component: "AbovePrompt" }, async ($, e, next) => {
+        const notice = await read($, cacheMiss);
+        return notice && !e.hasSurvey ? drawCacheMiss($.ui.resolve(e), notice) : next(e);
     });
 
     // a tool's result means another request follows, and it carries every row joined so far.
@@ -268,12 +312,16 @@ export const register: Register = (on) => {
     });
 
     on("turn.complete", async ($, e, next) => {
+        const wasAskInDialog = isAskInDialog && !e.agentId;
+        if (wasAskInDialog) {
+            isAskInDialog = false;
+        }
         for (const text of e.agentId ? [] : endTurn(turn)) {
             void $.prompt.submit({ text, asUser: true }).catch((err) =>
                 $.ui.log(`arc: submitting an unread mid-turn text failed: ${String(err)}`, { to: "debug" })
             );
         }
-        const args = active ? idleArgs(e, transcriptPath) : null;
+        const args = active ? idleArgs(e, transcriptPath, wasAskInDialog) : null;
         if (args) {
             try {
                 const ran = await $.process.run([WSH, ...args]);
@@ -284,6 +332,11 @@ export const register: Register = (on) => {
                 // the idle notification still corrects the cockpit, later
                 $.ui.log(`arc: wsh agentstatus --state idle failed: ${String(err)}`, { to: "debug" });
             }
+        }
+        // in every session, Arc's or not: the band shows the person the miss either way
+        if (!e.agentId) {
+            // not awaited: reading a long transcript must not hold the turn's end
+            void reportCacheMiss($);
         }
         return next(e);
     });
@@ -319,6 +372,7 @@ export const register: Register = (on) => {
         if (e.tool_use_id) {
             $.ui.notice(e.tool_use_id, ALSO_ON_CARD);
             racing.add(e.tool_use_id);
+            isAskInDialog = true;
         }
         // spawn, not run: run gives up after ten minutes, and a question can wait longer
         const wait = $.process.spawn({ argv: [WSH, "ask", "--wait"], input: askPayload(e.questions) });

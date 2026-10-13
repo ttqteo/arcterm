@@ -155,7 +155,11 @@ The long form, for pushback on a design call or a specific kind of piece: `refer
   data shapes), as content, not ornament.
 - Rationale and option notes go in your reply; an artboard's `title` names what it shows.
 - Options differ in layout and treatment of what the brief asks for. A control, step or section
-  the brief did not ask for is a question in your reply, not an artboard.
+  the brief did not ask for is a question in your reply, not an artboard. Start from the simplest
+  design the brief allows: no multi-step flows, merged controls or extra variants unless asked.
+- When an artboard redraws an existing screen, every piece of information it shows today (cost,
+  time, tokens, counts) stays visible. Moving one behind a tooltip or dropping it is a question in
+  your reply, not a design choice.
 - Plain surfaces: no gradient washes, left-border cards or emoji; no Inter, Roboto or Arial.
 - With no design system, avoid the looks AI design clusters around: warm cream with a serif
   display and a terracotta accent; near-black with one acid-green or vermilion pop; broadsheet

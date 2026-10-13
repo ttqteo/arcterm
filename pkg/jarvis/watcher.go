@@ -107,7 +107,11 @@ func ChannelOwnerORef(ctx context.Context, askingORef string) string {
 // second value is the classifier's task and the third is the attention row's source.
 func ResolveAskOwner(ctx context.Context, ownerORef string) (*waveobj.Channel, string, string) {
 	if m := ResolveRunWorkerFromMeta(ctx, ownerORef); m != nil {
-		return m.Channel, runWorkerTask(m.Run, m.PhaseIdx), runWorkerSource(m.Run, m.PhaseIdx)
+		source := dagTaskSource(ctx, m.Run)
+		if source == "" {
+			source = runWorkerSource(m.Run, m.PhaseIdx)
+		}
+		return m.Channel, runWorkerTask(m.Run, m.PhaseIdx), source
 	}
 	ch, task := resolveGatekeeperChannelByMeta(ctx, ownerORef)
 	return ch, task, goalHeadline(task)

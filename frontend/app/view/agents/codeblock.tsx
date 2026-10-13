@@ -33,7 +33,7 @@ export function CodeBlock({ code, lang, path }: { code: string; lang?: string; p
         <div className="my-1.5 overflow-hidden rounded-[10px] border border-border bg-surface-code">
             <div
                 data-code-head
-                className="flex items-center gap-2 border-b border-edge-faint bg-surface px-[11px] py-[7px]"
+                className="flex select-none items-center gap-2 border-b border-edge-faint bg-surface px-[11px] py-[7px]"
             >
                 {lang ? (
                     <span className="text-[9px] font-semibold uppercase tracking-[0.08em] text-accent">{lang}</span>

@@ -45,7 +45,7 @@ export function SleepingTranscript({ agent, barred }: { agent: AgentVM; barred: 
                         </div>
                     )}
                 </div>
-                {!atBottom ? <JumpToLatestPill onClick={jumpToBottom} /> : null}
+                <JumpToLatestPill show={!atBottom} onClick={jumpToBottom} />
             </div>
             {/* the transcript's own column (CompactTranscript), so the box lines up under the last message; keyed, so a
                 draft belongs to one agent */}

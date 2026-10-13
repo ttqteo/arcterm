@@ -3,9 +3,9 @@
 
 import { cn } from "@/util/util";
 import {
-    FloatingPortal,
     autoUpdate,
     flip,
+    FloatingPortal,
     offset,
     shift,
     useFloating,
@@ -13,6 +13,7 @@ import {
     useInteractions,
 } from "@floating-ui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { easeFluidCss, MOTION } from "./motiontokens";
 
 interface TooltipProps {
     children: React.ReactNode;
@@ -157,7 +158,7 @@ function TooltipInner({
                         style={{
                             ...floatingStyles,
                             opacity: isVisible ? 1 : 0,
-                            transition: "opacity 200ms ease",
+                            transition: `opacity ${MOTION.durMicro}s ${easeFluidCss}`,
                         }}
                         {...getFloatingProps()}
                         className={cn(

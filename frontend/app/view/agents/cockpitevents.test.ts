@@ -60,8 +60,14 @@ describe("runRailEvents", () => {
             ],
             "lead"
         );
-        expect(out.map((e) => e.kind)).toEqual(["asked", "landed", "failed", "quiet"]);
+        expect(out.map((e) => e.kind)).toEqual(["asked", "finished", "failed", "quiet"]);
         expect(out[0]).toMatchObject({ key: "R:child-ask1", focusId: "lead", who: "Session auth", group: "R" });
+    });
+
+    // a finished task has not landed while its merge waits; only the merge lands it
+    it("reads a task-done as finished and a task-merged as landed", () => {
+        const out = runRailEvents(run, [ev("task-done", 1, { taskid: "t1" }), ev("task-merged", 2, { taskid: "t1" })]);
+        expect(out.map((e) => e.kind)).toEqual(["finished", "landed"]);
     });
 });
 

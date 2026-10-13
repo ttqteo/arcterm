@@ -23,11 +23,17 @@ const runTrailer = jarvis.RunTrailerKey
 // when its lane landed several tasks as one.
 const taskTrailer = "Arc-Task"
 
+// modelTrailer names the harness and model behind each task a squash commit landed, so blaming a later fix
+// reaches the model that wrote the line after the run and its transcripts are gone.
+const modelTrailer = "Arc-Model"
+
 // MergeLane is what a lane's squash commit names: Title is its task titles, joined, and TaskIDs the tasks it
-// lands. Skipped tasks are in neither, since they landed nothing.
+// lands. Skipped tasks are in neither, since they landed nothing. Routes is "<task> <harness> [model]" for each
+// task whose worker run is known.
 type MergeLane struct {
 	Title   string
 	TaskIDs []string
+	Routes  []string
 }
 
 // MergeRunWorktree squash-merges wave/<runID> into the project branch and returns the merge commit
@@ -160,6 +166,9 @@ func mergeMessage(ctx context.Context, projectPath, runID string, lane MergeLane
 	trailers := []string{runTrailer + ": " + runID}
 	for _, id := range lane.TaskIDs {
 		trailers = append(trailers, taskTrailer+": "+id)
+	}
+	for _, r := range lane.Routes {
+		trailers = append(trailers, modelTrailer+": "+r)
 	}
 	return strings.Join(msgs, "\n\n") + "\n\n" + strings.Join(trailers, "\n")
 }

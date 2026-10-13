@@ -21,7 +21,7 @@ import { openTaskWorker, resolveTaskWorker, type TaskWorkerView } from "./taskco
 
 // the mockup's open rail (RAIL_H_DESC 340) minus its closed rail (RAIL_H 108): the description gets exactly
 // the height the rail grows by, so opening it never pushes the header or actions out of the rail
-const DESC_MAX_PX = 232;
+export const DESC_MAX_PX = 232;
 
 const ACTION_BTN =
     "cursor-pointer rounded-[8px] border border-edge-mid px-2.5 py-1 text-[11.5px] font-semibold hover:border-edge-strong";

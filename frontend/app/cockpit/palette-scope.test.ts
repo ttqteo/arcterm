@@ -125,6 +125,13 @@ describe("scope prefixes", () => {
     it("n: is Needs you", () => {
         expect(parsePrefix("n:")).toEqual({ scope: "needs", rest: "" });
     });
+    it("no: is Notes, typed from an empty All, and n: still narrows to Needs you", () => {
+        expect(typeQuery(all, "no:fix")).toMatchObject({ scope: "notes", query: "fix", via: "prefix" });
+        expect(typeQuery(all, "n:")).toMatchObject({ scope: "needs" });
+    });
+    it("Tab reaches Notes right after Records", () => {
+        expect(cycleScope(nav({ scope: "records" }), 1).scope).toBe("notes");
+    });
 });
 
 describe("placeholderFor", () => {
@@ -152,6 +159,7 @@ describe("ghostHint", () => {
         expect(ghostHint("r")).toBe(": narrows to Runs");
         expect(ghostHint("re")).toBe(": narrows to Records");
         expect(ghostHint("n")).toBe(": narrows to Needs you");
+        expect(ghostHint("no")).toBe(": narrows to Notes");
     });
     it("is silent otherwise", () => {
         expect(ghostHint("")).toBeNull();

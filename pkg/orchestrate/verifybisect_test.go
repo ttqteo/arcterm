@@ -102,6 +102,18 @@ func TestBisectFindsTheMiddleLaneAndLandsTheOneBefore(t *testing.T) {
 	if len(lead.sends) != 1 || !strings.Contains(lead.sends[0], "task t-1 (exit 1; bisected from t-0, t-1, t-2)") {
 		t.Fatalf("one wake naming the bisect, got %q", lead.sends)
 	}
+	// both outcomes carry the same count, so a reader decodes "bisect" one way
+	for _, kind := range []string{waveobj.RunEventKindTaskVerifyPassed, waveobj.RunEventKindTaskVerifyFailed} {
+		var bisect []any
+		for _, row := range lead.rows {
+			if row["eventkind"] == kind {
+				bisect = append(bisect, row["bisect"])
+			}
+		}
+		if !reflect.DeepEqual(bisect, []any{2}) {
+			t.Fatalf("one %s row with the two bisect steps as its count, got %v", kind, bisect)
+		}
+	}
 }
 
 func TestABatchOfOneFailsWithoutBisecting(t *testing.T) {

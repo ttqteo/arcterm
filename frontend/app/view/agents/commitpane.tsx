@@ -9,11 +9,12 @@ import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn, fireAndForget } from "@/util/util";
 import { Copy, Loader2 } from "lucide-react";
 import { formatAgo } from "./agentsviewmodel";
-import { ChangedFileList, TreeModeToggle } from "./changedfilelist";
+import { ChangedFileList, ReviewProgress, TreeModeToggle } from "./changedfilelist";
 import { type ChangesStatus } from "./changesstatus";
 import { filesListLabel } from "./fileslistlabel";
 import { type GitChanges } from "./gitstatus";
 import { WORKING_TREE, refChipClass, type HistoryRow } from "./historyrows";
+import type { ReviewSubject } from "./reviewmarks";
 
 function WorkingTreeHeader({ row, caption }: { row: HistoryRow; caption?: string }) {
     return (
@@ -74,6 +75,7 @@ export function CommitPane({
     selectedFile,
     onSelectFile,
     caption,
+    review,
 }: {
     row: HistoryRow | null;
     changes: GitChanges | null;
@@ -83,6 +85,7 @@ export function CommitPane({
     onRetry: () => void;
     selectedFile: string | null;
     onSelectFile: (path: string) => void;
+    review: ReviewSubject | null;
     // the working-tree row's "measured from what" line; worktreeCaption builds it
     caption?: string;
 }) {
@@ -100,30 +103,33 @@ export function CommitPane({
             <div className="flex-none border-b border-edge-faint px-[12px] pb-[9px] pt-[8px]">
                 {isWorkingTree ? <WorkingTreeHeader row={row} caption={caption} /> : <CommitHeader row={row} />}
             </div>
-            <div className="flex flex-none items-center gap-[8px] px-[12px] pb-[6px] pt-[8px]">
-                <span
-                    data-files-count
-                    role={listStatus === "loading" ? "status" : undefined}
-                    className={cn(
-                        "flex items-center gap-[7px] text-[11px] text-ink-mid",
-                        listStatus !== "loading" && "font-semibold"
-                    )}
-                >
-                    {listStatus === "loading" ? <Loader2 size={12} className="animate-spin" /> : null}
-                    {label.text}
-                </span>
-                <div className="flex-1" />
-                {label.counts ? (
-                    <>
-                        <span className="text-[11px] font-semibold tabular-nums text-diff-added">
-                            +{changes?.adds ?? 0}
-                        </span>
-                        <span className="text-[11px] font-semibold tabular-nums text-diff-removed">
-                            −{changes?.dels ?? 0}
-                        </span>
-                    </>
-                ) : null}
-                <TreeModeToggle />
+            <div className="flex-none px-[12px] pb-[6px] pt-[8px]">
+                <div className="flex items-center gap-[8px]">
+                    <span
+                        data-files-count
+                        role={listStatus === "loading" ? "status" : undefined}
+                        className={cn(
+                            "flex items-center gap-[7px] text-[11px] text-ink-mid",
+                            listStatus !== "loading" && "font-semibold"
+                        )}
+                    >
+                        {listStatus === "loading" ? <Loader2 size={12} className="animate-spin" /> : null}
+                        {label.text}
+                    </span>
+                    <div className="flex-1" />
+                    {label.counts ? (
+                        <>
+                            <span className="text-[11px] font-semibold tabular-nums text-diff-added">
+                                +{changes?.adds ?? 0}
+                            </span>
+                            <span className="text-[11px] font-semibold tabular-nums text-diff-removed">
+                                −{changes?.dels ?? 0}
+                            </span>
+                        </>
+                    ) : null}
+                    <TreeModeToggle />
+                </div>
+                <ReviewProgress review={review} changes={changes} />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-[6px] pb-[12px]">
                 {listStatus === "failed" ? (
@@ -137,7 +143,12 @@ export function CommitPane({
                         </button>
                     </div>
                 ) : (
-                    <ChangedFileList changes={changes} selectedFile={selectedFile} onSelectFile={onSelectFile} />
+                    <ChangedFileList
+                            changes={changes}
+                            selectedFile={selectedFile}
+                            onSelectFile={onSelectFile}
+                            review={review}
+                        />
                 )}
             </div>
         </div>

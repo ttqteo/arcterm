@@ -53,6 +53,7 @@ import {
 } from "./diffscope";
 import { defaultFocusId, focusFollowAgent } from "./diffsource";
 import { filesErrorAtom, filesStateAtom, loadFilesForScope, startChangesPoll, type FilesProject } from "./filesstore";
+import { activeReviewAtom, reviewSubjectFor } from "./reviewmarks";
 import {
     activeChangesAtom,
     dismissRestoreNotice,
@@ -338,6 +339,30 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
         revealFile(path);
     };
 
+    // which commit the list is showing: null for the working-tree row and compare's aggregate row
+    const shownCommit = compareOn
+        ? compareSelection === AGGREGATE
+            ? null
+            : compareSelection
+        : selectedCommit === WORKING_TREE
+          ? null
+          : selectedCommit;
+    // the Commit tab's list picks what the next commit takes, so it carries no review checks
+    const review = commitMode ? null : reviewSubjectFor(state?.cwd, scope?.range, shownCommit);
+
+    // the `v` binding and the diff header act on the open file through this, not through the surface
+    useEffect(() => {
+        globalStore.set(
+            activeReviewAtom,
+            review == null || shownChanges == null
+                ? null
+                : { subject: review, files: shownChanges.files, open: shownPath, select: selectShownFile }
+        );
+        // selectShownFile is rebuilt each render; what it does follows the deps below
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [review, shownChanges, shownPath, compareOn, selectedCommit]);
+    useEffect(() => () => globalStore.set(activeReviewAtom, null), []);
+
     // publish the visible column's rows for global j/k list-nav. cursor == selection: moving selects,
     // which loads that row's files and first diff. Must run before the early return (hooks rules).
     const navIds = compareOn ? compareNavIds(compareRows) : (historyRows ?? []).map((r) => r.hash);
@@ -415,7 +440,8 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
         commitEntry,
     ]);
 
-    if (agents.length === 0 && projects.length === 0) {
+    // a scope set by a link (a run's evidence) names its own repo, so it shows even with no agent or project
+    if (scope == null && agents.length === 0 && projects.length === 0) {
         return (
             <SurfaceEmptyState
                 title="No changes to show"
@@ -456,6 +482,7 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
                         onPickWorktree={pickWorktree}
                         onRevealFile={revealFile}
                         unreadable={unreadable}
+                        review={review}
                     />
                 ) : null}
                 <div ref={surfaceRef} className="flex min-h-0 min-w-0 flex-1 flex-col">

@@ -9,6 +9,7 @@
 
 import { fuzzyScore } from "@/app/cockpit/palette-match";
 import { resolveTargetChannel } from "@/app/view/agents/channelderive";
+import { appendAttachments, type Attachment } from "@/app/view/agents/composerattachments";
 import type { RunShape, StartFrom } from "@/app/view/agents/runconfig";
 
 export type ChannelTarget = { kind: "existing"; oid: string } | { kind: "create"; name: string; path: string };
@@ -88,9 +89,16 @@ export function launchOptsFromConfig(config: RunConfig): LaunchOpts {
 }
 
 // The goal a launch sends. A plan start sends none: the server names the run by its plan, and a goal typed
-// before switching to the plan is hidden, so it must not name a run the user can no longer see it on.
-export function launchGoal(config: Pick<RunConfig, "shape" | "start">, goal: string): string {
-    return config.shape === "orchestrator" && config.start === "plan" ? "" : goal.trim();
+// before switching to the plan is hidden, so it must not name a run the user can no longer see it on. The
+// goal's attachments hide with it, and otherwise reach the run as paths appended to the goal text.
+export function launchGoal(
+    config: Pick<RunConfig, "shape" | "start">,
+    goal: string,
+    attachments: Attachment[] = []
+): string {
+    return config.shape === "orchestrator" && config.start === "plan"
+        ? ""
+        : appendAttachments(goal.trim(), attachments);
 }
 
 // Which project + Run opens on. The modal is rebuilt on every open (NewRunControl unmounts it on close),

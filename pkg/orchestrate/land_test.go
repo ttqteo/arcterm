@@ -333,26 +333,33 @@ func TestLandAbortsAConflictedMerge(t *testing.T) {
 }
 
 func TestLandKeepsUncommittedEdits(t *testing.T) {
-	t.Run("an edit to a file the branch changes holds the land", func(t *testing.T) {
+	// run d9a7d94b re-ran Check and Verify for ~7 min before git merge refused the human's unstaged edit
+	t.Run("an edit to a file the branch changes holds the land before Verify", func(t *testing.T) {
 		f, tree := landFixture(t)
+		// after the final stage, so the land would re-run Verify
 		commitOnBranch(t, tree, "base.txt", "branch\n")
-		f.setFinal(t, &waveobj.FinalStage{State: FinalState_Passed, Round: 1, Commit: gitCmd(t, tree, "rev-parse", "HEAD")})
+		out := filepath.ToSlash(t.TempDir())
+		f.setLandCommands(t, "", "echo verify > "+out+"/verify")
 		edit := "the human's edit\r\nwith odd bytes \x00\n"
 		writeFile(t, filepath.Join(f.project, "base.txt"), edit)
 		head := gitCmd(t, f.project, "rev-parse", "main")
 
-		// git's own text names the file too; the reason must say it in words, not quote the git command
 		land := f.landRun(t, false)
-		f.assertHeld(t, land, head, "would overwrite uncommitted changes in the checkout: base.txt")
-		if strings.Contains(land.Reason, "git [merge") {
-			t.Fatalf("reason %q quotes the git command", land.Reason)
+		f.assertHeld(t, land, head, "unstaged edits to files the run changes: base.txt;")
+		if want := "commit or stash them, then run `wsh runs land " + f.ownerID + "`"; !strings.Contains(land.Reason, want) {
+			t.Fatalf("held reason %q, want it to contain %q", land.Reason, want)
+		}
+		if _, err := os.Stat(filepath.Join(out, "verify")); !os.IsNotExist(err) {
+			t.Fatalf("Verify ran before the hold: %v", err)
 		}
 		if got := readFile(t, filepath.Join(f.project, "base.txt")); got != edit {
 			t.Fatalf("base.txt = %q, want the edit byte-identical", got)
 		}
 	})
 	t.Run("an edit to an unrelated file lands around it", func(t *testing.T) {
-		f, _ := landFixture(t)
+		f, tree := landFixture(t)
+		commitOnBranch(t, tree, "wrapup.txt", "wrap-up\n")
+		f.setLandCommands(t, "", "true")
 		writeFile(t, filepath.Join(f.project, "base.txt"), "the human's edit\n")
 
 		if land := f.landRun(t, false); land.State != LandState_Landed {

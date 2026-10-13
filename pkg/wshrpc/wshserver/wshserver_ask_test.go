@@ -5,6 +5,9 @@ package wshserver
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -343,5 +346,55 @@ func TestRetireAskOnResumeIgnoresOtherEvents(t *testing.T) {
 	retireAskOnResume(nil)
 	if _, ok := agentask.GlobalRegistry.Get(oref); !ok {
 		t.Fatal("only agent:status events may retire an ask")
+	}
+}
+
+// the tail of run 24de67e0's t-3 worker: one assistant turn that asks and reads at once. The read gets its
+// result while the question dialog stays open.
+const (
+	recAskUse        = `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"ask1","name":"AskUserQuestion"}]}}`
+	recSiblingRead   = `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"read1","name":"Read"}]}}`
+	recSiblingResult = `{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"read1"}]}}`
+	recAskRejected   = `{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"ask1","is_error":true}]}}`
+)
+
+func writeAskTranscript(t *testing.T, records ...string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	if err := os.WriteFile(path, []byte(strings.Join(records, "\n")+"\n"), 0o644); err != nil {
+		t.Fatalf("writing transcript: %v", err)
+	}
+	return path
+}
+
+func workingWithTranscript(oref string, ts int64, transcript string) *wps.WaveEvent {
+	ev := statusEvent(oref, baseds.AgentState_Working, ts)
+	ev.Data.(map[string]any)["transcriptpath"] = transcript
+	return ev
+}
+
+func TestRetireAskOnResumeKeepsAskWhileSiblingToolsRun(t *testing.T) {
+	oref := waveobj.MakeORef("block", uuid.NewString()).String()
+	askTs := time.Now().UnixMilli()
+	setPendingAsk(t, oref, "ask-open", askTs)
+	transcript := writeAskTranscript(t, recAskUse, recSiblingRead, recSiblingResult)
+
+	retireAskOnResume(workingWithTranscript(oref, askTs+askResumeGraceMs+1, transcript))
+
+	if _, ok := agentask.GlobalRegistry.Get(oref); !ok {
+		t.Fatal("a tool running beside the question must not retire it: its dialog is still open")
+	}
+}
+
+func TestRetireAskOnResumeRetiresAskTheTranscriptClosed(t *testing.T) {
+	oref := waveobj.MakeORef("block", uuid.NewString()).String()
+	askTs := time.Now().UnixMilli()
+	setPendingAsk(t, oref, "ask-rejected", askTs)
+	transcript := writeAskTranscript(t, recAskUse, recAskRejected, recSiblingRead)
+
+	retireAskOnResume(workingWithTranscript(oref, askTs+askResumeGraceMs+1, transcript))
+
+	if _, ok := agentask.GlobalRegistry.Get(oref); ok {
+		t.Fatal("an ask rejected in the terminal must still retire on the next working status")
 	}
 }

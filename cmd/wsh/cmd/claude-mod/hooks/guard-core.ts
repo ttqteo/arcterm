@@ -12,8 +12,9 @@ const KILL_REASON =
     "Refused by arcterm: this stops arcterm by image name, which also kills the running arcterm and every agent in it. " +
     "List the processes with their paths and stop only the pid you mean.";
 
-// a tree the engine made for a run: <project>/.waveterm/worktrees/<run or task key>
-const ENGINE_TREE = /[\\/]\.waveterm[\\/]worktrees[\\/][^\\/]+/;
+// a tree the engine made for a run: <user cache dir>/arc-wt/<key>, or the legacy
+// <project>/.waveterm/worktrees/<run or task key>
+const ENGINE_TREE = /[\\/](?:\.waveterm[\\/]worktrees|arc-wt)[\\/][^\\/]+/;
 
 // git, past the options that come before its subcommand
 const GIT = String.raw`\bgit(?:\s+-[cC]\s+\S+|\s+--[\w-]+(?:=\S+)?)*\s+`;

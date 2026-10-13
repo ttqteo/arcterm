@@ -8,6 +8,7 @@
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { fireAndForget } from "@/util/util";
+import { landOn } from "@/app/view/jarvis/returnsurface";
 import type { AgentsViewModel } from "./agents";
 import { setCompareRefs } from "./comparestore";
 import { panelAppliedKeyAtom } from "./difflayout";
@@ -47,7 +48,7 @@ export function openDiff(model: AgentsViewModel, scope: DiffScope, file?: string
     globalStore.set(model.diffScopeAtom, scope);
     // the caller named what to see, so the panel opens on the tab that subject calls for even if it was shown before
     globalStore.set(panelAppliedKeyAtom, "");
-    globalStore.set(model.surfaceAtom, "files");
+    landOn(model.surfaceAtom, "files");
 }
 
 // the whole branch on the Diff surface: a compare from the default branch it left (merge-base form, what the branch

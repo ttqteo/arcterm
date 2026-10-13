@@ -26,10 +26,18 @@ import {
     modelFace,
     pickerRowMeta,
     pickerTitleFor,
+    refusedRouteFor,
     scopePickerSections,
 } from "./route";
 import type { PickerSection } from "./route";
-import { harnessesAtom, harnessesLoadingAtom, loadHarnesses, refreshHarnessCatalog } from "./harnessstore";
+import {
+    harnessesAtom,
+    harnessesLoadingAtom,
+    loadHarnesses,
+    loadRefusedRoutes,
+    refreshHarnessCatalog,
+    refusedRoutesAtom,
+} from "./harnessstore";
 import { SubLabel } from "./sectionlabel";
 
 // The panel is portalled to the body so this is measured against the viewport. Rendered in place it was
@@ -69,6 +77,7 @@ export function RoutePicker({
 }): JSX.Element {
     const harnesses = useAtomValue(harnessesAtom);
     const loading = useAtomValue(harnessesLoadingAtom);
+    const refusedRoutes = useAtomValue(refusedRoutesAtom);
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState("");
     const [scope, setScope] = useState<string | null>(null);
@@ -86,14 +95,16 @@ export function RoutePicker({
     const harness = value == null ? undefined : harnesses.find((h) => h.runtime === value.runtime);
     const extraSelected = extraOption?.selected ?? false;
     const inheritedSelected = value == null && !extraSelected;
+    // only a route the operator chose: an inherited one warns on the picker it is inherited from
+    const refused = extraSelected ? undefined : refusedRouteFor(value, refusedRoutes);
     const face = extraSelected
         ? extraOption.label
         : value == null
           ? inheritedLabel
           : `${harness?.label ?? value.runtime} · ${modelFace(value)}`;
     const catalog = useMemo(
-        () => allowPickerSections(buildPickerSections(harnesses), runtimes),
-        [harnesses, runtimes]
+        () => allowPickerSections(buildPickerSections(harnesses, refusedRoutes), runtimes),
+        [harnesses, refusedRoutes, runtimes]
     );
     const matched = useMemo(() => filterPickerSections(catalog, query), [catalog, query]);
     const sections = useMemo(() => scopePickerSections(matched, scope), [matched, scope]);
@@ -111,6 +122,10 @@ export function RoutePicker({
         const frame = requestAnimationFrame(() => searchRef.current?.focus());
         return () => cancelAnimationFrame(frame);
     }, [open, value?.runtime]);
+    // on mount for the face's warning, then on every open: runs record refusals while the cockpit is up
+    useEffect(() => {
+        void loadRefusedRoutes();
+    }, [open]);
     // the catalog is loaded once at boot and a failed load is not cached server-side, so an empty
     // picker retries instead of saying "no routes" for the rest of the session
     useEffect(() => {
@@ -199,6 +214,11 @@ export function RoutePicker({
                 )}
             >
                 <span className="min-w-0 truncate">{face}</span>
+                {refused ? (
+                    <span className="flex-none text-[10px] font-semibold text-warning" title={refused.text}>
+                        refused
+                    </span>
+                ) : null}
                 <ChevronDown size={12} className={cn("flex-none text-muted", open && "rotate-180")} />
             </button>
             <FloatingPortal>
@@ -293,10 +313,13 @@ export function RoutePicker({
                                             onKeyDown={(event) => navigateRow(event, index)}
                                             aria-pressed={selectedRow}
                                             data-testid={`route-option-${row.runtime}-${row.model}`}
+                                            data-refused={row.refusedtext ? "true" : undefined}
+                                            title={row.refusedtext || undefined}
                                             onClick={() => choose({ runtime: row.runtime, model:row.model })}
                                             className={cn(
                                                 "flex w-full cursor-pointer items-start gap-2 rounded px-[9px] py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                                                selectedRow ? "bg-surface-raised" : "hover:bg-surface-hover"
+                                                selectedRow ? "bg-surface-raised" : "hover:bg-surface-hover",
+                                                row.refusedtext && "opacity-55"
                                             )}
                                         >
                                             <span className="min-w-0 flex-1">

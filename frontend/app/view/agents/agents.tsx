@@ -24,11 +24,18 @@ import type { LauncherKind } from "./launcher";
 import type { SessionStatusFilter } from "./sessionsarchivestore";
 import { liveAgentsAtom, liveTerminalsAtom } from "./liveagents";
 import type { Lineage } from "./runlineage";
-import { endedWorkerAtomFor, lineageAtomFor, type EndedWorker } from "./runlineagestore";
+import {
+    endedWorkerAtomFor,
+    finalStageAtomFor,
+    lineageAtomFor,
+    type EndedWorker,
+    type FocusedFinalStage,
+} from "./runlineagestore";
 import { activeNavOrder } from "./activenav";
 import { AGENT_DIGITS } from "./agentsidebarmodel";
 import { usageBucketsAtom } from "./usagestore";
 import { aggregateBuckets, type HarnessFilter } from "./usagestats";
+import { landOn } from "@/app/view/jarvis/returnsurface";
 
 export type SurfaceKey = "cockpit" | "jarvis" | "agent" | "radar" | "files" | "usage" | "code" | "setup" | "settings";
 
@@ -50,6 +57,7 @@ export class AgentsViewModel implements ViewModel {
     agentsAtom: Atom<AgentVM[]>; // base roster overlaid with pending launches
     lineageAtom: Atom<Lineage>; // which agents lead an orchestrator run and which work its tasks
     endedWorkerAtom: Atom<EndedWorker | undefined>; // the done task's worker in focus, read from its transcript
+    finalStageAtom: Atom<FocusedFinalStage | undefined>; // the final stage in focus by its own id, before a verifier session stands for it
     baseRosterAtom: Atom<AgentVM[]>; // un-overlaid roster (dev mock or live) — read by the prune effect
     // Background terminals launched via New Agent: kept separate from the agent roster (listed in the details
     // rail's Terminals section, with their own focus pane). Always live (reads the workspace session sidebar),
@@ -151,13 +159,14 @@ export class AgentsViewModel implements ViewModel {
         this.agentsAtom = atom((get) => mergePendingLaunches(get(base), get(pendingAtom), Date.now()));
         this.lineageAtom = lineageAtomFor(this.agentsAtom);
         this.endedWorkerAtom = endedWorkerAtomFor(this.focusIdAtom, this.lineageAtom);
+        this.finalStageAtom = finalStageAtomFor(this.focusIdAtom, this.lineageAtom);
     }
 
     // openTerminal routes to the Agent surface (spec §6): focus the agent and switch surface. The Agent surface
     // renders the focused agent's live terminal; the controller starts on render.
     openTerminal(agentId: string) {
         globalStore.set(this.focusIdAtom, agentId);
-        globalStore.set(this.surfaceAtom, "agent");
+        landOn(this.surfaceAtom, "agent");
         showTerminal();
     }
 

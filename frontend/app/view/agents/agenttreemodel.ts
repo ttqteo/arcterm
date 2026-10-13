@@ -7,6 +7,7 @@
 // they stay out of this pure helper.
 
 import { projectOf, type AgentVM } from "./agentsviewmodel";
+import { finalRowFocusId, finalStageView } from "./finalstage";
 import { endedWorkerId, holdsTask, NO_LINEAGE, workerAsk, type Lineage, type RunInfo } from "./runlineage";
 
 export const UNGROUPED_PROJECT = "ungrouped";
@@ -33,7 +34,9 @@ export type AgentTreeRow =
     // a session the engine started to judge the whole run: its plan reviewer, its final verifier. `outcome` is its
     // verdict once it has one
     | { kind: "stage"; agent: AgentVM; project: string; run: RunInfo; stageRole: string; outcome?: StageOutcome }
-    // the fold of what finished: `count` done tasks and `stages` stage sessions with a verdict
+    // the run's final stage, one per run: `agent` is the current round's verifier session while it is in the roster
+    | { kind: "final"; project: string; run: RunInfo; agent?: AgentVM }
+    // the fold of what finished: `count` done tasks and `stages` stages with a verdict, the passed final stage included
     | { kind: "done"; project: string; run: RunInfo; count: number; stages: number; open: boolean }
     | { kind: "queued"; project: string; run: RunInfo; count: number; open: boolean };
 
@@ -141,12 +144,25 @@ function runRows(
     // tasks not dispatched yet have no session to open, so they fold away until asked for
     const queued = tasks.filter((t) => QUEUED.has(t.state) && !workers.has(t.id));
     const open = !folds.collapsed.has(run.runId);
+    // the stage's row is its current verifier's session while that is in the roster, so the session gets no
+    // stage row of its own; a tab an earlier round's verifier left stays a failed stage row
+    const final = finalStageView(run.dag, [], 0);
+    const verifierRunId = run.dag?.final?.verifierrunid;
+    const verifier = final.visible
+        ? stages.find((s) => verifierRunId != null && s.agent.runId === verifierRunId)?.agent
+        : undefined;
+    const finalRow: AgentTreeRow | undefined = final.visible
+        ? { kind: "final", project, run, agent: verifier }
+        : undefined;
+    const finalRunning = finalRow != null && final.tone === "run";
+    const finalPassed = finalRow != null && final.tone === "pass";
     const judged = stages
+        .filter((s) => s.agent !== verifier)
         .map((s) => ({ ...s, outcome: stageOutcome(run, s.stageRole, s.agent.runId) }))
         .sort((a, b) => stageRank(a) - stageRank(b));
     const judging = judged.filter((s) => s.outcome == null);
     const finished = judged.filter((s) => s.outcome != null);
-    const busy = live.length + judging.length;
+    const busy = live.length + judging.length + (finalRunning ? 1 : 0);
     const head: AgentTreeRow =
         item.kind === "lead"
             ? { kind: "lead", agent: item.agent, project, run, open, live: busy }
@@ -170,21 +186,31 @@ function runRows(
         rows.push({ kind: "stage", agent, project, run, stageRole, outcome });
     if (open) {
         // oldest first: what finished, what is running, what is still to come
-        if (done.length > 0 || finished.length > 0) {
-            // the worker being read keeps its fold open, or a landing would pull its row out from under it
+        if (done.length > 0 || finished.length > 0 || finalPassed) {
+            // the row being read keeps its fold open, or a landing or the stage passing would pull it out from
+            // under the reader
             const doneOpen =
                 folds.doneOpen.get(run.runId) === done.length ||
-                done.some((t) => endedWorkerId(run.runId, t.id) === focusId);
-            rows.push({ kind: "done", project, run, count: done.length, stages: finished.length, open: doneOpen });
+                done.some((t) => endedWorkerId(run.runId, t.id) === focusId) ||
+                (finalPassed && finalRowFocusId(run, verifier ? [verifier] : []) === focusId);
+            const stageCount = finished.length + (finalPassed ? 1 : 0);
+            rows.push({ kind: "done", project, run, count: done.length, stages: stageCount, open: doneOpen });
             if (doneOpen) {
                 finished.filter((s) => s.stageRole === "plan-reviewer").forEach(pushStage);
                 done.forEach(pushTask);
                 finished.filter((s) => s.stageRole !== "plan-reviewer").forEach(pushStage);
+                if (finalPassed) {
+                    rows.push(finalRow);
+                }
             }
         }
         live.forEach(pushTask);
         // a stage still judging is what the run is doing now, so it sits between what finished and what is to come
         judging.forEach(pushStage);
+        // a failed or unverified final stage stays out of the fold: it is what the run is waiting on
+        if (finalRow != null && !finalPassed) {
+            rows.push(finalRow);
+        }
         if (queued.length > 0) {
             const queuedOpen = folds.queuedOpen.has(run.runId);
             rows.push({ kind: "queued", project, run, count: queued.length, open: queuedOpen });
@@ -194,7 +220,8 @@ function runRows(
         }
     }
     const attn = live.filter((t) => workerNeedsYou(run, t.id, workers.get(t.id)?.[0])).length;
-    const agents = live.filter((t) => workers.has(t.id)).length + judging.length;
+    const agents =
+        live.filter((t) => workers.has(t.id)).length + judging.length + (finalRunning && verifier != null ? 1 : 0);
     return { rows, members: agents, attn };
 }
 

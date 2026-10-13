@@ -6,10 +6,12 @@ package wshserver
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/agentask"
+	"github.com/wavetermdev/waveterm/pkg/agentobserve"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/orchestrate"
@@ -122,7 +124,9 @@ const askResumeGraceMs = 2000
 // `wsh ask --clear` is the only other retirement path for a live block, and it never fires when the
 // AskUserQuestion tool is rejected or interrupted in the agent's own terminal — so the question stayed
 // pending forever, holding its card and its attention count. A working status materially after the ask
-// is proof the agent is no longer blocked on it: nothing else can run while the ask tool holds the turn.
+// is the sign the agent is no longer blocked on it, but not proof: a turn that asks and calls other tools
+// at once runs those tools while the dialog is open, and each of them reports working. So an ask whose
+// transcript still shows the question unanswered stays.
 // Only `working` counts (idle would kill a prose ask raised at settle, which is idle by construction).
 func retireAskOnResume(ev *wps.WaveEvent) {
 	if ev == nil || ev.Event != wps.Event_AgentStatus {
@@ -142,6 +146,9 @@ func retireAskOnResume(ev *wps.WaveEvent) {
 	if !ok || pending.Hold || data.Ts-pending.Ts <= askResumeGraceMs {
 		return
 	}
+	if askStillOpen(data.TranscriptPath) {
+		return
+	}
 	claimed, ok := agentask.GlobalRegistry.Claim(data.ORef, pending.AskId)
 	if !ok {
 		return
@@ -150,6 +157,22 @@ func retireAskOnResume(ev *wps.WaveEvent) {
 	agentask.GlobalRegistry.ResolveWaiter(claimed.AskId, agentask.WaitResult{Cancelled: true})
 	publishAgentAsk(baseds.AgentAskData{ORef: data.ORef, AskId: claimed.AskId, Cleared: true})
 	recordAskTransition(data.ORef, claimed.AskId, waveobj.RunEventKindChildAskCleared, orchestrate.AskClearReasonResumed)
+}
+
+// askStillOpen reports a transcript that shows the agent's question dialog still open. A status with no
+// transcript, or one that cannot be read, proves nothing and leaves the working status to decide.
+// ponytail: reads the whole transcript per working status while an ask is pending; keep the ask's
+// tool_use id on the PendingAsk and scan from its offset if that shows up in a profile.
+func askStillOpen(transcriptPath string) bool {
+	if transcriptPath == "" {
+		return false
+	}
+	open, err := agentobserve.AskOpen(transcriptPath)
+	if err != nil {
+		log.Printf("retire ask: reading transcript %s: %v\n", transcriptPath, err)
+		return false
+	}
+	return open
 }
 
 func publishAgentAsk(data baseds.AgentAskData) {

@@ -7,7 +7,24 @@ vi.mock("@/app/store/wshclientapi", () => ({
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 
-import { loadUsage, usageBucketsAtom, usageErrorAtom, usageLoadedAtom, allUsageStatsAtom } from "./usagestore";
+import {
+    allUsageStatsAtom,
+    loadUsage,
+    usageBucketsAtom,
+    usageErrorAtom,
+    usageLensAtom,
+    usageLoadedAtom,
+    usageSessionsAtom,
+    usageWorkItemAtom,
+    usageWorkScopeAtom,
+} from "./usagestore";
+
+const FIXTURE_KEY = "wave:dev-usage-buckets";
+const sessions = [{ harness: "claude", session: "s1", title: "Fix the rail", project: "C:/work/waveterm" }];
+
+function seedFixture(raw: string) {
+    vi.stubGlobal("localStorage", { getItem: (key: string) => (key === FIXTURE_KEY ? raw : null) });
+}
 
 const response = {
     buckets: [
@@ -43,6 +60,11 @@ const expectedTokens = 100 + 50 + 200 + 50;
 
 afterEach(() => {
     getStats.mockReset();
+    vi.unstubAllGlobals();
+    globalStore.set(usageSessionsAtom, []);
+    globalStore.set(usageLensAtom, "provider");
+    globalStore.set(usageWorkScopeAtom, "all");
+    globalStore.set(usageWorkItemAtom, null);
     globalStore.set(usageBucketsAtom, []);
     globalStore.set(usageErrorAtom, false);
     globalStore.set(usageLoadedAtom, false);
@@ -105,5 +127,62 @@ describe("loadUsage", () => {
         await loadUsage(7);
         expect(globalStore.get(usageBucketsAtom)).toEqual(response.buckets);
         expect(getStats).toHaveBeenCalled();
+    });
+
+    it("fills both atoms from a {buckets, sessions} dev fixture without calling the RPC", async () => {
+        seedFixture(JSON.stringify({ buckets: response.buckets, sessions }));
+        await loadUsage(7);
+        expect(globalStore.get(usageBucketsAtom)).toEqual(response.buckets);
+        expect(globalStore.get(usageSessionsAtom)).toEqual(sessions);
+        expect(getStats).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ["a bare array", JSON.stringify(response.buckets)],
+        ["an object with no buckets", JSON.stringify({ sessions })],
+        ["malformed json", "{not json"],
+    ])("falls through to the RPC when the dev fixture is %s", async (_name, raw) => {
+        seedFixture(raw);
+        getStats.mockResolvedValue({ buckets: response.buckets, sessions });
+        await loadUsage(7);
+        expect(getStats).toHaveBeenCalled();
+        expect(globalStore.get(usageBucketsAtom)).toEqual(response.buckets);
+        expect(globalStore.get(usageSessionsAtom)).toEqual(sessions);
+    });
+
+    it("sets neither atom from a superseded load", async () => {
+        let resolveOld!: (v: any) => void;
+        getStats
+            .mockImplementationOnce(() => new Promise((r) => (resolveOld = r)))
+            .mockResolvedValueOnce({ buckets: [], sessions: [] });
+        const pOld = loadUsage(7);
+        await loadUsage(0);
+        resolveOld({ buckets: response.buckets, sessions });
+        await pOld;
+        expect(globalStore.get(usageBucketsAtom)).toEqual([]);
+        expect(globalStore.get(usageSessionsAtom)).toEqual([]);
+    });
+
+    it("keeps the last sessions, like the last buckets, when the RPC throws", async () => {
+        getStats.mockResolvedValueOnce({ buckets: response.buckets, sessions });
+        await loadUsage(7);
+        getStats.mockRejectedValue(new Error("network error"));
+        await loadUsage(7);
+        expect(globalStore.get(usageSessionsAtom)).toEqual(sessions);
+        expect(globalStore.get(usageBucketsAtom)).toEqual(response.buckets);
+        expect(globalStore.get(usageErrorAtom)).toBe(true);
+    });
+
+    it("keeps the lens, scope and drilled item across a reload of the same window", async () => {
+        getStats.mockResolvedValue({ buckets: response.buckets, sessions });
+        await loadUsage(7);
+        const item = { key: "run:r1", back: "all" };
+        globalStore.set(usageLensAtom, "work");
+        globalStore.set(usageWorkScopeAtom, "C:/work/waveterm");
+        globalStore.set(usageWorkItemAtom, item);
+        await loadUsage(7);
+        expect(globalStore.get(usageLensAtom)).toBe("work");
+        expect(globalStore.get(usageWorkScopeAtom)).toBe("C:/work/waveterm");
+        expect(globalStore.get(usageWorkItemAtom)).toEqual(item);
     });
 });

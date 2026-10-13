@@ -6,7 +6,8 @@
 // view + run selection. No React, no jotai — unit-tested in runmodel.test.ts.
 
 import type { AgentVM } from "./agentsviewmodel";
-import { finalStageActivity, runProgress, type Lineage, type RunInfo } from "./runlineage";
+import { finalStageActivity } from "./finalstage";
+import { runProgress, type Lineage, type RunInfo } from "./runlineage";
 import { runStage } from "./runstage";
 
 export type RunStatusTone = "planning" | "review" | "running" | "blocked" | "done" | "failed" | "cancelled";

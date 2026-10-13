@@ -9,6 +9,7 @@
 // card for what needs you, then the tasks), and the dock (the configuration line and the run's actions).
 // All derivations are runsheetmodel.ts; this file maps them to DOM and to the verbs that already exist.
 
+import { PaneReveal } from "@/app/element/panereveal";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -20,7 +21,8 @@ import { runAtom } from "@/app/view/agents/channelsstore";
 import { ChildAskCard } from "@/app/view/agents/childaskcard";
 import { userOwnedAsks } from "@/app/view/agents/childaskmodel";
 import { childAsksAtom } from "@/app/view/agents/childaskstore";
-import { endFinalStage, resumeRun, type FinalEndOutcome } from "@/app/view/agents/runactions";
+import { EndFinalForm } from "@/app/view/agents/endfinalform";
+import { resumeRun } from "@/app/view/agents/runactions";
 import { AskCard, CancelRunButton, CancelSurvivorsCard } from "@/app/view/agents/runcards";
 import { needsEvidenceSeal, verifCounts } from "@/app/view/agents/runcompletion";
 import { useRunEvents } from "@/app/view/agents/runeventstore";
@@ -38,6 +40,8 @@ import { openRunOrigin, useRunOrigin } from "@/app/view/agents/runoriginstore";
 import { runStage } from "@/app/view/agents/runstage";
 import { PIP_FILL, SEG_FILL, STRIP_MAX, taskStrip, taskStripLabel } from "@/app/view/agents/runstrip";
 import { eventTitle, tsLabel } from "@/app/view/agents/runtimeline";
+import { useRunUsage } from "@/app/view/agents/runtokenstore";
+import { spendText, summarizeUsage } from "@/app/view/agents/runusage";
 import { SectionLabel } from "@/app/view/agents/sectionlabel";
 import { attentionQueue, type QueueEntry } from "@/app/view/orchestrate/attentionqueue";
 import { formatElapsed, taskBriefs, useDagDigest, type TaskBrief } from "@/app/view/orchestrate/dagdigest";
@@ -48,8 +52,8 @@ import { openTaskWorker, resolveTaskWorker, type TaskWorkerView } from "@/app/vi
 import { groupEvents, railRows, type EventGroup } from "@/app/view/orchestrate/timelinegroups";
 import { groupTime, SpineGlyph } from "@/app/view/orchestrate/timelinerail";
 import { cn, fireAndForget } from "@/util/util";
-import { atom, useAtomValue, type Atom } from "jotai";
-import { ArrowUpRight, ChevronDown, ChevronRight, CornerDownRight } from "lucide-react";
+import { atom, useAtomValue, useSetAtom, type Atom } from "jotai";
+import { ArrowUpRight, Check, ChevronDown, ChevronRight, CornerDownRight } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { RunComposer } from "./briefcomposer";
 import { RunSettingsPanel, SHEET_BTN } from "./briefrunsheet";
@@ -61,6 +65,7 @@ import { useLocalImage } from "./localimage";
 import { RunReportView } from "./runreportview";
 import type { LinkedGroupRead } from "./runsettings";
 import {
+    configLine,
     doneBody,
     finalStageEndable,
     orderedTasks,
@@ -201,7 +206,6 @@ function RunSheetFrame({ ctx, dag }: { ctx: SheetCtx; dag: SheetDagRead | null }
             <Reading
                 model={ctx.model}
                 run={run}
-                agents={agents}
                 status={status}
                 dag={dag}
                 onRetry={dag?.digest.retry}
@@ -274,7 +278,7 @@ function FinalCheckRow({ group, entry, onOpen }: { group: TaskGroup; entry: Fina
                 </span>
                 <span className="ml-auto flex-none text-[11px] tabular-nums text-secondary">{entry.right}</span>
             </button>
-            {open ? (
+            <PaneReveal open={open}>
                 <div className="flex flex-col gap-2 pb-3 pl-[22px]">
                     {latest != null && entry.strip.length > 0 ? (
                         <div className="grid grid-cols-5 gap-2">
@@ -307,7 +311,7 @@ function FinalCheckRow({ group, entry, onOpen }: { group: TaskGroup; entry: Fina
                         </span>
                     )}
                 </div>
-            ) : null}
+            </PaneReveal>
         </div>
     );
 }
@@ -345,22 +349,19 @@ function FinalThumb({
 function Reading({
     model,
     run,
-    agents,
     status,
     dag,
     onRetry,
 }: {
     model: AgentsViewModel;
     run: Run;
-    agents: AgentVM[];
     status: SheetStatus;
     dag: SheetDagRead | null;
     onRetry?: () => void;
 }) {
     const index = useAtomValue(briefEffortIndexAtom);
     const revealChunk = useAtomValue(briefRevealChunkAtom);
-    // what the run has spent so far, off its live workers (design L1401)
-    const cost = liveWorkers(run, agents).reduce((sum, a) => sum + (a.usage?.costusd ?? 0), 0);
+    const spent = summarizeUsage(useRunUsage(run.channeloid, run.id)?.rows);
     const ref = run.effortref;
     const effort = ref != null ? index.get(ref.effortoid) : undefined;
     const origin = useRunOrigin(model, run);
@@ -397,7 +398,11 @@ function Reading({
                                 {m.text}
                             </span>
                         ))}
-                        {cost > 0 ? <span className="text-ink-mid">${cost.toFixed(2)}</span> : null}
+                        {spent != null ? (
+                            <span data-run-sheet-usage className="text-ink-mid">
+                                {spendText(spent)}
+                            </span>
+                        ) : null}
                         {status.retry && onRetry != null ? (
                             <button type="button" onClick={onRetry} className={LINK}>
                                 retry
@@ -1049,7 +1054,7 @@ function Dock({
             try {
                 setResult(await landAgain(channel.oid, run.id));
             } catch (e) {
-                setResult({ failed: true, text: String(e) });
+                setResult({ failed: true, text: `Couldn't save to this project's Profile: ${String(e)}` });
             } finally {
                 setLanding(false);
             }
@@ -1156,7 +1161,8 @@ function Dock({
             </div>
             {endable && ending ? (
                 <EndFinalForm
-                    ctx={ctx}
+                    channelId={channel.oid}
+                    runId={run.id}
                     onClose={(text) => {
                         setEnding(false);
                         setResult(text != null ? { failed: false, text } : null);
@@ -1167,76 +1173,6 @@ function Dock({
             {result != null ? (
                 <span className={cn("text-[11px]", result.failed ? "text-error" : "text-success")}>{result.text}</span>
             ) : null}
-        </div>
-    );
-}
-
-// Ends a stuck final stage on the human's word. The reason is required: it is what the run records, and for
-// a fail what the lead plans the fix round from.
-function EndFinalForm({
-    ctx,
-    onClose,
-    onError,
-}: {
-    ctx: SheetCtx;
-    onClose: (done: string | null) => void;
-    onError: (text: string) => void;
-}) {
-    const [reason, setReason] = useState("");
-    const [busy, setBusy] = useState(false);
-    const blank = reason.trim() === "";
-    const end = (outcome: FinalEndOutcome) => {
-        setBusy(true);
-        fireAndForget(async () => {
-            try {
-                await endFinalStage(ctx.channel.oid, ctx.run.id, outcome, reason.trim());
-                onClose(
-                    outcome === "failed"
-                        ? "Final stage failed; the lead has the reason."
-                        : "Final stage ended unverified."
-                );
-            } catch (e) {
-                onError(`Ending the final stage failed: ${e instanceof Error ? e.message : String(e)}`);
-                setBusy(false);
-            }
-        });
-    };
-    return (
-        <div data-run-sheet-end-final className="flex flex-col gap-1.5">
-            <textarea
-                autoFocus
-                rows={2}
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="Why end it? Recorded on the run; a fail's reason goes to the lead."
-                aria-label="Reason for ending the final stage"
-                className="resize-none rounded-[6px] border border-edge-mid bg-transparent px-2 py-1.5 text-[12px] leading-[1.5] text-primary outline-none placeholder:text-muted focus-visible:border-accent"
-            />
-            <div className="flex items-center gap-2">
-                <button
-                    type="button"
-                    disabled={blank || busy}
-                    onClick={() => end("unverified")}
-                    className={cn(DOCK_BTN, "disabled:opacity-60")}
-                >
-                    Pass unverified
-                </button>
-                <button
-                    type="button"
-                    disabled={blank || busy}
-                    onClick={() => end("failed")}
-                    className={cn(
-                        DOCK_BTN,
-                        "border-edge-mid text-muted hover:border-error hover:text-error disabled:opacity-60"
-                    )}
-                >
-                    Fail
-                </button>
-                <span className="flex-1" />
-                <button type="button" disabled={busy} onClick={() => onClose(null)} className={DOCK_BTN}>
-                    Keep running
-                </button>
-            </div>
         </div>
     );
 }

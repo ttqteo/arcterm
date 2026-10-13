@@ -56,6 +56,8 @@ import { JobQueuePanel } from "./jobqueuepanel";
 import { setupOpenFileSubscription } from "./openfilestore";
 import { setupUiClient } from "./uiclient";
 import { NotificationToasts } from "./notificationtoasts";
+import { ResMonPopover } from "./resmonpopover";
+import { startResMonPolling } from "./resmonstore";
 
 const AgentsBlockId = "cockpit-agents";
 
@@ -121,6 +123,7 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
             }),
         [model]
     );
+    useEffect(() => startResMonPolling(), []);
     // Kill the native browser context menu app-wide so it never leaks on elements without a themed
     // handler (e.g. navrail items). Themed menus (ContextMenuModel) render via portal and are
     // unaffected — preventDefault only suppresses the native menu. Native stays only inside editable
@@ -189,6 +192,7 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
                 data-window-content
                 className={cn("flex min-h-0 flex-1 flex-col overflow-hidden bg-background", folded && "hidden")}
             >
+                <ResMonPopover model={model} />
                 {floating ? <FloatBar model={model} /> : <CockpitAppBar model={model} />}
                 <div className="min-h-0 flex-1">
                     <CockpitShell model={model} tabId={tabIdRef.current} />

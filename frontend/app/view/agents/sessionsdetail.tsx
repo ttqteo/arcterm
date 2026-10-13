@@ -8,6 +8,7 @@ import { launchAgent } from "@/app/cockpit/cockpit-actions";
 import { globalStore } from "@/app/store/jotaiStore";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { openOrPeek } from "@/app/view/jarvis/openref";
+import { landOn } from "@/app/view/jarvis/returnsurface";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { ArrowLeft, Check, Trash2 } from "lucide-react";
@@ -86,7 +87,7 @@ export function StatusMark({ status, className }: { status: Status; className?: 
 export function runSessionPrimary(model: AgentsViewModel, session: LiveSession) {
     if (session.live && session.liveId) {
         globalStore.set(model.focusIdAtom, session.liveId);
-        globalStore.set(model.surfaceAtom, "agent");
+        landOn(model.surfaceAtom, "agent");
         showTerminal();
         return;
     }

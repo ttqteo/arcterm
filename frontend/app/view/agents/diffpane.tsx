@@ -45,6 +45,7 @@ import { activeChangesStatusAtom, shownChangesAtom } from "./githistorystore";
 import { activeReviewKeyAtom, reviewModeAtom } from "./linecommentstore";
 import { LineReviewTray } from "./linereviewtray";
 import { ReviewList } from "./reviewlistview";
+import { activeReviewAtom, markState, noteOpenPair, pairHash, reviewMarksAtom, toggleOpenFile } from "./reviewmarks";
 import { fmtBytes } from "./runcompletion";
 import { SyncCounts } from "./syncbar";
 
@@ -54,6 +55,9 @@ const headerBar =
     "flex h-[40px] flex-none items-center gap-[10px] border-b border-border bg-background pl-[14px] pr-[12px]";
 const navBtn =
     "flex h-[24px] w-[24px] flex-none items-center justify-center rounded-[6px] text-ink-mid hover:bg-surface-hover hover:text-ink-hi";
+// the header's labelled toggle (Mark reviewed): a 26px pill that fits the 40px bar
+const headerBtn =
+    "flex h-[26px] flex-none items-center gap-[6px] rounded-[7px] border border-edge-mid px-[9px] text-[11.5px] font-semibold";
 const stepBtn =
     "flex h-[24px] w-[24px] flex-none items-center justify-center rounded-[6px] border border-edge-mid text-ink-mid hover:text-ink-hi";
 
@@ -324,6 +328,8 @@ export function DiffPane({
     const ignoreWs = useAtomValue(ignoreWsAtom);
     const navPos = useAtomValue(diffNavPosAtom);
     const mode = useAtomValue(reviewModeAtom);
+    const active = useAtomValue(activeReviewAtom);
+    const reviews = useAtomValue(reviewMarksAtom);
     const hostRef = useRef<HTMLDivElement>(null);
     const [width, setWidth] = useState(0);
     const reviewing = review != null && repoCwd != null && mode === "review";
@@ -353,6 +359,20 @@ export function DiffPane({
         return () => ro.disconnect();
     }, []);
 
+    // every load of the open file's pair, the working-tree poll's refresh included: a changed pair is
+    // what turns a mark stale when the file's counts did not move. The subject is a dependency because
+    // the surface publishes it in its own effect, after this one has run on mount.
+    const reviewSubject = active?.subject;
+    const reviewOpen = active?.open;
+    useEffect(() => {
+        if (pair != null && reviewSubject != null && pair.path === reviewOpen) {
+            noteOpenPair(reviewSubject, pair.path, pairHash(pair.original, pair.modified));
+        }
+    }, [pair, reviewSubject, reviewOpen]);
+
+    const openChange = active?.open != null && active.open === path ? active.files.find((c) => c.path === path) : null;
+    const reviewed = openChange != null && markState(reviews[active.subject], openChange) === "ok";
+    const reviewTitle = reviewed ? "Unmark this file (v)" : "Mark reviewed and open the next file (v)";
     const layout = paneHeaderLayout(width);
     const options = useMemo(
         () => paneOptions(split && layout.split, ignoreWs, wrap),
@@ -543,6 +563,27 @@ export function DiffPane({
                             <ChevronDown size={14} />
                         </button>
                     </div>
+                ) : null}
+                {openChange != null ? (
+                    <button
+                        onClick={() => toggleOpenFile()}
+                        title={reviewTitle}
+                        aria-label={reviewTitle}
+                        aria-pressed={reviewed}
+                        data-review-open
+                        className={cn(
+                            headerBtn,
+                            reviewed ? "border-accent/30 bg-accentbg text-ink-hi" : "text-ink-mid hover:text-ink-hi"
+                        )}
+                    >
+                        <Check size={13} />
+                        {layout.labelled ? (
+                            <>
+                                {reviewed ? "Reviewed" : "Mark reviewed"}
+                                <kbd className="font-mono text-[10px] text-ink-faint">v</kbd>
+                            </>
+                        ) : null}
+                    </button>
                 ) : null}
                 {modeControl()}
                 <OptionsMenu

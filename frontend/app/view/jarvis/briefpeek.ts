@@ -38,6 +38,8 @@ export interface PeekRunRow {
 
 export interface RecordPeek {
     title: string;
+    // the record has no objective, so the title is its id: drawn in mono, as an id rather than a sentence
+    titleIsId: boolean;
     // NOT the mockup's freshness word. A DossierDetail carries no freshness reading of any kind — no
     // gardener flag, no verification timestamp — so printing one would assert a check nobody ran, which is
     // the fabrication the Drew band's `unverified` exists to prevent. The record's own updated stamp is
@@ -47,6 +49,8 @@ export interface RecordPeek {
     statusRows: PeekStatusRow[];
     // null when the objective is one sentence: the title already says all of it
     body: string | null;
+    // the body is the stated absence, not content: drawn muted
+    bodyIsAbsence: boolean;
     // the link that opens a clamped body, or null when the body is short enough to show whole
     bodyMore: string | null;
     fleetMeta: string;
@@ -71,6 +75,8 @@ const STATUS_ORDER = ["active", "paused", "completed", "archived"];
 // past this many characters the body is clamped behind a link to the rest; 20 of the user's records cross it
 const BODY_CLAMP_CHARS = 400;
 
+const BODY_ABSENT = "This record states no objective yet.";
+
 const RUNS_ABSENT = "No session has ever been attributed to this record.";
 
 // statusPickerRows is the current status as a marked inert row, plus one control per legal transition. The
@@ -87,7 +93,7 @@ export function statusPickerRows(status: string): PeekStatusRow[] {
         }
         rows.push({
             status: s,
-            label: s,
+            label: s.charAt(0).toUpperCase() + s.slice(1),
             note: STATUS_NOTE[s] ?? "",
             current,
             terminal: isTerminalTransition(s),
@@ -96,17 +102,20 @@ export function statusPickerRows(status: string): PeekStatusRow[] {
     return rows;
 }
 
-function peekBody(detail: DossierDetail): { body: string | null; bodyMore: string | null } {
+function peekBody(detail: DossierDetail): { body: string | null; bodyIsAbsence: boolean; bodyMore: string | null } {
     const objective = detail.objective?.trim() ?? "";
     if (objective === "") {
         const notes = detail.notes?.trim() ?? "";
-        return { body: notes !== "" ? notes : "This record states no objective yet.", bodyMore: null };
+        if (notes === "") {
+            return { body: BODY_ABSENT, bodyIsAbsence: true, bodyMore: null };
+        }
+        return { body: notes, bodyIsAbsence: false, bodyMore: null };
     }
     if (headline(objective) === objective) {
-        return { body: null, bodyMore: null };
+        return { body: null, bodyIsAbsence: false, bodyMore: null };
     }
     const bodyMore = objective.length > BODY_CLAMP_CHARS ? `Show the full objective · ${kilo(objective.length)}` : null;
-    return { body: objective, bodyMore };
+    return { body: objective, bodyIsAbsence: false, bodyMore };
 }
 
 function logLine(n: number): string {
@@ -132,6 +141,7 @@ export function buildRecordPeek(input: RecordPeekInput): RecordPeek {
     const objective = detail.objective?.trim() ?? "";
     return {
         title: objective !== "" ? headline(objective) : detail.id,
+        titleIsId: objective === "",
         updatedLabel: detail.updated > 0 ? `updated ${ageLabel(Math.max(0, now - detail.updated))}` : "never updated",
         statusLabel: detail.status ?? "",
         statusRows: statusPickerRows(detail.status ?? ""),

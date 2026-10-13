@@ -42,3 +42,24 @@ func TestApplyRegionLeavesTextAroundTheRegionByteIdentical(t *testing.T) {
 		t.Fatalf("text outside the markers changed:\ngot:  %q\nwant: %q", got, want)
 	}
 }
+
+// A shared doc seeded from a harness file carried that file's markers, so each sync closed the nested region at
+// its first end marker and left one more stray end marker in every harness file (20 to 26 by 2026-10-10).
+func TestApplyRegionDropsMarkersInTheBodyAndHealsStrayEnds(t *testing.T) {
+	body := steeringBegin + "\n# Prefs\n- rule\n" + steeringEnd + "\n"
+	want := "# Notes\n\n" + renderRegion("# Prefs\n- rule") + "after\n"
+	if got := renderRegion(body); got != renderRegion("# Prefs\n- rule") {
+		t.Fatalf("markers in the body were rendered:\n%q", got)
+	}
+	corrupt := "# Notes\n\n" + steeringBegin + "\n" + steeringBegin + "\n# Prefs\n- rule\n" + strings.Repeat(steeringEnd+"\n", 20) + "after\n"
+	got := applyRegion(corrupt, body)
+	if got != want {
+		t.Fatalf("a file with a nested region and stray end markers was not healed:\ngot:  %q\nwant: %q", got, want)
+	}
+	if again := applyRegion(got, body); again != got {
+		t.Fatalf("not idempotent:\nfirst:  %q\nsecond: %q", got, again)
+	}
+	if steeringState(got, body) != "current" {
+		t.Fatalf("a healed file reads %q against the marker-carrying doc", steeringState(got, body))
+	}
+}

@@ -93,6 +93,41 @@ const TARGET = "min-w-0 truncate text-[11.5px] text-ink-mid";
 // 30px = the row's 6px padding + the 16px status square + the 8px gap, so the panel sits under the target
 const DETAIL_PANEL = "mb-1.5 ml-[30px] mt-1 overflow-hidden rounded-[8px] border border-edge-mid bg-surface-code";
 
+// One option of an asked question. The check and the weight mark a picked one, so colour is not the only signal.
+function AskOptionLine({
+    label,
+    description,
+    picked,
+    note,
+}: {
+    label: string;
+    description?: string;
+    picked: boolean;
+    note?: string;
+}) {
+    return (
+        <div className="flex items-start gap-2">
+            <span
+                className={cn(
+                    "mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px]",
+                    picked && "bg-accent/[0.12] text-accent-soft"
+                )}
+            >
+                {picked ? <Check size={10} strokeWidth={3} aria-hidden /> : null}
+            </span>
+            <div className="min-w-0 flex-1 [overflow-wrap:anywhere]">
+                <div className={cn("text-[12.5px]", picked ? "font-semibold text-primary" : "text-ink-mid")}>{label}</div>
+                {description ? (
+                    <div className={cn("text-[12px] leading-[1.5]", picked ? "text-ink-mid" : "text-muted")}>
+                        {description}
+                    </div>
+                ) : null}
+            </div>
+            {note ? <span className={cn("shrink-0", FAINT_TEXT)}>{note}</span> : null}
+        </div>
+    );
+}
+
 // Shared per-kind detail renderer. Used inline (capped by max-height) and by the modal (uncapped).
 // Tokens only — no raw hex. See Wave-transcript-feed.dc.html.
 export function ToolDetailBody({ detail, variant }: { detail: ActionDetail; variant: "inline" | "modal" }) {
@@ -180,6 +215,27 @@ export function ToolDetailBody({ detail, variant }: { detail: ActionDetail; vari
                         {detail.args}
                     </pre>
                 ) : null}
+            </div>
+        );
+    }
+    if (detail.kind === "ask") {
+        return (
+            <div className="flex flex-col">
+                {detail.questions.map((q, i) => (
+                    <div key={i} className={cn("flex flex-col gap-[5px] border-b border-edge-faint last:border-b-0", pad)}>
+                        {q.header ? <span className={FAINT_TEXT}>{q.header}</span> : null}
+                        <div className="text-[12.5px] leading-[1.5] text-secondary">{q.question}</div>
+                        {q.options.map((o, k) => (
+                            <AskOptionLine
+                                key={k}
+                                label={o.label}
+                                description={o.description}
+                                picked={q.picked.includes(o.label)}
+                            />
+                        ))}
+                        {q.typed ? <AskOptionLine label={q.typed} picked note="typed" /> : null}
+                    </div>
+                ))}
             </div>
         );
     }

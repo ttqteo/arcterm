@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Usage surface store: raw wire buckets + the impure loader. The scan runs in the Go backend
+// Usage surface store: raw wire buckets, the session directory + the impure loader. The scan runs in the Go backend
 // (GetUsageStatsCommand walks every in-window transcript, no file cap); this stores the raw buckets
 // and exposes aggregateBuckets over them (all-history when no harness filter is applied — the
 // surface's filtered stats come from the view model). On RPC failure the last-good buckets are kept
@@ -16,6 +16,8 @@ import { aggregateBuckets } from "./usagestats";
 const DEFAULT_WINDOW_DAYS = 7;
 
 export const usageBucketsAtom = atom<UsageBucket[]>([]) as PrimitiveAtom<UsageBucket[]>;
+// what each bucket's session was: its title, project, run and role. set from the same reply as the buckets
+export const usageSessionsAtom = atom<UsageSessionMeta[]>([]) as PrimitiveAtom<UsageSessionMeta[]>;
 export const allUsageStatsAtom = atom((get) => aggregateBuckets(get(usageBucketsAtom), Date.now(), "all"));
 export const usageErrorAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
 export const usageLoadedAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
@@ -28,19 +30,28 @@ export const usageMetricAtom = atom<"tokens" | "spend">("tokens");
 // true once the person has picked a provider tab (click or key). Until then the surface writes the busiest
 // provider into usageHarnessFilterAtom; after, the person's tab is left alone.
 export const usageTabChosenAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
+export type UsageLens = "provider" | "work";
+export const usageLensAtom = atom<UsageLens>("provider");
+// By work: the rail scope ("all" or a project key), the run or session opened from a list with the
+// scope its Back returns to, and whether the ranked list is expanded
+export const usageWorkScopeAtom = atom<string>("all");
+export type UsageWorkItem = { key: string; back: string };
+export const usageWorkItemAtom = atom<UsageWorkItem | null>(null) as PrimitiveAtom<UsageWorkItem | null>;
+export const usageListExpandedAtom = atom<boolean>(false);
 
-// DEV-only fixture seam: a deterministic localStorage array of wire buckets (see the usage-charts CDP
-// scenario). Compiled out behaviorally in production because import.meta.env.DEV is false. Malformed
+// DEV-only fixture seam: a deterministic localStorage {buckets, sessions} object (see the usage-charts
+// CDP scenario). Compiled out behaviorally in production because import.meta.env.DEV is false. Malformed
 // or absent fixtures fall through to the RPC.
 const DEV_USAGE_FIXTURE_KEY = "wave:dev-usage-buckets";
 
-function devUsageBuckets(): UsageBucket[] | undefined {
+function devUsageFixture(): CommandGetUsageStatsRtnData | undefined {
     if (!import.meta.env.DEV || typeof localStorage === "undefined") return undefined;
     const raw = localStorage.getItem(DEV_USAGE_FIXTURE_KEY);
     if (raw == null) return undefined;
     try {
         const value = JSON.parse(raw);
-        return Array.isArray(value) ? value : undefined;
+        if (value == null || !Array.isArray(value.buckets)) return undefined;
+        return { buckets: value.buckets, sessions: Array.isArray(value.sessions) ? value.sessions : [] };
     } catch {
         return undefined;
     }
@@ -63,18 +74,18 @@ export async function loadUsage(windowDays = DEFAULT_WINDOW_DAYS): Promise<void>
         globalStore.set(usageLoadedAtom, false);
     }
     try {
-        const fixture = devUsageBuckets();
-        const buckets = fixture ?? (await RpcApi.GetUsageStatsCommand(TabRpcClient, { windowdays: windowDays })).buckets ?? [];
+        const reply = devUsageFixture() ?? (await RpcApi.GetUsageStatsCommand(TabRpcClient, { windowdays: windowDays }));
         if (seq !== loadSeq) {
             return; // a newer load superseded this one — ignore its result
         }
-        globalStore.set(usageBucketsAtom, buckets);
+        globalStore.set(usageBucketsAtom, reply.buckets ?? []);
+        globalStore.set(usageSessionsAtom, reply.sessions ?? []);
         globalStore.set(usageErrorAtom, false);
     } catch {
         if (seq !== loadSeq) {
             return;
         }
-        // keep the last-good buckets; surface a subtle "couldn't refresh" instead of blanking
+        // keep the last-good buckets and sessions; surface a subtle "couldn't refresh" instead of blanking
         globalStore.set(usageErrorAtom, true);
     } finally {
         if (seq === loadSeq) {

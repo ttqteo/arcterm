@@ -30,6 +30,7 @@ export const harnessesAtom = atom<HarnessInfo[]>([]);
 export const harnessesLoadingAtom = atom(false);
 // the runtimes a run lead (and its reviewers) may use; the pickers of those two roles list only these
 export const leadRuntimesAtom = atom((get) => leadRuntimes(get(harnessesAtom)));
+export const refusedRoutesAtom = atom<RefusedRouteInfo[]>([]);
 
 export function resolveDefaultRuntime(pref: string, harnesses: HarnessInfo[]): string {
     if (pref && harnesses.some((h) => h.runtime === pref && h.installed && h.runworkercapable)) {
@@ -134,8 +135,21 @@ async function fetchHarnesses(forceRefresh: boolean): Promise<void> {
     }
 }
 
+// The catalog loads once at boot, but a run records refusals while it goes, so the picker reads them each time it
+// opens. A file read server-side, unlike the catalog's process spawns.
+export async function loadRefusedRoutes(): Promise<void> {
+    try {
+        const rtn = await RpcApi.ListRefusedRoutesCommand(TabRpcClient);
+        globalStore.set(refusedRoutesAtom, rtn?.routes ?? []);
+    } catch (e) {
+        console.error("loading refused routes failed", e);
+    }
+}
+
+// the refresh also forgets refusals server-side, which is what an operator wants after renewing an account
 export async function refreshHarnessCatalog(): Promise<void> {
-    return loadHarnesses(true);
+    await loadHarnesses(true);
+    await loadRefusedRoutes();
 }
 
 export function preferredCapability(route: RoutePin | null): RouteCapabilityInfo | undefined {

@@ -5,6 +5,12 @@ import type { Monitor, Window } from "@tauri-apps/api/window";
 
 export { LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize };
 
+// @tauri-apps/api/window's enum, by value: a page has no taskbar button to flash
+export enum UserAttentionType {
+    Critical = 1,
+    Informational = 2,
+}
+
 const ok = async () => {};
 const scale = () => window.devicePixelRatio || 1;
 const origin = () => new PhysicalPosition(0, 0);
@@ -62,6 +68,7 @@ const current = {
     unmaximize: ok,
     toggleMaximize: ok,
     startDragging: ok,
+    requestUserAttention: ok,
     setAlwaysOnTop: ok,
     setBadgeCount: ok,
     setFullscreen: ok,

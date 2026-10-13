@@ -43,6 +43,11 @@ func tendVerifier(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owner *wa
 	releaseFinalTree(g, owner, afterCommit)
 }
 
+// unverifiedGuidance bounds --unverified: it downgrades the whole stage, so it names a behavior of this change that
+// nothing exercised, not the verifier's own effort or what its brief told it not to do (20 of the 21 unverified
+// finals of 10-06..10-12 carried such a note).
+const unverifiedGuidance = "`--unverified` leaves the whole result unverified, so use it only for a behavior of this change that no check exercised and reading could not settle, and name that behavior. Never use it for a command or suite the engine already ran or this brief told you not to run, or for a file or screenshot you did not open: open it, or leave it out."
+
 // verifierPrompt is the verifier's brief. It reads the docs in the final tree, where a branch-landed dag
 // committed them at submit.
 func verifierPrompt(ctx context.Context, g *waveobj.TaskGroup, owner *waveobj.Run) string {
@@ -101,6 +106,10 @@ func verifierPrompt(ctx context.Context, g *waveobj.TaskGroup, owner *waveobj.Ru
 			b.WriteString("- " + n + "\n")
 		}
 	}
+	// the human went on past these findings: a gap one named is a decision already made, not news for --unverified
+	if pr := g.PlanReview; pr != nil && pr.State == PlanReviewState_Accepted && pr.Findings != "" {
+		fmt.Fprintf(&b, "The plan review failed and the human proceeded on the plan with these findings:\n%s\nCheck each against the tree. A finding still open that names something no check exercised goes in your pass summary as accepted at plan review, not in `--unverified`.\n", pr.Findings)
+	}
 	b.WriteString("Check that:\n")
 	b.WriteString("- the combined change does what the spec asks;\n")
 	b.WriteString("- nothing broke where tasks meet: code one task changed that another task uses, a name two tasks spell differently, behavior two tasks both touch.\n")
@@ -109,6 +118,7 @@ func verifierPrompt(ctx context.Context, g *waveobj.TaskGroup, owner *waveobj.Ru
 	b.WriteString("Finish with exactly one command, which ends your session:\n")
 	b.WriteString("- `wsh jarvis dag final pass \"<summary>\"`, adding `--unverified \"<what you could not verify, and why>\"` when something could not be checked;\n")
 	b.WriteString("- `wsh jarvis dag final fail \"<defects: each one, where it is, and the fix>\"`.\n")
+	b.WriteString(unverifiedGuidance + "\n")
 	fmt.Fprintf(&b, "Keep each text within %d characters; a longer one is refused.", MaxReviewNoteLen)
 	return b.String()
 }

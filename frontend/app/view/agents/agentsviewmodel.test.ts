@@ -1339,6 +1339,14 @@ describe("detail inline routing", () => {
         const matches = Array.from({ length: 6 }, () => ({ loc: "x", code: "y" }));
         expect(detailExceedsInline({ kind: "grep", matches })).toBe(false);
     });
+    it("counts an asked question as its text, its options and a typed answer", () => {
+        const options = [{ label: "a" }, { label: "b" }];
+        const questions = [
+            { question: "q1", options, picked: ["a"] },
+            { question: "q2", options, picked: [], typed: "c" },
+        ];
+        expect(detailLineCount({ kind: "ask", questions })).toBe(7);
+    });
 });
 
 describe("edit-burst grouping", () => {

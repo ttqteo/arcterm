@@ -19,11 +19,6 @@ import (
 
 var ErrNotGitRepo = errors.New("not a git repo")
 
-// worktreeDir is the per-run linked-worktree root inside the project.
-func worktreeDir(projectPath, runID string) string {
-	return filepath.Join(projectPath, ".waveterm", "worktrees", runID)
-}
-
 // gitWaitDelay bounds the wait for a git command's output pipe once its process has exited or its context has
 // ended. A var for tests.
 var gitWaitDelay = planCommandWaitDelay
@@ -58,8 +53,8 @@ func dropProgress(out string) string {
 	return strings.Join(kept, "\n")
 }
 
-// addWorktree runs `git worktree add` in project. A tree nests the checkout under .waveterm\worktrees\<key>\, so on
-// Windows a path that fits under MAX_PATH in the project can pass it in the tree; core.longpaths, set in the repo
+// addWorktree runs `git worktree add` in project. A tree's root (worktreeDir) can be longer than the project's, so
+// on Windows a path that fits under MAX_PATH in the project can pass it in the tree; core.longpaths, set in the repo
 // config rather than per command, lets the worker's own git in the tree reach those paths too.
 func addWorktree(ctx context.Context, project string, args ...string) (string, error) {
 	if runtime.GOOS == "windows" {
@@ -109,13 +104,16 @@ func FinalWorktreeKey(ownerRunID string) string {
 	return ownerRunID + "-" + finalTreeKey
 }
 
-// CreateRunWorktree links a worktree at <project>/.waveterm/worktrees/<runID> on branch
-// wave/<runID>, checked out at baseCommit (empty = current branch head).
+// CreateRunWorktree links a worktree at worktreeDir(projectPath, runID) on branch wave/<runID>, checked out at
+// baseCommit (empty = current branch head).
 func CreateRunWorktree(ctx context.Context, projectPath, runID, baseCommit string) (string, error) {
 	if !IsGitRepo(projectPath) {
 		return "", ErrNotGitRepo
 	}
-	wt := worktreeDir(projectPath, runID)
+	wt, err := claimWorktreeDir(projectPath, runID)
+	if err != nil {
+		return "", fmt.Errorf("creating worktree: %w", err)
+	}
 	args := []string{"-b", "wave/" + runID, wt}
 	if baseCommit != "" {
 		args = append(args, baseCommit)
@@ -237,7 +235,9 @@ func EnsureRunWorktree(ctx context.Context, projectPath, runID, baseCommit strin
 				return "", "", false, fmt.Errorf("recreating stale worktree: %w", err)
 			}
 		}
-		if _, err := CreateRunWorktree(ctx, projectPath, runID, baseCommit); err != nil {
+		// a removed legacy tree comes back under the short root, so the path is the one the claim returns
+		wt, err := CreateRunWorktree(ctx, projectPath, runID, baseCommit)
+		if err != nil {
 			return "", "", false, err
 		}
 		created, err := WorktreeHeadCommit(ctx, projectPath, runID)
@@ -261,6 +261,10 @@ func EnsureRunWorktree(ctx context.Context, projectPath, runID, baseCommit strin
 	// a registration whose directory is already gone makes the add refuse
 	if _, err := gitLocked(ctx, projectPath, "worktree", "prune"); err != nil {
 		return "", "", false, fmt.Errorf("pruning worktrees: %w", err)
+	}
+	wt, err := claimWorktreeDir(projectPath, runID)
+	if err != nil {
+		return "", "", false, fmt.Errorf("checking out worktree from wave/%s: %w", runID, err)
 	}
 	if _, err := addWorktree(ctx, projectPath, wt, "wave/"+runID); err != nil {
 		return "", "", false, fmt.Errorf("checking out worktree from wave/%s: %w", runID, err)

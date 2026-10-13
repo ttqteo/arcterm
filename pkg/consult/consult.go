@@ -217,7 +217,7 @@ const (
 )
 
 // The claude aliases each tier selects. Exported so callers that need the alias itself rather than a
-// tiered spec (reporadar builds its own --model args) share these definitions instead of re-hardcoding
+// tiered spec (runroute pins a route's model by alias) share these definitions instead of re-hardcoding
 // the strings.
 const (
 	// CheapModel is the cheap tier's alias. Haiku 4.5 is the cheapest current alias (~1/5 of Opus
@@ -269,7 +269,7 @@ func SpecForTier(runtime string, tier Tier) (RuntimeSpec, bool) {
 	return spec, true
 }
 
-// HeadlessRuntime returns the runtime the background AI features (gatekeeper, recall, gardener, radar,
+// HeadlessRuntime returns the runtime the background AI features (gatekeeper, recall, gardener,
 // pi titles, ...) use for one-shot consults. The headless:runtime setting is the single source of
 // truth; an empty or unknown value falls back to openrouter because these features run unattended —
 // a misconfigured value must degrade to the known default, never silently disable the feature.

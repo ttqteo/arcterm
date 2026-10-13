@@ -42,7 +42,7 @@ type CmdWrap struct {
 	pty.Pty
 }
 
-func MakeCmdWrap(cmd *exec.Cmd, cmdPty pty.Pty, isShell bool) CmdWrap {
+func MakeCmdWrap(cmd *exec.Cmd, cmdPty pty.Pty, isShell bool, blockId string) CmdWrap {
 	cw := CmdWrap{
 		Cmd:      cmd,
 		IsShell:  isShell,
@@ -57,6 +57,9 @@ func MakeCmdWrap(cmd *exec.Cmd, cmdPty pty.Pty, isShell bool) CmdWrap {
 		} else {
 			cw.jobHandle = job
 			cw.jobCloseOnce = &sync.Once{}
+			if blockId != "" {
+				jobobject.Register(job, cmd.Process.Pid, jobobject.Owner{Kind: jobobject.OwnerKind_Block, Id: blockId})
+			}
 		}
 	}
 	return cw

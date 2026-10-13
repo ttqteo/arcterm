@@ -15,6 +15,7 @@
 // running at, and a save sent from the snapshot would overwrite it. So the dock reads the group through
 // WOS (a scheduler tick has to show up here) and renders no controls until it has arrived.
 
+import { PaneReveal } from "@/app/element/panereveal";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -349,11 +350,11 @@ function LoadedConfig({
                         {open ? "done" : "adjust"}
                     </button>
                 </div>
-                {open ? (
+                <PaneReveal open={open}>
                     <div className="flex flex-col gap-3 rounded-[9px] border border-border bg-surface px-[13px] pb-[13px] pt-[11px]">
                         {dials}
                     </div>
-                ) : null}
+                </PaneReveal>
             </>
         );
     }
@@ -379,9 +380,9 @@ function LoadedConfig({
                     {open ? "Done" : "Adjust"}
                 </button>
             </div>
-            {open ? (
+            <PaneReveal open={open}>
                 <div className="flex flex-col gap-3 border-t border-edge-faint px-4 pb-3.5 pt-[11px]">{dials}</div>
-            ) : null}
+            </PaneReveal>
         </div>
     );
 }

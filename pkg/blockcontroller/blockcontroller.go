@@ -362,6 +362,17 @@ func isLocalConnName(connName string) bool {
 }
 
 func SendInput(blockId string, inputUnion *BlockInputUnion) error {
+	err := sendInput(blockId, inputUnion)
+	if err != nil && inputUnion.TermSize != nil {
+		// no process took the resize: keep it, so the next one starts at the terminal's size
+		if perr := persistTermSize(blockId, *inputUnion.TermSize); perr != nil {
+			log.Printf("error keeping term size for block %s: %v\n", blockId, perr)
+		}
+	}
+	return err
+}
+
+func sendInput(blockId string, inputUnion *BlockInputUnion) error {
 	controller := getController(blockId)
 	if controller == nil {
 		return fmt.Errorf("no controller found for block %s", blockId)
@@ -405,6 +416,16 @@ func getBoolFromMeta(meta map[string]any, key string, def bool) bool {
 		return val
 	}
 	return def
+}
+
+// startTermSize is the size a block's process starts at: the caller's when it names one, else the size the
+// block's terminal last reported. A worker is started with no terminal attached and names none; drawn for
+// the 24x80 default inside a larger mounted terminal, its frame lands wrapped over the top rows.
+func startTermSize(rtOpts *waveobj.RuntimeOpts, bdata *waveobj.Block) waveobj.TermSize {
+	if rtOpts != nil && rtOpts.TermSize.Rows > 0 && rtOpts.TermSize.Cols > 0 {
+		return rtOpts.TermSize
+	}
+	return getTermSize(bdata)
 }
 
 func getTermSize(bdata *waveobj.Block) waveobj.TermSize {

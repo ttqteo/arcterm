@@ -82,23 +82,30 @@ func spawnStageSession(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owne
 }
 
 // stageSessionLost says why a stage session with no verdict is done for, or "" while it is still working. It
-// is bounded like a task reviewer: judging a plan or a finished run takes minutes too.
-func stageSessionLost(ctx context.Context, g *waveobj.TaskGroup, runID string, startedTs, now int64) string {
-	if now-startedTs > ReviewTimeout.Milliseconds() {
-		return fmt.Sprintf("it gave no verdict within %s", ReviewTimeout)
-	}
+// is bounded like a task reviewer: judging a plan or a finished run takes minutes too. final is set when its route
+// refused it, which a replacement on the same route would meet too.
+func stageSessionLost(ctx context.Context, g *waveobj.TaskGroup, runID string, startedTs, now int64) (reason string, final bool) {
 	run, err := wstore.GetRun(ctx, g.ChannelId, runID)
+	if err == nil {
+		if failure, refused := routeRefused(run, now); refused {
+			recordRefusedRoute(run, failure, now)
+			return "its route refused it: " + failure.Text, true
+		}
+	}
+	if now-startedTs > ReviewTimeout.Milliseconds() {
+		return withSessionFailure(fmt.Sprintf("it gave no verdict within %s", ReviewTimeout), run), false
+	}
 	if err != nil {
-		return "" // unreadable this tick; the timeout still bounds it
+		return "", false // unreadable this tick; the timeout still bounds it
 	}
 	switch run.Status {
 	case jarvis.RunStatus_Done, jarvis.RunStatus_Cancelled, jarvis.RunStatus_Blocked:
-		return "it ended without a verdict"
+		return withSessionFailure("it ended without a verdict", run), false
 	}
 	if workerControllerGone(ctx, run) {
-		return "it exited without a verdict"
+		return withSessionFailure("it exited without a verdict", run), false
 	}
-	return ""
+	return "", false
 }
 
 // tendStageSession keeps a stage's one session going for a tick: it replaces a lost session, and starts the
@@ -107,13 +114,13 @@ func stageSessionLost(ctx context.Context, g *waveobj.TaskGroup, runID string, s
 // session is built only when one is spawned.
 func tendStageSession(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owner *waveobj.Run, session func() StageSession, runID *string, startedTs *int64, respawns *int, now int64, afterCommit *[]func()) string {
 	if *runID != "" {
-		reason := stageSessionLost(ctx, g, *runID, *startedTs, now)
+		reason, final := stageSessionLost(ctx, g, *runID, *startedTs, now)
 		if reason == "" {
 			return ""
 		}
 		stopReviewer(ctx, g, *runID, afterCommit)
 		*runID = ""
-		if *respawns >= MaxReviewRespawns {
+		if final || *respawns >= MaxReviewRespawns {
 			return reason
 		}
 		*respawns++

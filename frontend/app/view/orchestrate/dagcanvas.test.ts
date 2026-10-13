@@ -17,6 +17,7 @@ import {
     ZOOM_STEP,
     type FactCtx,
 } from "./dagcanvas";
+import { FINAL_NODE_ID, withFinalNode } from "./dagfinal";
 
 const task = (id: string, state: string, extra: Partial<TaskNode> = {}): TaskNode => ({ id, state, ...extra });
 const ctx = (tasks: TaskNode[], extra: Partial<FactCtx> = {}): FactCtx => ({
@@ -179,6 +180,23 @@ describe("graphKey", () => {
         expect(key("=", null)).toEqual({ kind: "zoom", factor: ZOOM_STEP });
         expect(key("-", null)).toEqual({ kind: "zoom", factor: 1 / ZOOM_STEP });
         expect(key("x", null)).toEqual({ kind: "none" });
+    });
+    it("reaches the final node as the layout's last task", () => {
+        // the sinks are c (y 100) and d (y 0); the final node sits level with c
+        const withFinal = withFinalNode(tasks);
+        const finalKey = (k: string, selected: string | null) =>
+            graphKey(k, {
+                tasks: withFinal,
+                selected,
+                layer: new Map([...layer, [FINAL_NODE_ID, 3]]),
+                pos: new Map([...pos, [FINAL_NODE_ID, { x: 732, y: 100 }]]),
+            });
+        expect(finalKey("ArrowRight", "d")).toEqual({ kind: "select", id: FINAL_NODE_ID });
+        expect(finalKey("ArrowRight", "c")).toEqual({ kind: "select", id: FINAL_NODE_ID });
+        expect(finalKey("ArrowLeft", FINAL_NODE_ID)).toEqual({ kind: "select", id: "c" });
+        expect(finalKey("j", "d")).toEqual({ kind: "select", id: FINAL_NODE_ID });
+        expect(finalKey("j", FINAL_NODE_ID)).toEqual({ kind: "none" });
+        expect(finalKey("ArrowRight", FINAL_NODE_ID)).toEqual({ kind: "none" });
     });
 });
 

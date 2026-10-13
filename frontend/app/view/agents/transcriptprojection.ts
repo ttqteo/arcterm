@@ -5,7 +5,7 @@
 // No React, no Wave runtime imports. Deterministic; no LLM (spec §5.3).
 
 import type { AgentEntry, CardTask } from "./agentsviewmodel";
-import { buildEditDiff, parseGrep, sliceRead, toolResultText } from "./tooldetail";
+import { answerAsk, askQuestions, buildEditDiff, parseGrep, sliceRead, toolResultText } from "./tooldetail";
 
 const READ_MODAL_MAX_LINES = 400; // bound stored Read body (modal view); inline uses the per-kind budget
 
@@ -18,6 +18,7 @@ const VERB_BY_TOOL: Record<string, string> = {
     Glob: "glob",
     Task: "spawned",
     Skill: "skill",
+    AskUserQuestion: "asked",
 };
 
 function verbFor(name: string): string {
@@ -48,6 +49,9 @@ function targetFor(input: any): string {
     }
     if (typeof input.skill === "string") {
         return input.skill;
+    }
+    if (typeof input.questions?.[0]?.question === "string") {
+        return input.questions[0].question;
     }
     return "";
 }
@@ -151,6 +155,8 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                     } else if (block.name === "Skill" && block.input && typeof block.input.skill === "string") {
                         const args = typeof block.input.args === "string" ? block.input.args.trim() : "";
                         action.detail = { kind: "skill", name: block.input.skill, args: args !== "" ? args : undefined };
+                    } else if (block.name === "AskUserQuestion" && Array.isArray(block.input?.questions)) {
+                        action.detail = { kind: "ask", questions: askQuestions(block.input.questions) };
                     }
                     // scratch fields (stripped before return): tool_use timestamp for duration, tool name for result
                     // routing, and the raw Bash command (the target line shows the human description instead).
@@ -251,6 +257,9 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                         output: body,
                         exit: block.is_error === true ? 1 : 0,
                     };
+                } else if (action.detail?.kind === "ask" && typeof rec.toolUseResult?.answers === "object") {
+                    // the answers ride on the record, keyed by question text; a rejected call carries a string there
+                    action.summary = answerAsk(action.detail.questions, rec.toolUseResult.answers ?? {});
                 }
                 const resTs = typeof rec.timestamp === "string" ? Date.parse(rec.timestamp) : NaN;
                 const useTs = (action as any)._useTs as number;

@@ -62,6 +62,9 @@ type ShellController struct {
 	// for shell/cmd
 	ShellProc    *shellexec.ShellProc
 	ShellInputCh chan *BlockInputUnion
+	// the last resize sent while no input channel was attached: a terminal mounted while the process starts
+	// sends its size once, and the process has already read its start size by then
+	pendingTermSize *waveobj.TermSize
 }
 
 // Constructor that returns the Controller interface
@@ -145,6 +148,10 @@ func (sc *ShellController) SendInput(inputUnion *BlockInputUnion) error {
 	sc.WithLock(func() {
 		ch := sc.ShellInputCh
 		if ch == nil {
+			if inputUnion.TermSize != nil {
+				size := *inputUnion.TermSize
+				sc.pendingTermSize = &size
+			}
 			err = fmt.Errorf("no shell input chan")
 			return
 		}
@@ -159,6 +166,19 @@ func (sc *ShellController) SendInput(inputUnion *BlockInputUnion) error {
 		}
 	})
 	return err
+}
+
+// attachInputCh makes ch the process's input, first queueing any resize that arrived before it: attaching under the
+// lock SendInput holds means every resize either is held here or goes through ch.
+func (sc *ShellController) attachInputCh(ch chan *BlockInputUnion, startSize waveobj.TermSize) {
+	sc.WithLock(func() {
+		pending := sc.pendingTermSize
+		sc.pendingTermSize = nil
+		if pending != nil && *pending != startSize {
+			ch <- &BlockInputUnion{TermSize: pending}
+		}
+		sc.ShellInputCh = ch
+	})
 }
 
 func (sc *ShellController) WithLock(f func()) {
@@ -311,13 +331,7 @@ func (sc *ShellController) run(logCtx context.Context, bdata *waveobj.Block, blo
 				panichandler.PanicHandler("blockcontroller:run-shell-command", recover())
 			}()
 			defer sc.UnlockRunLock()
-			var termSize waveobj.TermSize
-			if rtOpts != nil {
-				termSize = rtOpts.TermSize
-			} else {
-				termSize = getTermSize(bdata)
-			}
-			err := sc.DoRunShellCommand(logCtx, &RunShellOpts{TermSize: termSize}, bdata.Meta)
+			err := sc.DoRunShellCommand(logCtx, &RunShellOpts{TermSize: startTermSize(rtOpts, bdata)}, bdata.Meta)
 			if err != nil {
 				debugLog(logCtx, "error running shell: %v\n", err)
 				sc.failStart(err)
@@ -443,6 +457,7 @@ func (bc *ShellController) setupAndStartShellProcess(logCtx context.Context, rc 
 	}
 	cmdOpts.ShellPath = connUnion.ShellPath
 	cmdOpts.ShellOpts = getLocalShellOpts(blockMeta)
+	cmdOpts.BlockId = bc.BlockId
 	shellProc, err = shellexec.StartLocalShellProc(logCtx, rc.TermSize, cmdStr, cmdOpts, remoteName)
 	if err != nil {
 		return nil, err
@@ -458,7 +473,7 @@ func (bc *ShellController) setupAndStartShellProcess(logCtx context.Context, rc 
 func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellProc, rc *RunShellOpts, blockMeta waveobj.MetaMapType) error {
 	liveToken := markAgentLive(bc.BlockId, blockMeta)
 	shellInputCh := make(chan *BlockInputUnion, 32)
-	bc.ShellInputCh = shellInputCh
+	bc.attachInputCh(shellInputCh, rc.TermSize)
 	var typer *firstCommandTyper
 	if bc.ControllerType == BlockController_Shell {
 		if firstCmd := takeFirstCommand(bc.BlockId, blockMeta); firstCmd != "" {
@@ -911,8 +926,11 @@ func getCustomInitScriptValue(meta waveobj.MetaMapType, connName string, shellTy
 	return "", ""
 }
 
+// persistTermSize is a var so tests can record a kept size without a store.
+var persistTermSize = setTermSizeInDB
+
 func updateTermSize(shellProc *shellexec.ShellProc, blockId string, termSize waveobj.TermSize) {
-	err := setTermSizeInDB(blockId, termSize)
+	err := persistTermSize(blockId, termSize)
 	if err != nil {
 		log.Printf("error setting pty size: %v\n", err)
 	}

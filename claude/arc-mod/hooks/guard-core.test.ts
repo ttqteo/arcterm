@@ -4,6 +4,8 @@ import { denial } from "./guard-core";
 const CHECKOUT = "C:\\Users\\k\\proj";
 const TASK_TREE = "C:\\Users\\k\\proj\\.waveterm\\worktrees\\b74faed0-t-1";
 const POSIX_TASK_TREE = "/home/k/proj/.waveterm/worktrees/b74faed0-t-1/pkg";
+const CACHE_TASK_TREE = "C:\\Users\\k\\AppData\\Local\\arc-wt\\b74faed0-t-1\\pkg";
+const POSIX_CACHE_TASK_TREE = "/home/k/.cache/arc-wt/b74faed0-t-1";
 
 describe("denial: stopping arcterm by image name", () => {
     it.each([
@@ -42,6 +44,22 @@ describe("denial: a run's worktree", () => {
     ])("refuses %s", (command, why) => {
         expect(denial(command, TASK_TREE)).toMatch(why);
         expect(denial(command, POSIX_TASK_TREE)).toMatch(why);
+    });
+
+    it.each([
+        ["git push", /pushed/],
+        ["git worktree add ../scratch", /worktrees/],
+        ["git switch main", /stay on it/],
+    ])("refuses %s under the user cache dir's arc-wt", (command, why) => {
+        expect(denial(command, CACHE_TASK_TREE)).toMatch(why);
+        expect(denial(command, POSIX_CACHE_TASK_TREE)).toMatch(why);
+    });
+
+    it("holds none of this against a directory that only contains arc-wt in its name", () => {
+        const lookalike = "C:\\Users\\k\\my-arc-wtx\\repo";
+        expect(denial("git push", lookalike)).toBeNull();
+        expect(denial("git worktree add ../scratch", lookalike)).toBeNull();
+        expect(denial("git switch main", lookalike)).toBeNull();
     });
 
     it.each([

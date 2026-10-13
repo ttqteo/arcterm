@@ -54,7 +54,9 @@ func TestEngineLaunchPromptCarriesTheGoalRunProtocol(t *testing.T) {
 			"superpowers:writing-plans",
 			"header `Spec review`",
 			"wsh jarvis dag submit --plan <plan path> --spec <spec path>",
-			"wsh jarvis complete --commit $(git rev-parse HEAD)",
+			// a complete with no report seals the line the lead wrote before it
+			"then `wsh jarvis complete --report <that file>`.",
+			"wsh jarvis complete --commit $(git rev-parse HEAD) --report <that file>",
 			// the builder trims the prompt's trailing newline, which PlanFormat ends with
 			strings.TrimRight(PlanFormat, "\n"),
 		} {
@@ -73,7 +75,7 @@ func TestLeadPromptApprovalWithNotes(t *testing.T) {
 	if want := "an answer that starts with `Approve` is an approval, and " + applied; !strings.Contains(launch, want) {
 		t.Fatalf("launch prompt's Spec review missing %q:\n%s", want, launch)
 	}
-	rules := OrchestrationRules("r1", "", "")
+	rules := OrchestrationRules("r1", "", "", "")
 	if want := "an answer that starts with `Accept all and proceed` is an approval, and " + applied; !strings.Contains(rules, want) {
 		t.Fatalf("rules' Plan review missing %q:\n%s", want, rules)
 	}
@@ -93,7 +95,7 @@ func TestEngineLaunchPromptDropsTheOldPlanningProtocol(t *testing.T) {
 }
 
 func TestOrchestrationRulesNameRunSpecPlanAndCommands(t *testing.T) {
-	r := OrchestrationRules("run-1", "C:/p/spec.md", "C:/p/plan.md")
+	r := OrchestrationRules("run-1", "C:/p/spec.md", "C:/p/plan.md", "")
 	for _, want := range []string{
 		"You are the lead for run run-1.",
 		"Spec: C:/p/spec.md.",
@@ -115,10 +117,20 @@ func TestOrchestrationRulesNameRunSpecPlanAndCommands(t *testing.T) {
 	}
 }
 
+// the rules name the run's effort, so open issues land on it instead of on a new effort each run
+func TestOrchestrationRulesNameTheRunsEffort(t *testing.T) {
+	if r := OrchestrationRules("run-1", "", "", "eff-1"); !strings.Contains(r, " Effort: effort:eff-1.") {
+		t.Fatalf("rules should name the run's effort:\n%s", r)
+	}
+	if r := OrchestrationRules("run-1", "", "", ""); strings.Contains(r, "Effort: effort:") {
+		t.Fatalf("a run with no effort names none:\n%s", r)
+	}
+}
+
 // a lead that waited for the human's word to complete left finished runs open for hours (finding 17): it
 // completes on its own, and asks first only when a decision is needed, since complete closes its tab.
 func TestOrchestrationRulesCompleteOnTheirOwn(t *testing.T) {
-	r := OrchestrationRules("r1", "", "")
+	r := OrchestrationRules("r1", "", "", "")
 	var finished string
 	for _, line := range strings.Split(r, "\n") {
 		if strings.HasPrefix(line, "- run finished:") {
@@ -138,12 +150,20 @@ func TestOrchestrationRulesCompleteOnTheirOwn(t *testing.T) {
 		"to a file",
 		"wsh jarvis complete --report <file>",
 		"complete on your own",
-		"only when a decision is needed: a verification failed, a deviation needs the human's call, or you propose a fix round",
+		"only when a decision is needed: a verification failed or a deviation needs the human's call",
 		"not verified never blocks completion",
+		"wsh jarvis dag submit --round --plan <fix plan>",
+		"a round is left",
 	} {
 		if !strings.Contains(finished, want) {
 			t.Fatalf("run-finished rule missing %q:\n%s", want, finished)
 		}
+	}
+	if strings.Contains(r, "Don't add tasks.") {
+		t.Fatalf("a finished run may add tasks through a round:\n%s", r)
+	}
+	if strings.Contains(r, "propose a fix round") {
+		t.Fatalf("a round needs no ask; asking after the last round is the failed-final rule's:\n%s", r)
 	}
 	// run 33880f82's lead read "so ask before it" as "ask whether to complete", and asked
 	for _, gone := range []string{"only when the human says so", "so ask before it"} {
@@ -155,7 +175,7 @@ func TestOrchestrationRulesCompleteOnTheirOwn(t *testing.T) {
 		t.Fatalf("the run-finished rule must say not to ask whether to complete:\n%s", finished)
 	}
 	// a code fix committed at wrap-up skips review and costs the land a full Check (run 33880f82)
-	if !strings.Contains(finished, "A code defect found now is not a wrap-up commit") {
+	if !strings.Contains(finished, "A code defect is never a wrap-up commit") {
 		t.Fatalf("the run-finished rule must keep code out of the wrap-up:\n%s", finished)
 	}
 	if strings.Index(finished, AskTool("claude")) > strings.Index(finished, "wsh jarvis complete") {
@@ -251,7 +271,7 @@ func TestEngineLaunchPromptSkipsTheSpecWhenAMockupSettlesTheDesign(t *testing.T)
 func TestEngineRunPromptsPutTheContractOverPrinciples(t *testing.T) {
 	ps := waveobj.PrincipleList{{ID: "wt", Text: "Use worktree"}}
 	for name, p := range map[string]string{
-		"plan lead": PlanLeadPrompt(ps, "r1", "", "/repo/plan.md", "wake"),
+		"plan lead": PlanLeadPrompt(ps, "r1", "", "/repo/plan.md", "", "wake"),
 		"goal lead": BuildOrchestratePrompt("ship auth", ps, "claude"),
 	} {
 		if !strings.Contains(p, "- Use worktree\n"+ContractWinsLine+"\n\n") {
@@ -264,13 +284,13 @@ func TestEngineRunPromptsPutTheContractOverPrinciples(t *testing.T) {
 }
 
 func TestOrchestrationRulesForbidAttributionTrailers(t *testing.T) {
-	if r := OrchestrationRules("run-1", "", ""); !strings.Contains(r, "Co-Authored-By") {
+	if r := OrchestrationRules("run-1", "", "", ""); !strings.Contains(r, "Co-Authored-By") {
 		t.Fatalf("the lead commits too; its rules must forbid attribution trailers:\n%s", r)
 	}
 }
 
 func TestOrchestrationRulesOmitMissingPaths(t *testing.T) {
-	r := OrchestrationRules("run-1", "", "")
+	r := OrchestrationRules("run-1", "", "", "")
 	if strings.Contains(r, "Spec:") || strings.Contains(r, "Plan:") {
 		t.Fatalf("a dag without files names none:\n%s", r)
 	}
@@ -283,8 +303,8 @@ func TestOrchestrationRulesOmitMissingPaths(t *testing.T) {
 // first message is the event that needed it
 func TestPlanLeadPromptStartsFromTheRulesAndTheWake(t *testing.T) {
 	wake := "wake: 1 question waiting. wsh jarvis dag asks"
-	p := PlanLeadPrompt(nil, "run-1", "", "/repo/plan.md", wake)
-	if !strings.HasPrefix(p, OrchestrationRules("run-1", "", "/repo/plan.md")) {
+	p := PlanLeadPrompt(nil, "run-1", "", "/repo/plan.md", "", wake)
+	if !strings.HasPrefix(p, OrchestrationRules("run-1", "", "/repo/plan.md", "")) {
 		t.Fatalf("the rules come first:\n%s", p)
 	}
 	if !strings.HasSuffix(p, "\n\n"+wake) {
@@ -293,7 +313,7 @@ func TestPlanLeadPromptStartsFromTheRulesAndTheWake(t *testing.T) {
 	if strings.Contains(p, "brainstorming") {
 		t.Fatalf("a plan-input lead has nothing to brainstorm:\n%s", p)
 	}
-	principled := PlanLeadPrompt(waveobj.PrincipleList{{ID: waveobj.LegacyGlobalPrincipleID, Text: "be tidy"}}, "run-1", "", "/repo/plan.md", wake)
+	principled := PlanLeadPrompt(waveobj.PrincipleList{{ID: waveobj.LegacyGlobalPrincipleID, Text: "be tidy"}}, "run-1", "", "/repo/plan.md", "", wake)
 	if !strings.HasPrefix(principled, "Work by these principles:\nbe tidy\n"+ContractWinsLine+"\n\n") {
 		t.Fatalf("the run's principles lead the prompt, as they do for a goal-run lead:\n%s", principled)
 	}
@@ -329,7 +349,7 @@ func TestEveryCommittingPromptCarriesTheNoAttributionRule(t *testing.T) {
 	for name, p := range map[string]string{
 		"quick":               BuildQuickPrompt("add a spinner", nil, "claude"),
 		"orchestrate launch":  BuildOrchestratePrompt("ship auth", nil, "claude"),
-		"orchestration rules": OrchestrationRules("run-1", "", ""),
+		"orchestration rules": OrchestrationRules("run-1", "", "", ""),
 	} {
 		if !strings.Contains(p, NoAttributionRule) {
 			t.Errorf("%s prompt tells the agent to commit but never forbids an attribution trailer:\n%s", name, p)
@@ -343,7 +363,7 @@ func TestEveryWorkingPromptCarriesTheSubagentCap(t *testing.T) {
 	for name, p := range map[string]string{
 		"quick":               BuildQuickPrompt("add a spinner", nil, "claude"),
 		"orchestrate launch":  BuildOrchestratePrompt("ship auth", nil, "claude"),
-		"orchestration rules": OrchestrationRules("run-1", "", ""),
+		"orchestration rules": OrchestrationRules("run-1", "", "", ""),
 	} {
 		if !strings.Contains(p, SubagentCapRule) {
 			t.Errorf("%s prompt never states the subagent cap:\n%s", name, p)
@@ -355,7 +375,7 @@ func TestEveryWorkingPromptCarriesTheSubagentCap(t *testing.T) {
 }
 
 func TestOrchestrationRulesCoverReviewAndDownstream(t *testing.T) {
-	r := OrchestrationRules("run-1", "", "")
+	r := OrchestrationRules("run-1", "", "", "")
 	for _, want := range []string{
 		"- a task passed review with a note for later tasks:",
 		"wsh jarvis dag amend <task>",
@@ -372,11 +392,11 @@ func TestOrchestrationRulesCoverReviewAndDownstream(t *testing.T) {
 }
 
 func TestRunFinishedReportIsJudgmentOnly(t *testing.T) {
-	rules := OrchestrationRules("run-1", "", "")
+	rules := OrchestrationRules("run-1", "", "", "")
 	for _, want := range []string{
 		"wsh jarvis dag report <task> [section]",
 		"one line per task on what it did",
-		"the decisions you made (answers, skips, tells, sendbacks) and why",
+		"the decisions you made (answers, skips, tells, sendbacks, a round) and why",
 		"Found not fixed and Not verified sections",
 		"the engine records those",
 	} {
@@ -388,5 +408,12 @@ func TestRunFinishedReportIsJudgmentOnly(t *testing.T) {
 		if strings.Contains(rules, gone) {
 			t.Errorf("rules still ask for %q", gone)
 		}
+	}
+}
+
+func TestRulesSayWhereAFixPlanGoes(t *testing.T) {
+	r := OrchestrationRules("r1", "", "", "")
+	if got := strings.Count(r, fixPlanHome); got != 2 {
+		t.Fatalf("want the fix plan's place named in both the run-finished and the failed-final rule, got %d:\n%s", got, r)
 	}
 }

@@ -5,14 +5,17 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
 
 var notifyMessage string
 var notifyLevel string
+var notifyTransient bool
 
 var notifyCmd = &cobra.Command{
 	Use:     "notify [title]",
@@ -25,15 +28,22 @@ var notifyCmd = &cobra.Command{
 func init() {
 	notifyCmd.Flags().StringVar(&notifyMessage, "message", "", "notification message body")
 	notifyCmd.Flags().StringVar(&notifyLevel, "level", "", "notification level (info, warn, error)")
+	notifyCmd.Flags().BoolVar(&notifyTransient, "transient", false, "say it once: no unread marker, not kept in the avatar's popup")
 	rootCmd.AddCommand(notifyCmd)
 }
 
-func notifyDataFromArgs(title, message, level string) wshrpc.NotifyCommandData {
-	return wshrpc.NotifyCommandData{Title: title, Message: message, Level: level}
+// blockId is empty outside a block, and the notice then names no sender
+func notifyDataFromArgs(title, message, level, blockId string, transient bool) wshrpc.NotifyCommandData {
+	data := wshrpc.NotifyCommandData{Title: title, Message: message, Level: level, Transient: transient}
+	if blockId != "" {
+		data.ORef = waveobj.MakeORef(waveobj.OType_Block, blockId).String()
+	}
+	return data
 }
 
 func notifyRun(cmd *cobra.Command, args []string) error {
-	err := wshclient.NotifyCommand(RpcClient, notifyDataFromArgs(args[0], notifyMessage, notifyLevel), &wshrpc.RpcOpts{Timeout: 5000})
+	data := notifyDataFromArgs(args[0], notifyMessage, notifyLevel, os.Getenv("WAVETERM_BLOCKID"), notifyTransient)
+	err := wshclient.NotifyCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: 5000})
 	if err != nil {
 		return fmt.Errorf("sending notification: %w", err)
 	}

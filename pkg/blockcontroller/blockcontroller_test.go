@@ -164,3 +164,79 @@ func TestFailedStartEndsLikeAnExit(t *testing.T) {
 		t.Fatal("the outcome hook never heard the failed start")
 	}
 }
+
+func TestStartTermSizeFallsBackToTheTerminalsLastSize(t *testing.T) {
+	stored := waveobj.TermSize{Rows: 41, Cols: 142}
+	block := &waveobj.Block{RuntimeOpts: &waveobj.RuntimeOpts{TermSize: stored}}
+
+	// a worker start names no size (run d94aeda3's resumed lead drew for 24x80 in a 41x142 terminal)
+	if got := startTermSize(&waveobj.RuntimeOpts{}, block); got != stored {
+		t.Errorf("empty rtOpts: size = %+v, want the block's %+v", got, stored)
+	}
+	if got := startTermSize(nil, block); got != stored {
+		t.Errorf("nil rtOpts: size = %+v, want the block's %+v", got, stored)
+	}
+	named := waveobj.TermSize{Rows: 30, Cols: 100}
+	if got := startTermSize(&waveobj.RuntimeOpts{TermSize: named}, block); got != named {
+		t.Errorf("named rtOpts: size = %+v, want %+v", got, named)
+	}
+}
+
+func TestSendInputKeepsAResizeNoProcessTook(t *testing.T) {
+	oldPersist := persistTermSize
+	t.Cleanup(func() { persistTermSize = oldPersist })
+	var kept []waveobj.TermSize
+	persistTermSize = func(blockId string, termSize waveobj.TermSize) error {
+		kept = append(kept, termSize)
+		return nil
+	}
+
+	size := waveobj.TermSize{Rows: 41, Cols: 142}
+	if err := SendInput("no-such-block", &BlockInputUnion{TermSize: &size}); err == nil {
+		t.Fatal("input for a block with no controller should still report an error")
+	}
+	if len(kept) != 1 || kept[0] != size {
+		t.Errorf("kept sizes = %+v, want [%+v]", kept, size)
+	}
+
+	if err := SendInput("no-such-block", &BlockInputUnion{InputData: []byte("x")}); err == nil {
+		t.Fatal("input for a block with no controller should report an error")
+	}
+	if len(kept) != 1 {
+		t.Errorf("input with no resize kept a size: %+v", kept)
+	}
+}
+
+func TestAResizeSentWhileTheProcessStartsReachesIt(t *testing.T) {
+	sc := MakeShellController("tab", "block", BlockController_Cmd, "").(*ShellController)
+	start := waveobj.TermSize{Rows: 24, Cols: 80}
+	size := waveobj.TermSize{Rows: 41, Cols: 142}
+
+	// run a050adbc's verifier: the cockpit's resize landed 50ms before its pty took input
+	if err := sc.SendInput(&BlockInputUnion{TermSize: &size}); err == nil {
+		t.Fatal("a resize before the process takes input should still report an error")
+	}
+	ch := make(chan *BlockInputUnion, 1)
+	sc.attachInputCh(ch, start)
+
+	select {
+	case ic := <-ch:
+		if ic.TermSize == nil || *ic.TermSize != size {
+			t.Errorf("queued input = %+v, want a resize to %+v", ic, size)
+		}
+	default:
+		t.Fatalf("the process started at %+v and never heard the terminal's %+v", start, size)
+	}
+}
+
+func TestAResizeToTheStartSizeIsNotResent(t *testing.T) {
+	sc := MakeShellController("tab", "block", BlockController_Cmd, "").(*ShellController)
+	size := waveobj.TermSize{Rows: 41, Cols: 142}
+	sc.SendInput(&BlockInputUnion{TermSize: &size})
+
+	ch := make(chan *BlockInputUnion, 1)
+	sc.attachInputCh(ch, size)
+	if len(ch) != 0 {
+		t.Errorf("a process started at the held size was resized again: %+v", <-ch)
+	}
+}

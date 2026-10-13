@@ -2,7 +2,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
-import { attentionAtom, cockpitWaitingCount, loadAttention, splitAttention } from "./attentionstore";
+import { attentionAtom, cockpitWaitingCount, loadAttention, splitAttention, taskbarSignal } from "./attentionstore";
 
 vi.mock("@/app/store/wshclientapi", () => ({
     RpcApi: { GetAttentionCommand: vi.fn() },
@@ -38,6 +38,29 @@ describe("loadAttention", () => {
         await olderLoad;
 
         expect(globalStore.get(attentionAtom).map((entry) => entry.key)).toEqual(["newer"]);
+    });
+});
+
+describe("taskbarSignal", () => {
+    it("flashes for an item that was not in the previous list while Arc is unfocused", () => {
+        expect(taskbarSignal([item({ key: "a" })], [item({ key: "a" }), item({ key: "b" })], false)).toBe("flash");
+    });
+
+    it("flashes when an item is replaced by another, though the count is unchanged", () => {
+        expect(taskbarSignal([item({ key: "a" })], [item({ key: "b" })], false)).toBe("flash");
+    });
+
+    it("does not flash again for an item it already flashed for", () => {
+        expect(taskbarSignal([item({ key: "a" })], [item({ key: "a" })], false)).toBeNull();
+    });
+
+    it("does not flash while Arc has focus", () => {
+        expect(taskbarSignal([], [item({ key: "a" })], true)).toBeNull();
+    });
+
+    it("clears once the list empties, and only then", () => {
+        expect(taskbarSignal([item({ key: "a" })], [], false)).toBe("clear");
+        expect(taskbarSignal([], [], false)).toBeNull();
     });
 });
 

@@ -19,10 +19,10 @@ type AgentCommands interface {
 	GetTranscriptUsageCommand(ctx context.Context, data CommandGetTranscriptUsageData) (*CommandGetTranscriptUsageRtnData, error)
 	GetWindowTokensCommand(ctx context.Context, data CommandGetWindowTokensData) (*CommandGetWindowTokensRtnData, error)
 	GetSessionBurnCommand(ctx context.Context, data CommandGetSessionBurnData) (*CommandGetSessionBurnRtnData, error)                   // a spawn's weighing for the Token burn card
-	GetSubagentCostsCommand(ctx context.Context) (*CommandGetSubagentCostsRtnData, error)                                                // what finished subagents cost, by type (Usage)
+	GetSubagentCostsCommand(ctx context.Context) (*CommandGetSubagentCostsRtnData, error)                                               // what finished subagents cost, by type (Usage)
 	ReviewTokenEstimatesCommand(ctx context.Context, data CommandReviewTokenEstimatesData) (*CommandReviewTokenEstimatesRtnData, error) // the logged Token burn estimates against what ran
-	GetClaudeQuotaCommand(ctx context.Context) (*CommandGetClaudeQuotaRtnData, error)     // the Claude account's 5-hour and weekly windows with no session running
-	RefreshClaudeQuotaCommand(ctx context.Context) (*CommandGetClaudeQuotaRtnData, error) // the same, asking the usage endpoint now (a 429 backoff still holds: RetryAt says until when)
+	GetClaudeQuotaCommand(ctx context.Context) (*CommandGetClaudeQuotaRtnData, error)                                                   // the Claude account's 5-hour and weekly windows with no session running
+	RefreshClaudeQuotaCommand(ctx context.Context) (*CommandGetClaudeQuotaRtnData, error)                                               // the same, asking the usage endpoint now (a 429 backoff still holds: RetryAt says until when)
 	GetCacheStatusCommand(ctx context.Context, data CommandGetCacheStatusData) (*CommandGetCacheStatusRtnData, error)
 	GetBackgroundAgentsCommand(ctx context.Context, data CommandGetBackgroundAgentsData) (*CommandGetBackgroundAgentsRtnData, error)
 	// the folders Claude Code has sessions in, for the New project picker
@@ -34,7 +34,7 @@ type AgentCommands interface {
 	AgentsSendCommand(ctx context.Context, data CommandAgentsSendData) (*CommandAgentsSendRtnData, error)                                 // hand a prompt from one agent to another's live session
 	AgentsReadCommand(ctx context.Context, data CommandAgentsReadData) (*CommandAgentsReadRtnData, error)                                 // a live agent's state and last answer
 	AgentsSetModelCommand(ctx context.Context, data CommandAgentsSetModelData) (*CommandAgentsSetModelRtnData, error)                     // switch a live Claude session's model with its /model command
-	AgentsSleepCommand(ctx context.Context, data CommandAgentsSleepData) (*CommandAgentsSleepRtnData, error)                             // put an idle agent to sleep: its process ends, its tab and conversation stay
+	AgentsSleepCommand(ctx context.Context, data CommandAgentsSleepData) (*CommandAgentsSleepRtnData, error)                              // put an idle agent to sleep: its process ends, its tab and conversation stay
 	AgentsWakeCommand(ctx context.Context, data CommandAgentsWakeData) error                                                              // relaunch a sleeping agent with --resume; with Message, deliver it once the agent reports in
 	AgentsSetViewingCommand(ctx context.Context, data CommandAgentsSetViewingData) error                                                  // the frontend's agents on screen, which the sleep loop never sleeps
 	GetConsumersCommand(ctx context.Context) (*CommandGetConsumersRtnData, error)                                                         // every live agent's RAM and last-10-minutes tokens, and arcterm's own processes' RAM
@@ -123,7 +123,22 @@ type CommandGetUsageStatsData struct {
 }
 
 type CommandGetUsageStatsRtnData struct {
-	Buckets []UsageBucket `json:"buckets"`
+	Buckets  []UsageBucket      `json:"buckets"`
+	Sessions []UsageSessionMeta `json:"sessions"`
+}
+
+// UsageSessionMeta is the directory entry for one session that has usage in the window.
+type UsageSessionMeta struct {
+	Harness   string `json:"harness"`
+	Session   string `json:"session"`
+	Title     string `json:"title,omitempty"`
+	Project   string `json:"project,omitempty"` // repo root path
+	RunId     string `json:"runid,omitempty"`   // the owning top-level run
+	ChannelId string `json:"channelid,omitempty"`
+	RunGoal   string `json:"rungoal,omitempty"` // first line
+	RunMode   string `json:"runmode,omitempty"` // orchestrator | quick
+	Role      string `json:"role,omitempty"`    // lead | worker | reviewer | a stage role
+	TaskId    string `json:"taskid,omitempty"`
 }
 
 // UsageSessionModel is one (model, subagent or not) slice of a session's tokens; CacheCreate1h is a

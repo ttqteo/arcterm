@@ -81,6 +81,7 @@ import { launchGoal, launchOptsFromConfig } from "./newrun";
 import { openOrPeekAddress } from "./openref";
 import { recordBandCase } from "./recordband";
 import { RecordBand } from "./recordbandview";
+import { returnToOrigin } from "./returnsurface";
 import { RunSheet } from "./runsheet";
 import { launcherReading, sheetRoute } from "./runsheetmodel";
 
@@ -355,6 +356,7 @@ export function BriefSheet({ model }: { model: AgentsViewModel }) {
     const close = () => {
         globalStore.set(briefSheetOpenAtom, false);
         clearSubject();
+        returnToOrigin("sheet");
     };
     // an initiative's body leads with its own title, so the header naming it again would be a second one.
     // "none" is never drawn — `visible` below excludes it, so it is never latched.

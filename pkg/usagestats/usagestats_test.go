@@ -258,14 +258,14 @@ func TestScanRootsPrunesByModtime(t *testing.T) {
 		t.Fatal(err)
 	}
 	// window 7d (+1d margin) => stale (30d old) pruned, fresh kept
-	got := scanRoots(claude, filepath.Join(dir, "codex-missing"), filepath.Join(dir, "opencode-missing"), filepath.Join(dir, "pi-missing"), filepath.Join(dir, "agy-missing"), 7)
+	got, _ := scanRoots(claude, filepath.Join(dir, "codex-missing"), filepath.Join(dir, "opencode-missing"), filepath.Join(dir, "pi-missing"), filepath.Join(dir, "agy-missing"), 7)
 	if len(got) != 1 || got[0].Model != "claude-haiku-4-5" {
 		t.Fatalf("want 1 haiku bucket from fresh file only, got %+v", got)
 	}
-	// windowDays 0 => no prune => both files counted (2 msgs, same model/day bucket)
-	all := scanRoots(claude, filepath.Join(dir, "codex-missing"), filepath.Join(dir, "opencode-missing"), filepath.Join(dir, "pi-missing"), filepath.Join(dir, "agy-missing"), 0)
-	if len(all) != 1 || all[0].Msgs != 2 {
-		t.Fatalf("want 1 bucket msgs=2 with no prune, got %+v", all)
+	// windowDays 0 => no prune => both files counted (same model/day, one bucket per session)
+	all, _ := scanRoots(claude, filepath.Join(dir, "codex-missing"), filepath.Join(dir, "opencode-missing"), filepath.Join(dir, "pi-missing"), filepath.Join(dir, "agy-missing"), 0)
+	if len(all) != 2 || all[0].Msgs+all[1].Msgs != 2 {
+		t.Fatalf("want 2 buckets of 1 msg each with no prune, got %+v", all)
 	}
 }
 
@@ -288,7 +288,7 @@ func TestScanRootsDropsTurnsBeforeWindowFromFreshTranscript(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(proj, "s.jsonl"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got := scanRoots(filepath.Join(dir, "claude"), filepath.Join(dir, "codex-missing"), filepath.Join(dir, "opencode-missing"), filepath.Join(dir, "pi-missing"), filepath.Join(dir, "agy-missing"), 7)
+	got, _ := scanRoots(filepath.Join(dir, "claude"), filepath.Join(dir, "codex-missing"), filepath.Join(dir, "opencode-missing"), filepath.Join(dir, "pi-missing"), filepath.Join(dir, "agy-missing"), 7)
 	total := 0
 	for _, b := range got {
 		total += b.Input
@@ -546,7 +546,7 @@ func TestScanRootsWindowsOpencodeByMessageTimestamp(t *testing.T) {
 	if err := os.WriteFile(newMsg, msg(time.Now().UnixMilli(), 0.5, 200), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got := scanRoots(filepath.Join(dir, "claude-missing"), filepath.Join(dir, "codex-missing"), msgRoot, filepath.Join(dir, "pi-missing"), filepath.Join(dir, "agy-missing"), 7)
+	got, _ := scanRoots(filepath.Join(dir, "claude-missing"), filepath.Join(dir, "codex-missing"), msgRoot, filepath.Join(dir, "pi-missing"), filepath.Join(dir, "agy-missing"), 7)
 	if len(got) != 1 {
 		t.Fatalf("want 1 bucket (old excluded by timestamp despite fresh modtime), got %+v", got)
 	}
@@ -797,5 +797,251 @@ func TestParseFilesReparsesOnlyChangedFiles(t *testing.T) {
 	}
 	if got := inputs(); !slices.Equal(got, []int{2, 3}) {
 		t.Fatalf("grown file = %v, want [2 3]", got)
+	}
+}
+
+func writeScanFile(t *testing.T, body string, pathParts ...string) string {
+	t.Helper()
+	path := filepath.Join(pathParts...)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// claudeTurnLine is one billed claude turn carrying the fields the scan reads off a real line.
+func claudeTurnLine(id string, ts time.Time, output int, cwd string) string {
+	return fmt.Sprintf(`{"type":"assistant","timestamp":%q,"cwd":%q,"requestId":"req_%s","message":{"id":"msg_%s","model":"claude-opus-4-8","usage":{"input_tokens":10,"output_tokens":%d}}}`+"\n",
+		ts.UTC().Format(time.RFC3339), cwd, id, id, output)
+}
+
+// the session key only splits buckets: summed back over sessions they are, field for field, the
+// buckets the four-part key produced, so no existing usage total moves.
+func TestBucketSessionSumsMatchOldKey(t *testing.T) {
+	day1 := time.Date(2026, 10, 1, 12, 0, 0, 0, time.Local)
+	day2 := day1.AddDate(0, 0, 1)
+	half, quarter := 0.5, 0.25
+	records := []Record{
+		{TS: day1, Harness: "claude", Session: "c1", Provider: "anthropic", Model: "opus", Input: 1, Output: 2, CacheRead: 3, CacheCreate: 4, CacheCreate1h: 1},
+		{TS: day1, Harness: "claude", Session: "c2", Provider: "anthropic", Model: "opus", Input: 10, Output: 20, CacheRead: 30, CacheCreate: 40, CacheCreate1h: 5},
+		{TS: day1, Harness: "claude", Session: "c2", Provider: "anthropic", Model: "opus", Input: 100, Output: 200},
+		{TS: day1, Harness: "claude", Session: "c3", Provider: "anthropic", Model: "haiku", Input: 7},
+		{TS: day2, Harness: "claude", Session: "c1", Provider: "anthropic", Model: "opus", Input: 1000},
+		{TS: day1, Harness: "claude", Session: "c3", Provider: "anthropic", Model: "<synthetic>", Input: 9999},
+		{TS: day1, Harness: "pi", Session: "p1", Provider: "openai-codex", Model: "gpt-5.5", Input: 5, Reasoning: 2, ReportedCostUsd: &half},
+		{TS: day1, Harness: "pi", Session: "p2", Provider: "openai-codex", Model: "gpt-5.5", Input: 6, Reasoning: 3, ReportedCostUsd: &quarter},
+		{TS: day1, Harness: "pi", Session: "p2", Provider: "anthropic", Model: "opus", Output: 8, ReportedCostUsd: &quarter},
+	}
+	type oldKey struct{ harness, provider, model, day string }
+	type sums struct {
+		input, output, reasoning, cacheRead, cacheCreate, cacheCreate1h, msgs int
+		hasCost                                                               bool
+		cost                                                                  float64
+	}
+	fold := func(buckets []Bucket) map[oldKey]sums {
+		out := map[oldKey]sums{}
+		for _, b := range buckets {
+			k := oldKey{b.Harness, b.Provider, b.Model, b.Day}
+			s := out[k]
+			s.input += b.Input
+			s.output += b.Output
+			s.reasoning += b.Reasoning
+			s.cacheRead += b.CacheRead
+			s.cacheCreate += b.CacheCreate
+			s.cacheCreate1h += b.CacheCreate1h
+			s.msgs += b.Msgs
+			if b.ReportedCostUsd != nil {
+				s.hasCost = true
+				s.cost += *b.ReportedCostUsd
+			}
+			out[k] = s
+		}
+		return out
+	}
+	// with the session blanked the five-part key is the old four-part one
+	sessionless := slices.Clone(records)
+	for i := range sessionless {
+		sessionless[i].Session = ""
+	}
+	old := bucket(sessionless)
+	keyed := bucket(records)
+	if len(old) != 5 || len(keyed) != 7 {
+		t.Fatalf("want 5 old buckets split into 7 by session, got %d and %d", len(old), len(keyed))
+	}
+	want, got := fold(old), fold(keyed)
+	if len(got) != len(want) {
+		t.Fatalf("session buckets fold to %d old keys, want %d", len(got), len(want))
+	}
+	for k, w := range want {
+		if got[k] != w {
+			t.Errorf("%+v: summed over sessions = %+v, old key = %+v", k, got[k], w)
+		}
+	}
+}
+
+// each harness names a session by where its file sits, and a subagent's file sits under its parent.
+func TestSessionKeyPerHarness(t *testing.T) {
+	dir := t.TempDir()
+	claude := filepath.Join(dir, "claude")
+	pi := filepath.Join(dir, "pi")
+	codex := filepath.Join(dir, "codex")
+	opencode := filepath.Join(dir, "opencode", "storage", "message")
+	want := map[string]string{
+		writeScanFile(t, "", claude, "C--repo", "c1.jsonl"):                                                      "c1",
+		writeScanFile(t, "", claude, "C--repo", "c1", "subagents", "agent-a.jsonl"):                              "c1",
+		writeScanFile(t, "", claude, "C--repo--worktrees-x", "c2.jsonl"):                                         "c2",
+		writeScanFile(t, "", pi, "--C--repo--", "2026-10-01T02-31-47-396Z_p1.jsonl"):                             "p1",
+		writeScanFile(t, "", pi, "--C--repo--", "2026-10-01T02-31-47-396Z_p1", "run9", "run-0", "session.jsonl"): "p1",
+		writeScanFile(t, "", pi, "--C--repo--", "2026-10-02T02-31-47-396Z_p2.jsonl"):                             "p2",
+		writeScanFile(t, "", codex, "2026", "10", "01", "rollout-2026-10-01T02-31-47-x1.jsonl"):                  "rollout-2026-10-01T02-31-47-x1",
+		writeScanFile(t, "", opencode, "ses_o1", "msg_1.json"):                                                   "ses_o1",
+		writeScanFile(t, "", opencode, "ses_o1", "msg_2.json"):                                                   "ses_o1",
+		writeScanFile(t, "", opencode, "ses_o2", "msg_3.json"):                                                   "ses_o2",
+	}
+	files := slices.Concat(walkClaudeFiles(claude, time.Time{}), walkPiFiles(pi, time.Time{}),
+		walkCodexFiles(codex, time.Time{}), walkOpencodeFiles(opencode, time.Time{}))
+	if len(files) != len(want) {
+		t.Fatalf("walked %d files, want %d: %+v", len(files), len(want), files)
+	}
+	for _, f := range files {
+		if f.session != want[f.path] {
+			t.Errorf("%s: session = %q, want %q", f.path, f.session, want[f.path])
+		}
+	}
+}
+
+// dedupe runs over the whole corpus before bucketing, so a message two session files both hold is
+// one message in one session, at its final snapshot.
+func TestMessageInTwoFilesCountedOnce(t *testing.T) {
+	claude := filepath.Join(t.TempDir(), "claude")
+	now := time.Now()
+	writeScanFile(t, claudeTurnLine("shared", now, 5, "/repo"), claude, "slug", "c1.jsonl")
+	writeScanFile(t, claudeTurnLine("shared", now, 9, "/repo")+claudeTurnLine("own", now, 1, "/repo"), claude, "slug", "c2.jsonl")
+	got, metas := scanRoots(claude, filepath.Join(claude, "no-codex"), filepath.Join(claude, "no-opencode"), filepath.Join(claude, "no-pi"), filepath.Join(claude, "no-agy"), 0)
+	msgs, output := 0, 0
+	for _, b := range got {
+		msgs += b.Msgs
+		output += b.Output
+	}
+	if msgs != 2 || output != 10 {
+		t.Fatalf("want the shared message once at its final snapshot (2 msgs, 10 output), got %d msgs, %d output: %+v", msgs, output, got)
+	}
+	if len(got) != 1 || got[0].Session != "c2" || len(metas) != 1 {
+		t.Fatalf("want it billed to c2 alone, got buckets %+v, sessions %+v", got, metas)
+	}
+}
+
+func TestScanSessionMeta(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	nowStr := now.UTC().Format(time.RFC3339)
+	old := now.AddDate(0, 0, -20)
+	claude := filepath.Join(dir, "claude")
+	title := func(text string) string {
+		return fmt.Sprintf(`{"type":"ai-title","aiTitle":%q,"sessionId":"x"}`+"\n", text)
+	}
+
+	// c1's own transcript was last written before the window: only its subagent ran inside it
+	parent := writeScanFile(t, title("first title")+claudeTurnLine("c1old", old, 1, "/repo/app")+title("Fix the scan"), claude, "slug", "c1.jsonl")
+	if err := os.Chtimes(parent, old, old); err != nil {
+		t.Fatal(err)
+	}
+	writeScanFile(t, title("subagent title")+claudeTurnLine("c1sub", now, 1, "/elsewhere"), claude, "slug", "c1", "subagents", "agent-a.jsonl")
+	// c2 is freshly written but every turn in it predates the window
+	writeScanFile(t, claudeTurnLine("c2old", old, 1, "/repo/stale"), claude, "slug", "c2.jsonl")
+	writeScanFile(t, claudeTurnLine("c3", now, 1, "/repo/untitled"), claude, "slug", "c3.jsonl")
+
+	pi := filepath.Join(dir, "pi")
+	piSession := func(id, cwd, userText, extra string) string {
+		return fmt.Sprintf(`{"type":"session","version":3,"id":%q,"timestamp":%q,"cwd":%q}`, id, nowStr, cwd) + "\n" +
+			`{"type":"model_change","id":"mc","parentId":null,"timestamp":"` + nowStr + `","provider":"openai-codex","modelId":"gpt-5.5"}` + "\n" +
+			fmt.Sprintf(`{"type":"message","id":"u1","parentId":"mc","timestamp":%q,"message":{"role":"user","content":%q}}`, nowStr, userText) + "\n" +
+			`{"type":"message","id":"a1","parentId":"u1","timestamp":"` + nowStr + `","message":{"role":"assistant","content":"ok","usage":{"input":1,"output":1,"totalTokens":2,"cost":{"total":0}}}}` + "\n" + extra
+	}
+	writeScanFile(t, piSession("p1", "/repo/pi", "do the thing", `{"type":"session_info","id":"i1","parentId":"a1","name":"Named session"}`+"\n"),
+		pi, "--repo--", "2026-10-01T02-31-47-396Z_p1.jsonl")
+	writeScanFile(t, piSession("child", "/elsewhere", "subagent prompt", ""),
+		pi, "--repo--", "2026-10-01T02-31-47-396Z_p1", "run9", "run-0", "session.jsonl")
+	writeScanFile(t, piSession("p2", "/repo/pi2", "first line of the prompt\nsecond line", ""),
+		pi, "--repo--", "2026-10-02T02-31-47-396Z_p2.jsonl")
+
+	codex := filepath.Join(dir, "codex")
+	writeScanFile(t, `{"type":"session_meta","timestamp":"`+nowStr+`","payload":{"session_id":"sid","cwd":"/repo/codex"}}`+"\n"+
+		`{"type":"turn_context","timestamp":"`+nowStr+`","payload":{"model":"gpt-5.6"}}`+"\n"+
+		`{"type":"event_msg","timestamp":"`+nowStr+`","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":5,"output_tokens":1,"total_tokens":6}}}}`+"\n",
+		codex, "2026", "10", "08", "rollout-x1.jsonl")
+
+	storage := filepath.Join(dir, "opencode", "storage")
+	writeScanFile(t, fmt.Sprintf(`{"id":"m","role":"assistant","time":{"created":%d},"providerID":"openai","modelID":"gpt-5.6","tokens":{"input":3}}`, now.UnixMilli()),
+		storage, "message", "ses_o1", "msg_1.json")
+	writeScanFile(t, `{"id":"ses_o1","directory":"/repo/opencode","title":"Review the plan"}`, storage, "session", "proj1", "ses_o1.json")
+	writeScanFile(t, `{"id":"ses_o2","directory":"/repo/unused","title":"No usage"}`, storage, "session", "proj1", "ses_o2.json")
+
+	buckets, metas := scanRoots(claude, codex, filepath.Join(storage, "message"), pi, filepath.Join(storage, "no-agy"), 7)
+	want := map[SessionMeta]bool{
+		{Harness: "claude", Session: "c1", Cwd: "/repo/app", Title: "Fix the scan"}:               true,
+		{Harness: "claude", Session: "c3", Cwd: "/repo/untitled"}:                                 true,
+		{Harness: "pi", Session: "p1", Cwd: "/repo/pi", Title: "Named session"}:                   true,
+		{Harness: "pi", Session: "p2", Cwd: "/repo/pi2", Title: "first line of the prompt"}:       true,
+		{Harness: "codex", Session: "rollout-x1", Cwd: "/repo/codex"}:                             true,
+		{Harness: "opencode", Session: "ses_o1", Cwd: "/repo/opencode", Title: "Review the plan"}: true,
+	}
+	if len(metas) != len(want) {
+		t.Fatalf("directory has %d sessions, want %d: %+v", len(metas), len(want), metas)
+	}
+	bucketed := map[string]bool{}
+	for _, b := range buckets {
+		bucketed[b.Harness+"/"+b.Session] = true
+	}
+	for _, m := range metas {
+		if !want[m] {
+			t.Errorf("unexpected session %+v", m)
+		}
+		if !bucketed[m.Harness+"/"+m.Session] {
+			t.Errorf("session %+v has no bucket in the window", m)
+		}
+	}
+	if len(bucketed) != len(want) {
+		t.Errorf("buckets name %d sessions, want %d: %v", len(bucketed), len(want), bucketed)
+	}
+}
+
+// the cwd and title ride the cached parse: a scan of an unchanged file answers them without reading it.
+func TestParseCacheKeepsMeta(t *testing.T) {
+	claude := filepath.Join(t.TempDir(), "claude")
+	now := time.Now()
+	body := func(title, cwd string) string {
+		return fmt.Sprintf(`{"type":"ai-title","aiTitle":%q}`+"\n", title) + claudeTurnLine("m", now, 1, cwd)
+	}
+	path := writeScanFile(t, body("First", "/repo/aaa"), claude, "slug", "c1.jsonl")
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scan := func() SessionMeta {
+		_, metas := scanRoots(claude, filepath.Join(claude, "no-codex"), filepath.Join(claude, "no-opencode"), filepath.Join(claude, "no-pi"), filepath.Join(claude, "no-agy"), 0)
+		if len(metas) != 1 {
+			t.Fatalf("want 1 session, got %+v", metas)
+		}
+		return metas[0]
+	}
+	want := SessionMeta{Harness: "claude", Session: "c1", Cwd: "/repo/aaa", Title: "First"}
+	if got := scan(); got != want {
+		t.Fatalf("first scan = %+v, want %+v", got, want)
+	}
+	// same size, same modtime, different content: only a cached parse still answers the first one
+	writeScanFile(t, body("Other", "/repo/bbb"), path)
+	if err := os.Chtimes(path, info.ModTime(), info.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	if got := scan(); got != want {
+		t.Fatalf("unchanged file = %+v, want the cached %+v", got, want)
+	}
+	writeScanFile(t, body("Renamed", "/repo/bbb"), path)
+	if got := scan(); got.Title != "Renamed" || got.Cwd != "/repo/bbb" {
+		t.Fatalf("changed file = %+v, want it read again", got)
 	}
 }

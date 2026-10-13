@@ -35,6 +35,7 @@ type CommandOptsType struct {
 	ShellOpts   []string                  `json:"shellOpts,omitempty"`
 	SwapToken   *shellutil.TokenSwapEntry `json:"swapToken,omitempty"`
 	ForceJwt    bool                      `json:"forcejwt,omitempty"`
+	BlockId     string                    `json:"-"` // registers the shell's job as owned by this block
 }
 
 type ShellProc struct {
@@ -245,7 +246,7 @@ func StartLocalShellProc(logCtx context.Context, termSize waveobj.TermSize, cmdS
 	if err != nil {
 		return nil, err
 	}
-	cmdWrap := MakeCmdWrap(ecmd, cmdPty, isShell)
+	cmdWrap := MakeCmdWrap(ecmd, cmdPty, isShell, cmdOpts.BlockId)
 	return &ShellProc{Cmd: cmdWrap, ConnName: connName, CloseOnce: &sync.Once{}, DoneCh: make(chan any)}, nil
 }
 

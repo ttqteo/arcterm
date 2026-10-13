@@ -44,8 +44,11 @@ export interface PetEvent {
     detail?: string;
     // a notification's level, which is the only register that names one
     level?: NotifyLevel;
-    // address of the thing that raised this event (an ask's block oref) — carried for the peek to open
+    // address of the thing that raised this event (an ask's or a notice's block oref) — carried for the
+    // peek to open, and for a notice's bubble to name its agent
     ref?: string;
+    // said once: spoken like any other, but never remembered, and its bubble leaving marks nothing unread
+    transient?: boolean;
     reportedAsCondition?: boolean;
     // Set on any utterance that has products to open: volunteered knowledge carries one, a distillation
     // pass carries the notes it wrote. An utterance with none is either housekeeping that produced nothing
@@ -128,10 +131,25 @@ export function nextUtterance(events: PetEvent[], seen: PetWatermark | null): Pe
     // narrating twenty stale ones one bubble at a time. The rest are recoverable from the peek.
     const newestFirst = [...unseen].sort((a, b) => (isNewer(a, b) ? -1 : 1));
     const newest = newestFirst[0];
-    const heard = newestFirst.filter((e) => e.reportedAsCondition !== true);
+    const speakable = newestFirst.filter((e) => e.reportedAsCondition !== true);
     return {
-        utterance: heard[0] ?? null,
+        utterance: speakable[0] ?? null,
         watermark: { at: newest.at, id: newest.id },
-        heard,
+        heard: speakable.filter((e) => e.transient !== true),
     };
+}
+
+// The unread marker stands for what the peek can read back, and a said-once utterance is never there. So
+// saying one clears nothing: the marker stays if it was set, and is set for a kept bubble it pushed aside
+// unopened or for anything else the same burst remembered. A kept utterance is its own notice.
+export function unreadAfterSaying(speech: PetSpeech, showing: PetEvent | null, unread: boolean): boolean {
+    if (speech.utterance?.transient !== true) {
+        return false;
+    }
+    return unread || (showing != null && showing.transient !== true) || speech.heard.length > 0;
+}
+
+// a bubble that left unopened is unread, unless it was said once: then there is nothing to go and read
+export function unreadAfterLeaving(left: PetEvent | null, unread: boolean): boolean {
+    return left?.transient === true ? unread : true;
 }

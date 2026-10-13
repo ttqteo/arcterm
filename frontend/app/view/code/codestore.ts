@@ -13,6 +13,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { parseGitChanges } from "@/app/view/agents/gitstatus";
 import { buildProjectList, projectsAtom } from "@/app/view/agents/projectsstore";
+import { landOn } from "@/app/view/jarvis/returnsurface";
 import { joinRepoPath, repoBasename, sameRepoPath } from "@/util/paths";
 import { base64ToString, fireAndForget, stringToBase64 } from "@/util/util";
 import { atom, type Getter, type PrimitiveAtom } from "jotai";
@@ -1056,7 +1057,7 @@ export async function openInCode(
     globalStore.set(codeCursorAtom, target.rel);
     // set before the read: the viewer honors this the moment the text lands
     globalStore.set(codePendingLineAtom, target.line ?? null);
-    globalStore.set(model.surfaceAtom, "code");
+    landOn(model.surfaceAtom, "code");
     await openPath(target.rel, { line: target.line ?? null });
 }
 

@@ -43,8 +43,9 @@ const dagOneDagPerRunNote = `
 
 A run holds exactly one dag for its whole lifetime: the first submission wins and a later,
 differing one is rejected as a dag conflict. There is no multi-phase import, so a plan that
-does not fit in one dag must be split across two runs. A fix round after a failed final stage
-extends the same dag instead: --round appends the fix plan's tasks.`
+does not fit in one dag must be split across two runs. A round after the final stage finishes (a fix
+for a failure, or a finished run's in-goal leftovers) extends the same dag instead: --round appends
+the fix plan's tasks.`
 
 // dagSpecPath resolves --spec to an absolute path. A spec is committed with the plan it produced, so it is
 // only accepted beside --plan.
@@ -1091,7 +1092,7 @@ func dagRulesText(ctx *wshrpc.CommandJarvisCtxRtnData, st *wshrpc.CommandDagStat
 		return ""
 	}
 	g := st.Group
-	return jarvis.OrchestrationRules(ctx.RunId, orchestrate.DocPath(g, tree, g.SpecPath), orchestrate.DocPath(g, tree, g.PlanPath))
+	return jarvis.OrchestrationRules(ctx.RunId, orchestrate.DocPath(g, tree, g.SpecPath), orchestrate.DocPath(g, tree, g.PlanPath), g.EffortOID)
 }
 
 // leadTree is the root of the repository tree the caller runs in, which for a lead is its landing tree,

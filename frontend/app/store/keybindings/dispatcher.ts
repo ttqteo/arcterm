@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { resmonOpenAtom } from "@/app/cockpit/resmonstore";
 import { anyDialogOpen, anyModalOpen } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
 import { modalsModel } from "@/app/store/modalmodel";
@@ -119,6 +120,8 @@ export function deriveKeyContext(): KeyContext {
         globalStore.get(floatMiniAtom) ||
         // the Ctrl+Tab switcher over the terminal: its Escape closes it (switcher:cancel), not the surface underneath
         globalStore.get(tabSwitcherAtom) != null ||
+        // the Resource Manager popover is window chrome too, and its arrows, Enter, x and Escape are surface keys
+        globalStore.get(resmonOpenAtom) ||
         globalStore.get(modalsModel.modalsAtom).length > 0 ||
         // and every other ModalShell dialog (the cheat sheet, a confirm, the tool detail): without an atom above, Escape
         // and j/k/d/f acted on the surface behind it. A sheet does not count: its surface's keys stay live.

@@ -53,6 +53,7 @@ import { floatModeAtom, toggleFloat } from "./floatstore";
 import { agentGridAtom, currentGrid, eligibleIds, openInSplit, removeFromGrid } from "./gridstore";
 import { liveTokensAtom } from "./livetokensstore";
 import { rosterSeededAtom } from "./liveagents";
+import { isFinalStageId } from "./finalstage";
 import { railVisibleAtom, terminalFullscreenAtom } from "./railstore";
 import { agentProject, isEndedWorkerId, leadAgentOf } from "./runlineage";
 import { startedRunsText } from "./runorigin";
@@ -226,6 +227,8 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const blockId = agent.blockId;
     // a done task's worker reads as what its task came to, not as an idle session
     const ended = isEndedWorkerId(agent.id);
+    // the final stage's own id is no session: it has no runtime, and its pane says its state
+    const stage = isFinalStageId(agent.id);
     const landed = lineage?.kind === "worker" && lineage.task?.merged;
     const liveText = agent.state === "asking" ? askingLabel(agent) : STATE_LABEL[agent.state];
     const stateText = ended ? (landed ? "landed" : "done") : liveText;
@@ -371,7 +374,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
             onContextMenu={onContextMenu}
             className="flex shrink-0 select-none items-center gap-[10px] border-b border-border bg-background px-[18px] py-[8px]"
         >
-            {ended ? (
+            {stage ? null : ended ? (
                 <span className="h-[8px] w-[8px] shrink-0 rounded-full" style={{ background: stateColor }} />
             ) : (
                 <StatusDot state={agent.state} pulse={agent.state !== "idle"} className="!h-[8px] !w-[8px]" />
@@ -389,21 +392,25 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                     ) : null}
                     {name}
                 </span>
-                <span title={rt.label} className={cn("flex-none self-center", rt.text)}>
-                    <RuntimeMark runtime={agent.agent} className="text-[12px] leading-none" />
-                </span>
-                {queued ? (
-                    <QueuedJobTag job={queued} />
-                ) : (
-                    <span
-                        className={cn(
-                            "flex-none text-[11px] font-medium transition-colors duration-[140ms]",
-                            settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none"
+                {stage ? null : (
+                    <>
+                        <span title={rt.label} className={cn("flex-none self-center", rt.text)}>
+                            <RuntimeMark runtime={agent.agent} className="text-[12px] leading-none" />
+                        </span>
+                        {queued ? (
+                            <QueuedJobTag job={queued} />
+                        ) : (
+                            <span
+                                className={cn(
+                                    "flex-none text-[11px] font-medium transition-colors duration-[140ms]",
+                                    settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none"
+                                )}
+                                style={{ color: stateColor }}
+                            >
+                                {stateText}
+                            </span>
                         )}
-                        style={{ color: stateColor }}
-                    >
-                        {stateText}
-                    </span>
+                    </>
                 )}
                 {agent.model ? <span className="flex-none text-[11px] text-muted">{agent.model}</span> : null}
                 {agent.usage?.contextpct != null ? (

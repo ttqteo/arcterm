@@ -138,6 +138,7 @@ func TestGetRunsBySessionIds(t *testing.T) {
 		{ID: uuid.NewString(), Goal: "a", SessionId: "s-a"},
 		{ID: uuid.NewString(), Goal: "b", SessionId: "s-b"},
 		{ID: uuid.NewString(), Goal: "none"},
+		{ID: uuid.NewString(), Goal: "lead", SessionId: "s-lead-2", LeadSessionIds: []string{"s-lead-1", "s-lead-2"}},
 	} {
 		if err := AppendRun(ctx, ch.OID, r); err != nil {
 			t.Fatal(err)
@@ -149,6 +150,20 @@ func TestGetRunsBySessionIds(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Goal != "a" {
 		t.Fatalf("want only the run launched under s-a, got %+v", got)
+	}
+	got, err = GetRunsBySessionIds(ctx, []string{"s-lead-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Goal != "lead" {
+		t.Fatalf("want the lead run found by an earlier lead session, got %+v", got)
+	}
+	got, err = GetRunsBySessionIds(ctx, []string{"s-lead-1", "s-lead-2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("a run matching on both fields comes back once, got %+v", got)
 	}
 	if none, err := GetRunsBySessionIds(ctx, nil); err != nil || len(none) != 0 {
 		t.Fatalf("no ids: want nothing, got %v %v", none, err)

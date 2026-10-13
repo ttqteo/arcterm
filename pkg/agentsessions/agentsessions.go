@@ -1052,7 +1052,7 @@ func extractPiSession(file *pisession.File, path string) *SessionInfo {
 		ResumeCommand:  "pi --session " + path,
 		ResumeArgs:     []string{"--session", path},
 	}
-	title, firstUser := piBranchMeta(branch)
+	title, firstUser := pisession.BranchMeta(branch)
 	task := title
 	if task == "" {
 		task = firstUser
@@ -1080,58 +1080,6 @@ func extractPiSession(file *pisession.File, path string) *SessionInfo {
 	return s
 }
 
-// piBranchMeta folds the active parent chain into a display task: the latest session_info.name wins,
-// else the first active user message's text. Both are only ever read off the active branch, so an
-// abandoned sibling's title or text cannot leak into this session's task.
-func piBranchMeta(branch []pisession.Entry) (title, firstUser string) {
-	for _, e := range branch {
-		if e.Type == "session_info" && strings.TrimSpace(e.Name) != "" {
-			title = strings.TrimSpace(e.Name)
-		}
-	}
-	if title != "" {
-		return title, ""
-	}
-	for _, e := range branch {
-		if txt := piUserText(e.Message); txt != "" {
-			return "", txt
-		}
-	}
-	return "", ""
-}
-
-// piUserText returns the first human text of a Pi message record, or "" when the record is not a user
-// message (tool results, assistant turns). Content may be a plain string or an array of blocks.
-func piUserText(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var m struct {
-		Role    string          `json:"role"`
-		Content json.RawMessage `json:"content"`
-	}
-	if json.Unmarshal(raw, &m) != nil || m.Role != "user" {
-		return ""
-	}
-	var str string
-	if json.Unmarshal(m.Content, &str) == nil {
-		return strings.TrimSpace(str)
-	}
-	var blocks []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	}
-	if json.Unmarshal(m.Content, &blocks) != nil {
-		return ""
-	}
-	for _, b := range blocks {
-		if b.Type == "text" && strings.TrimSpace(b.Text) != "" {
-			return strings.TrimSpace(b.Text)
-		}
-	}
-	return ""
-}
-
 // extractPiEvents derives lifecycle events from a parsed Pi session file. Pi v3 carries no lifecycle
 // event stream, so the surface gets a synthetic "started" anchored on the header timestamp.
 func extractPiEvents(file *pisession.File) sessionEvents {
@@ -1139,7 +1087,7 @@ func extractPiEvents(file *pisession.File) sessionEvents {
 	if err != nil {
 		return sessionEvents{}
 	}
-	title, firstUser := piBranchMeta(branch)
+	title, firstUser := pisession.BranchMeta(branch)
 	startedText := "started session"
 	if title != "" {
 		startedText = clipText(title)

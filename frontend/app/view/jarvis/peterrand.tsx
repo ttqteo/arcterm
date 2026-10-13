@@ -144,11 +144,7 @@ export function PetErrand({
             </div>
 
             <div className="flex min-w-0 items-center gap-1.5">
-                <HarnessPicker
-                    operation="consult"
-                    placement="top-start"
-                    className={compact ? "min-w-0 max-w-[110px]" : undefined}
-                />
+                <HarnessPicker operation="consult" placement="top-start" />
                 {options.length > 0 ? (
                     <select
                         data-pet-errand-dest

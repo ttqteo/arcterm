@@ -25,7 +25,13 @@ import {
 import { useAtomValue } from "jotai";
 import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
-import { harnessesAtom, harnessPreferenceAtom, setPreferredHarness } from "./harnessstore";
+import {
+    harnessesAtom,
+    harnessesLoadingAtom,
+    harnessPreferenceAtom,
+    loadHarnesses,
+    setPreferredHarness,
+} from "./harnessstore";
 import { RuntimeMark } from "./runtimemark";
 
 export type HarnessOperation = "consult" | "run-worker";
@@ -101,8 +107,16 @@ interface HarnessPickerProps {
 export function HarnessPicker({ operation, placement = "top-start", className, openRequest = 0 }: HarnessPickerProps) {
     const pref = useAtomValue(harnessPreferenceAtom);
     const harnesses = useAtomValue(harnessesAtom);
+    const loading = useAtomValue(harnessesLoadingAtom);
     const [open, setOpen] = useState(false);
     useEffect(() => () => setOpen(false), []);
+    // the catalog loads once at boot and a failed load is never retried, so the face would read
+    // "Unknown: <runtime>" for the rest of the session; mounting with an empty catalog retries it
+    useEffect(() => {
+        if (harnesses.length === 0 && !loading) {
+            void loadHarnesses();
+        }
+    }, []);
     useEffect(() => {
         if (openRequest > 0) {
             setOpen(true);

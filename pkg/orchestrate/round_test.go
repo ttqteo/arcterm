@@ -116,7 +116,7 @@ func TestAppendRoundExtendsTheDagAndCutsFromTheLandingHead(t *testing.T) {
 	}
 }
 
-// a round is refused unless the final stage failed with a round left (Review Focus)
+// a round is refused unless the final stage finished with a round left (Review Focus)
 func TestCheckFixRoundRefuses(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -124,15 +124,17 @@ func TestCheckFixRoundRefuses(t *testing.T) {
 		status  string
 		errPart string
 	}{
-		{"no final stage yet", nil, "", "the final stage has not failed"},
-		{"a round not started", &waveobj.FinalStage{Round: 2}, "", "the final stage has not failed"},
-		{"running its commands", &waveobj.FinalStage{State: FinalState_Checking, Round: 1}, "", "the final stage has not failed"},
-		{"its verifier judging", &waveobj.FinalStage{State: FinalState_Verifying, Round: 1}, "", "the final stage has not failed"},
-		{"passed", &waveobj.FinalStage{State: FinalState_Passed, Round: 1}, "", "the final stage has not failed"},
-		{"unverified", &waveobj.FinalStage{State: FinalState_Unverified, Round: 1}, "", "the final stage has not failed"},
+		{"no final stage yet", nil, "", "the final stage has not finished"},
+		{"a round not started", &waveobj.FinalStage{Round: 2}, "", "the final stage has not finished"},
+		{"running its commands", &waveobj.FinalStage{State: FinalState_Checking, Round: 1}, "", "the final stage has not finished"},
+		{"its verifier judging", &waveobj.FinalStage{State: FinalState_Verifying, Round: 1}, "", "the final stage has not finished"},
 		{"failed the last round", &waveobj.FinalStage{State: FinalState_Failed, Round: MaxFinalRounds}, "", "no fix rounds left; forward to the human"},
-		{"cancelled", &waveobj.FinalStage{State: FinalState_Failed, Round: 1}, DagStatus_Cancelled, "cancelled"},
+		{"passed the last round", &waveobj.FinalStage{State: FinalState_Passed, Round: MaxFinalRounds}, "", "no rounds left"},
+		{"unverified in the last round", &waveobj.FinalStage{State: FinalState_Unverified, Round: MaxFinalRounds}, "", "effort chunks"},
+		{"cancelled", &waveobj.FinalStage{State: FinalState_Passed, Round: 1}, DagStatus_Cancelled, "cancelled"},
 		{"failed with a round left", &waveobj.FinalStage{State: FinalState_Failed, Round: 1}, "", ""},
+		{"passed with a round left", &waveobj.FinalStage{State: FinalState_Passed, Round: 1}, "", ""},
+		{"unverified with a round left", &waveobj.FinalStage{State: FinalState_Unverified, Round: 1}, "", ""},
 	}
 	for _, c := range cases {
 		g := mustGroup(t, []waveobj.TaskNode{{ID: "t-1", Label: "a"}})
@@ -214,5 +216,30 @@ func TestCheckFixPlanCommandsRefusesADifferentCommand(t *testing.T) {
 				t.Fatalf("want the %s line refused, got %v", c.refused, err)
 			}
 		})
+	}
+}
+
+// a run that passed takes one cleanup round: it runs again, and the passed round is kept beside the new one
+func TestAppendRoundAfterAPassedFinalStage(t *testing.T) {
+	f, _ := failedFinalFixture(t, 1)
+	if err := wstore.UpdateDag(f.ctx, f.dagID, func(cur *waveobj.TaskGroup) error {
+		cur.Final = &waveobj.FinalStage{State: FinalState_Passed, Round: 1}
+		RecomputeDagStatus(cur)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	g, err := AppendRound(f.ctx, f.dagID, "docs/fix.md", fixPlanTasks(t))
+	if err != nil {
+		t.Fatalf("a passed stage with a round left takes a round: %v", err)
+	}
+	if len(g.Tasks) != 9 || g.Tasks[7].State != TaskState_Pending || g.Status != DagStatus_Running {
+		t.Fatalf("the round's tasks are pending and the dag runs again, got %d tasks, t-8 %s, dag %s", len(g.Tasks), g.Tasks[7].State, g.Status)
+	}
+	if !reflect.DeepEqual(g.Final, &waveobj.FinalStage{Round: 2}) {
+		t.Fatalf("round 2 is set up but not started, got %+v", g.Final)
+	}
+	if len(g.PastFinals) != 1 || g.PastFinals[0].State != FinalState_Passed {
+		t.Fatalf("the passed round is kept in pastfinals, got %+v", g.PastFinals)
 	}
 }

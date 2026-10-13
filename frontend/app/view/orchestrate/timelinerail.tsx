@@ -6,6 +6,7 @@
 // is reused from the run body's runtimeline.ts, so the two timelines cannot describe the same row
 // differently.
 
+import { PaneReveal } from "@/app/element/panereveal";
 import { SkeletonLine } from "@/app/element/skeleton";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
@@ -17,6 +18,7 @@ import { useMemo, useState } from "react";
 import { retryRunEvents, useRunEventsState } from "../agents/runeventstore";
 import { eventTitle, toneFor, tsLabel } from "../agents/runtimeline";
 import { setActiveRunId } from "../jarvis/jarvissubjectstore";
+import { selectedTaskOf } from "./dagfinal";
 import { dagModalAgentsContextAtom } from "./dagmodalstate";
 import { hoveredTaskAtom, selectedTaskIdAtom } from "./dagstore";
 import { relaunchLeadAction } from "./relaunchlead";
@@ -58,7 +60,8 @@ export type TimelineRailProps = {
 
 export function TimelineRail({ channelId, runId, layout }: TimelineRailProps) {
     const { events, status } = useRunEventsState(runId, channelId);
-    const selectedTaskId = useAtomValue(selectedTaskIdAtom);
+    // the final node shares the graph's selection; here it reads as no task selected
+    const selectedTaskId = selectedTaskOf(useAtomValue(selectedTaskIdAtom));
     const [hovered, setHovered] = useAtom(hoveredTaskAtom);
     const agentsCtx = useAtomValue(dagModalAgentsContextAtom);
     const tick = useAtomValue(agentsCtx?.model.nowAtom ?? NO_NOW_ATOM);
@@ -112,85 +115,78 @@ export function TimelineRail({ channelId, runId, layout }: TimelineRailProps) {
                 onToggle={() => setDrawerOpen((o) => !o)}
                 onRetry={() => fireAndForget(() => retryRunEvents(runId, channelId))}
             />
-            {open && (
-                <>
-                    <ActivityStrip events={events} nowMs={nowMs} focusTaskId={selectedTaskId ?? graphHoverId} />
-                    <div className="flex flex-none gap-1 border-b border-border px-2 py-1.5">
-                        {FILTERS.map((f) => {
-                            const count = filterGroups(groups, f.id, selectedTaskId).length;
-                            const showCount = f.id !== "task" || selectedTaskId != null;
-                            return (
-                                <button
-                                    key={f.id}
-                                    type="button"
-                                    onClick={() => setFilter(f.id)}
-                                    aria-pressed={filter === f.id}
-                                    className={cn(
-                                        "flex cursor-pointer items-center gap-1.5 rounded-[5px] px-2 py-0.5 text-[10.5px] tabular-nums tracking-[0.04em] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
-                                        filter === f.id
-                                            ? "bg-accent/12 text-accent-soft"
-                                            : "text-ink-mid hover:text-ink-hi"
-                                    )}
-                                >
-                                    {f.id === "task" && selectedTaskId ? `Task · ${selectedTaskId}` : f.label}
-                                    {showCount && (
-                                        <span
-                                            className={
-                                                f.id === "attention" && count > 0 ? "text-warning" : "text-muted"
+            {/* flex-1 only in the rail: in the drawer a 0% basis would ignore the animated height */}
+            <PaneReveal open={open} className={cn("flex min-h-0 flex-col", layout === "rail" && "flex-1")}>
+                <ActivityStrip events={events} nowMs={nowMs} focusTaskId={selectedTaskId ?? graphHoverId} />
+                <div className="flex flex-none gap-1 border-b border-border px-2 py-1.5">
+                    {FILTERS.map((f) => {
+                        const count = filterGroups(groups, f.id, selectedTaskId).length;
+                        const showCount = f.id !== "task" || selectedTaskId != null;
+                        return (
+                            <button
+                                key={f.id}
+                                type="button"
+                                onClick={() => setFilter(f.id)}
+                                aria-pressed={filter === f.id}
+                                className={cn(
+                                    "flex cursor-pointer items-center gap-1.5 rounded-[5px] px-2 py-0.5 text-[10.5px] tabular-nums tracking-[0.04em] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
+                                    filter === f.id ? "bg-accent/12 text-accent-soft" : "text-ink-mid hover:text-ink-hi"
+                                )}
+                            >
+                                {f.id === "task" && selectedTaskId ? `Task · ${selectedTaskId}` : f.label}
+                                {showCount && (
+                                    <span className={f.id === "attention" && count > 0 ? "text-warning" : "text-muted"}>
+                                        {count}
+                                    </span>
+                                )}
+                            </button>
+                        );
+                    })}
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                    <div className="relative pt-1.5 pb-3">
+                        {rows.length > 0 && (
+                            <div
+                                aria-hidden="true"
+                                className="absolute top-3.5 bottom-3 left-[21px] w-px bg-edge-faint"
+                            />
+                        )}
+                        {showNow && <NowMarker nowMs={nowMs} />}
+                        {rows.length === 0 ? (
+                            <EmptyRows filter={filter} status={status} hasTask={selectedTaskId != null} />
+                        ) : (
+                            rows.map((row, i) =>
+                                row.kind === "gap" ? (
+                                    <GapRow key={`gap:${i}`} minutes={row.minutes} />
+                                ) : (
+                                    <GroupRow
+                                        key={row.group.id}
+                                        group={row.group}
+                                        events={events}
+                                        open={row.group.id === openGroupId}
+                                        selected={selectedTaskId != null && row.group.taskId === selectedTaskId}
+                                        graphHovered={graphHoverId != null && row.group.taskId === graphHoverId}
+                                        relaunching={relaunching}
+                                        relaunchError={relaunchError}
+                                        onRelaunch={() => void relaunchLead()}
+                                        onToggle={() => {
+                                            setOpenGroupId((id) => (id === row.group.id ? null : row.group.id));
+                                            applyTarget(eventClickTarget(row.group.head), channelId);
+                                        }}
+                                        onEnter={() => {
+                                            if (row.group.taskId) {
+                                                setHovered({ id: row.group.taskId, from: "timeline" });
                                             }
-                                        >
-                                            {count}
-                                        </span>
-                                    )}
-                                </button>
-                            );
-                        })}
-                    </div>
-                    <div className="min-h-0 flex-1 overflow-y-auto">
-                        <div className="relative pt-1.5 pb-3">
-                            {rows.length > 0 && (
-                                <div
-                                    aria-hidden="true"
-                                    className="absolute top-3.5 bottom-3 left-[21px] w-px bg-edge-faint"
-                                />
-                            )}
-                            {showNow && <NowMarker nowMs={nowMs} />}
-                            {rows.length === 0 ? (
-                                <EmptyRows filter={filter} status={status} hasTask={selectedTaskId != null} />
-                            ) : (
-                                rows.map((row, i) =>
-                                    row.kind === "gap" ? (
-                                        <GapRow key={`gap:${i}`} minutes={row.minutes} />
-                                    ) : (
-                                        <GroupRow
-                                            key={row.group.id}
-                                            group={row.group}
-                                            events={events}
-                                            open={row.group.id === openGroupId}
-                                            selected={selectedTaskId != null && row.group.taskId === selectedTaskId}
-                                            graphHovered={graphHoverId != null && row.group.taskId === graphHoverId}
-                                            relaunching={relaunching}
-                                            relaunchError={relaunchError}
-                                            onRelaunch={() => void relaunchLead()}
-                                            onToggle={() => {
-                                                setOpenGroupId((id) => (id === row.group.id ? null : row.group.id));
-                                                applyTarget(eventClickTarget(row.group.head), channelId);
-                                            }}
-                                            onEnter={() => {
-                                                if (row.group.taskId) {
-                                                    setHovered({ id: row.group.taskId, from: "timeline" });
-                                                }
-                                            }}
-                                            // a graph hover that began meanwhile is not the rail's to clear
-                                            onLeave={() => setHovered((h) => (h?.from === "timeline" ? null : h))}
-                                        />
-                                    )
+                                        }}
+                                        // a graph hover that began meanwhile is not the rail's to clear
+                                        onLeave={() => setHovered((h) => (h?.from === "timeline" ? null : h))}
+                                    />
                                 )
-                            )}
-                        </div>
+                            )
+                        )}
                     </div>
-                </>
-            )}
+                </div>
+            </PaneReveal>
         </div>
     );
 }

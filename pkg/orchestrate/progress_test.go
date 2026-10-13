@@ -16,6 +16,7 @@ import (
 func initRepoWithIgnore(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
+	useTestWorktreeRoot(t)
 	gitCmd(t, dir, "init", "-b", "main")
 	gitCmd(t, dir, "config", "user.email", "t@test")
 	gitCmd(t, dir, "config", "user.name", "t")

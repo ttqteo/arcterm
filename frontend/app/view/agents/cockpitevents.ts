@@ -61,7 +61,9 @@ export function agentTransitions(
 const RUN_KIND: Record<string, RailKind> = {
     "child-ask": "asked",
     "child-answered": "answered",
-    "task-done": "landed",
+    // a finished task lands only at its merge, which a held merge can put off indefinitely
+    "task-done": "finished",
+    "task-merged": "landed",
     "task-failed": "failed",
     "task-verify-failed": "failed",
     "lead-wake-failed": "failed",

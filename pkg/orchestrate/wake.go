@@ -448,7 +448,7 @@ func startLead(ctx context.Context, channelId, runId, wake string) error {
 	}
 	// the lead reads its own live copy in the landing tree, not a snapshot in some lane
 	land := jarvis.LandPath(run)
-	return LaunchLeadHook(ctx, channelId, runId, jarvis.PlanLeadPrompt(run.Principles, runId, DocPath(g, land, g.SpecPath), DocPath(g, land, g.PlanPath), wake))
+	return LaunchLeadHook(ctx, channelId, runId, jarvis.PlanLeadPrompt(run.Principles, runId, DocPath(g, land, g.SpecPath), DocPath(g, land, g.PlanPath), g.EffortOID, wake))
 }
 
 // RelaunchLead brings back a lead that died after its plan was submitted. The replacement is told the

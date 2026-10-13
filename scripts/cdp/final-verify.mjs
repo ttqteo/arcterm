@@ -12,10 +12,10 @@
 //
 // ARC_FINAL_DEV_CMD (default `task dev` with the port override, or `task dev:browser`), ARC_FINAL_BOOT_MS (default 10 min, a cold cargo
 // build), ARC_FINAL_VITE_PORT (the first port tried) and ARC_FINAL_LOCK_WAIT_MS (default 10 min) exist so the test
-// can drive the boot path without a real app.
+// can drive the boot path without a real app. The lock wait is for a free build slot.
 //
-// Final stages run one at a time: they share the cargo target dir, and `cargo tauri dev` runs the exe it builds
-// there, so a second stage's build would overwrite the exe the first is running.
+// BUILD_SLOTS final stages run at once, each holding one slot: a slot is a cargo target dir, and `cargo tauri dev`
+// runs the exe it builds there, so a second stage building into it would overwrite the exe the first is running.
 //
 // The user's packaged arcterm shares the dev app's image names, so only the PID this script spawned is ever killed.
 import { execFileSync, spawn } from "node:child_process";
@@ -40,10 +40,20 @@ const FIRST_VITE_PORT = 5175;
 // install replaces its junction with a real dir without touching the main checkout's
 const BUILD_JUNCTIONS = ["dist/bin", "src-tauri/target"];
 const FINAL_BASE = join(process.env.LOCALAPPDATA || join(homedir(), ".cache"), "arc-final");
-// one target dir for every final stage, outside any checkout: only the first pays the cold cargo build
-const FINAL_TARGET_DIR = join(FINAL_BASE, "target");
+// each slot is a target dir outside any checkout that pays one cold cargo build and then stays warm (~4.5 GB each)
+export const BUILD_SLOTS = 3;
+// keeps the port scans of stages on different slots apart: they pick ports long before anything binds them
+const SLOT_PORT_STRIDE = 20;
 const STORE_ID_LEN = 8;
-const STORES_DIR = join(FINAL_BASE, "stores");
+// a store's files can stay held for seconds after its dev app is killed; up to 10s before leaving it to the sweep
+const STORE_DROP_RETRIES = 20;
+const STORE_DROP_RETRY_MS = 500;
+
+// slot 0 keeps the names a checkout's older copy of this script uses, so that copy and this one still exclude each
+// other there
+function slotPath(name, slot) {
+    return join(FINAL_BASE, slot ? `${name}-${slot}` : name);
+}
 // where verify.mjs writes its shots, contact sheet and shots.json, relative to the tree it runs in
 const SHOTS_DIR = "cdp-shots";
 // with the 10 min boot and the verify run, a stage that waited this long still ends inside the engine's 30 min
@@ -52,8 +62,8 @@ const DEFAULT_LOCK_WAIT_MS = 600_000;
 
 // the dev app's store. wavesrv binds <store>/data/wave.sock and windows caps a unix socket path at 108 bytes, which
 // a store under ARC_FINAL_OUT (itself under %TEMP%) can pass, so it lives under a short path keyed by the out dir
-function storeDir(out) {
-    return join(STORES_DIR, createHash("sha1").update(out).digest("hex").slice(0, STORE_ID_LEN));
+function storeDir(out, slot) {
+    return join(slotPath("stores", slot), createHash("sha1").update(out).digest("hex").slice(0, STORE_ID_LEN));
 }
 
 // keeps the dev app's log for whoever reads the result, then drops the throwaway store
@@ -62,14 +72,20 @@ function dropStore(store, out) {
     try {
         const log = join(store, "data", "waveapp.log");
         if (existsSync(log)) cpSync(log, join(out, "waveapp.log"));
-        rmSync(store, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
     } catch (e) {
-        console.log(`could not keep the log and drop the dev app's store ${store}: ${e.message}`);
+        console.log(`could not keep the dev app's log from ${store}: ${e.message}`);
+    }
+    try {
+        rmSync(store, { recursive: true, force: true, maxRetries: STORE_DROP_RETRIES, retryDelay: STORE_DROP_RETRY_MS });
+    } catch (e) {
+        // workers reported the old "could not drop" line as a defect in six runs (09-18..10-12); the sweep makes it harmless
+        console.log(`the dev app's store ${store} is still held by a file handle; the next final stage on this slot drops it (${e.code ?? e.message})`);
     }
 }
 
-// drops every store under dir. Called holding the build lock, when no other stage is running, so each one is a stage's
-// that was killed before its finally ran or whose drop hit a file its dev app still held. Best-effort, like dropStore.
+// drops every store under dir, a slot's stores. Called holding that slot, when no other stage is running on it, so each
+// one is a stage's that was killed before its finally ran or whose drop hit a file its dev app still held. Best-effort,
+// like dropStore.
 export function sweepStaleStores(dir) {
     if (!existsSync(dir)) return;
     for (const name of readdirSync(dir)) {
@@ -86,10 +102,10 @@ export function sweepStaleStores(dir) {
 const MAX_SOCKET_PATH = 100;
 
 // the os drops a pipe or socket with its process, so a killed stage leaves no stale lock on windows. keyed by the
-// base, which is what the stages share. A posix socket lives in the base unless that path is too long for a socket,
-// then in the temp dir under the same key
-export function buildLockPath(base, platform = process.platform) {
-    const id = createHash("sha1").update(base).digest("hex").slice(0, STORE_ID_LEN);
+// base, which is what the stages share, and by the build slot. A posix socket lives in the base unless that path is
+// too long for a socket, then in the temp dir under the same key
+export function buildLockPath(base, slot = 0, platform = process.platform) {
+    const id = createHash("sha1").update(base).digest("hex").slice(0, STORE_ID_LEN) + (slot ? `-${slot}` : "");
     if (platform === "win32") return `\\\\.\\pipe\\arc-final-build-${id}`;
     const inBase = join(base, `build-${id}.sock`);
     return Buffer.byteLength(inBase) <= MAX_SOCKET_PATH ? inBase : join(tmpdir(), `arc-final-build-${id}.sock`);
@@ -125,15 +141,19 @@ async function dropStaleSocket(path) {
     if (!live) rmSync(path, { force: true });
 }
 
-// resolves the held lock (close it to release), or null when another stage kept it past waitMs
-export async function acquireBuildLock(path, waitMs) {
+// resolves the first free slot and its held lock (close it to release), or null when other stages kept every slot
+// past waitMs
+export async function acquireBuildSlot(base, waitMs, slots = BUILD_SLOTS) {
     const deadline = Date.now() + waitMs;
     for (let waited = false; ; waited = true) {
-        const lock = await listenOn(path);
-        if (lock) return lock;
+        for (let slot = 0; slot < slots; slot++) {
+            const path = buildLockPath(base, slot);
+            const lock = await listenOn(path);
+            if (lock) return { slot, lock };
+            await dropStaleSocket(path);
+        }
         if (Date.now() >= deadline) return null;
-        if (!waited) console.log("waiting for another final stage to finish with the shared build");
-        await dropStaleSocket(path);
+        if (!waited) console.log("waiting for another final stage to finish with a build slot");
         await new Promise((r) => setTimeout(r, POLL_MS));
     }
 }
@@ -308,16 +328,18 @@ async function main() {
     const bootMs = Number(process.env.ARC_FINAL_BOOT_MS) || DEFAULT_BOOT_MS;
     const lockWaitMs = Number(process.env.ARC_FINAL_LOCK_WAIT_MS) || DEFAULT_LOCK_WAIT_MS;
     mkdirSync(FINAL_BASE, { recursive: true });
-    // taken before the ports are picked too: two stages started together would otherwise pick the same free ports
-    const lock = await acquireBuildLock(buildLockPath(FINAL_BASE), lockWaitMs);
-    if (!lock) unverified(`another final stage held the shared build for ${Math.round(lockWaitMs / 1000)}s`);
-    const vitePort = await pickVitePort(Number(process.env.ARC_FINAL_VITE_PORT) || FIRST_VITE_PORT);
+    const held = await acquireBuildSlot(FINAL_BASE, lockWaitMs);
+    if (!held) unverified(`other final stages held every build slot for ${Math.round(lockWaitMs / 1000)}s`);
+    const { slot, lock } = held;
+    // two stages started together would otherwise pick the same free ports
+    const portOffset = slot * SLOT_PORT_STRIDE;
+    const vitePort = await pickVitePort((Number(process.env.ARC_FINAL_VITE_PORT) || FIRST_VITE_PORT) + portOffset);
     const mode = finalMode();
     mkdirSync(out, { recursive: true });
     unlinkBuildJunctions(process.cwd());
-    const store = storeDir(out);
-    sweepStaleStores(STORES_DIR);
-    const port = await pickPort();
+    const store = storeDir(out, slot);
+    sweepStaleStores(slotPath("stores", slot));
+    const port = await pickPort(DEFAULT_PORT + portOffset);
 
     let devCmd;
     let devEnv;
@@ -328,12 +350,14 @@ async function main() {
         const configPath = join(out, "tauri.final.json");
         writeFileSync(configPath, JSON.stringify(tauriConfig(vitePort), null, 2));
         devCmd = process.env.ARC_FINAL_DEV_CMD || `task dev -- --config "${configPath}"`;
-        const profile = join(out, "webview2-profile");
+        // inside the store, so it goes with it: nothing reads it after the run, and kept in ARC_FINAL_OUT it was ~76 MB
+            // a round for the 30 days the engine keeps that dir
+            const profile = join(store, "webview2-profile");
         mkdirSync(profile, { recursive: true });
         devEnv = {
             WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
             WEBVIEW2_USER_DATA_FOLDER: profile,
-            CARGO_TARGET_DIR: FINAL_TARGET_DIR,
+            CARGO_TARGET_DIR: slotPath("target", slot),
         };
     }
     // the dev app's output goes to a file so the last stdout line stays ours for the engine to read

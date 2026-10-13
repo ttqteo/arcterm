@@ -308,7 +308,7 @@ func runFinalSteps(ctx context.Context, dagID string, owner *waveobj.Run) finalR
 	if g.Check != "" {
 		var out string
 		if !step(FinalStep_Check, func(progress planProgress) bool {
-			out, err = runPlanCommand(jobqueue.WithSource(ctx, jobqueue.Source{RunId: owner.ID, Label: "Check"}), tree, g.Check, nil, VerifyTimeout, progress)
+			out, err = runPlanCommand(withRunCmdOwner(jobqueue.WithSource(ctx, jobqueue.Source{RunId: owner.ID, Label: "Check"}), owner.ID, PlanCmd_Check, ""), tree, g.Check, nil, VerifyTimeout, progress)
 			return err == nil
 		}) {
 			if !baseCheckFailed(g) {
@@ -324,7 +324,7 @@ func runFinalSteps(ctx context.Context, dagID string, owner *waveobj.Run) finalR
 		var out string
 		var flaky []string
 		if !step(FinalStep_Verify, func(progress planProgress) bool {
-			out, flaky, err = runVerifyCommand(jobqueue.WithSource(ctx, jobqueue.Source{RunId: owner.ID, Label: "Verify", Always: true}), tree, g.Verify, unscopedEnv, progress)
+			out, flaky, err = runVerifyCommand(withRunCmdOwner(jobqueue.WithSource(ctx, jobqueue.Source{RunId: owner.ID, Label: "Verify", Always: true}), owner.ID, PlanCmd_Verify, ""), tree, g.Verify, unscopedEnv, progress)
 			return err == nil
 		}) {
 			res.detail = fmt.Sprintf("Verify `%s` failed on the merged result (%s):\n%s", g.Verify, commandReason(err), out)
@@ -344,7 +344,7 @@ func runFinalSteps(ctx context.Context, dagID string, owner *waveobj.Run) finalR
 	var tail string
 	step(FinalStep_Final, func(progress planProgress) bool {
 		finalCtx := jobqueue.WithSource(ctx, jobqueue.Source{RunId: owner.ID, Label: "Final", Always: true, Peak: memgate.DevBytes})
-		exit, tail, err = runFinalCommand(finalCtx, tree, g.FinalCmd, g.Final.OutDir, finalCommandTimeout, progress)
+		exit, tail, err = runFinalCommand(withRunCmdOwner(finalCtx, owner.ID, PlanCmd_Final, ""), tree, g.FinalCmd, g.Final.OutDir, finalCommandTimeout, progress)
 		return err == nil && exit == 0
 	})
 	// whatever the exit: a failing scenario's screenshots are the ones worth seeing
@@ -701,9 +701,24 @@ func EndFinalStage(ctx context.Context, dagID, outcome, reason string) error {
 	return nil
 }
 
+// removeStaleFinalTree is removeWorktreeDir, a var so a test can leave a stale final tree in place on any platform.
+var removeStaleFinalTree = removeWorktreeDir
+
+// freeFinalTreeDir is the first directory beside a held final tree that nothing occupies: an earlier round's
+// stand-in can still be held too.
+func freeFinalTreeDir(held string) string {
+	for n := 2; ; n++ {
+		wt := fmt.Sprintf("%s-%d", held, n)
+		if _, err := os.Stat(wt); err != nil {
+			return wt
+		}
+	}
+}
+
 // finalTree is where the final stage runs: the landing tree for a dag landing on its own branch. A dag landing
 // in the checkout gets a detached worktree at the checkout's HEAD, prepared with Setup, because the stage never
-// runs in the shared checkout. cleanup removes a tree the stage made.
+// runs in the shared checkout: <run>-final, or a directory beside it while a stale one cannot be removed.
+// cleanup removes a tree the stage made.
 func finalTree(ctx context.Context, g *waveobj.TaskGroup, owner *waveobj.Run) (string, func(), error) {
 	if owner.LandPath != "" {
 		if err := checkLandingTree(ctx, owner); err != nil {
@@ -714,12 +729,26 @@ func finalTree(ctx context.Context, g *waveobj.TaskGroup, owner *waveobj.Run) (s
 	if !IsGitRepo(owner.ProjectPath) {
 		return "", nil, notGitRepo(owner.ProjectPath)
 	}
-	wt := worktreeDir(owner.ProjectPath, FinalWorktreeKey(owner.ID))
+	key := FinalWorktreeKey(owner.ID)
+	standIn := ""
 	// a tree a lost stage left behind would refuse the add
-	if _, err := os.Stat(wt); err == nil {
-		if err := removeWorktreeDir(ctx, owner.ProjectPath, wt); err != nil {
-			return "", nil, fmt.Errorf("removing a stale final tree: %w", err)
+	stale := worktreeDir(owner.ProjectPath, key)
+	if _, err := os.Stat(stale); err == nil {
+		if err := removeStaleFinalTree(ctx, owner.ProjectPath, stale); err != nil {
+			// a verifier that outlived its stage holds the directory on Windows until it exits, and the round
+			// must not wait for it
+			log.Printf("dag %s: removing a stale final tree, so the stage runs beside it: %v", g.OID, err)
+			removeFinalTree(g.OID, owner, stale)
+			standIn = freeFinalTreeDir(stale)
 		}
+	}
+	// claimed after the removal: a removed legacy tree comes back under the short root
+	wt, err := claimWorktreeDir(owner.ProjectPath, key)
+	if err != nil {
+		return "", nil, fmt.Errorf("creating the final tree: %w", err)
+	}
+	if standIn != "" {
+		wt = standIn
 	}
 	if _, err := addWorktree(ctx, owner.ProjectPath, "--detach", wt, "HEAD"); err != nil {
 		return "", nil, fmt.Errorf("creating the final tree: %w", err)
@@ -730,7 +759,7 @@ func finalTree(ctx context.Context, g *waveobj.TaskGroup, owner *waveobj.Run) (s
 		}
 	}
 	if g.Setup != "" {
-		if _, err := runPlanCommand(jobqueue.WithSource(ctx, jobqueue.Source{RunId: owner.ID, Label: "Setup · final tree"}), wt, g.Setup, nil, SetupTimeout, nil); err != nil {
+		if _, err := runPlanCommand(withRunCmdOwner(jobqueue.WithSource(ctx, jobqueue.Source{RunId: owner.ID, Label: "Setup · final tree"}), owner.ID, PlanCmd_Setup, ""), wt, g.Setup, nil, SetupTimeout, nil); err != nil {
 			cleanup()
 			return "", nil, fmt.Errorf("Setup failed in the final tree: %s", failureDetail(err))
 		}

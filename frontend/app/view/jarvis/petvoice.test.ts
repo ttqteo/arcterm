@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { bubbleMs, bubbleText, eventLabel, nextUtterance, type PetEvent, type PetWatermark } from "./petvoice";
+import {
+    bubbleMs,
+    bubbleText,
+    eventLabel,
+    nextUtterance,
+    unreadAfterLeaving,
+    unreadAfterSaying,
+    type PetEvent,
+    type PetWatermark,
+} from "./petvoice";
 
 function ev(id: string, at: number, extra: Partial<PetEvent> = {}): PetEvent {
     return { id, at, kind: "sweep", text: `event ${id}`, ...extra };
@@ -137,6 +146,41 @@ describe("heard — a burst stays reachable", () => {
         const old = ev("a", 1000);
         const fresh = ev("b", 2000);
         expect(nextUtterance([old, fresh], mark(old)).heard.map((e) => e.id)).toEqual(["b"]);
+    });
+});
+
+describe("said once", () => {
+    it("is the utterance, but is not remembered", () => {
+        const once = ev("b", 2000, { kind: "notify", transient: true });
+        const spoken = nextUtterance([ev("a", 1000), once], null);
+        expect(spoken.utterance).toEqual(once);
+        expect(spoken.heard.map((e) => e.id)).toEqual(["a"]);
+        expect(spoken.watermark).toEqual(mark(once));
+    });
+
+    it("leaves a normal event unchanged: spoken and remembered", () => {
+        const kept = ev("a", 1000, { kind: "notify" });
+        const spoken = nextUtterance([kept], null);
+        expect(spoken.utterance).toEqual(kept);
+        expect(spoken.heard).toEqual([kept]);
+    });
+
+    it("its bubble leaving marks nothing unread, where a kept one does", () => {
+        const once = ev("a", 1000, { transient: true });
+        expect(unreadAfterLeaving(once, false)).toBe(false);
+        expect(unreadAfterLeaving(once, true)).toBe(true);
+        expect(unreadAfterLeaving(ev("b", 1000), false)).toBe(true);
+    });
+
+    it("saying it keeps the marker for what is kept, and a kept utterance clears it", () => {
+        const once = ev("b", 2000, { transient: true });
+        const alone = nextUtterance([once], null);
+        expect(unreadAfterSaying(alone, null, false)).toBe(false);
+        expect(unreadAfterSaying(alone, null, true)).toBe(true);
+        // a kept bubble pushed aside unopened, and a kept event remembered in the same burst
+        expect(unreadAfterSaying(alone, ev("a", 1000), false)).toBe(true);
+        expect(unreadAfterSaying(nextUtterance([ev("a", 1000), once], null), null, false)).toBe(true);
+        expect(unreadAfterSaying(nextUtterance([ev("c", 3000)], null), once, true)).toBe(false);
     });
 });
 

@@ -538,6 +538,7 @@ func TestDagActionEscalatesToModel(t *testing.T) {
 func TestDagMergeTargetsChildWorktree(t *testing.T) {
 	ctx := context.Background()
 	projectDir := t.TempDir()
+	useTestWorktreeRoot(t)
 	execGit := func(args ...string) string {
 		out, err := exec.Command("git", append([]string{"-C", projectDir}, args...)...).CombinedOutput()
 		if err != nil {
@@ -586,7 +587,7 @@ func TestDagMergeTargetsChildWorktree(t *testing.T) {
 	}
 	// child commits feature work in its own worktree
 	key := orchestrate.TaskWorktreeKey(run.ID, "t-0")
-	wtPath := filepath.Join(projectDir, ".waveterm", "worktrees", key)
+	wtPath := orchestrate.WorktreeDir(projectDir, key)
 	if _, err := os.Stat(wtPath); err != nil {
 		t.Fatalf("expected task worktree at %s: %v", wtPath, err)
 	}
@@ -646,6 +647,7 @@ func TestDagMergeTargetsChildWorktree(t *testing.T) {
 func TestDagMergeContinueFinishesBlockedMerge(t *testing.T) {
 	ctx := context.Background()
 	projectDir := t.TempDir()
+	useTestWorktreeRoot(t)
 	execGit := func(args ...string) string {
 		out, err := exec.Command("git", append([]string{"-C", projectDir}, args...)...).CombinedOutput()
 		if err != nil {
@@ -695,7 +697,7 @@ func TestDagMergeContinueFinishesBlockedMerge(t *testing.T) {
 	// child edits base.txt in its worktree; the project main diverges on the same file so the
 	// eventual squash merge conflicts
 	key := orchestrate.TaskWorktreeKey(run.ID, "t-0")
-	wtPath := filepath.Join(projectDir, ".waveterm", "worktrees", key)
+	wtPath := orchestrate.WorktreeDir(projectDir, key)
 	if _, err := os.Stat(wtPath); err != nil {
 		t.Fatalf("expected task worktree at %s: %v", wtPath, err)
 	}
@@ -781,6 +783,7 @@ func TestDagMergeContinueFinishesBlockedMerge(t *testing.T) {
 func TestDagMergeCleanupFailurePersistsDebt(t *testing.T) {
 	ctx := context.Background()
 	projectDir := t.TempDir()
+	useTestWorktreeRoot(t)
 	execGit := func(args ...string) string {
 		out, err := exec.Command("git", append([]string{"-C", projectDir}, args...)...).CombinedOutput()
 		if err != nil {
@@ -828,7 +831,7 @@ func TestDagMergeCleanupFailurePersistsDebt(t *testing.T) {
 		t.Fatal(err)
 	}
 	key := orchestrate.TaskWorktreeKey(run.ID, "t-0")
-	wtPath := filepath.Join(projectDir, ".waveterm", "worktrees", key)
+	wtPath := orchestrate.WorktreeDir(projectDir, key)
 	if _, err := os.Stat(wtPath); err != nil {
 		t.Fatalf("expected task worktree at %s: %v", wtPath, err)
 	}

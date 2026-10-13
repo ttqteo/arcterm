@@ -2,18 +2,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The Route DAG's rendered pieces as ReactFlow node and edge types: the task card with its hover peek, the
-// dashed lane band, and the routed edge. Ported from the design canvas (dag-visualizer/Main.dc.html).
+// final stage's card, the dashed lane band, and the routed edge. Ported from the design canvas
+// (dag-visualizer/Main.dc.html).
 
 import { Tooltip } from "@/app/element/tooltip";
 import { Handle, Position, useInternalNode, type EdgeProps, type NodeProps } from "@xyflow/react";
 import { atom, useAtomValue, type Atom } from "jotai";
+import { createContext, useContext } from "react";
 import { runAtom } from "../agents/channelsstore";
+import type { FinalStageView, FinalTone } from "../agents/finalstage";
+import { FinalStepStrip } from "../agents/finalstageviews";
 import { InlineMarkdown } from "../agents/inlinemarkdown";
 import { ActivityLine } from "../agents/statusline";
 import { META_TEXT } from "../jarvis/briefstyle";
 import { glyphKind, kindOf, wordOf, type EdgeStyle, type GlyphKind, type NodeKind } from "./dagcanvas";
 import { descriptionLead } from "./dagdescription";
 import type { TaskBrief } from "./dagdigest";
+import { FINAL_NODE_ID } from "./dagfinal";
 import { CARD_H, CARD_W, edgeGeo, type Point, type Rect } from "./daglayout";
 import { dagModalAgentsContextAtom } from "./dagmodalstate";
 import { taskPeek } from "./dagpeek";
@@ -157,6 +162,62 @@ export function DagCardNode({ data }: NodeProps) {
     );
 }
 
+export type DagFinalData = { selected: boolean };
+
+// the stage's view reaches its card through context, not node data: the view is derived anew each render, and
+// as node data it would rebuild the graph's nodes every time
+export const FinalStageViewContext = createContext<FinalStageView | null>(null);
+
+// a failed stage is amber as the graph's attention cards are: the graph has no error-toned card
+const FINAL_GLYPH: Record<FinalTone, GlyphKind> = {
+    wait: "waiting",
+    run: "running",
+    pass: "done",
+    fail: "failed",
+    warn: "attention",
+};
+const FINAL_BORDER: Record<FinalTone, string> = {
+    wait: "border-edge-strong",
+    run: "border-accent/50",
+    pass: "border-edge-mid",
+    fail: "border-warning/55",
+    warn: "border-warning/55",
+};
+
+// the final stage as the graph's last node. It is not a task: nothing drags it and it has no peek.
+export function DagFinalNode({ data }: NodeProps) {
+    const { selected } = data as unknown as DagFinalData;
+    const view = useContext(FinalStageViewContext);
+    if (view == null) return null;
+    return (
+        <div className="relative">
+            <div
+                data-dag-node={FINAL_NODE_ID}
+                role="button"
+                aria-pressed={selected}
+                aria-label={`Final verification, ${view.headline}`}
+                style={{ width: CARD_W, height: CARD_H }}
+                className={`flex cursor-pointer select-none flex-col justify-between rounded-[11px] border bg-lane px-2.5 py-[7px] shadow-popover-line ${
+                    selected ? "border-accent ring-1 ring-accent" : FINAL_BORDER[view.tone]
+                }`}
+            >
+                <Handle type="target" position={Position.Left} isConnectable={false} className="!opacity-0" />
+                <div className="flex w-full items-start gap-2">
+                    <StateGlyph kind={FINAL_GLYPH[view.tone]} />
+                    <span className="min-w-0 truncate text-[12.5px] font-semibold leading-[17px] text-ink-hi">
+                        Final verification
+                    </span>
+                </div>
+                <span className={`truncate leading-[14px] ${META_TEXT}`}>{view.nodeMeta}</span>
+                <FinalStepStrip view={view} />
+            </div>
+            <span className="absolute left-0 top-full mt-[7px] whitespace-nowrap font-mono text-[10.5px] text-muted">
+                on the merged result
+            </span>
+        </div>
+    );
+}
+
 export function LaneBandNode({ data }: NodeProps) {
     const { rect, dimmed } = data as unknown as LaneBandData;
     return (
@@ -207,7 +268,7 @@ export function RoutedEdge({ source, target, data }: EdgeProps) {
     );
 }
 
-export const dagNodeTypes = { dagTask: DagCardNode, laneBand: LaneBandNode };
+export const dagNodeTypes = { dagTask: DagCardNode, dagFinal: DagFinalNode, laneBand: LaneBandNode };
 export const dagEdgeTypes = { routed: RoutedEdge };
 
 // TaskPeekCard is the hover peek: the description's lead, the rows taskPeek derives, plus the worker's live

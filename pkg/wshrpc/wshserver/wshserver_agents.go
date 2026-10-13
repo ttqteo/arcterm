@@ -55,7 +55,7 @@ func (ws *WshServer) GetSubagentsCommand(ctx context.Context, data wshrpc.Comman
 
 func usageBucketToWire(b usagestats.Bucket) wshrpc.UsageBucket {
 	return wshrpc.UsageBucket{
-		Harness: b.Harness, Provider: b.Provider, Model: b.Model, Day: b.Day,
+		Harness: b.Harness, Provider: b.Provider, Model: b.Model, Day: b.Day, Session: b.Session,
 		Input: b.Input, Output: b.Output, Reasoning: b.Reasoning,
 		CacheRead: b.CacheRead, CacheCreate: b.CacheCreate, CacheCreate1h: b.CacheCreate1h,
 		ReportedCostUsd: b.ReportedCostUsd, Msgs: b.Msgs,
@@ -63,7 +63,7 @@ func usageBucketToWire(b usagestats.Bucket) wshrpc.UsageBucket {
 }
 
 func (ws *WshServer) GetUsageStatsCommand(ctx context.Context, data wshrpc.CommandGetUsageStatsData) (*wshrpc.CommandGetUsageStatsRtnData, error) {
-	buckets, err := usagestats.ScanUsage(data.WindowDays)
+	buckets, metas, err := usagestats.ScanUsage(data.WindowDays)
 	if err != nil {
 		return nil, fmt.Errorf("scanning usage: %w", err)
 	}
@@ -71,7 +71,11 @@ func (ws *WshServer) GetUsageStatsCommand(ctx context.Context, data wshrpc.Comma
 	for i, b := range buckets {
 		out[i] = usageBucketToWire(b)
 	}
-	return &wshrpc.CommandGetUsageStatsRtnData{Buckets: out}, nil
+	sessions, err := usageSessions(ctx, metas)
+	if err != nil {
+		return nil, fmt.Errorf("linking usage sessions to runs: %w", err)
+	}
+	return &wshrpc.CommandGetUsageStatsRtnData{Buckets: out, Sessions: sessions}, nil
 }
 
 func sessionUsageToWire(s usagestats.SessionUsage) wshrpc.UsageSession {

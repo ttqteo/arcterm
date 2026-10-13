@@ -229,3 +229,13 @@ func TestDocPath(t *testing.T) {
 		}
 	}
 }
+
+func TestTreeTargetExplainsAPlanOutsideAnyRepository(t *testing.T) {
+	tree, _, _ := snapshotFixture(t)
+	outside := filepath.Join(t.TempDir(), "fix-plan.md")
+	writeDoc(t, outside, "# fix\n")
+	_, err := treeTarget(context.Background(), tree, outside)
+	if err == nil || !strings.Contains(err.Error(), outside) || !strings.Contains(err.Error(), "inside the repository") {
+		t.Fatalf("want an error naming %s and saying to write it inside the repository, got %v", outside, err)
+	}
+}

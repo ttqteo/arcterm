@@ -258,6 +258,52 @@ func TestTheVerifierBriefNamesWhatPassedAndItsBudget(t *testing.T) {
 	}
 }
 
+// the brief told the verifier not to run suites and also to list what it could not check, so it disclaimed the former
+func TestTheVerifierBriefBoundsWhatMayBeReportedUnverified(t *testing.T) {
+	g := &waveobj.TaskGroup{RunID: "run-1", Final: &waveobj.FinalStage{Round: 1, Tree: "/tree"}}
+	prompt := verifierPrompt(context.Background(), g, &waveobj.Run{})
+	for _, want := range []string{
+		"only for a behavior of this change that no check exercised and reading could not settle",
+		"Never use it for a command or suite the engine already ran or this brief told you not to run",
+		"or for a file or screenshot you did not open",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("the brief must contain %q:\n%s", want, prompt)
+		}
+	}
+	// the limit sits with the finishing commands, after the flag it bounds
+	if strings.Index(prompt, "--unverified") > strings.Index(prompt, "Never use it") {
+		t.Errorf("the bound must follow the flag it limits:\n%s", prompt)
+	}
+}
+
+func TestTheVerifierBriefCarriesTheFindingsAnAcceptedPlanReviewLeftOpen(t *testing.T) {
+	const finding = "Task 6 interactions with no scenario step"
+	for _, c := range []struct {
+		name  string
+		state string
+		want  bool
+	}{
+		{"accepted", PlanReviewState_Accepted, true},
+		{"passed", PlanReviewState_Passed, false},
+		{"failed", PlanReviewState_Failed, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			g := &waveobj.TaskGroup{RunID: "run-1", Final: &waveobj.FinalStage{Round: 1, Tree: "/tree"}, PlanReview: &waveobj.PlanReviewStage{State: c.state, Round: 2, Findings: finding}}
+			prompt := verifierPrompt(context.Background(), g, &waveobj.Run{})
+			if got := strings.Contains(prompt, finding); got != c.want {
+				t.Fatalf("findings in the brief = %v, want %v:\n%s", got, c.want, prompt)
+			}
+			if c.want && !strings.Contains(prompt, "accepted at plan review, not in `--unverified`") {
+				t.Fatalf("the brief must say where an accepted gap goes:\n%s", prompt)
+			}
+		})
+	}
+	if p := verifierPrompt(context.Background(), &waveobj.TaskGroup{Final: &waveobj.FinalStage{Round: 1}}, &waveobj.Run{}); strings.Contains(p, "plan review failed") {
+		t.Fatalf("a plan with no review has no findings to carry:\n%s", p)
+	}
+}
+
 func TestTheVerifierBriefNamesNoCommandsWhenThePlanHasNone(t *testing.T) {
 	g := &waveobj.TaskGroup{RunID: "run-1", Final: &waveobj.FinalStage{Round: 1, Tree: "/tree", Commit: "0123456789abcdef"}}
 	prompt := verifierPrompt(context.Background(), g, &waveobj.Run{})
