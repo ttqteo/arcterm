@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (Folded Spider-Man shows how many agents work)**
+
+- [ ] (arcterm) **Folded Spider-Man carries the count.** With Spider-Man as Jarvis and two or more agents working,
+  fold the window (Ctrl+M): beside the rooftop's top-right corner a pill shows his web and the number working, matching
+  `wsh agents list`'s `working` rows, also past four, where the lit windows stop; with none working and Jarvis idle the
+  pill is gone, and a waiting chip sits under the pill. `frontend/app/cockpit/sprout-mini.tsx`.
+
 **2026-10-13 (Sidebar: folds slide open and closed)**
 
 - [ ] (arcterm) **Sidebar folds animate.** Click the Active, Conversations and Terminals headers, and a project folder

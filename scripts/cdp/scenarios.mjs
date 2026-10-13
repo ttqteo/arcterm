@@ -6485,6 +6485,7 @@ const MINI_READ = `(() => {
         chipText: chip?.textContent?.trim() ?? null,
         chipBox: box(chip),
         web: !!document.querySelector("[data-sprout-mini] [data-working-web]"),
+        dots: document.querySelector("[data-sprout-mini] [data-working-dots]")?.textContent?.trim() ?? null,
         brick: ${petFillCount("[data-spidey-roof]", "--color-city-brick")},
         lit: ${petFillCount("[data-spidey-roof]", "--color-city-window-lit")},
         asking: ${petFillCount("[data-spidey-roof]", "--color-asking")},
@@ -7670,7 +7671,13 @@ const jarvisPet = {
         // the windows: 2x2 each, the first min(working, 4) lit
         const lit3 = await miniForce(h, { working: 3, waiting: 0, posture: "none" }, (r) => r.lit === 12 && r.look?.lit === 3);
         await miniShot(h, "jarvis-pet-22-windows");
-        const lit9 = await miniForce(h, { working: 9, waiting: 0, posture: "none" }, (r) => r.lit === 16 && r.look?.lit === 4);
+        // past four, the web beside him carries the count the windows cannot
+        const lit9 = await miniForce(
+            h,
+            { working: 9, waiting: 0, posture: "none" },
+            (r) => r.lit === 16 && r.look?.lit === 4 && r.web === true && r.dots === "9"
+        );
+        await miniShot(h, "jarvis-pet-22-count");
         const lit0 = await miniForce(h, { working: null, waiting: 0, posture: "none" }, (r) => r.lit === 0 && r.look?.lit === 0);
         // spider-sense: the eight amber jags for a posture or a count waiting, the chip at the right
         const sense1 = await miniForce(
@@ -7705,7 +7712,7 @@ const jarvisPet = {
         );
         await polishNap(1200);
         rec(
-            "22. folded, Spider-Man sits on a rooftop: the fold drew his web (departing or arriving), the rooftop is 60x60 in brick, the legs swing, 3 working agents light 3 windows (12 rects, 9 cap at 4), a posture or a waiting count raises 8 jags of spider-sense with the chip at the right, Jarvis thinking draws the web, and a double-click restores",
+            "22. folded, Spider-Man sits on a rooftop: the fold drew his web (departing or arriving), the rooftop is 60x60 in brick, the legs swing, 3 working agents light 3 windows (12 rects, 9 cap at 4 with the web reading 9), a posture or a waiting count raises 8 jags of spider-sense with the chip at the right, Jarvis thinking draws the web, and a double-click restores",
             folded22 === true &&
                 roofShown22 === true &&
                 (web22.footer > 0 || web22.mini > 0) &&
@@ -7720,6 +7727,8 @@ const jarvisPet = {
                 lit3.look?.lit === 3 &&
                 lit9.lit === 16 &&
                 lit9.look?.lit === 4 &&
+                lit9.web === true &&
+                lit9.dots === "9" &&
                 lit0.lit === 0 &&
                 sense1.asking === 8 &&
                 sense1.look?.sense === true &&
@@ -7735,7 +7744,7 @@ const jarvisPet = {
                 web: web22,
                 roof: { character: roof22.character, box: roof22.roof, brick: roof22.brick },
                 legs: { swung: swung22.length, still: still22.length, differ: modeSig(swung22) !== modeSig(still22) },
-                lit: { three: [lit3.lit, lit3.look?.lit], nine: [lit9.lit, lit9.look?.lit], none: [lit0.lit, lit0.look?.lit] },
+                lit: { three: [lit3.lit, lit3.look?.lit], nine: [lit9.lit, lit9.look?.lit, lit9.web, lit9.dots], none: [lit0.lit, lit0.look?.lit] },
                 sense: {
                     posture: [sense1.asking, sense1.look?.sense],
                     waiting: [sense2.asking, sense2.chipText, sense2.chipBox?.left, sense2.roof?.left, sense2.roof?.width],
