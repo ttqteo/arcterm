@@ -303,6 +303,9 @@ type Run struct {
 	// ReviewerRoute is the route task reviewers and stage sessions run on (nil = the lead's route). Only the
 	// human sets it; a submit carries it onto the group.
 	ReviewerRoute *RoutePin `json:"reviewerroute,omitempty"`
+	// Autonomous is the Approvals setting: the lead answers what would otherwise reach the human. Pending
+	// here before a dag exists; a submit carries it onto the group, which owns it after.
+	Autonomous bool `json:"autonomous,omitempty"`
 	// Orchestration selects which machine an orchestrator lead drives: "engine" publishes a TaskGroup
 	// that pkg/orchestrate schedules; "adaptive" dispatches the lead's own subagents with no TaskGroup.
 	// Empty preserves the pre-2026-09 fork, where runtime alone decided (pi engine, others adaptive).
@@ -506,6 +509,7 @@ type TaskGroup struct {
 	WorkerRoute   *RoutePin   `json:"workerroute,omitempty"`   // default worker route (nil = inherit owner); task RunSpec wins
 	ReviewerPicks bool        `json:"reviewerpicks,omitempty"` // the plan reviewer picks task models (false = the WorkerRoute rule stands)
 	ReviewerRoute *RoutePin   `json:"reviewerroute,omitempty"` // route for task reviewers and stage sessions (nil = the lead's route)
+	Autonomous    bool        `json:"autonomous,omitempty"`    // the lead answers what would otherwise reach the human
 	MergeRequired bool        `json:"mergerequired,omitempty"`
 	CreatedTs     int64       `json:"createdts"`
 	UpdatedTs     int64       `json:"updatedts"`
@@ -815,6 +819,8 @@ type JarvisProfile struct {
 	ReviewerRoute *RoutePin `json:"reviewerroute,omitempty"`
 	// Landing is where an engine run's lanes land: checkout | branch (empty = branch).
 	Landing string `json:"landing,omitempty"`
+	// Autonomous defaults a new orchestrator run's Approvals to Autonomous (false = Ask me).
+	Autonomous bool `json:"autonomous,omitempty"`
 }
 
 // ProfileOverride is a channel's per-project override, stored as JSON on channel meta. Pointer fields:
@@ -830,6 +836,7 @@ type ProfileOverride struct {
 	ReviewerPicks *bool     `json:"reviewerpicks,omitempty"`
 	ReviewerRoute *RoutePin `json:"reviewerroute,omitempty"`
 	Landing       *string   `json:"landing,omitempty"`
+	Autonomous    *bool     `json:"autonomous,omitempty"`
 }
 
 type Channel struct {

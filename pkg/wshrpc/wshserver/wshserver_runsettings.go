@@ -145,6 +145,7 @@ func (ws *WshServer) SetRunSettingsCommand(ctx context.Context, data wshrpc.Comm
 		WorkerRoute:   data.WorkerRoute,
 		ReviewerPicks: data.ReviewerPicks,
 		ReviewerRoute: data.ReviewerRoute,
+		Autonomous:    data.Autonomous,
 	}
 
 	for attempt := 0; attempt < runSettingsAttempts; attempt++ {

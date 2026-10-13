@@ -430,6 +430,9 @@ func (ws *WshServer) CreateRunCommand(ctx context.Context, data wshrpc.CommandCr
 	if data.Prototype != "" && !engineLaunch {
 		return nil, fmt.Errorf("prototype needs an orchestrator run: only the engine's final verifier reads it")
 	}
+	if data.Autonomous != nil && *data.Autonomous && !engineLaunch {
+		return nil, fmt.Errorf("autonomous needs an orchestrator run: only its lead answers for you")
+	}
 	orchestration := ""
 	if engineLaunch {
 		orchestration = jarvis.Orchestration_Engine
@@ -447,6 +450,9 @@ func (ws *WshServer) CreateRunCommand(ctx context.Context, data wshrpc.CommandCr
 		}
 		if data.ReviewerRoute == nil {
 			data.ReviewerRoute = resolved.ReviewerRoute
+		}
+		if data.Autonomous == nil {
+			data.Autonomous = &resolved.Autonomous
 		}
 	}
 	reviewerPicks := data.ReviewerPicks != nil && *data.ReviewerPicks
@@ -468,6 +474,7 @@ func (ws *WshServer) CreateRunCommand(ctx context.Context, data wshrpc.CommandCr
 	run.WorkerRoute = data.WorkerRoute
 	run.ReviewerPicks = reviewerPicks
 	run.ReviewerRoute = data.ReviewerRoute
+	run.Autonomous = data.Autonomous != nil && *data.Autonomous
 	run.Orchestration = orchestration // prompt-shaping only; DagSubmit stays open to either choice
 	// out-of-band widths are rejected rather than clamped: a caller asking for 40 workers has a wrong
 	// model of the engine, and silently running 8 would hide that.

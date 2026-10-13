@@ -354,6 +354,9 @@ func ResolveProfileWithDiagnostics(global waveobj.JarvisProfile, override *waveo
 		if override.Landing != nil {
 			out.Landing = *override.Landing
 		}
+		if override.Autonomous != nil {
+			out.Autonomous = *override.Autonomous
+		}
 	}
 	principles, diagnostics := ResolvePrinciples(global.Principles, patch)
 	out.Principles = principles
@@ -378,7 +381,7 @@ func ProfileOverrideIsEmpty(o *waveobj.ProfileOverride) bool {
 	}
 	return patch == nil && o.Route == nil && o.DefaultMode == nil &&
 		o.Parallelism == nil && o.WorkerRoute == nil && o.ReviewerPicks == nil && o.ReviewerRoute == nil &&
-		o.Landing == nil
+		o.Landing == nil && o.Autonomous == nil
 }
 
 func RenderPrinciples(items waveobj.PrincipleList) string {

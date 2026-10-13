@@ -856,3 +856,34 @@ func TestRunsQueuedReportSaysWhatBecameOfTheEntry(t *testing.T) {
 		t.Errorf("started already: %q", got)
 	}
 }
+
+func TestRunsStartDataAutonomous(t *testing.T) {
+	d, err := runsStartData(runsStartOpts{goal: "g", mode: jarvis.RunMode_Orchestrator, autonomous: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Autonomous == nil || !*d.Autonomous {
+		t.Fatalf("autonomous = %v, want &true", d.Autonomous)
+	}
+	if d, err = runsStartData(runsStartOpts{plan: "p.md", autonomous: true}); err != nil || d.Autonomous == nil || !*d.Autonomous {
+		t.Fatalf("a plan-file run: autonomous = %v, err = %v; want &true", d.Autonomous, err)
+	}
+	if _, err := runsStartData(runsStartOpts{goal: "g", autonomous: true}); err == nil || !strings.Contains(err.Error(), "--autonomous") {
+		t.Fatalf("a quick run: err = %v, want a refusal naming --autonomous", err)
+	}
+	if d, err = runsStartData(runsStartOpts{goal: "g", mode: jarvis.RunMode_Orchestrator}); err != nil || d.Autonomous != nil {
+		t.Fatalf("no flag: autonomous = %v, err = %v; want nil for the profile to decide", d.Autonomous, err)
+	}
+}
+
+func TestRunsShowLinesAutonomous(t *testing.T) {
+	ch := &waveobj.Channel{OID: "ch-1", Name: "waveterm"}
+	run := &waveobj.Run{ID: "r-1", Goal: "g", Status: "executing", Mode: "orchestrator", Runtime: "claude", CreatedTs: 1}
+	if out := strings.Join(runsShowLines(ch, run, nil, 2, nil), "\n"); strings.Contains(out, "autonomous") {
+		t.Fatalf("an Ask me run shows autonomous:\n%s", out)
+	}
+	run.Autonomous = true
+	if out := strings.Join(runsShowLines(ch, run, nil, 2, nil), "\n"); !strings.Contains(out, "autonomous") {
+		t.Fatalf("an autonomous run does not say so:\n%s", out)
+	}
+}

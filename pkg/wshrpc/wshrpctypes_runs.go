@@ -56,6 +56,9 @@ type CommandCreateRunData struct {
 	Prototype string `json:"prototype,omitempty"`
 	// OriginTabId is the tab of the session that ran `wsh runs start`; empty from the cockpit.
 	OriginTabId string `json:"origintabid,omitempty"`
+	// Autonomous is the Approvals setting; nil = the resolved profile's. An orchestrator run only: an explicit
+	// true on a quick run is refused.
+	Autonomous *bool `json:"autonomous,omitempty"`
 }
 
 type CommandCreateRunRtnData struct {
@@ -173,4 +176,6 @@ type CommandSetRunSettingsData struct {
 	// nil ReviewerRoute = the lead's route.
 	ReviewerPicks bool              `json:"reviewerpicks,omitempty"`
 	ReviewerRoute *waveobj.RoutePin `json:"reviewerroute,omitempty"`
+	// Autonomous is a pointer like Parallelism: nil leaves the Approvals setting unchanged.
+	Autonomous *bool `json:"autonomous,omitempty"`
 }
