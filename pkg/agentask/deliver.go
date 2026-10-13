@@ -50,7 +50,7 @@ var AnswerHook func(oref, askId string)
 // keystroke prefix into the picker, so the entry stays claimed (dropped) — restoring would risk a
 // double-send on retry.
 func DeliverAnswer(oref, askid string, answers []baseds.AgentAnswerItem) (bool, error) {
-	pending, ok := GlobalRegistry.Claim(oref, askid)
+	pending, ok := GlobalRegistry.claimToAnswer(oref, askid)
 	if !ok {
 		return false, fmt.Errorf("%w for %s", ErrNoPendingAsk, oref)
 	}
@@ -67,6 +67,7 @@ func injectAnswer(oref string, pending PendingAsk, answers []baseds.AgentAnswerI
 	// directly. pi has no native picker to drive, so keystrokes would type into the
 	// session; the waiter is the delivery. No waiter -> CC path (keystroke injection).
 	if GlobalRegistry.ResolveWaiter(pending.AskId, WaitResult{Answers: answers}) {
+		GlobalRegistry.endAnswer(oref, nil)
 		return true, nil
 	}
 	answers = foldAnswers(answers)
@@ -81,7 +82,7 @@ func injectAnswer(oref string, pending PendingAsk, answers []baseds.AgentAnswerI
 		typedText = promptTypedText(pending.Questions, answers)
 	}
 	if err != nil {
-		GlobalRegistry.Set(oref, pending) // nothing sent yet — safe to restore for retry
+		GlobalRegistry.endAnswer(oref, &pending) // nothing sent yet — safe to restore for retry
 		return false, err
 	}
 	// a dag child's transcript shows an answer typed as a prompt as the human's, so the engine is told before the first
@@ -99,13 +100,14 @@ func injectAnswer(oref string, pending PendingAsk, answers []baseds.AgentAnswerI
 			if typedForTask {
 				GlobalRegistry.forgetTyped(pending, sentAt) // enter goes last, so nothing was submitted
 			}
+			GlobalRegistry.endAnswer(oref, nil)
 			return false, err // partial prefix already sent — do NOT restore
 		}
 	}
 	// an answer is not delivered until the agent clears the ask (spec §5): keystrokes into a picker
 	// that was not listening vanish, and nothing else would notice the agent still waiting — true for a
 	// dag child as much as for a plain session, so every keystroke delivery awaits its clear.
-	GlobalRegistry.awaitClear(oref, pending, time.Now().UnixMilli())
+	GlobalRegistry.awaitClear(oref, time.Now().UnixMilli())
 	return true, nil
 }
 

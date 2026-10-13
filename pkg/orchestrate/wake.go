@@ -305,10 +305,12 @@ func atPrompt(state string) bool {
 // leadAsking reports the lead's own question still open in its terminal. Claude Code fires a Notification
 // a few seconds into the dialog, and agent-hook reports it as waiting over asking; a wake typed then has
 // its Enter pick the dialog's preselected option. The registry entry lasts until the ask is cleared or the
-// lead resumes work, whatever order the hook statuses arrive in.
+// lead resumes work, whatever order the hook statuses arrive in. An answer claimed for the question is still
+// asking: it is typed key by key into the open picker, which stays open until the lead clears the ask.
 func leadAsking(blockId string) bool {
-	_, asking := agentask.GlobalRegistry.Get(waveobj.MakeORef(waveobj.OType_Block, blockId).String())
-	return asking
+	oref := waveobj.MakeORef(waveobj.OType_Block, blockId).String()
+	_, asking := agentask.GlobalRegistry.Get(oref)
+	return asking || agentask.GlobalRegistry.AnswerInFlight(oref)
 }
 
 func (w *waker) flushLocked(ctx context.Context, runId string, rw *runWake) {

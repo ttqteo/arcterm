@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/wavetermdev/waveterm/pkg/agentask"
@@ -146,6 +147,48 @@ func TestWakeHeldWhileLeadsOwnQuestionIsOpen(t *testing.T) {
 	tickWakes(ctx)
 	if len(f.sends) != 1 || f.sends[0] != finishedLine {
 		t.Fatalf("the held wake goes out once the question is answered, got %q", f.sends)
+	}
+}
+
+// DeliverAnswer claims the ask before its first key, so a wake held for the question must keep waiting
+// through the typing and on until the lead clears the ask, or it is typed into the open picker.
+func TestWakeHeldWhileAnswerIsTypedUntilClear(t *testing.T) {
+	f := newFakeLead(t)
+	ctx := context.Background()
+	leadOref := waveobj.MakeORef(waveobj.OType_Block, wakeLeadBlock).String()
+	agentask.GlobalRegistry.Set(leadOref, agentask.PendingAsk{AskId: "lead-ask", BlockId: wakeLeadBlock, Questions: []baseds.AgentAskQuestion{singleSelect()}})
+	f.state.State = baseds.AgentState_Waiting
+	PostWake(ctx, wakeChannel, wakeRun, finishedLine)
+
+	typing, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	t.Cleanup(agentask.SetSendInputForTest(func(string, []byte) error {
+		once.Do(func() { close(typing); <-release })
+		return nil
+	}))
+	delivered := make(chan error, 1)
+	go func() {
+		_, err := agentask.DeliverAnswer(leadOref, "lead-ask", []baseds.AgentAnswerItem{{SelectedIndexes: []int{1}}})
+		delivered <- err
+	}()
+	<-typing
+	tickWakes(ctx)
+	NoteLeadStatus(ctx, f.status(baseds.AgentState_Waiting))
+	if len(f.sends) != 0 {
+		t.Fatalf("a wake typed while the answer is typed corrupts it, got %q", f.sends)
+	}
+	close(release)
+	if err := <-delivered; err != nil {
+		t.Fatalf("deliver: %v", err)
+	}
+	tickWakes(ctx)
+	if len(f.sends) != 0 {
+		t.Fatalf("the picker is open until the lead clears the ask, got %q", f.sends)
+	}
+	agentask.GlobalRegistry.ConfirmClear(leadOref)
+	tickWakes(ctx)
+	if len(f.sends) != 1 || f.sends[0] != finishedLine {
+		t.Fatalf("the held wake goes out once the lead clears the ask, got %q", f.sends)
 	}
 }
 

@@ -63,7 +63,7 @@ type PendingAsk struct {
 type Registry struct {
 	lock    sync.Mutex
 	pending map[string]PendingAsk
-	// clears holds typed dag answers waiting for the agent's clear, keyed by oref.
+	// clears holds claimed asks whose answer is being typed or waits for the agent's clear, keyed by oref.
 	clears map[string]sentAnswer
 	// typed holds prose answers typed into a dag child's session, keyed by task, until the engine meets them in the
 	// child's transcript, where they look exactly like a prompt the human typed.
@@ -71,7 +71,7 @@ type Registry struct {
 	waits waiters
 }
 
-// sentAnswer is a claimed ask whose answer was typed but not yet confirmed.
+// sentAnswer is a claimed ask whose answer is being typed (sentAt 0) or was typed but not yet confirmed.
 type sentAnswer struct {
 	pending PendingAsk
 	sentAt  int64
@@ -172,6 +172,22 @@ func (r *Registry) Drop(oref string) {
 func (r *Registry) Claim(oref, askid string) (PendingAsk, bool) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
+	return r.claimLocked(oref, askid)
+}
+
+// claimToAnswer is Claim for a delivery: the claimed ask is marked in flight under the same lock, so no reader
+// sees the oref neither asking nor answered while its answer is typed.
+func (r *Registry) claimToAnswer(oref, askid string) (PendingAsk, bool) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	p, ok := r.claimLocked(oref, askid)
+	if ok {
+		r.clears[oref] = sentAnswer{pending: p}
+	}
+	return p, ok
+}
+
+func (r *Registry) claimLocked(oref, askid string) (PendingAsk, bool) {
 	p, ok := r.pending[oref]
 	if !ok {
 		return PendingAsk{}, false
@@ -197,10 +213,37 @@ func (r *Registry) Update(oref, askId string, fn func(*PendingAsk)) bool {
 	return true
 }
 
-func (r *Registry) awaitClear(oref string, p PendingAsk, now int64) {
+// awaitClear starts the clear timeout of an answer typed in full. A clear that already arrived mid-typing
+// removed the entry, and the agent has nothing left to confirm.
+func (r *Registry) awaitClear(oref string, now int64) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
-	r.clears[oref] = sentAnswer{pending: p, sentAt: now}
+	s, ok := r.clears[oref]
+	if !ok {
+		return
+	}
+	s.sentAt = now
+	r.clears[oref] = s
+}
+
+// endAnswer forgets an in-flight answer that was not typed in full; restore puts its ask back as pending,
+// for a delivery that sent no keystroke.
+func (r *Registry) endAnswer(oref string, restore *PendingAsk) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	delete(r.clears, oref)
+	if restore != nil {
+		r.pending[oref] = *restore
+	}
+}
+
+// AnswerInFlight reports an answer claimed for oref that is being typed or waits for the agent's clear. The
+// agent's question is still open in its terminal until that clear, so typed input would land in it.
+func (r *Registry) AnswerInFlight(oref string) bool {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	_, ok := r.clears[oref]
+	return ok
 }
 
 // ConfirmClear ends the wait on a typed answer. The agent clearing its ask is the only proof the
@@ -221,7 +264,7 @@ func (r *Registry) ExpireClears(now int64, timeout time.Duration) map[string]Pen
 	defer r.lock.Unlock()
 	restored := make(map[string]PendingAsk)
 	for oref, s := range r.clears {
-		if now-s.sentAt < timeout.Milliseconds() {
+		if s.sentAt == 0 || now-s.sentAt < timeout.Milliseconds() {
 			continue
 		}
 		delete(r.clears, oref)
