@@ -8,6 +8,32 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
+## Unreleased
+
+### Added
+
+- **Code browses folders that are not git repositories** (from the kaeltran16 fork): a plain folder picked in Code
+  lists and searches its files, skipping `node_modules`, build output and dot-folders; Changed and Diff are greyed
+  out with the reason.
+- **A finished Check, Verify or Final step keeps its output**: click the step in the final stage pane or the run's
+  rail to read it after the next step has started.
+
+### Changed
+
+- **A run's land commit gets a conventional subject** (`feat(cockpit): <plan title>`), typed from the branch's own
+  commits, instead of the bare plan title.
+- **A land held only by uncommitted changes in the checkout lands by itself** once they are committed, stashed or
+  moved aside; the lead's `complete` now prints `landed <sha>` or `held: <reason>`, and its wake names every land
+  blocker, not only conflicts.
+
+### Fixed
+
+- A resumed session's tab is named after the session instead of the project.
+- `wsh jarvis dag submit` no longer stops at a bare timeout: it says whether the plan landed, did not land, or
+  cannot tell, and `dag status` shows whether a plan review is running or failed.
+- The shared instructions editor in Setup wraps long lines instead of scrolling sideways.
+- Files an older arcterm build installed into the Claude mod folder are removed when a newer build drops them.
+
 ## 0.15.11 — 2026-10-13
 
 ### Added
