@@ -40,8 +40,9 @@ Design rule from the review: **compact by default.** One pane in focus; anything
 - A terminal is a term block as today. New block meta records:
   - `project` (or Home) and `cwd` at open time; the tree groups by `project`, the branch chip shows when `cwd` is not the
     project root;
-  - `tool:id` for a block started from the library (`controller: "cmd"`, as `claude-signin-modal.tsx` already starts
-    a command block);
+  - `tool:id` for a block started from the library. A tool is a plain terminal (`controller: "shell"`) whose
+    `cmd:firstcommand` is the tool's command line, as a Terminal launch with a command is today, so the shell finds the
+    program and quitting the tool leaves a prompt in the same folder;
 - No new `waveobj` type, so no migration. Meta keys are Go-side (`pkg/waveobj` metaconsts) and need `task generate`.
 
 ## Sidebar: one tree per project
@@ -71,7 +72,8 @@ Code: `agentsidebarmodel.ts` (buildAgentTree, `splitActive`) builds the one tree
 - A quick Ctrl+Tab returns to the tab shown before (the agent), so agent ↔ tool is one chord; the pane header says so
   ("Ctrl Tab back to fix-login").
 - The terminal's pane keeps its mount once shown, like an agent's (`panemounts.ts`), so flipping never replays the
-  TUI. `focusIdAtom` stays the one selected agent; the centre's shown terminal is its own selection.
+  TUI. `focusIdAtom` holds the picked terminal's id too: Ctrl+Tab's recent list follows it, which is how the quick flip
+  returns to the agent.
 - The pane header: icon, name, branch chip, project, then Open beside <agent> (split), Move to the panel, Close.
 - The agent header keeps its Terminal | Canvas | Review switch unchanged.
 
@@ -125,8 +127,8 @@ global chord (proposed `Ctrl`+`Shift`+`T`, to be checked against `bindings.ts`).
 The dialog that starts an agent, a terminal or a run (`launchermodal.tsx`, `launcher.ts`) also opens a tool in a
 project, for when no agent is in focus (the picker always follows the focused agent).
 
-- The Start column gains **one** row, `7 Tool` ("lazygit, yazi, btop…"), under its own Tool label after Run. The
-  other rows keep their digits.
+- The Start column gains **one** row, Tool ("lazygit, yazi, btop…"), last, under its own Tool label after Run, so the
+  other rows keep their digits (7 on a machine with Claude Code, Codex and Antigravity installed).
 - With Tool picked, the lower area that holds Resume and Task for an agent holds a **Tool** list instead: the third
   `Tab` stop after Start and Project. Letters pick in it (`a`–`z`, the header hint reads "a–z tool"), installed
   tools first, then yours, then a not-installed one or two, and "All tools in Setup". Beside it, About: what the tool
@@ -143,7 +145,8 @@ project, for when no agent is in focus (the picker always follows the focused ag
 - **Worktree removed** (board WorktreeGone): when an agent's branch lands and its worktree goes, a terminal whose `cwd`
   was in it shows a card over its last screen: "This terminal's folder was removed", Reopen in <project> (primary),
   Close terminal.
-- **Tool exits:** the block stays with its last screen and an "exited" row until closed; reopening reruns the command.
+- **Tool exits:** the terminal returns to its shell prompt in the same folder; the row's name becomes the last
+  command, as for any terminal.
 - **Command missing:** a user tool not on PATH says so in the picker and library, with Edit; never a failed spawn.
 - **No focused agent:** the picker opens in the project root (or Home).
 - **Key collisions:** a TUI needs `Esc`, arrows and `Ctrl` keys. The app's global chords already pass through a
