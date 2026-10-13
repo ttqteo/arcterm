@@ -10,6 +10,46 @@ where it would plug in, and how to pick it back up. Append new entries at the to
 > Pruned 2026-10-05: 27 entries whose work shipped, was retired with its subsystem, or was superseded were
 > removed. Recover any of them with `git show c99f2041:docs/deferred.md`.
 
+## Radar security review audits (deferred 2026-10-13)
+
+- **Deferred:** an audit kind that reviews a window commit for security vulnerabilities it introduced. Radar ships
+  the sibling, introduced and hotspot kinds (`docs/superpowers/specs/2026-10-13-radar-audit-kinds-design.md`).
+- **Why:** the probe found 0 hits in 3 audits, and a keyword filter cannot pick security-relevant commits: it
+  matched "session" and "token" in usage code.
+- **Revive when** the commit classifier gains a flag for trust-boundary commits, then run a fresh probe on the
+  commits it picks. The probe's prompt (`CONTRACT.security` in `%TEMP%\radarprobe\audit.mjs`), quoted so it
+  survives the temp dir:
+
+  > You are reviewing commit <h> for security vulnerabilities it introduced that are still present in the
+  > current tree. 1. Work out what the change does and which inputs cross a trust boundary (rootcause: that
+  > summary). 2. Check: injection (SQL, command, template, path traversal), missing or wrong authentication or
+  > authorization, tenant or user isolation leaks, secrets in code or logs, unsafe deserialization, XSS, SSRF,
+  > open redirects, session handling. 3. Report only a vulnerability with a concrete attacker input or position
+  > that reaches it in the current code; not hardening advice. 4. trigger: the attacker input and where it
+  > enters. whynotcovered: why existing checks do not stop it.
+
+  Nothing-found sentence: "The change introduced no vulnerability".
+- Nothing was built for this, so there is nothing to recover from git.
+
+## Radar missing test coverage audits (deferred 2026-10-13)
+
+- **Deferred:** an audit kind that checks whether the behavior a window commit added or changed is exercised by
+  any test (`docs/superpowers/specs/2026-10-13-radar-audit-kinds-design.md` section 8).
+- **Why:** the probe was accurate (2 of 2), but it reports test gaps, not bugs, and Radar's findings are bugs.
+- **Revive when** Radar is to report test gaps as their own finding type. The probe's prompt
+  (`CONTRACT.coverage` in `%TEMP%\radarprobe\audit.mjs`):
+
+  > You are checking whether the behavior commit <h> added or changed is exercised by any test in the current
+  > tree. 1. List the behaviors the commit added or changed (rootcause: that list in one or two sentences).
+  > 2. For each, search the test suites for a test that reaches it (grep for the function, component, endpoint
+  > or string). 3. Report a hit only for behavior with a real chance of breaking (a branch, a calculation, a
+  > state transition, an error path), not trivial wiring or styling. 4. The hit's file and line are the
+  > untested code. trigger: the case a test should drive. actual: what no test checks today. expected: what
+  > that test should assert. whynotcovered: which nearby tests exist and why they miss it.
+
+  Nothing-found sentence: "Every changed behavior with real risk is tested".
+- Nothing was built for this, so there is nothing to recover from git.
+
 ## (arcterm) agy harness kept but unverified (2026-10-15)
 
 - **Held:** Antigravity (`agy`) stays in arcterm as an agent and a task worker, unchanged, but nobody uses it: it

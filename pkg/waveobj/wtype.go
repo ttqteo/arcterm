@@ -895,6 +895,7 @@ type RadarFinding struct {
 	SourceSubject string              `json:"sourcesubject,omitempty"`
 	RootCause     string              `json:"rootcause,omitempty"`
 	Sites         []RadarSite         `json:"sites,omitempty"`
+	FixSubjects   []string            `json:"fixsubjects,omitempty"`
 }
 
 // RadarSite is one place a fix-audit found the same bug as the source fix commit.
@@ -906,8 +907,10 @@ type RadarSite struct {
 	WhyNotCovered string `json:"whynotcovered"`
 }
 
-// RadarAudit is one fix commit's audit session within a scan.
+// RadarAudit is one audit session within a scan. For a hotspot audit, Commit, Subject and CommitTs are the
+// reviewed revision's and Files is the one file.
 type RadarAudit struct {
+	Kind            string   `json:"kind,omitempty"` // sibling|introduced|hotspot; empty reads as sibling
 	Commit          string   `json:"commit"`
 	Subject         string   `json:"subject"`
 	CommitTs        int64    `json:"committs"`
@@ -922,6 +925,13 @@ type RadarAudit struct {
 	CacheReadTokens int      `json:"cachereadtokens,omitempty"`
 	DurationMs      int64    `json:"durationms,omitempty"`
 	RawResponse     string   `json:"rawresponse,omitempty"`
+	FixSubjects     []string `json:"fixsubjects,omitempty"` // hotspot
+}
+
+// RadarCommitClass is the classifier's label for one window commit.
+type RadarCommitClass struct {
+	Fix      bool `json:"fix"`
+	Behavior bool `json:"behavior"`
 }
 
 // RadarInvestigation is the latest Run outcome recorded against a finding (by fingerprint). It closes the
@@ -944,33 +954,37 @@ type RadarInvestigation struct {
 }
 
 type RadarReport struct {
-	OID              string         `json:"oid"`
-	Version          int            `json:"version"`
-	ProjectName      string         `json:"projectname"`
-	ProjectPath      string         `json:"projectpath"`
-	Status           string         `json:"status"` // collecting|clustering|completed|partial|failed|cancelled
-	Phase            string         `json:"phase,omitempty"`
-	StartHead        string         `json:"starthead,omitempty"`
-	EndHead          string         `json:"endhead,omitempty"`
-	StartDirty       string         `json:"startdirty,omitempty"`
-	EndDirty         string         `json:"enddirty,omitempty"`
-	PrevReportId     string         `json:"prevreportid,omitempty"`
-	PrevHead         string         `json:"prevhead,omitempty"`
-	WindowStartTs    int64          `json:"windowstartts,omitempty"`
-	WindowEndTs      int64          `json:"windowendts,omitempty"`
-	StartedTs        int64          `json:"startedts"`
-	CompletedTs      int64          `json:"completedts,omitempty"`
-	FatalError       string         `json:"fatalerror,omitempty"`
-	ClusterError     string         `json:"clustererror,omitempty"`
-	ConfiguredModel  string         `json:"configuredmodel,omitempty"`
-	ResolvedModel    string         `json:"resolvedmodel,omitempty"`
-	TotalTokens      int            `json:"totaltokens,omitempty"`
-	Candidates       []RadarSignal  `json:"candidates,omitempty"` // retained while clustering is retryable
-	Signals          []RadarSignal  `json:"signals,omitempty"`    // referenced-by-findings after prune
-	Findings         []RadarFinding `json:"findings,omitempty"`
-	ClusterStartedTs int64          `json:"clusterstartedts,omitempty"`
-	Audits           []RadarAudit   `json:"audits,omitempty"`
-	Meta             MetaMapType    `json:"meta"`
+	OID              string                      `json:"oid"`
+	Version          int                         `json:"version"`
+	ProjectName      string                      `json:"projectname"`
+	ProjectPath      string                      `json:"projectpath"`
+	Status           string                      `json:"status"` // collecting|clustering|completed|partial|failed|cancelled
+	Phase            string                      `json:"phase,omitempty"`
+	StartHead        string                      `json:"starthead,omitempty"`
+	EndHead          string                      `json:"endhead,omitempty"`
+	StartDirty       string                      `json:"startdirty,omitempty"`
+	EndDirty         string                      `json:"enddirty,omitempty"`
+	PrevReportId     string                      `json:"prevreportid,omitempty"`
+	PrevHead         string                      `json:"prevhead,omitempty"`
+	WindowStartTs    int64                       `json:"windowstartts,omitempty"`
+	WindowEndTs      int64                       `json:"windowendts,omitempty"`
+	StartedTs        int64                       `json:"startedts"`
+	CompletedTs      int64                       `json:"completedts,omitempty"`
+	FatalError       string                      `json:"fatalerror,omitempty"`
+	ClusterError     string                      `json:"clustererror,omitempty"`
+	ConfiguredModel  string                      `json:"configuredmodel,omitempty"`
+	ResolvedModel    string                      `json:"resolvedmodel,omitempty"`
+	TotalTokens      int                         `json:"totaltokens,omitempty"`
+	Candidates       []RadarSignal               `json:"candidates,omitempty"` // retained while clustering is retryable
+	Signals          []RadarSignal               `json:"signals,omitempty"`    // referenced-by-findings after prune
+	Findings         []RadarFinding              `json:"findings,omitempty"`
+	ClusterStartedTs int64                       `json:"clusterstartedts,omitempty"`
+	Audits           []RadarAudit                `json:"audits,omitempty"`
+	CommitClasses    map[string]RadarCommitClass `json:"commitclasses,omitempty"` // full hash -> label
+	ClassifyCount    int                         `json:"classifycount,omitempty"`
+	ClassifyError    string                      `json:"classifyerror,omitempty"`
+	ClassifyTokens   int                         `json:"classifytokens,omitempty"`
+	Meta             MetaMapType                 `json:"meta"`
 }
 
 func (*RadarReport) GetOType() string {

@@ -2936,6 +2936,7 @@ declare global {
 
     // waveobj.RadarAudit
     type RadarAudit = {
+        kind?: string;
         commit: string;
         subject: string;
         committs: number;
@@ -2950,6 +2951,13 @@ declare global {
         cachereadtokens?: number;
         durationms?: number;
         rawresponse?: string;
+        fixsubjects?: string[];
+    };
+
+    // waveobj.RadarCommitClass
+    type RadarCommitClass = {
+        fix: boolean;
+        behavior: boolean;
     };
 
     // waveobj.RadarDisposition
@@ -2982,6 +2990,7 @@ declare global {
         sourcesubject?: string;
         rootcause?: string;
         sites?: RadarSite[];
+        fixsubjects?: string[];
     };
 
     // waveobj.RadarInvestigation
@@ -3025,6 +3034,10 @@ declare global {
         findings?: RadarFinding[];
         clusterstartedts?: number;
         audits?: RadarAudit[];
+        commitclasses?: {[key: string]: RadarCommitClass};
+        classifycount?: number;
+        classifyerror?: string;
+        classifytokens?: number;
     };
 
     // waveobj.RadarSignal

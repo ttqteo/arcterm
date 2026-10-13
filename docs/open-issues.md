@@ -916,6 +916,10 @@ Radar:
 
 - **Metadata collectors and the clustering pipeline** (retired 2026-10-06) — revive when chunk 8 of
   `effort:1557171a-e61d-4b29-83fd-fc7f818e6131` measures the fix-sibling audit as not worth keeping.
+- **Security review audits** (held 2026-10-13) — revive with a classifier flag for trust-boundary commits
+  and a fresh probe; `docs/deferred.md` keeps the probe's prompt.
+- **Missing test coverage audits** (held 2026-10-13) — revive if Radar is to report test gaps as their own
+  finding type; `docs/deferred.md` keeps the probe's prompt.
 
 Jarvis (what survived the 2026-09-22/23 memory and recall-arm removals):
 
