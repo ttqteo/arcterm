@@ -24,6 +24,8 @@ export interface FinalStep {
     text: string;
     // the plan's own command; for tree and verifier, what the step does
     command: string;
+    // where a command step that ended kept its output; ts is its end, so a rerun's output is not read from cache
+    kept?: { path: string; ts: number };
 }
 
 export interface FinalRoundLine {
@@ -108,6 +110,15 @@ const STAGE_TONES: Record<string, FinalTone> = {
     failed: "fail",
     unverified: "warn",
 };
+
+// the steps whose output the engine keeps once they end (keepFinalStepOutput)
+const KEPT_STEPS = new Set<FinalStepKey>(["check", "verify", "final"]);
+
+/** Pure: where the engine keeps a round's finished step output, beside its ARC_FINAL_OUT (finalStepsDir in
+ *  pkg/orchestrate/final.go). */
+export function finalStepOutputPath(outDir: string, key: FinalStepKey): string {
+    return `${outDir}-steps/${key}.txt`;
+}
 
 type StepEvent = { ts: number; ms: number; ok: boolean };
 type StepEventDetail = { round?: number; step?: string; ms?: number; ok?: boolean };
@@ -238,6 +249,11 @@ function buildSteps(
         } else if (state !== "waiting" && state !== "notrun") {
             ms = evs.get(key)?.ms;
         }
+        const ended = evs.get(key);
+        const kept =
+            ended && stage?.outdir && KEPT_STEPS.has(key)
+                ? { path: finalStepOutputPath(stage.outdir, key), ts: ended.ts }
+                : undefined;
         return {
             key,
             label: LABELS[key],
@@ -246,6 +262,7 @@ function buildSteps(
             ms,
             text: withTime(STEP_WORDS[state], ms),
             command: WHAT_IT_DOES[key] ?? commandOf(group, key),
+            kept,
         };
     });
 }
@@ -472,6 +489,11 @@ export function finalRowFocusId(
     const verifierRunId = run.dag?.final?.verifierrunid;
     const agent = verifierRunId ? agents.find((a) => a.runId === verifierRunId) : undefined;
     return agent?.id ?? finalStageId(run.runId);
+}
+
+/** Pure: whether a step's output can be opened: a command running, or one that ended and kept its output. */
+export function stepHasOutput(step: FinalStep): boolean {
+    return step.kept != null || (step.state === "running" && KEPT_STEPS.has(step.key));
 }
 
 /** Pure: the last `lines` lines of a command's output. */

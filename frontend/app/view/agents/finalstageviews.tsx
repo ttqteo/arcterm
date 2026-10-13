@@ -7,17 +7,22 @@
 import * as WOS from "@/app/store/wos";
 import { finalCheckEntry } from "@/app/view/jarvis/finalshotsmodel";
 import { FinalShotsViewer } from "@/app/view/jarvis/finalshotsviewer";
+import { imageStatus, localFileUrl, type LocalImageStatus } from "@/app/view/jarvis/localimage";
 import { finalStageEndable } from "@/app/view/jarvis/runsheetmodel";
+import { getWebServerEndpoint } from "@/util/endpoints";
+import { fetch } from "@/util/fetchutil";
 import { cn } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { dockButtonClass, EndFinalForm } from "./endfinalform";
 import {
     finalStageView,
     outputTail,
+    stepHasOutput,
     type FinalRoundLine,
     type FinalStageView,
     type FinalStep,
+    type FinalStepKey,
     type FinalTone,
 } from "./finalstage";
 import { useRunEvents } from "./runeventstore";
@@ -79,64 +84,151 @@ function StepText({ step }: { step: FinalStep }) {
     );
 }
 
-// One row per step: mark, label, state text.
+export type KeptOutput = { status: LocalImageStatus; text: string };
+
+// useKeptOutput reads the output a step that ended kept on disk, through wavesrv as the screenshots are.
+export function useKeptOutput(kept: FinalStep["kept"]): KeptOutput {
+    const [out, setOut] = useState<KeptOutput>({ status: "loading", text: "" });
+    const path = kept?.path;
+    const ts = kept?.ts;
+    useEffect(() => {
+        if (path == null) {
+            return;
+        }
+        let cancelled = false;
+        setOut({ status: "loading", text: "" });
+        (async () => {
+            try {
+                // the endpoint lets the webview cache, and a rerun of the step rewrites the same file
+                const resp = await fetch(`${localFileUrl(getWebServerEndpoint(), path)}&v=${ts}`);
+                const status = imageStatus(resp.status);
+                const text = status === "ok" ? await resp.text() : "";
+                if (!cancelled) {
+                    setOut({ status, text });
+                }
+            } catch (e) {
+                console.error("final stage: cannot read the output of", path, e);
+                if (!cancelled) {
+                    setOut({ status: "error", text: "" });
+                }
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [path, ts]);
+    return out;
+}
+
+const KEPT_EMPTY: Record<LocalImageStatus, string> = {
+    loading: "loading the output...",
+    ok: "the step printed nothing",
+    missing: "no output kept: the step ran before Arc kept it, or it was swept",
+    error: "could not read the step's output",
+};
+
+// A step's kept output whole, or a line saying why there is none.
+export function FinalKeptOutput({ kept, className }: { kept: FinalStep["kept"]; className?: string }) {
+    const out = useKeptOutput(kept);
+    if (out.text.trim() === "") {
+        return <span className="font-mono text-[10.5px] text-muted">{KEPT_EMPTY[out.status]}</span>;
+    }
+    return <FinalOutput output={out.text} className={className} />;
+}
+
+// One row per step: mark, label, state text. A row whose step kept its output opens it beneath.
 export function FinalStepList({ steps }: { steps: FinalStep[] }) {
+    const [open, setOpen] = useState<FinalStepKey | null>(null);
     return (
         <div className="flex flex-col">
-            {steps.map((step) => (
-                <div
-                    key={step.key}
-                    data-final-step={step.key}
-                    data-final-step-state={step.state}
-                    className="flex items-center gap-[9px] border-b border-edge-faint py-1.5"
-                >
-                    <StepMark tone={step.tone} />
-                    <StepLabel step={step} />
-                    <span className="flex-1" />
-                    <StepText step={step} />
-                </div>
-            ))}
+            {steps.map((step) => {
+                const opens = step.kept != null;
+                const isOpen = opens && open === step.key;
+                return (
+                    <div key={step.key} className="flex flex-col border-b border-edge-faint">
+                        <div
+                            data-final-step={step.key}
+                            data-final-step-state={step.state}
+                            role={opens ? "button" : undefined}
+                            aria-expanded={opens ? isOpen : undefined}
+                            onClick={opens ? () => setOpen(isOpen ? null : step.key) : undefined}
+                            className={cn("flex items-center gap-[9px] py-1.5", opens && "cursor-pointer")}
+                        >
+                            <StepMark tone={step.tone} />
+                            <StepLabel step={step} />
+                            <span className="flex-1" />
+                            <StepText step={step} />
+                        </div>
+                        {isOpen ? (
+                            <div className="sc mb-1.5 max-h-[320px] overflow-auto">
+                                <FinalKeptOutput kept={step.kept} />
+                            </div>
+                        ) : null}
+                    </div>
+                );
+            })}
         </div>
     );
 }
 
-// The pipeline: one bordered cell per step, the running one accented. showCommand adds each step's command.
-export function FinalStepCells({ steps, showCommand }: { steps: FinalStep[]; showCommand?: boolean }) {
+// The pipeline: one bordered cell per step, the shown one accented, else the running one. showCommand adds each
+// step's command. With onPick, a step whose output can be opened is clickable.
+export function FinalStepCells({
+    steps,
+    showCommand,
+    shown,
+    onPick,
+}: {
+    steps: FinalStep[];
+    showCommand?: boolean;
+    shown?: FinalStepKey;
+    onPick?: (key: FinalStepKey) => void;
+}) {
     return (
         <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
-            {steps.map((step) => (
-                <div
-                    key={step.key}
-                    data-final-step={step.key}
-                    data-final-step-state={step.state}
-                    className={cn(
-                        "flex min-w-0 flex-col gap-1 rounded-[8px] border px-2.5 py-2",
-                        step.state === "running" ? "border-accent/50 bg-lane" : "border-edge-mid"
-                    )}
-                >
-                    {showCommand ? (
-                        <>
-                            <span className="flex items-center gap-1.5">
-                                <StepMark tone={step.tone} />
-                                <StepLabel step={step} />
-                                <span className="flex-1" />
+            {steps.map((step) => {
+                const pickable = onPick != null && stepHasOutput(step);
+                return (
+                    <div
+                        key={step.key}
+                        data-final-step={step.key}
+                        data-final-step-state={step.state}
+                        role={pickable ? "button" : undefined}
+                        aria-pressed={pickable ? step.key === shown : undefined}
+                        onClick={pickable ? () => onPick(step.key) : undefined}
+                        className={cn(
+                            "flex min-w-0 flex-col gap-1 rounded-[8px] border px-2.5 py-2",
+                            (shown ? step.key === shown : step.state === "running")
+                                ? "border-accent/50"
+                                : "border-edge-mid",
+                            step.state === "running" && "bg-lane",
+                            pickable && step.key !== shown && "cursor-pointer hover:border-edge-strong"
+                        )}
+                    >
+                        {showCommand ? (
+                            <>
+                                <span className="flex items-center gap-1.5">
+                                    <StepMark tone={step.tone} />
+                                    <StepLabel step={step} />
+                                    <span className="flex-1" />
+                                    <StepText step={step} />
+                                </span>
+                                <span title={step.command} className="truncate font-mono text-[10.5px] text-muted">
+                                    {step.command}
+                                </span>
+                            </>
+                        ) : (
+                            <>
+                                <span className="flex items-center gap-1.5">
+                                    <StepMark tone={step.tone} />
+                                    <StepLabel step={step} />
+                                </span>
                                 <StepText step={step} />
-                            </span>
-                            <span title={step.command} className="truncate font-mono text-[10.5px] text-muted">
-                                {step.command}
-                            </span>
-                        </>
-                    ) : (
-                        <>
-                            <span className="flex items-center gap-1.5">
-                                <StepMark tone={step.tone} />
-                                <StepLabel step={step} />
-                            </span>
-                            <StepText step={step} />
-                        </>
-                    )}
-                </div>
-            ))}
+                            </>
+                        )}
+                    </div>
+                );
+            })}
         </div>
     );
 }

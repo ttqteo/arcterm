@@ -20019,6 +20019,7 @@ const FST_COMMIT = "c0ffee5a".padEnd(40, "0");
 const FST_MARK = "final-stage verify";
 const FST_LIVE_VERIFY = `printf '${FST_MARK} 1\\n${FST_MARK} 2\\n${FST_MARK} 3\\n'; for i in $(seq 1 300); do sleep 3; echo "${FST_MARK} still running $i"; done`;
 const FST_LIVE_FINAL = "true";
+const FST_KEPT_MARK = "final-stage kept check output";
 const FST_DETAIL = [
     `Final \`${FINAL_SHOTS_CMD}\` failed (exit 1):`,
     "FAIL jarvis-peek 4. the narrow panel stays bounded with a pinned header, no horizontal overflow, and an unclipped harness picker",
@@ -20600,6 +20601,40 @@ const finalStageScenario = {
                 d.rail.shots != null &&
                 railViewer,
             { row: a?.rows, slot: a?.slot, pane: a?.pane, paneViewer, node: d?.node, rail: d?.rail, railViewer }
+        );
+
+        // a step that ended kept its output beside the round's ARC_FINAL_OUT (finalStepsDir); only Check's is
+        // written here, so Verify stands for a step whose output is gone
+        const keptDir = join(ctx.out, "1-steps");
+        mkdirSync(keptDir, { recursive: true });
+        writeFileSync(join(keptDir, "check.txt"), `${FST_KEPT_MARK}\n`);
+        await h.goto("agent");
+        const paneCell = (key) => `${FST_PANE}?.querySelector('[data-final-step="${key}"]')`;
+        const keptRead = `(() => ({
+            pane: (${FST_PANE}?.textContent ?? "").replace(/\\s+/g, " ").trim(),
+            pressed: [...(${FST_PANE}?.querySelectorAll('[data-final-step][aria-pressed="true"]') ?? [])].map((c) => c.getAttribute("data-final-step")),
+            rail: (${FST_RAIL}?.querySelector("[data-final-rail]")?.textContent ?? "").replace(/\\s+/g, " ").trim(),
+        }))()`;
+        await finalShotsClick(h, paneCell("check"));
+        const keptCheck = await fstUntil(h, keptRead, (s) => s.pane.includes(FST_KEPT_MARK));
+        await shot("b5b-kept-check");
+        await finalShotsClick(h, paneCell("verify"));
+        const keptGone = await fstUntil(h, keptRead, (s) => s.pane.includes("no output kept"));
+        await finalShotsClick(h, paneCell("verify"));
+        const keptClosed = await fstUntil(h, keptRead, (s) => s.pressed.length === 0);
+        await finalShotsClick(h, `${FST_RAIL}?.querySelector('[data-final-rail] [data-final-step="check"]')`);
+        const keptRail = await fstUntil(h, keptRead, (s) => s.rail.includes(FST_KEPT_MARK));
+        await shot("b5b-kept-rail");
+        rec(
+            "B5b. a step that ended opens the output it kept: Check's from the pane and from the rail, Verify's says none was kept, and a second click returns to the outcome",
+            () =>
+                fstSame(keptCheck.pressed, ["check"]) &&
+                keptCheck.pane.includes(`$ ${FST_CHECK}`) &&
+                fstSame(keptGone.pressed, ["verify"]) &&
+                !keptGone.pane.includes(FST_KEPT_MARK) &&
+                keptClosed.pane.includes(fstFlat(FST_DETAIL)) &&
+                keptRail.rail.includes(FST_KEPT_MARK),
+            { keptCheck, keptGone, keptClosed, keptRail }
         );
 
         await fstShow(h, ctx, "fixing");

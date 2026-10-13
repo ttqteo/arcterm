@@ -613,6 +613,30 @@ func TestAFailedFinalStepIsRecordedAndTheStepsAfterItDoNotRun(t *testing.T) {
 	}
 }
 
+func TestFinalKeepsEachCommandStepsOutputAfterTheStageMovesOn(t *testing.T) {
+	f := finalFixture(t, "echo verified", "echo checked", "echo finished; exit 1")
+
+	g := runFinal(t, f)
+
+	dir := finalStepsDir(g.Final.OutDir)
+	for step, want := range map[string]string{
+		FinalStep_Check:  "checked",
+		FinalStep_Verify: "verified",
+		FinalStep_Final:  "finished",
+	} {
+		b, err := os.ReadFile(filepath.Join(dir, step+".txt"))
+		if err != nil || !strings.Contains(string(b), want) {
+			t.Fatalf("%s's output is kept once the stage ends, want %q, got %q (%v)", step, want, b, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, FinalStep_Tree+".txt")); !os.IsNotExist(err) {
+		t.Fatalf("the Tree step has no output to keep, got %v", err)
+	}
+	if entries, err := os.ReadDir(g.Final.OutDir); err == nil && slices.ContainsFunc(entries, func(e os.DirEntry) bool { return e.Name() == "check.txt" }) {
+		t.Fatal("the outputs stay out of ARC_FINAL_OUT, which the Final command clears")
+	}
+}
+
 func TestALateTailDoesNotLandOnTheNextStep(t *testing.T) {
 	f := finalFixture(t, passVerify, "", "")
 	if err := wstore.UpdateDag(f.ctx, f.dagID, func(cur *waveobj.TaskGroup) error {
