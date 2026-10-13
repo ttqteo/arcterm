@@ -10775,15 +10775,9 @@ const agentRailFileLink = {
 // window, whose transcript starts four Bash background tasks in the record shapes claude writes: three running (output
 // with lines, an empty output, an output path that does not exist) and one failed. Standing by is all that keeps its
 // card on the grid, so finishing the three running tasks parks it in the Idle section. A second agent, idle a minute,
-// holds one failed task and nothing running: its card is the plain Finished band with a one-task chip. A third
-// agent starts working with no tasks: steps 7-9 start a task and turn it idle right behind it, as a Stop does.
+// holds one failed task and nothing running: its card is the plain Finished band with a one-task chip.
 const SHELL_AGENT = { id: "fx-shell-tasks", name: "shell-tasks agent" };
 const SHELL_FAILED_AGENT = { id: "fx-shell-failed", name: "shell-failed agent" };
-const SHELL_STOP_AGENT = { id: "fx-shell-stop", name: "shell-stop agent" };
-const SHELL_STOP_TASKS = [
-    { id: "bshserve", description: "serve the preview", output: ["preview on :4173"] },
-    { id: "bshwatch", description: "watch the preview build", output: [] },
-];
 const SHELL_TASKS = [
     { id: "bshlines", description: "tail the dev server log", output: ["vite v6 dev server", "ready on :5173", "GET / 200"] },
     { id: "bshempty", description: "watch the test suite", output: [] },
@@ -10832,11 +10826,7 @@ const SHELL_LIB = `
     };
     // the Agent surface header holds one dot, the focused agent's
     const header = () => document.querySelector("[data-agent-header]");
-    const headerDot = () => ({
-        name: text(header()).includes(${JSON.stringify(SHELL_AGENT.name)}),
-        dot: dot(header()),
-        pill: text(header()?.querySelector("[data-agent-state-pill]")),
-    });
+    const headerDot = () => ({ name: text(header()).includes(${JSON.stringify(SHELL_AGENT.name)}), dot: dot(header()) });
     const finishedRows = (name) =>
         [...(document.querySelector('aside[aria-label="Events"]')?.querySelectorAll('[role="button"]') ?? [])]
             .map(text)
@@ -10921,7 +10911,6 @@ const shellTasksScenario = {
         try {
             ctx.transcript = writeShellTranscript(cwd, "shell-tasks", SHELL_TASKS);
             const failedTranscript = writeShellTranscript(cwd, "shell-failed", [SHELL_ONLY_FAILED]);
-            ctx.stopTranscript = writeShellTranscript(cwd, "shell-stop", []);
             const now = Date.now();
             const agent = (a, transcriptPath, idleSince, task) => ({
                 id: a.id,
@@ -10944,7 +10933,6 @@ const shellTasksScenario = {
                         // past IDLE_GRACE_MS: only standing by keeps this card on the grid
                         agent(SHELL_AGENT, ctx.transcript, now - 8 * 60_000, "start the dev server and stand by"),
                         agent(SHELL_FAILED_AGENT, failedTranscript, now - 60_000, "lint the changed files"),
-                        { ...agent(SHELL_STOP_AGENT, ctx.stopTranscript, undefined, "build the preview"), state: "working" },
                     ],
                     null,
                     2
@@ -11075,11 +11063,10 @@ const shellTasksScenario = {
             JSON.stringify(folded)
         );
         rec(
-            "2b. the Agent surface header of the standing-by agent: an accent, still dot and a standing by pill",
+            "2b. the Agent surface header dot of the standing-by agent is accent and still",
             folded.header?.name === true &&
                 folded.header.dot?.bg === "var(--color-accent)" &&
-                folded.header.dot?.pulse === false &&
-                folded.header.pill === "standing by",
+                folded.header.dot?.pulse === false,
             JSON.stringify(folded.header)
         );
 
@@ -11278,125 +11265,9 @@ const shellTasksScenario = {
             JSON.stringify(after)
         );
         rec(
-            "6c. after the finish the Agent surface header dot is no longer accent and its pill reads idle",
-            after.header?.name === true &&
-                after.header.dot != null &&
-                after.header.dot.bg !== "var(--color-accent)" &&
-                after.header.pill === "idle",
+            "6c. after the finish the Agent surface header dot is no longer accent",
+            after.header?.name === true && after.header.dot != null && after.header.dot.bg !== "var(--color-accent)",
             JSON.stringify(after.header)
-        );
-
-        // 7. A Stop right behind a background start: the agent turns idle before the shell-task read lands, and
-        // the hold keeps the card and the rail from playing a finish in between. The observer sees every commit.
-        const stop = JSON.stringify(SHELL_STOP_AGENT.id);
-        const stopName = JSON.stringify(SHELL_STOP_AGENT.name);
-        const startTask = (t) => {
-            writeFileSync(join(ctx.cwd, `${t.id}.output`), t.output.map((l) => l + "\n").join(""));
-            const recs = shellTaskStart(t, ctx.cwd, new Date().toISOString());
-            appendFileSync(ctx.stopTranscript, recs.map((r) => JSON.stringify(r) + "\n").join(""));
-        };
-        const SETTLE = `'[class*="animate-[settle"]'`;
-        await h.goto("cockpit");
-        startTask(SHELL_STOP_TASKS[0]);
-        const stopped = await h.ev(`(async () => {
-            ${SHELL_LIB}
-            const fx = window.__cockpitRosterFixture;
-            if (fx == null) return { ok: false, why: "no __cockpitRosterFixture seam" };
-            if (!(await until(() => card(${stop}) != null, 40))) return { ok: false, why: "no card for the working agent" };
-            const bands = new Set();
-            let settled = false;
-            const look = () => {
-                const c = card(${stop});
-                if (c == null) return;
-                const b = band(c);
-                bands.add(b.includes("standing by") ? "standing by" : b.includes("finished") ? "finished" : "other");
-                if (c.matches(${SETTLE}) || c.querySelector(${SETTLE})) settled = true;
-            };
-            const mo = new MutationObserver(look);
-            mo.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
-            fx.patch(${stop}, { state: "idle", idleSince: Date.now() });
-            const standing = await until(() => band(card(${stop})).includes("standing by"), 40);
-            await new Promise((r) => setTimeout(r, 1500));
-            mo.disconnect();
-            look();
-            return { ok: true, standing, bands: [...bands], settled, finished: finishedRows(${stopName}) };
-        })()`);
-        await h.shot("cdp-shots/shell-tasks-stop-standing.png");
-        rec(
-            "7. a Stop right behind a background start goes straight to standing by: no Finished band, no settle, no finished event",
-            stopped.ok === true &&
-                stopped.standing === true &&
-                !stopped.bands.includes("finished") &&
-                stopped.settled === false &&
-                stopped.finished.length === 0,
-            JSON.stringify(stopped)
-        );
-
-        // 8. Its task ends inside the idle grace window: the card stays on the grid and its band returns to Finished
-        appendFileSync(
-            ctx.stopTranscript,
-            JSON.stringify(shellTaskFinish(SHELL_STOP_TASKS[0], ctx.cwd, "completed", "completed (exit code 0)")) + "\n"
-        );
-        const regraced = await h.ev(`(async () => {
-            ${SHELL_LIB}
-            const finishedBand = () => band(card(${stop})).includes("finished") && !band(card(${stop})).includes("standing by");
-            // the 5s poll is what reads the finish record of an idle agent
-            const back = await until(finishedBand, 120);
-            await until(() => finishedRows(${stopName}).length > 0, 20);
-            await new Promise((r) => setTimeout(r, 800));
-            return { back, band: band(card(${stop})).slice(0, 200), finished: finishedRows(${stopName}) };
-        })()`);
-        await h.shot("cdp-shots/shell-tasks-stop-finished.png");
-        rec(
-            "8. the task ending inside the grace window returns the card's band to Finished, with exactly one finished event",
-            regraced.back === true && regraced.finished.length === 1,
-            JSON.stringify(regraced)
-        );
-
-        // 9. The same Stop race on the Agent surface: neither the tree row nor the header pill settles before the read
-        await h.goto("agent");
-        const working = await h.ev(`(async () => {
-            ${SHELL_LIB}
-            window.__cockpitRosterFixture?.patch(${stop}, { state: "working", idleSince: undefined });
-            if (!(await until(() => treeRow(${stopName}) != null, 40))) return { ok: false, why: "no tree row" };
-            treeRow(${stopName}).click();
-            return { ok: await until(() => text(header()).includes(${stopName}), 20) };
-        })()`);
-        startTask(SHELL_STOP_TASKS[1]);
-        const treeStop = working.ok
-            ? await h.ev(`(async () => {
-                  ${SHELL_LIB}
-                  let row = false;
-                  let pill = false;
-                  const look = () => {
-                      if (treeRow(${stopName})?.matches(${SETTLE})) row = true;
-                      if (header()?.querySelector("[data-agent-state-pill]")?.matches(${SETTLE})) pill = true;
-                  };
-                  const mo = new MutationObserver(look);
-                  mo.observe(document.body, { subtree: true, childList: true, attributes: true });
-                  window.__cockpitRosterFixture.patch(${stop}, { state: "idle", idleSince: Date.now() });
-                  const standing = await until(() => dot(treeRow(${stopName}))?.bg === "var(--color-accent)", 40);
-                  await new Promise((r) => setTimeout(r, 1500));
-                  mo.disconnect();
-                  look();
-                  return {
-                      ok: true,
-                      standing,
-                      rowSettled: row,
-                      pillSettled: pill,
-                      pill: text(header()?.querySelector("[data-agent-state-pill]")),
-                  };
-              })()`)
-            : working;
-        await h.shot("cdp-shots/shell-tasks-stop-tree.png");
-        rec(
-            "9. on the Agent surface the same Stop settles neither the tree row nor the header pill, which reads standing by",
-            treeStop.ok === true &&
-                treeStop.standing === true &&
-                treeStop.rowSettled === false &&
-                treeStop.pillSettled === false &&
-                treeStop.pill === "standing by",
-            JSON.stringify(treeStop)
         );
         return steps;
     },

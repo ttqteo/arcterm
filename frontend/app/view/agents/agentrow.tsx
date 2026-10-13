@@ -360,8 +360,6 @@ export const AgentRow = memo(function AgentRow({
             return () => clearTimeout(t);
         }
     }, [agent.state, standingBy, readPending]);
-    // a Stop whose shell-task read is still out may yet be standing by, so the band says neither until it lands
-    const held = nextSnap(snapRef.current, agent.state, standingBy, readPending).held;
 
     return (
         <motion.div
@@ -496,7 +494,7 @@ export const AgentRow = memo(function AgentRow({
 
             {/* finished: the card keeps its place and says so, with the two things you do next. standing by
                 (a shell task still running) says that instead, with the same two actions */}
-            {idle && !held ? (
+            {idle ? (
                 <div
                     onClick={(e) => e.stopPropagation()}
                     className="flex shrink-0 items-center gap-2 border-b border-edge-mid bg-accent/[0.06] py-[5px] pl-3.5 pr-2"

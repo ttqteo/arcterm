@@ -123,11 +123,10 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     // the final stage's own id is no session: it has no runtime, and its pane says its state
     const stage = isFinalStageId(agent.id);
     const landed = lineage?.kind === "worker" && lineage.task?.merged;
-    const standingBy = isStandingBy(agent.state, useAtomValue(shellTasksByIdAtom)[agent.id] ?? []);
-    // standing by reads like its dot: accent, not the idle grey
-    const stateText = ended ? (landed ? "landed" : "done") : standingBy ? "standing by" : STATE_LABEL[agent.state];
-    const stateColor = ended ? "var(--color-success)" : standingBy ? "var(--color-accent)" : STATE_COLOR[agent.state];
+    const stateText = ended ? (landed ? "landed" : "done") : STATE_LABEL[agent.state];
+    const stateColor = ended ? "var(--color-success)" : STATE_COLOR[agent.state];
     // m4: one-shot settle on the state pill when the focused agent reaches idle
+    const standingBy = isStandingBy(agent.state, useAtomValue(shellTasksByIdAtom)[agent.id] ?? []);
     const readPending = shellReadPending(agent, useAtomValue(shellReadAtByIdAtom)[agent.id]);
     // held until a shell-task read since the Stop lands, so a just-launched task never settles first;
     // nextSnap is idempotent for the same inputs, so advancing it in render is safe
@@ -217,7 +216,6 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                     settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none"
                                 )}
                                 style={{ color: stateColor, borderColor: stateColor }}
-                                data-agent-state-pill
                             >
                                 {stateText}
                             </span>

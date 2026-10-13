@@ -41,27 +41,3 @@ export async function loadDevMockRoster(): Promise<void> {
         // no fixture served (or the dev server returned index.html) -> stay on the live roster
     }
 }
-
-// the fixture roster is read once at boot, so a scenario that drives a state change (working -> idle at a
-// Stop) patches the loaded roster in place; a no-op when no fixture is active
-if (import.meta.env.DEV && typeof window !== "undefined") {
-    window.__cockpitRosterFixture = {
-        patch: (id, fields) => {
-            const cur = globalStore.get(devMockAgentsAtom);
-            if (cur != null) {
-                globalStore.set(
-                    devMockAgentsAtom,
-                    cur.map((a) => (a.id === id ? { ...a, ...fields } : a))
-                );
-            }
-        },
-    };
-}
-
-declare global {
-    interface Window {
-        __cockpitRosterFixture?: {
-            patch: (id: string, fields: Partial<AgentVM>) => void;
-        };
-    }
-}

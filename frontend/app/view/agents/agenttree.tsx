@@ -31,7 +31,6 @@ import type { AgentsViewModel } from "./agents";
 import { buildAgentTree, stageSubline, treeAgentCount, type StageOutcome } from "./agenttreemodel";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom, setCanvasMode } from "./canvasstore";
-import { nextSnap, type AgentSnap } from "./cockpitevents";
 import { renamingRowAtom } from "./rowrenameatom";
 import { duplicateSession, renameSession, sessionCustomLabel } from "./session-models/sessionsidebarmodel";
 import { displayAgeMs, formatAgeShort, type AgentVM } from "./agentsviewmodel";
@@ -74,7 +73,7 @@ import {
 } from "./session-models/sessionviewmodel";
 import { failedLabel, ShellTaskPeek } from "./shelltaskpeek";
 import { isStandingBy, shellTasksLabel, visibleShellTasks, type ShellTask } from "./shelltasks";
-import { shellReadAtByIdAtom, shellReadPending, shellTasksByIdAtom } from "./shelltasksstore";
+import { shellTasksByIdAtom } from "./shelltasksstore";
 import { StatusDot } from "./statusdot";
 import { focusSubagentAtom, subagentsByIdAtom } from "./subagentsstore";
 import { useSubagentTracking } from "./subagenttracking";
@@ -428,13 +427,8 @@ function ParentRow({
             setPeek(null);
         }
     }, [peek, peekTask]);
-    // held until a shell-task read since the Stop lands, so a just-launched task never settles first;
-    // nextSnap is idempotent for the same inputs, so advancing it in render is safe
-    const readPending = shellReadPending(agent, useAtomValue(shellReadAtByIdAtom)[agent.id]);
-    const snapRef = useRef<AgentSnap>(undefined);
-    snapRef.current = nextSnap(snapRef.current, agent.state, standing, readPending);
     // m4: one-shot settle when this agent is done (working/asking -> idle, or its last shell task ending)
-    const settling = useSettle(agent.state === "idle" && !standing && !snapRef.current.held);
+    const settling = useSettle(agent.state === "idle" && !standing);
 
     const renaming = useAtomValue(renamingRowAtom) === agent.id;
 
