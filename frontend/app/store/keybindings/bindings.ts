@@ -1025,7 +1025,8 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "ArrowLeft",
             group: "Agent",
             label: "Previous agent",
-            when: agentNav,
+            // on a canvas board left and right step the boards; up, down, j and k still move between agents
+            when: (ctx) => agentNav(ctx) && !boardReady(ctx),
             run: () => step(-1),
         },
         {
@@ -1033,7 +1034,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "ArrowRight",
             group: "Agent",
             label: "Next agent",
-            when: agentNav,
+            when: (ctx) => agentNav(ctx) && !boardReady(ctx),
             run: () => step(1),
         },
         // the tree lists agents top to bottom, so up and down move through it; left and right are the older keys
@@ -1215,6 +1216,22 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         {
             id: "agent:canvas-next",
             keys: "]",
+            group: "Agent",
+            label: "Next board",
+            when: boardReady,
+            run: () => stepCanvasBoard(focusId(), 1),
+        },
+        {
+            id: "agent:canvas-prev-arrow",
+            keys: "ArrowLeft",
+            group: "Agent",
+            label: "Previous board",
+            when: boardReady,
+            run: () => stepCanvasBoard(focusId(), -1),
+        },
+        {
+            id: "agent:canvas-next-arrow",
+            keys: "ArrowRight",
             group: "Agent",
             label: "Next board",
             when: boardReady,

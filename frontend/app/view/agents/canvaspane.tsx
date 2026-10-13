@@ -112,7 +112,7 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
                         <StepButton dir="prev" onStep={(delta) => stepCanvasBoard(agent.id, delta)} />
                         <SwapTabs
                             ariaLabel="Boards"
-                            title={`Previous and next board (${formatChordString("[")} and ${formatChordString("]")})`}
+                            title={`Previous and next board (${formatChordString("[")} and ${formatChordString("]")}, or ← and →)`}
                             value={currentTab(s)}
                             options={canvasTabs(s.boards).map((t) => ({
                                 key: t,
@@ -288,7 +288,7 @@ function StepButton({ dir, onStep }: { dir: "prev" | "next"; onStep: (delta: num
         <button
             type="button"
             data-canvas-board-step={dir}
-            title={`${prev ? "Previous" : "Next"} board (${formatChordString(prev ? "[" : "]")})`}
+            title={`${prev ? "Previous" : "Next"} board (${formatChordString(prev ? "[" : "]")} or ${prev ? "←" : "→"})`}
             aria-label={prev ? "Previous board" : "Next board"}
             onClick={() => onStep(prev ? -1 : 1)}
             className={cn(SWAP_BTN, "px-[5px]")}

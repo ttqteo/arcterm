@@ -1208,15 +1208,17 @@ describe("agent canvas mode keys", () => {
         expect(getCanvas("a1")!.mode).toBe("canvas");
     });
 
-    it("in canvas mode: c, [ ], m and the agent switches are live; the surface, rail, fullscreen and back keys stand down", () => {
+    it("in canvas mode: c, [ ], ← →, m and the agent switches are live; the surface, rail, fullscreen and back keys stand down", () => {
         setCanvasMode("a1", "canvas", 1);
         for (const id of [
             "agent:canvas-close",
             "agent:canvas-prev",
             "agent:canvas-next",
+            "agent:canvas-prev-arrow",
+            "agent:canvas-next-arrow",
             "agent:mark-start",
-            "agent:prev",
-            "agent:next",
+            "agent:prev-up",
+            "agent:next-down",
             "agent:prev-k",
             "agent:next-j",
             "switcher:next",
@@ -1233,9 +1235,19 @@ describe("agent canvas mode keys", () => {
             "agent:fullscreen",
             "agent:fullscreen-chord",
             "agent:back",
+            // ← → step the boards there, not the agents
+            "agent:prev",
+            "agent:next",
         ]) {
             expect(active(id), id).toBe(false);
         }
+    });
+
+    it("← → move between agents again once the board is not ready to step", () => {
+        setCanvasMode("a1", "canvas", 1);
+        updateCanvas("a1", (s) => ({ ...s, status: "probing" }));
+        expect(active("agent:canvas-next-arrow")).toBe(false);
+        expect(active("agent:next")).toBe(true);
     });
 
     it("the surface switch still works on other surfaces while an agent is in canvas mode", () => {

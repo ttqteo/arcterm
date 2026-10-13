@@ -269,14 +269,14 @@ show one thing in place of the grid; the grid comes back as it was. A terminal p
 
 ### Agent: canvas mode
 
-`c` works when the focused agent has a canvas. In canvas mode, `[` / `]`, `d`, `f`, `F11` and `Esc` do not do their usual jobs; the agent keys (`j` / `k`, the arrows, the `Ctrl`+`Tab` switcher) still move between agents, since the tree stays beside the canvas.
+`c` works when the focused agent has a canvas. In canvas mode, `[` / `]`, `d`, `f`, `F11` and `Esc` do not do their usual jobs; the agent keys (`j` / `k`, `↑` / `↓`, the `Ctrl`+`Tab` switcher) still move between agents, since the tree stays beside the canvas. On a board `←` / `→` step the boards instead of the agents.
 
 | Keys | Action |
 |---|---|
 | `c` | Show the agent's canvas; from the canvas, back to the terminal |
 | `Alt`+`C` | Switch Terminal → Canvas → Review, skipping the ones the agent doesn't have. Works from inside the terminal, where a bare `c` is typed into it |
 | `Alt`+`W` | Close the agent whose header shows **✓ Close · N tok** (its last turn committed and you have read it). Works from inside the terminal; when the header offers no Close, the key goes to the terminal |
-| `[` / `]` | Previous / next board |
+| `[` / `]` or `←` / `→` | Previous / next board |
 | `m` | Mark parts of the board; in mark mode, stop marking |
 | `Mod`+`Enter` | Send the marks to the agent (from mark mode) |
 
