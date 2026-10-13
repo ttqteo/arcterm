@@ -34,8 +34,8 @@ does not, say what you saw and it becomes a bug row under Actionable.
   next message. Shift+Enter is a newline, a Telex/IME Enter does not send, empty + Enter just resumes. A live session
   shows Jump → in the header and no box. `sessionsdetail.tsx` ResumeComposer.
 - [ ] (arcterm) **Transcript sits beside Launch.** New dialog → pick a session under Resume: the footer reads Cancel ·
-  Transcript ⇧⏎ · Resume ⏎ and the row has no button. Shift+Enter from the Start or Project column opens the
-  transcript; in the Task box it is a newline. `launchermodal.tsx` footer, `launcher.ts` launcherKey.
+  Transcript shift+enter · Resume enter and the row has no button. Shift+Enter from the Start or Project column
+  opens the transcript; in the Task box it is a newline. `launchermodal.tsx` footer, `launcher.ts` launcherKey.
 
 **2026-10-13 (New: Ctrl+V pastes into the Task)**
 

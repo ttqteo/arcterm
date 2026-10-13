@@ -25,11 +25,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
-- **Ctrl+V in the New dialog pastes into the Task** (or a run's Goal) wherever focus is outside a text field, images
 - **An ended session's transcript has a message box**: type the next message and press Enter to resume the session
   with it (empty, Enter just resumes); Shift+Enter is a newline.
-- **The New dialog's Transcript button moved to the footer**, beside Launch, with its key ⇧⏎; Shift+Enter now opens
-  the picked session's transcript from anywhere but the Task box, and Launch shows its key as ⏎.
+- **The New dialog's Transcript button moved to the footer**, beside Launch, with its key Shift+Enter, which now opens
+  the picked session's transcript from anywhere but the Task box, and Launch shows its key as Enter.
+- **Ctrl+V in the New dialog pastes into the Task** (or a run's Goal) wherever focus is outside a text field, images
   included, and leaves the cursor there.
 - **An agent's ✳ in the sidebar now shows its state** in place of the dot on its second line: it pulses in the accent
   colour while working, in yellow while asking, and goes grey when idle or asleep.

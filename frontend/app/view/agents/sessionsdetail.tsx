@@ -154,7 +154,11 @@ function ResumeComposer({ model, session }: { model: AgentsViewModel; session: L
         });
     };
     return (
-        <div data-agent-session-composer className="flex flex-none items-end gap-2 border-t border-edge-faint pt-2.5">
+        // the transcript's own column (CompactTranscript), so the box lines up under the last message
+        <div
+            data-agent-session-composer
+            className="mx-auto flex w-full max-w-[760px] flex-none items-end gap-2 border-t border-edge-faint pt-2.5"
+        >
             <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
@@ -164,7 +168,7 @@ function ResumeComposer({ model, session }: { model: AgentsViewModel; session: L
                         resume();
                     }
                 }}
-                placeholder="Message to send on resume. Leave empty to just resume."
+                placeholder="Next message (optional)"
                 className="block field-sizing-content min-h-[38px] max-h-[160px] min-w-0 flex-1 resize-none overflow-y-auto rounded-[8px] border border-edge-mid bg-surface px-3 py-[9px] text-[13px] leading-normal text-primary outline-none placeholder:text-muted focus:border-accent-700"
             />
             <button
@@ -175,7 +179,7 @@ function ResumeComposer({ model, session }: { model: AgentsViewModel; session: L
                 className="flex h-[38px] flex-none cursor-pointer items-center gap-1.5 rounded-[8px] bg-accent px-[13px] text-[12px] font-semibold text-background hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-45"
             >
                 {busy ? "Resuming…" : "Resume"}
-                <kbd className="font-mono text-[10px] font-normal opacity-60">⏎</kbd>
+                <kbd className="font-mono text-[10px] font-normal opacity-60">enter</kbd>
             </button>
         </div>
     );

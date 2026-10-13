@@ -1025,7 +1025,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                         {resume != null ? (
                             <DialogButton
                                 variant="secondary"
-                                hint="⇧⏎"
+                                hint="shift+enter"
                                 data-launcher-transcript
                                 title="View transcript (Shift+Enter)"
                                 onClick={() => viewTranscript(resume)}
@@ -1036,7 +1036,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                         {/* Enter launches from every zone but the Task box, where Mod+Enter does */}
                         <DialogButton
                             variant="primary"
-                            hint="⏎"
+                            hint="enter"
                             title={`Enter, or ${formatChordString("Cmd:Enter")} from the Task box`}
                             disabled={primaryDisabled}
                             onClick={launch}
