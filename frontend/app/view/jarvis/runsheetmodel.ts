@@ -816,7 +816,27 @@ export function configLine(run: Run, draft: RunSettingsDraft, notSaved: boolean)
         `workers ${workersLabel(draft)}`,
         // only when set, so a run that never chose one prints the line it always did
         ...(draft.reviewerRoute != null ? [`reviewers ${routeLabel(draft.reviewerRoute)}`] : []),
+        ...(run.mode === "orchestrator" ? [approvalsWord(draft.autonomous)] : []),
     ].join(" · ");
+}
+
+// how the run's configuration names its Approvals setting; only an orchestrator run has one
+export function approvalsWord(autonomous: boolean): string {
+    return autonomous ? "autonomous" : "asks you";
+}
+
+const AUTONOMOUS_FROM_HERE = "It answers everything from here on; each call it makes goes in its report.";
+
+// The note that replaces a waiting lead question the human handed back by turning Approvals on. Its first
+// sentence says what the lead does with that question, as far as its header tells.
+export function autonomousResolvedNote(header: string): { title: string; body: string } {
+    const doing =
+        header === "Spec review"
+            ? "The lead approved its spec and is writing the plan."
+            : header === "Plan review"
+              ? "The lead is carrying the plan review's findings into the tasks and going on."
+              : "The lead is deciding it as it would recommend.";
+    return { title: `${header}: the lead decided`, body: `${doing} ${AUTONOMOUS_FROM_HERE}` };
 }
 
 export type ConfigNote = { title: string; body: string; tone: SheetTone; pulse: boolean };

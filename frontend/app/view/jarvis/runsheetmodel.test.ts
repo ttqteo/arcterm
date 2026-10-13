@@ -6,7 +6,9 @@ import { taskStripLabel } from "@/app/view/agents/runstrip";
 import { describe, expect, it } from "vitest";
 import type { DigestState } from "../orchestrate/dagdigest";
 import type { TaskWorkerView } from "../orchestrate/taskcorrelate";
+import type { RunSettingsDraft } from "./runsettings";
 import {
+    autonomousResolvedNote,
     configLine,
     configNote,
     doneBody,
@@ -745,22 +747,56 @@ describe("taskRow", () => {
 });
 
 describe("configLine", () => {
+    const draft = (over: Partial<RunSettingsDraft> = {}): RunSettingsDraft => ({
+        parallelism: 2,
+        workerRoute: null,
+        reviewerPicks: false,
+        reviewerRoute: null,
+        autonomous: false,
+        ...over,
+    });
+
     it("prints the running configuration as one line", () => {
-        expect(
-            configLine(run(), { parallelism: 2, workerRoute: null, reviewerPicks: false, reviewerRoute: null }, false)
-        ).toBe("engine · orchestrator · lead pi/deepseek-v4-flash · parallelism 2 · workers inherit the lead");
+        expect(configLine(run(), draft(), false)).toBe(
+            "engine · orchestrator · lead pi/deepseek-v4-flash · parallelism 2 · workers inherit the lead · asks you"
+        );
     });
 
     it("says when a run's width is left to its submit", () => {
-        expect(
-            configLine(run(), { parallelism: 0, workerRoute: null, reviewerPicks: false, reviewerRoute: null }, false)
-        ).toContain("parallelism set at submit");
+        expect(configLine(run(), draft({ parallelism: 0 }), false)).toContain("parallelism set at submit");
     });
 
     it("carries a refused value with not saved", () => {
-        expect(
-            configLine(run(), { parallelism: 9, workerRoute: null, reviewerPicks: false, reviewerRoute: null }, true)
-        ).toBe("engine · orchestrator · parallelism 9 — not saved");
+        expect(configLine(run(), draft({ parallelism: 9 }), true)).toBe(
+            "engine · orchestrator · parallelism 9 — not saved"
+        );
+    });
+
+    it("names the Approvals setting for an orchestrator run only", () => {
+        expect(configLine(run(), draft({ autonomous: true }), false)).toMatch(/ · autonomous$/);
+        expect(configLine(run(), draft(), false)).toMatch(/ · asks you$/);
+        const quick = run({ mode: "quick" });
+        expect(configLine(quick, draft({ autonomous: true }), false)).not.toMatch(/autonomous|asks you/);
+        expect(configLine(quick, draft(), false)).not.toMatch(/autonomous|asks you/);
+    });
+});
+
+describe("autonomousResolvedNote", () => {
+    const FROM_HERE = "It answers everything from here on; each call it makes goes in its report.";
+
+    it("says what the lead does with the question it was handed back", () => {
+        expect(autonomousResolvedNote("Spec review")).toEqual({
+            title: "Spec review: the lead decided",
+            body: `The lead approved its spec and is writing the plan. ${FROM_HERE}`,
+        });
+        expect(autonomousResolvedNote("Plan review")).toEqual({
+            title: "Plan review: the lead decided",
+            body: `The lead is carrying the plan review's findings into the tasks and going on. ${FROM_HERE}`,
+        });
+        expect(autonomousResolvedNote("Land")).toEqual({
+            title: "Land: the lead decided",
+            body: `The lead is deciding it as it would recommend. ${FROM_HERE}`,
+        });
     });
 });
 

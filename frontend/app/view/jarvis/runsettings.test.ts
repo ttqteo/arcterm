@@ -6,9 +6,11 @@ import {
     draftIsDirty,
     draftSeedKey,
     parallelismInvalid,
+    runAutonomous,
     runMachine,
     runSettingsDraft,
     runSettingsPanelState,
+    settingsChangePayload,
     settingsPayload,
     sheetFace,
 } from "./runsettings";
@@ -103,6 +105,7 @@ describe("runSettingsDraft", () => {
             workerRoute: route,
             reviewerPicks: false,
             reviewerRoute: null,
+            autonomous: false,
         });
     });
 
@@ -116,16 +119,45 @@ describe("runSettingsDraft", () => {
             workerRoute: route,
             reviewerPicks: false,
             reviewerRoute: null,
+            autonomous: false,
         });
+    });
+
+    it("seeds Approvals from the owning group over the run, and from the run before a dag", () => {
+        const group = (autonomous: boolean) => submittedGroup({ autonomous });
+        expect(runSettingsDraft(engineRun({ autonomous: false }), group(true)).autonomous).toBe(true);
+        expect(runSettingsDraft(engineRun({ autonomous: true }), group(false)).autonomous).toBe(false);
+        expect(runSettingsDraft(engineRun({ autonomous: true }), null).autonomous).toBe(true);
+        expect(runSettingsDraft(engineRun(), null).autonomous).toBe(false);
+    });
+});
+
+describe("runAutonomous", () => {
+    // a child run carries its parent's dag oref; the parent's group says nothing about the child
+    it("ignores a group another run owns", () => {
+        const child = engineRun({ id: "r2", autonomous: false });
+        expect(runAutonomous(child, submittedGroup({ autonomous: true }))).toBe(false);
+    });
+
+    it("reads the group alone when the caller has no run", () => {
+        expect(runAutonomous(null, submittedGroup({ autonomous: true }))).toBe(true);
+        expect(runAutonomous(null, null)).toBe(false);
     });
 });
 
 describe("draftIsDirty", () => {
     it("compares the effective values", () => {
-        const base = { parallelism: 2, workerRoute: null, reviewerPicks: false, reviewerRoute: null };
+        const base = {
+            parallelism: 2,
+            workerRoute: null,
+            reviewerPicks: false,
+            reviewerRoute: null,
+            autonomous: false,
+        };
         expect(draftIsDirty(base, { ...base })).toBe(false);
         expect(draftIsDirty(base, { ...base, parallelism: 3 })).toBe(true);
         expect(draftIsDirty(base, { ...base, workerRoute: { runtime: "pi" } as RoutePin })).toBe(true);
+        expect(draftIsDirty(base, { ...base, autonomous: true })).toBe(true);
     });
 });
 
@@ -136,14 +168,38 @@ describe("settingsPayload", () => {
             workerRoute: { runtime: "pi" } as RoutePin,
             reviewerPicks: false,
             reviewerRoute: null,
+            autonomous: false,
         };
-        expect(settingsPayload("c1", "r1", draft)).toEqual({
+        expect(settingsPayload("c1", "r1", draft, false)).toEqual({
             channelid: "c1",
             runid: "r1",
             parallelism: 3,
             workerroute: { runtime: "pi" },
             reviewerpicks: false,
         });
+    });
+
+    it("sends Approvals only when the draft changes it", () => {
+        const draft = {
+            parallelism: 3,
+            workerRoute: null,
+            reviewerPicks: false,
+            reviewerRoute: null,
+            autonomous: true,
+        };
+        expect(settingsPayload("c1", "r1", draft, false).autonomous).toBe(true);
+        expect(settingsPayload("c1", "r1", { ...draft, autonomous: false }, true).autonomous).toBe(false);
+        // a save about the other dials never writes back a value the palette may since have flipped
+        expect(settingsPayload("c1", "r1", draft, true)).not.toHaveProperty("autonomous");
+    });
+});
+
+describe("settingsChangePayload and Approvals", () => {
+    it("sends Approvals only when the change sets it", () => {
+        const group = submittedGroup({ autonomous: true });
+        expect(settingsChangePayload("c1", "r1", null, group, { parallelism: 4 })).not.toHaveProperty("autonomous");
+        expect(settingsChangePayload("c1", "r1", null, group, { autonomous: false }).autonomous).toBe(false);
+        expect(settingsChangePayload("c1", "r1", engineRun(), null, { autonomous: true }).autonomous).toBe(true);
     });
 });
 
@@ -207,6 +263,14 @@ describe("draftSeedKey", () => {
         const before = draftSeedKey(linked, submittedGroup());
         const after = draftSeedKey(linked, submittedGroup({ workerroute: { runtime: "pi" } as RoutePin }));
         expect(after).not.toBe(before);
+    });
+
+    it("changes when Approvals flips, before a dag and after", () => {
+        const linked = engineRun({ dagoref: "d1" });
+        expect(draftSeedKey(linked, submittedGroup({ autonomous: true }))).not.toBe(
+            draftSeedKey(linked, submittedGroup())
+        );
+        expect(draftSeedKey(engineRun({ autonomous: true }), null)).not.toBe(draftSeedKey(engineRun(), null));
     });
 
     it("changes on a pre-dag width or worker route", () => {

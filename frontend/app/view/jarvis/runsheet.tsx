@@ -56,7 +56,7 @@ import { atom, useAtomValue, useSetAtom, type Atom } from "jotai";
 import { ArrowUpRight, Check, ChevronDown, ChevronRight, CornerDownRight } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { RunComposer } from "./briefcomposer";
-import { RunSettingsPanel, SHEET_BTN } from "./briefrunsheet";
+import { RunSettingsPanel, SHEET_BTN, type WaitingQuestion } from "./briefrunsheet";
 import { finalCheckEntry, shotPath, shotRounds, type FinalCheckEntry, type ShotRound } from "./finalshotsmodel";
 import { FinalShotsViewer, VERDICT_DOT } from "./finalshotsviewer";
 import { briefEffortIndexAtom, briefRevealChunkAtom } from "./jarvisstore";
@@ -211,6 +211,12 @@ function RunSheetFrame({ ctx, dag }: { ctx: SheetCtx; dag: SheetDagRead | null }
         workerAsking: asker != null,
         survivors,
     });
+    const waiting: WaitingQuestion | null =
+        asker != null
+            ? { header: asker.ask?.questions?.[0]?.header || "question", lead: true }
+            : userAsks.length > 0
+              ? { header: "question", lead: false }
+              : null;
     const body = doneBody(run);
     const group = dag?.group ?? null;
     const finalEntry = finalCheckEntry(group);
@@ -224,6 +230,7 @@ function RunSheetFrame({ ctx, dag }: { ctx: SheetCtx; dag: SheetDagRead | null }
                 run={run}
                 status={status}
                 dag={dag}
+                waiting={waiting}
                 onRetry={dag?.digest.retry}
             />
             <div className="sc min-h-0 flex-1 overflow-y-auto px-4 pb-2.5">
@@ -367,12 +374,14 @@ function Reading({
     run,
     status,
     dag,
+    waiting,
     onRetry,
 }: {
     model: AgentsViewModel;
     run: Run;
     status: SheetStatus;
     dag: SheetDagRead | null;
+    waiting: WaitingQuestion | null;
     onRetry?: () => void;
 }) {
     const index = useAtomValue(briefEffortIndexAtom);
@@ -407,6 +416,7 @@ function Reading({
             <RunSettingsPanel
                 run={run}
                 inline
+                waiting={waiting}
                 meta={
                     <>
                         {status.meta.map((m) => (
