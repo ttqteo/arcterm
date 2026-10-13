@@ -19358,6 +19358,85 @@ const launcherResume = {
         await launcherPress(h, "Escape");
         const closed = await polishWaitFor(h, `!${LAUNCHER}`, 3000);
         rec("5c. Escape closes the dialog", closed, `closed=${closed}`);
+
+        // 6. Open asleep (Shift+Enter on the picked session): a new agent on the roster, asleep, its conversation and the
+        // box under it in its cell, and no process started (the server lists it as sleeping, which it does only for a
+        // block with no running shell). Safe to press: nothing runs until a Wake, which this never sends. Its tab is
+        // closed in teardown.
+        // the new agent is the one whose conversation is this scenario's session: its task is unique to it
+        const asleepCover = `[...document.querySelectorAll('[data-sleeping-transcript]')].find((c) => (c.textContent ?? '').includes(${JSON.stringify(LAUNCHER_RESUME_TASK)}))`;
+        const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+        const wslist = await h.rpc("workspacelist", null);
+        ctx.workspaceId = (wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0]).workspacedata.oid;
+        await h.ev(OPEN_NEW_AGENT);
+        await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
+        await polishNap(400);
+        if ((await state())?.start !== "claude") {
+            await h.ev(focusColumn("start"));
+            await launcherPress(h, await digit("claude"));
+        }
+        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-resume-id="${ctx.sessionId}"]')`, 8000);
+        await h.ev(`${LAUNCHER}?.querySelector('[data-resume-id="${ctx.sessionId}"]')?.click()`);
+        await polishNap(300);
+        const footer = await h.ev(`(() => {
+            const d = ${LAUNCHER};
+            const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+            return {
+                asleep: flat(d?.querySelector('[data-launcher-asleep]')) || null,
+                transcript: !!d?.querySelector('[data-launcher-transcript]'),
+                picked: d?.querySelector('[data-resume-id][aria-checked="true"]')?.getAttribute('data-resume-id') ?? null,
+            };
+        })()`);
+        await h.shot("cdp-shots/launcher-resume-6-asleep-button.png");
+        rec(
+            "6a. a picked Claude session offers Open asleep (Shift+Enter) beside Resume, in place of Transcript",
+            footer?.picked === ctx.sessionId && /^Open asleep/.test(footer.asleep ?? "") && !footer.transcript,
+            JSON.stringify(footer)
+        );
+
+        await h.ev(`${LAUNCHER}?.querySelector('[data-resume-id="${ctx.sessionId}"]')?.focus()`);
+        await launcherPress(h, "Enter", { shift: true });
+        const appeared = await polishWaitFor(h, `!${LAUNCHER} && !!(${asleepCover})`, 10000);
+        const tabId = appeared ? await h.ev(`(${asleepCover})?.getAttribute('data-sleeping-transcript') ?? null`) : null;
+        ctx.asleepTab = tabId;
+        let cell = null;
+        if (tabId) {
+            await polishWaitFor(h, `!!document.querySelector('[data-agent-row="${tabId}"] [data-agent-sleeping]')`, 5000);
+            cell = await h.ev(`(() => {
+                const cover = document.querySelector('[data-sleeping-transcript="${tabId}"]');
+                return {
+                    moon: !!document.querySelector('[data-agent-row="${tabId}"] [data-agent-sleeping]'),
+                    card: (document.querySelector('[data-sleeping-card="${tabId}"]')?.textContent ?? '').trim(),
+                    conversation: (cover?.textContent ?? '').includes(${JSON.stringify(LAUNCHER_RESUME_TASK)}),
+                    composer: document.querySelector('[data-sleeping-composer="${tabId}"] textarea')?.placeholder ?? null,
+                };
+            })()`);
+        }
+        await h.shot("cdp-shots/launcher-resume-6-asleep-agent.png");
+        rec(
+            "6b. Shift+Enter closes the dialog and the session is a new agent row with the moon; its cell shows the conversation, the Sleeping card and the box to wake it",
+            appeared && tabId != null && cell?.moon && cell.conversation && cell.card.includes("Sleeping since") &&
+                /to wake it/.test(cell.composer ?? ""),
+            JSON.stringify({ appeared, tabId, cell })
+        );
+
+        let meta = null;
+        let listed = null;
+        if (tabId) {
+            const tab = await waveService(h, "object", "GetObject", [`tab:${tabId}`]);
+            const blockId = tab?.blockids?.[0];
+            const block = blockId ? await waveService(h, "object", "GetObject", [`block:${blockId}`]) : null;
+            meta = block?.meta ?? null;
+            listed = ((await h.rpc("agentslist", null))?.agents ?? []).find((a) => a.tabid === tabId) ?? null;
+        }
+        const args = meta?.["cmd:args"] ?? [];
+        rec(
+            "6c. its block holds claude --resume <session>, agent:sleeping and the session's transcript, and the server lists it as sleeping (no process)",
+            meta != null && meta.cmd === "claude" && args[0] === "--resume" && args[1] === ctx.sessionId &&
+                meta["agent:sleeping"] > 0 && String(meta["agent:transcriptpath"] ?? "").endsWith(`${ctx.sessionId}.jsonl`) &&
+                listed?.state === "sleeping" && listed?.harness === "claude",
+            JSON.stringify({ meta, listed })
+        );
         return steps;
     },
     async teardown(h, ctx) {
@@ -19369,6 +19448,11 @@ const launcherResume = {
                 console.error(`launcher-resume teardown: ${what} failed: ${e?.message ?? e}`);
             }
         };
+        if (ctx.asleepTab && ctx.workspaceId) {
+            await step("close the tab opened asleep", () =>
+                waveService(h, "workspace", "CloseTab", [ctx.workspaceId, ctx.asleepTab, false])
+            );
+        }
         if (ctx.transcriptDir) {
             await step("remove the transcript", () => rmSync(ctx.transcriptDir, { recursive: true, force: true }));
         }
@@ -26491,7 +26575,8 @@ const agentSleep = {
                 moon: !!sl?.querySelector("[data-consumer-moon]"),
                 wake: sl?.querySelector("[data-consumer-wake]")?.textContent.trim() ?? null,
                 sleepOnSleeper: !!sl?.querySelector("[data-consumer-sleep]"),
-                sleepOnAwake: aw?.querySelector("[data-consumer-sleep]")?.textContent.trim() ?? null,
+                // an icon button since the panel's redraw: its name is its aria-label
+                sleepOnAwake: aw?.querySelector("[data-consumer-sleep]")?.getAttribute("aria-label") ?? null,
                 wakeOnAwake: !!aw?.querySelector("[data-consumer-wake]"),
             };
         })()`);
