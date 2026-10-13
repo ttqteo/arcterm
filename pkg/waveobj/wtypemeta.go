@@ -50,6 +50,8 @@ type MetaTSType struct {
 	CmdInitScriptPwsh string            `json:"cmd:initscript.pwsh,omitempty"`
 	CmdInitScriptFish string            `json:"cmd:initscript.fish,omitempty"`
 
+	ToolId string `json:"tool:id,omitempty"` // the library id (pkg/arctools) of a terminal opened as a tool
+
 	EditorClear               bool    `json:"editor:*,omitempty"`
 	EditorMinimapEnabled      bool    `json:"editor:minimapenabled,omitempty"`
 	EditorStickyScrollEnabled bool    `json:"editor:stickyscrollenabled,omitempty"`

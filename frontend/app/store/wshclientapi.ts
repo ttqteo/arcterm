@@ -1206,6 +1206,18 @@ export class RpcApiType {
         return client.wshRpcCall("termgetscrollbacklines", data, opts);
     }
 
+    // command "toolssetuser" [call]
+    ToolsSetUserCommand(client: WshClient, data: CommandToolsSetUserData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "toolssetuser", data, opts);
+        return client.wshRpcCall("toolssetuser", data, opts);
+    }
+
+    // command "toolsstatus" [call]
+    ToolsStatusCommand(client: WshClient, opts?: RpcOpts): Promise<CommandToolsStatusRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "toolsstatus", null, opts);
+        return client.wshRpcCall("toolsstatus", null, opts);
+    }
+
     // command "uiinvoke" [call]
     UiInvokeCommand(client: WshClient, data: CommandUiInvokeData, opts?: RpcOpts): Promise<string> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "uiinvoke", data, opts);
