@@ -22,10 +22,12 @@ import {
     codeDraftsAtom,
     codeFileAtom,
     codePinsAtom,
+    codePlainAtom,
     codeProjectAtom,
     codeTexPdfAtom,
     codeViewModeAtom,
     draftKey,
+    NOT_TRACKED,
     openPath,
     refreshTexPdf,
     texPdfFor,
@@ -119,6 +121,7 @@ function ViewModeToggle(p: { path: string; abs: string; hasPdf: boolean; preview
     const { path, abs, hasPdf, previewable } = p;
     const [chosen, setMode] = useAtom(codeViewModeAtom);
     const mode = resolveViewMode(path, chosen, hasPdf, previewable);
+    const plain = useAtomValue(codePlainAtom);
     const modes = viewModesFor(path, hasPdf, previewable);
     return (
         <div className="flex flex-none items-center gap-0.5 rounded-[6px] border border-border p-[2px]">
@@ -127,6 +130,8 @@ function ViewModeToggle(p: { path: string; abs: string; hasPdf: boolean; preview
                     key={m}
                     type="button"
                     data-code-view-mode={m}
+                    disabled={plain && m === "diff"}
+                    title={plain && m === "diff" ? NOT_TRACKED : undefined}
                     onClick={() => {
                         setMode(m);
                         if (m === "pdf") {
@@ -134,7 +139,7 @@ function ViewModeToggle(p: { path: string; abs: string; hasPdf: boolean; preview
                         }
                     }}
                     className={cn(
-                        "cursor-pointer rounded-[4px] px-2 py-[2px] text-[11px] capitalize",
+                        "cursor-pointer rounded-[4px] px-2 py-[2px] text-[11px] capitalize disabled:cursor-default disabled:opacity-40",
                         m === mode ? "bg-accent/10 text-accent-soft" : "text-muted hover:text-primary"
                     )}
                 >

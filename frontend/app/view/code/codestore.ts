@@ -97,6 +97,11 @@ export const lastCodeProjectAtom = atomWithStorage<CodeProject | null>("code.pro
 }) as PrimitiveAtom<CodeProject | null>;
 export const codeIndexAtom = atom<CodeIndex | null>(null) as PrimitiveAtom<CodeIndex | null>;
 export const codeIndexErrorAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+// A directory that is not a repository: browsable, but with no change tracking. Derived from the one
+// index so nothing else has to be told; false while the index loads.
+export const codePlainAtom = atom((get) => get(codeIndexAtom)?.isRepo === false);
+// the reason a git-only affordance gives for being disabled in a plain directory
+export const NOT_TRACKED = "Not a git repository — no change tracking";
 export const codeExpandedAtom = atom<Set<string>>(new Set<string>()) as PrimitiveAtom<Set<string>>;
 // an ignored directory's entries once it has been opened, keyed by the directory (see listIgnoredDirs)
 export const codeIgnoredListedAtom = atom<Map<string, string[]>>(new Map()) as PrimitiveAtom<Map<string, string[]>>;
@@ -348,7 +353,7 @@ export function canRestoreProject(stored: CodeProject | null, registry: Record<s
     return false;
 }
 
-export type CodeBodyPhase = "no-projects" | "no-project" | "error" | "loading" | "not-repo" | "ready";
+export type CodeBodyPhase = "no-projects" | "no-project" | "error" | "loading" | "ready";
 
 // What CodeBody shows. A stored project the restore effect is about to reopen is "loading": that effect
 // runs after the first paint, and "No project selected" there is a false claim. More states than LoadPhase
@@ -370,10 +375,7 @@ export function codeBodyPhase(p: {
     if (p.indexError != null) {
         return "error";
     }
-    if (p.index == null) {
-        return "loading";
-    }
-    return p.index.isRepo ? "ready" : "not-repo";
+    return p.index == null ? "loading" : "ready";
 }
 
 // Code's view of the one project list: name and path only, because a pick is persisted (lastCodeProjectAtom)
@@ -393,7 +395,11 @@ export async function loadFileIndex(path: string): Promise<CodeIndex> {
     if (cached != null) {
         return cached;
     }
-    const res = await RpcApi.GitListFilesCommand(TabRpcClient, { cwd: path }, { timeout: LIST_RPC_TIMEOUT_MS });
+    const res = await RpcApi.GitListFilesCommand(
+        TabRpcClient,
+        { cwd: path, allowplain: true },
+        { timeout: LIST_RPC_TIMEOUT_MS }
+    );
     const idx: CodeIndex = {
         paths: res.files ?? [],
         ignored: res.ignored ?? [],

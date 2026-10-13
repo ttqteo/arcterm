@@ -1325,6 +1325,7 @@ declare global {
     // wshrpc.CommandGitGrepData
     type CommandGitGrepData = {
         cwd: string;
+        allowplain?: boolean;
         query: string;
         regex?: boolean;
         wholeword?: boolean;
@@ -1362,6 +1363,7 @@ declare global {
     // wshrpc.CommandGitListFilesData
     type CommandGitListFilesData = {
         cwd: string;
+        allowplain?: boolean;
     };
 
     // wshrpc.CommandGitListFilesRtnData

@@ -23,6 +23,7 @@ describe("grepData", () => {
     it("sends the default options as a plain substring search", () => {
         expect(grepData("C:\\repo", "needle", DEFAULT_SEARCH_OPTS)).toEqual({
             cwd: "C:\\repo",
+            allowplain: true,
             query: "needle",
             regex: false,
             wholeword: false,
@@ -42,6 +43,7 @@ describe("grepData", () => {
         };
         expect(grepData("C:\\repo", "need(le)?", opts)).toEqual({
             cwd: "C:\\repo",
+            allowplain: true,
             query: "need(le)?",
             regex: true,
             wholeword: true,

@@ -10198,6 +10198,115 @@ const codeGitStatus = {
 const CODE_DIFF_PROJECT = "verify-code-diff";
 const CODE_DIFF_FILE = "notes.md";
 
+// A directory git does not know: typed into the picker, it browses like a repository, minus change
+// tracking. The fixture holds a skipped build folder, so the walk's skip set is checked too.
+const codePlainDir = {
+    name: "code-plain-dir",
+    surface: "code",
+    async arrange() {
+        const dir = mkdtempSync(join(tmpdir(), "verify-code-plain-"));
+        writeFileSync(join(dir, "notes.txt"), "first line\nPLAINNEEDLE here\n");
+        mkdirSync(join(dir, "sub"));
+        writeFileSync(join(dir, "sub", "inner.txt"), "PLAINNEEDLE again\n");
+        mkdirSync(join(dir, "node_modules"));
+        writeFileSync(join(dir, "node_modules", "skipped.js"), "PLAINNEEDLE skipped\n");
+        return { dir };
+    },
+    async assert(h, ctx) {
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const poll = async (expr, tries = 20) => {
+            let v;
+            for (let i = 0; i < tries; i++) {
+                v = await h.ev(expr);
+                if (v) break;
+                await sleep(300);
+            }
+            return v;
+        };
+        await h.goto("code");
+
+        await h.ev(`document.querySelector('[data-code-project-picker]')?.click()`);
+        // the popover mounts its contents only once open, a render after the click
+        await poll(`!!document.querySelector('[data-code-picker-path] input')`);
+        const typed = await h.ev(`(() => {
+            const input = document.querySelector('[data-code-picker-path] input');
+            if (!input) return "no path input";
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, ${JSON.stringify(ctx.dir)});
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            return "ok";
+        })()`);
+        await sleep(100); // let React commit the typed value before the submit reads it
+        await h.ev(`document.querySelector('[data-code-picker-path]')?.requestSubmit()`);
+        rec("type the plain directory into the picker", typed === "ok", typed);
+
+        const tree = await poll(`(() => {
+            const rows = [...document.querySelectorAll('[data-code-tree] [role="treeitem"]')].map((r) => r.textContent.trim());
+            return rows.length ? rows : null;
+        })()`);
+        rec(
+            "the tree lists the directory's files",
+            Array.isArray(tree) && tree.some((t) => t.includes("notes.txt")) && tree.some((t) => t.includes("sub")),
+            `rows=${JSON.stringify(tree)}`
+        );
+        rec(
+            "node_modules is skipped",
+            Array.isArray(tree) && !tree.some((t) => t.includes("node_modules")),
+            `rows=${JSON.stringify(tree)}`
+        );
+        const footer = await h.ev(`document.querySelector('[data-code-tree-skipset]')?.textContent ?? ""`);
+        rec("the skip set is stated under the tree", footer.includes("node_modules"), `footer="${footer}"`);
+        const header = await h.ev(`document.body.innerText.includes("not a git repository")`);
+        rec("the header marks the directory as not a repository", header === true, `marked=${header}`);
+        const changed = await h.ev(`(() => {
+            const t = document.querySelector('[data-code-column-tab="changed"]');
+            return t ? { disabled: t.disabled, title: t.title } : null;
+        })()`);
+        rec(
+            "the Changed tab is disabled with its reason",
+            changed?.disabled === true && /no change tracking/.test(changed?.title ?? ""),
+            JSON.stringify(changed)
+        );
+
+        await h.ev(`(() => {
+            const row = [...document.querySelectorAll('[data-code-tree] [role="treeitem"]')].find((r) => r.textContent.includes("notes.txt"));
+            row?.click();
+        })()`);
+        const editor = await poll(`!!document.querySelector('.monaco-editor')`);
+        rec("opening a file mounts the editor", editor === true, `editor=${editor}`);
+        const diff = await h.ev(`document.querySelector('[data-code-view-mode="diff"]')?.disabled ?? null`);
+        rec("the Diff toggle is disabled", diff === true, `disabled=${diff}`);
+        await h.shot("cdp-shots/code-plain-dir.png");
+
+        await h.ev(`document.querySelector('[data-code-column-tab="search"]')?.click()`);
+        await sleep(300);
+        await h.ev(`(() => {
+            const input = document.querySelector('[data-code-search-input]');
+            if (!input) return;
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, "plainneedle");
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+        })()`);
+        await sleep(100);
+        await h.ev(`document.querySelector('[data-code-search-input]')?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }))`);
+        const hits = await poll(`(() => {
+            const rows = [...document.querySelectorAll('[data-code-search-row]')];
+            return rows.length ? rows.map((r) => r.textContent.trim()) : null;
+        })()`);
+        rec(
+            "search finds both matches and none under node_modules",
+            Array.isArray(hits) && hits.length === 2 && !hits.some((t) => t.includes("skipped")),
+            `hits=${JSON.stringify(hits)}`
+        );
+        await h.shot("cdp-shots/code-plain-dir-search.png");
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await h.goto("cockpit");
+        if (ctx?.dir) rmSync(ctx.dir, { recursive: true, force: true });
+    },
+};
+
 const codeDiff = {
     name: "code-diff",
     surface: "code",
@@ -36821,6 +36930,7 @@ export const SCENARIOS = [
     codeSearch,
     codeSidebar,
     codeGitStatus,
+    codePlainDir,
     codeDiff,
     codeMarkdown,
     codeTexPdf,

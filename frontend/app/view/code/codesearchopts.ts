@@ -31,6 +31,7 @@ export function toPathspecs(raw: string): string[] {
 export function grepData(cwd: string, query: string, opts: SearchOpts): CommandGitGrepData {
     return {
         cwd,
+        allowplain: true, // a directory that is not a repository is searched by a Go scan instead
         query,
         regex: opts.regex,
         wholeword: opts.wholeWord,

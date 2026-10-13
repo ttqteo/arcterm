@@ -1,7 +1,9 @@
 # Code surface: browsing beyond the project registry
 
 **Date:** 2026-09-04
-**Status:** design approved, no plan written yet
+**Status:** shipped (all three phases). One deviation from decision 1: there is no persisted
+`CodeProject.kind`. "Plain" is `codePlainAtom` in `codestore.ts`, derived from the loaded index's
+`isRepo`, so the stored selection and recents carry no second copy of a fact the index already holds.
 **Design source:** none — no mockup. Extends the surface's existing project-picker popover.
 **Predecessors:** `2026-08-03-code-browser-surface-design.md` (decision 2, "one `git ls-files` call is
 the single source of truth", which this spec qualifies).
