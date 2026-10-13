@@ -108,6 +108,7 @@ async function resumeSession(model: AgentsViewModel, session: LiveSession, messa
         task: message.trim(),
         projectPath: session.projectpath,
         projectName: session.projectname || "agent",
+        resumeOf: session.transcriptpath,
         ...piResume,
     });
 }

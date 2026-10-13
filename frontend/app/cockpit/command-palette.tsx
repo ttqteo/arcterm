@@ -691,6 +691,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
                                 task: "",
                                 projectPath: s.projectpath,
                                 projectName: s.projectname || "agent",
+                                resumeOf: s.transcriptpath,
                                 ...piResume,
                             })
                         );

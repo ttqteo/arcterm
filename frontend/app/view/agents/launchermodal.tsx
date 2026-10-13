@@ -550,6 +550,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 projectName: p.name,
                 branch,
                 ...spec,
+                ...(resume ? { resumeOf: resume.transcriptpath } : {}),
                 ...(asleep && resume
                     ? { asleep: { since: resume.lastactivets, transcriptPath: resume.transcriptpath } }
                     : {}),

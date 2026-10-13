@@ -62,6 +62,20 @@ function norm(p: string): string {
     return p.replace(/\\/g, "/").toLowerCase();
 }
 
+/** Pure: the roster agent whose tab holds this transcript, awake or asleep (a sleeping agent keeps its transcript path
+ *  in its block meta), or undefined. A resume of a session a tab holds goes to that tab: a second tab on it would run
+ *  two processes writing one transcript. */
+export function sessionHolder<T extends Pick<AgentVM, "transcriptPath">>(
+    roster: T[],
+    transcriptPath: string | undefined
+): T | undefined {
+    if (!transcriptPath) {
+        return undefined;
+    }
+    const want = norm(transcriptPath);
+    return roster.find((a) => a.transcriptPath && norm(a.transcriptPath) === want);
+}
+
 // Overlay the live roster onto the scanned sessions: match on transcript path, strip the synthetic
 // "finished" event for live sessions, and compute needsAttention (live+asking, or ended waiting).
 export function overlayLive(base: SessionActivity[], roster: AgentVM[], _now: number): LiveSession[] {

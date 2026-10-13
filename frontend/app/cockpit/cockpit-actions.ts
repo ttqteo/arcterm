@@ -1,5 +1,6 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
+import { pushToast } from "@/app/cockpit/notificationstore";
 import { atoms } from "@/app/store/global-atoms";
 import { globalStore } from "@/app/store/jotaiStore";
 import { WorkspaceService } from "@/app/store/services";
@@ -8,9 +9,11 @@ import * as WOS from "@/app/store/wos";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { showTerminal } from "@/app/view/agents/agentcenter";
 import { AgentsViewModel } from "@/app/view/agents/agents";
-import { asleepLaunchMeta, type AsleepLaunch } from "@/app/view/agents/agentsleep";
-import type { PendingLaunch } from "@/app/view/agents/agentsviewmodel";
+import { asleepLaunchMeta, wakeAgent, wakeErrorToast, type AsleepLaunch } from "@/app/view/agents/agentsleep";
+import type { AgentVM, PendingLaunch } from "@/app/view/agents/agentsviewmodel";
 import { buildLaunchMeta, runtimeCreatesAgentPanel, type Runtime } from "@/app/view/agents/launch";
+import { sessionHolder } from "@/app/view/agents/sessionsarchivestore";
+import { stringToBase64 } from "@/util/util";
 
 export interface LaunchAgentOpts {
     runtime: Runtime;
@@ -22,6 +25,9 @@ export interface LaunchAgentOpts {
     projectName: string; // labels the roster row + carries project scope
     branch?: string;
     resumePath?: string; // pi transcript path; preflighted before any worktree/tab is created
+    // the transcript of the session this launch resumes: when a tab already holds it, awake or asleep, the launch goes
+    // to that tab instead of opening a second one (goToHolder)
+    resumeOf?: string;
     label?: string; // the session's name in the roster (session:label), e.g. the initiative it works on
     effortORef?: string; // the initiative it works on (session:effort), "effort:<oid>"
     // open asleep: the tab is made with its resume command and marked asleep, so it shows the session's transcript and
@@ -55,6 +61,11 @@ export async function createTermTab(tabName: string): Promise<{ tabId: string; b
 // default term block is reconfigured via SetMeta before it renders, so meta is honored at controller
 // start (the backend starts controllers lazily on the first terminal-view resync).
 export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts): Promise<string> {
+    const holder = sessionHolder(globalStore.get(model.agentsAtom), opts.resumeOf);
+    if (holder) {
+        await goToHolder(model, holder, opts.task.trim());
+        return holder.id;
+    }
     // Pi --session creates a session when the path is missing; a stale archived entry must never reach
     // that behavior, so a resumePath that no longer exists on disk aborts before anything is created.
     if (opts.resumePath) {
@@ -142,6 +153,38 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
         }
     }
     return tabId;
+}
+
+// A resume of a session a tab already holds: two tabs on it would run two processes writing one transcript, so the
+// launch takes that tab's focus instead, as a new agent's would. A message given with it wakes a sleeping agent with
+// it, or is typed into an awake one, as the agent's composer sends it. A failed wake toasts, as everywhere else.
+async function goToHolder(model: AgentsViewModel, holder: AgentVM, message: string): Promise<void> {
+    globalStore.set(model.focusIdAtom, holder.id);
+    globalStore.set(model.surfaceAtom, "agent");
+    showTerminal();
+    if (!holder.sleeping) {
+        globalStore.set(model.typingFollowsAtom, holder.id);
+    }
+    pushToast({
+        title: `${holder.name} is already open`,
+        message: "Went to its tab rather than open the conversation a second time.",
+        level: "info",
+    });
+    if (message === "") {
+        return;
+    }
+    if (holder.sleeping) {
+        try {
+            await wakeAgent(holder.id, { message });
+        } catch (e) {
+            wakeErrorToast(holder.name, e);
+        }
+    } else if (holder.blockId) {
+        await RpcApi.ControllerInputCommand(TabRpcClient, {
+            blockid: holder.blockId,
+            inputdata64: stringToBase64(message + "\r"),
+        });
+    }
 }
 
 // Attach = resume a detached background agent inside a fresh Wave terminal block. `claude --resume

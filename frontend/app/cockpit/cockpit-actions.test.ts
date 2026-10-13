@@ -12,6 +12,8 @@ const setMeta = vi.fn().mockResolvedValue(undefined);
 const reloadWaveObject = vi.fn().mockResolvedValue(undefined);
 const fileInfo = vi.fn();
 const agentSyncApply = vi.fn().mockResolvedValue({ actions: [] });
+const wake = vi.fn().mockResolvedValue(undefined);
+const controllerInput = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("@/app/store/services", () => ({ WorkspaceService: { CreateTab: (...a: any[]) => createTab(...a) } }));
 vi.mock("@/app/store/wshclientapi", () => ({
@@ -19,6 +21,8 @@ vi.mock("@/app/store/wshclientapi", () => ({
         SetMetaCommand: (...a: any[]) => setMeta(...a),
         FileInfoCommand: (...a: any[]) => fileInfo(...a),
         AgentSyncApplyCommand: (...a: any[]) => agentSyncApply(...a),
+        AgentsWakeCommand: (...a: any[]) => wake(...a),
+        ControllerInputCommand: (...a: any[]) => controllerInput(...a),
     },
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
@@ -32,8 +36,9 @@ vi.mock("@/app/store/wos", () => ({
 
 import { launchAgent } from "./cockpit-actions";
 
-function fakeModel() {
+function fakeModel(agents: any[] = []) {
     return {
+        agentsAtom: atom(agents),
         pendingLaunchesAtom: atom([]),
         focusIdAtom: atom<string | undefined>(undefined),
         surfaceAtom: atom("cockpit"),
@@ -47,6 +52,8 @@ afterEach(() => {
     setMeta.mockClear();
     reloadWaveObject.mockClear();
     fileInfo.mockReset().mockResolvedValue({});
+    wake.mockClear();
+    controllerInput.mockClear();
 });
 
 describe("launchAgent", () => {
@@ -160,5 +167,58 @@ describe("launchAgent", () => {
             "--session",
             "C:\\Users\\Jane Doe\\.pi\\agent\\sessions\\s.jsonl",
         ]);
+    });
+
+    describe("a resume of a session a tab already holds", () => {
+        const held = "/Users/me/.claude/projects/-p/s1.jsonl";
+        const holder = (over: Record<string, unknown> = {}) => ({
+            id: "tab-held",
+            name: "Lumen",
+            state: "idle",
+            blockId: "blk-held",
+            transcriptPath: held,
+            ...over,
+        });
+        const resume = (model: any, task = "") =>
+            launchAgent(model, {
+                runtime: "claude",
+                startupCommand: "claude --resume s1",
+                task,
+                projectPath: "/p",
+                projectName: "p",
+                resumeOf: held.toUpperCase(),
+            });
+
+        it("goes to that tab and opens no second one", async () => {
+            const model = fakeModel([holder()]);
+            expect(await resume(model)).toBe("tab-held");
+            expect(createTab).not.toHaveBeenCalled();
+            expect(globalStore.get(model.focusIdAtom)).toBe("tab-held");
+            expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+            expect(wake).not.toHaveBeenCalled();
+            expect(controllerInput).not.toHaveBeenCalled();
+        });
+
+        it("wakes a sleeping holder with the message given", async () => {
+            const model = fakeModel([holder({ sleeping: { since: 1, freedBytes: 0 } })]);
+            await resume(model, " next step ");
+            expect(createTab).not.toHaveBeenCalled();
+            expect(wake.mock.calls[0][1]).toEqual({ tab: "tab-held", message: "next step", fresh: undefined });
+            // nothing to type into while it sleeps
+            expect(globalStore.get(model.typingFollowsAtom)).toBeNull();
+        });
+
+        it("types the message given into an awake holder", async () => {
+            const model = fakeModel([holder()]);
+            await resume(model, "next step");
+            expect(controllerInput.mock.calls[0][1]).toEqual({ blockid: "blk-held", inputdata64: btoa("next step\r") });
+            expect(globalStore.get(model.typingFollowsAtom)).toBe("tab-held");
+        });
+
+        it("still opens a new tab for a session no tab holds", async () => {
+            const model = fakeModel([holder({ transcriptPath: "/Users/me/.claude/projects/-p/other.jsonl" })]);
+            expect(await resume(model)).toBe("tab-1");
+            expect(createTab).toHaveBeenCalled();
+        });
     });
 });

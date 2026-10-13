@@ -34,6 +34,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
   instead of leaving the screen on the full-screen app.
 - **A sleeping agent keeps its conversation's title** instead of reading as its project's name: when it slept long
   enough ago that newer conversations pushed it out of Conversations, its title now comes from its own transcript.
+- **Resuming a conversation that a tab already holds takes you to that tab** instead of opening a second one on the
+  same conversation, whether it is awake or asleep, from the command palette, New's Resume list, Open asleep or
+  Conversations. A message typed with the resume wakes the agent with it, or goes to it if awake.
 
 ## 0.15.11 — 2026-10-13
 

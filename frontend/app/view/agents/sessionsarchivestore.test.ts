@@ -12,6 +12,7 @@ import {
     mergedFeed,
     overlayLive,
     resolveSelectedSession,
+    sessionHolder,
     sessionsArchiveAtom,
     sessionsErrorAtom,
     totalEvents,
@@ -58,6 +59,20 @@ describe("overlayLive", () => {
         const [s] = overlayLive([mk({ status: "waiting" })], [], 1000);
         expect(s.live).toBe(false);
         expect(s.needsAttention).toBe(true);
+    });
+});
+
+describe("sessionHolder", () => {
+    it("finds the agent whose tab holds the transcript, asleep or awake, whatever the path's case or separators", () => {
+        const asleep = mkAgent({ id: "t2", state: "idle", sleeping: { since: 1, freedBytes: 0 } });
+        const roster = [mkAgent({ transcriptPath: "/other.jsonl" }), asleep];
+        expect(sessionHolder(roster, "/HOME/me/.claude/projects/p/x.jsonl")?.id).toBe("t2");
+        expect(sessionHolder([mkAgent()], "\\home\\me\\.claude\\projects\\p\\x.jsonl")?.id).toBe("t1");
+    });
+    it("finds none for a transcript no tab holds, or no transcript", () => {
+        expect(sessionHolder([mkAgent()], "/home/me/.claude/projects/p/y.jsonl")).toBeUndefined();
+        expect(sessionHolder([mkAgent({ transcriptPath: undefined })], "")).toBeUndefined();
+        expect(sessionHolder([mkAgent()], undefined)).toBeUndefined();
     });
 });
 
