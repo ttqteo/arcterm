@@ -20625,16 +20625,31 @@ const finalStageScenario = {
         await finalShotsClick(h, `${FST_RAIL}?.querySelector('[data-final-rail] [data-final-step="check"]')`);
         const keptRail = await fstUntil(h, keptRead, (s) => s.rail.includes(FST_KEPT_MARK));
         await shot("b5b-kept-rail");
+        await fstDag(h, ctx, (s) => s.node.meta === "round 1 · failed at Final");
+        const dagCell = `${FST_DAG_RAIL}?.querySelector('[data-final-step="check"]')`;
+        const dagRead = `(() => ({
+            text: (${FST_DAG_RAIL}?.textContent ?? "").replace(/\\s+/g, " ").trim(),
+            pressed: [...(${FST_DAG_RAIL}?.querySelectorAll('[data-final-step][aria-pressed="true"]') ?? [])].map((c) => c.getAttribute("data-final-step")),
+        }))()`;
+        await finalShotsClick(h, dagCell);
+        const keptDag = await fstUntil(h, dagRead, (s) => s.text.includes(FST_KEPT_MARK));
+        await shot("b5b-kept-dag");
+        await finalShotsClick(h, dagCell);
+        const keptDagClosed = await fstUntil(h, dagRead, (s) => s.pressed.length === 0);
         rec(
-            "B5b. a step that ended opens the output it kept: Check's from the pane and from the rail, Verify's says none was kept, and a second click returns to the outcome",
+            "B5b. a step that ended opens the output it kept: Check's from the pane, the rail and the DAG rail, Verify's says none was kept, and a second click returns to the outcome",
             () =>
                 fstSame(keptCheck.pressed, ["check"]) &&
                 keptCheck.pane.includes(`$ ${FST_CHECK}`) &&
                 fstSame(keptGone.pressed, ["verify"]) &&
                 !keptGone.pane.includes(FST_KEPT_MARK) &&
                 keptClosed.pane.includes(fstFlat(FST_DETAIL)) &&
-                keptRail.rail.includes(FST_KEPT_MARK),
-            { keptCheck, keptGone, keptClosed, keptRail }
+                keptRail.rail.includes(FST_KEPT_MARK) &&
+                fstSame(keptDag.pressed, ["check"]) &&
+                !keptDag.text.includes(fstFlat(FST_DETAIL)) &&
+                keptDagClosed.text.includes(fstFlat(FST_DETAIL)) &&
+                !keptDagClosed.text.includes(FST_KEPT_MARK),
+            { keptCheck, keptGone, keptClosed, keptRail, keptDag, keptDagClosed }
         );
 
         await fstShow(h, ctx, "fixing");

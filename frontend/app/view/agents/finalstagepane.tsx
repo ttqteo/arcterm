@@ -9,7 +9,7 @@ import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { useEffect, useRef, useState } from "react";
 import type { AgentsViewModel } from "./agents";
-import { stepHasOutput, type FinalStepKey } from "./finalstage";
+import { shownStep, type FinalStepKey } from "./finalstage";
 import {
     EndFinalStage,
     FinalKeptOutput,
@@ -27,8 +27,7 @@ export function FinalStagePane({ model, run }: { model: AgentsViewModel; run: Ru
     const view = useFinalStageView(run.dag, run.runId, run.channelId, now);
     const [picked, setPicked] = useState<FinalStepKey | null>(null);
     // with no output yet (Tree, or a command's first seconds) the step list stands alone
-    const live = view.output !== "" ? view.steps.find((s) => s.key === view.running) : undefined;
-    const shown = view.steps.find((s) => s.key === picked && stepHasOutput(s)) ?? live;
+    const shown = shownStep(view, picked);
     const outputRef = useRef<HTMLDivElement>(null);
     // a tail is read from its end, so each publish keeps the newest lines in view
     useEffect(() => {

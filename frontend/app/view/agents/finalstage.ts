@@ -496,6 +496,13 @@ export function stepHasOutput(step: FinalStep): boolean {
     return step.kept != null || (step.state === "running" && KEPT_STEPS.has(step.key));
 }
 
+/** Pure: the step whose output a site shows: the one picked while it has output to open, else the running command
+ *  once it has printed. */
+export function shownStep(view: FinalStageView, picked: FinalStepKey | null): FinalStep | undefined {
+    const pick = view.steps.find((s) => s.key === picked && stepHasOutput(s));
+    return pick ?? (view.output !== "" ? view.steps.find((s) => s.key === view.running) : undefined);
+}
+
 /** Pure: the last `lines` lines of a command's output. */
 export function outputTail(output: string, lines: number): string {
     if (lines <= 0) {

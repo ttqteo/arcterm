@@ -9,6 +9,7 @@ import {
     finalStageView,
     isFinalStageId,
     outputTail,
+    shownStep,
     stepHasOutput,
     type FinalStageView,
 } from "./finalstage";
@@ -388,6 +389,21 @@ describe("finalStageView, the steps", () => {
         expect(finalStageView(dag(done), [ev("check", S)], NOW).steps.some((s) => s.kept)).toBe(false);
         const withDir = { ...done, outdir: "/d/1" };
         expect(finalStageView(dag(withDir), [], NOW).steps.some((s) => s.kept)).toBe(false);
+    });
+
+    it("shows the picked step while it has output, else the running command once it printed", () => {
+        const final = { state: "checking", round: 1, step: "verify", stepts: NOW, outdir: "/d/1", output: "" };
+        const events = [ev("tree", S), ev("check", S)];
+        const quiet = finalStageView(dag(final), events, NOW);
+        expect(shownStep(quiet, null)).toBeUndefined();
+        expect(shownStep(quiet, "check")?.key).toBe("check");
+        // Tree keeps nothing and the Final has not run: a pick of either falls back
+        expect(shownStep(quiet, "tree")).toBeUndefined();
+        expect(shownStep(quiet, "final")).toBeUndefined();
+        const printing = finalStageView(dag({ ...final, output: "ok pkg/x" }), events, NOW);
+        expect(shownStep(printing, null)?.key).toBe("verify");
+        expect(shownStep(printing, "tree")?.key).toBe("verify");
+        expect(shownStep(printing, "check")?.key).toBe("check");
     });
 
     it("is invisible with nothing running for no dag and for a dag with no tasks", () => {
