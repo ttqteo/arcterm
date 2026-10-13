@@ -1,58 +1,44 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// The only place the frontend calls the Resource Manager RPCs. The snapshot is polled while the window is
-// visible; the backend samples only while it is being asked (pkg/resmon), so the poll is also its keep-alive.
+// The only place the frontend calls the Resource Manager RPCs. The snapshot is polled while the window is visible,
+// and at once whenever the Consumers panel opens; the backend samples only while it is being asked (pkg/resmon), so
+// the poll is also its keep-alive.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { consumersOpenAtom } from "@/app/view/agents/consumersstore";
-import { machineServersOpenAtom } from "@/app/view/agents/machineserversstore";
 import { atom, type PrimitiveAtom } from "jotai";
-import { jobQueueOpenAtom } from "./jobqueuestore";
-import { outcomeNote, RESMON_UI_INITIAL, resmonReduce, rowLabel, type ResMonAction, type ResMonUi } from "./resmon";
+import { killNote, type AgentCommand } from "./resmon";
 
 export const RESMON_POLL_MS = 2000;
+// a snapshot answers in milliseconds; a call that hangs must not hold the poll, which waits for the one in flight
+export const RESMON_RPC_TIMEOUT_MS = 5000;
 
 // null until the first snapshot lands
 export const resmonSnapshotAtom = atom<ResMonSnapshotData | null>(null) as PrimitiveAtom<ResMonSnapshotData | null>;
-export const resmonOpenAtom = atom(false) as PrimitiveAtom<boolean>;
-export const resmonUiAtom = atom<ResMonUi>(RESMON_UI_INITIAL) as PrimitiveAtom<ResMonUi>;
-// Windows only (pkg/resmon): where it is, the app bar's RAM chip opens it; elsewhere the chip opens Consumers by RAM
+// Windows only (pkg/resmon): there the Consumers panel shows each agent's CPU and command; elsewhere it shows RAM alone
 export const resmonSupportedAtom = atom((get) => get(resmonSnapshotAtom)?.supported === true);
+// the note under an agent's row after its command's kill, by tab id
+export const resmonNotesAtom = atom<Record<string, { text: string; tone: "note" | "alert" }>>({}) as PrimitiveAtom<
+    Record<string, { text: string; tone: "note" | "alert" }>
+>;
 
-let opener: HTMLElement | null = null;
-
-// the control that opened the popover, while it is still on screen; null for a `g m` open
-export function resmonOpener(): HTMLElement | null {
-    return opener?.isConnected ? opener : null;
-}
-
-/** The RAM chip's click: opens the popover hanging from `from`, or closes it. Like the app bar's other popovers, it
- * closes Consumers, Servers and Jobs, so one is open at a time. */
-export function toggleResMon(from: HTMLElement | null): void {
-    globalStore.set(consumersOpenAtom, null);
-    globalStore.set(machineServersOpenAtom, false);
-    globalStore.set(jobQueueOpenAtom, false);
-    opener = from;
-    globalStore.set(resmonOpenAtom, !globalStore.get(resmonOpenAtom));
-}
-
-// DEV fixture state: a pinned snapshot is never overwritten by a poll; an armed outcome answers the next confirm
+// DEV fixture state: a pinned snapshot is never overwritten by a poll; an armed outcome answers the next kill
 let pinned = false;
 let armedOutcome: ResMonKillRtnData | null = null;
 
 let inFlight = false;
 let failing = false;
 
-async function pollOnce(): Promise<void> {
-    if (pinned || inFlight || (typeof document !== "undefined" && document.hidden)) {
+/** One snapshot read. `force` reads even while the document reads hidden: the panel is open, so it is in view. */
+export async function pollResMon(force = false): Promise<void> {
+    if (pinned || inFlight || (!force && typeof document !== "undefined" && document.hidden)) {
         return;
     }
     inFlight = true;
     try {
-        const snap = await RpcApi.ResMonSnapshotCommand(TabRpcClient, {});
+        const snap = await RpcApi.ResMonSnapshotCommand(TabRpcClient, {}, { timeout: RESMON_RPC_TIMEOUT_MS });
         failing = false;
         if (!pinned) {
             globalStore.set(resmonSnapshotAtom, snap ?? null);
@@ -69,48 +55,36 @@ async function pollOnce(): Promise<void> {
 }
 
 export function startResMonPolling(): () => void {
-    void pollOnce();
-    const timer = setInterval(() => void pollOnce(), RESMON_POLL_MS);
+    void pollResMon();
+    const timer = setInterval(() => void pollResMon(), RESMON_POLL_MS);
     return () => clearInterval(timer);
 }
 
-export function dispatchResMon(a: ResMonAction): void {
-    globalStore.set(resmonUiAtom, (ui) => resmonReduce(ui, a));
-}
-
-async function runKill(g: ResMonGroup, pid: number | null): Promise<ResMonKillRtnData> {
+async function runKill(cmd: AgentCommand): Promise<ResMonKillRtnData> {
     if (armedOutcome != null) {
         const r = armedOutcome;
         armedOutcome = null;
         return r;
     }
     try {
-        if (pid != null) {
-            return await RpcApi.ResMonKillCommand(TabRpcClient, { ownerid: g.ownerid ?? "", pid, tree: true });
-        }
-        return await RpcApi.ResMonKillChildrenCommand(TabRpcClient, { ownerid: g.ownerid ?? "" });
+        return await RpcApi.ResMonKillCommand(TabRpcClient, { ownerid: cmd.ownerid, pid: cmd.pid, tree: true });
     } catch (e) {
         return { outcome: "failed", killed: 0, error: e instanceof Error ? e.message : String(e) };
     }
 }
 
-export async function confirmResMon(): Promise<void> {
-    const confirm = globalStore.get(resmonUiAtom).confirm;
-    if (confirm == null) {
-        return;
-    }
-    // cleared before the kill runs, so a second Enter cannot send it twice
-    dispatchResMon({ type: "cancel" });
-    const g = globalStore.get(resmonSnapshotAtom)?.groups.find((x) => x.key === confirm.key);
-    if (g == null) {
-        return;
-    }
-    const pid = confirm.kind === "row" ? confirm.pid : null;
-    const row = pid == null ? null : g.rows.find((r) => r.pid === pid);
-    const target = pid == null ? null : { name: row ? rowLabel(row).name : "process", pid };
-    const r = await runKill(g, pid);
-    dispatchResMon({ type: "note", key: g.key, note: outcomeNote(r, target, g) });
-    await pollOnce();
+/** Kills an agent's command and what it started, notes the outcome under the agent's row, then reads again. */
+export async function killAgentCommand(tabId: string, cmd: AgentCommand): Promise<void> {
+    const r = await runKill(cmd);
+    globalStore.set(resmonNotesAtom, (notes) => ({ ...notes, [tabId]: killNote(r, cmd.label) }));
+    await pollResMon(true);
+}
+
+export function clearResMonNote(tabId: string): void {
+    globalStore.set(resmonNotesAtom, (notes) => {
+        const { [tabId]: _, ...rest } = notes;
+        return rest;
+    });
 }
 
 if (import.meta.env.DEV && typeof window !== "undefined") {
@@ -122,14 +96,12 @@ if (import.meta.env.DEV && typeof window !== "undefined") {
         killOutcome: (r) => {
             armedOutcome = r;
         },
-        open: () => globalStore.set(resmonOpenAtom, true),
         clear: () => {
             pinned = false;
             armedOutcome = null;
-            globalStore.set(resmonOpenAtom, false);
-            globalStore.set(resmonUiAtom, RESMON_UI_INITIAL);
+            globalStore.set(resmonNotesAtom, {});
             globalStore.set(resmonSnapshotAtom, null);
-            void pollOnce();
+            void pollResMon();
         },
     };
 }
@@ -139,7 +111,6 @@ declare global {
         __resmonFixture?: {
             set: (s: ResMonSnapshotData | null) => void;
             killOutcome: (r: ResMonKillRtnData) => void;
-            open: () => void;
             clear: () => void;
         };
     }

@@ -150,7 +150,7 @@ Jarvis (con vật ở footer) cũng phản ánh quota: nó có dáng mệt khi c
 
 Chip RAM (biểu tượng thanh RAM và `1.3 GB free`) nằm bên trái thanh meter. Nó biến mất cho đến khi có số đọc đầu tiên. Khi RAM trống dưới 512 MB, hoặc Arc dùng nhiều CPU/RAM, chip chuyển vàng kèm dấu ⚠. Tooltip cho biết: RAM trống trên tổng, RAM ước tính mỗi worker và mỗi tác vụ nặng (đo thực hoặc mặc định), số agent đang chạy, còn chỗ cho khoảng bao nhiêu worker nữa, và CPU/RAM của Arc cùng các agent.
 
-Trên Windows, bấm chip mở **Resource Manager** ([Cockpit](cockpit.md#resource-manager-windows)), nơi duy nhất đọc RAM theo agent; Consumers khi đó chỉ có view **Tokens**. Trên macOS, bấm chip (view **RAM**) hoặc thanh meter (view **Tokens**) để mở **Consumers**: bảng thả xuống ngay dưới nút bạn bấm, liệt kê mọi agent đang chạy. `Esc` hoặc bấm ra ngoài để đóng. Bảng tự đọc lại mỗi 5 giây khi đang mở; nếu một lần đọc thất bại, nó mờ đi và ghi `Couldn't read usage · last at 14:02`.
+Bấm chip (view **RAM**) hoặc thanh meter (view **Tokens**) để mở **Consumers**: bảng thả xuống ngay dưới nút bạn bấm, liệt kê mọi agent đang chạy. `Esc` hoặc bấm ra ngoài để đóng. Bảng tự đọc lại mỗi 5 giây khi đang mở; nếu một lần đọc thất bại, nó mờ đi và ghi `Couldn't read usage · last at 14:02`.
 
 ![Bảng Consumers ở view RAM: tiêu đề "N GB free of M GB", các hàng agent (chấm trạng thái, tên, project, model, RAM, → Sonnet, Stop), nhóm "Run xxxxxxxx" cho worker, và phần arcterm (Interface, Server, Host, Terminals, Total, with agents)](images/usage-consumers-ram.png)
 

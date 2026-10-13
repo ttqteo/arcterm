@@ -202,7 +202,7 @@ Thanh trên cùng cao 46 px, luôn hiện ở mọi surface. Kéo vào chỗ tr�
 | `/ <project> ▾` | **Bộ chọn project**. Xem bên dưới |
 | Ô **Search, or type a goal…** | Mở command palette (`Ctrl+P`) |
 | Pill `x.y.z / a.b.c` màu cam | Chỉ hiện khi app và backend build từ hai phiên bản khác nhau (bản dev quên `task build:backend`). Rê chuột để xem lời nhắc |
-| Chip RAM (`1.3 GB free`) | RAM còn trống. Chuyển cam kèm ⚠ khi dưới 512 MB hoặc khi Arc dùng nhiều CPU/RAM. Rê chuột xem tổng RAM, mức RAM mỗi worker, còn chứa được ~N worker, và CPU/RAM của Arc cùng các agent. Bấm mở **Resource Manager** trên Windows, panel **Consumers** ở dạng RAM trên macOS |
+| Chip RAM (`1.3 GB free`) | RAM còn trống. Chuyển cam kèm ⚠ khi dưới 512 MB hoặc khi Arc dùng nhiều CPU/RAM. Rê chuột xem tổng RAM, mức RAM mỗi worker, còn chứa được ~N worker, và CPU/RAM của Arc cùng các agent. Bấm mở panel **Consumers** ở dạng RAM |
 | Thanh quota | Mức dùng quota của từng provider. Bấm mở **Consumers** ở dạng Tokens |
 | **+ New** | Mở hộp thoại tạo agent / run. Xem [Agent](agent.md#khởi-chạy-agent-mới) |
 | Nút cửa sổ (Windows) | Thu nhỏ, phóng to, đóng. Trên macOS dùng đèn giao thông gốc của hệ điều hành |
@@ -230,15 +230,9 @@ Mỗi provider có dữ liệu (Claude, Codex, OpenCode, Pi, Antigravity) hiện
 
 Muốn xem biểu đồ và phân tích chi tiết: [Usage](usage.md).
 
-### Resource Manager (Windows)
-
-Bấm chip RAM (hoặc `Ctrl+G` `m`) để mở **Resource Manager** treo dưới chip: CPU và RAM của Arc và của từng agent, run worker, lệnh của run. Đầu popover ghi tổng `Arc N% CPU · N GB` và RAM trống. Mỗi nhóm mở ra là một dòng ghi nó đang chạy gì (`Agent tab · task tauri:build, sleep 10`); bấm vào (hoặc `Enter`) để xem agent và các lệnh của nó. Một chuỗi tiến trình chỉ có một con được gộp thành một dòng, ghi đầu và đáy chuỗi (`task.exe tauri:build → makensis.exe`) và tổng CPU/RAM; launcher, console, `wsh agentctl`, các lớp shell chỉ bọc một lệnh và shell rảnh không còn gì bên trong được gộp vào dòng `+ N helper processes` kèm CPU/RAM của chúng, bấm để xem cả cây. `×` hoặc `x` kill một tiến trình, **Kill children** hoặc `Shift+X` kill mọi thứ agent đã khởi chạy (đều hỏi trước). Phím: [Resource Manager](../keyboard-shortcuts.md#resource-manager-the-popover-opened-from-the-app-bars-ram-chip-or-g-m-on-windows).
-
-Trên Windows, RAM chỉ đọc ở đây: panel Consumers không còn cột RAM, dòng RAM trống và phần *arcterm*. macOS không có Resource Manager, nên chip RAM mở Consumers ở dạng RAM như bên dưới.
-
 ### Panel Consumers
 
-Bấm thanh quota (hoặc chip RAM trên macOS) để mở panel **Consumers** treo ngay dưới nút bạn bấm. Panel liệt kê mọi agent đang chạy, worker của run nằm dưới nhóm `Run <id>`. Nút chuyển **RAM** / **Tokens** ở đầu panel đổi cách xem; thứ tự dòng được xếp lúc mở và giữ nguyên khi panel còn mở.
+Bấm chip RAM hoặc thanh quota để mở panel **Consumers** treo ngay dưới nút bạn bấm. Panel liệt kê mọi agent đang chạy, worker của run nằm dưới nhóm `Run <id>`. Nút chuyển **RAM** / **Tokens** ở đầu panel đổi cách xem; thứ tự dòng được xếp lúc mở và giữ nguyên khi panel còn mở.
 
 | Chế độ | Đầu panel | Mỗi dòng | Cuối panel |
 |---|---|---|---|
@@ -254,6 +248,15 @@ Mỗi dòng có chấm trạng thái, tên (bấm để mở agent), project, mo
 Biểu tượng cảnh báo ở chế độ Tokens đánh dấu agent đốt nhiều nhất khi vượt 500.000 token trong cửa sổ. **Open Usage** ở chân panel chuyển sang surface Usage. `Esc` hoặc bấm ra ngoài để đóng. Panel đọc lại mỗi 5 giây; nếu một lần đọc thất bại, danh sách mờ đi kèm dòng "Couldn't read usage".
 
 ![Panel Consumers ở chế độ RAM treo dưới chip RAM: các agent kèm RAM, nút Stop/→ Sonnet, phần arcterm và Total, with agents](images/cockpit-consumers.png)
+
+#### Trên Windows: CPU và lệnh đang chạy
+
+Trên Windows, arcterm đọc được từng tiến trình mà agent khởi chạy, nên panel gọn hơn và có thêm CPU:
+
+- **Đầu panel một dòng:** `6.2 GB free · CPU 14% · 5h 62% · Usage →`. Rê chuột lên "free" để xem RAM của arcterm so với app khác. CPU chuyển vàng kèm `high CPU` / `high memory` khi Arc dùng nhiều, và chip RAM trên app bar cũng chuyển vàng kèm ⚠.
+- **Mỗi agent một dòng:** tên, rồi lệnh nặng nhất nó đang chạy bằng chữ mờ (`git log --all -p`, đã bỏ các lớp shell bọc ngoài), CPU, RAM và chi phí 10 phút. Model và số token nằm trong tooltip của dòng. CPU ghi `–` trong 2–4 giây đầu, tới khi có mẫu thứ hai.
+- **Nút ⋯ cuối dòng** gom mọi thao tác: **Kill** lệnh đang chạy (hỏi trước; agent vẫn chạy tiếp, kết quả ghi ngay dưới dòng), **Switch to Sonnet**, **Sleep**, **Stop agent** / **Stop worker**. Agent đang ngủ có nút **Wake**.
+- Không có phần *arcterm* ở chân panel.
 
 ## Nav rail bên trái
 

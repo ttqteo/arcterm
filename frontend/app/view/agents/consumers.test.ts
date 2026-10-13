@@ -464,3 +464,57 @@ describe("ramBar", () => {
         });
     });
 });
+
+describe("buildConsumers with the Resource Manager snapshot", () => {
+    const resmon = (rows: ProcessInfo[], cpu: number): ResMonSnapshotData => ({
+        supported: true,
+        ready: true,
+        ts: 1,
+        cpu: 14,
+        mem: GB,
+        totalmem: 16 * GB,
+        busycpu: false,
+        busymem: false,
+        groups: [
+            { key: "job:1", ownerkind: "agenttab", ownerid: "blk-a", label: "a", killable: true, cpu, mem: GB, rows },
+        ],
+    });
+    const p = (pid: number, depth: number, name: string, extra: Partial<ProcessInfo> = {}): ProcessInfo => ({
+        pid,
+        depth,
+        name,
+        mem: 10 * MB,
+        mempct: 0,
+        cpu: 0,
+        numthreads: 1,
+        ...extra,
+    });
+
+    it("gives an agent its CPU and heaviest command by its block; an asleep agent and one without a group get none", () => {
+        const snap = resmon(
+            [
+                p(1, 0, "claude.exe", { tag: "agent" }),
+                p(2, 1, "git.exe", { command: "git.exe log --all -p", mem: 203 * MB }),
+            ],
+            4.1
+        );
+        const view = buildConsumers(
+            reading([agent("a"), agent("b"), agent("nap")]),
+            [vm("a"), vm("b"), vm("nap", { sleeping: { since: 1, freedBytes: 0 } })],
+            "ram",
+            snap
+        );
+        const byId = Object.fromEntries(view.groups.flatMap((g) => g.rows).map((r) => [r.id, r]));
+        expect(byId.a.work).toMatchObject({
+            cpu: 4.1,
+            command: { label: "git log --all -p", pid: 2, ownerid: "blk-a" },
+        });
+        expect(byId.b.work).toBeUndefined();
+        expect(byId.nap.work).toBeUndefined();
+    });
+
+    it("leaves work out with no snapshot", () => {
+        const view = buildConsumers(reading([agent("a")]), [vm("a")], "ram");
+        expect(view.groups[0].rows[0].work).toBeUndefined();
+    });
+});

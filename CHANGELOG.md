@@ -23,12 +23,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - **On Windows, Alt+Tab back to a folded arcterm opens it maximized**, in Full, whatever size it was folded from (Full,
   Float, or a smaller window); the taskbar button does the same. On macOS ⌘Tab still gives back the size it folded from.
-- **The Resource Manager reads in the interface font**: process names, their command lines, and the CPU, memory and
-  age columns are no longer monospaced; the numbers still line up.
-- **The Resource Manager opens with one line per agent**, saying what it runs (`Agent tab · task tauri:build, sleep 10`);
-  open a group to see its commands, where a chain of processes that each start just one more reads as one line
-  (`task.exe tauri:build → makensis.exe`, with the chain's total CPU and memory) and idle shells fold into
-  `+ N helper processes`.
+- **The Resource Manager is now part of the Consumers panel.** On Windows the app bar's RAM chip opens Consumers again,
+  one line per agent: its CPU, RAM, spend of the last 10 minutes, and the heaviest command it runs
+  (`git log --all -p`), with Kill, Switch to Sonnet, Sleep and Stop in one ⋯ menu; the header reads free RAM, Arc's
+  CPU and the 5-hour quota on one line. The separate popover and `Mod`+`G` `m` are gone. On macOS the panel is
+  unchanged.
 
 ## 0.15.11 — 2026-10-13
 

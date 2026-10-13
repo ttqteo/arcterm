@@ -6,9 +6,9 @@ import { MemoryStick, TriangleAlert } from "lucide-react";
 import { capacityChipLabel, capacityTitle, lowRam, type WorkerCapacity } from "./workercapacity";
 
 // The RAM half of the app bar's usage button (usagemeters.tsx HeaderUsage): the free RAM, with how many more workers
-// that holds in the tooltip, and where the Resource Manager runs, what Arc and its agents use. A click on it opens the
-// Resource Manager there, else the Consumers panel sorted by RAM. When the free RAM is low (lowRam) or the Resource
-// Manager reads Arc as busy, it takes the warning tone.
+// that holds in the tooltip, and where the Resource Manager runs (Windows), what Arc and its agents use. A click on it
+// opens the Consumers panel sorted by RAM. When the free RAM is low (lowRam) or the Resource Manager reads Arc as busy,
+// it takes the warning tone.
 export function WorkerCapacityChip({
     cap,
     busy = null,

@@ -4,14 +4,24 @@
 // The Consumers panel (spec 2026-10-08-consumers-panel-design.md): every live agent with its RAM and its tokens and
 // spend of the last 10 minutes, a run's workers under their run, and Stop / → Sonnet per row; free RAM and the 5-hour
 // quota in the header, arcterm's own processes below. Opened from the RAM chip (ranked by RAM) and the plan-usage
-// meters (ranked by tokens). Where the Resource Manager runs (Windows), RAM is read there and the RAM chip opens it
-// instead: this panel drops its RAM column, free RAM and arcterm section, and is tokens alone. Rows are ranked when it
+// meters (ranked by tokens). Where the Resource Manager runs (Windows) it is the compact panel instead: a one-line
+// header with Arc's CPU, and per agent its CPU, RAM, spend and the heaviest command it runs, every action (kill that
+// command, → Sonnet, Sleep, Stop) in one ⋯ menu; model and tokens move to the row's tooltip. Rows are ranked when it
 // opens and keep their place while it is open. consumers.ts decides; this draws.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
-import { resmonSupportedAtom } from "@/app/cockpit/resmonstore";
+import { busyWords, fmtCpu, fmtMem } from "@/app/cockpit/resmon";
+import {
+    clearResMonNote,
+    killAgentCommand,
+    pollResMon,
+    resmonNotesAtom,
+    resmonSnapshotAtom,
+    resmonSupportedAtom,
+} from "@/app/cockpit/resmonstore";
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import { SkeletonLine } from "@/app/element/skeleton";
+import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
 import { modalsModel } from "@/app/store/modalmodel";
 import { RpcApi } from "@/app/store/wshclientapi";
@@ -19,13 +29,14 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ArrowRight, Moon, Square, TriangleAlert } from "lucide-react";
+import { ArrowRight, CircleAlert, Ellipsis, Moon, Square, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { confirmCloseSession } from "./agentactions";
 import type { AgentsViewModel } from "./agents";
 import { sleepWithConfirm, wakeAgent, wakeErrorToast } from "./agentsleep";
 import {
     buildConsumers,
+    COMPACT_WIDTH,
     holdOrder,
     PANEL_WIDTH,
     panelPlacement,
@@ -114,7 +125,7 @@ const ICON_ACTION =
 const TEXT_ACTION =
     "flex h-[22px] flex-none cursor-pointer items-center gap-0.5 whitespace-nowrap rounded border border-edge-mid px-1.5 text-[11px] text-secondary hover:border-edge-strong hover:bg-surface-selected hover:text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent disabled:cursor-default disabled:opacity-50";
 
-function Row({ row, model, showRam }: { row: ConsumerRow; model: AgentsViewModel; showRam: boolean }) {
+function Row({ row, model }: { row: ConsumerRow; model: AgentsViewModel }) {
     // the call in flight; a sleep or a wake takes seconds, and a second press would only be refused by the server
     const [pending, setPending] = useState<"sleep" | "wake" | null>(null);
     const run = (kind: "sleep" | "wake", call: () => Promise<void>) => {
@@ -172,11 +183,9 @@ function Row({ row, model, showRam }: { row: ConsumerRow; model: AgentsViewModel
             >
                 {row.model}
             </span>
-            {showRam ? (
-                <span data-consumer-ram title="RAM" className={cn(COL_RAM, "text-[12px] tabular-nums text-secondary")}>
-                    {row.ramBytes === undefined ? "—" : ramLabel(row.ramBytes)}
-                </span>
-            ) : null}
+            <span data-consumer-ram title="RAM" className={cn(COL_RAM, "text-[12px] tabular-nums text-secondary")}>
+                {row.ramBytes === undefined ? "—" : ramLabel(row.ramBytes)}
+            </span>
             {/* one element for both numbers, split into the two columns */}
             <span data-consumer-tokens className="flex flex-none items-center gap-2.5 text-[12px] tabular-nums">
                 <span title="Tokens, last 10 minutes" className={cn(COL_TOKENS, "text-secondary")}>
@@ -259,13 +268,13 @@ function Row({ row, model, showRam }: { row: ConsumerRow; model: AgentsViewModel
 
 const SECTION_LABEL = "text-[10.5px] font-semibold uppercase tracking-wide text-ink-faint";
 
-function ColumnHeads({ showRam }: { showRam: boolean }) {
+function ColumnHeads() {
     return (
         <div aria-hidden className={cn(SECTION_LABEL, "mx-1 flex items-center gap-2.5 px-2 pb-1 pt-1.5")}>
             <span className="w-[7px] flex-none" />
             <span className="min-w-0 flex-1">Agent</span>
             <span className={COL_MODEL}>Model</span>
-            {showRam ? <span className={COL_RAM}>RAM</span> : null}
+            <span className={COL_RAM}>RAM</span>
             <span className="flex flex-none gap-2.5" title="Last 10 minutes">
                 <span className={COL_TOKENS}>Tokens</span>
                 <span className={COL_SPEND}>Spend</span>
@@ -275,28 +284,23 @@ function ColumnHeads({ showRam }: { showRam: boolean }) {
     );
 }
 
-// free RAM in words, and a bar of all RAM: arcterm with its agents, everything else in use, and free; without RAM, the
-// 5-hour quota and the way to Usage alone
+// free RAM in words, and a bar of all RAM: arcterm with its agents, everything else in use, and free
 function MemoryHeader({
     view,
     fiveHour,
-    showRam,
     onOpenUsage,
 }: {
     view: ConsumersView | null;
     fiveHour?: number;
-    showRam: boolean;
     onOpenUsage: () => void;
 }) {
-    const bar = view && showRam ? ramBar(view) : null;
+    const bar = view ? ramBar(view) : null;
     return (
         <div className="flex flex-col gap-1.5 border-b border-border px-3 pb-2.5 pt-2">
             <div className="flex items-baseline gap-3">
                 <div data-consumers-header className="flex flex-1 items-baseline gap-3">
                     <span className="flex-1 text-[12px] text-muted">
-                        {!showRam ? (
-                            <span className="text-[12.5px] font-semibold text-primary">Tokens by agent</span>
-                        ) : view ? (
+                        {view ? (
                             <>
                                 <span className="text-[13px] font-semibold text-primary">
                                     {formatGB(view.freeBytes)}
@@ -323,16 +327,14 @@ function MemoryHeader({
                     <ArrowRight size={11} aria-hidden />
                 </button>
             </div>
-            {showRam ? (
-                <div className="flex h-[5px] overflow-hidden rounded-full bg-surface">
-                    {bar ? (
-                        <>
-                            <span className="h-full bg-accent" style={{ width: `${bar.appPct}%` }} />
-                            <span className="h-full bg-ink-faint" style={{ width: `${bar.otherPct}%` }} />
-                        </>
-                    ) : null}
-                </div>
-            ) : null}
+            <div className="flex h-[5px] overflow-hidden rounded-full bg-surface">
+                {bar ? (
+                    <>
+                        <span className="h-full bg-accent" style={{ width: `${bar.appPct}%` }} />
+                        <span className="h-full bg-ink-faint" style={{ width: `${bar.otherPct}%` }} />
+                    </>
+                ) : null}
+            </div>
             {bar && view ? (
                 <div className="flex items-center gap-3 text-[10.5px] text-muted">
                     <span className="flex items-center gap-1">
@@ -360,6 +362,254 @@ function Stat({ label, bytes, ...rest }: { label: string; bytes?: number } & Rec
     );
 }
 
+const COL_CPU = "w-[40px] flex-none text-right";
+
+function askKill(row: ConsumerRow): void {
+    const cmd = row.work?.command;
+    if (cmd == null) {
+        return;
+    }
+    modalsModel.pushModal("ConfirmModal", {
+        title: "Kill command",
+        message: `Kill ${cmd.label} and what it started? ${row.name} keeps running.`,
+        confirmLabel: "Kill",
+        destructive: true,
+        onConfirm: () => {
+            clearResMonNote(row.id);
+            fireAndForget(() => killAgentCommand(row.id, cmd));
+        },
+    });
+}
+
+function rowMenu(row: ConsumerRow, model: AgentsViewModel): ContextMenuItem[] {
+    const cmd = row.work?.command;
+    const items: ContextMenuItem[] = [];
+    if (cmd != null) {
+        items.push({ label: `Kill ${cmd.label}`, danger: true, click: () => askKill(row) });
+    }
+    if (row.canSonnet) {
+        items.push({ label: "Switch to Sonnet", click: () => toSonnet(row) });
+    }
+    if (row.canSleep) {
+        items.push({ label: "Sleep", click: () => fireAndForget(() => sleepWithConfirm(row.vm)) });
+    }
+    if (items.length > 0) {
+        items.push({ type: "separator" });
+    }
+    items.push({ label: row.dag ? "Stop worker" : "Stop agent", danger: true, click: () => stop(row, model) });
+    return items;
+}
+
+// the model and tokens the compact row leaves out, and the command in full
+function compactTitle(row: ConsumerRow): string {
+    const parts = [row.model, row.tokens === undefined ? null : `${fmt(row.tokens)} tokens in 10 min`];
+    const cmd = row.work?.command;
+    if (cmd != null) {
+        parts.push(`running ${cmd.label} (${fmtMem(cmd.mem)})`);
+    }
+    return parts.filter(Boolean).join(" · ");
+}
+
+function CompactRow({ row, model, ready }: { row: ConsumerRow; model: AgentsViewModel; ready: boolean }) {
+    const note = useAtomValue(resmonNotesAtom)[row.id];
+    const [waking, setWaking] = useState(false);
+    const cmd = row.work?.command;
+    const wake = () => {
+        setWaking(true);
+        fireAndForget(async () => {
+            try {
+                await wakeAgent(row.id);
+            } catch (e) {
+                wakeErrorToast(row.name, e);
+            } finally {
+                setWaking(false);
+            }
+        });
+    };
+    return (
+        <div>
+            <div
+                data-consumer-row={row.id}
+                title={compactTitle(row)}
+                className="group mx-1 flex h-[30px] items-center gap-2.5 rounded-md px-2 hover:bg-surface-hover"
+            >
+                {row.sleeping ? (
+                    <Moon
+                        data-consumer-moon
+                        size={10}
+                        className="-mx-[1.5px] flex-none text-muted"
+                        aria-label="sleeping"
+                    />
+                ) : (
+                    <span
+                        className={cn("h-[7px] w-[7px] flex-none rounded-full", STATE_DOT[row.state])}
+                        aria-label={row.state}
+                    />
+                )}
+                <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                    <button
+                        type="button"
+                        data-consumer-open
+                        onClick={() => {
+                            close();
+                            fireAndForget(() => openTarget(model, { kind: "agent", tabId: row.id }));
+                        }}
+                        className={cn(
+                            "shrink-0 cursor-pointer whitespace-nowrap text-left text-[12.5px] hover:underline",
+                            row.sleeping ? "text-muted" : "text-primary"
+                        )}
+                    >
+                        {row.name}
+                    </button>
+                    {cmd != null ? (
+                        <span data-consumer-command className="min-w-0 truncate font-mono text-[11px] text-muted">
+                            {cmd.label}
+                        </span>
+                    ) : null}
+                </span>
+                <span data-consumer-cpu className={cn(COL_CPU, "text-[12px] tabular-nums text-secondary")}>
+                    {row.work == null || !ready ? "–" : fmtCpu(row.work.cpu)}
+                </span>
+                <span data-consumer-ram className={cn(COL_RAM, "text-[12px] tabular-nums text-secondary")}>
+                    {row.ramBytes === undefined ? "–" : ramLabel(row.ramBytes)}
+                </span>
+                <span
+                    data-consumer-tokens
+                    title="Estimated spend, last 10 minutes"
+                    className={cn(
+                        COL_SPEND,
+                        "whitespace-nowrap text-[12px] tabular-nums",
+                        row.spendUsd ? "text-secondary" : "text-ink-faint"
+                    )}
+                >
+                    {row.burn ? (
+                        <TriangleAlert
+                            data-consumer-burn
+                            size={11}
+                            className="mr-1 inline align-[-1px] text-warning"
+                            aria-label="Spending fastest"
+                        />
+                    ) : null}
+                    {row.tokens === undefined ? "—" : usd(row.spendUsd ?? 0)}
+                </span>
+                <span className="flex w-[52px] flex-none items-center justify-end">
+                    {row.sleeping ? (
+                        <button
+                            type="button"
+                            data-consumer-wake
+                            title="Relaunch this agent where its conversation left off"
+                            disabled={waking}
+                            onClick={wake}
+                            className={TEXT_ACTION}
+                        >
+                            {waking ? "Waking…" : "Wake"}
+                        </button>
+                    ) : (
+                        <button
+                            type="button"
+                            data-consumer-menu
+                            aria-label={`Actions for ${row.name}`}
+                            aria-haspopup="menu"
+                            onClick={(e) => ContextMenuModel.getInstance().showContextMenu(rowMenu(row, model), e)}
+                            className={ICON_ACTION}
+                        >
+                            <Ellipsis size={14} />
+                        </button>
+                    )}
+                </span>
+            </div>
+            {note ? (
+                <div
+                    data-consumer-note
+                    role={note.tone === "alert" ? "alert" : "status"}
+                    className={cn(
+                        "mb-1 ml-[31px] mr-3 flex items-center gap-1.5 text-[11.5px]",
+                        note.tone === "alert" ? "text-error-soft" : "text-muted"
+                    )}
+                >
+                    {note.tone === "alert" ? (
+                        <CircleAlert size={12} className="flex-none text-error" aria-hidden />
+                    ) : null}
+                    {note.text}
+                </div>
+            ) : null}
+        </div>
+    );
+}
+
+function CompactHeads() {
+    return (
+        <div aria-hidden className="mx-1 flex items-center gap-2.5 px-2 pb-1 pt-1.5 text-[11px] text-ink-faint">
+            <span className="w-[7px] flex-none" />
+            <span className="min-w-0 flex-1">Agent</span>
+            <span className={COL_CPU}>CPU</span>
+            <span className={COL_RAM}>RAM</span>
+            <span className={COL_SPEND} title="Estimated spend, last 10 minutes">
+                10 min
+            </span>
+            <span className="w-[52px] flex-none" />
+        </div>
+    );
+}
+
+// one line: the free RAM (arcterm against other apps in its tooltip), Arc's CPU, the 5-hour quota, the way to Usage
+function CompactHeader({
+    view,
+    snap,
+    fiveHour,
+    onOpenUsage,
+}: {
+    view: ConsumersView | null;
+    snap: ResMonSnapshotData | null;
+    fiveHour?: number;
+    onOpenUsage: () => void;
+}) {
+    const bar = view ? ramBar(view) : null;
+    const busy = snap?.ready ? busyWords(snap) : null;
+    const split =
+        view && bar
+            ? `arcterm ${view.appBytes === undefined ? "—" : ramLabel(view.appBytes)} · other apps ${ramLabel(bar.otherBytes)} · ${formatGB(view.totalBytes)} in all`
+            : undefined;
+    return (
+        <div className="flex items-baseline gap-3.5 border-b border-border px-3 py-2.5 text-[12px] text-muted">
+            <span data-consumers-header title={split} className="flex-1">
+                {view ? (
+                    <>
+                        <span className="text-[13px] font-semibold text-primary">{formatGB(view.freeBytes)}</span> free
+                    </>
+                ) : (
+                    "Reading…"
+                )}
+            </span>
+            <span
+                data-consumers-cpu
+                title="What arcterm and its agents use of all cores"
+                className={busy ? "text-warning-soft" : undefined}
+            >
+                CPU{" "}
+                <span className={cn("tabular-nums", busy ? "font-semibold text-warning" : "text-secondary")}>
+                    {snap?.ready ? fmtCpu(snap.cpu, 0) : "–"}
+                </span>
+                {busy ? ` · ${busy}` : null}
+            </span>
+            {fiveHour != null ? (
+                <span title="Claude's 5-hour plan window used">
+                    5h <span className="tabular-nums text-secondary">{`${Math.round(fiveHour)}%`}</span>
+                </span>
+            ) : null}
+            <button
+                type="button"
+                data-consumers-open-usage
+                onClick={onOpenUsage}
+                className="flex cursor-pointer items-center gap-0.5 text-[11.5px] text-accent hover:underline"
+            >
+                Usage
+                <ArrowRight size={11} aria-hidden />
+            </button>
+        </div>
+    );
+}
+
 // measured from the opener while open, and again when the window resizes, which moves the opener
 export function usePanelPlacement(open: boolean, opener: Element | null) {
     const [, setSize] = useState(0);
@@ -382,8 +632,17 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
     const agents = useAtomValue(model.agentsAtom);
     const fiveHour = usePlanDonuts(model).find((d) => d.provider === "claude")?.fivehour.pct;
     const placement = usePanelPlacement(open, useAtomValue(consumersOpenerAtom));
-    const showRam = !useAtomValue(resmonSupportedAtom);
+    const compact = useAtomValue(resmonSupportedAtom);
+    const snap = useAtomValue(resmonSnapshotAtom);
     useConsumersPoll(open);
+    // read at once on open, past the hidden-document gate: the panel is in view; a kill's note lasts while it is open
+    useEffect(() => {
+        if (open) {
+            void pollResMon(true);
+        } else {
+            globalStore.set(resmonNotesAtom, {});
+        }
+    }, [open]);
     useEffect(() => {
         if (!open) {
             return;
@@ -404,7 +663,12 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
     if (!open) {
         heldOrder.current = null;
     }
-    let view = reading.data != null && sort != null ? buildConsumers(reading.data, agents, sort) : null;
+    const openUsage = () => {
+        close();
+        globalStore.set(model.surfaceAtom, "usage");
+    };
+    let view =
+        reading.data != null && sort != null ? buildConsumers(reading.data, agents, sort, compact ? snap : null) : null;
     if (view != null) {
         const held = holdOrder(view, heldOrder.current);
         view = held.view;
@@ -417,19 +681,20 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                 open={open}
                 origin={placement.origin}
                 // it hangs from the control that opened it (the app bar's usage button), wherever that sits
-                style={{ right: placement.right, top: placement.top, bottom: placement.bottom, width: PANEL_WIDTH }}
+                style={{
+                    right: placement.right,
+                    top: placement.top,
+                    bottom: placement.bottom,
+                    width: compact ? COMPACT_WIDTH : PANEL_WIDTH,
+                }}
                 className="fixed z-[60] overflow-hidden rounded-lg border border-edge-strong bg-surface-raised shadow-popover"
             >
                 <div data-consumers-panel data-sort={sort ?? ""} role="dialog" aria-label="Consumers">
-                    <MemoryHeader
-                        view={view}
-                        fiveHour={fiveHour}
-                        showRam={showRam}
-                        onOpenUsage={() => {
-                            close();
-                            globalStore.set(model.surfaceAtom, "usage");
-                        }}
-                    />
+                    {compact ? (
+                        <CompactHeader view={view} snap={snap} fiveHour={fiveHour} onOpenUsage={openUsage} />
+                    ) : (
+                        <MemoryHeader view={view} fiveHour={fiveHour} onOpenUsage={openUsage} />
+                    )}
                     {reading.failed ? (
                         <div data-consumers-stale className="px-3 py-1.5 text-[11.5px] text-warning">
                             {staleLine(reading.lastOkMs)}
@@ -450,7 +715,7 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                             </div>
                         ) : (
                             <>
-                                <ColumnHeads showRam={showRam} />
+                                {compact ? <CompactHeads /> : <ColumnHeads />}
                                 {view.groups.map((g) => (
                                     <div key={g.key}>
                                         {g.label ? (
@@ -458,15 +723,19 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                                                 {g.label}
                                             </div>
                                         ) : null}
-                                        {g.rows.map((r) => (
-                                            <Row key={r.id} row={r} model={model} showRam={showRam} />
-                                        ))}
+                                        {g.rows.map((r) =>
+                                            compact ? (
+                                                <CompactRow key={r.id} row={r} model={model} ready={!!snap?.ready} />
+                                            ) : (
+                                                <Row key={r.id} row={r} model={model} />
+                                            )
+                                        )}
                                     </div>
                                 ))}
                             </>
                         )}
                     </div>
-                    {showRam ? (
+                    {compact ? null : (
                         <div className="flex flex-col gap-1.5 border-t border-border bg-surface px-3 pb-2 pt-2">
                             <div className="flex items-center gap-2">
                                 <span className={cn(SECTION_LABEL, "flex-1")}>arcterm</span>
@@ -490,7 +759,7 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                                 ))}
                             </div>
                         </div>
-                    ) : null}
+                    )}
                 </div>
             </PopoverReveal>
         </>

@@ -1,10 +1,12 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pure: the Consumers panel's rows. Joins a GetConsumersCommand reading with the roster, sorts by RAM or by tokens of
-// the window, groups a run's workers under their run, and marks what to warn about and which actions a row offers.
+// Pure: the Consumers panel's rows. Joins a GetConsumersCommand reading with the roster and, where the Resource Manager
+// runs (Windows), each agent's CPU and heaviest command from its snapshot; sorts by RAM or by tokens of the window,
+// groups a run's workers under their run, and marks what to warn about and which actions a row offers.
 // consumerspanel.tsx draws it. No React, no store.
 
+import { agentWork, type AgentWork } from "@/app/cockpit/resmon";
 import type { AgentState, AgentVM } from "./agentsviewmodel";
 import { fmtClock } from "./runcompletion";
 import { aggregateSessionUsage, type SessionUsage } from "./sessionusage";
@@ -60,6 +62,7 @@ export interface ConsumerRow {
     canSonnet: boolean;
     sleeping: boolean; // asleep: no process, so no RAM; Wake instead of Sleep
     canSleep: boolean; // awake and idle, on a harness that resumes, and not working for a run
+    work?: AgentWork; // its CPU and heaviest command, where the Resource Manager reads them; absent asleep
     dag?: ConsumerDag; // a run worker's task, for Stop
     vm: AgentVM;
 }
@@ -121,7 +124,8 @@ function sleepingLast(groups: ConsumerGroup[]): void {
 export function buildConsumers(
     data: CommandGetConsumersRtnData,
     agents: AgentVM[],
-    sort: ConsumersSort
+    sort: ConsumersSort,
+    snap: ResMonSnapshotData | null = null
 ): ConsumersView {
     const byId = new Map(agents.map((a) => [a.id, a]));
     const rows: ConsumerRow[] = [];
@@ -148,6 +152,7 @@ export function buildConsumers(
             canSonnet: opus && !sleeping,
             sleeping,
             canSleep: c.dag == null && canSleep(vm),
+            work: sleeping ? undefined : (agentWork(snap, c.blockid) ?? undefined),
             dag: c.dag,
             vm,
         });
@@ -243,6 +248,8 @@ export interface Placement {
 }
 
 export const PANEL_WIDTH = 620;
+// the compact panel (Windows): CPU, RAM and spend columns, every action in one menu
+export const COMPACT_WIDTH = 560;
 const PANEL_GAP = 6; // between the opener and the panel
 const PANEL_MARGIN = 8; // the nearest it comes to the window's edge
 

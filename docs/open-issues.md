@@ -47,13 +47,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
   centre, not the first agent; close the last one in a folder and the one above it takes it. Same for a plain terminal.
   commit "close opens the neighbour".
 
-**2026-10-13 (Resource Manager font)**
-
-- [ ] (arcterm) **The Resource Manager uses the interface font.** Open the app bar's RAM chip: process names, command
-  lines and the Running / CPU / Memory columns read in the interface font (Settings → Appearance → Fonts), not
-  JetBrains Mono, and the numbers stay right-aligned in columns; only the footer keycaps are mono. commit "resmon
-  interface font".
-
 **2026-10-13 (folder running count, Spider-Man web)**
 
 - [ ] (arcterm) **A project folder counts its running agents.** With an agent working in a project, its folder row in
@@ -110,12 +103,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) **Claude mod after the merge.** In a Claude session in arcterm, ask a question with AskUserQuestion,
   dismiss it in Claude's dialog: the cockpit card goes away and the agent reads idle. Then answer one from the card: the
   dialog closes. `claude/arc-mod/hooks/register.ts` (ask kept ours; cache-miss band added from the fork).
-- [ ] (arcterm) **Resource Manager under the RAM chip (Windows).** Click the app bar's RAM chip: the popover hangs below
-  it with `Arc N% CPU · N GB · N GB free` at its top; every group starts as one line naming what it runs; opened, an
-  agent shows `claude.exe` and its commands (a single-child chain folded to `top → bottom`) with a `+ N helper
-  processes` line that opens the whole tree; `x` asks before killing. The
-  footer has no readout, and the quota meters open Consumers with no RAM column. `frontend/app/cockpit/resmon*.tsx`,
-  `frontend/app/view/agents/usagemeters.tsx`, `consumerspanel.tsx`.
+- [ ] (arcterm) **Consumers with CPU and commands (Windows).** Have an agent run something long (`git log --all -p` in a
+  big repo), click the app bar's RAM chip: the panel reads `N GB free · CPU N% · 5h N%` on one line; the agent's row
+  names `git log --all -p` after its name with its CPU, RAM and 10-minute spend (CPU reads – for the first 2-4 s);
+  ⋯ → Kill git log --all -p asks, then kills it and notes "Killed git log --all -p." under the row while the agent
+  keeps running. No Resource Manager popover, no footer readout. `frontend/app/view/agents/consumerspanel.tsx`,
+  `frontend/app/cockpit/resmon.ts`.
 - [ ] (arcterm) **Review marks in the Diff surface's Log tab.** Open a commit's file, press `v`: the row's check fills and
   the next unreviewed file opens; the bar reads 1/n reviewed. `frontend/app/view/agents/changedfilelist.tsx`.
 - [ ] (arcterm) **Final verification row.** Start a plan run with a Final: once the dag is finalizing, the agent list

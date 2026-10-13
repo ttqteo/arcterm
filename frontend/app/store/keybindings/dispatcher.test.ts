@@ -1,7 +1,6 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { resmonOpenAtom } from "@/app/cockpit/resmonstore";
 import { registerModal } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel, SurfaceKey } from "@/app/view/agents/agents";
@@ -129,7 +128,6 @@ describe("deriveKeyContext", () => {
         globalStore.set(petPeekOpenAtom, false);
         globalStore.set(uploadsLightboxOpenAtom, false);
         globalStore.set(floatMiniAtom, false);
-        globalStore.set(resmonOpenAtom, false);
         vi.unstubAllGlobals();
     });
 
@@ -211,15 +209,6 @@ describe("deriveKeyContext", () => {
         const unbind = bindModel("agent");
         expect(deriveKeyContext().modalOpen).toBe(false);
         globalStore.set(petPeekOpenAtom, true);
-        expect(deriveKeyContext().modalOpen).toBe(true);
-        unbind();
-    });
-
-    // the Resource Manager popover's arrows, Enter, x and Escape are the Agent surface's keys too
-    it("counts the open Resource Manager popover as a modal", () => {
-        const unbind = bindModel("agent");
-        expect(deriveKeyContext().modalOpen).toBe(false);
-        globalStore.set(resmonOpenAtom, true);
         expect(deriveKeyContext().modalOpen).toBe(true);
         unbind();
     });

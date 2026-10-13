@@ -1,8 +1,6 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { RESMON_UI_INITIAL } from "@/app/cockpit/resmon";
-import { resmonOpenAtom, resmonSnapshotAtom, resmonUiAtom } from "@/app/cockpit/resmonstore";
 import { globalStore } from "@/app/store/jotaiStore";
 import { centerModeAtom } from "@/app/view/agents/agentcenter";
 import { SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
@@ -59,7 +57,6 @@ import {
     buildJarvisGraphBindings,
     buildJarvisTourBindings,
     buildListNavBindings,
-    buildResMonBindings,
     buildUsageBindings,
     closeTarget,
 } from "./bindings";
@@ -1831,119 +1828,5 @@ describe("the open avatar popup keeps its keys on every surface", () => {
             }
         }
         expect(claimed).toEqual([]);
-    });
-});
-
-// The popover is non-modal window chrome over any surface, and the dispatcher runs the first active binding for a
-// key, so every surface binding on its keys has to stand down while it is open.
-describe("Resource Manager popover bindings", () => {
-    const key = (k: string, shift = false) =>
-        ({ key: k, code: "", control: false, shift, cmd: false, option: false, meta: false, alt: false }) as any;
-    const model = { ...stubModel("agent-tab"), paletteOpenAtom: atom(false) };
-    const resmon = buildResMonBindings(model);
-    // the popover's bindings last: they must win on the key, not on registration order
-    const all = [
-        ...buildGlobalBindings(model),
-        ...buildListNavBindings(model),
-        ...buildAgentBindings(model),
-        ...resmon,
-    ];
-    const onAgent = (modalOpen: boolean): KeyContext => ({
-        surface: "agent",
-        editable: false,
-        modalOpen,
-        leader: null,
-    });
-    const picked = (k: string, c: KeyContext, shift = false) => {
-        const r = matchBinding(key(k, shift), c, all);
-        return r.kind === "run" ? r.binding.id : r.kind;
-    };
-    const row = (pid: number, depth: number, tag?: string): ProcessInfo =>
-        ({ pid, depth, tag, name: `p${pid}.exe`, cpu: 0, mem: 0, mempct: 0, numthreads: 1 }) as ProcessInfo;
-    const snapshot: ResMonSnapshotData = {
-        supported: true,
-        ready: true,
-        ts: 0,
-        cpu: 0,
-        mem: 0,
-        totalmem: 0,
-        busycpu: false,
-        busymem: false,
-        groups: [
-            { key: "arc", ownerkind: "arc", label: "Arc", killable: false, cpu: 0, mem: 0, rows: [row(1, 0)] },
-            {
-                key: "job:10",
-                ownerkind: "agenttab",
-                label: "waveterm",
-                killable: true,
-                cpu: 1,
-                mem: 0,
-                rows: [row(10, 0, "agent"), row(11, 1)],
-            },
-        ],
-    };
-    const run = (id: string) => resmon.find((b) => b.id === id)!.run(onAgent(true));
-
-    afterEach(() => {
-        globalStore.set(resmonOpenAtom, false);
-        globalStore.set(resmonSnapshotAtom, null);
-        globalStore.set(resmonUiAtom, RESMON_UI_INITIAL);
-        globalStore.set(model.paletteOpenAtom, false);
-    });
-
-    it("takes Escape, Enter, ArrowDown and x from the Agent surface while open", () => {
-        globalStore.set(resmonOpenAtom, true);
-        expect(picked("Escape", onAgent(true))).toBe("resmon:close");
-        expect(picked("Enter", onAgent(true))).toBe("resmon:enter");
-        expect(picked("ArrowDown", onAgent(true))).toBe("resmon:next");
-        expect(picked("ArrowUp", onAgent(true))).toBe("resmon:prev");
-        expect(picked("x", onAgent(true))).toBe("resmon:kill");
-        expect(picked("X", onAgent(true), true)).toBe("resmon:kill-children");
-    });
-
-    // the leader is entered with Mod+G (matcher.ts LEADER_ALIASES); a bare g opens nothing
-    it("is inactive while closed, where the leader's m opens it", () => {
-        expect(resmon.some((b) => b.when!(onAgent(false)))).toBe(false);
-        expect(picked("m", { ...onAgent(false), leader: "g" })).toBe("go:resmon");
-        all.find((b) => b.id === "go:resmon")!.run(onAgent(false));
-        expect(globalStore.get(resmonOpenAtom)).toBe(true);
-    });
-
-    it("yields to a field, the palette and a modal opened over it", () => {
-        globalStore.set(resmonOpenAtom, true);
-        expect(resmon.some((b) => b.when!({ ...onAgent(true), editable: true }))).toBe(false);
-        globalStore.set(model.paletteOpenAtom, true);
-        expect(resmon.some((b) => b.when!(onAgent(true)))).toBe(false);
-    });
-
-    it("moves, asks, cancels and closes", () => {
-        globalStore.set(resmonSnapshotAtom, snapshot);
-        globalStore.set(resmonOpenAtom, true);
-        // Arc first and collapsed, then waveterm's header and its rows
-        for (let i = 0; i < 3; i++) {
-            run("resmon:next");
-        }
-        expect(globalStore.get(resmonUiAtom).cursor).toBe("job:10/10");
-        run("resmon:kill"); // the agent itself: no confirm
-        expect(globalStore.get(resmonUiAtom).confirm).toBeNull();
-        run("resmon:next");
-        run("resmon:kill");
-        expect(globalStore.get(resmonUiAtom).confirm).toEqual({ kind: "row", key: "job:10", pid: 11 });
-        run("resmon:close");
-        expect(globalStore.get(resmonUiAtom).confirm).toBeNull();
-        expect(globalStore.get(resmonOpenAtom)).toBe(true);
-        run("resmon:kill-children");
-        expect(globalStore.get(resmonUiAtom).confirm).toEqual({ kind: "group", key: "job:10" });
-        run("resmon:close");
-        run("resmon:close");
-        expect(globalStore.get(resmonOpenAtom)).toBe(false);
-    });
-
-    it("toggles the cursor's group on Enter", () => {
-        globalStore.set(resmonSnapshotAtom, snapshot);
-        globalStore.set(resmonOpenAtom, true);
-        run("resmon:next");
-        run("resmon:enter");
-        expect(globalStore.get(resmonUiAtom).expanded.arc).toBe(true);
     });
 });
