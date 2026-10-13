@@ -2,10 +2,11 @@
 
 Mỗi harness đọc chỉ dẫn và skill ở một chỗ khác nhau (`~/.claude/CLAUDE.md`, `~/.pi/agent/AGENTS.md`, `~/.codex/AGENTS.md`…). Nếu bạn muốn mọi agent tuân theo cùng một bộ quy tắc, việc tự chép tay ra từng nơi rất dễ lệch. Surface **Setup** giữ **một bản duy nhất** trong vault của arcterm rồi ghi nó vào mọi harness đã cài.
 
-Setup có hai tab:
+Setup có ba tab:
 
 - **Instructions**: một tài liệu Markdown chung, được chiếu vào file chỉ dẫn của từng harness.
 - **Skills**: xem skill của mọi harness cạnh nhau và đưa chúng vào vault để arcterm giữ đồng bộ.
+- **Tools**: thư viện các tool TUI (lazygit, yazi, btop…) để cài và mở đúng thư mục. Tab này không dùng vault; xem [Agent → Tools](agent.md#tools).
 
 Mở bằng nav rail (nút **Setup** ở đáy) hoặc `Ctrl+G` rồi `.`. Setup không lọc theo project. Mỗi lần mở surface, nó đọc lại từ đĩa, nên file bạn sửa ngoài arcterm không bị hiện cũ.
 

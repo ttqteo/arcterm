@@ -12,6 +12,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- **A library of terminal tools (lazygit, yazi, btop and more) that opens in the right folder**: Setup → Tools lists
+  nine built-in tools and any of your own, shows which are installed, and installs one with winget or brew in a
+  terminal you can watch. **Open a tool** (`Ctrl+Shift+T`, the agent header's Tool button, the tool button on a
+  project folder, or Search) opens one in the focused agent's folder, and the New dialog's Tool row opens one in a
+  project's root.
 - Spider-Man as a third Jarvis character (Settings → Appearance → Character): the Homecoming suit at work, Peter Parker at rest. He walks the footer side-on, thwips when he speaks, hangs from a strand when you drag him and rappels down when you let go, now and then crawls along under the app bar and hangs upside down until your cursor comes near, web-swings out and back when the window folds, and folded sits on a rooftop whose windows light up for each running agent.
 - A Spider theme (Settings → Appearance → Theme): Claude's colours with Spider-Man's red accent and the suit's blue in
   the terminal, a spider in place of the arcterm logo, a small spider that drops on its thread over the agent list and
@@ -27,6 +32,13 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- **Terminals sit with their project's agents in the sidebar and open in the centre**: the Active and Terminals
+  sections are one tree, a folder per project with its agents, then its terminals and tools. Picking a terminal (in
+  the tree, with `j` / `k`, `Ctrl+Tab` or Search) shows it in the centre, and a quick `Ctrl+Tab` goes back to the
+  agent. A terminal can also take a cell in the split. One whose folder was removed (the worktree of an agent that
+  landed) offers to reopen in the project.
+- **The terminal panel folds to a strip** showing the terminal's name and latest output line; `` Ctrl+` `` opens and folds
+  it. Moving a terminal into the panel is now a button, not what picking it does.
 - **Click a file's path to copy it**: in the Agent panel's File tab and in Code, the path at the top copies its full
   path on click, in place of a separate copy button.
 - **Right-click in a terminal copies or pastes**: with text selected it copies it, with nothing selected it pastes;
