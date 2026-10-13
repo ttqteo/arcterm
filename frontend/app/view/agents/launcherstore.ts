@@ -60,9 +60,18 @@ function keptDraft() {
     };
 }
 
+// A resume pick outlives a close only this long: enough to reopen after a stray click outside, short enough that a
+// later New is not a resume the person forgot they picked. One click picks it again; typed text is kept.
+export const RESUME_PICK_KEEP_MS = 2 * 60 * 1000;
+let closedAt: number | null = null;
+
 // Every way in. A door picks its own half of the Start list; the agent row and the run shape inside it stay as the
 // last open left them. A prefill always opens on the run half.
 export function openLauncher(model: LauncherModel, door: LauncherKind, prefill?: NewRunPrefill): void {
+    if (closedAt != null && Date.now() - closedAt > RESUME_PICK_KEEP_MS) {
+        globalStore.set(launcherResumeAtom, null);
+    }
+    closedAt = null;
     const kind: LauncherKind = prefill != null ? "run" : door;
     globalStore.set(launcherKindAtom, kind);
     globalStore.set(launcherRestoredAtom, prefill == null && draftShown(keptDraft()));
@@ -75,8 +84,10 @@ export function reopenLauncher(model: LauncherModel): void {
     openLauncher(model, globalStore.get(launcherKindAtom));
 }
 
-// Every way out keeps the draft; that is what lets a click outside close the dialog. An open popover is not draft.
+// Every way out keeps the draft; that is what lets a click outside close the dialog. An open popover is not draft, and
+// the resume pick is kept only for RESUME_PICK_KEEP_MS.
 export function closeLauncher(model: LauncherModel): void {
+    closedAt = Date.now();
     globalStore.set(launcherFlagMenuAtom, false);
     globalStore.set(launcherBranchListAtom, false);
     globalStore.set(model.launcherAtom, null);

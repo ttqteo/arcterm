@@ -36,6 +36,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) **Transcript sits beside Launch.** New dialog → pick a session under Resume: the footer reads Cancel ·
   Transcript shift+enter · Resume enter and the row has no button. Shift+Enter from the Start or Project column
   opens the transcript; in the Task box it is a newline. `launchermodal.tsx` footer, `launcher.ts` launcherKey.
+- [ ] (arcterm) **A resume pick lapses after two minutes closed.** New → pick a session under Resume, type a task,
+  close; reopen at once: the session is still picked. Close, wait over two minutes, reopen: New session is picked
+  and the task text is still there. `launcherstore.ts` RESUME_PICK_KEEP_MS.
 - [ ] (arcterm) **A sleeping agent's cell has a message box.** Sleep an idle agent (row menu → Sleep), select it: under
   its conversation, a box reading "message <name> to wake it… (Enter)", lined up with the transcript. Type a line and
   press Enter: the button reads Waking…, the agent wakes and the line arrives as its next message. In a 2x2 grid each

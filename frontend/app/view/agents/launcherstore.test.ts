@@ -37,6 +37,7 @@ import {
     pickLauncherRuntime,
     removeTaskImage,
     reopenLauncher,
+    RESUME_PICK_KEEP_MS,
 } from "./launcherstore";
 import { planPathAtom, resetRunConfig, runShapeAtom, setRunShape, startAtom } from "./runconfigstore";
 
@@ -195,6 +196,25 @@ describe("closing, clearing and launching", () => {
         globalStore.set(launcherResumeAtom, "sess-1");
         clearLauncherDraft();
         expect(globalStore.get(launcherResumeAtom)).toBeNull();
+    });
+    it("a reopen within two minutes keeps the resume pick; a later one starts on New session but keeps the text", () => {
+        vi.useFakeTimers();
+        try {
+            const m = model();
+            globalStore.set(launcherResumeAtom, "sess-1");
+            globalStore.set(launcherTaskAtom, "fix it");
+            closeLauncher(m);
+            vi.advanceTimersByTime(RESUME_PICK_KEEP_MS);
+            openLauncher(m, "agent");
+            expect(globalStore.get(launcherResumeAtom)).toBe("sess-1");
+            closeLauncher(m);
+            vi.advanceTimersByTime(RESUME_PICK_KEEP_MS + 1);
+            openLauncher(m, "agent");
+            expect(globalStore.get(launcherResumeAtom)).toBeNull();
+            expect(globalStore.get(launcherTaskAtom)).toBe("fix it");
+        } finally {
+            vi.useRealTimers();
+        }
     });
     it("clearLauncherDraft empties the images and frees their previews", () => {
         globalStore.set(launcherImagesAtom, [

@@ -25,6 +25,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- New dialog: a session picked to resume is forgotten once the dialog has been closed for more than two minutes, so a
+  later New starts a new session instead of a resume you forgot about. What you typed is still kept.
 - **An ended session's transcript has a message box**: type the next message and press Enter to resume the session
   with it (empty, Enter just resumes); Shift+Enter is a newline.
 - **The New dialog's Transcript button moved to the footer**, beside Launch, with its key Shift+Enter, which now opens
