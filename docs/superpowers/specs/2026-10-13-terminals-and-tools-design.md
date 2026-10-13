@@ -123,19 +123,22 @@ global chord (proposed `Ctrl`+`Shift`+`T`, to be checked against `bindings.ts`).
 
 ### The New dialog (board Launcher)
 
-The dialog that starts an agent, a terminal or a run (`launchermodal.tsx`, `launcher.ts`) opens a tool in a project
-when no agent is in focus (the picker always follows the focused agent). It adds no Start rows: a tool is a terminal
-running a command, so it rides on the Terminal row.
+The dialog that starts an agent, a terminal or a run (`launchermodal.tsx`, `launcher.ts`) also opens a tool in a
+project, for when no agent is in focus (the picker always follows the focused agent).
 
-- With Terminal picked, a **Run in it** row of chips sits under the columns: Shell (the default, today's behaviour),
-  then the pinned tools ("In Open a tool" on), then "More tools…", which opens the picker. The Start column keeps its
-  rows and digits.
-- Project and Home work as for Terminal today; there is still no Task, Flag or worktree toggle.
+- The Start column gains **one** row, `7 Tool` ("lazygit, yazi, btop…"), under its own Tool label after Run. The
+  other rows keep their digits.
+- With Tool picked, the lower area that holds Resume and Task for an agent holds a **Tool** list instead: the third
+  `Tab` stop after Start and Project. Letters pick in it (`a`–`z`, the header hint reads "a–z tool"), installed
+  tools first, then yours, then a not-installed one or two, and "All tools in Setup". Beside it, About: what the tool
+  does and that it runs in the project root (an agent's worktree is the agent's Tool button).
+- Command shows the tool's command; there is no Task, Flag or worktree toggle. Project and Home work as for Terminal.
 - With no agent to stand over, the tool takes the centre, as a terminal does with no agent, and sits in its project
-  folder in the tree. Opening a tool in an agent's worktree is the agent's Tool button.
-- The dialog's title follows the row picked (New agent, New terminal, New run); the primary button names the tool
-  when one is chosen (Open lazygit).
-- The app bar's one `+ New` button (`app-bar.tsx`) stays as it is; its tooltip becomes "New agent, terminal or run".
+  folder in the tree.
+- The dialog's title follows the row picked (New agent, New terminal, New run, Open a tool); the primary button names
+  the tool (Open lazygit).
+- The app bar's one `+ New` button (`app-bar.tsx`) stays as it is; its tooltip becomes "New agent, terminal, run or
+  tool".
 
 ## Edge cases
 
