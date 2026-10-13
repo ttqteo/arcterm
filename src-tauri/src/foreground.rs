@@ -1,11 +1,12 @@
 // Where the OS's foreground is, for the fold that follows you out of the app (floatstore.ts window:autosprout). The main
 // window losing focus is not enough to fold:
 // - "ours": a file dialog, the color picker or another arcterm window took the focus; folding under them would be wrong.
-// - "covered": another app took it, and its window hides most of arcterm (maximized, full screen, or a big window over
-//   it), so the fold keeps arcterm in sight as a picture-in-picture would.
-// - "beside": another app took it but arcterm still shows next to it (a small window, a popup, a window on another
-//   screen), or an overlay took it: the screenshot tool, the lock screen, Alt+Tab's switcher or the Start menu cover the
-//   whole screen for a moment, which is no leaving arcterm. Folding would hide a cockpit you are coming back to.
+// - "covered": another app took it, and its window hides most of arcterm, so the fold keeps arcterm in sight as a
+//   picture-in-picture would. On Windows only a maximized or full-screen window on arcterm's screen counts.
+// - "beside": another app took it but arcterm still shows next to it (a small or merely big window, a dialog or popup, a
+//   window on another screen), or an overlay took it: the screenshot tool, the lock screen, Alt+Tab's switcher or the
+//   Start menu cover the whole screen for a moment, which is no leaving arcterm. Folding would hide a cockpit you are
+//   coming back to, and a popup that steals the focus while you watch something must not fold it.
 // On Windows the foreground window's process is compared with ours and its frame with arcterm's. On macOS the app is
 // asked whether it is active, which a sheet or dialog keeps it, and then the window list: the frontmost window of
 // another app above arcterm's is compared with it the same way. AppKit's occlusion state cannot answer it: it counts a
@@ -71,6 +72,25 @@ fn covers(front: Frame, ours: Frame) -> bool {
     (w * h) as f64 / area >= COVER_SHARE
 }
 
+// Windows' answer for another app's foreground window: it hides arcterm only as an app's own top-level window (an owned
+// one is a dialog or popup) that is maximized or fills its screen, the screen arcterm is on.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn covered_on_windows(
+    front: Frame,
+    ours: Frame,
+    screen: Option<Frame>,
+    maximized: bool,
+    owned: bool,
+) -> bool {
+    let fills = |s: Frame| {
+        front.left <= s.left
+            && front.top <= s.top
+            && front.right >= s.right
+            && front.bottom >= s.bottom
+    };
+    !owned && (maximized || screen.is_some_and(fills)) && covers(front, ours)
+}
+
 // one on-screen window as macOS's window list gives it, front to back: its app, its level (0 is an app's normal window;
 // the menu bar, the Dock, the screenshot tool and the lock screen sit above it), how opaque, and its frame
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -115,9 +135,34 @@ fn from_window_list(list: &[Listed], our_pid: i64) -> Foreground {
 #[cfg(windows)]
 fn foreground(window: &WebviewWindow) -> Foreground {
     use windows_sys::Win32::Foundation::{HWND, RECT};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetWindowLongW, GetWindowRect, GetWindowThreadProcessId, GWL_EXSTYLE,
+    use windows_sys::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONULL,
     };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindow, GetWindowLongW, GetWindowRect, GetWindowThreadProcessId,
+        IsZoomed, GWL_EXSTYLE, GW_OWNER,
+    };
+
+    fn screen(hwnd: HWND) -> Option<Frame> {
+        // SAFETY: takes no pointers; a stale handle gives no monitor
+        let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONULL) };
+        if monitor.is_null() {
+            return None;
+        }
+        // SAFETY: zeroed is a valid MONITORINFO; cbSize is set and the out-param lives on this stack
+        let mut info: MONITORINFO = unsafe { std::mem::zeroed() };
+        info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+        if unsafe { GetMonitorInfoW(monitor, &mut info) } == 0 {
+            return None;
+        }
+        let r = info.rcMonitor;
+        Some(Frame {
+            left: r.left as i64,
+            top: r.top as i64,
+            right: r.right as i64,
+            bottom: r.bottom as i64,
+        })
+    }
 
     fn frame(hwnd: HWND) -> Option<Frame> {
         let mut r = RECT {
@@ -155,8 +200,13 @@ fn foreground(window: &WebviewWindow) -> Foreground {
     }
     // both frames from GetWindowRect, so they share its pixels and its borders
     let ours = window.hwnd().ok().and_then(|h| frame(h.0 as HWND));
+    // SAFETY: take no pointers; a stale handle reads as neither maximized nor owned
+    let (maximized, owned) =
+        unsafe { (IsZoomed(front) != 0, !GetWindow(front, GW_OWNER).is_null()) };
     match (frame(front), ours) {
-        (Some(f), Some(o)) if covers(f, o) => Foreground::Covered,
+        (Some(f), Some(o)) if covered_on_windows(f, o, screen(front), maximized, owned) => {
+            Foreground::Covered
+        }
         _ => Foreground::Beside,
     }
 }
@@ -252,11 +302,68 @@ pub fn app_foreground(window: WebviewWindow) -> &'static str {
     foreground(&window).as_str()
 }
 
+// Lift the folded window above every other (floatstore.ts foldToSprout). Windows lifts a window above the foreground one
+// only for a process allowed to take the foreground, and the fold that follows you out comes after another app took it:
+// tao's always-on-top then sets the TOPMOST style but leaves Sprout under that app. Joined to the foreground window's
+// thread for the call, the lift goes through, without taking the focus. A sync command, so it runs on the main thread,
+// the window's. Answers how it went, for the fold's log line.
+#[tauri::command]
+pub fn raise_topmost(window: WebviewWindow) -> &'static str {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::HWND;
+        use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            GetForegroundWindow, GetWindowThreadProcessId, SetWindowPos, HWND_TOPMOST,
+            SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+        };
+        let Ok(h) = window.hwnd() else {
+            return "no window";
+        };
+        // SAFETY: takes no pointers but the null out-param GetWindowThreadProcessId allows; stale handles only fail
+        unsafe {
+            let me = GetCurrentThreadId();
+            let front = GetForegroundWindow();
+            let them = if front.is_null() {
+                0
+            } else {
+                GetWindowThreadProcessId(front, std::ptr::null_mut())
+            };
+            let joined = them != 0 && them != me && AttachThreadInput(me, them, 1) != 0;
+            let lifted = SetWindowPos(
+                h.0 as HWND,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            ) != 0;
+            if joined {
+                AttachThreadInput(me, them, 0);
+            }
+            match (lifted, joined) {
+                (false, _) => "failed",
+                (true, true) => "lifted, joined to the foreground",
+                (true, false) => "lifted alone",
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = window;
+        "not needed"
+    }
+}
+
 // A click on arcterm's taskbar button brings a window folded into Sprout back, as the Dock icon does on macOS (main.rs
 // emits "app-reopen" there; floatstore.ts grows the window back on it). Windows has no reopen event, so the host watches
 // the foreground: the main window taking it straight from the taskbar is a click on its button, while Alt+Tab comes from
 // the switcher and only focuses Sprout. A click on the button of the window already in front minimizes it instead, so
 // that minimize counts too. The frontend lets both pass unless the window is folded.
+// Every time the main window takes the foreground the host also emits "main-foreground": the folded window's focus event
+// cannot tell a return to arcterm, since the fold's own window changes activate it inside its thread while another app
+// stays in front, and the real return then brings no new focus event.
 
 // the window classes of the taskbar: the main one, one on another screen, and a button's thumbnail
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -330,6 +437,11 @@ pub fn watch_taskbar(window: &WebviewWindow) {
                 let _ = app.emit("app-reopen", ());
             }
         }
+        if event == EVENT_SYSTEM_FOREGROUND {
+            if let Some(app) = APP.get() {
+                let _ = app.emit("main-foreground", ());
+            }
+        }
     }
 
     let Ok(hwnd) = window.hwnd() else {
@@ -397,6 +509,52 @@ mod tests {
     #[test]
     fn a_window_over_three_quarters_does_not() {
         assert!(!covers(f(0, 0, 1440, 1040), f(0, 0, 1920, 1040)));
+    }
+
+    #[test]
+    fn on_windows_only_a_maximized_or_full_screen_app_window_covers() {
+        let ours = f(0, 0, 1920, 1040);
+        let screen = Some(f(0, 0, 1920, 1080));
+        // a maximized window, its frame overhanging the work area
+        assert!(covered_on_windows(
+            f(-8, -8, 1928, 1048),
+            ours,
+            screen,
+            true,
+            false
+        ));
+        // full screen: a borderless window over the whole screen
+        assert!(covered_on_windows(
+            f(0, 0, 1920, 1080),
+            ours,
+            screen,
+            false,
+            false
+        ));
+        // a big window that is neither: ~86% of arcterm, which used to fold it
+        assert!(!covered_on_windows(
+            f(60, 40, 1860, 990),
+            ours,
+            screen,
+            false,
+            false
+        ));
+        // a dialog or popup the app owns, even one as big as the screen
+        assert!(!covered_on_windows(
+            f(0, 0, 1920, 1080),
+            ours,
+            screen,
+            false,
+            true
+        ));
+        // maximized on another screen
+        assert!(!covered_on_windows(
+            f(1912, -8, 3848, 1048),
+            ours,
+            Some(f(1920, 0, 3840, 1080)),
+            true,
+            false
+        ));
     }
 
     #[test]

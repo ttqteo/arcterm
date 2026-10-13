@@ -89,8 +89,9 @@ export function autoSproutOn(raw: unknown): boolean {
     return raw === true;
 }
 
-// how long the window stays out of focus before it folds, so an Alt+Tab that comes straight back leaves it be
-export const AUTO_FOLD_DELAY_MS = 800;
+// how long the window stays out of focus before it folds, so an Alt+Tab that comes straight back, or a window that
+// pops up for a moment while you watch something, leaves it be
+export const AUTO_FOLD_DELAY_MS = 3000;
 
 export type Foreground = "ours" | "covered" | "beside";
 

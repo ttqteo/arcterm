@@ -344,7 +344,8 @@ fn main() {
             macwindow::set_folded_chrome,
             macwindow::redirect_minimize,
             winframe::hold_window_frame,
-            foreground::app_foreground
+            foreground::app_foreground,
+            foreground::raise_topmost
         ])
         .setup(move |app| {
             // the config window already exists here (Tauri builds it before running setup)

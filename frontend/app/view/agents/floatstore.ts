@@ -554,6 +554,10 @@ export function foldToSprout(): Promise<void> {
                 await holdFrame(win, placed);
             }
             await win.setAlwaysOnTop(true);
+            // the fold that follows you out comes after another app took the front, which Windows keeps above a
+            // plain always-on-top (foreground.rs raise_topmost)
+            const lift = await invoke<string>("raise_topmost").catch((e) => `failed: ${e}`);
+            foldLog(`lifting Sprout on top: ${lift}`);
             startClickThrough();
             if (motion) {
                 void playTeleport("mini", "arrive");
@@ -788,10 +792,12 @@ async function recoverFold(win: Window, restore: MiniRestore): Promise<void> {
 }
 
 // window:autosprout, like a picture-in-picture: Full folds into Sprout once you have been for AUTO_FOLD_DELAY_MS in
-// another app whose window hides most of arcterm (foreground.rs: an overlay such as a screenshot, the lock screen or
-// Alt+Tab's switcher never does), and a fold made so grows back when you return to arcterm, whichever way. A focus counts
-// as a return only once the folded window has been seen out of focus, so a fold that takes the focus itself never undoes
-// itself, and only when it came without a press on Sprout (windowsize.ts autoRestoreOnReturn). A button's fold stays.
+// another app whose window hides arcterm (foreground.rs: on Windows a maximized or full-screen one; a dialog, a popup or
+// an overlay such as a screenshot, the lock screen or Alt+Tab's switcher never does), and a fold made so grows back when
+// you return to arcterm, whichever way. A focus, or on Windows the host seeing the main window take the foreground,
+// counts as a return only once another app has been seen in front of the folded window, so a fold that takes the focus
+// itself never undoes itself, and only when it came without a press on Sprout (windowsize.ts autoRestoreOnReturn). A
+// button's fold stays.
 function setupAutoSprout(model: AgentsViewModel): () => void {
     const win = getCurrentWindow();
     const setting = getSettingsKeyAtom("window:autosprout");
@@ -818,8 +824,19 @@ function setupAutoSprout(model: AgentsViewModel): () => void {
         await foldToSprout();
         if (globalStore.get(floatMiniAtom)) {
             autoFolded = true;
-            armed = !(await win.isFocused());
+            // the host, not the window's focus: the fold's own window changes report the window focused while the
+            // other app stays in front
+            armed = (await invoke<Foreground>("app_foreground").catch((): Foreground => "beside")) !== "ours";
         }
+    };
+    const arrive = () => {
+        if (!armed) {
+            return;
+        }
+        armed = false;
+        const at = Date.now();
+        clearTimeout(returnTimer);
+        returnTimer = setTimeout(() => comeBack(at), AUTO_RESTORE_SETTLE_MS);
     };
     const comeBack = (at: number) => {
         const pressGapMs = lastPress == null ? null : lastPress - at;
@@ -850,18 +867,22 @@ function setupAutoSprout(model: AgentsViewModel): () => void {
             }
             return;
         }
-        if (!armed) {
-            return;
+        arrive();
+    });
+    // Windows: the main window took the foreground (foreground.rs watch_taskbar). A return to a folded window brings
+    // no focus event when the fold left it activated inside its thread.
+    const unlistenForeground = listen("main-foreground", () => {
+        if (currentSize().size === "sprout") {
+            foldLog(`main window took the foreground (armed ${armed}, auto ${autoFolded})`);
+            arrive();
         }
-        armed = false;
-        const at = Date.now();
-        returnTimer = setTimeout(() => comeBack(at), AUTO_RESTORE_SETTLE_MS);
     });
     return () => {
         clearTimeout(leaveTimer);
         clearTimeout(returnTimer);
         window.removeEventListener("pointerdown", onPress, true);
         void unlistenFocus.then((f) => f());
+        void unlistenForeground.then((f) => f());
     };
 }
 

@@ -27,6 +27,18 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (Fold when you leave: stricter, on top; Sprout click opens the chat)**
+
+- [ ] (arcterm) **Auto fold only for a maximized or full-screen app, and Sprout on top of it.** Windows, Fold when you
+  leave on, arcterm maximized: switch to a maximized Chrome and wait 3 s: Sprout folds and sits above Chrome
+  (`waveapp.log`: `[fold] lifting Sprout on top: lifted, joined to the foreground`). A big unmaximized window, a dialog
+  or a popup that takes the focus does not fold it; neither does coming back within 3 s. Alt+Tab or click back to
+  arcterm: it grows back (`[fold] main window took the foreground`). `foreground.rs` covered_on_windows,
+  raise_topmost, main-foreground; `floatstore.ts` setupAutoSprout.
+- [ ] (arcterm) **One click on the folded Sprout opens the chat, a double-click restores.** Fold with `Ctrl+M`: one
+  click opens the Jarvis chat beside Sprout (a second click closes it); a double-click grows the window back without
+  the chat flashing open. `sprout-mini.tsx` onClick.
+
 **2026-10-12 (folded Sprout: a click restores, every Space)**
 
 - [ ] (arcterm) **Folded Sprout on a Mac.** Fold with `⌘M`, then: switch Desktop (Ctrl+→) and go into a full-screen

@@ -3,9 +3,9 @@
 //
 // The window folded into Sprout (floatstore.ts foldToSprout): the see-through window holds only this. Sprout, the same
 // 48px as on the footer and the float's ledge, sits in the window's corner away from where things open (floatwindow.ts
-// miniSides), bobs, wears what waits on you (petmini.ts), and is dragged by a press that moves. A click gives back the
-// size it was folded from, as a click on a Dock icon would. A cursor resting on it opens the hover card: the agents (a
-// click floats on one), the row that opens the Jarvis chat (the pet peek), and Restore. What Sprout says
+// miniSides), bobs, wears what waits on you (petmini.ts), and is dragged by a press that moves. A click opens or closes
+// the Jarvis chat (the pet peek); a double-click gives back the size it was folded from. A cursor resting on it opens the
+// hover card: the agents (a click floats on one), the row that opens the chat, and Restore. What Sprout says
 // (petBubbleAtom), and a reply that landed while the chat was folded, show in a bubble beside it, and give way to the
 // card. Spider-Man folds into a rooftop scene instead (petmini.ts spideyFoldLook): windows lit for the
 // agents working, spider-sense for what waits.
@@ -28,7 +28,7 @@ import type { MiniSides } from "@/app/view/agents/floatwindow";
 import { miniHoverAtom } from "@/app/view/agents/miniclickthrough";
 import { foldedList, workingCount } from "@/app/view/agents/sproutroster";
 import { StatusDot } from "@/app/view/agents/statusdot";
-import { openPetPeek } from "@/app/view/jarvis/peekstore";
+import { closePeek, openPetPeek } from "@/app/view/jarvis/peekstore";
 import { PetBubble } from "@/app/view/jarvis/petbubble";
 import { petCharacter } from "@/app/view/jarvis/petcharacter";
 import { postureFor, type PetPosture } from "@/app/view/jarvis/petcondition";
@@ -61,10 +61,19 @@ import type { Placement } from "@floating-ui/react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { MessageCircle, PictureInPicture2, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+    type MouseEvent as ReactMouseEvent,
+    type PointerEvent as ReactPointerEvent,
+} from "react";
 
 const BOB_MS = 700;
 const DRAG_PX = 4;
+// how long a click waits for a second one: a single click opens the chat, a double-click restores
+const DOUBLE_CLICK_MS = 250;
 // the key that folds and gives the window back (floatstore.ts minimizeRequested), as the card names it
 const FOLD_KEY = isMacOS() ? "⌘M" : "Ctrl+M";
 // Spike result 1 or 2 failed on a platform: draw Sprout on a tile there (make this `isWindows()` or `isMacOS()`)
@@ -191,6 +200,8 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
     // state, not a ref: the chat and the bubble position themselves once this lands
     const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
     const dragged = useRef(false);
+    const clickTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+    useEffect(() => () => clearTimeout(clickTimer.current), []);
 
     // the reply's unread mark follows the errand and the chat; the chat's opening and closing size the window
     useEffect(() => {
@@ -261,12 +272,21 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
     };
     // to the size it was folded from, or to Float on an agent picked in the list
     const restore = (agentId?: string) => fireAndForget(() => restoreFromSprout(model, agentId));
-    const onClick = () => {
+    // one click opens or closes the chat, once it is no double-click's first; a double-click restores
+    const onClick = (e: ReactMouseEvent) => {
         if (dragged.current) {
             dragged.current = false;
             return;
         }
-        restore();
+        clearTimeout(clickTimer.current);
+        if (e.detail >= 2) {
+            restore();
+            return;
+        }
+        clickTimer.current = setTimeout(
+            () => (globalStore.get(petPeekOpenAtom) ? closePeek() : openPetPeek()),
+            e.detail === 0 ? 0 : DOUBLE_CLICK_MS
+        );
     };
     // the card takes the place of the bubbles while it shows: they come back when it closes
     const card = (forced?.hover ?? hovered) && !chatOpen;
@@ -426,7 +446,7 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
                     >
                         <PictureInPicture2 size={12} strokeWidth={2} aria-hidden />
                         {fromFloat ? "Restore float" : "Restore window"}
-                        <span className="ml-auto text-[10.5px] font-medium text-muted">click · {FOLD_KEY}</span>
+                        <span className="ml-auto text-[10.5px] font-medium text-muted">double-click · {FOLD_KEY}</span>
                     </button>
                 </div>
             ) : null}

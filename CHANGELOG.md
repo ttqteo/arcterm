@@ -26,13 +26,15 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - **An agent's ✳ in the sidebar now shows its state** in place of the dot on its second line: it pulses in the accent
   colour while working, in yellow while asking, and goes grey when idle or asleep.
-- **Fold when you leave** is simpler: it folds when the app you switch to covers most of arcterm (four fifths of it,
-  maximized or not), and grows back as soon as you come back to arcterm, by Alt+Tab, the taskbar button or a click. A
-  fold from the Sprout button or `Ctrl+M` stays until you click Sprout, press `Ctrl+M` again, pick **Restore**, or
-  click arcterm's taskbar button (the Dock icon on macOS).
-- **A click on the folded Sprout brings the window back**, and `⌘M` (`Ctrl+M`) folds and unfolds. The chat opens
-  from the card that shows when the cursor rests on Sprout (its **Ask Jarvis** row, with what waits on you); a cursor
-  that only passes over Sprout no longer pops the card, and the card shows even while Sprout is speaking.
+- **Fold when you leave** is simpler and calmer: on Windows it folds only when the app you switch to is maximized or
+  full screen on arcterm's screen and stays in front for about 3 seconds, so a dialog or popup that grabs the focus while
+  you watch something no longer folds it. It grows back as soon as you come back to arcterm, by Alt+Tab, the taskbar
+  button or a click. A fold from the Sprout button or `Ctrl+M` stays until you double-click Sprout, press `Ctrl+M`
+  again, pick **Restore**, or click arcterm's taskbar button (the Dock icon on macOS).
+- **One click on the folded Sprout opens the Jarvis chat, a double-click brings the window back**, and `⌘M`
+  (`Ctrl+M`) folds and unfolds. The card that shows when the cursor rests on Sprout lists your agents and has an **Ask
+  Jarvis** row too; a cursor that only passes over Sprout no longer pops the card, and the card shows even while Sprout
+  is speaking.
 - **On macOS the folded Sprout follows you to every Space**, beside a full-screen app too, instead of staying on the
   Desktop you folded it on.
 - The launcher's **Transcript** button on a picked session spells out its key, **Shift+Enter**, in place of ⇧⏎.
@@ -52,6 +54,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   Chrome, folds it into Sprout. Before, nothing folded it on a Mac.
 - **A window folded on leaving grows back on ⌘Tab** on macOS: coming back to arcterm with ⌘Tab sometimes left it in
   Sprout until you clicked the Dock icon.
+- On Windows, Sprout folded on leaving now floats above the app you switched to instead of hiding under it, and a
+  return to arcterm grows it back even when the fold came while that app was in front.
 - The mouse wheel scrolls Claude Code's fullscreen view again after arcterm restarts or reloads its pane.
 - An agent with a background task still running is no longer offered **✓ Close**: closing it would end that task.
 - Agent sidebar: clicking the top row of a run started from a plan (it has no lead) now shows the terminal of the run's
