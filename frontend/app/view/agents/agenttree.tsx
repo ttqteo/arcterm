@@ -581,8 +581,8 @@ function RunSubline({
                 {runComplete(run) ? (
                     <RunCompleteLabel run={run} />
                 ) : (
-                    <span className={cn("truncate", PROGRESS_TEXT[runStage(run).tone])} title={progress}>
-                        {progress}
+                    <span className={cn("truncate", PROGRESS_TEXT[runStage(run).tone])} title={progress.title}>
+                        {progress.text}
                     </span>
                 )}
                 {trailing != null ? <span className="flex-1" /> : null}

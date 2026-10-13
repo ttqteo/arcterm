@@ -31,33 +31,35 @@ export function finishedRunLabel(run: Pick<RunInfo, "dag" | "status" | "land">):
     return s.key === "wrapping-up" ? "Wrapping up · lead" : s.label;
 }
 
-/** Pure: a dag run's line in the Agents tree, the stage first so a cut line keeps it. Every task done is not the
- *  run done: the final stage, the lead's wrap-up and the land still follow. */
+/** Pure: a dag run's line in the Agents tree, the stage first so a cut line keeps it, and its tooltip. Every task
+ *  done is not the run done: the final stage, the lead's wrap-up and the land still follow. */
 export function dagProgressLabel(
     run: Pick<RunInfo, "dag" | "status" | "land" | "leadStarted">,
     leadless: boolean
-): string {
+): { text: string; title: string } {
+    const same = (text: string) => ({ text, title: text });
     const { done, total } = runProgress(run.dag);
     const s = runStage(run);
     if (s.key === "final-check") {
-        return `Final check · ${finalStageActivity(run.dag?.final) ?? "verifying the merged result"}`;
+        return same(`Final check · ${finalStageActivity(run.dag?.final) ?? "verifying the merged result"}`);
     }
     if (s.key === "cancelled") {
         // a cancelled run says how far it got
-        return `Cancelled · ${done}/${total}`;
+        return same(`Cancelled · ${done}/${total}`);
     }
     if (s.key === "land-held") {
-        return s.needsYou ? "Land held · needs you" : "Land held";
+        return same(s.needsYou ? "Land held · needs you" : "Land held");
     }
     if (s.key !== "working" && s.key !== "plan-review" && s.key !== "planning") {
-        return finishedRunLabel(run);
+        return same(finishedRunLabel(run));
     }
     const base = `${s.label} · ${done}/${total}`;
     if (leadless) {
-        // a plan-path run gets its lead only at its first judgment event, so no lead yet is the normal case
-        return `${base} · ${run.leadStarted ? "lead closed" : "lead starts if needed"}`;
+        // a plan-path run gets its lead only at its first judgment event, so no lead yet is the normal case: the
+        // tooltip says it, the line keeps its room for the count
+        return { text: base, title: `${base} · ${run.leadStarted ? "lead closed" : "lead starts if needed"}` };
     }
-    return base;
+    return same(base);
 }
 
 // runComplete is a run with nothing left to happen: landed, or done with nothing to land. a lead still wrapping up, a

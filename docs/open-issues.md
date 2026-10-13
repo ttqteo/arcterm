@@ -27,6 +27,12 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (Sidebar: a plan run's line drops the lead suffix)**
+
+- [ ] (arcterm) **A plan run's line shows its count.** Start a run from a plan file and look at its row in the
+  sidebar: the line under the title reads `1 worker  Plan review · 0/N` (later `Working · k/N`) without being cut;
+  hovering it shows `… · lead starts if needed` (or `lead closed`).
+
 **2026-10-13 (Click a file's path to copy it)**
 
 - [ ] (arcterm) **The path copies on click.** Open a file in an agent's File tab, hover its path (a grey fill, the
