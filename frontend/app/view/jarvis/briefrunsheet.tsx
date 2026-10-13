@@ -249,7 +249,10 @@ function LoadedConfig({
 
     const busy = saving != null;
     const dirty = draftIsDirty(draft, baseline);
-    const invalid = parallelismInvalid(draft.parallelism);
+    // an untouched stored 0 (no width yet; the engine picks one at submit) is never sent, so it blocks no save
+    const invalid = draft.parallelism !== baseline.parallelism && parallelismInvalid(draft.parallelism);
+    // "Use for new runs" copies the width into the profile, where a 0 is refused whether or not it was touched
+    const defaultsInvalid = parallelismInvalid(draft.parallelism);
     // the scheduler runs at the baseline until a save lands, so a draft it refused (or never received) is
     // printed as not saved rather than as the configuration in force
     const notSaved = dirty && (invalid || error != null);
@@ -283,11 +286,7 @@ function LoadedConfig({
               : "Saved. Applies to future dispatches.";
         submit(
             "settings",
-            () =>
-                RpcApi.SetRunSettingsCommand(
-                    TabRpcClient,
-                    settingsPayload(channelId, run.id, draft, baseline.autonomous)
-                ),
+            () => RpcApi.SetRunSettingsCommand(TabRpcClient, settingsPayload(channelId, run.id, draft, baseline)),
             () => {
                 // only a successful write re-seeds: a refused save must leave the user's draft alone.
                 setBaseline(draft);
@@ -385,7 +384,7 @@ function LoadedConfig({
                     {error}
                 </p>
             ) : null}
-            {notice != null ? (
+            {notice != null && !dirty ? (
                 <p data-jarvis-brief-sheet-state="saved" className="text-[11.5px] text-success">
                     {notice}
                 </p>

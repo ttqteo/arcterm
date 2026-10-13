@@ -170,13 +170,28 @@ describe("settingsPayload", () => {
             reviewerRoute: null,
             autonomous: false,
         };
-        expect(settingsPayload("c1", "r1", draft, false)).toEqual({
+        expect(settingsPayload("c1", "r1", draft, { ...draft, parallelism: 2 })).toEqual({
             channelid: "c1",
             runid: "r1",
             parallelism: 3,
             workerroute: { runtime: "pi" },
             reviewerpicks: false,
         });
+    });
+
+    it("sends the width only when the draft changes it", () => {
+        const saved = {
+            parallelism: 0,
+            workerRoute: null,
+            reviewerPicks: false,
+            reviewerRoute: null,
+            autonomous: false,
+        };
+        // a stored 0 means no width yet: the server refuses 0, so an Approvals-only save must leave it out
+        const approvalsOnly = settingsPayload("c1", "r1", { ...saved, autonomous: true }, saved);
+        expect(approvalsOnly).not.toHaveProperty("parallelism");
+        expect(approvalsOnly.autonomous).toBe(true);
+        expect(settingsPayload("c1", "r1", { ...saved, parallelism: 4 }, saved).parallelism).toBe(4);
     });
 
     it("sends Approvals only when the draft changes it", () => {
@@ -187,10 +202,11 @@ describe("settingsPayload", () => {
             reviewerRoute: null,
             autonomous: true,
         };
-        expect(settingsPayload("c1", "r1", draft, false).autonomous).toBe(true);
-        expect(settingsPayload("c1", "r1", { ...draft, autonomous: false }, true).autonomous).toBe(false);
+        const off = { ...draft, autonomous: false };
+        expect(settingsPayload("c1", "r1", draft, off).autonomous).toBe(true);
+        expect(settingsPayload("c1", "r1", off, draft).autonomous).toBe(false);
         // a save about the other dials never writes back a value the palette may since have flipped
-        expect(settingsPayload("c1", "r1", draft, true)).not.toHaveProperty("autonomous");
+        expect(settingsPayload("c1", "r1", draft, draft)).not.toHaveProperty("autonomous");
     });
 });
 
@@ -200,6 +216,15 @@ describe("settingsChangePayload and Approvals", () => {
         expect(settingsChangePayload("c1", "r1", null, group, { parallelism: 4 })).not.toHaveProperty("autonomous");
         expect(settingsChangePayload("c1", "r1", null, group, { autonomous: false }).autonomous).toBe(false);
         expect(settingsChangePayload("c1", "r1", engineRun(), null, { autonomous: true }).autonomous).toBe(true);
+    });
+
+    it("sends the width only when the change sets it", () => {
+        // the palette toggle over a run stored with no width yet: a 0 here would make the server refuse the save
+        const palette = settingsChangePayload("c1", "r1", engineRun({ parallelism: 0 }), null, { autonomous: true });
+        expect(palette).not.toHaveProperty("parallelism");
+        expect(palette.autonomous).toBe(true);
+        // the lead card's width control
+        expect(settingsChangePayload("c1", "r1", null, submittedGroup(), { parallelism: 3 }).parallelism).toBe(3);
     });
 });
 

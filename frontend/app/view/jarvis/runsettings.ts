@@ -157,16 +157,20 @@ export function parallelismInvalid(n: number): boolean {
     return !Number.isInteger(n) || n < 1 || n > MAX_PARALLELISM;
 }
 
-// Autonomous is left out unless the save changes it: the server leaves an omitted value alone, so a save about
-// the other dials never writes back an Approvals value the palette has since flipped.
+// The width and Approvals are left out unless the save changes them: the server leaves an omitted value alone,
+// so a save about one dial never writes back an Approvals value the palette has since flipped, nor a stored
+// width of 0 (no width yet; the engine picks one at submit) that the server would refuse.
 export function settingsPayload(
     channelId: string,
     runId: string,
     draft: RunSettingsDraft,
-    savedAutonomous: boolean
+    saved: RunSettingsDraft
 ): CommandSetRunSettingsData {
     const payload = dialsPayload(channelId, runId, draft);
-    if (draft.autonomous !== savedAutonomous) {
+    if (draft.parallelism !== saved.parallelism) {
+        payload.parallelism = draft.parallelism;
+    }
+    if (draft.autonomous !== saved.autonomous) {
         payload.autonomous = draft.autonomous;
     }
     return payload;
@@ -176,7 +180,6 @@ function dialsPayload(channelId: string, runId: string, draft: RunSettingsDraft)
     const payload: CommandSetRunSettingsData = {
         channelid: channelId,
         runid: runId,
-        parallelism: draft.parallelism,
         reviewerpicks: draft.reviewerPicks,
     };
     if (draft.workerRoute != null) {
@@ -189,7 +192,8 @@ function dialsPayload(channelId: string, runId: string, draft: RunSettingsDraft)
 }
 
 // SetRunSettings applies every route field it is sent, so a control that changes one dial sends the rest as
-// they stand: from the group once a dag exists, else from the run. Autonomous goes only when the change sets it.
+// they stand: from the group once a dag exists, else from the run. The width and Autonomous go only when the
+// change sets them.
 export function settingsChangePayload(
     channelId: string,
     runId: string,
@@ -198,6 +202,9 @@ export function settingsChangePayload(
     change: Partial<RunSettingsDraft>
 ): CommandSetRunSettingsData {
     const payload = dialsPayload(channelId, runId, { ...runSettingsDraft(run, group), ...change });
+    if (change.parallelism != null) {
+        payload.parallelism = change.parallelism;
+    }
     if (change.autonomous != null) {
         payload.autonomous = change.autonomous;
     }

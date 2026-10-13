@@ -23384,9 +23384,10 @@ const autonomousRuns = {
         await polishWaitFor(h, `${flatOf(`${RUN_SHEET}?.querySelector('[data-jarvis-brief-sheet-state="saved"]')`)} === 'Saved. The lead asks you from its next decision.'`, 8000);
         const off = await h.ev(SHEET_STATE);
         rec(
-            "run-sheet 4. picking Ask me says the lead asks again, and Save reads asks you",
+            "run-sheet 4. picking Ask me says the lead asks again and hides the saved line, and Save reads asks you",
             backToAsk?.pressed.join(",") === "Ask me" &&
                 backToAsk.line === AUTONOMOUS_BACK_TO_ASK &&
+                backToAsk.saved === "" &&
                 off?.saved === "Saved. The lead asks you from its next decision." &&
                 off.word === "asks you",
             JSON.stringify({ backToAsk, off })
