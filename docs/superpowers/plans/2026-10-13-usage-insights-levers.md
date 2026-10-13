@@ -36,14 +36,11 @@ Notes for every task:
 ### Task 1: Pin the digest's class and model tables, and expose the digest to scenarios
 
 **Depends on:** none
+**Files:** `frontend/app/view/agents/usagedigest.test.ts`, `frontend/app/view/agents/usageinsightsstore.ts`
 
 The saved analysis of 2026-10-13 said the digest's "Tokens and spend by class" and "Spend by model" tables were empty.
 The code that builds them looks right; this task pins the behaviour with a test and lets Task 7's scenario read the
 digest the real surface sends.
-
-**Files:**
-- Test: `frontend/app/view/agents/usagedigest.test.ts`
-- Modify: `frontend/app/view/agents/usageinsightsstore.ts` (the dev fixture seam)
 
 **Step 1: Write the test.** In `usagedigest.test.ts` add a case that builds the stats the way the surface does,
 from Claude buckets, and checks both tables have rows:
@@ -111,12 +108,7 @@ line for it in the fixture comment block.
 ### Task 2: `rereadtokens` on oversized tool results
 
 **Depends on:** none
-
-**Files:**
-- Modify: `pkg/usagestats/sessions.go` (`SessionBigResults`, `foldSessions`)
-- Modify: `pkg/wshrpc/wshrpctypes_agents.go` (`UsageBigResults`)
-- Modify: `pkg/wshrpc/wshserver/wshserver_agents.go` (`sessionUsageToWire`)
-- Test: `pkg/usagestats/sessions_test.go`
+**Files:** `pkg/usagestats/sessions.go`, `pkg/usagestats/sessions_test.go`, `pkg/wshrpc/wshrpctypes_agents.go`, `pkg/wshrpc/wshserver/wshserver_agents.go`, `frontend/types/gotypes.d.ts`
 
 **Step 1: Write the failing test** in `sessions_test.go` (package `usagestats`, so `foldSessions` is reachable):
 
@@ -206,21 +198,16 @@ func rereadOf(b BigToolResult, turns []mainTurn) int {
 
 **Step 5: Commit.**
 `git commit -m "feat(usage): count how often an oversized tool result is read back" -- pkg/usagestats/sessions.go pkg/usagestats/sessions_test.go pkg/wshrpc/wshrpctypes_agents.go pkg/wshrpc/wshserver/wshserver_agents.go frontend/types/gotypes.d.ts`
-(add any other file `task generate` changed, by name.)
+(if `task generate` changes another file, add it to the commit and say so in the task report.)
 
 ---
 
 ### Task 3: Claude answers in JSON against the levers it is given
 
 **Depends on:** Task 2
+**Files:** `pkg/usageinsights/usageinsights.go`, `pkg/usageinsights/usageinsights_test.go`, `pkg/wshrpc/wshrpctypes_agents.go`, `pkg/wshrpc/wshserver/wshserver_agents.go`, `pkg/wshrpc/wshserver/wshserver_usageinsights_test.go`, `frontend/types/gotypes.d.ts`
 
 Depends on Task 2 only so the two `task generate` runs do not conflict in the generated files.
-
-**Files:**
-- Modify: `pkg/usageinsights/usageinsights.go`
-- Modify: `pkg/wshrpc/wshrpctypes_agents.go` (`CommandAnalyzeUsageData`, `UsageInsights`, new `UsageLever`, `UsageLeverSession`)
-- Modify: `pkg/wshrpc/wshserver/wshserver_agents.go` (`AnalyzeUsageCommand`, `usageInsightsToWire`)
-- Test: `pkg/usageinsights/usageinsights_test.go`, `pkg/wshrpc/wshserver/wshserver_usageinsights_test.go`
 
 **Step 1: Types in `usageinsights`.**
 
@@ -327,11 +314,7 @@ Then `task generate`.
 ### Task 4: `usagelevers.ts` — price the levers and build the card's views
 
 **Depends on:** Task 3
-
-**Files:**
-- Create: `frontend/app/view/agents/usagelevers.ts`, `frontend/app/view/agents/usagelevers.test.ts`
-- Modify: `frontend/app/view/agents/usagesessions.ts` (`SessionRow`, `buildSessionRows`)
-- Test: `frontend/app/view/agents/usagesessions.test.ts`
+**Files:** `frontend/app/view/agents/usagelevers.ts`, `frontend/app/view/agents/usagelevers.test.ts`, `frontend/app/view/agents/usagesessions.ts`, `frontend/app/view/agents/usagesessions.test.ts`
 
 **Step 1: Session rows carry what the levers price.** `SessionRow` gains, optional so existing fixtures still type:
 
@@ -424,12 +407,7 @@ model … No React, no Wave runtime imports"), pricing through `priceFor` (`usag
 ### Task 5: The digest names the levers; Analyze sends them; a levers result counts as a result
 
 **Depends on:** Task 4
-
-**Files:**
-- Modify: `frontend/app/view/agents/usagedigest.ts`, `usagedigest.test.ts`
-- Modify: `frontend/app/view/agents/usageinsightsstore.ts` (`analyzeUsage`, `loadSavedInsights`, `devAnalyze`)
-- Modify: `frontend/app/view/agents/usageinsights.ts` (`insightsCard`), `usageinsights.test.ts`
-- Modify: `frontend/app/view/agents/usagesurface.tsx` (`analyze`)
+**Files:** `frontend/app/view/agents/usagedigest.ts`, `frontend/app/view/agents/usagedigest.test.ts`, `frontend/app/view/agents/usageinsightsstore.ts`, `frontend/app/view/agents/usageinsights.ts`, `frontend/app/view/agents/usageinsights.test.ts`, `frontend/app/view/agents/usagesurface.tsx`
 
 **Step 1: Tests first.**
 
@@ -464,17 +442,12 @@ Run both — FAIL.
 ### Task 6: The levers card
 
 **Depends on:** Task 5
+**Files:** `frontend/app/view/agents/usageleversbody.tsx`, `frontend/app/view/agents/usageinsightscard.tsx`, `frontend/app/view/agents/usageinsightsstore.ts`, `frontend/app/view/agents/usagesurface.tsx`
 
 Read `DESIGN.md` and the prototype boards first (`Main.dc.html`, `Narrow.dc.html`, `Running.dc.html` under the
 Prototype path). Copy sizes from the boards; take colors from tokens: `bg-surface-raised` panel, `bg-surface-selected`
 selected row, `border-edge-mid` dividers, bar `bg-muted` on `bg-edge-strong`, text `text-primary` / `text-ink-hi` /
 `text-secondary` / `text-muted` / `text-ink-faint`.
-
-**Files:**
-- Create: `frontend/app/view/agents/usageleversbody.tsx`
-- Modify: `frontend/app/view/agents/usageinsightscard.tsx` (`AnalysisBody` choice, `RunningBody`, new `onOpenSession` prop)
-- Modify: `frontend/app/view/agents/usageinsightsstore.ts` (selection atom)
-- Modify: `frontend/app/view/agents/usagesurface.tsx` (pass `onOpenSession`)
 
 **Step 1: Selection survives the surface unmounting.** In `usageinsightsstore.ts`:
 
@@ -533,10 +506,7 @@ skeleton shape (`SkeletonLine`s: a 56% headline line, five rows on the left, thr
 ### Task 7: CDP scenario, changelog, hand check
 
 **Depends on:** Task 6
-
-**Files:**
-- Modify: `scripts/cdp/scenarios.mjs`
-- Modify: `CHANGELOG.md`, `docs/open-issues.md`
+**Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/open-issues.md`
 
 **Step 1: Scenario `usage-insights-levers`** (surface `usage`), next to `usageInsights` in `scenarios.mjs` and
 registered the same way. Reuse its arrange and teardown helpers (`usageInsightsSessions`, the bucket and rate-limit
