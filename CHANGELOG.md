@@ -8,23 +8,6 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
-## Unreleased
-
-### Changed
-
-- **A smaller Jarvis popup**: the harness and the project a question goes to are one line of small text under the
-  field instead of two dropdowns. Folded into Sprout, the popup only shows what waits on you and a reply already on
-  its way, with no field to ask in; restore the window to ask.
-- **The folded Sprout's "don't fold" box says what it takes**: it reads "Custom…", and shows "e.g. 2h, 30m, or until
-  14:30" once you click into it.
-
-### Fixed
-
-- **An initiative's progress bar no longer paints its next chunk in the accent colour**, which read as work under
-  way when nobody had picked it up. Only a chunk actually marked active is accent; the next one stays grey.
-- **The folded Sprout's Jarvis chat closes when you click away** to another app, as a popup should, instead of
-  staying open over it.
-
 ## 0.15.11 — 2026-10-13
 
 ### Added
@@ -67,6 +50,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- **A smaller Jarvis popup**: the harness and the project a question goes to are one line of small text under the
+  field instead of two dropdowns. Folded into Sprout, the popup only shows what waits on you and a reply already on
+  its way, with no field to ask in; restore the window to ask.
+- **The folded Sprout's "don't fold" box says what it takes**: it reads "Custom…", and shows "e.g. 2h, 30m, or until
+  14:30" once you click into it.
 - The RAM popup on Windows now shows what arcterm's total is made of, on one line under the agents: Agents,
   Interface (the webview), Server, Host and Terminals.
 - **Agent rows in the sidebar are calmer.** Background commands an agent left running no longer mark its row (Servers
@@ -164,6 +152,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- **An initiative's progress bar no longer paints its next chunk in the accent colour**, which read as work under
+  way when nobody had picked it up. Only a chunk actually marked active is accent; the next one stays grey.
+- **The folded Sprout's Jarvis chat closes when you click away** to another app, as a popup should, instead of
+  staying open over it.
 - **A Claude agent that restarts on Claude Code's classic renderer scrolls again.** When arcterm restarted while a
   resumed Claude was still starting, Claude Code fell back to its classic renderer on the next launch and drew it
   inside the fullscreen screen left over from before, which has no scrollback, so the wheel did nothing.
