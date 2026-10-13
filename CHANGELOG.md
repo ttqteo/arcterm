@@ -8,34 +8,6 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
-## Unreleased
-
-### Fixed
-
-- **A Claude agent that restarts on Claude Code's classic renderer scrolls again.** When arcterm restarted while a
-  resumed Claude was still starting, Claude Code fell back to its classic renderer on the next launch and drew it
-  inside the fullscreen screen left over from before, which has no scrollback, so the wheel did nothing.
-- **A canvas with only a few boards has ‹ and › beside its tabs too**, and on a canvas `←` / `→` step the boards as
-  `[` and `]` do (`↑` / `↓` and `j` / `k` still move between agents).
-- **Closing the agent or terminal you are looking at opens the one beside it** in the sidebar (the one below, or above
-  when it was last), instead of jumping back to the first agent.
-- **Usage no longer sits on its loading placeholders after arcterm starts**: the first scan of your transcripts could
-  outlast a 5-second limit and lose its answer, leaving By session and Subagent cost blank until you switched the
-  window. The scans now get up to a minute, and opening Usage reads each transcript once instead of up to three times.
-
-### Changed
-
-- **On Windows, Alt+Tab back to a folded arcterm opens it maximized**, in Full, whatever size it was folded from (Full,
-  Float, or a smaller window); the taskbar button does the same. On macOS ⌘Tab still gives back the size it folded from.
-- **The Resource Manager is now part of the Consumers panel.** On Windows the app bar's RAM chip opens Consumers again,
-  one line per agent: its CPU, RAM, spend of the last 10 minutes, and the heaviest command it runs
-  (`git log --all -p`), with Kill, Switch to Sonnet, Sleep and Stop in one ⋯ menu; the header reads free RAM, what
-  arcterm itself holds and its CPU share, and the 5-hour quota on one line (`6.2 GB free · arcterm 5.9 GB · 4% CPU`).
-  The separate popover and `Mod`+`G` `m` are gone. On macOS the panel is unchanged.
-- **A sleeping agent reads apart from an idle one in the sidebar**: a moon takes its ✳ at the head of the row and the
-  row fades, its age is how long it has slept. **Background commands an agent left running** show as a still,
-  grey terminal icon with their count instead of a pulsing green dot, which read as the agent itself still working.
-
 ## 0.15.11 — 2026-10-13
 
 ### Added
@@ -68,9 +40,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
   senses an agent asking you, another hanging over the empty Agent screen, and a web in the top-left corner behind
   the sidebar's icons. Picking Spider-Man as Jarvis asks whether to switch to it, and as Jarvis he now and then says a
   line from his films.
-- **A green dot and a count on an agent's sidebar row while background tasks it started still run** (a build, a dev
-  server), even after its turn has ended; hover it to see which. The rail's Background tasks marks a running one with
-  the same green dot.
+- **A terminal icon and a count on an agent's sidebar row while background tasks it started still run** (a build, a
+  dev server), even after its turn has ended; hover it to see which. It is grey and still, so it does not read as the
+  agent itself working.
 - **Your design canvases are back after a restart**: the palette (search “canvas”) lists the canvases in the
   selected agent’s project, and opening one shows it on that agent.
 - **Usage → Insights answers in English or Vietnamese**: an EN / VI switch beside Analyze picks the language, and
@@ -78,6 +50,15 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- **On Windows, Alt+Tab back to a folded arcterm opens it maximized**, in Full, whatever size it was folded from (Full,
+  Float, or a smaller window); the taskbar button does the same. On macOS ⌘Tab still gives back the size it folded from.
+- **The Resource Manager is now part of the Consumers panel.** On Windows the app bar's RAM chip opens Consumers again,
+  one line per agent: its CPU, RAM, spend of the last 10 minutes, and the heaviest command it runs
+  (`git log --all -p`), with Kill, Switch to Sonnet, Sleep and Stop in one ⋯ menu; the header reads free RAM, what
+  arcterm itself holds and its CPU share, and the 5-hour quota on one line (`6.2 GB free · arcterm 5.9 GB · 4% CPU`).
+  The separate popover and `Mod`+`G` `m` are gone. On macOS the panel is unchanged.
+- **A sleeping agent reads apart from an idle one in the sidebar**: a moon takes its ✳ at the head of the row and the
+  row fades, its age is how long it has slept.
 - **Alt+Tab back to arcterm opens the window again from Sprout**, however it was folded (the Sprout button, minimize,
   or Fold when you leave), as ⌘Tab does on macOS; a click on Sprout itself still leaves it folded.
 - **Spider-Man shows the same working dots as Sprout** in place of the small web, which read as a green smudge.
@@ -149,6 +130,16 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- **A Claude agent that restarts on Claude Code's classic renderer scrolls again.** When arcterm restarted while a
+  resumed Claude was still starting, Claude Code fell back to its classic renderer on the next launch and drew it
+  inside the fullscreen screen left over from before, which has no scrollback, so the wheel did nothing.
+- **A canvas with only a few boards has ‹ and › beside its tabs too**, and on a canvas `←` / `→` step the boards as
+  `[` and `]` do (`↑` / `↓` and `j` / `k` still move between agents).
+- **Closing the agent or terminal you are looking at opens the one beside it** in the sidebar (the one below, or above
+  when it was last), instead of jumping back to the first agent.
+- **Usage no longer sits on its loading placeholders after arcterm starts**: the first scan of your transcripts could
+  outlast a 5-second limit and lose its answer, leaving By session and Subagent cost blank until you switched the
+  window. The scans now get up to a minute, and opening Usage reads each transcript once instead of up to three times.
 - **A dev server whose launcher exited still names the agent that started it.** `pnpm run dev` on Astro 7 starts
   the server and returns, so the agent's Servers list read `already running` and the footer's Servers popover read
   `no owner`; both now say the agent, and its log opens from the task that started it.
