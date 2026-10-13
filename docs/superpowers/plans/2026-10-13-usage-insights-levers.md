@@ -313,7 +313,7 @@ Then `task generate`.
 
 ### Task 4: `usagelevers.ts` — price the levers and build the card's views
 
-**Depends on:** Task 3
+**Depends on:** Task 1, Task 3
 **Files:** `frontend/app/view/agents/usagelevers.ts`, `frontend/app/view/agents/usagelevers.test.ts`, `frontend/app/view/agents/usagesessions.ts`, `frontend/app/view/agents/usagesessions.test.ts`
 
 **Step 1: Session rows carry what the levers price.** `SessionRow` gains, optional so existing fixtures still type:
