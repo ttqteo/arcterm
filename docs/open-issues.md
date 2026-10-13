@@ -32,12 +32,16 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] Jarvis → Initiatives: a row whose chunks are all pending (e.g. Repo hygiene 0/2) shows an all-grey bar, no
   accent segment; a chunk set to active is still accent. `effortmodel.ts` `buildEffortCard` segments.
 
-**2026-10-13 (one click on the folded Sprout holds its card)**
+**2026-10-13 (one click on the folded Sprout holds its card; Mac: the Dock icon over a full-screen app)**
 
 - [ ] Fold into Sprout, click it once: after a beat the card of agents and terminals opens (no Jarvis chat) and stays
   with the cursor moved off it; a click on a row floats on it. Click Sprout again, press Esc, or click another app:
   the card closes and does not pop back while the cursor still rests on Sprout. A double-click restores.
   `sprout-mini.tsx`, `miniclickthrough.ts`.
+- [ ] (Mac) Put an app in full screen, fold arcterm into Sprout over it, click arcterm's Dock icon: the window grows
+  back and the screen slides to arcterm's desktop, with arcterm in front. `waveapp.log` says `[fold] grown back off
+  the Space on screen ... on the active Space now true`. Same with ⌘Tab and a double-click on Sprout; on a plain
+  desktop nothing changes. `macwindow.rs` `check_unfold_space`.
 
 **2026-10-13 (Jarvis popup: folded chat closes on a click away, no Ask while folded, compact composer)**
 

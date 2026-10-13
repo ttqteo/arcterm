@@ -7,6 +7,11 @@
 // A folded window grows back on its own focus (floatstore.ts setupAutoSprout). ⌘Tab back to arcterm sometimes left it
 // folded while a click on the Dock icon grew it back, so each arrival while folded is logged with what AppKit gave, and
 // a folded arcterm that comes to the front with no key window makes its window key itself (takes_key).
+//
+// Folded over a full-screen app, Sprout sits in that app's Space. Growing back gives the window its own collection
+// behavior again, which a full-screen Space does not take, so AppKit moves it to its desktop and the screen stays on the
+// full-screen app: the Dock icon "showed nothing". A moment after the fold ends, a window no longer on the active Space
+// is brought to the front, which takes the screen to its Space (brings_to_front).
 
 use tauri::WebviewWindow;
 
@@ -29,6 +34,24 @@ fn takes_key(a: Arrival) -> bool {
     a.active && a.folded && !a.has_key && a.visible && !a.minimized
 }
 
+// The window just grown back from the fold, a moment later.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[derive(Clone, Copy, Debug)]
+struct Unfolded {
+    // folded again since: the fold's own chrome puts it on every Space
+    folded: bool,
+    on_active_space: bool,
+    visible: bool,
+    minimized: bool,
+}
+
+// Whether the grown-back window is brought to the front: it left the Space on screen (a full-screen app's) when it got
+// its own collection behavior back. A minimized or hidden one stays where the person put it.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn brings_to_front(u: Unfolded) -> bool {
+    !u.folded && !u.on_active_space && u.visible && !u.minimized
+}
+
 #[cfg(target_os = "macos")]
 mod imp {
     use std::cell::{Cell, RefCell};
@@ -44,13 +67,15 @@ mod imp {
     use objc2_foundation::{ns_string, NSNotificationCenter};
     use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
-    use super::{takes_key, Arrival};
+    use super::{brings_to_front, takes_key, Arrival, Unfolded};
     use crate::applog;
 
     static APP: OnceLock<AppHandle> = OnceLock::new();
 
     // AppKit may hand the key back after it posts that the app became active, so the window is looked at a moment later
     const ARRIVAL_CHECK_DELAY_S: f64 = 0.15;
+    // AppKit moves a window off a full-screen Space some time after its collection behavior changes
+    const UNFOLD_SPACE_CHECK_DELAY_S: f64 = 0.3;
 
     define_class!(
         // SAFETY: NSObject has no subclassing requirements, and this class does not implement Drop.
@@ -99,6 +124,11 @@ mod imp {
             #[unsafe(method(checkArrival:))]
             fn check_arrival(&self, _: Option<&AnyObject>) {
                 check_arrival();
+            }
+
+            #[unsafe(method(checkUnfoldSpace:))]
+            fn check_unfold_space(&self, _: Option<&AnyObject>) {
+                check_unfold_space();
             }
         }
     );
@@ -199,6 +229,20 @@ mod imp {
             ns.setCollectionBehavior(behavior);
         } else if let Some(was) = UNFOLDED_BEHAVIOR.with(|cell| cell.take()) {
             ns.setCollectionBehavior(was);
+            let _ = APP.set(window.app_handle().clone());
+            ARRIVAL_OBSERVER.with(|cell| {
+                if let Some(observer) = cell.borrow().as_ref() {
+                    // SAFETY: checkUnfoldSpace: is the observer's own method, taking one object it ignores
+                    unsafe {
+                        let _: () = msg_send![
+                            &**observer,
+                            performSelector: sel!(checkUnfoldSpace:),
+                            withObject: None::<&AnyObject>,
+                            afterDelay: UNFOLD_SPACE_CHECK_DELAY_S
+                        ];
+                    }
+                }
+            });
         }
         Ok(())
     }
@@ -259,6 +303,36 @@ mod imp {
             line.push_str(&format!("; made it key: {}", ns.isKeyWindow()));
         }
         applog::log_line(&line);
+    }
+
+    fn check_unfold_space() {
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let Some(window) = APP.get().and_then(|app| app.get_webview_window("main")) else {
+            return;
+        };
+        let Ok(ns) = ns_window(&window, mtm) else {
+            return;
+        };
+        let unfolded = Unfolded {
+            folded: FOLDED.with(|cell| cell.get()),
+            on_active_space: ns.isOnActiveSpace(),
+            visible: ns.isVisible(),
+            minimized: ns.isMiniaturized(),
+        };
+        if !brings_to_front(unfolded) {
+            return;
+        }
+        // activating arcterm takes the screen to a Space holding its window, and the window to the front there
+        #[allow(deprecated)]
+        NSApplication::sharedApplication(mtm).activateIgnoringOtherApps(true);
+        ns.makeKeyAndOrderFront(None);
+        applog::log_line(&format!(
+            "[tauri] [fold] grown back off the Space on screen (a full-screen app's): brought it to the front, on the \
+             active Space now {}",
+            ns.isOnActiveSpace()
+        ));
     }
 
     pub fn redirect_minimize(window: &WebviewWindow, on: bool) -> Result<(), String> {
@@ -350,6 +424,27 @@ mod tests {
 
     fn folded_in_front() -> Arrival {
         Arrival { active: true, folded: true, has_key: false, visible: true, minimized: false }
+    }
+
+    fn grown_back_off_screen() -> Unfolded {
+        Unfolded { folded: false, on_active_space: false, visible: true, minimized: false }
+    }
+
+    #[test]
+    fn a_window_grown_back_off_the_space_on_screen_comes_to_the_front() {
+        assert!(brings_to_front(grown_back_off_screen()));
+    }
+
+    #[test]
+    fn a_window_grown_back_on_the_space_on_screen_stays() {
+        assert!(!brings_to_front(Unfolded { on_active_space: true, ..grown_back_off_screen() }));
+    }
+
+    #[test]
+    fn a_window_folded_again_or_put_away_stays() {
+        assert!(!brings_to_front(Unfolded { folded: true, ..grown_back_off_screen() }));
+        assert!(!brings_to_front(Unfolded { minimized: true, ..grown_back_off_screen() }));
+        assert!(!brings_to_front(Unfolded { visible: false, ..grown_back_off_screen() }));
     }
 
     #[test]

@@ -18,6 +18,12 @@ Add one line in the same commit as any change a user would notice, under `Added`
   chat: pick one to float on it, or open the chat from the card. Click Sprout again, press Esc or click away to close
   it; a double-click still restores the window.
 
+### Fixed
+
+- **The Dock icon brings arcterm back over a full-screen app on a Mac**: with the window folded into Sprout above a
+  full-screen app, clicking the Dock icon (or ⌘Tab, or a double-click on Sprout) now takes you to arcterm's desktop
+  instead of leaving the screen on the full-screen app.
+
 ## 0.15.11 — 2026-10-13
 
 ### Added
