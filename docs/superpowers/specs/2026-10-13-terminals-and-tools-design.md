@@ -3,7 +3,7 @@
 Date: 2026-10-13. Status: design agreed, not planned yet.
 
 Prototype: `D:\work\arcterm\.superpowers\design\terminal-tui\project\` (canvas `terminal-tui`; boards Compact,
-Main, ProjectTree, Library, LibraryAdd, Picker, Sidebar, WorktreeGone).
+Main, ProjectTree, Library, LibraryAdd, Picker, Launcher, NewButton, Sidebar, WorktreeGone).
 
 ## Why
 
@@ -120,6 +120,23 @@ Palette-style dialog (`command-palette.tsx` shell): a line saying where it opens
 Installed, Not installed, Yours; `↵` opens over the focused agent, `Shift`+`↵` in the panel, `Ctrl`+`I` installs. Entry
 points: the `+` in the agent header switch, a folder's `tool` button on hover, the palette ("Open a tool…") and a
 global chord (proposed `Ctrl`+`Shift`+`T`, to be checked against `bindings.ts`).
+
+### The New dialog (board Launcher)
+
+The dialog that starts an agent, a terminal or a run (`launchermodal.tsx`, `launcher.ts`) gains a third Start group,
+**Tool**, for opening a tool in a project when no agent is in focus (the picker always follows the focused agent).
+
+- The group lists only the pinned tools ("In Open a tool" on), so the column stays short and the digits stay within
+  1–9, then a "More tools…" row that opens the picker.
+- A tool picked leaves only the Project column, as Terminal does today: no Task, Command, Flag or worktree toggle. Home
+  is offered, as for Terminal. A card under the projects says what the tool is and that it runs in the project root;
+  opening it in an agent's worktree is the agent's Tool button.
+- With no agent to stand over, the tool takes the centre, as a terminal does with no agent, and sits in its project
+  folder in the tree.
+- The dialog's title and primary button follow the row picked: New agent / Launch agent, New terminal, New run,
+  Open a tool / Open lazygit.
+- The app bar's one `+ New` button (`app-bar.tsx`) stays as it is (board NewButton, A); its tooltip becomes "New
+  agent, terminal, run or tool".
 
 ## Edge cases
 
