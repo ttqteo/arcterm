@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -170,12 +171,14 @@ func claudeModDirs(home string) []string {
 	return dirs
 }
 
-// installClaudeMod writes the embedded mods into claudeModDirs with the wsh path substituted. A file
-// whose bytes already match is left alone: every interactive claude session watches its plugin
-// folders and reloads the mod on a write, so rewriting on every arcterm launch would reload it everywhere.
+// installClaudeMod writes the embedded mods into claudeModDirs with the wsh path substituted, and removes
+// what an earlier build wrote that this one no longer ships. A file whose bytes already match is left
+// alone: every interactive claude session watches its plugin folders and reloads the mod on a write, so
+// rewriting on every arcterm launch would reload it everywhere.
 func installClaudeMod(home, wshExe string) error {
 	for i, dir := range claudeModDirs(home) {
 		root := claudeMods[i]
+		var shipped []string
 		err := fs.WalkDir(claudeModFS, root, func(p string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() {
 				return err
@@ -186,9 +189,13 @@ func installClaudeMod(home, wshExe string) error {
 			}
 			want := strings.ReplaceAll(string(body), `"__WSH_PATH__"`, jsonString(wshExe))
 			rel := strings.TrimPrefix(p, root+"/")
+			shipped = append(shipped, rel)
 			return writeFileIfChanged(filepath.Join(dir, filepath.FromSlash(rel)), want)
 		})
 		if err != nil {
+			return err
+		}
+		if err := pruneClaudeMod(dir, shipped); err != nil {
 			return err
 		}
 	}
@@ -210,6 +217,67 @@ func claudeAskSettingsPath(home string) string {
 // Home agent.
 func installClaudeAskSettings(home string) error {
 	return writeFileIfChanged(claudeAskSettingsPath(home), claudeAskSettings)
+}
+
+// claudeModManifest lists, one slash path per line, the files the last install wrote into a mod folder.
+const claudeModManifest = ".arc-installed"
+
+// pruneClaudeMod deletes the files an earlier install wrote into dir that this build no longer ships, then records
+// what this one wrote. claude writes its own files there too (.claude-plugin/types, tsconfig.json), so only arcterm's
+// go: those the manifest names, or, before the first manifest, the files beside the ones this build ships.
+func pruneClaudeMod(dir string, shipped []string) error {
+	keep := map[string]bool{}
+	for _, rel := range shipped {
+		keep[rel] = true
+	}
+	earlier, err := installedClaudeModFiles(dir, shipped)
+	if err != nil {
+		return err
+	}
+	for _, rel := range earlier {
+		// a hand-edited manifest must not reach outside the folder
+		if keep[rel] || !filepath.IsLocal(filepath.FromSlash(rel)) {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, filepath.FromSlash(rel))); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("removing %s the mod no longer ships: %w", rel, err)
+		}
+	}
+	sorted := append([]string(nil), shipped...)
+	sort.Strings(sorted)
+	return writeFileIfChanged(filepath.Join(dir, claudeModManifest), strings.Join(sorted, "\n")+"\n")
+}
+
+// installedClaudeModFiles is what an earlier install wrote into dir: its manifest, or for an install from before
+// manifests, every file directly inside a folder this build ships a file into. never the root, where claude keeps
+// its tsconfig.json
+func installedClaudeModFiles(dir string, shipped []string) ([]string, error) {
+	body, err := os.ReadFile(filepath.Join(dir, claudeModManifest))
+	if err == nil {
+		return strings.Fields(string(body)), nil
+	}
+	if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("reading %s: %w", claudeModManifest, err)
+	}
+	folders := map[string]bool{}
+	for _, rel := range shipped {
+		if folder := path.Dir(rel); folder != "." {
+			folders[folder] = true
+		}
+	}
+	var files []string
+	for folder := range folders {
+		entries, err := os.ReadDir(filepath.Join(dir, filepath.FromSlash(folder)))
+		if err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("listing %s: %w", folder, err)
+		}
+		for _, e := range entries {
+			if !e.IsDir() {
+				files = append(files, path.Join(folder, e.Name()))
+			}
+		}
+	}
+	return files, nil
 }
 
 // writeFileIfChanged writes body to path through a temp file and a rename, unless path already holds it.
