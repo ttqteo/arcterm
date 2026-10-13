@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (Spider theme: blue accent)**
+
+- [ ] (arcterm) **The Spider theme's accent is the suit's blue (#7a9ce6), not red.** Setup → Appearance → Theme →
+  Spider: links, focus rings, the selected row and the app-bar spider logo read soft blue, nothing glares red; the
+  small spiders in the corners and the pet keep the suit's red; the Spider chip shows a red and a blue swatch.
+  Commit: "feat(theme): the Spider theme's accent is the suit's soft blue".
+
 **2026-10-13 (Don't fold for, on the folded Sprout)**
 
 - [ ] (arcterm) **The folded Sprout's card holds the auto fold off.** Turn on "Fold when you leave arcterm" (right-click

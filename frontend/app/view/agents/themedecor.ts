@@ -61,12 +61,12 @@ export const SPIDER_SMALL: readonly string[] = [
 ];
 
 /**
- * The four swatches a theme chip shows: background, surface, accent and success. The Spider chip trades success for
- * its terminal blue, so it shows the suit's red and blue.
+ * The four swatches a theme chip shows: background, surface, accent and success. The Spider chip shows the suit's
+ * red (its decor) and blue (its accent) instead.
  */
 export function chipSwatches(id: string, palette: ThemePalette): [string, string, string, string] {
-    const last = hasSpiderDecor(id) ? (palette.ansiBlue ?? palette.success) : palette.success;
-    return [palette.bg, palette.surface, palette.accent, last];
+    if (hasSpiderDecor(id)) return [palette.bg, palette.surface, "var(--color-spidey-red)", palette.accent];
+    return [palette.bg, palette.surface, palette.accent, palette.success];
 }
 
 // Spider-sense around the small spider, as Spider-Man's in the fold (petsprite.ts SPIDEY_SENSE): a jag either side

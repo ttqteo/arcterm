@@ -78,7 +78,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
     // the lights hide in macOS fullscreen, so their room goes with them
     const fullscreen = useAtomValue(atoms.isFullScreen);
     const newAgentKeys = useBindingKeys("new-agent");
-    // the Spider theme swaps the t> mark for its spider, in the theme's red (themedecorview.tsx)
+    // the Spider theme swaps the t> mark for its spider, in the theme's accent (themedecorview.tsx)
     const spider = useSpiderDecor();
     return (
         <div

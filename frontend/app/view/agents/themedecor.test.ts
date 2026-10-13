@@ -68,7 +68,7 @@ describe("chipSwatches", () => {
 
     it("shows the suit's red and blue on the Spider chip", () => {
         const p = activePalette("spider");
-        expect(chipSwatches("spider", p)).toEqual([p.bg, p.surface, "#f05252", "#5b8cf0"]);
+        expect(chipSwatches("spider", p)).toEqual([p.bg, p.surface, "var(--color-spidey-red)", "#7a9ce6"]);
     });
 });
 

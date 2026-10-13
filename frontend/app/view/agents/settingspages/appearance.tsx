@@ -203,7 +203,7 @@ function SpiderThemeOffer({ onSwitch, onDismiss }: { onSwitch: () => void; onDis
             <div className="min-w-0 flex-1">
                 <div className="text-[13px] font-medium text-primary">Switch to the Spider theme too?</div>
                 <div className="mt-0.5 text-[12px] leading-[1.45] text-muted">
-                    The red accent, a spider logo and webs in two corners. Theme above puts it back.
+                    The suit's blue accent, a spider logo and webs in two corners. Theme above puts it back.
                 </div>
             </div>
             <button

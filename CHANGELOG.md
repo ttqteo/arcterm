@@ -18,6 +18,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- The Spider theme's accent is now the suit's soft blue instead of a glaring red; the red stays in the spider decor and the pet.
 - The RAM popup on Windows now shows what arcterm's total is made of, on one line under the agents: Agents,
   Interface (the webview), Server, Host and Terminals.
 - **Agent rows in the sidebar are calmer.** Background commands an agent left running no longer mark its row (Servers
