@@ -562,6 +562,35 @@ func TestInstallPiTheme(t *testing.T) {
 	}
 }
 
+func TestMergePiSettingsDefaultsReplacesLegacyArcPackage(t *testing.T) {
+	home := t.TempDir()
+	settingsPath := filepath.Join(home, ".pi", "agent", "settings.json")
+	os.MkdirAll(filepath.Dir(settingsPath), 0o755)
+	os.WriteFile(settingsPath, []byte(`{"theme": "arc", "packages": ["git:github.com/kaeltran16/waveterm", "npm:pi-tasks"]}`), 0o644)
+
+	installed, _, err := mergePiSettingsDefaults(home)
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	if len(installed) != 1 || installed[0] != "packages" {
+		t.Fatalf("installed = %v, want [packages]", installed)
+	}
+	got, _ := os.ReadFile(settingsPath)
+	var s struct {
+		Packages []string `json:"packages"`
+	}
+	if err := json.Unmarshal(got, &s); err != nil {
+		t.Fatalf("parse settings: %v", err)
+	}
+	if len(s.Packages) != 2 || s.Packages[0] != "npm:pi-tasks" || s.Packages[1] != arcPackageEntry {
+		t.Fatalf("packages = %v, want [npm:pi-tasks %s]", s.Packages, arcPackageEntry)
+	}
+
+	if installed2, _, _ := mergePiSettingsDefaults(home); len(installed2) != 0 {
+		t.Fatalf("second run installed %v, want nothing", installed2)
+	}
+}
+
 func TestMergePiSettingsDefaults(t *testing.T) {
 	home := t.TempDir()
 	settingsPath := filepath.Join(home, ".pi", "agent", "settings.json")

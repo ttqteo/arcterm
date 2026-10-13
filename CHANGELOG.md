@@ -50,6 +50,8 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
 - **Resuming a conversation that a tab already holds takes you to that tab** instead of opening a second one on the
   same conversation, whether it is awake or asleep, from the command palette, New's Resume list, Open asleep or
   Conversations. A message typed with the resume wakes the agent with it, or goes to it if awake.
+- **pi loads the arc package from arcterm's own repository** (`github.com/ttqteo/arcterm`) instead of the upstream
+  fork's; an entry an earlier build wrote for the fork is replaced on the next launch.
 
 ## 0.15.11 — 2026-10-13
 

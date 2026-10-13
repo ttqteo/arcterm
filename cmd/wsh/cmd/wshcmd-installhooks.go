@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1055,7 +1056,11 @@ func installPiTheme(home string) error {
 
 // arcPackageEntry is the settings.packages entry provisioning adds so pi loads the arc package
 // (extensions/skills/prompts/themes declared in the pi manifest).
-const arcPackageEntry = "git:github.com/kaeltran16/waveterm"
+const arcPackageEntry = "git:github.com/ttqteo/arcterm"
+
+// legacyArcPackageEntries are entries earlier builds wrote for the arc package; provisioning swaps
+// them for arcPackageEntry so pi does not keep loading the upstream fork's copy beside this one.
+var legacyArcPackageEntries = []string{"git:github.com/kaeltran16/waveterm"}
 
 // mergePiSettingsDefaults writes pi settings defaults only when keys are absent: the arc theme and
 // the arc package entry. provider/model/thinking defaults are deliberately not written (arc defines
@@ -1075,8 +1080,22 @@ func mergePiSettingsDefaults(home string) (installed []string, skipped []string,
 	} else {
 		skipped = append(skipped, "theme")
 	}
-	if pkgs, _ := settings["packages"].([]any); !containsString(pkgs, arcPackageEntry) {
-		settings["packages"] = append(pkgs, arcPackageEntry)
+	pkgs, _ := settings["packages"].([]any)
+	kept := make([]any, 0, len(pkgs)+1)
+	changed := false
+	for _, p := range pkgs {
+		if s, ok := p.(string); ok && slices.Contains(legacyArcPackageEntries, s) {
+			changed = true
+			continue
+		}
+		kept = append(kept, p)
+	}
+	if !containsString(kept, arcPackageEntry) {
+		kept = append(kept, arcPackageEntry)
+		changed = true
+	}
+	if changed {
+		settings["packages"] = kept
 		installed = append(installed, "packages")
 	} else {
 		skipped = append(skipped, "packages")
