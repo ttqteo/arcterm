@@ -163,12 +163,23 @@ Load-bearing rules:
   `CockpitFocusPane` once mounted stays mounted until its terminal closes; `panemounts.ts` mounts the app's own agents
   and terminals the first time they show (so the first load does not replay them all at once), and one opened later at
   once. `agentgrid.ts` / `gridstore.ts` only decide which panes show and where (inline `gridRow`/`gridColumn`; the rest
-  `hidden`), and only agents can be cells. Re-parenting a pane or rendering the stack conditionally remounts the xterm
+  `hidden`), and a cell is an agent or a terminal (a tool is a terminal); the terminal in the panel under the agent
+  (`terminaldock.ts`) is never a cell. Re-parenting a pane or rendering the stack conditionally remounts the xterm
   and replays the TUI. Panes refit through `term.tsx`'s ResizeObserver, so keep the tracks `minmax(0, 1fr)`, the cells
   `min-w-0 min-h-0`, and nothing animating a cell's size.
-- **`focusIdAtom` stays the one "selected agent".** `AgentSurface` reconciles the saved grid against it, so every route
-  that selects an agent obeys one rule; the grid never overrides a focused agent, it is only the fallback when nothing is
-  in focus.
+- **`focusIdAtom` stays the one "selected agent", and it holds a terminal's id too.** `AgentSurface` reconciles the
+  saved grid against it, so every route that selects an agent or a terminal (the tree, `j`/`k`, Ctrl+Tab, the palette,
+  the picker) obeys one rule: it takes the focused cell, and picking a terminal no longer docks it; the grid never
+  overrides a focused agent or terminal, it is only the fallback when nothing is in focus.
+- **The Agent sidebar is one tree per project**, not an Active section plus a Terminals section: `projectTree` in
+  `agentsidebarmodel.ts` builds a folder per project holding its agents, a divider, then its terminals and tools
+  (Home holds the terminals with no project), and Conversations is the one other section. A plain terminal is a peer of
+  an agent and takes the centre when picked; the panel under the agent is a place you move a terminal to, and it folds
+  to a strip. A **tool** is a plain terminal (`controller: "shell"`, `cmd:firstcommand` the tool's command) whose block
+  meta `tool:id` is its only lasting marker. The catalog is Go (`pkg/arctools`, plus the user's `tools.json` in the
+  config dir, answered by one wshrpc command with PATH status); the pure model is `view/agents/toolsmodel.ts`, the
+  state and the open / install actions `toolsstore.ts`, the views `toolslibrary.tsx` (Setup → Tools), `toolpicker.tsx`
+  and the New dialog's Tool row.
 - **Opening an item on another surface goes through the one router**, `frontend/app/view/jarvis/openref.ts`
   (`openAddress` for a string, `openTarget` for an id): it loads the target, writes the destination's
   selection, then switches surface. Don't hand-roll set-selection-then-`surfaceAtom`.

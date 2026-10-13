@@ -56,6 +56,66 @@ describe("railVisibleAtom", () => {
     });
 });
 
+describe("the terminal panel", () => {
+    // one fresh copy of the modules per case, so the global store and the stored fold start clean
+    async function fresh(storedFold?: string) {
+        lsMock.clear();
+        if (storedFold != null) {
+            lsMock.store.set("agent.terminalDock.folded", storedFold);
+        }
+        vi.resetModules();
+        const { atom } = await import("jotai");
+        const { globalStore } = await import("@/app/store/jotaiStore");
+        const rail = await import("./railstore");
+        const { recentTabsAtom } = await import("./tabswitcherstore");
+        const model = {
+            focusIdAtom: atom<string | undefined>("t1"),
+            agentsAtom: atom([
+                { id: "a1", blockId: "b-a1" },
+                { id: "a2", blockId: "b-a2" },
+            ]),
+        };
+        return { globalStore, rail, recentTabsAtom, model };
+    }
+
+    it("is unfolded for a profile that never folded it, and keeps a stored fold", async () => {
+        const a = await fresh();
+        expect(a.globalStore.get(a.rail.terminalDockFoldedAtom)).toBe(false);
+        const b = await fresh("true");
+        expect(b.globalStore.get(b.rail.terminalDockFoldedAtom)).toBe(true);
+    });
+
+    it("moves a terminal under the agent that was in view before it, and opens the panel", async () => {
+        const { globalStore, rail, recentTabsAtom, model } = await fresh("true");
+        globalStore.set(recentTabsAtom, ["t1", "a2", "a1"]);
+        expect(rail.moveToDock(model, "t1")).toBe(true);
+        expect(globalStore.get(rail.dockedTerminalAtom)).toBe("t1");
+        expect(globalStore.get(model.focusIdAtom)).toBe("a2");
+        expect(globalStore.get(rail.terminalDockFoldedAtom)).toBe(false);
+    });
+
+    it("moves nothing when there is no agent to dock under", async () => {
+        const { globalStore, rail, model } = await fresh();
+        const none = { ...model, agentsAtom: (await import("jotai")).atom([]) };
+        expect(rail.moveToDock(none, "t1")).toBe(false);
+        expect(globalStore.get(rail.dockedTerminalAtom)).toBeNull();
+        expect(globalStore.get(model.focusIdAtom)).toBe("t1");
+    });
+
+    it("undocks the docked terminal, leaves the focus on the agent, and ignores another terminal", async () => {
+        const { globalStore, rail, model } = await fresh();
+        globalStore.set(rail.dockedTerminalAtom, "t1");
+        globalStore.set(rail.terminalDockMaxAtom, true);
+        globalStore.set(model.focusIdAtom, "a1");
+        rail.undock(model, "t2");
+        expect(globalStore.get(rail.dockedTerminalAtom)).toBe("t1");
+        rail.undock(model, "t1");
+        expect(globalStore.get(rail.dockedTerminalAtom)).toBeNull();
+        expect(globalStore.get(rail.terminalDockMaxAtom)).toBe(false);
+        expect(globalStore.get(model.focusIdAtom)).toBe("a1");
+    });
+});
+
 describe("branchDiffOf", () => {
     const read = (over: Partial<CommandGitChangesRtnData>): CommandGitChangesRtnData => ({
         branch: "wave/abc",

@@ -161,6 +161,7 @@ export interface LaunchMetaSpec {
     task: string;
     extraArgs?: string[]; // argv after the task (codex --image); never part of agent:baseargs
     cwd: string;
+    toolId?: string; // a terminal opened from the tool library (block meta tool:id); its startupCommand is the tool's command line
 }
 
 // Build the CreateBlock meta. Terminal -> default shell block (plus its first command). Agent runtimes -> cmd block with the
@@ -178,6 +179,9 @@ export function buildLaunchMeta(spec: LaunchMetaSpec): Record<string, unknown> {
         const command = spec.startupCommand.trim();
         if (command) {
             meta["cmd:firstcommand"] = command;
+        }
+        if (spec.toolId) {
+            meta["tool:id"] = spec.toolId;
         }
         return meta;
     }

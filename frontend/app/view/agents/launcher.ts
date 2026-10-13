@@ -1,22 +1,23 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pure view-model logic for the New launcher, the one dialog that starts an agent, a terminal or a run
-// (docs/superpowers/specs/2026-10-08-new-launcher-design.md): the Start rows and their digits, the words the dialog
-// shows for a pick, the project filter, and what a key does where focus is. No React, no Wave runtime imports.
+// Pure view-model logic for the New launcher, the one dialog that starts an agent, a terminal, a run or a tool
+// (docs/superpowers/specs/2026-10-08-new-launcher-design.md, docs/superpowers/specs/2026-10-13-terminals-and-tools-design.md):
+// the Start rows and their digits, the words the dialog shows for a pick, the project filter, and what a key does where
+// focus is. No React, no Wave runtime imports.
 
 import { isRuntimeOffered, runtimeLaunchLabel, type Runtime } from "./launch";
 import { SHAPE_CARDS, type RunShape } from "./runconfig";
 
-// Which half of the Start list is picked, and which door opened the dialog: a door picks its own half.
-export type LauncherKind = "agent" | "run";
-export type StartRowId = Runtime | RunShape;
+// Which part of the Start list is picked, and which door opened the dialog: a door picks its own part.
+export type LauncherKind = "agent" | "run" | "tool";
+export type StartRowId = Runtime | RunShape | "tool";
 
 export interface StartRow {
     id: StartRowId;
     kind: LauncherKind;
     name: string;
-    // a run row's shape description; agent rows have none
+    // a run row's shape description, and the Tool row's examples; agent rows have none
     desc: string | null;
     key: string;
 }
@@ -35,8 +36,11 @@ const RUN_ROWS: { id: RunShape; name: string }[] = [
     { id: "orchestrator", name: "Orchestrate" },
 ];
 
-// An uninstalled runtime stays hidden, so the digits follow the visible rows (spec D2). There are at most eight rows,
-// so every row has a digit.
+// The one Tool row: it picks a tool from a list of its own, so there is a single row however many tools there are
+const TOOL_ROW: Omit<StartRow, "key"> = { id: "tool", kind: "tool", name: "Tool", desc: "lazygit, yazi, btop…" };
+
+// An uninstalled runtime stays hidden, so the digits follow the visible rows (spec D2). There are at most nine rows, so
+// every row has a digit. The Tool row is last, so it never moves another row's digit.
 export function startRows(harnesses: { runtime: string; installed?: boolean }[]): StartRow[] {
     const agents: Omit<StartRow, "key">[] = AGENT_ROWS.filter((r) => isRuntimeOffered(r.id, harnesses)).map((r) => ({
         id: r.id,
@@ -50,7 +54,7 @@ export function startRows(harnesses: { runtime: string; installed?: boolean }[])
         name: r.name,
         desc: SHAPE_CARDS.find((c) => c.id === r.id)?.desc ?? null,
     }));
-    return [...agents, ...runs].map((r, i) => ({ ...r, key: String(i + 1) }));
+    return [...agents, ...runs, TOOL_ROW].map((r, i) => ({ ...r, key: String(i + 1) }));
 }
 
 // The agent row on show: the remembered runtime while it is still offered, else the first agent row.
@@ -63,28 +67,38 @@ export function agentRuntime(rows: StartRow[], remembered: Runtime | null): Runt
 }
 
 export function selectedRowId(kind: LauncherKind, runtime: Runtime, shape: RunShape): StartRowId {
-    return kind === "run" ? shape : runtime;
+    return kind === "tool" ? "tool" : kind === "run" ? shape : runtime;
 }
 
 export function launcherTitle(kind: LauncherKind): string {
-    return kind === "run" ? "New run" : "New agent";
+    return kind === "tool" ? "Open a tool" : kind === "run" ? "New run" : "New agent";
 }
 
-export function primaryLabel(kind: LauncherKind, runtime: Runtime, resuming = false): string {
+// The primary button. A tool names the one picked ("Open lazygit"); it has no session to resume.
+export function primaryLabel(kind: LauncherKind, runtime: Runtime, resuming = false, toolName = ""): string {
+    if (kind === "tool") {
+        return toolName ? `Open ${toolName}` : "Open a tool";
+    }
     if (kind === "run") {
         return "Start run";
     }
     return resuming ? "Resume agent" : runtimeLaunchLabel(runtime);
 }
 
+// What the header's a–z hint says a letter does: starts the Task or Goal box's text, or picks a tool
+export function letterHint(kind: LauncherKind): "task" | "goal" | "tool" {
+    return kind === "tool" ? "tool" : kind === "run" ? "goal" : "task";
+}
+
 export interface FooterInput {
     kind: LauncherKind;
     shape: RunShape;
     parallelism: number;
+    // for a tool, the folder it opens in (toolFolder)
     project: { name: string; path: string } | null;
     // "on main", "worktree on main-agent", or "" while the branch is unknown
     branchNote: string;
-    // a run's launchBlocker; always null for an agent
+    // a run's launchBlocker or a tool's toolBlocker; always null for an agent
     blocker: string | null;
     // the session an agent launch resumes; null or left out starts a new one
     resume?: { title: string; branch: string } | null;
@@ -113,9 +127,14 @@ export function footerLine(input: FooterInput): FooterLine {
             blocked: false,
         };
     }
-    if (input.kind === "agent") {
+    if (input.kind === "agent" || input.kind === "tool") {
         const tail = input.branchNote ? ` · ${input.branchNote}` : "";
-        return { lead: "Starts in ", strong: input.project.path, tail, blocked: false };
+        return {
+            lead: input.kind === "tool" ? "Opens in " : "Starts in ",
+            strong: input.project.path,
+            tail,
+            blocked: false,
+        };
     }
     if (input.shape === "quick") {
         return { lead: "Quick run in ", strong: input.project.name, tail: "", blocked: false };
@@ -154,9 +173,66 @@ export function focusLaunchProject(focusedProject: string, projectNames: readonl
 export const HOME_PICK = "~";
 export const HOME_NAME = "Home";
 
-// Only an agent row that is safe outside a project starts there, and only once the home folder is known.
+// Only an agent row that is safe outside a project starts there, and only once the home folder is known. A tool is a
+// plain terminal, so it is safe anywhere: Home is offered to every tool.
 export function homeOffered(kind: LauncherKind, runtime: Runtime, homePath: string): boolean {
+    if (kind === "tool") {
+        return homePath !== "";
+    }
     return kind === "agent" && (runtime === "claude" || runtime === "terminal") && homePath !== "";
+}
+
+// The tool on show: the remembered one while it is still listed, else the first; null only for an empty list.
+export function pickedTool<T extends { id: string }>(tools: T[], remembered: string | null): T | null {
+    return tools.find((t) => t.id === remembered) ?? tools[0] ?? null;
+}
+
+// The folder a picked tool opens in: Home for a tool that lives there (its "opens in"), else the picked project, which is
+// Home when Home was picked. An agent's own folder is not on offer here: nothing is in focus to name one.
+export function toolFolder(
+    tool: Pick<ToolStatus, "opensin"> | null,
+    picked: { name: string; path: string } | null,
+    homePath: string
+): { name: string; path: string } | null {
+    if (tool?.opensin === "home") {
+        return homePath !== "" ? { name: HOME_NAME, path: homePath } : null;
+    }
+    return picked;
+}
+
+// The word at the right of a Tool list row: the tool's category, or what is missing. "Yours" is arctools.CategoryYours.
+export function toolRowNote(tool: Pick<ToolStatus, "category" | "found">): string {
+    if (tool.found) {
+        return tool.category;
+    }
+    return tool.category === "Yours" ? "not on PATH" : "not installed";
+}
+
+// What stops a tool from opening: its list not read yet (or not readable), then a command that is not on PATH, which
+// would only print "command not found" in a terminal (toolsmodel openToolRefusal says the same in the pickers).
+export function toolBlocker(
+    tool: Pick<ToolStatus, "name" | "found"> | null,
+    load: "loading" | "error" | "ready"
+): string | null {
+    if (tool == null) {
+        return load === "error"
+            ? "Could not read the tool list"
+            : load === "loading"
+              ? "Reading the tool list…"
+              : "No tool to open";
+    }
+    return tool.found ? null : `${tool.name} is not on PATH`;
+}
+
+// The About card's second line: where the tool runs from here, and for one that is not on PATH where to put that right
+export function toolAboutLine(tool: Pick<ToolStatus, "opensin" | "found">, atHome: boolean): string {
+    let where = "Runs in the project's root.";
+    if (atHome || tool.opensin === "home") {
+        where = "Runs in your home folder.";
+    } else if (tool.opensin !== "root") {
+        where = `${where} To open it in an agent's worktree, use Tool on that agent.`;
+    }
+    return tool.found ? where : `${where} Not found on PATH: Setup → Tools can install it or fix its command.`;
 }
 
 // The Project column's pick keys, top to bottom: the filtered projects, then Home while it is offered and its name
@@ -193,8 +269,9 @@ export function draftShown(draft: LauncherDraft): boolean {
     return [draft.task, draft.goal, draft.planPath, draft.prototype].some((v) => v.trim() !== "") || draft.images > 0;
 }
 
-// "resume" is the Resume list: it takes ↑↓ itself (launcheragentfields), so only Enter is the dialog's
-export type FocusZone = "start" | "project" | "resume" | "textarea" | "input" | "other";
+// "resume" is the Resume list: it takes ↑↓ itself (launcheragentfields), so only Enter is the dialog's. "tools" is the
+// Tool list a Tool pick shows in the lower area (launchertoolfields): the dialog's third column, picked by letters.
+export type FocusZone = "start" | "project" | "tools" | "resume" | "textarea" | "input" | "other";
 
 // What an Escape can close before the dialog, innermost first
 export type LauncherInner = "flags" | "branches" | "filter";
@@ -204,6 +281,8 @@ export interface LauncherKeyCtx {
     startCount: number;
     // the visible project rows
     projectCount: number;
+    // the tools in the Tool list; 0 while no Tool is picked
+    toolCount: number;
     filter: string;
     // shown on screen, not just set: a branch list with no branches draws nothing
     flagMenuOpen: boolean;
@@ -227,7 +306,8 @@ export type LauncherKeyAction =
     | { kind: "none" }
     | { kind: "pick-start"; index: number }
     | { kind: "pick-project"; index: number }
-    | { kind: "move"; column: "start" | "project"; delta: 1 | -1 }
+    | { kind: "pick-tool"; index: number }
+    | { kind: "move"; column: "start" | "project" | "tools"; delta: 1 | -1 }
     | { kind: "column"; to: "start" | "project" }
     | { kind: "filter"; next: string }
     | { kind: "write" }
@@ -263,13 +343,23 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
         return NONE;
     }
     if (k.key === "Enter") {
-        if (zone !== "start" && zone !== "project" && zone !== "resume" && zone !== "input") {
+        if (zone !== "start" && zone !== "project" && zone !== "tools" && zone !== "resume" && zone !== "input") {
             return NONE;
         }
         // opening a session asleep (or reading it back, for an agent that cannot sleep) costs nothing; resuming it
         // starts the agent and reloads its whole context. The footer's second button names Shift+Enter, so it holds
         // wherever Enter launches.
         return k.shift && ctx.resumePicked ? { kind: "resume-secondary" } : { kind: "launch" };
+    }
+    // the Tool list is lettered, not numbered: a letter picks the nth tool and ↑↓ walk it. → and ← are Tab's job here.
+    if (zone === "tools") {
+        if (/^[a-z]$/i.test(k.key)) {
+            const index = k.key.toLowerCase().charCodeAt(0) - "a".charCodeAt(0);
+            return index < ctx.toolCount ? { kind: "pick-tool", index } : NONE;
+        }
+        return k.key === "ArrowDown" || k.key === "ArrowUp"
+            ? { kind: "move", column: "tools", delta: k.key === "ArrowDown" ? 1 : -1 }
+            : NONE;
     }
     if (zone !== "start" && zone !== "project") {
         return NONE;

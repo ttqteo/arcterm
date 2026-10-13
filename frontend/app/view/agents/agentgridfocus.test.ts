@@ -77,11 +77,20 @@ describe("a click on a tree row or a cell", () => {
     });
 });
 
-describe("what is in focus but is not a cell", () => {
-    it("a terminal or a done worker leaves the grid untouched, and an agent brings it back", () => {
+describe("what is in focus", () => {
+    // terminal ids are eligible beside the agents' (gridstore eligibleIds of both rosters)
+    const withTerm = new Set([...roster, "term"]);
+    it("a terminal with a block takes a cell by the agents' rule, and a done worker leaves the grid untouched", () => {
+        const s = g(["a", "b"], "a");
+        expect(settle(s, "term", withTerm)).toEqual(g(["term", "b"], "term"));
+        expect(settle(g(["a", "term"], "a"), "term", withTerm)).toEqual(g(["a", "term"], "term"));
+        expect(settle(settle(s, "term", withTerm), "a", withTerm)).toEqual(g(["a", "b"], "a"));
+        expect(settle(s, "ended-worker")).toEqual(s);
+        expect(settle(settle(s, "ended-worker"), "b")).toEqual(g(["a", "b"], "b"));
+    });
+    it("a terminal that has no block is not a cell, so it leaves the grid untouched too", () => {
         const s = g(["a", "b"], "a");
         expect(settle(s, "term")).toEqual(s);
-        expect(settle(settle(s, "term"), "b")).toEqual(g(["a", "b"], "b"));
     });
 });
 

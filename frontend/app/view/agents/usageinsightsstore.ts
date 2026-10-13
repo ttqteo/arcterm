@@ -11,6 +11,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type PrimitiveAtom } from "jotai";
+import { hasInsights } from "./usagelevers";
 
 export const sessionUsageAtom = atom<UsageSession[]>([]) as PrimitiveAtom<UsageSession[]>;
 export const sessionUsageLoadedAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
@@ -30,6 +31,9 @@ export const savedInsightsAtom = atom<UsageInsights | undefined>(undefined) as P
 export const insightsRunningAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
 // the last Analyze failure; the card shows it beside the previous result. Cleared when the next run starts.
 export const insightsErrorAtom = atom<string | undefined>(undefined) as PrimitiveAtom<string | undefined>;
+// the lever the Insights card shows, or "tips"; a module atom since the Usage surface unmounts on switch.
+// An unknown or missing key means the first lever (selectedLeverKey).
+export const insightsLeverAtom = atom<string | undefined>(undefined) as PrimitiveAtom<string | undefined>;
 // "Show all N" on the By session table, kept across the surface's unmount
 export const sessionShowAllAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
 // the By session table's cursor (j / k), a session id
@@ -54,8 +58,9 @@ const ANALYZE_TIMEOUT_MS = 150_000;
 //   saved     the last saved analysis (absent: never analysed)
 //   analyze   what the next Analyze does: "ok" resolves `result` after 1.5 s, "error" rejects after 1.5 s,
 //             "hang" never settles
-//   result    the analysis "ok" returns
+//   result    the analysis "ok" returns (absent: a small levers result over the levers Analyze sent)
 //   heldPct   overrides Claude's 5-hour reading, for the held check only (devHeldPct)
+//   lastdigest  written, not read: the digest the last Analyze sent, for a scenario to read back
 // A malformed or absent fixture falls through to the RPC.
 const DEV_INSIGHTS_KEY = "wave:dev-usage-insights";
 const DEV_ANALYZE_MS = 1500;
@@ -71,6 +76,7 @@ interface DevInsightsFixture {
     analyze?: "ok" | "error" | "hang";
     result?: UsageInsights;
     heldPct?: number;
+    lastdigest?: string;
 }
 
 function devInsights(): DevInsightsFixture | undefined {
@@ -98,7 +104,25 @@ async function devDelay(fixture: DevInsightsFixture): Promise<void> {
     }
 }
 
-function devAnalyze(fixture: DevInsightsFixture, windowDays: number, lang: string): Promise<UsageInsights> {
+// a scenario reads back what the surface sent (usage-insights-levers)
+function devRecordDigest(digest: string): void {
+    try {
+        const raw = localStorage.getItem(DEV_INSIGHTS_KEY);
+        const value = raw != null ? JSON.parse(raw) : {};
+        localStorage.setItem(DEV_INSIGHTS_KEY, JSON.stringify({ ...value, lastdigest: digest }));
+    } catch {
+        // a fixture that cannot be rewritten only loses the record
+    }
+}
+
+// Without a `result`, the fixture answers like Claude would: a headline, a fix for each lever it was given, one tip.
+function devAnalyze(
+    fixture: DevInsightsFixture,
+    windowDays: number,
+    lang: string,
+    levers: UsageLever[],
+    spendUsd: number
+): Promise<UsageInsights> {
     const mode = fixture.analyze ?? "ok";
     if (mode === "hang") {
         return new Promise(() => {});
@@ -111,7 +135,11 @@ function devAnalyze(fixture: DevInsightsFixture, windowDays: number, lang: strin
             }
             resolve(
                 fixture.result ?? {
-                    markdown: "## Where it goes\n\nFixture analysis.\n\n## What to change\n\n1. Fixture.",
+                    markdown: "",
+                    headline: "Fixture analysis: the long tabs cost the most.",
+                    levers: levers.map((l) => ({ ...l, fix: `Fixture fix for ${l.key}.` })),
+                    tips: ["Fixture tip: keep CLAUDE.md short."],
+                    spendusd: spendUsd,
                     analyzedts: Date.now(),
                     windowdays: windowDays,
                     model: "sonnet",
@@ -207,15 +235,23 @@ export async function loadSavedInsights(): Promise<void> {
             return;
         }
         // nothing analysed yet comes back as an empty markdown, never null
-        globalStore.set(savedInsightsAtom, ins != null && ins.markdown !== "" ? ins : undefined);
+        globalStore.set(savedInsightsAtom, hasInsights(ins) ? ins : undefined);
     } catch {
         // keep what the card already shows
     }
 }
 
-// Runs the analysis over `digest` (usagedigest.ts), answering in `lang`. A second call while one runs does nothing. On
-// failure the saved result is untouched and the message goes to insightsErrorAtom, for the card to show beside it.
-export async function analyzeUsage(windowDays: number, digest: string, lang: "en" | "vi"): Promise<void> {
+// Runs the analysis over `digest` (usagedigest.ts), answering in `lang`. `levers` are the candidates the digest names
+// (buildLevers) and `spendUsd` the window's spend they are a share of; both are saved with the result. A second call
+// while one runs does nothing. On failure the saved result is untouched and the message goes to insightsErrorAtom, for
+// the card to show beside it.
+export async function analyzeUsage(
+    windowDays: number,
+    digest: string,
+    lang: "en" | "vi",
+    levers: UsageLever[],
+    spendUsd: number
+): Promise<void> {
     if (globalStore.get(insightsRunningAtom)) {
         return;
     }
@@ -223,12 +259,15 @@ export async function analyzeUsage(windowDays: number, digest: string, lang: "en
     globalStore.set(insightsErrorAtom, undefined);
     try {
         const fixture = devInsights();
+        if (fixture != null) {
+            devRecordDigest(digest);
+        }
         const ins =
             fixture != null
-                ? await devAnalyze(fixture, windowDays, lang)
+                ? await devAnalyze(fixture, windowDays, lang, levers, spendUsd)
                 : await RpcApi.AnalyzeUsageCommand(
                       TabRpcClient,
-                      { windowdays: windowDays, digest, lang },
+                      { windowdays: windowDays, digest, lang, levers, spendusd: spendUsd },
                       { timeout: ANALYZE_TIMEOUT_MS }
                   );
         savedSeq++;

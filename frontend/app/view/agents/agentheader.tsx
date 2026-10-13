@@ -34,6 +34,7 @@ import {
     Plus,
     RotateCw,
     Workflow,
+    Wrench,
     X,
 } from "lucide-react";
 import { motion } from "motion/react";
@@ -62,6 +63,7 @@ import { runtimeMeta } from "./runtimemeta";
 import { splitMenuState } from "./splitmenu";
 import { StatusDot } from "./statusdot";
 import { backgroundTasksByIdAtom } from "./subagentsstore";
+import { openToolPicker } from "./toolsstore";
 import { runningBackgroundTasks } from "./transcriptprojection";
 import { unreadAgentsAtom } from "./unreadagentsstore";
 import { openLauncher } from "./launcherstore";
@@ -244,21 +246,23 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const showDialogButton = review != null && review.kind !== "doc" && !dialogOpen;
     const view: AgentView = docReview?.mode === "review" ? "review" : canvas?.mode === "canvas" ? "canvas" : "terminal";
 
-    // The grid's cells, to tell the Split button whether a split is showing. Only agents with a terminal can be cells
-    // (gridstore.eligibleIds); a plain terminal has no Split button.
+    // The grid's cells, to tell the Split button whether a split is showing. Only agents and terminals with a terminal
+    // can be cells (gridstore.eligibleIds).
     const gridState = useAtomValue(agentGridAtom);
     const rosterSeeded = useAtomValue(rosterSeededAtom);
     const rosterAgents = useAtomValue(model.agentsAtom);
-    const cellCount = gridState.ids.filter((id) => eligibleIds(rosterAgents).has(id)).length;
+    const rosterTerminals = useAtomValue(model.terminalsAtom);
+    const cellIds = eligibleIds([...rosterAgents, ...rosterTerminals]);
+    const cellCount = gridState.ids.filter((id) => cellIds.has(id)).length;
     const splitShown = cellCount > 1;
-    const canSplit = blockId != null && agent.kind !== "terminal" && !ended;
+    const canSplit = blockId != null && !ended;
 
     // The visible way to a second cell: every other live agent, and what to do with none (dragging a sidebar row onto
     // the terminal works too, but nothing on screen says so). Built when opened, from the grid as it is then.
     const openSplitMenu = (e: React.MouseEvent) => {
         const grid = currentGrid(model);
         const s = splitMenuState(
-            globalStore.get(model.agentsAtom).map((a) => ({
+            [...globalStore.get(model.agentsAtom), ...globalStore.get(model.terminalsAtom)].map((a) => ({
                 id: a.id,
                 name: a.name,
                 blockId: a.blockId,
@@ -270,7 +274,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
         if (s.full) {
             items.push({ label: `The grid is full (${s.cells} of 4)`, enabled: false });
         } else if (s.targets.length === 0) {
-            items.push({ label: "No other agent is running", enabled: false });
+            items.push({ label: "No other agent or terminal is running", enabled: false });
         } else {
             for (const t of s.targets) {
                 items.push({
@@ -540,6 +544,19 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         ]}
                         onChange={(v) => setAgentView(agent.id, v, Date.now())}
                     />
+                ) : null}
+                {canSplit ? (
+                    // the header is the focused agent's, which is whose folder the picker opens a tool in
+                    <button
+                        type="button"
+                        data-agent-tool-button
+                        onClick={() => openToolPicker(model)}
+                        title={`Open a tool (lazygit, yazi, btop…) in this agent's folder (${formatChordString("Mod:Shift:t")})`}
+                        className={cn(ICON_BTN, "gap-[6px] px-[8px] text-[12px] font-medium")}
+                    >
+                        <Wrench size={14} strokeWidth={1.8} aria-hidden />
+                        Tool
+                    </button>
                 ) : null}
                 {canSplit ? (
                     <button

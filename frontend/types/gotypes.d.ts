@@ -518,6 +518,8 @@ declare global {
         windowdays: number;
         digest: string;
         lang?: string;
+        levers?: UsageLever[];
+        spendusd?: number;
     };
 
     // wshrpc.CommandAnswerAgentData
@@ -1868,6 +1870,17 @@ declare global {
         lastupdated: number;
     };
 
+    // wshrpc.CommandToolsSetUserData
+    type CommandToolsSetUserData = {
+        id: string;
+        tool?: ToolKeywords;
+    };
+
+    // wshrpc.CommandToolsStatusRtnData
+    type CommandToolsStatusRtnData = {
+        tools: ToolStatus[];
+    };
+
     // wshrpc.CommandUiInvokeData
     type CommandUiInvokeData = {
         actionid: string;
@@ -2392,6 +2405,7 @@ declare global {
         defaultsettings: SettingsType;
         connections: {[key: string]: ConnKeywords};
         projects: {[key: string]: ProjectKeywords};
+        tools: {[key: string]: ToolKeywords};
         configerrors: ConfigError[];
         version: string;
         buildtime: string;
@@ -2465,6 +2479,12 @@ declare global {
         ts: number;
         subject: string;
         refs?: string[];
+    };
+
+    // arctools.Install
+    type Install = {
+        windows?: string;
+        darwin?: string;
     };
 
     // waveobj.JarvisProfile
@@ -2547,6 +2567,7 @@ declare global {
         "cmd:initscript.zsh"?: string;
         "cmd:initscript.pwsh"?: string;
         "cmd:initscript.fish"?: string;
+        "tool:id"?: string;
         "editor:*"?: boolean;
         "editor:minimapenabled"?: boolean;
         "editor:stickyscrollenabled"?: boolean;
@@ -3502,6 +3523,34 @@ declare global {
         medianratio: number;
     };
 
+    // wconfig.ToolKeywords
+    type ToolKeywords = {
+        name?: string;
+        command?: string;
+        args?: string;
+        opensin?: string;
+        shows?: string;
+        purpose?: string;
+        "install:windows"?: string;
+        "install:darwin"?: string;
+    };
+
+    // arctools.ToolStatus
+    type ToolStatus = {
+        id: string;
+        name: string;
+        category: string;
+        purpose: string;
+        command: string;
+        args?: string;
+        opensin: string;
+        shows: string;
+        install: Install;
+        user?: boolean;
+        found: boolean;
+        path?: string;
+    };
+
     // waveobj.UIContext
     type UIContext = {
         windowid: string;
@@ -3531,6 +3580,7 @@ declare global {
         sub?: boolean;
         count: number;
         chars: number;
+        rereadtokens?: number;
     };
 
     // wshrpc.UsageBucket
@@ -3553,10 +3603,33 @@ declare global {
     // wshrpc.UsageInsights
     type UsageInsights = {
         markdown: string;
+        headline?: string;
+        levers?: UsageLever[];
+        opusclear?: string[];
+        tips?: string[];
+        spendusd?: number;
         analyzedts: number;
         windowdays: number;
         model: string;
         lang?: string;
+    };
+
+    // wshrpc.UsageLever
+    type UsageLever = {
+        key: string;
+        count?: number;
+        tokens?: number;
+        sessions: UsageLeverSession[];
+        fix?: string;
+        tabs?: string[];
+    };
+
+    // wshrpc.UsageLeverSession
+    type UsageLeverSession = {
+        ref: string;
+        id: string;
+        title: string;
+        saveusd: number;
     };
 
     // waveobj.UsageRow

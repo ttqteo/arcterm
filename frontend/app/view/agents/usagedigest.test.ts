@@ -71,7 +71,24 @@ const row = (i: number, over: Partial<SessionRow> = {}): SessionRow => ({
 const manyRows = (n: number, over: Partial<SessionRow> = {}): SessionRow[] =>
     Array.from({ length: n }, (_, k) => row(k + 1, { share: 1 / n, ...over }));
 
-const digestOf = (rows: SessionRow[], windowLabel = "last 7 days") => buildUsageDigest({ windowLabel, stats, rows });
+const digestOf = (rows: SessionRow[], windowLabel = "last 7 days", levers: UsageLever[] = []) =>
+    buildUsageDigest({ windowLabel, stats, rows, levers });
+
+// A lever's candidate for row `n` (1-based), as buildLevers makes it.
+const candidate = (n: number, saveusd: number): UsageLeverSession => ({
+    ref: `S${n}`,
+    id: `id-${n}`,
+    title: `session-${String(n).padStart(2, "0")}`,
+    saveusd,
+});
+
+// A lever over the given 1-based rows, saving `10 - k` dollars for the k-th (heaviest first, as buildLevers sorts).
+const leverOver = (key: string, rowNumbers: number[], save = (k: number) => 10 - k): UsageLever => ({
+    key,
+    count: rowNumbers.length,
+    tokens: 250_000,
+    sessions: rowNumbers.map((n, k) => candidate(n, save(k))),
+});
 
 // the lines under a "## <heading>" up to the next one
 function section(digest: string, heading: string): string[] {
@@ -150,6 +167,34 @@ describe("buildUsageDigest", () => {
         const lines = section(digestOf(manyRows(2)), "Spend by model");
         expect(lines.some((l) => l.includes("claude-opus-5-5"))).toBe(true);
         expect(lines.some((l) => l.includes("claude-sonnet-5-5"))).toBe(true);
+    });
+
+    it("lists the class and model tables whenever Claude buckets exist, and only Claude's", () => {
+        // built the way the surface builds it: every harness's buckets in, filtered to Claude
+        const now = new Date(2026, 9, 13, 12).getTime();
+        const day = "2026-10-12";
+        const scoped = aggregateBuckets(
+            [
+                bucket("claude-opus-5-5", day, {
+                    input: 1_000,
+                    output: 2_000,
+                    cacheread: 900_000,
+                    cachecreate: 80_000,
+                }),
+                bucket("claude-sonnet-5-5", day, { input: 500, output: 800, cacheread: 300_000, cachecreate: 20_000 }),
+                bucket("gpt-5.5", day, { harness: "codex", provider: "openai", input: 100, output: 100 }),
+            ],
+            now,
+            "claude"
+        );
+        const digest = buildUsageDigest({ windowLabel: "last 7 days", stats: scoped, rows: [], levers: [] });
+        const classes = section(digest, "Tokens and spend by class");
+        const models = section(digest, "Spend by model");
+        expect(classes.some((l) => l.startsWith("| Cache read |"))).toBe(true);
+        expect(classes.some((l) => l.startsWith("| Output |"))).toBe(true);
+        expect(models.some((l) => l.startsWith("| claude-opus-5-5 |"))).toBe(true);
+        expect(models.some((l) => l.startsWith("| claude-sonnet-5-5 |"))).toBe(true);
+        expect(models.some((l) => l.includes("gpt-5.5"))).toBe(false);
     });
 
     it("gives tokens and spend for each day with usage and skips the idle one", () => {
@@ -260,6 +305,91 @@ describe("buildUsageDigest", () => {
         ]);
         expect(digest.split("\n").find((l) => l.includes("Big reads"))).toContain("| 4 (≈50K) |");
         expect(digest.split("\n").find((l) => l.includes("Clean tab"))).toContain("| 0 |");
+    });
+
+    it("numbers the top sessions S1, S2… in a ref column", () => {
+        const lines = section(digestOf(manyRows(3)), "Top 3 sessions").filter((l) => l.startsWith("| "));
+        expect(lines[0].startsWith("| ref | title |")).toBe(true);
+        expect(lines[1].startsWith("| S1 | session-01 |")).toBe(true);
+        expect(lines[3].startsWith("| S3 | session-03 |")).toBe(true);
+    });
+
+    describe("the Levers section", () => {
+        // the lines of one lever's block: its heading, then its table
+        const block = (digest: string, key: string): string[] => {
+            const lines = section(digest, "Levers");
+            const start = lines.findIndex((l) => l.startsWith(`### ${key}:`));
+            if (start < 0) return [];
+            const rest = lines.slice(start + 1);
+            const end = rest.findIndex((l) => l.startsWith("### "));
+            return [lines[start], ...(end < 0 ? rest : rest.slice(0, end))];
+        };
+        const rowsOf = (lines: string[]) => lines.filter((l) => /^\| S\d+ \|/.test(l));
+
+        // 12 sessions, spend 99, 98 … 88: 1122 in all; the second one is in another project
+        const rows = manyRows(12).map((r, i) => (i === 1 ? { ...r, project: "engine run" } : r));
+
+        it("names the lever, what it could recover at most and its share of the spend", () => {
+            const levers = [leverOver("longctx", [1, 2, 3, 4, 5, 6, 7])]; // 10 + 9 + … + 4 = $49 of $1122
+            expect(block(digestOf(rows, "last 7 days", levers), "longctx")[0]).toBe(
+                "### longctx: at most $49.00 (4% of spend)"
+            );
+        });
+
+        it("tabulates a lever's five heaviest sessions by ref, title, project and saving", () => {
+            const levers = [leverOver("longctx", [1, 2, 3, 4, 5, 6, 7])];
+            const lines = block(digestOf(rows, "last 7 days", levers), "longctx");
+            expect(lines[1]).toBe("| ref | title | project | saves |");
+            const body = rowsOf(lines);
+            expect(body).toHaveLength(5);
+            expect(body[0]).toBe("| S1 | session-01 | arcterm | $10.00 |");
+            expect(body[1]).toBe("| S2 | session-02 | engine run | $9.00 |");
+            expect(body[4]).toBe("| S5 | session-05 | arcterm | $6.00 |");
+        });
+
+        it("names a session by the same ref in a lever as in the top sessions table", () => {
+            const digest = digestOf(rows, "last 7 days", [leverOver("cold", [3, 9])]);
+            const top = section(digest, "Top 12 sessions").find((l) => l.startsWith("| S9 |"))!;
+            expect(top).toContain("session-09");
+            expect(rowsOf(block(digest, "cold")).map((l) => l.split(" | ")[0])).toEqual(["| S3", "| S9"]);
+        });
+
+        it("tabulates every Opus candidate, capped at 40, with its models, spend and saving on Sonnet", () => {
+            const many = manyRows(45).map((r, i) => (i === 0 ? { ...r, models: ["opus-5-5", "haiku-4-5"] } : r));
+            const all = Array.from({ length: 45 }, (_, i) => i + 1);
+            const lines = block(digestOf(many, "last 7 days", [leverOver("opus", all, (k) => 50 - k)]), "opus");
+            expect(lines[1]).toBe("| ref | title | project | models | spend | saves on Sonnet |");
+            const body = rowsOf(lines);
+            expect(body).toHaveLength(40);
+            expect(body[0]).toBe("| S1 | session-01 | arcterm | opus-5-5, haiku-4-5 | $99.00 | $50.00 |");
+            expect(body[39].startsWith("| S40 |")).toBe(true);
+        });
+
+        it("keeps a lever session's title on one table line", () => {
+            const lever = leverOver("cold", [1]);
+            lever.sessions[0].title = "alpha | beta\ngamma";
+            const body = rowsOf(block(digestOf(rows, "last 7 days", [lever]), "cold"));
+            expect(body).toHaveLength(1);
+            expect(body[0]).toContain("alpha / beta gamma");
+        });
+
+        it("lists the levers in the order given and puts them after the top sessions", () => {
+            const digest = digestOf(rows, "last 7 days", [leverOver("cold", [1]), leverOver("longctx", [2])]);
+            const heads = digest.split("\n").filter((l) => l.startsWith("### "));
+            expect(heads.map((h) => h.split(":")[0])).toEqual(["### cold", "### longctx"]);
+            expect(digest.indexOf("## Levers (what each fix could recover at most)")).toBeGreaterThan(
+                digest.indexOf("## Top 12 sessions")
+            );
+        });
+
+        it("says so when no lever applies", () => {
+            expect(section(digestOf(rows), "Levers")).toEqual(["No lever applies in this window."]);
+        });
+
+        it("never prints NaN when nothing was spent", () => {
+            const free = [row(1, { spendUsd: 0, subSpendUsd: 0, share: 0 })];
+            expect(digestOf(free, "last 7 days", [leverOver("cold", [1])])).not.toMatch(/NaN|Infinity|undefined/);
+        });
     });
 
     it("still builds when there are no sessions", () => {

@@ -3,13 +3,14 @@
 //
 // The Agent (Focus) surface: AgentTree | center [| AgentDetailsRail]. The rail is toggleable
 // (railVisibleAtom, default on, `d` key): the surface is normally 3 panes, 2 plus the 44px strip with the rail
-// closed; a plain terminal has none (the tree's Terminals section is the way to the others). A terminal chosen while
-// there is an agent does not take the centre: it docks in a third grid row under the agent (terminaldock.ts).
+// closed; a plain terminal has none (the project tree is the way to the others). A terminal chosen takes the centre as
+// an agent does, under a slim TerminalPaneHead; one you move to the panel ("Move to the panel") sits in a third grid
+// row under the agent, which folds to a strip (terminaldock.ts).
 // The center is the focused agent's live Claude Code terminal (CockpitFocusPane) — the real TUI,
 // not a narrated transcript; an AgentHeader bar sits above it for identity + the rail toggle. The terminal
 // stack is up to four of them in a 2x2 CSS grid (agentgrid.ts, gridstore.ts): focusIdAtom stays the single
-// selection, and the surface reconciles the saved grid against it, so every route that selects an agent
-// obeys one rule. With no explicit focus it defaults (resolveShownAgent, cockpitsurfacemodel.ts; handoff
+// selection, and the surface reconciles the saved grid against it, so every route that selects an agent or a
+// terminal obeys one rule. With no explicit focus it defaults (resolveShownAgent, cockpitsurfacemodel.ts; handoff
 // dc.html:1790 `focusAgent = …find(fid) || list[0]`) — never the cockpit's card grid; only a zero-agent roster
 // shows an empty state. The center is not always the terminal: centerModeAtom (agentcenter.ts) swaps it for one
 // ended session's transcript or Conversation History, the terminal stack staying mounted but hidden, and
@@ -33,7 +34,7 @@ import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { MotionConfig } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { centerModeAtom, type CenterMode } from "./agentcenter";
+import { centerModeAtom, showTerminal, type CenterMode } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { AgentDetailsRail } from "./agentdetailsrail";
 import { gridEquals, placementStyle, reconcileGrid, visibleCells } from "./agentgrid";
@@ -57,7 +58,7 @@ import { GridCellBar } from "./gridcellbar";
 import { mentionTarget } from "./griddrop";
 import { GridDropOverlay } from "./griddropoverlay";
 import { HeldAskBar } from "./heldaskbar";
-import { agentGridAtom, currentGrid, eligibleIds, removeFromGrid } from "./gridstore";
+import { agentGridAtom, currentGrid, eligibleIds, openInSplit, removeFromGrid } from "./gridstore";
 import { finalRowFocusId } from "./finalstage";
 import { FinalStagePane } from "./finalstagepane";
 import { rosterSeededAtom } from "./liveagents";
@@ -68,9 +69,11 @@ import { SessionPane } from "./sessionpane";
 import {
     dockedTerminalAtom,
     terminalDockDragAtom,
+    terminalDockFoldedAtom,
     terminalDockHeightAtom,
     terminalDockMaxAtom,
     terminalFullscreenAtom,
+    undock,
 } from "./railstore";
 import { projectFocusTarget } from "./railterminals";
 import { isEndedWorkerId } from "./runlineage";
@@ -79,8 +82,11 @@ import { SleepingTranscript } from "./sleepingtranscript";
 import { SubagentInterior } from "./subagentinterior";
 import { focusSubagentAtom } from "./subagentsstore";
 import { clampDockHeight, splitDock } from "./terminaldock";
-import { TerminalDockBar } from "./terminaldockbar";
+import { DOCK_STRIP_PX, TerminalDockBar, TerminalDockStrip } from "./terminaldockbar";
+import { TerminalPaneHead } from "./terminalpaneheadview";
 import { useSessionsScan } from "./usesessionsscan";
+import { WorktreeGoneCard } from "./worktreegonecard";
+import { goneTerminalIdsAtom, useWorktreeGoneChecks } from "./worktreegonestore";
 
 export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: string }) {
     const focusId = useAtomValue(model.focusIdAtom);
@@ -104,17 +110,20 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     // default, never empty). A done task's worker has no terminal to mount, so it is focusable without being
     // mountable; so is a run's final stage before a verifier session stands for it.
     const mountable = [...agents, ...terminals];
-    // The grid's cells are live agents with a terminal. A plain terminal is shown alone (visibleCells); a done
-    // worker's transcript replaces the grid (terminalShown). Both leave the saved grid as it was.
-    const eligible = useMemo(() => eligibleIds(agents), [agents]);
-    const chosen =
-        focusId != null ? (mountable.find((a) => a.id === focusId) ?? ended?.agent ?? stage?.agent) : undefined;
-    // A terminal chosen while there is an agent docks under the agent that was showing instead of taking its place
-    // (terminaldock.ts); the effects below write focusIdAtom back to that agent and the dock atom to the terminal.
+    const chosen = focusId != null ? (mountable.find((a) => a.id === focusId) ?? ended?.agent ?? stage?.agent) : undefined;
+    // A terminal chosen takes the centre, as an agent does, and focusIdAtom keeps its id (Ctrl+Tab's recent list follows
+    // it, which is how the quick flip returns to the agent). The terminal in the panel (moved there by "Move to the
+    // panel") is the one thing splitDock keeps out of the centre; the effect below writes the dock atom to what it says.
     const dockedId = useAtomValue(dockedTerminalAtom);
-    const hostRef = useRef<string | null>(null);
-    const dock = splitDock({ focused: chosen, docked: dockedId, host: hostRef.current, agents, terminals });
+    const dock = splitDock({ focused: chosen, docked: dockedId, agents, terminals });
     const focused = dock.focused;
+    // The grid's cells are live agents and terminals with a terminal, but not the one in the panel (it has its own
+    // place; a stored cell it held is pruned). A done worker's transcript replaces the grid (terminalShown), which leaves
+    // the saved grid as it was.
+    const eligible = useMemo(
+        () => eligibleIds([...agents, ...terminals.filter((t) => t.id !== dock.dockedId)]),
+        [agents, terminals, dock.dockedId]
+    );
     const { agent, hold: holdForGrid } = resolveShownAgent({
         focused,
         agents,
@@ -138,13 +147,8 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         }
     }, [agent?.id, focusId, model]);
 
-    // the agent shown above is what the next chosen terminal docks under; the dock atom follows splitDock (a newly
-    // chosen terminal, or empty once its terminal closed)
-    useEffect(() => {
-        if (agent != null && agent.kind !== "terminal") {
-            hostRef.current = agent.id;
-        }
-    }, [agent?.id, agent?.kind]);
+    // the dock atom follows splitDock: empty once its terminal closed, was chosen (it takes the centre) or has no agent
+    // left to sit under
     useEffect(() => {
         if (globalStore.get(dockedTerminalAtom) !== dock.dockedId) {
             globalStore.set(dockedTerminalAtom, dock.dockedId);
@@ -172,11 +176,11 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         }
     }, [reconciled, gridState]);
 
-    // What the terminal stack shows: the grid's cells, or one cell alone (fullscreen; an agent that is not a cell,
-    // such as a terminal). When the centre shows something else (a subagent's interior, a session or History, a canvas
-    // or a review, a done worker's transcript) the grid hides, every mounted pane staying mounted, and comes back as it
-    // was. stackHidden is also what hides the whole column (header and all) in the subagent-interior and
-    // session/History cases.
+    // What the terminal stack shows: the grid's cells, or one cell alone (fullscreen; a tab that is not a cell yet,
+    // such as an agent with no terminal). When the centre shows something else (a subagent's interior, a session or
+    // History, a canvas or a review, a done worker's transcript) the grid hides, every mounted pane staying mounted,
+    // and comes back as it was. stackHidden is also what hides the whole column (header and all) in the
+    // subagent-interior and session/History cases.
     const stackHidden = showSub || centerMode !== "terminal";
     const terminalShown = agent != null && !stackHidden && swapped == null && !isEndedWorkerId(agent.id);
     // Until the roster is seeded the saved cells are not pruned, so a cell whose agent has not arrived yet still holds
@@ -188,17 +192,23 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     // a visible cell with no pane (a launch with no terminal yet) leaves the grid hidden so the fallback below shows
     const gridShown = mountable.some((a) => a.blockId != null && cellOf.has(a.id));
     // The docked terminal is a third grid row under the cells, spanning both columns, so its pane stays under the same
-    // parent as every other (no remount). Not under a terminal shown alone. Maximized (dockMax) it spans all three rows
-    // and the agents' cells hide under it; fullscreen shows the focused cell alone, so it drops the dock unless the dock
-    // is what is maximized, which then fills the whole surface.
-    const dockable = gridShown && agent?.kind !== "terminal" ? dock.docked : undefined;
-    const dockMax = useAtomValue(terminalDockMaxAtom) && dockable != null;
+    // parent as every other (no remount). Folded (terminalDockFoldedAtom) the row is the strip and the pane is hidden
+    // under it, still mounted. Maximized (dockMax) it spans all three rows and the agents' cells hide under it;
+    // fullscreen shows the focused cell alone, so it drops the dock unless the dock is what is maximized, which then
+    // fills the whole surface. A folded dock is never maximized.
+    const dockable = gridShown ? dock.docked : undefined;
+    const dockFolded = useAtomValue(terminalDockFoldedAtom);
+    const dockMax = useAtomValue(terminalDockMaxAtom) && dockable != null && !dockFolded;
     // float mode's bar (cockpit/float-bar.tsx) already names the agent and its state: a second header would only
     // repeat it in a window that has room for little else
     const floating = useAtomValue(floatModeAtom);
     const docked = !fullscreen || dockMax ? dockable : undefined;
     // the cells' tiled look (gaps, borders, bars) is off while the dock covers them
     const tiled = multi && !dockMax;
+    // A terminal whose folder was removed (a worktree that went when its branch landed) shows a card over its pane
+    // (worktreegonecard.tsx). The folders are read as the terminals change and as a pane is shown (worktreegonestore.ts).
+    const goneIds = useAtomValue(goneTerminalIdsAtom);
+    useWorktreeGoneChecks([...cells.map((cell) => cell.id), ...(docked != null ? [docked.id] : [])]);
     // Which panes are mounted (panemounts.ts): the app's agents and terminals the first time they show, one opened
     // later at once, and none ever unmounted while its terminal lives. Stored during render (it returns the same value
     // when nothing changed), so a pane shown in this render mounts in this commit.
@@ -233,6 +243,8 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const storedDockHeight = useAtomValue(terminalDockHeightAtom);
     const dragDockHeight = useAtomValue(terminalDockDragAtom);
     const dockHeight = clampDockHeight(dragDockHeight ?? storedDockHeight, gridHeight);
+    // folded, the row is the strip; untiled it keeps a 6px margin around it, as the cells do when tiled
+    const dockRowPx = dockFolded ? DOCK_STRIP_PX + (tiled ? 0 : 12) : dockHeight;
 
 
     // the stage's row becomes its verifier's session once that is in the roster, and the focus goes with the row
@@ -367,6 +379,33 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         lastDocked.current = undefined;
         if (agent != null) {
             focusTerminalOf(agent.id);
+        }
+    };
+    const foldDock = () => globalStore.set(terminalDockFoldedAtom, true);
+    const openDock = () => globalStore.set(terminalDockFoldedAtom, false);
+    // Folding hands the keyboard back to the agent above and opening it gives it to the terminal, as the chord is pressed
+    // from inside either; only on a change, so the dock coming back after a session read does not move focus.
+    const lastFolded = useRef(dockFolded);
+    useEffect(() => {
+        const was = lastFolded.current;
+        lastFolded.current = dockFolded;
+        if (was === dockFolded || docked == null) {
+            return;
+        }
+        if (dockFolded) {
+            globalStore.set(terminalDockMaxAtom, false);
+            focusTerminalOf(agent?.id ?? "");
+        } else {
+            requestAnimationFrame(() => focusTerminalOf(docked.id));
+        }
+    }, [dockFolded]);
+    // "Open in split" on the panel: the terminal leaves it and gets a cell beside the agent; with no room for one it takes
+    // the centre instead, so it never vanishes
+    const openDockInSplit = (id: string) => {
+        undock(model, id);
+        if (!openInSplit(model, id)) {
+            globalStore.set(model.focusIdAtom, id);
+            showTerminal();
         }
     };
 
@@ -547,7 +586,11 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                             would name an agent that is not on screen */}
                         {dockMax ? null : (
                             <>
-                                {floating ? null : <AgentHeader model={model} agent={agent} />}
+                                {floating ? null : agent.kind === "terminal" ? (
+                                    <TerminalPaneHead model={model} terminal={agent} />
+                                ) : (
+                                    <AgentHeader model={model} agent={agent} />
+                                )}
                                 <DivergenceBanner decision={decision} onRejoin={rejoin} />
                                 <HeldAskBar model={model} agent={agent} />
                                 {/* keyed: the card's pending wake and its failure belong to one agent */}
@@ -565,9 +608,10 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                             data-agent-grid
                             data-agent-grid-count={cells.length}
                             data-terminal-docked={docked?.id}
+                            data-terminal-dock-folded={docked != null && dockFolded ? "true" : undefined}
                             style={
                                 docked != null
-                                    ? { gridTemplateRows: `minmax(0, 1fr) minmax(0, 1fr) ${dockHeight}px` }
+                                    ? { gridTemplateRows: `minmax(0, 1fr) minmax(0, 1fr) ${dockRowPx}px` }
                                     : undefined
                             }
                             className={cn(
@@ -584,6 +628,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                     // the docked terminal is the grid's third row (one wrapper either way, so its pane is
                                     // never re-parented); clicking it does not select it, the agent above stays selected
                                     const isDock = a.id === docked?.id;
+                                    const stripped = isDock && dockFolded && !dockMax;
                                     return (
                                         <div
                                             key={a.id}
@@ -611,16 +656,21 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                                 (cell != null && !dockMax) || isDock ? "flex flex-col" : "hidden",
                                                 (cell != null || isDock) &&
                                                     tiled &&
+                                                    !stripped &&
                                                     "overflow-hidden rounded-[8px] border",
                                                 cell != null &&
                                                     multi &&
                                                     (cell.focused ? "border-accent" : "border-edge-mid"),
                                                 isDock &&
                                                     !dockMax &&
-                                                    (multi ? "border-edge-mid" : "border-t border-border")
+                                                    !stripped &&
+                                                    (multi ? "border-edge-mid" : "border-t border-border"),
+                                                stripped && !tiled && "p-[6px]"
                                             )}
                                         >
-                                            {isDock ? (
+                                            {stripped ? (
+                                                <TerminalDockStrip terminal={a} onOpen={openDock} />
+                                            ) : isDock ? (
                                                 <TerminalDockBar
                                                     terminal={a}
                                                     height={dockHeight}
@@ -628,6 +678,8 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                                     maximized={dockMax}
                                                     onToggleMax={toggleDockMax}
                                                     onClose={closeDock}
+                                                    onFold={foldDock}
+                                                    onOpenSplit={() => openDockInSplit(a.id)}
                                                 />
                                             ) : cell != null && multi ? (
                                                 <GridCellBar
@@ -636,13 +688,29 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                                     onRemove={() => onRemoveCell(a.id)}
                                                 />
                                             ) : null}
-                                            {paneMounts.mounted.has(a.id) ? (
-                                                <CockpitFocusPane blockId={a.blockId!} tabId={tabId} />
-                                            ) : null}
+                                            {/* one wrapper around every pane, so the folded dock can hide its pane (still
+                                                mounted) without a pane ever changing parent; `contents` is no box at all */}
+                                            <div className={stripped ? "hidden" : "contents"}>
+                                                {paneMounts.mounted.has(a.id) ? (
+                                                    <CockpitFocusPane blockId={a.blockId!} tabId={tabId} />
+                                                ) : null}
+                                            </div>
                                             {/* asleep, its terminal holds only the kill: the conversation covers it,
                                                 the pane staying mounted under it at its size */}
                                             {a.sleeping != null && cell != null ? (
                                                 <SleepingTranscript agent={a} barred={multi} />
+                                            ) : null}
+                                            {/* a terminal whose folder is gone: the card over its dimmed last screen, the
+                                                pane staying mounted under it; the bar above it (a grid cell's or the
+                                                panel's) stays. Not on the panel's folded strip. */}
+                                            {a.kind === "terminal" &&
+                                            goneIds.includes(a.id) &&
+                                            (cell != null || (isDock && !stripped)) ? (
+                                                <WorktreeGoneCard
+                                                    model={model}
+                                                    terminal={a}
+                                                    barred={(cell != null && multi) || isDock}
+                                                />
                                             ) : null}
                                             {/* Drop zones, only while an agent is dragged. Not before the roster is seeded
                                                 (a drop prunes against the roster as it is), and not on a cell the saved

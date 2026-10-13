@@ -43,6 +43,52 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) **Bubble click opens the agent.** When Jarvis says a one-off line for an agent (a cache-miss notice),
   clicking the bubble opens that agent's terminal instead of the chat. `frontend/app/view/jarvis/petview.tsx`.
 
+**2026-10-13 (Terminals and tools)**
+
+- [ ] (arcterm) **Install two tools with winget.** Setup → Tools, pick `glow`, press **Install**: an `Install glow`
+  terminal opens in the project you are in and the row reads `installing`; when winget exits 0 the terminal closes by
+  itself (about 2 s) and the tool reads `installed`, or `not found on PATH` with the hint to restart arcterm (PATH is
+  read once, at launch). Do the same for a second tool (`lazygit`). Also run `winget show --id <id> -e` for the nine
+  ids in `pkg/arctools/catalog.go`: the ids drawn on the canvas were illustrations. `0f8df9836`, `363ed96be`
+- [ ] (arcterm) **An install that fails.** Setup → Tools → **Add your own tool** with a command that is not on PATH and
+  the install command `cmd /c exit 1`, then **Install**. The row reads `install failed` in the library and, under the
+  project's divider, in the tree (its terminal stays open); **Open output** shows that terminal, **Try again** runs the
+  install once more. `0f8df9836`, `363ed96be`
+- [ ] (arcterm) **A tool in a Mac build (brew).** On Apple silicon: Setup → Tools → **Install** `glow` runs
+  `brew install glow` in an `Install glow` terminal; then open it with `Cmd+Shift+T`. A Finder-launched app has a short
+  PATH: check the library reads `found at …` for a tool brew put in `/opt/homebrew/bin`, or shows the restart hint,
+  and that `brew` itself is found by the install terminal. `0f8df9836`
+- [ ] (arcterm) **A tool in the tree and the centre.** With an agent focused, `Ctrl+Shift+T` → lazygit: a lazygit row
+  sits under the divider of the agent's project and the tool shows in the centre, in the agent's folder (a worktree
+  agent gives the folder chip). `Esc` and the arrows work inside it; a quick `Ctrl+Tab` flips to the agent and back
+  with lazygit's screen as it was; quit lazygit and the terminal stays at its shell prompt in that folder, its row now
+  reading the last command. `3af7fd154`, `962e5c80a`
+- [ ] (arcterm) **A removed worktree.** Open a terminal in an agent's isolated worktree, then land the agent's branch
+  so the worktree goes: the terminal's row strikes its folder through and reads `removed`, and its pane shows the card
+  "This terminal's folder was removed" over its last screen; **Reopen in `<project>`** opens a terminal at the project
+  root, **Close terminal** closes it. `301dae8bc`
+
+**2026-10-13 (Usage → Insights: ranked levers)**
+
+- [ ] (arcterm) Usage → Insights levers: Re-analyze once in the installed app; Claude's reply parses and the levers' sizes look plausible against the By session table.
+
+**2026-10-13 (Spider-Man pet: held strand, crawl art, a grab mid-descent, idle mid-hang)**
+
+- [ ] (arcterm) **Spider-Man hangs under the pointer.** With Spider-Man as Jarvis, press him anywhere and drag: he
+  eases 4 cells under the pointer with his raised hand right under it, and the strand runs from the pointer to that
+  hand; let go and the strand stays where you let go while he rappels down, his hand drifting back to centre.
+  Hover him while he hangs under the app bar and grab him at once, while he is still coming down: he stays under the
+  pointer instead of sliding off it. Under the app bar, the crawl reads as one body (boots and gloves on the bar, the
+  head with its eye in front). `petview.tsx`, `petsprite.ts` SPIDEY_CRAWL.
+
+**2026-10-13 (Spider theme: the web sits behind the sidebar)**
+
+- [ ] (arcterm) **The web is behind the icons.** Under the Spider theme on the Agent surface, the top-left web shows
+  through the gaps of the nav rail and the agent tree, under the Cockpit/Jarvis icons and the Conversation History row,
+  and reads as one web across the rail's border (also after narrowing the window until the rail drops its labels); no
+  web at the bottom right over the terminal or the Stop button. `frontend/app/view/agents/themedecorview.tsx`
+  (`PanelWeb`).
+
 **2026-10-13 (Folded Spider-Man shows how many agents work)**
 
 - [ ] (arcterm) **Folded Spider-Man carries the count.** With Spider-Man as Jarvis and two or more agents working,
@@ -52,10 +98,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
 
 **2026-10-13 (Sidebar: folds slide open and closed)**
 
-- [ ] (arcterm) **Sidebar folds animate.** Click the Active, Conversations and Terminals headers, and a project folder
-  in Conversations and Terminals: the rows slide closed and open (~0.3 s) instead of vanishing; the first paint and a
-  section reopened with its folders open do not replay. Tab to a row after it opens: its focus ring is not clipped.
-  `agenttree.tsx` FoldBody, `motiontokens.ts` foldReveal, `agentsidebarmodel.ts` folderBlocks.
+- [ ] (arcterm) **Sidebar folds animate.** Click the Conversations header and a project folder in Conversations: the
+  rows slide closed and open (~0.3 s) instead of vanishing; the first paint and a section reopened with its folders
+  open do not replay. Tab to a row after it opens: its focus ring is not clipped. (The Active and Terminals sections
+  became the one project tree, whose folders animate row by row.) `agenttree.tsx` FoldBody, `motiontokens.ts`
+  foldReveal, `agentsidebarmodel.ts` folderBlocks.
 
 **2026-10-13 (Sidebar: a plan run's line drops the lead suffix)**
 
@@ -198,6 +245,16 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Claude ignores (the cache lost `ESC[?1006h`). A pane restored before this fix stays broken until its Claude is
   relaunched. `termmodes.ts`, `termwrap.ts` processAndCacheData.
 
+**2026-10-12 (Run sheet with a long goal)**
+
+- [ ] (arcterm) **A long goal opened with Show more no longer swallows the run sheet.** In Jarvis, open a run whose
+  goal is several paragraphs and click Show more: the top (verb, meter, goal) scrolls on its own within half the
+  sheet, the tasks below still scroll, and the dock at the bottom (with the screenshots button) stays in view.
+  `runsheet.tsx` Reading.
+- [ ] (arcterm) **An earlier Final round's screenshots stay while the next round runs.** On a run whose Final is on
+  round 2 or later and still running (reading says "final: running Verify"), the dock shows **Screenshots · N**, and
+  the Final check row under the tasks reads "N shots · round 1"; both open round 1's shots. `finalshotsmodel.ts`.
+
 **2026-10-12 (Outline with many headings)**
 
 - [ ] (arcterm) **A long document's Outline scrolls instead of squeezing.** Open a markdown file with 30+ headings
@@ -298,7 +355,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
 | (arcterm) Closing an agent attached to a background session was never exercised live: `ce797bee` runs `claude stop <id>` from `WorkspaceService.CloseTab` (dry run against the real `claude agents` picked only the background session), but no wavesrv with it has closed a real one. Check: Close it, then `claude agents` no longer lists it `working` | verification gap | S | `pkg/bgagents` `Stop`, `pkg/service/workspaceservice` `tabSessionIds` |
 | A run whose lead is down is visible only on the Cockpit: its card shows "Lead down" and "Lead wake failed" with **Relaunch lead** (`leadcard.tsx`, `orchestrate/relaunchlead.ts`). The Agent surface's run row only reads "lead closed" (`runmodel.ts` `dagProgressLabel`), with no action, and `wsh runs show` does not mention it at all. A run whose lead died in an app restart (run 74f0fa77, 2026-10-06) then sat 15 min on a failed plan review with nobody to revise it, unnoticed by a user who works in Agent/Conversation History. Since `90f4b49e` (kaeltran16 fork, merged 2026-10-07) a lead killed by an app restart is resumed at boot (`ResumeInterruptedLeads`), so what is left is a lead that resume cannot bring back. Show the lead-down state and Relaunch on the Agent surface's run row, and a `lead down` line (and a relaunch command) in `wsh runs` | feature | S | Session 2026-10-06; restart recovery itself is `docs/deferred.md` "Run recovery after a restart — dag runs" |
 | Agent + Sessions merge, the 2x2 grid and Uploads were never run live: no `task check:ts`, of the four new CDP scenarios only `agent-grid` and `agent-uploads` have run, and every step passed (headless Chrome on a Mac, run 915dc28d, 2026-10-12); `agent-history` and `agent-rail-sections` have not, and a real WebView2 drag, an OS file drop and the native Attach dialog were never exercised. Clear `public/cockpit-fixtures/active.json` first (`npm run cockpit:fixtures -- --clear`): the new scenarios SKIP while it exists | verification gap | M | `docs/superpowers/specs/2026-10-05-agent-sessions-merge-design.md`; If WebView2 cancels a drag the instant it starts, the fix is a `setTimeout(0)` in `beginAgentDrag` (already deferred once) or moving the overlay mount later |
-| Plain terminals are reachable only by mouse, from the Agent tree's Terminals section (back from the details rail 2026-10-06): not in the palette, Ctrl+Tab or `j`/`k`, and not while the centre is fullscreen (which hides the tree). Option: list terminals in the palette's Agents group | feature | S | `docs/superpowers/specs/2026-10-05-agent-sessions-merge-design.md`; Task 13 review (2026-10-06) |
 | `wsh ui state` cannot tell a worker that Conversation History is open (it reports `surface: agent`, `agent:<id>`): needs a `center` field in `UiState` (Go type + `task generate`) | feature | S | `frontend/app/cockpit/uiapi.ts`, `uiclient.ts`; Task 7 review |
 | `useLocalImage` (shared by the Uploads lightbox, the Final check viewer and the run sheet) decodes the whole file with no size guard: a very large attached image costs hundreds of MB transiently. Check `content-length` before `resp.blob()` and add a `toolarge` status | limitation | S | `frontend/app/view/jarvis/localimage.ts`; Task 28 review |
 | Duplicated rules from the merge: "choose an agent row" (`selectAgentRow` in `agenttree.tsx` and `select` in `terminalsrail.tsx`); the Open-in-split gate (seeded + `canOpenInSplit` + fallback to `openTerminal`) in `agenttree.tsx` and `cockpit/actions/agent.ts`; `blockId != null` checks beside `eligibleIds` | tech-debt | S | final integration review 2026-10-06 |
@@ -356,6 +412,9 @@ Each names its revive condition in `docs/deferred.md` unless a source is given.
 
 Cockpit and surfaces:
 
+- **(arcterm) Per-tool shortcuts in the tool library** (2026-10-13) — Setup → Tools has no Shortcut field until the
+  `Ctrl`+`G` leader-chord question (a tool as a leader chord beside the go-to letters) is settled. Revive when the
+  picker's `Ctrl`+`Shift`+`T` is too slow for one or two tools; notes in `docs/deferred.md`.
 - **(arcterm) Windows taskbar overlay badge when arcterm is backgrounded** — OS notifications ship
   (2026-10-07) and the Dock badge covers macOS. Measure first that it is missed (`dockbadgesync.ts`).
 - **Conversation History's "All activity" rows peeking a run, agent or initiative** (2026-10-01; the old

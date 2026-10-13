@@ -148,6 +148,17 @@ describe("resolveShownAgent", () => {
             hold: false,
         });
     });
+    it("a focused terminal is shown while agents exist, and with nothing focused an agent still comes before a terminal", () => {
+        const agents = [a, b];
+        expect(resolveShownAgent(input({ focused: term, agents })).agent).toBe(term);
+        expect(resolveShownAgent(input({ agents, firstInOrder: undefined })).agent).toBe(a);
+        expect(resolveShownAgent(input({ agents, terminals: [{ id: "t2" }, term] })).agent).toBe(a);
+    });
+    it("resumes on a saved terminal cell, whose id is eligible beside the agents'", () => {
+        const eligible = new Set(["a", "b", "c", "term"]);
+        expect(resolveShownAgent(input({ grid: grid(["a", "term"], "term"), eligible })).agent).toBe(term);
+        expect(resolveShownAgent(input({ grid: grid(["a", "term"], "a"), eligible })).agent).toBe(a);
+    });
     it("lets a focused agent beat the hold, even while the roster loads and none of the saved cells has arrived", () => {
         const held = { grid: grid(["x", "y"]), eligible: new Set(["a"]), seeded: false };
         expect(resolveShownAgent(input({ ...held, focused: b }))).toEqual({ agent: b, hold: false });

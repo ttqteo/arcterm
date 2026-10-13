@@ -70,6 +70,7 @@ export const GOTO_GROUP = "Go to";
 
 export interface ExtraDeps {
     openNewProject: () => void;
+    openToolPicker: () => void;
 }
 
 // The cockpit actions that have no chord to derive from. A drill opens a picker rather than
@@ -77,6 +78,7 @@ export interface ExtraDeps {
 export function buildExtraItems(deps: ExtraDeps): CommandItem[] {
     return [
         { key: "cmd:new-project", title: "New project", group: "Global", run: deps.openNewProject },
+        { key: "cmd:open-tool", title: "Open a tool…", group: "Global", run: deps.openToolPicker },
         { key: "cmd:theme", title: "Switch theme…", group: "Appearance", drill: "theme", run: () => {} },
     ];
 }

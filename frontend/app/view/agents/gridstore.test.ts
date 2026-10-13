@@ -20,11 +20,12 @@ import {
 
 const g = (ids: string[], focused: string | null = ids[0] ?? null): GridState => ({ ids, focused });
 
-// a roster of live agents, each with a terminal, and the surface's focus
-function model(ids: string[], focus?: string): GridModel {
+// a roster of live agents, each with a terminal, plain terminals beside them, and the surface's focus
+function model(ids: string[], focus?: string, terminalIds: string[] = []): GridModel {
     return {
         focusIdAtom: atom<string | undefined>(focus),
         agentsAtom: atom(ids.map((id) => ({ id, blockId: `blk-${id}` }))),
+        terminalsAtom: atom(terminalIds.map((id) => ({ id, blockId: `blk-${id}` }))),
     };
 }
 
@@ -53,6 +54,11 @@ describe("eligibleIds", () => {
     it("is empty for an empty roster", () => {
         expect(eligibleIds([]).size).toBe(0);
     });
+    it("takes agents and terminals together, and skips a terminal with no block", () => {
+        const agents = [{ id: "a", blockId: "blk-a" }];
+        const terminals = [{ id: "t", blockId: "blk-t" }, { id: "q" }];
+        expect([...eligibleIds([...agents, ...terminals])]).toEqual(["a", "t"]);
+    });
 });
 
 describe("currentGrid", () => {
@@ -64,9 +70,22 @@ describe("currentGrid", () => {
         const m: GridModel = {
             focusIdAtom: atom<string | undefined>("a"),
             agentsAtom: atom([{ id: "a", blockId: "blk-a" }, { id: "p" }]),
+            terminalsAtom: atom([{ id: "t", blockId: "blk-t" }, { id: "q" }]),
         };
         globalStore.set(agentGridAtom, g(["a", "p"]));
         expect(currentGrid(m).ids).toEqual(["a"]);
+    });
+    it("counts a terminal with a block as a cell, and not one without", () => {
+        const m: GridModel = {
+            focusIdAtom: atom<string | undefined>("a"),
+            agentsAtom: atom([{ id: "a", blockId: "blk-a" }]),
+            terminalsAtom: atom([{ id: "t", blockId: "blk-t" }, { id: "q" }]),
+        };
+        globalStore.set(agentGridAtom, g(["a", "t", "q"]));
+        expect(currentGrid(m).ids).toEqual(["a", "t"]);
+    });
+    it("puts a focused terminal in the grid, as it does an agent", () => {
+        expect(currentGrid(model(["a"], "t", ["t"]))).toEqual(g(["t"], "t"));
     });
     it("puts the focused live agent in the grid even when the stored one is empty", () => {
         expect(currentGrid(model(["a", "b"], "b"))).toEqual(g(["b"], "b"));
@@ -207,6 +226,40 @@ describe("openInSplit", () => {
         expect(openInSplit(m, "b")).toBe(true);
         expect(globalStore.get(centerModeAtom)).toBe("terminal");
     });
+    it("opens a terminal beside the focused agent and focuses it", () => {
+        const m = model(["a", "b"], "a", ["t"]);
+        globalStore.set(agentGridAtom, g(["a", "b"], "a"));
+        expect(openInSplit(m, "t")).toBe(true);
+        expect(globalStore.get(agentGridAtom)).toEqual(g(["a", "t", "b"], "t"));
+        expect(globalStore.get(m.focusIdAtom)).toBe("t");
+    });
+});
+
+describe("a terminal as a cell", () => {
+    it("can be dropped on a cell, and takes it by the agents' rule", () => {
+        const m = model(["a", "b"], "a", ["t"]);
+        globalStore.set(agentGridAtom, g(["a", "b"], "a"));
+        dropAgentOnGrid(m, "t", 1, "center");
+        expect(globalStore.get(agentGridAtom)).toEqual(g(["a", "t"], "t"));
+        expect(globalStore.get(m.focusIdAtom)).toBe("t");
+    });
+    it("leaves a terminal with no block alone", () => {
+        const m: GridModel = {
+            focusIdAtom: atom<string | undefined>("a"),
+            agentsAtom: atom([{ id: "a", blockId: "blk-a" }]),
+            terminalsAtom: atom([{ id: "q" }]),
+        };
+        globalStore.set(agentGridAtom, g(["a"]));
+        dropAgentOnGrid(m, "q", 0, "right");
+        expect(canOpenInSplit(m, "q")).toBe(false);
+        expect(globalStore.get(agentGridAtom)).toEqual(g(["a"]));
+    });
+    it("goes with the x on its cell, the shell keeps running", () => {
+        const m = model(["a"], "a", ["t"]);
+        globalStore.set(agentGridAtom, g(["a", "t"], "t"));
+        removeFromGrid(m, "t");
+        expect(globalStore.get(agentGridAtom)).toEqual(g(["a"], "a"));
+    });
 });
 
 describe("canOpenInSplit", () => {
@@ -221,5 +274,10 @@ describe("canOpenInSplit", () => {
         expect(canOpenInSplit(m, "a")).toBe(false);
         expect(canOpenInSplit(m, "e")).toBe(false);
         expect(canOpenInSplit(m, "ghost")).toBe(false);
+    });
+    it("is true for a live terminal with a block", () => {
+        const m = model(["a"], "a", ["t"]);
+        globalStore.set(agentGridAtom, g(["a"]));
+        expect(canOpenInSplit(m, "t")).toBe(true);
     });
 });

@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The Spider theme's look beyond its palette: the spider mark in the app bar, a small spider (on the theme chip, the
-// Settings offer, and on a thread from the agent tree's top), and webs in two corners. Pure: the cells, the paths
-// and when each shows; themedecorview.tsx draws them.
+// Settings offer, and on a thread from the agent tree's top), and a web in the top-left corner, behind the panels'
+// content. Pure: the cells, the paths and when each shows; themedecorview.tsx draws them.
 
 import type { PetCharacter } from "@/app/view/jarvis/petsprite";
 import type { ThemePalette } from "./themes";

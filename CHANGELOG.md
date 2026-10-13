@@ -12,6 +12,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- **A library of terminal tools (lazygit, yazi, btop and more) that opens in the right folder**: Setup → Tools lists
+  nine built-in tools and any of your own, shows which are installed, and installs one with winget or brew in a
+  terminal you can watch. **Open a tool** (`Ctrl+Shift+T`, the agent header's Tool button, the tool button on a
+  project folder, or Search) opens one in the focused agent's folder, and the New dialog's Tool row opens one in a
+  project's root.
 - **Resource Manager** (from the kaeltran16 fork): the footer shows arcterm's CPU and RAM; click it, or `Mod`+`G` `m`,
   for a popover of every process arcterm and its agents started, grouped by agent, with `x` to kill a runaway process
   and its children (asks first, never the agent itself).
@@ -28,8 +33,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - Spider-Man as a third Jarvis character (Settings → Appearance → Character): the Homecoming suit at work, Peter Parker at rest. He walks the footer side-on, thwips when he speaks, hangs from a strand when you drag him and rappels down when you let go, now and then crawls along under the app bar and hangs upside down until your cursor comes near, web-swings out and back when the window folds, and folded sits on a rooftop whose windows light up for each running agent, with his web and the count of agents at work beside it.
 - A Spider theme (Settings → Appearance → Theme): Claude's colours with Spider-Man's red accent and the suit's blue in
   the terminal, a spider in place of the arcterm logo, a small spider that drops on its thread over the agent list and
-  senses an agent asking you, another hanging over the empty Agent screen, and webs in two corners. Picking
-  Spider-Man as Jarvis asks whether to switch to it, and as Jarvis he now and then says a line from his films.
+  senses an agent asking you, another hanging over the empty Agent screen, and a web in the top-left corner behind
+  the sidebar's icons. Picking Spider-Man as Jarvis asks whether to switch to it, and as Jarvis he now and then says a
+  line from his films.
 - **A green dot and a count on an agent's sidebar row while background tasks it started still run** (a build, a dev
   server), even after its turn has ended; hover it to see which. The rail's Background tasks marks a running one with
   the same green dot.
@@ -40,8 +46,19 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
-- **The sidebar's sections and project folders open and close smoothly**: folding Active, Conversations or Terminals,
-  or a project's folder in Conversations or Terminals, slides its rows closed instead of dropping them at once.
+- **Usage → Insights ranks what to change by what it would save**: each fix (long context, oversized reads, noisy
+  Bash output, Opus on clear work, cold resumes) shows at most how much of the window's spend it recovers, the tabs
+  behind it open with a click, and a General tips row holds advice your numbers do not measure. Re-analyze once to
+  get the new card.
+- **Terminals sit with their project's agents in the sidebar and open in the centre**: the Active and Terminals
+  sections are one tree, a folder per project with its agents, then its terminals and tools. Picking a terminal (in
+  the tree, with `j` / `k`, `Ctrl+Tab` or Search) shows it in the centre, and a quick `Ctrl+Tab` goes back to the
+  agent. A terminal can also take a cell in the split. One whose folder was removed (the worktree of an agent that
+  landed) offers to reopen in the project.
+- **The terminal panel folds to a strip** showing the terminal's name and latest output line; `` Ctrl+` `` opens and folds
+  it. Moving a terminal into the panel is now a button, not what picking it does.
+- **The sidebar's Conversations section and its project folders open and close smoothly**: folding them slides their
+  rows closed instead of dropping them at once.
 - **A run's line in the sidebar fits again**: it reads `Plan review · 0/11` and no longer cuts off at the count;
   whether its lead has started is in the tooltip, and in a narrow sidebar the workers chip keeps just its number.
 - **Click a file's path to copy it**: in the Agent panel's File tab and in Code, the path at the top copies its full
@@ -103,6 +120,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
   return to arcterm grows it back even when the fold came while that app was in front.
 - The mouse wheel scrolls Claude Code's fullscreen view again after arcterm restarts or reloads its pane.
 - An agent with a background task still running is no longer offered **✓ Close**: closing it would end that task.
+- Jarvis: opening a long run goal with **Show more** no longer pushes the run's tasks and its bottom bar (with the
+  screenshots button) out of the sheet; the goal scrolls on its own instead.
+- Jarvis: a run's **Screenshots** button and Final check row no longer vanish while a later Final round runs; they
+  keep showing the last finished round, marked with its number.
 - Agent sidebar: clicking the top row of a run started from a plan (it has no lead) now shows the terminal of the run's
   agent that is asking or working, such as its plan reviewer or a worker, and a double-click lets you type into it.
   The click used to fold and unfold the run, so a double-click did nothing; the workers chip still folds it.

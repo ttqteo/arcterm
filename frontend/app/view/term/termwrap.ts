@@ -9,6 +9,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { FileRef } from "@/app/view/agents/agentrailtabs";
 import { openPathFromTerminal, touchedPathForBlock } from "@/app/view/agents/pathlinkroute";
 import { isAgentSleeping, relaunchBlockedBy } from "@/app/view/agents/session-models/agentresumestore";
+import { lastOutputLine } from "@/app/view/agents/terminaldock";
 import { recordPastedImage } from "@/app/view/agents/uploadsingest";
 import { pasteTextFor } from "@/app/view/agents/uploadsstore";
 import {
@@ -80,6 +81,13 @@ export function redrawTerminal(blockId: string): boolean {
     }
     wrap.redraw();
     return true;
+}
+
+// The last line with text on the block's mounted terminal, which the folded terminal panel shows as its latest output
+// (terminaldock.ts lastOutputLine). Undefined when the block has no mounted terminal or nothing is on its screen.
+export function latestTerminalLine(blockId: string): string | undefined {
+    const lines = liveTermWraps.get(blockId)?.recentLines(40);
+    return lines == null ? undefined : lastOutputLine(lines);
 }
 
 // detect webgl support

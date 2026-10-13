@@ -15,7 +15,8 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { bindingsAtom } from "@/app/store/keybindings/store";
 import { resolveCwd } from "@/app/view/agents/agentcwdresolve";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
-import { askingLabel, formatAge } from "@/app/view/agents/agentsviewmodel";
+import { HOME_PROJECT, projectLabel } from "@/app/view/agents/agentsidebarmodel";
+import { askingLabel, formatAge, projectOf } from "@/app/view/agents/agentsviewmodel";
 import { answerAgentAsk } from "@/app/view/agents/askanswer";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
 import { listCanvasTopics } from "@/app/view/agents/canvaslist";
@@ -28,7 +29,10 @@ import { channelProjectLabel } from "@/app/view/agents/projectlabel";
 import { projectListAtom, projectsAtom, recentProjectsAtom, rowsWithChannel } from "@/app/view/agents/projectsstore";
 import { runStatusView, type RunStatusTone } from "@/app/view/agents/runmodel";
 import { loadSessionsArchive, sessionsArchiveAtom } from "@/app/view/agents/sessionsarchivestore";
+import { TOOL_GLYPHS } from "@/app/view/agents/terminalsrail";
 import { themeOverridesAtom, themePresetAtom } from "@/app/view/agents/themestore";
+import { toolIcon, toolTerminalName } from "@/app/view/agents/toolsmodel";
+import { loadTools, openToolPicker, toolsStatusAtom } from "@/app/view/agents/toolsstore";
 import { recentPaths } from "@/app/view/code/codehistory";
 import { pinsFor } from "@/app/view/code/codepins";
 import {
@@ -255,6 +259,14 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
     const open = useAtomValue(model.paletteOpenAtom);
     const agents = useAtomValue(model.agentsAtom);
     const terminals = useAtomValue(model.terminalsAtom);
+    // the tool library names the terminals opened from it; read when the palette opens before anything has
+    const toolStatus = useAtomValue(toolsStatusAtom);
+    const toolList = useMemo(() => toolStatus ?? [], [toolStatus]);
+    useEffect(() => {
+        if (open && toolStatus == null) {
+            void loadTools();
+        }
+    }, [open, toolStatus]);
     const focusId = useAtomValue(model.focusIdAtom);
     const sessions = useAtomValue(sessionsArchiveAtom);
     const channel = useAtomValue(activeChannelAtom);
@@ -443,7 +455,10 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
         };
         const all = [
             ...buildCommandItems(bindings, postCloseContext(surface)),
-            ...buildExtraItems({ openNewProject: () => globalStore.set(model.newProjectOpenAtom, true) }),
+            ...buildExtraItems({
+                openNewProject: () => globalStore.set(model.newProjectOpenAtom, true),
+                openToolPicker: () => openToolPicker(model),
+            }),
         ];
         const goto: PaletteItem[] = all
             .filter((c) => c.group === GOTO_GROUP)
@@ -509,9 +524,12 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
         }));
     }, [bindings, model]);
 
+    // The Agents group: the live agents, then the plain terminals and tools, which open in the centre as an agent does
+    // (model.openTerminal). A terminal reads as its tool's name while it carries the launch label (toolTerminalName),
+    // with its project beside it, and its tool's icon.
     const agentItems = useMemo<PaletteItem[]>(
-        () =>
-            agents.map((a) => {
+        () => [
+            ...agents.map((a): PaletteItem => {
                 const asking = a.state === "asking";
                 return {
                     key: `agent:${a.id}`,
@@ -532,7 +550,27 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
                     },
                 };
             }),
-        [agents, model]
+            ...terminals.map((t): PaletteItem => {
+                const name = toolTerminalName(t, toolList);
+                const project = projectLabel(projectOf(t) || HOME_PROJECT);
+                return {
+                    key: `terminal:${t.id}`,
+                    kind: "agent" as const,
+                    search: `${name} ${project} terminal ${t.toolId ?? ""}`,
+                    title: name,
+                    icon: TOOL_GLYPHS[toolIcon(toolList.find((x) => x.id === t.toolId))],
+                    meta: project,
+                    status: { label: t.running ? "running" : "terminal", tone: t.running ? "working" : "muted" },
+                    verb: "Open",
+                    echo: `Opens ${name} in the centre`,
+                    run: () => {
+                        model.openTerminal(t.id);
+                        close();
+                    },
+                };
+            }),
+        ],
+        [agents, terminals, toolList, model]
     );
 
     // every project's runs, so each row names its project

@@ -31,6 +31,7 @@ import { RadarSurface } from "./radarsurface";
 import { SettingsSurface } from "./settingssurface";
 import { SetupSurface } from "./setupsurface";
 import { StorageNudge } from "./storagenudge";
+import { ToolPicker } from "./toolpicker";
 import { UsageSurface } from "./usagesurface";
 
 // One always-mounted synchronization hook: seed the shared preferred-harness state from the persisted
@@ -170,6 +171,8 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
             <DocReviewDialog model={model} />
             {/* a held card (Token burn, an Antigravity question) blocks its agent until answered: it pops over any surface */}
             <HeldAskDialog model={model} />
+            {/* Open a tool: from the agent header, a folder, the palette or its chord, on any surface */}
+            <ToolPicker model={model} />
             {/* a turn can end or an ask can land while any surface shows */}
             <NotifySync model={model} />
             {/* a scan can finish while any surface shows */}

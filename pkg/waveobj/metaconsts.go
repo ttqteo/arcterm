@@ -47,6 +47,8 @@ const (
 	MetaKey_CmdInitScriptPwsh                = "cmd:initscript.pwsh"
 	MetaKey_CmdInitScriptFish                = "cmd:initscript.fish"
 
+	MetaKey_ToolId                           = "tool:id"
+
 	MetaKey_EditorClear                      = "editor:*"
 	MetaKey_EditorMinimapEnabled             = "editor:minimapenabled"
 	MetaKey_EditorStickyScrollEnabled        = "editor:stickyscrollenabled"

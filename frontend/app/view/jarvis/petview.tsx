@@ -480,11 +480,20 @@ function PetSprite({
     // held, he hangs this far under the pointer on a strand, and rappels down one when let go
     const dropY = useMotionValue(0);
     const dropAnimRef = useRef<AnimationPlaybackControls | null>(null);
+    const holdAnimRef = useRef<AnimationPlaybackControls | null>(null);
+    // where the press caught him, from the root's top-left: the strand's top while he is held
+    const grabRef = useRef({ x: 0, y: 0 });
+    const grabY = useMotionValue(0);
+    // held, his raised hand is under the pointer: the body slides over by this much, back to 0 as he rappels
+    const holdX = useMotionValue(0);
     // dragY where the strand is stuck: the pointer while held, the release point while he rappels
     const releaseY = useMotionValue(0);
+    const svgX = useTransform([slideX, holdX], ([a, b]: number[]) => a + b);
     const svgY = useTransform([ledgeY, dropY], ([a, b]: number[]) => a + b);
-    const strandTop = useTransform([releaseY, dragY], ([r, y]: number[]) => r - y);
-    const strandH = useTransform([releaseY, dragY, dropY], ([r, y, d]: number[]) => Math.max(0, y - r + d));
+    const strandTop = useTransform([releaseY, dragY, grabY], ([r, y, g]: number[]) => r - y + g);
+    const strandH = useTransform([releaseY, dragY, dropY, grabY], ([r, y, d, g]: number[]) =>
+        Math.max(0, y - r + d - g)
+    );
     // the DEV contract's force({ swing }) holds a web-swing still; its run is made once, in force, so the clock under
     // it is not restarted by every render
     const swingRunRef = useRef<TeleportRun | null>(null);
@@ -690,8 +699,9 @@ function PetSprite({
             hangY.set(-hangRise);
         } else if (hangPhase === "hang") {
             hangAnimRef.current = animate(hangY, -hangRise + HANG_STRAND_PX, { duration: 0.15, ease: "easeOut" });
-        } else if (hangY.get() !== 0) {
-            // down, or a hang cut short: back to his spot
+        } else if (hangY.get() !== 0 && !draggingNowRef.current) {
+            // down, or a hang cut short: back to his spot. Not while held: the margin stays where the press caught it,
+            // so the root does not slide out from under the pointer, and the release folds it into the drag's offset
             hangAnimRef.current = animate(hangY, 0, { duration: HANG_DOWN_MS / 1000, ease: "easeOut" });
         }
     }, [hangPhase, hangRise, hangY]);
@@ -704,6 +714,7 @@ function PetSprite({
             slideAnimRef.current?.stop();
             hangAnimRef.current?.stop();
             dropAnimRef.current?.stop();
+            holdAnimRef.current?.stop();
         },
         []
     );
@@ -795,8 +806,13 @@ function PetSprite({
                 touch();
             }}
             // a press starts clean: a drag whose release fired no click must not swallow the next real one
-            onPointerDown={() => {
+            onPointerDown={(e) => {
                 draggedRef.current = false;
+                const r = e.currentTarget.getBoundingClientRect();
+                grabRef.current = {
+                    x: Math.min(Math.max(0, e.clientX - r.left), PET_PX),
+                    y: Math.min(Math.max(0, e.clientY - r.top), PET_PX),
+                };
             }}
             onDragStart={() => {
                 draggedRef.current = true;
@@ -805,16 +821,31 @@ function PetSprite({
                 fallSeqRef.current++;
                 fallRef.current.forEach((a) => a.stop());
                 fallRef.current = [];
+                // caught on his way down from the app bar: he stops there, under the pointer
+                hangAnimRef.current?.stop();
+                hangAnimRef.current = null;
                 releaseY.set(dragY.get());
                 if (character === "spidey" && !reduce) {
+                    // 4 cells under the pointer, his raised hand right under it
+                    const grab = grabRef.current;
+                    grabY.set(grab.y);
+                    const hand = strandLeft(HAND_LEFT_PX, step.flip) + PET_CELL_PX / 2;
                     dropAnimRef.current?.stop();
-                    dropAnimRef.current = animate(dropY, DRAG_DROP_PX, { duration: 0.12, ease: "easeOut" });
+                    dropAnimRef.current = animate(dropY, grab.y + DRAG_DROP_PX, { duration: 0.12, ease: "easeOut" });
+                    holdAnimRef.current?.stop();
+                    holdAnimRef.current = animate(holdX, grab.x - hand, { duration: 0.12, ease: "easeOut" });
                 }
                 touch();
             }}
             // the strand is stuck to the pointer while he is held
             onDrag={() => releaseY.set(dragY.get())}
             onDragEnd={(_, info) => {
+                // a margin the press caught on his way down from the app bar goes into the drag's offset, where the
+                // fall below takes it down; the root stays where it is on screen
+                if (hangY.get() !== 0) {
+                    dragY.set(dragY.get() + hangY.get());
+                    hangY.set(0);
+                }
                 const l = { left: ledge.left, right: ledge.right };
                 const dropX = dropAt(info.point.x, l);
                 const land = () => {
@@ -822,6 +853,9 @@ function PetSprite({
                     draggingNowRef.current = false;
                     dropAnimRef.current?.stop();
                     dropY.set(0);
+                    holdAnimRef.current?.stop();
+                    holdX.set(0);
+                    grabY.set(0);
                     // the new left edge is committed before the transform resets, so no paint between them shows
                     // it back at the left edge it was picked up from
                     flushSync(touch);
@@ -842,10 +876,14 @@ function PetSprite({
                     animate(dragY, way.y, { duration: way.duration, times: way.times, ease: way.ease }),
                 ];
                 if (character === "spidey") {
-                    // he ends the rappel on the ledge, not four cells under it: the drop he hung at eases out with it
+                    // he ends the rappel on the ledge, not four cells under it: the drop he hung at eases out with it,
+                    // and so does the slide that held his hand under the pointer
+                    const down = { duration: way.duration * way.times[1], ease: "easeOut" } as const;
                     dropAnimRef.current?.stop();
-                    dropAnimRef.current = animate(dropY, 0, { duration: way.duration * way.times[1], ease: "easeOut" });
-                    fallRef.current.push(dropAnimRef.current);
+                    dropAnimRef.current = animate(dropY, 0, down);
+                    holdAnimRef.current?.stop();
+                    holdAnimRef.current = animate(holdX, 0, down);
+                    fallRef.current.push(dropAnimRef.current, holdAnimRef.current);
                 }
                 // a stopped fall may resolve too; only the fall still current lands
                 void fallRef.current[1].finished.then(() => {
@@ -892,7 +930,7 @@ function PetSprite({
                 aria-hidden="true"
                 // the flag in hand rises above the sprite's box (PET_FLAG_RISE), so the svg draws past its top
                 overflow="visible"
-                style={{ x: slideX, y: svgY }}
+                style={{ x: svgX, y: svgY }}
                 className="block"
             >
                 {teleport != null || swingRun != null ? (
@@ -934,7 +972,7 @@ function PetSprite({
                     aria-hidden
                     data-pet-strand
                     className="pointer-events-none absolute top-0 w-[3px] bg-spidey-web"
-                    style={{ left: strandLeft(HAND_LEFT_PX, step.flip), y: strandTop, height: strandH }}
+                    style={{ left: strandLeft(HAND_LEFT_PX, step.flip), x: holdX, y: strandTop, height: strandH }}
                 />
             ) : null}
             {chip != null && !teleporting ? (

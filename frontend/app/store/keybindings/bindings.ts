@@ -44,12 +44,18 @@ import { anyFilterActive } from "@/app/view/agents/historyquery";
 import { openLauncher, type LauncherModel } from "@/app/view/agents/launcherstore";
 import { activeReviewKeyAtom, canSendKey, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
 import { canRequest } from "@/app/view/agents/proseanchor";
-import { railVisibleAtom, terminalFullscreenAtom } from "@/app/view/agents/railstore";
+import {
+    dockedTerminalAtom,
+    railVisibleAtom,
+    terminalDockFoldedAtom,
+    terminalFullscreenAtom,
+} from "@/app/view/agents/railstore";
 import { toggleOpenFile } from "@/app/view/agents/reviewmarks";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { resolveActiveRunId } from "@/app/view/agents/runmodel";
 import { backgroundTasksByIdAtom, focusSubagentAtom } from "@/app/view/agents/subagentsstore";
 import { closeSwitcher, switcherKey, tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
+import { openToolPicker } from "@/app/view/agents/toolsstore";
 import { runningBackgroundTasks } from "@/app/view/agents/transcriptprojection";
 import { unreadAgentsAtom } from "@/app/view/agents/unreadagentsstore";
 import { panelShownFoldedAtom, refreshSidebar } from "@/app/view/agents/worktreesidebarstore";
@@ -383,6 +389,17 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             label: "New run",
             when: (ctx) => !ctx.modalOpen,
             run: () => openLauncher(model, "run"),
+        },
+        {
+            // Open a tool (lazygit, yazi, btop…) in the focused agent's folder, from a focused terminal too. Not bare
+            // Mod+T: on Windows that is Ctrl+T, which a TUI (fzf, the shell's transpose) may take.
+            id: "open-tool",
+            keys: "Mod:Shift:t",
+            group: "Global",
+            label: "Open a tool",
+            paletteHidden: true, // the palette's own "Open a tool…" row (palette-commands.ts) is the same action
+            when: (ctx) => !ctx.modalOpen,
+            run: () => openToolPicker(model),
         },
         {
             // ⌘, / Ctrl+, as in VS Code and every Mac app. A comma is no terminal key, so it is the same chord in a terminal.
@@ -1122,6 +1139,17 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             paletteHidden: true, // duplicates agent:fullscreen, which already has a palette row
             when: fullscreenChordActive,
             run: toggleTerminalFullscreen,
+        },
+        {
+            // The terminal panel under the agent folds to a strip and opens again, from inside the terminal too like the
+            // other Mod chords. By code, so it is the same key on every layout (the backtick sits elsewhere on some).
+            // Active only while a terminal is docked: with none, the key is the terminal's own.
+            id: "agent:terminal-panel",
+            keys: "Mod:c{Backquote}",
+            group: "Agent",
+            label: "Fold or open the terminal panel",
+            when: (ctx) => ctx.surface === "agent" && !ctx.modalOpen && globalStore.get(dockedTerminalAtom) != null,
+            run: () => globalStore.set(terminalDockFoldedAtom, !globalStore.get(terminalDockFoldedAtom)),
         },
         {
             id: "agent:return-nav",

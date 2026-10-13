@@ -40,6 +40,9 @@ export interface SessionRow {
     coldSpendUsd: number; // coldTokens at the main model's 1h cache-write rate
     lifetimeMs: number;
     bigResults: UsageBigResults[]; // oversized tool results by tool, most characters first
+    mainModel?: string; // the main conversation's model id, unstripped, for its prices
+    opusSpendUsd?: number; // spend on Opus models, main and subagents
+    opusAsSonnetUsd?: number; // the same tokens at the Sonnet price of that generation
     chips: ChipKey[];
     liveTabId?: string; // set when an open agent tab runs this session
 }
@@ -62,6 +65,11 @@ function modelSpend(m: UsageSessionModel): number {
         cacheCreateTokens: m.cachecreate,
         cacheCreate1hTokens: m.cachecreate1h,
     });
+}
+
+// the Sonnet an Opus tab would have run on: the same generation's (priceFor's "sonnet-5" row covers 5 and 5.5)
+function sonnetFor(model: string): string {
+    return model.includes("opus-5") ? "claude-sonnet-5-5" : "claude-sonnet-4-5";
 }
 
 // Distinct model ids ordered main first (by main tokens), then subagent-only models by their tokens.
@@ -128,11 +136,17 @@ export function buildSessionRows(
     const partial = sessions.map((s) => {
         let spendUsd = 0;
         let subSpendUsd = 0;
+        let opusSpendUsd = 0;
+        let opusAsSonnetUsd = 0;
         let tokens = 0;
         for (const m of s.models) {
             const sp = modelSpend(m);
             spendUsd += sp;
             if (m.sub) subSpendUsd += sp;
+            if (m.model.includes("opus")) {
+                opusSpendUsd += sp;
+                opusAsSonnetUsd += modelSpend({ ...m, model: sonnetFor(m.model) });
+            }
             tokens += modelTokens(m);
         }
         const { ids, main } = modelsOf(s.models);
@@ -152,6 +166,9 @@ export function buildSessionRows(
             coldSpendUsd: (s.coldtokens * coldRate) / 1_000_000,
             lifetimeMs,
             bigResults: s.bigresults ?? [],
+            mainModel: main,
+            opusSpendUsd,
+            opusAsSonnetUsd,
             fiveHourPct: quota
                 ? windowSharePct(
                       s.fivehourtokens ?? 0,

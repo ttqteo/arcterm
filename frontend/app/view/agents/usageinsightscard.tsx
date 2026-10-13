@@ -4,7 +4,9 @@
 // The Usage surface's Insights section (Claude tab): the rule with the Analyze button, and the card under it.
 // Thin: which state shows is insightsCard (usageinsights.ts), whether Analyze is held is insightsHeld, and the
 // markdown split is splitInsights. States and sizes follow Main.dc.html and InsightsStates.dc.html in the
-// usage-insights prototype. Spec: 2026-10-08-usage-insights-design.md, section 3.
+// usage-insights prototype. Spec: 2026-10-08-usage-insights-design.md, section 3. A result with a headline draws as
+// the levers card (usageleversbody.tsx, spec 2026-10-13-usage-insights-levers-design.md); one saved before levers keeps
+// the markdown body.
 
 import { Markdown } from "@/app/element/markdown";
 import { Segmented } from "@/app/element/segmented";
@@ -15,6 +17,7 @@ import { CircleAlert, Clock, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 import { formatAge } from "./agentsviewmodel";
 import { splitInsights, type InsightsCard, type InsightsLang } from "./usageinsights";
+import { LeversBody } from "./usageleversbody";
 
 const PANEL = "rounded-[14px] border border-border bg-surface-raised";
 const BUTTON =
@@ -138,18 +141,60 @@ function AnalysisBody({ ins, note }: { ins: UsageInsights; note?: ReactNode }) {
     );
 }
 
+// A result with a headline is the levers card; one saved before levers (markdown only) keeps the document body.
+function ResultBody({
+    ins,
+    note,
+    onOpenSession,
+}: {
+    ins: UsageInsights;
+    note?: ReactNode;
+    onOpenSession: (id: string) => void;
+}) {
+    return ins.headline ? (
+        <LeversBody ins={ins} note={note} onOpenSession={onOpenSession} />
+    ) : (
+        <AnalysisBody ins={ins} note={note} />
+    );
+}
+
+// The levers card's shape (Running.dc.html): a headline line, five rows on the left, three lines on the right once the
+// container is wide enough to have a right column.
+const SKELETON_ROW_WIDTHS = ["w-[34%]", "w-[28%]", "w-[31%]", "w-[24%]", "w-[20%]"];
+const SKELETON_DETAIL_WIDTHS = ["w-[24%]", "w-[70%]", "w-[52%]"];
+
 function RunningBody() {
     return (
-        <div aria-live="polite" className={cn(PANEL, "flex flex-col gap-2.5 px-5 py-[18px]")}>
+        <div
+            aria-live="polite"
+            className={cn(PANEL, "flex flex-col gap-4 px-[18px] py-[18px] @3xl:gap-[18px] @3xl:px-[22px] @3xl:py-5")}
+        >
             <div className="text-[12px] text-muted">
                 Analysing… Claude reads the per-tab numbers, not your conversations (~30 s).
             </div>
-            <SkeletonLine className="h-3 w-[32%]" />
-            <SkeletonLine className="h-2.5 w-[88%]" />
-            <SkeletonLine className="h-2.5 w-[76%]" />
-            <SkeletonLine className="mt-2 h-3 w-[28%]" />
-            <SkeletonLine className="h-2.5 w-[82%]" />
-            <SkeletonLine className="h-2.5 w-[64%]" />
+            <SkeletonLine className="h-3.5 w-[56%]" />
+            <div className="flex flex-col @3xl:flex-row @3xl:gap-7">
+                <div className="flex min-w-0 flex-col @3xl:w-[520px] @3xl:flex-none">
+                    <div className={cn(REGION_LABEL, "border-b border-edge-mid pb-2 text-muted @3xl:px-2.5")}>
+                        Recoverable
+                    </div>
+                    {SKELETON_ROW_WIDTHS.map((w) => (
+                        <div key={w} className="flex items-center gap-3.5 py-[13px] @3xl:px-2.5">
+                            <span className="w-3 flex-none" />
+                            <span className="min-w-0 flex-1">
+                                <SkeletonLine className={cn("h-2.5 rounded-[3px]", w)} />
+                            </span>
+                            <span className="hidden h-0.5 w-[140px] flex-none bg-edge-strong @3xl:block" />
+                            <SkeletonLine className="h-2.5 w-11 flex-none rounded-[3px]" />
+                        </div>
+                    ))}
+                </div>
+                <div className="hidden min-w-0 flex-1 flex-col gap-3 border-l border-edge-mid pl-7 @3xl:flex">
+                    {SKELETON_DETAIL_WIDTHS.map((w) => (
+                        <SkeletonLine key={w} className={cn("h-2.5 rounded-[3px]", w)} />
+                    ))}
+                </div>
+            </div>
         </div>
     );
 }
@@ -212,7 +257,8 @@ const LANG_OPTIONS: { key: InsightsLang; label: string; title: string }[] = [
 
 // `held` is the insightsHeld tooltip, or null when Analyze may run. `windowDays` is the surface's window (7, or 0
 // for all time), against which a result is stale. `lang` is the language analyses answer in; the surface re-runs one
-// when it is changed with an analysis in the other language on screen (relangRuns).
+// when it is changed with an analysis in the other language on screen (relangRuns). `onOpenSession` opens a tab a lever's
+// chip names, by session id.
 export function UsageInsightsCard({
     card,
     held,
@@ -222,6 +268,7 @@ export function UsageInsightsCard({
     lang,
     onLang,
     onAnalyze,
+    onOpenSession,
 }: {
     card: InsightsCard;
     held: string | null;
@@ -231,6 +278,7 @@ export function UsageInsightsCard({
     lang: InsightsLang;
     onLang: (lang: InsightsLang) => void;
     onAnalyze: () => void;
+    onOpenSession: (id: string) => void;
 }) {
     const shown = card.kind === "done" ? card.ins : card.kind === "error" ? card.prev : undefined;
     const meta =
@@ -302,16 +350,17 @@ export function UsageInsightsCard({
             {card.kind === "running" ? <RunningBody /> : null}
 
             {card.kind === "done" ? (
-                <AnalysisBody
+                <ResultBody
                     ins={card.ins}
                     note={card.stale ? <StaleNote ins={card.ins} windowDays={windowDays} now={now} /> : undefined}
+                    onOpenSession={onOpenSession}
                 />
             ) : null}
 
             {card.kind === "error" ? (
                 <>
                     <ErrorNote message={card.message} hasPrev={card.prev != null} />
-                    {card.prev != null ? <AnalysisBody ins={card.prev} /> : null}
+                    {card.prev != null ? <ResultBody ins={card.prev} onOpenSession={onOpenSession} /> : null}
                 </>
             ) : null}
         </section>

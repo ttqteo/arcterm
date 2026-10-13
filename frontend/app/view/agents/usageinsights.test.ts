@@ -58,10 +58,24 @@ describe("insightsCard precedence", () => {
         expect(card({ saved: ins })).toEqual({ kind: "done", ins, stale: false });
     });
 
-    it("is never when nothing is saved or the saved markdown is empty", () => {
+    it("is never when nothing is saved or the saved result has neither markdown nor a headline", () => {
         expect(card()).toEqual({ kind: "never" });
         expect(card({ saved: saved({ markdown: "", analyzedts: 0 }) })).toEqual({ kind: "never" });
         expect(card({ saved: saved({ markdown: "" }) })).toEqual({ kind: "never" });
+    });
+
+    it("is done with a levers result, whose markdown is empty", () => {
+        const ins = saved({
+            markdown: "",
+            headline: "Long tabs cost the most.",
+            levers: [{ key: "longctx", sessions: [] }],
+        });
+        expect(card({ saved: ins })).toEqual({ kind: "done", ins, stale: false });
+    });
+
+    it("keeps a levers result as prev beside an error", () => {
+        const prev = saved({ markdown: "", headline: "Long tabs cost the most." });
+        expect(card({ error: "boom", saved: prev })).toEqual({ kind: "error", message: "boom", prev });
     });
 });
 
