@@ -119,14 +119,14 @@ describe("sleepingAge", () => {
     const vm = { sleeping: { since: SINCE, freedBytes: 0 } };
 
     it("reads how long it has slept", () => {
-        expect(sleepingAge(vm, SINCE + 2 * 3_600_000)).toBe("sleeping 2h");
-        expect(sleepingAge(vm, SINCE + 5 * 60_000)).toBe("sleeping 5m");
-        expect(sleepingAge(vm, SINCE + 3 * 86_400_000)).toBe("sleeping 3d");
+        expect(sleepingAge(vm, SINCE + 2 * 3_600_000)).toBe("2h");
+        expect(sleepingAge(vm, SINCE + 5 * 60_000)).toBe("5m");
+        expect(sleepingAge(vm, SINCE + 3 * 86_400_000)).toBe("3d");
     });
 
     it("reads under a minute as <1m, and a clock behind the stamp as no time", () => {
-        expect(sleepingAge(vm, SINCE + 10_000)).toBe("sleeping <1m");
-        expect(sleepingAge(vm, SINCE - 5000)).toBe("sleeping <1m");
+        expect(sleepingAge(vm, SINCE + 10_000)).toBe("<1m");
+        expect(sleepingAge(vm, SINCE - 5000)).toBe("<1m");
     });
 
     it("is empty for an awake agent", () => {

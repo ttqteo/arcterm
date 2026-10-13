@@ -30018,7 +30018,7 @@ const agentSleep = {
             return steps;
         }
 
-        // 1. the sleeping row: a moon, "sleeping 2h" for its age, and no ✓ Close although its last turn committed
+        // 1. the sleeping row: a moon in its glyph's place, "2h" for its age, and no ✓ Close although its last turn committed
         const rowReady = await polishWaitFor(h, `!!${asRow(AS_SLEEPING_ID)}?.querySelector("[data-agent-sleeping]")`, 10000);
         const row = await h.ev(`(() => {
             const sl = ${asRow(AS_SLEEPING_ID)};
@@ -30026,6 +30026,7 @@ const agentSleep = {
             return {
                 text: sl?.textContent.replace(/\\s+/g, " ").trim() ?? null,
                 moon: !!sl?.querySelector("[data-agent-sleeping]"),
+                glyph: !!sl?.querySelector("[data-agent-glyph-state]"),
                 done: !!sl?.querySelector("[data-agent-done]"),
                 awakeMoon: !!aw?.querySelector("[data-agent-sleeping]"),
                 awakeDone: !!aw?.querySelector("[data-agent-done]"),
@@ -30033,8 +30034,8 @@ const agentSleep = {
         })()`);
         await h.shot("cdp-shots/agent-sleep-row.png");
         rec(
-            "1. the sidebar row shows the moon and \"sleeping 2h\", and no Close",
-            rowReady && row.moon && /sleeping 2h/.test(row.text ?? "") && !row.done && !row.awakeMoon,
+            "1. the sidebar row shows the moon in its glyph's place and \"2h\", and no Close",
+            rowReady && row.moon && !row.glyph && /\b2h\b/.test(row.text ?? "") && !row.done && !row.awakeMoon,
             JSON.stringify(row)
         );
 
@@ -35442,9 +35443,9 @@ const settingsStorage = {
     },
 };
 
-// --- sidebar-agent-glyph: an agent row's ✳ carries its state, and a green dot its running background tasks. Four fixture
+// --- sidebar-agent-glyph: an agent row's ✳ carries its state, and a muted terminal its running background tasks. Four fixture
 // agents in one project: working, asking, idle with a committed last turn (it offers ✓ Close), and the same idle one whose
-// transcript left a command running with run_in_background (a dot, no Close).
+// transcript left a command running with run_in_background (the terminal, no Close).
 const SAG_PROJECT = "verify-sidebar-glyph";
 const SAG_ID = { working: "fx-sag-working", asking: "fx-sag-asking", idle: "fx-sag-idle", bg: "fx-sag-bg" };
 const sagRow = (id) => `document.querySelector('[data-agent-row="${id}"]')`;
@@ -35458,7 +35459,7 @@ const sagFacts = (id) => `(() => {
         state: glyph?.dataset.agentGlyphState ?? null,
         color: glyph ? getComputedStyle(glyph).color : null,
         pulse: !!glyph?.classList.contains("pulse-dot"),
-        dot: dot ? { n: Number(dot.dataset.agentBackground), title: dot.title, bg: getComputedStyle(dot).backgroundColor } : null,
+        dot: dot ? { n: Number(dot.dataset.agentBackground), title: dot.title, color: getComputedStyle(dot).color, pulse: /pulse/.test(dot.className) } : null,
         close: !!row.querySelector("[data-agent-done]"),
         stateDot: !!row.querySelector("span.rounded-full[style*='background-color']"),
     };
@@ -35531,7 +35532,6 @@ const sidebarAgentGlyph = {
         const accent = await h.ev(sagColor("--color-accent"));
         const warning = await h.ev(sagColor("--color-warning"));
         const muted = await h.ev(sagColor("--color-muted"));
-        const working = await h.ev(`(() => { const el = document.createElement("span"); el.style.backgroundColor = "var(--color-working)"; document.body.appendChild(el); const c = getComputedStyle(el).backgroundColor; el.remove(); return c; })()`);
         rec(
             "1. a working agent's ✳ pulses in the accent colour",
             f.working?.state === "working" && f.working.pulse && f.working.color === accent,
@@ -35553,9 +35553,13 @@ const sidebarAgentGlyph = {
             JSON.stringify(Object.fromEntries(Object.entries(f).map(([k, x]) => [k, x?.stateDot])))
         );
         rec(
-            "5. the agent with a running background task shows one green dot naming it",
-            ctx.dotSeen && f.bg?.dot?.n === 1 && f.bg.dot.bg === working && f.bg.dot.title.includes("Start the dev server"),
-            JSON.stringify({ dot: f.bg?.dot, working })
+            "5. the agent with a running background task shows one muted, still terminal naming it",
+            ctx.dotSeen &&
+                f.bg?.dot?.n === 1 &&
+                f.bg.dot.color === muted &&
+                !f.bg.dot.pulse &&
+                f.bg.dot.title.includes("Start the dev server"),
+            JSON.stringify({ dot: f.bg?.dot, muted })
         );
         rec("6. no other row shows the dot", !f.working?.dot && !f.asking?.dot && !f.idle?.dot, "");
         rec(

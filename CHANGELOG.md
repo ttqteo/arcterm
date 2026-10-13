@@ -32,6 +32,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
   (`git log --all -p`), with Kill, Switch to Sonnet, Sleep and Stop in one ⋯ menu; the header reads free RAM, Arc's
   CPU and the 5-hour quota on one line. The separate popover and `Mod`+`G` `m` are gone. On macOS the panel is
   unchanged.
+- **A sleeping agent reads apart from an idle one in the sidebar**: a moon takes its ✳ at the head of the row and the
+  row fades, its age is how long it has slept. **Background commands an agent left running** show as a still,
+  grey terminal icon with their count instead of a pulsing green dot, which read as the agent itself still working.
 
 ## 0.15.11 — 2026-10-13
 

@@ -676,6 +676,9 @@ function ParentRow({
     // Close waits for them, since closing the agent would end them
     const background = runningBackgroundTasks(useAtomValue(backgroundTasksByIdAtom)[agent.id]);
     const done = !agent.sleeping && doneSuggestion(agent, unreadCount, lineageRuns, background.length);
+    // a sleeping row steps back to the faintest ink, so it reads apart from an idle one at a glance; being chosen or
+    // holding unread turns brings its name back
+    const dim = agent.sleeping != null && !selected;
     // the canvas tag and a worded Close overflow the second line together, so beside the tag Close is its check alone
     const compactClose = useAtomValue(canvasStateAtom(agent.id)) != null;
     // m4: one-shot settle when this agent reaches idle (working/asking -> idle)
@@ -786,8 +789,8 @@ function ParentRow({
                 </>
             ) : (
                 <>
-                    {/* its glyph carries working or idle; this slot holds its queued command, the Close a finished one
-                        offers, the moon of a sleeping one, or the dot of background tasks still running */}
+                    {/* its glyph carries working, idle or (a moon) sleeping; this slot holds its queued command, the
+                        Close a finished one offers, or the terminal of background tasks still running */}
                     {queued ? (
                         <QueuedJobTag job={queued} />
                     ) : done ? (
@@ -809,19 +812,12 @@ function ParentRow({
                             <Check size={10} strokeWidth={2.4} aria-hidden />
                             {compactClose ? null : "Close"}
                         </button>
-                    ) : agent.sleeping ? (
-                        // not the count's stand-in: the moon is what says it is parked, so an unread count sits beside it
-                        <Moon
-                            size={10}
-                            strokeWidth={2}
-                            aria-label="sleeping"
-                            data-agent-sleeping={agent.id}
-                            className="flex-none text-muted"
-                        />
                     ) : background.length > 0 ? (
-                        <BackgroundDot tasks={background} />
+                        <BackgroundTag tasks={background} />
                     ) : null}
-                    {tokens ? <span className={TOKENS_COL}>{formatTokens(tokens)}</span> : null}
+                    {tokens ? (
+                        <span className={cn(TOKENS_COL, dim && "text-ink-faint")}>{formatTokens(tokens)}</span>
+                    ) : null}
                     <span className={AGE_COL}>
                         {agent.sleeping ? sleepingAge(agent, now) : formatAgeShort(displayAgeMs(agent, now))}
                     </span>
@@ -879,18 +875,16 @@ function ParentRow({
                                     aria-hidden
                                     className={cn("flex-none", LEAD_MARK_CLASS[mark.tone], mark.pulse && PULSE)}
                                 />
+                            ) : agent.sleeping ? (
+                                <SleepGlyph id={agent.id} runtime={agent.agent} />
                             ) : (
-                                <RuntimeGlyph
-                                    runtime={agent.agent}
-                                    state={agent.state}
-                                    sleeping={agent.sleeping != null}
-                                />
+                                <RuntimeGlyph runtime={agent.agent} state={agent.state} />
                             )}
                         </DigitHint>
                         <span
                             className={cn(
                                 "min-w-0 flex-1 truncate text-[13px]",
-                                selected || unread ? "text-primary" : "text-secondary",
+                                selected || unread ? "text-primary" : dim ? "text-ink-faint" : "text-secondary",
                                 unread && "font-semibold"
                             )}
                         >
@@ -906,7 +900,7 @@ function ParentRow({
                 ) : (
                     // under the name: its model, a branch other than the default, its subagents chip and its badges
                     // @container: the subagents chip drops its word when this line is narrow, and the model truncates
-                    <div className={cn(CONVERSATION_META, "@container mt-[3px]", UNDER_GLYPH)}>
+                    <div className={cn(CONVERSATION_META, "@container mt-[3px]", UNDER_GLYPH, dim && "text-ink-faint")}>
                         {agent.model ? <span className="min-w-0 truncate">{agent.model}</span> : null}
                         {agent.model && shownBranch ? (
                             <span aria-hidden className="flex-none text-ink-faint">
@@ -1402,43 +1396,52 @@ const UNDER_GLYPH = "pl-[18px]";
 
 // the runtime's glyph at the head of a row, in a slot as wide as the run icon so titles line up. On an agent's row it
 // also carries the agent's state, where a dot used to: working pulses in the accent, asking in the warning colour, and
-// an idle or sleeping one goes muted, so the rows doing something stand out
-function RuntimeGlyph({ runtime, state, sleeping }: { runtime: string; state?: AgentState; sleeping?: boolean }) {
+// an idle one goes muted, so the rows doing something stand out
+function RuntimeGlyph({ runtime, state }: { runtime: string; state?: AgentState }) {
     const rt = runtimeMeta(runtime);
-    const busy = !sleeping && (state === "working" || state === "asking");
+    const busy = state === "working" || state === "asking";
     return (
         <span
             data-agent-glyph-state={state}
             className={cn(
                 "min-w-[12px] flex-none text-center text-[12px] transition-colors duration-200",
-                state == null ? rt.text : sleeping || state === "idle" ? "text-muted" : GLYPH_COLOR[state],
+                state == null ? rt.text : GLYPH_COLOR[state],
                 busy && PULSE
             )}
-            title={state == null ? rt.label : `${rt.label} · ${sleeping ? "sleeping" : state}`}
+            title={state == null ? rt.label : `${rt.label} · ${state}`}
         >
             {rt.glyph}
         </span>
     );
 }
 
+// a sleeping agent's moon takes its runtime glyph's place, the slot that carries a row's state, so a parked agent reads
+// apart from an idle one down the glyph column
+function SleepGlyph({ id, runtime }: { id: string; runtime: string }) {
+    const label = `${runtimeMeta(runtime).label} · sleeping`;
+    return (
+        <span title={label} className="flex min-w-[12px] flex-none justify-center text-muted">
+            <Moon size={11} strokeWidth={2} aria-label={label} data-agent-sleeping={id} />
+        </span>
+    );
+}
+
 const GLYPH_COLOR: Record<AgentState, string> = { working: "text-accent", asking: "text-warning", idle: "text-muted" };
 
-// the dot on an agent's second line, with their count: shell commands it left running in the background, which outlive
-// its turn. Same green and pulse as a running row in the rail's Background tasks, so the two read as one state
-function BackgroundDot({ tasks }: { tasks: BackgroundTask[] }) {
+// the terminal on an agent's second line, with their count: shell commands it left running in the background, which
+// outlive its turn. Muted and still: a green pulsing dot read as the agent itself still working
+function BackgroundTag({ tasks }: { tasks: BackgroundTask[] }) {
     const n = tasks.length;
     const title = `${n} background ${n === 1 ? "task" : "tasks"} running:\n${tasks.map((t) => t.label).join("\n")}`;
     return (
-        <span title={title} className="flex flex-none items-center gap-[3px]">
-            <span
-                data-agent-background={n}
-                title={title}
-                aria-label={`${n} background ${n === 1 ? "task" : "tasks"} running`}
-                className="h-[6px] w-[6px] flex-none rounded-full bg-working pulse-dot-slow"
-            />
-            <span aria-hidden className="text-[10.5px] tabular-nums text-working">
-                {n}
-            </span>
+        <span
+            data-agent-background={n}
+            title={title}
+            aria-label={`${n} background ${n === 1 ? "task" : "tasks"} running`}
+            className="flex flex-none items-center gap-[3px] text-[10.5px] tabular-nums text-muted"
+        >
+            <SquareTerminal size={11} strokeWidth={2} aria-hidden />
+            <span aria-hidden>{n}</span>
         </span>
     );
 }

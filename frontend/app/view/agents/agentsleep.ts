@@ -102,9 +102,10 @@ export function asleepLaunchMeta(asleep: AsleepLaunch, now = Date.now()): Record
     return meta;
 }
 
-/** Pure: the age column of a sleeping agent ("sleeping 2h"), "" for one that is awake. */
+/** Pure: the age column of a sleeping agent, how long it has slept ("2h"; the moon at the row's head says it sleeps), "" for
+ *  one that is awake. */
 export function sleepingAge(vm: Pick<AgentVM, "sleeping">, now: number): string {
-    return vm.sleeping ? `sleeping ${formatAgeShort(Math.max(0, now - vm.sleeping.since))}` : "";
+    return vm.sleeping ? formatAgeShort(Math.max(0, now - vm.sleeping.since)) : "";
 }
 
 /** Pure: the agents whose terminal is on screen, as a sorted list: the focused agent, and every cell of the grid when it

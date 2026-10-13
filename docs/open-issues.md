@@ -27,6 +27,14 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (Sleeping and background-task rows in the sidebar)**
+
+- [ ] (arcterm) **Sleeping rows read apart from idle ones; the background mark is not a running dot.** In the Agent
+  sidebar a sleeping agent shows a moon in place of its ✳, a faded name and meta, and a bare age (`19m`); an idle one
+  keeps its ✳ and `text-secondary` name. An agent with a background command shows a grey, still terminal icon and a
+  count, the commands on hover. Selected or unread, a sleeping row's name is bright again. `agenttree.tsx`
+  (`SleepGlyph`, `BackgroundTag`); scenarios `agent-sleep`, `sidebar-agent-glyph`.
+
 **2026-10-13 (Classic-renderer Claude after a restart scrolls)**
 
 - [ ] (arcterm) **A Claude that comes back on the classic renderer scrolls.** Rebuild wavesrv, then restart arcterm twice
