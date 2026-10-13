@@ -78,9 +78,9 @@ Chưa chọn thì bản nháp của bạn được giữ nguyên, không mất.
 
 Tab **Skills** là một ma trận: mỗi hàng là một skill, mỗi cột là một harness có thư mục skill cố định (Claude Code, Antigravity, Codex, OpenCode). Cột của harness chưa dùng có nhãn **not set up**. pi không có cột: nó đọc skill từ danh sách đường dẫn trong `settings.json` của chính nó; `wsh agent-sync status` cho biết cấu hình đó có trỏ vào skill đã đồng bộ hay không.
 
-Dòng đầu trang ghi tình hình (`19 skills · 3 managed by arcterm`), nút **New skill** và nút **Manage N skills in arcterm**.
+Dòng đầu trang ghi tình hình (`19 skills · 3 managed by arcterm`), nút **New skill**, và nút **Manage N skills in arcterm** khi còn skill nằm ngoài vault (không còn thì nút ẩn).
 
-<!-- shot: setup-skills.png | Tab Skills: ma trận skill × harness chia nhóm (Needs a decision, Differs between harnesses, Same copy in N harnesses, Only in …, Managed by arcterm), một hàng được chọn và cột phải hiện "Where it lives" | Mở Setup, bấm tab **Skills** (`#setup-tab-skills`); hàng là `[role="row"]` trong `[aria-label="Skills by harness"]`. Cần vài skill nằm trong `~/.claude/skills` và `~/.codex/skills` để có nhóm khác nhau; năm skill của arcterm luôn có mặt ở nhóm "Managed by arcterm" -->
+<!-- shot: setup-skills.png | Tab Skills: ma trận skill × harness chia nhóm (Needs a decision, Differs between harnesses, Same copy in N harnesses, Only in …, Your skills, Ships with arcterm), một hàng được chọn và cột phải hiện "Where it lives" | Mở Setup, bấm tab **Skills** (`#setup-tab-skills`); hàng là `[role="row"]` trong `[aria-label="Skills by harness"]`. Cần vài skill nằm trong `~/.claude/skills` và `~/.codex/skills` để có nhóm khác nhau; các skill của arcterm luôn có mặt ở nhóm "Ships with arcterm" -->
 
 ### Đọc ma trận
 
@@ -92,7 +92,8 @@ Các hàng chia nhóm, theo thứ tự:
 | **Differs between harnesses** | Khác nhau ở phần đầu (frontmatter) hoặc file đi kèm; arcterm giữ một bản dùng chung và ghi lại điểm khác của từng harness. |
 | **Same copy in N harnesses** | Cùng một skill bạn đã chép tay vào nhiều harness. |
 | **Only in <Harness>** | Skill chỉ có ở một harness. |
-| **Managed by arcterm** | Skill đã nằm trong vault, được ghi vào mọi harness. |
+| **Your skills** | Skill của bạn đã nằm trong vault, được chép vào mọi harness. Sửa được bằng **Edit**. |
+| **Ships with arcterm** | Skill đi kèm arcterm (xem dưới). Chỉ đọc. |
 
 Ô trong ma trận:
 
@@ -109,7 +110,7 @@ Bấm một hàng để xem chi tiết ở cột phải: mô tả của skill, n
 
 ### Sửa và tạo skill
 
-- **Sửa**: chọn một skill ở nhóm **Managed by arcterm** rồi bấm **Edit** ở chân cột phải. `SKILL.md` trong vault mở ngay trong cột phải (cột rộng ra); hàng đang có bản nháp hiện chữ **edited**. **Save** ghi vào vault rồi chép sang mọi harness ngay; **Discard** bỏ bản nháp. Bản nháp còn nguyên khi bạn chọn skill khác hay chuyển surface. Nếu file bị sửa ở chỗ khác trong lúc bạn soạn, Save báo **Reload** / **Overwrite** như tab Instructions.
+- **Sửa**: chọn một skill ở nhóm **Your skills** rồi bấm **Edit** ở chân cột phải. `SKILL.md` trong vault mở ngay trong cột phải (cột rộng ra); hàng đang có bản nháp hiện chữ **edited**. **Save** ghi vào vault rồi chép sang mọi harness ngay; **Discard** bỏ bản nháp. Bản nháp còn nguyên khi bạn chọn skill khác hay chuyển surface. Nếu file bị sửa ở chỗ khác trong lúc bạn soạn, Save báo **Reload** / **Overwrite** như tab Instructions.
 - **Tạo**: bấm **New skill**, nhập tên (chữ thường, số và dấu gạch nối, như `trade-check`; không trùng skill nào đã có) và mô tả (agent đọc nó để biết khi nào dùng skill), rồi **Create and edit**. arcterm tạo `<vault>/skills/<tên>/SKILL.md`, chép vào mọi harness, và mở file trong trình soạn thảo.
 - Skill đi kèm arcterm không có nút Edit: mỗi lần đồng bộ arcterm ghi đè lại chúng (xem dưới).
 
@@ -128,7 +129,7 @@ Chi tiết cần biết:
 
 ### Skills đi kèm arcterm
 
-arcterm mang theo năm skill, được đưa vào `<vault>/skills/` ở mỗi lần đồng bộ (nên chúng luôn nằm ở nhóm **Managed by arcterm**) và từ đó chiếu vào mọi harness:
+arcterm mang theo năm skill, được đưa vào `<vault>/skills/` ở mỗi lần đồng bộ (nên chúng luôn nằm ở nhóm **Ships with arcterm**) và từ đó chiếu vào mọi harness:
 
 | Skill | Dùng khi |
 |---|---|

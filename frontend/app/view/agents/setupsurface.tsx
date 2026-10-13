@@ -96,6 +96,11 @@ const BTN_SECONDARY =
 const BTN_PRIMARY =
     "h-8 cursor-pointer rounded border-0 bg-accent px-[14px] text-[13px] font-bold text-background shadow-inset-highlight hover:bg-accenthover disabled:cursor-default disabled:opacity-40 disabled:hover:bg-accent";
 
+// The skill rail grows with the window so a SKILL.md reads at a comfortable measure, and wider again while editing; the
+// matrix keeps the rest (its harness columns are fixed, so the floor of either width still leaves the names room).
+const RAIL_WIDTH = "w-[clamp(440px,38%,680px)]";
+const RAIL_EDIT_WIDTH = "w-[clamp(560px,50%,860px)]";
+
 const INPUT =
     "h-[30px] min-w-0 rounded-[7px] border border-edge-mid bg-background px-2.5 text-[13px] text-primary outline-none placeholder:text-muted focus:border-accent";
 
@@ -522,6 +527,7 @@ function SkillsHeader() {
         return null;
     }
     const n = adoptCount(data, keep);
+    // Manage only has work when a harness holds a skill outside the vault; at zero it would read as a dead control
     return (
         <>
             <span className="text-[12px] text-ink-mid">{skillsSummary(data)}</span>
@@ -534,14 +540,17 @@ function SkillsHeader() {
             >
                 New skill
             </button>
-            <button
-                type="button"
-                disabled={busy || n === 0}
-                onClick={() => fireAndForget(adoptSkills)}
-                className={BTN_PRIMARY}
-            >
-                {manageLabel(n)}
-            </button>
+            {n > 0 ? (
+                <button
+                    type="button"
+                    data-skill-manage
+                    disabled={busy}
+                    onClick={() => fireAndForget(adoptSkills)}
+                    className={BTN_PRIMARY}
+                >
+                    {manageLabel(n)}
+                </button>
+            ) : null}
         </>
     );
 }
@@ -825,7 +834,7 @@ function SkillRail({
             data-skill-rail={row.name}
             className={cn(
                 "flex flex-none flex-col border-l border-border bg-surface",
-                ed != null ? "w-[600px]" : "w-[440px]"
+                ed != null ? RAIL_EDIT_WIDTH : RAIL_WIDTH
             )}
         >
             {ed != null ? (
@@ -966,7 +975,7 @@ function NewSkillRail({ taken }: { taken: string[] }) {
             {...FADE_IN}
             aria-label="New skill"
             data-new-skill-form
-            className="flex w-[440px] flex-none flex-col border-l border-border bg-surface"
+            className={cn("flex flex-none flex-col border-l border-border bg-surface", RAIL_WIDTH)}
         >
             <form
                 className="flex min-h-0 flex-1 flex-col"

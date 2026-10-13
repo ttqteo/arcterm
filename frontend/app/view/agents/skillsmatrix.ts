@@ -202,6 +202,9 @@ export function skillRows(data: SkillsData, keep: SkillKeep): SkillRow[] {
 const KIND_ORDER: SkillGroupKind[] = ["decide", "differs", "same", "only", "managed"];
 
 function groupKey(row: SkillRow): string {
+    if (row.kind === "managed") {
+        return row.shipped ? "managed:shipped" : "managed";
+    }
     if (row.kind === "same") {
         return `same:${row.copies.length}`;
     }
@@ -222,7 +225,8 @@ function groupTitle(row: SkillRow): string {
         case "only":
             return `Only in ${row.copies[0].label}`;
         case "managed":
-            return "Managed by arcterm";
+            // the user's own vault skills, which the rail edits, apart from the read-only ones arcterm ships
+            return row.shipped ? "Ships with arcterm" : "Your skills";
     }
 }
 
@@ -244,6 +248,9 @@ export function skillGroups(data: SkillsData, keep: SkillKeep): SkillGroup[] {
         }
         if (g.kind === "only") {
             return [kind, colOrder.get(first.copies[0].runtime) ?? 0];
+        }
+        if (g.kind === "managed") {
+            return [kind, first.shipped ? 1 : 0];
         }
         return [kind, 0];
     };

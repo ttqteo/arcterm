@@ -38,6 +38,10 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
 - **Setup says where a skill's copy is, not "Synced"**: a cell now reads **Up to date** or **Out of date** against
   the copy in that harness's skills folder on this machine, and the side panel lists those folders under Copied into.
   The Instructions tab says Up to date too.
+- **Setup → Skills separates your skills from arcterm's**: the vault's skills sit under **Your skills** (with Edit) and
+  **Ships with arcterm** (read-only); the side panel is wider and grows with the window, and its SKILL.md scrolls with
+  the panel rather than in a second scrollbar of its own; **Manage … in arcterm** shows only while a skill sits outside
+  the vault.
 - **A tidier agent header**: Open a tool, Float and Redraw moved into a new `…` button (the same menu as a right-click
   on the header), leaving `…`, Split, Fullscreen and Close. A project folder in the sidebar no longer shows a `+` on
   hover; open a terminal from **New**.

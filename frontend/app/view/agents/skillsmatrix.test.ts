@@ -76,7 +76,24 @@ describe("skillGroups", () => {
             { title: "Same copy in 2 harnesses", names: ["commit", "wrangler"] },
             { title: "Only in Claude Code", names: ["graphify"] },
             { title: "Only in Codex", names: ["review-spec"] },
-            { title: "Managed by arcterm", names: ["vaulted"] },
+            { title: "Your skills", names: ["vaulted"] },
+        ]);
+    });
+
+    it("splits the vault's skills: the user's own first, then the read-only ones arcterm ships", () => {
+        const groups = groupsOf(
+            data({
+                skills: [
+                    { name: "notes", states: {}, shipped: true },
+                    { name: "trade-check", states: {} },
+                    { name: "cockpit-ui", states: {}, shipped: true },
+                    { name: "review-plan", states: {} },
+                ],
+            })
+        );
+        expect(groups).toEqual([
+            { title: "Your skills", names: ["review-plan", "trade-check"] },
+            { title: "Ships with arcterm", names: ["cockpit-ui", "notes"] },
         ]);
     });
 

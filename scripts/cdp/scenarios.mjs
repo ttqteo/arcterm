@@ -36750,12 +36750,18 @@ const setupSkillEdit = {
         const first = await h.ev(`(() => {
             const cells = [...document.querySelectorAll('[role="table"][aria-label="Skills by harness"] [role="cell"]')].map((c) => c.textContent.trim());
             const rail = ${SK_RAIL("commit-helper")};
+            const group = (title) => [...(document.querySelector('[role="rowgroup"][aria-label="' + title + '"]')?.querySelectorAll('[data-skill-row]') ?? [])].map((r) => r.getAttribute("data-skill-row"));
             return {
                 synced: cells.some((t) => /synced/i.test(t)),
                 upToDate: cells.includes("Up to date"),
                 outOfDate: cells.includes("Out of date"),
                 copies: [...(rail?.querySelectorAll('[data-skill-copies] [title]') ?? [])].map((e) => e.getAttribute("title")),
                 note: rail?.innerText.includes("on this machine") ?? false,
+                yours: group("Your skills"),
+                shipped: group("Ships with arcterm"),
+                railWidth: Math.round(rail?.getBoundingClientRect().width ?? 0),
+                tabWidth: Math.round(document.getElementById("setup-tabpanel")?.getBoundingClientRect().width ?? 0),
+                manage: !!document.querySelector("[data-skill-manage]"),
             };
         })()`);
         await h.shot("cdp-shots/setup-skill-edit-1-rail.png");
@@ -36763,6 +36769,18 @@ const setupSkillEdit = {
             "1. the cells read Up to date / Out of date (no Synced); a vault skill's rail has Edit and lists the local folders it is copied into",
             listed && railUp && !first.synced && first.upToDate && first.outOfDate && first.copies.length === 2 && first.note,
             JSON.stringify(first)
+        );
+        rec(
+            "1b. the vault's skills split into Your skills and Ships with arcterm; the rail grows with the window; Manage shows while skills sit outside the vault",
+            first.yours.includes("commit-helper") &&
+                !first.yours.includes("design-local") &&
+                first.shipped.includes("design-local") &&
+                first.shipped.includes("cockpit-ui") &&
+                first.railWidth >= 440 &&
+                first.railWidth <= 680 &&
+                Math.abs(first.railWidth - Math.min(680, Math.max(440, first.tabWidth * 0.38))) <= 2 &&
+                first.manage,
+            JSON.stringify({ yours: first.yours, shipped: first.shipped, railWidth: first.railWidth, tabWidth: first.tabWidth, manage: first.manage })
         );
 
         await h.ev(skClick('[data-skill-row="design-local"]'));
