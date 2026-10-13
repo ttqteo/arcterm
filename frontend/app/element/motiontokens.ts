@@ -63,6 +63,25 @@ export const paneReveal: Variants = {
     exit: { opacity: 0, height: 0, transition: { duration: MOTION.durExit, ease: MOTION.easeFluid } },
 };
 
+// Fold reveal: paneReveal for a list that folds under its header (the agent sidebar's sections and project
+// folders). It clips only while it moves, so a row's focus ring past the list's edge shows once it has opened.
+export const foldReveal: Variants = {
+    initial: { opacity: 0, height: 0, overflow: "hidden" },
+    animate: {
+        opacity: 1,
+        height: "auto",
+        overflow: "hidden",
+        transition: { duration: MOTION.durMacro, ease: MOTION.easeFluid },
+        transitionEnd: { overflow: "visible" },
+    },
+    exit: {
+        opacity: 0,
+        height: 0,
+        overflow: "hidden",
+        transition: { duration: MOTION.durExit, ease: MOTION.easeFluid },
+    },
+};
+
 // Popover / dropdown reveal. Opacity + scale only (never x/y — consistent with cardVariants); the
 // panel scales from its anchor corner via a per-site transform-origin. Snappy in and out — a dropdown
 // dismiss should not linger.

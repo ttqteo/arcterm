@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (Sidebar: folds slide open and closed)**
+
+- [ ] (arcterm) **Sidebar folds animate.** Click the Active, Conversations and Terminals headers, and a project folder
+  in Conversations and Terminals: the rows slide closed and open (~0.3 s) instead of vanishing; the first paint and a
+  section reopened with its folders open do not replay. Tab to a row after it opens: its focus ring is not clipped.
+  `agenttree.tsx` FoldBody, `motiontokens.ts` foldReveal, `agentsidebarmodel.ts` folderBlocks.
+
 **2026-10-13 (Sidebar: a plan run's line drops the lead suffix)**
 
 - [ ] (arcterm) **A plan run's line shows its count.** Start a run from a plan file and look at its row in the

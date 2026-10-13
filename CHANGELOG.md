@@ -27,6 +27,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- **The sidebar's sections and project folders open and close smoothly**: folding Active, Conversations or Terminals,
+  or a project's folder in Conversations or Terminals, slides its rows closed instead of dropping them at once.
 - **A plan run's line in the sidebar fits again**: it reads `Plan review · 0/11` and no longer cuts off at the
   count; whether its lead has started is in the tooltip.
 - **Click a file's path to copy it**: in the Agent panel's File tab and in Code, the path at the top copies its full

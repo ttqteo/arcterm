@@ -10,7 +10,13 @@ import { QueuedJobTag } from "@/app/cockpit/jobqueuechip";
 import { jobQueueAtom } from "@/app/cockpit/jobqueuestore";
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { useSettle } from "@/app/element/motionhooks";
-import { cardVariants, composerReveal, computeEntrances, initialEntranceState } from "@/app/element/motiontokens";
+import {
+    cardVariants,
+    composerReveal,
+    computeEntrances,
+    foldReveal,
+    initialEntranceState,
+} from "@/app/element/motiontokens";
 import { globalStore } from "@/app/store/jotaiStore";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import * as WOS from "@/app/store/wos";
@@ -52,7 +58,7 @@ import {
     X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { memo, useLayoutEffect, useMemo, useRef } from "react";
+import { Fragment, memo, useLayoutEffect, useMemo, useRef } from "react";
 import { confirmCloseRun, confirmCloseSession } from "./agentactions";
 import { DONE_TITLE, doneSuggestion } from "./donesuggest";
 import { beginAgentDrag, endAgentDrag } from "./agentdragstore";
@@ -80,6 +86,7 @@ import {
     conversationCount,
     conversationTree,
     endedConversationsByProject,
+    folderBlocks,
     liveBranches,
     notableBranch,
     registeredConversations,
@@ -1640,6 +1647,20 @@ function useSectionOpen(section: SidebarSection): boolean {
     return !useAtomValue(collapsedSectionsAtom).includes(section);
 }
 
+// The rows under a section's or a folder's header, opening and closing with foldReveal. initial={false}, so the first
+// paint does not reveal them, nor does a section opening replay the folders inside it.
+function FoldBody({ open, children }: { open: boolean; children: React.ReactNode }) {
+    return (
+        <AnimatePresence initial={false}>
+            {open ? (
+                <motion.div key="body" variants={foldReveal} initial="initial" animate="animate" exit="exit">
+                    {children}
+                </motion.div>
+            ) : null}
+        </AnimatePresence>
+    );
+}
+
 // The Agent surface's split as one row at the top of Active, as a browser shows split tabs: a segment per cell, laid
 // out as the cells are (two side by side, three as two over one, four as 2x2), so the row is a map of the screen.
 // A click focuses that cell; a segment drags onto the grid like any agent row. The 1px gaps over the edge colour are
@@ -1883,40 +1904,50 @@ function TerminalsSection({ model }: { model: AgentsViewModel }) {
                 first
                 trailing={filter !== ALL_PROJECTS ? <div className="ml-auto">{newTerminal(filter)}</div> : null}
             />
-            {open && rows.length === 0 ? (
-                <div className="px-[10px] py-[6px] text-[12px] text-muted">
-                    {filter !== ALL_PROJECTS ? `No terminals in ${filter}` : "No terminals open"}
-                </div>
-            ) : null}
-            {open && rows.length > 0 ? (
-                <div className="flex flex-col">
-                    {rows.map((r) =>
-                        r.kind === "folder" ? (
-                            <FolderRow
-                                key={`f-${r.project}`}
-                                section="terminals"
-                                project={r.project}
-                                open={r.open}
-                                onToggle={() =>
-                                    globalStore.set(collapsedTerminalProjectsAtom, toggleFold(collapsedList, r.project))
-                                }
-                                action={newTerminal(r.project)}
-                                trailing={
-                                    r.open ? null : (
-                                        <span className="whitespace-nowrap text-[11px] tabular-nums text-ink-faint">
-                                            {r.count}
-                                        </span>
-                                    )
-                                }
-                            />
-                        ) : (
-                            <div key={r.terminal.id} className={rowIndent(filter !== ALL_PROJECTS)}>
-                                <TerminalRow model={model} terminal={r.terminal} />
-                            </div>
-                        )
-                    )}
-                </div>
-            ) : null}
+            <FoldBody open={open}>
+                {rows.length === 0 ? (
+                    <div className="px-[10px] py-[6px] text-[12px] text-muted">
+                        {filter !== ALL_PROJECTS ? `No terminals in ${filter}` : "No terminals open"}
+                    </div>
+                ) : (
+                    <div className="flex flex-col">
+                        {folderBlocks(rows).map(({ head, body }) => (
+                            <Fragment key={head?.kind === "folder" ? `f-${head.project}` : "flat"}>
+                                {head?.kind === "folder" ? (
+                                    <FolderRow
+                                        section="terminals"
+                                        project={head.project}
+                                        open={head.open}
+                                        onToggle={() =>
+                                            globalStore.set(
+                                                collapsedTerminalProjectsAtom,
+                                                toggleFold(collapsedList, head.project)
+                                            )
+                                        }
+                                        action={newTerminal(head.project)}
+                                        trailing={
+                                            head.open ? null : (
+                                                <span className="whitespace-nowrap text-[11px] tabular-nums text-ink-faint">
+                                                    {head.count}
+                                                </span>
+                                            )
+                                        }
+                                    />
+                                ) : null}
+                                <FoldBody open={body.length > 0}>
+                                    {body.map((r) =>
+                                        r.kind === "terminal" ? (
+                                            <div key={r.terminal.id} className={rowIndent(filter !== ALL_PROJECTS)}>
+                                                <TerminalRow model={model} terminal={r.terminal} />
+                                            </div>
+                                        ) : null
+                                    )}
+                                </FoldBody>
+                            </Fragment>
+                        ))}
+                    </div>
+                )}
+            </FoldBody>
         </div>
     );
 }
@@ -1972,85 +2003,97 @@ function ConversationsSection({ model }: { model: AgentsViewModel }) {
     return (
         <div data-agent-conversations>
             <SectionHeader section="conversations" label="Conversations" count={conversationCount(ended, filter)} />
-            {!open || archive == null ? null : rows.length === 0 ? (
-                <div className="px-[10px] py-[6px] text-[12px] text-muted">
-                    {filtered ? `No past conversations in ${filter}` : "No past conversations"}
-                </div>
-            ) : (
-                <div className="flex flex-col">
-                    {rows.map((r) => {
-                        switch (r.kind) {
-                            case "folder":
-                                return (
+            <FoldBody open={open}>
+                {archive == null ? null : rows.length === 0 ? (
+                    <div className="px-[10px] py-[6px] text-[12px] text-muted">
+                        {filtered ? `No past conversations in ${filter}` : "No past conversations"}
+                    </div>
+                ) : (
+                    <div className="flex flex-col">
+                        {folderBlocks(rows).map(({ head, body }) => (
+                            <Fragment key={head?.kind === "folder" ? `f-${head.project}` : "flat"}>
+                                {head?.kind === "folder" ? (
                                     <FolderRow
-                                        key={`f-${r.project}`}
                                         section="conversations"
-                                        project={r.project}
-                                        open={r.open}
+                                        project={head.project}
+                                        open={head.open}
                                         onToggle={() =>
                                             globalStore.set(
                                                 collapsedConversationProjectsAtom,
-                                                toggleFold(collapsedList, r.project)
+                                                toggleFold(collapsedList, head.project)
                                             )
                                         }
                                         trailing={
                                             <>
-                                                {r.attn > 0 && !r.open ? (
+                                                {head.attn > 0 && !head.open ? (
                                                     <span
                                                         role="img"
-                                                        aria-label={`${r.attn} waiting for you`}
+                                                        aria-label={`${head.attn} waiting for you`}
                                                         className="h-[6px] w-[6px] flex-none rounded-full bg-warning"
                                                     />
                                                 ) : null}
                                                 <span className="whitespace-nowrap text-[11px] tabular-nums text-ink-faint">
-                                                    {r.count}
+                                                    {head.count}
                                                 </span>
                                             </>
                                         }
                                     />
-                                );
-                            case "more":
-                                return (
-                                    <div key={`more-${r.project}`} className={rowIndent(filtered)}>
-                                        <ShowMoreConversations project={r.project} hidden={r.hidden} less={r.less} />
-                                    </div>
-                                );
-                            case "run":
-                                return (
-                                    <div key={r.key} className={rowIndent(filtered)}>
-                                        <RunConversationRow
-                                            model={model}
-                                            row={r}
-                                            view={runViews.get(r.key)}
-                                            age={sessionAgeLabel(r.lastactivets, now)}
-                                            selected={mode === "run" && sel === r.key}
-                                        />
-                                    </div>
-                                );
-                            case "session":
-                                return (
-                                    <div key={r.key} className={rowIndent(filtered)}>
-                                        <ConversationRow
-                                            model={model}
-                                            row={r}
-                                            age={sessionAgeLabel(r.lastactivets, now)}
-                                            started={
-                                                colliding.has(r.key) && r.session.startedts > 0
-                                                    ? startedLabel(r.session.startedts, now)
-                                                    : undefined
-                                            }
-                                            selected={mode === "session" && sel === r.key}
-                                            later={laterLabel(laterMarks, r, now)}
-                                        />
-                                    </div>
-                                );
-                        }
-                    })}
-                </div>
-            )}
-            {open && archive != null && !filtered && elsewhere > 0 ? (
-                <HistoryElsewhereRow model={model} count={elsewhere} />
-            ) : null}
+                                ) : null}
+                                <FoldBody open={body.length > 0}>
+                                    {body.map((r) => {
+                                        switch (r.kind) {
+                                            case "more":
+                                                return (
+                                                    <div key={`more-${r.project}`} className={rowIndent(filtered)}>
+                                                        <ShowMoreConversations
+                                                            project={r.project}
+                                                            hidden={r.hidden}
+                                                            less={r.less}
+                                                        />
+                                                    </div>
+                                                );
+                                            case "run":
+                                                return (
+                                                    <div key={r.key} className={rowIndent(filtered)}>
+                                                        <RunConversationRow
+                                                            model={model}
+                                                            row={r}
+                                                            view={runViews.get(r.key)}
+                                                            age={sessionAgeLabel(r.lastactivets, now)}
+                                                            selected={mode === "run" && sel === r.key}
+                                                        />
+                                                    </div>
+                                                );
+                                            case "session":
+                                                return (
+                                                    <div key={r.key} className={rowIndent(filtered)}>
+                                                        <ConversationRow
+                                                            model={model}
+                                                            row={r}
+                                                            age={sessionAgeLabel(r.lastactivets, now)}
+                                                            started={
+                                                                colliding.has(r.key) && r.session.startedts > 0
+                                                                    ? startedLabel(r.session.startedts, now)
+                                                                    : undefined
+                                                            }
+                                                            selected={mode === "session" && sel === r.key}
+                                                            later={laterLabel(laterMarks, r, now)}
+                                                        />
+                                                    </div>
+                                                );
+                                            default:
+                                                return null;
+                                        }
+                                    })}
+                                </FoldBody>
+                            </Fragment>
+                        ))}
+                    </div>
+                )}
+                {archive != null && !filtered && elsewhere > 0 ? (
+                    <HistoryElsewhereRow model={model} count={elsewhere} />
+                ) : null}
+            </FoldBody>
         </div>
     );
 }
@@ -2183,9 +2226,10 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                 />
                 {/* the rows are this wrapper's direct children (AnimatePresence renders no element); relative so popLayout
                     pops an exiting row out of flow in this wrapper's own coordinates. A folded section unmounts it, and
-                    its AnimatePresence starts over with initial={false}, so unfolding never replays the entrances */}
-                {activeOpen && split.length > 0 ? <SplitRow model={model} agents={split} digits={digits} /> : null}
-                {activeOpen ? (
+                    its AnimatePresence starts over with initial={false}, so unfolding never replays the entrances. A
+                    project's folder needs no FoldBody here: its rows leave and arrive one by one through this list */}
+                <FoldBody open={activeOpen}>
+                    {split.length > 0 ? <SplitRow model={model} agents={split} digits={digits} /> : null}
                     <div data-agent-active-rows className="relative">
                         <AnimatePresence mode="popLayout" initial={false}>
                             {visibleRows.map((r) => {
@@ -2322,15 +2366,15 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                             })}
                         </AnimatePresence>
                     </div>
-                ) : null}
-                {activeOpen && visibleRows.length === 0 && split.length === 0 ? (
-                    <div className="px-[10px] py-[6px] text-[12px] text-muted">
-                        {filtered ? `No agents running in ${filter}` : "No agents running"}
-                    </div>
-                ) : null}
-                {activeOpen && active.elsewhere.agents > 0 ? (
-                    <ElsewhereRow model={model} agents={active.elsewhere.agents} asking={active.elsewhere.asking} />
-                ) : null}
+                    {visibleRows.length === 0 && split.length === 0 ? (
+                        <div className="px-[10px] py-[6px] text-[12px] text-muted">
+                            {filtered ? `No agents running in ${filter}` : "No agents running"}
+                        </div>
+                    ) : null}
+                    {active.elsewhere.agents > 0 ? (
+                        <ElsewhereRow model={model} agents={active.elsewhere.agents} asking={active.elsewhere.asking} />
+                    ) : null}
+                </FoldBody>
                 <ConversationsSection model={model} />
             </div>
             <TerminalsSection model={model} />

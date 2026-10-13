@@ -430,6 +430,29 @@ export function terminalTree(terminals: AgentVM[], filter: string, collapsed: Re
     return out;
 }
 
+// a folder row and the rows under it, which fold as one block; a flat list (filtered to a project) is one block with no
+// head
+export interface FolderBlock<R> {
+    head: R | null;
+    body: R[];
+}
+
+/** Pure: a section's rows (terminalTree's, conversationTree's) cut at each folder row, so each folder's rows render
+ *  in one block that can open and close under it. A collapsed folder's block has an empty body. */
+export function folderBlocks<R extends { kind: string }>(rows: readonly R[]): FolderBlock<R>[] {
+    const out: FolderBlock<R>[] = [];
+    for (const r of rows) {
+        if (r.kind === "folder") {
+            out.push({ head: r, body: [] });
+        } else if (out.length === 0) {
+            out.push({ head: null, body: [r] });
+        } else {
+            out[out.length - 1].body.push(r);
+        }
+    }
+    return out;
+}
+
 /** Pure: the projects with at least one ended conversation, the one with the newest conversation first (equal times in
  *  name order): the order of the Conversations section's folders. */
 export function conversationProjects(ended: ReadonlyMap<string, ConversationEntry[]>): string[] {

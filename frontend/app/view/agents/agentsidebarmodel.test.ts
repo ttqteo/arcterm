@@ -14,6 +14,7 @@ import {
     conversationProjects,
     conversationTree,
     endedConversationsByProject,
+    folderBlocks,
     liveBranches,
     notableBranch,
     registeredConversations,
@@ -841,5 +842,30 @@ describe("agentDigits", () => {
         expect(digits.has("a9")).toBe(false);
         expect(digits.size).toBe(9);
         expect(agentDigits([]).size).toBe(0);
+    });
+});
+
+describe("folderBlocks", () => {
+    type Row = { kind: "folder" | "item"; id: string };
+    const f = (id: string): Row => ({ kind: "folder", id });
+    const i = (id: string): Row => ({ kind: "item", id });
+
+    it("gives each folder the rows under it", () => {
+        expect(folderBlocks([f("a"), i("1"), i("2"), f("b"), i("3")])).toEqual([
+            { head: f("a"), body: [i("1"), i("2")] },
+            { head: f("b"), body: [i("3")] },
+        ]);
+    });
+
+    it("leaves a collapsed folder an empty body", () => {
+        expect(folderBlocks([f("a"), f("b"), i("1")])).toEqual([
+            { head: f("a"), body: [] },
+            { head: f("b"), body: [i("1")] },
+        ]);
+    });
+
+    it("makes a flat list one block with no head", () => {
+        expect(folderBlocks([i("1"), i("2")])).toEqual([{ head: null, body: [i("1"), i("2")] }]);
+        expect(folderBlocks([])).toEqual([]);
     });
 });
