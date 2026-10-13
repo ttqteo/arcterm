@@ -304,9 +304,6 @@ export async function setFloatPinned(pinned: boolean): Promise<void> {
 
 // Sprout's box while folded, in the fold's space (floatwindow.ts toSpace: points on macOS, physical pixels on Windows)
 let sprout: WinRect | null = null;
-// the fold leaving made (window:autosprout), which a return to the app grows back; a button's fold and every way out of
-// the fold clear it
-let autoFolded = false;
 // Every window call of the fold goes through this, one at a time: a restore and the chat's resize, or a fold and a leave,
 // interleaving left the window at the wrong size and the terminal refit to it.
 const miniOps = serialQueue();
@@ -490,7 +487,6 @@ export function foldToSprout(): Promise<void> {
         }
         const origin = now.size;
         const win = getCurrentWindow();
-        autoFolded = false;
         try {
             const fullscreen = await win.isFullscreen();
             await leaveNativeFullscreen(win);
@@ -586,7 +582,6 @@ interface Unfold {
 async function leaveMini(win: Window): Promise<Unfold> {
     const was = sprout;
     sprout = null;
-    autoFolded = false;
     stopClickThrough();
     // Sprout must not show in a corner of the grown window
     globalStore.set(miniResizingAtom, true);
@@ -793,17 +788,22 @@ async function recoverFold(win: Window, restore: MiniRestore): Promise<void> {
 
 // window:autosprout, like a picture-in-picture: Full folds into Sprout once you have been for AUTO_FOLD_DELAY_MS in
 // another app whose window hides arcterm (foreground.rs: on Windows a maximized or full-screen one; a dialog, a popup or
-// an overlay such as a screenshot, the lock screen or Alt+Tab's switcher never does), and a fold made so grows back when
-// you return to arcterm, whichever way. A focus, or on Windows the host seeing the main window take the foreground,
-// counts as a return only once another app has been seen in front of the folded window, so a fold that takes the focus
-// itself never undoes itself, and only when it came without a press on Sprout (windowsize.ts autoRestoreOnReturn). A
-// button's fold stays.
+// an overlay such as a screenshot, the lock screen or Alt+Tab's switcher never does). Any fold, that one or a button's,
+// grows back when you return to arcterm, whichever way (Alt+Tab, ⌘Tab, the taskbar). A focus, or on Windows the host
+// seeing the main window take the foreground, counts as a return only once another app has been seen in front of the
+// folded window, so a fold that takes the focus itself never undoes itself, and only when it came without a press on
+// Sprout (windowsize.ts autoRestoreOnReturn).
 function setupAutoSprout(model: AgentsViewModel): () => void {
     const win = getCurrentWindow();
     const setting = getSettingsKeyAtom("window:autosprout");
     let leaveTimer: ReturnType<typeof setTimeout> | undefined;
     let returnTimer: ReturnType<typeof setTimeout> | undefined;
     let armed = false;
+    // whether the chat was open when the folded window last lost the focus, so a return that opens it (a toast's
+    // click) is told from one that finds it open
+    let chatAtLeave = false;
+    // bumped on every focus change, so an arming that resolves after the focus came back is dropped
+    let focusSeq = 0;
     let lastPress: number | null = null;
     const onPress = () => {
         lastPress = Date.now();
@@ -823,7 +823,7 @@ function setupAutoSprout(model: AgentsViewModel): () => void {
         foldLog("leaving for a window that hides arcterm");
         await foldToSprout();
         if (globalStore.get(floatMiniAtom)) {
-            autoFolded = true;
+            chatAtLeave = false;
             // the host, not the window's focus: the fold's own window changes report the window focused while the
             // other app stays in front
             armed = (await invoke<Foreground>("app_foreground").catch((): Foreground => "beside")) !== "ours";
@@ -840,25 +840,35 @@ function setupAutoSprout(model: AgentsViewModel): () => void {
     };
     const comeBack = (at: number) => {
         const pressGapMs = lastPress == null ? null : lastPress - at;
-        const chatOpen = globalStore.get(petPeekOpenAtom);
-        if (autoRestoreOnReturn({ autoFolded, size: currentSize().size, pressGapMs, chatOpen })) {
+        const chatOpened = globalStore.get(petPeekOpenAtom) && !chatAtLeave;
+        if (autoRestoreOnReturn({ size: currentSize().size, pressGapMs, chatOpened })) {
             foldLog("back in arcterm: growing back");
             void restoreFromSprout(model);
         } else if (currentSize().size === "sprout") {
-            foldLog(
-                `back in arcterm: staying folded (auto ${autoFolded}, press gap ${pressGapMs}, chat open ${chatOpen})`
-            );
+            foldLog(`back in arcterm: staying folded (press gap ${pressGapMs}, chat opened ${chatOpened})`);
         }
     };
     const unlistenFocus = win.onFocusChanged(({ payload: focused }) => {
         clearTimeout(leaveTimer);
         clearTimeout(returnTimer);
+        const seq = ++focusSeq;
         if (currentSize().size === "sprout") {
             // with the host's arrival line (macwindow.rs), says which way a return that left it folded went
-            foldLog(`folded window ${focused ? "focused" : "lost the focus"} (armed ${armed}, auto ${autoFolded})`);
+            foldLog(`folded window ${focused ? "focused" : "lost the focus"} (armed ${armed})`);
         }
         if (!focused) {
-            armed = autoFolded;
+            armed = false;
+            if (currentSize().size === "sprout") {
+                chatAtLeave = globalStore.get(petPeekOpenAtom);
+                // the host, not the focus: the fold's own window changes blur it while arcterm stays in front
+                void invoke<Foreground>("app_foreground")
+                    .catch((): Foreground => "beside")
+                    .then((foreground) => {
+                        if (seq === focusSeq && currentSize().size === "sprout") {
+                            armed = foreground !== "ours";
+                        }
+                    });
+            }
             if (autoSproutOn(globalStore.get(setting)) && currentSize().size === "full") {
                 leaveTimer = setTimeout(
                     () => void leave().catch((e) => console.error("folding on leaving failed", e)),
@@ -873,7 +883,7 @@ function setupAutoSprout(model: AgentsViewModel): () => void {
     // no focus event when the fold left it activated inside its thread.
     const unlistenForeground = listen("main-foreground", () => {
         if (currentSize().size === "sprout") {
-            foldLog(`main window took the foreground (armed ${armed}, auto ${autoFolded})`);
+            foldLog(`main window took the foreground (armed ${armed})`);
             arrive();
         }
     });

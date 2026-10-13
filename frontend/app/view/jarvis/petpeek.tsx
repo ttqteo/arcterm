@@ -252,6 +252,8 @@ function ActLinks({ model, acts, onLeave }: { model: AgentsViewModel; acts: PetA
                     type="button"
                     data-pet-act={act.id}
                     data-peek={act.verb === "open" ? "" : undefined}
+                    // an Open carries its source's title, which can be a whole sentence: cut it at the panel's edge
+                    title={act.label}
                     onClick={(event) => {
                         if (actNavigates(act, event)) {
                             onLeave();
@@ -259,7 +261,7 @@ function ActLinks({ model, acts, onLeave }: { model: AgentsViewModel; acts: PetA
                         fireAndForget(() => runAct(model, act, event));
                     }}
                     className={cn(
-                        "whitespace-nowrap text-[11px] font-semibold text-accent-soft hover:text-accenthover hover:underline",
+                        "min-w-0 max-w-full truncate text-left text-[11px] font-semibold text-accent-soft hover:text-accenthover hover:underline",
                         FOCUS_RING
                     )}
                 >

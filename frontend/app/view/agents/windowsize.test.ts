@@ -135,15 +135,14 @@ describe("auto Sprout", () => {
     it("does not fold under arcterm's own dialog", () =>
         expect(autoFoldOnLeave({ ...left, foreground: "ours" })).toBe(false));
 
-    const back = { autoFolded: true, size: "sprout" as const, pressGapMs: null, chatOpen: false };
-    it("grows back when you return to a fold leaving made", () => {
+    const back = { size: "sprout" as const, pressGapMs: null, chatOpened: false };
+    it("grows back when you return to any fold, a button's too", () => {
         expect(autoRestoreOnReturn(back)).toBe(true);
         expect(autoRestoreOnReturn({ ...back, pressGapMs: -5000 })).toBe(true);
     });
-    it("stays folded for a button's fold, outside the fold, or with the chat open", () => {
-        expect(autoRestoreOnReturn({ ...back, autoFolded: false })).toBe(false);
+    it("stays folded outside the fold, or when the chat opened with the return", () => {
         expect(autoRestoreOnReturn({ ...back, size: "full" })).toBe(false);
-        expect(autoRestoreOnReturn({ ...back, chatOpen: true })).toBe(false);
+        expect(autoRestoreOnReturn({ ...back, chatOpened: true })).toBe(false);
     });
     it("stays folded when the focus came with a press on Sprout, before or after it", () => {
         expect(autoRestoreOnReturn({ ...back, pressGapMs: -40 })).toBe(false);

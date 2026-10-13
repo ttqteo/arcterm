@@ -117,18 +117,17 @@ export const AUTO_RESTORE_SETTLE_MS = 250;
 export const AUTO_RESTORE_PRESS_MS = 300;
 
 export interface ReturnCheck {
-    // the fold was the one leaving made, not a button's
-    autoFolded: boolean;
     size: WindowSize;
     // the last press on the window minus the focus's time; null with no press yet
     pressGapMs: number | null;
-    chatOpen: boolean;
+    // the chat opened with the return (a toast's click), rather than being open when you left
+    chatOpened: boolean;
 }
 
-/** Whether a focus coming back to a folded window grows it back, as a picture-in-picture returns to its tab: only a fold
- *  leaving made, and not a focus that came with a press on Sprout or with its chat open. */
+/** Whether a focus coming back to a folded window grows it back, as a picture-in-picture returns to its tab: any fold,
+ *  a button's or the one leaving made, but not a focus that came with a press on Sprout or with its chat opening. */
 export function autoRestoreOnReturn(c: ReturnCheck): boolean {
-    if (!c.autoFolded || c.size !== "sprout" || c.chatOpen) {
+    if (c.size !== "sprout" || c.chatOpened) {
         return false;
     }
     return c.pressGapMs == null || Math.abs(c.pressGapMs) > AUTO_RESTORE_PRESS_MS;

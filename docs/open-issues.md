@@ -27,6 +27,16 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (Alt+Tab grows Sprout back; Jarvis card link)**
+
+- [ ] (arcterm) **Alt+Tab grows any fold back.** Fold with the Sprout button (not Fold when you leave), click into
+  another app, Alt+Tab back to arcterm: the window grows back to the size it folded from. A click on Sprout from the
+  other app leaves it folded; a toast click that opens the chat leaves it folded too. `waveapp.log` logs
+  "back in arcterm: growing back".
+- [ ] (arcterm) **A long Open link ends in "…" in the folded Jarvis card.** With a run notice whose title is long (an
+  installer build), open the card from Sprout: the "Open <title>" link stays inside the card, cut with "…", and its
+  hover shows the whole title.
+
 **2026-10-13 (New agent: Claude account)**
 
 - [ ] (arcterm) **The New agent footer names the Claude account.** With a token account added in Settings → Agents →

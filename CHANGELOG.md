@@ -8,6 +8,18 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
+## Unreleased
+
+### Changed
+
+- **Alt+Tab back to arcterm opens the window again from Sprout**, however it was folded (the Sprout button, minimize,
+  or Fold when you leave), as ⌘Tab does on macOS; a click on Sprout itself still leaves it folded.
+
+### Fixed
+
+- **A long "Open …" link in the Jarvis card no longer runs off its edge**: it ends in "…", and hovering it shows the
+  whole title.
+
 ## 0.15.11 — 2026-10-13
 
 ### Added
