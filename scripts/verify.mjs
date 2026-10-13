@@ -227,22 +227,17 @@ function testSource(dir) {
 
 // goTest runs the packages like go test, except that a package with many tests is built once and its tests are
 // dealt across SHARDS processes; go test runs one package's tests in one process however many cores are idle.
-// The sharded packages run even when a plain one failed, so the fix round sees every failure.
+// The plain and the sharded packages run at the same time: each took ~75 s alone, and together they take ~105 s
+// rather than ~150 s. Each half runs to its end, so the fix round sees every failure.
 async function goTest(args) {
     const env = goTestEnv(process.env, process.platform, process.arch);
     const { sharded, plain } = partitionPackages(goPackages(args), (dir) => countTopLevelTests(testSource(dir)));
     const flaky = [];
-    let ok = plain.length === 0 || (await goTestPlain(plain.map((p) => p.importPath), env, flaky));
-    if (sharded.length > 0) {
-        const tmp = mkdtempSync(join(tmpdir(), "arc-verify-"));
-        try {
-            console.log(`verify: testing ${sharded.map((p) => p.importPath).join(" ")} at once, at most ${MAX_TEST_PROCESSES} test processes`);
-            const write = (s) => process.stdout.write(s);
-            ok = (await testSharded(sharded, MAX_TEST_PROCESSES, shardProcs(tmp, env), write, flaky)) && ok;
-        } finally {
-            rmSync(tmp, { recursive: true, force: true });
-        }
-    }
+    const [plainOk, shardedOk] = await Promise.all([
+        plain.length === 0 || goTestPlain(plain.map((p) => p.importPath), env, flaky),
+        sharded.length === 0 || goTestSharded(sharded, env, flaky),
+    ]);
+    const ok = plainOk && shardedOk;
     if (flaky.length > 0) {
         console.log(`verify: flaky, failed and then passed when rerun alone: ${flaky.join(", ")}`);
     }
@@ -261,8 +256,6 @@ export function reportFlaky(flaky, env) {
     }
     appendFileSync(file, flaky.map((name) => `${name}\n`).join(""));
 }
-
-const OUTPUT_MAX = 256 * 1024 * 1024;
 
 // rerunAlone reruns a package's failed tests once, in one process. Passing alone, they failed on what another test
 // left behind or on load, so they are reported as flaky rather than failing the merge and costing a fix round;
@@ -345,30 +338,32 @@ export function rerunVitestAlone(failed, flaky, rerun, write) {
     return true;
 }
 
+// written in one piece when go test ends, so its lines never interleave with a sharded package's
 async function goTestPlain(pkgs, env, flaky) {
     console.log(`verify: go test ${pkgs.join(" ")}`);
-    const r = spawnSync("go", ["test", ...pkgs], { env, encoding: "utf8", maxBuffer: OUTPUT_MAX });
-    if (r.error) {
-        console.error(`verify: could not run go: ${r.error.message}`);
-        return false;
-    }
-    process.stdout.write(r.stdout);
-    process.stderr.write(r.stderr);
-    if (r.status === 0) {
+    const r = await capture("go", ["test", ...pkgs], { env });
+    process.stdout.write(r.output);
+    if (r.ok) {
         return true;
     }
     const failures = packageResults(r.stdout).filter((p) => !p.ok);
-    const rerun = (pkg) => (pattern) => {
-        const again = spawnSync("go", ["test", "-count=1", "-run", pattern, pkg], { env, encoding: "utf8", maxBuffer: OUTPUT_MAX });
-        const output = again.error ? `verify: could not run go: ${again.error.message}\n` : again.stdout + again.stderr;
-        return { ok: !again.error && again.status === 0, output };
-    };
+    const rerun = (pkg) => (pattern) => capture("go", ["test", "-count=1", "-run", pattern, pkg], { env });
     for (const p of failures) {
         if (!(await rerunAlone(p.pkg, rerunnableTests(p.output), flaky, rerun(p.pkg), (s) => process.stdout.write(s)))) {
             return false;
         }
     }
     return failures.length > 0;
+}
+
+async function goTestSharded(pkgs, env, flaky) {
+    const tmp = mkdtempSync(join(tmpdir(), "arc-verify-"));
+    try {
+        console.log(`verify: testing ${pkgs.map((p) => p.importPath).join(" ")} at once, at most ${MAX_TEST_PROCESSES} test processes`);
+        return await testSharded(pkgs, MAX_TEST_PROCESSES, shardProcs(tmp, env), (s) => process.stdout.write(s), flaky);
+    } finally {
+        rmSync(tmp, { recursive: true, force: true });
+    }
 }
 
 // limiter runs at most n of the tasks handed to it at once, and the rest in the order they arrived.
