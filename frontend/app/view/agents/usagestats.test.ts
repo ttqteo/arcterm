@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { aggregateBuckets, foldModels, modelGridClass, type ModelUsage } from "./usagestats";
+import {
+    aggregateBuckets,
+    bucketSpend,
+    bucketTokens,
+    foldModels,
+    modelGridClass,
+    pctStr,
+    type ModelUsage,
+} from "./usagestats";
 
 describe("modelGridClass", () => {
     it("fills the full width when there is a single provider (or none)", () => {
@@ -8,6 +16,28 @@ describe("modelGridClass", () => {
     });
     it("splits into two columns on lg for multiple providers", () => {
         expect(modelGridClass(2)).toBe("grid grid-cols-1 gap-[14px] lg:grid-cols-2");
+    });
+});
+
+describe("bucket helpers", () => {
+    it("counts every token class and prices a bucket the way the aggregate does", () => {
+        const b = bkt({ input: 1_000_000, output: 1_000_000, reasoning: 10, cacheread: 20, cachecreate: 30 });
+        expect(bucketTokens(b)).toBe(2_000_060);
+        expect(bucketSpend(b)).toBeCloseTo(
+            aggregateBuckets([b], Date.parse("2026-06-26T12:00:00.000Z")).totals.spendWindowUsd,
+            9
+        );
+        expect(bucketSpend(bkt({ model: "no-such-model", input: 500 }))).toBe(0);
+    });
+
+    it("formats a share as the cards and legends print it", () => {
+        expect([pctStr(0), pctStr(0.04), pctStr(1), pctStr(4.26), pctStr(41.6)]).toEqual([
+            "0%",
+            "<0.1%",
+            "1%",
+            "4.3%",
+            "42%",
+        ]);
     });
 });
 

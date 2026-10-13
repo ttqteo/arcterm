@@ -78,6 +78,21 @@ describe("statusPickerRows", () => {
         const rows = statusPickerRows("mothballed");
         expect(rows.every((r) => !r.current)).toBe(true);
     });
+
+    it("labels each row in sentence case and keeps the stored status lowercase", () => {
+        const rows = statusPickerRows("active");
+        expect(rows.map((r) => r.label)).toEqual(["Active", "Paused", "Completed", "Archived"]);
+        expect(rows.map((r) => r.status)).toEqual(["active", "paused", "completed", "archived"]);
+    });
+
+    // the archived board: reactivating is the only move offered
+    it("offers only Active from archived, beside the current Archived", () => {
+        const rows = statusPickerRows("archived");
+        expect(rows.map((r) => [r.label, r.current])).toEqual([
+            ["Active", false],
+            ["Archived", true],
+        ]);
+    });
 });
 
 describe("buildRecordPeek", () => {
@@ -139,6 +154,24 @@ describe("buildRecordPeek", () => {
         expect(buildRecordPeek(input({ detail: detail({ objective: "", notes: "" }) })).body).toBe(
             "This record states no objective yet."
         );
+    });
+
+    it("flags a title that fell back to the record id", () => {
+        expect(buildRecordPeek(input({ detail: detail({ objective: "" }) })).titleIsId).toBe(true);
+        expect(buildRecordPeek(input({ detail: detail({ objective: "  " }) })).titleIsId).toBe(true);
+        expect(buildRecordPeek(input()).titleIsId).toBe(false);
+    });
+
+    // only the stated absence reads muted; notes and an objective are content
+    it("flags the body only when it is the stated absence", () => {
+        expect(buildRecordPeek(input({ detail: detail({ objective: "", notes: "" }) })).bodyIsAbsence).toBe(true);
+        expect(buildRecordPeek(input({ detail: detail({ objective: "", notes: "scratch" }) })).bodyIsAbsence).toBe(
+            false
+        );
+        expect(
+            buildRecordPeek(input({ detail: detail({ objective: "Ship it.\n\nThen tidy up the rest." }) }))
+                .bodyIsAbsence
+        ).toBe(false);
     });
 
     // the rows are runs; the meta line counts workers across channels. They are different numbers on

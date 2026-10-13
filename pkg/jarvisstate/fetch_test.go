@@ -64,8 +64,8 @@ func TestFetchWorkStateWindowsShippedTimelineAndDelta(t *testing.T) {
 	ctx := context.Background()
 	seedStore(t, ctx)
 	seams := emptyLegs()
-	seams.getChannels = wstore.GetChannels
-	seams.getChannelRuns = wstore.GetChannelRuns
+	seams.getChannels = defaultSeams.getChannels
+	seams.getChannelRuns = defaultSeams.getChannelRuns
 	restore := SetFetchSeamsForTest(seams)
 	defer restore()
 	st, err := FetchWorkState(ctx, "", 600)

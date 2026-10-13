@@ -10,6 +10,10 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/google/uuid"
+	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
 func TestMergeSquash(t *testing.T) {
@@ -58,7 +62,7 @@ func TestMergeSquashKeepsTheWorkersCommitMessages(t *testing.T) {
 }
 
 // one worker's subject names only its own task, so a lane of several lands under their titles, with the
-// workers' messages as the body and a trailer per task; a retry still finds the commit by its run trailer
+// workers' messages as the body and a task and model trailer per task; a retry still finds the commit by its run trailer
 func TestMergeSquashOfASeveralTaskLaneNamesEveryTask(t *testing.T) {
 	dir := newGitRepo(t)
 	base := gitCmd(t, dir, "rev-parse", "HEAD")
@@ -68,12 +72,12 @@ func TestMergeSquashOfASeveralTaskLaneNamesEveryTask(t *testing.T) {
 		gitCmd(t, wt, "add", ".")
 		gitCmd(t, wt, "commit", "-m", msg)
 	}
-	lane := MergeLane{Title: "schema; ui", TaskIDs: []string{"t-1", "t-4"}}
+	lane := MergeLane{Title: "schema; ui", TaskIDs: []string{"t-1", "t-4"}, Routes: []string{"t-1 claude claude-opus-5-5", "t-4 pi opencode-go/deepseek-v4-flash"}}
 	landed, err := MergeRunWorktree(context.Background(), dir, "run-1", lane, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "schema; ui\n\nfeat(schema): add the table\n\nfeat(ui): show the table\n\nArc-Run: run-1\nArc-Task: t-1\nArc-Task: t-4"
+	want := "schema; ui\n\nfeat(schema): add the table\n\nfeat(ui): show the table\n\nArc-Run: run-1\nArc-Task: t-1\nArc-Task: t-4\nArc-Model: t-1 claude claude-opus-5-5\nArc-Model: t-4 pi opencode-go/deepseek-v4-flash"
 	if got := gitCmd(t, dir, "log", "-1", "--format=%B"); got != want {
 		t.Fatalf("squash message = %q, want %q", got, want)
 	}
@@ -112,8 +116,29 @@ func TestMergeSquashOfASeveralTaskLaneCutsItsSubjectLine(t *testing.T) {
 func TestMergeLaneLeavesOutSkippedTasks(t *testing.T) {
 	g := laneGroup(t, true, map[string]string{"t-1": TaskState_Done, "t-2": TaskState_Skipped, "t-3": TaskState_Done})
 	want := MergeLane{Title: "schema; ui", TaskIDs: []string{"t-1", "t-3"}}
-	if got := mergeLane(g, []string{"t-1", "t-2", "t-3"}); !reflect.DeepEqual(got, want) {
+	if got := mergeLane(context.Background(), g, []string{"t-1", "t-2", "t-3"}); !reflect.DeepEqual(got, want) {
 		t.Fatalf("lane = %+v, want %+v", got, want)
+	}
+}
+
+// the model trailer names the run behind each task, its pinned model when no transcript reports one, and leaves
+// out a task whose run is gone rather than failing the merge
+func TestMergeLaneNamesEachTasksWorkerRoute(t *testing.T) {
+	ctx := context.Background()
+	ch, err := wstore.CreateChannel(ctx, "mergelane-"+uuid.NewString(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := laneGroup(t, true, map[string]string{"t-1": TaskState_Done, "t-2": TaskState_Done, "t-3": TaskState_Done})
+	g.ChannelId = ch.OID
+	for _, r := range []waveobj.Run{{ID: "run-t-1", Runtime: "pi", Model: "opencode-go/deepseek-v4-flash"}, {ID: "run-t-2"}} {
+		if err := wstore.AppendRun(ctx, ch.OID, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := mergeLane(ctx, g, []string{"t-1", "t-2", "t-3"}).Routes
+	if want := []string{"t-1 pi opencode-go/deepseek-v4-flash", "t-2 claude"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("routes = %q, want %q", got, want)
 	}
 }
 

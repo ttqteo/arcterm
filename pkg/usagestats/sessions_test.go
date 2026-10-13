@@ -240,7 +240,8 @@ func TestScanSessionUsageMatchesScanUsage(t *testing.T) {
 	)
 	none := filepath.Join(t.TempDir(), "none")
 	var want SessionModelTokens
-	for _, b := range scanRoots(root, none, none, none, none, 7) {
+	buckets, _ := scanRoots(root, none, none, none, none, 7)
+	for _, b := range buckets {
 		want.Input += b.Input
 		want.Output += b.Output
 		want.CacheRead += b.CacheRead

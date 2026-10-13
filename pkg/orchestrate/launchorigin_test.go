@@ -18,15 +18,23 @@ const originRun = "c1423d16-9d19-4f67-8726-7aed1a35e400"
 // worktree it ran in, read back from worktreeDir's own keys.
 func TestLaunchOriginReadsTheWorktreeBack(t *testing.T) {
 	project := filepath.Join("D:", "projects", "arcterm")
+	// claimed as the engine creates them, so a tree under the short root has the marker that names its run
+	tree := func(key string) string {
+		dir, err := claimWorktreeDir(project, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
 	cases := []struct {
 		name string
 		cwd  string
 		want LaunchOrigin
 	}{
-		{"a task's tree", worktreeDir(project, TaskWorktreeKey(originRun, "t-8")), LaunchOrigin{RunID: originRun, TaskID: "t-8"}},
-		{"the final tree", worktreeDir(project, FinalWorktreeKey(originRun)), LaunchOrigin{RunID: originRun, Role: jarvis.UsageRole_Verifier}},
-		{"the run's own tree", worktreeDir(project, originRun), LaunchOrigin{RunID: originRun}},
-		{"a folder inside a task's tree", filepath.Join(worktreeDir(project, TaskWorktreeKey(originRun, "t-2")), "frontend"), LaunchOrigin{RunID: originRun, TaskID: "t-2"}},
+		{"a task's tree", tree(TaskWorktreeKey(originRun, "t-8")), LaunchOrigin{RunID: originRun, TaskID: "t-8"}},
+		{"the final tree", tree(FinalWorktreeKey(originRun)), LaunchOrigin{RunID: originRun, Role: jarvis.UsageRole_Verifier}},
+		{"the run's own tree", tree(originRun), LaunchOrigin{RunID: originRun}},
+		{"a folder inside a task's tree", filepath.Join(tree(TaskWorktreeKey(originRun, "t-2")), "frontend"), LaunchOrigin{RunID: originRun, TaskID: "t-2"}},
 		{"forward slashes", "D:/projects/arcterm/.waveterm/worktrees/" + originRun + "-t-1", LaunchOrigin{RunID: originRun, TaskID: "t-1"}},
 	}
 	for _, c := range cases {

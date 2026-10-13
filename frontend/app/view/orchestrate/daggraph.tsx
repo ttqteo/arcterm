@@ -18,6 +18,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { atom, useAtom, useAtomValue } from "jotai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useFinalStageView } from "../agents/finalstageviews";
 import {
     edgeStyle,
     factOf,
@@ -31,6 +32,8 @@ import {
 } from "./dagcanvas";
 import { DagDetailRail, openTaskFromGraph } from "./dagdetailrail";
 import { taskBriefs, useDagDigest } from "./dagdigest";
+import { FINAL_NODE_ID, finalEdgeStyle, withFinalNode } from "./dagfinal";
+import { DagFinalRail, openFinalFromGraph } from "./dagfinalrail";
 import { DagGraphHeader } from "./daggraph-header";
 import { CARD_H, CARD_W, computeLayout, edgeKey, laneBand, lanesOf, type Point } from "./daglayout";
 import {
@@ -41,7 +44,15 @@ import {
     type Offsets,
 } from "./daglayoutstore";
 import { dagModalAgentsContextAtom } from "./dagmodalstate";
-import { dagEdgeTypes, dagNodeTypes, type DagCardData, type LaneBandData, type RoutedEdgeData } from "./dagnodes";
+import {
+    dagEdgeTypes,
+    dagNodeTypes,
+    FinalStageViewContext,
+    type DagCardData,
+    type DagFinalData,
+    type LaneBandData,
+    type RoutedEdgeData,
+} from "./dagnodes";
 import { buildViewData, hoveredTaskAtom, mergeReadyIds, selectedTaskIdAtom, useDagGroup } from "./dagstore";
 import { enterOpensTask } from "./taskcorrelate";
 import { stageEntries, type StageEntry } from "./taskroute";
@@ -126,15 +137,20 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
     const oid = group?.oid ?? "";
     // the layout depends only on ids and deps, so a state change does not re-run it
     const shapeKey = (tasks ?? []).map((t) => t.id + ":" + (t.deps ?? []).join(",")).join("|");
-    const layout = useMemo(() => computeLayout(tasks ?? []), [shapeKey]);
+    // the final stage is the layout's last node from the start of the run
+    const layoutTasks = useMemo(() => withFinalNode(tasks ?? []), [shapeKey]);
+    const layout = useMemo(() => computeLayout(layoutTasks), [layoutTasks]);
+    // the bands mirror the engine's lanes, which hold tasks alone
     const lanes = useMemo(() => lanesOf(tasks ?? []), [shapeKey]);
+    const finalView = useFinalStageView(group, owner.id, owner.channeloid ?? "", tick || Date.now());
+    const finalRunning = finalView.tone === "run";
     const store = useMemo(() => sanitizeStore(rawStore), [rawStore]);
     const storedOffsets = store[oid]?.offsets;
     const positions = useMemo(() => applyOffsets(layout.pos, storedOffsets), [layout, storedOffsets]);
-    // a selection naming a task this group lacks dims nothing
+    // a selection naming a task this group lacks dims nothing. The final node's relatives are every task.
     const rel = useMemo(
-        () => (tasks && selectedId && tasks.some((t) => t.id === selectedId) ? relatives(tasks, selectedId) : null),
-        [tasks, selectedId]
+        () => (selectedId && layoutTasks.some((t) => t.id === selectedId) ? relatives(layoutTasks, selectedId) : null),
+        [layoutTasks, selectedId]
     );
 
     const onHover = useCallback((id: string | null) => {
@@ -194,28 +210,38 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
             selectedId && rel
                 ? { id: selectedId, rel, selected: true }
                 : graphHover
-                  ? { id: graphHover, rel: relatives(group.tasks, graphHover), selected: false }
+                  ? { id: graphHover, rel: relatives(layoutTasks, graphHover), selected: false }
                   : null;
         const reactEdges: Edge[] = [];
-        for (const t of group.tasks) {
+        for (const t of layoutTasks) {
+            const dst = byId.get(t.id);
             for (const d of t.deps ?? []) {
                 const src = byId.get(d);
                 if (src == null) continue;
                 const data: RoutedEdgeData = {
                     via: layout.via.get(edgeKey(d, t.id)) ?? [],
-                    style: edgeStyle(src, t, focus),
+                    style: dst ? edgeStyle(src, dst, focus) : finalEdgeStyle(src, finalRunning, focus),
                 };
                 reactEdges.push({ id: edgeKey(d, t.id), source: d, target: t.id, type: "routed", data });
             }
         }
-        return { built: [...bandNodes, ...taskNodes], edges: reactEdges };
+        const finalPos = positions.get(FINAL_NODE_ID);
+        const finalNodes: Node[] = [];
+        if (finalPos != null) {
+            const data: DagFinalData = { selected: selectedId === FINAL_NODE_ID };
+            finalNodes.push({ id: FINAL_NODE_ID, type: "dagFinal", position: finalPos, data, draggable: false });
+        }
+        // the tasks come first, so the document's first card stays a task
+        return { built: [...bandNodes, ...taskNodes, ...finalNodes], edges: reactEdges };
     }, [
         digestById,
+        finalRunning,
         group,
         harnesses,
         hovered,
         lanes,
         layout,
+        layoutTasks,
         loading,
         mergeReady,
         onHover,
@@ -308,15 +334,24 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
             // shift is not a skip: "+" is shift+= on most layouts
             if (e.ctrlKey || e.metaKey || e.altKey) return;
             if (e.key === "Enter") {
+                if (!enterOpensTask(document.activeElement)) return;
                 const task = tasks.find((t) => t.id === selectedId);
-                if (task && enterOpensTask(document.activeElement)) {
+                if (task) {
                     e.preventDefault();
                     fireAndForget(() => openTaskFromGraph(task));
+                } else if (selectedId === FINAL_NODE_ID && group) {
+                    e.preventDefault();
+                    openFinalFromGraph(group, owner);
                 }
                 return;
             }
             if (isEditableTarget(document.activeElement)) return;
-            const r = graphKey(e.key, { tasks, selected: selectedId, layer: layout.layer, pos: positions });
+            const r = graphKey(e.key, {
+                tasks: layoutTasks,
+                selected: selectedId,
+                layer: layout.layer,
+                pos: positions,
+            });
             if (r.kind === "none") return;
             e.preventDefault();
             if (r.kind === "select") {
@@ -331,7 +366,7 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, [fitAll, getZoom, layout, positions, selectedId, tasks, zoomTo]);
+    }, [fitAll, getZoom, group, layout, layoutTasks, owner, positions, selectedId, tasks, zoomTo]);
 
     if (loading || !group) {
         return <GraphSkeleton />;
@@ -348,44 +383,52 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
                 <span>
                     Run route · {owner.runtime || "unavailable"} / {owner.model || "default"}
                 </span>
-                {stageEntries(group, owner, tick || Date.now()).map((s) => (
-                    <span key={s.key} title={s.detail} className="flex items-center gap-1.5">
+                {stageEntries(group, owner).map((s) => (
+                    <span key={s.key} className="flex items-center gap-1.5">
                         <span className={`h-[7px] w-[7px] rounded-full border ${STAGE_DOT[s.tone]}`} />
                         {s.text}
                     </span>
                 ))}
             </div>
             <div ref={paneRef} className="relative min-h-0 flex-1">
-                <ReactFlow
-                    nodes={nodes}
-                    edges={edges}
-                    nodeTypes={dagNodeTypes}
-                    edgeTypes={dagEdgeTypes}
-                    onNodesChange={onNodesChange}
-                    nodesDraggable
-                    nodesConnectable={false}
-                    elementsSelectable={false}
-                    disableKeyboardA11y
-                    // Backspace would otherwise delete a focused card from the canvas state
-                    deleteKeyCode={null}
-                    // double-click means "open" on a node; zooming on it too would move the graph under the click
-                    zoomOnDoubleClick={false}
-                    minZoom={ZOOM_MIN}
-                    maxZoom={ZOOM_MAX}
-                    colorMode="dark"
-                    proOptions={{ hideAttribution: true }}
-                    onNodeClick={(_e, n) => {
-                        if (n.type === "dagTask") globalStore.set(selectedTaskIdAtom, n.id);
-                    }}
-                    onNodeDoubleClick={(_e, n) => {
-                        const task = group.tasks.find((t) => t.id === n.id);
-                        if (task) fireAndForget(() => openTaskFromGraph(task));
-                    }}
-                    onNodeDragStop={onNodeDragStop}
-                    onPaneClick={() => globalStore.set(selectedTaskIdAtom, null)}
-                >
-                    <Background gap={24} size={1} color="color-mix(in srgb, var(--color-ink-mid) 14%, transparent)" />
-                </ReactFlow>
+                <FinalStageViewContext.Provider value={finalView}>
+                    <ReactFlow
+                        nodes={nodes}
+                        edges={edges}
+                        nodeTypes={dagNodeTypes}
+                        edgeTypes={dagEdgeTypes}
+                        onNodesChange={onNodesChange}
+                        nodesDraggable
+                        nodesConnectable={false}
+                        elementsSelectable={false}
+                        disableKeyboardA11y
+                        // Backspace would otherwise delete a focused card from the canvas state
+                        deleteKeyCode={null}
+                        // double-click means "open" on a node; zooming on it too would move the graph under the click
+                        zoomOnDoubleClick={false}
+                        minZoom={ZOOM_MIN}
+                        maxZoom={ZOOM_MAX}
+                        colorMode="dark"
+                        proOptions={{ hideAttribution: true }}
+                        onNodeClick={(_e, n) => {
+                            if (n.type === "dagTask" || n.type === "dagFinal")
+                                globalStore.set(selectedTaskIdAtom, n.id);
+                        }}
+                        onNodeDoubleClick={(_e, n) => {
+                            const task = group.tasks.find((t) => t.id === n.id);
+                            if (task) fireAndForget(() => openTaskFromGraph(task));
+                            else if (n.id === FINAL_NODE_ID) openFinalFromGraph(group, owner);
+                        }}
+                        onNodeDragStop={onNodeDragStop}
+                        onPaneClick={() => globalStore.set(selectedTaskIdAtom, null)}
+                    >
+                        <Background
+                            gap={24}
+                            size={1}
+                            color="color-mix(in srgb, var(--color-ink-mid) 14%, transparent)"
+                        />
+                    </ReactFlow>
+                </FinalStageViewContext.Provider>
                 <div className="absolute right-3 top-3 z-[5] flex flex-col items-end gap-1.5">
                     <ZoomCluster onFit={fitAll} />
                     {store[oid] != null ? (
@@ -423,6 +466,8 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
                     descOpen={descOpen}
                     onToggleDesc={() => setDescOpen((o) => !o)}
                 />
+            ) : selectedId === FINAL_NODE_ID && finalView.steps.length > 0 ? (
+                <DagFinalRail group={group} owner={owner} view={finalView} />
             ) : null}
         </div>
     );

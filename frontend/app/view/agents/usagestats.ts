@@ -6,7 +6,7 @@
 // (aggregateBuckets). Spend is computed from token counts via usagepricing. Pure module — no React
 // or Wave runtime imports, unit-tested in isolation.
 
-import { priceFor, spendBreakdown } from "./usagepricing";
+import { priceFor, spendBreakdown, spendOf } from "./usagepricing";
 
 export type HarnessFilter = "all" | string;
 
@@ -145,8 +145,12 @@ function bucketAsRecord(b: UsageBucket): UsageRecord {
     };
 }
 
-function bucketTokens(b: UsageBucket): number {
+export function bucketTokens(b: UsageBucket): number {
     return b.input + b.output + b.reasoning + b.cacheread + b.cachecreate;
+}
+
+export function bucketSpend(b: UsageBucket): number {
+    return spendOf(bucketAsRecord(b));
 }
 
 // availableHarnesses of the UNFILTERED bucket set, in first-seen order — a filter chip only appears
@@ -373,6 +377,12 @@ export function usd(n: number): string {
     if (n >= 1000) return "$" + +(n / 1000).toFixed(1) + "K";
     if (n >= 100) return "$" + Math.round(n);
     return "$" + n.toFixed(2);
+}
+
+export function pctStr(n: number): string {
+    if (n >= 10) return Math.round(n) + "%";
+    if (n < 0.1) return n <= 0 ? "0%" : "<0.1%";
+    return +n.toFixed(1) + "%";
 }
 
 // Pure: the model-usage grid class. A single provider fills the full row (dropping lg:grid-cols-2, which

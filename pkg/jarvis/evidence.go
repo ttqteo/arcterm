@@ -371,6 +371,11 @@ func evidenceRoute(run *waveobj.Run, observedModel string) (harness, model strin
 	return harness, model
 }
 
+// RunRoute is the harness and model a run worked on: the model its last transcript reports, else its pinned one.
+func RunRoute(run *waveobj.Run) (harness, model string) {
+	return evidenceRoute(run, observedModelFn(run))
+}
+
 func evidenceHash(ev waveobj.RunEvidence) string {
 	ev.Hash = "" // hash excludes itself
 	ev.CapturedTs = 0
@@ -671,7 +676,7 @@ func SealEvidence(ctx context.Context, run *waveobj.Run) error {
 	if run.DagORef != "" && UsageRole(run) == UsageRole_Lead {
 		ev.Usage = RunUsage(ctx, run, DagChildRuns(ctx, run.ChannelOID, run.DagORef, run.ID))
 	}
-	ev.Harness, ev.Model = evidenceRoute(run, observedModelFn(run))
+	ev.Harness, ev.Model = RunRoute(run)
 	ev.Hash = evidenceHash(ev)
 	run.Evidence = &ev
 	return nil

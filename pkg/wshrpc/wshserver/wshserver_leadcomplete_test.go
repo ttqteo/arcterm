@@ -51,6 +51,7 @@ func (f *leadCompleteFixture) write(t *testing.T, rel, content string) {
 func newLeadCompleteFixture(t *testing.T) *leadCompleteFixture {
 	ctx := context.Background()
 	f := &leadCompleteFixture{projectDir: t.TempDir()}
+	useTestWorktreeRoot(t)
 	f.git(t, "init", "-b", "main")
 	f.git(t, "config", "user.email", "t@test")
 	f.git(t, "config", "user.name", "t")

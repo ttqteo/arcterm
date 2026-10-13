@@ -92,6 +92,8 @@ export function eventFromNotify(
         text: title,
         detail: d.message?.trim() || undefined,
         level: d.level === "error" || d.level === "warn" ? d.level : "info",
+        ref: d.oref || undefined,
+        transient: d.transient || undefined,
     };
 }
 
@@ -173,6 +175,21 @@ export function askAgent(agents: ReadonlyArray<AgentVM>, askOref: string | undef
         return undefined;
     }
     return agents.find((a) => a.blockId === oid);
+}
+
+// The agent a bubble names on its own line. Notices only: an ask carries the same kind of ref, but its
+// question already reads as the agent's, and its bubble stays as it was.
+export function bubbleAgent(event: PetEvent | null, agents: ReadonlyArray<AgentVM>): AgentVM | undefined {
+    return event?.kind === "notify" ? askAgent(agents, event.ref) : undefined;
+}
+
+// What a click on the bubble does. A said-once notice is in no list the popup could show, so its bubble is
+// the only way to its agent; everything else is read back in the popup.
+export type BubbleClick = { open: "agent"; tabId: string } | { open: "peek" };
+
+export function bubbleClick(event: PetEvent | null, agents: ReadonlyArray<AgentVM>): BubbleClick {
+    const agent = event?.transient === true ? bubbleAgent(event, agents) : undefined;
+    return agent != null ? { open: "agent", tabId: agent.id } : { open: "peek" };
 }
 
 // The focus gate (design §4.2): an ask you are already looking at is already reported — speaking it too

@@ -4,6 +4,7 @@
 // Shared stick-to-bottom behavior for streaming NarrationTimeline feeds. Extracted from agentrow.tsx
 // so the subagent interior and runs worker cards get the same auto-follow + jump-to-latest pill.
 
+import { PopoverReveal } from "@/app/element/popoverreveal";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isNearBottom } from "./agentsviewmodel";
 import { PROMPT_JUMP_EVENT } from "./pinnedprompt";
@@ -75,19 +76,21 @@ export function useStickToBottom(entries: unknown[]) {
 
 // The jump-to-latest pill. Render inside a `relative` parent of the scroll region so it anchors to the
 // viewport bottom and does not scroll with the feed. Stops click propagation (callers are often inside
-// a clickable card).
-export function JumpToLatestPill({ onClick }: { onClick: () => void }) {
+// a clickable card). Render it unconditionally and pass `show`, so it can leave as it came.
+export function JumpToLatestPill({ show, onClick }: { show: boolean; onClick: () => void }) {
     return (
-        <button
-            type="button"
-            onClick={(e) => {
-                e.stopPropagation();
-                onClick();
-            }}
-            title="Jump to latest"
-            className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-full border border-edge-strong bg-surface-raised px-2.5 py-1 text-[11px] font-medium text-secondary shadow-popover-sm hover:border-accent hover:text-primary"
-        >
-            <span className="text-[12px] leading-none">↓</span> Latest
-        </button>
+        <PopoverReveal open={show} origin="bottom" className="absolute bottom-3 left-1/2 z-20 -translate-x-1/2">
+            <button
+                type="button"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onClick();
+                }}
+                title="Jump to latest"
+                className="flex items-center gap-1 rounded-full border border-edge-strong bg-surface-raised px-2.5 py-1 text-[11px] font-medium text-secondary shadow-popover-sm hover:border-accent hover:text-primary"
+            >
+                <span className="text-[12px] leading-none">↓</span> Latest
+            </button>
+        </PopoverReveal>
     );
 }

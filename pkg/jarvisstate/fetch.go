@@ -38,9 +38,11 @@ type fetchSeams struct {
 	getEfforts      func(ctx context.Context) ([]*waveobj.Effort, error)
 }
 
+// the Shared readers, because nothing here modifies a channel or run: copying every run on each Brief
+// load was 2 GB in the first 8 minutes of a packaged launch (1,023 runs, 19 MB of JSON)
 var defaultSeams = fetchSeams{
-	getChannels:     wstore.GetChannels,
-	getChannelRuns:  wstore.GetChannelRuns,
+	getChannels:     wstore.GetChannelsShared,
+	getChannelRuns:  wstore.GetChannelRunsShared,
 	scanSessions:    agentsessions.ScanSessions,
 	gatherAttention: jarvis.GatherAttentionFromLedger,
 	openVault:       wavevault.OpenVault,

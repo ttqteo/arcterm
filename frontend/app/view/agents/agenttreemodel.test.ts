@@ -93,6 +93,8 @@ describe("buildAgentTree with run lineage", () => {
                     return `parent:${r.agent.id}`;
                 case "stage":
                     return `stage:${r.stageRole}:${r.agent.id}${r.outcome ? `:${r.outcome}` : ""}`;
+                case "final":
+                    return `final:${r.agent?.id ?? "-"}`;
                 default:
                     return `${r.kind}:${r.run.runId}:${r.live}`;
             }
@@ -176,7 +178,7 @@ describe("buildAgentTree with run lineage", () => {
         it("folds into the done fold, and only a stage still judging counts as live", () => {
             const { r, roles, agents } = finishing();
             const rows = buildAgentTree(agents, ["lead", "rev2", "rev1", "ver"], lineage([r], roles));
-            expect(shape(rows)).toEqual(["group:waveterm:2:0", "lead:run-1:1", "done:2+2:false", "stage:verifier:ver"]);
+            expect(shape(rows)).toEqual(["group:waveterm:2:0", "lead:run-1:1", "done:2+2:false", "final:ver"]);
         });
 
         it("lists the plan reviews oldest round first, before the tasks, and a final verdict after them", () => {
@@ -197,7 +199,7 @@ describe("buildAgentTree with run lineage", () => {
                 "stage:plan-reviewer:rev2:accepted",
                 "worker:t-1:-",
                 "worker:t-2:-",
-                "stage:verifier:ver:passed",
+                "final:ver",
             ]);
         });
 
@@ -212,7 +214,7 @@ describe("buildAgentTree with run lineage", () => {
                     ver2: { kind: "stage", leadRunId: "run-1", stageRole: "verifier" },
                 })
             );
-            expect(shape(rows)).toEqual(["group:waveterm:1:0", "run:run-1:1", "done:1+1:false", "stage:verifier:ver2"]);
+            expect(shape(rows)).toEqual(["group:waveterm:1:0", "run:run-1:1", "done:1+1:false", "final:ver2"]);
         });
 
         it("stays live while the dag has no verdict for it", () => {
@@ -232,6 +234,125 @@ describe("buildAgentTree with run lineage", () => {
                 "stage:plan-reviewer:rev1",
                 "queued:1:false",
             ]);
+        });
+    });
+
+    describe("the final stage's row", () => {
+        const LEAD: Lineage["roles"] = { lead: { kind: "lead", runId: "run-1" } };
+        const VERIFIER: Lineage["roles"][string] = { kind: "stage", leadRunId: "run-1", stageRole: "verifier" };
+        const verifierAgent = (id: string, state: AgentVM["state"] = "working") => ({
+            ...agent(id, state, ""),
+            runId: id,
+        });
+        const openDone = (count: number) => ({
+            collapsed: new Set<string>(),
+            doneOpen: new Map([["run-1", count]]),
+            queuedOpen: new Set<string>(),
+            extrasOpen: new Set<string>(),
+        });
+        const staged = (tasks: TaskNode[], status: string, final?: FinalStage) => {
+            const r = run("run-1", tasks);
+            r.dag.status = status;
+            r.dag.final = final;
+            return r;
+        };
+        const tree = (r: RunInfo, verifiers: string[] = [], folds?: ReturnType<typeof openDone>, focusId?: string) =>
+            shape(
+                buildAgentTree(
+                    [agent("lead", "idle"), ...verifiers.map((id) => verifierAgent(id))],
+                    ["lead", ...verifiers],
+                    lineage([r], { ...LEAD, ...Object.fromEntries(verifiers.map((id) => [id, VERIFIER])) }),
+                    folds,
+                    focusId
+                )
+            );
+
+        it("is absent while tasks run and the stage has no state", () => {
+            const r = staged([task("t-1", "done"), task("t-2", "running")], "running");
+            expect(tree(r)).toEqual(["group:waveterm:1:0", "lead:run-1:1", "done:1:false", "worker:t-2:-"]);
+        });
+
+        it("is there once the dag is finalizing, before any verifier session", () => {
+            const r = staged([task("t-1", "done")], "finalizing", { state: "checking", round: 1, step: "tree" });
+            // the stage is live for its lead, and no agent for the group
+            expect(tree(r)).toEqual(["group:waveterm:1:0", "lead:run-1:1", "done:1:false", "final:-"]);
+        });
+
+        it("is the current round's verifier session once that is in the roster, with no second row", () => {
+            const r = staged([task("t-1", "done")], "finalizing", {
+                state: "verifying",
+                round: 1,
+                verifierrunid: "v1",
+            });
+            const rows = tree(r, ["v1"]);
+            expect(rows).toEqual(["group:waveterm:2:0", "lead:run-1:1", "done:1:false", "final:v1"]);
+            expect(rows.filter((s) => s.startsWith("final:") || s.startsWith("stage:"))).toHaveLength(1);
+        });
+
+        it("leaves an earlier round's verifier tab a failed stage row beside it", () => {
+            const r = staged([task("t-1", "done")], "finalizing", {
+                state: "verifying",
+                round: 2,
+                verifierrunid: "v2",
+            });
+            expect(tree(r, ["v1", "v2"], openDone(1))).toEqual([
+                "group:waveterm:2:0",
+                "lead:run-1:1",
+                "done:1+1:true",
+                "worker:t-1:-",
+                "stage:verifier:v1:failed",
+                "final:v2",
+            ]);
+        });
+
+        it("folds into the finished group once passed, and is counted there", () => {
+            const r = staged([task("t-1", "done")], "done", { state: "passed", round: 1 });
+            expect(tree(r)).toEqual(["group:waveterm:1:0", "lead:run-1:0", "done:1+1:false"]);
+            expect(tree(r, [], openDone(1))).toEqual([
+                "group:waveterm:1:0",
+                "lead:run-1:0",
+                "done:1+1:true",
+                "worker:t-1:-",
+                "final:-",
+            ]);
+        });
+
+        it("keeps the finished group open while the passed row is the one being read", () => {
+            const r = staged([task("t-1", "done")], "done", { state: "passed", round: 1 });
+            expect(tree(r, [], undefined, "final:run-1")).toContain("final:-");
+        });
+
+        it("stays out of the fold, and is not live, when failed or unverified", () => {
+            for (const state of ["failed", "unverified"]) {
+                const r = staged([task("t-1", "done")], "finalizing", { state, round: 1 });
+                expect(tree(r)).toEqual(["group:waveterm:1:0", "lead:run-1:0", "done:1:false", "final:-"]);
+            }
+        });
+
+        it("has a row while a fix round is under way, after the fix tasks and not live", () => {
+            const r = staged([task("t-1", "done"), task("t-2", "running"), task("t-3", "pending")], "running", {
+                state: "",
+                round: 2,
+            });
+            expect(tree(r)).toEqual([
+                "group:waveterm:1:0",
+                "lead:run-1:1",
+                "done:1:false",
+                "worker:t-2:-",
+                "final:-",
+                "queued:1:false",
+            ]);
+        });
+
+        it("counts toward the lead's live only while the stage runs", () => {
+            const live = (final: FinalStage) =>
+                tree(staged([task("t-1", "done")], "finalizing", final)).find((s) => s.startsWith("lead:"));
+            expect(live({ state: "checking", round: 1 })).toBe("lead:run-1:1");
+            expect(live({ state: "final", round: 1 })).toBe("lead:run-1:1");
+            expect(live({ state: "verifying", round: 1 })).toBe("lead:run-1:1");
+            expect(live({ state: "", round: 1 })).toBe("lead:run-1:0");
+            expect(live({ state: "failed", round: 1 })).toBe("lead:run-1:0");
+            expect(live({ state: "passed", round: 1 })).toBe("lead:run-1:0");
         });
     });
 

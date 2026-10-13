@@ -51,7 +51,7 @@ export function SubagentInterior({ sub, parentName }: { sub: FocusSubagent; pare
                         <TranscriptSkeleton />
                     )}
                 </div>
-                {!atBottom ? <JumpToLatestPill onClick={jumpToBottom} /> : null}
+                <JumpToLatestPill show={!atBottom} onClick={jumpToBottom} />
             </div>
         </motion.div>
     );

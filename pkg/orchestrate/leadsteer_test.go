@@ -133,6 +133,20 @@ func TestAmendReachesOnlyATaskNotStarted(t *testing.T) {
 	if f.countKind(waveobj.RunEventKindTaskAmended) != 1 {
 		t.Fatal("want one task-amended row")
 	}
+	// longer than a task-told row keeps, and still whole in the prompt
+	long := strings.Repeat("x", MaxToldLen+1)
+	if err := AmendTask(ctx, dag.OID, "t-0", long); err != nil {
+		t.Fatal(err)
+	}
+	if got := firstTask(t, ctx, dag.OID).LeadNotes; len(got) != 2 || got[1] != long {
+		t.Fatalf("want the long note kept whole, got %d notes", len(got))
+	}
+	if err := AmendTask(ctx, dag.OID, "t-0", strings.Repeat("x", MaxReviewNoteLen+1)); err == nil || !strings.Contains(err.Error(), "limit") {
+		t.Fatalf("a note past the limit must be refused, got %v", err)
+	}
+	if got := firstTask(t, ctx, dag.OID).LeadNotes; len(got) != 2 {
+		t.Fatalf("a refused note must not be kept, got %d notes", len(got))
+	}
 	ctx2, running := seedRunningTask(t)
 	err := AmendTask(ctx2, running.OID, "t-0", "too late")
 	if err == nil || !strings.Contains(err.Error(), "dag tell") {

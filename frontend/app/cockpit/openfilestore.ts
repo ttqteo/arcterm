@@ -20,6 +20,7 @@ import {
     registeredProjects,
     selectProject,
 } from "@/app/view/code/codestore";
+import { landOn } from "@/app/view/jarvis/returnsurface";
 import { normalizeRepoPath, sameRepoPath } from "@/util/paths";
 import { routeOpenFile } from "./openfileroute";
 
@@ -45,7 +46,7 @@ export async function openFileInCode(
         globalStore.set(codePendingLineAtom, line ?? null);
         await openPath(route.rel, { line: line ?? null });
     }
-    globalStore.set(model.surfaceAtom, "code");
+    landOn(model.surfaceAtom, "code");
 }
 
 let subscribed = false;

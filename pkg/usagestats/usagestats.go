@@ -40,21 +40,23 @@ type Record struct {
 	CacheCreate     int
 	CacheCreate1h   int // subset of CacheCreate billed at the 1h extended-cache rate
 	ReportedCostUsd *float64
-	// claude only: the session the record bills to (the transcript's stem, or for a subagent file the
-	// session directory above its subagents dir), whether it came from a subagent file, the assistant
-	// line's cwd, and the file's last ai-title ("" when none)
+	// the harness's own session id, read off the file's path (for a claude subagent file, the session
+	// directory above its subagents dir; empty outside a scan); claude only: whether it came from a
+	// subagent file, the assistant line's cwd, and the file's last ai-title ("" when none)
 	Session string
 	Sub     bool
 	Cwd     string
 	Title   string
 }
 
-// Bucket is one (harness, provider, model, local-day) aggregate. The frontend prices and rolls these up.
+// Bucket is one (harness, provider, model, local-day, session) aggregate. The frontend prices and
+// rolls these up.
 type Bucket struct {
 	Harness         string
 	Provider        string
 	Model           string
 	Day             string // "YYYY-MM-DD", server-local timezone
+	Session         string
 	Input           int
 	Output          int
 	Reasoning       int
@@ -277,21 +279,21 @@ func dedupe(records []Record) []Record {
 	return out
 }
 
-// bucket groups deduped records by (harness, provider, model, local day), summing token classes,
-// reported cost (preserving presence), and a message count. Records with model "<synthetic>"
+// bucket groups deduped records by (harness, provider, model, local day, session), summing token
+// classes, reported cost (preserving presence), and a message count. Records with model "<synthetic>"
 // (Claude's non-billable internal turns) are dropped here so they never reach the wire.
 func bucket(records []Record) []Bucket {
-	type key struct{ harness, provider, model, day string }
+	type key struct{ harness, provider, model, day, session string }
 	m := map[key]*Bucket{}
 	for _, r := range records {
 		if r.Model == "<synthetic>" {
 			continue
 		}
 		day := r.TS.Local().Format("2006-01-02")
-		k := key{r.Harness, r.Provider, r.Model, day}
+		k := key{r.Harness, r.Provider, r.Model, day, r.Session}
 		b := m[k]
 		if b == nil {
-			b = &Bucket{Harness: r.Harness, Provider: r.Provider, Model: r.Model, Day: day}
+			b = &Bucket{Harness: r.Harness, Provider: r.Provider, Model: r.Model, Day: day, Session: r.Session}
 			m[k] = b
 		}
 		b.Input += r.Input
@@ -400,14 +402,59 @@ const (
 	scanOpencode
 	scanPi
 	scanAgy
+	// an opencode storage/session info file: no usage, only the session's directory and title
+	scanOpencodeInfo
 )
+
+func (k scanKind) harness() string {
+	switch k {
+	case scanCodex:
+		return "codex"
+	case scanOpencode, scanOpencodeInfo:
+		return "opencode"
+	case scanPi:
+		return "pi"
+	case scanAgy:
+		return "agy"
+	default:
+		return "claude"
+	}
+}
 
 // scanFile is one transcript to parse, tagged with the parser it needs. cutoff is the authoritative
 // timestamp window for the file (used by the OpenCode walker, which cannot prune by modtime).
+// session is the harness's session id, read off the path. metaPath is the file that holds that
+// session's cwd and title: the session's own transcript, so a subagent file never names its parent.
 type scanFile struct {
-	path   string
-	kind   scanKind
-	cutoff time.Time
+	path     string
+	kind     scanKind
+	cutoff   time.Time
+	session  string
+	metaPath string
+}
+
+// metaFile is the scanFile to parse for f's session cwd and title; its path is empty when the
+// session has no such file.
+func (f scanFile) metaFile() scanFile {
+	kind := f.kind
+	if kind == scanOpencode {
+		kind = scanOpencodeInfo
+	}
+	return scanFile{path: f.metaPath, kind: kind, session: f.session, metaPath: f.metaPath}
+}
+
+// sessionStem returns the second path segment of path under root without its .jsonl, and the
+// transcript that segment names. Claude and Pi both keep a session at <slug>/<stem>.jsonl and its
+// subagents' files under <slug>/<stem>/, so every file of a session shares the stem.
+func sessionStem(root, path string) (stem, transcript string) {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return "", path
+	}
+	segs := strings.Split(filepath.ToSlash(rel), "/")
+	n := min(2, len(segs))
+	stem = strings.TrimSuffix(segs[n-1], ".jsonl")
+	return stem, filepath.Join(root, filepath.Join(segs[:n-1]...), stem+".jsonl")
 }
 
 // walkClaudeFiles collects in-window Claude transcript files (recursively, so subagent dirs are
@@ -430,7 +477,8 @@ func walkClaudeFiles(root string, cutoff time.Time) []scanFile {
 			return nil
 		}
 		if inWindow(path, cutoff) {
-			files = append(files, scanFile{path: path, kind: scanClaude})
+			session, transcript := sessionStem(root, path)
+			files = append(files, scanFile{path: path, kind: scanClaude, session: session, metaPath: transcript})
 		}
 		return nil
 	})
@@ -449,7 +497,7 @@ func walkCodexFiles(root string, cutoff time.Time) []scanFile {
 			return nil
 		}
 		if inWindow(path, cutoff) {
-			files = append(files, scanFile{path: path, kind: scanCodex})
+			files = append(files, scanFile{path: path, kind: scanCodex, session: strings.TrimSuffix(name, ".jsonl"), metaPath: path})
 		}
 		return nil
 	})
@@ -459,14 +507,23 @@ func walkCodexFiles(root string, cutoff time.Time) []scanFile {
 // walkOpencodeFiles collects OpenCode assistant-message JSON files under the message root. Message
 // timestamps are the authoritative window (a file may be written long after the message it holds),
 // so every file is walked without inWindow pruning and the exact timestamp cutoff is stored on each
-// scanFile for the parser to apply.
+// scanFile for the parser to apply. A message sits at <root>/<sessionID>/<messageID>.json; its
+// session's directory and title are in the sibling storage/session/<projectID>/<sessionID>.json.
 func walkOpencodeFiles(root string, cutoff time.Time) []scanFile {
+	infoBySession := map[string]string{}
+	_ = filepath.WalkDir(filepath.Join(filepath.Dir(root), "session"), func(path string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && strings.HasSuffix(path, ".json") {
+			infoBySession[strings.TrimSuffix(d.Name(), ".json")] = path
+		}
+		return nil
+	})
 	var files []scanFile
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".json") {
 			return nil
 		}
-		files = append(files, scanFile{path: path, kind: scanOpencode, cutoff: cutoff})
+		session := filepath.Base(filepath.Dir(path))
+		files = append(files, scanFile{path: path, kind: scanOpencode, cutoff: cutoff, session: session, metaPath: infoBySession[session]})
 		return nil
 	})
 	return files
@@ -532,29 +589,45 @@ func parseFiles(files []scanFile) []Record {
 // parseFile reads one transcript into its records, whatever their age: the window is applied by the
 // caller, so one parse serves every window. Records are deduped within the file, which a later
 // corpus-wide dedupe leaves unchanged (it keeps the largest output per ID either way) and which
-// keeps the streaming snapshots out of the cache. A Claude file also gives its oversized tool results.
-func parseFile(f scanFile) ([]Record, []BigToolResult) {
+// keeps the streaming snapshots out of the cache. The same read takes the cwd and title the file
+// holds, so the session directory costs no second pass. A Claude file also gives its oversized tool results.
+func parseFile(f scanFile) fileParse {
+	var p fileParse
 	switch f.kind {
 	case scanCodex:
-		return extractCodex(readLines(f.path)), nil
+		lines := readLines(f.path)
+		p.records = extractCodex(lines)
+		p.cwd = codexCwd(lines)
 	case scanOpencode:
-		data, err := os.ReadFile(f.path)
-		if err != nil {
-			return nil, nil
+		if data, err := os.ReadFile(f.path); err == nil {
+			if rec, ok := extractOpencode(data); ok {
+				p.records = []Record{rec}
+			}
 		}
-		rec, ok := extractOpencode(data)
-		if !ok {
-			return nil, nil
+	case scanOpencodeInfo:
+		var info struct {
+			Directory string `json:"directory"`
+			Title     string `json:"title"`
 		}
-		return []Record{rec}, nil
+		if data, err := os.ReadFile(f.path); err == nil && json.Unmarshal(data, &info) == nil {
+			p.cwd, p.title = info.Directory, info.Title
+		}
 	case scanPi:
 		file, err := pisession.Read(f.path)
 		if err != nil {
-			return nil, nil
+			return p
 		}
-		return extractPi(file, time.Time{}), nil
+		p.records = extractPi(file, time.Time{})
+		p.cwd = file.Header.Cwd
+		if branch, err := file.ActiveBranch(); err == nil {
+			name, firstUser := pisession.BranchMeta(branch)
+			p.title = name
+			if p.title == "" {
+				p.title = firstUser
+			}
+		}
 	case scanAgy:
-		return extractAgy(readAgyLines(f.path)), nil
+		p.records = extractAgy(readAgyLines(f.path))
 	default:
 		lines, big := readClaudeFile(f.path)
 		recs := dedupe(extractClaude(lines))
@@ -562,21 +635,67 @@ func parseFile(f scanFile) ([]Record, []BigToolResult) {
 		title := lastAiTitle(lines)
 		for i := range recs {
 			recs[i].Session, recs[i].Sub, recs[i].Title = session, sub, title
+			if p.cwd == "" {
+				p.cwd = recs[i].Cwd
+			}
 		}
 		nameTools(lines, big)
 		for i := range big {
 			big[i].Session, big[i].Sub = session, sub
 		}
-		return recs, big
+		p.records, p.big, p.title = recs, big, title
 	}
+	if f.session != "" {
+		for i := range p.records {
+			p.records[i].Session = f.session
+		}
+	}
+	p.title = clipTitle(p.title)
+	return p
 }
 
-// fileParse is one file's parsed records and oversized tool results, and the modtime and size they were read at.
+// codexCwd returns the cwd on a rollout's session_meta line.
+func codexCwd(lines []string) string {
+	for _, line := range lines {
+		if !strings.Contains(line, `"session_meta"`) {
+			continue
+		}
+		var rec struct {
+			Type    string `json:"type"`
+			Payload struct {
+				Cwd string `json:"cwd"`
+			} `json:"payload"`
+		}
+		if json.Unmarshal([]byte(line), &rec) == nil && rec.Type == "session_meta" && rec.Payload.Cwd != "" {
+			return rec.Payload.Cwd
+		}
+	}
+	return ""
+}
+
+// maxTitleRunes bounds a session title: a pi title can be a whole first prompt, and every title is
+// held in the parse cache and sent with each usage reply.
+const maxTitleRunes = 200
+
+// clipTitle cuts a title to its first line and to maxTitleRunes.
+func clipTitle(title string) string {
+	title, _, _ = strings.Cut(strings.TrimSpace(title), "\n")
+	title = strings.TrimSpace(title)
+	if r := []rune(title); len(r) > maxTitleRunes {
+		return string(r[:maxTitleRunes])
+	}
+	return title
+}
+
+// fileParse is one file's parsed records and oversized tool results, the cwd and title it holds, and the modtime and size they
+// were read at.
 type fileParse struct {
 	mod     time.Time
 	size    int64
 	records []Record
 	big     []BigToolResult
+	cwd     string
+	title   string
 }
 
 // parseCache holds each scanned file's records by path. Reading and parsing the transcripts is nearly
@@ -586,8 +705,8 @@ type fileParse struct {
 // entries no recent scan read if its memory matters.
 var parseCache sync.Map
 
-// cachedFileParse returns f's parse, parsing the file only when its modtime or size differs from the
-// cached parse. The returned slices are shared with the cache and must not be modified.
+// cachedFileParse returns f's parse, reading the file only when its modtime or size differs from the
+// cached one. The returned slices are shared with the cache and must not be modified.
 func cachedFileParse(f scanFile) fileParse {
 	info, err := os.Stat(f.path)
 	if err != nil {
@@ -599,16 +718,48 @@ func cachedFileParse(f scanFile) fileParse {
 			return c
 		}
 	}
-	records, big := parseFile(f)
-	p := fileParse{mod: info.ModTime(), size: info.Size(), records: records, big: big}
+	p := parseFile(f)
+	p.mod, p.size = info.ModTime(), info.Size()
 	parseCache.Store(f.path, p)
 	return p
 }
 
+// SessionMeta is what a session's own transcript says about it. Cwd and Title are empty when the
+// harness records none.
+type SessionMeta struct {
+	Harness string
+	Session string
+	Cwd     string
+	Title   string
+}
+
+// sessionMetas returns one SessionMeta per (harness, session) among buckets, read from the session's
+// own transcript. That file is parsed even when the walk pruned it, so a session whose only usage in
+// the window is a subagent's still gets its cwd and title.
+func sessionMetas(buckets []Bucket, files []scanFile) []SessionMeta {
+	type sessionKey struct{ harness, session string }
+	metaFiles := map[sessionKey]scanFile{}
+	for _, f := range files {
+		metaFiles[sessionKey{f.kind.harness(), f.session}] = f.metaFile()
+	}
+	seen := map[sessionKey]bool{}
+	var metas []SessionMeta
+	for _, b := range buckets {
+		k := sessionKey{b.Harness, b.Session}
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		p := cachedFileParse(metaFiles[k])
+		metas = append(metas, SessionMeta{Harness: b.Harness, Session: b.Session, Cwd: p.cwd, Title: p.title})
+	}
+	return metas
+}
+
 // scanRoots walks the Claude, Codex, OpenCode, Pi, and agy transcript roots, prunes Claude/Codex files by
 // modtime to the window (with a 1-day margin), parses + dedups the records, keeps those inside the
-// window, and returns buckets. Missing roots yield nothing.
-func scanRoots(claudeRoot, codexRoot, opencodeRoot, piRoot, agyRoot string, windowDays int) []Bucket {
+// window, and returns buckets and the directory of the sessions they name. Missing roots yield nothing.
+func scanRoots(claudeRoot, codexRoot, opencodeRoot, piRoot, agyRoot string, windowDays int) ([]Bucket, []SessionMeta) {
 	var cutoff, since time.Time
 	if windowDays > 0 {
 		cutoff = time.Now().AddDate(0, 0, -windowDays-1)
@@ -626,7 +777,8 @@ func scanRoots(claudeRoot, codexRoot, opencodeRoot, piRoot, agyRoot string, wind
 			records = append(records, r)
 		}
 	}
-	return bucket(dedupe(records))
+	buckets := bucket(dedupe(records))
+	return buckets, sessionMetas(buckets, files)
 }
 
 // windowStart is local midnight windowDays-1 days before now: the window is whole local days with
@@ -637,17 +789,18 @@ func windowStart(now time.Time, windowDays int) time.Time {
 }
 
 // ScanUsage aggregates usage from the user's Claude, Codex, OpenCode, Pi, and agy transcripts within
-// the last windowDays (0 = all-time). It is the only exported entry point.
-func ScanUsage(windowDays int) ([]Bucket, error) {
+// the last windowDays (0 = all-time), with one SessionMeta per (harness, session) that has a bucket.
+func ScanUsage(windowDays int) ([]Bucket, []SessionMeta, error) {
 	home := wavebase.GetHomeDir()
-	return scanRoots(
+	buckets, sessions := scanRoots(
 		filepath.Join(home, ".claude", "projects"),
 		filepath.Join(home, ".codex", "sessions"),
 		filepath.Join(home, ".local", "share", "opencode", "storage", "message"),
 		filepath.Join(home, ".pi", "agent", "sessions"),
 		filepath.Join(home, ".gemini", "antigravity-cli", "brain"),
 		windowDays,
-	), nil
+	)
+	return buckets, sessions, nil
 }
 
 // sumRecords totals the five token classes across deduped records.

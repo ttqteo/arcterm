@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
+import type { Attachment } from "../agents/composerattachments";
 import type { RunConfig } from "./newrun";
 import {
     initialPick,
@@ -159,6 +160,18 @@ describe("launchGoal", () => {
     // the goal field is hidden for a plan start, so a goal typed before switching must not name the run
     it("sends none for a plan start, which the run's plan names", () => {
         expect(launchGoal({ shape: "orchestrator", start: "plan" }, "an old goal")).toBe("");
+    });
+
+    const shot: Attachment = { id: "1", name: "shot.png", kind: "image", status: "ready", path: "/tmp/a/shot.png" };
+
+    it("appends the goal's ready attachments as paths to read", () => {
+        expect(launchGoal({ shape: "quick", start: "goal" }, " fix the flake ", [shot])).toBe(
+            "fix the flake\n\nAttachments (read these files):\n- /tmp/a/shot.png"
+        );
+    });
+
+    it("sends no attachments on a plan start, where the goal box and its chips are hidden", () => {
+        expect(launchGoal({ shape: "orchestrator", start: "plan" }, "an old goal", [shot])).toBe("");
     });
 });
 

@@ -63,6 +63,12 @@ describe("assembleAllGroups", () => {
         expect(groups[1].items.map((i) => i.key)).toEqual(["surface:cockpit"]);
     });
 
+    it("groups a note row under Notes", () => {
+        const note = item("note:2026-10-08-radar", "note", "Radar ideas");
+        const groups = assembleAllGroups(input({ query: "radar", ranked: [note] }));
+        expect(groups.map((g) => g.label)).toEqual(["Notes"]);
+    });
+
     it("drops scattered matches from All, so they take no slot", () => {
         const groups = assembleAllGroups(input({ query: "rad", ranked: [radar, juno], launch, asGoalItem }));
         expect(groups.flatMap((g) => g.items.map((i) => i.key))).toEqual(["surface:radar", "as-goal"]);

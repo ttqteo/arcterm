@@ -229,6 +229,35 @@ func runWorkerSource(run *waveobj.Run, phaseIdx int) string {
 	return runWorkerFrame(run, phaseIdx, goalHeadline(run.Goal))
 }
 
+// dagTaskSource names a dag child by the task it works. Its goal is the worker's prompt, which as a
+// row's source reads "execute phase (execute) of run goal: You are the worker for task t-1...".
+// Empty for a run that works no task, or whose dag cannot be read: the caller keeps the run's frame.
+func dagTaskSource(ctx context.Context, run *waveobj.Run) string {
+	if run.TaskId == "" || run.DagORef == "" {
+		return ""
+	}
+	g, err := wstore.GetDagShared(ctx, run.DagORef)
+	if err != nil {
+		return ""
+	}
+	return taskSource(g, run.TaskId, run.Review)
+}
+
+func taskSource(g *waveobj.TaskGroup, taskId string, review bool) string {
+	idx := slices.IndexFunc(g.Tasks, func(t waveobj.TaskNode) bool { return t.ID == taskId })
+	if idx < 0 {
+		return ""
+	}
+	name := taskId
+	if review {
+		name += " review"
+	}
+	if label := g.Tasks[idx].Label; label != "" {
+		name += " · " + label
+	}
+	return goalHeadline(name)
+}
+
 func runWorkerFrame(run *waveobj.Run, phaseIdx int, goal string) string {
 	if phaseIdx < 0 || phaseIdx >= len(run.Phases) {
 		return goal

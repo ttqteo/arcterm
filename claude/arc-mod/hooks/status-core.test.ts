@@ -6,6 +6,11 @@ describe("idleArgs", () => {
         expect(idleArgs({ reason: "answer" }, "/t.jsonl")).toBeNull();
     });
 
+    it("reports idle for an answered turn that put a question in claude's dialog: a dismissal runs no Stop", () => {
+        expect(idleArgs({ reason: "answer" }, null, true)).toEqual(["agentstatus", "--state", "idle", "--agent", "claude"]);
+        expect(idleArgs({ reason: "answer", agentId: "a1" }, null, true)).toBeNull();
+    });
+
     it("reports idle for an interrupted turn, with the transcript it knows", () => {
         expect(idleArgs({ reason: "aborted" }, "/t.jsonl")).toEqual([
             "agentstatus", "--state", "idle", "--agent", "claude", "--transcript", "/t.jsonl",

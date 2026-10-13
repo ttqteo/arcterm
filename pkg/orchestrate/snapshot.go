@@ -123,7 +123,7 @@ func treeTarget(ctx context.Context, tree, path string) (string, error) {
 	dir := filepath.Dir(path)
 	top, err := git(ctx, dir, "rev-parse", "--show-toplevel")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%s cannot be placed in the run's tree: write it inside the repository, such as in the run's worktree: %w", path, err)
 	}
 	src, err := git(ctx, dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {

@@ -17,6 +17,7 @@ export type GroupKind =
     // the jarvis entity kinds (see palette-entities.ts), named to match briefpalette's BriefKind
     | "record"
     | "effort"
+    | "note"
     | "channel"
     | "canvas" // a design canvas in the selected agent's project
     | "action" // a verb row: one of a thing's actions, "Cancel run · <run>"
@@ -58,6 +59,7 @@ export const KIND_LABELS: Partial<Record<GroupKind, string>> = {
     session: "Sessions",
     record: "Records",
     effort: "Initiatives", // the user-facing word for an effort (briefpalette's BRIEF_KIND_LABELS)
+    note: "Notes",
     channel: "Projects",
     canvas: "Canvases",
     action: "Actions",
@@ -76,6 +78,7 @@ export const ALL_KIND_ORDER: GroupKind[] = [
     "session",
     "record",
     "effort",
+    "note",
     "channel",
     "canvas",
     "command",

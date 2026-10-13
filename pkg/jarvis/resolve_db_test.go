@@ -176,6 +176,58 @@ func TestResolveAskOwner_RunWorker(t *testing.T) {
 	}
 }
 
+// A dag child's goal is its worker prompt, so its row is named by the task it works.
+func TestResolveAskOwner_DagWorkerSourceIsItsTask(t *testing.T) {
+	ctx := context.Background()
+	ch, err := wstore.CreateChannel(ctx, "dag-ch", "/p")
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	dagID := uuid.NewString()
+	if err := wstore.AppendDag(ctx, &waveobj.TaskGroup{OID: dagID, ID: dagID, ChannelId: ch.OID,
+		Tasks: []waveobj.TaskNode{{ID: "t-1", Label: "The card sits 16px in"}}}); err != nil {
+		t.Fatalf("append dag: %v", err)
+	}
+	worker := seedWorkerTab(t, ctx)
+	runID := uuid.NewString()
+	run := waveobj.Run{ID: runID, Goal: "You are the worker for task 1 of the plan", Status: "executing", CreatedTs: 1,
+		DagORef: dagID, TaskId: "t-1",
+		Phases: []waveobj.RunPhase{{Kind: PhaseKind_Execute, WorkerOrefs: []string{worker}}}}
+	if err := wstore.AppendRun(ctx, ch.OID, run); err != nil {
+		t.Fatalf("append run: %v", err)
+	}
+	if err := wstore.StampWorkerOwner(ctx, worker,
+		waveobj.MakeORef(waveobj.OType_Run, runID).String(),
+		waveobj.MakeORef(waveobj.OType_Channel, ch.OID).String()); err != nil {
+		t.Fatalf("stamp: %v", err)
+	}
+	_, task, source := ResolveAskOwner(ctx, worker)
+	if source != "t-1 · The card sits 16px in" {
+		t.Fatalf("source = %q", source)
+	}
+	if !contains(task, "You are the worker") {
+		t.Fatalf("the classifier's task must keep the goal: %q", task)
+	}
+}
+
+func TestTaskSource(t *testing.T) {
+	g := &waveobj.TaskGroup{Tasks: []waveobj.TaskNode{{ID: "t-1", Label: "build"}, {ID: "t-2"}}}
+	for _, c := range []struct {
+		id     string
+		review bool
+		want   string
+	}{
+		{"t-1", false, "t-1 · build"},
+		{"t-1", true, "t-1 review · build"},
+		{"t-2", false, "t-2"},
+		{"t-9", false, ""},
+	} {
+		if got := taskSource(g, c.id, c.review); got != c.want {
+			t.Fatalf("taskSource(%s, %v) = %q, want %q", c.id, c.review, got, c.want)
+		}
+	}
+}
+
 // A concierge worker dispatched by a channel set to concierge is not owned by the gatekeeper (nil), matching
 // the old ResolveGatekeeperChannel skip of non-enabled channels.
 func TestResolveAskOwner_NonGatekeeper(t *testing.T) {

@@ -43,6 +43,8 @@ func TestMain(m *testing.M) {
 	// real ~/.claude/projects that was 1.4M file checks a run, all logged as test inputs for go to re-check
 	sessionsRootFor = func(string) string { return filepath.Join(dir, "sessions") }
 	defer effortstore.UseRootForTest(filepath.Join(dir, "vault"))()
+	// a backstop for a test that makes trees without a repo fixture: none may land in the real user cache dir
+	defer UseWorktreeRootForTest(filepath.Join(dir, "arc-wt"))()
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)

@@ -798,7 +798,7 @@ func TestCancelSweepsTaskWorktrees(t *testing.T) {
 		t.Fatal(err)
 	}
 	key := TaskWorktreeKey(dag.RunID, "t-0")
-	wtPath := filepath.Join(ch.ProjectPath, ".waveterm", "worktrees", key)
+	wtPath := worktreeDir(ch.ProjectPath, key)
 	if _, err := os.Stat(wtPath); err != nil {
 		t.Fatalf("expected spawned task worktree at %s: %v", wtPath, err)
 	}
@@ -996,7 +996,7 @@ func TestStopRefusesATaskWithNoWorker(t *testing.T) {
 }
 
 func TestTheLeadIsToldToLeaveAStoppedTask(t *testing.T) {
-	if !strings.Contains(jarvis.OrchestrationRules("r1", "", ""), FailureKindStopped) {
+	if !strings.Contains(jarvis.OrchestrationRules("r1", "", "", ""), FailureKindStopped) {
 		t.Fatalf("the lead's rules must name %q", FailureKindStopped)
 	}
 }

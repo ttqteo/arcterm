@@ -59,7 +59,7 @@ const WorkerReportTemplate = `## Done
 <what a later task must know, including a departure that changes what it builds on; or None>
 
 ## Found not fixed
-<failures already on the base, and defects outside your task; or None>`
+<failures already on the base, and defects outside your task, but not formatter or lint findings already on the base; or None>`
 
 const (
 	reportHeadingPrefix = "## "

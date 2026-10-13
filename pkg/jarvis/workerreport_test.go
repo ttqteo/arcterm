@@ -155,3 +155,11 @@ func TestReadWorkerReport(t *testing.T) {
 		t.Fatalf("empty: %+v %q", rep, un)
 	}
 }
+
+// HEAD is not formatter-clean, so every task re-reported the same gofmt and prettier lines and leads filed them as
+// open issues (about a fifth of all Found not fixed items, measured 2026-10-12)
+func TestWorkerReportTemplateLeavesBaseFormatterStateOut(t *testing.T) {
+	if !strings.Contains(WorkerReportTemplate, "not formatter or lint findings already on the base") {
+		t.Fatalf("the Found not fixed placeholder must leave base formatter and lint state out:\n%s", WorkerReportTemplate)
+	}
+}

@@ -11,6 +11,7 @@
 // hatch the inline tracker links to as "initiative activity": every note on every chunk, in one stream,
 // which the per-chunk sidebar deliberately does not show.
 
+import { PaneReveal } from "@/app/element/panereveal";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { formatAge } from "@/app/view/agents/agentsviewmodel";
 import { SectionLabel } from "@/app/view/agents/sectionlabel";
@@ -308,11 +309,11 @@ function FeedGroupLine({
                             className={cn("flex-none self-center text-muted", open && "rotate-90")}
                         />
                     </button>
-                    {open ? (
+                    <PaneReveal open={open}>
                         <div className="mb-2 ml-[48px] mt-0.5 flex flex-col gap-1.5 rounded-lg border border-edge-faint bg-surface px-3 py-2.5 text-[12.5px] leading-[1.65] text-secondary">
                             <NoteParagraphs body={row.body} />
                         </div>
-                    ) : null}
+                    </PaneReveal>
                 </div>
             );
         case "event":

@@ -17,21 +17,46 @@ const HIGHLIGHT_PENDING = "doc-review-pending";
 const FIELD_GAP = 6;
 const NOTE_PLACEHOLDER = "What should change here";
 
-// a range's string is its text nodes' data, so this counts the same characters as root.textContent
+// a code block's line numbers and its header: a selection's text leaves them out
+const UNSELECTABLE = ".select-none";
+
+// the document's text is these nodes in order: offsets, ranges and the painted check all count the same ones
+function textNodes(root: Node): Text[] {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, (n) =>
+        n.parentElement?.closest(UNSELECTABLE) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+    );
+    const nodes: Text[] = [];
+    for (let node = walker.nextNode(); node != null; node = walker.nextNode()) {
+        nodes.push(node as Text);
+    }
+    return nodes;
+}
+
+const docTextOf = (root: Node): string =>
+    textNodes(root)
+        .map((n) => n.data)
+        .join("");
+
 function offsetOf(root: Node, node: Node, offset: number): number {
     const before = document.createRange();
     before.setStart(root, 0);
     before.setEnd(node, offset);
-    return before.toString().length;
+    let count = 0;
+    for (const text of textNodes(root)) {
+        if (before.comparePoint(text, text.length) !== 0) {
+            return text === node ? count + offset : count;
+        }
+        count += text.length;
+    }
+    return count;
 }
 
 function rangeOf(root: Node, start: number, end: number): Range | null {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     const range = document.createRange();
     let pos = 0;
     let started = false;
-    for (let node = walker.nextNode(); node != null; node = walker.nextNode()) {
-        const len = node.nodeValue?.length ?? 0;
+    for (const node of textNodes(root)) {
+        const len = node.length;
         if (!started && start < pos + len) {
             range.setStart(node, start - pos);
             started = true;
@@ -79,7 +104,7 @@ export function useDocHighlights(
         if (registry == null || root == null) {
             return;
         }
-        const docText = root.textContent ?? "";
+        const docText = docTextOf(root);
         const rangesOf = (passages: PendingPassage[]) => passages.flatMap((p) => rangeOf(root, p.start, p.end) ?? []);
         registry.set(HIGHLIGHT_QUOTED, new Highlight(...rangesOf(notes.filter((n) => isPaintable(n, docText)))));
         registry.set(HIGHLIGHT_PENDING, new Highlight(...rangesOf(pending ? [pending] : [])));

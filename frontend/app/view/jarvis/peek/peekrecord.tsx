@@ -6,6 +6,7 @@
 
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { landOn } from "@/app/view/jarvis/returnsurface";
 import { useAtomValue } from "jotai";
 import { useEffect } from "react";
 import { RecordPeekBody } from "../briefpeekview";
@@ -27,7 +28,7 @@ export function PeekRecordBody({ model, target }: { model: AgentsViewModel; targ
         closePeek();
         globalStore.set(briefGraphRecordAtom, dossierId);
         globalStore.set(graphPeekOpenAtom, true);
-        globalStore.set(model.surfaceAtom, "jarvis");
+        landOn(model.surfaceAtom, "jarvis");
     };
 
     return (

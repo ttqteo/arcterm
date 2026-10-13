@@ -7,6 +7,8 @@ package jobobject
 
 import "os"
 
+const jobsSupported = false
+
 // no job objects outside windows; process trees are handled by the pty/session
 func Attach(proc *os.Process) (uintptr, error) {
 	return 0, nil
@@ -15,3 +17,11 @@ func Attach(proc *os.Process) (uintptr, error) {
 func KillTree(job uintptr) {}
 
 func Close(job uintptr) {}
+
+func Members(job uintptr) ([]int, error) {
+	return nil, nil
+}
+
+func TerminateMember(o Owner, pid int) error {
+	return ErrNotMember
+}

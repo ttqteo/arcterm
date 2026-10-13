@@ -6,6 +6,7 @@
 // The `?` button at the bar's right end (FooterStatus) opens that cheat sheet too, on every surface.
 
 import { FooterStatus } from "@/app/cockpit/footerstatus";
+import { ResMonReadout } from "@/app/cockpit/resmonreadout";
 import { formatChordString } from "@/util/keysym";
 import type { AgentsViewModel } from "./agents";
 
@@ -14,7 +15,7 @@ import type { AgentsViewModel } from "./agents";
 // ones the global HintsFooter shows elsewhere — folded in here so the cockpit surface renders a single
 // bar (the footer suppresses its rest posture on this surface — see hints-footer.tsx).
 // hints: false while the roster loads or is empty, where the keys have nothing to act on; the bar still draws its
-// status (servers, version), which every surface keeps.
+// status (the resource readout, servers, version), which every surface keeps.
 export function HintsBar({ model, hints }: { model: AgentsViewModel; hints: boolean }) {
     // Built at render (not module-eval) so the platform-aware modifier glyphs resolve after boot.
     const HINTS: [string, string][] = [
@@ -34,6 +35,7 @@ export function HintsBar({ model, hints }: { model: AgentsViewModel; hints: bool
     ];
     return (
         <div
+            data-cockpit-hints=""
             data-pet-ledge
             className="flex shrink-0 items-center gap-4 border-t border-border bg-background px-[18px] py-1.5 text-[11px] text-muted"
         >
@@ -49,6 +51,7 @@ export function HintsBar({ model, hints }: { model: AgentsViewModel; hints: bool
                     </span>
                 ))}
             </div>
+            <ResMonReadout className="shrink-0" />
             <FooterStatus model={model} />
         </div>
     );

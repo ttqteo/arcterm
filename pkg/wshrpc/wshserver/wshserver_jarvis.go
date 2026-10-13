@@ -72,9 +72,19 @@ func (ws *WshServer) SetGlobalProfileCommand(ctx context.Context, data wshrpc.Co
 	return jarvis.SaveGlobalProfile(data.Profile)
 }
 
+// RefreshRouteCatalogCommand also forgets refused routes: refresh is what an operator reaches for after renewing
+// the account a route was refused on.
 func (ws *WshServer) RefreshRouteCatalogCommand(ctx context.Context) error {
 	runroute.RefreshRouteCatalog()
-	return nil
+	return runroute.ClearRefused()
+}
+
+func (ws *WshServer) ListRefusedRoutesCommand(ctx context.Context) (*wshrpc.CommandListRefusedRoutesRtnData, error) {
+	routes := []wshrpc.RefusedRouteInfo{}
+	for _, r := range runroute.RefusedRoutes(time.Now().UnixMilli()) {
+		routes = append(routes, wshrpc.RefusedRouteInfo{Runtime: r.Runtime, Model: r.Model, Text: r.Text, Ts: r.Ts})
+	}
+	return &wshrpc.CommandListRefusedRoutesRtnData{Routes: routes}, nil
 }
 
 const consultTimeout = 120 * time.Second

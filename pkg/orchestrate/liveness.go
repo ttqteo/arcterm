@@ -5,6 +5,7 @@ package orchestrate
 
 import (
 	"context"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/harness"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/memusage"
+	"github.com/wavetermdev/waveterm/pkg/runroute"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/workercap"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
@@ -155,6 +157,61 @@ func transcriptForRun(run *waveobj.Run) (path, runtime string, tracked bool) {
 		return "", "", false
 	}
 	return agentsessions.TranscriptForSession(root, runtime, run.ProjectPath, run.SessionId), runtime, true
+}
+
+// RefusedQuiet is how long a child's transcript must sit still after a refused turn before the engine gives up on
+// it: pi retries a failed turn about four times in twenty seconds, and a refusal is settled only once it stops.
+const RefusedQuiet = time.Minute
+
+// sessionFailure is the provider error the child's last turn ended on, zero when it did not end on one. A child on
+// a dead route (a lapsed subscription, a model the account cannot run) sits idle at its prompt, so without this
+// every reason given for it reads as a timeout or an idle worker and hides that a retry on the route cannot help.
+func sessionFailure(run *waveobj.Run) agentsessions.Failure {
+	path, runtime, _ := transcriptForRun(run)
+	if path == "" {
+		return agentsessions.Failure{}
+	}
+	return agentsessions.LastError(path, runtime)
+}
+
+// routeRefused reports a child whose provider refused its last turn (agentsessions.Failure.Refused) and which has
+// stopped retrying. A new session on the same route would be refused too, so the caller gives up on it at once
+// instead of waiting out its timeout and respawning. The transcript is read only once it has gone quiet.
+func routeRefused(run *waveobj.Run, now int64) (agentsessions.Failure, bool) {
+	last, _ := lastActivityForRun(run)
+	if last == 0 || now-last < RefusedQuiet.Milliseconds() {
+		return agentsessions.Failure{}, false
+	}
+	failure := sessionFailure(run)
+	return failure, failure.Refused()
+}
+
+// recordRefusedRoute marks refused the route the child was launched on, and the model that refused it when the
+// transcript names another (a runtime default that resolved to a model), so the route picker warns before the next
+// run is sent down it.
+func recordRefusedRoute(run *waveobj.Run, failure agentsessions.Failure, now int64) {
+	runtime := run.Runtime
+	if runtime == "" {
+		runtime = defaultWorkerRuntime
+	}
+	marks := []runroute.RefusedRoute{{Runtime: runtime, Model: run.Model, Text: failure.Text, Ts: now}}
+	if failure.Model != "" && failure.Model != run.Model {
+		marks = append(marks, runroute.RefusedRoute{Runtime: runtime, Model: failure.Model, Text: failure.Text, Ts: now})
+	}
+	if err := runroute.RecordRefused(now, marks...); err != nil {
+		log.Printf("recording refused route %s %q: %v", runtime, run.Model, err)
+	}
+}
+
+// withSessionFailure adds the child's sessionFailure to why the child is done for.
+func withSessionFailure(reason string, run *waveobj.Run) string {
+	if reason == "" {
+		return ""
+	}
+	if failure := sessionFailure(run); failure.Text != "" {
+		return reason + "; its last turn failed: " + failure.Text
+	}
+	return reason
 }
 
 // workerBlockFn reads a child's worker block and whether its process runs. A var so tests can script the
@@ -403,6 +460,9 @@ func hungWake(ctx context.Context, taskID string, run *waveobj.Run, silentMs int
 		return ""
 	}
 	if workerTurnEndedAt(ctx, run) > 0 {
+		if failure := sessionFailure(run); failure.Text != "" {
+			return taskTurnFailedWake(taskID, failure.Text)
+		}
 		return taskTurnEndedWake(taskID)
 	}
 	return taskHungWake(taskID, silentMs/time.Minute.Milliseconds())

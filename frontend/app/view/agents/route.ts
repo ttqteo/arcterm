@@ -109,6 +109,9 @@ export interface PickerModelRow {
     contexthint: string;
     default: boolean;
     label: string;
+    // the provider's refusal of this route (a 401/403 a run met), "" when it has none
+    refusedtext?: string;
+    refusedts?: number;
 }
 
 export interface PickerSection {
@@ -117,22 +120,40 @@ export interface PickerSection {
     rows: PickerModelRow[];
 }
 
+// the refusal recorded for exactly this route. There is no fallback to the runtime default, unlike capabilityFor:
+// a refusal of the default says nothing about a model the operator typed.
+export function refusedRouteFor(
+    pin: RoutePin | null | undefined,
+    refused: RefusedRouteInfo[]
+): RefusedRouteInfo | undefined {
+    if (pin == null) {
+        return undefined;
+    }
+    const model = pin.model ?? "";
+    return refused.find((r) => r.runtime === pin.runtime && (r.model ?? "") === model);
+}
+
 // model-only rows for the picker; a runtime's default row names no model, so it never becomes a row.
-export function buildPickerSections(harnesses: HarnessInfo[]): PickerSection[] {
+export function buildPickerSections(harnesses: HarnessInfo[], refused: RefusedRouteInfo[] = []): PickerSection[] {
     return harnesses
         .map((h) => ({
             runtime: h.runtime,
             label: h.label,
             rows: (h.routecapabilities ?? [])
                 .filter((c) => (c.model ?? "") !== "")
-                .map((c) => ({
-                    runtime: c.runtime,
-                    model: c.model!,
-                    provider: c.provider ?? "",
-                    contexthint: c.contexthint ?? "",
-                    default: c.default ?? false,
-                    label: h.label,
-                })),
+                .map((c) => {
+                    const refusal = refusedRouteFor({ runtime: c.runtime, model: c.model }, refused);
+                    return {
+                        runtime: c.runtime,
+                        model: c.model!,
+                        provider: c.provider ?? "",
+                        contexthint: c.contexthint ?? "",
+                        default: c.default ?? false,
+                        label: h.label,
+                        refusedtext: refusal?.text ?? "",
+                        refusedts: refusal?.ts ?? 0,
+                    };
+                }),
         }))
         .filter((s) => s.rows.length > 0);
 }
@@ -174,12 +195,24 @@ export function modelFace(pin: RoutePin): string {
     return pin.model || "default";
 }
 
+// "refused 403 · Oct 10": the status the provider answered with and the day, so an old mark reads as old. "" for
+// a route nothing refused.
+export function refusedNote(text?: string, ts?: number): string {
+    if (!text) {
+        return "";
+    }
+    const status = text.match(/^\d{3}\b/)?.[0];
+    const day = ts ? new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
+    return [status ? `refused ${status}` : "refused", day].filter(Boolean).join(" · ");
+}
+
 // the line under a model: only the facts it has, so a row with no "CLI default" ends on its last fact
 export function pickerRowMeta(row: PickerModelRow): string {
     return [
         row.provider && row.provider !== row.runtime ? `provider ${row.provider}` : "",
         row.contexthint ? `ctx ${row.contexthint}` : "",
         row.default ? "CLI default" : "",
+        refusedNote(row.refusedtext, row.refusedts),
     ]
         .filter(Boolean)
         .join(" · ");

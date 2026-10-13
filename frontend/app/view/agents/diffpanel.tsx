@@ -74,6 +74,7 @@ import { worktreeCaption } from "./historyrows";
 import { RefPicker } from "./refpicker";
 import { SourcePicker } from "./sourcepicker";
 import { SyncBar, SyncFailure } from "./syncbar";
+import type { ReviewSubject } from "./reviewmarks";
 
 const TAB_BASE = "flex items-center gap-[6px] border-b-2 px-[10px] text-[12px] font-semibold";
 
@@ -195,6 +196,7 @@ export function DiffPanel({
     onPickWorktree,
     onRevealFile,
     unreadable,
+    review,
 }: {
     // the sync failure's "Open a terminal here" launches through it
     model: AgentsViewModel;
@@ -211,6 +213,8 @@ export function DiffPanel({
     onRevealFile: (path: string) => void;
     // the repository cannot be read: the surface says so beside the panel, and the tabs have nothing to list
     unreadable: boolean;
+    // the Log tab's lists' review subject (reviewmarks.ts); null draws no checks
+    review: ReviewSubject | null;
 }) {
     const tab = useAtomValue(panelTabAtom);
     const width = clampPanelWidth(useAtomValue(panelWidthAtom));
@@ -264,6 +268,7 @@ export function DiffPanel({
                 changes={compareChanges}
                 selectedFile={compareFile}
                 onSelectFile={(path) => selectCompareFile(path)}
+                review={review}
             />
         ) : (
             // a compare commit row *is* a HistoryRow, so the shipped pane takes it directly
@@ -278,6 +283,7 @@ export function DiffPanel({
                 onRetry={retrySelectedCompareRow}
                 selectedFile={compareFile}
                 onSelectFile={(path) => selectCompareFile(path)}
+                review={review}
             />
         )
     ) : (
@@ -294,6 +300,7 @@ export function DiffPanel({
                 }
                 onRevealFile(path);
             }}
+            review={review}
         />
     );
 

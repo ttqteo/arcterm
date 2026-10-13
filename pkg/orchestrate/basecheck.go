@@ -14,6 +14,7 @@ import (
 
 	"github.com/wavetermdev/waveterm/pkg/jobqueue"
 	"github.com/wavetermdev/waveterm/pkg/util/ds"
+	"github.com/wavetermdev/waveterm/pkg/util/jobobject"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wcore"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
@@ -87,13 +88,20 @@ func (e *treeStepError) Error() string { return e.step + ": " + e.err.Error() }
 func (e *treeStepError) Unwrap() error { return e.err }
 
 // withDetachedTree runs fn in a tree detached at commit, never in a tree anyone works in, after the plan's Setup, and
-// removes the tree. The caller puts the run's id in ctx (jobqueue.WithSource), for the queue to name Setup's job.
+// removes the tree. The caller puts the run's id in ctx (jobqueue.WithSource), for the queue to name Setup's job. The
+// Setup keeps the run-command owner ctx carries, renamed Setup, so the Resource Manager never shows it as the command
+// the tree is for.
 func withDetachedTree(ctx context.Context, project, name, label, commit, setup string, fn func(wt string) error) error {
-	wt := worktreeDir(project, name)
-	if _, err := os.Stat(wt); err == nil {
-		if err := removeWorktreeDir(ctx, project, wt); err != nil {
+	stale := worktreeDir(project, name)
+	if _, err := os.Stat(stale); err == nil {
+		if err := removeWorktreeDir(ctx, project, stale); err != nil {
 			return &treeStepError{"removing a stale " + label, err}
 		}
+	}
+	// claimed after the removal: a removed legacy tree comes back under the short root
+	wt, err := claimWorktreeDir(project, name)
+	if err != nil {
+		return &treeStepError{"creating the " + label, err}
 	}
 	if _, err := addWorktree(ctx, project, "--detach", wt, commit); err != nil {
 		return &treeStepError{"creating the " + label, err}
@@ -105,6 +113,10 @@ func withDetachedTree(ctx context.Context, project, name, label, commit, setup s
 	}()
 	if setup != "" {
 		setupCtx := jobqueue.WithSource(ctx, jobqueue.Source{RunId: jobqueue.SourceFrom(ctx).RunId, Label: "Setup · " + label})
+		if o, ok := jobobject.OwnerFrom(setupCtx); ok {
+			o.Cmd = PlanCmd_Setup
+			setupCtx = jobobject.WithOwner(setupCtx, o)
+		}
 		if _, err := runPlanCommand(setupCtx, wt, setup, nil, SetupTimeout, nil); err != nil {
 			return &treeStepError{"Setup failed in the " + label, errors.New(failureDetail(err))}
 		}
@@ -114,6 +126,7 @@ func withDetachedTree(ctx context.Context, project, name, label, commit, setup s
 
 // runBaseCheck runs Check in a detached tree at commit.
 func runBaseCheck(ctx context.Context, runID, project, commit, setup, check string) (string, string) {
+	ctx = withRunCmdOwner(ctx, runID, PlanCmd_Check, "")
 	err := withDetachedTree(jobqueue.WithSource(ctx, jobqueue.Source{RunId: runID}), project, runID+"-base", "base tree", commit, setup, func(wt string) error {
 		_, err := runPlanCommand(jobqueue.WithSource(ctx, jobqueue.Source{RunId: runID, Label: "Check · base tree"}), wt, check, nil, VerifyTimeout, nil)
 		return err

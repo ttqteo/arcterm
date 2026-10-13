@@ -29,7 +29,17 @@ export type ActionDetail =
     | { kind: "read"; snippet: string; truncated?: boolean }
     | { kind: "bash"; command?: string; output: string; exit: number }
     | { kind: "skill"; name: string; args?: string }
-    | { kind: "edit"; files: EditFile[] };
+    | { kind: "edit"; files: EditFile[] }
+    | { kind: "ask"; questions: AskQuestionDetail[] };
+
+// a question the agent asked: `picked` holds the chosen option labels, `typed` the text entered under "Other"
+export interface AskQuestionDetail {
+    question: string;
+    header?: string;
+    options: AgentAskOption[];
+    picked: string[];
+    typed?: string;
+}
 
 // One item of "previous info": something the agent said, or something it did.
 export type AgentEntry =
@@ -197,6 +207,7 @@ export const DETAIL_INLINE_MAX: Record<ActionDetail["kind"], number> = {
     bash: 8,
     skill: 6,
     edit: 9,
+    ask: 12,
 };
 
 // Pure: number of lines a detail would render inline (drives inline-vs-modal routing).
@@ -212,6 +223,8 @@ export function detailLineCount(d: ActionDetail): number {
             return d.args ? d.args.split("\n").length + 1 : 1;
         case "edit":
             return d.files.reduce((n, f) => n + f.lines.length + 1, 0);
+        case "ask":
+            return d.questions.reduce((n, q) => n + 1 + q.options.length + (q.typed ? 1 : 0), 0);
     }
 }
 

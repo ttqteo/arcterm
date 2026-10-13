@@ -264,8 +264,7 @@ func truncate(s string, n int) string {
 	return s[:n]
 }
 
-// tailLines returns the lines in the last transcriptTailBytes of path, dropping the
-// partial leading line that a mid-file read produces. Any error yields nil.
+// tailLines returns the lines in the last transcriptTailBytes of path. Any error yields nil.
 func tailLines(path string) []string {
 	lines, _ := tailLinesN(path, transcriptTailBytes)
 	return lines
@@ -273,31 +272,48 @@ func tailLines(path string) []string {
 
 // tailLinesN returns the lines in the last n bytes of path, as tailLines does, and whether that is the whole file.
 func tailLinesN(path string, n int64) ([]string, bool) {
-	f, err := os.Open(path)
+	lines, whole, err := readTail(path, n)
 	if err != nil {
 		return nil, true
+	}
+	return lines, whole
+}
+
+// readTailLines returns the lines in the last maxBytes of path, dropping the
+// partial leading line that a mid-file read produces.
+func readTailLines(path string, maxBytes int64) ([]string, error) {
+	lines, _, err := readTail(path, maxBytes)
+	return lines, err
+}
+
+// readTail returns the lines in the last n bytes of path, less the partial leading line a mid-file read produces,
+// and whether they are the whole file.
+func readTail(path string, n int64) ([]string, bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, false, err
 	}
 	defer f.Close()
 	st, err := f.Stat()
 	if err != nil {
-		return nil, true
+		return nil, false, err
 	}
 	start := int64(0)
 	if st.Size() > n {
 		start = st.Size() - n
 	}
 	if _, err := f.Seek(start, io.SeekStart); err != nil {
-		return nil, true
+		return nil, false, err
 	}
 	data, err := io.ReadAll(f)
 	if err != nil {
-		return nil, true
+		return nil, false, err
 	}
 	lines := strings.Split(string(data), "\n")
 	if start > 0 && len(lines) > 0 {
 		lines = lines[1:]
 	}
-	return lines, start == 0
+	return lines, start == 0, nil
 }
 
 func readLastModel(path string) string {

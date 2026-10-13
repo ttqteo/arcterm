@@ -4,6 +4,7 @@
 package orchestrate
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -61,8 +62,12 @@ func LaunchOriginOf(cwd, firstPrompt string) (LaunchOrigin, bool) {
 const uuidLen = 36
 
 // runOfWorktree reads back the run that owns a path inside one of the engine's worktrees, and the tree's key past the
-// run id: a task id (TaskWorktreeKey), finalTreeKey, or "" for the run's own tree. worktreeDir builds the path.
+// run id: a task id (TaskWorktreeKey), finalTreeKey, or "" for the run's own tree. worktreeDir builds the path: under
+// the short root (worktreeroot.go) or, for a run started before it, the project's .waveterm/worktrees.
 func runOfWorktree(path string) (runID, rest string, ok bool) {
+	if runID, rest, ok := runOfShortTree(path); ok {
+		return runID, rest, true
+	}
 	parts := strings.Split(filepath.ToSlash(path), "/")
 	for i := 0; i+2 < len(parts); i++ {
 		if parts[i] != ".waveterm" || parts[i+1] != "worktrees" {
@@ -78,4 +83,39 @@ func runOfWorktree(path string) (runID, rest string, ok bool) {
 		return key[:uuidLen], strings.TrimPrefix(rest, "-"), true
 	}
 	return "", "", false
+}
+
+// runOfShortTree reads back a tree under the short root: <root>/<first 8 of the run id><suffix>, named back to its run
+// by the prefix's marker, or <root>/<run id><suffix> when the prefix was another run's.
+func runOfShortTree(path string) (runID, rest string, ok bool) {
+	root := worktreeRoot()
+	if root == "" || path == "" {
+		return "", "", false
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+		return "", "", false
+	}
+	tree := strings.Split(filepath.ToSlash(rel), "/")[0]
+	if runID, suffix, ok := splitRunKey(tree); ok {
+		return runID, strings.TrimPrefix(suffix, "-"), true
+	}
+	if len(tree) < runPrefixLen {
+		return "", "", false
+	}
+	prefix, suffix := tree[:runPrefixLen], tree[runPrefixLen:]
+	if suffix != "" && suffix[0] != '-' {
+		return "", "", false
+	}
+	runMarkerMu.RLock()
+	owner, err := os.ReadFile(runMarkerPath(root, prefix))
+	runMarkerMu.RUnlock()
+	if err != nil {
+		return "", "", false
+	}
+	runID = string(owner)
+	if len(runID) != uuidLen || uuid.Validate(runID) != nil || !strings.HasPrefix(runID, prefix) {
+		return "", "", false
+	}
+	return runID, strings.TrimPrefix(suffix, "-"), true
 }

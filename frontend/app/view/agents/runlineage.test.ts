@@ -3,11 +3,14 @@
 
 import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
+import { finalStageId } from "./finalstage";
 import {
     agentProject,
     endedRoles,
     endedWorkerId,
     endedWorkerVM,
+    finalStageRoles,
+    finalStageVM,
     formatLeft,
     holdsTask,
     isEndedWorkerId,
@@ -402,5 +405,35 @@ describe("a task past its worker", () => {
         ] as TaskNode[];
         const runs = { r: { runId: "r", channelId: "ch", title: "t", project: "p", dag: { tasks } as TaskGroup } };
         expect(Object.keys(endedRoles(runs))).toEqual([endedWorkerId("r", "t-1")]);
+    });
+});
+
+describe("the final stage's own id", () => {
+    const info = (runId: string, status: string, final?: FinalStage) => ({
+        runId,
+        channelId: "ch",
+        title: "t",
+        project: "p",
+        dag: { status, final, tasks: [{ id: "t-1", state: "done" }] } as TaskGroup,
+    });
+
+    it("has a verifier stage role under its run once the stage has a row", () => {
+        const runs = {
+            r1: info("r1", "finalizing", { state: "checking", round: 1, step: "tree" }),
+            r2: info("r2", "running"),
+            r3: info("r3", "running", { state: "", round: 2 }),
+            r4: { runId: "r4", channelId: "ch", title: "t", project: "p" },
+        };
+        expect(finalStageRoles(runs)).toEqual({
+            [finalStageId("r1")]: { kind: "stage", leadRunId: "r1", stageRole: "verifier" },
+            [finalStageId("r3")]: { kind: "stage", leadRunId: "r3", stageRole: "verifier" },
+        });
+    });
+
+    it("is shown as a session named for the stage, with no terminal to mount", () => {
+        const vm = finalStageVM("r1");
+        expect(vm).toMatchObject({ id: finalStageId("r1"), name: stageLabel("verifier"), state: "idle" });
+        expect(vm.blockId).toBeUndefined();
+        expect(vm.runId).toBeUndefined();
     });
 });

@@ -9,7 +9,10 @@ import { isPeekGesture } from "@/app/cockpit/ctrlheld";
 import { paneReveal } from "@/app/element/motiontokens";
 import { globalStore } from "@/app/store/jotaiStore";
 import * as WOS from "@/app/store/wos";
+import { briefSheetOpenAtom } from "@/app/view/jarvis/jarvisstore";
+import { clearSubject } from "@/app/view/jarvis/jarvissubjectstore";
 import { openOrPeek } from "@/app/view/jarvis/openref";
+import { returnWhenClosed } from "@/app/view/jarvis/returnsurface";
 import {
     cleanupOnly,
     digestStale,
@@ -28,6 +31,7 @@ import type { AgentsViewModel } from "./agents";
 import { formatTokens } from "./agentsviewmodel";
 import { ASK_OWNER_USER, childAskKey } from "./childaskmodel";
 import { bindChildAsks, childAskErrorAtom, childAsksAtom, takeOverChildAsk } from "./childaskstore";
+import { useFinalStageView } from "./finalstageviews";
 import { useRunEvents } from "./runeventstore";
 import { formatLeft, leadAgentOf, runProgress, taskAgentOf, type RunInfo } from "./runlineage";
 import { runStatusView } from "./runmodel";
@@ -39,12 +43,13 @@ import {
     runSegments,
     taskFacts,
     thenTask,
+    verifyingHeadline,
     type LaneState,
 } from "./runrail";
 import { SEG_FILL } from "./runstrip";
 import { tsLabel } from "./runtimeline";
 import { useRunUsage } from "./runtokenstore";
-import { summarizeUsage, usageText, type UsageSummary } from "./runusage";
+import { estimateText, summarizeUsage, tokensText, type UsageSummary } from "./runusage";
 import { SectionLabel, SubLabel } from "./sectionlabel";
 
 const LANE_DOT: Record<LaneState, string> = {
@@ -94,11 +99,17 @@ function FactRow({ label, children }: { label: string; children: React.ReactNode
     );
 }
 
-// the tokens a run or task has spent, then each model's share
+// the tokens a run or task has spent and what they would cost at api prices, then each model's share
 function UsageRows({ spent, sealed }: { spent: UsageSummary; sealed: boolean }) {
+    const estimate = estimateText(spent);
     return (
         <>
-            <FactRow label="Tokens">{usageText(spent, sealed)}</FactRow>
+            <FactRow label="Tokens">{tokensText(spent, sealed)}</FactRow>
+            {estimate != null ? (
+                <FactRow label="Cost">
+                    <span data-run-cost>{estimate} API-equiv</span>
+                </FactRow>
+            ) : null}
             {spent.byModel.map((m) => (
                 <FactRow key={m.model} label={m.model}>
                     {formatTokens(m.tokens)}
@@ -125,6 +136,11 @@ export function openRunDag(model: AgentsViewModel, run: RunInfo, taskId?: string
         } else {
             openDagLive(run.channelId, run.runId, dagOref);
         }
+        // the sheet was only the way in: left open, it would greet the user's next visit to Jarvis
+        returnWhenClosed("dag", () => {
+            globalStore.set(briefSheetOpenAtom, false);
+            clearSubject();
+        });
     });
 }
 
@@ -439,20 +455,23 @@ function Activity({ model, run }: { model: AgentsViewModel; run: RunInfo }) {
 }
 
 // RunStatus is the Run section's headline: the run's title, a slot per task, and where the run stands.
-function RunStatus({ run, waitingOnYou }: { run: RunInfo; waitingOnYou: boolean }) {
+function RunStatus({ run, waitingOnYou, finalNext }: { run: RunInfo; waitingOnYou: boolean; finalNext: string }) {
     const digest = run.digest;
     const state = { digest, loading: digest == null, stale: digestStale(digest, run.dag?.version) };
     const known = digest != null && !state.stale ? RUN_STATUS[digest.health] : undefined;
-    const status = waitingOnYou
-        ? RUN_STATUS["needs-you"]
-        : !state.stale && cleanupOnly(digest)
-          ? { text: "Cleanup failed", tone: "text-warning" }
-          : (known ?? healthView(state));
+    const verifying = verifyingHeadline(run.dag?.status, waitingOnYou, finalNext);
+    const status =
+        verifying ??
+        (waitingOnYou
+            ? RUN_STATUS["needs-you"]
+            : !state.stale && cleanupOnly(digest)
+              ? { text: "Cleanup failed", tone: "text-warning" }
+              : (known ?? healthView(state)));
     const finished = !state.stale && digest?.health === "done";
     // waiting on you, the engine's next step only repeats that; what the run moves on to afterwards is news
     const then = waitingOnYou ? thenTask(run.dag) : undefined;
-    const next = finished || waitingOnYou ? null : nextStepView(state, taskBriefs(run.dag));
-    const tail = then ? `· then ${then}` : next ? `· next ${next}` : "";
+    const next = finished || waitingOnYou || verifying ? null : nextStepView(state, taskBriefs(run.dag));
+    const tail = verifying ? verifying.tail : then ? `· then ${then}` : next ? `· next ${next}` : "";
     return (
         <div className="flex flex-col gap-[8px]">
             <div className="truncate text-[13px] font-semibold text-primary">{run.title}</div>
@@ -478,6 +497,7 @@ function RunStatus({ run, waitingOnYou }: { run: RunInfo; waitingOnYou: boolean 
 
 export function RunSection({ model, run, asks }: { model: AgentsViewModel; run: RunInfo; asks: DagAskItem[] }) {
     const now = useAtomValue(model.nowAtom);
+    const finalView = useFinalStageView(run.dag, run.runId, run.channelId, now);
     const { done, total } = runProgress(run.dag);
     const digest = run.digest;
     const finished = !digestStale(digest, run.dag?.version) && digest?.health === "done";
@@ -507,7 +527,11 @@ export function RunSection({ model, run, asks }: { model: AgentsViewModel; run: 
                     {runStatusView(run.status ?? "planning").label} · no plan submitted
                 </div>
             ) : (
-                <RunStatus run={run} waitingOnYou={asks.some((a) => a.owner === ASK_OWNER_USER)} />
+                <RunStatus
+                    run={run}
+                    waitingOnYou={asks.some((a) => a.owner === ASK_OWNER_USER)}
+                    finalNext={finalView.next}
+                />
             )}
             {(finished && report) || spent ? (
                 <div>

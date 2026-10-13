@@ -6,6 +6,7 @@
 
 import { diffScopeOfRun, openDiff } from "@/app/view/agents/agentdiffnav";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { InlineMarkdown } from "@/app/view/agents/inlinemarkdown";
 import { SectionLabel } from "@/app/view/agents/sectionlabel";
 import { cn } from "@/util/util";
 import { ArrowUpRight } from "lucide-react";
@@ -49,7 +50,9 @@ export function RunReportView({ model, run, compact }: { model: AgentsViewModel;
                 </button>
             </div>
             {report.lead !== "" ? (
-                <div className="break-words text-[11px] leading-[1.55] text-secondary">{report.lead}</div>
+                <div className="break-words text-[11px] leading-[1.55] text-secondary">
+                    <InlineMarkdown text={report.lead} />
+                </div>
             ) : null}
             {raw ? (
                 <pre className="m-0 max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-[8px] border border-border bg-surface px-[13px] py-3 font-mono text-[11px] leading-[1.6] text-secondary">
@@ -90,7 +93,7 @@ export function RunReportView({ model, run, compact }: { model: AgentsViewModel;
                                             it.dim ? "text-ink-mid" : "text-ink-hi"
                                         )}
                                     >
-                                        {it.text}
+                                        <InlineMarkdown text={it.text} />
                                     </span>
                                     {it.tag !== "" ? (
                                         <span className="flex-none rounded-[5px] border border-edge-mid px-1.5 text-[10.5px] leading-[17px] text-ink-mid">

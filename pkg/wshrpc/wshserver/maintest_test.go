@@ -32,6 +32,17 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	wavebase.DataHome_VarCache = dir
+	// the transcript, session and usage readers all resolve under the home dir: against the real one a run
+	// globbed ~/.claude/projects for 11 lookups and opened 229 of the user's transcripts
+	home := filepath.Join(dir, "home")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		panic(err)
+	}
+	for _, key := range []string{"HOME", "USERPROFILE"} {
+		if err := os.Setenv(key, home); err != nil {
+			panic(err)
+		}
+	}
 	if err := wavebase.EnsureWaveDBDir(); err != nil {
 		panic(err)
 	}
@@ -66,6 +77,8 @@ func TestMain(m *testing.M) {
 	// must not read as a worker that exited
 	jarvis.StartRunWorker = func(context.Context, string) error { return nil }
 	orchestrate.SetWorkerGoneForTest(func(context.Context, *waveobj.Run) bool { return false })
+	// a backstop for a test that makes trees without a repo fixture: none may land in the real user cache dir
+	defer orchestrate.UseWorktreeRootForTest(filepath.Join(dir, "arc-wt"))()
 	code := m.Run()
 	// a test that repoints the config home without restoring it hands every later test the real vault
 	// (fixture efforts and tasks landed in ~/.waveterm/vault that way); TestVaultIsTheTestsOwn runs too early to see it
@@ -82,4 +95,23 @@ func TestVaultIsTheTestsOwn(t *testing.T) {
 	if !strings.HasPrefix(filepath.Clean(memroots.VaultRoot()), filepath.Clean(testVaultDir)) {
 		t.Fatalf("vault root %q is outside the test vault %q", memroots.VaultRoot(), testVaultDir)
 	}
+}
+
+// testRootOwner is the test whose own worktree root is installed.
+var testRootOwner *testing.T
+
+// useTestWorktreeRoot gives the test an engine worktree root of its own, once, so a second repo in the test resolves
+// its trees beside the first's and none outlives the test.
+func useTestWorktreeRoot(t *testing.T) {
+	t.Helper()
+	if testRootOwner == t {
+		return
+	}
+	prev := testRootOwner
+	testRootOwner = t
+	restore := orchestrate.UseWorktreeRootForTest(t.TempDir())
+	t.Cleanup(func() {
+		restore()
+		testRootOwner = prev
+	})
 }

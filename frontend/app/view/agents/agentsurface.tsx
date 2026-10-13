@@ -58,6 +58,8 @@ import { mentionTarget } from "./griddrop";
 import { GridDropOverlay } from "./griddropoverlay";
 import { HeldAskBar } from "./heldaskbar";
 import { agentGridAtom, currentGrid, eligibleIds, removeFromGrid } from "./gridstore";
+import { finalRowFocusId } from "./finalstage";
+import { FinalStagePane } from "./finalstagepane";
 import { rosterSeededAtom } from "./liveagents";
 import { agentFocusFallback } from "./modalfocusfallback";
 import { NO_PANES, nextPaneMounts } from "./panemounts";
@@ -88,6 +90,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const fullscreen = useAtomValue(terminalFullscreenAtom);
     const focusSub = useAtomValue(focusSubagentAtom);
     const ended = useAtomValue(model.endedWorkerAtom);
+    const stage = useAtomValue(model.finalStageAtom);
     const seeded = useAtomValue(rosterSeededAtom);
     const gridState = useAtomValue(agentGridAtom);
     // what the centre column shows: the terminal, one session's transcript, or Conversation History (agentcenter.ts).
@@ -99,12 +102,13 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     // order is documented there; a terminal only when there is no agent), and holds the skeleton while the roster
     // loads and none of a saved grid's agents has arrived. focusId is kept "always real" (initialized to a
     // default, never empty). A done task's worker has no terminal to mount, so it is focusable without being
-    // mountable.
+    // mountable; so is a run's final stage before a verifier session stands for it.
     const mountable = [...agents, ...terminals];
     // The grid's cells are live agents with a terminal. A plain terminal is shown alone (visibleCells); a done
     // worker's transcript replaces the grid (terminalShown). Both leave the saved grid as it was.
     const eligible = useMemo(() => eligibleIds(agents), [agents]);
-    const chosen = focusId != null ? (mountable.find((a) => a.id === focusId) ?? ended?.agent) : undefined;
+    const chosen =
+        focusId != null ? (mountable.find((a) => a.id === focusId) ?? ended?.agent ?? stage?.agent) : undefined;
     // A terminal chosen while there is an agent docks under the agent that was showing instead of taking its place
     // (terminaldock.ts); the effects below write focusIdAtom back to that agent and the dock atom to the terminal.
     const dockedId = useAtomValue(dockedTerminalAtom);
@@ -229,6 +233,15 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const storedDockHeight = useAtomValue(terminalDockHeightAtom);
     const dragDockHeight = useAtomValue(terminalDockDragAtom);
     const dockHeight = clampDockHeight(dragDockHeight ?? storedDockHeight, gridHeight);
+
+
+    // the stage's row becomes its verifier's session once that is in the roster, and the focus goes with the row
+    const stageFocusId = stage ? finalRowFocusId(stage.run, agents) : undefined;
+    useEffect(() => {
+        if (stageFocusId != null && stageFocusId !== focusId) {
+            globalStore.set(model.focusIdAtom, stageFocusId);
+        }
+    }, [stageFocusId, focusId, model]);
 
     // a stale interior (its parent is no longer focused) closes so the terminal returns
     useEffect(() => {
@@ -648,6 +661,8 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                         </div>
                         {isEndedWorkerId(agent.id) ? (
                             <EndedTranscript model={model} agent={agent} />
+                        ) : stage != null && agent.id === stage.agent.id ? (
+                            <FinalStagePane model={model} run={stage.run} />
                         ) : reviewMode ? (
                             <DocReviewPane model={model} agent={agent} />
                         ) : canvasMode ? (

@@ -7,10 +7,12 @@
 // and the creature keeps an unread marker until you look.
 
 import { PopoverReveal } from "@/app/element/popoverreveal";
+import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { InlineMarkdown } from "@/app/view/agents/inlinemarkdown";
 import { cn } from "@/util/util";
 import { autoUpdate, offset, shift, useFloating, type Placement } from "@floating-ui/react";
 import { useEffect, useRef, useState } from "react";
+import { bubbleAgent } from "./petjoin";
 import type { PetCorner } from "./petledge";
 import { bubbleMs, bubbleText, eventLabel, type NotifyLevel, type PetEvent } from "./petvoice";
 
@@ -60,6 +62,7 @@ export function EventLabel({ event, className }: { event: PetEvent; className?: 
 
 export function PetBubble({
     event,
+    agents,
     anchor,
     corner,
     placement,
@@ -68,6 +71,7 @@ export function PetBubble({
     onDismiss,
 }: {
     event: PetEvent | null;
+    agents: ReadonlyArray<AgentVM>;
     anchor: HTMLElement | null;
     corner: PetCorner;
     // folded (cockpit/sprout-mini.tsx): which way from Sprout it opens, and no drop shadow over the app behind
@@ -84,6 +88,7 @@ export function PetBubble({
             setSaid(event);
         }
     }, [event]);
+    const agent = bubbleAgent(said, agents);
 
     // held in a ref, not in the dep list: the creature re-renders on every nowAtom tick, and a callback
     // identity in the deps would restart this timer each second so the bubble never dismissed.
@@ -140,6 +145,24 @@ export function PetBubble({
                         className="flex w-full cursor-pointer flex-col gap-1.5 rounded-[12px] px-3 py-[11px] text-left hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
                         <EventLabel event={said} className="text-[9px]" />
+                        {agent != null ? (
+                            <span data-pet-bubble-agent className="flex min-w-0 items-baseline gap-1.5">
+                                <span
+                                    data-pet-bubble-agent-name
+                                    className="min-w-0 truncate text-[12px] font-semibold text-primary"
+                                >
+                                    {agent.name}
+                                </span>
+                                {agent.project ? (
+                                    <span
+                                        data-pet-bubble-agent-project
+                                        className="flex-none font-mono text-[10px] text-muted"
+                                    >
+                                        {agent.project}
+                                    </span>
+                                ) : null}
+                            </span>
+                        ) : null}
                         {/* clamped: a notification title passes through verbatim and would otherwise stretch
                             the bubble. Inline only, and links as plain text — the bubble is one button. */}
                         <span

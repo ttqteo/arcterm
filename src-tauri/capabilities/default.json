@@ -23,6 +23,7 @@
     "core:window:allow-cursor-position",
     "core:window:allow-maximize",
     "core:window:allow-unmaximize",
+    "core:window:allow-request-user-attention",
     "core:webview:allow-set-webview-zoom",
     "core:menu:default",
     "dialog:allow-open",

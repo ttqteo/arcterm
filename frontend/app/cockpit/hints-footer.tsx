@@ -24,15 +24,29 @@ import { digitHintAtom } from "./digithints";
 import { heldHints, visibleHints, type HintChip } from "./footer-visible";
 import { GLOBAL_HINTS, SURFACE_HINTS } from "./footerhints";
 import { FooterStatus } from "./footerstatus";
+import { ResMonReadout } from "./resmonreadout";
 
-// dim: focus is in the terminal, so the hints step back; the status at the right end (servers, version) does not
-function FooterBar({ model, children, dim }: { model: AgentsViewModel; children?: React.ReactNode; dim?: boolean }) {
+// dim: focus is in the terminal, so the hints step back; the status at the right end (the resource readout,
+// servers, version) does not. The readout is data, not a key hint, and never dims with the chips
+function FooterBar({
+    model,
+    children,
+    dim,
+    readout = true,
+}: {
+    model: AgentsViewModel;
+    children?: React.ReactNode;
+    dim?: boolean;
+    readout?: boolean;
+}) {
     return (
         <div
             data-pet-ledge
+            data-hints-footer=""
             className="flex h-7 shrink-0 select-none items-center gap-4 border-t border-edge-strong bg-modalbg px-4"
         >
             <div className={cn("flex min-w-0 flex-1 items-center gap-4", dim && "opacity-60")}>{children}</div>
+            {readout ? <ResMonReadout className="shrink-0" /> : null}
             <FooterStatus model={model} />
         </div>
     );
@@ -96,8 +110,9 @@ export function HintsFooter({ model }: { model: AgentsViewModel }) {
         const items = bindings
             .filter((b) => b.keys.startsWith(leader + " "))
             .map((b) => ({ next: b.keys.split(" ")[1], label: b.label }));
+        // the cockpit's hints bar always carries a readout, so on that surface the footer yields its own
         return (
-            <FooterBar model={model}>
+            <FooterBar model={model} readout={surface !== "cockpit"}>
                 <span className="shrink-0 font-mono text-[11px] text-accent-soft">{formatChordString(leaderChord(leader))} →</span>
                 <div className={CHIP_ROW}>
                     {items.map((it) => (
@@ -135,7 +150,7 @@ export function HintsFooter({ model }: { model: AgentsViewModel }) {
     const chips = visibleHints(ctx, bindings, SURFACE_HINTS[surface] ?? [], GLOBAL_HINTS);
     return (
         <FooterBar model={model} dim={ctx.editable}>
-            <div className={CHIP_ROW}>
+            <div data-footer-chips="" className={CHIP_ROW}>
                 {chips.map((c) => (
                     <Chip
                         key={(c.glyph ?? c.keys) + c.label}

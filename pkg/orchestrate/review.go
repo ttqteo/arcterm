@@ -76,12 +76,16 @@ func advanceReviews(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owner *
 			continue
 		}
 		if t.ReviewRunID != "" {
-			reason := reviewerLost(ctx, g, t, now)
+			reason, final := reviewerLost(ctx, g, t, now)
 			if reason == "" {
 				continue
 			}
 			stopReviewer(ctx, g, t.ReviewRunID, afterCommit)
 			t.ReviewRunID = ""
+			if final {
+				failReview(ctx, g, t, reason, afterCommit)
+				continue
+			}
 			if !spendReviewRespawn(ctx, g, t, reason, afterCommit) {
 				continue
 			}
@@ -160,23 +164,30 @@ func spawnReviewer(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, t *waveo
 	})
 }
 
-// reviewerLost says why a reviewer with no verdict is done for, or "" while it is still working.
-func reviewerLost(ctx context.Context, g *waveobj.TaskGroup, t *waveobj.TaskNode, now int64) string {
-	if now-t.ReviewSpawnedTs > ReviewTimeout.Milliseconds() {
-		return fmt.Sprintf("reviewer gave no verdict within %s", ReviewTimeout)
-	}
+// reviewerLost says why a reviewer with no verdict is done for, or "" while it is still working. final is set when
+// its route refused it, which a replacement on the same route would meet too.
+func reviewerLost(ctx context.Context, g *waveobj.TaskGroup, t *waveobj.TaskNode, now int64) (reason string, final bool) {
 	run, err := wstore.GetRun(ctx, g.ChannelId, t.ReviewRunID)
+	if err == nil {
+		if failure, refused := routeRefused(run, now); refused {
+			recordRefusedRoute(run, failure, now)
+			return "reviewer's route refused it: " + failure.Text, true
+		}
+	}
+	if now-t.ReviewSpawnedTs > ReviewTimeout.Milliseconds() {
+		return withSessionFailure(fmt.Sprintf("reviewer gave no verdict within %s", ReviewTimeout), run), false
+	}
 	if err != nil {
-		return "" // unreadable this tick; the timeout still bounds it
+		return "", false // unreadable this tick; the timeout still bounds it
 	}
 	switch run.Status {
 	case jarvis.RunStatus_Done, jarvis.RunStatus_Cancelled, jarvis.RunStatus_Blocked:
-		return "reviewer ended without a verdict"
+		return withSessionFailure("reviewer ended without a verdict", run), false
 	}
 	if workerControllerGone(ctx, run) {
-		return "reviewer exited without a verdict"
+		return withSessionFailure("reviewer exited without a verdict", run), false
 	}
-	return ""
+	return "", false
 }
 
 // stopReviewer cancels a reviewer being replaced and stops its process once the tick commits. A reviewer
@@ -415,7 +426,7 @@ func routeDownstream(ctx context.Context, g *waveobj.TaskGroup, from, note strin
 		return
 	}
 	n := laterNote{
-		amend: toldText(from + "'s reviewer: " + note),
+		amend: from + "'s reviewer: " + note,
 		typed: fmt.Sprintf("%s passed review with a note for your task: %s", from, note),
 	}
 	var reached, missed []string

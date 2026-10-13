@@ -5,6 +5,7 @@ import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "@/
 import { overlayLive, sessionsArchiveAtom, type LiveSession } from "@/app/view/agents/sessionsarchivestore";
 import { runSessionPrimary } from "@/app/view/agents/sessionsdetail";
 import { sessionPrimary, sessionSelection } from "@/app/view/agents/sessionsruns";
+import { landOn } from "@/app/view/jarvis/returnsurface";
 import type { ThingKindDef } from "./types";
 
 // the session as Conversation History builds it, with the roster agent a live one is running in

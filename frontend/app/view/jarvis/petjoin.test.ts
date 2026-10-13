@@ -118,6 +118,8 @@ import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import {
     agentFinishedFromDiff,
     askAgent,
+    bubbleAgent,
+    bubbleClick,
     eventFromAsk,
     eventFromNotify,
     eventFromRunLanded,
@@ -125,6 +127,7 @@ import {
     shouldSpeakAsk,
     type AskGateCtx,
 } from "./petjoin";
+import type { PetEvent } from "./petvoice";
 
 function notify(over: Partial<NotifyCommandData> = {}): NotifyCommandData {
     return { title: "build finished", message: "all 214 tests green", level: "info", ...over };
@@ -156,6 +159,55 @@ describe("eventFromNotify", () => {
 
     it("leaves detail unset when there is no message", () => {
         expect(eventFromNotify(notify({ message: "" }), 1000, 2)?.detail).toBeUndefined();
+    });
+
+    it("carries the sending block as the ref, and the said-once flag", () => {
+        const e = eventFromNotify(notify({ oref: "block:abc", transient: true }), 1000, 1);
+        expect(e?.ref).toBe("block:abc");
+        expect(e?.transient).toBe(true);
+    });
+
+    it("sets neither when the payload has neither", () => {
+        const e = eventFromNotify(notify(), 1000, 1);
+        expect(e?.ref).toBeUndefined();
+        expect(e?.transient).toBeUndefined();
+    });
+});
+
+describe("a notice's bubble and its agent", () => {
+    const agents = [{ id: "tab1", name: "radar-triage", project: "waveterm", blockId: "abc" } as unknown as AgentVM];
+    const notice = (over: Partial<PetEvent> = {}): PetEvent => ({
+        id: "notify:1:1",
+        at: 1,
+        kind: "notify",
+        text: "cache miss",
+        ref: "block:abc",
+        ...over,
+    });
+    const question: PetEvent = { id: "ask:1", at: 1, kind: "ask", text: "which?", ref: "block:abc" };
+
+    it("names the agent for a notice whose ref matches the roster", () => {
+        expect(bubbleAgent(notice(), agents)?.id).toBe("tab1");
+    });
+
+    it("names no agent for an ask, an unmatched ref, or no ref", () => {
+        expect(bubbleAgent(question, agents)).toBeUndefined();
+        expect(bubbleAgent(notice({ ref: "block:gone" }), agents)).toBeUndefined();
+        expect(bubbleAgent(notice({ ref: undefined }), agents)).toBeUndefined();
+        expect(bubbleAgent(null, agents)).toBeUndefined();
+    });
+
+    it("a click on a said-once notice with a resolved agent opens that agent", () => {
+        expect(bubbleClick(notice({ transient: true }), agents)).toEqual({ open: "agent", tabId: "tab1" });
+    });
+
+    it("every other click opens the popup", () => {
+        const peek = { open: "peek" };
+        expect(bubbleClick(notice({ transient: true, ref: undefined }), agents)).toEqual(peek);
+        expect(bubbleClick(notice({ transient: true, ref: "block:gone" }), agents)).toEqual(peek);
+        expect(bubbleClick(notice(), agents)).toEqual(peek);
+        expect(bubbleClick(question, agents)).toEqual(peek);
+        expect(bubbleClick({ ...question, transient: true }, agents)).toEqual(peek);
     });
 });
 

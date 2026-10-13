@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The universal search — Ctrl+P on every surface. One overlay with visible scopes (All, Needs you, Go to,
-// Agents, Runs, Sessions, Records, Projects, Files, Commands): Tab walks them, and a typed prefix ("r:")
+// Agents, Runs, Sessions, Records, Notes, Projects, Files, Commands): Tab walks them, and a typed prefix ("r:")
 // or one of the old sigils narrows to one from an empty All. In All, text that names something opens it
 // and text that names nothing is a goal the launch rows start. Code's own file finder folded in as the
 // Files scope, preselected there.
@@ -56,6 +56,7 @@ import {
     Eye,
     Flag,
     GitFork,
+    Plus,
     Search,
     SlidersHorizontal,
     Square,
@@ -112,7 +113,24 @@ import {
     type NeedsRow,
     type NeedsTarget,
 } from "./palette-needs";
-import { PaletteGroupView, type PaletteItem, type StatusTone } from "./palette-rows";
+import { PaletteNoteEditor } from "./palette-noteeditor";
+import {
+    draftDirty,
+    draftOf,
+    NEW_NOTE_KEY,
+    newDraft,
+    noteDayLabel,
+    noteKey,
+    noteMarkdown,
+    noteTitleError,
+    pressArm,
+    selectionAfterDelete,
+    type Armed,
+    type NoteDraft,
+} from "./palette-notes";
+import { deletePaletteNote, loadPaletteNotes, paletteNotesAtom, saveNoteDraft } from "./palette-notesstore";
+import { PaletteNotesView } from "./palette-notesview";
+import { FooterKeyLine, PaletteGroupView, type PaletteItem, type StatusTone } from "./palette-rows";
 import {
     backspaceEmpty,
     caretAtEnd,
@@ -208,6 +226,16 @@ const SCOPE_KINDS: Partial<Record<ScopeId, GroupKind[]>> = {
     projects: ["channel"],
 };
 
+// how much of the preview's height PageUp/PageDown move it, so a line or two carries over
+const PREVIEW_PAGE = 0.85;
+
+const errorText = (error: string) => error.replace(/^Error:\s*/, "");
+
+// the Notes scope's rows: the server's order (newest first) until text is typed, then ranked by title
+function notesFor(rows: PaletteItem[], query: string): PaletteItem[] {
+    return query.trim() === "" ? rows : rankPaletteItems(rows, query);
+}
+
 function runTone(tone: RunStatusTone): StatusTone {
     if (tone === "running") {
         return "working";
@@ -238,6 +266,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
     const projects = useAtomValue(projectsAtom);
     const records = useAtomValue(taskListAtom);
     const efforts = useAtomValue(paletteEffortsAtom);
+    const notes = useAtomValue(paletteNotesAtom);
     const surface = useAtomValue(model.surfaceAtom);
     const bindings = useAtomValue(bindingsAtom);
     const mru = useAtomValue(paletteMruAtom);
@@ -258,12 +287,18 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
     const [nav, setNavState] = useState<NavState>(() => initialNav(surface));
     const [sel, setSel] = useState(0);
     const [paletteError, setPaletteError] = useState<string | undefined>(undefined);
+    const [armed, setArmed] = useState<Armed | null>(null);
+    // the note being written: while set, the palette is the editor. dropped with each open
+    const [draft, setDraft] = useState<NoteDraft | null>(null);
     // Files: the target's listing, re-read each time the scope is shown
     const [loadedFiles, setLoadedFiles] = useState<{ path: string; index?: CodeIndex; error?: string } | null>(null);
     // Canvases: the selected agent's project's, re-read per open
     const [canvases, setCanvases] = useState<{ agentId: string; topics: string[] } | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
+    const previewRef = useRef<HTMLDivElement>(null);
+    const bodyRef = useRef<HTMLTextAreaElement>(null);
+    const savingRef = useRef(false);
     const loadedRef = useRef(false);
 
     const close = () => globalStore.set(model.paletteOpenAtom, false);
@@ -273,6 +308,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
         setPaletteError(undefined);
     };
     const q = nav.query.trim();
+    const atTop = nav.drill == null && nav.actions == null;
 
     // Lazy-load the sessions archive on first open (the Agent sidebar and History load it on their own).
     useEffect(() => {
@@ -284,6 +320,12 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
             // records / initiatives: re-read per open so archiving one in
             // the Jarvis surface is reflected the next time the palette is asked to find it.
             loadPaletteEntities();
+            // notes too: an agent may have written one since the last open
+            void runPaletteAction(loadPaletteNotes).then((result) => {
+                if ("error" in result) {
+                    setPaletteError(`Couldn’t load notes: ${errorText(result.error)}`);
+                }
+            });
             // only Jarvis loads the channel list, so a palette opened first thing elsewhere had no project to
             // start in and no runs; primeChannels, not loadChannels, which also selects a channel
             fireAndForget(primeChannels);
@@ -306,6 +348,8 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
             return;
         }
         setNav(initialNav(globalStore.get(model.surfaceAtom)));
+        setDraft(null);
+        setArmed(null);
         const raf = requestAnimationFrame(() => inputRef.current?.focus());
         return () => cancelAnimationFrame(raf);
     }, [open]);
@@ -708,6 +752,48 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
         }));
     }, [briefIndex, nav.query, model, efforts]);
 
+    // --- Notes ------------------------------------------------------------------------------------
+    const noteByKey = useMemo(() => new Map((notes ?? []).map((n) => [noteKey(n.id), n])), [notes]);
+    const noteItems = useMemo<PaletteItem[]>(() => {
+        // the server names a note's day in local time, and en-CA writes a local date the same way
+        const today = new Date().toLocaleDateString("en-CA");
+        return (notes ?? []).map((n) => ({
+            key: noteKey(n.id),
+            kind: "note" as const,
+            search: n.title,
+            title: n.title,
+            meta: noteDayLabel(n.day, today),
+            verb: "Copy",
+            echo: `Copies “${n.title}”`,
+            alt: { echo: "Edits it", run: () => openDraft(draftOf(n)) },
+            run: () => {
+                setPaletteError(undefined);
+                void runPaletteAction(() => navigator.clipboard.writeText(noteMarkdown(n))).then((result) => {
+                    if ("error" in result) {
+                        setPaletteError(`Copy failed: ${errorText(result.error)}`);
+                        return;
+                    }
+                    close();
+                });
+            },
+        }));
+    }, [notes]);
+    // All has no preview pane, so Enter there shows the note where it can be read
+    const noteItemsInAll = noteItems.map(
+        (it): PaletteItem => ({
+            ...it,
+            verb: "Show",
+            echo: "Shows the note in Notes",
+            alt: undefined, // the editor leaves to the Notes list, so it opens from there
+            run: () => {
+                // the scope ranks the same rows by the same text, so this is the note's index there
+                const at = notesFor(noteItems, nav.query).findIndex((row) => row.key === it.key);
+                setNav(pickScope(nav, "notes"));
+                setSel(at);
+            },
+        })
+    );
+
     // --- Launch -----------------------------------------------------------------------------------
     // Projects scope with "<project> <goal>" targets that project; everywhere else, the home one.
     const projectLaunch = nav.scope === "projects" && nav.drill == null ? parseProjectLaunch(nav.query) : null;
@@ -978,7 +1064,8 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
         );
         // mergeRanked interleaves by score without re-ranking either side, so the brief rows keep
         // briefpalette's order (archived last) while the merged head is still the best match overall
-        const ranked = mergeRanked(nav.query, rankPaletteItems(pool, nav.query), briefItems);
+        // notes join the ranking but not the pool: they are never listed under Recent
+        const ranked = mergeRanked(nav.query, rankPaletteItems([...pool, ...noteItemsInAll], nav.query), briefItems);
         const asGoalItem: PaletteItem | null =
             launchItems.length > 0
                 ? {
@@ -1052,6 +1139,9 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
         ({ groups, fileHighlight } = fileScopeGroups());
     } else if (nav.scope === "records") {
         groups = narrowed(briefItems, SCOPE_KINDS.records);
+    } else if (nav.scope === "notes") {
+        // never empty: the "New note" row closes it, below
+        groups = [{ key: "note", label: scopeDef("notes").label, items: notesFor(noteItems, nav.query) }];
     } else {
         const pools: Partial<Record<ScopeId, PaletteItem[]>> = {
             goto: gotoItems,
@@ -1139,11 +1229,158 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
         const n = t == null ? 0 : t.def.actions.filter((a) => a.applies(t.entry.thing)).length;
         return n > 0 ? { ...it, actions: n } : it;
     };
-    const capped = capGroups(groups, cap).map((g) => ({ ...g, items: g.items.map(withActions) }));
+    // the Notes scope: the list beside a preview, instead of the one column
+    const notesSplit = nav.scope === "notes" && atTop;
+    const newNoteItem: PaletteItem = {
+        key: NEW_NOTE_KEY,
+        kind: "note",
+        search: "",
+        title: "New note",
+        icon: Plus,
+        verb: "Write",
+        echo: q === "" ? "Writes a new note" : `Writes a new note titled “${q}”`,
+        run: () => openDraft(newDraft(nav.query)),
+    };
+    // "New note" joins after the cap, so a long list cannot push it out
+    const capped = capGroups(groups, cap).map((g) => ({
+        ...g,
+        items: [...g.items.map(withActions), ...(notesSplit ? [newNoteItem] : [])],
+    }));
     const flat = capped.flatMap((g) => g.items);
     const selClamped = flat.length === 0 ? 0 : Math.min(sel, flat.length - 1);
     const indexOf = new Map(flat.map((it, i) => [it.key, i]));
     const selected = flat[selClamped];
+    const selectedNote = notesSplit ? noteByKey.get(selected?.key) : undefined;
+    const armedDelete = armed?.key === "del" && armed.target === selected?.key;
+
+    // an armed delete is for the row it was pressed on, with the text as it then was
+    useEffect(() => setArmed(null), [selected?.key, nav.query]);
+
+    const deleteNote = (note: UserNote) => {
+        const at = selClamped;
+        const count = flat.length - 1; // less the "New note" row
+        setPaletteError(undefined);
+        void runPaletteAction(() => deletePaletteNote(note.id)).then((result) => {
+            if ("error" in result) {
+                setPaletteError(`Delete failed: ${errorText(result.error)}`);
+                return;
+            }
+            setSel(selectionAfterDelete(at, count));
+        });
+    };
+
+    // --- Note editor ------------------------------------------------------------------------------
+    function openDraft(d: NoteDraft) {
+        setDraft(d);
+        setArmed(null);
+        setPaletteError(undefined);
+    }
+    const editDraft = (patch: { title?: string; body?: string }) => {
+        setDraft((d) => (d == null ? d : { ...d, ...patch }));
+        setArmed(null);
+        setPaletteError(undefined);
+    };
+    // Esc, the chip, a backdrop click and the palette toggle all leave through here, back to the Notes list
+    // and never out of the palette; unsaved changes take a second leave
+    const leaveDraft = () => {
+        if (draft == null) {
+            return;
+        }
+        if (draftDirty(draft)) {
+            const press = pressArm(armed, "esc", "");
+            setArmed(press.armed);
+            if (!press.fire) {
+                return;
+            }
+        }
+        setDraft(null);
+        setPaletteError(undefined);
+    };
+    const saveDraft = () => {
+        if (draft == null || savingRef.current) {
+            return;
+        }
+        const refused = noteTitleError(draft.title);
+        if (refused != null) {
+            setPaletteError(refused);
+            return;
+        }
+        setPaletteError(undefined);
+        savingRef.current = true;
+        let id: string;
+        void runPaletteAction(async () => {
+            id = await saveNoteDraft(draft);
+        }).then((result) => {
+            savingRef.current = false;
+            if ("error" in result) {
+                setPaletteError(`Save failed: ${errorText(result.error)}`);
+                return;
+            }
+            setDraft(null);
+            setArmed(null);
+            setNav((s) => ({ ...s, query: "" }));
+            // with no query the list is the store's own order
+            setSel(
+                Math.max(
+                    0,
+                    (globalStore.get(paletteNotesAtom) ?? []).findIndex((n) => n.id === id)
+                )
+            );
+        });
+    };
+    const onEditorKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === "Escape") {
+            // taken here rather than by ModalShell's window listener, which cannot tell a held key: an
+            // auto-repeat must not confirm its own discard
+            e.stopPropagation();
+            if (!e.repeat) {
+                leaveDraft();
+            }
+            return;
+        }
+        setArmed(null);
+        if (e.key === "Enter" && e.ctrlKey) {
+            e.preventDefault();
+            // a held key would add a new note once per repeat
+            if (!e.repeat) {
+                saveDraft();
+            }
+        } else if (e.key === "Tab" || (e.key === "Enter" && e.target === inputRef.current)) {
+            e.preventDefault();
+            (e.target === bodyRef.current ? inputRef : bodyRef).current?.focus();
+        }
+    };
+
+    const editing = draft != null;
+    const leaveRef = useRef(leaveDraft);
+    leaveRef.current = leaveDraft;
+    // Whatever closes the palette while a draft is open (Ctrl+P's toggle is a binding, out of this file's
+    // reach) is taken as a leave: reopened before React sees it closed, so the text is never dropped.
+    useEffect(() => {
+        if (!editing) {
+            return;
+        }
+        return globalStore.sub(model.paletteOpenAtom, () => {
+            if (!globalStore.get(model.paletteOpenAtom)) {
+                globalStore.set(model.paletteOpenAtom, true);
+                leaveRef.current();
+            }
+        });
+    }, [editing, model]);
+    // editing opens with the caret in the body, a new note with no title in the title; leaving hands the
+    // keyboard back to the search field
+    useEffect(() => {
+        if (!open) {
+            return;
+        }
+        const body = bodyRef.current;
+        if (draft == null || body == null || (draft.id == null && draft.title === "")) {
+            inputRef.current?.focus();
+            return;
+        }
+        body.focus();
+        body.setSelectionRange(body.value.length, body.value.length);
+    }, [editing]);
 
     // The selected Needs you ask shows its options under it. They join the rows only after the selection is
     // resolved and never the selection order, so showing them cannot move what ↑↓ lands on.
@@ -1170,7 +1407,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
                       ? g
                       : { ...g, items: [...g.items.slice(0, at + 1), ...answerRows, ...g.items.slice(at + 1)] };
               });
-    const footerExtra: { k: string; text: string }[] = [
+    const footerExtra: { k: string; text: string; arm?: boolean }[] = [
         ...(selected?.alt != null ? [{ k: "ctrl ⏎", text: selected.alt.echo }] : []),
         ...(answerRows.length > 0
             ? [
@@ -1181,6 +1418,13 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
               ]
             : []),
         ...(selected?.actions ? [{ k: "→", text: `Its ${selected.actions} actions` }] : []),
+        ...(selectedNote != null
+            ? [
+                  armedDelete
+                      ? { k: "del", text: `del again deletes “${selectedNote.title}”`, arm: true }
+                      : { k: "del", text: "Deletes it, after a second del" },
+              ]
+            : []),
     ];
 
     // Arrow-keying past the visible rows used to move the selection out of view — the scroll container
@@ -1197,12 +1441,12 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
 
     // Only rows All can list are recorded: the launch, goal, widen and file rows are not things to
     // float back up under Recent (files have Code's own history), and neither are actions, so a Cancel
-    // run never waits on the empty screen.
+    // run never waits on the empty screen, nor notes, which Recent never lists.
     const fire = (it: PaletteItem | undefined) => {
         if (it == null) {
             return;
         }
-        if (ALL_KIND_ORDER.includes(it.kind) && it.kind !== "action") {
+        if (ALL_KIND_ORDER.includes(it.kind) && it.kind !== "action" && it.kind !== "note") {
             globalStore.set(paletteMruAtom, (prev) => nextMru(prev, it.key));
         }
         it.run();
@@ -1236,7 +1480,31 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
         // a digit past the ask's options is query text, as in any other scope
         const digit = /^[1-9]$/.test(e.key) && !e.ctrlKey && !e.altKey && !e.metaKey ? Number(e.key) : 0;
         const bare = !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey;
-        if (digit > 0 && digit <= answerRows.length) {
+        // mid-query, Del edits the text as it always has
+        const del =
+            e.key === "Delete" &&
+            bare &&
+            selectedNote != null &&
+            caretAtEnd(nav.query, inputRef.current?.selectionStart ?? null);
+        if (!del) {
+            setArmed(null);
+        }
+        if (del) {
+            e.preventDefault();
+            // a held key must not confirm its own delete
+            if (e.repeat) {
+                return;
+            }
+            const press = pressArm(armed, "del", selected.key);
+            setArmed(press.armed);
+            if (press.fire) {
+                deleteNote(selectedNote);
+            }
+        } else if ((e.key === "PageDown" || e.key === "PageUp") && selectedNote != null) {
+            e.preventDefault();
+            const pane = previewRef.current;
+            pane?.scrollBy({ top: (e.key === "PageDown" ? 1 : -1) * pane.clientHeight * PREVIEW_PAGE });
+        } else if (digit > 0 && digit <= answerRows.length) {
             e.preventDefault();
             fire(answerRows[digit - 1]);
         } else if (e.key === "ArrowDown") {
@@ -1283,7 +1551,6 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
         }
     };
 
-    const atTop = nav.drill == null && nav.actions == null;
     const placeholder =
         atTop && nav.scope === "files" && fileTarget != null
             ? `Open a file in #${fileTarget.name}, path:line jumps…`
@@ -1293,8 +1560,23 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
     const ghost = atTop && nav.scope === "all" ? ghostHint(nav.query) : null;
 
     return (
-        <ModalShell open={open} onClose={close} className="flex h-[min(600px,80vh)] w-[min(820px,93vw)] flex-col">
-            {open ? (
+        <ModalShell
+            open={open}
+            onClose={editing ? leaveDraft : close}
+            className="flex h-[min(600px,80vh)] w-[min(820px,93vw)] flex-col"
+        >
+            {open && draft != null ? (
+                <PaletteNoteEditor
+                    draft={draft}
+                    error={paletteError}
+                    discardArmed={armed?.key === "esc"}
+                    titleRef={inputRef}
+                    bodyRef={bodyRef}
+                    onChange={editDraft}
+                    onKeyDown={onEditorKeyDown}
+                    onLeave={leaveDraft}
+                />
+            ) : open ? (
                 <>
                     <div className="flex shrink-0 items-center gap-2.5 px-4 pb-[7px] pt-[13px]">
                         <Search size={15} strokeWidth={2} className="shrink-0 text-muted" />
@@ -1413,41 +1695,55 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
                             {paletteError}
                         </div>
                     ) : null}
-                    <div
-                        ref={listRef}
-                        role="listbox"
-                        aria-label="Results"
-                        className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2 pt-1"
-                    >
-                        {capped.length === 0 ? (
-                            <div className="px-4 py-8 text-center text-[13px] text-muted">
-                                {q === ""
-                                    ? "Nothing here yet."
-                                    : `Nothing matches “${q}”, and no project to start it in.`}
-                            </div>
-                        ) : (
-                            shown.map((g) => (
-                                <PaletteGroupView
-                                    key={g.key}
-                                    group={g}
-                                    indexOf={indexOf}
-                                    selected={selClamped}
-                                    query={fileHighlight ?? nav.query}
-                                    onHover={setSel}
-                                    onFire={fire}
-                                    onActions={(idx) => {
-                                        openRowActions(idx);
-                                        inputRef.current?.focus();
-                                    }}
-                                />
-                            ))
-                        )}
-                        {nav.scope === "files" && fileIndex?.truncated ? (
-                            <div className="px-2.5 pt-2 text-[10.5px] text-muted">
-                                Index truncated: searching the first 20,000 files only.
-                            </div>
-                        ) : null}
-                    </div>
+                    {notesSplit ? (
+                        <PaletteNotesView
+                            rows={flat}
+                            selected={selClamped}
+                            note={selectedNote}
+                            query={nav.query}
+                            overflow={capped[0].overflow}
+                            listRef={listRef}
+                            previewRef={previewRef}
+                            onHover={setSel}
+                            onFire={fire}
+                        />
+                    ) : (
+                        <div
+                            ref={listRef}
+                            role="listbox"
+                            aria-label="Results"
+                            className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2 pt-1"
+                        >
+                            {capped.length === 0 ? (
+                                <div className="px-4 py-8 text-center text-[13px] text-muted">
+                                    {q === ""
+                                        ? "Nothing here yet."
+                                        : `Nothing matches “${q}”, and no project to start it in.`}
+                                </div>
+                            ) : (
+                                shown.map((g) => (
+                                    <PaletteGroupView
+                                        key={g.key}
+                                        group={g}
+                                        indexOf={indexOf}
+                                        selected={selClamped}
+                                        query={fileHighlight ?? nav.query}
+                                        onHover={setSel}
+                                        onFire={fire}
+                                        onActions={(idx) => {
+                                            openRowActions(idx);
+                                            inputRef.current?.focus();
+                                        }}
+                                    />
+                                ))
+                            )}
+                            {nav.scope === "files" && fileIndex?.truncated ? (
+                                <div className="px-2.5 pt-2 text-[10.5px] text-muted">
+                                    Index truncated: searching the first 20,000 files only.
+                                </div>
+                            ) : null}
+                        </div>
+                    )}
                     <div className="flex shrink-0 flex-col gap-1 border-t border-border px-4 py-[9px]">
                         <div className="flex items-center gap-3">
                             {/* widened only to line up with a key line below it */}
@@ -1469,10 +1765,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
                             </span>
                         </div>
                         {footerExtra.map((f) => (
-                            <div key={f.k} className="flex items-center gap-3">
-                                <span className="w-[60px] shrink-0 font-mono text-[11px] text-accent-soft">{f.k}</span>
-                                <span className="min-w-0 flex-1 truncate text-[12px] text-secondary">{f.text}</span>
-                            </div>
+                            <FooterKeyLine key={f.k} {...f} />
                         ))}
                     </div>
                 </>

@@ -191,6 +191,21 @@ export function questionOrder(asks: DagAskItem[]): DagAskItem[] {
     return [...asks].sort((a, b) => yours(a) - yours(b) || a.ts - b.ts);
 }
 
+const DAG_FINALIZING = "finalizing";
+
+// verifyingHeadline is the Run status line while the final stage runs. A question waiting on the human still
+// wins, so it yields; every other status keeps the line it had.
+export function verifyingHeadline(
+    dagStatus: string | undefined,
+    waitingOnYou: boolean,
+    next: string
+): { text: string; tone: string; tail: string } | undefined {
+    if (dagStatus !== DAG_FINALIZING || waitingOnYou) {
+        return undefined;
+    }
+    return { text: "Verifying", tone: "text-accent", tail: next ? `· ${next}` : "" };
+}
+
 export const RUN_LOG_LINES = 3;
 
 // runLog is the newest few rows of the run's timeline, newest first.

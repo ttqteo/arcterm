@@ -1,8 +1,10 @@
 // Toast stack for transient cockpit notifications. Thin render over toastsAtom; colors come
 // from @theme tokens only.
+import { cardVariants } from "@/app/element/motiontokens";
 import { RuntimeMark } from "@/app/view/agents/runtimemark";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
+import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import {
     Bell,
     CircleCheck,
@@ -68,60 +70,70 @@ function AgentToastBody({ t, eyebrow }: { t: ToastNotification; eyebrow: ToastEy
 
 export function NotificationToasts(): React.JSX.Element {
     const toasts = useAtomValue(toastsAtom);
-    if (toasts.length === 0) return <></>;
+    // the stack stays mounted while empty so the last toast can play its exit; popLayout takes a leaving toast
+    // out of flow at once, so the rest slide into its place instead of waiting for it
     return (
         // above the pet (z-60) and its bubble (z-61), below its open peek (z-64): a toast is never covered by a sprite
         // passing under it, and data-pet-avoid sends the pet off the stretch of ledge beneath the stack
-        <div data-pet-avoid className="pointer-events-none fixed bottom-4 right-4 z-[62] flex w-80 flex-col gap-2">
-            {toasts.map((t) => (
-                <div
-                    key={t.id}
-                    // reading a toast keeps it: the clock stops while the pointer is on it
-                    onPointerEnter={() => holdToast(t.id)}
-                    onPointerLeave={() => releaseToast(t.id)}
-                    className={cn(
-                        "pointer-events-auto flex rounded-lg border bg-surface text-primary shadow-lg",
-                        t.level === "error"
-                            ? "border-error/40"
-                            : t.level === "warn" || t.eyebrow?.tone === "asking"
-                              ? "border-warning/40"
-                              : "border-border",
-                        t.onOpen && "hover:border-accent-700"
-                    )}
-                >
-                    <button
-                        type="button"
-                        data-notification-toast
-                        data-notification-open={t.onOpen ? "" : undefined}
-                        data-notification-tone={t.eyebrow?.tone}
-                        onClick={() => {
-                            t.onOpen?.();
-                            dismissToast(t.id);
-                        }}
-                        className={cn("min-w-0 flex-1 py-3 pl-3 text-left", t.onOpen && "cursor-pointer")}
-                    >
-                        {t.eyebrow ? (
-                            <AgentToastBody t={t} eyebrow={t.eyebrow} />
-                        ) : (
-                            <>
-                                <div className="text-sm font-medium">{t.title}</div>
-                                {t.message ? <div className="text-xs text-secondary">{t.message}</div> : null}
-                            </>
-                        )}
-                    </button>
-                    {/* a sibling, not inside the body: closing must not open what the toast is about */}
-                    <button
-                        type="button"
-                        data-notification-close
-                        aria-label="Dismiss notification"
-                        title="Dismiss"
-                        onClick={() => dismissToast(t.id)}
-                        className="m-1.5 flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center self-start rounded text-muted hover:bg-surface-hover hover:text-primary"
-                    >
-                        <X size={14} strokeWidth={1.8} aria-hidden />
-                    </button>
-                </div>
-            ))}
-        </div>
+        <MotionConfig reducedMotion="user">
+            <div data-pet-avoid className="pointer-events-none fixed bottom-4 right-4 z-[62] flex w-80 flex-col gap-2">
+                <AnimatePresence mode="popLayout">
+                    {toasts.map((t) => (
+                        <motion.div
+                            key={t.id}
+                            layout
+                            variants={cardVariants}
+                            initial="initial"
+                            animate="animate"
+                            exit="exit"
+                            // reading a toast keeps it: the clock stops while the pointer is on it
+                            onPointerEnter={() => holdToast(t.id)}
+                            onPointerLeave={() => releaseToast(t.id)}
+                            className={cn(
+                                "pointer-events-auto flex rounded-lg border bg-surface text-primary shadow-lg",
+                                t.level === "error"
+                                    ? "border-error/40"
+                                    : t.level === "warn" || t.eyebrow?.tone === "asking"
+                                      ? "border-warning/40"
+                                      : "border-border",
+                                t.onOpen && "hover:border-accent-700"
+                            )}
+                        >
+                            <button
+                                type="button"
+                                data-notification-toast
+                                data-notification-open={t.onOpen ? "" : undefined}
+                                data-notification-tone={t.eyebrow?.tone}
+                                onClick={() => {
+                                    t.onOpen?.();
+                                    dismissToast(t.id);
+                                }}
+                                className={cn("min-w-0 flex-1 py-3 pl-3 text-left", t.onOpen && "cursor-pointer")}
+                            >
+                                {t.eyebrow ? (
+                                    <AgentToastBody t={t} eyebrow={t.eyebrow} />
+                                ) : (
+                                    <>
+                                        <div className="text-sm font-medium">{t.title}</div>
+                                        {t.message ? <div className="text-xs text-secondary">{t.message}</div> : null}
+                                    </>
+                                )}
+                            </button>
+                            {/* a sibling, not inside the body: closing must not open what the toast is about */}
+                            <button
+                                type="button"
+                                data-notification-close
+                                aria-label="Dismiss notification"
+                                title="Dismiss"
+                                onClick={() => dismissToast(t.id)}
+                                className="m-1.5 flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center self-start rounded text-muted hover:bg-surface-hover hover:text-primary"
+                            >
+                                <X size={14} strokeWidth={1.8} aria-hidden />
+                            </button>
+                        </motion.div>
+                    ))}
+                </AnimatePresence>
+            </div>
+        </MotionConfig>
     );
 }

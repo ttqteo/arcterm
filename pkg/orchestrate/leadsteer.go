@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wcore"
@@ -34,12 +35,24 @@ func persistDag(ctx context.Context, g *waveobj.TaskGroup) error {
 	return nil
 }
 
+// refuseLongNote refuses lead text past MaxReviewNoteLen. It joins a worker's prompt, where a clipped note reads
+// as a whole one: run 7a242678's worker got an amend cut off mid-sentence.
+func refuseLongNote(what, text string) error {
+	if count := utf8.RuneCountInString(text); count > MaxReviewNoteLen {
+		return fmt.Errorf("the %s is %d characters; the limit is %d. Shorten it, or split it into several", what, count, MaxReviewNoteLen)
+	}
+	return nil
+}
+
 // AmendTask adds the lead's note to a task that has not started, carried into its worker's prompt. It is how
 // the lead passes on what an earlier task found without re-planning; a started task is reached with TellTask.
 func AmendTask(ctx context.Context, dagID, taskID, note string) error {
 	note = strings.TrimSpace(note)
 	if note == "" {
 		return fmt.Errorf("amend needs the note to add")
+	}
+	if err := refuseLongNote("note", note); err != nil {
+		return err
 	}
 	var g *waveobj.TaskGroup
 	err := withDagMutation(dagID, func() error {
@@ -54,7 +67,7 @@ func AmendTask(ctx context.Context, dagID, taskID, note string) error {
 		if !amendable(task.State) {
 			return fmt.Errorf("task %s is %s: amend reaches only a task that has not started; use dag tell for a running one", taskID, task.State)
 		}
-		task.LeadNotes = append(task.LeadNotes, toldText(note))
+		task.LeadNotes = append(task.LeadNotes, note)
 		return persistDag(ctx, g)
 	})
 	if err != nil {
@@ -157,6 +170,10 @@ func takeLeadTold(t *waveobj.TaskNode, text string) bool {
 // beside the reviewer's findings; ReviewRound is kept, so a further fail comes straight back to the lead. Any
 // other task takes the old plan-gate sendback, which has no guidance.
 func SendBack(ctx context.Context, dagID, taskID, guidance string) error {
+	guidance = strings.TrimSpace(guidance)
+	if err := refuseLongNote("guidance", guidance); err != nil {
+		return err
+	}
 	// behind an action still working on the task: a skip resetting its lane must not find it sent back
 	taskActions.Lock(dagID)
 	err := withDagMutation(dagID, func() error {
@@ -168,7 +185,7 @@ func SendBack(ctx context.Context, dagID, taskID, guidance string) error {
 			return applyActionLocked(ctx, dagID, taskID, "sendback", waveobj.RoutePin{})
 		}
 		task := taskByID(g, taskID)
-		task.LeadGuidance = clipRunes(strings.TrimSpace(guidance), MaxReviewNoteLen)
+		task.LeadGuidance = guidance
 		task.State = TaskState_Pending
 		task.RunID = ""
 		RecomputeDagStatus(g)

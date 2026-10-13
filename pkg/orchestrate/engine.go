@@ -502,6 +502,13 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 			(verdict == cpuIdle || verdict == cpuNone) {
 			t.State = TaskState_Stalled
 		}
+		// a refused turn ends the worker's work as surely as an exit, so it skips the wait. Only an idle worker is
+		// read for one: a refused worker sits idle, and a busy one would pay a transcript read every tick
+		if t.State == TaskState_Running && (verdict == cpuIdle || verdict == cpuNone) {
+			if _, refused := routeRefused(runs[t.RunID], now); refused {
+				t.State = TaskState_Stalled
+			}
+		}
 		// first-token deadline: a child that has written nothing has no mtime to age, so without this
 		// it can never stall. The exit hook catches a child that DIED before its first token; this
 		// catches one that hangs, which leaves no signal anywhere else. A runtime the deadline is off for still
@@ -550,6 +557,11 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 			// a worker that ended its turn may have finished (its complete lost to an EC-TIME): a retry would throw
 			// its work away, so the lead judges it
 			retry := workerTurnEndedAt(ctx, runs[t.RunID]) == 0 && autoRetriable(ctx, g, t)
+			// a retry on a route that refused the worker is refused too, so the lead gets the provider's words
+			if failure, refused := routeRefused(runs[t.RunID], now); refused {
+				recordRefusedRoute(runs[t.RunID], failure, now)
+				hung, retry = taskTurnFailedWake(taskID, failure.Text), false
+			}
 			if retry {
 				*stalled = append(*stalled, stalledTask{taskID: taskID, runID: t.RunID, hung: hung})
 			}
@@ -635,7 +647,7 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 				// no progress sink: Setup runs under the dag mutation lock, so nothing can read a
 				// partial tail while it holds the lock anyway
 				setupCtx := jobqueue.WithSource(context.WithoutCancel(ctx), jobqueue.Source{RunId: owner.ID, Label: taskStepLabel("Setup", g, taskID)})
-				_, serr := runPlanCommand(setupCtx, wt, g.Setup, nil, SetupTimeout, nil)
+				_, serr := runPlanCommand(withRunCmdOwner(setupCtx, owner.ID, PlanCmd_Setup, ""), wt, g.Setup, nil, SetupTimeout, nil)
 				setupMs = time.Since(setupStart).Milliseconds()
 				if serr != nil {
 					// only a new tree is set up, so a retry must not reuse this half-prepared one. The branch

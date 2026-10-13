@@ -55,6 +55,49 @@ Add the scenario to `SCENARIOS`, or `verify.mjs` and a plan's Final never run it
   reloads onto the live roster and removes the temp dir. It attempts every step even when one fails. Pass
   `restore` (`{ what, fn }`) for UI state the scenario changed.
 
+## A run with a final stage
+
+`final-stage` is the example. Two things in the engine decide how such a fixture is built (`pkg/orchestrate/final.go`).
+
+1. **The engine acts on a dag that is `finalizing`.** Every tick starts the stage's commands when none are running,
+   and tends a real verifier session while the stage is `verifying`, or `checking` with `final.tree` set. A seeded
+   finalizing dag is run, not left alone, and a seeded `final.tree` on one spawns a verifier.
+2. **A run's events cannot be written through an RPC.** The page appends every `run:event` wave event it receives
+   to that run's list (`runeventstore.ts`), so `eventpublish` with a `RunEventData` payload stands in for a
+   `final-step` event until the next reload. The first load of the run's history replaces the list, so publish
+   again until the step's time shows (`fstUntil`'s `nudge`).
+
+So there are two fixtures, and `final-stage` uses both on one run.
+
+- **A state the engine has not reached** (`fstShow`): seed `final`, `pastfinals` and the plan's commands with
+  `seedDag` on a dag that still has a task at work, as `final-shots` does. That dag is never finalizing, so the
+  engine never touches its `final`, and the cockpit draws the stage from its state alone. Publish the round's step
+  events for the times. A verifier's session is a deferred quick run with `stagerole` and `dagoref` written through
+  `object.UpdateObject` (`fstWriteRun`, which also sends the stored run to the page), and a roster agent whose
+  `runId` is that run's id.
+- **A stage the engine really runs** (`fstStartLive`): the temp dir is a git repository with one commit before the
+  run is created, since the stage needs a tree. Seed every task `done` and `merged` with its `runid` removed (a
+  tick derives a task's state from its child run), `status: "finalizing"`, a `verify` that keeps writing, a
+  `finalcmd`, and no `final`. The next watchdog tick (30 seconds at most) starts round 1: the Tree step and its
+  `final-step` event, then Verify with `final.step`, `stepts` and `output`. With a Final command the stage records
+  no tree until its commands end, so no verifier is tended. The run lands on its own branch by default, so the
+  stage's tree is that landing tree. It runs on the dev app's wavesrv, not under a Go test, so the tree is under
+  the real `%LOCALAPPDATA%\arc-wt\<first 8 of run id>` (the full id if another run owns the prefix), not in the
+  temp dir, and t-1's lane tree sits beside it as `<8>-t-1`. Removing the temp dir does not remove them, and
+  neither does `cancelrun`: `Cancel` (`pkg/orchestrate/mutation.go`) removes only the dag's task trees, and only a
+  land (`removeLandedTree` in `land.go`) removes the landing tree. So `teardownFixtureRun` removes the run's
+  `landpath` (recorded by `arrangeFixtureRun`) and every linked worktree of the temp repo before it removes the
+  temp dir, and throws if any is left. `final-stage`'s step 0b checks the landing tree is under the arc-wt root.
+  - The output tail is published from the command's own writes: the first write at once, which carried one line of
+    a three-line `printf`, then at most every 10 seconds, and a publish that finds the dag lock held is skipped. A
+    command that prints and then sleeps shows its first line and nothing more: keep it writing, and wait for the
+    line the scenario reads.
+  - The seed's fingerprint must leave out `status` and `final`, which the engine owns from its first tick.
+  - Ending the stage as unverified makes the dag done. A run with no lead is then completed by the engine and no
+    lead is launched; ending it as failed launches one. Do it last: the run is over afterwards, so teardown's run
+    cancel has nothing to cancel, and the child run of the task the seed unlinked is cancelled on its own, or its
+    worker keeps the lane's tree and the temp dir cannot be removed.
+
 ## Rules
 
 - **Wait for what is visible, not for the write.** A finished RPC, a reload or a fixed sleep is not readiness.

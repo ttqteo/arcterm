@@ -102,11 +102,11 @@ const (
 
 	// merge-point Verify (orchestrator redesign §4): the plan's Verify command, run where lanes land after
 	// a batch of squash merges. "batch" (the tip ids in merge order) is set only when the batch has more
-	// than one tip.
+	// than one tip. "bisect" (the extra Verify runs a bisect took) is set only on a bisected batch's events.
 	//   task-verify-started  "taskid" (the oldest tip), "batch"
-	//   task-verify-passed   "taskid", "ms", "batch", "bisect" (bool: landed by a bisect)
+	//   task-verify-passed   "taskid", "ms", "batch", "bisect"
 	//   task-verify-failed   "taskid", "reason" ("exit 1" or "timed out after 20m"), "detail", "batch",
-	//                        "bisect" (int: the extra Verify runs a bisect took)
+	//                        "bisect"
 	RunEventKindTaskVerifyStarted = "task-verify-started"
 	RunEventKindTaskVerifyPassed  = "task-verify-passed"
 	RunEventKindTaskVerifyFailed  = "task-verify-failed"

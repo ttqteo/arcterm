@@ -12,6 +12,19 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- **Resource Manager** (from the kaeltran16 fork): the footer shows arcterm's CPU and RAM; click it, or `Mod`+`G` `m`,
+  for a popover of every process arcterm and its agents started, grouped by agent, with `x` to kill a runaway process
+  and its children (asks first, never the agent itself).
+- **Mark files reviewed in the Diff surface's log**: a check at each file's right end, `v` or **Mark reviewed** in the
+  diff header to mark the open file and step to the next unreviewed one, and an *n/m reviewed* bar over the list.
+- **Notes in the palette**: the palette's Notes scope lists, previews, copies, edits and deletes your notes, and
+  `wsh note add` lets an agent write one.
+- **A run's final stage has its own row**: a Final verification row under the run in the agent list, with the step
+  pipeline, the running command and End final stage, and the stage as the last node of the run's DAG.
+- **A missed prompt cache is named**: when a Claude turn re-billed a cache miss, a line above Claude's prompt says
+  how much, and arcterm shows it as a notice.
+- A new waiting item flashes arcterm's taskbar button while arcterm is in the background.
+- A finished orchestrator run takes one more round for the leftovers inside its goal before it completes.
 - Spider-Man as a third Jarvis character (Settings → Appearance → Character): the Homecoming suit at work, Peter Parker at rest. He walks the footer side-on, thwips when he speaks, hangs from a strand when you drag him and rappels down when you let go, now and then crawls along under the app bar and hangs upside down until your cursor comes near, web-swings out and back when the window folds, and folded sits on a rooftop whose windows light up for each running agent, with his web and the count of agents at work beside it.
 - A Spider theme (Settings → Appearance → Theme): Claude's colours with Spider-Man's red accent and the suit's blue in
   the terminal, a spider in place of the arcterm logo, a small spider that drops on its thread over the agent list and

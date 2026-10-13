@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/harness"
 	"github.com/wavetermdev/waveterm/pkg/runroute"
@@ -173,5 +174,39 @@ func TestListHarnessesAddsCatalogModelCapabilities(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// the picker reads refusals on every open, and the refresh an operator clicks after renewing forgets them
+func TestListRefusedRoutesUntilRefresh(t *testing.T) {
+	defer runroute.SetCatalogCommandForTest(func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		return []byte("not a model table\n"), nil
+	})()
+	defer runroute.RefreshRouteCatalog()
+	const refusal = "403: An active OpenCode Go subscription is required"
+	now := time.Now().UnixMilli()
+	if err := runroute.RecordRefused(now,
+		runroute.RefusedRoute{Runtime: "pi", Text: refusal, Ts: now},
+		runroute.RefusedRoute{Runtime: "pi", Model: "opencode-go/deepseek-v4-flash", Text: refusal, Ts: now},
+	); err != nil {
+		t.Fatal(err)
+	}
+	ws := &WshServer{}
+	rtn, err := ws.ListRefusedRoutesCommand(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []wshrpc.RefusedRouteInfo{
+		{Runtime: "pi", Text: refusal, Ts: now},
+		{Runtime: "pi", Model: "opencode-go/deepseek-v4-flash", Text: refusal, Ts: now},
+	}
+	if !reflect.DeepEqual(rtn.Routes, want) {
+		t.Fatalf("routes = %+v, want %+v", rtn.Routes, want)
+	}
+	if err := ws.RefreshRouteCatalogCommand(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if rtn, err = ws.ListRefusedRoutesCommand(context.Background()); err != nil || len(rtn.Routes) != 0 {
+		t.Fatalf("refresh must forget refusals, got %+v, %v", rtn, err)
 	}
 }

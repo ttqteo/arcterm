@@ -6,6 +6,7 @@ import { selectedTaskIdAtom } from "./dagstore";
 import { atom, type PrimitiveAtom } from "jotai";
 import type { AgentsViewModel } from "../agents/agents";
 import type { AgentVM } from "../agents/agentsviewmodel";
+import { returnToOrigin } from "../jarvis/returnsurface";
 
 export type DagModalState = {
     kind: "live";
@@ -74,6 +75,7 @@ export function openDagTask(channelId: string, runId: string, dagOref: string, t
 export function closeDagModal(): void {
     resetSelection();
     dispatchDagModal({ type: "close" });
+    returnToOrigin("dag");
 }
 
 // escapeDagModal is Esc inside the modal: a selection is the nearer thing to dismiss, so it goes first

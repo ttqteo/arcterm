@@ -822,6 +822,15 @@ func (*Channel) GetOType() string {
 	return OType_Channel
 }
 
+// UserNote is a note an agent or the user wrote for the user to read later: a notes/<id>.md file in the
+// vault (pkg/notestore), not a stored object.
+type UserNote struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Body  string `json:"body,omitempty"` // markdown
+	Day   string `json:"day"`            // the day it was added, YYYY-MM-DD
+}
+
 type RadarSignal struct {
 	ID          string         `json:"id"`
 	Collector   string         `json:"collector"` // git: a finding's source fix commit

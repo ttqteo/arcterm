@@ -27,6 +27,22 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (Sync from the kaeltran16 fork)**
+
+- [ ] (arcterm) **Claude mod after the merge.** In a Claude session in arcterm, ask a question with AskUserQuestion,
+  dismiss it in Claude's dialog: the cockpit card goes away and the agent reads idle. Then answer one from the card: the
+  dialog closes. `claude/arc-mod/hooks/register.ts` (ask kept ours; cache-miss band added from the fork).
+- [ ] (arcterm) **Resource Manager beside our RAM chip.** The footer readout (`Arc … CPU`) opens the popover, `x` asks
+  before killing; the app bar's RAM chip still opens Consumers. Both show RAM: decide whether Consumers keeps its RAM
+  half. `frontend/app/cockpit/resmon*.tsx`, `frontend/app/view/agents/consumerspanel.tsx`.
+- [ ] (arcterm) **Review marks in the Diff surface's Log tab.** Open a commit's file, press `v`: the row's check fills and
+  the next unreviewed file opens; the bar reads 1/n reviewed. `frontend/app/view/agents/changedfilelist.tsx`.
+- [ ] (arcterm) **Final verification row.** Start a plan run with a Final: once the dag is finalizing, the agent list
+  shows a Final verification row under the run, its pane shows the steps, and the Agent rail's Final section shows for
+  it. `frontend/app/view/agents/agenttree.tsx`, `agentsurface.tsx`.
+- [ ] (arcterm) **Bubble click opens the agent.** When Jarvis says a one-off line for an agent (a cache-miss notice),
+  clicking the bubble opens that agent's terminal instead of the chat. `frontend/app/view/jarvis/petview.tsx`.
+
 **2026-10-13 (Folded Spider-Man shows how many agents work)**
 
 - [ ] (arcterm) **Folded Spider-Man carries the count.** With Spider-Man as Jarvis and two or more agents working,
@@ -272,6 +288,8 @@ does not, say what you saw and it becomes a bug row under Actionable.
 
 | Item | Kind | Effort | Source / notes |
 |---|---|---|---|
+| (arcterm) Engine worktrees moved to `%LOCALAPPDATA%\arc-wt\<8 of run id>` with the kaeltran16 sync (2026-10-13), but our own path readers still look only under `<project>/.waveterm/worktrees`: the sidebar's grouping of engine conversations under their project (`agentsidebarmodel.ts` `ENGINE_WORKTREES`), Claude project mapping (`pkg/agentsessions/claudeprojects.go`), Settings → Storage's engine-tree cleanup (`pkg/storage/worktrees.go`) and Usage's "engine run" project label (`pkg/usagestats/sessions.go` `projectOf`). `orchestrate.runOfWorktree` already reads both | bug | M | `pkg/orchestrate/worktreeroot.go`, `launchorigin.go` `runOfShortTree` |
+| (arcterm) Not ported from the kaeltran16 sync (2026-10-13): Usage's **By work** lens (spend by project, run and session; `usageattribution.ts` and the backend's session directory are in, our tabbed Usage surface does not draw it), the New run goal's file-pick button (it lived in the fork's `newruncontrol.tsx`, which our New dialog replaced), and the fork's `docs/orchestrator-guide.md` changes (short worktree root, cleanup round, final stage row) into `docs/guide/orchestrator.md` | feature | M | merge of `kael/main` 713f11140; dropped scenarios `usage-work`, `new-run-attachments`, `run-sheet-carry` |
 | (arcterm) Final on a Mac checks Chromium, not WKWebView: `task dev:browser` runs the scenarios in headless Chrome, so WebKit-only behaviour (the File tab Source view's Ctrl+Enter, IME, scrolling) and the scenarios marked `host: true` (notify-toast, float-mini, jarvis-modes) still need a hand check in the real app or a Windows run | verification gap | S | `scripts/cdp/browser-app.mjs`, `scripts/cdp/final-verify.mjs` (`hostOnlyScenarios`); AGENTS.md "Visual verification"; run 915dc28d (2026-10-12) |
 | (arcterm) Token burn guard part (1) shipped (a Token burn card before a costly `Agent`/`Task`/`Workflow` spawn). Left: nothing warns while a session burns its 5h window through cache reads (a docs session went ~20M → ~220M tokens in an hour): a burn-rate toast, cache reads shown apart in Consumers, a whole-run cost estimate at plan submit, exempting engine runs | feature | M | `docs/deferred.md` "Token burn guard"; complements `docs/superpowers/specs/2026-10-07-quota-guard-design.md` |
 | (arcterm) The Claude sign-in dialog's `TokenScanner` is tested only on synthetic output: the `settings-claude-account` scenario runs a node stand-in through the dev override `arc:dev:setuptoken-cmd`, never the real command. Record a real `claude setup-token` run's pty output (the token redacted to a fixture of the same shape, line breaks and escape sequences kept) and add it as a `setuptokenscan.test.ts` case | verification gap | S | `frontend/app/view/agents/setuptokenscan.ts`, `frontend/app/cockpit/claude-signin-modal.tsx`; plan review of `docs/superpowers/plans/2026-10-07-claude-account-switch.md` (2026-10-07) |
@@ -292,6 +310,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
 | (arcterm) A dag child's question that a human owns is not in the Cockpit's "Cần bạn" strip: the strip lists the attention list's gates, blocked tasks, runs to accept or land and escalations, and `ChildAskCard` (answered through `DagAsksCommand`) is fed by the run sheet and the agent rail, not by `GetAttention`. It stays there, and the Cockpit and dock badges do not count it. Listing it in the strip needs the attention list to carry it, with an answer path through `DagAsksCommand` rather than the agent's block | feature | M | `docs/superpowers/specs/2026-10-07-cockpit-needs-you-design.md` decision 5; `frontend/app/view/agents/childaskcard.tsx`, `frontend/app/view/agents/needsyoustripmodel.ts` |
 | (arcterm) Whether `/model` applies inside a running Claude turn was never checked (the Consumers plan's Task 1 spike could not drive a session: tmux is not installed on this Mac), so the panel's → Sonnet toast says "from its next turn". Check it as the spike describes; if the switch waits for the turn, add spec decision 9's fallback: a re-run of a worker's task on Sonnet through the existing `escalate` dag action (`wsh jarvis dag escalate <task> --model sonnet`) | verification gap | S | `docs/superpowers/specs/2026-10-08-consumers-panel-design.md` decision 9; Task 1 of the Consumers plan, `git show 75f82cd9:docs/superpowers/plans/2026-10-08-consumers-panel.md` |
 | (arcterm) 11 user-guide shots are still `<!-- shot: … -->` placeholders: agent-history, cockpit-needs-you, code-side-column, jarvis-brief, plan-launcher-error, settings-agents, setup-skills, usage-claude-tab, usage-insights-sessions, usage-consumers-tokens, usage-low-ram-card. Each would show real data on a demo store (efforts, the Claude account email, usage from `~/.claude` transcripts, the real skills list) or its CDP scenario failed there; they need fixture data first. Take them at 1600x1000 into `docs/guide/images/` | docs | M | `docs/guide/README.md` |
+
+- **`final-stage` CDP scenario, Part B flakes** (2026-10-12). B2–B6 failed in 2 of 3 runs after the lead's
+  Final verification block was removed from the details rail, and passed in 2 runs without that change
+  (one of which failed only B6). The failing shape: in B2 the DAG modal's final node still reads the B1
+  state ("waits on every task") while the tree's row shows Tree running, and from B3 on the stage row has
+  lost focus (no pane). That change touches neither the modal nor focus, so the cause is unproven either
+  way. Repro: `ARC_FINAL_OUT=<dir> node scripts/cdp/final-verify.mjs final-stage`, a few runs.
 
 Tracked in their own initiatives, not here:
 
@@ -385,10 +410,6 @@ Cockpit and surfaces:
 
 Orchestrator:
 
-- **Route picker lists a route the account cannot run (F14)** (held 2026-10-06) — `pi --list-models`
-  itself lists `openai-codex/gpt-5.3-codex-spark`, which the provider rejects, so a catalog check at
-  spawn would pass it. Revive when dead routes are more than a stray row, as a denylist learned from
-  spawn failures. Source: `docs/orchestrator-redesign-flaws.md` F14.
 - **Cross-run Verify hold under `--landing checkout`** (2026-09-15) — one run's failed Verify does not
   hold another run's merges in the same checkout. Branch landing, the default, is unaffected.
 - **Lead-authored task routing, Phase 4** (2026-09-17) — the cost/outcome measurement gate. Revive on
@@ -427,7 +448,9 @@ Jarvis (what survived the 2026-09-22/23 memory and recall-arm removals):
 ## 4 · Declined / permanent limitations (do not resurface)
 
 - Cockpit light/Paper theme — declined; code removed 2026-08-24 (`docs/deferred.md`).
-- Gatekeeper v1.1 (make-a-rule + countdown) — revive only on recurring-ask or misfire evidence.
+- Gatekeeper v1.1 (make-a-rule + countdown) — revive only on recurring-ask or misfire evidence. Measured
+  2026-10-12 over 879 structured asks since 08-11: 737 distinct headers, and the ones that recur (spec
+  review, scope, plan review, commit) are approval gates, not routine asks a rule could answer.
 - arcterm Environment capability — restore via `git show 4e80bf4f:docs/environment-roadmap.md` if needed.
 - Agents-tab fit-one-screen density engine — obsolete, un-executable against the card grid.
 - Diff-surface row-density variants and the rest of the narrow-window cascade — the commit column fold

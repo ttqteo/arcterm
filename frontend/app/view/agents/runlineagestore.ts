@@ -15,9 +15,12 @@ import { atom, type Atom, type PrimitiveAtom } from "jotai";
 import { useEffect } from "react";
 import { type AgentVM } from "./agentsviewmodel";
 import { taskFoldKey, type TreeFolds } from "./agenttreemodel";
+import { finalStageRunId } from "./finalstage";
 import {
     endedRoles,
     endedWorkerVM,
+    finalStageRoles,
+    finalStageVM,
     isEndedWorkerId,
     runRoleOf,
     runTitle,
@@ -127,7 +130,7 @@ export function lineageAtomFor(agentsAtom: Atom<AgentVM[]>): Atom<Lineage> {
                 digest: digests[leadRunId],
             };
         }
-        return { roles: { ...roles, ...endedRoles(runs) }, runs };
+        return { roles: { ...roles, ...endedRoles(runs), ...finalStageRoles(runs) }, runs };
     });
 }
 
@@ -182,6 +185,29 @@ export function endedWorkerAtomFor(
             files: child?.evidence?.files ?? [],
             branch: child?.branch || undefined,
         };
+    });
+}
+
+export interface FocusedFinalStage {
+    run: RunInfo;
+    agent: AgentVM;
+}
+
+// finalStageAtomFor is the final stage the surface is focused on by the stage's own id, if the focus is one.
+export function finalStageAtomFor(
+    focusIdAtom: Atom<string | undefined>,
+    lineageAtom: Atom<Lineage>
+): Atom<FocusedFinalStage | undefined> {
+    return atom((get) => {
+        const id = get(focusIdAtom) ?? "";
+        const runId = finalStageRunId(id);
+        if (runId == null) {
+            return undefined;
+        }
+        const lineage = get(lineageAtom);
+        const run = lineage.runs[runId];
+        // no role: the run has left the roster, or its stage has no row
+        return run != null && lineage.roles[id] != null ? { run, agent: finalStageVM(runId) } : undefined;
     });
 }
 

@@ -30,6 +30,7 @@ func newLandingRepo(t *testing.T) (string, func(args ...string) string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	useTestWorktreeRoot(t)
 	execGit := func(args ...string) string {
 		t.Helper()
 		out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
@@ -397,7 +398,7 @@ func TestDagSubmitRoundCommitsTheFixPlanOnTheRunsBranch(t *testing.T) {
 	}
 	branch := "wave/" + run.ID
 	tip := execGit("rev-parse", branch)
-	if _, err := submit(wshrpc.CommandDagSubmitData{PlanPath: fix, Round: true}); err == nil || !strings.Contains(err.Error(), "the final stage has not failed") {
+	if _, err := submit(wshrpc.CommandDagSubmitData{PlanPath: fix, Round: true}); err == nil || !strings.Contains(err.Error(), "the final stage has not finished") {
 		t.Fatalf("want the round refused, got %v", err)
 	}
 	if got := execGit("rev-parse", branch); got != tip {
@@ -495,7 +496,7 @@ func assertRunTornDown(t *testing.T, ch *waveobj.Channel, projectDir string, exe
 	if runs[0].Status != jarvis.RunStatus_Cancelled {
 		t.Fatalf("status = %q, want cancelled", runs[0].Status)
 	}
-	if _, err := os.Stat(filepath.Join(projectDir, ".waveterm", "worktrees", runs[0].ID)); !os.IsNotExist(err) {
+	if _, err := os.Stat(orchestrate.WorktreeDir(projectDir, runs[0].ID)); !os.IsNotExist(err) {
 		t.Fatalf("the landing tree is still there: %v", err)
 	}
 	if branches := execGit("branch", "--list", "wave/*"); branches != "" {
@@ -582,7 +583,7 @@ func TestCreateRunLandsOnItsOwnBranch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateRunCommand: %v", err)
 	}
-	want := filepath.Join(projectDir, ".waveterm", "worktrees", run.ID)
+	want := orchestrate.WorktreeDir(projectDir, run.ID)
 	if run.LandPath != want {
 		t.Fatalf("landpath = %q, want %q", run.LandPath, want)
 	}
@@ -638,7 +639,7 @@ func TestCreateRunLandingRequest(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if run.LandPath != filepath.Join(projectDir, ".waveterm", "worktrees", run.ID) {
+		if run.LandPath != orchestrate.WorktreeDir(projectDir, run.ID) {
 			t.Fatalf("landpath = %q, want the run's own tree", run.LandPath)
 		}
 		if run.BaseBranch != "main" {
@@ -698,7 +699,7 @@ func TestCreateRunLandingLeavesLandPathEmpty(t *testing.T) {
 			if run.LandPath != "" {
 				t.Fatalf("landpath = %q, want empty", run.LandPath)
 			}
-			if _, err := os.Stat(filepath.Join(projectDir, ".waveterm", "worktrees")); !os.IsNotExist(err) {
+			if _, err := os.Stat(orchestrate.WorktreeDir(projectDir, run.ID)); !os.IsNotExist(err) {
 				t.Fatalf("no landing tree should be created, stat err %v", err)
 			}
 		})
@@ -709,13 +710,12 @@ func TestCreateRunLandingLeavesLandPathEmpty(t *testing.T) {
 func TestCreateRunCancelsWhenTheLandingTreeFails(t *testing.T) {
 	ctx := context.Background()
 	projectDir, _ := newLandingRepo(t)
-	// a file where the worktrees dir belongs makes `git worktree add` fail
-	if err := os.MkdirAll(filepath.Join(projectDir, ".waveterm"), 0o755); err != nil {
+	// a file where the worktree root belongs makes the tree's creation fail
+	root := filepath.Join(t.TempDir(), "arc-wt")
+	if err := os.WriteFile(root, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(projectDir, ".waveterm", "worktrees"), nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	t.Cleanup(orchestrate.UseWorktreeRootForTest(root))
 	ch, _, err := createLandingRun(t, ctx, projectDir, jarvis.RunMode_Orchestrator, strPtr(jarvis.Landing_Branch))
 	if err == nil || !strings.Contains(err.Error(), "landing") {
 		t.Fatalf("error %v should name the landing tree", err)

@@ -185,6 +185,7 @@ import { JarvisTour, TourButton, TourOffer } from "./jarvistourview";
 import { NewInitiativeControl } from "./newinitiativecontrol";
 import { radarDraftLanding } from "./newrun";
 import { openChannelSheet, openOrPeek, openOrPeekAddress } from "./openref";
+import { forgetOrigin } from "./returnsurface";
 import { loadTaskList, taskListAtom } from "./tasksstore";
 import {
     appendInStageAt,
@@ -1353,6 +1354,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
             const lineId = "initiatives:" + effortOref;
             globalStore.set(briefSheetOpenAtom, false);
             clearSubject();
+            forgetOrigin();
             setOpenInitiative(lineId);
             setCursor(chunkRowId(lineId, chunk));
             fireAndForget(async () => {
@@ -2199,74 +2201,78 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                         ) : null}
                     </AnimatePresence>
                 </div>
-                {selectedChunk != null && openInitiative != null ? (
-                    <ChunkSidebar
-                        model={model}
-                        initiative={openEffort?.title ?? ""}
-                        label={selectedChunk.row.label}
-                        stage={selectedChunk.row.stage}
-                        flat={isFlatPlan(planChunks)}
-                        status={selectedChunk.row.status}
-                        position={{
-                            n: planChunks.findIndex((c) => c.label === selectedChunk.row.label) + 1,
-                            total: planChunks.length,
-                        }}
-                        feed={tracker.feed}
-                        expanded={readingNote}
-                        now={Date.now()}
-                        handle={`wsh effort note ${selectedChunk.oref.replace(/^effort:/, "")} "${selectedChunk.row.label}"`}
-                        error={mutateError}
-                        work={chunkWork}
-                        onPrev={stepTo("prev")}
-                        onNext={stepTo("next")}
-                        onToggle={(key) =>
-                            setReadingNote((cur) => {
-                                const next = new Set(cur);
-                                if (!next.delete(key)) {
-                                    next.add(key);
-                                }
-                                return next;
-                            })
-                        }
-                        onClose={closeNotes}
-                        onActivity={(e) => openLine({ oref: selectedChunk.oref }, e)}
-                        onAddNote={(text) =>
-                            runMutation(() => appendChunkNote(selectedChunk.oref, selectedChunk.row.label, text))
-                        }
-                        onSetStatus={(status) => edits?.onSetStatus(selectedChunk.row.label, status)}
-                        onEditNote={(entry, text) =>
-                            entry.noteAt != null &&
-                            runMutation(() =>
-                                editNote(
-                                    selectedChunk.oref,
-                                    chunkRef(planChunks, entry.chunk),
-                                    entry.noteAt!,
-                                    entry.ts,
-                                    text
-                                )
-                            )
-                        }
-                        onDeleteNote={(entry) => {
-                            if (entry.noteAt == null) {
-                                return;
+                <AnimatePresence initial={false}>
+                    {selectedChunk != null && openInitiative != null ? (
+                        <ChunkSidebar
+                            key="chunk-sidebar"
+                            model={model}
+                            initiative={openEffort?.title ?? ""}
+                            label={selectedChunk.row.label}
+                            stage={selectedChunk.row.stage}
+                            flat={isFlatPlan(planChunks)}
+                            status={selectedChunk.row.status}
+                            position={{
+                                n: planChunks.findIndex((c) => c.label === selectedChunk.row.label) + 1,
+                                total: planChunks.length,
+                            }}
+                            feed={tracker.feed}
+                            expanded={readingNote}
+                            now={Date.now()}
+                            handle={`wsh effort note ${selectedChunk.oref.replace(/^effort:/, "")} "${selectedChunk.row.label}"`}
+                            error={mutateError}
+                            work={chunkWork}
+                            onPrev={stepTo("prev")}
+                            onNext={stepTo("next")}
+                            onToggle={(key) =>
+                                setReadingNote((cur) => {
+                                    const next = new Set(cur);
+                                    if (!next.delete(key)) {
+                                        next.add(key);
+                                    }
+                                    return next;
+                                })
                             }
-                            const at = entry.noteAt;
-                            setReadingNote(new Set());
-                            briefUndo.schedule(
-                                [noteKey(selectedChunk.oref, entry.chunk, entry.ts)],
-                                "Note deleted",
-                                () => removeNote(selectedChunk.oref, chunkRef(planChunks, entry.chunk), at, entry.ts)
-                            );
-                        }}
-                        onOpenSession={(c, e) =>
-                            fireAndForget(() =>
-                                c.sessionTab !== ""
-                                    ? openOrPeek(model, { kind: "agent", tabId: c.sessionTab }, e)
-                                    : openOrPeekAddress(model, "run:" + c.runOid, e)
-                            )
-                        }
-                    />
-                ) : null}
+                            onClose={closeNotes}
+                            onActivity={(e) => openLine({ oref: selectedChunk.oref }, e)}
+                            onAddNote={(text) =>
+                                runMutation(() => appendChunkNote(selectedChunk.oref, selectedChunk.row.label, text))
+                            }
+                            onSetStatus={(status) => edits?.onSetStatus(selectedChunk.row.label, status)}
+                            onEditNote={(entry, text) =>
+                                entry.noteAt != null &&
+                                runMutation(() =>
+                                    editNote(
+                                        selectedChunk.oref,
+                                        chunkRef(planChunks, entry.chunk),
+                                        entry.noteAt!,
+                                        entry.ts,
+                                        text
+                                    )
+                                )
+                            }
+                            onDeleteNote={(entry) => {
+                                if (entry.noteAt == null) {
+                                    return;
+                                }
+                                const at = entry.noteAt;
+                                setReadingNote(new Set());
+                                briefUndo.schedule(
+                                    [noteKey(selectedChunk.oref, entry.chunk, entry.ts)],
+                                    "Note deleted",
+                                    () =>
+                                        removeNote(selectedChunk.oref, chunkRef(planChunks, entry.chunk), at, entry.ts)
+                                );
+                            }}
+                            onOpenSession={(c, e) =>
+                                fireAndForget(() =>
+                                    c.sessionTab !== ""
+                                        ? openOrPeek(model, { kind: "agent", tabId: c.sessionTab }, e)
+                                        : openOrPeekAddress(model, "run:" + c.runOid, e)
+                                )
+                            }
+                        />
+                    ) : null}
+                </AnimatePresence>
                 <BriefToastView />
             </div>
             {/* the Brief's destination for a record address: openref.ts's record landing sets the atom this reads.

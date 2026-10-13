@@ -11,7 +11,7 @@
 // digest's figures are dated rather than presented as current.
 
 import type { AgentVM } from "../agents/agentsviewmodel";
-import { finalStageActivity } from "../agents/runlineage";
+import { finalStageActivity } from "../agents/finalstage";
 import { canResume, currentPhaseIndex, isTerminal, leadWorker } from "../agents/runmodel";
 import {
     cleanupOnly,

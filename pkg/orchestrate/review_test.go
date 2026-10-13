@@ -413,6 +413,27 @@ func TestReviewerThatEndsWithoutAVerdictIsReplacedOnce(t *testing.T) {
 	}
 }
 
+// Run bf3a2fe3's reviewer: its route refused every turn, so a replacement would be refused too. The review fails at
+// once with the provider's words and spends no respawn.
+func TestReviewerOnARefusedRouteFailsTheReviewAtOnce(t *testing.T) {
+	ctx, dag, worker := seedReviewDag(t)
+	stubReviewTree(t, worker.EndCommit)
+	stubStopRunWorkers(t)
+	stubSessionsRoot(t, t.TempDir())
+	calls := captureSpawns(t)
+	schedule(t, ctx, dag.OID)
+	reviewer, err := wstore.GetRun(ctx, dag.ChannelId, firstTask(t, ctx, dag.OID).ReviewRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFailedTurn(t, reviewer, deadRouteError, time.Now().Add(-RefusedQuiet-time.Second))
+	schedule(t, ctx, dag.OID)
+	task := firstTask(t, ctx, dag.OID)
+	if task.State != TaskState_ReviewFailed || task.ReviewNote != "reviewer's route refused it: "+deadRouteError || len(*calls) != 1 || task.ReviewRespawns != 0 {
+		t.Fatalf("want review-failed on the refusal with no replacement, got %+v after %d spawns", task, len(*calls))
+	}
+}
+
 func TestReviewerThatCommittedIsOverruled(t *testing.T) {
 	ctx, dag, _ := seedReviewDag(t)
 	resets := stubReviewTree(t, "moved999")

@@ -131,7 +131,7 @@ func TestScanRootsIncludesAgy(t *testing.T) {
 	if err := os.WriteFile(lossy, []byte(agyPlanner(time.Now().Format(time.RFC3339), 999, 999, 999)+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got := scanRoots(filepath.Join(dir, "claude-missing"), filepath.Join(dir, "codex-missing"), filepath.Join(dir, "opencode-missing"), filepath.Join(dir, "pi-missing"), agyRoot, 7)
+	got, _ := scanRoots(filepath.Join(dir, "claude-missing"), filepath.Join(dir, "codex-missing"), filepath.Join(dir, "opencode-missing"), filepath.Join(dir, "pi-missing"), agyRoot, 7)
 	if len(got) != 1 {
 		t.Fatalf("want 1 agy bucket, got %+v", got)
 	}
@@ -145,7 +145,7 @@ func TestScanRootsIncludesAgy(t *testing.T) {
 	if err := os.Chtimes(stale, old, old); err != nil {
 		t.Fatal(err)
 	}
-	got = scanRoots(filepath.Join(dir, "claude-missing"), filepath.Join(dir, "codex-missing"), filepath.Join(dir, "opencode-missing"), filepath.Join(dir, "pi-missing"), agyRoot, 7)
+	got, _ = scanRoots(filepath.Join(dir, "claude-missing"), filepath.Join(dir, "codex-missing"), filepath.Join(dir, "opencode-missing"), filepath.Join(dir, "pi-missing"), agyRoot, 7)
 	if len(got) != 1 || got[0].Input != 31 {
 		t.Errorf("windowed scan = %+v; want only the two fresh conversations", got)
 	}

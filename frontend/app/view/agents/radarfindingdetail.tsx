@@ -6,6 +6,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { openInCode } from "@/app/view/code/codestore";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { openOrPeek } from "@/app/view/jarvis/openref";
+import { landOn } from "@/app/view/jarvis/returnsurface";
 import { cn, fireAndForget } from "@/util/util";
 import { ArrowRight, ChevronDown } from "lucide-react";
 import { useState } from "react";
@@ -45,7 +46,7 @@ export function runPrimaryAction(
         return;
     }
     globalStore.set(pendingRunDraftAtom, toPendingRunDraft(report, finding));
-    globalStore.set(model.surfaceAtom, "jarvis");
+    landOn(model.surfaceAtom, "jarvis");
 }
 
 const LABEL = cn(REGION_LABEL, "text-muted");

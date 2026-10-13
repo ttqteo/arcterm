@@ -23,21 +23,25 @@ const fixRoundLineFmt = "Fix round %d: this is task %d of the fix plan at %s; re
 // fixRoundLineRe finds the fix plan's path in that line, so each reader gets it resolved in its own tree.
 var fixRoundLineRe = regexp.MustCompile(`^Fix round \d+: this is task \d+ of the fix plan at (.+?); re-read it there`)
 
-// CheckFixRound says why a dag cannot take a fix round, or nil. A round fixes what a failed final stage found,
-// and the dag gets MaxFinalRounds of them in all, the first included; after that the call is the human's.
+// CheckFixRound says why a dag cannot take a round, or nil. A round fixes what a failed final stage found, or
+// the open issues inside the goal that a finished run left, and the dag gets MaxFinalRounds final stages in all,
+// the first included. After a failed last round the call is the human's; after a finished one the rest is chunks.
 func CheckFixRound(g *waveobj.TaskGroup) error {
 	if g.Status == DagStatus_Cancelled {
 		return fmt.Errorf("dag %s is cancelled", g.OID)
 	}
-	if g.Final == nil || g.Final.State != FinalState_Failed {
+	if g.Final == nil || !finalTerminal(g.Final.State) {
 		state := "not started"
 		if g.Final != nil && g.Final.State != "" {
 			state = g.Final.State
 		}
-		return fmt.Errorf("the final stage has not failed (it is %s); a fix round only follows a failed final stage", state)
+		return fmt.Errorf("the final stage has not finished (it is %s); a round only follows a finished final stage", state)
 	}
 	if g.Final.Round >= MaxFinalRounds {
-		return fmt.Errorf("no fix rounds left; forward to the human: the final stage failed round %d of %d", g.Final.Round, MaxFinalRounds)
+		if g.Final.State == FinalState_Failed {
+			return fmt.Errorf("no fix rounds left; forward to the human: the final stage failed round %d of %d", g.Final.Round, MaxFinalRounds)
+		}
+		return fmt.Errorf("no rounds left: the final stage %s round %d of %d; add what is left as effort chunks", g.Final.State, g.Final.Round, MaxFinalRounds)
 	}
 	return nil
 }
@@ -60,7 +64,7 @@ func CheckFixPlanCommands(g *waveobj.TaskGroup, verify, setup, check, final stri
 	return nil
 }
 
-// AppendRound extends a dag whose final stage failed with a fix plan's tasks, numbered on from its last task,
+// AppendRound extends a dag whose final stage finished with a fix plan's tasks, numbered on from its last task,
 // and sets up the next final round, which starts once they land. The dag keeps its Verify, Setup, Check, Final
 // and plan review: a fix round is not plan-reviewed, though each of its tasks is. planPath is the fix plan as
 // the dag stores its docs, repo-relative for a branch-landed dag; each task's description names it.

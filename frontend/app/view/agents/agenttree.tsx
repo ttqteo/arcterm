@@ -123,6 +123,8 @@ import { parseDocReview } from "./docreview";
 import { openReview } from "./docreviewstore";
 import { reconcileGrid } from "./agentgrid";
 import { agentGridAtom, canOpenInSplit, eligibleIds, endSplit, openInSplit, removeFromGrid } from "./gridstore";
+import { finalRowFocusId, type FinalTone } from "./finalstage";
+import { useFinalStageView } from "./finalstageviews";
 import { LEAD_MARK_CLASS, leadMark } from "./leadcardmodel";
 import { rosterSeededAtom } from "./liveagents";
 import {
@@ -158,7 +160,7 @@ import {
 } from "./runlineagestore";
 import { dagProgressLabel, finishedRunLabel, runComplete, runStatusView } from "./runmodel";
 import { runStage, type StageTone } from "./runstage";
-import { PIP_FILL, SEG_FILL, taskStrip, taskStripLabel } from "./runstrip";
+import { FINAL_FILL, PIP_FILL, SEG_FILL, taskStrip, taskStripLabel } from "./runstrip";
 import {
     getSubagentExpandAtom,
     toggleSubagentExpand,
@@ -1208,6 +1210,68 @@ function StageRow({
                 <div className="truncate text-[12.5px] font-medium text-ink-hi">{stageLabel(stageRole)}</div>
                 <div className="mt-[3px] truncate text-[10.5px] tabular-nums text-muted">
                     {stageSubline(outcome, formatAgeShort(displayAgeMs(agent, now)))}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+const FINAL_SUB_INK: Record<FinalTone, string> = {
+    wait: "text-muted",
+    run: "text-accent-soft",
+    pass: "text-muted",
+    fail: "text-error",
+    warn: "text-warning",
+};
+
+// The run's final stage, under the run like a task's worker: there from the moment the plan's tasks are over,
+// before any verifier session exists. Once the current round's verifier is in the roster the row is that session.
+function FinalRow({ model, run, agent }: { model: AgentsViewModel; run: RunInfo; agent?: AgentVM }) {
+    const focusId = useAtomValue(model.focusIdAtom);
+    const now = useAtomValue(model.nowAtom);
+    const view = useFinalStageView(run.dag, run.runId, run.channelId, now);
+    const focusKey = finalRowFocusId(run, agent ? [agent] : []);
+    const selected = focusId === focusKey;
+    const select = () => {
+        globalStore.set(model.focusIdAtom, focusKey);
+        globalStore.set(model.focusReplyAtom, false);
+    };
+    const onContextMenu = (e: React.MouseEvent) => {
+        if (agent == null) {
+            return;
+        }
+        const items: ContextMenuItem[] = [
+            { label: "Close agent", icon: <X size={15} />, danger: true, click: () => confirmCloseSession(agent) },
+        ];
+        ContextMenuModel.getInstance().showContextMenu(items, e);
+    };
+    return (
+        <div
+            data-final-row
+            data-final-tone={view.tone}
+            onClick={select}
+            onContextMenu={onContextMenu}
+            className={cn(
+                "relative flex cursor-pointer items-center gap-[9px] rounded-[9px] py-[7px] pl-[28px] pr-[11px] transition-colors duration-[140ms]",
+                selected ? "bg-accentbg" : "hover:bg-surface-hover"
+            )}
+        >
+            <Guides depth={1} />
+            <Slot>
+                {view.tone === "pass" ? (
+                    <Check size={11} aria-hidden className="text-success" />
+                ) : view.tone === "run" ? (
+                    <StatusDot state="working" pulse className="!h-[7px] !w-[7px]" />
+                ) : view.tone === "wait" ? (
+                    <span className="h-[7px] w-[7px] shrink-0 rounded-full border border-muted" />
+                ) : (
+                    <span className={cn("h-[7px] w-[7px] shrink-0 rounded-full", FINAL_FILL[view.tone])} />
+                )}
+            </Slot>
+            <div className="min-w-0 flex-1">
+                <div className="truncate text-[12.5px] font-medium text-ink-hi">{stageLabel("verifier")}</div>
+                <div className={cn("mt-[3px] truncate font-mono text-[10.5px]", FINAL_SUB_INK[view.tone])}>
+                    {view.subline}
                 </div>
             </div>
         </div>
@@ -2320,6 +2384,11 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                                 navDigit={digits.get(r.agent.id)}
                                             />
                                         );
+                                        break;
+                                    case "final":
+                                        // the stage's own key before a verifier stands for it, then the session's
+                                        key = r.agent?.id ?? `final-${r.run.runId}`;
+                                        body = <FinalRow model={model} run={r.run} agent={r.agent} />;
                                         break;
                                     case "done":
                                         key = `done-${r.run.runId}`;

@@ -106,7 +106,12 @@ function main() {
     const tmp = mkdtempSync(join(tmpdir(), "arc-mod-check-"));
     try {
         const logPath = join(tmp, "wsh-calls.log");
-        const stubExe = buildStub(tmp, logPath);
+        let stubExe;
+        try {
+            stubExe = buildStub(tmp, logPath);
+        } catch (err) {
+            return outcome(EXIT_UNVERIFIED, tail(err.stderr?.toString()), `could not verify: stub wsh build failed (${err.message.split("\n")[0]})`);
+        }
         const modDst = join(tmp, "arc-mod");
         const copyErr = copyMod(modDst, stubExe);
         if (copyErr) {

@@ -16,6 +16,7 @@ export type ScopeId =
     | "runs"
     | "sessions"
     | "records"
+    | "notes"
     | "projects"
     | "files"
     | "commands";
@@ -47,6 +48,7 @@ export const SCOPES: ScopeDef[] = [
         placeholder: "Find a session to resume…",
     },
     { id: "records", label: "Records", prefix: "re", noun: "records", placeholder: "Find a record or initiative…" },
+    { id: "notes", label: "Notes", prefix: "no", noun: "notes", placeholder: "Search notes…" },
     {
         id: "projects",
         label: "Projects",

@@ -236,6 +236,54 @@ func TestDagSubmitFromPlanPath(t *testing.T) {
 		}
 	})
 
+	t.Run("a plan with no effort takes the run's, and a plan's own effort wins", func(t *testing.T) {
+		linked := &waveobj.Effort{Title: "linked", Chunks: []waveobj.EffortChunk{{Label: "build it", Status: "pending"}}}
+		named := &waveobj.Effort{Title: "named", Chunks: []waveobj.EffortChunk{{Label: "other", Status: "pending"}}}
+		for _, e := range []*waveobj.Effort{linked, named} {
+			if err := effortstore.Create(ctx, e); err != nil {
+				t.Fatal(err)
+			}
+		}
+		link := func(t *testing.T, channelId, runId string) {
+			if err := wstore.UpdateRun(ctx, channelId, runId, func(r *waveobj.Run) error {
+				r.EffortRef = &waveobj.RunEffortRef{EffortOID: linked.OID, ChunkLabel: "build it"}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		bare := "### Task 1: a\ndo a\n"
+
+		channelId, runId := newRun(t)
+		link(t, channelId, runId)
+		g, err := (&WshServer{}).DagSubmitCommand(ctx, wshrpc.CommandDagSubmitData{ChannelId: channelId, RunId: runId, PlanPath: writePlan(t, "plan.md", bare)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if g.EffortOID != linked.OID {
+			t.Fatalf("a plan with no effort takes the run's link, got %q", g.EffortOID)
+		}
+
+		channelId, runId = newRun(t)
+		link(t, channelId, runId)
+		g, err = (&WshServer{}).DagSubmitCommand(ctx, wshrpc.CommandDagSubmitData{ChannelId: channelId, RunId: runId, PlanPath: writePlan(t, "plan.md", "**Effort:** effort:"+named.OID+"\n\n"+bare)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if g.EffortOID != named.OID {
+			t.Fatalf("the plan's own effort wins over the run's link, got %q", g.EffortOID)
+		}
+
+		channelId, runId = newRun(t)
+		g, err = (&WshServer{}).DagSubmitCommand(ctx, wshrpc.CommandDagSubmitData{ChannelId: channelId, RunId: runId, PlanPath: writePlan(t, "plan.md", bare)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if g.EffortOID != "" {
+			t.Fatalf("no link and no plan effort leaves the dag without one, got %q", g.EffortOID)
+		}
+	})
+
 	t.Run("a task submitted as JSON cannot name chunks without an effort", func(t *testing.T) {
 		channelId, runId := newRun(t)
 		_, err := (&WshServer{}).DagSubmitCommand(ctx, wshrpc.CommandDagSubmitData{
@@ -283,7 +331,7 @@ func TestDagSubmitRoundExtendsTheDag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := submit(wshrpc.CommandDagSubmitData{PlanPath: fixPlan, Round: true}); err == nil || !strings.Contains(err.Error(), "the final stage has not failed") {
+	if _, err := submit(wshrpc.CommandDagSubmitData{PlanPath: fixPlan, Round: true}); err == nil || !strings.Contains(err.Error(), "the final stage has not finished") {
 		t.Fatalf("a round before the final stage failed: want a refusal, got %v", err)
 	}
 	if err := wstore.UpdateDag(ctx, g.OID, func(cur *waveobj.TaskGroup) error {

@@ -118,3 +118,14 @@ func pendingAsk(lines []string) bool {
 	}
 	return len(askIDs) > 0
 }
+
+// AskOpen reports whether the transcript at path holds an AskUserQuestion call with no result yet: the
+// agent's question dialog is still on screen. The whole transcript is read, since the tools called beside
+// a question write their results after it and can push it out of any tail.
+func AskOpen(path string) (bool, error) {
+	tail, err := ReadTail(path, 0)
+	if err != nil {
+		return false, err
+	}
+	return pendingAsk(tail.Lines), nil
+}

@@ -578,7 +578,7 @@ func handSetupToLead(ctx context.Context, channelId string, run waveobj.Run, pla
 		return false
 	}
 	wake := setupRepairWake(planPath, failed)
-	if lerr := LaunchPlanLead(ctx, channelId, run.ID, jarvis.PlanLeadPrompt(run.Principles, run.ID, "", planPath, wake)); lerr != nil {
+	if lerr := LaunchPlanLead(ctx, channelId, run.ID, jarvis.PlanLeadPrompt(run.Principles, run.ID, "", planPath, runEffortOID(&run), wake)); lerr != nil {
 		log.Printf("CreateRun: no lead to take run %s's failed setup: %v", run.ID, lerr)
 		return false
 	}

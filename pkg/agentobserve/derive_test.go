@@ -4,6 +4,9 @@
 package agentobserve
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -70,5 +73,28 @@ func TestPendingAsk(t *testing.T) {
 	}
 	if pendingAsk([]string{recAssistantToolUse}) {
 		t.Fatal("a non-ask tool_use is not a pending ask")
+	}
+}
+
+func TestAskOpenReadsPastTheToolsCalledBesideTheQuestion(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	write := func(records ...string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(strings.Join(records, "\n")+"\n"), 0o644); err != nil {
+			t.Fatalf("writing transcript: %v", err)
+		}
+	}
+	siblingResult := `{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1"}]}}`
+
+	write(recAskUse, recAssistantToolUse, siblingResult)
+	if open, err := AskOpen(path); err != nil || !open {
+		t.Fatalf("a question with no result is open: open=%v err=%v", open, err)
+	}
+	write(recAskUse, recAssistantToolUse, siblingResult, recAskResult)
+	if open, err := AskOpen(path); err != nil || open {
+		t.Fatalf("a question with its result is closed: open=%v err=%v", open, err)
+	}
+	if _, err := AskOpen(filepath.Join(t.TempDir(), "missing.jsonl")); err == nil {
+		t.Fatal("a transcript that cannot be read is an error, not a closed question")
 	}
 }

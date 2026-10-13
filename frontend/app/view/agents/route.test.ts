@@ -10,6 +10,8 @@ import {
     normalizeProfileOverrideRoute,
     normalizeRoute,
     pickerRowMeta,
+    refusedNote,
+    refusedRouteFor,
     resolveEffectiveRoute,
     routePickerItems,
     scopePickerSections,
@@ -234,5 +236,52 @@ describe("lead route seed", () => {
     it("passes no route through, and leaves the route alone before the catalog loads", () => {
         expect(leadRouteSeed(null, leadCatalog)).toBeNull();
         expect(leadRouteSeed(pin("agy"), [])).toEqual(pin("agy"));
+    });
+});
+
+// a route its provider refused (run bf3a2fe3: a lapsed OpenCode Go plan) stays selectable but says so
+describe("refused routes", () => {
+    const refusal = "403: An active OpenCode Go subscription is required";
+    const ts = Date.UTC(2026, 9, 10, 12);
+    const refused: RefusedRouteInfo[] = [
+        { runtime: "pi", text: refusal, ts },
+        { runtime: "pi", model: "opencode-go/deepseek-v4-flash", text: refusal, ts },
+    ];
+    const piHarnesses: HarnessInfo[] = [
+        harness("pi", [
+            runtimeDefault("pi"),
+            cap("pi", "opencode-go/deepseek-v4-flash", { provider: "opencode-go" }),
+            cap("pi", "opencode/deepseek-v4-pro", { provider: "opencode" }),
+        ]),
+    ];
+
+    it("notes the status and the day, or nothing for a route nobody refused", () => {
+        expect(refusedNote(refusal, ts)).toBe("refused 403 · Oct 10");
+        expect(refusedNote("forbidden by policy", ts)).toBe("refused · Oct 10");
+        expect(refusedNote("", ts)).toBe("");
+        expect(refusedNote(undefined, undefined)).toBe("");
+    });
+
+    it("carries a refusal onto its row and into the row's meta", () => {
+        const rows = buildPickerSections(piHarnesses, refused)[0].rows;
+        expect(rows.map((r) => [r.model, r.refusedtext])).toEqual([
+            ["opencode-go/deepseek-v4-flash", refusal],
+            ["opencode/deepseek-v4-pro", ""],
+        ]);
+        expect(pickerRowMeta(rows[0])).toBe("provider opencode-go · refused 403 · Oct 10");
+        expect(pickerRowMeta(rows[1])).toBe("provider opencode");
+        expect(buildPickerSections(piHarnesses)[0].rows.every((r) => r.refusedtext === "")).toBe(true);
+    });
+
+    it("finds a refusal only for the exact route a pin names", () => {
+        expect(refusedRouteFor(pin("pi"), refused)?.text).toBe(refusal);
+        expect(refusedRouteFor(pin("pi", "opencode-go/deepseek-v4-flash"), refused)?.model).toBe(
+            "opencode-go/deepseek-v4-flash"
+        );
+        expect(refusedRouteFor(pin("pi", "opencode/deepseek-v4-pro"), refused)).toBeUndefined();
+        // a typed model the catalog lacks is not the refused default capabilityFor would fall back to
+        expect(refusedRouteFor(pin("pi", "custom/model"), refused)).toBeUndefined();
+        expect(refusedRouteFor(pin("claude"), refused)).toBeUndefined();
+        expect(refusedRouteFor(null, refused)).toBeUndefined();
     });
 });

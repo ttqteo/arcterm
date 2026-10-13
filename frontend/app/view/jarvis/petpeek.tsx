@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The peek is a compact global hub anchored to the creature. Its shape follows its responsibility: a quiet
-// 300px card when nothing waits, and a 420px queue when work arrives. Both share one grammar: a title that
+// card when nothing waits, and a queue when work arrives, at one 420px width so arriving work never resizes
+// it. Both share one grammar: a title that
 // carries the count, standing conditions as static lines under it, the body, the updates drawer, the
 // composer, and the key hints last. What needs doing leads and carries its actions inline; the quiet card
 // leads with the latest update and keeps the rest under Earlier. Everything actionable carries its own

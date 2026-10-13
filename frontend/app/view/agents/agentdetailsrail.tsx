@@ -57,6 +57,8 @@ import { canvasStateAtom, selectCanvasTab } from "./canvasstore";
 import { ASK_OWNER_USER } from "./childaskmodel";
 import { useDevServers } from "./devserversstore";
 import { FileTab } from "./filetab";
+import { finalRowFocusId, isFinalStageId } from "./finalstage";
+import { FinalStageRail } from "./finalstagerail";
 import { capFiles, statusColor } from "./gitstatus";
 import { instructionsFileAtom, instructionsKey, loadInstructionsFile } from "./instructionsfile";
 import { entriesAtomFor, liveEntriesByIdAtom } from "./livetranscriptatoms";
@@ -990,13 +992,33 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 <RunSection key={agent.id} model={model} run={roleRun!} asks={asks} />
             ),
     };
-    const sections: RailSection[] = plan.map((p) => ({
+    // the agent is its run's Final verification row: the stage's own id, or the current round's verifier session.
+    // a tab an earlier round's verifier left is not the row, and keeps the rail it has
+    const finalRun =
+        !sub && role?.kind === "stage" && roleRun && finalRowFocusId(roleRun, [agent]) === agent.id
+            ? roleRun
+            : undefined;
+    const finalSection: RailSection[] = finalRun
+        ? [
+              {
+                  id: "final",
+                  label: "Final verification",
+                  icon: RAIL_ICON.autonomy,
+                  content: <FinalStageRail key={finalRun.runId} model={model} run={finalRun} />,
+              },
+          ]
+        : [];
+
+    const planned: RailSection[] = plan.map((p) => ({
         id: p.id,
         label: LABEL[p.id],
         icon: ICON[p.id],
         header: p.header,
         content: CONTENT[p.id](),
     }));
+    // the Final verification block follows the status section, as it follows details in the stage's own rail
+    const statusAt = planned.findIndex((s) => s.id === "status");
+    const sections: RailSection[] = [...planned.slice(0, statusAt + 1), ...finalSection, ...planned.slice(statusAt + 1)];
 
     const stripTitle = [
         "Agent details",
@@ -1010,7 +1032,8 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         <CollapsibleRail
             openAtom={railVisibleAtom}
             ariaLabel="Agent details"
-            sections={sections}
+            // the stage's own id is no session, so its rail is the stage alone
+            sections={isFinalStageId(agent.id) ? finalSection : sections}
             width={shown === "overview" ? RAIL_OVERVIEW_PX : wide.width}
             widthKey={shown}
             tabs={

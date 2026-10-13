@@ -347,52 +347,27 @@ describe("header chips", () => {
 });
 
 describe("stageEntries", () => {
-    it("names each stage's state and the reviewer route's model", () => {
-        const g = { tasks: [], planreview: { state: "passed", round: 1 } } as unknown as TaskGroup;
-        expect(stageEntries(g, lead, 0)).toEqual([
-            { key: "planreview", text: "plan review · passed · opus-5-5", tone: "done" },
-            { key: "final", text: "final verify · waiting · opus-5-5", tone: "open" },
-        ]);
-    });
-    it("leaves out a plan review that never ran, and uses the reviewer route", () => {
-        const g = {
-            tasks: [],
-            reviewerroute: { model: "sonnet" },
-            final: { state: "failed", round: 1 },
-        } as unknown as TaskGroup;
-        expect(stageEntries(g, lead, 0)).toEqual([
-            { key: "final", text: "final verify · failed · sonnet", tone: "failed" },
-        ]);
-    });
-    it("names a running final stage's step and how long it has run, with the plan's command and output as detail", () => {
+    it("is empty with no plan review, whatever the final stage is doing", () => {
         const g = {
             tasks: [],
             verify: "pytest -q",
             final: { state: "checking", round: 1, step: "verify", stepts: 1_000, output: "collected 40 items" },
         } as unknown as TaskGroup;
-        expect(stageEntries(g, lead, 1_000 + 3 * 60_000)).toEqual([
-            {
-                key: "final",
-                text: "final verify · running Verify 3m · opus-5-5",
-                tone: "open",
-                detail: "pytest -q\n\ncollected 40 items",
-            },
-        ]);
+        expect(stageEntries(g, lead)).toEqual([]);
     });
-    it("keeps only the last lines of a long output tail in the detail", () => {
-        const output = Array.from({ length: 30 }, (_, i) => `line ${i}`).join("\n");
+    it("holds only the plan review once one ran, on the reviewer route's model", () => {
         const g = {
             tasks: [],
-            finalcmd: "make e2e",
-            final: { state: "final", round: 1, step: "final", stepts: 1, output },
+            planreview: { state: "passed", round: 1 },
+            final: { state: "failed", round: 1 },
         } as unknown as TaskGroup;
-        const [entry] = stageEntries(g, lead, 1);
-        expect(entry.detail?.startsWith("make e2e\n\nline 18\n")).toBe(true);
-        expect(entry.detail?.endsWith("line 29")).toBe(true);
-    });
-    it("shows the verifier once the commands passed", () => {
-        const g = { tasks: [], final: { state: "verifying", round: 1 } } as unknown as TaskGroup;
-        expect(stageEntries(g, lead, 0)[0].text).toBe("final verify · verifier reviewing · opus-5-5");
+        expect(stageEntries(g, lead)).toEqual([
+            { key: "planreview", text: "plan review · passed · opus-5-5", tone: "done" },
+        ]);
+        const routed = { ...g, reviewerroute: { model: "sonnet" }, planreview: { state: "failed", round: 2 } };
+        expect(stageEntries(routed as unknown as TaskGroup, lead)).toEqual([
+            { key: "planreview", text: "plan review · failed · sonnet", tone: "failed" },
+        ]);
     });
 });
 

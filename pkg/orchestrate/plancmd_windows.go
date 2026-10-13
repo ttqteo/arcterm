@@ -38,8 +38,8 @@ func shellCommand(ctx context.Context, command string) (*exec.Cmd, error) {
 //
 // c.Cancel is set before Start so the context-watcher goroutine Start spawns never reads it
 // concurrently with a write; the job handle it closes over is published through an atomic
-// once Attach succeeds.
-func runShellCmd(c *exec.Cmd) error {
+// once Attach succeeds. The job is registered as owner's when owner is set.
+func runShellCmd(c *exec.Cmd, owner jobobject.Owner) error {
 	var job atomic.Uint64
 	c.Cancel = func() error {
 		if j := job.Load(); j != 0 {
@@ -54,6 +54,9 @@ func runShellCmd(c *exec.Cmd) error {
 	}
 	if j, jerr := jobobject.Attach(c.Process); jerr == nil {
 		job.Store(uint64(j))
+		if owner.Kind != "" {
+			jobobject.Register(j, c.Process.Pid, owner)
+		}
 	}
 	err := c.Wait()
 	if j := job.Load(); j != 0 {
