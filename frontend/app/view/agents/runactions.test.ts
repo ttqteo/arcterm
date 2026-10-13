@@ -146,6 +146,20 @@ describe("createRun", () => {
         expect(createRunCommand.mock.calls[1][1]).not.toHaveProperty("prototype");
     });
 
+    // false is said out loud too: unset means the profile's, which a launcher showing Ask me did not choose
+    it.each([true, false])("sends an orchestrator run's autonomous %s", async (autonomous) => {
+        createRunCommand.mockResolvedValueOnce({ run: { id: "run-1" } });
+        await createRun("channel-1", "build", { runtime: "pi" }, { mode: "orchestrator", autonomous });
+        expect(createRunCommand.mock.calls[0][1]).toMatchObject({ mode: "orchestrator", autonomous });
+    });
+
+    // the server refuses an explicit autonomous on a quick run
+    it("never sends autonomous on a quick run", async () => {
+        createRunCommand.mockResolvedValueOnce({ run: { id: "run-1" } });
+        await createRun("channel-1", "fix", { runtime: "pi" }, { mode: "quick", autonomous: true });
+        expect(createRunCommand.mock.calls[0][1]).not.toHaveProperty("autonomous");
+    });
+
     it("sends a budget that covers a whole engine launch", async () => {
         createRunCommand.mockResolvedValueOnce({ run: { id: "run-1" } });
         await createRun("channel-1", "ship", { runtime: "pi" }, { mode: "orchestrator", planPath: "plan.md" });

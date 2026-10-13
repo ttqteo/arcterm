@@ -81,6 +81,7 @@ describe("launchOptsFromConfig", () => {
         planPath: "",
         reviewerPicks: false,
         reviewerRoute: null,
+        autonomous: false,
     };
     const workerRoute: RoutePin = { runtime: "claude" };
 
@@ -101,6 +102,7 @@ describe("launchOptsFromConfig", () => {
         expect(launchOptsFromConfig({ ...base, shape: "orchestrator", parallelism: 4, workerRoute })).toEqual({
             mode: "orchestrator",
             reviewerPicks: false,
+            autonomous: false,
             parallelism: 4,
             workerRoute,
         });
@@ -110,6 +112,7 @@ describe("launchOptsFromConfig", () => {
         expect(launchOptsFromConfig({ ...base, shape: "orchestrator", parallelism: 2 })).toEqual({
             mode: "orchestrator",
             reviewerPicks: false,
+            autonomous: false,
             parallelism: 2,
         });
     });
@@ -120,6 +123,7 @@ describe("launchOptsFromConfig", () => {
         ).toEqual({
             mode: "orchestrator",
             reviewerPicks: false,
+            autonomous: false,
             parallelism: 3,
             planPath: "/repo/plan.md",
         });
@@ -136,6 +140,7 @@ describe("launchOptsFromConfig", () => {
         expect(launchOptsFromConfig({ ...base, shape: "orchestrator", prototype })).toEqual({
             mode: "orchestrator",
             reviewerPicks: false,
+            autonomous: false,
             parallelism: 3,
             prototype,
         });
@@ -144,6 +149,20 @@ describe("launchOptsFromConfig", () => {
     // the server rejects a prototype on a quick run
     it("drops the prototype from quick", () => {
         expect(launchOptsFromConfig({ ...base, prototype: "C:/p/x/project/Main.dc.html" })).toEqual({ mode: "quick" });
+    });
+
+    it.each([true, false])("carries autonomous %s on an orchestrator run", (autonomous) => {
+        expect(launchOptsFromConfig({ ...base, shape: "orchestrator", autonomous })).toEqual({
+            mode: "orchestrator",
+            reviewerPicks: false,
+            autonomous,
+            parallelism: 3,
+        });
+    });
+
+    // the server refuses an explicit autonomous on a quick run
+    it("drops autonomous from quick", () => {
+        expect(launchOptsFromConfig({ ...base, autonomous: true })).toEqual({ mode: "quick" });
     });
 
     it("sends no prototype when none is set", () => {

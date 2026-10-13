@@ -54,6 +54,7 @@ export interface RunConfig {
     planPath: string;
     reviewerPicks: boolean;
     reviewerRoute: RoutePin | null;
+    autonomous: boolean;
     // a canvas's board, from Build this…; absolute, since a run's worktree has no copy of the design folder
     prototype?: string;
 }
@@ -66,14 +67,17 @@ export interface LaunchOpts {
     reviewerPicks?: boolean;
     reviewerRoute?: RoutePin;
     prototype?: string;
+    autonomous?: boolean;
 }
 
 // What the launcher's controls mean as CreateRun's arguments. The mode cannot simply be omitted: the server
 // reads an unset mode as `quick` (resolveRunPlan). Every orchestrator run is an engine run, so the machine
 // is the server's to set. reviewerPicks goes out even when false: the server reads an unset one as the
-// profile's, and the launcher has already shown the user the profile's answer and let them change it.
+// profile's, and the launcher has already shown the user the profile's answer and let them change it. autonomous
+// goes out the same way, and never on quick, which the server refuses it on.
 export function launchOptsFromConfig(config: RunConfig): LaunchOpts {
-    const { shape, parallelism, workerRoute, start, planPath, reviewerPicks, reviewerRoute, prototype } = config;
+    const { shape, parallelism, workerRoute, start, planPath, reviewerPicks, reviewerRoute, prototype, autonomous } =
+        config;
     if (shape !== "orchestrator") {
         return { mode: shape };
     }
@@ -85,6 +89,7 @@ export function launchOptsFromConfig(config: RunConfig): LaunchOpts {
         reviewerPicks,
         ...(reviewerRoute != null ? { reviewerRoute } : {}),
         ...(prototype ? { prototype } : {}),
+        autonomous,
     };
 }
 

@@ -13,6 +13,7 @@ const base: RunConfig = {
     planPath: "",
     reviewerPicks: false,
     reviewerRoute: null,
+    autonomous: false,
 };
 const opus: RoutePin = { runtime: "claude", model: "opus" };
 
@@ -22,6 +23,7 @@ describe("launchOptsFromConfig reviewer fields", () => {
             mode: "orchestrator",
             parallelism: 3,
             reviewerPicks: true,
+            autonomous: false,
         });
     });
 
@@ -31,6 +33,7 @@ describe("launchOptsFromConfig reviewer fields", () => {
             parallelism: 3,
             reviewerPicks: false,
             reviewerRoute: opus,
+            autonomous: false,
         });
     });
 
@@ -38,7 +41,7 @@ describe("launchOptsFromConfig reviewer fields", () => {
     // Same as lead over a profile that picks
     it("still sends reviewerPicks false with neither set", () => {
         const opts = launchOptsFromConfig(base);
-        expect(opts).toEqual({ mode: "orchestrator", parallelism: 3, reviewerPicks: false });
+        expect(opts).toEqual({ mode: "orchestrator", parallelism: 3, reviewerPicks: false, autonomous: false });
         expect(opts).not.toHaveProperty("reviewerRoute");
     });
 

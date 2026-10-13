@@ -55,6 +55,8 @@ export interface ProfileRunDefaults {
     // not nullable: false is the profile's own answer (Same as lead or its worker route), not silence
     reviewerPicks: boolean;
     reviewerRoute: RoutePin | null;
+    // not nullable either: false is the profile saying Ask me
+    autonomous: boolean;
 }
 
 export function profileRunDefaults(profile: JarvisProfile | null | undefined): ProfileRunDefaults {
@@ -68,6 +70,7 @@ export function profileRunDefaults(profile: JarvisProfile | null | undefined): P
         workerRoute: profile?.workerroute ?? null,
         reviewerPicks: profile?.reviewerpicks ?? false,
         reviewerRoute: profile?.reviewerroute ?? null,
+        autonomous: profile?.autonomous ?? false,
     };
 }
 
@@ -75,13 +78,26 @@ export interface RunLauncherFace {
     showStart: boolean;
     showParallelism: boolean;
     showWorkerRoute: boolean;
+    showApprovals: boolean;
 }
 
-// The start, the width and the worker route belong to the orchestrator: parallelism and WorkerRoute are read
-// only when the engine spawns dag children, and a quick run has no plan to start from.
+// The start, the width, the worker route and Approvals belong to the orchestrator: parallelism and WorkerRoute
+// are read only when the engine spawns dag children, a quick run has no plan to start from, and the server
+// refuses an autonomous quick run.
 export function runLauncherFace(shape: RunShape): RunLauncherFace {
     const orchestrator = shape === "orchestrator";
-    return { showStart: orchestrator, showParallelism: orchestrator, showWorkerRoute: orchestrator };
+    return {
+        showStart: orchestrator,
+        showParallelism: orchestrator,
+        showWorkerRoute: orchestrator,
+        showApprovals: orchestrator,
+    };
+}
+
+export function approvalsNote(autonomous: boolean): string {
+    return autonomous
+        ? "No questions: the lead decides the spec, plan review and product calls itself, and records why. You can switch this on the run sheet."
+        : "The lead waits for you at the spec review and whenever a call is yours.";
 }
 
 // PlanPreview is the launcher's last reading of a plan path: its parsed shape, or the parser's refusal.

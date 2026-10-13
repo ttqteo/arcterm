@@ -41,6 +41,7 @@ import {
 import { RunBody } from "@/app/view/agents/runbody";
 import { launchBlocker } from "@/app/view/agents/runconfig";
 import {
+    autonomousAtom,
     endRunConfigDraft,
     hydrateRunConfigFromProfile,
     parallelismAtom,
@@ -101,6 +102,7 @@ function ChannelLaunch({ channel }: { channel: Channel }) {
     const workerRoute = useAtomValue(workerRouteAtom);
     const reviewerPicks = useAtomValue(reviewerPicksAtom);
     const reviewerRoute = useAtomValue(reviewerRouteAtom);
+    const autonomous = useAtomValue(autonomousAtom);
     const parallelism = useAtomValue(parallelismAtom);
     const startFrom = useAtomValue(startAtom);
     const planPath = useAtomValue(planPathAtom);
@@ -123,7 +125,16 @@ function ChannelLaunch({ channel }: { channel: Channel }) {
     const target = pendingDraft != null ? resolveTargetChannel(channels ?? [], pendingDraft.projectPath) : undefined;
     const radarDraft = pendingDraft != null && target?.oid === channel.oid ? pendingDraft : null;
     const value = radarDraft != null ? radarDraft.goal : goal;
-    const config = { shape, parallelism, workerRoute, start: startFrom, planPath, reviewerPicks, reviewerRoute };
+    const config = {
+        shape,
+        parallelism,
+        workerRoute,
+        start: startFrom,
+        planPath,
+        reviewerPicks,
+        reviewerRoute,
+        autonomous,
+    };
     const planStart = shape === "orchestrator" && startFrom === "plan";
     const blocker = launchBlocker({ shape, start: startFrom, goal: value, planPath, preview });
 

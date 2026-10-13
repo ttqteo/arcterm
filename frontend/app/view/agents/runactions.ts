@@ -66,6 +66,7 @@ export interface CreateRunOpts {
     reviewerPicks?: boolean;
     reviewerRoute?: RoutePin | null;
     prototype?: string;
+    autonomous?: boolean;
 }
 
 export function createRunPayload(
@@ -90,6 +91,8 @@ export function createRunPayload(
         ...(orchestrator && opts.reviewerPicks != null ? { reviewerpicks: opts.reviewerPicks } : {}),
         ...(orchestrator && opts.reviewerRoute ? { reviewerroute: opts.reviewerRoute } : {}),
         ...(orchestrator && opts.prototype ? { prototype: opts.prototype } : {}),
+        // false is sent too, as reviewerpicks is; the server refuses an explicit autonomous on a quick run
+        ...(orchestrator && opts.autonomous != null ? { autonomous: opts.autonomous } : {}),
         mode: opts?.mode,
         deferstart: opts?.deferStart,
         ...(opts?.radarOrigin ? { radarorigin: opts.radarOrigin } : {}),

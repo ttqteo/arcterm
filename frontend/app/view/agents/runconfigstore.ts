@@ -29,6 +29,8 @@ export const workerRouteAtom = atom<RoutePin | null>(null) as PrimitiveAtom<Rout
 // the Workers picker's third answer beside Same as lead and a route; never true alongside a worker route
 export const reviewerPicksAtom = atom(false) as PrimitiveAtom<boolean>;
 export const reviewerRouteAtom = atom<RoutePin | null>(null) as PrimitiveAtom<RoutePin | null>;
+// the Approvals field: Autonomous when true, Ask me when false
+export const autonomousAtom = atom(false) as PrimitiveAtom<boolean>;
 export const parallelismAtom = atom<number>(DEFAULT_PARALLELISM) as PrimitiveAtom<number>;
 // Not profile-backed: a plan file belongs to one launch, never to a project's defaults, and a saved default
 // that silently started lead-free runs is not a default anyone asked for.
@@ -89,6 +91,11 @@ export function setReviewerRoute(next: RoutePin | null): void {
     globalStore.set(reviewerRouteAtom, next);
 }
 
+export function setAutonomous(next: boolean): void {
+    globalStore.set(configTouchedAtom, true);
+    globalStore.set(autonomousAtom, next);
+}
+
 // Fills the launcher from a channel's resolved profile, applying only what the profile actually states and
 // only while the user has not touched the configuration here. Called whenever the resolved profile arrives
 // (mount, a save, a switch back to this channel), which is what makes a saved default drive the next launch
@@ -108,6 +115,7 @@ export function hydrateRunConfigFromProfile(profile: JarvisProfile | null | unde
     globalStore.set(workerRouteAtom, defaults.workerRoute ?? null);
     globalStore.set(reviewerPicksAtom, defaults.reviewerPicks);
     globalStore.set(reviewerRouteAtom, defaults.reviewerRoute);
+    globalStore.set(autonomousAtom, defaults.autonomous);
 }
 
 // A launch or a discarded draft ends the configuration the user's manual choices belonged to. Manual choices
@@ -156,6 +164,7 @@ export function resetRunConfig(): void {
     globalStore.set(workerRouteAtom, null);
     globalStore.set(reviewerPicksAtom, false);
     globalStore.set(reviewerRouteAtom, null);
+    globalStore.set(autonomousAtom, false);
     globalStore.set(parallelismAtom, DEFAULT_PARALLELISM);
     globalStore.set(startAtom, DEFAULT_START);
     globalStore.set(planPathAtom, "");
