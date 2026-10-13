@@ -35740,13 +35740,13 @@ const sidebarAgentGlyph = {
         }
         const f = {};
         for (const [k, id] of Object.entries(SAG_ID)) f[k] = await h.ev(sagFacts(id));
-        const accent = await h.ev(sagColor("--color-accent"));
+        const working = await h.ev(sagColor("--color-working"));
         const warning = await h.ev(sagColor("--color-warning"));
         const muted = await h.ev(sagColor("--color-muted"));
         rec(
-            "1. a working agent's ✳ pulses in the accent colour",
-            f.working?.state === "working" && f.working.pulse && f.working.color === accent,
-            JSON.stringify({ ...f.working, accent })
+            "1. a working agent's ✳ pulses in the working green",
+            f.working?.state === "working" && f.working.pulse && f.working.color === working,
+            JSON.stringify({ ...f.working, working })
         );
         rec(
             "2. an asking agent's ✳ pulses in the warning colour",

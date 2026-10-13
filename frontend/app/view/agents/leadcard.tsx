@@ -83,7 +83,7 @@ const LEAD_PANE_MIN_BODY_PX = 320;
 const leadPaneOpenAtom = atom<Record<string, boolean>>({}) as PrimitiveAtom<Record<string, boolean>>;
 
 const TONE_DOT: Record<RowTone, string> = {
-    run: "bg-accent pulse-dot",
+    run: "bg-working pulse-dot",
     ask: "bg-warning",
     soft: "bg-accent-soft",
     warn: "shadow-[inset_0_0_0_1.5px_var(--color-warning)]",

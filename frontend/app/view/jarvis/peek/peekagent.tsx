@@ -21,7 +21,7 @@ const FILES_CAP = 8;
 
 const STATE_DOT: Record<AgentVM["state"], string> = {
     asking: "bg-warning",
-    working: "bg-accent",
+    working: "bg-working",
     idle: "bg-muted",
 };
 

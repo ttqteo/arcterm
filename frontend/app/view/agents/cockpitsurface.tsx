@@ -73,8 +73,8 @@ import { landOn } from "@/app/view/jarvis/returnsurface";
 // Status tabs (mockup A3): a tab's count takes its status color while it has any, the selected tab underlines
 const TAB_TONE: Record<ChipFilter, { text: string; line: string }> = {
     asking: { text: "text-warning", line: "border-warning" },
-    working: { text: "text-accent", line: "border-accent" },
-    idle: { text: "text-accent-soft", line: "border-accent-soft" },
+    working: { text: "text-working", line: "border-working" },
+    idle: { text: "text-muted", line: "border-muted" },
     all: { text: "text-primary", line: "border-primary" },
 };
 

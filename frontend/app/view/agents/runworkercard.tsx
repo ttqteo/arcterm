@@ -105,10 +105,10 @@ export function RunWorkerCard({
                 <span className="shrink-0 text-xxxs text-edge-strong">{open ? "▼" : "▶"}</span>
             </div>
 
-            {/* streaming flow bar — a subtle accent sweep while the worker actively narrates */}
+            {/* streaming flow bar — a subtle green sweep while the worker actively narrates */}
             {working && !quiet ? (
                 <div className="h-[2px] overflow-hidden bg-lane">
-                    <div className="h-full w-[26%] bg-gradient-to-r from-transparent via-accent to-transparent animate-[flowBar_1.9s_linear_infinite] motion-reduce:animate-none" />
+                    <div className="h-full w-[26%] bg-gradient-to-r from-transparent via-working to-transparent animate-[flowBar_1.9s_linear_infinite] motion-reduce:animate-none" />
                 </div>
             ) : null}
 

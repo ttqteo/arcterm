@@ -143,7 +143,7 @@ function Row({
         >
             <div className="flex items-center gap-2">
                 {running ? (
-                    <span className="h-[7px] w-[7px] flex-none rounded-full bg-accent" aria-label="running" />
+                    <span className="h-[7px] w-[7px] flex-none rounded-full bg-working" aria-label="running" />
                 ) : (
                     <span
                         title={`Number ${job.position ?? "?"} in the queue`}

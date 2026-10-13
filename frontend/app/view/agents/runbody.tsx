@@ -253,7 +253,7 @@ export function RunHeader({
 
 // dispatched-agent state -> text tone class (dot + state pill share it via bg-current / text-*)
 const SUB_TONE_CLASS: Record<SubagentState, string> = {
-    working: "text-accent",
+    working: "text-working",
     success: "text-success",
     failure: "text-error",
     done: "text-muted",

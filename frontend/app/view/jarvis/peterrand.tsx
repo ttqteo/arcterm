@@ -25,7 +25,7 @@ import { petErrandState } from "./peterrandmodel";
 import { petErrandAtom, type PetErrand as PetErrandState } from "./petstore";
 
 const REPLY_STATUS: Record<PetErrandState["status"], { dot: string; word: string }> = {
-    streaming: { dot: "bg-accent", word: "thinking" },
+    streaming: { dot: "bg-working", word: "thinking" },
     done: { dot: "bg-success", word: "replied" },
     error: { dot: "bg-error", word: "failed" },
 };

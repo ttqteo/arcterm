@@ -19,9 +19,9 @@ export const SMALL_BTN =
 export type Tone = "ok" | "active" | "running" | "asking" | "error" | "muted" | "faint";
 export const TONE_TEXT: Record<Tone, string> = {
     ok: "text-success",
-    active: "text-accent-soft",
+    active: "text-working",
     // the engine moving a run on (a final check, a land), apart from a task at work
-    running: "text-running",
+    running: "text-working",
     asking: "text-asking",
     error: "text-error",
     muted: "text-ink-mid",

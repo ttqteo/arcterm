@@ -9,13 +9,13 @@ import { runProgress } from "./runlineage";
 import { runSegments, type LaneState } from "./runrail";
 import type { PipState } from "./runstage";
 
-// working is blue, not the accent: clay and the error red share a lightness, and at the strip's 3px a working task
-// read as a failed one
+// working is the status green and pulses, never the accent: a blue accent read as focus, and clay as the error red
+// at the strip's 3px. Done is the same green dimmed, so a task at work stands out from the ones behind it
 export const SEG_FILL: Record<LaneState, string> = {
-    done: "bg-success",
-    working: "bg-running",
+    done: "bg-success/45",
+    working: "bg-working pulse-dot",
     asking: "bg-warning",
-    lead: "bg-running",
+    lead: "bg-working",
     pending: "bg-edge-strong",
     failed: "bg-error",
     muted: "bg-muted",
@@ -25,8 +25,8 @@ export const SEG_FILL: Record<LaneState, string> = {
 // tail with nothing started reads as more of the same road
 export const PIP_FILL: Record<PipState, string> = {
     pending: "bg-edge-strong",
-    active: "bg-running",
-    done: "bg-success",
+    active: "bg-working pulse-dot",
+    done: "bg-success/45",
     held: "bg-warning",
     failed: "bg-error",
     skipped: "bg-muted/40",

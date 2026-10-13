@@ -131,8 +131,8 @@ function WorkOnButton({
 // the segments, so the bar reads as one strip of the same colours.
 const SEGMENT_GAP_LIMIT = 24;
 const SEGMENT_BG: Record<ChunkTone, string> = {
-    done: "bg-success",
-    active: "bg-accent",
+    done: "bg-success/45",
+    active: "bg-working",
     blocked: "bg-asking",
     deferred: "bg-ink-faint",
     skipped: "bg-ink-faint",

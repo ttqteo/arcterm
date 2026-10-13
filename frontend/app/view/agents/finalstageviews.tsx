@@ -111,7 +111,7 @@ export function FinalStepCells({ steps, showCommand }: { steps: FinalStep[]; sho
                     data-final-step-state={step.state}
                     className={cn(
                         "flex min-w-0 flex-col gap-1 rounded-[8px] border px-2.5 py-2",
-                        step.state === "running" ? "border-accent/50 bg-lane" : "border-edge-mid"
+                        step.state === "running" ? "border-working/50 bg-lane" : "border-edge-mid"
                     )}
                 >
                     {showCommand ? (

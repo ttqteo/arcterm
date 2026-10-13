@@ -15,10 +15,10 @@ import {
 } from "./runrail";
 
 describe("verifyingHeadline", () => {
-    it("reads Verifying in the accent tone while finalizing, with the model's next as its tail", () => {
+    it("reads Verifying in the working tone while finalizing, with the model's next as its tail", () => {
         expect(verifyingHeadline("finalizing", false, "next Final, then the verifier")).toEqual({
             text: "Verifying",
-            tone: "text-accent",
+            tone: "text-working",
             tail: "· next Final, then the verifier",
         });
         expect(verifyingHeadline("finalizing", false, "")?.tail).toBe("");

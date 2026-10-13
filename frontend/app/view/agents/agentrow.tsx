@@ -70,7 +70,7 @@ const CHIP =
     "flex h-5 shrink-0 cursor-pointer items-center gap-1 rounded-[5px] border border-edge-mid px-[7px] text-[10.5px] font-semibold tabular-nums text-ink-mid";
 
 const SUB_COLOR: Record<SubagentState, string> = {
-    working: "var(--color-accent)",
+    working: "var(--color-working)",
     success: "var(--color-success)",
     failure: "var(--color-error)",
     done: "var(--color-muted)",
@@ -401,10 +401,10 @@ export const AgentRow = memo(function AgentRow({
                 ) : null}
             </div>
 
-            {/* streaming flow bar — a subtle accent sweep under the header while the agent works */}
+            {/* streaming flow bar — a subtle green sweep under the header while the agent works */}
             {working ? (
                 <div className="h-[2px] shrink-0 overflow-hidden bg-lane">
-                    <div className="h-full w-[26%] bg-gradient-to-r from-transparent via-accent to-transparent animate-[flowBar_1.9s_linear_infinite] motion-reduce:animate-none" />
+                    <div className="h-full w-[26%] bg-gradient-to-r from-transparent via-working to-transparent animate-[flowBar_1.9s_linear_infinite] motion-reduce:animate-none" />
                 </div>
             ) : null}
 

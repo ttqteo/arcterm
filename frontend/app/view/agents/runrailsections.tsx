@@ -54,7 +54,7 @@ import { SectionLabel, SubLabel } from "./sectionlabel";
 
 const LANE_DOT: Record<LaneState, string> = {
     done: "bg-success",
-    working: "bg-accent pulse-dot",
+    working: "bg-working pulse-dot",
     asking: "bg-warning pulse-dot",
     lead: "bg-muted",
     pending: "border border-muted bg-transparent",
@@ -64,7 +64,7 @@ const LANE_DOT: Record<LaneState, string> = {
 
 const LANE_TEXT: Record<LaneState, string> = {
     done: "text-success",
-    working: "text-accent",
+    working: "text-working",
     asking: "text-warning",
     lead: "text-muted",
     pending: "text-muted",

@@ -169,8 +169,8 @@ designed to be operated entirely from the keyboard; the mouse is a fallback).
 The visual identity is **Claude's palette**: claude.ai's warm greys, layered in a
 tonal surface ramp so regions are separated by tone rather than by lines. Text
 rides an ink ramp that steps from `ink-faint` through `muted` to a warm ivory.
-The clay accent (`#d97757`) is used sparingly (the primary CTA, focus, links
-and the running state) so it still reads as a signal. Status is semantic and
+The clay accent (`#d97757`) is used sparingly (the primary CTA, focus and
+links) so it still reads as a signal, and never for status. Status is semantic and
 never color-alone: amber = asking, green = working, red = error.
 
 Typography is **Inter** throughout the UI, with **JetBrains Mono** reserved for
@@ -231,7 +231,8 @@ against `background`; `muted` on a hovered row (`surface-hover`) is 4.74:1.
 ### Accent ramp (clay, used sparingly)
 
 - **`accent` `#d97757`** — the main accent: the primary CTA, focus rings,
-  links, the running state. Selection and hover are grey, not accent.
+  links. Selection and hover are grey, not accent, and so is no status: a
+  working dot, bar or glyph is `working` green.
 - **`accent-50…900`** — full ramp (`#f7e4dd` → `#3d2118`) for gradients and
   emphasis tiers.
 - **`accenthover` `#de8a6f`**, **`accent-soft` `#e4a089`**, **`accentbg`
@@ -247,7 +248,10 @@ against `background`; `muted` on a hovered row (`surface-hover`) is 4.74:1.
   (theme-derived like `accentbg`), and **`pill` `rgba(255,255,255,0.05)`**
   for faint pill/chip overlays (preserved across themes with the neutral
   overlays). Status is always paired with an icon, label, or dot — color
-  alone never carries meaning.
+  alone never carries meaning. `working` and `success` are one green, so what
+  is at work pulses, and in a segment bar (a run's strip, an effort's bar) a
+  done segment is the green dimmed (`bg-success/45`) beside the full green of
+  the one at work.
 
 ### Identity palettes (theme-agnostic by design)
 
@@ -466,9 +470,10 @@ Theme set, via `element/fileicon.tsx` (`<FileIcon path dir expanded />`).
 - Do keep status semantic: pair amber/green/red with an icon, label, or dot.
   Never color alone.
 - Do use the accent sparingly: the single most important action per screen
-  (the primary CTA is `bg-accent` on `background`-toned text), focus, links
-  and the running state. Separate regions by tone, and mark selection and
-  hover in grey, not accent.
+  (the primary CTA is `bg-accent` on `background`-toned text), focus and
+  links. Separate regions by tone, and mark selection and hover in grey, not
+  accent. Never draw a status in the accent: in a theme whose accent is a blue,
+  a working dot in it reads as focus.
 - Do keep identity palettes (avatar, graphlane, rt-*) at `@theme` defaults —
   they must survive any theme.
 - Do keep the keyboard first: visible focus ring, roving cursor, regions;

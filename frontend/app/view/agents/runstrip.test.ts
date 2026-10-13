@@ -71,7 +71,7 @@ describe("finalSlot and treeStripLabel", () => {
     });
     it("has a fill for every state of the slot", () => {
         for (const tone of ["wait", "run", "pass", "fail", "warn"] as const) {
-            expect(FINAL_FILL[tone]).toMatch(/^bg-[a-z-]+$/);
+            expect(FINAL_FILL[tone]).toMatch(/^bg-[a-z-]+(\/\d+)?( pulse-dot)?$/);
         }
     });
 });
@@ -79,7 +79,7 @@ describe("finalSlot and treeStripLabel", () => {
 describe("SEG_FILL", () => {
     it("has a token fill for every lane state", () => {
         for (const st of ["done", "working", "asking", "lead", "pending", "failed", "muted"] as const) {
-            expect(SEG_FILL[st]).toMatch(/^bg-[a-z-]+$/);
+            expect(SEG_FILL[st]).toMatch(/^bg-[a-z-]+(\/\d+)?( pulse-dot)?$/);
         }
     });
 });

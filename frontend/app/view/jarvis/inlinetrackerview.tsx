@@ -61,7 +61,7 @@ export function ToneIcon({ tone, size, className }: { tone: ChunkTone; size?: nu
 
 export const TONE_FG: Record<ChunkTone, string> = {
     done: "text-success",
-    active: "text-accent",
+    active: "text-working",
     blocked: "text-warning-soft",
     deferred: "text-warning-soft",
     skipped: "text-ink-mid",

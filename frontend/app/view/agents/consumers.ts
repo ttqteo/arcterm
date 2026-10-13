@@ -26,7 +26,7 @@ function countedTokens(u: SessionUsage): number {
 
 // the roster's state dots (runstrip.ts SEG_FILL's colors)
 export const STATE_DOT: Record<AgentState, string> = {
-    working: "bg-accent",
+    working: "bg-working",
     asking: "bg-warning",
     idle: "bg-muted",
 };

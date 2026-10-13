@@ -13,8 +13,8 @@ import { reportPeekFacts, type PeekTarget } from "../peekstore";
 import { effortPeekFacts, effortPeekModel } from "./peekeffortmodel";
 
 const SEGMENT_FILL: Record<ChunkTone, string> = {
-    done: "bg-success",
-    active: "bg-accent",
+    done: "bg-success/45",
+    active: "bg-working",
     blocked: "bg-warning",
     deferred: "bg-ink-faint",
     skipped: "bg-edge-mid",

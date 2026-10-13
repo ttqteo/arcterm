@@ -104,7 +104,7 @@ const GAUGE_TEXT: Record<"ok" | "warn" | "hot", string> = {
 };
 
 const SUB_COLOR: Record<SubagentState, string> = {
-    working: "var(--color-accent)",
+    working: "var(--color-working)",
     success: "var(--color-success)",
     failure: "var(--color-error)",
     done: "var(--color-muted)",

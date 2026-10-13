@@ -189,7 +189,7 @@ import { folderName } from "./worktreegone";
 import { goneTerminalIdsAtom } from "./worktreegonestore";
 
 const SUB_COLOR: Record<SubagentState, string> = {
-    working: "var(--color-accent)",
+    working: "var(--color-working)",
     success: "var(--color-success)",
     failure: "var(--color-error)",
     done: "var(--color-muted)",
@@ -603,12 +603,12 @@ function RunCompleteLabel({ run }: { run: RunInfo }) {
     );
 }
 
-// the progress line's colour by the run's stage: amber when it needs you, red when its final check failed, blue
+// the progress line's colour by the run's stage: amber when it needs you, red when its final check failed, green
 // while the engine moves it on, and the quiet grey otherwise
 const PROGRESS_TEXT: Record<StageTone, string> = {
     asking: "text-warning",
     error: "text-error",
-    running: "text-running",
+    running: "text-working",
     working: "text-muted",
     muted: "text-muted",
     done: "text-muted",
@@ -1445,7 +1445,7 @@ const AGE_COL = "min-w-[24px] flex-none whitespace-nowrap text-right text-[11px]
 const UNDER_GLYPH = "pl-[18px]";
 
 // the runtime's glyph at the head of a row, in a slot as wide as the run icon so titles line up. On an agent's row it
-// also carries the agent's state, where a dot used to: working pulses in the accent, asking in the warning colour, and
+// also carries the agent's state, where a dot used to: working pulses in the working green, asking in the warning colour, and
 // an idle one goes muted, so the rows doing something stand out
 function RuntimeGlyph({ runtime, state }: { runtime: string; state?: AgentState }) {
     const rt = runtimeMeta(runtime);
@@ -1476,7 +1476,7 @@ function SleepGlyph({ id, runtime }: { id: string; runtime: string }) {
     );
 }
 
-const GLYPH_COLOR: Record<AgentState, string> = { working: "text-accent", asking: "text-warning", idle: "text-muted" };
+const GLYPH_COLOR: Record<AgentState, string> = { working: "text-working", asking: "text-warning", idle: "text-muted" };
 
 function BranchLabel({ branch }: { branch: string }) {
     return (

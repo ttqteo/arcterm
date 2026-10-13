@@ -32,6 +32,10 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
 - **One click on the folded Sprout opens its card of agents and terminals** and keeps it open, instead of the Jarvis
   chat: pick one to float on it, or open the chat from the card. Click Sprout again, press Esc or click away to close
   it; a double-click still restores the window.
+- **Anything at work is green, never the accent**: a working agent's dot, glyph and header, subagents, a run's lanes,
+  strip and graph, the Jobs queue and an effort's active chunk are now the status green, so in a theme with a blue
+  accent (Spider, Graphite, One Dark…) a working agent no longer reads as the selected one. In a run's strip and an
+  effort's bar the done segments are the same green dimmed.
 
 ### Fixed
 

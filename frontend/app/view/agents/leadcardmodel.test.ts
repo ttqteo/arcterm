@@ -479,26 +479,26 @@ describe("leadMark", () => {
             pulse: false,
         });
     });
-    it("is not green for a cancelled run, a lead wrapping up, or a held land", () => {
+    it("is not the still green of a complete run for a cancelled run, a lead wrapping up, or a held land", () => {
         expect(leadMark(ended("cancelled", "cancelled"), leadOf({ state: "idle" }))).toEqual(MUTED);
         expect(leadMark(ended("finalizing", "done"), leadOf({ state: "working" }))).toEqual({
-            tone: "accent",
+            tone: "working",
             pulse: true,
         });
         expect(leadMark(ended("done", "done", { state: "held" } as RunLand), leadOf({ state: "idle" }))).toEqual(MUTED);
     });
-    it("is accent and still while the engine works without its lead", () => {
-        const STILL_ACCENT = { tone: "accent", pulse: false };
-        expect(leadMark(runInfo([task("t-1", "running")]), undefined)).toEqual(STILL_ACCENT);
-        expect(leadMark(runInfo([task("t-1", "reviewing")]), leadOf({ atPrompt: true }))).toEqual(STILL_ACCENT);
+    it("is working and still while the engine works without its lead", () => {
+        const STILL_WORKING = { tone: "working", pulse: false };
+        expect(leadMark(runInfo([task("t-1", "running")]), undefined)).toEqual(STILL_WORKING);
+        expect(leadMark(runInfo([task("t-1", "reviewing")]), leadOf({ atPrompt: true }))).toEqual(STILL_WORKING);
     });
     it("is muted when neither the lead nor the engine works", () => {
         expect(leadMark(runInfo([task("t-1", "pending")]), undefined)).toEqual(MUTED);
         expect(leadMark(runInfo([task("t-1", "failed")]), leadOf({ atPrompt: true }))).toEqual(MUTED);
     });
-    it("pulses accent while working and warning while asking", () => {
+    it("pulses working while working and warning while asking", () => {
         const run = runInfo([task("t-1", "running")]);
-        expect(leadMark(run, leadOf({ state: "working" }))).toEqual({ tone: "accent", pulse: true });
+        expect(leadMark(run, leadOf({ state: "working" }))).toEqual({ tone: "working", pulse: true });
         expect(leadMark(run, leadOf({ state: "asking" }))).toEqual({ tone: "warning", pulse: true });
         expect(leadMark(run, leadOf({ state: "idle" }))).toEqual(MUTED);
     });

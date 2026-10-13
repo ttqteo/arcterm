@@ -11,7 +11,7 @@ import { reviewersChip, workersChip } from "./taskroute";
 // a chip's dot: filled for the groups that are doing or done something, an open ring for those that are not
 const CHIP_DOT = new Map<ChipGroup["key"], string>([
     ["attention", "border-warning bg-warning"],
-    ["live", "border-accent bg-accent"],
+    ["live", "border-working bg-working"],
     ["done", "border-success bg-success"],
     ["waiting", "border-ink-faint"],
     ["inert", "border-muted"],

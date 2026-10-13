@@ -50,7 +50,7 @@ type Look = { bg: string; border: string; label: string; word: string };
 
 const LOOK = new Map<NodeKind, Look>([
     ["attention", { bg: "bg-warning/10", border: "border-warning/55", label: "text-ink-hi", word: "text-warning" }],
-    ["live", { bg: "bg-lane", border: "border-accent/50", label: "text-ink-hi", word: "text-accent-soft" }],
+    ["live", { bg: "bg-lane", border: "border-working/50", label: "text-ink-hi", word: "text-working" }],
     ["ready", { bg: "bg-lane", border: "border-edge-strong", label: "text-ink-hi", word: "text-accent-soft" }],
     ["done", { bg: "bg-surface", border: "border-edge-mid", label: "text-secondary", word: "text-success" }],
     ["inert", { bg: "bg-surface", border: "border-edge-mid", label: "text-muted", word: "text-muted" }],
@@ -78,8 +78,8 @@ const GLYPH = new Map<GlyphKind, Glyph>([
     ["failed", { ...NO_MARK, ...WARN_GLYPH, mark: "M5 5l4 4M9 5l-4 4" }],
     ["stalled", { ...NO_MARK, ...WARN_GLYPH, mark: "M5.7 4.6v4.8M8.3 4.6v4.8" }],
     ["attention", { ...NO_MARK, ...WARN_GLYPH, mark: "M7 3.9v3.7M7 9.7v.5" }],
-    ["running", { ...NO_MARK, ring: tok("accent"), mark: "M7 4.6a2.4 2.4 0 1 0 .01 0Z", markFill: tok("accent") }],
-    ["live", { ...NO_MARK, ring: tok("accent"), mark: "M7 1.75a5.25 5.25 0 0 1 0 10.5Z", markFill: tok("accent") }],
+    ["running", { ...NO_MARK, ring: tok("working"), mark: "M7 4.6a2.4 2.4 0 1 0 .01 0Z", markFill: tok("working") }],
+    ["live", { ...NO_MARK, ring: tok("working"), mark: "M7 1.75a5.25 5.25 0 0 1 0 10.5Z", markFill: tok("working") }],
     ["ready", { ...NO_MARK, ring: tok("accent") }],
     ["inert", { ...NO_MARK, ring: tok("muted"), mark: "M3.8 10.2l6.4-6.4", markStroke: tok("muted") }],
     ["waiting", NO_MARK],
@@ -90,7 +90,7 @@ function StateGlyph({ kind }: { kind: GlyphKind }) {
     return (
         <span className="relative mt-px h-[14px] w-[14px] flex-none">
             {kind === "running" ? (
-                <span className="absolute -inset-[3px] rounded-full border-[1.5px] border-accent pulse-soft" />
+                <span className="absolute -inset-[3px] rounded-full border-[1.5px] border-working pulse-soft" />
             ) : null}
             <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" className="relative block">
                 <circle cx="7" cy="7" r="5.25" style={{ fill: g.fill, stroke: g.ring, strokeWidth: 1.5 }} />
@@ -233,7 +233,7 @@ export function LaneBandNode({ data }: NodeProps) {
 const EDGE_STROKE = new Map<EdgeStyle["kind"], string>([
     ["satisfied", tok("ink-faint")],
     ["waiting", tok("ink-faint")],
-    ["live", tok("accent")],
+    ["live", tok("working")],
     ["needs-you", `color-mix(in srgb, ${tok("warning")} 70%, transparent)`],
     ["path", tok("accent-soft")],
 ]);

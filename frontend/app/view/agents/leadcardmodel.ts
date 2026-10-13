@@ -318,27 +318,27 @@ export function buildLeadCard(input: LeadCardInput): LeadCardVM {
     };
 }
 
-export type LeadMarkTone = "success" | "accent" | "warning" | "muted";
+export type LeadMarkTone = "success" | "working" | "warning" | "muted";
 
 export const LEAD_MARK_CLASS: Record<LeadMarkTone, string> = {
     success: "text-success",
-    accent: "text-accent",
+    working: "text-working",
     warning: "text-warning",
     muted: "text-muted",
 };
 
-/** Pure: a run's Workflow mark, on its lead card and its agent tree row: green only when the run is complete. The
- *  pulse is the lead's own work; a lead that is down or standing by while the engine works leaves the mark accent
+/** Pure: a run's Workflow mark, on its lead card and its agent tree row: green and still only when the run is complete. The
+ *  pulse is the lead's own work; a lead that is down or standing by while the engine works leaves the mark green
  *  and still, so the run does not read as stopped. */
 export function leadMark(run: RunInfo, lead: AgentVM | undefined): { tone: LeadMarkTone; pulse: boolean } {
     if (runComplete(run)) {
         return { tone: "success", pulse: false };
     }
     if (lead == null || leadStandingBy(lead, run)) {
-        return { tone: runEngineBusy(run) ? "accent" : "muted", pulse: false };
+        return { tone: runEngineBusy(run) ? "working" : "muted", pulse: false };
     }
     if (lead.state === "working") {
-        return { tone: "accent", pulse: true };
+        return { tone: "working", pulse: true };
     }
     if (lead.state === "asking") {
         return { tone: "warning", pulse: true };

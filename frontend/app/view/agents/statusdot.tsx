@@ -4,10 +4,11 @@
 import { cn } from "@/util/util";
 import type { AgentState } from "./agentsviewmodel";
 
-// Single source of truth for the in-view dot. Colors mirror the sidebar STATUS_COLOR map (Wave @theme tokens).
+// Single source of truth for the in-view dot. Working is the status green, never the accent: the accent is focus and
+// the primary action, so a working dot in it read as selected.
 const COLOR: Record<AgentState, string> = {
     asking: "var(--color-warning)",
-    working: "var(--color-accent)",
+    working: "var(--color-working)",
     idle: "var(--color-muted)",
 };
 

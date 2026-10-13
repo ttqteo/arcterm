@@ -44,16 +44,16 @@ const ROW_HOVER = "rounded-[6px] hover:bg-surface-hover";
 // pending is the bar's empty track, so it draws no fill of its own; deferred is parked work, so it takes a
 // neutral rather than blocked's amber, and the legend words carry the meaning
 const BAR_FILL: Record<ChunkTone, string> = {
-    done: "bg-success",
-    active: "bg-accent",
+    done: "bg-success/45",
+    active: "bg-working",
     blocked: "bg-warning",
     pending: "bg-transparent",
     deferred: "bg-ink-faint",
     skipped: "bg-transparent",
 };
 const SWATCH: Record<ChunkTone, string> = {
-    done: "border-success bg-success",
-    active: "border-accent bg-accent",
+    done: "border-success/45 bg-success/45",
+    active: "border-working bg-working",
     blocked: "border-warning bg-warning",
     pending: "border-edge-strong bg-edge-mid",
     deferred: "border-ink-faint bg-ink-faint",

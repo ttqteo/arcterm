@@ -32,7 +32,7 @@ export const LIST_TONE_DOT: Record<ListGroupMeta["tone"], string> = {
 // clean audit is not what to watch there.
 export const AUDIT_STATE_TEXT: Record<AuditState, string> = {
     queued: "text-muted",
-    running: "text-accent-soft",
+    running: "text-working",
     clean: "text-success",
     hits: "text-accent-soft",
     failed: "text-error",
@@ -40,14 +40,14 @@ export const AUDIT_STATE_TEXT: Record<AuditState, string> = {
 
 // Investigation tone → text and dot color, keyed by InvestigationView.tone.
 export const INVESTIGATION_TEXT: Record<InvestigationTone, string> = {
-    live: "text-accent-soft",
+    live: "text-working",
     success: "text-success",
     warning: "text-warning",
     muted: "text-muted",
 };
 
 export const INVESTIGATION_DOT: Record<InvestigationTone, string> = {
-    live: "bg-accent-soft",
+    live: "bg-working",
     success: "bg-success",
     warning: "bg-warning",
     muted: "bg-muted",

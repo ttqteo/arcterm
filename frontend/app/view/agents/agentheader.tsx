@@ -70,7 +70,7 @@ import { openLauncher } from "./launcherstore";
 
 export const STATE_COLOR: Record<AgentVM["state"], string> = {
     asking: "var(--color-warning)",
-    working: "var(--color-accent)",
+    working: "var(--color-working)",
     idle: "var(--color-muted)",
 };
 export const STATE_LABEL: Record<AgentVM["state"], string> = { asking: "asking", working: "working", idle: "idle" };

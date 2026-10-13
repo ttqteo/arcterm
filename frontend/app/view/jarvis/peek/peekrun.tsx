@@ -31,7 +31,7 @@ import {
 
 const TONE_TEXT: Record<PeekTone, string> = {
     done: "text-success",
-    running: "text-accent-soft",
+    running: "text-working",
     warning: "text-warning",
     failed: "text-error",
     pending: "text-muted",
@@ -39,7 +39,7 @@ const TONE_TEXT: Record<PeekTone, string> = {
 
 const TONE_DOT: Record<PeekTone, string> = {
     done: "bg-success",
-    running: "bg-accent-soft",
+    running: "bg-working",
     warning: "bg-warning",
     failed: "bg-error",
     pending: "bg-ink-faint",

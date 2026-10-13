@@ -203,7 +203,7 @@ export function verifyingHeadline(
     if (dagStatus !== DAG_FINALIZING || waitingOnYou) {
         return undefined;
     }
-    return { text: "Verifying", tone: "text-accent", tail: next ? `· ${next}` : "" };
+    return { text: "Verifying", tone: "text-working", tail: next ? `· ${next}` : "" };
 }
 
 export const RUN_LOG_LINES = 3;
