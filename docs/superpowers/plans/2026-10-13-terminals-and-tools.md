@@ -212,7 +212,7 @@ export function treeNavIds(rows: ProjectTreeRow[]): string[];
 ```
 
 Reuse `splitActive`'s folder bookkeeping rather than copying it; extend it so a terminal cell is lifted too. Keep
-`activeView`, `terminalTree` and `splitActive` exported until Task 4 stops using them, then Task 4 deletes what is
+`activeView`, `terminalTree` and `splitActive` exported until Task 5 stops using them, then Task 5 deletes what is
 unused. Update the file header comment (it still describes three sections).
 
 **Step 5: Nav order.** `activenav.ts` `activeNavOrder(model)` returns `treeNavIds(projectTree(...))` built from
@@ -277,40 +277,7 @@ Run: `npx vitest run frontend/app/view/agents/terminaldock.test.ts frontend/app/
 
 **Step 4: Commit** with `feat(agents): a picked terminal takes the centre, terminals can be split cells, the panel folds to a strip`.
 
-### Task 4: The sidebar draws one tree per project; terminals in the palette
-
-**Depends on:** Task 2, Task 3, Task 5
-
-**Files:** `frontend/app/view/agents/agenttree.tsx`, `frontend/app/view/agents/terminalsrail.tsx`, `frontend/app/view/agents/agentsidebarmodel.ts`, `frontend/app/view/agents/agentsidebarmodel.test.ts`, `frontend/app/cockpit/command-palette.tsx`
-
-Facts: `AgentTree` (`agenttree.tsx:2100`) renders Active (`:2171-2331`, `SplitRow` at `:2187`), `ConversationsSection`
-(`:2334`) and the pinned `TerminalsSection` (`:1857-1922`, `TerminalRow` `:1816`). `terminalsrail.tsx` only holds
-`showTerminalMenu`. The palette's Agents group is built from `model.agentsAtom` only
-(`command-palette.tsx:468-492`).
-
-**Step 1: Render the model.** `AgentTree` renders `projectTree(...)` (Task 2) instead of `activeView` + the separate
-Terminals section: group rows (`FolderRow`, now showing `2 agents · 1 terminal` when folded, `data-project-folder`),
-the agent rows as today, a 1 px divider (`data-project-divider`), terminal rows (`TerminalRow`, now
-`data-tree-terminal-row`, with the branch chip from `place` and a where-it-shows word `split` / `panel` in
-`data-terminal-place`), and the split row inside its folder (or on top when `crossProject`). Delete
-`TerminalsSection` and any model export Task 2 kept only for it, with their tests. Keep the existing
-`data-agent-terminal-row` attribute on terminal rows too, so older scenarios keep finding them. Conversations stays at
-the bottom. Board: ProjectTree, Sidebar.
-
-**Step 2: Terminal rows act like agent rows.** They are drag sources onto the grid (`dragSource`, now allowed for a
-terminal with a `blockId`), take Alt-digit hints, and their context menu (`terminalsrail.tsx`) gains Open in split and
-Move to the panel. Folder hover shows `tool` (opens the picker with that project: `openToolPicker` from Task 5) and
-`+` (new terminal, as today).
-
-**Step 3: Palette.** The Agents group also lists `model.terminalsAtom` (kind `"terminal"`, key `terminal:${id}`,
-labelled with the terminal's name and project), opening it with `model.openTerminal(id)`. Add the palette command
-"Open a tool…" that calls `openToolPicker(model)`.
-
-**Step 4: Check.** `npx vitest run frontend/app/view/agents/agentsidebarmodel.test.ts` and `task check:ts` — PASS / exit 0.
-
-**Step 5: Commit** with `feat(agents): one tree per project in the sidebar; terminals in the palette`.
-
-### Task 5: Tools model, store and the open/install actions
+### Task 4: Tools model, store and the open/install actions
 
 **Depends on:** Task 1
 
@@ -358,9 +325,42 @@ and `task check:ts` — PASS / exit 0.
 
 **Step 5: Commit** with `feat(tools): the tools model, status store, and open/install actions`.
 
+### Task 5: The sidebar draws one tree per project; terminals in the palette
+
+**Depends on:** Task 2, Task 3, Task 4
+
+**Files:** `frontend/app/view/agents/agenttree.tsx`, `frontend/app/view/agents/terminalsrail.tsx`, `frontend/app/view/agents/agentsidebarmodel.ts`, `frontend/app/view/agents/agentsidebarmodel.test.ts`, `frontend/app/cockpit/command-palette.tsx`
+
+Facts: `AgentTree` (`agenttree.tsx:2100`) renders Active (`:2171-2331`, `SplitRow` at `:2187`), `ConversationsSection`
+(`:2334`) and the pinned `TerminalsSection` (`:1857-1922`, `TerminalRow` `:1816`). `terminalsrail.tsx` only holds
+`showTerminalMenu`. The palette's Agents group is built from `model.agentsAtom` only
+(`command-palette.tsx:468-492`).
+
+**Step 1: Render the model.** `AgentTree` renders `projectTree(...)` (Task 2) instead of `activeView` + the separate
+Terminals section: group rows (`FolderRow`, now showing `2 agents · 1 terminal` when folded, `data-project-folder`),
+the agent rows as today, a 1 px divider (`data-project-divider`), terminal rows (`TerminalRow`, now
+`data-tree-terminal-row`, with the branch chip from `place` and a where-it-shows word `split` / `panel` in
+`data-terminal-place`), and the split row inside its folder (or on top when `crossProject`). Delete
+`TerminalsSection` and any model export Task 2 kept only for it, with their tests. Keep the existing
+`data-agent-terminal-row` attribute on terminal rows too, so older scenarios keep finding them. Conversations stays at
+the bottom. Board: ProjectTree, Sidebar.
+
+**Step 2: Terminal rows act like agent rows.** They are drag sources onto the grid (`dragSource`, now allowed for a
+terminal with a `blockId`), take Alt-digit hints, and their context menu (`terminalsrail.tsx`) gains Open in split and
+Move to the panel. Folder hover shows `tool` (opens the picker with that project: `openToolPicker` from Task 4) and
+`+` (new terminal, as today).
+
+**Step 3: Palette.** The Agents group also lists `model.terminalsAtom` (kind `"terminal"`, key `terminal:${id}`,
+labelled with the terminal's name and project), opening it with `model.openTerminal(id)`. Add the palette command
+"Open a tool…" that calls `openToolPicker(model)`.
+
+**Step 4: Check.** `npx vitest run frontend/app/view/agents/agentsidebarmodel.test.ts` and `task check:ts` — PASS / exit 0.
+
+**Step 5: Commit** with `feat(agents): one tree per project in the sidebar; terminals in the palette`.
+
 ### Task 6: Setup → Tools
 
-**Depends on:** Task 5
+**Depends on:** Task 4
 
 **Files:** `frontend/app/view/agents/setupstore.ts`, `frontend/app/view/agents/setupsurface.tsx`, `frontend/app/view/agents/toolslibrary.tsx`, `frontend/app/view/agents/toolslibrarymodel.ts`, `frontend/app/view/agents/toolslibrarymodel.test.ts`
 
@@ -416,7 +416,7 @@ picker for that agent; a global binding "Open a tool" on `Ctrl`+`Shift`+`T` (`Mo
 
 ### Task 8: A Tool row in the New dialog
 
-**Depends on:** Task 5
+**Depends on:** Task 4
 
 **Files:** `frontend/app/view/agents/launcher.ts`, `frontend/app/view/agents/launcher.test.ts`, `frontend/app/view/agents/launchermodal.tsx`, `frontend/app/view/agents/launchertoolfields.tsx`, `frontend/app/view/agents/launcherstore.ts`
 
@@ -445,7 +445,7 @@ Command line showing the tool's command; no Task, Flag or worktree toggle. The f
 
 ### Task 9: A terminal whose worktree was removed
 
-**Depends on:** Task 3, Task 4
+**Depends on:** Task 3, Task 5
 
 **Files:** `frontend/app/view/agents/worktreegone.ts`, `frontend/app/view/agents/worktreegone.test.ts`, `frontend/app/view/agents/worktreegonecard.tsx`, `frontend/app/view/agents/agentsurface.tsx`, `frontend/app/view/agents/agenttree.tsx`
 
@@ -465,7 +465,7 @@ same tool or shell, then close this one) and "Close terminal".
 
 ### Task 10: CDP scenarios for every board
 
-**Depends on:** Task 4, Task 6, Task 7, Task 8, Task 9
+**Depends on:** Task 5, Task 6, Task 7, Task 8, Task 9
 
 **Files:** `scripts/cdp/scenarios.mjs`
 
@@ -500,7 +500,7 @@ scenario, not the app, only when the scenario is wrong. **Step 3:** commit with
 
 ### Task 11: Docs and changelog
 
-**Depends on:** Task 4, Task 6, Task 7, Task 8, Task 9
+**Depends on:** Task 5, Task 6, Task 7, Task 8, Task 9
 
 **Files:** `CHANGELOG.md`, `docs/guide/agent.md`, `docs/guide/settings.md`, `docs/keyboard-shortcuts.md`, `AGENTS.md`, `docs/open-issues.md`
 
