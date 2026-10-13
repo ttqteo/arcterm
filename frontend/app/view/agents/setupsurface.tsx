@@ -18,7 +18,7 @@ import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Share2, TriangleAlert } from "lucide-react";
 import { motion, MotionConfig } from "motion/react";
-import { useEffect, useRef, type KeyboardEvent } from "react";
+import { Fragment, useEffect, type KeyboardEvent } from "react";
 import type { AgentsViewModel } from "./agents";
 import { formatAgo } from "./agentsviewmodel";
 import { RuntimeMark } from "./runtimemark";
@@ -299,8 +299,7 @@ function LineEditor({
     path: string;
     placeholder: string;
 }) {
-    const gutter = useRef<HTMLDivElement>(null);
-    const n = Math.max(1, ed.draft.split("\n").length);
+    const lines = ed.draft.split("\n");
     return (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded border border-edge-mid bg-surface-code focus-within:ring-2 focus-within:ring-accent/25">
             <div className="flex h-[30px] flex-none items-center gap-2.5 border-b border-edge-faint px-3 text-[11px] tabular-nums text-muted">
@@ -314,31 +313,44 @@ function LineEditor({
                     {lineCount(ed.draft)} {lineCount(ed.draft) === 1 ? "line" : "lines"}
                 </span>
             </div>
-            <div className="flex min-h-0 flex-1 font-mono text-[12.5px] leading-[21px]">
-                {/* the gutter follows the textarea's scroll, so the numbers stay beside their lines */}
+            <div className="min-h-0 flex-1 overflow-y-auto py-2 pr-4 font-mono text-[12.5px] leading-[21px]">
+                {/* lines soft-wrap, so each row holds a number beside an invisible copy of its line: the row
+                    takes the wrapped height and the number stays level with the line the textarea draws over it.
+                    the last 1fr row lets the textarea fill the rest of the box. */}
                 <div
-                    ref={gutter}
-                    aria-hidden
-                    className="w-10 flex-none overflow-hidden py-2 pr-3 text-right text-ink-faint select-none"
+                    className="grid min-h-full"
+                    style={{ gridTemplateColumns: "2.5rem 1fr", gridTemplateRows: `repeat(${lines.length}, auto) 1fr` }}
                 >
-                    {Array.from({ length: n }, (_, i) => (
-                        <div key={i}>{i + 1}</div>
+                    {lines.map((line, i) => (
+                        <Fragment key={i}>
+                            <div
+                                aria-hidden
+                                style={{ gridRow: i + 1 }}
+                                className="pr-3 text-right text-ink-faint select-none"
+                            >
+                                {i + 1}
+                            </div>
+                            {/* placed by row: the textarea already holds column 2, so auto-placement would skip it */}
+                            <div
+                                aria-hidden
+                                style={{ gridRow: i + 1, gridColumn: 2 }}
+                                className="invisible whitespace-pre-wrap break-words"
+                            >
+                                {line || " "}
+                            </div>
+                        </Fragment>
                     ))}
+                    <textarea
+                        aria-label="Instructions for every harness"
+                        value={ed.draft}
+                        spellCheck={false}
+                        rows={1}
+                        placeholder={placeholder}
+                        onChange={(e) => onChange(e.target.value)}
+                        style={{ gridColumn: 2, gridRow: "1 / -1" }}
+                        className="h-full resize-none overflow-hidden border-0 bg-transparent p-0 text-secondary outline-none placeholder:text-muted"
+                    />
                 </div>
-                <textarea
-                    aria-label="Instructions for every harness"
-                    value={ed.draft}
-                    spellCheck={false}
-                    wrap="off"
-                    placeholder={placeholder}
-                    onChange={(e) => onChange(e.target.value)}
-                    onScroll={(e) => {
-                        if (gutter.current) {
-                            gutter.current.scrollTop = e.currentTarget.scrollTop;
-                        }
-                    }}
-                    className="min-h-0 flex-1 resize-none border-0 bg-transparent py-2 pr-4 text-secondary outline-none placeholder:text-muted"
-                />
             </div>
         </div>
     );

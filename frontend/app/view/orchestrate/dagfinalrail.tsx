@@ -5,10 +5,24 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { META_TEXT } from "@/app/view/jarvis/briefstyle";
 import { finalStageEndable } from "@/app/view/jarvis/runsheetmodel";
 import { useAtomValue } from "jotai";
+import { useState } from "react";
 import type { AgentVM } from "../agents/agentsviewmodel";
 import { jumpToAgent } from "../agents/channelsprimitives";
-import { finalRowFocusId, isFinalStageId, type FinalStageView } from "../agents/finalstage";
-import { EndFinalStage, FinalOutcome, FinalOutput, FinalShotsLink, FinalStepCells } from "../agents/finalstageviews";
+import {
+    finalRowFocusId,
+    isFinalStageId,
+    shownStep,
+    type FinalStageView,
+    type FinalStepKey,
+} from "../agents/finalstage";
+import {
+    EndFinalStage,
+    FinalKeptOutput,
+    FinalOutcome,
+    FinalOutput,
+    FinalShotsLink,
+    FinalStepCells,
+} from "../agents/finalstageviews";
 import { fmtDuration } from "../agents/runcompletion";
 import { DESC_MAX_PX } from "./dagdetailrail";
 import { dagModalAgentsContextAtom } from "./dagmodalstate";
@@ -45,12 +59,16 @@ function verifierLine(group: TaskGroup, view: FinalStageView): string {
 }
 
 // the final stage's rail under the graph, in place of a task's while the final node is selected: each step
-// with its command, then the running output, or how the stage ended.
+// with its command, then the running output, or how the stage ended. A click on a step that ended shows the
+// output it kept instead.
 export function DagFinalRail({ group, owner, view }: { group: TaskGroup; owner: Run; view: FinalStageView }) {
     const agentsCtx = useAtomValue(dagModalAgentsContextAtom);
     const { route, custom } = reviewerRouteOf(group, owner);
     const state = view.tone === "run" ? "running" : view.state || "waiting";
     const when = verifierLine(group, view);
+    const [picked, setPicked] = useState<FinalStepKey | null>(null);
+    const shown = shownStep(view, picked);
+    const kept = shown?.state !== "running" ? shown?.kept : undefined;
     return (
         <div
             data-dag-final-rail
@@ -83,11 +101,24 @@ export function DagFinalRail({ group, owner, view }: { group: TaskGroup; owner: 
                     <EndFinalStage group={group} channelId={group.channelid} runId={group.runid} />
                 </div>
             </div>
-            <FinalStepCells steps={view.steps} showCommand />
-            <FinalOutput output={view.output} lines={OUTPUT_LINES} />
-            <div className="flex min-h-0 flex-col empty:hidden" style={{ maxHeight: DESC_MAX_PX }}>
-                <FinalOutcome view={view} />
-            </div>
+            <FinalStepCells
+                steps={view.steps}
+                showCommand
+                shown={shown?.key}
+                onPick={(key) => setPicked(picked === key ? null : key)}
+            />
+            {kept ? (
+                <div className="sc min-h-0 overflow-auto" style={{ maxHeight: DESC_MAX_PX }}>
+                    <FinalKeptOutput key={shown.key} kept={kept} />
+                </div>
+            ) : (
+                <>
+                    <FinalOutput output={view.output} lines={OUTPUT_LINES} />
+                    <div className="flex min-h-0 flex-col empty:hidden" style={{ maxHeight: DESC_MAX_PX }}>
+                        <FinalOutcome view={view} />
+                    </div>
+                </>
+            )}
             <FinalShotsLink group={group} />
         </div>
     );

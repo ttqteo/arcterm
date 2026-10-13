@@ -9,6 +9,7 @@ import {
     LEAD_MEMBER,
     memberOfSession,
     memberSession,
+    resumeLaunchOpts,
     runView,
     sessionLabel,
     sessionPrimary,
@@ -269,6 +270,30 @@ describe("sessionPrimary", () => {
         expect(sessionPrimary(mk({ live: true, liveId: "tab-1" }))).toBe("jump");
         expect(sessionPrimary(mk({ resumecommand: "claude --resume x" }))).toBe("resume");
         expect(sessionPrimary(mk())).toBeNull();
+    });
+});
+
+describe("resumeLaunchOpts", () => {
+    it("names the resumed tab after the session it resumes", () => {
+        const opts = resumeLaunchOpts(mk({ task: "fix the login bug", resumecommand: "claude --resume x" }));
+        expect(opts.label).toBe("fix the login bug");
+        expect(opts.startupCommand).toBe("claude --resume x");
+        expect(opts.task).toBe("");
+    });
+    it("leaves an untitled session to the tab's own fallback name", () => {
+        expect(resumeLaunchOpts(mk({ task: "  ", resumecommand: "claude --resume x" })).label).toBeUndefined();
+    });
+    it("resumes pi by its exact argv and transcript path", () => {
+        const opts = resumeLaunchOpts(
+            mk({
+                runtime: "pi",
+                resumecommand: "pi",
+                resumeargs: ["--session", "/t.jsonl"],
+                transcriptpath: "/t.jsonl",
+            })
+        );
+        expect(opts.startupArgs).toEqual(["--session", "/t.jsonl"]);
+        expect(opts.resumePath).toBe("/t.jsonl");
     });
 });
 

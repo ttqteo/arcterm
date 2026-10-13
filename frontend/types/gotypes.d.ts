@@ -1315,6 +1315,7 @@ declare global {
     // wshrpc.CommandGitGrepData
     type CommandGitGrepData = {
         cwd: string;
+        allowplain?: boolean;
         query: string;
         regex?: boolean;
         wholeword?: boolean;
@@ -1352,6 +1353,7 @@ declare global {
     // wshrpc.CommandGitListFilesData
     type CommandGitListFilesData = {
         cwd: string;
+        allowplain?: boolean;
     };
 
     // wshrpc.CommandGitListFilesRtnData
@@ -1613,6 +1615,12 @@ declare global {
         report?: string;
         holdland?: boolean;
         forceland?: boolean;
+    };
+
+    // wshrpc.CommandReportRunPhaseRtnData
+    type CommandReportRunPhaseRtnData = {
+        land?: RunLand;
+        landerror?: string;
     };
 
     // wshrpc.CommandResMonKillChildrenData
@@ -3042,6 +3050,8 @@ declare global {
         commit?: string;
         notes?: string[];
         dismissed?: boolean;
+        dirty?: boolean;
+        force?: boolean;
     };
 
     // waveobj.RunPhase

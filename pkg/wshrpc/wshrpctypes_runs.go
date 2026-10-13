@@ -20,7 +20,7 @@ type RunCommands interface {
 	AckRunCommand(ctx context.Context, data CommandAckRunData) error                                                  // acknowledge a done run's unverified outcome, which clears its attention item
 	RunAsksCommand(ctx context.Context, data CommandRunAskData) (*CommandDagAsksRtnData, error)                       // the pending question on a run's own session (a lead's, or a quick run's)
 	RunAnswerCommand(ctx context.Context, data CommandRunAnswerData) error                                            // answer a run's own pending question
-	ReportRunPhaseCommand(ctx context.Context, data CommandReportRunPhaseData) error                                  // lead self-reports hold/complete; resolves run/phase from its own oref
+	ReportRunPhaseCommand(ctx context.Context, data CommandReportRunPhaseData) (*CommandReportRunPhaseRtnData, error) // lead self-reports hold/complete; resolves run/phase from its own oref; an engine lead's complete returns its land
 	CreateChildRunCommand(ctx context.Context, data CommandCreateChildRunData) (*CommandCreateChildRunRtnData, error) // orchestrator lead spawns a hands-off child run for one backlog unit; parent resolved from the caller's oref
 	SetRunSettingsCommand(ctx context.Context, data CommandSetRunSettingsData) error                                  // change a live engine run's scheduler settings (pending on the Run before a DAG exists, live on its TaskGroup after)
 	RunTranscriptPathCommand(ctx context.Context, data CommandRunTranscriptPathData) (string, error)                  // the transcript of a run launched under a session id, "" when none was written
@@ -140,6 +140,13 @@ type CommandReportRunPhaseData struct {
 	Report    string   `json:"report,omitempty"`    // lead's final report; forwarded to AdvanceRun, stored on Run.Report
 	HoldLand  bool     `json:"holdland,omitempty"`  // forwarded to AdvanceRun
 	ForceLand bool     `json:"forceland,omitempty"` // forwarded to AdvanceRun
+}
+
+// CommandReportRunPhaseRtnData is what a complete did past the phase: an engine lead's complete lands the run's
+// branch before it returns, so the lead can report the outcome before its tab closes.
+type CommandReportRunPhaseRtnData struct {
+	Land      *waveobj.RunLand `json:"land,omitempty"`      // the land's outcome; nil when the complete made no land
+	LandError string           `json:"landerror,omitempty"` // why the land could not be attempted at all
 }
 
 type CommandCreateChildRunData struct {

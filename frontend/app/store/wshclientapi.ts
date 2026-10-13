@@ -1015,7 +1015,7 @@ export class RpcApiType {
     }
 
     // command "reportrunphase" [call]
-    ReportRunPhaseCommand(client: WshClient, data: CommandReportRunPhaseData, opts?: RpcOpts): Promise<void> {
+    ReportRunPhaseCommand(client: WshClient, data: CommandReportRunPhaseData, opts?: RpcOpts): Promise<CommandReportRunPhaseRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "reportrunphase", data, opts);
         return client.wshRpcCall("reportrunphase", data, opts);
     }

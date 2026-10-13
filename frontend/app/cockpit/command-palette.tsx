@@ -1204,9 +1204,6 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
         if (fileIndex == null) {
             return { groups: empty(`Loading files in ${label}…`) };
         }
-        if (!fileIndex.isRepo) {
-            return { groups: empty(`${label} isn’t a git repository, so there is no file list.`) };
-        }
         const recent = codeOwnsTarget ? recentPaths(codeHistory) : [];
         const pinned = pinsFor(codePins, fileTarget.path);
         const fg = assembleFileGroups(nav.query, fileIndex.paths, recent, label, MAX_IN_SCOPE, pinned);

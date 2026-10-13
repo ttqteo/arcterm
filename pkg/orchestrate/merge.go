@@ -144,13 +144,10 @@ func foldIntoTree(ctx context.Context, tree, path string) (string, error) {
 // then the run trailer and one task trailer per landed task. The branch always starts at a commit on the
 // project branch, so HEAD..branch is exactly its workers' commits. A lane of several tasks takes its title
 // as the subject, since any one worker's subject names only that worker's task, cut to a subject line as a land
-// title is: two task titles joined run past it. A one-task lane falls back to the title only when the messages
-// are empty or unreadable.
+// title is: two task titles joined run past it, typed from the workers' subjects. A one-task lane falls back to
+// the title only when the messages are empty or unreadable.
 func mergeMessage(ctx context.Context, projectPath, runID string, lane MergeLane) string {
-	var msgs []string
-	if len(lane.TaskIDs) > 1 {
-		msgs = []string{landSubject(firstLine(lane.Title))}
-	}
+	var msgs, subjects []string
 	out, err := git(ctx, projectPath, "log", "--reverse", "--format=%B%x00", "HEAD..wave/"+runID)
 	if err != nil {
 		log.Printf("merge %s: reading the branch's commit messages: %v", runID, err)
@@ -158,10 +155,11 @@ func mergeMessage(ctx context.Context, projectPath, runID string, lane MergeLane
 	for _, m := range strings.Split(out, "\x00") {
 		if m = stripAttribution(m); m != "" && !slices.Contains(msgs, m) {
 			msgs = append(msgs, m)
+			subjects = append(subjects, firstLine(m))
 		}
 	}
-	if len(msgs) == 0 {
-		msgs = []string{landSubject(firstLine(lane.Title))}
+	if len(lane.TaskIDs) > 1 || len(msgs) == 0 {
+		msgs = append([]string{conventionalTitle(firstLine(lane.Title), subjects)}, msgs...)
 	}
 	trailers := []string{runTrailer + ": " + runID}
 	for _, id := range lane.TaskIDs {

@@ -97,7 +97,9 @@ func TestResumeArgs(t *testing.T) {
 		{"pi takes the transcript path whole", "pi", `C:\t\s.jsonl`, []string{"--session", "old", "--model", "x"}, []string{"--session", `C:\t\s.jsonl`, "--model", "x"}, true},
 		{"agy", "agy", "c1", []string{"--sandbox", "-c", "--conversation", "old"}, []string{"--conversation", "c1", "--sandbox"}, true},
 		{"opencode", "opencode", "ses_1", []string{"-s", "old", "--continue", "--x"}, []string{"-s", "ses_1", "--x"}, true},
-		{"codex has no resume flag", "codex", "abc", nil, nil, false},
+		{"codex resumes through its subcommand", "codex", "abc", nil, []string{"resume", "abc"}, true},
+		{"codex keeps its launch flags after the subcommand", "codex", "abc", []string{"--model", "gpt-5.5"}, []string{"resume", "abc", "--model", "gpt-5.5"}, true},
+		{"a harness with no resume flag", "shell", "abc", nil, nil, false},
 		{"no session to reopen", "claude", "", []string{"--model", "opus"}, nil, false},
 	}
 	for _, c := range cases {

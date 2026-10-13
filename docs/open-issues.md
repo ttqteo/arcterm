@@ -27,6 +27,20 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (kaeltran16 sync: cherry-picked fixes and features)**
+
+- [ ] Code → project picker, type a folder that is not a git repo (one with a `node_modules`): the tree lists its
+  files without `node_modules`, a footer names the skip set, the header path ends "· not a git repository", the
+  Changed tab and a file's Diff toggle are greyed out with "Not a git repository — no change tracking", and Search
+  finds text in it. Scenario `code-plain-dir`. `codestore.ts` `codePlainAtom`, `pkg/gitinfo/walk.go`.
+- [ ] A run with a Final stage: once Check/Verify finish, click the step in the final stage pane and in the run's
+  rail: its kept output opens. `finalstagepane.tsx`, `pkg/orchestrate/final.go` `<round>-steps/`.
+- [ ] Sessions → an ended session → Resume: the new agent tab is named after the session's task, not the project.
+  `sessionsruns.ts` `resumeLaunchOpts`.
+- [ ] `task dev` (Windows) while an editor is in front: the dev window opens behind it, restored, without taking
+  focus. On a Mac the dev window still appears. `src-tauri/src/main.rs` `show_behind_foreground`.
+- [ ] Setup → shared instructions with a long line: the editor wraps it instead of scrolling sideways.
+
 **2026-10-13 (Initiative bar: the next chunk is no longer accent)**
 
 - [ ] Jarvis → Initiatives: a row whose chunks are all pending (e.g. Repo hygiene 0/2) shows an all-grey bar, no

@@ -92,8 +92,10 @@ describe("codeBodyPhase", () => {
     it("keeps the existing branches", () => {
         expect(codeBodyPhase({ ...base, registry: {}, project: null })).toBe("no-projects");
         expect(codeBodyPhase({ ...base, index: null, indexError: "boom" })).toBe("error");
-        expect(codeBodyPhase({ ...base, index: idx(false) })).toBe("not-repo");
         expect(codeBodyPhase(base)).toBe("ready");
+    });
+    it("browses a directory that is not a repository", () => {
+        expect(codeBodyPhase({ ...base, index: idx(false) })).toBe("ready");
     });
     it("shows a project opened by a jump when none is registered", () => {
         expect(codeBodyPhase({ ...base, registry: {} })).toBe("ready");

@@ -24,6 +24,11 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
   project, Sleeping lists them under a head per project, with a tick that picks just that project's.
 - **What's new**: click the version at the bottom right for the latest release notes, a headline each (click one for
   the rest); **Try it** on a note takes you to that feature. The shortcuts button beside it is now a round help icon.
+- **Code browses folders that are not git repositories** (from the kaeltran16 fork): a plain folder picked in Code
+  lists and searches its files, skipping `node_modules`, build output and dot-folders; Changed and Diff are greyed
+  out with the reason.
+- **A finished Check, Verify or Final step keeps its output**: click the step in the final stage pane or the run's
+  rail to read it after the next step has started.
 
 ### Changed
 
@@ -39,6 +44,11 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
   strip and graph, the Jobs queue and an effort's active chunk are now the status green, so in a theme with a blue
   accent (Spider, Graphite, One Dark…) a working agent no longer reads as the selected one. In a run's strip and an
   effort's bar the done segments are the same green dimmed.
+- **A run's land commit gets a conventional subject** (`feat(cockpit): <plan title>`), typed from the branch's own
+  commits, instead of the bare plan title.
+- **A land held only by uncommitted changes in the checkout lands by itself** once they are committed, stashed or
+  moved aside; the lead's `complete` now prints `landed <sha>` or `held: <reason>`, and its wake names every land
+  blocker, not only conflicts.
 
 ### Fixed
 
@@ -59,6 +69,11 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
   Conversations. A message typed with the resume wakes the agent with it, or goes to it if awake.
 - **pi loads the arc package from arcterm's own repository** (`github.com/ttqteo/arcterm`) instead of the upstream
   fork's; an entry an earlier build wrote for the fork is replaced on the next launch.
+- A resumed session's tab is named after the session instead of the project.
+- `wsh jarvis dag submit` no longer stops at a bare timeout: it says whether the plan landed, did not land, or
+  cannot tell, and `dag status` shows whether a plan review is running or failed.
+- The shared instructions editor in Setup wraps long lines instead of scrolling sideways.
+- Files an older arcterm build installed into the Claude mod folder are removed when a newer build drops them.
 
 ## 0.15.11 — 2026-10-13
 

@@ -987,22 +987,118 @@ func TestInstallClaudeMod_equalBytesPreserveMtime(t *testing.T) {
 	if err := installClaudeMod(home, fakeWshPath(t)); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(claudeModDirs(home)[0], "hooks", "register.ts")
-	info1, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
+	paths := []string{
+		filepath.Join(claudeModDirs(home)[0], "hooks", "register.ts"),
+		filepath.Join(claudeModDirs(home)[0], claudeModManifest),
+	}
+	var before []time.Time
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before = append(before, info.ModTime())
 	}
 	time.Sleep(20 * time.Millisecond)
 	if err := installClaudeMod(home, fakeWshPath(t)); err != nil {
 		t.Fatal(err)
 	}
-	info2, err := os.Stat(path)
-	if err != nil {
+	for i, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !info.ModTime().Equal(before[i]) {
+			t.Fatalf("an unchanged %s was rewritten (reloads every running claude session): %v -> %v", path, before[i], info.ModTime())
+		}
+	}
+}
+
+// writes rel under dir, creating its folders
+func writeModFile(t *testing.T, dir, rel string) string {
+	t.Helper()
+	path := filepath.Join(dir, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if !info2.ModTime().Equal(info1.ModTime()) {
-		t.Fatalf("an unchanged mod was rewritten (reloads every running claude session): %v -> %v", info1.ModTime(), info2.ModTime())
+	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
 	}
+	return path
+}
+
+func assertExists(t *testing.T, path string, want bool) {
+	t.Helper()
+	_, err := os.Stat(path)
+	if got := err == nil; got != want {
+		t.Fatalf("%s exists = %v, want %v (err %v)", path, got, want, err)
+	}
+}
+
+// claude writes its own files into a mod folder; only what an Arc install wrote may go
+func claudeGeneratedFiles(t *testing.T, dir string) []string {
+	return []string{
+		writeModFile(t, dir, ".claude-plugin/types/claude-code/index.d.ts"),
+		writeModFile(t, dir, ".claude-plugin/types/.gitignore"),
+		writeModFile(t, dir, "tsconfig.json"),
+	}
+}
+
+func TestInstallClaudeMod_removesWhatAnEarlierInstallWroteAndNoLongerShips(t *testing.T) {
+	home := t.TempDir()
+	if err := installClaudeMod(home, fakeWshPath(t)); err != nil {
+		t.Fatal(err)
+	}
+	dir := claudeModDirs(home)[0]
+	dropped := writeModFile(t, dir, "hooks/dropped.ts")
+	manifest := filepath.Join(dir, claudeModManifest)
+	body, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatalf("no manifest after an install: %v", err)
+	}
+	if err := os.WriteFile(manifest, append(body, []byte("hooks/dropped.ts\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	generated := claudeGeneratedFiles(t, dir)
+	if err := installClaudeMod(home, fakeWshPath(t)); err != nil {
+		t.Fatal(err)
+	}
+	assertExists(t, dropped, false)
+	for _, p := range generated {
+		assertExists(t, p, true)
+	}
+	assertExists(t, filepath.Join(dir, "hooks", "register.ts"), true)
+	if after, _ := os.ReadFile(manifest); strings.Contains(string(after), "dropped") {
+		t.Fatalf("the manifest still names a file this build does not ship:\n%s", after)
+	}
+}
+
+func TestInstallClaudeMod_withoutAManifestRemovesStaleFilesBesideTheShippedOnes(t *testing.T) {
+	home := t.TempDir()
+	dir := claudeModDirs(home)[0]
+	stale := writeModFile(t, dir, "hooks/ask-pane.tsx")
+	generated := claudeGeneratedFiles(t, dir)
+	if err := installClaudeMod(home, fakeWshPath(t)); err != nil {
+		t.Fatal(err)
+	}
+	assertExists(t, stale, false)
+	for _, p := range generated {
+		assertExists(t, p, true)
+	}
+}
+
+func TestInstallClaudeMod_ignoresAManifestEntryOutsideTheModFolder(t *testing.T) {
+	home := t.TempDir()
+	dir := claudeModDirs(home)[0]
+	outside := writeModFile(t, home, "keep.txt")
+	writeModFile(t, dir, claudeModManifest)
+	if err := os.WriteFile(filepath.Join(dir, claudeModManifest), []byte("../../keep.txt\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := installClaudeMod(home, fakeWshPath(t)); err != nil {
+		t.Fatal(err)
+	}
+	assertExists(t, outside, true)
 }
 
 func TestInstallClaudeAskSettings_writesAndRestoresTheLockedRules(t *testing.T) {

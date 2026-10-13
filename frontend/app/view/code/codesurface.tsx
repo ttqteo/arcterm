@@ -68,6 +68,7 @@ import {
     codeIndexErrorAtom,
     codeMutateErrorAtom,
     codePickerErrorAtom,
+    codePlainAtom,
     codeProjectAtom,
     codeRecentsAtom,
     codeSaveAtom,
@@ -76,6 +77,7 @@ import {
     goBack,
     goForward,
     lastCodeProjectAtom,
+    NOT_TRACKED,
     openPickedPath,
     refreshIndex,
     registeredProjects,
@@ -96,6 +98,7 @@ export function CodeSurface({ model }: { model: AgentsViewModel }) {
     const stored = useAtomValue(lastCodeProjectAtom);
     const index = useAtomValue(codeIndexAtom);
     const indexError = useAtomValue(codeIndexErrorAtom);
+    const plain = useAtomValue(codePlainAtom);
     const history = useAtomValue(codeHistoryAtom);
     const hasFocus = useAtomValue(atoms.documentHasFocus);
     const mutateError = useAtomValue(codeMutateErrorAtom);
@@ -188,7 +191,16 @@ export function CodeSurface({ model }: { model: AgentsViewModel }) {
                 compact
                 title="Code"
                 // the project's name is on the picker beside it; the path is what the row adds
-                subtitle={project != null ? <span title={project.path}>{project.path}</span> : "No project selected"}
+                subtitle={
+                    project != null ? (
+                        <span title={project.path}>
+                            {project.path}
+                            {plain ? " · not a git repository" : ""}
+                        </span>
+                    ) : (
+                        "No project selected"
+                    )
+                }
                 actions={
                     <>
                         <div className="relative">
@@ -494,8 +506,6 @@ function CodeBody({ model, onPickProject }: { model: AgentsViewModel; onPickProj
             return null; // the banner above already says it, and a second message would double up
         case "loading":
             return <CodePanesSkeleton />;
-        case "not-repo":
-            return <SurfaceEmptyState title="Not a git repository" body={project.path} />;
         case "ready":
             return <CodePanes model={model} />;
     }
@@ -563,6 +573,7 @@ function readCodeSidebarPrefs(): CodeSidebarPrefs {
 
 function CodePanes({ model }: { model: AgentsViewModel }) {
     const [mode, setMode] = useAtom(codeSearchModeAtom);
+    const plain = useAtomValue(codePlainAtom);
     const [prefs, setPrefs] = useState(readCodeSidebarPrefs);
     const [workspaceWidth, setWorkspaceWidth] = useState(0);
     const [dragWidth, setDragWidth] = useState<number | null>(null);
@@ -749,14 +760,17 @@ function CodePanes({ model }: { model: AgentsViewModel }) {
                                 type="button"
                                 aria-pressed={m === mode}
                                 data-code-column-tab={m}
+                                // disabled with its reason rather than hidden, so the sidebar does not
+                                // change shape for a reason the user cannot see
+                                disabled={plain && m === "changed"}
                                 onClick={() => {
                                     setDragWidth(null);
                                     setMode(m);
                                 }}
                                 aria-label={CODE_SIDEBAR_TABS[m].label}
-                                title={codeSidebarTabTitle(m)}
+                                title={plain && m === "changed" ? NOT_TRACKED : codeSidebarTabTitle(m)}
                                 className={cn(
-                                    "flex size-6 cursor-pointer items-center justify-center rounded-[6px] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
+                                    "flex size-6 cursor-pointer items-center justify-center rounded-[6px] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent disabled:cursor-default disabled:opacity-40",
                                     m === mode
                                         ? "bg-accent/10 text-accent-soft"
                                         : "text-muted hover:bg-surface-hover hover:text-primary"

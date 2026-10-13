@@ -54,6 +54,9 @@ func (ws *WshServer) GitCompareChangesCommand(ctx context.Context, data wshrpc.C
 
 func (ws *WshServer) GitListFilesCommand(ctx context.Context, data wshrpc.CommandGitListFilesData) (*wshrpc.CommandGitListFilesRtnData, error) {
 	fl, err := gitinfo.ListFiles(ctx, data.Cwd)
+	if err == nil && !fl.IsRepo && data.AllowPlain {
+		fl, err = gitinfo.WalkFiles(ctx, data.Cwd)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -87,13 +90,18 @@ func (ws *WshServer) GitListWorktreesCommand(ctx context.Context, data wshrpc.Co
 }
 
 func (ws *WshServer) GitGrepCommand(ctx context.Context, data wshrpc.CommandGitGrepData) (*wshrpc.CommandGitGrepRtnData, error) {
-	res, err := gitinfo.Grep(ctx, data.Cwd, data.Query, gitinfo.GrepOpts{
+	opts := gitinfo.GrepOpts{
 		Regex:         data.Regex,
 		WholeWord:     data.WholeWord,
 		CaseSensitive: data.CaseSensitive,
 		Include:       data.Include,
 		Exclude:       data.Exclude,
-	})
+	}
+	grep := gitinfo.Grep
+	if data.AllowPlain && !gitinfo.IsWorkTree(ctx, data.Cwd) {
+		grep = gitinfo.ScanGrep
+	}
+	res, err := grep(ctx, data.Cwd, data.Query, opts)
 	if err != nil {
 		return nil, err
 	}

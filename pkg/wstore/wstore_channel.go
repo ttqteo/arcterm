@@ -378,6 +378,11 @@ func GetRunsByStatus(ctx context.Context, statuses ...string) ([]*waveobj.Run, e
 	return selectRunsWhereIn(ctx, "status", statuses)
 }
 
+// GetRunsByLandState returns the runs whose land (Run.Land.State) is state, across channels. Pure read (read pool).
+func GetRunsByLandState(ctx context.Context, state string) ([]*waveobj.Run, error) {
+	return selectRuns(ctx, `SELECT oid, version, data FROM db_run WHERE json_extract(data, '$.land.state') = ?`, state)
+}
+
 // selectRunsWhereIn selects the runs whose top-level json field is any of values.
 func selectRunsWhereIn(ctx context.Context, field string, values []string) ([]*waveobj.Run, error) {
 	marks := strings.TrimSuffix(strings.Repeat("?,", len(values)), ",")

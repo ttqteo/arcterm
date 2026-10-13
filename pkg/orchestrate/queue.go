@@ -63,19 +63,35 @@ const (
 	noRoundLeftLine = "No round is left: every open issue is an effort chunk."
 )
 
-// landConflictLine goes after the run-finished wake's outcome when the land would hold on a conflict, so the lead
-// fixes it before complete closes its tab. Empty when the land merges cleanly or cannot be predicted: the land
-// checks again either way.
-func landConflictLine(ctx context.Context, run *waveobj.Run) string {
+// landBlockerLines go after the run-finished wake's outcome, one per thing the land would hold on now, each with
+// what the lead may do about it, so it acts or reports before complete closes its tab. Only a conflict is the
+// lead's to fix; the checkout is the human's and other sessions', and the lead never touches uncommitted changes
+// that are not its own. Empty when the land would merge, or cannot be predicted: the land checks again either way.
+// A failed final stage is not repeated here: the wake's outcome line already says it.
+func landBlockerLines(ctx context.Context, run *waveobj.Run) string {
+	if run.LandPath == "" {
+		return ""
+	}
+	var lines []string
+	if hold := landPrecheck(ctx, run); hold != nil {
+		switch {
+		case hold.Dirty:
+			lines = append(lines, fmt.Sprintf("The land will hold: %s. Those changes are not yours: they belong to another session or the human. Do not commit, stash, restore or delete them; say in your report that the land waits on them. The engine lands the run by itself once they are gone.", hold.Reason))
+		default:
+			lines = append(lines, fmt.Sprintf("The land will hold: %s. That is the human's to clear, not yours: leave the checkout as it is and say it in your report.", hold.Reason))
+		}
+	}
 	files, err := LandConflicts(ctx, run)
 	if err != nil {
 		log.Printf("run %s: %v", run.ID, err)
+	}
+	if len(files) > 0 {
+		lines = append(lines, fmt.Sprintf("The land into %s will conflict in %s: merge %s into this tree, resolve, commit, then complete.", run.BaseBranch, strings.Join(files, ", "), run.BaseBranch))
+	}
+	if len(lines) == 0 {
 		return ""
 	}
-	if len(files) == 0 {
-		return ""
-	}
-	return fmt.Sprintf("\nThe land into %s will conflict in %s: merge %s into this tree, resolve, commit, then complete.", run.BaseBranch, strings.Join(files, ", "), run.BaseBranch)
+	return "\n" + strings.Join(lines, "\n")
 }
 
 // finalFailedWake carries the final stage's failure whole: the lead writes its fix plan from it. After the

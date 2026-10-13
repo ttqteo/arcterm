@@ -95,8 +95,11 @@ type CommandGitCompareChangesRtnData struct {
 	IsRepo  bool   `json:"isrepo"`
 }
 
+// AllowPlain lists a directory that is not a repository by walking it, instead of answering
+// isrepo:false with no files. IsRepo still says which reader answered.
 type CommandGitListFilesData struct {
-	Cwd string `json:"cwd"`
+	Cwd        string `json:"cwd"`
+	AllowPlain bool   `json:"allowplain,omitempty"`
 }
 
 // Files are repo-relative, forward-slashed, sorted. Truncated reports that the repo exceeded the
@@ -145,8 +148,11 @@ type CommandGitListWorktreesRtnData struct {
 }
 
 // Include and Exclude are git pathspecs, so the filter runs inside git and before the match cap.
+// AllowPlain searches a directory that is not a repository with a Go scan, matching those pathspecs
+// the way git would.
 type CommandGitGrepData struct {
 	Cwd           string   `json:"cwd"`
+	AllowPlain    bool     `json:"allowplain,omitempty"`
 	Query         string   `json:"query"`
 	Regex         bool     `json:"regex,omitempty"`
 	WholeWord     bool     `json:"wholeword,omitempty"`

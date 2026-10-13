@@ -139,6 +139,22 @@ export function stageEntries(group: TaskGroup, owner: Run): StageEntry[] {
     ];
 }
 
+export type DagStatusPill = { label: string; tone: "done" | "waiting" | "muted" | "active" };
+
+// dagStatusPill is the graph header's status pill. The dag reads plan-review both while a reviewer works and after
+// one failed, so the plan review's own state tells a review waiting on the lead from one in progress.
+export function dagStatusPill(group: Pick<TaskGroup, "status" | "planreview">): DagStatusPill {
+    const status = group.status;
+    if (status === "plan-review" && group.planreview?.state === "failed") {
+        return { label: "plan review failed", tone: "waiting" };
+    }
+    const label = status.split("-").join(" ");
+    if (status === "done" || status === "awaiting-review") return { label, tone: "done" };
+    if (status === "blocked" || status === "awaiting-plan") return { label, tone: "waiting" };
+    if (status === "cancelled") return { label, tone: "muted" };
+    return { label, tone: "active" };
+}
+
 // isWaiting mirrors taskWaiting: a task nothing has started or touched, whose model can still change.
 export function isWaiting(task: TaskNode): boolean {
     return (

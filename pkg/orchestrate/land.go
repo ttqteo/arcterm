@@ -54,6 +54,11 @@ var inProgressOps = []struct{ path, what string }{
 func LandRun(ctx context.Context, channelID, runID string, force bool) (*waveobj.RunLand, error) {
 	landLocks.Lock(runID)
 	defer landLocks.Unlock(runID)
+	return landRunLocked(ctx, channelID, runID, force)
+}
+
+// landRunLocked is LandRun under the run's land lock.
+func landRunLocked(ctx context.Context, channelID, runID string, force bool) (*waveobj.RunLand, error) {
 	run, err := wstore.GetRun(ctx, channelID, runID)
 	if err != nil {
 		return nil, fmt.Errorf("loading run: %w", err)
@@ -77,6 +82,10 @@ func LandRun(ctx context.Context, channelID, runID string, force bool) (*waveobj
 		return nil, err
 	}
 	land := landRun(ctx, run, g, force)
+	if land.State == LandState_Held {
+		// the engine's own retry of a dirty hold must not drop the human's force
+		land.Force = force
+	}
 	if err := saveLand(ctx, channelID, runID, land); err != nil {
 		return nil, err
 	}
@@ -84,7 +93,7 @@ func LandRun(ctx context.Context, channelID, runID string, force bool) (*waveobj
 	case LandState_Held:
 		appendRunEvent(ctx, channelID, runID, waveobj.RunEventKindLandHeld, nil, map[string]any{"reason": land.Reason})
 	case LandState_Landed:
-		appendRunEvent(ctx, channelID, runID, waveobj.RunEventKindLanded, nil, map[string]any{"commit": land.Commit, "title": landTitle(run, g)})
+		appendRunEvent(ctx, channelID, runID, waveobj.RunEventKindLanded, nil, map[string]any{"commit": land.Commit, "title": landedTitle(ctx, run, g, land.Commit)})
 		// the land runs after the lead's `complete`, whose close check saw a run not yet landed: a run landed past
 		// a failed final stage keeps its dag blocked, so no later tick would look at its lead again
 		if fresh, err := wstore.GetRun(ctx, channelID, runID); err == nil {
@@ -94,6 +103,35 @@ func LandRun(ctx context.Context, channelID, runID string, force bool) (*waveobj
 		}
 	}
 	return land, nil
+}
+
+// retryDirtyLands lands again each run held only by uncommitted changes in its checkout (RunLand.Dirty), once the
+// land's own checkout check passes. The changes are another session's or the human's, so the engine waits for them
+// to be committed, stashed or moved aside instead of asking anyone to retry. The watchdog calls it every tick. A
+// dismissed hold is the human's to retry, and a run whose land is already under way is skipped.
+func retryDirtyLands(ctx context.Context) {
+	runs, err := wstore.GetRunsByLandState(ctx, LandState_Held)
+	if err != nil {
+		log.Printf("listing held lands: %v", err)
+		return
+	}
+	for _, run := range runs {
+		if !run.Land.Dirty || run.Land.Dismissed || !landLocks.TryLock(run.ID) {
+			continue
+		}
+		goStage("land retry "+run.ID, func() {
+			defer landLocks.Unlock(run.ID)
+			if mergedCommit(ctx, run) == "" && landPrecheck(ctx, run) != nil {
+				return
+			}
+			// a merge cut off halfway would leave the checkout mid-merge
+			lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), LandTimeout)
+			defer cancel()
+			if _, err := landRunLocked(lctx, run.ChannelOID, run.ID, run.Land.Force); err != nil {
+				log.Printf("run %s: retrying its land: %v", run.ID, err)
+			}
+		})
+	}
 }
 
 func saveLand(ctx context.Context, channelID, runID string, land *waveobj.RunLand) error {
@@ -112,6 +150,18 @@ func heldLand(reason string) *waveobj.RunLand {
 	return &waveobj.RunLand{State: LandState_Held, Reason: reason}
 }
 
+// landPrecheck is the hold the land would meet in the checkout now, nil when there is none: the cheap checks that
+// need neither Check nor Verify. The run-finished wake and the dirty-hold retry ask it too.
+func landPrecheck(ctx context.Context, run *waveobj.Run) *waveobj.RunLand {
+	if run.BaseBranch == "" {
+		return heldLand(fmt.Sprintf("the run started on a detached HEAD, so wave/%s has no branch to merge into", run.ID))
+	}
+	if reason, dirty := checkoutHold(ctx, run); reason != "" {
+		return &waveobj.RunLand{State: LandState_Held, Reason: reason, Dirty: dirty}
+	}
+	return nil
+}
+
 // landRun makes the merge, or says why it may not. The cheap checks on the checkout run before the re-run of
 // Check and Verify, so a held reason the human can fix at once is not minutes away, and again under the checkout
 // claim, since the checkout can change while they run.
@@ -123,13 +173,10 @@ func landRun(ctx context.Context, run *waveobj.Run, g *waveobj.TaskGroup, force 
 	if reason := finalHold(g); reason != "" && !force {
 		return heldLand(reason)
 	}
-	if run.BaseBranch == "" {
-		return heldLand(fmt.Sprintf("the run started on a detached HEAD, so wave/%s has no branch to merge into", run.ID))
+	if hold := landPrecheck(ctx, run); hold != nil {
+		return hold
 	}
 	project, branch := run.ProjectPath, "wave/"+run.ID
-	if reason := checkoutHold(ctx, run); reason != "" {
-		return heldLand(reason)
-	}
 	reason, checkedBase, checkNote := reverifyHold(ctx, run, g)
 	if reason != "" {
 		return heldLand(reason)
@@ -139,8 +186,8 @@ func landRun(ctx context.Context, run *waveobj.Run, g *waveobj.TaskGroup, force 
 		return heldLand(err.Error())
 	}
 	defer releaseProject(project, claim)
-	if reason := checkoutHold(ctx, run); reason != "" {
-		return heldLand(reason)
+	if hold := landPrecheck(ctx, run); hold != nil {
+		return hold
 	}
 	if reason := clearUntrackedCopies(ctx, project, branch); reason != "" {
 		return heldLand(reason)
@@ -149,7 +196,8 @@ func landRun(ctx context.Context, run *waveobj.Run, g *waveobj.TaskGroup, force 
 	if err != nil {
 		return heldLand("reading the checkout's head: " + err.Error())
 	}
-	if _, err := git(ctx, project, "merge", "--no-ff", "-m", landTitle(run, g), "-m", "Arc-Run: "+run.ID, branch); err != nil {
+	title := landTitle(run, g, branchSubjects(ctx, project, pre, branch))
+	if _, err := git(ctx, project, "merge", "--no-ff", "-m", title, "-m", "Arc-Run: "+run.ID, branch); err != nil {
 		return heldLand(mergeRefusal(ctx, project, run.BaseBranch, err))
 	}
 	land := &waveobj.RunLand{State: LandState_Landed}
@@ -246,16 +294,18 @@ func finalHold(g *waveobj.TaskGroup) string {
 }
 
 // checkoutHold is why the project checkout cannot take the merge now: it is on another branch, stopped inside a
-// git operation, has staged changes the merge commit would sweep in, or has unstaged edits the merge would
-// overwrite.
-func checkoutHold(ctx context.Context, run *waveobj.Run) string {
-	project := run.ProjectPath
+// git operation, has staged changes the merge commit would sweep in, has unstaged edits the merge would overwrite,
+// or has an untracked file where the branch adds a different one. dirty is set when only uncommitted changes stand
+// in the way. Those belong to another session or the human, so nothing of the engine's touches them: the land
+// retries by itself once they are gone (retryDirtyLands).
+func checkoutHold(ctx context.Context, run *waveobj.Run) (reason string, dirty bool) {
+	project, branch := run.ProjectPath, "wave/"+run.ID
 	cur, err := git(ctx, project, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
-		return "reading the checkout's branch: " + err.Error()
+		return "reading the checkout's branch: " + err.Error(), false
 	}
 	if cur != run.BaseBranch {
-		return fmt.Sprintf("the checkout is on %s, not %s", cur, run.BaseBranch)
+		return fmt.Sprintf("the checkout is on %s, not %s", cur, run.BaseBranch), false
 	}
 	args := []string{"rev-parse"}
 	for _, op := range inProgressOps {
@@ -263,7 +313,7 @@ func checkoutHold(ctx context.Context, run *waveobj.Run) string {
 	}
 	out, err := git(ctx, project, args...)
 	if err != nil {
-		return "reading the checkout's git state: " + err.Error()
+		return "reading the checkout's git state: " + err.Error(), false
 	}
 	for i, p := range strings.Split(out, "\n") {
 		p = strings.TrimSpace(p)
@@ -271,33 +321,46 @@ func checkoutHold(ctx context.Context, run *waveobj.Run) string {
 			p = filepath.Join(project, p)
 		}
 		if _, err := os.Stat(p); err == nil && i < len(inProgressOps) {
-			return "the checkout is stopped mid-operation: " + inProgressOps[i].what
+			return "the checkout is stopped mid-operation: " + inProgressOps[i].what, false
 		}
 	}
 	if clean, _ := IndexClean(ctx, project); !clean {
-		return "the checkout has staged changes"
+		return "the checkout has staged changes", true
 	}
-	return unstagedOverlapHold(ctx, run)
+	overlap, err := unstagedOverlap(ctx, project, branch)
+	if err != nil {
+		return err.Error(), false
+	}
+	if len(overlap) > 0 {
+		return "the checkout has unstaged edits to files the run changes: " + strings.Join(overlap, ", "), true
+	}
+	_, differs, err := untrackedCopies(ctx, project, branch)
+	if err != nil {
+		return err.Error(), false
+	}
+	if differs != "" {
+		return untrackedDiffersReason(differs), true
+	}
+	return "", false
 }
 
-// unstagedOverlapHold names the checkout's unstaged edits to files the run's branch changes, which git merge
-// refuses to overwrite only after the re-run of Check and Verify. Edits to other files stay: git merges past them.
-func unstagedOverlapHold(ctx context.Context, run *waveobj.Run) string {
-	project, branch := run.ProjectPath, "wave/"+run.ID
+// unstagedOverlap names the checkout's unstaged edits to files the run's branch changes, which git merge refuses
+// to overwrite only after the re-run of Check and Verify. Edits to other files stay: git merges past them.
+func unstagedOverlap(ctx context.Context, project, branch string) ([]string, error) {
 	edited, err := git(ctx, project, "diff", "--name-only", "--no-renames", "-z")
 	if err != nil {
-		return "listing the checkout's unstaged edits: " + err.Error()
+		return nil, fmt.Errorf("listing the checkout's unstaged edits: %w", err)
 	}
 	if edited == "" {
-		return ""
+		return nil, nil
 	}
 	base, err := git(ctx, project, "merge-base", "HEAD", branch)
 	if err != nil {
-		return "finding where the run's branch forked: " + err.Error()
+		return nil, fmt.Errorf("finding where the run's branch forked: %w", err)
 	}
 	changed, err := git(ctx, project, "diff", "--name-only", "--no-renames", "-z", base, branch)
 	if err != nil {
-		return "listing what the run changes: " + err.Error()
+		return nil, fmt.Errorf("listing what the run changes: %w", err)
 	}
 	theirs := strings.Split(changed, "\x00")
 	var overlap []string
@@ -306,10 +369,7 @@ func unstagedOverlapHold(ctx context.Context, run *waveobj.Run) string {
 			overlap = append(overlap, p)
 		}
 	}
-	if len(overlap) == 0 {
-		return ""
-	}
-	return fmt.Sprintf("the checkout has unstaged edits to files the run changes: %s; commit or stash them, then run `wsh runs land %s`", strings.Join(overlap, ", "), run.ID)
+	return overlap, nil
 }
 
 // reverifyHold checks what the final stage never saw before the run lands: the lead's wrap-up commits after it,
@@ -401,15 +461,36 @@ func onlyMarkdown(ctx context.Context, dir, from, to string) bool {
 // lead wrote its spec or plan there before submit, and the engine committed that file on the branch. git would
 // refuse to overwrite it. One that differs is the human's, and holds the land.
 func clearUntrackedCopies(ctx context.Context, project, branch string) string {
+	copies, differs, err := untrackedCopies(ctx, project, branch)
+	if err != nil {
+		return err.Error()
+	}
+	if differs != "" {
+		return untrackedDiffersReason(differs)
+	}
+	for _, full := range copies {
+		if err := os.Remove(full); err != nil {
+			return "removing an untracked copy of what the run adds: " + err.Error()
+		}
+	}
+	return ""
+}
+
+func untrackedDiffersReason(path string) string {
+	return fmt.Sprintf("an untracked %s in the checkout differs from the one the run adds", path)
+}
+
+// untrackedCopies lists, as full paths, the untracked files in the checkout that are the same as ones the branch
+// adds, or names the first that differs instead. It changes nothing.
+func untrackedCopies(ctx context.Context, project, branch string) (copies []string, differs string, err error) {
 	base, err := git(ctx, project, "merge-base", "HEAD", branch)
 	if err != nil {
-		return "finding where the run's branch forked: " + err.Error()
+		return nil, "", fmt.Errorf("finding where the run's branch forked: %w", err)
 	}
 	added, err := git(ctx, project, "diff", "--name-only", "--no-renames", "--diff-filter=A", "-z", base, branch)
 	if err != nil {
-		return "listing what the run adds: " + err.Error()
+		return nil, "", fmt.Errorf("listing what the run adds: %w", err)
 	}
-	var copies []string
 	for _, p := range strings.Split(added, "\x00") {
 		if p == "" {
 			continue
@@ -424,23 +505,18 @@ func clearUntrackedCopies(ctx context.Context, project, branch string) string {
 		// hash-object applies the checkout's filters, so a CRLF copy of an LF file still reads as the same
 		theirs, err := git(ctx, project, "rev-parse", branch+":"+p)
 		if err != nil {
-			return "reading " + p + " on the run's branch: " + err.Error()
+			return nil, "", fmt.Errorf("reading %s on the run's branch: %w", p, err)
 		}
 		mine, err := git(ctx, project, "hash-object", "--", p)
 		if err != nil {
-			return "reading the untracked " + p + ": " + err.Error()
+			return nil, "", fmt.Errorf("reading the untracked %s: %w", p, err)
 		}
 		if mine != theirs {
-			return fmt.Sprintf("an untracked %s in the checkout differs from the one the run adds; move it aside", p)
+			return nil, p, nil
 		}
 		copies = append(copies, full)
 	}
-	for _, full := range copies {
-		if err := os.Remove(full); err != nil {
-			return "removing an untracked copy of what the run adds: " + err.Error()
-		}
-	}
-	return ""
+	return copies, "", nil
 }
 
 // LandConflicts names the files the land of a branch-landed run would conflict in, sorted, while its lead can
@@ -532,17 +608,99 @@ func changeTitle(title string) string {
 // a thousand characters.
 const maxLandTitleLen = 72
 
-// landTitle is the merge commit's subject: the plan's title, else the goal's first line, each cut by landSubject.
-func landTitle(run *waveobj.Run, g *waveobj.TaskGroup) string {
+// landTitle is the merge commit's subject: the plan's title, else the goal's first line, as a conventional
+// subject typed from the branch's own commit subjects.
+func landTitle(run *waveobj.Run, g *waveobj.TaskGroup, subjects []string) string {
 	if g != nil {
 		if title := changeTitle(g.Title); title != "" {
-			return landSubject(title)
+			return conventionalTitle(title, subjects)
 		}
 	}
 	if goal, _, _ := strings.Cut(strings.TrimSpace(run.Goal), "\n"); strings.TrimSpace(goal) != "" {
-		return landSubject(strings.TrimSpace(goal))
+		return conventionalTitle(strings.TrimSpace(goal), subjects)
 	}
-	return "Land run " + run.ID
+	return conventionalTitle("Land run "+run.ID, subjects)
+}
+
+// landedTitle is the subject the land committed. The branch is gone by then, so landTitle could no longer type it.
+func landedTitle(ctx context.Context, run *waveobj.Run, g *waveobj.TaskGroup, commit string) string {
+	if commit != "" {
+		if s, err := git(ctx, run.ProjectPath, "log", "-1", "--format=%s", commit); err == nil && s != "" {
+			return s
+		}
+	}
+	return landTitle(run, g, nil)
+}
+
+// branchSubjects are the subjects of the commits branch adds over base, merges left out.
+func branchSubjects(ctx context.Context, project, base, branch string) []string {
+	out, err := git(ctx, project, "log", "--no-merges", "--format=%s", base+".."+branch)
+	if err != nil {
+		log.Printf("reading the subjects of %s: %v", branch, err)
+		return nil
+	}
+	return strings.Split(out, "\n")
+}
+
+// conventionalSubjectRe matches a conventional-commit subject's "type(scope)!: " head.
+var conventionalSubjectRe = regexp.MustCompile(`^([a-z]+)(?:\(([^()\s]+)\))?!?: \S`)
+
+// conventionalTypes ranks the types by what a reader of the log most needs to know: a commit gathering a
+// feature and its fixes is a feature.
+var conventionalTypes = []string{"feat", "fix", "perf", "refactor", "test", "docs", "build", "ci", "style", "chore"}
+
+// fallbackType types a commit whose gathered subjects name no known type.
+const fallbackType = "chore"
+
+// conventionalTitle makes title a conventional subject, cut to maxLandTitleLen. A title that already is one is
+// kept; otherwise the prefix comes from conventionalPrefix.
+func conventionalTitle(title string, subjects []string) string {
+	if conventionalSubjectRe.MatchString(title) {
+		return landSubject(title, maxLandTitleLen)
+	}
+	prefix := conventionalPrefix(subjects)
+	return prefix + landSubject(title, maxLandTitleLen-len([]rune(prefix)))
+}
+
+// conventionalPrefix is the "type(scope): " of the highest-ranked type among subjects, with the scope its
+// subjects use most; a tie names none, since the change spans them.
+func conventionalPrefix(subjects []string) string {
+	type head struct{ typ, scope string }
+	var heads []head
+	rank := len(conventionalTypes)
+	for _, s := range subjects {
+		m := conventionalSubjectRe.FindStringSubmatch(strings.TrimSpace(s))
+		if m == nil {
+			continue
+		}
+		if i := slices.Index(conventionalTypes, m[1]); i >= 0 {
+			heads = append(heads, head{m[1], m[2]})
+			rank = min(rank, i)
+		}
+	}
+	if rank == len(conventionalTypes) {
+		return fallbackType + ": "
+	}
+	typ := conventionalTypes[rank]
+	counts := map[string]int{}
+	for _, h := range heads {
+		if h.typ == typ && h.scope != "" {
+			counts[h.scope]++
+		}
+	}
+	scope, top := "", 0
+	for s, n := range counts {
+		switch {
+		case n > top:
+			scope, top = s, n
+		case n == top:
+			scope = ""
+		}
+	}
+	if scope == "" {
+		return typ + ": "
+	}
+	return typ + "(" + scope + "): "
 }
 
 // absPathToken is a word that is an absolute path (a drive, a share, root or home); trailing punctuation belongs
@@ -552,8 +710,8 @@ var absPathToken = regexp.MustCompile(`^([A-Za-z]:[\\/]|\\\\|/|~/)(.*?)([.,;:)]*
 var sentenceEnd = regexp.MustCompile(`[.?!]\s`)
 
 // landSubject makes one line of text a merge subject: absolute paths shrink to their base name, the text stops at
-// its first sentence, and a subject over maxLandTitleLen is cut at a word, so it never ends inside a path.
-func landSubject(s string) string {
+// its first sentence, and a subject over limit runes is cut at a word, so it never ends inside a path.
+func landSubject(s string, limit int) string {
 	words := strings.Fields(s)
 	for i, w := range words {
 		m := absPathToken.FindStringSubmatch(w)
@@ -570,14 +728,14 @@ func landSubject(s string) string {
 		s = strings.TrimSuffix(s[:loc[0]+1], ".")
 	}
 	r := []rune(s)
-	if len(r) <= maxLandTitleLen {
+	if len(r) <= limit {
 		return s
 	}
-	head := string(r[:maxLandTitleLen])
+	head := string(r[:limit])
 	if i := strings.LastIndex(head, " "); i > 0 {
 		return strings.TrimRight(head[:i], ",;: ") + "…"
 	}
-	return clipRunes(s, maxLandTitleLen)
+	return clipRunes(s, limit)
 }
 
 // movedBaseNote is set when the base branch took commits the land's check did not see: all of them when nothing

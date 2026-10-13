@@ -273,7 +273,7 @@ func runFinalSteps(ctx context.Context, dagID string, owner *waveobj.Run) finalR
 		return finalResult{round: -1}
 	}
 	res := finalResult{round: g.Final.Round}
-	step := func(name string, run func(planProgress) bool) bool {
+	step := func(name string, run func(planProgress) (bool, string)) bool {
 		return runFinalStep(ctx, g, res.round, name, run)
 	}
 	if g.Final.Tree != "" {
@@ -281,9 +281,9 @@ func runFinalSteps(ctx context.Context, dagID string, owner *waveobj.Run) finalR
 		res.tree, res.commit, res.onStage = g.Final.Tree, g.Final.Commit, true
 	} else {
 		var tree string
-		if !step(FinalStep_Tree, func(planProgress) bool {
+		if !step(FinalStep_Tree, func(planProgress) (bool, string) {
 			tree, _, err = finalTree(ctx, g, owner)
-			return err == nil
+			return err == nil, ""
 		}) {
 			res.unverified = []string{finalTreeFailed + err.Error()}
 			return res
@@ -307,9 +307,9 @@ func runFinalSteps(ctx context.Context, dagID string, owner *waveobj.Run) finalR
 	tree := res.tree
 	if g.Check != "" {
 		var out string
-		if !step(FinalStep_Check, func(progress planProgress) bool {
+		if !step(FinalStep_Check, func(progress planProgress) (bool, string) {
 			out, err = runPlanCommand(withRunCmdOwner(jobqueue.WithSource(ctx, jobqueue.Source{RunId: owner.ID, Label: "Check"}), owner.ID, PlanCmd_Check, ""), tree, g.Check, nil, VerifyTimeout, progress)
-			return err == nil
+			return err == nil, out
 		}) {
 			if !baseCheckFailed(g) {
 				res.detail = fmt.Sprintf("Check `%s` failed (%s):\n%s", g.Check, commandReason(err), out)
@@ -323,9 +323,9 @@ func runFinalSteps(ctx context.Context, dagID string, owner *waveobj.Run) finalR
 	if g.Verify != "" {
 		var out string
 		var flaky []string
-		if !step(FinalStep_Verify, func(progress planProgress) bool {
+		if !step(FinalStep_Verify, func(progress planProgress) (bool, string) {
 			out, flaky, err = runVerifyCommand(withRunCmdOwner(jobqueue.WithSource(ctx, jobqueue.Source{RunId: owner.ID, Label: "Verify", Always: true}), owner.ID, PlanCmd_Verify, ""), tree, g.Verify, unscopedEnv, progress)
-			return err == nil
+			return err == nil, out
 		}) {
 			res.detail = fmt.Sprintf("Verify `%s` failed on the merged result (%s):\n%s", g.Verify, commandReason(err), out)
 			return res
@@ -342,10 +342,10 @@ func runFinalSteps(ctx context.Context, dagID string, owner *waveobj.Run) finalR
 	}
 	var exit int
 	var tail string
-	step(FinalStep_Final, func(progress planProgress) bool {
+	step(FinalStep_Final, func(progress planProgress) (bool, string) {
 		finalCtx := jobqueue.WithSource(ctx, jobqueue.Source{RunId: owner.ID, Label: "Final", Always: true, Peak: memgate.DevBytes})
 		exit, tail, err = runFinalCommand(withRunCmdOwner(finalCtx, owner.ID, PlanCmd_Final, ""), tree, g.FinalCmd, g.Final.OutDir, finalCommandTimeout, progress)
-		return err == nil && exit == 0
+		return err == nil && exit == 0, tail
 	})
 	// whatever the exit: a failing scenario's screenshots are the ones worth seeing
 	res.shots, res.shotsManifest = readFinalShots(dagID, g.Final.OutDir)
@@ -411,10 +411,10 @@ func commandReason(err error) string {
 	return err.Error()
 }
 
-// runFinalStep runs one step of the stage, which run does, reporting whether it passed. The stage shows the step and
-// its output tail while it runs, so the cockpit can say which of the stage's minutes this is, and a final-step event
-// records how long it took.
-func runFinalStep(ctx context.Context, g *waveobj.TaskGroup, round int, step string, run func(planProgress) bool) bool {
+// runFinalStep runs one step of the stage, which run does, reporting whether it passed and the step's output. The
+// stage shows the step and its output tail while it runs, so the cockpit can say which of the stage's minutes this
+// is; the output is kept once it ends, and a final-step event records how long it took.
+func runFinalStep(ctx context.Context, g *waveobj.TaskGroup, round int, step string, run func(planProgress) (bool, string)) bool {
 	if err := WithDagMutation(g.OID, func() error { return markFinalStepLocked(ctx, g.OID, round, step) }); err != nil {
 		log.Printf("dag %s: marking the final stage's %s step: %v", g.OID, step, err)
 	}
@@ -427,11 +427,36 @@ func runFinalStep(ctx context.Context, g *waveobj.TaskGroup, round int, step str
 		return ran && err == nil
 	}
 	start := time.Now()
-	ok := run(progress)
+	ok, output := run(progress)
+	// before the event: the cockpit reads the file once the event says the step ended
+	keepFinalStepOutput(g.OID, g.Final.OutDir, step, output)
 	appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindFinalStep, nil, map[string]any{
 		"round": round, "step": step, "ms": time.Since(start).Milliseconds(), "ok": ok,
 	})
 	return ok
+}
+
+// finalStepsDir holds a round's finished step outputs, as <step>.txt. It sits beside ARC_FINAL_OUT, which the Final
+// command clears, and SweepFinalShots removes it with the round's shots. The cockpit derives the same path from
+// FinalStage.OutDir (finalStepOutputPath in finalstage.ts).
+func finalStepsDir(outDir string) string {
+	return outDir + "-steps"
+}
+
+// keepFinalStepOutput writes a finished command step's output, so the cockpit can show it after the stage moved on.
+// The Tree step has none, and a write that fails costs only that view.
+func keepFinalStepOutput(dagID, outDir, step, output string) {
+	if outDir == "" || step == FinalStep_Tree {
+		return
+	}
+	dir := finalStepsDir(outDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		log.Printf("dag %s: keeping the final stage's %s output: %v", dagID, step, err)
+		return
+	}
+	if err := os.WriteFile(filepath.Join(dir, step+".txt"), []byte(output), 0o644); err != nil {
+		log.Printf("dag %s: keeping the final stage's %s output: %v", dagID, step, err)
+	}
 }
 
 // clearFinalStep drops the step of a stage whose commands are no longer running.

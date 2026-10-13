@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
+	"github.com/wavetermdev/waveterm/pkg/wshutil"
 )
 
 func TestTaskSignalTellsBusyFromIdle(t *testing.T) {
@@ -739,5 +741,165 @@ func TestDagDoneLineCoversEveryAction(t *testing.T) {
 	}
 	if got := dagDoneLine("planreview-accept", ""); got == "" || strings.Contains(got, "Ending") {
 		t.Errorf("accept keeps the lead's session, got %q", got)
+	}
+}
+
+// stubWavesrv stands in for wavesrv's run lookup, dag read and submit for one test.
+func stubWavesrv(t *testing.T) {
+	t.Helper()
+	rpc, lookup, read, send := RpcClient, lookupRunCtx, readRunDag, sendDagSubmit
+	t.Cleanup(func() { RpcClient, lookupRunCtx, readRunDag, sendDagSubmit = rpc, lookup, read, send })
+	RpcClient = &wshutil.WshRpc{}
+}
+
+const rpcTimeoutText = "EC-TIME: timeout waiting for response"
+
+func TestDagIdsNamesTheLookupStepAndUsesTheCommandsBudget(t *testing.T) {
+	stubWavesrv(t)
+	var budget int64
+	lookupRunCtx = func(timeoutMs int64) (*wshrpc.CommandJarvisCtxRtnData, error) {
+		budget = timeoutMs
+		return nil, errors.New(rpcTimeoutText)
+	}
+	_, _, err := dagIds(dagStatusCmd, dagSubmitTimeoutMs)
+	if err == nil || err.Error() != "resolving this session's run (nothing was sent): "+rpcTimeoutText {
+		t.Fatalf("a lookup timeout must name its step and say nothing was sent, got %v", err)
+	}
+	if budget != dagSubmitTimeoutMs {
+		t.Fatalf("the lookup must get the budget of the call it serves, got %dms", budget)
+	}
+}
+
+func failedPlanReviewDag(round int) *waveobj.TaskGroup {
+	return &waveobj.TaskGroup{
+		ID: "d", Status: orchestrate.DagStatus_PlanReview,
+		Tasks:      []waveobj.TaskNode{{ID: "t-1", State: orchestrate.TaskState_Pending}},
+		PlanReview: &waveobj.PlanReviewStage{State: orchestrate.PlanReviewState_Failed, Round: round, Findings: "spec 4.1 has no task"},
+	}
+}
+
+func reviewingDag(round int) *waveobj.TaskGroup {
+	g := failedPlanReviewDag(round)
+	g.PlanReview = &waveobj.PlanReviewStage{State: orchestrate.PlanReviewState_Reviewing, Round: round}
+	return g
+}
+
+func TestDagSubmitTimeoutRereadsTheDag(t *testing.T) {
+	passed := reviewingDag(1)
+	passed.PlanReview.State, passed.Status = orchestrate.PlanReviewState_Passed, orchestrate.DagStatus_Running
+	for _, tc := range []struct {
+		name          string
+		before, after *waveobj.TaskGroup
+		rereadErr     error
+		round         bool
+		wantErr       bool
+		want          []string
+	}{
+		{name: "a resubmit that landed", before: failedPlanReviewDag(1), after: reviewingDag(2),
+			want: []string{"got no reply within", rpcTimeoutText, "but the plan landed; do not resend", "plan review  reviewing  round=2"}},
+		{name: "a resubmit that did not land", before: failedPlanReviewDag(1), after: failedPlanReviewDag(1), wantErr: true,
+			want: []string{"the plan did not land: its plan review is still round 1, failed", "resending the same command is safe"}},
+		{name: "a first submit that landed", before: nil, after: reviewingDag(1),
+			want: []string{"but the plan landed", "plan review  reviewing  round=1"}},
+		{name: "a first submit that did not land", before: nil, after: nil, wantErr: true,
+			want: []string{"the plan did not land: the run still holds no dag", "safe"}},
+		{name: "a fix round that did not land", before: passed, after: passed, round: true, wantErr: true,
+			want: []string{"the plan did not land: the dag still has its 1 tasks"}},
+		{name: "a re-read that failed", before: failedPlanReviewDag(1), rereadErr: errors.New(rpcTimeoutText), wantErr: true,
+			want: []string{"reading the dag again failed", "cannot tell whether the plan landed", "wsh jarvis dag status"}},
+		{name: "a dag that already held a plan", before: passed, after: passed, wantErr: true,
+			want: []string{"cannot tell whether the plan landed: the dag already held a plan"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stubWavesrv(t)
+			reads := 0
+			readRunDag = func(string, string) (*waveobj.TaskGroup, error) {
+				reads++
+				if reads == 1 {
+					return tc.before, nil
+				}
+				return tc.after, tc.rereadErr
+			}
+			sendDagSubmit = func(wshrpc.CommandDagSubmitData) (*waveobj.TaskGroup, error) {
+				return nil, errors.New(rpcTimeoutText)
+			}
+			out, err := runDagSubmit(wshrpc.CommandDagSubmitData{ChannelId: "ch", RunId: "r", Round: tc.round})
+			if reads != 2 {
+				t.Fatalf("a timed-out submit must read the dag before and after, read %d times", reads)
+			}
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("want error %v, got out %q err %v", tc.wantErr, out, err)
+			}
+			if err != nil {
+				out = err.Error()
+			}
+			for _, w := range tc.want {
+				if !strings.Contains(out, w) {
+					t.Fatalf("want %q in:\n%s", w, out)
+				}
+			}
+		})
+	}
+}
+
+func TestDagSubmitReportsThePlanReviewItStarted(t *testing.T) {
+	stubWavesrv(t)
+	readRunDag = func(string, string) (*waveobj.TaskGroup, error) { return failedPlanReviewDag(1), nil }
+	sendDagSubmit = func(wshrpc.CommandDagSubmitData) (*waveobj.TaskGroup, error) { return reviewingDag(2), nil }
+	out, err := runDagSubmit(wshrpc.CommandDagSubmitData{ChannelId: "ch", RunId: "r"})
+	if err != nil || !strings.Contains(out, "dag d submitted (1 tasks") || !strings.Contains(out, "plan review  reviewing  round=2") {
+		t.Fatalf("a landed submit must print the review round it opened, got %q, %v", out, err)
+	}
+}
+
+func TestDagSubmitPassesOtherErrorsThroughWithoutRereading(t *testing.T) {
+	stubWavesrv(t)
+	reads := 0
+	readRunDag = func(string, string) (*waveobj.TaskGroup, error) { reads++; return nil, nil }
+	sendDagSubmit = func(wshrpc.CommandDagSubmitData) (*waveobj.TaskGroup, error) {
+		return nil, errors.New("dag conflict: run r already holds a different dag")
+	}
+	_, err := runDagSubmit(wshrpc.CommandDagSubmitData{ChannelId: "ch", RunId: "r"})
+	if err == nil || err.Error() != "dag conflict: run r already holds a different dag" || reads != 1 {
+		t.Fatalf("a refused submit is reported as wavesrv said it, got %v after %d reads", err, reads)
+	}
+}
+
+func TestDagSubmitStopsWhenTheFirstReadFails(t *testing.T) {
+	stubWavesrv(t)
+	readRunDag = func(string, string) (*waveobj.TaskGroup, error) { return nil, errors.New(rpcTimeoutText) }
+	sendDagSubmit = func(wshrpc.CommandDagSubmitData) (*waveobj.TaskGroup, error) {
+		t.Fatal("nothing may be sent when the dag could not be read first")
+		return nil, nil
+	}
+	_, err := runDagSubmit(wshrpc.CommandDagSubmitData{ChannelId: "ch", RunId: "r"})
+	if err == nil || !strings.HasPrefix(err.Error(), "reading the dag before submitting (nothing was sent): EC-TIME") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestDagStatusTellsAFailedPlanReviewFromOneInProgress(t *testing.T) {
+	now := time.Now().UnixMilli()
+	status := func(g *waveobj.TaskGroup) string {
+		return strings.Join(dagStatusLines(&wshrpc.CommandDagStatusRtnData{Group: g}, now), "\n")
+	}
+	reviewing := reviewingDag(2)
+	reviewing.PlanReview.StartedTs = now - 90_000
+	failed := failedPlanReviewDag(1)
+	last := failedPlanReviewDag(orchestrate.MaxPlanReviewRounds)
+	for _, tc := range []struct {
+		g    *waveobj.TaskGroup
+		want string
+	}{
+		{reviewing, "plan review  reviewing  round=2  for 1m30s  the reviewer is at work; its verdict wakes the lead"},
+		{failed, "plan review  failed  round=1  waiting on the lead's revised submit: spec 4.1 has no task"},
+		{last, "the last round; waiting on the lead to put it to the human: spec 4.1 has no task"},
+	} {
+		if out := status(tc.g); !strings.Contains(out, tc.want) {
+			t.Fatalf("want %q in:\n%s", tc.want, out)
+		}
+	}
+	if strings.Contains(status(failed), "at work") || strings.Contains(status(reviewing), "waiting on the lead") {
+		t.Fatal("a failed plan review must not read like one in progress")
 	}
 }

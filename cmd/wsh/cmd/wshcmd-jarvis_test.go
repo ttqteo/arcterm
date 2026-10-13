@@ -6,7 +6,12 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+
+	"github.com/wavetermdev/waveterm/pkg/orchestrate"
+	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
 func TestJarvisRunSubcommandRegistered(t *testing.T) {
@@ -63,5 +68,30 @@ func TestReadReportFileRefusesAnEmptyFile(t *testing.T) {
 	}
 	if _, err := readReportFile(path); err == nil {
 		t.Fatal("expected an error for an empty report file")
+	}
+}
+
+// the lead copies these into its report before its tab closes
+func TestCompleteLandLinesSayWhereTheLandStands(t *testing.T) {
+	cases := []struct {
+		name string
+		rtn  *wshrpc.CommandReportRunPhaseRtnData
+		want []string
+	}{
+		{"no land", nil, nil},
+		{"landed", &wshrpc.CommandReportRunPhaseRtnData{Land: &waveobj.RunLand{State: orchestrate.LandState_Landed, Commit: "9910d928", Notes: []string{"merged onto 1 commit"}}},
+			[]string{"landed 9910d928", "note: merged onto 1 commit"}},
+		{"held", &wshrpc.CommandReportRunPhaseRtnData{Land: &waveobj.RunLand{State: orchestrate.LandState_Held, Reason: "the final stage failed"}},
+			[]string{"held: the final stage failed"}},
+		{"held on a dirty checkout", &wshrpc.CommandReportRunPhaseRtnData{Land: &waveobj.RunLand{State: orchestrate.LandState_Held, Reason: "the checkout has staged changes", Dirty: true}},
+			[]string{"held: the checkout has staged changes; those changes are not yours to touch: the engine lands the run by itself once they are gone"}},
+		{"land failed", &wshrpc.CommandReportRunPhaseRtnData{LandError: "loading run: gone"}, []string{"land failed: loading run: gone"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := completeLandLines(c.rtn); !reflect.DeepEqual(got, c.want) {
+				t.Fatalf("completeLandLines = %q, want %q", got, c.want)
+			}
+		})
 	}
 }

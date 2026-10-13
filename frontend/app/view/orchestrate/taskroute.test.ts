@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
     cardModelTag,
+    dagStatusPill,
     isWaiting,
     LIGHT_PICK,
     reviewerRouteOf,
@@ -368,6 +369,24 @@ describe("stageEntries", () => {
         expect(stageEntries(routed as unknown as TaskGroup, lead)).toEqual([
             { key: "planreview", text: "plan review · failed · sonnet", tone: "failed" },
         ]);
+    });
+});
+
+describe("dagStatusPill", () => {
+    it("tells a failed plan review, waiting on the lead, from one in progress", () => {
+        const reviewing = { status: "plan-review", planreview: { state: "reviewing", round: 2 } } as TaskGroup;
+        const failed = { status: "plan-review", planreview: { state: "failed", round: 1 } } as TaskGroup;
+        expect(dagStatusPill(reviewing)).toEqual({ label: "plan review", tone: "active" });
+        expect(dagStatusPill(failed)).toEqual({ label: "plan review failed", tone: "waiting" });
+    });
+    it("words and tones every other status as before", () => {
+        expect(dagStatusPill({ status: "awaiting-review" } as TaskGroup)).toEqual({
+            label: "awaiting review",
+            tone: "done",
+        });
+        expect(dagStatusPill({ status: "blocked" } as TaskGroup)).toEqual({ label: "blocked", tone: "waiting" });
+        expect(dagStatusPill({ status: "cancelled" } as TaskGroup)).toEqual({ label: "cancelled", tone: "muted" });
+        expect(dagStatusPill({ status: "running" } as TaskGroup)).toEqual({ label: "running", tone: "active" });
     });
 });
 

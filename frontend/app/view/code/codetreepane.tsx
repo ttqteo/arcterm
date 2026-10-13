@@ -49,6 +49,7 @@ import {
     codeIgnoredListedAtom,
     codeIndexAtom,
     codePinsAtom,
+    codePlainAtom,
     codeProjectAtom,
     codeRowsAtom,
     codeStatusAtom,
@@ -88,6 +89,7 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
     const pins = useAtomValue(codePinsAtom);
     const locate = useAtomValue(codeLocateAtom);
     const pinned = project == null ? [] : pinsFor(pins, project.path);
+    const plain = useAtomValue(codePlainAtom);
     const openFile = file.kind === "none" ? null : file.path;
     const rowRefs = useRef(new Map<string, HTMLDivElement>());
     const treeRef = useRef<HTMLDivElement>(null);
@@ -326,6 +328,15 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
                 })}
                 {provisional >= rows.length ? provisionalInput : null}
             </div>
+            {/* no .gitignore to honor here, so the walk's fixed skip set is stated rather than mysterious */}
+            {plain ? (
+                <div
+                    data-code-tree-skipset
+                    className="flex-none border-t border-border px-3 py-1.5 text-[11px] text-muted"
+                >
+                    Skipping node_modules, dist, target, dot-folders and other build output.
+                </div>
+            ) : null}
         </div>
     );
 }

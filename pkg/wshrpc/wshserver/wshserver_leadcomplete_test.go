@@ -8,9 +8,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -229,5 +231,123 @@ func TestLeadCompleteCarriesTheForceLandToTheLand(t *testing.T) {
 		if calls != 1 || got != force {
 			t.Fatalf("land called %d times with force=%v, want once with force=%v", calls, got, force)
 		}
+	}
+}
+
+// run 1409ee43: the land held after the lead's complete had returned, so the lead's report never said so and
+// nobody saw the hold. A lead's complete now waits on the land and returns where it stands.
+func TestLeadCompleteReportsTheLandItWaitedOn(t *testing.T) {
+	cases := []struct {
+		name string
+		land *waveobj.RunLand
+	}{
+		{"held", &waveobj.RunLand{State: orchestrate.LandState_Held, Reason: "the checkout has unstaged edits to files the run changes: scenarios.mjs", Dirty: true}},
+		{"landed", &waveobj.RunLand{State: orchestrate.LandState_Landed, Commit: "9910d928b72a3607e8b2a24e06460d097a551a9e"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := newLeadCompleteFixture(t)
+			tab := waveobj.MakeORef(waveobj.OType_Tab, uuid.NewString()).String()
+			if err := wstore.UpdateRun(context.Background(), f.channelId, f.owner.ID, func(r *waveobj.Run) error {
+				r.LandPath = f.projectDir
+				r.Phases[0].WorkerOrefs = []string{tab}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			calls := 0
+			orig := landRun
+			landRun = func(_ context.Context, _, runId string, _ bool) (*waveobj.RunLand, error) {
+				calls++
+				if runId != f.owner.ID {
+					t.Errorf("landed run %s, want %s", runId, f.owner.ID)
+				}
+				return c.land, nil
+			}
+			t.Cleanup(func() { landRun = orig })
+
+			rtn, err := (&WshServer{}).ReportRunPhaseCommand(context.Background(), wshrpc.CommandReportRunPhaseData{ORef: tab, Action: jarvis.RunAction_Complete})
+			if err != nil {
+				t.Fatalf("ReportRunPhaseCommand: %v", err)
+			}
+			if f.seal != nil {
+				t.Fatal("the lead's land was dispatched off the complete instead of waited on")
+			}
+			if calls != 1 || rtn == nil || !reflect.DeepEqual(rtn.Land, c.land) || rtn.LandError != "" {
+				t.Fatalf("land called %d times, complete returned %+v, want the land %+v", calls, rtn, c.land)
+			}
+		})
+	}
+}
+
+// a task's worker lands through the engine's merge: its complete returns at once, with the seal left off-band for
+// its reviewer
+func TestWorkerCompleteDoesNotWaitOnALand(t *testing.T) {
+	f := newLeadCompleteFixture(t)
+	tab := waveobj.MakeORef(waveobj.OType_Tab, uuid.NewString()).String()
+	if err := wstore.UpdateRun(context.Background(), f.channelId, f.child.ID, func(r *waveobj.Run) error {
+		r.TaskId = "t-1"
+		r.Review = true // a reviewer needs no worker report
+		r.Phases[0].WorkerOrefs = []string{tab}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rtn, err := (&WshServer{}).ReportRunPhaseCommand(context.Background(), wshrpc.CommandReportRunPhaseData{ORef: tab, Action: jarvis.RunAction_Complete})
+	if err != nil {
+		t.Fatalf("ReportRunPhaseCommand: %v", err)
+	}
+	if rtn != nil {
+		t.Fatalf("complete returned %+v, want no land", rtn)
+	}
+	if f.seal == nil {
+		t.Fatal("the worker's seal was not dispatched")
+	}
+}
+
+// run 1409ee43 landed by hand with `wsh runs land` as "Shared Surface Toolbar": the human's land, from the CLI or
+// the cockpit, goes through LandRunCommand and gets the same conventional subject as the engine's own land
+func TestAManualLandGetsAConventionalSubject(t *testing.T) {
+	ctx := context.Background()
+	f := newLeadCompleteFixture(t)
+	base := f.git(t, "rev-parse", "HEAD")
+	tree, err := orchestrate.CreateRunWorktree(ctx, f.projectDir, f.owner.ID, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"commit", "--allow-empty", "-m", "feat(cockpit): add SurfaceToolbar"},
+		{"commit", "--allow-empty", "-m", "docs: spec and plan for Shared Surface Toolbar"},
+	} {
+		if out, err := exec.Command("git", append([]string{"-C", tree}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	head, err := exec.Command("git", "-C", tree, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wstore.UpdateRun(ctx, f.channelId, f.owner.ID, func(r *waveobj.Run) error {
+		r.LandPath, r.BaseBranch, r.Status = tree, "main", jarvis.RunStatus_Done
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wstore.UpdateDag(ctx, f.owner.DagORef, func(g *waveobj.TaskGroup) error {
+		g.Title = "Shared Surface Toolbar Implementation Plan"
+		g.Final = &waveobj.FinalStage{State: orchestrate.FinalState_Passed, Round: 1, Commit: strings.TrimSpace(string(head))}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// the engine's recovery patch is untracked in the checkout and would not stop a land
+	f.git(t, "clean", "-fdq")
+
+	land, err := (&WshServer{}).LandRunCommand(ctx, wshrpc.CommandLandRunData{ChannelId: f.channelId, RunId: f.owner.ID})
+	if err != nil || land.State != orchestrate.LandState_Landed {
+		t.Fatalf("land = %+v, %v, want landed", land, err)
+	}
+	if got := f.git(t, "log", "-1", "--format=%s"); got != "feat(cockpit): Shared Surface Toolbar" {
+		t.Fatalf("merge subject %q, want the conventional feat(cockpit): Shared Surface Toolbar", got)
 	}
 }

@@ -29,7 +29,7 @@ func landFixture(t *testing.T) (*mergeFixture, string) {
 	tree := f.land(t)
 	writeFile(t, filepath.Join(tree, "feature.txt"), "feature\n")
 	gitCmd(t, tree, "add", ".")
-	gitCmd(t, tree, "commit", "-m", "add feature")
+	gitCmd(t, tree, "commit", "-m", "feat(coupons): add feature")
 	head := gitCmd(t, tree, "rev-parse", "HEAD")
 	if err := wstore.UpdateRun(f.ctx, f.channel, f.ownerID, func(r *waveobj.Run) error {
 		r.BaseBranch, r.BaseCommit, r.Status = "main", base, jarvis.RunStatus_Done
@@ -123,8 +123,8 @@ func TestLandMergesTheBranchIntoACleanCheckout(t *testing.T) {
 		t.Fatalf("head has parents %v, want a --no-ff merge", parents)
 	}
 	msg := gitCmd(t, f.project, "log", "-1", "--format=%B")
-	if !strings.HasPrefix(msg, "Coupon codes\n") || !strings.Contains(msg, "Arc-Run: "+f.ownerID) {
-		t.Fatalf("merge message %q, want the plan title and the Arc-Run line", msg)
+	if !strings.HasPrefix(msg, "feat(coupons): Coupon codes\n") || !strings.Contains(msg, "Arc-Run: "+f.ownerID) {
+		t.Fatalf("merge message %q, want the plan title typed from the branch and the Arc-Run line", msg)
 	}
 	// core.autocrlf may check it out with CRLF
 	if got := strings.ReplaceAll(readFile(t, filepath.Join(f.project, "feature.txt")), "\r\n", "\n"); got != "feature\n" {
@@ -187,28 +187,54 @@ func TestLandTitleNamesTheChangeOnOneLine(t *testing.T) {
 	cases := []struct {
 		name, title, goal, want string
 	}{
-		{"the plan's title", "Coupon codes", "a goal", "Coupon codes"},
-		{"the template's suffix dropped", "Orchestrator small findings Implementation Plan", "", "Orchestrator small findings"},
-		{"a title that is only the suffix", " Implementation Plan", "Add coupons\nmore", "Implementation Plan"},
-		{"the goal's first line with no title", "", "Add coupons\nand more", "Add coupons"},
-		{"run 2993e463's goal is cut before the path", "", goal2993, "Close the last open orchestrator gaps in…"},
-		{"an absolute path becomes its base name", "", `Fix the land title in C:\x\pkg\orchestrate\land.go`, "Fix the land title in land.go"},
-		{"a unix path becomes its base name", "", "Fix /home/u/src/land.go, then ship", "Fix land.go, then ship"},
-		{"the first sentence only", "", "Fix it. Then more", "Fix it"},
-		{"a question keeps its mark", "", "Why does it hang? Find out", "Why does it hang?"},
-		{"a long goal is cut at a word", "", long, "fix the orchestrator findings fix the orchestrator findings fix the…"},
-		{"a long title is cut at a word", long, "", "fix the orchestrator findings fix the orchestrator findings fix the…"},
-		{"one long token is clipped", "", strings.Repeat("x", 100), strings.Repeat("x", 71) + "…"},
-		{"nothing to go on", "", "", "Land run r-1"},
+		{"the plan's title", "Coupon codes", "a goal", "chore: Coupon codes"},
+		{"the template's suffix dropped", "Orchestrator small findings Implementation Plan", "", "chore: Orchestrator small findings"},
+		{"a title that is only the suffix", " Implementation Plan", "Add coupons\nmore", "chore: Implementation Plan"},
+		{"the goal's first line with no title", "", "Add coupons\nand more", "chore: Add coupons"},
+		{"run 2993e463's goal is cut before the path", "", goal2993, "chore: Close the last open orchestrator gaps in…"},
+		{"an absolute path becomes its base name", "", `Fix the land title in C:\x\pkg\orchestrate\land.go`, "chore: Fix the land title in land.go"},
+		{"a unix path becomes its base name", "", "Fix /home/u/src/land.go, then ship", "chore: Fix land.go, then ship"},
+		{"the first sentence only", "", "Fix it. Then more", "chore: Fix it"},
+		{"a question keeps its mark", "", "Why does it hang? Find out", "chore: Why does it hang?"},
+		{"a long goal is cut at a word", "", long, "chore: fix the orchestrator findings fix the orchestrator findings fix…"},
+		{"a long title is cut at a word", long, "", "chore: fix the orchestrator findings fix the orchestrator findings fix…"},
+		{"one long token is clipped", "", strings.Repeat("x", 100), "chore: " + strings.Repeat("x", 64) + "…"},
+		{"a conventional title is kept", "fix(land): type the merge", "", "fix(land): type the merge"},
+		{"nothing to go on", "", "", "chore: Land run r-1"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := landTitle(&waveobj.Run{ID: "r-1", Goal: c.goal}, &waveobj.TaskGroup{Title: c.title})
+			got := landTitle(&waveobj.Run{ID: "r-1", Goal: c.goal}, &waveobj.TaskGroup{Title: c.title}, nil)
 			if got != c.want {
 				t.Fatalf("landTitle = %q, want %q", got, c.want)
 			}
 			if n := len([]rune(got)); n > subjectLen {
 				t.Fatalf("landTitle is %d runes, over %d", n, subjectLen)
+			}
+		})
+	}
+}
+
+// a land is typed by the most telling change on its branch: run 1062afff's feat(agents) lanes, with a
+// fix(jarvis) and the docs snapshot beside them, landed as a bare "Shell Task Standing-By"
+func TestConventionalPrefixTypesTheBranch(t *testing.T) {
+	cases := []struct {
+		name     string
+		subjects []string
+		want     string
+	}{
+		{"a feature outranks its fixes and docs", []string{"docs: spec and plan for X", "feat(agents): a", "fix(jarvis): b", "feat(agents): c", "test(agents): d"}, "feat(agents): "},
+		{"the scope its type uses most", []string{"fix(ui): a", "fix(land): b", "fix(land): c"}, "fix(land): "},
+		{"a scope tie names none", []string{"feat(schema): a", "feat(ui): b"}, "feat: "},
+		{"unscoped commits name no scope", []string{"fix: a", "docs(x): b"}, "fix: "},
+		{"a breaking mark still types it", []string{"refactor(api)!: a"}, "refactor(api): "},
+		{"no conventional subject", []string{"add feature", "Merge branch 'main'", "WIP: x"}, "chore: "},
+		{"no subjects", nil, "chore: "},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := conventionalPrefix(c.subjects); got != c.want {
+				t.Fatalf("conventionalPrefix = %q, want %q", got, c.want)
 			}
 		})
 	}
@@ -345,9 +371,9 @@ func TestLandKeepsUncommittedEdits(t *testing.T) {
 		head := gitCmd(t, f.project, "rev-parse", "main")
 
 		land := f.landRun(t, false)
-		f.assertHeld(t, land, head, "unstaged edits to files the run changes: base.txt;")
-		if want := "commit or stash them, then run `wsh runs land " + f.ownerID + "`"; !strings.Contains(land.Reason, want) {
-			t.Fatalf("held reason %q, want it to contain %q", land.Reason, want)
+		f.assertHeld(t, land, head, "unstaged edits to files the run changes: base.txt")
+		if !land.Dirty {
+			t.Fatalf("land = %+v, want a dirty hold the engine retries", land)
 		}
 		if _, err := os.Stat(filepath.Join(out, "verify")); !os.IsNotExist(err) {
 			t.Fatalf("Verify ran before the hold: %v", err)
@@ -725,4 +751,76 @@ func TestLandRecognizesAHandMergedBranch(t *testing.T) {
 	if branchExists(f.project, "wave/"+f.ownerID) {
 		t.Fatal("the run's branch was not deleted")
 	}
+}
+
+// run 1409ee43: another session's edits held the land, that session then committed them, and the run sat held
+// until the human asked how to land it. A hold made only by uncommitted changes retries once they are gone.
+func TestADirtyHoldLandsOnceTheCheckoutIsClean(t *testing.T) {
+	t.Run("a staged change another session then commits", func(t *testing.T) {
+		f, _ := landFixture(t)
+		writeFile(t, filepath.Join(f.project, "other.txt"), "another session's work\n")
+		gitCmd(t, f.project, "add", "other.txt")
+		head := gitCmd(t, f.project, "rev-parse", "main")
+		land := f.landRun(t, false)
+		f.assertHeld(t, land, head, "staged changes")
+		if !land.Dirty {
+			t.Fatalf("land = %+v, want a dirty hold", land)
+		}
+
+		retryDirtyLands(f.ctx)
+		waitStages(t)
+		f.assertHeld(t, f.owner(t).Land, head, "staged changes")
+
+		gitCmd(t, f.project, "commit", "-m", "another session's work")
+		retryDirtyLands(f.ctx)
+		waitStages(t)
+		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed || got.Commit != gitCmd(t, f.project, "rev-parse", "HEAD") {
+			t.Fatalf("land = %+v, want landed on the checkout's new head", got)
+		}
+	})
+	t.Run("an unstaged edit another session then reverts", func(t *testing.T) {
+		f, tree := landFixture(t)
+		commitOnBranch(t, tree, "base.txt", "branch\n")
+		f.setFinal(t, &waveobj.FinalStage{State: FinalState_Passed, Round: 1, Commit: gitCmd(t, tree, "rev-parse", "HEAD")})
+		writeFile(t, filepath.Join(f.project, "base.txt"), "another session's edit\n")
+		if land := f.landRun(t, false); land.State != LandState_Held || !land.Dirty {
+			t.Fatalf("land = %+v, want a dirty hold", land)
+		}
+
+		gitCmd(t, f.project, "checkout", "--", "base.txt")
+		retryDirtyLands(f.ctx)
+		waitStages(t)
+		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed {
+			t.Fatalf("land = %+v, want landed", got)
+		}
+	})
+	t.Run("a forced land keeps its force", func(t *testing.T) {
+		f, _ := landFixture(t)
+		f.setFinal(t, &waveobj.FinalStage{State: FinalState_Failed, Round: 2, Detail: "Check failed"})
+		writeFile(t, filepath.Join(f.project, "other.txt"), "staged\n")
+		gitCmd(t, f.project, "add", "other.txt")
+		if land := f.landRun(t, true); land.State != LandState_Held || !land.Dirty || !land.Force {
+			t.Fatalf("land = %+v, want a forced dirty hold", land)
+		}
+
+		gitCmd(t, f.project, "commit", "-m", "staged")
+		retryDirtyLands(f.ctx)
+		waitStages(t)
+		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed {
+			t.Fatalf("land = %+v, want landed past the failed final stage", got)
+		}
+	})
+	t.Run("a hold that is not a dirty checkout waits for the human", func(t *testing.T) {
+		f, _ := landFixture(t)
+		gitCmd(t, f.project, "checkout", "-b", "x")
+		head := gitCmd(t, f.project, "rev-parse", "main")
+		if land := f.landRun(t, false); land.State != LandState_Held || land.Dirty {
+			t.Fatalf("land = %+v, want a hold that is not dirty", land)
+		}
+
+		gitCmd(t, f.project, "checkout", "main")
+		retryDirtyLands(f.ctx)
+		waitStages(t)
+		f.assertHeld(t, f.owner(t).Land, head, "checkout is on x, not main")
+	})
 }

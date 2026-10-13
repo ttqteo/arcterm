@@ -305,7 +305,8 @@ fn main() {
     applog::install_panic_hook();
     let scrubbed_env = shellenv::scrub_inherited_agent_env();
     let path_probe = shellenv::PathProbe::start();
-    let context = tauri::generate_context!();
+    #[allow(unused_mut)]
+    let mut context = tauri::generate_context!();
     let cache_note = clear_webview_cache_at_launch(&context.config().identifier);
     #[cfg(all(windows, not(debug_assertions)))]
     set_app_user_model_id(&context.config().identifier);
@@ -313,6 +314,18 @@ fn main() {
     // main (before the Tauri builder), not in the setup hook. Dev-only: compiled out of packaged.
     #[cfg(debug_assertions)]
     {
+        // a dev launch (and every rebuild-restart) must not steal focus from the editor or
+        // terminal. the window opens restored too: tao maximizes with SW_MAXIMIZE, which always
+        // activates the window and would override focus=false. it starts hidden so setup can show
+        // it behind the foreground window (show_behind_foreground).
+        if let Some(w) = context.config_mut().app.windows.iter_mut().find(|w| w.label == MAIN_WINDOW_LABEL) {
+            w.focus = false;
+            w.maximized = false;
+            // only Windows shows it again (show_behind_foreground); elsewhere it would never appear
+            if cfg!(windows) {
+                w.visible = false;
+            }
+        }
         // expose WebView2's Chrome DevTools Protocol on :9222 for visual verification.
         if std::env::var_os("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS").is_none() {
             std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--remote-debugging-port=9222");
@@ -407,6 +420,10 @@ fn main() {
                     None => "[tauri] login-shell PATH unavailable; children inherit ours".to_string(),
                 });
             }
+            #[cfg(all(debug_assertions, windows))]
+            if let Some(win) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+                show_behind_foreground(&win);
+            }
             if is_dev && std::env::var_os(paths::DEV_NO_GLOBAL_INSTALL_ENV).is_some() {
                 applog::log_line(
                     "[tauri] ARC_DEV_NO_GLOBAL_INSTALL is set; skipping the agent-hooks install",
@@ -452,6 +469,32 @@ fn main() {
                 let _ = app_handle.emit("app-reopen", ());
             }
         });
+}
+
+const MAIN_WINDOW_LABEL: &str = "main";
+
+// a window shown without activation still opens at the top of the z-order and covers the editor,
+// so the dev window is slotted directly behind whatever is in front before it is shown.
+#[cfg(all(debug_assertions, windows))]
+fn show_behind_foreground(win: &tauri::WebviewWindow) {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, SetWindowPos, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    };
+    match win.hwnd() {
+        Ok(hwnd) => {
+            let fg = unsafe { GetForegroundWindow() };
+            if !fg.is_invalid() {
+                let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
+                if let Err(e) = unsafe { SetWindowPos(hwnd, Some(fg), 0, 0, 0, 0, flags) } {
+                    applog::log_line(&format!("[tauri] placing the dev window behind the foreground failed: {}", e));
+                }
+            }
+        }
+        Err(e) => applog::log_line(&format!("[tauri] dev window hwnd unavailable: {}", e)),
+    }
+    if let Err(e) = win.show() {
+        applog::log_line(&format!("[tauri] showing the dev window failed: {}", e));
+    }
 }
 
 #[cfg(test)]

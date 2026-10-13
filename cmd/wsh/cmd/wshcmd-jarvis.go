@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
@@ -68,10 +69,14 @@ var jarvisCompleteCmd = &cobra.Command{
 		}
 		holdLand, _ := cmd.Flags().GetBool("hold-land")
 		forceLand, _ := cmd.Flags().GetBool("force-land")
-		if err := reportRunPhase(wshrpc.CommandReportRunPhaseData{Action: "complete", Artifacts: artifacts, Commit: commit, Report: report, HoldLand: holdLand, ForceLand: forceLand}); err != nil {
+		rtn, err := sendRunPhase(wshrpc.CommandReportRunPhaseData{Action: "complete", Artifacts: artifacts, Commit: commit, Report: report, HoldLand: holdLand, ForceLand: forceLand}, completeTimeoutMs)
+		if err != nil {
 			return err
 		}
 		fmt.Println("run phase marked complete; the engine takes it from here")
+		for _, line := range completeLandLines(rtn) {
+			fmt.Println(line)
+		}
 		return nil
 	},
 	PreRunE: preRunSetupRpcClient,
@@ -129,13 +134,56 @@ func readReportFile(path string) (string, error) {
 	return report, nil
 }
 
+// runPhaseTimeoutMs bounds a hold or a complete that makes no land. The server's write is cancelled with the
+// client's budget, and the store can be busy behind an engine tick for longer than the 5s default; a lost complete
+// leaves the task running with nobody told.
+const runPhaseTimeoutMs = 30_000
+
+// completeTimeoutMs bounds `wsh jarvis complete`: a lead's complete seals the run's evidence (wshserver's
+// evidenceSealTimeout, 30s) and then lands its branch before it returns.
+const completeTimeoutMs = runsLandTimeoutMs + 30_000
+
 func reportRunPhase(data wshrpc.CommandReportRunPhaseData) error {
+	_, err := sendRunPhase(data, runPhaseTimeoutMs)
+	return err
+}
+
+func sendRunPhase(data wshrpc.CommandReportRunPhaseData, timeoutMs int64) (*wshrpc.CommandReportRunPhaseRtnData, error) {
 	tabId := getTabIdFromEnv()
 	if tabId == "" {
-		return fmt.Errorf("no WAVETERM_TABID env var set")
+		return nil, fmt.Errorf("no WAVETERM_TABID env var set")
 	}
 	data.ORef = waveobj.MakeORef(waveobj.OType_Tab, tabId).String()
-	// the server's write is cancelled with the client's budget, and the store can be busy behind an engine tick
-	// for longer than the 5s default; a lost complete leaves the task running with nobody told
-	return wshclient.ReportRunPhaseCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: 30_000})
+	return wshclient.ReportRunPhaseCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: timeoutMs})
+}
+
+// completeLandLines are the land's outcome as complete prints it, for the lead to put in its report: "landed
+// <sha>", or "held: <reason>". None when the complete made no land.
+func completeLandLines(rtn *wshrpc.CommandReportRunPhaseRtnData) []string {
+	switch {
+	case rtn == nil:
+		return nil
+	case rtn.LandError != "":
+		return []string{"land failed: " + rtn.LandError}
+	case rtn.Land == nil:
+		return nil
+	}
+	l := rtn.Land
+	var lines []string
+	switch l.State {
+	case orchestrate.LandState_Landed:
+		lines = append(lines, "landed "+l.Commit)
+	case orchestrate.LandState_Held:
+		line := "held: " + l.Reason
+		if l.Dirty {
+			line += "; those changes are not yours to touch: the engine lands the run by itself once they are gone"
+		}
+		lines = append(lines, line)
+	default:
+		lines = append(lines, "land "+l.State)
+	}
+	for _, note := range l.Notes {
+		lines = append(lines, "note: "+note)
+	}
+	return lines
 }

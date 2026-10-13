@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -47,6 +48,13 @@ does not fit in one dag must be split across two runs. A round after the final s
 for a failure, or a finished run's in-goal leftovers) extends the same dag instead: --round appends
 the fix plan's tasks.`
 
+// dagSubmitReplyNote says what a submit prints, so a lead never reads silence as a review in progress.
+const dagSubmitReplyNote = `
+
+A submit that lands prints the dag and, for a reviewed plan, its plan review line (state and round). When
+wavesrv's reply does not come back in time, the submit reads the dag again and says whether the plan landed (do
+not resend), did not land (resending is safe), or that it cannot tell (check ` + "`wsh jarvis dag status`" + ` first).`
+
 // dagSpecPath resolves --spec to an absolute path. A spec is committed with the plan it produced, so it is
 // only accepted beside --plan.
 func dagSpecPath(planPath, spec string) (string, error) {
@@ -76,7 +84,7 @@ func dagSubmitData(cmd *cobra.Command) (wshrpc.CommandDagSubmitData, error) {
 		return wshrpc.CommandDagSubmitData{}, err
 	}
 	round, _ := cmd.Flags().GetBool("round")
-	channelId, runId, err := dagIds(cmd)
+	channelId, runId, err := dagIds(cmd, dagSubmitTimeoutMs)
 	if err != nil {
 		return wshrpc.CommandDagSubmitData{}, err
 	}
@@ -91,7 +99,7 @@ var dagSubmitTimeoutMs = int64((orchestrate.SetupTimeout + 20*time.Second) / tim
 var dagSubmitCmd = &cobra.Command{
 	Use:     "submit --plan <plan.md>",
 	Short:   "validate and submit a plan file as this run's DAG",
-	Long:    "Validate and submit a plan file as this run's DAG.\n\n" + jarvis.PlanFormat + dagOneDagPerRunNote,
+	Long:    "Validate and submit a plan file as this run's DAG.\n\n" + jarvis.PlanFormat + dagOneDagPerRunNote + dagSubmitReplyNote,
 	Args:    cobra.NoArgs,
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -99,13 +107,97 @@ var dagSubmitCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		g, err := wshclient.DagSubmitCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: dagSubmitTimeoutMs})
+		out, err := runDagSubmit(data)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("dag %s submitted (%d tasks, %d lanes, longest chain %d, parallelism %d)\n", g.ID, len(g.Tasks), len(jarvis.Lanes(g.Tasks)), jarvis.LongestChain(g.Tasks), g.Parallelism)
+		fmt.Println(out)
 		return nil
 	},
+}
+
+// readRunDag returns the run's dag, nil while it has none. A var so a test can stand in for wavesrv.
+var readRunDag = func(channelId, runId string) (*waveobj.TaskGroup, error) {
+	rtn, err := wshclient.DagStatusCommand(RpcClient, wshrpc.CommandDagStatusData{ChannelId: channelId, RunId: runId}, &wshrpc.RpcOpts{Timeout: dagRpcTimeoutMs})
+	if err != nil {
+		if strings.Contains(err.Error(), wshrpc.DagErrRunHasNoDag) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return rtn.Group, nil
+}
+
+// sendDagSubmit is the submit call. A var so a test can stand in for wavesrv.
+var sendDagSubmit = func(data wshrpc.CommandDagSubmitData) (*waveobj.TaskGroup, error) {
+	return wshclient.DagSubmitCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: dagSubmitTimeoutMs})
+}
+
+// runDagSubmit sends the submit and returns what to print. The dag is read first, so that a submit whose reply never
+// came back can be told apart from one that never landed by reading it again: a bare timeout left a lead believing a
+// resubmit was under review when nothing had been sent (run 1409ee43).
+func runDagSubmit(data wshrpc.CommandDagSubmitData) (string, error) {
+	before, err := readRunDag(data.ChannelId, data.RunId)
+	if err != nil {
+		return "", fmt.Errorf("reading the dag before submitting (nothing was sent): %w", err)
+	}
+	g, err := sendDagSubmit(data)
+	if err == nil {
+		return dagSubmittedLines(g, data.Round), nil
+	}
+	if !submitOutcomeUnknown(err) {
+		return "", err
+	}
+	after, rerr := readRunDag(data.ChannelId, data.RunId)
+	waited := fmt.Sprintf("dag submit got no reply within %s (%v)", compactDur(dagSubmitTimeoutMs), err)
+	if rerr != nil {
+		return "", fmt.Errorf("%s, and reading the dag again failed (%v), so wsh cannot tell whether the plan landed; run `wsh jarvis dag status` before resending", waited, rerr)
+	}
+	landed, known, state := dagSubmitLanded(before, after, data.Round)
+	switch {
+	case !known:
+		return "", fmt.Errorf("%s, and wsh cannot tell whether the plan landed: %s; run `wsh jarvis dag status` before resending", waited, state)
+	case landed:
+		return fmt.Sprintf("%s, but the plan landed; do not resend\n%s", waited, dagSubmittedLines(after, data.Round)), nil
+	}
+	return "", fmt.Errorf("%s, and the plan did not land: %s. Nothing changed, so resending the same command is safe", waited, state)
+}
+
+// submitOutcomeUnknown is a submit error after which the plan may or may not have landed: the reply did not come back
+// in time, or wavesrv's own deadline cut the submit off partway.
+func submitOutcomeUnknown(err error) bool {
+	return wshutil.IsTimeoutErr(err) || strings.Contains(err.Error(), context.DeadlineExceeded.Error())
+}
+
+// dagSubmitLanded compares the run's dag before and after a submit whose reply never came, by what that submit
+// changes: a first submit creates the dag, a resubmit after a failed plan review opens the next review round, and a
+// fix round adds tasks. known is false when the dag already held a plan the submit could not replace, which a resend
+// either matches (and changes nothing) or conflicts with. state says what the dag shows.
+func dagSubmitLanded(before, after *waveobj.TaskGroup, round bool) (landed, known bool, state string) {
+	switch {
+	case after == nil:
+		return false, true, "the run still holds no dag"
+	case before == nil:
+		return true, true, ""
+	case round:
+		return len(after.Tasks) > len(before.Tasks), true, fmt.Sprintf("the dag still has its %d tasks", len(before.Tasks))
+	case orchestrate.PlanReviewReplaceable(before):
+		if after.PlanReview != nil && after.PlanReview.Round > before.PlanReview.Round {
+			return true, true, ""
+		}
+		return false, true, fmt.Sprintf("its plan review is still round %d, failed", before.PlanReview.Round)
+	}
+	return false, false, fmt.Sprintf("the dag already held a plan before this submit (status %s)", after.Status)
+}
+
+// dagSubmittedLines is what a submit that landed prints: the dag's shape and, for a reviewed plan, where its review
+// stands, so the lead knows a reviewer is at work before it waits on one. A fix round is not plan-reviewed.
+func dagSubmittedLines(g *waveobj.TaskGroup, round bool) string {
+	out := fmt.Sprintf("dag %s submitted (%d tasks, %d lanes, longest chain %d, parallelism %d)", g.ID, len(g.Tasks), len(jarvis.Lanes(g.Tasks)), jarvis.LongestChain(g.Tasks), g.Parallelism)
+	if pr := planReviewLine(g.PlanReview, time.Now().UnixMilli()); pr != "" && !round {
+		out += "\n" + pr
+	}
+	return out
 }
 
 var dagStatusCmd = &cobra.Command{
@@ -114,11 +206,11 @@ var dagStatusCmd = &cobra.Command{
 	Args:    cobra.NoArgs,
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		channelId, runId, err := dagIds(cmd)
+		channelId, runId, err := dagIds(cmd, dagRpcTimeoutMs)
 		if err != nil {
 			return err
 		}
-		rtn, err := wshclient.DagStatusCommand(RpcClient, wshrpc.CommandDagStatusData{ChannelId: channelId, RunId: runId}, &wshrpc.RpcOpts{Timeout: 10_000})
+		rtn, err := wshclient.DagStatusCommand(RpcClient, wshrpc.CommandDagStatusData{ChannelId: channelId, RunId: runId}, &wshrpc.RpcOpts{Timeout: dagRpcTimeoutMs})
 		if err != nil {
 			return err
 		}
@@ -139,7 +231,11 @@ func dagStatusLines(rtn *wshrpc.CommandDagStatusRtnData, now int64) []string {
 	}
 	line := fmt.Sprintf("dag %s  status=%s  tasks=%d/%d  failures=%d  parallelism=%d",
 		g.ID, g.Status, d.Counts.Done, d.Counts.Total, g.Failures, g.Parallelism)
-	lines := append([]string{line, reportLine(d)}, usageLines(d.Report.Usage)...)
+	lines := []string{line}
+	if pr := planReviewLine(g.PlanReview, now); pr != "" {
+		lines = append(lines, pr)
+	}
+	lines = append(append(lines, reportLine(d)), usageLines(d.Report.Usage)...)
 	if len(d.Report.Commits) > 0 {
 		landed := make([]string, len(d.Report.Commits))
 		for i, c := range d.Report.Commits {
@@ -215,6 +311,35 @@ func reportPresenceLine(taskID string, sections []string) string {
 		what = strings.ReplaceAll(strings.Join(sections, ", "), "-", " ")
 	}
 	return fmt.Sprintf("%s report: %s (wsh jarvis dag report %s)", taskID, what, taskID)
+}
+
+// planReviewFindingsRunes is how much of a failed review's findings the status line quotes; the lead's wake carries
+// them whole.
+const planReviewFindingsRunes = 240
+
+// planReviewLine says where the dag's plan review stands. The dag's status reads plan-review both while a reviewer
+// works and after it failed, so this line is what tells a failed review, waiting on the lead, from one in progress.
+func planReviewLine(pr *waveobj.PlanReviewStage, now int64) string {
+	if pr == nil {
+		return ""
+	}
+	head := fmt.Sprintf("plan review  %s  round=%d", pr.State, pr.Round)
+	switch pr.State {
+	case orchestrate.PlanReviewState_Reviewing:
+		if pr.StartedTs > 0 {
+			head += "  for " + durOrZero(now-pr.StartedTs)
+		}
+		return head + "  the reviewer is at work; its verdict wakes the lead"
+	case orchestrate.PlanReviewState_Failed:
+		next := "waiting on the lead's revised submit"
+		if pr.Round >= orchestrate.MaxPlanReviewRounds {
+			next = "the last round; waiting on the lead to put it to the human"
+		}
+		return head + "  " + next + ": " + compactText(flatText(pr.Findings), planReviewFindingsRunes)
+	case orchestrate.PlanReviewState_Accepted:
+		return head + "  failed, then accepted by the lead on the human's word"
+	}
+	return head
 }
 
 // finalLines is the final stage: its state and round, where its output went, and what it found. The lead's fix
@@ -442,10 +567,18 @@ func compactText(s string, n int) string {
 	return string(r[:n-1]) + "…"
 }
 
+// dagRpcTimeoutMs is a dag command's budget for its own call to wavesrv.
+const dagRpcTimeoutMs = 10_000
+
+// dagMergeTimeoutMs covers a merge, which runs git in the landing tree before it answers.
+const dagMergeTimeoutMs = 60_000
+
 // dagIds returns the --channel/--runid flags, falling back to the caller's own run context when the
 // lead runs the command from its own session (the engine never injects the ids, so the lead must not
 // need to know them). A fallback that resolves nothing is an error — the command cannot target a dag.
-func dagIds(cmd *cobra.Command) (string, string, error) {
+// timeoutMs is the budget of the call the ids are for: a lookup on a tighter one failed a submit before it
+// was sent (run 1409ee43), so a lookup failure names its step and says nothing was sent.
+func dagIds(cmd *cobra.Command, timeoutMs int64) (string, string, error) {
 	channelId, _ := cmd.Flags().GetString("channel")
 	runId, _ := cmd.Flags().GetString("runid")
 	if channelId != "" && runId != "" {
@@ -454,18 +587,33 @@ func dagIds(cmd *cobra.Command) (string, string, error) {
 	if RpcClient == nil {
 		return "", "", fmt.Errorf("--channel/--runid required outside a wave session")
 	}
-	oref, err := resolveBlockArg()
+	rtn, err := lookupRunCtx(timeoutMs)
 	if err != nil {
-		return "", "", fmt.Errorf("resolving block: %w", err)
-	}
-	rtn, err := wshclient.JarvisCtxCommand(RpcClient, wshrpc.CommandJarvisCtxData{BlockORef: oref.String()}, &wshrpc.RpcOpts{Timeout: 5000})
-	if err != nil {
-		return "", "", err
+		return "", "", fmt.Errorf("resolving this session's run (nothing was sent): %w", err)
 	}
 	if rtn.RunId == "" {
 		return "", "", fmt.Errorf("no run context for this block; pass --channel/--runid explicitly")
 	}
 	return rtn.ChannelId, rtn.RunId, nil
+}
+
+// lookupRunCtx asks wavesrv for the run owning the caller's block. A var so a test can stand in for wavesrv.
+var lookupRunCtx = func(timeoutMs int64) (*wshrpc.CommandJarvisCtxRtnData, error) {
+	oref, err := callerBlockORef()
+	if err != nil {
+		return nil, fmt.Errorf("resolving block: %w", err)
+	}
+	return wshclient.JarvisCtxCommand(RpcClient, wshrpc.CommandJarvisCtxData{BlockORef: oref.String()}, &wshrpc.RpcOpts{Timeout: timeoutMs})
+}
+
+// callerBlockORef is the --block arg, or else the caller's own block. That one comes from the env: wavesrv resolves
+// "this" to the same block, and asking it was one more call, on a 2s budget.
+func callerBlockORef() (*waveobj.ORef, error) {
+	if blockId := os.Getenv("WAVETERM_BLOCKID"); blockArg == "" && blockId != "" {
+		oref := waveobj.MakeORef(waveobj.OType_Block, blockId)
+		return &oref, nil
+	}
+	return resolveBlockArg()
 }
 
 // dagDoneLines is the one line a dag command prints on success: what it recorded and what happens next. A silent
@@ -499,7 +647,7 @@ func dagDoneLine(action, taskID string) string {
 }
 
 func dagAction(action string) *cobra.Command {
-	return dagActionWithin(action, 10_000)
+	return dagActionWithin(action, dagRpcTimeoutMs)
 }
 
 func dagActionWithin(action string, timeoutMs int64) *cobra.Command {
@@ -509,7 +657,7 @@ func dagActionWithin(action string, timeoutMs int64) *cobra.Command {
 		Args:    cobra.ExactArgs(1),
 		PreRunE: preRunSetupRpcClient,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			channelId, runId, err := dagIds(cmd)
+			channelId, runId, err := dagIds(cmd, timeoutMs)
 			if err != nil {
 				return err
 			}
@@ -525,7 +673,7 @@ func dagActionWithin(action string, timeoutMs int64) *cobra.Command {
 }
 
 func dagEscalateData(cmd *cobra.Command, args []string) (wshrpc.CommandDagActionData, error) {
-	channelID, runID, err := dagIds(cmd)
+	channelID, runID, err := dagIds(cmd, dagRpcTimeoutMs)
 	if err != nil {
 		return wshrpc.CommandDagActionData{}, err
 	}
@@ -554,7 +702,7 @@ var dagEscalateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if err := wshclient.DagActionCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: 10_000}); err != nil {
+		if err := wshclient.DagActionCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: dagRpcTimeoutMs}); err != nil {
 			return err
 		}
 		fmt.Println(dagDoneLine(data.Action, data.TaskId))
@@ -573,7 +721,7 @@ var dagMergeCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		channelId, runId, err := dagIds(cmd)
+		channelId, runId, err := dagIds(cmd, dagMergeTimeoutMs)
 		if err != nil {
 			return err
 		}
@@ -583,13 +731,13 @@ var dagMergeCmd = &cobra.Command{
 		}
 		data := wshrpc.CommandDagMergeData{ChannelId: channelId, RunId: runId, TaskId: args[0]}
 		if cont {
-			if err := wshclient.DagMergeContinueCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: 60_000}); err != nil {
+			if err := wshclient.DagMergeContinueCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: dagMergeTimeoutMs}); err != nil {
 				return err
 			}
 			fmt.Printf("task %s continued; the plan's Verify, if it has one, runs next and a failure wakes you\n", args[0])
 			return nil
 		}
-		if err := wshclient.DagMergeCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: 60_000}); err != nil {
+		if err := wshclient.DagMergeCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: dagMergeTimeoutMs}); err != nil {
 			return err
 		}
 		fmt.Println(dagDoneLine("merge", args[0]))
@@ -603,11 +751,11 @@ var dagAsksCmd = &cobra.Command{
 	Args:    cobra.NoArgs,
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		channelId, runId, err := dagIds(cmd)
+		channelId, runId, err := dagIds(cmd, dagRpcTimeoutMs)
 		if err != nil {
 			return err
 		}
-		rtn, err := wshclient.DagAsksCommand(RpcClient, wshrpc.CommandDagStatusData{ChannelId: channelId, RunId: runId}, &wshrpc.RpcOpts{Timeout: 10_000})
+		rtn, err := wshclient.DagAsksCommand(RpcClient, wshrpc.CommandDagStatusData{ChannelId: channelId, RunId: runId}, &wshrpc.RpcOpts{Timeout: dagRpcTimeoutMs})
 		if err != nil {
 			return err
 		}
@@ -692,13 +840,13 @@ var dagAnswerCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(2),
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		channelId, runId, err := dagIds(cmd)
-		if err != nil {
-			return err
-		}
 		var answers []baseds.AgentAnswerItem
 		if err := json.Unmarshal([]byte(args[1]), &answers); err != nil {
 			return fmt.Errorf("answers json: %w", err)
+		}
+		channelId, runId, err := dagIds(cmd, dagAnswerTimeoutMs(answers))
+		if err != nil {
+			return err
 		}
 		if err := wshclient.DagAnswerCommand(RpcClient, wshrpc.CommandDagAnswerData{
 			ChannelId: channelId, RunId: runId, TaskId: args[0], Answers: answers, Lead: true,
@@ -726,7 +874,7 @@ func dagAnswerTimeoutMs(answers []baseds.AgentAnswerItem) int64 {
 // dagForwardData is the forward action's payload. The note is not checked here: the server owns what
 // a forward needs.
 func dagForwardData(cmd *cobra.Command, args []string) (wshrpc.CommandDagActionData, error) {
-	channelId, runId, err := dagIds(cmd)
+	channelId, runId, err := dagIds(cmd, dagRpcTimeoutMs)
 	if err != nil {
 		return wshrpc.CommandDagActionData{}, err
 	}
@@ -743,7 +891,7 @@ var dagForwardCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if err := wshclient.DagActionCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: 10_000}); err != nil {
+		if err := wshclient.DagActionCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: dagRpcTimeoutMs}); err != nil {
 			return err
 		}
 		fmt.Println(dagDoneLine(data.Action, data.TaskId))
@@ -758,7 +906,7 @@ func dagReviewData(cmd *cobra.Command, args []string) (wshrpc.CommandDagActionDa
 	if verdict != "pass" && verdict != "fail" {
 		return wshrpc.CommandDagActionData{}, fmt.Errorf("verdict must be pass or fail, got %q", verdict)
 	}
-	channelId, runId, err := dagIds(cmd)
+	channelId, runId, err := dagIds(cmd, dagRpcTimeoutMs)
 	if err != nil {
 		return wshrpc.CommandDagActionData{}, err
 	}
@@ -778,7 +926,7 @@ var dagReviewCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if err := wshclient.DagActionCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: 10_000}); err != nil {
+		if err := wshclient.DagActionCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: dagRpcTimeoutMs}); err != nil {
 			return err
 		}
 		fmt.Println(dagDoneLine(data.Action, ""))
@@ -805,7 +953,7 @@ func dagPlanReviewData(cmd *cobra.Command, args []string) (wshrpc.CommandDagActi
 		}
 		picks = append(picks, pick)
 	}
-	channelId, runId, err := dagIds(cmd)
+	channelId, runId, err := dagIds(cmd, dagRpcTimeoutMs)
 	if err != nil {
 		return wshrpc.CommandDagActionData{}, err
 	}
@@ -843,7 +991,7 @@ var dagPlanReviewCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if err := wshclient.DagActionCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: 10_000}); err != nil {
+		if err := wshclient.DagActionCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: dagRpcTimeoutMs}); err != nil {
 			return err
 		}
 		fmt.Println(dagDoneLine(data.Action, ""))
@@ -861,7 +1009,7 @@ func dagFinalData(cmd *cobra.Command, args []string) (wshrpc.CommandDagActionDat
 	if verdict != "pass" && verdict != "fail" {
 		return wshrpc.CommandDagActionData{}, fmt.Errorf("final takes pass or fail, got %q", verdict)
 	}
-	channelId, runId, err := dagIds(cmd)
+	channelId, runId, err := dagIds(cmd, dagRpcTimeoutMs)
 	if err != nil {
 		return wshrpc.CommandDagActionData{}, err
 	}
@@ -879,7 +1027,7 @@ var dagFinalCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if err := wshclient.DagActionCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: 10_000}); err != nil {
+		if err := wshclient.DagActionCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: dagRpcTimeoutMs}); err != nil {
 			return err
 		}
 		fmt.Println(dagDoneLine(data.Action, ""))
@@ -890,7 +1038,7 @@ var dagFinalCmd = &cobra.Command{
 // dagNoteData is the payload of a lead action that carries text for a task: amend's note, tell's message,
 // sendback's optional guidance.
 func dagNoteData(cmd *cobra.Command, action string, args []string) (wshrpc.CommandDagActionData, error) {
-	channelId, runId, err := dagIds(cmd)
+	channelId, runId, err := dagIds(cmd, dagRpcTimeoutMs)
 	if err != nil {
 		return wshrpc.CommandDagActionData{}, err
 	}
@@ -912,7 +1060,7 @@ func dagNoteCmd(use, action, short string, args cobra.PositionalArgs) *cobra.Com
 			if err != nil {
 				return err
 			}
-			if err := wshclient.DagActionCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: 10_000}); err != nil {
+			if err := wshclient.DagActionCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: dagRpcTimeoutMs}); err != nil {
 				return err
 			}
 			fmt.Println(dagDoneLine(action, data.TaskId))
@@ -985,11 +1133,11 @@ var dagReportCmd = &cobra.Command{
 	Args:    cobra.RangeArgs(1, 2),
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		channelId, runId, err := dagIds(cmd)
+		channelId, runId, err := dagIds(cmd, dagRpcTimeoutMs)
 		if err != nil {
 			return err
 		}
-		st, err := wshclient.DagStatusCommand(RpcClient, wshrpc.CommandDagStatusData{ChannelId: channelId, RunId: runId}, &wshrpc.RpcOpts{Timeout: 10_000})
+		st, err := wshclient.DagStatusCommand(RpcClient, wshrpc.CommandDagStatusData{ChannelId: channelId, RunId: runId}, &wshrpc.RpcOpts{Timeout: dagRpcTimeoutMs})
 		if err != nil {
 			return err
 		}
