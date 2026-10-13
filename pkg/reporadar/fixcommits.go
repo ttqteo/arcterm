@@ -7,15 +7,12 @@ import (
 	"context"
 	"fmt"
 	"path"
-	"regexp"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 )
-
-var fixSubjectRe = regexp.MustCompile(`(?i)^fix(\([^)]*\))?!?:`)
 
 var docExts = []string{".md", ".mdx", ".txt", ".rst"}
 
@@ -170,50 +167,4 @@ func codeChurn(c gitCommit) int {
 		}
 	}
 	return churn
-}
-
-// selectFixCommits applies the spec's trigger: fix subjects, code files only, ranked, audited ones removed, capped.
-func selectFixCommits(commits []gitCommit, audited map[string]bool, limit int) []fixCommit {
-	var fixes []fixCommit
-	fileFixes := map[string]int{}
-	for _, c := range commits {
-		if !fixSubjectRe.MatchString(c.subject) {
-			continue
-		}
-		files := codeFiles(c)
-		if len(files) == 0 {
-			continue
-		}
-		for _, f := range files {
-			fileFixes[f]++
-		}
-		fixes = append(fixes, fixCommit{Hash: c.hash, Subject: c.subject, Ts: c.ts * 1000, Files: files})
-	}
-	score := func(fc fixCommit) int {
-		best := 0
-		for _, f := range fc.Files {
-			best = max(best, fileFixes[f])
-		}
-		return best
-	}
-	var kept []fixCommit
-	for _, fc := range fixes {
-		if !audited[fc.Hash] {
-			kept = append(kept, fc)
-		}
-	}
-	sort.SliceStable(kept, func(i, j int) bool {
-		a, b := kept[i], kept[j]
-		if sa, sb := score(a), score(b); sa != sb {
-			return sa > sb
-		}
-		if a.Ts != b.Ts {
-			return a.Ts > b.Ts
-		}
-		return a.Hash < b.Hash
-	})
-	if limit >= 0 && len(kept) > limit {
-		kept = kept[:limit]
-	}
-	return kept
 }

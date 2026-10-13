@@ -6,6 +6,10 @@ package reporadar
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -126,5 +130,118 @@ func TestRetryCancelRestoresStatus(t *testing.T) {
 	}
 	if a := auditOf(t, got, failed); a.Status != AuditFailed || a.Error != auditOf(t, rpt, failed).Error {
 		t.Fatalf("the failed audit must stay retryable as it was, got %+v", a)
+	}
+}
+
+// hotspotPartial scans hotRepo with every sibling finding a site in the hot file and the hotspot audit failing.
+func hotspotPartial(t *testing.T) (dir, revision string, rpt *waveobj.RadarReport) {
+	t.Helper()
+	dir, revision = hotRepo(t)
+	fakeKindSessions(t, func(_ context.Context, kind, _, _ string) (auditSessionResult, error) {
+		if kind == KindHotspot {
+			return auditSessionResult{TotalTokens: 3}, errors.New("boom")
+		}
+		return hitReply("src/hot.go", 3), nil
+	})
+	rpt = scan(t, dir)
+	if rpt.Status != StatusPartial || len(rpt.Findings) != 2 || len(failedAuditTargets(rpt)) != 1 {
+		t.Fatalf("fixture: status %q findings %d audits %+v", rpt.Status, len(rpt.Findings), rpt.Audits)
+	}
+	return dir, revision, rpt
+}
+
+func hotspotAudit(t *testing.T, rpt *waveobj.RadarReport) waveobj.RadarAudit {
+	t.Helper()
+	for _, a := range rpt.Audits {
+		if a.Kind == KindHotspot {
+			return a
+		}
+	}
+	t.Fatalf("no hotspot audit in %+v", rpt.Audits)
+	return waveobj.RadarAudit{}
+}
+
+func TestRetryHotspotAudit(t *testing.T) {
+	_, revision, rpt := hotspotPartial(t)
+	var seen calls
+	var prompt string
+	fakeKindSessions(t, func(_ context.Context, kind, ref, p string) (auditSessionResult, error) {
+		seen.add(kind + " " + ref)
+		prompt = p
+		return rootCauseHitReply("retries pile up", "src/hot.go", 2), nil
+	})
+	runRetry(context.Background(), rpt.OID, testRoute)
+
+	if s := seen.list(); len(s) != 1 || s[0] != KindHotspot+" src/hot.go" {
+		t.Fatalf("a retry must re-run only the failed hotspot audit, ran %v", s)
+	}
+	for _, want := range []string{"- fix: b\n- fix: a\n", knownSitesBegin, "- line 3: same nil row"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("the retried prompt lacks %q:\n%s", want, prompt)
+		}
+	}
+	got := getReport(t, rpt.OID)
+	if got.Status != StatusCompleted || got.ClusterError != "" || len(got.Candidates) != 0 {
+		t.Fatalf("status %q clustererror %q candidates %+v", got.Status, got.ClusterError, got.Candidates)
+	}
+	a := hotspotAudit(t, got)
+	if a.Status != AuditOK || a.Commit != revision || targetFile(targetOfAudit(a)) != "src/hot.go" || len(a.FixSubjects) != 2 || a.RootCause != "retries pile up" {
+		t.Errorf("hotspot audit = %+v", a)
+	}
+	if len(got.Findings) != 3 {
+		t.Fatalf("want both sibling findings and the hotspot one, got %+v", got.Findings)
+	}
+	f := findingOfKind(t, got, RiskHotspotBug)
+	if f.ID != "f3" || f.Group != GroupNew || f.SourceCommit != revision || strings.Join(f.FixSubjects, "|") != "fix: b|fix: a" {
+		t.Errorf("hotspot finding = %+v", f)
+	}
+}
+
+// review focus 4: a hotspot file gone before the retry fails that audit cleanly, naming the file.
+func TestRetryHotspotFileGone(t *testing.T) {
+	dir, revision, rpt := hotspotPartial(t)
+	if err := os.Remove(filepath.Join(dir, "src", "hot.go")); err != nil {
+		t.Fatal(err)
+	}
+	fakeKindSessions(t, func(_ context.Context, kind, ref, _ string) (auditSessionResult, error) {
+		t.Errorf("no session may run for a missing file: %s %s", kind, ref)
+		return auditSessionResult{}, nil
+	})
+	runRetry(context.Background(), rpt.OID, testRoute)
+
+	got := getReport(t, rpt.OID)
+	a := hotspotAudit(t, got)
+	if got.Status != StatusPartial || a.Status != AuditFailed || !strings.Contains(a.Error, "src/hot.go") {
+		t.Fatalf("status %q hotspot audit %+v", got.Status, a)
+	}
+	if !strings.HasPrefix(got.ClusterError, "src/hot.go: ") {
+		t.Errorf("clustererror must name the file, got %q", got.ClusterError)
+	}
+	if len(got.Candidates) != 1 || got.Candidates[0].SourceRef != "hotspot:"+revision+":src/hot.go" {
+		t.Errorf("candidates = %+v", got.Candidates)
+	}
+	if len(failedAuditTargets(got)) != 1 {
+		t.Error("the failed hotspot audit stays retryable")
+	}
+}
+
+func TestFailedAuditTargets(t *testing.T) {
+	rpt := &waveobj.RadarReport{Audits: []waveobj.RadarAudit{
+		{Commit: "legacy", Status: AuditFailed},
+		{Kind: KindSibling, Commit: "ok", Status: AuditOK},
+		{Kind: KindIntroduced, Commit: "intro", Subject: "feat: x", CommitTs: 5, Files: []string{"a.go"}, Status: AuditFailed},
+		{Kind: KindHotspot, Commit: "rev", Files: []string{"hot.go"}, FixSubjects: []string{"fix: a", "fix: b"}, Status: AuditFailed},
+	}}
+	got := failedAuditTargets(rpt)
+	want := []auditTarget{
+		{Kind: KindSibling, Commit: "legacy"},
+		{Kind: KindIntroduced, Commit: "intro", Subject: "feat: x", Ts: 5, Files: []string{"a.go"}},
+		{Kind: KindHotspot, Commit: "rev", Files: []string{"hot.go"}, FixSubjects: []string{"fix: a", "fix: b"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+	if failedAuditTargets(&waveobj.RadarReport{Audits: []waveobj.RadarAudit{{Commit: "ok", Status: AuditOK}}}) != nil {
+		t.Error("no failed audit, no target")
 	}
 }

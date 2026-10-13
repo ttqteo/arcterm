@@ -42,7 +42,7 @@ type auditKind struct {
 	mission       func(t auditTarget, rootCause string) string // the lead-in before the site lines
 	sourceRef     func(t auditTarget) string                   // the signal's identity, distinct per kind
 	signalPrefix  func(t auditTarget) string
-	label         func(t auditTarget) string // names the target in errors
+	label         func(t auditTarget) string // names the target in errors and the report's clustererror
 }
 
 var auditKinds = []auditKind{
@@ -58,7 +58,7 @@ var auditKinds = []auditKind{
 		},
 		sourceRef:    func(t auditTarget) string { return "commit:" + t.Commit },
 		signalPrefix: func(auditTarget) string { return "fix commit" },
-		label:        func(t auditTarget) string { return t.Commit },
+		label:        func(t auditTarget) string { return shortCommit(t.Commit) },
 	},
 	{
 		Name:           KindIntroduced,
@@ -73,7 +73,7 @@ var auditKinds = []auditKind{
 		},
 		sourceRef:    func(t auditTarget) string { return "introduced:" + t.Commit },
 		signalPrefix: func(auditTarget) string { return "commit" },
-		label:        func(t auditTarget) string { return t.Commit },
+		label:        func(t auditTarget) string { return shortCommit(t.Commit) },
 	},
 	{
 		Name:           KindHotspot,

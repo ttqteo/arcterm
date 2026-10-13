@@ -119,7 +119,7 @@ func Cancel(reportId string) error {
 	return nil
 }
 
-// Retry re-audits the commits whose audit failed in a failed or partial report, without reselecting.
+// Retry re-audits the targets whose audit failed in a failed or partial report, without reselecting.
 // Rejected when the report is not in a retryable state, never finished its scan, or has no failed audit.
 func Retry(ctx context.Context, reportId string) error {
 	rpt, err := wstore.GetRadarReport(ctx, reportId)
@@ -133,7 +133,7 @@ func Retry(ctx context.Context, reportId string) error {
 		// it never reconciled, so finishing its audits would make a baseline that drops every carried finding
 		return fmt.Errorf("report %s did not finish its scan (%s); start a new scan", reportId, rpt.FatalError)
 	}
-	if len(failedAuditCommits(rpt)) == 0 {
+	if len(failedAuditTargets(rpt)) == 0 {
 		return fmt.Errorf("report %s has no failed audit to retry", reportId)
 	}
 	route, err := scanAuditRoute()

@@ -6,7 +6,6 @@ package reporadar
 import "time"
 
 const (
-	FixAuditsPerScan = 8
 	AuditConcurrency = 3
 	AuditTimeout     = 10 * time.Minute
 	MaxFixDiffBytes  = 60 * 1024
@@ -31,14 +30,6 @@ const (
 	AuditRuntimePi     = "pi"
 	DefaultAuditModel  = "sonnet" // claude only; pi with no model runs its own default
 )
-
-// fixCommit is one selected fix commit. Files are its code files (no docs, no tests), sorted.
-type fixCommit struct {
-	Hash    string
-	Subject string
-	Ts      int64 // unix millis
-	Files   []string
-}
 
 // auditHit and auditReply are the session's JSON reply contract.
 type auditHit struct {

@@ -76,25 +76,25 @@ func TestSiblingFingerprint(t *testing.T) {
 	}
 }
 
-func TestCommitSignal(t *testing.T) {
-	c := fixCommit{Hash: "deadbeefcafe", Subject: "fix x", Ts: 1234, Files: []string{"b.go", "a.go"}}
-	s := commitSignal(c)
+func TestSiblingTargetSignal(t *testing.T) {
+	c := auditTarget{Kind: KindSibling, Commit: "deadbeefcafe", Subject: "fix x", Ts: 1234, Files: []string{"b.go", "a.go"}}
+	s := targetSignal(c)
 	if s.Collector != CollectorGit || s.SourceRef != "commit:deadbeefcafe" || s.ObservedTs != 1234 || len(s.Paths) != 2 {
 		t.Fatalf("signal: %+v", s)
 	}
-	if commitSignal(c).ID != s.ID {
+	if targetSignal(c).ID != s.ID {
 		t.Error("id not stable")
 	}
 }
 
-func TestFindingsFromAudit(t *testing.T) {
+func TestSiblingTargetFindings(t *testing.T) {
 	p := hitsProject(t)
-	c := fixCommit{Hash: "deadbeefcafe", Subject: "fix x", Files: []string{"a.go"}}
+	c := auditTarget{Kind: KindSibling, Commit: "deadbeefcafe", Subject: "fix x", Files: []string{"a.go"}}
 	hit := func(file string, line int) auditHit {
 		return auditHit{File: file, Line: line, Title: "t", Trigger: "when x", Actual: "act", Expected: "exp", WhyNotCovered: "why", Severity: "low"}
 	}
 	got := func(hits ...auditHit) ([]waveobj.RadarFinding, int) {
-		return findingsFromAudit(p, c, &auditReply{RootCause: "rc", Hits: hits})
+		return targetFindings(p, c, &auditReply{RootCause: "rc", Hits: hits})
 	}
 	if f, k := got(hit("a.go", 1), hit("b.go", 2)); len(f) != 2 || k != 2 {
 		t.Errorf("two files: %d findings kept %d", len(f), k)
@@ -109,13 +109,13 @@ func TestFindingsFromAudit(t *testing.T) {
 	if f, k := got(); len(f) != 0 || k != 0 {
 		t.Error("zero hits")
 	}
-	if f, k := findingsFromAudit(p, c, nil); len(f) != 0 || k != 0 {
+	if f, k := targetFindings(p, c, nil); len(f) != 0 || k != 0 {
 		t.Error("nil reply")
 	}
 	hi := hit("a.go", 3)
 	hi.Severity = "high"
 	f, _ = got(hit("a.go", 1), hi)
-	if f[0].Severity != "high" || f[0].Group != GroupNew || f[0].RiskKind != RiskSiblingBug || f[0].SourceCommit != c.Hash {
+	if f[0].Severity != "high" || f[0].Group != GroupNew || f[0].RiskKind != RiskSiblingBug || f[0].SourceCommit != c.Commit {
 		t.Errorf("fields: %+v", f[0])
 	}
 	for _, want := range []string{"deadbee", "a.go:1", "when x"} {
@@ -231,7 +231,7 @@ func TestTargetFindingsPerKind(t *testing.T) {
 		t.Error("nil reply")
 	}
 
-	if targetSignal(sib).ID != commitSignal(fixCommit{Hash: sib.Commit, Subject: sib.Subject, Files: sib.Files}).ID {
+	if targetSignal(sib).ID != shortHash(CollectorGit+"\x00commit:"+sib.Commit) {
 		t.Error("sibling signal ids must stay as before")
 	}
 	ids := map[string]string{}

@@ -5,12 +5,16 @@ package reporadar
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -57,12 +61,14 @@ func newRepo(t *testing.T) string {
 	return canonPath(dir)
 }
 
-// commitFix adds one fix commit touching rel and returns its hash.
-func commitFix(t *testing.T, dir, rel string) string {
+// commitAs commits the files, path to content, under subject and returns the hash.
+func commitAs(t *testing.T, dir, subject string, files map[string]string) string {
 	t.Helper()
-	writeFile(t, dir, rel, "package src\n\nfunc fixed() {}\n")
+	for rel, content := range files {
+		writeFile(t, dir, rel, content)
+	}
 	gitCmd(t, dir, "add", ".")
-	gitCmd(t, dir, "commit", "-q", "-m", "fix: guard "+rel)
+	gitCmd(t, dir, "commit", "-q", "-m", subject)
 	head, err := gitHead(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
@@ -70,30 +76,125 @@ func commitFix(t *testing.T, dir, rel string) string {
 	return head
 }
 
+// commitFix adds one fix commit touching rel and returns its hash.
+func commitFix(t *testing.T, dir, rel string) string {
+	t.Helper()
+	return commitAs(t, dir, "fix: guard "+rel, map[string]string{rel: "package src\n\nfunc fixed() {}\n"})
+}
+
+// goLines is a Go file of n lines, enough churn for an introduced audit at n >= IntroducedMinLines.
+func goLines(n int) string {
+	var b strings.Builder
+	b.WriteString("package src\n")
+	for i := 1; i < n; i++ {
+		fmt.Fprintf(&b, "// line %d\n", i)
+	}
+	return b.String()
+}
+
 var testRoute = auditRoute{Runtime: AuditRuntimeClaude, Model: DefaultAuditModel}
 
 type sessionFn func(ctx context.Context, commit string) (auditSessionResult, error)
 
-var promptCommitRe = regexp.MustCompile(`fix commit ([0-9a-f]{40})`)
+// kindSessionFn gets what a session was asked: kind is an audit kind or sessionClassify; ref is the
+// audited commit, or the file for hotspot.
+type kindSessionFn func(ctx context.Context, kind, ref, prompt string) (auditSessionResult, error)
 
-// fakeSessions replaces the session seam and the route for one test. fn gets the commit under audit.
-func fakeSessions(t *testing.T, fn sessionFn) {
+const sessionClassify = "classify"
+
+var (
+	promptCommitRe     = regexp.MustCompile(`fix commit ([0-9a-f]{40})`)
+	promptIntroducedRe = regexp.MustCompile(`reviewing commit ([0-9a-f]{40})`)
+	promptHotspotRe    = regexp.MustCompile(`You are reviewing (\S+), which`)
+)
+
+func promptTarget(prompt string) (kind, ref string) {
+	if strings.Contains(prompt, classifyBegin) {
+		return sessionClassify, ""
+	}
+	// introduced before hotspot: both prompts open with "You are reviewing"
+	for _, p := range []struct {
+		kind string
+		re   *regexp.Regexp
+	}{{KindSibling, promptCommitRe}, {KindIntroduced, promptIntroducedRe}, {KindHotspot, promptHotspotRe}} {
+		if m := p.re.FindStringSubmatch(prompt); m != nil {
+			return p.kind, m[1]
+		}
+	}
+	return "", ""
+}
+
+// fakeKindSessions replaces the session seam and the route for one test.
+func fakeKindSessions(t *testing.T, fn kindSessionFn) {
 	t.Helper()
 	origSession, origRoute := runAuditSession, scanAuditRoute
 	t.Cleanup(func() { runAuditSession, scanAuditRoute = origSession, origRoute })
 	scanAuditRoute = func() (auditRoute, error) { return testRoute, nil }
 	runAuditSession = func(ctx context.Context, _ auditRoute, _, prompt string) (auditSessionResult, error) {
-		m := promptCommitRe.FindStringSubmatch(prompt)
-		if m == nil {
-			return auditSessionResult{}, errors.New("the prompt names no commit")
+		kind, ref := promptTarget(prompt)
+		if kind == "" {
+			return auditSessionResult{}, errors.New("the prompt names no target")
 		}
-		return fn(ctx, m[1])
+		return fn(ctx, kind, ref, prompt)
 	}
 }
 
+// fakeSessions is fakeKindSessions for sibling audits alone. fn gets the commit under audit.
+func fakeSessions(t *testing.T, fn sessionFn) {
+	t.Helper()
+	fakeKindSessions(t, func(ctx context.Context, kind, ref, _ string) (auditSessionResult, error) {
+		if kind != KindSibling {
+			return auditSessionResult{}, fmt.Errorf("unexpected %s session", kind)
+		}
+		return fn(ctx, ref)
+	})
+}
+
 func hitReply(file string, line int) auditSessionResult {
-	reply := fmt.Sprintf(`{"rootcause":"nil row","siblings":["callers"],"hits":[{"file":%q,"line":%d,"title":"same nil row","trigger":"an empty table","actual":"panics","expected":"returns nil","whynotcovered":"the fix guards one caller","severity":"high"}]}`, file, line)
+	return rootCauseHitReply("nil row", file, line)
+}
+
+func rootCauseHitReply(rootCause, file string, line int) auditSessionResult {
+	reply := fmt.Sprintf(`{"rootcause":%q,"siblings":["callers"],"hits":[{"file":%q,"line":%d,"title":"same nil row","trigger":"an empty table","actual":"panics","expected":"returns nil","whynotcovered":"the fix guards one caller","severity":"high"}]}`, rootCause, file, line)
 	return auditSessionResult{Reply: reply, Model: "claude-sonnet-5-5", TotalTokens: 100, CacheReadTokens: 900}
+}
+
+// classifyReply is the classifier's reply labelling the commits, keyed as the prompt keys them.
+func classifyReply(labels map[string]waveobj.RadarCommitClass) auditSessionResult {
+	byKey := map[string]waveobj.RadarCommitClass{}
+	for hash, cls := range labels {
+		byKey[hash12(hash)] = cls
+	}
+	reply, _ := json.Marshal(byKey)
+	return auditSessionResult{Reply: string(reply), Model: "claude-haiku-5-5", TotalTokens: 7}
+}
+
+// phaseLog records the phase every publish of a report carried.
+type phaseLog struct {
+	mu       sync.Mutex
+	byReport map[string][]string
+}
+
+func watchPhases(t *testing.T) *phaseLog {
+	t.Helper()
+	orig := publish
+	t.Cleanup(func() { publish = orig })
+	l := &phaseLog{byReport: map[string][]string{}}
+	publish = func(reportId string) {
+		if r, err := wstore.GetRadarReport(context.Background(), reportId); err == nil {
+			l.mu.Lock()
+			l.byReport[reportId] = append(l.byReport[reportId], r.Phase)
+			l.mu.Unlock()
+		}
+		orig(reportId)
+	}
+	return l
+}
+
+func (l *phaseLog) of(reportId string) []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.byReport[reportId]...)
 }
 
 func cleanReply() auditSessionResult {
@@ -350,7 +451,7 @@ func TestScanPartialAndFailed(t *testing.T) {
 
 // carried is a baseline finding from an earlier fix-sibling audit, pointing at the repo's sibling file.
 func carried(fp, group string) (waveobj.RadarFinding, waveobj.RadarSignal) {
-	sig := commitSignal(fixCommit{Hash: "feedbeef" + fp, Subject: "fix: earlier", Ts: 1000, Files: []string{"src/old.go"}})
+	sig := targetSignal(auditTarget{Kind: KindSibling, Commit: "feedbeef" + fp, Subject: "fix: earlier", Ts: 1000, Files: []string{"src/old.go"}})
 	return waveobj.RadarFinding{
 		ID: "f9", Fingerprint: fp, Group: group, RiskKind: RiskSiblingBug, Risk: "same nil row", Severity: SeverityHigh,
 		SignalIDs: []string{sig.ID}, Files: []string{siblingFile}, SourceCommit: "feedbeef" + fp,
@@ -469,7 +570,7 @@ func TestConcurrentAuditUpdates(t *testing.T) {
 	ctx := context.Background()
 	id := newReport(t, canonPath(t.TempDir()))
 	var audits []waveobj.RadarAudit
-	for i := 0; i < FixAuditsPerScan; i++ {
+	for i := 0; i < SiblingAuditsPerScan; i++ {
 		audits = append(audits, waveobj.RadarAudit{Commit: fmt.Sprintf("commit%d", i), Status: AuditQueued})
 	}
 	if err := wstore.UpdateRadarReport(ctx, id, func(r *waveobj.RadarReport) { r.Audits = audits }); err != nil {
@@ -490,7 +591,315 @@ func TestConcurrentAuditUpdates(t *testing.T) {
 	close(start)
 	wg.Wait()
 	got := getReport(t, id)
-	if by := auditsByStatus(got); len(got.Audits) != FixAuditsPerScan || by[AuditOK] != FixAuditsPerScan {
-		t.Fatalf("want %d ok audits, got %v", FixAuditsPerScan, by)
+	if by := auditsByStatus(got); len(got.Audits) != SiblingAuditsPerScan || by[AuditOK] != SiblingAuditsPerScan {
+		t.Fatalf("want %d ok audits, got %v", SiblingAuditsPerScan, by)
+	}
+}
+
+func auditRefsByKind(rpt *waveobj.RadarReport) map[string][]string {
+	out := map[string][]string{}
+	for _, a := range rpt.Audits {
+		ref := a.Commit
+		if a.Kind == KindHotspot {
+			ref = targetFile(targetOfAudit(a))
+		}
+		out[a.Kind] = append(out[a.Kind], ref)
+	}
+	return out
+}
+
+func findingOfKind(t *testing.T, rpt *waveobj.RadarReport, riskKind string) waveobj.RadarFinding {
+	t.Helper()
+	for _, f := range rpt.Findings {
+		if f.RiskKind == riskKind {
+			return f
+		}
+	}
+	t.Fatalf("no %s finding in %+v", riskKind, rpt.Findings)
+	return waveobj.RadarFinding{}
+}
+
+// hotRepo is a repo whose src/hot.go took two fix commits, so it is a hotspot target at the second.
+func hotRepo(t *testing.T) (dir, revision string) {
+	t.Helper()
+	dir = newRepo(t)
+	commitAs(t, dir, "fix: a", map[string]string{"src/hot.go": "package src\n\nfunc a() {}\n"})
+	revision = commitAs(t, dir, "fix: b", map[string]string{"src/hot.go": "package src\n\nfunc b() {}\n"})
+	return dir, revision
+}
+
+func TestScanMixedKinds(t *testing.T) {
+	dir, revision := hotRepo(t)
+	feat := commitAs(t, dir, "feat: add the feature", map[string]string{"src/feature.go": goLines(60)})
+	alert := commitAs(t, dir, "Alert: tune the retry", map[string]string{"src/alert.go": "package src\n\nfunc alert() {}\n"})
+	phases := watchPhases(t)
+	id := newReport(t, dir)
+	var classifyPhase string
+	fakeKindSessions(t, func(_ context.Context, kind, ref, _ string) (auditSessionResult, error) {
+		switch kind {
+		case sessionClassify:
+			classifyPhase = getReport(t, id).Phase
+			return classifyReply(map[string]waveobj.RadarCommitClass{alert: {Fix: true}}), nil
+		case KindSibling:
+			if ref == alert {
+				return hitReply(siblingFile, 3), nil
+			}
+			return cleanReply(), nil
+		case KindIntroduced:
+			return hitReply("src/feature.go", 2), nil
+		}
+		return hitReply("src/hot.go", 1), nil
+	})
+	runScan(context.Background(), id)
+	got := getReport(t, id)
+
+	if got.Status != StatusCompleted || got.ClusterError != "" {
+		t.Fatalf("status %q clustererror %q fatal %q", got.Status, got.ClusterError, got.FatalError)
+	}
+	if classifyPhase != "classifying" {
+		t.Errorf("the phase while the classifier ran = %q, want classifying", classifyPhase)
+	}
+	if p := strings.Join(phases.of(id), ","); !strings.Contains(p, "collecting,classifying,clustering") {
+		t.Errorf("published phases %q must pass collecting, classifying, clustering in order", p)
+	}
+	kinds := auditRefsByKind(got)
+	if len(kinds[KindSibling]) != 3 || !slices.Contains(kinds[KindSibling], alert) {
+		t.Errorf("sibling audits = %v, want the two prefixed fixes and the model-labelled one", kinds[KindSibling])
+	}
+	if strings.Join(kinds[KindIntroduced], ",") != feat || strings.Join(kinds[KindHotspot], ",") != "src/hot.go" || len(got.Audits) != 5 {
+		t.Errorf("audits by kind = %v", kinds)
+	}
+	for _, a := range got.Audits {
+		if a.Status != AuditOK {
+			t.Errorf("%s audit of %s = %s", a.Kind, a.Commit, a.Status)
+		}
+		if a.Kind == KindHotspot && (a.Commit != revision || strings.Join(a.FixSubjects, "|") != "fix: b|fix: a") {
+			t.Errorf("hotspot audit = %+v, want revision %s and both fix subjects", a, revision)
+		}
+	}
+	if got.ClassifyCount != 1 || got.ClassifyError != "" || got.ClassifyTokens != 7 || len(got.CommitClasses) != 1 || !got.CommitClasses[alert].Fix {
+		t.Errorf("classify count %d error %q tokens %d classes %v", got.ClassifyCount, got.ClassifyError, got.ClassifyTokens, got.CommitClasses)
+	}
+	if got.TotalTokens != 7+5*100 {
+		t.Errorf("total tokens %d, want the classifier's plus every audit's", got.TotalTokens)
+	}
+	if len(got.Findings) != 3 {
+		t.Fatalf("want one finding per kind, got %+v", got.Findings)
+	}
+	if f := findingOfKind(t, got, RiskSiblingBug); f.SourceCommit != alert {
+		t.Errorf("sibling finding = %+v", f)
+	}
+	if f := findingOfKind(t, got, RiskIntroducedBug); f.SourceCommit != feat || !strings.Contains(f.Mission, "changed behavior") {
+		t.Errorf("introduced finding = %+v", f)
+	}
+	if f := findingOfKind(t, got, RiskHotspotBug); f.SourceCommit != revision || len(f.FixSubjects) != 2 || !strings.HasPrefix(f.Mission, "src/hot.go took 2 fix commits") {
+		t.Errorf("hotspot finding = %+v", f)
+	}
+}
+
+// review focus 1: one commit audited by two kinds keeps both rows.
+func TestScanSameCommitTwoKinds(t *testing.T) {
+	dir := newRepo(t)
+	both := commitAs(t, dir, "Tighten the timeout", map[string]string{"src/timeout.go": goLines(60)})
+	entered := make(chan struct{}, 2)
+	release := make(chan struct{})
+	fakeKindSessions(t, func(_ context.Context, kind, _, _ string) (auditSessionResult, error) {
+		if kind == sessionClassify {
+			return classifyReply(map[string]waveobj.RadarCommitClass{both: {Fix: true, Behavior: true}}), nil
+		}
+		// both audits run at once, so their running and finished writes interleave
+		entered <- struct{}{}
+		<-release
+		if kind == KindSibling {
+			return rootCauseHitReply("sibling cause", "src/timeout.go", 2), nil
+		}
+		return rootCauseHitReply("introduced intent", "src/timeout.go", 3), nil
+	})
+	id := newReport(t, dir)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runScan(context.Background(), id)
+	}()
+	for i := 0; i < 2; i++ {
+		select {
+		case <-entered:
+		case <-time.After(10 * time.Second):
+			t.Fatal("both audits must run at once")
+		}
+	}
+	if mid := getReport(t, id); auditsByStatus(mid)[AuditRunning] != 2 {
+		t.Errorf("both rows must show running, got %+v", mid.Audits)
+	}
+	close(release)
+	<-done
+
+	got := getReport(t, id)
+	if got.Status != StatusCompleted || len(got.Audits) != 2 {
+		t.Fatalf("status %q audits %+v", got.Status, got.Audits)
+	}
+	roots := map[string]string{}
+	for _, a := range got.Audits {
+		if a.Commit != both || a.Status != AuditOK {
+			t.Errorf("audit = %+v", a)
+		}
+		roots[a.Kind] = a.RootCause
+	}
+	if roots[KindSibling] != "sibling cause" || roots[KindIntroduced] != "introduced intent" {
+		t.Errorf("each kind's row must hold its own result, got %v", roots)
+	}
+	sib, intro := findingOfKind(t, got, RiskSiblingBug), findingOfKind(t, got, RiskIntroducedBug)
+	if sib.Fingerprint == intro.Fingerprint || sib.SignalIDs[0] == intro.SignalIDs[0] {
+		t.Errorf("the two kinds' findings must differ in identity and signal: %+v / %+v", sib, intro)
+	}
+	refs := map[string]string{}
+	for _, s := range got.Signals {
+		refs[s.ID] = s.SourceRef
+	}
+	if refs[sib.SignalIDs[0]] != "commit:"+both || refs[intro.SignalIDs[0]] != "introduced:"+both {
+		t.Errorf("report signals must hold both kinds' signals, got %v", refs)
+	}
+}
+
+func TestScanClassifyFailureStillAudits(t *testing.T) {
+	dir := newRepo(t)
+	fixed := commitFix(t, dir, "src/a.go")
+	commitAs(t, dir, "Alert: tune the retry", map[string]string{"src/alert.go": "package src\n"})
+	var seen calls
+	fakeKindSessions(t, func(_ context.Context, kind, ref, _ string) (auditSessionResult, error) {
+		if kind == sessionClassify {
+			return auditSessionResult{TotalTokens: 7}, errors.New("rate limited")
+		}
+		seen.add(kind + " " + ref)
+		return cleanReply(), nil
+	})
+	got := scan(t, dir)
+	if got.Status != StatusCompleted || got.ClusterError != "" {
+		t.Fatalf("a classifier failure must not fail the scan: status %q clustererror %q", got.Status, got.ClusterError)
+	}
+	if !strings.Contains(got.ClassifyError, "commit classification") || !strings.Contains(got.ClassifyError, "rate limited") ||
+		got.ClassifyCount != 1 || got.ClassifyTokens != 7 || len(got.CommitClasses) != 0 {
+		t.Errorf("classify error %q count %d tokens %d classes %v", got.ClassifyError, got.ClassifyCount, got.ClassifyTokens, got.CommitClasses)
+	}
+	if s := seen.list(); len(s) != 1 || s[0] != KindSibling+" "+fixed {
+		t.Errorf("only the prefixed fix may be audited, audited %v", s)
+	}
+	if got.TotalTokens != 7+100 {
+		t.Errorf("total tokens %d, want the failed classifier's too", got.TotalTokens)
+	}
+}
+
+func TestScanCarriesCommitClasses(t *testing.T) {
+	dir := newRepo(t)
+	alert := commitAs(t, dir, "Alert: tune the retry", map[string]string{"src/alert.go": "package src\n"})
+	phases := watchPhases(t)
+	fakeKindSessions(t, func(_ context.Context, kind, _, _ string) (auditSessionResult, error) {
+		if kind == sessionClassify {
+			return classifyReply(map[string]waveobj.RadarCommitClass{alert: {Fix: true}}), nil
+		}
+		return auditSessionResult{}, errors.New("boom")
+	})
+	first := scan(t, dir)
+	if first.Status != StatusFailed || !first.CommitClasses[alert].Fix || !slices.Contains(phases.of(first.OID), "classifying") {
+		t.Fatalf("fixture: status %q classes %v phases %v", first.Status, first.CommitClasses, phases.of(first.OID))
+	}
+
+	var seen calls
+	fakeKindSessions(t, func(_ context.Context, kind, ref, _ string) (auditSessionResult, error) {
+		if kind == sessionClassify {
+			t.Error("a cached commit must not be sent to the classifier again")
+		}
+		seen.add(ref)
+		return cleanReply(), nil
+	})
+	second := scan(t, dir)
+	if slices.Contains(phases.of(second.OID), "classifying") {
+		t.Errorf("a fully cached scan must never reach classifying, published %v", phases.of(second.OID))
+	}
+	if second.ClassifyCount != 0 || !second.CommitClasses[alert].Fix {
+		t.Errorf("classify count %d classes %v; the label carries from a failed report too", second.ClassifyCount, second.CommitClasses)
+	}
+	if s := seen.list(); len(s) != 1 || s[0] != alert {
+		t.Errorf("the cached label still selects the commit, audited %v", s)
+	}
+}
+
+// review focus 5: a report stored before the kinds exists keeps excluding its audited commits.
+func TestAuditedTargetsLegacyAudits(t *testing.T) {
+	reports := []*waveobj.RadarReport{{
+		OID: "legacy", Status: StatusCompleted,
+		Audits: []waveobj.RadarAudit{{Commit: "c1", Status: AuditOK}, {Commit: "c2", Status: AuditFailed}},
+		Findings: []waveobj.RadarFinding{
+			{RiskKind: RiskSiblingBug, SourceCommit: "c3", Files: []string{"a.go"}},
+			{SourceCommit: "c4", Files: []string{"b.go"}},
+		},
+	}}
+	sibling := func(c string) string { return auditTarget{Kind: KindSibling, Commit: c}.Key() }
+	want := map[string]bool{sibling("c1"): true, sibling("c3"): true, sibling("c4"): true}
+	if got := auditedTargets(reports, ""); !reflect.DeepEqual(got, want) {
+		t.Errorf("got %q, want %q", keys(got), keys(want))
+	}
+
+	dir := newRepo(t)
+	fixed := commitFix(t, dir, "src/a.go")
+	f, sig := carried("RAD-legacy", GroupNew)
+	id := seedBaseline(t, dir, []waveobj.RadarSignal{sig}, f)
+	if err := wstore.UpdateRadarReport(context.Background(), id, func(r *waveobj.RadarReport) {
+		r.Audits = []waveobj.RadarAudit{{Commit: fixed, Subject: "fix: guard src/a.go", Files: []string{"src/a.go"}, Status: AuditOK}}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fakeKindSessions(t, func(_ context.Context, kind, ref, _ string) (auditSessionResult, error) {
+		t.Errorf("no session may run: %s %s", kind, ref)
+		return auditSessionResult{}, nil
+	})
+	got := scan(t, dir)
+	if got.Status != StatusCompleted || len(got.Audits) != 0 || len(got.Findings) != 1 || got.Findings[0].Group != GroupRecurring {
+		t.Fatalf("status %q audits %+v findings %+v", got.Status, got.Audits, got.Findings)
+	}
+}
+
+func keys(m map[string]bool) []string {
+	var out []string
+	for k := range m {
+		out = append(out, strings.ReplaceAll(k, "\x00", " "))
+	}
+	sort.Strings(out)
+	return out
+}
+
+func TestAuditedTargetsPerKind(t *testing.T) {
+	key := func(kind, commit string, files ...string) string {
+		return auditTarget{Kind: kind, Commit: commit, Files: files}.Key()
+	}
+	reports := []*waveobj.RadarReport{ // newest first
+		{OID: "self", Status: StatusCompleted, Audits: []waveobj.RadarAudit{{Kind: KindSibling, Commit: "s-self", Status: AuditOK}}},
+		{OID: "cancelled", Status: StatusCancelled, Audits: []waveobj.RadarAudit{{Kind: KindSibling, Commit: "s-cancelled", Status: AuditOK}}},
+		{OID: "baseline", Status: StatusCompleted, Findings: []waveobj.RadarFinding{
+			{RiskKind: RiskIntroducedBug, SourceCommit: "i-finding", Files: []string{"x.go"}},
+			{RiskKind: RiskHotspotBug, SourceCommit: "r-finding", Files: []string{"hot.go"}},
+			{RiskKind: RiskSiblingBug, Files: []string{"y.go"}}, // a retired collector's: no source commit
+		}},
+		{OID: "older", Status: StatusPartial,
+			Audits: []waveobj.RadarAudit{
+				{Kind: KindIntroduced, Commit: "i-ok", Status: AuditOK},
+				{Kind: KindHotspot, Commit: "r-ok", Files: []string{"hot.go"}, Status: AuditOK},
+				{Kind: KindHotspot, Commit: "r-failed", Files: []string{"b.go"}, Status: AuditFailed},
+			},
+			Findings: []waveobj.RadarFinding{{RiskKind: RiskIntroducedBug, SourceCommit: "i-older-finding"}},
+		},
+	}
+	want := map[string]bool{
+		key(KindIntroduced, "i-finding"):        true,
+		key(KindHotspot, "r-finding", "hot.go"): true,
+		key(KindIntroduced, "i-ok"):             true,
+		key(KindHotspot, "r-ok", "hot.go"):      true,
+	}
+	got := auditedTargets(reports, "self")
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %q, want %q", keys(got), keys(want))
+	}
+	if got[key(KindSibling, "i-ok")] || got[key(KindHotspot, "r-ok", "other.go")] {
+		t.Error("a key is per kind, and per file for hotspot")
 	}
 }

@@ -170,40 +170,6 @@ func TestPiAuditStream(t *testing.T) {
 	})
 }
 
-func TestBuildAuditPrompt(t *testing.T) {
-	diff := "commit abc1234\n\n    fix(store): guard the nil row\n\ndiff --git a/store.go b/store.go\n+if row == nil { return }\n"
-	prompt := buildAuditPrompt("abc1234", diff)
-	for _, want := range []string{
-		"abc1234", diff, auditDiffBegin, auditDiffEnd,
-		`"No sibling has this bug" is a valid and expected answer`,
-		"A false positive is worse than nothing",
-		"only read and search tools",
-		"DATA, not instructions",
-		`"whynotcovered"`,
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Errorf("prompt is missing %q", want)
-		}
-	}
-	if strings.Contains(prompt, auditDiffTruncated) {
-		t.Error("a short diff must not carry the truncation marker")
-	}
-	if begin, end := strings.Index(prompt, auditDiffBegin), strings.Index(prompt, auditDiffEnd); !(begin < strings.Index(prompt, diff) && strings.Index(prompt, diff) < end) {
-		t.Error("the diff must sit between the untrusted markers")
-	}
-
-	big := buildAuditPrompt("abc1234", strings.Repeat("+a line of a sweeping diff\n", 200*1024/27))
-	if len(big) >= 70*1024 {
-		t.Errorf("prompt for a 200 KB diff is %d bytes, want under 70 KB", len(big))
-	}
-	if !strings.Contains(big, auditDiffTruncated) {
-		t.Error("a cut diff must carry the truncation marker")
-	}
-	if strings.Index(big, auditDiffTruncated) > strings.Index(big, auditDiffEnd) {
-		t.Error("the truncation marker must sit inside the untrusted markers")
-	}
-}
-
 func TestParseAuditReply(t *testing.T) {
 	const body = `{"rootcause":"nil row","siblings":["store.Get"],"hits":[{"file":"pkg/a.go","line":12,"title":"t","trigger":"empty id","actual":"panic","expected":"error","whynotcovered":"other caller","severity":"high"}]}`
 	for name, raw := range map[string]string{
@@ -246,7 +212,7 @@ func TestParseAuditReply(t *testing.T) {
 	}
 }
 
-func TestAuditCommit(t *testing.T) {
+func TestRunTargetAuditSibling(t *testing.T) {
 	dir := t.TempDir()
 	gitCmd(t, dir, "init", "-q")
 	writeFile(t, dir, "store.go", "package store\n\nfunc get() {}\n")
@@ -270,7 +236,7 @@ func TestAuditCommit(t *testing.T) {
 			gotRoute, gotPath, gotPrompt = r, projectPath, prompt
 			return auditSessionResult{Reply: `{"rootcause":"nil row","hits":[]}`, Model: "claude-sonnet-5-5", TotalTokens: 7}, nil
 		})
-		reply, res, err := auditCommit(context.Background(), route, dir, commit)
+		reply, res, err := runTargetAudit(context.Background(), route, dir, auditTarget{Kind: KindSibling, Commit: commit}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -294,7 +260,7 @@ func TestAuditCommit(t *testing.T) {
 		fake(func(context.Context, auditRoute, string, string) (auditSessionResult, error) {
 			return auditSessionResult{Reply: "partial", TotalTokens: 3}, errors.New("claude is not installed")
 		})
-		reply, res, err := auditCommit(context.Background(), route, dir, commit)
+		reply, res, err := runTargetAudit(context.Background(), route, dir, auditTarget{Kind: KindSibling, Commit: commit}, nil)
 		if err == nil || !strings.Contains(err.Error(), "claude is not installed") || reply != nil {
 			t.Errorf("reply = %+v, err = %v", reply, err)
 		}
@@ -307,7 +273,7 @@ func TestAuditCommit(t *testing.T) {
 		fake(func(context.Context, auditRoute, string, string) (auditSessionResult, error) {
 			return auditSessionResult{Reply: "I found nothing wrong.", Model: "m", TotalTokens: 9}, nil
 		})
-		reply, res, err := auditCommit(context.Background(), route, dir, commit)
+		reply, res, err := runTargetAudit(context.Background(), route, dir, auditTarget{Kind: KindSibling, Commit: commit}, nil)
 		if err == nil || reply != nil {
 			t.Errorf("reply = %+v, err = %v", reply, err)
 		}
@@ -321,7 +287,7 @@ func TestAuditCommit(t *testing.T) {
 			t.Error("the session must not run")
 			return auditSessionResult{}, nil
 		})
-		if _, _, err := auditCommit(context.Background(), route, dir, "0000000000000000000000000000000000000000"); err == nil {
+		if _, _, err := runTargetAudit(context.Background(), route, dir, auditTarget{Kind: KindSibling, Commit: "0000000000000000000000000000000000000000"}, nil); err == nil {
 			t.Error("want an error for a commit git cannot show")
 		}
 	})
@@ -336,7 +302,7 @@ func TestAuditCommit(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() {
-			_, _, err := auditCommit(ctx, route, dir, commit)
+			_, _, err := runTargetAudit(ctx, route, dir, auditTarget{Kind: KindSibling, Commit: commit}, nil)
 			done <- err
 		}()
 		<-started
@@ -347,7 +313,7 @@ func TestAuditCommit(t *testing.T) {
 				t.Errorf("err = %v, want context.Canceled", err)
 			}
 		case <-time.After(5 * time.Second):
-			t.Fatal("auditCommit did not return after its context was cancelled")
+			t.Fatal("runTargetAudit did not return after its context was cancelled")
 		}
 	})
 }
