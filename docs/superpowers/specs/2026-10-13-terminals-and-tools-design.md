@@ -58,7 +58,7 @@ Design rule from the review: **compact by default.** One pane in focus; anything
 - The project switcher in the app bar filters as today.
 - Keyboard: `j`/`k`, Ctrl+Tab and the palette's Agents group include terminals. This closes the open issue above.
 
-States (board Sidebar): running, exited (row stays until closed so the last screen is readable), worktree removed
+States (board Sidebar): running, worktree removed
 (branch struck through), installing, install failed.
 
 Code: `agentsidebarmodel.ts` (buildAgentTree, `splitActive`) builds the one tree; `TerminalsSection` in
