@@ -12284,108 +12284,152 @@ const briefRestore = {
     },
 };
 
-// --- brief-profile: both scopes of the profile modal, and the playbook override -----------------
-// F4's re-home. The playbook editor and the global face lost their mount when B5 deleted profilepanel.tsx,
-// which left a custom playbook and the global principles reachable only over the RPC. Read-only on purpose:
-// it never presses Save, so it asserts the editors exist and the override toggles without writing a
-// profile into whatever config dir the dev app is pointed at.
+// --- brief-profile: both scopes of the profile modal -------------------------------------------
+// Read-only on purpose: it never presses Save, so nothing is written into whatever config dir the dev app is
+// pointed at. A store with no projects opens the modal on Global only, so the scenario registers one of its own.
+const BRIEF_PROFILE_PROJECT = "verify-brief-profile";
+const PROFILE_MODAL = `document.querySelector('[data-jarvis-brief-modal="profile"]')`;
+
+// Opens the Brief's profile modal on a project's Project scope. The modal opens on the first project, so a store
+// holding others needs this one picked, through the search box once there are more than the chips show.
+async function openProfileOn(h, name) {
+    if (!(await h.ev(`!!${PROFILE_MODAL}`))) {
+        await h.ev(`document.querySelector('[data-jarvis-brief-profile]')?.click()`);
+        if (!(await polishWaitFor(h, `!!${PROFILE_MODAL}`, 5000))) return false;
+    }
+    await h.ev(`${PROFILE_MODAL}?.querySelector('[data-jarvis-profile-tab="project"]')?.click()`);
+    const chip = `${PROFILE_MODAL}?.querySelector('button[title="${name}"]')`;
+    if (!(await polishWaitFor(h, `!!${chip}`, 3000))) {
+        await h.ev(setInputExpr(`${PROFILE_MODAL}?.querySelector('input[aria-label="Search projects"]')`, name));
+        if (!(await polishWaitFor(h, `!!${chip}`, 3000))) return false;
+    }
+    await h.ev(`${chip}?.click()`);
+    // a pick reloads that project's profile, so the rows are read only once they are back
+    await polishNap(300);
+    return polishWaitFor(
+        h,
+        `${chip}?.getAttribute('aria-pressed') === 'true' && !!${PROFILE_MODAL}?.querySelector('[role="group"][aria-label="Approvals"]')`,
+        5000
+    );
+}
+
+async function closeProfile(h) {
+    await h.ev(`[...(${PROFILE_MODAL}?.querySelectorAll('footer button') ?? [])].find((b) => b.textContent.trim() === 'Cancel')?.click()`);
+    return polishWaitFor(h, `!${PROFILE_MODAL}`, 3000);
+}
+
+// the run-defaults rows: a row is the grid holding a label, its control and the source or reach cell
+const PROFILE_STATE = `(() => {
+    const m = ${PROFILE_MODAL};
+    if (!m) return null;
+    const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+    const footer = m.querySelector('footer');
+    const save = [...(footer?.querySelectorAll('button') ?? [])].at(-1);
+    return {
+        scope: m.dataset.jarvisProfileScope,
+        subtitle: flat(m.querySelector('header span:nth-child(2)')),
+        tabs: [...m.querySelectorAll('[data-jarvis-profile-tab]')].map((b) => ({ tab: b.dataset.jarvisProfileTab, disabled: b.disabled })),
+        sections: [...m.querySelectorAll('section h2')].map(flat),
+        rows: [...(m.querySelector('section')?.querySelectorAll(':scope > div > .grid') ?? [])].map((r) => ({
+            label: flat(r.firstElementChild?.firstElementChild),
+            aside: flat(r.lastElementChild),
+        })),
+        globalPrinciples: !!m.querySelector('[data-jarvis-global-principles="editor"]'),
+        status: flat(footer?.firstElementChild),
+        save: flat(save),
+        saveDisabled: save?.disabled ?? null,
+    };
+})()`;
+
 const briefProfile = {
     name: "brief-profile",
     surface: "jarvis",
-    async arrange() {
-        return {};
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-brief-profile-"));
+        const ctx = { cwd };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            await h.rpc("createproject", { name: BRIEF_PROFILE_PROJECT, path: cwd });
+            ctx.project = BRIEF_PROFILE_PROJECT;
+            await waitForProjectInConfig(h, BRIEF_PROFILE_PROJECT);
+            const ch = await h.rpc("createchannel", { name: BRIEF_PROFILE_PROJECT, projectpath: cwd });
+            ctx.channelId = ch.oid;
+            // the modal lists projects from the boot-primed channel list
+            await polishReload(h);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
     },
-    async assert(h) {
+    async assert(h, ctx) {
         const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. a project with its channel was made", false, ctx.arrangeError);
+            return steps;
+        }
+        await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
         await h.goto("jarvis");
-        await h.ev(`document.querySelector('[data-jarvis-brief-profile]')?.click()`);
-        await h.ev("new Promise((r) => setTimeout(r, 1200))");
-
-        const STATE = `(() => {
-            // the hook is now INSIDE ModalShell's panel, which is itself the [role="dialog"] — the
-            // profile stopped hand-rolling its own scrim and dialog when it moved onto the shell.
-            const dlg = document.querySelector('[data-jarvis-brief-modal="profile"]');
-            const txt = (el) => (el?.innerText || "").replace(/\\s+/g, " ").trim();
-            return {
-                scope: dlg ? dlg.dataset.jarvisProfileScope : null,
-                title: txt(dlg?.querySelector("header")),
-                tabs: [...document.querySelectorAll('[data-jarvis-profile-tab]')].map((b) => b.dataset.jarvisProfileTab),
-                sections: [...(dlg?.querySelectorAll("section") ?? [])].map((s) => txt(s).slice(0, 14)),
-                editors: document.querySelectorAll('[data-jarvis-playbook="editor"]').length,
-                summary: document.querySelectorAll('[data-jarvis-playbook="summary"]').length,
-                phases: document.querySelectorAll('[data-jarvis-playbook="phase"]').length,
-                globalPrinciples: document.querySelectorAll('[data-jarvis-global-principles="editor"] textarea').length,
-                save: txt([...(dlg?.querySelectorAll("footer button") ?? [])][0]),
-                saveDisabled: [...(dlg?.querySelectorAll("footer button") ?? [])][0]?.disabled ?? null,
-            };
-        })()`;
-
-        const project = await h.ev(STATE);
-        steps.push({
-            step: "1. the modal opens on this project, with both scopes offered",
-            ok:
-                project.scope === "project" &&
-                project.tabs.join(",") === "project,global" &&
-                project.sections.length === 3 &&
+        const opened = await openProfileOn(h, BRIEF_PROFILE_PROJECT);
+        const project = await h.ev(PROFILE_STATE);
+        rec(
+            "1. the modal opens on the project's Project scope, both scopes offered, with nothing to save",
+            opened &&
+                project?.scope === "project" &&
+                project.tabs.map((t) => `${t.tab}:${t.disabled}`).join(",") === "project:false,global:false" &&
+                project.subtitle === "Defaults Jarvis uses for future runs" &&
+                project.sections.join(",") === "Run defaults,Principles" &&
+                project.status === "No changes" &&
+                project.save === "Save profile" &&
                 project.saveDisabled === true,
-            detail: JSON.stringify(project),
-        });
-
-        // an inherited playbook is stated, not editable: the project has not said anything different yet
-        steps.push({
-            step: "2. the inherited playbook reads as a summary, with no editor under it",
-            ok: project.summary === 1 && project.editors === 0 && project.phases === 0,
-            detail: JSON.stringify({ summary: project.summary, editors: project.editors, phases: project.phases }),
-        });
-
-        await h.ev(
-            `[...document.querySelectorAll('[data-jarvis-brief-modal="profile"] button')].find((b) => b.innerText.trim() === 'customize')?.click()`
+            JSON.stringify({ opened, ...project, rows: undefined })
         );
-        await h.ev("new Promise((r) => setTimeout(r, 400))");
-        const customized = await h.ev(STATE);
-        steps.push({
-            step: "3. customize copies the inherited phases into an editable override",
-            ok:
-                customized.editors === 1 &&
-                customized.summary === 0 &&
-                customized.phases > 0 &&
-                customized.saveDisabled === false,
-            detail: JSON.stringify(customized),
-        });
 
-        await h.ev(
-            `[...document.querySelectorAll('[data-jarvis-brief-modal="profile"] section button')].find((b) => b.innerText.trim() === 'reset')?.click()`
+        // a project that never said anything inherits every row
+        const labels = project?.rows.map((r) => r.label) ?? [];
+        rec(
+            "2. the run defaults list Lead route and Approvals among their rows, every one inheriting Global",
+            labels.includes("Lead route") &&
+                labels.includes("Approvals") &&
+                project.rows.every((r) => r.aside === "Global"),
+            JSON.stringify(project?.rows)
         );
-        await h.ev("new Promise((r) => setTimeout(r, 400))");
-        const resetted = await h.ev(STATE);
-        steps.push({
-            step: "4. reset drops the override, so the draft is clean again",
-            ok: resetted.summary === 1 && resetted.editors === 0 && resetted.saveDisabled === true,
-            detail: JSON.stringify(resetted),
-        });
+        await h.shot("cdp-shots/brief-profile-project.png");
 
-        await h.ev(`document.querySelector('[data-jarvis-profile-tab="global"]')?.click()`);
-        await h.ev("new Promise((r) => setTimeout(r, 600))");
-        const global = await h.ev(STATE);
-        steps.push({
-            step: "5. the global face edits the playbook and the principles every project inherits",
-            ok:
-                global.scope === "global" &&
-                global.title.toLowerCase().includes("global defaults") &&
-                global.editors === 1 &&
-                global.globalPrinciples > 0 &&
-                global.save.toLowerCase() === "save global defaults" &&
+        await h.ev(`${PROFILE_MODAL}?.querySelector('[data-jarvis-profile-tab="global"]')?.click()`);
+        await polishWaitFor(h, `${PROFILE_MODAL}?.dataset.jarvisProfileScope === 'global' && !!${PROFILE_MODAL}?.querySelector('[data-jarvis-global-principles="editor"]')`, 5000);
+        const global = await h.ev(PROFILE_STATE);
+        const globalLabels = global?.rows.map((r) => r.label) ?? [];
+        rec(
+            "3. the global face edits the run defaults and the principles every project inherits, with no lead route",
+            global?.scope === "global" &&
+                global.subtitle === "The base every project inherits" &&
+                global.sections.join(",") === "Run defaults,Principles" &&
+                globalLabels.includes("Approvals") &&
+                !globalLabels.includes("Lead route") &&
+                global.globalPrinciples === true &&
+                global.status === "No changes" &&
+                global.save === "Save global profile" &&
                 global.saveDisabled === true,
-            detail: JSON.stringify(global),
-        });
-
+            JSON.stringify(global)
+        );
         await h.shot("cdp-shots/brief-profile.png");
         return steps;
     },
-    async teardown(h) {
-        await h.ev(
-            `[...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Close profile')?.click()`
-        );
+    async teardown(h, ctx) {
+        const undo = [
+            ["close the profile", () => closeProfile(h)],
+            ["delete the channel", () => ctx.channelId && h.rpc("deletechannel", { channelid: ctx.channelId })],
+            ["delete the project", () => ctx.project && h.rpc("deleteproject", { name: ctx.project })],
+            ["remove the temp dir", () => rmSync(ctx.cwd, { recursive: true, force: true })],
+        ];
+        for (const [what, fn] of undo) {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`brief-profile teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        }
         await h.goto("cockpit");
     },
 };
@@ -23006,6 +23050,404 @@ const paletteActions = {
     async teardown(h, ctx) {
         await h.ev(PEEKS_ESC).catch(() => {});
         await teardownFixtureRun(h, ctx, "palette-actions");
+    },
+};
+
+// --- autonomous-runs: the Approvals setting on each of its boards (docs/superpowers/plans/2026-10-13-autonomous-runs.md)
+// One project with one orchestrator run held by deferstart. Its lead is a seeded tab, linked as the lead by a tab oref
+// on the running phase, whose block runs a stdin sink: the server's switch finds the lead's Spec review question
+// there deterministically, and the answer it types lands somewhere harmless. The fixture roster names that tab as the
+// lead asking Spec review, which is how the sheet and the palette learn of the question; no live agent runs.
+const AUTONOMOUS_PROJECT = "verify-autonomous-runs";
+const AUTONOMOUS_SPEC_ASK = {
+    header: "Spec review",
+    question: "The spec is written. Approve it so I can write the plan?",
+    options: [{ label: "Approve" }, { label: "Revise" }],
+};
+const AUTONOMOUS_PROFILE_NOTE =
+    "The lead takes the option it would recommend at each of those points and records why in its report. If the final stage still fails after the last round, the land stays held for you.";
+const AUTONOMOUS_RESOLVED =
+    "The lead approved its spec and is writing the plan. It answers everything from here on; each call it makes goes in its report.";
+const AUTONOMOUS_BACK_TO_ASK = "The lead asks you again from its next decision. Calls it already made stand.";
+// typing the ON answer takes 60ms a rune, so the question leaves the registry well inside this
+const AUTONOMOUS_ANSWER_WAIT_MS = 20_000;
+const RUN_SHEET = `document.querySelector('[data-run-sheet]')`;
+const SHEET_APPROVALS = `${RUN_SHEET}?.querySelector('[role="group"][aria-label="Approvals"]')`;
+const flatOf = (elExpr) => `((${elExpr})?.textContent ?? '').replace(/\\s+/g, ' ').trim()`;
+const clickByText = (scopeExpr, selector, text) =>
+    `[...((${scopeExpr})?.querySelectorAll(${JSON.stringify(selector)}) ?? [])].find((b) => b.textContent.trim() === ${JSON.stringify(text)})?.click()`;
+
+// the Approvals row of the open profile: what is pressed, its source cell and the note under the control
+const PROFILE_APPROVALS = `(() => {
+    const group = ${PROFILE_MODAL}?.querySelector('[role="group"][aria-label="Approvals"]');
+    const row = group?.closest('.grid');
+    if (!row) return null;
+    const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+    return {
+        pressed: [...group.querySelectorAll('button[aria-pressed="true"]')].map(flat),
+        source: flat(row.lastElementChild),
+        reset: !!row.querySelector('button[aria-label="Reset approvals to global"]'),
+        note: flat(group.nextElementSibling),
+    };
+})()`;
+
+// the run sheet's Approvals: the dial, the line under it, the saved line, the resolved note and the config word
+const SHEET_STATE = `(() => {
+    const s = ${RUN_SHEET};
+    if (!s) return null;
+    const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+    const group = s.querySelector('[role="group"][aria-label="Approvals"]');
+    return {
+        pressed: [...(group?.querySelectorAll('button[aria-pressed="true"]') ?? [])].map(flat),
+        line: [...(group?.parentElement.querySelectorAll(':scope > span') ?? [])].map(flat).slice(1).join(' '),
+        saved: flat(s.querySelector('[data-jarvis-brief-sheet-state="saved"]')),
+        error: flat(s.querySelector('[data-jarvis-brief-sheet-state="error"]')),
+        resolved: flat(s.querySelector('[data-jarvis-brief-sheet-resolved]')),
+        word: flat(s.querySelector('[data-jarvis-brief-sheet-approvals]')),
+    };
+})()`;
+
+// the lead's own pending question, as the server holds it
+async function autonomousLeadAsk(h, ctx) {
+    return (await h.rpc("runasks", { channelid: ctx.channelId, runid: ctx.runId }))?.asks?.[0] ?? null;
+}
+
+async function raiseSpecReview(h, ctx) {
+    await h.rpc("ask", { oref: `block:${ctx.leadBlockId}`, questions: [AUTONOMOUS_SPEC_ASK] });
+    ctx.askRaised = true;
+}
+
+// the fixture lead's face: asking Spec review, or working once its question is answered
+const patchFixtureLead = (h, ctx, asking) =>
+    h.ev(
+        `window.__cockpitRosterFixture?.patch(${JSON.stringify(ctx.leadTabId)}, ${
+            asking
+                ? JSON.stringify({ state: "asking", ask: { questions: [AUTONOMOUS_SPEC_ASK], oref: `block:${ctx.leadBlockId}` } })
+                : "{ state: 'working', ask: undefined }"
+        })`
+    );
+
+// The lead's tab, in the page's own workspace. Its block runs a node process that reads and drops stdin: a shell
+// would run the typed answer, and the picker's arrow keys would recall its history first.
+async function seedAutonomousLead(h, ctx) {
+    const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+    const wslist = await h.rpc("workspacelist", null);
+    const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+    ctx.workspaceId = ws.workspacedata.oid;
+    ctx.leadTabId = await waveService(h, "workspace", "CreateTab", [ctx.workspaceId, "verify-autonomous-lead", false]);
+    const tab = await waveService(h, "object", "GetObject", [`tab:${ctx.leadTabId}`]);
+    ctx.leadBlockId = tab?.blockids?.[0];
+    if (!ctx.leadBlockId) throw new Error("the lead's tab has no block");
+    const sink = join(ctx.cwd, "lead-sink.mjs");
+    writeFileSync(sink, "process.stdin.resume();\n");
+    // the cwd is ~, not the temp dir, which the process would keep locked past teardown
+    await h.rpc("setmeta", {
+        oref: `block:${ctx.leadBlockId}`,
+        meta: { view: "term", controller: "cmd", cmd: `node '${sink}'`, "cmd:cwd": "~" },
+    });
+    await h.rpc("controllerresync", { tabid: ctx.leadTabId, blockid: ctx.leadBlockId, forcerestart: true });
+    // readLeadState takes the lead from the first tab oref on the run's phases
+    await fstWriteRun(h, ctx.runId, (run) => ({
+        ...run,
+        phases: run.phases.map((p, i) => (i === 0 ? { ...p, workerorefs: [`tab:${ctx.leadTabId}`] } : p)),
+    }));
+    mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+    writeFileSync(
+        TREE_RAIL_FIXTURE,
+        JSON.stringify(
+            [
+                {
+                    id: ctx.leadTabId,
+                    name: "autonomous lead",
+                    project: AUTONOMOUS_PROJECT,
+                    task: "verify autonomous-runs",
+                    state: "asking",
+                    agent: "claude",
+                    model: "opus",
+                    blockedMs: 60_000,
+                    runId: ctx.runId,
+                    blockId: ctx.leadBlockId,
+                    ask: { questions: [AUTONOMOUS_SPEC_ASK], oref: `block:${ctx.leadBlockId}` },
+                },
+            ],
+            null,
+            2
+        )
+    );
+    ctx.wroteFixture = true;
+}
+
+// the Run actions of ctx's run, with the toggle row selected
+async function openRunToggle(h, ctx, title) {
+    if (!(await openPalette(h))) return { opened: false };
+    await h.ev(setInputExpr(PALETTE_INPUT, "r:"));
+    await paletteStateWhen(h, (s) => s.token === "Runs", 2000);
+    await h.ev(setInputExpr(PALETTE_INPUT, ctx.stamp));
+    await paletteStateWhen(h, (s) => (s.selected ?? "").includes(ctx.stamp) && s.chip, 8000);
+    await h.ev(paletteKey("ArrowRight"));
+    let state = await paletteStateWhen(h, (s) => s.drill != null && s.groups.some((g) => g.rows.some((r) => r.startsWith(title))), 8000);
+    for (let i = 0; i < 20 && state != null && !(state.selected ?? "").startsWith(title); i++) {
+        await h.ev(paletteKey("ArrowDown"));
+        state = await h.ev(PALETTE_STATE);
+    }
+    return { opened: true, state };
+}
+
+const autonomousRuns = {
+    name: "autonomous-runs",
+    surface: "jarvis",
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-autonomous-runs-"));
+        const stamp = `autoruns${Date.now() % 100000}`;
+        const ctx = { cwd, stamp };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            await h.rpc("createproject", { name: AUTONOMOUS_PROJECT, path: cwd });
+            ctx.project = AUTONOMOUS_PROJECT;
+            await waitForProjectInConfig(h, AUTONOMOUS_PROJECT);
+            const wslist = await h.rpc("workspacelist", null);
+            const ch = await h.rpc("createchannel", { name: AUTONOMOUS_PROJECT, projectpath: cwd });
+            ctx.channelId = ch.oid;
+            // made before the profile turns autonomous, so the run starts on Ask me
+            const created = await h.rpc("createrun", {
+                channelid: ctx.channelId,
+                workspaceid: wslist[0].workspacedata.oid,
+                goal: `verify ${stamp}: do nothing, make no file changes, stop immediately`,
+                runtime: "claude",
+                mode: "orchestrator",
+                // a width, as the launcher always sends: a run stored at 0 cannot save its settings until submit
+                parallelism: 2,
+                deferstart: true,
+            });
+            ctx.runId = created.run.id;
+            ctx.landPath = created.run.landpath;
+            await seedAutonomousLead(h, ctx);
+            // the fixture roster and the channel list are both read at boot
+            await polishReload(h);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. a project, its channel, a planning run and its seeded lead were made", false, ctx.arrangeError);
+            return steps;
+        }
+        await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
+        await h.goto("jarvis");
+
+        // --- profile (Main board)
+        const opened = await openProfileOn(h, AUTONOMOUS_PROJECT);
+        await h.ev(clickByText(`${PROFILE_MODAL}?.querySelector('[role="group"][aria-label="Approvals"]')`, "button", "Autonomous"));
+        await polishNap(200);
+        await h.ev(clickByText(`${PROFILE_MODAL}?.querySelector('footer')`, "button", "Save profile"));
+        const savedClosed = await polishWaitFor(h, `!${PROFILE_MODAL}`, 5000);
+        const override = (await h.rpc("getjarvisprofile", { channelid: ctx.channelId }))?.override ?? {};
+        ctx.profileSaved = override.autonomous === true;
+        const reopened = await openProfileOn(h, AUTONOMOUS_PROJECT);
+        const projectRow = await h.ev(PROFILE_APPROVALS);
+        await h.shot("cdp-shots/autonomous-runs-1-profile.png");
+        await h.ev(`${PROFILE_MODAL}?.querySelector('button[aria-label="Reset approvals to global"]')?.click()`);
+        await polishNap(300);
+        const resetRow = await h.ev(PROFILE_APPROVALS);
+        // Cancel, not Save: the new-run step reads the saved Autonomous
+        await closeProfile(h);
+        rec(
+            "profile 1. picking Autonomous and saving stores it on the project, and the row reads Project with Reset and the autonomous note",
+            opened &&
+                savedClosed &&
+                ctx.profileSaved &&
+                reopened &&
+                projectRow?.pressed.join(",") === "Autonomous" &&
+                projectRow.source.startsWith("Project") &&
+                projectRow.reset === true &&
+                projectRow.note === AUTONOMOUS_PROFILE_NOTE,
+            JSON.stringify({ opened, savedClosed, override, reopened, row: projectRow })
+        );
+        rec(
+            "profile 2. Reset puts the row back on Global",
+            resetRow?.source === "Global" && resetRow.reset === false,
+            JSON.stringify(resetRow)
+        );
+
+        // --- new-run (NewRun board)
+        await h.ev(`document.querySelector('[data-new-run]')?.click()`);
+        const windowOpen = await polishWaitFor(h, `!!${NEW_RUN}`, 5000);
+        await h.ev(`${NEW_RUN_FIELD}?.click()`);
+        await polishWaitFor(h, `!!${NEW_RUN_LIST}`, 3000);
+        await h.ev(setInputExpr(`${NEW_RUN}?.querySelector('input[aria-label="Search projects"]')`, AUTONOMOUS_PROJECT));
+        await polishNap(300);
+        await h.ev(`${NEW_RUN_LIST}?.querySelector('[data-project-option="${AUTONOMOUS_PROJECT}"]')?.click()`);
+        await polishNap(300);
+        await h.ev(
+            `[...(${NEW_RUN}?.querySelectorAll('button[aria-pressed]') ?? [])].find((b) => b.firstElementChild?.textContent.trim() === 'orchestrator')?.click()`
+        );
+        await polishNap(200);
+        await h.ev(clickByText(`${NEW_RUN}?.querySelector('[role="group"][aria-label="Start from"]')`, "button", "Goal"));
+        await h.ev(`(() => {
+            const el = ${NEW_RUN_GOAL};
+            if (!el) return false;
+            Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(el, ${JSON.stringify(`verify ${ctx.stamp}: do nothing`)});
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            return true;
+        })()`);
+        const NEW_RUN_APPROVALS = `${NEW_RUN}?.querySelector('[role="group"][aria-label="Approvals"]')`;
+        await polishWaitFor(h, `${NEW_RUN_APPROVALS}?.querySelector('button[aria-pressed="true"]')?.textContent.trim() === 'Autonomous'`, 5000);
+        const NEW_RUN_FOOTER = `${NEW_RUN}?.querySelector('[data-new-run-footer] > span')`;
+        await polishWaitFor(h, `${flatOf(NEW_RUN_FOOTER)}.endsWith(' · autonomous')`, 3000);
+        const orch = await h.ev(`(() => {
+            const group = ${NEW_RUN_APPROVALS};
+            const models = [...(${NEW_RUN}?.querySelectorAll('span') ?? [])].find((s) => s.textContent.trim() === 'Models')?.parentElement;
+            return {
+                pressed: [...(group?.querySelectorAll('button[aria-pressed="true"]') ?? [])].map((b) => b.textContent.trim()),
+                underModels: models != null && models.nextElementSibling === group?.parentElement,
+                footer: ${flatOf(NEW_RUN_FOOTER)},
+            };
+        })()`);
+        await h.shot("cdp-shots/autonomous-runs-2-new-run.png");
+        rec(
+            "new-run 1. on orchestrator the Approvals field sits under Models with the profile's Autonomous selected, and the footer ends · autonomous",
+            windowOpen && orch.pressed.join(",") === "Autonomous" && orch.underModels && orch.footer.endsWith(" · autonomous"),
+            JSON.stringify({ windowOpen, ...orch })
+        );
+        await h.ev(
+            `[...(${NEW_RUN}?.querySelectorAll('button[aria-pressed]') ?? [])].find((b) => b.firstElementChild?.textContent.trim() === 'quick')?.click()`
+        );
+        const gone = await polishWaitFor(h, `!${NEW_RUN_APPROVALS}`, 3000);
+        const quickFooter = await h.ev(flatOf(NEW_RUN_FOOTER));
+        rec(
+            "new-run 2. on quick the Approvals field is gone, and so is the footer's autonomous",
+            gone && quickFooter.startsWith("quick") && !quickFooter.endsWith(" · autonomous"),
+            JSON.stringify({ gone, footer: quickFooter })
+        );
+        await h.ev(clickByText(NEW_RUN, "button", "Cancel"));
+        await polishWaitFor(h, `!${NEW_RUN}`, 3000);
+
+        // --- run-sheet (RunSheet board)
+        await raiseSpecReview(h, ctx);
+        const askBefore = await autonomousLeadAsk(h, ctx);
+        const sheetOpen = await h.ev(`(async () => {
+            for (let i = 0; i < 20 && typeof window.__openAddress !== "function"; i++) {
+                await new Promise((r) => setTimeout(r, 250));
+            }
+            return window.__openAddress(${JSON.stringify(`run:${ctx.runId}`)});
+        })()`);
+        await polishWaitFor(h, `!!${RUN_SHEET}?.querySelector('[data-jarvis-brief-sheet-approvals]')`, 8000);
+        await h.ev(clickByText(`${RUN_SHEET}?.querySelector('[data-jarvis-brief-sheet-config="editable"]')`, "button", "adjust"));
+        await polishWaitFor(h, `!!${SHEET_APPROVALS}`, 3000);
+        await h.ev(clickByText(SHEET_APPROVALS, "button", "Autonomous"));
+        await polishNap(200);
+        const warned = await h.ev(SHEET_STATE);
+        rec(
+            "run-sheet 1. picking Autonomous while the lead waits on Spec review warns that saving hands it back",
+            askBefore?.questions?.[0]?.header === "Spec review" &&
+                warned?.pressed.join(",") === "Autonomous" &&
+                warned.line === "Saving hands the waiting Spec review back to the lead, and it answers everything from then on.",
+            JSON.stringify({ opened: sheetOpen, ask: askBefore?.questions?.[0]?.header ?? null, ...warned })
+        );
+
+        await h.ev(clickByText(RUN_SHEET, "button", "Save settings"));
+        await polishWaitFor(h, `${flatOf(`${RUN_SHEET}?.querySelector('[data-jarvis-brief-sheet-state="saved"]')`)} === 'Saved. The run is autonomous from now on.'`, 8000);
+        const on = await h.ev(SHEET_STATE);
+        rec(
+            "run-sheet 2. Save: the saved line, the Spec review note that the lead decided, and the config reading autonomous",
+            on?.saved === "Saved. The run is autonomous from now on." &&
+                on.resolved.startsWith("Spec review: the lead decided") &&
+                on.resolved.endsWith(AUTONOMOUS_RESOLVED) &&
+                on.word === "autonomous",
+            JSON.stringify(on)
+        );
+        // the answer is typed in the background, and the server takes the question out of its registry as it starts
+        let askAfter = askBefore;
+        for (const until = Date.now() + AUTONOMOUS_ANSWER_WAIT_MS; askAfter != null && Date.now() < until; ) {
+            await polishNap(500);
+            askAfter = await autonomousLeadAsk(h, ctx);
+        }
+        const runOn = (await channelRuns(h, ctx.channelId)).find((r) => r.id === ctx.runId);
+        rec(
+            "run-sheet 3. the lead's Spec review is answered, and the run is stored autonomous",
+            askBefore != null && askAfter == null && runOn?.autonomous === true,
+            JSON.stringify({ pending: askAfter?.questions?.[0]?.header ?? null, autonomous: runOn?.autonomous ?? null })
+        );
+        // the lead has its answer, so it is working again
+        await patchFixtureLead(h, ctx, false);
+        await polishNap(300);
+        await h.shot("cdp-shots/autonomous-runs-3-run-sheet.png");
+
+        await h.ev(clickByText(SHEET_APPROVALS, "button", "Ask me"));
+        await polishNap(200);
+        const backToAsk = await h.ev(SHEET_STATE);
+        await h.ev(clickByText(RUN_SHEET, "button", "Save settings"));
+        await polishWaitFor(h, `${flatOf(`${RUN_SHEET}?.querySelector('[data-jarvis-brief-sheet-state="saved"]')`)} === 'Saved. The lead asks you from its next decision.'`, 8000);
+        const off = await h.ev(SHEET_STATE);
+        rec(
+            "run-sheet 4. picking Ask me says the lead asks again, and Save reads asks you",
+            backToAsk?.pressed.join(",") === "Ask me" &&
+                backToAsk.line === AUTONOMOUS_BACK_TO_ASK &&
+                off?.saved === "Saved. The lead asks you from its next decision." &&
+                off.word === "asks you",
+            JSON.stringify({ backToAsk, off })
+        );
+
+        // --- palette (RunActions board): the lead asks Spec review again, now that it asks the human
+        await raiseSpecReview(h, ctx);
+        await patchFixtureLead(h, ctx, true);
+        const offToggle = await openRunToggle(h, ctx, "Go autonomous");
+        const offState = offToggle.state;
+        await h.shot("cdp-shots/autonomous-runs-4-palette.png");
+        const steer = offState?.groups.find((g) => g.label === "Steer");
+        rec(
+            "palette 1. the Steer group's toggle reads Go autonomous, asks you, Enter Go, and the off echo",
+            offToggle.opened &&
+                (steer?.rows ?? []).some((r) => r.startsWith("Go autonomous")) &&
+                (offState.selected ?? "").startsWith("Go autonomousasks you") &&
+                (offState.selected ?? "").includes("Go ⏎") &&
+                offState.text.includes("The lead answers everything from now on, starting with the Spec review it is waiting on."),
+            JSON.stringify({ opened: offToggle.opened, selected: offState?.selected, steer, footer: offState?.text.slice(-200) })
+        );
+
+        await h.ev(paletteKey("Enter"));
+        let runAuto = null;
+        for (let i = 0; i < 20 && runAuto !== true; i++) {
+            await polishNap(250);
+            runAuto = (await channelRuns(h, ctx.channelId)).find((r) => r.id === ctx.runId)?.autonomous ?? null;
+        }
+        const onToggle = await openRunToggle(h, ctx, "Ask me again");
+        const onState = onToggle.state;
+        await h.shot("cdp-shots/autonomous-runs-5-palette-on.png");
+        rec(
+            "palette 2. Enter turns the run autonomous, and its actions then read Ask me again, autonomous, Enter Ask me, and the on echo",
+            runAuto === true &&
+                onToggle.opened &&
+                (onState?.selected ?? "").startsWith("Ask me againautonomous") &&
+                (onState.selected ?? "").includes("Ask me ⏎") &&
+                onState.text.includes(AUTONOMOUS_BACK_TO_ASK),
+            JSON.stringify({ autonomous: runAuto, selected: onState?.selected, footer: onState?.text.slice(-200) })
+        );
+        await h.ev(PEEKS_ESC);
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const undo = [
+            ["close the palette", () => h.ev(PEEKS_ESC)],
+            ["clear the lead's question", () => ctx.askRaised && h.rpc("agentaskclear", `block:${ctx.leadBlockId}`)],
+        ];
+        for (const [what, fn] of undo) {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`autonomous-runs teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        }
+        // the lead's tab is a worker oref on the run, so this deletes its block and the tab with it; the channel
+        // holds the profile override
+        await teardownFixtureRun(h, ctx, "autonomous-runs", {
+            what: "delete the project",
+            fn: () => (ctx.project ? h.rpc("deleteproject", { name: ctx.project }) : null),
+        });
     },
 };
 
@@ -42965,6 +43407,7 @@ export const SCENARIOS = [
     launcherResume,
     launcherImages,
     paletteActions,
+    autonomousRuns,
     paletteGoal,
     paletteNotes,
     modelPicks,
