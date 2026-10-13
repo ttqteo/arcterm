@@ -28,7 +28,7 @@ does not close the block); listed here because the restart dialog's wording assu
 ## The list
 
 - Each row: a radio, the name, a quota line, and (token accounts only) a `⋯` button at the right edge.
-  - Default: the `/login` email is the name (`quang.tt@mozox.com`) with a small `/login` tag; "Claude login"
+  - Default: the `/login` email is the name (`user@example.com`) with a small `/login` tag; "Claude login"
     when the email is not known.
   - A token account: its label is the name; its email, when set, sits under it in muted text.
 - Quota line: `5h 54% · week 99% · 1m ago`. A window at 90% or more is warning-toned. "Not used yet" without
