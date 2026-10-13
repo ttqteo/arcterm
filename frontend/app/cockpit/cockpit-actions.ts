@@ -27,6 +27,26 @@ export interface LaunchAgentOpts {
     // open asleep: the tab is made with its resume command and marked asleep, so it shows the session's transcript and
     // starts on Wake or a message (asleepLaunchMeta). Its process never starts here.
     asleep?: AsleepLaunch;
+    toolId?: string; // a terminal opened from the tool library (block meta tool:id); startupCommand is its command line
+    // take the Agent surface's focus on launch, as an agent does. A plain Terminal launch leaves it in the background
+    // (see below); a tool opened into the centre sets this.
+    focus?: boolean;
+}
+
+// A new tab and the id of the term block it opens with, for the caller to configure with SetMeta before the block
+// renders. Used for every launch, and by an install, which starts its own block (toolsstore.ts installTool).
+export async function createTermTab(tabName: string): Promise<{ tabId: string; blockId: string }> {
+    const ws = globalStore.get(atoms.workspace);
+    if (ws?.oid == null) {
+        throw new Error("no active workspace");
+    }
+    const tabId = await WorkspaceService.CreateTab(ws.oid, tabName, false);
+    const tab = globalStore.get(WOS.getWaveObjectAtom<Tab>(WOS.makeORef("tab", tabId)));
+    const blockId = tab?.blockids?.[0];
+    if (blockId == null) {
+        throw new Error("new tab has no block");
+    }
+    return { tabId, blockId };
 }
 
 // Launch a runtime as its OWN session tab. Agent runtimes get a pending roster row; terminals only
@@ -58,16 +78,7 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
     if (isTerminal && !cwd) {
         cwd = "~";
     }
-    const ws = globalStore.get(atoms.workspace);
-    if (ws?.oid == null) {
-        throw new Error("no active workspace");
-    }
-    const tabId = await WorkspaceService.CreateTab(ws.oid, opts.projectName, false);
-    const tab = globalStore.get(WOS.getWaveObjectAtom<Tab>(WOS.makeORef("tab", tabId)));
-    const blockId = tab?.blockids?.[0];
-    if (blockId == null) {
-        throw new Error("new tab has no block");
-    }
+    const { tabId, blockId } = await createTermTab(opts.projectName);
     const blockORef = WOS.makeORef("block", blockId);
     await RpcApi.SetMetaCommand(TabRpcClient, {
         oref: blockORef,
@@ -79,6 +90,7 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
                 task: opts.task,
                 extraArgs: opts.extraArgs,
                 cwd,
+                toolId: opts.toolId,
             }),
             ...(opts.asleep ? asleepLaunchMeta(opts.asleep) : {}),
         },
@@ -115,8 +127,9 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
     }
     // Terminals launch in the background: leave the user where they are (no focus/surface change). The
     // terminal appears in the details rail's Terminals section and starts when first opened. Agents
-    // foreground into the Agent surface so their booting terminal mounts (which starts the process).
-    if (!isTerminal) {
+    // foreground into the Agent surface so their booting terminal mounts (which starts the process), and so
+    // does a terminal asked to take the focus (a tool opened into the centre).
+    if (!isTerminal || opts.focus) {
         globalStore.set(model.focusIdAtom, tabId);
         globalStore.set(model.surfaceAtom, "agent");
         // a resumed session opens its new tab over the transcript it was resumed from

@@ -32,6 +32,7 @@ import { compareOnAtom } from "@/app/view/agents/comparestore";
 import { docReviewStateAtom } from "@/app/view/agents/docreviewstore";
 import { historyFiltersAtom } from "@/app/view/agents/githistorystore";
 import { activeReviewKeyAtom, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
+import { dockedTerminalAtom } from "@/app/view/agents/railstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { focusSubagentAtom } from "@/app/view/agents/subagentsstore";
 import { tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
@@ -74,6 +75,7 @@ export const PREDICATE_ATOMS: Atom<unknown>[] = [
     focusSubagentAtom, // buildAgentBindings: subagent:back, agent:back, agent:leave-center
     centerModeAtom, // buildAgentBindings: agentNav / agentNavStrict (every Agent key), agent:back, agent:leave-center
     tabSwitcherAtom, // buildGlobalBindings: switcher:cancel, and switcher:next / prev under the open switcher
+    dockedTerminalAtom, // buildAgentBindings: agent:terminal-panel
 ];
 
 function bumpWhenVersion() {

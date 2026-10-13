@@ -16,7 +16,7 @@ const NO_OPS = [
     "hold_window_frame",
     "redirect_minimize",
     "set_folded_chrome",
-    "raise_topmost",
+    "raise_topmost", // a page has no window to lift above another app; floatstore.ts only logs the answer
 ];
 export const BROWSER_COMMANDS: readonly string[] = [
     "get_init",

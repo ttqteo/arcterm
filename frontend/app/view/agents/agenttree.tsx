@@ -44,6 +44,7 @@ import {
     GitBranch,
     Hash,
     History as HistoryIcon,
+    Loader2,
     Moon,
     Pencil,
     Play,
@@ -58,13 +59,13 @@ import {
     X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { Fragment, memo, useLayoutEffect, useMemo, useRef } from "react";
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { confirmCloseRun, confirmCloseSession } from "./agentactions";
 import { DONE_TITLE, doneSuggestion } from "./donesuggest";
 import { beginAgentDrag, endAgentDrag } from "./agentdragstore";
 import { mentionToken } from "./agentrowmodel";
 import type { AgentsViewModel } from "./agents";
-import { buildAgentTree, stageSubline, type StageOutcome } from "./agenttreemodel";
+import { buildAgentTree, stageSubline, UNGROUPED_PROJECT, type StageOutcome } from "./agenttreemodel";
 import { setAgentView } from "./agentview";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
@@ -78,27 +79,33 @@ import { runEventsAtom } from "./runeventstore";
 import { runMenuEntries } from "./runrowmenu";
 import { centerModeAtom, showHistory, showSession, showTerminal } from "./agentcenter";
 import {
-    activeAgentIds,
-    activeView,
     agentDigits,
+    agentsElsewhere,
     ALL_PROJECTS,
     collidingTitles,
     conversationCount,
     conversationTree,
     endedConversationsByProject,
     folderBlocks,
+    folderCounts,
+    HOME_PROJECT,
     liveBranches,
     notableBranch,
+    projectLabel,
+    projectTree,
     registeredConversations,
     runTokens,
     sessionAgeLabel,
-    splitActive,
     startedLabel,
     startOfDay,
-    terminalTree,
+    terminalRowState,
+    terminalShows,
+    treeNavIds,
     type ConversationEntry,
     type EndedRunRow,
     type EndedSessionRow,
+    type TerminalRowState,
+    type TerminalShows,
 } from "./agentsidebarmodel";
 import { projectsAtom } from "./projectsstore";
 import { useRunObjects } from "./runobjects";
@@ -116,6 +123,7 @@ import {
     displayAgeMs,
     formatAgeShort,
     formatTokens,
+    projectOf,
     type AgentState,
     type AgentVM,
 } from "./agentsviewmodel";
@@ -129,7 +137,6 @@ import {
     collapsedConversationProjectsAtom,
     collapsedProjectsAtom,
     collapsedSectionsAtom,
-    collapsedTerminalProjectsAtom,
     toggleFold,
     type SidebarSection,
 } from "./projectfoldstore";
@@ -171,8 +178,12 @@ import { useSubagentTracking } from "./subagenttracking";
 import { runningBackgroundTasks, type BackgroundTask } from "./transcriptprojection";
 import { unreadLabel } from "./unreadagents";
 import { unreadAgentsAtom } from "./unreadagentsstore";
-import { showTerminalMenu } from "./terminalsrail";
+import { showTerminalMenu, ToolGlyph } from "./terminalsrail";
 import { PanelWeb, TreeSpider } from "./themedecorview";
+import { toolIcon, toolTerminalName, type ToolIconName } from "./toolsmodel";
+import { failedAtom, installingAtom, loadTools, openToolPicker, toolsStatusAtom } from "./toolsstore";
+import { folderName } from "./worktreegone";
+import { goneTerminalIdsAtom } from "./worktreegonestore";
 
 const SUB_COLOR: Record<SubagentState, string> = {
     working: "var(--color-accent)",
@@ -1667,37 +1678,45 @@ function FoldBody({ open, children }: { open: boolean; children: React.ReactNode
     );
 }
 
-// The Agent surface's split as one row at the top of Active, as a browser shows split tabs: a segment per cell, laid
-// out as the cells are (two side by side, three as two over one, four as 2x2), so the row is a map of the screen.
-// A click focuses that cell; a segment drags onto the grid like any agent row. The 1px gaps over the edge colour are
-// the dividers.
+// The Agent surface's split as one row, as a browser shows split tabs: a segment per cell, agents and terminals alike,
+// laid out as the cells are (two side by side, three as two over one, four as 2x2), so the row is a map of the screen.
+// It sits in its project's folder when every cell is in that project; across projects (`cross`) it is the one row with no
+// folder, at the top, and each segment names its project. A click focuses that cell; a segment drags onto the grid like
+// any row. The 1px gaps over the edge colour are the dividers.
 function SplitRow({
     model,
-    agents,
+    cells,
     digits,
+    tools,
+    cross,
 }: {
     model: AgentsViewModel;
-    agents: AgentVM[];
+    cells: AgentVM[];
     digits: ReadonlyMap<string, number>;
+    tools: ToolStatus[];
+    cross: boolean;
 }) {
     const focusId = useSelectedRowId(model);
     const altHeld = useAtomValue(digitHintAtom) === "alt";
-    const segmentMenu = (agent: AgentVM, e: React.MouseEvent) => {
+    // a tool's own name while its terminal still carries the launch label, as its row in the folder reads
+    const nameOf = (cell: AgentVM) => (cell.kind === "terminal" ? toolTerminalName(cell, tools) : cell.name);
+    const segmentMenu = (cell: AgentVM, name: string, e: React.MouseEvent) => {
+        const isTerminal = cell.kind === "terminal";
         const items: ContextMenuItem[] = [
-            { label: "Remove from split", icon: <X size={15} />, click: () => removeFromGrid(model, agent.id) },
+            { label: "Remove from split", icon: <X size={15} />, click: () => removeFromGrid(model, cell.id) },
             { label: "End split", icon: <Columns2 size={15} />, click: () => endSplit(model) },
             {
                 label: "Copy name",
                 icon: <Copy size={15} />,
-                click: () => void navigator.clipboard.writeText(agent.name),
+                click: () => void navigator.clipboard.writeText(name),
             },
-            mentionMenuItem(agent),
+            ...(isTerminal ? [] : [mentionMenuItem(cell)]),
             { type: "separator" },
             {
-                label: "Close agent",
+                label: isTerminal ? "Close terminal" : "Close agent",
                 icon: <X size={15} />,
                 danger: true,
-                click: () => confirmCloseSession(agent, model),
+                click: () => (isTerminal ? confirmCloseSession(cell) : confirmCloseSession(cell, model)),
             },
         ];
         ContextMenuModel.getInstance().showContextMenu(items, e);
@@ -1705,33 +1724,49 @@ function SplitRow({
     return (
         <div
             data-agent-split-row
+            data-split-cross={cross ? "true" : undefined}
             role="group"
-            aria-label={`Split, ${agents.length} agents`}
-            className="mb-[4px] grid grid-cols-2 gap-px overflow-hidden rounded-[8px] border border-edge-mid bg-edge-mid"
+            aria-label={`Split: ${cells.map(nameOf).join(" and ")}`}
+            className="my-[2px] grid grid-cols-2 gap-px overflow-hidden rounded-[8px] border border-edge-mid bg-edge-mid"
         >
-            {agents.map((agent, i) => {
-                const selected = focusId === agent.id;
+            {cells.map((cell, i) => {
+                const selected = focusId === cell.id;
+                const terminal = cell.kind === "terminal";
+                const name = nameOf(cell);
+                // the project a segment belongs to, named only where the row has no folder to say it
+                const project = cross
+                    ? projectLabel(projectOf(cell) || (terminal ? HOME_PROJECT : UNGROUPED_PROJECT))
+                    : "";
                 return (
                     <div
-                        key={agent.id}
-                        data-agent-split-cell={agent.id}
-                        title={agent.name}
+                        key={cell.id}
+                        data-agent-split-cell={cell.id}
+                        title={project ? `${name} · ${project}` : name}
                         aria-current={selected ? "true" : undefined}
-                        onClick={() => selectAgentRow(model, agent.id)}
-                        onContextMenu={(e) => segmentMenu(agent, e)}
-                        {...dragSource(agent, true)}
+                        onClick={() => selectAgentRow(model, cell.id)}
+                        onContextMenu={(e) => segmentMenu(cell, name, e)}
+                        {...dragSource(cell, true)}
                         className={cn(
                             "flex min-w-0 cursor-pointer items-center gap-[6px] px-[9px] py-[7px] transition-colors duration-[140ms]",
                             // three cells: the third spans the bottom, as it does on screen
-                            agents.length === 3 && i === 2 && "col-span-2",
+                            cells.length === 3 && i === 2 && "col-span-2",
                             selected ? "bg-surface-selected" : "bg-surface hover:bg-surface-hover"
                         )}
                     >
-                        <DigitHint digit={altHeld ? digits.get(agent.id) : undefined}>
-                            {agent.state === "asking" ? (
-                                <span className="h-[7px] w-[7px] flex-none rounded-full bg-warning" aria-label="asking" />
+                        <DigitHint digit={altHeld ? digits.get(cell.id) : undefined}>
+                            {terminal ? (
+                                <ToolGlyph
+                                    name={toolIcon(tools.find((t) => t.id === cell.toolId))}
+                                    size={12}
+                                    className="text-muted"
+                                />
+                            ) : cell.state === "asking" ? (
+                                <span
+                                    className="h-[7px] w-[7px] flex-none rounded-full bg-warning"
+                                    aria-label="asking"
+                                />
                             ) : (
-                                <StatusDot state={agent.state} pulse={agent.state !== "idle"} />
+                                <StatusDot state={cell.state} pulse={cell.state !== "idle"} />
                             )}
                         </DigitHint>
                         <span
@@ -1740,8 +1775,16 @@ function SplitRow({
                                 selected ? "text-primary" : "text-secondary"
                             )}
                         >
-                            {agent.name}
+                            {name}
                         </span>
+                        {project ? (
+                            <span
+                                data-split-project
+                                className="min-w-0 max-w-[45%] flex-none truncate text-[10.5px] text-ink-faint"
+                            >
+                                {project}
+                            </span>
+                        ) : null}
                     </div>
                 );
             })}
@@ -1750,11 +1793,13 @@ function SplitRow({
 }
 
 // A project's folder row, in either section: the chevron and the folder say whether it is open, then the project's name
-// and, at the far end, `trailing`, which a folded folder keeps (what in it wants you, how much it holds). `action` is a
-// button over the far end that shows while the row is hovered, outside the toggle so its click never folds the folder.
+// (`label` where the folder's key reads otherwise: Home) and, at the far end, `trailing`, which a folded folder keeps
+// (what in it wants you, how much it holds). `action` is a button over the far end that shows while the row is hovered,
+// outside the toggle so its click never folds the folder.
 function FolderRow({
     section,
     project,
+    label,
     open,
     onToggle,
     trailing,
@@ -1762,6 +1807,7 @@ function FolderRow({
 }: {
     section: SidebarSection;
     project: string;
+    label?: string;
     open: boolean;
     onToggle: () => void;
     trailing?: React.ReactNode;
@@ -1774,6 +1820,7 @@ function FolderRow({
             aria-expanded={open}
             data-agent-folder={project}
             data-agent-folder-section={section}
+            data-project-folder={section === "active" ? project : undefined}
             className="flex w-full cursor-pointer items-center gap-[7px] rounded-[6px] px-[8px] py-[6px] text-left hover:bg-surface-hover"
         >
             <ChevronRight
@@ -1786,7 +1833,7 @@ function FolderRow({
             ) : (
                 <Folder size={14} aria-hidden className="shrink-0 text-muted" />
             )}
-            <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">{project}</span>
+            <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">{label ?? project}</span>
             {trailing}
         </button>
     );
@@ -1796,7 +1843,7 @@ function FolderRow({
     return (
         <div className="group/folder relative">
             {row}
-            <div className="absolute inset-y-0 right-[4px] hidden items-center group-hover/folder:flex group-focus-within/folder:flex">
+            <div className="absolute inset-y-0 right-[4px] hidden items-center gap-[4px] group-hover/folder:flex group-focus-within/folder:flex">
                 {action}
             </div>
         </div>
@@ -1804,7 +1851,7 @@ function FolderRow({
 }
 
 // Opens a plain terminal in a registered project, the New launcher's Terminal pick without the dialog. Like the
-// launcher's, it starts in the background and lands in the Terminals section. The Diff panel's sync failure opens one
+// launcher's, it starts in the background and lands in its project's folder. The Diff panel's sync failure opens one
 // in its worktree, so it is exported.
 export function quickTerminal(model: AgentsViewModel, project: string, path: string) {
     fireAndForget(() =>
@@ -1837,123 +1884,127 @@ function NewTerminalButton({ model, project, path }: { model: AgentsViewModel; p
     );
 }
 
-// A plain terminal in the Terminals section: its name, filled while it is the focused one or the one docked under the
-// agent, and a pulsing dot while its shell runs a command. A click focuses it the way an agent's row does, which with an agent on screen docks it there (terminaldock.ts);
-// its menu is the one a focused terminal's rail offers (showTerminalMenu). Not draggable: only agents are grid cells.
-function TerminalRow({ model, terminal }: { model: AgentsViewModel; terminal: AgentVM }) {
-    const selectedId = useSelectedRowId(model);
-    const docked = useAtomValue(dockedTerminalAtom) === terminal.id;
-    const selected = selectedId === terminal.id || (selectedId != null && docked);
+// The small "tool" button of a folder row: opens "Open a tool" (toolsstore.ts) for this project, in its root rather than
+// an agent's folder
+function FolderToolButton({ model, project }: { model: AgentsViewModel; project: string }) {
+    return (
+        <button
+            type="button"
+            data-folder-tool={project}
+            title={`Open a tool in ${project}`}
+            aria-label={`Open a tool in ${project}`}
+            onClick={(e) => {
+                e.stopPropagation();
+                openToolPicker(model, project);
+            }}
+            className="flex h-[20px] flex-none cursor-pointer items-center rounded-[5px] bg-surface px-[5px] text-[11px] text-muted hover:bg-surface-hover hover:text-primary"
+        >
+            tool
+        </button>
+    );
+}
+
+// The words after a terminal row's name that say it is an install terminal (Install glow): a spinner and "installing"
+// while it runs, "install failed" in the danger token once it exited non-zero and was kept with its output
+function InstallState({ state }: { state: Exclude<TerminalRowState, "removed"> }) {
+    return state === "installing" ? (
+        <span className="flex flex-none items-center gap-[4px] text-[11px] text-ink-faint">
+            <Loader2 size={11} aria-hidden className="animate-spin" />
+            installing
+        </span>
+    ) : (
+        <span className="flex-none whitespace-nowrap text-[11px] text-error-soft">install failed</span>
+    );
+}
+
+// A plain terminal or tool in its project's folder, a peer of the agent rows above the divider: the tool's icon and
+// name (a plain shell: the terminal icon and its last command), the folder it runs in when that is not the project's
+// root, a pulsing dot while its shell runs a command, and where it shows when that is not the centre (`split`, `panel`).
+// A click gives it the centre, as an agent's row does. It drags onto the grid and takes an Alt digit like one, and its
+// menu (showTerminalMenu) can open it in a split or move it to the panel. An install terminal reads installing, or
+// install failed once it exited non-zero; one whose folder was removed (worktreegone.ts) strikes its folder through and
+// reads removed.
+function TerminalRow({
+    model,
+    terminal,
+    name,
+    icon,
+    place,
+    shows,
+    state,
+    navDigit,
+}: {
+    model: AgentsViewModel;
+    terminal: AgentVM;
+    name: string; // the tool's name while the terminal still carries the launch label (toolTerminalName)
+    icon: ToolIconName;
+    place?: string; // the folder it runs in when that is not the project's root (terminalPlace)
+    shows?: TerminalShows;
+    state?: TerminalRowState;
+    navDigit?: number; // its Alt+1..9 digit
+}) {
+    const selected = useSelectedRowId(model) === terminal.id;
     const renaming = useAtomValue(renamingRowAtom) === terminal.id;
+    const digit = useHeldDigit(navDigit);
+    const removed = state === "removed";
+    // a removed terminal always names the folder it was in, even where no project root says which part is the worktree
+    const chip = place ?? (removed ? folderName(terminal.cwd) : undefined);
     return (
         <div
             data-agent-terminal-row={terminal.id}
+            data-tree-terminal-row={terminal.id}
+            data-terminal-state={state}
             onClick={() => selectAgentRow(model, terminal.id)}
-            onContextMenu={(e) => showTerminalMenu(model, terminal, e)}
+            onContextMenu={(e) => showTerminalMenu(model, terminal, e, name)}
+            {...dragSource(terminal, true)}
             className={cn(
                 "relative flex cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms]",
                 selected ? "bg-surface-selected" : "hover:bg-surface-hover"
             )}
         >
-            <Slot>
-                <SquareTerminal size={13} aria-hidden className="text-muted" />
-            </Slot>
+            <DigitHint digit={digit}>
+                <Slot>
+                    <ToolGlyph name={icon} className="text-muted" />
+                </Slot>
+            </DigitHint>
             {renaming ? (
-                <RenameBox tabId={terminal.id} shown={terminal.name} />
+                <RenameBox tabId={terminal.id} shown={name} />
             ) : (
                 <span
-                    title={terminal.name}
-                    className={cn("min-w-0 flex-1 truncate text-[13px]", selected ? "text-primary" : "text-secondary")}
+                    title={name}
+                    className={cn(
+                        "truncate text-[13px]",
+                        // the name takes the row unless a branch chip shares it
+                        chip == null ? "min-w-0 flex-1" : "min-w-0 shrink-0 max-w-[60%]",
+                        selected ? "text-primary" : "text-secondary"
+                    )}
                 >
-                    {terminal.name}
+                    {name}
                 </span>
             )}
+            {chip != null ? (
+                <span
+                    data-terminal-branch
+                    title={removed ? `${chip} was removed` : `Runs in ${chip}`}
+                    className="flex min-w-0 flex-1 items-center gap-[3px] overflow-hidden text-[11px] text-muted"
+                >
+                    <GitBranch size={10} aria-hidden className="flex-none" />
+                    <span className={cn("truncate", removed && "line-through")}>{chip}</span>
+                </span>
+            ) : null}
+            {state === "installing" || state === "failed" ? <InstallState state={state} /> : null}
+            {removed ? <span className="flex-none whitespace-nowrap text-[11px] text-muted">removed</span> : null}
             {/* a command still running (a dev server, a build) pulses like a working agent; at its prompt, no dot */}
-            {terminal.running ? (
+            {terminal.running && state == null ? (
                 <span title="Running a command" aria-label="running a command" className="flex flex-none">
                     <StatusDot state="working" pulse className="!h-[6px] !w-[6px]" />
                 </span>
             ) : null}
-        </div>
-    );
-}
-
-// The sidebar's Terminals section, pinned under the scrolling sections so it is in view however long Conversations runs:
-// the plain shells, in a folder per project, or the chosen project's alone (with those that name no project) when the
-// app bar narrows the sidebar. With no terminal in view it keeps its header and says so.
-function TerminalsSection({ model }: { model: AgentsViewModel }) {
-    const terminals = useAtomValue(model.terminalsAtom);
-    const filter = useAtomValue(model.projectFilterAtom);
-    const collapsedList = useAtomValue(collapsedTerminalProjectsAtom);
-    const registered = useAtomValue(projectsAtom);
-    const open = useSectionOpen("terminals");
-    const rows = useMemo(
-        () => terminalTree(terminals, filter, new Set(collapsedList)),
-        [terminals, filter, collapsedList]
-    );
-    // filtered, the list is flat: every row is a terminal
-    const count = filter === ALL_PROJECTS ? terminals.length : rows.length;
-    // a "+" only where the project is registered with a path to open in ("ungrouped" and unregistered folders have none)
-    const newTerminal = (project: string) => {
-        const path = registered?.[project]?.path;
-        return path ? <NewTerminalButton model={model} project={project} path={path} /> : null;
-    };
-    return (
-        <div
-            data-agent-terminals
-            className="max-h-[40%] flex-none overflow-y-auto border-t border-border px-[8px] pb-[8px] pt-[6px]"
-        >
-            <SectionHeader
-                section="terminals"
-                label="Terminals"
-                count={count}
-                first
-                trailing={filter !== ALL_PROJECTS ? <div className="ml-auto">{newTerminal(filter)}</div> : null}
-            />
-            <FoldBody open={open}>
-                {rows.length === 0 ? (
-                    <div className="px-[10px] py-[6px] text-[12px] text-muted">
-                        {filter !== ALL_PROJECTS ? `No terminals in ${filter}` : "No terminals open"}
-                    </div>
-                ) : (
-                    <div className="flex flex-col">
-                        {folderBlocks(rows).map(({ head, body }) => (
-                            <Fragment key={head?.kind === "folder" ? `f-${head.project}` : "flat"}>
-                                {head?.kind === "folder" ? (
-                                    <FolderRow
-                                        section="terminals"
-                                        project={head.project}
-                                        open={head.open}
-                                        onToggle={() =>
-                                            globalStore.set(
-                                                collapsedTerminalProjectsAtom,
-                                                toggleFold(collapsedList, head.project)
-                                            )
-                                        }
-                                        action={newTerminal(head.project)}
-                                        trailing={
-                                            head.open ? null : (
-                                                <span className="whitespace-nowrap text-[11px] tabular-nums text-ink-faint">
-                                                    {head.count}
-                                                </span>
-                                            )
-                                        }
-                                    />
-                                ) : null}
-                                <FoldBody open={body.length > 0}>
-                                    {body.map((r) =>
-                                        r.kind === "terminal" ? (
-                                            <div key={r.terminal.id} className={rowIndent(filter !== ALL_PROJECTS)}>
-                                                <TerminalRow model={model} terminal={r.terminal} />
-                                            </div>
-                                        ) : null
-                                    )}
-                                </FoldBody>
-                            </Fragment>
-                        ))}
-                    </div>
-                )}
-            </FoldBody>
+            {shows != null ? (
+                <span data-terminal-place={shows} className="flex-none text-[11px] text-ink-faint">
+                    {shows}
+                </span>
+            ) : null}
         </div>
     );
 }
@@ -2154,26 +2205,60 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const focusId = useAtomValue(model.focusIdAtom);
     const collapsedList = useAtomValue(collapsedProjectsAtom);
     const center = useAtomValue(centerModeAtom);
-    const collapsed = new Set(collapsedList);
-    const activeOpen = useSectionOpen("active");
-    // the Active section: each project's live agents, a collapsed project folding to its folder row. The ended
-    // conversations are the section under it (ConversationsSection), and the plain terminals are pinned at the foot of
-    // the sidebar (TerminalsSection), never mixed in
+    // One tree per project: each project's live agents, a divider, then its terminals and tools (projectTree), a collapsed
+    // project folding to its folder row. The ended conversations are the section under it (ConversationsSection).
     const filter = useAtomValue(model.projectFilterAtom);
     const filtered = filter !== ALL_PROJECTS;
     const tree = buildAgentTree(agents, order, lineage, folds, focusId);
-    // the split the Agent surface shows (the grid as it reconciles it) leaves the folders for one row of its own;
-    // lifted before the folds apply, so a collapsed folder stops counting what it lost
+    // the split the Agent surface shows (the grid as it reconciles it, agents and terminals alike) leaves its folders for
+    // one row of its own. The docked terminal is no cell: the surface prunes it, so it stays a row of its folder.
     const gridState = useAtomValue(agentGridAtom);
     const seeded = useAtomValue(rosterSeededAtom);
-    const cells = reconcileGrid(gridState, { focusId, eligible: eligibleIds(agents), seeded }).ids;
-    const { split, rows: unsplit } = splitActive(tree, cells, agents);
-    const active = activeView(unsplit, filter, collapsed);
-    const visibleRows = active.rows;
+    const terminals = useAtomValue(model.terminalsAtom);
+    const dockedId = useAtomValue(dockedTerminalAtom);
+    const cells = reconcileGrid(gridState, {
+        focusId,
+        eligible: eligibleIds([...agents, ...terminals.filter((t) => t.id !== dockedId)]),
+        seeded,
+    }).ids;
+    // project name -> root path, as activenav.ts builds it: the folders a terminal's branch chip is read against
+    const registered = useAtomValue(projectsAtom);
+    const roots = useMemo(() => {
+        const out = new Map<string, string>();
+        for (const [name, project] of Object.entries(registered ?? {})) {
+            if (project?.path) {
+                out.set(name, project.path);
+            }
+        }
+        return out;
+    }, [registered]);
+    // the tool library names and icons the terminals opened from it; read once on first mount
+    const toolStatus = useAtomValue(toolsStatusAtom);
+    useEffect(() => {
+        if (toolStatus == null) {
+            void loadTools();
+        }
+    }, [toolStatus]);
+    const tools = toolStatus ?? [];
+    const installing = useAtomValue(installingAtom);
+    const failed = useAtomValue(failedAtom);
+    // the terminals whose folder was removed (worktreegonestore.ts); the surface keeps them read
+    const gone = useAtomValue(goneTerminalIdsAtom);
+    const rows = projectTree({
+        tree,
+        terminals,
+        cells,
+        roster: [...agents, ...terminals],
+        filter,
+        collapsed: collapsedList,
+        roots,
+    });
     // numbered as Alt+1..9 reach them: focusAgentAt walks activeNavOrder, which builds this list from the same inputs
-    const digits = agentDigits(activeAgentIds(split, visibleRows));
-    // every project's, whatever the filter: the badge stays on the header while the section is folded, so an agent asking
-    // in a project the filter hides is never out of sight
+    const digits = agentDigits(treeNavIds(rows));
+    // what the filter hides: the row under the tree says how many agents are in other projects and how many are asking
+    const elsewhere = agentsElsewhere(tree, filter);
+    // every project's, whatever the filter: it lights the spider, so an agent asking in a project the filter hides is
+    // never out of sight
     const asking = askingCount(agents);
     // each live agent's branch, for its row's second line (as a Conversations row reads its own)
     const archive = useAtomValue(sessionsArchiveAtom);
@@ -2218,173 +2303,229 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                 </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-[8px]">
-                <SectionHeader
-                    section="active"
-                    label="Active"
-                    count={active.count + split.length}
-                    first
-                    trailing={
-                        asking > 0 ? (
-                            <span className="ml-auto">
-                                <AskingBadge n={asking} />
-                            </span>
-                        ) : null
-                    }
-                />
                 {/* the rows are this wrapper's direct children (AnimatePresence renders no element); relative so popLayout
-                    pops an exiting row out of flow in this wrapper's own coordinates. A folded section unmounts it, and
-                    its AnimatePresence starts over with initial={false}, so unfolding never replays the entrances. A
-                    project's folder needs no FoldBody here: its rows leave and arrive one by one through this list */}
-                <FoldBody open={activeOpen}>
-                    {split.length > 0 ? <SplitRow model={model} agents={split} digits={digits} /> : null}
-                    <div data-agent-active-rows className="relative">
-                        <AnimatePresence mode="popLayout" initial={false}>
-                            {visibleRows.map((r) => {
-                                if (r.kind === "group") {
+                    pops an exiting row out of flow in this wrapper's own coordinates */}
+                <div data-agent-active-rows className="relative">
+                    <AnimatePresence mode="popLayout" initial={false}>
+                        {rows.map((r, i) => {
+                            // the rows other than an agent's slide into place but never fade: a terminal, a divider and
+                            // the split come and go with no entrance or exit of their own
+                            const plain = (key: string, body: React.ReactNode) => (
+                                <motion.div key={key} layout="position" className={rowIndent(filtered)}>
+                                    {body}
+                                </motion.div>
+                            );
+                            switch (r.kind) {
+                                case "group": {
+                                    const path = registered?.[r.project]?.path;
                                     return (
-                                        <motion.div key={`g-${r.project}`} layout="position">
+                                        <motion.div
+                                            key={`g-${r.project}`}
+                                            layout="position"
+                                            className={i > 0 ? "mt-[4px]" : undefined}
+                                        >
                                             <FolderRow
                                                 section="active"
                                                 project={r.project}
-                                                open={!collapsed.has(r.project)}
+                                                label={projectLabel(r.project)}
+                                                open={r.open}
                                                 onToggle={() =>
                                                     globalStore.set(
                                                         collapsedProjectsAtom,
                                                         toggleFold(collapsedList, r.project)
                                                     )
                                                 }
-                                                trailing={r.attn > 0 ? <AskingBadge n={r.attn} /> : null}
+                                                // the tool and + buttons only where the project is registered with a path to
+                                                // open in (ungrouped, Home and unregistered folders have none)
+                                                action={
+                                                    path ? (
+                                                        <>
+                                                            <FolderToolButton model={model} project={r.project} />
+                                                            <NewTerminalButton
+                                                                model={model}
+                                                                project={r.project}
+                                                                path={path}
+                                                            />
+                                                        </>
+                                                    ) : null
+                                                }
+                                                trailing={
+                                                    <>
+                                                        {r.open ? null : (
+                                                            <span
+                                                                data-folder-counts
+                                                                className="whitespace-nowrap text-[11px] tabular-nums text-ink-faint"
+                                                            >
+                                                                {folderCounts(r.agents, r.terminals)}
+                                                            </span>
+                                                        )}
+                                                        {r.attn > 0 ? <AskingBadge n={r.attn} /> : null}
+                                                    </>
+                                                }
                                             />
                                         </motion.div>
                                     );
                                 }
-                                // an agent's row keeps the agent's key wherever it moves (a worker folding into done, an
-                                // agent nesting once its run loads), so the move animates instead of remounting
-                                let key: string;
-                                let body: React.ReactNode;
-                                switch (r.kind) {
-                                    case "parent":
-                                        key = r.agent.id;
-                                        body = (
-                                            <ParentRow
-                                                model={model}
-                                                agent={r.agent}
-                                                branch={branches.get(r.agent.id)}
-                                                tokens={tokens.get(r.agent.id)}
-                                                navDigit={digits.get(r.agent.id)}
-                                            />
-                                        );
-                                        break;
-                                    case "lead":
-                                        key = r.agent.id;
-                                        body = (
-                                            <ParentRow
-                                                model={model}
-                                                agent={r.agent}
-                                                branch={branches.get(r.agent.id)}
-                                                tokens={tokens.get(r.agent.id)}
-                                                lead={{ run: r.run, open: r.open, live: r.live }}
-                                                navDigit={digits.get(r.agent.id)}
-                                            />
-                                        );
-                                        break;
-                                    case "run":
-                                        key = `run-${r.run.runId}`;
-                                        body = <RunRow model={model} run={r.run} open={r.open} live={r.live} />;
-                                        break;
-                                    case "worker":
-                                        key = r.agent?.id ?? `task-${r.run.runId}-${r.task.id}`;
-                                        body = (
-                                            <WorkerRow
-                                                model={model}
-                                                run={r.run}
-                                                task={r.task}
-                                                agent={r.agent}
-                                                nested={r.nested}
-                                                extras={
-                                                    r.nested
-                                                        ? undefined
-                                                        : { count: r.extras ?? 0, open: r.extrasOpen ?? false }
-                                                }
-                                                navDigit={r.agent != null ? digits.get(r.agent.id) : undefined}
-                                            />
-                                        );
-                                        break;
-                                    case "stage":
-                                        key = r.agent.id;
-                                        body = (
-                                            <StageRow
-                                                model={model}
-                                                agent={r.agent}
-                                                stageRole={r.stageRole}
-                                                outcome={r.outcome}
-                                                navDigit={digits.get(r.agent.id)}
-                                            />
-                                        );
-                                        break;
-                                    case "done":
-                                        key = `done-${r.run.runId}`;
-                                        body = (
-                                            <FoldRow
-                                                glyph={<Check size={11} aria-hidden className="text-success" />}
-                                                label={[
-                                                    r.count > 0 ? `${r.count} done` : "",
-                                                    r.stages > 0
-                                                        ? `${r.stages} ${r.stages === 1 ? "review" : "reviews"}`
-                                                        : "",
-                                                ]
-                                                    .filter(Boolean)
-                                                    .join(" · ")}
-                                                open={r.open}
-                                                onToggle={() => toggleRunDoneOpen(r.run.runId, r.open, r.count)}
-                                            />
-                                        );
-                                        break;
-                                    case "queued":
-                                        key = `queued-${r.run.runId}`;
-                                        body = (
-                                            <FoldRow
-                                                glyph={
-                                                    <span className="h-[7px] w-[7px] shrink-0 rounded-full border border-muted" />
-                                                }
-                                                label={`${r.count} queued`}
-                                                open={r.open}
-                                                onToggle={() => toggleRunQueuedOpen(r.run.runId)}
-                                            />
-                                        );
-                                        break;
-                                }
-                                // layout="position" so a subagent expand doesn't scale-distort the row — only its
-                                // position animates on reflow. Must be the direct AnimatePresence child: popLayout
-                                // measures it via ref to pop an exiting row out of flow (else its space lingers).
-                                return (
-                                    <motion.div
-                                        key={key}
-                                        layout="position"
-                                        className={rowIndent(filtered)}
-                                        variants={cardVariants}
-                                        initial={entranceIds.has(key) ? "initial" : false}
-                                        animate="animate"
-                                        exit="exit"
-                                    >
-                                        {body}
-                                    </motion.div>
-                                );
-                            })}
-                        </AnimatePresence>
+                                case "split":
+                                    return plain(
+                                        "split",
+                                        <SplitRow
+                                            model={model}
+                                            cells={r.cells}
+                                            digits={digits}
+                                            tools={tools}
+                                            cross={r.crossProject}
+                                        />
+                                    );
+                                case "divider":
+                                    return plain(
+                                        `div-${r.project}`,
+                                        <div
+                                            data-project-divider={r.project}
+                                            aria-hidden
+                                            className="mx-[10px] my-[4px] h-px bg-border"
+                                        />
+                                    );
+                                case "terminal":
+                                    return plain(
+                                        r.terminal.id,
+                                        <TerminalRow
+                                            model={model}
+                                            terminal={r.terminal}
+                                            name={toolTerminalName(r.terminal, tools)}
+                                            icon={toolIcon(tools.find((t) => t.id === r.terminal.toolId))}
+                                            place={r.place}
+                                            shows={terminalShows(r.terminal.id, cells, dockedId)}
+                                            state={terminalRowState(r.terminal.id, installing, failed, gone)}
+                                            navDigit={digits.get(r.terminal.id)}
+                                        />
+                                    );
+                            }
+                            // an agent's row keeps the agent's key wherever it moves (a worker folding into done, an
+                            // agent nesting once its run loads), so the move animates instead of remounting
+                            let key: string;
+                            let body: React.ReactNode;
+                            switch (r.kind) {
+                                case "parent":
+                                    key = r.agent.id;
+                                    body = (
+                                        <ParentRow
+                                            model={model}
+                                            agent={r.agent}
+                                            branch={branches.get(r.agent.id)}
+                                            tokens={tokens.get(r.agent.id)}
+                                            navDigit={digits.get(r.agent.id)}
+                                        />
+                                    );
+                                    break;
+                                case "lead":
+                                    key = r.agent.id;
+                                    body = (
+                                        <ParentRow
+                                            model={model}
+                                            agent={r.agent}
+                                            branch={branches.get(r.agent.id)}
+                                            tokens={tokens.get(r.agent.id)}
+                                            lead={{ run: r.run, open: r.open, live: r.live }}
+                                            navDigit={digits.get(r.agent.id)}
+                                        />
+                                    );
+                                    break;
+                                case "run":
+                                    key = `run-${r.run.runId}`;
+                                    body = <RunRow model={model} run={r.run} open={r.open} live={r.live} />;
+                                    break;
+                                case "worker":
+                                    key = r.agent?.id ?? `task-${r.run.runId}-${r.task.id}`;
+                                    body = (
+                                        <WorkerRow
+                                            model={model}
+                                            run={r.run}
+                                            task={r.task}
+                                            agent={r.agent}
+                                            nested={r.nested}
+                                            extras={
+                                                r.nested
+                                                    ? undefined
+                                                    : { count: r.extras ?? 0, open: r.extrasOpen ?? false }
+                                            }
+                                            navDigit={r.agent != null ? digits.get(r.agent.id) : undefined}
+                                        />
+                                    );
+                                    break;
+                                case "stage":
+                                    key = r.agent.id;
+                                    body = (
+                                        <StageRow
+                                            model={model}
+                                            agent={r.agent}
+                                            stageRole={r.stageRole}
+                                            outcome={r.outcome}
+                                            navDigit={digits.get(r.agent.id)}
+                                        />
+                                    );
+                                    break;
+                                case "done":
+                                    key = `done-${r.run.runId}`;
+                                    body = (
+                                        <FoldRow
+                                            glyph={<Check size={11} aria-hidden className="text-success" />}
+                                            label={[
+                                                r.count > 0 ? `${r.count} done` : "",
+                                                r.stages > 0
+                                                    ? `${r.stages} ${r.stages === 1 ? "review" : "reviews"}`
+                                                    : "",
+                                            ]
+                                                .filter(Boolean)
+                                                .join(" · ")}
+                                            open={r.open}
+                                            onToggle={() => toggleRunDoneOpen(r.run.runId, r.open, r.count)}
+                                        />
+                                    );
+                                    break;
+                                case "queued":
+                                    key = `queued-${r.run.runId}`;
+                                    body = (
+                                        <FoldRow
+                                            glyph={
+                                                <span className="h-[7px] w-[7px] shrink-0 rounded-full border border-muted" />
+                                            }
+                                            label={`${r.count} queued`}
+                                            open={r.open}
+                                            onToggle={() => toggleRunQueuedOpen(r.run.runId)}
+                                        />
+                                    );
+                                    break;
+                            }
+                            // layout="position" so a subagent expand doesn't scale-distort the row — only its
+                            // position animates on reflow. Must be the direct AnimatePresence child: popLayout
+                            // measures it via ref to pop an exiting row out of flow (else its space lingers).
+                            return (
+                                <motion.div
+                                    key={key}
+                                    layout="position"
+                                    className={rowIndent(filtered)}
+                                    variants={cardVariants}
+                                    initial={entranceIds.has(key) ? "initial" : false}
+                                    animate="animate"
+                                    exit="exit"
+                                >
+                                    {body}
+                                </motion.div>
+                            );
+                        })}
+                    </AnimatePresence>
+                </div>
+                {rows.length === 0 ? (
+                    <div className="px-[10px] py-[6px] text-[12px] text-muted">
+                        {filtered ? `No agents running in ${filter}` : "No agents running"}
                     </div>
-                    {visibleRows.length === 0 && split.length === 0 ? (
-                        <div className="px-[10px] py-[6px] text-[12px] text-muted">
-                            {filtered ? `No agents running in ${filter}` : "No agents running"}
-                        </div>
-                    ) : null}
-                    {active.elsewhere.agents > 0 ? (
-                        <ElsewhereRow model={model} agents={active.elsewhere.agents} asking={active.elsewhere.asking} />
-                    ) : null}
-                </FoldBody>
+                ) : null}
+                {elsewhere.agents > 0 ? (
+                    <ElsewhereRow model={model} agents={elsewhere.agents} asking={elsewhere.asking} />
+                ) : null}
                 <ConversationsSection model={model} />
             </div>
-            <TerminalsSection model={model} />
         </div>
     );
 });

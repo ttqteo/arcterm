@@ -96,7 +96,8 @@ export interface AgentVM {
     usage?: AgentUsage; // latest context %, cost, and plan rate-limit snapshot (from the statusLine reporter)
     kind?: "agent" | "terminal" | "background"; // undefined = agent (roster); "terminal" = plain shell; "background" = detached claude agent
     needsInput?: boolean; // background agent parked on input (claude state "blocked") — drives the needs-input badge
-    cwd?: string; // background agent working dir — the resume target for Attach
+    cwd?: string; // background agent working dir — the resume target for Attach; a terminal's live cwd
+    toolId?: string; // a terminal opened from the tool library (block meta tool:id): names its tool and icon
     sessionId?: string; // pi control-channel session id (agentstatus --session-id)
     runId?: string; // the run this agent works for, when a run spawned it: a lead's own run, a worker's child run
     effortId?: string; // the initiative this agent works on: launched from it, or last read or wrote through `wsh effort`
@@ -601,7 +602,8 @@ export function terminalName(
  *  terminals launched via New Agent; the Agent surface lists + renders them separately from agents.
  *  `hasAgentStatus(oref)` reports whether that block has a live agent:status (i.e. it's a real agent).
  *  A terminal's project follows its live cwd's registered project first, then the launch-time label, so a `cd`
- *  into another registered repo moves it. `registeredProject` defaults to "no registry" for callers that have none. */
+ *  into another registered repo moves it. `registeredProject` defaults to "no registry" for callers that have none. The
+ *  VM also carries the terminal's cwd and, for one opened from the tool library, its tool id. */
 export function deriveTerminalVMs(
     rows: TerminalRowInput[],
     hasAgentStatus: (termBlockOref: string) => boolean,
@@ -610,7 +612,9 @@ export function deriveTerminalVMs(
     // the command the terminal's block last ran, as its shell reported it
     lastCommand: (blockId: string) => string | undefined = () => undefined,
     // whether the terminal's block is running a command rather than sitting at its prompt
-    running: (blockId: string) => boolean = () => false
+    running: (blockId: string) => boolean = () => false,
+    // the tool the terminal's block was opened for (block meta tool:id), undefined for a plain shell
+    toolId: (blockId: string) => string | undefined = () => undefined
 ): AgentVM[] {
     const out: AgentVM[] = [];
     for (const row of rows) {
@@ -622,6 +626,7 @@ export function deriveTerminalVMs(
         }
         const project = registeredProject(row.cwd ?? "") || row.projectLabel?.trim() || undefined;
         const blockId = row.termBlockOref.split(":")[1];
+        const tool = toolId(blockId);
         out.push({
             id: row.tabId,
             name: terminalName(row.customLabel, lastCommand(blockId), out.length + 1),
@@ -631,6 +636,8 @@ export function deriveTerminalVMs(
             agent: "terminal", // selects the "Terminal" pill in the header (runtimeMeta)
             blockId,
             ...(project != null ? { project } : {}),
+            ...(row.cwd ? { cwd: row.cwd } : {}),
+            ...(tool ? { toolId: tool } : {}),
             ...(running(blockId) ? { running: true } : {}),
         });
     }

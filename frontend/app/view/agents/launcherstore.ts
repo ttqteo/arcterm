@@ -19,6 +19,8 @@ import { planPathAtom, setRunShape, setStart } from "./runconfigstore";
 export const launcherKindAtom = atom<LauncherKind>("agent") as PrimitiveAtom<LauncherKind>;
 // the agent row; null until the first open defaults it from the harness preference
 export const launcherRuntimeAtom = atom<Runtime | null>(null) as PrimitiveAtom<Runtime | null>;
+// the Tool row's pick, by tool id; null until one is picked (launcher.ts pickedTool falls back to the first listed)
+export const launcherToolAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 // "" means the first project in recent-first order
 export const launcherProjectAtom = atom("") as PrimitiveAtom<string>;
 export const launcherTaskAtom = atom("") as PrimitiveAtom<string>;
@@ -163,6 +165,11 @@ export function pickLauncherRuntime(runtime: Runtime): void {
     }
     globalStore.set(launcherRuntimeAtom, runtime);
     globalStore.set(launcherResumeAtom, null);
+}
+
+// The last tool picked is remembered for the next open, as the agent row is.
+export function pickLauncherTool(id: string): void {
+    globalStore.set(launcherToolAtom, id);
 }
 
 // Once per open: the list is a scan of transcripts on disk, and a stale one offers a session that has moved on.

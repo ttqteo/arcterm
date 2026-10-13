@@ -10,6 +10,21 @@ where it would plug in, and how to pick it back up. Append new entries at the to
 > Pruned 2026-10-05: 27 entries whose work shipped, was retired with its subsystem, or was superseded were
 > removed. Recover any of them with `git show c99f2041:docs/deferred.md`.
 
+## (arcterm) Per-tool shortcuts in the tool library (deferred 2026-10-13)
+
+- **What:** a Shortcut field per tool in Setup → Tools (the library has none), so a tool opens from one chord without
+  the picker. The design's idea was a leader chord: `Ctrl`+`G` then a letter that the user picks for the tool, beside
+  the go-to letters.
+- **Why:** the leader is the go-to map (`GO_TARGETS` in `bindings.ts`: `c a j r s f u b . ,`, plus the `p` and `w`
+  bindings beside it), so a per-tool letter must not collide with them, must be stored somewhere (`tools.json` per tool, or a separate map), and must show
+  in the which-key bar and the cheat sheet, both of which read the static registry. That is a design question of its
+  own (can a user-defined letter shadow a surface letter, what does the cheat sheet list) and not part of the library,
+  which ships the picker (`Ctrl`+`Shift`+`T`) as the fast path.
+- **Way back:** add an optional `shortcut` to a `tools.json` entry (`wconfig.ToolKeywords`, then `task generate`),
+  register one leader binding per tool that has it (rebuilt when the tool list changes), refuse a letter the go-to map
+  already uses in the library's form, and add the Shortcut row beside **In Open a tool** in `toolslibrary.tsx`.
+- **Revive when** opening the same one or two tools through the picker is typed often enough to want a chord.
+
 ## (arcterm) Codex workers skip the job queue (deferred 2026-10-10)
 
 - **What:** a codex run worker's heavy commands (a build, the typecheck, a whole test suite) do not wait in the job

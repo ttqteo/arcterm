@@ -12,6 +12,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- **A library of terminal tools (lazygit, yazi, btop and more) that opens in the right folder**: Setup → Tools lists
+  nine built-in tools and any of your own, shows which are installed, and installs one with winget or brew in a
+  terminal you can watch. **Open a tool** (`Ctrl+Shift+T`, the agent header's Tool button, the tool button on a
+  project folder, or Search) opens one in the focused agent's folder, and the New dialog's Tool row opens one in a
+  project's root.
 - Spider-Man as a third Jarvis character (Settings → Appearance → Character): the Homecoming suit at work, Peter Parker at rest. He walks the footer side-on, thwips when he speaks, hangs from a strand when you drag him and rappels down when you let go, now and then crawls along under the app bar and hangs upside down until your cursor comes near, web-swings out and back when the window folds, and folded sits on a rooftop whose windows light up for each running agent, with his web and the count of agents at work beside it.
 - A Spider theme (Settings → Appearance → Theme): Claude's colours with Spider-Man's red accent and the suit's blue in
   the terminal, a spider in place of the arcterm logo, a small spider that drops on its thread over the agent list and
@@ -32,8 +37,15 @@ Add one line in the same commit as any change a user would notice, under `Added`
   Bash output, Opus on clear work, cold resumes) shows at most how much of the window's spend it recovers, the tabs
   behind it open with a click, and a General tips row holds advice your numbers do not measure. Re-analyze once to
   get the new card.
-- **The sidebar's sections and project folders open and close smoothly**: folding Active, Conversations or Terminals,
-  or a project's folder in Conversations or Terminals, slides its rows closed instead of dropping them at once.
+- **Terminals sit with their project's agents in the sidebar and open in the centre**: the Active and Terminals
+  sections are one tree, a folder per project with its agents, then its terminals and tools. Picking a terminal (in
+  the tree, with `j` / `k`, `Ctrl+Tab` or Search) shows it in the centre, and a quick `Ctrl+Tab` goes back to the
+  agent. A terminal can also take a cell in the split. One whose folder was removed (the worktree of an agent that
+  landed) offers to reopen in the project.
+- **The terminal panel folds to a strip** showing the terminal's name and latest output line; `` Ctrl+` `` opens and folds
+  it. Moving a terminal into the panel is now a button, not what picking it does.
+- **The sidebar's Conversations section and its project folders open and close smoothly**: folding them slides their
+  rows closed instead of dropping them at once.
 - **A run's line in the sidebar fits again**: it reads `Plan review · 0/11` and no longer cuts off at the count;
   whether its lead has started is in the tooltip, and in a narrow sidebar the workers chip keeps just its number.
 - **Click a file's path to copy it**: in the Agent panel's File tab and in Code, the path at the top copies its full

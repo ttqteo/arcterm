@@ -1,6 +1,6 @@
 # Terminals and tools: one tree per project, terminals as peers of agents, a tool library
 
-Date: 2026-10-13. Status: design agreed, not planned yet.
+Date: 2026-10-13. Status: shipped 2026-10-13 (run 41df6bc1); the hand checks are in `docs/open-issues.md`.
 
 Prototype: `D:\work\arcterm\.superpowers\design\terminal-tui\project\` (canvas `terminal-tui`; boards Compact,
 Main, ProjectTree, Library, LibraryAdd, Picker, Launcher, Sidebar, WorktreeGone).
@@ -38,8 +38,9 @@ Design rule from the review: **compact by default.** One pane in focus; anything
 ## Model
 
 - A terminal is a term block as today. New block meta records:
-  - `project` (or Home) and `cwd` at open time; the tree groups by `project`, the branch chip shows when `cwd` is not the
-    project root;
+  - the project (or Home) is the tab's `session:project`, which a launch already stamps, and the folder is the
+    terminal's `cwd`; the tree groups by the live cwd's registered project, else `session:project` (so a worktree
+    outside every registered root stays in its project), and the branch chip shows when `cwd` is not the project root;
   - `tool:id` for a block started from the library. A tool is a plain terminal (`controller: "shell"`) whose
     `cmd:firstcommand` is the tool's command line, as a Terminal launch with a command is today, so the shell finds the
     program and quitting the tool leaves a prompt in the same folder;
@@ -48,9 +49,9 @@ Design rule from the review: **compact by default.** One pane in focus; anything
 ## Sidebar: one tree per project
 
 - Folder order and agent rows are as today. Under a divider: terminals and tools, most recent first.
-- A terminal row: icon, name (the tool's name, else the last command as today), branch chip when not at the root, and a
-  short where-it-shows word when it is not the centre: `split`, `panel`; nothing otherwise. A running command
-  keeps the pulsing dot.
+- A terminal row: icon, name (the tool's name, else the last command as today), branch chip when not at the root, and
+  `panel` when it is docked under the agent; nothing otherwise. A terminal in a split is not a row of its own: it shows
+  as a segment of the split row, as the Main board draws it. A running command keeps the pulsing dot.
 - The split row (`SplitRow` in `agenttree.tsx`) moves inside its project folder when every cell is in that project. A
   split across projects keeps it at the top, each segment naming its project.
 - A folded folder says what it holds: `2 agents · 1 terminal`.
@@ -111,9 +112,9 @@ Code: `agentsidebarmodel.ts` (buildAgentTree, `splitActive`) builds the one tree
 
 A third tab after Instructions and Skills. Left: search and the catalog by category, each row with its status
 (installed, not installed, installing, install failed, on PATH / not on PATH for yours), and "Add your own tool". Right,
-for the selected tool: purpose, primary action "Open lazygit" (in the focused agent's folder), then Opens in, Shows, Shortcut, "In Open a tool"
+for the selected tool: purpose, primary action "Open lazygit" (in the focused agent's folder), then Opens in, Shows, "In Open a tool"
 (pinned to the picker's top), Command with where it was found, Install (command and Update), and Open now (its running
-blocks with Show).
+blocks with Show). A per-tool Shortcut field is deferred until the chord question below is settled (`docs/deferred.md`).
 
 ### Open a tool (board Picker)
 
@@ -169,5 +170,5 @@ project, for when no agent is in focus (the picker always follows the focused ag
 
 - `tools.json` file versus a `tools` key in settings.
 - The global chords: `Ctrl`+`Shift`+`T` for the picker, `Ctrl`+`` ` `` for the panel, per-tool shortcuts as `Ctrl`+`G`
-  leader chords.
+  leader chords (deferred: this change ships no per-tool shortcut, and the library has no Shortcut field yet).
 - Whether the Conversations section should also fold into project folders later (not part of this change).

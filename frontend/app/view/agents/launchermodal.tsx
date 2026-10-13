@@ -1,11 +1,12 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The New launcher: one dialog that starts an agent, a terminal or a run
+// The New launcher: one dialog that starts an agent, a terminal, a run or a tool
 // (docs/superpowers/specs/2026-10-08-new-launcher-design.md). It replaced the New agent dialog and the New run window.
 // The Start column picks what, the Project column where, the details below fill in the rest. Digits pick in the
 // focused column, → and ← step between the two columns, and Tab walks the dialog without leaving it. Every close keeps
-// the draft (launcherstore), which is what lets a click outside close it.
+// the draft (launcherstore), which is what lets a click outside close it. The Tool row (docs/superpowers/specs/
+// 2026-10-13-terminals-and-tools-design.md) swaps the details for a lettered Tool list, the third Tab stop.
 //
 // The open state is model.launcherAtom, so deriveKeyContext counts the dialog as a modal. The app bar's one New button
 // reopens it on the last pick; Mod+N and Mod+Shift+R, and the Brief's `r`, open it at the agent or the run door.
@@ -23,7 +24,7 @@ import { homeFromInfo, projectWhere } from "@/app/view/jarvis/projectpicker";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Check, House, Network, Search, SquareTerminal, X, Zap } from "lucide-react";
+import { Check, House, Network, Search, SquareTerminal, Wrench, X, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
@@ -50,6 +51,8 @@ import {
     homeOffered,
     launcherKey,
     launcherTitle,
+    letterHint,
+    pickedTool,
     primaryLabel,
     projectAfterFilter,
     projectColumnPicks,
@@ -57,6 +60,8 @@ import {
     selectedRowId,
     startRows,
     stepIndex,
+    toolBlocker,
+    toolFolder,
     type FocusZone,
     type LauncherKind,
     type StartRow,
@@ -93,12 +98,15 @@ import {
     launcherRuntimeAtom,
     launcherSessionsAtom,
     launcherTaskAtom,
+    launcherToolAtom,
     launcherWorktreeAtom,
     loadLauncherSessions,
     openLauncher,
     pickLauncherProject,
     pickLauncherRuntime,
+    pickLauncherTool,
 } from "./launcherstore";
+import { ToolFields } from "./launchertoolfields";
 import { naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
 import { noteRecentProject, projectListAtom, recentFirst, recentProjectsAtom, type ProjectRow } from "./projectsstore";
 import { leadRouteSeed } from "./route";
@@ -122,6 +130,9 @@ import {
 import { agentProject } from "./runlineage";
 import { RuntimeMark } from "./runtimemark";
 import { sessionKey } from "./sessionsruns";
+import { setupTabAtom } from "./setupstore";
+import { pickerOrder } from "./toolsmodel";
+import { loadTools, openTool, pinnedToolsAtom, toolsErrorAtom, toolsStatusAtom } from "./toolsstore";
 import { newAgentRamWarning } from "./workercapacity";
 import { useWorkerCapacity } from "./workercapacitystore";
 
@@ -186,6 +197,9 @@ function StartMark({ id }: { id: StartRowId }) {
     if (id === "orchestrator") {
         return <Network size={15} strokeWidth={1.8} className="text-ink-mid" />;
     }
+    if (id === "tool") {
+        return <Wrench size={15} strokeWidth={1.8} className="text-ink-mid" />;
+    }
     return (
         <RuntimeMark
             runtime={id}
@@ -208,6 +222,10 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const kind = useAtomValue(launcherKindAtom);
     const remembered = useAtomValue(launcherRuntimeAtom);
     const pickedName = useAtomValue(launcherProjectAtom);
+    const rememberedTool = useAtomValue(launcherToolAtom);
+    const toolStatuses = useAtomValue(toolsStatusAtom);
+    const toolsError = useAtomValue(toolsErrorAtom);
+    const pinnedTools = useAtomValue(pinnedToolsAtom);
     const task = useAtomValue(launcherTaskAtom);
     const goal = useAtomValue(launcherGoalAtom);
     const prototype = useAtomValue(launcherPrototypeAtom);
@@ -234,13 +252,14 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const runRoute = useAtomValue(runRouteAtom);
     const routeTouched = useAtomValue(routeTouchedAtom);
     const cap = useWorkerCapacity();
-    const [zone, setZone] = useState<"start" | "project" | null>(null);
+    const [zone, setZone] = useState<"start" | "project" | "tools" | null>(null);
     const [filter, setFilter] = useState("");
     const [home, setHome] = useState("");
     const [error, setError] = useState<string | null>(null);
     const rootRef = useRef<HTMLDivElement>(null);
     const startRef = useRef<HTMLDivElement>(null);
     const projectRef = useRef<HTMLDivElement>(null);
+    const toolListRef = useRef<HTMLDivElement>(null);
     const goalRef = useRef<HTMLTextAreaElement>(null);
     const taskRef = useRef<HTMLTextAreaElement>(null);
     const planRef = useRef<HTMLInputElement>(null);
@@ -249,8 +268,22 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const runtime = agentRuntime(startList, remembered);
     const selectedRow = selectedRowId(kind, runtime, shape);
     const isRun = kind === "run";
-    // the pick has a box a letter typed in the Start column writes into (launcherKey "write")
-    const writable = isRun ? !(shape === "orchestrator" && start === "plan") : runtimeShowsTask(runtime);
+    const isTool = kind === "tool";
+    const isAgent = kind === "agent";
+    // the pick has a box a letter typed in the Start column writes into (launcherKey "write"); a tool has none
+    const writable = isTool
+        ? false
+        : isRun
+          ? !(shape === "orchestrator" && start === "plan")
+          : runtimeShowsTask(runtime);
+    // the Tool list: pinned first, then the rest installed, yours, a couple not installed (toolsmodel pickerOrder); null
+    // until the first status read lands
+    const toolList = useMemo(
+        () => (toolStatuses == null ? null : pickerOrder(toolStatuses, pinnedTools)),
+        [toolStatuses, pinnedTools]
+    );
+    const tool = toolList == null ? null : pickedTool(toolList, rememberedTool);
+    const toolLoad = toolStatuses != null ? "ready" : toolsError != null ? "error" : "loading";
     const candidates = useMemo(() => recentFirst(rows, recent), [rows, recent]);
     const visible = filterProjects(candidates, filter);
     const homeShown = homeOffered(kind, runtime, home);
@@ -262,32 +295,41 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         : selectedProject(candidates, pickedName);
     const pickKey = atHome ? HOME_PICK : (project?.name ?? "");
     const projectPath = project?.path ?? "";
+    // A tool opens in the picked project, or Home when Home is picked or the tool lives there; the others open in the
+    // project. `where` is the folder the launch lands in.
+    const toolAtHome = atHome || tool?.opensin === "home";
+    const folder = isTool ? toolFolder(tool, project, home) : project;
+    const where = isTool ? folder : project;
     const { currentBranch, branches } = useProjectBranches(
-        open && !isRun && !atHome,
-        projectPath,
-        runtimeSupportsWorktree(runtime)
+        open && !isRun && !(isTool ? toolAtHome : atHome),
+        isTool ? (folder?.path ?? "") : projectPath,
+        isAgent && runtimeSupportsWorktree(runtime)
     );
     const branchNames = branches.map((b) => b.name);
     // the sessions this agent and project offer, and the one picked (a pick no longer on offer launches nothing)
     const choices = resumeChoices(sessions, runtime, projectPath);
-    const resume = isRun ? null : pickedResume(choices, resumeId);
+    const resume = isAgent ? pickedResume(choices, resumeId) : null;
     // a resumed session keeps its own folder, so the worktree option is neither shown nor applied
-    const wantsWorktree = !isRun && !atHome && resume == null && worktreeOn && runtimeSupportsWorktree(runtime);
+    const wantsWorktree = isAgent && !atHome && resume == null && worktreeOn && runtimeSupportsWorktree(runtime);
     const chosenBranch = (branchPick ?? currentBranch).trim();
     // git can't reuse the checked-out branch for a worktree; branch a fresh one off it instead
     const landingBranch = chosenBranch === currentBranch ? deriveBranch(currentBranch, branchNames) : chosenBranch;
     let branchNote = wantsWorktree
         ? chosenBranch && `worktree on ${landingBranch}`
         : currentBranch && `on ${currentBranch}`;
-    if (atHome) {
-        branchNote = runtime === "claude" ? "ask-only" : "";
+    if (isTool ? toolAtHome : atHome) {
+        branchNote = !isTool && runtime === "claude" ? "ask-only" : "";
     }
-    const blocker = isRun ? launchBlocker({ shape, start, goal, planPath, preview }) : null;
+    const blocker = isRun
+        ? launchBlocker({ shape, start, goal, planPath, preview })
+        : isTool
+          ? toolBlocker(tool, toolLoad)
+          : null;
     const footer = footerLine({
         kind,
         shape,
         parallelism,
-        project,
+        project: where,
         branchNote,
         blocker,
         resume: resume && { title: resume.task || "(untitled session)", branch: resume.branch },
@@ -309,16 +351,19 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     // a lead picker never seeds a runtime that cannot lead; memoized, since the seed effect keys on it and a
     // fallback route is a fresh object each call
     const profileRoute = useMemo(() => leadRouteSeed(rawRoute, harnesses), [rawRoute, harnesses]);
-    const ramWarning = isRun
-        ? shape === "quick"
-            ? newAgentRamWarning(cap, "run", "worker")
-            : null
-        : newAgentRamWarning(cap, runtime);
+    // a tool is a terminal running one program: it asks for no room
+    const ramWarning = isTool
+        ? null
+        : isRun
+          ? shape === "quick"
+              ? newAgentRamWarning(cap, "run", "worker")
+              : null
+          : newAgentRamWarning(cap, runtime);
     // an image still being written has no path to send yet; one that failed does not hold the launch
-    const imagesWriting = !isRun && imagesPending(images);
-    const primaryDisabled = project == null || blocker != null || busy || imagesWriting;
+    const imagesWriting = isAgent && imagesPending(images);
+    const primaryDisabled = where == null || blocker != null || busy || imagesWriting;
     // what an Escape closes first: a popover only while it is drawn (a branch list with no branches draws nothing)
-    const flagMenuShown = !isRun && flagMenuOpen && RUNTIME_FLAGS[runtime].length > 0;
+    const flagMenuShown = isAgent && flagMenuOpen && RUNTIME_FLAGS[runtime].length > 0;
     const branchListShown = wantsWorktree && branchListOpen && branches.length > 0;
 
     // the first open picks the agent row from the harness preference; later opens keep the last pick
@@ -442,9 +487,16 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         }
     }, [open, isRun, profileRoute, routeTouched]);
 
+    // a Tool pick lists the tools as the dialog opens: one installed since the last read should be there
+    useEffect(() => {
+        if (open && isTool) {
+            fireAndForget(loadTools);
+        }
+    }, [open, isTool]);
+
     useEffect(() => {
         setError(null);
-    }, [kind, runtime, project?.name]);
+    }, [kind, runtime, project?.name, tool?.id]);
 
     const close = () => {
         setError(null);
@@ -464,6 +516,10 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         if (row.kind === "run") {
             globalStore.set(launcherKindAtom, "run");
             setRunShape(row.id as RunShape);
+            return;
+        }
+        if (row.kind === "tool") {
+            globalStore.set(launcherKindAtom, "tool");
             return;
         }
         globalStore.set(launcherKindAtom, "agent");
@@ -612,12 +668,51 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         });
     };
 
+    // A tool takes the centre, as an agent launch does. The folder is the project's (the tool's own "opens in" aside, see
+    // toolFolder); Home is no registered project, so it goes by its name and openTool resolves the home folder itself.
+    const openPickedTool = async (t: ToolStatus, p: { name: string }) => {
+        if (!beginLauncherLaunch()) {
+            return;
+        }
+        setError(null);
+        try {
+            const res = await openTool(model, t, { project: toolAtHome ? HOME_NAME : p.name, place: "centre" });
+            if ("reason" in res) {
+                setError(res.reason);
+                return;
+            }
+            // Home takes no project's place in last used first
+            if (!toolAtHome) {
+                noteRecentProject(p.name);
+            }
+            close();
+        } catch (e) {
+            setError(String(e));
+        } finally {
+            endLauncherLaunch();
+        }
+    };
+
+    // All tools in Setup: the library tab, over the dialog it was opened from (the draft is kept, as in any close)
+    const openToolLibrary = () => {
+        close();
+        globalStore.set(setupTabAtom, "tools");
+        globalStore.set(model.surfaceAtom, "setup");
+    };
+
     const launch = () => {
-        if (project == null) {
+        if (where == null) {
             return;
         }
         // Enter and Mod+Enter reach here as well as the button, which is disabled while an image is still writing
         if (imagesWriting) {
+            return;
+        }
+        if (isTool) {
+            // a tool that is not on PATH says why in the footer; the button is disabled and Enter does nothing
+            if (blocker == null && tool != null) {
+                void openPickedTool(tool, where);
+            }
             return;
         }
         if (isRun) {
@@ -638,6 +733,9 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         }
         if (target === projectRef.current) {
             return "project";
+        }
+        if (target === toolListRef.current) {
+            return "tools";
         }
         if (target instanceof Element && target.closest("[data-launcher-resume]")) {
             return "resume";
@@ -665,14 +763,15 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             focusTrapTarget(stops, document.activeElement, e.shiftKey)?.focus();
             return;
         }
-        // the box a letter typed in the Start column starts: an agent's Task, or a run's Goal (none for a terminal, or a
-        // run from a plan file)
-        const textField = isRun ? goalRef.current : taskRef.current;
+        // the box a letter typed in the Start column starts: an agent's Task, or a run's Goal (none for a terminal, a
+        // tool, or a run from a plan file)
+        const textField = isTool ? null : isRun ? goalRef.current : taskRef.current;
         const action = launcherKey(
             {
                 zone: zoneOf(e.target),
                 startCount: startList.length,
                 projectCount: picks.length,
+                toolCount: isTool && toolList != null ? toolList.length : 0,
                 filter,
                 flagMenuOpen: flagMenuShown,
                 branchListOpen: branchListShown,
@@ -707,10 +806,29 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             case "pick-project":
                 pickProject(picks[action.index]);
                 return;
+            case "pick-tool": {
+                const picked = toolList?.[action.index];
+                if (picked != null) {
+                    pickLauncherTool(picked.id);
+                }
+                return;
+            }
             case "move": {
                 if (action.column === "start") {
                     const at = startList.findIndex((r) => r.id === selectedRow);
                     pickRow(startList[stepIndex(startList.length, at, action.delta)]);
+                    return;
+                }
+                if (action.column === "tools") {
+                    const list = toolList ?? [];
+                    const next = stepIndex(
+                        list.length,
+                        list.findIndex((t) => t.id === tool?.id),
+                        action.delta
+                    );
+                    if (next >= 0) {
+                        pickLauncherTool(list[next].id);
+                    }
                     return;
                 }
                 const next = stepIndex(picks.length, picks.indexOf(pickKey), action.delta);
@@ -754,6 +872,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
 
     const startFocused = zone === "start";
     const projectFocused = zone === "project";
+    const toolsFocused = zone === "tools";
     let projectHint = "";
     if (projectFocused) {
         projectHint = filter === "" && picks.length > 0 ? `type to filter · 1–${Math.min(9, picks.length)}` : "";
@@ -828,10 +947,10 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             <span className="flex items-center gap-[5px]">
                                 <kbd className={KEY_LEGEND}>1–9</kbd>pick
                             </span>
-                            {startFocused && writable ? (
+                            {(startFocused && writable) || toolsFocused ? (
                                 <span className="flex items-center gap-[5px]">
                                     <kbd className={KEY_LEGEND}>a–z</kbd>
-                                    {isRun ? "goal" : "task"}
+                                    {letterHint(kind)}
                                 </span>
                             ) : null}
                             {projectFocused ? (
@@ -873,6 +992,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             {startList.filter((r) => r.kind === "agent").map(renderStartRow)}
                             <ColumnLabel label="Run" focused={startFocused} className="pt-[10px]" />
                             {startList.filter((r) => r.kind === "run").map(renderStartRow)}
+                            <ColumnLabel label="Tool" focused={startFocused} className="pt-[10px]" />
+                            {startList.filter((r) => r.kind === "tool").map(renderStartRow)}
                         </div>
                         <div
                             ref={projectRef}
@@ -1003,6 +1124,19 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                 planRef={planRef}
                                 ramWarning={ramWarning}
                             />
+                        ) : isTool ? (
+                            <ToolFields
+                                tools={toolList}
+                                error={toolsError}
+                                tool={tool}
+                                atHome={toolAtHome}
+                                focused={toolsFocused}
+                                listRef={toolListRef}
+                                onFocus={() => setZone("tools")}
+                                onBlur={() => setZone(null)}
+                                onPick={pickLauncherTool}
+                                onAll={openToolLibrary}
+                            />
                         ) : (
                             <AgentFields
                                 runtime={runtime}
@@ -1028,7 +1162,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                         ) : (
                             <span
                                 data-launcher-footer="line"
-                                title={projectPath || undefined}
+                                title={where?.path || undefined}
                                 className={cn(
                                     "min-w-0 flex-1 truncate text-[12px]",
                                     footer.blocked ? "text-ink-mid" : "text-muted"
@@ -1070,12 +1204,12 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                         <DialogButton
                             variant="primary"
                             hint="enter"
-                            title={`Enter, or ${formatChordString("Cmd:Enter")} from the Task box`}
+                            title={isTool ? "Enter" : `Enter, or ${formatChordString("Cmd:Enter")} from the Task box`}
                             disabled={primaryDisabled}
                             onClick={launch}
                             className="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-300"
                         >
-                            {busy && isRun ? "Starting…" : primaryLabel(kind, runtime, resume != null)}
+                            {busy && isRun ? "Starting…" : primaryLabel(kind, runtime, resume != null, tool?.name)}
                         </DialogButton>
                     </div>
                 </div>

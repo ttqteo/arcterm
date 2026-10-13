@@ -21,8 +21,10 @@ import {
     type DocEditor,
 } from "./setupmodel";
 import { adoptKeep, type SkillKeep } from "./skillsmatrix";
+import type { ToolForm } from "./toolslibrarymodel";
+import { failedAtom, installingAtom } from "./toolsstore";
 
-export type SetupTab = "instructions" | "skills";
+export type SetupTab = "instructions" | "skills" | "tools";
 
 // local filesystem reads behind an rpc with no default timeout: a stalled backend must reject rather
 // than leave the pane on "Reading…" forever
@@ -160,4 +162,51 @@ export function adoptSkills(): Promise<void> {
 
 export function openSkillFile(model: AgentsViewModel, path: string): Promise<void> {
     return busy(() => openFileInCode(model, path));
+}
+
+// ---- tools ----
+
+// the tool the library's detail shows (null: the first in the list), and what is typed in its search
+export const selectedToolAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+export const toolsSearchAtom = atom<string>("") as PrimitiveAtom<string>;
+// the add / edit form while it is open; null shows the selected tool's detail
+export const toolFormAtom = atom<ToolForm | null>(null) as PrimitiveAtom<ToolForm | null>;
+// tools an install terminal ended on without failing, this session: one still not found after it needs a restart
+export const installEndedAtom = atom<string[]>([]) as PrimitiveAtom<string[]>;
+
+// Opens Setup → Tools on one tool (Edit in the picker lands here).
+export function openSetupTool(model: Pick<AgentsViewModel, "surfaceAtom">, toolId: string): void {
+    globalStore.set(toolFormAtom, null);
+    globalStore.set(selectedToolAtom, toolId);
+    globalStore.set(toolsSearchAtom, "");
+    globalStore.set(setupTabAtom, "tools");
+    globalStore.set(model.surfaceAtom, "setup");
+}
+
+let watchingInstalls = false;
+
+// Once: notes each tool whose install terminal ends without a failure. Started wherever an install starts, since the
+// terminal can end after the library is left. A failure sets failedAtom in the same turn that clears installingAtom, so
+// the check waits a microtask for both.
+export function watchInstallEnds(): void {
+    if (watchingInstalls) {
+        return;
+    }
+    watchingInstalls = true;
+    let prev = globalStore.get(installingAtom);
+    globalStore.sub(installingAtom, () => {
+        const next = globalStore.get(installingAtom);
+        const gone = Object.keys(prev).filter((id) => next[id] == null);
+        prev = next;
+        if (gone.length === 0) {
+            return;
+        }
+        queueMicrotask(() => {
+            const failed = globalStore.get(failedAtom);
+            const ended = gone.filter((id) => failed[id] == null);
+            if (ended.length > 0) {
+                globalStore.set(installEndedAtom, [...new Set([...globalStore.get(installEndedAtom), ...ended])]);
+            }
+        });
+    });
 }

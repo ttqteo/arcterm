@@ -27,9 +27,10 @@ import type { LineComment } from "@/app/view/agents/linecomments";
 import { activeReviewKeyAtom, lineReviewsAtom, type LineReviewState } from "@/app/view/agents/linecommentstore";
 import { confirmCloseSession } from "@/app/view/agents/agentactions";
 import { floatModeAtom, minimizeRequested } from "@/app/view/agents/floatstore";
-import { terminalFullscreenAtom } from "@/app/view/agents/railstore";
+import { dockedTerminalAtom, terminalDockFoldedAtom, terminalFullscreenAtom } from "@/app/view/agents/railstore";
 import { NO_LINEAGE } from "@/app/view/agents/runlineage";
 import { closeSwitcher, tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
+import { openToolPicker } from "@/app/view/agents/toolsstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
@@ -67,6 +68,12 @@ vi.mock("@/app/view/jarvis/openref", async (orig) => ({
 vi.mock("@/app/view/agents/floatstore", async (orig) => ({
     ...(await orig<typeof import("@/app/view/agents/floatstore")>()),
     minimizeRequested: vi.fn(),
+}));
+
+// the picker reads the tool status over the wire when it opens; the chord is only asked to open it
+vi.mock("@/app/view/agents/toolsstore", async (orig) => ({
+    ...(await orig<typeof import("@/app/view/agents/toolsstore")>()),
+    openToolPicker: vi.fn(),
 }));
 
 vi.mock("@/app/view/agents/agentactions", async (orig) => ({
@@ -834,6 +841,26 @@ describe("new run chord", () => {
     });
 });
 
+describe("open a tool chord", () => {
+    const find = (model: any) => buildGlobalBindings(model).find((x) => x.id === "open-tool")!;
+
+    // Ctrl+Shift+T on Windows: from a field and the terminal as New run's Mod+Shift+R is, and never over another modal
+    it("is Mod+Shift+T and opens the tool picker for the focused agent from anywhere but a modal", () => {
+        const model = { surfaceAtom: atom<SurfaceKey>("agent") } as any;
+        const b = find(model);
+        expect(b.keys).toBe("Mod:Shift:t");
+        expect(b.when?.({ ...ctx("agent"), editable: true })).toBe(true);
+        expect(b.when?.({ ...ctx(), modalOpen: true })).toBe(false);
+        vi.mocked(openToolPicker).mockClear();
+        b.run(ctx("agent"));
+        expect(openToolPicker).toHaveBeenCalledWith(model);
+    });
+
+    it("leaves the palette its own Open a tool row, so the action is not listed twice", () => {
+        expect(find({ surfaceAtom: atom<SurfaceKey>("agent") } as any).paletteHidden).toBe(true);
+    });
+});
+
 describe("new agent chord", () => {
     it("is Mod+N and opens the launcher at the agent door", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("cockpit"), launcherAtom: atom<LauncherKind | null>(null) } as any;
@@ -1045,6 +1072,27 @@ describe("leader reachability and the fullscreen chord", () => {
         expect(b.keys).toBe("Mod:Shift:Enter");
         expect(b.when!(inTerm)).toBe(true);
         expect(b.when!({ ...inTerm, surface: "cockpit" })).toBe(false);
+    });
+
+    it("Mod+` folds or opens the terminal panel, live in the terminal, and only while a terminal is docked", () => {
+        const b = buildAgentBindings(model).find((x) => x.id === "agent:terminal-panel")!;
+        expect(b.keys).toBe("Mod:c{Backquote}");
+        expect(b.label).toBe("Fold or open the terminal panel");
+        globalStore.set(dockedTerminalAtom, null);
+        expect(b.when!(inTerm)).toBe(false);
+        globalStore.set(dockedTerminalAtom, "t1");
+        try {
+            expect(b.when!(inTerm)).toBe(true);
+            expect(b.when!({ ...inTerm, surface: "cockpit" })).toBe(false);
+            expect(b.when!({ ...inTerm, modalOpen: true })).toBe(false);
+            globalStore.set(terminalDockFoldedAtom, false);
+            b.run(inTerm);
+            expect(globalStore.get(terminalDockFoldedAtom)).toBe(true);
+            b.run(inTerm);
+            expect(globalStore.get(terminalDockFoldedAtom)).toBe(false);
+        } finally {
+            globalStore.set(dockedTerminalAtom, null);
+        }
     });
 });
 

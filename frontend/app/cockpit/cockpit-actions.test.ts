@@ -81,6 +81,54 @@ describe("launchAgent", () => {
         expect(globalStore.get(model.typingFollowsAtom)).toBe("tab-1");
     });
 
+    it("leaves a plain terminal in the background: no focus, no surface change", async () => {
+        const model = fakeModel();
+        await launchAgent(model, {
+            runtime: "terminal",
+            startupCommand: "",
+            task: "",
+            projectPath: "C:/proj",
+            projectName: "proj",
+        });
+        expect(globalStore.get(model.focusIdAtom)).toBeUndefined();
+        expect(globalStore.get(model.surfaceAtom)).toBe("cockpit");
+        expect(globalStore.get(model.typingFollowsAtom)).toBeNull();
+    });
+
+    it("a terminal asked to focus (a tool opened into the centre) takes the Agent surface and the keyboard", async () => {
+        const model = fakeModel();
+        await launchAgent(model, {
+            runtime: "terminal",
+            startupCommand: "lazygit",
+            task: "",
+            projectPath: "C:/proj",
+            projectName: "proj",
+            toolId: "lazygit",
+            focus: true,
+        });
+        expect(globalStore.get(model.focusIdAtom)).toBe("tab-1");
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+        expect(globalStore.get(model.typingFollowsAtom)).toBe("tab-1");
+    });
+
+    it("records the tool on a terminal's block, with its command line to type at the first prompt", async () => {
+        await launchAgent(fakeModel(), {
+            runtime: "terminal",
+            startupCommand: "lazygit",
+            task: "",
+            projectPath: "C:/proj",
+            projectName: "proj",
+            toolId: "lazygit",
+        });
+        const blockSetMeta = setMeta.mock.calls.find((c) => c[1]?.oref === "block:blk-1");
+        expect(blockSetMeta[1].meta).toMatchObject({
+            controller: "shell",
+            "cmd:cwd": "C:/proj",
+            "cmd:firstcommand": "lazygit",
+            "tool:id": "lazygit",
+        });
+    });
+
     it("preflights a missing Pi resumePath and refuses to create a tab", async () => {
         const missing = "C:\\Users\\Jane Doe\\.pi\\agent\\sessions\\gone.jsonl";
         fileInfo.mockRejectedValue(new Error("no such file"));

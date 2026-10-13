@@ -10,13 +10,15 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { atom, type PrimitiveAtom } from "jotai";
+import { atom, type Atom, type PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
+import { showTerminal } from "./agentcenter";
 import { resolveCwd } from "./agentcwdresolve";
 import { linkedWorktree } from "./agentrailmodel";
 import { ensureSessionStart } from "./agentsessionstore";
 import { parseGitChanges, type GitChanges } from "./gitstatus";
-import { DOCK_DEFAULT_PX } from "./terminaldock";
+import { recentTabsAtom } from "./tabswitcherstore";
+import { DOCK_DEFAULT_PX, dockHostId } from "./terminaldock";
 
 export interface RailGitState {
     cwd: string | null;
@@ -62,8 +64,45 @@ export const railVisibleAtom = atomWithStorage("agent.rail.visible", DEFAULT_RAI
 export const terminalFullscreenAtom = atom(false);
 
 // The plain terminal docked under the agent stack (terminaldock.ts), or null with the dock closed. Session-scoped:
-// the surface fills it when a terminal is chosen and empties it when that terminal closes.
+// "Move to the panel" (moveToDock) fills it, and the surface empties it when that terminal closes or is chosen.
 export const dockedTerminalAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+
+// the dock folded to its 32 px strip (the terminal's name, a running dot and its latest output line); one choice for
+// every terminal, kept across launches
+export const terminalDockFoldedAtom = atomWithStorage("agent.terminalDock.folded", false, undefined, {
+    getOnInit: true,
+}) as PrimitiveAtom<boolean>;
+
+// What moveToDock and undock need of AgentsViewModel; spelled out so they can be tested without one.
+interface DockModel {
+    focusIdAtom: PrimitiveAtom<string | undefined>;
+    agentsAtom: Atom<ReadonlyArray<{ id: string; blockId?: string }>>;
+}
+
+// "Move to the panel": the terminal goes under the agent that was in view before it, which takes the centre back, and
+// the panel opens to show it. False (and nothing moves) when there is no agent to dock it under.
+export function moveToDock(model: DockModel, id: string): boolean {
+    const host = dockHostId(globalStore.get(recentTabsAtom), globalStore.get(model.agentsAtom), id);
+    if (host == null) {
+        return false;
+    }
+    globalStore.set(dockedTerminalAtom, id);
+    globalStore.set(terminalDockFoldedAtom, false);
+    globalStore.set(model.focusIdAtom, host);
+    showTerminal();
+    return true;
+}
+
+// The panel empties and the shown agent stays in focus: the first half of "Open in split" on the panel (the second is
+// openInSplit, which gives the terminal a cell beside that agent). A terminal that is not the docked one is left alone.
+// The terminal is not a cell while it is docked (the surface prunes it from the grid), so this runs before openInSplit.
+export function undock(_model: DockModel, id: string): void {
+    if (globalStore.get(dockedTerminalAtom) !== id) {
+        return;
+    }
+    globalStore.set(dockedTerminalAtom, null);
+    globalStore.set(terminalDockMaxAtom, false);
+}
 
 // The dock's height as last dragged, in px; clampDockHeight bounds it against the column when it is drawn.
 export const terminalDockHeightAtom = atomWithStorage("agent.terminalDock.height", DOCK_DEFAULT_PX, undefined, {

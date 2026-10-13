@@ -1,12 +1,12 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Agent surface's terminal dock as pure data: a plain terminal chosen while there is an agent to show opens in a
-// panel under the agent stack instead of taking the centre from it. Every route that chooses a terminal (the tree, the
-// palette, an openref) only writes focusIdAtom; the surface runs it through splitDock, which keeps the agent that was
-// showing above and docks the terminal below, then writes focusIdAtom back to that agent. So focusIdAtom stays the one
-// selected agent and no route needs to know about the dock. With no agent at all a terminal still fills the centre.
-// No React and no atoms: railstore.ts holds the state, agentsurface.tsx draws it.
+// The Agent surface's terminal dock as pure data: a plain terminal moved to a panel under the agent stack ("Move to the
+// panel"), a place you send a terminal to, not where choosing it goes. Every route that chooses a terminal (the tree,
+// the palette, an openref, Ctrl+Tab) only writes focusIdAtom and the terminal takes the centre, as an agent does;
+// splitDock only keeps or empties the dock. A terminal in the dock that is chosen leaves it and takes the centre. The
+// dock folds to a strip (terminalDockFoldedAtom). No React and no atoms: railstore.ts holds the state, agentsurface.tsx
+// draws it.
 
 // the dock's height bounds: never shorter than a few lines of shell, never more than this share of the column, so the
 // agent above always keeps the larger part
@@ -34,29 +34,46 @@ interface DockItem {
 
 export interface DockSplitInput<T extends DockItem> {
     focused: T | undefined; // what focusIdAtom names, if it is on the roster
-    docked: string | null; // the terminal in the dock (dockedTerminalAtom)
-    host: string | null; // the agent shown above before this render, which a newly chosen terminal docks under
+    docked: string | null; // the terminal in the dock (dockedTerminalAtom), an explicit choice
     agents: T[];
     terminals: T[];
 }
 
 export interface DockSplit<T extends DockItem> {
-    // what to show above (passed on to resolveShownAgent); undefined lets it default, which with any agent on the
-    // roster is an agent
-    focused: T | undefined;
+    focused: T | undefined; // what to show in the centre (passed on to resolveShownAgent)
     docked: T | undefined; // the terminal to draw in the dock, live and with a block
     dockedId: string | null; // what dockedTerminalAtom should hold
 }
 
 export function splitDock<T extends DockItem>(input: DockSplitInput<T>): DockSplit<T> {
     const { focused, agents, terminals } = input;
-    let dockedId = input.docked;
-    let shown = focused;
-    if (focused?.kind === "terminal" && agents.length > 0) {
-        dockedId = focused.id;
-        shown = agents.find((a) => a.id === input.host);
-    }
+    // the dock needs an agent above it, and a docked terminal that is chosen takes the centre instead
+    const dockedId = agents.length === 0 || focused?.id === input.docked ? null : input.docked;
     const docked = dockedId == null ? undefined : terminals.find((t) => t.id === dockedId && t.blockId != null);
     // a terminal that closed (or lost its block) leaves the dock empty rather than pointing at nothing
-    return { focused: shown, docked, dockedId: docked != null ? dockedId : null };
+    return { focused, docked, dockedId: docked != null ? dockedId : null };
+}
+
+// The agent to show above when `terminalId` moves to the panel: the agent in view before the terminal (the recent
+// list, newest first, as Ctrl+Tab keeps it), else the first agent with a terminal. Undefined with no agent to dock
+// under, so the terminal stays where it is.
+export function dockHostId(
+    recent: readonly string[],
+    agents: readonly { id: string; blockId?: string }[],
+    terminalId: string
+): string | undefined {
+    const live = new Set(agents.filter((a) => a.blockId != null).map((a) => a.id));
+    return recent.find((id) => id !== terminalId && live.has(id)) ?? agents.find((a) => a.blockId != null)?.id;
+}
+
+// The latest line of a terminal's output: its last line with any text. A TUI's last line is its key bar, a shell's the
+// prompt, which is what the folded strip shows. Undefined for a screen with nothing on it.
+export function lastOutputLine(lines: readonly string[]): string | undefined {
+    for (let i = lines.length - 1; i >= 0; i--) {
+        const text = lines[i].trim();
+        if (text !== "") {
+            return text;
+        }
+    }
+    return undefined;
 }

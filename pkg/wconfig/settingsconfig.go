@@ -28,6 +28,7 @@ const SettingsFile = "settings.json"
 const ConnectionsFile = "connections.json"
 const ProfilesFile = "profiles.json"
 const ProjectsFile = "projects.json"
+const ToolsFile = "tools.json"
 
 var configWriteLock sync.Mutex
 
@@ -141,6 +142,7 @@ type FullConfigType struct {
 	DefaultSettings SettingsType               `json:"defaultsettings" configfile:"-"`
 	Connections     map[string]ConnKeywords    `json:"connections"`
 	Projects        map[string]ProjectKeywords `json:"projects"`
+	Tools           map[string]ToolKeywords    `json:"tools"`
 	ConfigErrors    []ConfigError              `json:"configerrors" configfile:"-"`
 	Version         string                     `json:"version" configfile:"-"`
 	BuildTime       string                     `json:"buildtime" configfile:"-"`
@@ -148,6 +150,19 @@ type FullConfigType struct {
 
 type ProjectKeywords struct {
 	Path string `json:"path,omitempty"`
+}
+
+// ToolKeywords is one entry of tools.json, keyed by tool id: a terminal tool the user added, or a built-in of
+// the same id with the fields they changed (pkg/arctools merges the two).
+type ToolKeywords struct {
+	Name           string `json:"name,omitempty"`
+	Command        string `json:"command,omitempty"`
+	Args           string `json:"args,omitempty"`
+	OpensIn        string `json:"opensin,omitempty"` // "agent", "root" or "home"
+	Shows          string `json:"shows,omitempty"`   // "centre" or "panel"
+	Purpose        string `json:"purpose,omitempty"`
+	InstallWindows string `json:"install:windows,omitempty"`
+	InstallDarwin  string `json:"install:darwin,omitempty"`
 }
 
 type ConnKeywords struct {
@@ -755,4 +770,26 @@ func DeleteProjectConfigValue(projName string) error {
 	}
 	delete(m, projName)
 	return writeWaveHomeConfigFileLocked(ProjectsFile, m)
+}
+
+// SetUserTool writes one entry of tools.json, replacing any entry of that id; a nil t removes the entry.
+func SetUserTool(id string, t *ToolKeywords) error {
+	configWriteLock.Lock()
+	defer configWriteLock.Unlock()
+	m, cerrs := ReadWaveHomeConfigFile(ToolsFile)
+	if len(cerrs) > 0 {
+		return fmt.Errorf("error reading config file: %v", cerrs[0])
+	}
+	if t == nil {
+		if m == nil {
+			return nil // nothing registered, removing is a no-op
+		}
+		delete(m, id)
+	} else {
+		if m == nil {
+			m = make(waveobj.MetaMapType)
+		}
+		m[id] = *t
+	}
+	return writeWaveHomeConfigFileLocked(ToolsFile, m)
 }

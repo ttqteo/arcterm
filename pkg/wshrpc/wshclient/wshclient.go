@@ -1198,6 +1198,18 @@ func TermGetScrollbackLinesCommand(w *wshutil.WshRpc, data wshrpc.CommandTermGet
 	return resp, err
 }
 
+// command "toolssetuser", wshserver.ToolsSetUserCommand
+func ToolsSetUserCommand(w *wshutil.WshRpc, data wshrpc.CommandToolsSetUserData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "toolssetuser", data, opts)
+	return err
+}
+
+// command "toolsstatus", wshserver.ToolsStatusCommand
+func ToolsStatusCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandToolsStatusRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandToolsStatusRtnData](w, "toolsstatus", nil, opts)
+	return resp, err
+}
+
 // command "uiinvoke", wshserver.UiInvokeCommand
 func UiInvokeCommand(w *wshutil.WshRpc, data wshrpc.CommandUiInvokeData, opts *wshrpc.RpcOpts) (string, error) {
 	resp, err := sendRpcRequestCallHelper[string](w, "uiinvoke", data, opts)

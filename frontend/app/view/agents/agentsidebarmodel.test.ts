@@ -3,10 +3,9 @@
 
 import { describe, expect, it } from "vitest";
 import {
-    activeAgentIds,
-    activeView,
     agentDigits,
     agentExited,
+    agentsElsewhere,
     ALL_PROJECTS,
     collidingTitles,
     CONVERSATION_PAGE,
@@ -15,21 +14,28 @@ import {
     conversationTree,
     endedConversationsByProject,
     folderBlocks,
+    folderCounts,
+    HOME_PROJECT,
     liveBranches,
     notableBranch,
+    projectLabel,
+    projectTree,
     registeredConversations,
     runTokens,
     scanDue,
     sessionAgeLabel,
     sessionTitle,
-    splitActive,
     startedLabel,
     startOfDay,
-    terminalTree,
+    terminalPlace,
+    terminalRowState,
+    terminalShows,
+    treeNavIds,
     UNTITLED_SESSION,
     type ConversationEntry,
     type ConversationTreeRow,
     type EndedSessionRow,
+    type ProjectTreeRow,
 } from "./agentsidebarmodel";
 import type { AgentVM } from "./agentsviewmodel";
 import { buildAgentTree, UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
@@ -72,8 +78,6 @@ const agent = (id: string, path?: string, project = "waveterm"): AgentVM => ({
     transcriptPath: path,
 });
 
-const label = (r: AgentTreeRow): string => (r.kind === "group" ? `group:${r.project}` : r.kind);
-const labels = (rows: AgentTreeRow[]) => rows.map(label);
 const groupsOf = (rows: AgentTreeRow[]) => rows.flatMap((r) => (r.kind === "group" ? [r.project] : []));
 
 // an entry as its session id, or "run:<id>" for a run
@@ -362,143 +366,28 @@ describe("endedConversationsByProject project keys", () => {
     });
 });
 
-describe("splitActive", () => {
-    const roster = [agent("a"), agent("b"), agent("c", undefined, "loom"), agent("d")];
-    const tree = treeOf(roster);
+describe("agentsElsewhere", () => {
+    const asking = (id: string, project: string): AgentVM => ({ ...agent(id, undefined, project), state: "asking" });
 
-    it("lifts the split's agents out of their folders, in cell order", () => {
-        const v = splitActive(tree, ["c", "a"], roster);
-        expect(v.split.map((x) => x.id)).toEqual(["c", "a"]);
-        expect(labels(v.rows)).toEqual(["group:waveterm", "parent", "parent"]);
-        expect(v.rows.flatMap((r) => (r.kind === "parent" ? [r.agent.id] : []))).toEqual(["b", "d"]);
-    });
-    it("is no split with fewer than two cells", () => {
-        expect(splitActive(tree, ["a"], roster)).toEqual({ split: [], rows: tree });
-        expect(splitActive(tree, [], roster)).toEqual({ split: [], rows: tree });
-    });
-    it("skips a cell whose agent left the roster, and drops the split when one agent is left", () => {
-        expect(splitActive(tree, ["a", "gone", "b"], roster).split.map((x) => x.id)).toEqual(["a", "b"]);
-        expect(splitActive(tree, ["a", "gone"], roster)).toEqual({ split: [], rows: tree });
-    });
-    it("takes a lifted agent out of its folder's count and asking badge", () => {
-        const asking = { ...agent("b"), state: "asking" as const };
-        const list = [agent("a"), asking, agent("d")];
-        const v = splitActive(treeOf(list), ["b", "c"], [...list, agent("c", undefined, "loom")]);
-        expect(v.rows[0]).toMatchObject({ kind: "group", project: "waveterm", count: 2, attn: 0 });
-    });
-    it("lifts from the whole tree, so a collapsed folder's badge drops too and an emptied one goes", () => {
-        const asking = { ...agent("e", undefined, "loom"), state: "asking" as const };
-        const list = [...roster, asking];
-        const v = splitActive(treeOf(list), ["e", "a"], list);
-        const folded = activeView(v.rows, ALL_PROJECTS, new Set(["loom"])).rows;
-        expect(labels(folded)).toEqual(["group:waveterm", "parent", "parent", "group:loom"]);
-        expect(folded[3]).toMatchObject({ count: 1, attn: 0 });
-        // the split emptied loom: collapsed or not, it goes
-        const emptied = splitActive(treeOf(roster), ["c", "a"], roster);
-        expect(labels(activeView(emptied.rows, ALL_PROJECTS, new Set(["loom"])).rows)).toEqual([
-            "group:waveterm",
-            "parent",
-            "parent",
-        ]);
-    });
-});
-
-describe("activeView", () => {
-    const noneCollapsed = new Set<string>();
-    const view = (tree: AgentTreeRow[], filter = ALL_PROJECTS, collapsed: ReadonlySet<string> = noneCollapsed) =>
-        activeView(tree, filter, collapsed);
-
-    it("is the tree as it is when no project is collapsed", () => {
+    it("counts nothing with no filter", () => {
         const tree = treeOf([agent("a"), agent("b", undefined, "loom")]);
-        expect(view(tree).rows).toEqual(tree);
-        expect(labels(view(tree).rows)).toEqual(["group:waveterm", "parent", "group:loom", "parent"]);
-    });
-
-    it("hides a collapsed project's rows, keeping its folder row", () => {
-        const tree = treeOf([agent("a"), agent("b", undefined, "loom")]);
-        expect(labels(view(tree, ALL_PROJECTS, new Set(["waveterm"])).rows)).toEqual([
-            "group:waveterm",
-            "group:loom",
-            "parent",
-        ]);
-        expect(labels(view(tree, ALL_PROJECTS, new Set(["loom"])).rows)).toEqual([
-            "group:waveterm",
-            "parent",
-            "group:loom",
-        ]);
-        expect(labels(view(tree, ALL_PROJECTS, new Set(["waveterm", "loom"])).rows)).toEqual([
-            "group:waveterm",
-            "group:loom",
-        ]);
-    });
-
-    it("keeps the count and attention a collapsed folder row carries", () => {
-        const asking: AgentVM = { ...agent("a"), state: "asking" };
-        const rows = view(treeOf([asking, agent("b")]), ALL_PROJECTS, new Set(["waveterm"])).rows;
-        expect(rows).toHaveLength(1);
-        expect(rows[0]).toMatchObject({ kind: "group", project: "waveterm", count: 2, attn: 1 });
-    });
-
-    it("ignores a collapsed name no live project has, and is empty with no live agent", () => {
-        const tree = treeOf([agent("a")]);
-        expect(view(tree, ALL_PROJECTS, new Set(["loom"])).rows).toEqual(tree);
-        expect(view([], ALL_PROJECTS, new Set(["loom"]))).toEqual({
-            rows: [],
-            count: 0,
-            elsewhere: { agents: 0, asking: 0 },
-        });
-    });
-
-    it("counts every folder's agents, a collapsed one included, with nothing elsewhere", () => {
-        const tree = treeOf([agent("a"), agent("b"), agent("c", undefined, "loom")]);
-        expect(view(tree, ALL_PROJECTS, new Set(["waveterm"]))).toMatchObject({
-            count: 3,
-            elsewhere: { agents: 0, asking: 0 },
-        });
-    });
-
-    it("narrows to the chosen project's rows, flat: one project needs no folder row", () => {
-        const tree = treeOf([agent("a"), agent("b", undefined, "loom"), agent("c")]);
-        const v = view(tree, "waveterm");
-        expect(labels(v.rows)).toEqual(["parent", "parent"]);
-        expect(v.rows.map((r) => (r.kind === "parent" ? r.agent.id : r.kind))).toEqual(["a", "c"]);
-        expect(v.count).toBe(2);
+        expect(agentsElsewhere(tree, ALL_PROJECTS)).toEqual({ agents: 0, asking: 0 });
+        expect(agentsElsewhere([], ALL_PROJECTS)).toEqual({ agents: 0, asking: 0 });
     });
 
     it("counts the agents a filter hides, and how many of them are asking", () => {
-        const asking = (id: string, project: string): AgentVM => ({
-            ...agent(id, undefined, project),
-            state: "asking",
-        });
         const tree = treeOf([agent("a"), asking("b", "loom"), agent("c", undefined, "loom"), asking("d", "zeta")]);
-        expect(view(tree, "waveterm").elsewhere).toEqual({ agents: 3, asking: 2 });
+        expect(agentsElsewhere(tree, "waveterm")).toEqual({ agents: 3, asking: 2 });
         // an agent with no project is in none of them, so a filter hides it too
-        expect(view(treeOf([agent("a"), agent("u", undefined, "")]), "waveterm").elsewhere).toEqual({
+        expect(agentsElsewhere(treeOf([agent("a"), agent("u", undefined, "")]), "waveterm")).toEqual({
             agents: 1,
             asking: 0,
         });
     });
 
-    it("unfolds the chosen project even when its folder was collapsed: with no folder row it could not be opened", () => {
+    it("counts every other project for a project with no live agent", () => {
         const tree = treeOf([agent("a"), agent("b", undefined, "loom")]);
-        expect(labels(view(tree, "waveterm", new Set(["waveterm"])).rows)).toEqual(["parent"]);
-    });
-
-    it("is empty for a project with no live agent, which still counts the others", () => {
-        const tree = treeOf([agent("a"), agent("b", undefined, "loom")]);
-        expect(view(tree, "nowhere")).toEqual({ rows: [], count: 0, elsewhere: { agents: 2, asking: 0 } });
-    });
-});
-
-describe("activeAgentIds", () => {
-    it("lists the split's agents, then each shown agent row top to bottom, skipping rows with no session", () => {
-        const a = agent("a");
-        const rows: AgentTreeRow[] = [
-            { kind: "group", project: "waveterm", count: 2, attn: 0 },
-            { kind: "parent", agent: agent("b"), project: "waveterm" },
-            { kind: "parent", agent: agent("c"), project: "waveterm" },
-        ];
-        expect(activeAgentIds([a], rows)).toEqual(["a", "b", "c"]);
+        expect(agentsElsewhere(tree, "nowhere")).toEqual({ agents: 2, asking: 0 });
     });
 });
 
@@ -729,40 +618,344 @@ describe("registeredConversations", () => {
     });
 });
 
-describe("terminalTree", () => {
-    const term = (id: string, project = "waveterm"): AgentVM => ({
-        ...agent(id, undefined, project),
+describe("projectTree", () => {
+    // null names no project (a default parameter would swallow undefined)
+    const term = (id: string, project: string | null = "waveterm", cwd?: string): AgentVM => ({
+        ...agent(id, undefined, project ?? ""),
         kind: "terminal",
+        ...(project === null ? { project: undefined } : {}),
+        ...(cwd != null ? { cwd } : {}),
     });
-    const shape = (rows: ReturnType<typeof terminalTree>) =>
-        rows.map((r) => (r.kind === "folder" ? `folder:${r.project}:${r.count}:${r.open}` : r.terminal.id));
+    // a row as a short string: "group:<project>:<agents>a:<terminals>t[:closed]", "split:<ids>[:cross]",
+    // "divider:<project>", "t:<id>", "a:<id>" for a plain agent row
+    const shape = (rows: ProjectTreeRow[]) =>
+        rows.map((r) => {
+            switch (r.kind) {
+                case "group":
+                    return `group:${r.project}:${r.agents}a:${r.terminals}t${r.open ? "" : ":closed"}`;
+                case "split":
+                    return `split:${r.cells.map((c) => c.id).join("+")}${r.crossProject ? ":cross" : ""}`;
+                case "divider":
+                    return `divider:${r.project}`;
+                case "terminal":
+                    return `t:${r.terminal.id}`;
+                case "parent":
+                    return `a:${r.agent.id}`;
+                default:
+                    return r.kind;
+            }
+        });
+    const build = (agents: AgentVM[], terminals: AgentVM[], over: Partial<Parameters<typeof projectTree>[0]> = {}) =>
+        projectTree({
+            tree: treeOf(agents),
+            terminals,
+            cells: [],
+            roster: [...agents, ...terminals],
+            filter: ALL_PROJECTS,
+            collapsed: [],
+            roots: new Map(),
+            ...over,
+        });
 
-    it("files each terminal under its project's folder, the projects in the roster's order", () => {
-        const rows = terminalTree([term("t1"), term("t2", "loom"), term("t3")], ALL_PROJECTS, new Set());
-        expect(shape(rows)).toEqual(["folder:waveterm:2:true", "t1", "t3", "folder:loom:1:true", "t2"]);
-    });
-
-    it("folds a collapsed project to its folder row, which keeps its count", () => {
-        const rows = terminalTree([term("t1"), term("t2", "loom")], ALL_PROJECTS, new Set(["waveterm"]));
-        expect(shape(rows)).toEqual(["folder:waveterm:1:false", "folder:loom:1:true", "t2"]);
-    });
-
-    it("files a terminal with no project under ungrouped, like an agent with none", () => {
-        expect(shape(terminalTree([term("t1", "")], ALL_PROJECTS, new Set()))).toEqual([
-            `folder:${UNGROUPED_PROJECT}:1:true`,
-            "t1",
+    it("lists a project's agents, a divider, then its terminals in the order given", () => {
+        const rows = build([agent("a"), agent("b", undefined, "loom")], [term("t1"), term("t2", "loom"), term("t3")]);
+        expect(shape(rows)).toEqual([
+            "group:waveterm:1a:2t",
+            "a:a",
+            "divider:waveterm",
+            "t:t1",
+            "t:t3",
+            "group:loom:1a:1t",
+            "a:b",
+            "divider:loom",
+            "t:t2",
         ]);
     });
 
-    it("narrows to the chosen project's terminals, flat and unfolded, keeping one that names no project", () => {
-        const terminals = [term("t1"), term("t2", "loom"), term("u", ""), term("t3")];
-        expect(shape(terminalTree(terminals, "waveterm", new Set(["waveterm"])))).toEqual(["t1", "u", "t3"]);
-        expect(shape(terminalTree(terminals, "zeta", new Set()))).toEqual(["u"]);
+    it("has no divider for a project with no terminals", () => {
+        expect(shape(build([agent("a")], []))).toEqual(["group:waveterm:1a:0t", "a:a"]);
     });
 
-    it("is empty with no terminal", () => {
-        expect(terminalTree([], ALL_PROJECTS, new Set(["waveterm"]))).toEqual([]);
-        expect(terminalTree([], "waveterm", new Set())).toEqual([]);
+    it("gives a project with only terminals a group row and its terminals, after the agents' projects", () => {
+        const rows = build([agent("a")], [term("t1", "ops"), term("t2", "ops")]);
+        expect(shape(rows)).toEqual(["group:waveterm:1a:0t", "a:a", "group:ops:0a:2t", "t:t1", "t:t2"]);
+    });
+
+    it("files a terminal with no project under Home, last", () => {
+        const rows = build([agent("a")], [term("h", null), term("t1", "ops"), term("t2")]);
+        expect(shape(rows)).toEqual([
+            "group:waveterm:1a:1t",
+            "a:a",
+            "divider:waveterm",
+            "t:t2",
+            "group:ops:0a:1t",
+            "t:t1",
+            `group:${HOME_PROJECT}:0a:1t`,
+            "t:h",
+        ]);
+        // a blank project is no project either
+        expect(shape(build([], [term("h", "")]))).toEqual([`group:${HOME_PROJECT}:0a:1t`, "t:h"]);
+    });
+
+    it("folds a project to its group row, which keeps the agent and terminal counts", () => {
+        const rows = build([agent("a"), agent("b", undefined, "loom")], [term("t1"), term("t2")], {
+            collapsed: ["waveterm"],
+        });
+        expect(shape(rows)).toEqual(["group:waveterm:1a:2t:closed", "group:loom:1a:0t", "a:b"]);
+        // Home folds like any project
+        expect(shape(build([], [term("h", null)], { collapsed: [HOME_PROJECT] }))).toEqual([
+            `group:${HOME_PROJECT}:0a:1t:closed`,
+        ]);
+    });
+
+    it("carries the agents waiting on you into the group row", () => {
+        const asking = { ...agent("a"), state: "asking" as const };
+        const rows = build([asking, agent("b")], [term("t1")], { collapsed: ["waveterm"] });
+        expect(rows[0]).toMatchObject({ kind: "group", agents: 2, terminals: 1, attn: 1, open: false });
+    });
+
+    it("narrows to one project's rows with no group row, keeping a terminal that names no project", () => {
+        const agents = [agent("a"), agent("b", undefined, "loom")];
+        const terminals = [term("t1"), term("h", null), term("t2", "loom"), term("t3")];
+        // the fold does not apply to a filtered project
+        const rows = build(agents, terminals, { filter: "waveterm", collapsed: ["waveterm"] });
+        expect(shape(rows)).toEqual(["a:a", "divider:waveterm", "t:t1", "t:h", "t:t3"]);
+        expect(shape(build(agents, terminals, { filter: "zeta" }))).toEqual(["t:h"]);
+        expect(shape(build(agents, [term("t2", "loom")], { filter: "zeta" }))).toEqual([]);
+    });
+
+    it("names where a terminal runs when it is not at its project's root", () => {
+        const roots = new Map([["waveterm", "D:\\code\\waveterm\\"]]);
+        const rows = build(
+            [agent("a")],
+            [
+                term("at", "waveterm", "d:/code/waveterm"),
+                term("wt", "waveterm", "D:\\code\\waveterm\\.waveterm\\worktrees\\fix-login-agent"),
+                term("home", null, "C:\\Users\\u"),
+                term("unreg", "ops", "C:\\ops\\x"),
+            ],
+            { roots }
+        );
+        const places = rows.flatMap((r) => (r.kind === "terminal" ? [[r.terminal.id, r.place]] : []));
+        expect(places).toEqual([
+            ["at", undefined],
+            ["wt", "fix-login-agent"],
+            ["unreg", undefined],
+            ["home", undefined],
+        ]);
+    });
+
+    describe("split", () => {
+        const agents = [agent("a1"), agent("a2"), agent("b", undefined, "loom")];
+        const terminals = [term("t1"), term("t2", "loom")];
+
+        it("sits first in a project's body when every cell is in it, agents and terminals alike", () => {
+            const rows = build(agents, terminals, { cells: ["a1", "t1"] });
+            expect(shape(rows)).toEqual([
+                "group:waveterm:1a:0t",
+                "split:a1+t1",
+                "a:a2",
+                "group:loom:1a:1t",
+                "a:b",
+                "divider:loom",
+                "t:t2",
+            ]);
+            expect(rows[1]).toMatchObject({ kind: "split", project: "waveterm", crossProject: false });
+        });
+
+        it("puts a split across projects at the very top, crossProject", () => {
+            const rows = build(agents, terminals, { cells: ["a1", "t2", "b"] });
+            expect(shape(rows)).toEqual([
+                "split:a1+t2+b:cross",
+                "group:waveterm:1a:1t",
+                "a:a2",
+                "divider:waveterm",
+                "t:t1",
+            ]);
+            expect(rows[0]).toMatchObject({ kind: "split", project: null, crossProject: true });
+        });
+
+        it("is no split with fewer than two cells on the roster", () => {
+            const plain = shape(build(agents, terminals));
+            expect(shape(build(agents, terminals, { cells: ["a1"] }))).toEqual(plain);
+            expect(shape(build(agents, terminals, { cells: [] }))).toEqual(plain);
+            expect(shape(build(agents, terminals, { cells: ["a1", "gone"] }))).toEqual(plain);
+        });
+
+        it("skips a cell that left the roster and still splits the rest", () => {
+            const rows = build(agents, terminals, { cells: ["a1", "gone", "a2"] });
+            expect(shape(rows)[1]).toBe("split:a1+a2");
+        });
+
+        it("keeps a project the split emptied when it still holds a terminal, and drops one it left bare", () => {
+            // a2 and t1 stay: waveterm keeps its terminal. loom lost its only agent to the split and has no terminal
+            const kept = build([agent("a1"), agent("b", undefined, "loom")], [term("t1")], { cells: ["a1", "b"] });
+            expect(shape(kept)).toEqual(["split:a1+b:cross", "group:waveterm:0a:1t", "t:t1"]);
+            // the split took every row of the project it sits in: the group stays as its host
+            const host = build([agent("a1"), agent("a2")], [], { cells: ["a1", "a2"] });
+            expect(shape(host)).toEqual(["group:waveterm:0a:0t", "split:a1+a2"]);
+        });
+
+        it("takes a lifted agent out of its project's asking count", () => {
+            const asking = { ...agent("a1"), state: "asking" as const };
+            const rows = build([asking, agent("a2")], [], { cells: ["a1", "a2"], collapsed: ["waveterm"] });
+            expect(rows[0]).toMatchObject({ kind: "group", agents: 0, attn: 0, open: false });
+        });
+
+        it("is not folded away with its project", () => {
+            const rows = build(agents, terminals, { cells: ["a1", "t1"], collapsed: ["waveterm", "loom"] });
+            expect(shape(rows)).toEqual(["group:waveterm:1a:0t:closed", "split:a1+t1", "group:loom:1a:1t:closed"]);
+        });
+
+        it("is the first row under a project filter, wherever its cells are", () => {
+            expect(shape(build(agents, terminals, { cells: ["a1", "t1"], filter: "waveterm" }))).toEqual([
+                "split:a1+t1",
+                "a:a2",
+            ]);
+            // cells in another project than the filter's: still shown, as the surface shows it
+            expect(shape(build(agents, terminals, { cells: ["b", "t2"], filter: "waveterm" }))).toEqual([
+                "split:b+t2",
+                "a:a1",
+                "a:a2",
+                "divider:waveterm",
+                "t:t1",
+            ]);
+        });
+
+        it("puts a divider under the split when terminals remain and nothing else is above them", () => {
+            const rows = build([agent("a1"), agent("a2")], [term("t1"), term("t2")], { cells: ["a1", "a2"] });
+            expect(shape(rows)).toEqual(["group:waveterm:0a:2t", "split:a1+a2", "divider:waveterm", "t:t1", "t:t2"]);
+        });
+    });
+});
+
+describe("projectLabel", () => {
+    it("calls the terminals with no project Home, and names every other folder as it is", () => {
+        expect(projectLabel(HOME_PROJECT)).toBe("Home");
+        expect(projectLabel("arcterm")).toBe("arcterm");
+        // the agents with no project keep their own folder and its own name
+        expect(projectLabel(UNGROUPED_PROJECT)).toBe(UNGROUPED_PROJECT);
+    });
+});
+
+describe("folderCounts", () => {
+    it("says what a folded folder holds, agents then terminals", () => {
+        expect(folderCounts(2, 1)).toBe("2 agents · 1 terminal");
+        expect(folderCounts(1, 2)).toBe("1 agent · 2 terminals");
+    });
+    it("names only the terminals of a folder with no agents, and only the agents of one with no terminals", () => {
+        expect(folderCounts(0, 2)).toBe("2 terminals");
+        expect(folderCounts(0, 1)).toBe("1 terminal");
+        expect(folderCounts(3, 0)).toBe("3 agents");
+    });
+    it("is empty for a folder that holds nothing", () => {
+        expect(folderCounts(0, 0)).toBe("");
+    });
+});
+
+describe("terminalRowState", () => {
+    // tool id -> the tab of its install terminal (toolsstore's installingAtom and failedAtom)
+    it("reads installing for the tab of a running install, failed for one that exited non-zero", () => {
+        expect(terminalRowState("t1", { glow: "t1" }, {})).toBe("installing");
+        expect(terminalRowState("t2", {}, { k9s: "t2" })).toBe("failed");
+    });
+    it("is nothing for any other terminal", () => {
+        expect(terminalRowState("t3", { glow: "t1" }, { k9s: "t2" })).toBeUndefined();
+        expect(terminalRowState("t3", {}, {})).toBeUndefined();
+    });
+    it("finds the tab whichever tool it belongs to", () => {
+        expect(terminalRowState("t5", { glow: "t1", btop: "t5" }, { k9s: "t2" })).toBe("installing");
+    });
+    it("reads failed when both name the tab: the exit is the later fact", () => {
+        expect(terminalRowState("t1", { glow: "t1" }, { glow: "t1" })).toBe("failed");
+    });
+    it("reads removed for a terminal whose folder is gone (worktreegone.ts), an install's own state first", () => {
+        expect(terminalRowState("t1", {}, {}, ["t1"])).toBe("removed");
+        expect(terminalRowState("t2", {}, {}, ["t1"])).toBeUndefined();
+        expect(terminalRowState("t1", { glow: "t1" }, {}, ["t1"])).toBe("installing");
+        expect(terminalRowState("t1", {}, { glow: "t1" }, ["t1"])).toBe("failed");
+    });
+});
+
+describe("terminalShows", () => {
+    it("says panel for the docked terminal", () => {
+        expect(terminalShows("t1", [], "t1")).toBe("panel");
+        expect(terminalShows("t1", ["a", "t1"], "t1")).toBe("panel");
+    });
+    it("says split for a cell of a split, and nothing for the one cell of a grid that is not split", () => {
+        expect(terminalShows("t1", ["a", "t1"], null)).toBe("split");
+        expect(terminalShows("t1", ["t1"], null)).toBeUndefined();
+    });
+    it("is nothing for a terminal that is neither", () => {
+        expect(terminalShows("t1", ["a", "b"], "t2")).toBeUndefined();
+        expect(terminalShows("t1", [], undefined)).toBeUndefined();
+    });
+});
+
+describe("terminalPlace", () => {
+    it("is nothing at the project's root, however either path is written", () => {
+        expect(terminalPlace("D:\\Code\\WaveTerm", "d:/code/waveterm")).toBeUndefined();
+        expect(terminalPlace("d:/code/waveterm/", "D:\\Code\\WaveTerm")).toBeUndefined();
+        expect(terminalPlace("/home/u/p//", "/home/u/p")).toBeUndefined();
+    });
+    it("is the last folder of the cwd anywhere else", () => {
+        expect(terminalPlace("D:\\code\\wt\\.waveterm\\worktrees\\fix-login-agent", "D:\\code\\wt")).toBe(
+            "fix-login-agent"
+        );
+        expect(terminalPlace("/home/u/p/src/", "/home/u/p")).toBe("src");
+        // a folder that only shares the root's name as a prefix is another folder
+        expect(terminalPlace("/home/u/p2", "/home/u/p")).toBe("p2");
+    });
+    it("is nothing with no cwd, or no root to compare against", () => {
+        expect(terminalPlace(undefined, "/home/u/p")).toBeUndefined();
+        expect(terminalPlace("", "/home/u/p")).toBeUndefined();
+        expect(terminalPlace("/home/u/p/src", undefined)).toBeUndefined();
+    });
+});
+
+describe("treeNavIds", () => {
+    const agents = [agent("a"), agent("b"), agent("c", undefined, "loom")];
+    const terminals: AgentVM[] = [
+        { ...agent("t1"), kind: "terminal" },
+        { ...agent("t2", undefined, "loom"), kind: "terminal" },
+    ];
+    const tree = (cells: string[] = []) =>
+        projectTree({
+            tree: treeOf(agents),
+            terminals,
+            cells,
+            roster: [...agents, ...terminals],
+            filter: ALL_PROJECTS,
+            collapsed: [],
+            roots: new Map(),
+        });
+
+    it("walks agents and terminals the way the tree reads", () => {
+        expect(treeNavIds(tree())).toEqual(["a", "b", "t1", "c", "t2"]);
+    });
+    it("puts the split's cells first, in cell order, as the agent keys have always walked them", () => {
+        expect(treeNavIds(tree(["c", "t1"]))).toEqual(["c", "t1", "a", "b", "t2"]);
+    });
+    it("skips a folded project's rows", () => {
+        const folded = projectTree({
+            tree: treeOf(agents),
+            terminals,
+            cells: [],
+            roster: [...agents, ...terminals],
+            filter: ALL_PROJECTS,
+            collapsed: ["waveterm"],
+            roots: new Map(),
+        });
+        expect(treeNavIds(folded)).toEqual(["c", "t2"]);
+    });
+    it("skips a worker row whose session is gone, and rows that are not a session", () => {
+        const gone = { kind: "worker", project: "p", run: {}, task: {} } as unknown as ProjectTreeRow;
+        const rows: ProjectTreeRow[] = [
+            { kind: "group", project: "p", agents: 1, terminals: 0, attn: 0, open: true },
+            gone,
+            { kind: "divider", project: "p" },
+        ];
+        expect(treeNavIds(rows)).toEqual([]);
     });
 });
 

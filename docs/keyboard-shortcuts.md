@@ -31,7 +31,7 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
   that will work in your current context.
 - **Held modifier.** Hold `Mod` or `Alt` on its own a moment and the bottom bar lists every chord on that key that
   works right now — inside the terminal, the only keys that reach the cockpit. The digit jumps show as one chip
-  (`Mod`+`1`–`7`, `Alt`+`1`–`9`) while the rail and the Active list number their rows.
+  (`Mod`+`1`–`7`, `Alt`+`1`–`9`) while the rail and the Agent surface's project tree number their rows.
 - **Cheat sheet.** Press `?` (while not typing), or click the `?` button at the right end of the bottom bar (on every
   surface, while typing too), to open a searchable modal of every shortcut. From the keyboard while typing, open it via
   Search (`Mod`+`P`) → Commands → "Keyboard shortcuts".
@@ -44,6 +44,7 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 | `Mod`+`P` | Search — opens on the Files scope on Code (see below) |
 | `Mod`+`N` | New agent: opens the New dialog on an agent row |
 | `Mod`+`Shift`+`R` | New run: opens the New dialog on a run row |
+| `Mod`+`Shift`+`T` | Open a tool: the picker for lazygit, yazi, btop and your own tools (see below), opening in the focused agent's folder, else the project root. From inside a terminal too. Not bare `Mod`+`T`: on Windows that is `Ctrl`+`T`, which a TUI or the shell may take |
 | `Mod`+`G` | Go to…: opens the go-to leader (see below) |
 | `Mod`+`J` | What's waiting: the avatar popup (Jarvis peek), on any surface, from inside a terminal too (on Windows it takes `Ctrl`+`J` there; Shift+Enter is the newline). Hold `Mod` on its own and the creature shows a `J` |
 | `Mod`+`,` | Settings, as in VS Code and every Mac app |
@@ -56,21 +57,39 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 Setup and Settings have no `Mod`+number slot — the positions are bound to `SURFACE_ORDER`
 (`frontend/app/view/agents/agents.tsx`), which excludes them. Reach Setup with `Mod`+`G` `.` and Settings with `Mod`+`,` or `Mod`+`G` `,`.
 
-## The New dialog (New agent, New run)
+## The New dialog (New agent, New run, Open a tool)
 
-One dialog starts an agent, a terminal or a run. It opens with focus on the Start column.
+One dialog starts an agent, a terminal, a run or a tool. It opens with focus on the Start column. The Tool row is the
+last in Start, so the other rows keep their digits.
 
 | Keys | Action |
 |---|---|
 | `1`…`9` | Pick that row in the focused column (Start or Project) |
 | `↑` / `↓` | Move in the focused column |
 | `→` / `←` | From the Start column to the Project column, and back |
-| letters | In the Start column, start typing the task (or a run's goal): focus moves to that box with the letter in it. In the Project column, filter projects by name; `Backspace` shortens the filter |
-| `Tab` / `Shift`+`Tab` | Next / previous: Start, Project, each field, Cancel, the launch button, and round again |
-| `Enter` | Launch, from a column or a one-line field; in the task or goal box it starts a new line |
+| letters | In the Start column, start typing the task (or a run's goal): focus moves to that box with the letter in it (not with the Tool row picked, which has no task box). In the Project column, filter projects by name; `Backspace` shortens the filter |
+| `a`…`z` | In the Tool list (the third `Tab` stop after Start and Project, with the Tool row picked): pick the nth tool. `↑` / `↓` walk the list, `Enter` opens the tool |
+| `Tab` / `Shift`+`Tab` | Next / previous: Start, Project, each field (the Tool list with the Tool row picked), Cancel, the launch button, and round again |
+| `Enter` | Launch, from a column, the Tool list or a one-line field; in the task or goal box it starts a new line |
 | `Shift`+`Enter` | In the Resume list, on a session: read its transcript on the Agent surface instead of resuming it |
 | `Mod`+`Enter` | Launch, from anywhere in the dialog |
 | `Esc` | Close the open menu or the project filter first, then the dialog. What you typed is kept for the next open |
+
+## Open a tool (`Mod`+`Shift`+`T`)
+
+A palette-style picker for the tool library (Setup → Tools). Its first line says where the tool will open: the focused
+agent's folder (its worktree when it has one), else the project root, else Home. Other ways in: the Tool button in an
+agent's header, the `tool` button on a project folder in the tree (opens in the project root), and Search → Commands →
+"Open a tool…". The search box has focus on open.
+
+| Keys | Action |
+|---|---|
+| letters | Filter by name, command or purpose |
+| `↑` / `↓` | Move through the list (Installed, Not installed, Yours); the pointer moves the selection too |
+| `Enter` | Open the selected tool in the centre. A tool that is not installed, is installing, failed, or is not on PATH answers with a line instead |
+| `Shift`+`Enter` | Open it in the panel under the agent |
+| `Mod`+`I` | Install the selected built-in tool that is not installed |
+| `Esc` | Close |
 
 ## Go-to surface — leader `Mod`+`G`
 
@@ -84,7 +103,7 @@ One dialog starts an agent, a terminal or a run. It opens with focus on the Star
 | `Mod`+`G` `f` | Files |
 | `Mod`+`G` `u` | Usage |
 | `Mod`+`G` `b` | Code — browse source |
-| `Mod`+`G` `.` | Setup — instructions and skills |
+| `Mod`+`G` `.` | Setup — instructions, skills and the tool library |
 | `Mod`+`G` `,` | Settings |
 | `Mod`+`G` `p` | Search |
 | `Mod`+`G` `w` | What's waiting — the avatar popup (Jarvis peek), on any surface |
@@ -104,6 +123,9 @@ One overlay with scopes: All, Needs you, Go to, Agents, Runs, Sessions, Records,
 | `Mod`+`Enter` | The selected row's alternate action, named in the footer. On the goal block, open an orchestrator run instead of a Quick one |
 | `Backspace` on an empty query | Leave a picker, then drop back to All |
 | `path:123` in Files | Open the file at that line; a bare `:123` on Code moves the open file |
+
+The Agents scope lists the plain terminals and tools beside the agents (a terminal's status reads `running` while it
+runs a command, else `terminal`); `Enter` opens one in the centre.
 
 In All, text that names nothing is a goal: Quick and
 Orchestrate open the New dialog on that run row with it
@@ -184,7 +206,8 @@ A link inside an item view does a full open, even with `Mod` held.
 
 | Keys | Action |
 |---|---|
-| `j` / `k` (or `↓` / `↑`, `→` / `←`) | Next / previous agent |
+| `j` / `k` (or `↓` / `↑`, `→` / `←`) | Next / previous row of the project tree: agents and terminals, in the tree's order. A terminal row takes the centre as an agent does |
+| `Mod`+`` ` `` | Fold the terminal panel under the agent to a 32 px strip showing the terminal's name and latest output line, or open it again. Works from inside the terminal; active only while a terminal is in the panel, else the key is the terminal's own. By key position, so the same on every layout |
 | `d` | Toggle the agent rail |
 | `f` | Toggle terminal fullscreen |
 | `Mod`+`Shift`+`Enter` (or `F11`) | Toggle terminal fullscreen from inside the terminal too. A Mac keyboard has no `F11` of its own, so `Cmd`+`Shift`+`Enter` is the one to use there |
@@ -209,17 +232,20 @@ the terminal back. An ended session opened from the sidebar covers the terminal 
 
 ### Agent: terminal grid
 
-Open a split by dragging a live agent from the tree onto a terminal (up to four cells), or by right-clicking its row and
-picking **Open in split**. From the keyboard it is in the palette: `Mod`+`P`, the agent, `→`, **Open in split**. A split
-needs an agent with no cell yet and a grid with room; otherwise the menu item is disabled and the palette action just
-opens the agent.
+A cell is an agent or a terminal (a shell, lazygit beside the agent). Open a split by dragging a live agent or terminal
+from the tree onto a terminal (up to four cells), or by right-clicking its row and picking **Open in split**. From the
+keyboard it is in the palette: `Mod`+`P`, the agent or terminal, `→`, **Open in split**. A split needs an agent or
+terminal with no cell yet and a grid with room; otherwise the menu item is disabled and the palette action just opens it.
+A terminal in the centre has the same in its header, **Open beside `<agent>`**, and a terminal in the panel in its bar.
 
-Once there are two cells, each has a bar you can drag to rearrange it; the `×` on it takes the agent out of the grid and
-leaves it running. The header and the details rail follow the focused cell; click a cell to focus it.
+Once there are two cells, each has a bar you can drag to rearrange it; the `×` on it takes the agent or terminal out of
+the grid and leaves it running. The header and the details rail follow the focused cell (a terminal's header is its slim
+one, with **Move to the panel** and **Close**); click a cell to focus it.
 
-Moving between agents with the keyboard follows one rule: if the agent already has a cell, that cell takes focus;
-otherwise the agent replaces the focused cell and the others stay put. So stepping through more agents than there are
-cells keeps changing which of them show.
+Moving between agents and terminals with the keyboard follows one rule: if it already has a cell, that cell takes focus;
+otherwise it replaces the focused cell and the others stay put. So stepping through more of them than there are cells
+keeps changing which of them show, and picking terminal T on agent A of a split [A, B] gives [T, B]; a quick `Ctrl`+`Tab`
+puts A back in T's cell.
 
 An agent asking a question in its terminal (Claude Code's picker) takes the keyboard: choose it by any route, or have
 the chosen agent start asking, and typing moves into its terminal, so `↑` / `↓`, `Enter` and the digits answer the
@@ -228,13 +254,13 @@ picker instead of moving through the list. `Shift`+`Esc` goes back to the list.
 | Keys | Action |
 |---|---|
 | `Ctrl`+`Tab` | The tab switcher (see Global); the tab it opens follows the rule above. Works from inside a terminal, and pressed there, typing follows to the new agent's terminal |
-| `Alt`+`1`…`9` | The nth agent of the Active list, top to bottom (the split's agents first). Hold `Alt` a moment and each row shows its number. Works from inside a terminal, where typing follows as with `Ctrl`+`Tab` |
-| `j` / `k` (or `↓` / `↑`, `→` / `←`) | Next / previous agent, by the rule above, stopping at the ends of the list; not while a terminal holds focus |
+| `Alt`+`1`…`9` | The nth row of the project tree, agents and terminals, top to bottom as the tree shows them. Hold `Alt` a moment and each row shows its number. Works from inside a terminal, where typing follows as with `Ctrl`+`Tab` |
+| `j` / `k` (or `↓` / `↑`, `→` / `←`) | Next / previous agent or terminal, by the rule above, stopping at the ends of the list; not while a terminal holds focus |
 | `f` / `Mod`+`Shift`+`Enter` / `F11` | Fullscreen shows only the focused cell; the grid returns when you leave it |
 
-Canvas mode, a review, the subagent view, Conversation History, an ended session's or a done worker's transcript, and a
-terminal focused from the tree's Terminals section each show one thing in place of the grid; the grid comes back as it
-was.
+Canvas mode, a review, the subagent view, Conversation History and an ended session's or a done worker's transcript each
+show one thing in place of the grid; the grid comes back as it was. A terminal picked from the tree, `j` / `k`,
+`Ctrl`+`Tab` or Search no longer does: it takes a cell by the rule above.
 
 ### Agent: canvas mode
 

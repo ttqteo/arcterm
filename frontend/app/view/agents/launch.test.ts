@@ -198,6 +198,34 @@ describe("buildLaunchMeta", () => {
             "cmd:firstcommand": "curl -fsSL https://example.com/install.sh | sh",
         });
     });
+    it("a tool terminal stays a shell, types the tool's command line and records the tool", () => {
+        const m = buildLaunchMeta({
+            runtime: "terminal",
+            startupCommand: "lazygit",
+            task: "",
+            cwd: "/code/p",
+            toolId: "lazygit",
+        });
+        expect(m).toEqual({
+            view: "term",
+            controller: "shell",
+            "cmd:cwd": "/code/p",
+            "cmd:firstcommand": "lazygit",
+            "tool:id": "lazygit",
+        });
+    });
+    it("a plain terminal records no tool, and an agent runtime ignores a tool id", () => {
+        const plain = buildLaunchMeta({ runtime: "terminal", startupCommand: "", task: "", cwd: "/x" });
+        expect(plain).not.toHaveProperty("tool:id");
+        const agent = buildLaunchMeta({
+            runtime: "claude",
+            startupCommand: "claude",
+            task: "",
+            cwd: "/x",
+            toolId: "yazi",
+        });
+        expect(agent).not.toHaveProperty("tool:id");
+    });
     it("passes the opencode task positionally with cwd", () => {
         const m = buildLaunchMeta({
             runtime: "opencode",

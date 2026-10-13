@@ -8,10 +8,13 @@ import {
     filterProjects,
     focusLaunchProject,
     footerLine,
+    HOME_NAME,
     HOME_PICK,
     homeOffered,
     launcherKey,
     launcherTitle,
+    letterHint,
+    pickedTool,
     primaryLabel,
     projectAfterFilter,
     projectColumnPicks,
@@ -19,6 +22,10 @@ import {
     selectedRowId,
     startRows,
     stepIndex,
+    toolAboutLine,
+    toolBlocker,
+    toolFolder,
+    toolRowNote,
     type LauncherKeyCtx,
 } from "./launcher";
 
@@ -31,15 +38,16 @@ const claudeOnly = [
 const allFive = ["claude", "codex", "opencode", "pi", "agy"].map((runtime) => ({ runtime, installed: true }));
 
 describe("startRows", () => {
-    it("numbers the visible rows: Claude Code, Terminal, Quick run, Orchestrate", () => {
+    it("numbers the visible rows: Claude Code, Terminal, Quick run, Orchestrate, Tool", () => {
         expect(startRows(claudeOnly).map((r) => `${r.key} ${r.id}`)).toEqual([
             "1 claude",
             "2 terminal",
             "3 quick",
             "4 orchestrator",
+            "5 tool",
         ]);
     });
-    it("numbers 1 to 8 with every runtime installed", () => {
+    it("numbers 1 to 9 with every runtime installed", () => {
         const rows = startRows(allFive);
         expect(rows.map((r) => r.id)).toEqual([
             "claude",
@@ -50,11 +58,12 @@ describe("startRows", () => {
             "terminal",
             "quick",
             "orchestrator",
+            "tool",
         ]);
-        expect(rows.at(-1)?.key).toBe("8");
+        expect(rows.at(-1)?.key).toBe("9");
     });
     it("offers every runtime while the harness list has not loaded", () => {
-        expect(startRows([])).toHaveLength(8);
+        expect(startRows([])).toHaveLength(9);
     });
     it("gives run rows their names and shape descriptions, agent rows no description", () => {
         const rows = startRows(claudeOnly);
@@ -62,6 +71,14 @@ describe("startRows", () => {
         expect(rows.find((r) => r.id === "quick")?.desc).toBe("one worker, one goal");
         expect(rows.find((r) => r.id === "orchestrator")?.desc).toBe("lead plans, workers fan out");
         expect(rows.find((r) => r.id === "claude")?.desc).toBeNull();
+    });
+    it("ends with one Tool row after the run rows, so no earlier row changes its digit", () => {
+        const rows = startRows(claudeOnly);
+        expect(rows.filter((r) => r.kind === "tool")).toEqual([
+            { id: "tool", kind: "tool", name: "Tool", desc: "lazygit, yazi, btop…", key: "5" },
+        ]);
+        expect(rows.at(-1)?.kind).toBe("tool");
+        expect(rows.slice(0, -1).map((r) => r.key)).toEqual(["1", "2", "3", "4"]);
     });
 });
 
@@ -78,13 +95,15 @@ describe("agentRuntime", () => {
 });
 
 describe("the words for a pick", () => {
-    it("an agent pick selects its runtime row, a run pick the shape's row", () => {
+    it("an agent pick selects its runtime row, a run pick the shape's row, a tool pick the Tool row", () => {
         expect(selectedRowId("agent", "terminal", "orchestrator")).toBe("terminal");
         expect(selectedRowId("run", "terminal", "orchestrator")).toBe("orchestrator");
+        expect(selectedRowId("tool", "terminal", "orchestrator")).toBe("tool");
     });
     it("titles and primary labels follow the pick", () => {
         expect(launcherTitle("agent")).toBe("New agent");
         expect(launcherTitle("run")).toBe("New run");
+        expect(launcherTitle("tool")).toBe("Open a tool");
         expect(primaryLabel("agent", "claude")).toBe("Launch agent");
         expect(primaryLabel("agent", "terminal")).toBe("Open terminal");
         expect(primaryLabel("run", "claude")).toBe("Start run");
@@ -93,6 +112,16 @@ describe("the words for a pick", () => {
         expect(primaryLabel("agent", "claude", true)).toBe("Resume agent");
         expect(primaryLabel("agent", "claude", false)).toBe("Launch agent");
         expect(primaryLabel("run", "claude", true)).toBe("Start run");
+    });
+    it("primaryLabel names the picked tool, and a session is no part of it", () => {
+        expect(primaryLabel("tool", "claude", false, "lazygit")).toBe("Open lazygit");
+        expect(primaryLabel("tool", "claude", true, "PR dashboard")).toBe("Open PR dashboard");
+        expect(primaryLabel("tool", "claude", false, "")).toBe("Open a tool");
+    });
+    it("the letter hint names what a letter does in the pick", () => {
+        expect(letterHint("agent")).toBe("task");
+        expect(letterHint("run")).toBe("goal");
+        expect(letterHint("tool")).toBe("tool");
     });
 });
 
@@ -145,6 +174,29 @@ describe("footerLine", () => {
             blocked: true,
         });
     });
+    it("says where a tool opens and on which branch", () => {
+        expect(footerLine({ ...base, kind: "tool" })).toEqual({
+            lead: "Opens in ",
+            strong: "/Users/me/arcterm",
+            tail: " · on main",
+            blocked: false,
+        });
+        expect(footerLine({ ...base, kind: "tool", branchNote: "" }).tail).toBe("");
+    });
+    it("a tool with no project, or one that cannot open, says so instead", () => {
+        expect(footerLine({ ...base, kind: "tool", project: null })).toEqual({
+            lead: "Pick a project",
+            strong: "",
+            tail: "",
+            blocked: true,
+        });
+        expect(footerLine({ ...base, kind: "tool", blocker: "lazydocker is not on PATH" })).toEqual({
+            lead: "lazydocker is not on PATH",
+            strong: "",
+            tail: "",
+            blocked: true,
+        });
+    });
     it("summarises a quick run and an orchestrator run", () => {
         expect(footerLine({ ...base, kind: "run" })).toEqual({
             lead: "Quick run in ",
@@ -187,6 +239,11 @@ describe("Home", () => {
         expect(homeOffered("agent", "codex", "/Users/me")).toBe(false);
         expect(homeOffered("run", "claude", "/Users/me")).toBe(false);
         expect(homeOffered("agent", "claude", "")).toBe(false);
+    });
+
+    it("is offered to every tool, whichever agent row was picked last, once the home folder is known", () => {
+        expect(homeOffered("tool", "codex", "/Users/me")).toBe(true);
+        expect(homeOffered("tool", "claude", "")).toBe(false);
     });
 
     it("sits after the projects and is filtered by its name", () => {
@@ -244,6 +301,7 @@ describe("launcherKey", () => {
         zone,
         startCount: 4,
         projectCount: 2,
+        toolCount: 3,
         filter,
         flagMenuOpen: !!open.flagMenuOpen,
         branchListOpen: !!open.branchListOpen,
@@ -344,6 +402,37 @@ describe("launcherKey", () => {
             kind: "none",
         });
     });
+    it("in the Tool list a letter picks the nth tool, a for the first", () => {
+        expect(launcherKey(at("tools"), key("a"))).toEqual({ kind: "pick-tool", index: 0 });
+        expect(launcherKey(at("tools"), key("c"))).toEqual({ kind: "pick-tool", index: 2 });
+        expect(launcherKey(at("tools"), key("C", { shift: true }))).toEqual({ kind: "pick-tool", index: 2 });
+    });
+    it("a letter past the last tool, a digit or a space does nothing in the Tool list", () => {
+        expect(launcherKey(at("tools"), key("d"))).toEqual({ kind: "none" });
+        expect(launcherKey(at("tools"), key("z"))).toEqual({ kind: "none" });
+        expect(launcherKey(at("tools"), key("1"))).toEqual({ kind: "none" });
+        expect(launcherKey(at("tools"), key(" "))).toEqual({ kind: "none" });
+        expect(launcherKey(at("tools"), key("Process"))).toEqual({ kind: "none" });
+        expect(launcherKey({ ...at("tools"), toolCount: 0 }, key("a"))).toEqual({ kind: "none" });
+    });
+    it("arrows move in the Tool list, which leaves → and ← to Tab", () => {
+        expect(launcherKey(at("tools"), key("ArrowDown"))).toEqual({ kind: "move", column: "tools", delta: 1 });
+        expect(launcherKey(at("tools"), key("ArrowUp"))).toEqual({ kind: "move", column: "tools", delta: -1 });
+        expect(launcherKey(at("tools"), key("ArrowRight"))).toEqual({ kind: "none" });
+        expect(launcherKey(at("tools"), key("ArrowLeft"))).toEqual({ kind: "none" });
+    });
+    it("Enter in the Tool list opens the picked tool; Escape and a modified key behave as everywhere", () => {
+        expect(launcherKey(at("tools"), key("Enter"))).toEqual({ kind: "launch" });
+        expect(launcherKey(at("tools"), key("Escape"))).toEqual({ kind: "close" });
+        expect(launcherKey(at("tools"), key("a", { mod: true }))).toEqual({ kind: "none" });
+        // a Tool pick has no Task or Goal box for a paste to land in
+        expect(launcherKey({ ...at("tools"), textField: false }, key("v", { mod: true, paste: true }))).toEqual({
+            kind: "none",
+        });
+    });
+    it("a letter in the Start column still goes only to a Task or Goal box", () => {
+        expect(launcherKey({ ...at("start"), textField: false }, key("a"))).toEqual({ kind: "none" });
+    });
     it("Tab is no action: the dialog's focus trap takes it before asking", () => {
         expect(launcherKey(at("textarea"), key("Tab"))).toEqual({ kind: "none" });
         expect(launcherKey(at("project", "ok"), key("Tab", { shift: true }))).toEqual({ kind: "none" });
@@ -375,6 +464,59 @@ describe("launcherKey", () => {
         expect(launcherKey(at("start"), key("Enter", { mod: true }))).toEqual({ kind: "none" });
         expect(launcherKey(at("start"), key("1", { mod: true }))).toEqual({ kind: "none" });
         expect(launcherKey(at("start"), key("Tab", { mod: true }))).toEqual({ kind: "none" });
+    });
+});
+
+describe("the Tool pick", () => {
+    const tools = [{ id: "lazygit" }, { id: "yazi" }, { id: "btop" }];
+    it("keeps the remembered tool while it is listed, else the first", () => {
+        expect(pickedTool(tools, "yazi")?.id).toBe("yazi");
+        expect(pickedTool(tools, "gone")?.id).toBe("lazygit");
+        expect(pickedTool(tools, null)?.id).toBe("lazygit");
+    });
+    it("picks nothing from an empty list", () => {
+        expect(pickedTool([], "yazi")).toBeNull();
+    });
+
+    it("opens in the picked project, or Home for a tool that lives there or when Home is picked", () => {
+        const project = { name: "arcterm", path: "/Users/me/arcterm" };
+        const home = { name: HOME_NAME, path: "/Users/me" };
+        expect(toolFolder({ opensin: "agent" }, project, "/Users/me")).toEqual(project);
+        expect(toolFolder({ opensin: "root" }, project, "/Users/me")).toEqual(project);
+        expect(toolFolder({ opensin: "home" }, project, "/Users/me")).toEqual(home);
+        expect(toolFolder({ opensin: "agent" }, home, "/Users/me")).toEqual(home);
+    });
+    it("has no folder until the project, or the home folder a home tool needs, is known", () => {
+        expect(toolFolder({ opensin: "agent" }, null, "/Users/me")).toBeNull();
+        expect(toolFolder({ opensin: "home" }, { name: "a", path: "/a" }, "")).toBeNull();
+        expect(toolFolder(null, { name: "a", path: "/a" }, "/Users/me")).toEqual({ name: "a", path: "/a" });
+    });
+
+    it("a row's note is the category, or what is missing", () => {
+        expect(toolRowNote({ category: "Git", found: true })).toBe("Git");
+        expect(toolRowNote({ category: "Yours", found: true })).toBe("Yours");
+        expect(toolRowNote({ category: "Containers", found: false })).toBe("not installed");
+        expect(toolRowNote({ category: "Yours", found: false })).toBe("not on PATH");
+    });
+
+    it("blocks the launch while the list is unread and on a tool that is not on PATH", () => {
+        expect(toolBlocker(null, "loading")).toBe("Reading the tool list…");
+        expect(toolBlocker(null, "error")).toBe("Could not read the tool list");
+        expect(toolBlocker(null, "ready")).toBe("No tool to open");
+        expect(toolBlocker({ name: "lazygit", found: true }, "ready")).toBeNull();
+        expect(toolBlocker({ name: "lazydocker", found: false }, "ready")).toBe("lazydocker is not on PATH");
+    });
+
+    it("about: where the tool runs, and what to do about one that is not on PATH", () => {
+        expect(toolAboutLine({ opensin: "agent", found: true }, false)).toBe(
+            "Runs in the project's root. To open it in an agent's worktree, use Tool on that agent."
+        );
+        expect(toolAboutLine({ opensin: "root", found: true }, false)).toBe("Runs in the project's root.");
+        expect(toolAboutLine({ opensin: "home", found: true }, false)).toBe("Runs in your home folder.");
+        expect(toolAboutLine({ opensin: "agent", found: true }, true)).toBe("Runs in your home folder.");
+        expect(toolAboutLine({ opensin: "root", found: false }, false)).toBe(
+            "Runs in the project's root. Not found on PATH: Setup → Tools can install it or fix its command."
+        );
     });
 });
 

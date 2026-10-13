@@ -4,7 +4,8 @@
 // The Setup surface: the instructions and skills every harness reads. The Instructions tab edits the
 // shared doc, which every save writes into each harness's file, and lists each harness file's state.
 // The Skills tab views every harness's skills and moves them into the vault; it never creates or edits
-// one. Logic lives in setupmodel.ts and skillsmatrix.ts, the RPCs and the atoms in setupstore.ts.
+// one. The Tools tab is the library of terminal tools (toolslibrary.tsx). Logic lives in setupmodel.ts and
+// skillsmatrix.ts, the RPCs and the atoms in setupstore.ts.
 
 import { openFileInCode } from "@/app/cockpit/openfilestore";
 import { Markdown } from "@/app/element/markdown";
@@ -69,6 +70,7 @@ import {
     type SkillPreview,
     type SkillRow,
 } from "./skillsmatrix";
+import { ToolsHeader, ToolsLibrary } from "./toolslibrary";
 import { useFileText } from "./usefiletext";
 
 const SECTION_HEAD = cn(REGION_LABEL, "text-muted");
@@ -83,6 +85,7 @@ const TONE_TEXT: Record<Tone, string> = { ok: "text-ink-mid", warn: "text-warnin
 const TABS: { key: SetupTab; label: string }[] = [
     { key: "instructions", label: "Instructions" },
     { key: "skills", label: "Skills" },
+    { key: "tools", label: "Tools" },
 ];
 
 function useRows(): AgentSyncHarness[] {
@@ -148,6 +151,7 @@ function Tabs() {
                 <button
                     key={t.key}
                     id={`setup-tab-${t.key}`}
+                    data-setup-tab={t.key}
                     type="button"
                     role="tab"
                     aria-selected={tab === t.key}
@@ -790,7 +794,7 @@ export function SetupSurface({ model }: { model: AgentsViewModel }) {
                 <div className="text-[15px] font-semibold text-primary">Setup</div>
                 <Tabs />
                 <div className="flex-1" />
-                {tab === "instructions" ? <HeaderStatus /> : <SkillsHeader />}
+                {tab === "instructions" ? <HeaderStatus /> : tab === "skills" ? <SkillsHeader /> : <ToolsHeader />}
             </div>
             <div
                 id="setup-tabpanel"
@@ -798,7 +802,13 @@ export function SetupSurface({ model }: { model: AgentsViewModel }) {
                 aria-labelledby={`setup-tab-${tab}`}
                 className="flex min-h-0 flex-1"
             >
-                {tab === "instructions" ? <InstructionsTab /> : <SkillsTab model={model} />}
+                {tab === "instructions" ? (
+                    <InstructionsTab />
+                ) : tab === "skills" ? (
+                    <SkillsTab model={model} />
+                ) : (
+                    <ToolsLibrary model={model} />
+                )}
             </div>
         </div>
     );

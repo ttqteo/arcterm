@@ -14,10 +14,10 @@ Cockpit cho bạn cái nhìn tổng quan ([Cockpit](cockpit.md)); Agent là nơi
 │                 │         · context · project      [Split][⤢][×]│ (tab Overview,   │
 │ Conversation    ├──────────────────────────────────────────────┤  Files, File)    │
 │ History         │                                              │                  │
-│ Active          │      Terminal của agent (hoặc lưới 2x2)       │ Status / Needs   │
-│  └ project ▸    │                                              │ you / Subagents  │
-│ Conversations   │                                              │ Files changed    │
-│ Terminals       │                                              │ Servers …        │
+│ project ▾       │      Terminal của agent (hoặc lưới 2x2)       │ Status / Needs   │
+│  ├ agent        │                                              │ you / Subagents  │
+│  └ terminal     │                                              │ Files changed    │
+│ Conversations   │                                              │ Servers …        │
 └─────────────────┴──────────────────────────────────────────────┴──────────────────┘
 ```
 
@@ -29,7 +29,7 @@ Surface Agent là surface duy nhất arcterm **giữ nguyên trong nền** khi b
 
 - Bấm **Agent** trên nav rail, hoặc `Ctrl+3`, hoặc `Ctrl+G` rồi `a`.
 - Từ Cockpit: `t` hoặc `Enter` trên một thẻ, hoặc nút terminal của thẻ.
-- Từ bất kỳ đâu: `Ctrl+P`, gõ tên agent, `Enter`.
+- Từ bất kỳ đâu: `Ctrl+P`, gõ tên agent hoặc terminal, `Enter`.
 
 Khi chưa có terminal nào, trung tâm hiện màn **No terminal running** với nút **Launch new terminal** (mở hộp thoại **New agent**), nút **Conversation History**, và danh sách **Recent sessions** (bấm một dòng để resume nó).
 
@@ -47,7 +47,7 @@ Nếu bạn đang chọn một project ở app bar mà agent đang xem thuộc p
 | `Ctrl+P` → **Start** → *New agent…* | Như `Ctrl+N` |
 | Nút **Split** ở header → **New agent…** | Như `Ctrl+N` |
 
-Cùng một hộp thoại dùng cho agent, terminal và run: cột **Start** bên trái chia hai nhóm, **Agent** (các harness, kèm **Terminal**) và **Run** (**Quick run**, **Orchestrate**). Phần Run — mục tiêu, plan file, số worker, model — được mô tả ở [Orchestrator](orchestrator.md).
+Cùng một hộp thoại dùng cho agent, terminal, run và tool: cột **Start** bên trái chia ba nhóm, **Agent** (các harness, kèm **Terminal**), **Run** (**Quick run**, **Orchestrate**) và **Tool** (một hàng cuối, mở lazygit, yazi, btop… trong một project; xem [Tools](#tools)). Phần Run — mục tiêu, plan file, số worker, model — được mô tả ở [Orchestrator](orchestrator.md).
 
 ![Hộp thoại New agent: cột Start (Claude Code, Codex, … Terminal / Quick run, Orchestrate), cột Project, ô Task, ô Command với nút Flag, công tắc Isolated git worktree, chân hộp thoại có Cancel và Launch agent](images/agent-launcher.png)
 
@@ -127,13 +127,31 @@ Bấm vào terminal để gõ cho agent. Nhấn `Shift+Esc` để trả focus v�
 
 Hình ảnh trong terminal (Sixel, iTerm inline image, như `imgcat`, `chafa`) được vẽ tại chỗ.
 
+### Terminal thường và tool ở giữa
+
+Một terminal thường hoặc một [tool](#tools) là **ngang hàng với agent**: chọn nó (trong cây, bằng `j` / `k`, `Ctrl+Tab` hay `Ctrl+P`) thì nó chiếm trung tâm như một agent, chứ không tự mở thành panel dưới agent như trước. Bấm nhanh `Ctrl+Tab` đưa bạn về tab vừa xem, nên đi từ agent sang lazygit rồi về chỉ tốn một phím. Terminal giữ nguyên khi bạn đổi qua lại: TUI của nó không bị dựng lại hay vẽ lại. Terminal thường không có rail chi tiết.
+
+Header của nó là một hàng gọn, thay cho header của agent:
+
+- biểu tượng (của tool, hoặc biểu tượng terminal), **tên** (tên tool khi nó chạy một tool; không thì lệnh gần nhất, hoặc "Terminal 2" nếu chưa chạy lệnh nào), chip thư mục khi terminal không chạy ở gốc project (thường là worktree của một agent), rồi `project`.
+- bên phải: gợi ý `Ctrl Tab back to <agent>` khi tab xem trước đó là một agent; nút **Open beside `<agent>`** (thành một ô cạnh agent đó, ẩn khi agent đã có ô hoặc lưới đầy); nút **Move to the panel** (xuống [panel dưới agent](#panel-terminal), mờ khi không có agent nào đang chạy); nút `×` đóng, có hỏi xác nhận.
+
+`Esc`, mũi tên và các phím `Ctrl` đi thẳng vào tool; các chord của app (`Ctrl+P`, `Ctrl+Tab`, `Ctrl+Shift+T`…) vẫn dùng được từ bên trong như ở mọi terminal. `Shift+Esc` trả focus về sidebar.
+
+Khi một agent land nhánh và worktree của nó bị xóa, terminal nào đang chạy trong worktree đó hiện một thẻ phủ lên màn hình cuối của nó: **This terminal's folder was removed**, nút chính **Reopen in `<project>`** (mở lại terminal ở gốc project) và **Close terminal**. Hàng của nó trong cây ghi `removed` và gạch ngang chip thư mục.
+
 ## Sidebar
 
-Cột trái 248 px, từ trên xuống: nút **Conversation History**, rồi hai mục cuộn được **Active** và **Conversations**, và mục **Terminals** ghim ở đáy. Bộ chọn project ở app bar lọc cả ba mục theo project.
+Cột trái 248 px, từ trên xuống: nút **Conversation History**, rồi hai mục cuộn được: **cây project** (không có tiêu đề) và **Conversations**. Bộ chọn project ở app bar lọc cả hai theo project. Không còn mục **Terminals** riêng ở đáy: terminal nằm trong cây, cạnh agent của project.
 
-### Active — các agent đang chạy
+### Cây project — agent và terminal
 
-Agent được gom thành **thư mục theo project**; bấm tên thư mục để gấp/mở. Chọn một project ở app bar thì thư mục biến mất, danh sách phẳng, và một dòng `N in other projects · M asking` cho biết agent ở project khác (bấm để xem tất cả project).
+Mỗi project là một **thư mục**; bấm tên thư mục để gấp/mở. Trong thư mục là các hàng agent, một **đường kẻ mảnh**, rồi các **terminal và tool** của project, cái dùng gần nhất lên trước. Terminal là hàng ngang hàng với agent: chọn nó (bấm, `j` / `k`, `Ctrl+Tab`, `Ctrl+P`) thì nó chiếm trung tâm, xem [Terminal thường và tool ở giữa](#terminal-thường-và-tool-ở-giữa). Thư mục đang gấp ghi nó chứa gì, ví dụ `2 agents · 1 terminal`.
+
+- Terminal thuộc project mà thư mục hiện tại của nó nằm trong (`cd` sang project khác thì nó chuyển thư mục theo), không thì project của tab đã mở nó. **Home** là thư mục cuối, chứa terminal và tool không thuộc project nào (btop chẳng hạn); agent không có project nằm ở thư mục `ungrouped` riêng.
+- Rê chuột vào một thư mục: nút **+** mở ngay một terminal trong project đó, nút **tool** mở [Open a tool](#open-a-tool-chọn-nhanh) ở gốc project.
+- Một [split](#lưới-terminal-2x2) hiện thành **một hàng** gồm các ô nhỏ, mỗi ô một agent hoặc terminal, nằm đầu thư mục của project khi mọi ô cùng project; nếu các ô thuộc nhiều project thì hàng nằm trên cùng cây và mỗi ô ghi thêm project của nó. Các ô của split rời hàng riêng của mình (và khỏi số đếm của thư mục) cho tới khi split kết thúc.
+- Chọn một project ở app bar thì thư mục biến mất, danh sách phẳng (agent, đường kẻ, terminal), và một dòng `N in other projects · M asking` cho biết agent ở project khác (bấm để xem tất cả project).
 
 Mỗi hàng agent: biểu tượng harness và **tên** ở dòng trên; dòng dưới là model, nhánh git (chỉ khi khác `main`), chip subagent, rồi các dấu hiệu:
 
@@ -170,30 +188,101 @@ Mỗi hàng một dòng: biểu tượng harness, tiêu đề (prompt đầu ti�
 - Chấm cam nhỏ: hội thoại đó còn câu hỏi chưa trả lời.
 - Bấm một hàng để đọc transcript ở giữa, nơi có nút **Resume →**. Chuột phải: **Resume** (khi resume được), **Copy title**, **Delete session** (xem bên dưới).
 
-### Terminals
+### Hàng terminal và tool
 
-Các shell thường (không phải agent), gom theo project, ghim ở đáy sidebar. Hàng có chấm nhấp nháy khi shell đang chạy một lệnh (dev server, build) và không có chấm khi đã về prompt. Tên của một terminal chưa đổi là lệnh gần nhất nó chạy (`task dev`), hoặc "Terminal 2" nếu chưa chạy lệnh nào.
+Các shell thường và [tool](#tools) (không phải agent) nằm dưới đường kẻ của thư mục project. Mỗi hàng: biểu tượng (của tool, hoặc biểu tượng terminal), **tên**, chip thư mục khi terminal không chạy ở gốc project, và các dấu hiệu:
 
-- Nút **+** hiện khi rê chuột vào thư mục project (hoặc ở đầu mục khi đã chọn project ở app bar): mở ngay một terminal trong project đó.
-- Chọn một terminal khi đang xem một agent thì nó **mở thành một panel ngay dưới agent** thay vì chiếm chỗ của agent. Kéo mép trên của panel để đổi chiều cao (từ 120 px tới 60% cột; bấm đúp mép để về 260 px), nút phóng to (hoặc bấm đúp thanh tiêu đề) cho nó cả vùng và bấm lại để thu về, `×` ẩn panel mà shell vẫn chạy. Không có agent nào thì terminal chiếm cả giữa màn hình.
-- Chuột phải: **Rename**, **Duplicate**, **Copy name**, **Close terminal**.
+| Dấu hiệu | Nghĩa |
+|---|---|
+| Tên | Tên tool khi nó chạy một tool; không thì lệnh gần nhất terminal chạy (`task dev`), hoặc "Terminal 2" nếu chưa chạy lệnh nào |
+| Chấm nhấp nháy | Shell đang chạy một lệnh (dev server, build); không có chấm khi đã về prompt |
+| `split` / `panel` | Nơi nó đang hiện khi không phải trung tâm: một ô của split, hoặc panel dưới agent |
+| `installing` / `install failed` | Terminal cài tool từ thư viện ("Install glow") đang chạy, hoặc đã thoát lỗi và được giữ lại cùng output |
+| `removed` | Thư mục nó chạy đã bị xóa (worktree của agent đã land); chip thư mục bị gạch ngang |
+
+Thao tác trên hàng:
+
+- Bấm: chọn terminal và đưa nó vào trung tâm. Kéo hàng thả lên lưới để cho nó một ô. Có phím số `Alt+1`–`9` như hàng agent.
+- Chuột phải: **Open in split**, **Move to the panel**, **Rename**, **Duplicate**, **Copy name**, **Close terminal**.
 
 ## Lưới terminal (2x2)
 
-Có thể xem tới **bốn** agent cùng lúc.
+Có thể xem tới **bốn** ô cùng lúc, mỗi ô là một agent **hoặc một terminal / tool** (một shell, lazygit cạnh agent đang sửa code).
 
 ### Làm thế nào
 
-1. Thêm ô: kéo hàng của một agent đang chạy từ sidebar thả lên terminal; hoặc chuột phải hàng → **Open in split**; hoặc nút **Split** ở header → chọn agent trong danh sách *Show beside this agent*; hoặc `Ctrl+P` → agent → `→` → **Open in split**.
-2. Khi thả, vùng giữa ô thay thế (hoặc đổi chỗ) agent trong ô đó; một phần tư mép ngoài chèn agent vào trước/sau ô.
-3. Mỗi ô có thanh tiêu đề: kéo thanh để đổi chỗ ô; `×` bỏ agent khỏi lưới (agent vẫn chạy).
-4. Bấm vào một ô để focus nó; header và rail chi tiết đi theo ô đang focus. **Close split** (trong menu Split) đưa lưới về một ô; `f` (toàn màn hình) chỉ tạm hiện mỗi ô đang focus.
+1. Thêm ô: kéo hàng của một agent hoặc terminal đang chạy từ sidebar thả lên terminal; hoặc chuột phải hàng → **Open in split**; hoặc nút **Split** ở header → chọn agent trong danh sách *Show beside this agent*; hoặc `Ctrl+P` → agent hay terminal → `→` → **Open in split**. Từ header của một terminal ở giữa, nút **Open beside `<agent>`** đặt agent đó cạnh terminal; từ thanh của [panel](#panel-terminal), nút **Open in split** cho terminal một ô cạnh agent.
+2. Khi thả, vùng giữa ô thay thế (hoặc đổi chỗ) cái đang ở ô đó; một phần tư mép ngoài chèn vào trước/sau ô.
+3. Mỗi ô có thanh tiêu đề: kéo thanh để đổi chỗ ô; `×` bỏ ô khỏi lưới (agent hay terminal vẫn chạy).
+4. Bấm vào một ô để focus nó; header và rail chi tiết đi theo ô đang focus (ô terminal thì header là header gọn của terminal, có nút **Move to the panel**; ô terminal không được focus chỉ có thanh tiêu đề thường). **Close split** (trong menu Split) đưa lưới về một ô; `f` (toàn màn hình) chỉ tạm hiện mỗi ô đang focus.
 
-Cách các ô xếp: 1 ô chiếm cả vùng, 2 ô cạnh nhau, 3 ô là hai ô trên và một ô trải ngang bên dưới, 4 ô là lưới 2x2. Lưới được lưu lại và còn nguyên sau khi mở lại app. Canvas, review, phần bên trong subagent, Conversation History, transcript của phiên đã kết thúc hoặc của worker đã xong, và terminal chọn từ mục Terminals mỗi thứ hiện thay cho lưới; lưới trở lại như cũ khi bạn rời đi.
+Cách các ô xếp: 1 ô chiếm cả vùng, 2 ô cạnh nhau, 3 ô là hai ô trên và một ô trải ngang bên dưới, 4 ô là lưới 2x2. Lưới được lưu lại và còn nguyên sau khi mở lại app. Canvas, review, phần bên trong subagent, Conversation History, và transcript của phiên đã kết thúc hoặc của worker đã xong mỗi thứ hiện thay cho lưới; lưới trở lại như cũ khi bạn rời đi. Terminal chọn từ cây thì không thay cả lưới mà vào một ô, theo quy tắc dưới đây.
 
-Khi chuyển giữa các agent bằng phím (thanh `Ctrl+Tab`, `j`/`k`…): nếu agent đã có ô thì ô đó được focus; nếu chưa thì agent thế chỗ ô đang focus còn các ô khác giữ nguyên.
+Khi chuyển giữa các agent và terminal bằng phím (thanh `Ctrl+Tab`, `j`/`k`…) hay chọn trong cây: nếu cái đó đã có ô thì ô đó được focus; nếu chưa thì nó thế chỗ ô đang focus còn các ô khác giữ nguyên. Vậy từ một split [A, B] đang ở A, chọn terminal T cho [T, B]; bấm nhanh `Ctrl+Tab` đặt A vào chỗ của T.
 
 ![Lưới terminal 2x2 với bốn agent, ô đang focus có viền accent, mỗi ô có thanh tiêu đề kèm nút ×](images/agent-grid.png)
+
+## Panel terminal
+
+Panel là chỗ bạn **chuyển** một terminal tới, không phải nơi chọn nó dẫn tới: một shell nhỏ (dev server, `git status`) nằm ngay dưới agent mà không chiếm trung tâm. Có hai đường vào: nút **Move to the panel** ở header của terminal đang ở giữa (hoặc trong menu chuột phải của hàng terminal), và một tool có **Shows: In the panel** (hoặc `Shift+Enter` trong [Open a tool](#open-a-tool-chọn-nhanh)). Panel cần có một agent ở trên nó; hàng terminal trong cây ghi `panel`. Chọn terminal đang ở panel thì nó rời panel và vào trung tâm.
+
+- Kéo mép trên của panel để đổi chiều cao (từ 120 px tới 60% cột; bấm đúp mép để về 260 px). Nút phóng to (hoặc bấm đúp thanh tiêu đề) cho nó cả vùng, bấm lại để thu về. `×` ẩn panel mà shell vẫn chạy; terminal vẫn nằm trong cây. Nút **Open in split** trên thanh panel cho terminal một ô cạnh agent.
+- **Gấp thành một dải.** Nút mũi tên xuống trên thanh panel, hoặc `` Ctrl+` `` (`` Cmd+` `` trên macOS), gấp panel thành một dải cao 32 px dưới agent: tên terminal, chấm xanh khi nó đang chạy một lệnh, và **dòng output mới nhất** của nó (với một TUI thì thường là thanh phím của nó, với shell là prompt). Bấm dải, nút mũi tên lên, hoặc `` Ctrl+` `` lần nữa để mở panel lại. Dòng output chỉ hiện sau khi terminal đã được dựng, tức ngay sau nửa giây đầu. Panel đang gấp không bao giờ phóng to. `` Ctrl+` `` chỉ có tác dụng khi có terminal trong panel; không thì phím đó là của terminal.
+
+## Tools
+
+Một **tool** là một chương trình TUI như lazygit, yazi hay btop. arcterm không dựng lại những việc đó bằng React: nó cho bạn một thư viện để cài, rồi mở tool đúng thư mục trong một terminal thường. Hàng của nó nằm trong cây của project, mang tên và biểu tượng của tool; thoát tool thì terminal quay về prompt của shell ở cùng thư mục, và hàng đổi tên thành lệnh gần nhất như mọi terminal.
+
+Mỗi tool có hai thiết lập:
+
+| Thiết lập | Lựa chọn |
+|---|---|
+| **Opens in** | **The agent's folder** (mặc định: worktree của agent đang focus nếu có, không thì gốc project), **Project root**, **Home**. Không có agent nào đang focus thì tool mở ở gốc project (hoặc Home) |
+| **Shows** | **In the centre** (mặc định) hoặc **In the panel** ([panel dưới agent](#panel-terminal)) |
+
+### Thư viện: Setup → Tools
+
+Tab thứ ba của [Setup](setup.md), sau Instructions và Skills (`Ctrl+G` rồi `.`). Mỗi lần mở tab, arcterm đọc lại xem tool nào đã có trên máy.
+
+- **Cột trái**: ô **Find a tool**; danh sách theo nhóm **Git**, **Files**, **System**, **Containers**, **Docs and data**, **Yours**, mỗi hàng ghi trạng thái (`installed`, `not installed`, `installing`, `install failed`; tool của bạn thì `on PATH` hoặc `not on PATH`); nút **Add your own tool**. Có chín tool dựng sẵn: lazygit, gitui, yazi, broot, btop, lazydocker, k9s, glow và visidata.
+- **Cột phải**, cho tool đang chọn: mô tả, nút **Open `<tool>`** (mở ở thư mục của agent đang focus; không có khi tool chưa có trên PATH), các dòng **Opens in**, **Shows**, **In Open a tool** (bật thì tool được xếp lên đầu danh sách của [Open a tool](#open-a-tool-chọn-nhanh); mặc định lazygit, yazi và btop; chỉ lưu trên máy này) và **Command** (kèm `found at <đường dẫn>` hoặc `not found on PATH`); mục **Install**; mục **Open now** liệt kê các terminal đang chạy tool này (project và nút **Show**). Đổi **Opens in** hay **Shows** của một tool dựng sẵn thì ghi đè nó, và dòng *Changed from the built-in* có nút **Reset to default**.
+
+**Cài đặt.** Nút **Install** chạy lệnh của hệ điều hành (winget trên Windows, brew trên macOS) trong một terminal riêng tên `Install <tool>`, ở project bạn đang đứng (hoặc Home). Hàng của nó ghi `installing`; arcterm không cài ngầm và không có trình quản lý gói của riêng mình, nên bạn đọc được output. Cài xong (exit 0) terminal tự đóng và trạng thái được đọc lại; nếu lỗi, terminal ở lại cùng output, hàng ghi `install failed`, và thư viện có **Open output** và **Try again**. Tool đã cài có nút **Update**. Tool không có lệnh cài cho hệ điều hành này (visidata trên Windows) chỉ ghi vậy.
+
+> arcterm đọc `PATH` một lần, lúc khởi động. Tool vừa cài xong có thể vẫn ghi `not found on PATH` cho tới khi bạn khởi động lại arcterm; thư viện nhắc điều đó ngay trên tool.
+
+**Tool của riêng bạn.** **Add your own tool** mở một biểu mẫu: tên, lệnh, **Opens in**, **Shows** và lệnh cài (không bắt buộc). Tool được lưu vào `tools.json` trong thư mục `config`, cạnh `settings.json` (đổi tay file cũng được, arcterm đọc lại khi file đổi), và nằm ở nhóm **Yours**. Một tool của bạn không có trên `PATH` thì ghi `not on PATH` kèm nút **Edit** ở thư viện và ở Open a tool, và không bao giờ mở ra một terminal lỗi. Biểu mẫu chỉ kiểm tra `PATH` khi bạn lưu; sau đó dòng **Command** của tool ghi `found at …`.
+
+### Open a tool (chọn nhanh)
+
+Hộp thoại kiểu palette để mở tool ngay, trong thư mục của agent đang focus. Mở bằng:
+
+- `Ctrl+Shift+T` (`Cmd+Shift+T` trên macOS), từ bất kỳ đâu, kể cả khi đang gõ trong terminal.
+- Nút **Tool** trên header của agent (chỉ agent đang có terminal).
+- Nút **tool** hiện khi rê chuột vào một thư mục project trong cây: mở ở **gốc project**.
+- `Ctrl+P` → **Open a tool…**.
+
+Dòng đầu hộp thoại nói tool sẽ mở ở đâu (`Opens in fix-login's worktree`, `Opens in arcterm`, `Opens in Home`). Bên dưới là các nhóm **Installed** (tool ghim ở trên), **Not installed** (chỉ hai tool để gợi ý; khi bạn gõ lọc thì hiện mọi tool khớp) và **Yours**.
+
+| Phím | Tác dụng |
+|---|---|
+| Gõ chữ | Lọc theo tên |
+| `↑` / `↓` | Di chuyển |
+| `Enter` | Mở trong trung tâm |
+| `Shift+Enter` | Mở trong panel |
+| `Ctrl+I` | Cài tool chưa cài (tool dựng sẵn) |
+| `Esc` | Đóng |
+
+Tool chưa cài, đang cài hay lỗi trả lời bằng một dòng ngay trong hộp thoại (`lazygit is not installed. Press Ctrl I to install it.`) thay vì không làm gì. **Edit tools in settings** (và nút **Edit** trên hàng của tool bạn thêm) mở Setup → Tools tại tool đó. Tool của bạn chưa có trên `PATH` chỉ có **Edit**; cài nó từ Setup → Tools, nếu bạn đã khai lệnh cài.
+
+### Hàng Tool trong hộp thoại New
+
+Khi không có agent nào đang focus (Open a tool luôn đi theo agent đang focus), hộp thoại `Ctrl+N` cũng mở được tool trong một project. Cột **Start** có thêm một hàng **Tool** cuối cùng, dưới nhãn **Tool** sau nhóm Run, nên các hàng khác giữ nguyên phím số của chúng.
+
+- Chọn **Tool** thì phần dưới (nơi agent có Resume và Task) là danh sách **Tool**, điểm dừng thứ ba của `Tab` sau Start và Project. Các chữ `a`–`z` chọn trong đó (gợi ý ở đầu hộp thoại ghi `a–z tool`): tool đã cài trước (ghim lên đầu), rồi tool của bạn, rồi một hai tool chưa cài, và **All tools in Setup**. Bên cạnh là phần About: tool làm gì và nó chạy ở gốc project (worktree của một agent thì dùng nút **Tool** của agent đó).
+- Ô **Command** hiện lệnh của tool; không có Task, Flag hay công tắc worktree. **Project** và **Home** dùng như với Terminal.
+- Tiêu đề hộp thoại đổi theo hàng đã chọn (**Open a tool**) và nút chính ghi tên tool (**Open lazygit**); tool chưa có trên `PATH` thì nút chính mờ và chân hộp thoại nói lý do.
+- Tool mở ra chiếm trung tâm và nằm trong thư mục của project ở cây, như khi mở từ chỗ khác. Nút **+ New** ở app bar giữ nguyên; tooltip của nó là *New agent, terminal, run or tool*.
 
 ## Rail chi tiết bên phải
 
@@ -306,8 +395,11 @@ Phím đơn (`j`, `k`, `d`, `f`, `r`, `c`, `Esc`…) chỉ có tác dụng khi b
 
 | Phím | Tác dụng |
 |---|---|
-| `j` / `k` (hoặc `↓` / `↑`, `→` / `←`) | Agent kế tiếp / trước trong danh sách Active |
-| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Thanh chuyển tab: giữ `Ctrl`, `Tab` / `Shift+Tab` chọn, thả `Ctrl` để mở (dùng được cả trong terminal) |
+| `j` / `k` (hoặc `↓` / `↑`, `→` / `←`) | Hàng kế tiếp / trước trong cây project: agent và terminal, theo thứ tự cây |
+| `Alt+1`–`9` | Hàng thứ n của cây (agent và terminal), từ trên xuống; giữ `Alt` một lúc để thấy số trên từng hàng |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Thanh chuyển tab: giữ `Ctrl`, `Tab` / `Shift+Tab` chọn, thả `Ctrl` để mở (dùng được cả trong terminal). Bấm nhanh để quay về tab vừa xem |
+| `Ctrl+Shift+T` | Open a tool: mở lazygit, yazi, btop… trong thư mục của agent đang focus (dùng được cả trong terminal) |
+| `` Ctrl+` `` | Gấp panel terminal thành dải / mở lại (chỉ khi có terminal trong panel) |
 | `d` | Bật/tắt rail chi tiết |
 | `f` / `F11` | Toàn màn hình terminal (`F11` dùng được trong terminal) |
 | `Shift+F` | Bật/tắt Float |
@@ -329,4 +421,5 @@ Khi History hoặc transcript của phiên đã kết thúc đang phủ lên ter
 - [Orchestrator](orchestrator.md) — run, DAG, lead và worker.
 - [Diff](diff.md), [Code](code.md) — xem và sửa thay đổi của agent.
 - [Usage](usage.md) — token và chi phí.
+- [Setup](setup.md) — instructions và skills dùng chung; thư viện tool nằm ở tab Tools (xem [Tools](#tools) ở trên).
 - [Agent integration](agent-integration.md) — hook và `wsh` cho agent.
