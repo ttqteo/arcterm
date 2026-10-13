@@ -41,6 +41,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   shows no mark (and no ✓ while it runs); one with a canvas shows a grid icon after its name (accent dot when
   updated; a click shows the canvas, again goes back to the terminal); a finished one a bare green ✓; the Later
   bookmark is grey. `agenttree.tsx` (`SleepGlyph`, `CanvasTag`); scenarios `agent-sleep`, `sidebar-agent-glyph`.
+- [ ] (arcterm) **Settings → Appearance → Agent sidebar hides row meta.** Turn off Model, then Tokens, then Age,
+  then Branch: each disappears from every agent row in the sidebar at once and comes back when turned on; the card's
+  changed dot shows while one is off, and Revert turns it back on. It survives a reload. `rowfields.ts`,
+  `rowfieldsstore.ts`, `settingspages/appearance.tsx`.
 
 **2026-10-13 (Classic-renderer Claude after a restart scrolls)**
 

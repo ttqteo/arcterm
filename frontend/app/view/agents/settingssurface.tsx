@@ -26,6 +26,8 @@ import { fontMonoAtom, fontSansAtom } from "./fontstore";
 import { RUNTIME_FLAGS, type Runtime } from "./launch";
 import { DEFAULT_REMEMBER_FLAGS, naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
 import { DEFAULT_RAIL_VISIBLE, railVisibleAtom } from "./railstore";
+import { DEFAULT_ROW_FIELDS, ROW_FIELD_ROWS } from "./rowfields";
+import { rowFieldsAtom } from "./rowfieldsstore";
 import {
     changedCount,
     filterSections,
@@ -83,6 +85,7 @@ function useRowBindings(sections: SettingSectionDef[], flagRuntime: Runtime) {
     const [quotes, setQuotes] = useAtom(petQuotesOnAtom);
     const [flags, setFlags] = useAtom(naFlagsAtom);
     const [remember, setRemember] = useAtom(naRememberFlagsAtom);
+    const [rowFields, setRowField] = useAtom(rowFieldsAtom);
 
     const local: Record<string, LocalBinding> = {
         "appearance.theme": {
@@ -110,6 +113,12 @@ function useRowBindings(sections: SettingSectionDef[], flagRuntime: Runtime) {
             revert: () => setRemember(DEFAULT_REMEMBER_FLAGS),
         },
     };
+    for (const r of ROW_FIELD_ROWS) {
+        local[r.id] = {
+            changed: rowFields[r.field] !== DEFAULT_ROW_FIELDS[r.field],
+            revert: () => setRowField(r.field, DEFAULT_ROW_FIELDS[r.field]),
+        };
+    }
     for (const role of OVERRIDE_ROLES) {
         local[`appearance.${role}`] = {
             changed: overrides[role] != null,

@@ -317,6 +317,12 @@ describe("settings pages", () => {
             "appearance.petoutfit",
             "appearance.petquotes",
         ]);
+        expect(cards["appearance/agentrows"]).toEqual([
+            "appearance.rowmodel",
+            "appearance.rowbranch",
+            "appearance.rowtokens",
+            "appearance.rowage",
+        ]);
         expect(cards["terminal/text"]).toEqual(["fonts.term", "terminal.fontsize"]);
         expect(cards["terminal/cursor"]).toEqual(["terminal.cursor", "terminal.cursorblink"]);
         expect(cards["terminal/behavior"]).toEqual([
@@ -345,7 +351,7 @@ describe("settings pages", () => {
             .flatMap(sectionRows)
             .map((r) => r.id);
         expect(new Set(ids).size).toBe(ids.length);
-        expect(ids).toHaveLength(43 + RUNTIME_FLAGS.claude.length);
+        expect(ids).toHaveLength(47 + RUNTIME_FLAGS.claude.length);
     });
 
     it("leaves the backend-authoritative run route off the config path", () => {

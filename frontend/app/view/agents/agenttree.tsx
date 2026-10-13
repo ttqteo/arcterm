@@ -178,6 +178,7 @@ import { DigitHint } from "./digithint";
 import { StatusDot } from "./statusdot";
 import { backgroundTasksByIdAtom, focusSubagentAtom, subagentsByIdAtom } from "./subagentsstore";
 import { useSubagentTracking } from "./subagenttracking";
+import { rowFieldsAtom } from "./rowfieldsstore";
 import { runningBackgroundTasks } from "./transcriptprojection";
 import { unreadLabel } from "./unreadagents";
 import { unreadAgentsAtom } from "./unreadagentsstore";
@@ -661,7 +662,10 @@ function ParentRow({
     lead?: { run: RunInfo; open: boolean; live: number };
     navDigit?: number; // its Alt+1..9 digit
 }) {
-    const shownBranch = notableBranch(branch);
+    // the meta the person chose to see on a row (Settings → Appearance → Agent sidebar)
+    const fields = useAtomValue(rowFieldsAtom);
+    const shownBranch = fields.branch ? notableBranch(branch) : undefined;
+    const shownModel = fields.model ? agent.model : undefined;
     const focusId = useSelectedRowId(model);
     const now = useAtomValue(model.nowAtom);
     const oref = `block:${agent.blockId}`;
@@ -819,12 +823,14 @@ function ParentRow({
                             <Check size={12} strokeWidth={2.4} aria-hidden />
                         </button>
                     ) : null}
-                    {tokens ? (
+                    {fields.tokens && tokens ? (
                         <span className={cn(TOKENS_COL, dim && "text-ink-faint")}>{formatTokens(tokens)}</span>
                     ) : null}
-                    <span className={AGE_COL}>
-                        {agent.sleeping ? sleepingAge(agent, now) : formatAgeShort(displayAgeMs(agent, now))}
-                    </span>
+                    {fields.age ? (
+                        <span className={AGE_COL}>
+                            {agent.sleeping ? sleepingAge(agent, now) : formatAgeShort(displayAgeMs(agent, now))}
+                        </span>
+                    ) : null}
                     {step ? (
                         <span
                             data-agent-step={step}
@@ -906,8 +912,8 @@ function ParentRow({
                     // under the name: its model, a branch other than the default, its subagents chip and its badges
                     // @container: the subagents chip drops its word when this line is narrow, and the model truncates
                     <div className={cn(CONVERSATION_META, "@container mt-[3px]", UNDER_GLYPH, dim && "text-ink-faint")}>
-                        {agent.model ? <span className="min-w-0 truncate">{agent.model}</span> : null}
-                        {agent.model && shownBranch ? (
+                        {shownModel ? <span className="min-w-0 truncate">{shownModel}</span> : null}
+                        {shownModel && shownBranch ? (
                             <span aria-hidden className="flex-none text-ink-faint">
                                 ·
                             </span>

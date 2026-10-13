@@ -9,6 +9,7 @@
 import { isMacOS } from "@/util/platformutil";
 import { formatAgo } from "./agentsviewmodel";
 import { RUNTIME_FLAGS, type Runtime } from "./launch";
+import { ROW_FIELD_ROWS } from "./rowfields";
 import { CARD_COPY, CARD_ORDER } from "./storagemodel";
 
 // Where a row's value lives. "synced" travels with settings.json; "local" stays on this machine
@@ -204,7 +205,7 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
         {
             id: "appearance",
             name: "Appearance",
-            blurb: "The palette every surface derives from, its role colors, and the faces the app is set in.",
+            blurb: "The palette every surface derives from, its role colors, the faces the app is set in, and what an agent row in the sidebar shows.",
             cards: [
                 {
                     id: "theme",
@@ -299,6 +300,17 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                             scope: "local",
                         },
                     ],
+                },
+                {
+                    id: "agentrows",
+                    label: "Agent sidebar",
+                    rows: ROW_FIELD_ROWS.map((r) => ({
+                        id: r.id,
+                        title: r.title,
+                        desc: r.desc,
+                        key: "agent.row.fields",
+                        scope: "local" as const,
+                    })),
                 },
             ],
         },

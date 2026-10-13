@@ -17,6 +17,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - **Agent rows in the sidebar are calmer.** Background commands an agent left running no longer mark its row (Servers
   and the rail's Background tasks list them; Close still waits for them), its canvas is a grid icon beside its name,
   Close is a green check alone, and the Later bookmark is grey instead of yellow.
+- **Choose what an agent row shows**: Settings → Appearance → Agent sidebar turns its model, branch, tokens and age on
+  or off. All stay on unless you turn one off.
 
 ## 0.15.11 — 2026-10-13
 

@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Settings > Appearance: the palette every surface derives from, its role colors, the interface and code
-// faces, and Jarvis's character, outfit and quotes. The terminal's own face is a Terminal setting.
+// faces, Jarvis's character, outfit and quotes, and what an agent row in the sidebar shows. The terminal's own face is
+// a Terminal setting.
 
 import { PET_CHARACTER_NAME, petCharacter } from "@/app/view/jarvis/petcharacter";
 import { petOutfitChoice, type PetOutfitChoice } from "@/app/view/jarvis/petoutfit";
@@ -14,6 +15,8 @@ import { Check } from "lucide-react";
 import { useContext, useState } from "react";
 import { MONO_FONTS, SANS_FONTS } from "../fonts";
 import { fontMonoAtom, fontSansAtom } from "../fontstore";
+import { ROW_FIELD_ROWS } from "../rowfields";
+import { rowFieldsAtom } from "../rowfieldsstore";
 import { RowCtx, Segmented, SettingCard, SettingRow, Toggle } from "../settingsui";
 import { chipSwatches, offersSpiderTheme, SPIDER_THEME } from "../themedecor";
 import { SmallSpider } from "../themedecorview";
@@ -36,6 +39,9 @@ export function AppearancePage() {
                 <PetCharacterRow />
                 <PetOutfitRow />
                 <PetQuotesRow />
+            </SettingCard>
+            <SettingCard id="agentrows" label="Agent sidebar">
+                <AgentRowFieldRows />
             </SettingCard>
         </>
     );
@@ -243,6 +249,20 @@ function PetQuotesRow() {
         <SettingRow id="appearance.petquotes">
             <Toggle on={on} onToggle={() => setOn(!on)} label="Jarvis quotes" />
         </SettingRow>
+    );
+}
+
+// One toggle per piece of meta an agent row shows (rowfields.ts); off hides it from the row only
+function AgentRowFieldRows() {
+    const [fields, setField] = useAtom(rowFieldsAtom);
+    return (
+        <>
+            {ROW_FIELD_ROWS.map((r) => (
+                <SettingRow key={r.id} id={r.id}>
+                    <Toggle on={fields[r.field]} onToggle={() => setField(r.field, !fields[r.field])} label={r.title} />
+                </SettingRow>
+            ))}
+        </>
     );
 }
 
