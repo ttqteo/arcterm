@@ -227,14 +227,6 @@ func cutoffFromEpoch(sec int64) time.Time {
 	return time.Unix(sec, 0)
 }
 
-func (ws *WshServer) GetTranscriptTokensCommand(ctx context.Context, data wshrpc.CommandGetTranscriptTokensData) (*wshrpc.CommandGetTranscriptTokensRtnData, error) {
-	total, err := usagestats.SumTranscript(data.Path)
-	if err != nil {
-		return nil, fmt.Errorf("summing transcript tokens: %w", err)
-	}
-	return &wshrpc.CommandGetTranscriptTokensRtnData{Tokens: total}, nil
-}
-
 func (ws *WshServer) GetTranscriptUsageCommand(ctx context.Context, data wshrpc.CommandGetTranscriptUsageData) (*wshrpc.CommandGetTranscriptUsageRtnData, error) {
 	buckets, err := usagestats.TranscriptUsage(data.Path)
 	if err != nil {

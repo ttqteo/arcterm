@@ -5,8 +5,6 @@ package jarvisdossier
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -244,44 +242,5 @@ func TestAppendHumanDecisionAttributesToUser(t *testing.T) {
 	}
 	if head != "Wave User" {
 		t.Fatalf("decision-file commit author (HEAD) = %q, want Wave User", head)
-	}
-}
-
-// A backfilled decision must carry the day it was reached, in both the frontmatter stamp and the
-// filename date — otherwise an import silently redates the whole corpus to the import day.
-func TestAppendDecisionHonorsCreatedOverride(t *testing.T) {
-	fixedNow(t, 1753324800000) // 2025-07-24
-	v := newVault(t)
-	taskID, _, err := CreateDossier(v, DossierFacts{Objective: "historical work"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	const decided = int64(1750118400000) // 2025-06-17
-	decID, err := AppendDecision(v, DecisionFacts{
-		TaskID:  taskID,
-		Summary: "backdated call",
-		Created: decided,
-	})
-	if err != nil {
-		t.Fatalf("AppendDecision: %v", err)
-	}
-
-	dec, err := LoadDecision(v.Retriever(wavevault.AllScope()), decID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if dec.Created != decided {
-		t.Errorf("Created = %d, want the override %d", dec.Created, decided)
-	}
-
-	entries, err := os.ReadDir(filepath.Join(v.Root, "decisions"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 1 {
-		t.Fatalf("want 1 decision file, got %d", len(entries))
-	}
-	if name := entries[0].Name(); !strings.HasPrefix(name, "2025-06-17-") {
-		t.Errorf("filename %q should be dated when it was decided, not when it was imported", name)
 	}
 }

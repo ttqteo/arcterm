@@ -1,11 +1,6 @@
 .task
-frontend/dist
 dist/
-dist-dev/
-frontend/node_modules
 node_modules/
-frontend/bindings
-bindings/
 *.log
 *.tsbuildinfo
 bin/
@@ -13,34 +8,12 @@ bin/
 *.exe
 .DS_Store
 *~
-out/
-make/
-artifacts/
-mikework/
-aiplans/
-manifests/
 .env
-out
-.kilocode/package-lock.json
 public/cockpit-fixtures/active.json
 cdp-shots/
 
-# Yarn Modern
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/sdks
-!.yarn/versions
-
-
-*storybook.log
-storybook-static/
-
 test-results.xml
 
-.kilo-format-temp-*
 .superpowers
 .claude
 /.graphify_scope
@@ -48,7 +21,6 @@ test-results.xml
 .graphify_detect.json
 /graphify-out
 .graphify_uncached.txt
-/docs/agents/channels-realworld-report
 
 # git worktrees
 .worktrees/
@@ -57,7 +29,6 @@ test-results.xml
 .pi/
 /.pi-subagents
 /.ui-design
-/.waveterm/worktrees
 /.waveterm
 claude/arc-mod/.claude-plugin/types/
 claude/arc-view-mod/.claude-plugin/types/

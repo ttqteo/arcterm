@@ -15,7 +15,6 @@ type AgentCommands interface {
 	GetUsageInsightsCommand(ctx context.Context) (*UsageInsights, error)                                                 // the last saved usage analysis; the zero value when there is none
 	GetRecentSessionsCommand(ctx context.Context, data CommandGetRecentSessionsData) (*CommandGetRecentSessionsRtnData, error)
 	GetSessionsActivityCommand(ctx context.Context, data CommandGetSessionsActivityData) (*CommandGetSessionsActivityRtnData, error)
-	GetTranscriptTokensCommand(ctx context.Context, data CommandGetTranscriptTokensData) (*CommandGetTranscriptTokensRtnData, error)
 	GetTranscriptUsageCommand(ctx context.Context, data CommandGetTranscriptUsageData) (*CommandGetTranscriptUsageRtnData, error)
 	GetWindowTokensCommand(ctx context.Context, data CommandGetWindowTokensData) (*CommandGetWindowTokensRtnData, error)
 	GetSessionBurnCommand(ctx context.Context, data CommandGetSessionBurnData) (*CommandGetSessionBurnRtnData, error)                   // a spawn's weighing for the Token burn card
@@ -254,14 +253,6 @@ type CommandGetSessionsActivityData struct {
 
 type CommandGetSessionsActivityRtnData struct {
 	Sessions []SessionActivity `json:"sessions"`
-}
-
-type CommandGetTranscriptTokensData struct {
-	Path string `json:"path"`
-}
-
-type CommandGetTranscriptTokensRtnData struct {
-	Tokens int `json:"tokens"`
 }
 
 type CommandGetTranscriptUsageData struct {

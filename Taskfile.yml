@@ -459,10 +459,8 @@ tasks:
         cmd: '{{if eq OS "windows"}}powershell -NoProfile -NonInteractive Copy-Item -Recurse -Force -Path {{index .MATCH 0}} -Destination {{index .MATCH 1}}{{else}}mkdir -p "$(dirname {{index .MATCH 1}})" && cp -r {{index .MATCH 0}} {{index .MATCH 1}}{{end}}'
 
     clean:
-        desc: clean make/dist directories
+        desc: clean the dist directory
         cmds:
-            - cmd: '{{.RMRF}} "make"'
-              ignore_error: true
             - cmd: '{{.RMRF}} "dist"'
               ignore_error: true
 

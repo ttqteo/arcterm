@@ -247,9 +247,9 @@ func TestTranscriptUsageRoutesPiPath(t *testing.T) {
 		t.Errorf("reported cost = %#v, want 0.068", b.ReportedCostUsd)
 	}
 
-	// SumTranscript totals Input+Output+Reasoning+CacheRead+CacheCreate; CacheCreate1h is metadata
+	// sumTranscript totals Input+Output+Reasoning+CacheRead+CacheCreate; CacheCreate1h is metadata
 	// inside CacheCreate and is not added separately.
-	sum, err := SumTranscript(path)
+	sum, err := sumTranscript(path)
 	if err != nil || sum != 165+54+13+501+18 {
 		t.Fatalf("sum = %d, err = %v; want 751", sum, err)
 	}
@@ -411,8 +411,8 @@ func TestTranscriptUsageFoldsPiSubagentSessions(t *testing.T) {
 		t.Errorf("claude-sonnet bucket = %+v", b)
 	}
 
-	// SumTranscript folds parent + all children: 150 + 38 + 18 + 6 = 212.
-	sum, err := SumTranscript(parent)
+	// sumTranscript folds parent + all children: 150 + 38 + 18 + 6 = 212.
+	sum, err := sumTranscript(parent)
 	if err != nil || sum != 212 {
 		t.Fatalf("sum = %d, err = %v; want 212", sum, err)
 	}

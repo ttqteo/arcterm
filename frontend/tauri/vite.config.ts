@@ -7,11 +7,11 @@ import { defineConfig, searchForWorkspaceRoot } from "vite";
 const fe = resolve(__dirname, ".."); // frontend/
 
 // Mirror tsconfig.json "paths" exactly (deterministic prefix aliases; @/store -> app/store, etc.).
-// A flat "@" -> frontend alias would mis-resolve @/store, @/view, @/element, @/shadcn.
+// A flat "@" -> frontend alias would mis-resolve @/store, @/view, @/element.
 export default defineConfig({
     root: resolve(__dirname),
-    // serve the workspace-root public/ (Font Awesome + other static assets Electron used to serve).
-    // without this, publicDir defaults to frontend/tauri/public and /fontawesome/* 404s to the SPA fallback.
+    // serve the workspace-root public/ (Font Awesome, fonts, logos, cockpit fixtures). Without this,
+    // publicDir defaults to frontend/tauri/public, which does not exist, and /fontawesome/* 404s to the SPA fallback.
     publicDir: resolve(fe, "../public"),
     plugins: [react(), tailwindcss()],
     resolve: {
@@ -20,7 +20,6 @@ export default defineConfig({
             "@/store": resolve(fe, "app/store"),
             "@/view": resolve(fe, "app/view"),
             "@/element": resolve(fe, "app/element"),
-            "@/shadcn": resolve(fe, "app/shadcn"),
             "@/util": resolve(fe, "util"),
         },
     },

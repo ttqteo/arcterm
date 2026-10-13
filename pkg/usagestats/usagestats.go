@@ -851,15 +851,6 @@ func ScanUsage(windowDays int) ([]Bucket, []SessionMeta, error) {
 	return buckets, sessions, nil
 }
 
-// sumRecords totals the five token classes across deduped records.
-func sumRecords(records []Record) int {
-	total := 0
-	for _, r := range dedupe(records) {
-		total += r.Input + r.Output + r.Reasoning + r.CacheRead + r.CacheCreate
-	}
-	return total
-}
-
 // subagentsDir derives the Claude Code subagents directory for a parent transcript path:
 // <dir>/<basename without .jsonl>/subagents. Mirrors the unexported helper in
 // pkg/wshrpc/wshserver; kept local rather than shared to avoid a cross-package dependency for a
@@ -945,13 +936,6 @@ func transcriptRecords(path string) []Record {
 		return extractCodex(lines)
 	}
 	return append(recs, subagentRecords(path)...)
-}
-
-// SumTranscript reads one transcript file — and the subagent transcripts it spawned — and returns
-// the deduped cumulative token total (Input+Output+CacheRead+CacheCreate), matching the Usage
-// surface's accounting. Empty/unreadable/unknown-shape files return 0.
-func SumTranscript(path string) (int, error) {
-	return sumRecords(transcriptRecords(path)), nil
 }
 
 // TranscriptUsage parses one transcript file — and the subagent transcripts it spawned — into

@@ -660,12 +660,6 @@ export class RpcApiType {
         return client.wshRpcCall("getsubagents", data, opts);
     }
 
-    // command "gettranscripttokens" [call]
-    GetTranscriptTokensCommand(client: WshClient, data: CommandGetTranscriptTokensData, opts?: RpcOpts): Promise<CommandGetTranscriptTokensRtnData> {
-        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gettranscripttokens", data, opts);
-        return client.wshRpcCall("gettranscripttokens", data, opts);
-    }
-
     // command "gettranscriptusage" [call]
     GetTranscriptUsageCommand(client: WshClient, data: CommandGetTranscriptUsageData, opts?: RpcOpts): Promise<CommandGetTranscriptUsageRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gettranscriptusage", data, opts);
@@ -868,12 +862,6 @@ export class RpcApiType {
     ListDevServersCommand(client: WshClient, data: CommandListDevServersData, opts?: RpcOpts): Promise<CommandListDevServersRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "listdevservers", data, opts);
         return client.wshRpcCall("listdevservers", data, opts);
-    }
-
-    // command "listdossiers" [call]
-    ListDossiersCommand(client: WshClient, opts?: RpcOpts): Promise<CommandListDossiersRtnData> {
-        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "listdossiers", null, opts);
-        return client.wshRpcCall("listdossiers", null, opts);
     }
 
     // command "listharnesses" [call]

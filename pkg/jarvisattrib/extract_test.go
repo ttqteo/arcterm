@@ -116,12 +116,10 @@ func TestPastProbation(t *testing.T) {
 	}
 }
 
-// The backfill importer (pkg/jarvisbackfill) writes a deliberate corpus shape: a dossier grouping
-// several runs, but a canonical ref for only the *owner*. This asserts that shape yields a mixed
-// confirmed/informing edge set rather than a single-valued one — the entire reason the importer does
-// not ref every run. It also pins the two ways that shape can silently degenerate: a dossier stamped
-// at import time instead of its run window attracts no layer-3 edges at all, and a corpus with a ref
-// per run reports everything at 1.0.
+// A dossier grouping several runs, but with a canonical ref for only the *owner*, must yield a mixed
+// confirmed/informing edge set rather than a single-valued one. This also pins the two ways that
+// shape can silently degenerate: a dossier stamped later than its run window attracts no layer-3
+// edges at all, and a corpus with a ref per run reports everything at 1.0.
 func TestAssembleBackfillShapeYieldsMixedEdges(t *testing.T) {
 	const now = int64(1_000_000_000_000)
 	const hour = int64(3_600_000)

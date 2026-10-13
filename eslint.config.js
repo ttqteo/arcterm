@@ -23,7 +23,6 @@ export default [
             "**/node_modules/**",
             "**/dist/**",
             "**/build/**",
-            "**/make/**",
         ],
     },
 

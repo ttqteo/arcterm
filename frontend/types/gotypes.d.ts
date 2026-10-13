@@ -1145,16 +1145,6 @@ declare global {
         subagents: SubagentFileInfo[];
     };
 
-    // wshrpc.CommandGetTranscriptTokensData
-    type CommandGetTranscriptTokensData = {
-        path: string;
-    };
-
-    // wshrpc.CommandGetTranscriptTokensRtnData
-    type CommandGetTranscriptTokensRtnData = {
-        tokens: number;
-    };
-
     // wshrpc.CommandGetTranscriptUsageData
     type CommandGetTranscriptUsageData = {
         path: string;
@@ -1515,11 +1505,6 @@ declare global {
     // wshrpc.CommandListDevServersRtnData
     type CommandListDevServersRtnData = {
         servers: Server[];
-    };
-
-    // wshrpc.CommandListDossiersRtnData
-    type CommandListDossiersRtnData = {
-        spaces: SpaceSummary[];
     };
 
     // wshrpc.CommandListHarnessesRtnData

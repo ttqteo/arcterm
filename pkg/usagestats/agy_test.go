@@ -169,8 +169,8 @@ func TestTranscriptUsageAndSumTranscriptCountAgy(t *testing.T) {
 			t.Errorf("bucket %+v is not agy's", b)
 		}
 	}
-	total, err := SumTranscript(path)
+	total, err := sumTranscript(path)
 	if err != nil || total != 100+10+50+200+20+150 {
-		t.Errorf("SumTranscript = %d, %v; want 530", total, err)
+		t.Errorf("sumTranscript = %d, %v; want 530", total, err)
 	}
 }

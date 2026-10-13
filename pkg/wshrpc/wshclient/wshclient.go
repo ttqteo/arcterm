@@ -655,12 +655,6 @@ func GetSubagentsCommand(w *wshutil.WshRpc, data wshrpc.CommandGetSubagentsData,
 	return resp, err
 }
 
-// command "gettranscripttokens", wshserver.GetTranscriptTokensCommand
-func GetTranscriptTokensCommand(w *wshutil.WshRpc, data wshrpc.CommandGetTranscriptTokensData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetTranscriptTokensRtnData, error) {
-	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetTranscriptTokensRtnData](w, "gettranscripttokens", data, opts)
-	return resp, err
-}
-
 // command "gettranscriptusage", wshserver.GetTranscriptUsageCommand
 func GetTranscriptUsageCommand(w *wshutil.WshRpc, data wshrpc.CommandGetTranscriptUsageData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetTranscriptUsageRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetTranscriptUsageRtnData](w, "gettranscriptusage", data, opts)
@@ -861,12 +855,6 @@ func ListDetachedEdgesCommand(w *wshutil.WshRpc, data wshrpc.CommandListDetached
 // command "listdevservers", wshserver.ListDevServersCommand
 func ListDevServersCommand(w *wshutil.WshRpc, data wshrpc.CommandListDevServersData, opts *wshrpc.RpcOpts) (*wshrpc.CommandListDevServersRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandListDevServersRtnData](w, "listdevservers", data, opts)
-	return resp, err
-}
-
-// command "listdossiers", wshserver.ListDossiersCommand
-func ListDossiersCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandListDossiersRtnData, error) {
-	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandListDossiersRtnData](w, "listdossiers", nil, opts)
 	return resp, err
 }
 

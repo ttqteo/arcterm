@@ -29,14 +29,6 @@ func TestListTaskDossiersReturnsAllStatuses(t *testing.T) {
 	if len(rtn.Dossiers) != 3 {
 		t.Fatalf("want all 3 statuses returned, got %d: %+v", len(rtn.Dossiers), rtn.Dossiers)
 	}
-	// U1's focusable list is unaffected by the refactor (active only here, no paused)
-	u1, err := listDossiers(v)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(u1.Spaces) != 1 || u1.Spaces[0].Objective != "alpha" {
-		t.Fatalf("listDossiers must still return active|paused only, got %+v", u1.Spaces)
-	}
 }
 
 func TestGetDossierAssemblesDecisionsAndNotes(t *testing.T) {

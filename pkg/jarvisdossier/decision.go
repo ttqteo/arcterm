@@ -41,11 +41,6 @@ type DecisionFacts struct {
 	Links      []string
 	Rationale  string
 	Summary    string
-	// Created overrides the decision timestamp, for importing decisions that were actually made
-	// earlier (see pkg/jarvisbackfill). Zero means now, so live capture is unaffected. It drives both
-	// the frontmatter stamp and the filename date, so an imported decision files under the day it was
-	// decided rather than the day it was imported.
-	Created int64
 }
 
 // newDecisionID mints an opaque stable id "dec-<8hex>". Callers link by this id, never the filename.
@@ -76,10 +71,7 @@ func AppendHumanDecision(v *wavevault.Vault, f DecisionFacts) (string, error) {
 
 func appendDecision(v *wavevault.Vault, f DecisionFacts, create createFn) (string, error) {
 	id := newDecisionID()
-	stamp := f.Created
-	if stamp == 0 {
-		stamp = nowFn()
-	}
+	stamp := nowFn()
 	date := time.UnixMilli(stamp).UTC().Format("2006-01-02")
 	filename := date + "-" + boundedSlug(f.Summary, id) + ".md"
 	links := append([]string{f.TaskID}, f.Links...)

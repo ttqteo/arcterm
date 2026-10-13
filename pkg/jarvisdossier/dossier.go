@@ -34,11 +34,6 @@ type DossierFacts struct {
 	Objective  string
 	Acceptance []string
 	Confidence string // defaults to "med"
-	// Created overrides the created/updated stamp, for importing work whose dispatch already
-	// happened (see pkg/jarvisbackfill). Zero means now, so live dispatch is unaffected. It must be
-	// the real dispatch time: D's layer-3 windowing compares run end against dossier created, so a
-	// historical dossier stamped "now" silently attracts no structural edges.
-	Created int64
 }
 
 // DossierSpec is the region-ownership contract A enforces for a dossier: the machine frontmatter keys
@@ -81,11 +76,7 @@ func CreateDossier(v *wavevault.Vault, f DossierFacts) (string, string, error) {
 }
 
 func renderDossier(f DossierFacts, conf string) string {
-	stamp := f.Created
-	if stamp == 0 {
-		stamp = nowFn()
-	}
-	ts := strconv.FormatInt(stamp, 10)
+	ts := strconv.FormatInt(nowFn(), 10)
 	var b strings.Builder
 	b.WriteString("---\n")
 	b.WriteString("status: active\n")

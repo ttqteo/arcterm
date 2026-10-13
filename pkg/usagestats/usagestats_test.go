@@ -299,6 +299,16 @@ func TestScanRootsDropsTurnsBeforeWindowFromFreshTranscript(t *testing.T) {
 	}
 }
 
+// sumTranscript is the deduped five-class token total of one transcript and the subagent
+// transcripts it spawned, the same records TranscriptUsage buckets. Tests use it to pin the totals.
+func sumTranscript(path string) (int, error) {
+	total := 0
+	for _, r := range dedupe(transcriptRecords(path)) {
+		total += r.Input + r.Output + r.Reasoning + r.CacheRead + r.CacheCreate
+	}
+	return total, nil
+}
+
 func TestSumTranscript(t *testing.T) {
 	dir := t.TempDir()
 
@@ -312,7 +322,7 @@ func TestSumTranscript(t *testing.T) {
 		t.Fatal(err)
 	}
 	// deduped to the output:50 copy → 100+50+1000+200 = 1350
-	got, err := SumTranscript(claude)
+	got, err := sumTranscript(claude)
 	if err != nil || got != 1350 {
 		t.Fatalf("claude sum = %d, err = %v; want 1350", got, err)
 	}
@@ -326,13 +336,13 @@ func TestSumTranscript(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Input = 9458-7040 = 2418; Output = 89; CacheRead = 7040; CacheCreate = 0 → 9547
-	gotCodex, err := SumTranscript(codex)
+	gotCodex, err := sumTranscript(codex)
 	if err != nil || gotCodex != 9547 {
 		t.Fatalf("codex sum = %d, err = %v; want 9547", gotCodex, err)
 	}
 
 	// Missing/unreadable file → 0, no error.
-	gotMissing, err := SumTranscript(filepath.Join(dir, "does-not-exist.jsonl"))
+	gotMissing, err := sumTranscript(filepath.Join(dir, "does-not-exist.jsonl"))
 	if err != nil || gotMissing != 0 {
 		t.Fatalf("missing sum = %d, err = %v; want 0", gotMissing, err)
 	}
@@ -440,8 +450,8 @@ func TestTranscriptUsageIncludesSubagents(t *testing.T) {
 		t.Errorf("subagent haiku bucket = %+v, want input=35 output=9 msgs=2", h)
 	}
 
-	// SumTranscript folds parent + both subagents: (100+50) + (30+8) + (5+1) = 194.
-	sum, err := SumTranscript(parent)
+	// sumTranscript folds parent + both subagents: (100+50) + (30+8) + (5+1) = 194.
+	sum, err := sumTranscript(parent)
 	if err != nil || sum != 194 {
 		t.Fatalf("sum = %d, err = %v; want 194", sum, err)
 	}
@@ -497,7 +507,7 @@ func TestLastCacheWrite(t *testing.T) {
 		t.Fatalf("want nil/no-error for codex transcript, got %+v, err=%v", got3, err)
 	}
 
-	// Missing file -> nil, no error (mirrors SumTranscript's missing-file behavior).
+	// Missing file -> nil, no error (mirrors sumTranscript's missing-file behavior).
 	got4, err := LastCacheWrite(filepath.Join(dir, "does-not-exist.jsonl"))
 	if err != nil || got4 != nil {
 		t.Fatalf("want nil/no-error for missing file, got %+v, err=%v", got4, err)
@@ -672,8 +682,8 @@ func TestTranscriptUsageOpencodeShadow(t *testing.T) {
 		t.Errorf("reported cost = %#v, want 0.4", b.ReportedCostUsd)
 	}
 
-	// SumTranscript totals all five classes on the deduped final snapshot.
-	sum, err := SumTranscript(shadow)
+	// sumTranscript totals all five classes on the deduped final snapshot.
+	sum, err := sumTranscript(shadow)
 	if err != nil || sum != 1200+80+40+300+10 {
 		t.Fatalf("sum = %d, err = %v; want %d", sum, err, 1200+80+40+300+10)
 	}

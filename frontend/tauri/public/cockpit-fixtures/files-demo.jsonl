@@ -1,5 +1,0 @@
-{"type":"ai-title","aiTitle":"Files surface demo"}
-{"type":"user","cwd":"C:/Users/kael02/IdeaProjects/waveterm","gitBranch":"main","message":{"content":"polish the cockpit Files surface"}}
-{"type":"assistant","message":{"content":[{"type":"text","text":"Uplifting the surface background and styling the diff view."}]}}
-{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Edit","input":{"file_path":"frontend/app/view/agents/filessurface.tsx"}}}]}
-{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","is_error":false}]}}

@@ -232,17 +232,8 @@ func (ws *WshServer) UpdateHarnessCommand(ctx context.Context, data wshrpc.Comma
 	return &wshrpc.CommandUpdateHarnessRtnData{Version: res.Version}, nil
 }
 
-func (ws *WshServer) ListDossiersCommand(ctx context.Context) (*wshrpc.CommandListDossiersRtnData, error) {
-	v, err := wavevault.OpenVault(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("opening vault: %w", err)
-	}
-	return listDossiers(v)
-}
-
 // collectDossiers projects the tasks collection to SpaceSummaries, keeping those whose status passes
-// keep, newest-updated first. The shared core behind ListDossiers (U1, active|paused) and
-// ListTaskDossiers (U2, all statuses).
+// keep, newest-updated first.
 func collectDossiers(v *wavevault.Vault, keep func(status string) bool) ([]wshrpc.SpaceSummary, error) {
 	r := v.Retriever(wavevault.Scope{Collections: []string{wavevault.CollTasks}})
 	nodes, err := r.Query(wavevault.Filter{})
@@ -262,15 +253,6 @@ func collectDossiers(v *wavevault.Vault, keep func(status string) bool) ([]wshrp
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Updated > out[j].Updated })
 	return out, nil
-}
-
-// listDossiers is U1's focusable-task core (active|paused only), unchanged in behavior.
-func listDossiers(v *wavevault.Vault) (*wshrpc.CommandListDossiersRtnData, error) {
-	spaces, err := collectDossiers(v, func(s string) bool { return s == "active" || s == "paused" })
-	if err != nil {
-		return nil, err
-	}
-	return &wshrpc.CommandListDossiersRtnData{Spaces: spaces}, nil
 }
 
 // listTaskDossiers is U2's all-statuses core (the Tasks surface groups them Active/Paused/Done).

@@ -40,7 +40,6 @@
         "prettier-plugin-organize-imports": "^4.3.0",
         "sass": "1.91.0",
         "tailwindcss": "^4.2.1",
-        "tsx": "^4.21.0",
         "typescript": "^5.9.3",
         "typescript-eslint": "^8.56",
         "vite": "^6.4.2",
