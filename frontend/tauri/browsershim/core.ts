@@ -9,7 +9,15 @@ declare const __ARC_BROWSER_INIT__: Omit<InitData, "wsEndpoint" | "webEndpoint">
 // scripts/cdp/verify.mjs reads it to skip the scenarios that drive the Tauri host
 (globalThis as any).__ARC_BROWSER_SHIM__ = true;
 
-const NO_OPS = ["fe_log", "open_external", "notify_os", "hold_window_frame", "redirect_minimize", "set_folded_chrome"];
+const NO_OPS = [
+    "fe_log",
+    "open_external",
+    "notify_os",
+    "hold_window_frame",
+    "redirect_minimize",
+    "set_folded_chrome",
+    "raise_topmost", // a page has no window to lift above another app; floatstore.ts only logs the answer
+];
 export const BROWSER_COMMANDS: readonly string[] = [
     "get_init",
     "set_window_init_status",

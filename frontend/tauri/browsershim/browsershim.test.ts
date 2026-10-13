@@ -49,6 +49,7 @@ function tauriImports(): Map<string, Set<string>> {
 }
 
 describe("the stand-ins cover what the frontend uses", () => {
+    // dynamically imports every stand-in and walks the frontend's sources: past vitest's 5 s default under the full suite
     it("shims every Tauri module the frontend imports, and exports every name it takes", async () => {
         const found = tauriImports();
         expect(found.size).toBeGreaterThan(0);
@@ -57,7 +58,7 @@ describe("the stand-ins cover what the frontend uses", () => {
             const shim = await SHIM_MODULES[SHIMMED[mod]]();
             for (const name of names) expect(shim[name], `${mod} stand-in lacks ${name}`).toBeDefined();
         }
-    });
+    }, 30000);
 
     it("answers every Tauri command the frontend invokes", async () => {
         const { BROWSER_COMMANDS } = await import("./core");
