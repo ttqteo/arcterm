@@ -27,6 +27,12 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (Usage cold first open)**
+
+- [ ] (arcterm) **Usage fills in after a fresh start.** Restart arcterm (the build with this fix), open Usage at once:
+  the stat tiles, By session and Subagent cost replace their placeholders within a few seconds and never stay on
+  them; switching 7 days / All time is not needed. commit "scans get a 60s RPC timeout and share in-flight reads".
+
 **2026-10-13 (canvas arrows with few boards)**
 
 - [ ] (arcterm) **A canvas with five tabs or fewer has ‹ and › too.** Open a canvas with two to four boards (Canvas in
