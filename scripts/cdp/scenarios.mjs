@@ -13018,7 +13018,7 @@ const agentHistory = {
                 return {
                     headings: [...(tree?.querySelectorAll("span") ?? [])]
                         .map((s) => s.textContent.trim())
-                        .filter((t) => t === "Active" || t === "Conversations"),
+                        .filter((t) => t === "Conversations"),
                     liveInActive: !!active?.querySelector('[data-agent-row="${AH_LIVE_ID}"]'),
                     liveInConversations: !!convo?.querySelector('[data-agent-row="${AH_LIVE_ID}"]'),
                     sessionsInActive: active?.querySelectorAll("[data-agent-session-row]").length ?? -1,
@@ -13031,8 +13031,8 @@ const agentHistory = {
                 };
             })()`);
             rec(
-                "4. live agents are under Active and ended sessions in Conversations below it, never mixed; a project with no live agent has a Conversations folder and no Active one; both section headers fold, open by default",
-                JSON.stringify(split.headings) === JSON.stringify(["Active", "Conversations"]) &&
+                "4. live agents are in the project tree and ended sessions in Conversations below it, never mixed; a project with no live agent has a Conversations folder and no project one; the Conversations header folds, open by default, and the project tree has no header of its own",
+                JSON.stringify(split.headings) === JSON.stringify(["Conversations"]) &&
                     split.liveInActive &&
                     !split.liveInConversations &&
                     split.sessionsInActive === 0 &&
@@ -13040,8 +13040,7 @@ const agentHistory = {
                     split.ghostRows === 2 &&
                     !split.ghostActiveFolder &&
                     split.ghostConversationsFolder &&
-                    split.toggles.includes("active:true") &&
-                    split.toggles.includes("conversations:true"),
+                    JSON.stringify(split.toggles) === JSON.stringify(["conversations:true"]),
                 JSON.stringify(split)
             );
 
@@ -13108,18 +13107,19 @@ const agentHistory = {
             const noConversations = await h.ev(`document.querySelectorAll("[data-agent-conversations] [data-agent-folder]").length === 0`);
             await h.ev(`${conversationsToggle}?.click()`);
             await ahNap(200);
-            const activeToggle = `document.querySelector('[data-agent-section-toggle="active"]')`;
+            // the project tree has no section header: its project's folder folds to its row, taking the agent with it
+            const activeToggle = `document.querySelector('[data-project-folder="${AH_PROJECT}"]')`;
             await h.ev(`${activeToggle}?.click()`);
             await ahNap(300);
             const activeFolded = await h.ev(`(() => ({
-                rows: !!document.querySelector("[data-agent-active-rows]"),
+                rows: !!document.querySelector('[data-agent-active-rows] [data-agent-row="${AH_LIVE_ID}"]'),
                 expanded: ${activeToggle}?.getAttribute("aria-expanded") ?? null,
             }))()`);
             await h.ev(`${activeToggle}?.click()`);
             await ahNap(300);
             const restored = await h.ev(`!!document.querySelector('[data-agent-active-rows] [data-agent-row="${AH_LIVE_ID}"]')`);
             rec(
-                "6b. a Conversations folder folds to its row and count, and each section folds to its header and back",
+                "6b. a Conversations folder folds to its row and count, the Conversations section folds to its header and back, and a project folder of the tree folds to its row and back",
                 JSON.stringify(folded) ===
                     JSON.stringify([`folder:${AH_GHOST}`, "claude:ah-g1", "run:ah-run-1", `folder:${AH_PROJECT}`]) &&
                     (foldedCount ?? "").endsWith(String(AH_SEEDS)) &&
@@ -18749,9 +18749,9 @@ const launcherScenario = {
         await launcherPress(h, "ArrowDown");
         const down = await state();
         rec(
-            "3. in Start, ArrowUp from the first row picks the last (Orchestrate, titled New run) and ArrowDown wraps back to the first",
-            up?.start === "orchestrator" &&
-                up.title === "New run" &&
+            "3. in Start, ArrowUp from the first row picks the last (Tool, titled Open a tool) and ArrowDown wraps back to the first",
+            up?.start === "tool" &&
+                up.title === "Open a tool" &&
                 down?.start === s.startRows[0] &&
                 down.title === "New agent",
             JSON.stringify({ up: [up?.start, up?.title], down: [down?.start, down?.title] })
@@ -18871,7 +18871,7 @@ const launcherScenario = {
 
         await h.ev(focusColumn("start"));
         const agentRow = s.startRows.includes("claude") ? "claude" : s.startRows[0];
-        await launcherPress(h, digit(agentRow));
+        await launcherPress(h, await digit(agentRow));
         await launcherPress(h, "Tab");
         await launcherPress(h, "Tab");
         const tabbedTo = (await state()).focus;
@@ -21234,6 +21234,14 @@ async function openCanvasTerminal(h, ctx) {
         meta: { view: "term", controller: "shell", "cmd:cwd": "~" },
     });
     await h.rpc("setmeta", { oref: `tab:${ctx.tabId}`, meta: { "session:project": CANVAS_TOPIC } });
+    // The canvas swap is an agent's header: a plain terminal's slim pane head has none, so the terminal reports as a
+    // Claude agent, as the grid scenario's does, and the tab id is the agent id
+    await h.rpc("eventpublish", {
+        event: "agent:status",
+        scopes: [`block:${ctx.blockId}`],
+        persist: 1,
+        data: { oref: `block:${ctx.blockId}`, state: "idle", agent: "claude", title: CANVAS_TOPIC, ts: Date.now() },
+    });
 }
 
 const pressCanvasKey = async (h, { key, code, keyCode }) => {
@@ -21388,13 +21396,13 @@ const canvasSwap = {
             back.sameNode && (tagged.xterm ? back.sameXterm === true : true),
             JSON.stringify({ taggedXterm: tagged.xterm, sameNode: back.sameNode, sameXterm: back.sameXterm })
         );
-        const treeTerminal = await h.ev(
-            `!!document.querySelector('[data-agent-tree] [data-agent-terminals] [data-agent-terminal-row="${ctx.tabId}"]')`
+        const treeAgentRow = await h.ev(
+            `!!document.querySelector('[data-agent-tree] [data-agent-row="${ctx.tabId}"]')`
         );
         rec(
-            "6. the agent tree's Terminals section lists the terminal",
-            treeTerminal === true,
-            `treeTerminal=${treeTerminal}`
+            "6. the agent tree lists the agent",
+            treeAgentRow === true,
+            `treeAgentRow=${treeAgentRow}`
         );
         if (!delivered) {
             steps.push(skipStep("4b. the c key itself", "CDP key events never reached the page; drove the header instead"));
@@ -21775,10 +21783,16 @@ const railCount = (id) => `(() => {
     const m = /(\\d+)$/.exec(t.trim());
     return m ? Number(m[1]) : null;
 })()`;
-// the tree's Terminals section in order: a folder as "folder:<project>", a terminal row as its tab id
-const treeTerminalRows = `[...(document.querySelector("[data-agent-tree] [data-agent-terminals]")
-    ?.querySelectorAll("[data-agent-folder], [data-agent-terminal-row]") ?? [])]
-    .map((r) => r.hasAttribute("data-agent-folder") ? "folder:" + r.getAttribute("data-agent-folder") : r.getAttribute("data-agent-terminal-row"))`;
+// the tree's folders and terminals in order: a folder as "folder:<project>", a terminal row as its tab id. The tree is one
+// list per project now (the agents, a divider, then the terminals), so a terminal belongs to the nearest folder above it
+const treeTerminalRows = `[...(document.querySelector("[data-agent-tree] [data-agent-active-rows]")
+    ?.querySelectorAll("[data-project-folder], [data-tree-terminal-row]") ?? [])]
+    .map((r) => r.hasAttribute("data-project-folder") ? "folder:" + r.getAttribute("data-project-folder") : r.getAttribute("data-tree-terminal-row"))`;
+// the project of the folder a terminal's row is under in treeTerminalRows' list
+const treeTerminalFolder = (rows, tabId) => {
+    const at = rows.indexOf(tabId);
+    return at < 0 ? null : (rows.slice(0, at).findLast((r) => r.startsWith("folder:")) ?? null);
+};
 
 // a plain terminal tab in a project, the way launchAgent makes one (CreateTab, then the terminal meta). It is tracked
 // on ctx as soon as the tab exists, so a failure in the calls after it still lets teardown close it
@@ -21957,9 +21971,9 @@ const agentRailSections = {
         );
 
         const treeRows = await h.ev(treeTerminalRows);
-        const under = (t) => treeRows.indexOf(t.tabId) === treeRows.indexOf(`folder:${t.project}`) + 1;
+        const under = (t) => treeTerminalFolder(treeRows, t.tabId) === `folder:${t.project}`;
         rec(
-            "5. the Agent tree's Terminals section files each terminal under its project's folder, whatever project is focused",
+            "5. the Agent tree files each terminal under its project's folder, whatever project is focused",
             treeRows.includes(termA.tabId) && treeRows.includes(termB.tabId) && under(termA) && under(termB),
             JSON.stringify(treeRows)
         );
@@ -21967,7 +21981,19 @@ const agentRailSections = {
         const swept = await h.ev(polishSweep(RAIL_ASIDE));
         rec("6. nothing in the open rail is under 10.5px", sweptOk(swept), JSON.stringify(swept));
 
-        await h.ev(`document.querySelector('[data-agent-terminal-row="${termA.tabId}"]')?.click()`);
+        // a tree row gives its terminal the centre and docks nothing; the pane head's Move to the panel is what docks it
+        await h.ev(`document.querySelector('[data-tree-terminal-row="${termA.tabId}"]')?.click()`);
+        const centred = await polishWaitFor(h, `!!document.querySelector('[data-terminal-pane-head="${termA.tabId}"]')`, 4000);
+        const centreMarks = await h.ev(`({
+            gridDocked: document.querySelector("[data-agent-grid]")?.dataset.terminalDocked ?? null,
+            tree: document.querySelector('[data-tree-terminal-row="${termA.tabId}"]')?.className.includes("bg-surface-selected") ?? false,
+        })`);
+        rec(
+            "7. a tree terminal row gives that terminal the centre and reads as selected there, with nothing docked",
+            centred && centreMarks.gridDocked == null && centreMarks.tree === true,
+            JSON.stringify({ centred, ...centreMarks })
+        );
+        await h.ev(`document.querySelector('[data-terminal-pane-head="${termA.tabId}"] [data-terminal-to-dock]')?.click()`);
         const docked = await polishWaitFor(
             h,
             `(() => {
@@ -21983,18 +22009,18 @@ const agentRailSections = {
             const grid = document.querySelector("[data-agent-grid]")?.getBoundingClientRect();
             return {
                 gridDocked: document.querySelector("[data-agent-grid]")?.dataset.terminalDocked ?? null,
-                tree: document.querySelector('[data-agent-terminal-row="${termA.tabId}"]')?.className.includes("bg-surface-selected") ?? false,
+                place: document.querySelector('[data-tree-terminal-row="${termA.tabId}"] [data-terminal-place]')?.dataset.terminalPlace ?? null,
                 bar: !!document.querySelector('[data-terminal-dock-bar="${termA.tabId}"]'),
                 atBottom: !!dock && !!grid && Math.abs(dock.bottom - grid.bottom) < 2,
                 share: dock && grid ? Math.round((dock.height / grid.height) * 100) : null,
             };
         })()`);
         rec(
-            "7. a tree Terminals row docks that terminal under the agent, at the column's foot and at most 60% of it, reads as selected there, and leaves the agent's rail in place",
+            "7b. Move to the panel docks that terminal under the agent, at the column's foot and at most 60% of it, its row reading panel, and leaves the agent's rail in place",
             docked &&
                 !JSON.stringify(narrowed).includes('"terminals"') &&
                 marks.gridDocked === termA.tabId &&
-                marks.tree === true &&
+                marks.place === "panel" &&
                 marks.bar === true &&
                 marks.atBottom === true &&
                 marks.share != null &&
@@ -31861,6 +31887,1213 @@ const sidebarAgentGlyph = {
     },
 };
 
+// --- terminals and tools (docs/superpowers/specs/2026-10-13-terminals-and-tools-design.md) --------------------------
+// One tree per project with terminals beside its agents, a terminal that takes the centre, the dock's folded strip, and
+// the tool library (Setup → Tools, the Open a tool picker, the New dialog's Tool row). Nothing here needs lazygit or any
+// real tool: arrange writes user tools to tools.json through ToolsSetUserCommand (`node` for the one that runs, commands
+// that are not on PATH for the rest) and teardown removes them, the temp project and every tab it opened.
+const TT_PROJECT = "verify-tt";
+const TT_AGENT_ID = "fx-tt-agent";
+const TT_AGENT_BLOCK = "fx-blk-tt-agent";
+const TT_AGENT_NAME = "tt agent";
+// the one line arc-fixture's screen holds, then it waits
+const TT_FIXTURE_LINE = "ARC-FIXTURE-SCREEN-READY";
+const TT_SLEEP = `node -e "setTimeout(()=>{},120000)"`;
+const TT_USER_TOOLS = {
+    "arc-fixture": {
+        name: "arc-fixture",
+        command: "node",
+        args: `-e "console.log('${TT_FIXTURE_LINE}');setInterval(()=>{},1000)"`,
+        opensin: "root",
+        shows: "centre",
+        purpose: "Verification fixture: prints one line and waits.",
+    },
+    "arc-slow-install": {
+        name: "arc-slow-install",
+        command: "arc-slow-install-cmd",
+        opensin: "root",
+        shows: "centre",
+        purpose: "Verification fixture: its install runs for two minutes.",
+        "install:windows": TT_SLEEP,
+        "install:darwin": TT_SLEEP,
+    },
+    "arc-bad-install": {
+        name: "arc-bad-install",
+        command: "arc-bad-install-cmd",
+        opensin: "root",
+        shows: "centre",
+        purpose: "Verification fixture: its install exits 1.",
+        "install:windows": `node -e "process.exit(1)"`,
+        "install:darwin": `node -e "process.exit(1)"`,
+    },
+    "arc-missing": {
+        name: "arc-missing",
+        command: "arc-missing-xyz",
+        opensin: "root",
+        shows: "centre",
+        purpose: "Verification fixture: a command that is not on PATH and has no install line.",
+    },
+};
+const TT_STORAGE_KEYS = ["agent.grid", "agent.tree.collapsed", "agent.terminalDock.folded", "agent.terminalDock.height"];
+const TT_ROWS = `document.querySelector("[data-agent-tree] [data-agent-active-rows]")`;
+const TT_TERM_ROW = (id) => `document.querySelector('[data-tree-terminal-row="${id}"]')`;
+const TT_PICKER = `document.querySelector("[data-tool-picker]")`;
+const TT_FLAT = `((el) => (el?.textContent ?? "").replace(/\\s+/g, " ").trim())`;
+
+// the tree's rows in order, each as folder:<project>, agent:<id>, divider:<project>, split or terminal:<tab id>
+const TT_TREE_SHAPE = `(() => {
+    const root = ${TT_ROWS};
+    if (!root) return null;
+    const sel = "[data-project-folder], [data-agent-row], [data-project-divider], [data-tree-terminal-row], [data-agent-split-row]";
+    return [...root.querySelectorAll(sel)].map((el) => {
+        if (el.hasAttribute("data-project-folder")) return "folder:" + el.getAttribute("data-project-folder");
+        if (el.hasAttribute("data-agent-row")) return "agent:" + el.getAttribute("data-agent-row");
+        if (el.hasAttribute("data-project-divider")) return "divider:" + el.getAttribute("data-project-divider");
+        if (el.hasAttribute("data-agent-split-row")) return "split";
+        return "terminal:" + el.getAttribute("data-tree-terminal-row");
+    });
+})()`;
+
+// a real mouse move or click at the middle of the first element `sel` matches, so :hover and focus behave as for a person
+async function ttMouse(h, sel, kind = "click") {
+    const box = await h.ev(`(() => {
+        const r = document.querySelector(${JSON.stringify(sel)})?.getBoundingClientRect();
+        return r && r.width > 0 ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null;
+    })()`);
+    if (box == null) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y });
+    if (kind === "click") {
+        for (const type of ["mousePressed", "mouseReleased"]) {
+            await h.cdp("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button: "left", clickCount: 1 });
+        }
+    }
+    await polishNap(250);
+    return true;
+}
+
+// a click the page's own handler sees, for an element a hover would otherwise have to reveal
+const ttClick = (h, sel) => h.ev(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); el?.click(); return !!el; })()`);
+
+// a plain terminal tab, the way launchAgent makes one (CreateTab, then the block and tab meta). `project` null leaves it
+// in no project, which the tree files under Home. Tracked on ctx the moment the tab exists, so a failure in the calls
+// after it still lets teardown close it.
+async function ttOpenTerminal(h, ctx, { key, project = TT_PROJECT, cwd = "~", label, extra }) {
+    const tabId = await waveService(h, "workspace", "CreateTab", [ctx.workspaceId, project ?? "Home", false]);
+    const terminal = { key, tabId, blockId: null, project };
+    ctx.terminals.push(terminal);
+    const tab = await waveService(h, "object", "GetObject", [`tab:${tabId}`]);
+    terminal.blockId = tab?.blockids?.[0] ?? null;
+    if (!terminal.blockId) throw new Error(`the new tab ${tabId} has no block`);
+    await h.rpc("setmeta", {
+        oref: `block:${terminal.blockId}`,
+        meta: { view: "term", controller: "shell", "cmd:cwd": cwd, ...(extra ?? {}) },
+    });
+    const tabMeta = { ...(project ? { "session:project": project } : {}), ...(label ? { "session:label": label } : {}) };
+    if (Object.keys(tabMeta).length > 0) await h.rpc("setmeta", { oref: `tab:${tabId}`, meta: tabMeta });
+    return terminal;
+}
+
+// Every tab of the window's workspace the scenario can have made: an install terminal is "Install <tool>", and a tool
+// opened from a picker or the New dialog is filed under the fixture project
+async function ttFixtureTabs(h, ctx) {
+    const ws = await waveService(h, "object", "GetObject", [`workspace:${ctx.workspaceId}`]);
+    const found = [];
+    for (const tabId of ws?.tabids ?? []) {
+        const meta = (await waveService(h, "object", "GetObject", [`tab:${tabId}`]))?.meta ?? {};
+        if (String(meta["session:label"] ?? "").startsWith("Install arc-") || meta["session:project"] === TT_PROJECT) {
+            found.push(tabId);
+        }
+    }
+    return found;
+}
+
+// Setup → Tools, the tool selected and its Install pressed: the install runs in a terminal of its own in the focused
+// agent's project. The install state is the page's, so a reload loses it: start installs after the last reload.
+async function ttStartInstall(h, toolId) {
+    await h.goto("setup");
+    await ttClick(h, '[data-setup-tab="tools"]');
+    if (!(await polishWaitFor(h, `!!document.querySelector('[data-tools-row="${toolId}"]')`, 8000))) return false;
+    await ttClick(h, `[data-tools-row="${toolId}"]`);
+    if (!(await polishWaitFor(h, `!!document.querySelector('[data-tools-detail="${toolId}"] [data-tool-install]')`, 5000))) {
+        return false;
+    }
+    return ttClick(h, `[data-tools-detail="${toolId}"] [data-tool-install]`);
+}
+
+// What every tools scenario starts from: a registered project with a temp folder, the four user tools, the fixture
+// agent in that project, and the terminals asked for. `terminals` is a list of { key, project, cwd, label } where cwd is
+// "~", "root" or "root/<sub>" (made on disk). It reloads, so the roster and the tool list are read fresh, and lands on
+// the Agent surface with the fixture agent in focus. A throw still returns ctx (the caller catches), so teardown closes
+// what was already made.
+async function ttArrange(h, ctx, { terminals = [], agent = true, overrides = {} } = {}) {
+    ctx.terminals = [];
+    ctx.dirs = [];
+    ctx.userTools = [];
+    ctx.prevStorage = {};
+    for (const k of TT_STORAGE_KEYS) ctx.prevStorage[k] = await h.ev(`localStorage.getItem(${JSON.stringify(k)})`);
+    const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+    const wslist = await h.rpc("workspacelist", null);
+    const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+    ctx.workspaceId = ws.workspacedata.oid;
+    ctx.root = mkdtempSync(join(tmpdir(), "verify-tt-"));
+    ctx.dirs.push(ctx.root);
+    await h.rpc("createproject", { name: TT_PROJECT, path: ctx.root });
+    ctx.projectMade = true;
+    await waitForProjectInConfig(h, TT_PROJECT);
+    // overrides are entries for a built-in's id: the built-in with the fields set, so it is still a catalog tool
+    const written = { ...TT_USER_TOOLS, ...overrides };
+    for (const [id, tool] of Object.entries(written)) {
+        await h.rpc("toolssetuser", { id, tool });
+        ctx.userTools.push(id);
+    }
+    const commands = Object.fromEntries(Object.entries(written).map(([id, tool]) => [id, tool.command]));
+    const listed = await polishWaitFor(
+        h,
+        `window.TabRpcClient.wshRpcCall("toolsstatus", null, {}).then((r) => Object.entries(${JSON.stringify(commands)}).every(([id, command]) => (r.tools ?? []).some((t) => t.id === id && t.command === command)))`,
+        10000
+    );
+    if (!listed) throw new Error("the user tools never reached the tool list");
+    for (const t of terminals) {
+        let cwd = t.cwd ?? "~";
+        if (cwd === "root") cwd = ctx.root;
+        else if (cwd.startsWith("root/")) {
+            cwd = join(ctx.root, cwd.slice(5));
+            mkdirSync(cwd, { recursive: true });
+        } else if (cwd.startsWith("gone/")) {
+            // a worktree that is made and then removed, before any shell has started in it (the pane mounts when first
+            // shown): the terminal's cmd:cwd names a folder that is gone
+            cwd = join(ctx.root, cwd.slice(5));
+            mkdirSync(cwd, { recursive: true });
+            rmSync(cwd, { recursive: true, force: true });
+        }
+        await ttOpenTerminal(h, ctx, {
+            key: t.key,
+            project: t.project === undefined ? TT_PROJECT : t.project,
+            cwd,
+            label: t.label,
+            extra: t.extra,
+        });
+    }
+    if (agent) {
+        mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+        writeFileSync(
+            TREE_RAIL_FIXTURE,
+            JSON.stringify(
+                [
+                    {
+                        id: TT_AGENT_ID,
+                        name: TT_AGENT_NAME,
+                        project: TT_PROJECT,
+                        task: "verify terminals and tools",
+                        state: "idle",
+                        agent: "claude",
+                        model: "opus",
+                        idleSince: Date.now() - 60_000,
+                        blockId: TT_AGENT_BLOCK,
+                    },
+                ],
+                null,
+                2
+            )
+        );
+        ctx.wroteFixture = true;
+    }
+    // the grid, fold list and dock fold are persisted: each scenario starts from the defaults
+    for (const k of TT_STORAGE_KEYS) await h.ev(`localStorage.removeItem(${JSON.stringify(k)})`);
+    await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true")`);
+    if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+    await h.goto("agent");
+    const agentUp = !agent || (await polishWaitFor(h, `!!document.querySelector('[data-agent-row="${TT_AGENT_ID}"]')`, 15000));
+    const terminalsUp = await polishWaitFor(
+        h,
+        `${JSON.stringify(ctx.terminals.map((t) => t.tabId))}.every((id) => !!document.querySelector('[data-tree-terminal-row="' + id + '"]'))`,
+        15000
+    );
+    ctx.inRoster = agentUp && terminalsUp;
+    // the pointer off the tree, so no hover tooltip is in a shot
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 900, y: 600 });
+}
+
+// best-effort, so one failed step does not strand the rest; every tab and tool the scenario made goes, and the page
+// reloads onto the live roster
+async function ttTeardown(h, ctx, name) {
+    const step = async (what, fn) => {
+        try {
+            await fn();
+        } catch (e) {
+            console.error(`${name} teardown: ${what} failed: ${e?.message ?? e}`);
+        }
+    };
+    await step("close a dialog a failed step left open", async () => {
+        if (await h.ev(`!!${TT_PICKER} || !!document.querySelector('[role="dialog"]')`)) await h.ev(PEEKS_ESC);
+    });
+    if (ctx.workspaceId) {
+        const closed = new Set();
+        await step("close the install terminals and every tool the scenario opened", async () => {
+            for (const tabId of await ttFixtureTabs(h, ctx)) {
+                await step(`close ${tabId}`, () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, tabId, false]));
+                closed.add(tabId);
+            }
+        });
+        // a Home terminal is under no project, so it is closed by its own id
+        for (const t of (ctx.terminals ?? []).filter((x) => !closed.has(x.tabId))) {
+            await step(`close the terminal tab ${t.tabId}`, () =>
+                waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false])
+            );
+        }
+    }
+    for (const id of ctx.userTools ?? []) await step(`remove the tool ${id}`, () => h.rpc("toolssetuser", { id }));
+    await step("remove the tool the add form saved", () => h.rpc("toolssetuser", { id: "pr-dashboard" }));
+    if (ctx.projectMade) await step("delete the project", () => h.rpc("deleteproject", { name: TT_PROJECT }));
+    if (ctx.wroteFixture) await step("remove the fixture roster", () => rmSync(TREE_RAIL_FIXTURE, { force: true }));
+    for (const k of TT_STORAGE_KEYS) {
+        await step(`restore ${k}`, () => h.ev(restoreStorageKey(k, ctx.prevStorage?.[k] ?? null)));
+    }
+    await step("reload onto the live roster", async () => {
+        await h.ev("location.reload()");
+        await polishNap(2500);
+    });
+    for (const dir of ctx.dirs ?? []) {
+        // a shell that held its folder is gone with its tab, but Windows lets go a moment later
+        await step(`remove ${dir}`, () => rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 400 }));
+    }
+}
+
+// --- tools-tree: one tree per project (boards ProjectTree and Sidebar). The project's folder holds its agent, a
+// divider and its terminals; folded, it counts them; a folder with only terminals says so; the folder's tool button
+// opens the picker for that project; an install shows on its terminal's row.
+const toolsTree = {
+    name: "tools-tree",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            await ttArrange(h, ctx, {
+                terminals: [
+                    { key: "plain", cwd: "root" },
+                    { key: "chip", cwd: "root/feat-chip" },
+                    { key: "home-a", project: null },
+                    { key: "home-b", project: null },
+                ],
+            });
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const arranged = ctx.arrangeError == null && ctx.inRoster === true;
+        rec(
+            "0. the fixture agent and the four terminals are in the tree",
+            arranged,
+            ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster })
+        );
+        if (!arranged) return steps;
+        const t = (key) => ctx.terminals.find((x) => x.key === key);
+
+        const shape = await h.ev(TT_TREE_SHAPE);
+        const inProject = shape?.slice(shape.indexOf(`folder:${TT_PROJECT}`)) ?? [];
+        const rows = [
+            `folder:${TT_PROJECT}`,
+            `agent:${TT_AGENT_ID}`,
+            `divider:${TT_PROJECT}`,
+            `terminal:${t("plain").tabId}`,
+            `terminal:${t("chip").tabId}`,
+        ];
+        await h.shot("cdp-shots/tools-tree-1-folder.png");
+        rec(
+            "1. the project's folder holds its agent, then the divider, then both terminals",
+            JSON.stringify(inProject.slice(0, rows.length)) === JSON.stringify(rows),
+            JSON.stringify(shape)
+        );
+
+        const chips = await h.ev(`(() => {
+            const text = (el) => ${TT_FLAT}(el);
+            return {
+                plain: text(${TT_TERM_ROW(t("plain").tabId)}?.querySelector("[data-terminal-branch]")) || null,
+                chip: text(${TT_TERM_ROW(t("chip").tabId)}?.querySelector("[data-terminal-branch]")) || null,
+            };
+        })()`);
+        rec(
+            "2. the terminal in a sub-folder carries its folder as a branch chip, the one in the root has none",
+            chips.plain == null && chips.chip === "feat-chip",
+            JSON.stringify(chips)
+        );
+
+        const folded = async (project) => {
+            await ttClick(h, `[data-project-folder="${project}"]`);
+            await polishNap(300);
+            return h.ev(`(() => {
+                const f = document.querySelector('[data-project-folder="${project}"]');
+                return {
+                    expanded: f?.getAttribute("aria-expanded"),
+                    counts: ${TT_FLAT}(f?.querySelector("[data-folder-counts]")) || null,
+                    rows: document.querySelectorAll("[data-tree-terminal-row]").length,
+                };
+            })()`);
+        };
+        const foldedMain = await folded(TT_PROJECT);
+        await h.shot("cdp-shots/tools-tree-2-folded.png");
+        rec(
+            "3. folded, the folder reads 1 agent · 2 terminals",
+            foldedMain.expanded === "false" && foldedMain.counts === "1 agent · 2 terminals",
+            JSON.stringify(foldedMain)
+        );
+        await ttClick(h, `[data-project-folder="${TT_PROJECT}"]`);
+
+        const homeKey = await h.ev(`(() => {
+            const f = [...document.querySelectorAll("[data-project-folder]")].find((el) => ${TT_FLAT}(el).startsWith("Home"));
+            return f?.getAttribute("data-project-folder") ?? null;
+        })()`);
+        const foldedHome = homeKey == null ? null : await folded(homeKey);
+        rec(
+            "4. folded-terminals-only: a folder holding only two terminals reads 2 terminals",
+            foldedHome?.expanded === "false" && foldedHome.counts === "2 terminals",
+            JSON.stringify({ homeKey, foldedHome })
+        );
+        if (homeKey != null) await ttClick(h, `[data-project-folder="${homeKey}"]`);
+
+        // the hover action is display:none until the folder is hovered, so the move is real
+        const hovered = await ttMouse(h, `[data-project-folder="${TT_PROJECT}"]`, "move");
+        const toolShown = await h.ev(`(() => {
+            const b = document.querySelector('[data-folder-tool="${TT_PROJECT}"]');
+            return !!b && getComputedStyle(b.parentElement).display !== "none";
+        })()`);
+        await ttMouse(h, `[data-folder-tool="${TT_PROJECT}"]`);
+        const picker = await polishWaitFor(h, `!!${TT_PICKER}`, 5000);
+        const context = await h.ev(`${TT_FLAT}(document.querySelector("[data-tool-picker-context]"))`);
+        await h.shot("cdp-shots/tools-tree-3-folder-tool.png");
+        rec(
+            "5. folder-tool: hovering the folder shows its tool button, which opens the picker with a context line naming the project",
+            hovered && toolShown && picker && context.includes(TT_PROJECT),
+            JSON.stringify({ hovered, toolShown, picker, context })
+        );
+        await h.ev(PEEKS_ESC);
+        rec("5b. Esc closes the picker", await polishWaitFor(h, `!${TT_PICKER}`, 3000), "");
+        // the pointer off the folder, so its tooltip is not in the shots that follow
+        await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 900, y: 600 });
+
+        const started = [];
+        for (const id of ["arc-slow-install", "arc-bad-install"]) started.push(await ttStartInstall(h, id));
+        await h.goto("agent");
+        const rowState = (name) => `(() => {
+            const row = [...document.querySelectorAll("[data-tree-terminal-row]")].find((r) => ${TT_FLAT}(r).includes(${JSON.stringify(name)}));
+            return row?.getAttribute("data-terminal-state") ?? null;
+        })()`;
+        const installing = await polishWaitFor(h, `(${rowState("Install arc-slow-install")}) === "installing"`, 15000);
+        await h.shot("cdp-shots/tools-tree-4-installing.png");
+        rec(
+            "6. row-installing: the Install arc-slow-install row is installing",
+            started.every(Boolean) && installing,
+            JSON.stringify({ started, state: await h.ev(rowState("Install arc-slow-install")) })
+        );
+        const failed = await polishWaitFor(h, `(${rowState("Install arc-bad-install")}) === "failed"`, 30000);
+        await h.shot("cdp-shots/tools-tree-5-failed.png");
+        rec(
+            "7. row-failed: the Install arc-bad-install row is install failed",
+            failed,
+            JSON.stringify({ state: await h.ev(rowState("Install arc-bad-install")) })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await ttTeardown(h, ctx, "tools-tree");
+    },
+};
+
+// the keyboard back on the surface wrapper, so a bare j or k is the Agent surface's and not an xterm's
+const ttToSurface = (h) =>
+    h.ev(`(() => {
+        document.activeElement?.blur?.();
+        document.querySelector("[data-cockpit-surface-wrap]")?.focus();
+        return true;
+    })()`);
+// the tab the centre shows: a terminal's pane head names its tab, an agent has its header
+const TT_CENTRE = `(() => {
+    const head = document.querySelector("[data-terminal-pane-head]");
+    return head ? "terminal:" + head.getAttribute("data-terminal-pane-head") : document.querySelector("[data-agent-header]") ? "agent" : null;
+})()`;
+
+// --- tools-centre: a picked terminal takes the centre (board Compact). Its slim header says where Ctrl+Tab goes back to;
+// a quick Ctrl+Tab returns, j and k step through the tree's rows terminals included, the palette lists the terminal
+// and Open a tool…, and the header's close removes its row.
+const toolsCentre = {
+    name: "tools-centre",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            await ttArrange(h, ctx, { terminals: [{ key: "a", cwd: "root" }, { key: "b", cwd: "root" }] });
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const arranged = ctx.arrangeError == null && ctx.inRoster === true;
+        rec("0. the fixture agent and two terminals are in the tree", arranged, ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster }));
+        if (!arranged) return steps;
+        const [a, b] = [ctx.terminals[0], ctx.terminals[1]];
+
+        await ttClick(h, `[data-tree-terminal-row="${a.tabId}"]`);
+        const shown = await polishWaitFor(h, `!!document.querySelector('[data-terminal-pane-head="${a.tabId}"]')`, 5000);
+        await polishNap(400);
+        const head = await h.ev(`(() => {
+            const el = document.querySelector('[data-terminal-pane-head="${a.tabId}"]');
+            return {
+                back: [...(el?.querySelectorAll("[data-terminal-back-hint] > span") ?? [])].map((x) => ${TT_FLAT}(x)),
+                docked: document.querySelector("[data-agent-grid]")?.getAttribute("data-terminal-docked") ?? null,
+                selected: !!${TT_TERM_ROW(a.tabId)}?.className.includes("bg-surface-selected"),
+            };
+        })()`);
+        await h.shot("cdp-shots/tools-centre-1-terminal.png");
+        rec(
+            "1. picking the terminal row gives it the centre, with a pane head that says Ctrl Tab back to the agent",
+            shown && JSON.stringify(head.back) === JSON.stringify(["Ctrl Tab", `back to ${TT_AGENT_NAME}`]) && head.docked == null && head.selected,
+            JSON.stringify(head)
+        );
+
+        await ahKey(h, "Tab", "Tab", { ctrlKey: true });
+        await ahKeyUp(h, "Control", "ControlLeft");
+        const back = await polishWaitFor(h, `(${TT_CENTRE}) === "agent"`, 4000);
+        rec("2. a quick Ctrl+Tab returns to the agent", back, JSON.stringify({ centre: await h.ev(TT_CENTRE) }));
+
+        await ttToSurface(h);
+        await ahKey(h, "j", "KeyJ");
+        const onTerminal = await polishWaitFor(h, `(${TT_CENTRE}).startsWith("terminal:")`, 4000);
+        const landed = await h.ev(TT_CENTRE);
+        await ahKey(h, "k", "KeyK");
+        const home = await polishWaitFor(h, `(${TT_CENTRE}) === "agent"`, 4000);
+        rec(
+            "3. jk: j from the agent lands on a terminal (its pane head shows) and k returns",
+            onTerminal && landed === `terminal:${a.tabId}` && home,
+            JSON.stringify({ landed, after: await h.ev(TT_CENTRE) })
+        );
+
+        await ttToSurface(h);
+        const opened = await openPalette(h);
+        await h.ev(setFieldExpr(PALETTE_INPUT, "terminal"));
+        const listed = await polishWaitFor(h, `!!document.querySelector('[data-palette-key="terminal:${a.tabId}"]')`, 4000);
+        await h.shot("cdp-shots/tools-centre-2-palette-terminal.png");
+        await h.ev(setFieldExpr(PALETTE_INPUT, "Open a tool"));
+        const toolRow = await polishWaitFor(h, `!!document.querySelector('[data-palette-key="cmd:open-tool"]')`, 4000);
+        await ttClick(h, '[data-palette-key="cmd:open-tool"]');
+        const picker = await polishWaitFor(h, `!!${TT_PICKER}`, 4000);
+        rec(
+            "4. palette: it lists the terminal and Open a tool…, which opens the picker",
+            opened && listed && toolRow && picker,
+            JSON.stringify({ opened, listed, toolRow, picker })
+        );
+        await h.ev(PEEKS_ESC);
+        await polishWaitFor(h, `!${TT_PICKER}`, 3000);
+
+        await ttClick(h, `[data-tree-terminal-row="${b.tabId}"]`);
+        const bShown = await polishWaitFor(h, `!!document.querySelector('[data-terminal-pane-head="${b.tabId}"]')`, 5000);
+        await ttClick(h, `[data-terminal-pane-head="${b.tabId}"] [data-terminal-close]`);
+        const confirmUp = await polishWaitFor(h, `!!document.querySelector('[role="dialog"]')`, 3000);
+        await h.shot("cdp-shots/tools-centre-3-close.png");
+        const dialogButtons = await h.ev(`(() => {
+            const all = [...document.querySelectorAll('[role="dialog"] button')];
+            all.find((x) => ${TT_FLAT}(x).startsWith("Close terminal"))?.click();
+            return all.map((x) => ${TT_FLAT}(x));
+        })()`);
+        const gone = await polishWaitFor(h, `!${TT_TERM_ROW(b.tabId)}`, 8000);
+        // closed here, so teardown has nothing to close for it
+        if (gone) ctx.terminals = ctx.terminals.filter((t) => t.tabId !== b.tabId);
+        rec(
+            "5. close: the pane head's close, once confirmed, removes the terminal's row",
+            bShown && confirmUp && gone,
+            JSON.stringify({ bShown, confirmUp, gone, dialogButtons })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await ttTeardown(h, ctx, "tools-centre");
+    },
+};
+
+// the grid's shown cells: the tab each holds, and how many the surface counts
+const TT_GRID = `(() => {
+    const grid = document.querySelector("[data-agent-grid]");
+    return {
+        count: grid ? Number(grid.getAttribute("data-agent-grid-count")) : null,
+        cells: [...document.querySelectorAll("[data-agent-cell]")]
+            .filter((c) => !c.classList.contains("hidden"))
+            .map((c) => c.getAttribute("data-agent-terminal")),
+        docked: grid?.getAttribute("data-terminal-docked") ?? null,
+        folded: grid?.getAttribute("data-terminal-dock-folded") === "true",
+    };
+})()`;
+const TT_PLACE = (id) => `(${TT_FLAT})(${TT_TERM_ROW(id)}?.querySelector("[data-terminal-place]")) || null`;
+
+// --- tools-split: a terminal opened beside the agent (board Main). Two cells, one a terminal; the terminal's row reads
+// split and the split row sits inside the project's folder; a split whose cells are in different projects moves to the
+// top of the tree, flagged, each segment naming its project.
+const toolsSplit = {
+    name: "tools-split",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            await ttArrange(h, ctx, { terminals: [{ key: "a", cwd: "root" }, { key: "home", project: null }] });
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const arranged = ctx.arrangeError == null && ctx.inRoster === true;
+        rec("0. the fixture agent and two terminals are in the tree", arranged, ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster }));
+        if (!arranged) return steps;
+        const [a, home] = ctx.terminals;
+
+        await ttClick(h, `[data-tree-terminal-row="${a.tabId}"]`);
+        await polishWaitFor(h, `!!document.querySelector('[data-terminal-pane-head="${a.tabId}"] [data-terminal-open-split]')`, 5000);
+        const beside = await h.ev(
+            `document.querySelector('[data-terminal-pane-head="${a.tabId}"] [data-terminal-open-split]')?.getAttribute("aria-label") ?? null`
+        );
+        await ttClick(h, `[data-terminal-pane-head="${a.tabId}"] [data-terminal-open-split]`);
+        const two = await polishWaitFor(h, `(${TT_GRID}).cells.length === 2`, 5000);
+        await polishNap(400);
+        const grid = await h.ev(TT_GRID);
+        // the board draws a split's terminal as a segment of the split row alone: the terminal leaves its folder's list
+        // (projectTree lifts it out with the agent), so its own row, and the where-it-shows word on it, are not drawn
+        const seg = await h.ev(`(() => {
+            const row = document.querySelector("[data-agent-split-row]");
+            return {
+                cells: [...(row?.querySelectorAll("[data-agent-split-cell]") ?? [])].map((x) => x.getAttribute("data-agent-split-cell")),
+                ownRow: !!${TT_TERM_ROW(a.tabId)},
+            };
+        })()`);
+        const shape = await h.ev(TT_TREE_SHAPE);
+        const iFolder = shape.indexOf(`folder:${TT_PROJECT}`);
+        const iSplit = shape.indexOf("split");
+        const iHome = shape.findIndex((r) => r.startsWith("folder:") && r !== `folder:${TT_PROJECT}`);
+        await h.shot("cdp-shots/tools-split-1-beside.png");
+        rec(
+            "1. Open beside the agent: two cells, one of them the terminal, shown as a segment of the split row, which is inside the project's folder",
+            beside === `Open beside ${TT_AGENT_NAME}` &&
+                two &&
+                grid.cells.length === 2 &&
+                grid.cells.includes(a.tabId) &&
+                grid.cells.includes(TT_AGENT_ID) &&
+                seg.cells.length === 2 &&
+                seg.cells.includes(a.tabId) &&
+                seg.cells.includes(TT_AGENT_ID) &&
+                !seg.ownRow &&
+                iSplit > iFolder &&
+                (iHome < 0 || iSplit < iHome),
+            JSON.stringify({ beside, grid, seg, shape })
+        );
+
+        // a Home terminal takes the focused cell (a pick replaces it): the split now spans two projects
+        await ttClick(h, `[data-tree-terminal-row="${home.tabId}"]`);
+        const crossUp = await polishWaitFor(h, `!!document.querySelector("[data-split-cross]")`, 5000);
+        await polishNap(400);
+        const cross = await h.ev(`(() => {
+            const row = document.querySelector("[data-agent-split-row]");
+            return {
+                cross: row?.getAttribute("data-split-cross") ?? null,
+                projects: [...(row?.querySelectorAll("[data-split-project]") ?? [])].map((x) => ${TT_FLAT}(x)),
+                cells: [...(row?.querySelectorAll("[data-agent-split-cell]") ?? [])].map((x) => x.getAttribute("data-agent-split-cell")),
+            };
+        })()`);
+        const crossShape = await h.ev(TT_TREE_SHAPE);
+        await h.shot("cdp-shots/tools-split-2-cross-project.png");
+        rec(
+            "2. cross-project: a Home terminal in the split moves the split row to the top, flagged, each segment naming its project",
+            crossUp &&
+                crossShape[0] === "split" &&
+                cross.cross === "true" &&
+                cross.projects.length === 2 &&
+                cross.projects.includes("Home") &&
+                cross.cells.includes(home.tabId),
+            JSON.stringify({ cross, top: crossShape[0] })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await ttTeardown(h, ctx, "tools-split");
+    },
+};
+
+// the command line a tool terminal is opened with (toolsmodel.ts toolCommandLine), for a terminal arrange opens as one
+const TT_FIXTURE_LINE_CMD = `${TT_USER_TOOLS["arc-fixture"].command} ${TT_USER_TOOLS["arc-fixture"].args}`;
+const TT_FIXTURE_META = { "cmd:firstcommand": TT_FIXTURE_LINE_CMD, "tool:id": "arc-fixture" };
+const TT_CHORD_PANEL = modChord("`", "Backquote", false);
+
+// --- tools-dock-strip: the panel under the agent folds to a strip (boards Compact strip and Main panel). The terminal
+// is arc-fixture, so the strip has a fixed screen to quote. Move to the panel, fold with the chord, the strip shows its
+// latest line, a click opens it, unfold; Open in split moves the terminal into the grid and leaves the panel empty.
+const toolsDockStrip = {
+    name: "tools-dock-strip",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            await ttArrange(h, ctx, { terminals: [{ key: "fx", cwd: "root", extra: TT_FIXTURE_META }] });
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const arranged = ctx.arrangeError == null && ctx.inRoster === true;
+        rec("0. the fixture agent and the arc-fixture terminal are in the tree", arranged, ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster }));
+        if (!arranged) return steps;
+        const [fx] = ctx.terminals;
+
+        await ttClick(h, `[data-tree-terminal-row="${fx.tabId}"]`);
+        await polishWaitFor(h, `!!document.querySelector('[data-terminal-pane-head="${fx.tabId}"] [data-terminal-to-dock]')`, 5000);
+        await ttClick(h, `[data-terminal-pane-head="${fx.tabId}"] [data-terminal-to-dock]`);
+        const docked = await polishWaitFor(h, `(${TT_GRID}).docked === ${JSON.stringify(fx.tabId)}`, 5000);
+        const rowPanel = await polishWaitFor(h, `(${TT_PLACE(fx.tabId)}) === "panel"`, 4000);
+        await h.shot("cdp-shots/tools-dock-strip-1-panel.png");
+        rec(
+            "1. Move to the panel docks the terminal under the agent, and its row reads panel (row-panel)",
+            docked && rowPanel,
+            JSON.stringify({ grid: await h.ev(TT_GRID), place: await h.ev(TT_PLACE(fx.tabId)) })
+        );
+
+        await ttToSurface(h);
+        await h.ev(TT_CHORD_PANEL);
+        const stripUp = await polishWaitFor(h, `!!document.querySelector("[data-dock-strip]")`, 4000);
+        // the line is read from the mounted xterm: it is there once the shell has typed the fixture's command and node printed
+        const line = await polishWaitFor(
+            h,
+            `(${TT_FLAT})(document.querySelector("[data-dock-strip] [data-dock-strip-line]")).includes(${JSON.stringify(TT_FIXTURE_LINE)})`,
+            30000
+        );
+        const strip = await h.ev(`(() => ({
+            line: (${TT_FLAT})(document.querySelector("[data-dock-strip] [data-dock-strip-line]")),
+            folded: document.querySelector("[data-agent-grid]")?.getAttribute("data-terminal-dock-folded"),
+            height: Math.round(document.querySelector("[data-dock-strip]")?.getBoundingClientRect().height ?? 0),
+        }))()`);
+        await h.shot("cdp-shots/tools-dock-strip-2-strip.png");
+        rec(
+            "2. the chord folds the panel to a strip that quotes arc-fixture's screen line",
+            stripUp && line && strip.folded === "true",
+            JSON.stringify(strip)
+        );
+
+        await ttMouse(h, "[data-dock-strip] [data-dock-strip-line]");
+        const opened = await polishWaitFor(h, `!document.querySelector("[data-dock-strip]") && !(${TT_GRID}).folded`, 4000);
+        rec("3. a click on the strip opens the panel", opened, JSON.stringify(await h.ev(TT_GRID)));
+
+        await ttToSurface(h);
+        await h.ev(TT_CHORD_PANEL);
+        const refolded = await polishWaitFor(h, `!!document.querySelector("[data-dock-strip]")`, 4000);
+        await ttToSurface(h);
+        await h.ev(TT_CHORD_PANEL);
+        const unfolded = await polishWaitFor(h, `!document.querySelector("[data-dock-strip]") && !!document.querySelector("[data-dock-fold]")`, 4000);
+        rec("4. the chord folds the panel again and unfolds it", refolded && unfolded, JSON.stringify({ refolded, unfolded }));
+
+        await ttClick(h, "[data-dock-open-split]");
+        const split = await polishWaitFor(h, `(${TT_GRID}).cells.length === 2 && (${TT_GRID}).docked == null`, 5000);
+        await polishNap(400);
+        await h.shot("cdp-shots/tools-dock-strip-3-split.png");
+        const after = await h.ev(TT_GRID);
+        rec(
+            "5. panel-split: Open in split moves the terminal into the grid (two cells) and leaves the panel empty",
+            split && after.cells.includes(fx.tabId) && after.docked == null,
+            JSON.stringify(after)
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await ttTeardown(h, ctx, "tools-dock-strip");
+    },
+};
+
+// Setup → Tools: the tab open on the library
+const TT_LIBRARY = `document.querySelector("[data-tools-library]")`;
+async function ttOpenLibrary(h) {
+    await h.goto("setup");
+    await ttClick(h, '[data-setup-tab="tools"]');
+    return polishWaitFor(h, `!!${TT_LIBRARY} && !!document.querySelector("[data-tools-row]")`, 8000);
+}
+const TT_ROW_STATUS = (id) => `${TT_FLAT}(document.querySelector('[data-tools-row="${id}"] [data-tools-status]'))`;
+
+// --- tools-library: Setup → Tools (board Library). The catalog by category and the user's tools under Yours, each with
+// its status; a row selected shows its detail; a failed install keeps its terminal to open and an install to retry.
+const toolsLibrary = {
+    name: "tools-library",
+    surface: "setup",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            await ttArrange(h, ctx);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const arranged = ctx.arrangeError == null && ctx.inRoster === true;
+        rec("0. the fixture agent and the user tools are arranged", arranged, ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster }));
+        if (!arranged) return steps;
+
+        const up = await ttOpenLibrary(h);
+        await ttClick(h, '[data-tools-row="arc-fixture"]');
+        const detail = await polishWaitFor(h, `!!document.querySelector('[data-tools-detail="arc-fixture"]')`, 4000);
+        await polishNap(300);
+        const lib = await h.ev(`(() => {
+            const groups = [...document.querySelectorAll('[data-tools-library] aside [role="group"]')].map((g) => ({
+                category: g.getAttribute("aria-label"),
+                rows: [...g.querySelectorAll("[data-tools-row]")].map((r) => r.getAttribute("data-tools-row")),
+            }));
+            return {
+                groups,
+                fixture: ${TT_ROW_STATUS("arc-fixture")},
+                missing: ${TT_ROW_STATUS("arc-missing")},
+                open: !!document.querySelector('[data-tools-detail="arc-fixture"] [data-tool-open]'),
+            };
+        })()`);
+        await h.shot("cdp-shots/tools-library-1-library.png");
+        const yours = lib.groups.find((g) => g.category === "Yours")?.rows ?? [];
+        rec(
+            "1. Setup → Tools lists the catalog by category and the four fixture tools under Yours; a selected row shows its detail",
+            up &&
+                detail &&
+                lib.groups.length > 1 &&
+                lib.groups.some((g) => g.category !== "Yours" && g.rows.length > 0) &&
+                Object.keys(TT_USER_TOOLS).every((id) => yours.includes(id)) &&
+                lib.fixture === "on PATH" &&
+                lib.missing === "not on PATH" &&
+                lib.open,
+            JSON.stringify(lib)
+        );
+
+        const started = await ttStartInstall(h, "arc-bad-install");
+        const failed = await polishWaitFor(h, `(${TT_ROW_STATUS("arc-bad-install")}) === "install failed"`, 30000);
+        await polishNap(300);
+        const buttons = await h.ev(`({
+            output: !!document.querySelector('[data-tools-detail="arc-bad-install"] [data-tool-open-output]'),
+            retry: !!document.querySelector('[data-tools-detail="arc-bad-install"] [data-tool-retry]'),
+            status: ${TT_ROW_STATUS("arc-bad-install")},
+        })`);
+        await h.shot("cdp-shots/tools-library-2-install-failed.png");
+        rec(
+            "2. install-failed: the arc-bad-install row reads install failed and its detail offers Open output and Try again",
+            started && failed && buttons.output && buttons.retry,
+            JSON.stringify({ started, ...buttons })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await ttTeardown(h, ctx, "tools-library");
+    },
+};
+
+// --- tools-add: adding a tool of your own (board LibraryAdd). The form, a name and a command, Add tool, and the tool
+// under Yours with its detail; Edit then reads the command's PATH line, which only a saved tool has.
+const toolsAdd = {
+    name: "tools-add",
+    surface: "setup",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            await ttArrange(h, ctx);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const arranged = ctx.arrangeError == null && ctx.inRoster === true;
+        rec("0. the fixture agent and the user tools are arranged", arranged, ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster }));
+        if (!arranged) return steps;
+
+        const up = await ttOpenLibrary(h);
+        await ttClick(h, "[data-tool-add]");
+        const form = await polishWaitFor(h, `!!document.querySelector("[data-tool-form]")`, 4000);
+        await h.ev(setFieldExpr(`document.querySelector("[data-tool-name]")`, "PR dashboard"));
+        await h.ev(setFieldExpr(`document.querySelector("[data-tool-command]")`, "node"));
+        await polishNap(300);
+        const filled = await h.ev(`({
+            name: document.querySelector("[data-tool-name]")?.value,
+            command: document.querySelector("[data-tool-command]")?.value,
+            hint: ${TT_FLAT}(document.querySelector("[data-tool-command]")?.closest("div")?.parentElement?.lastElementChild),
+        })`);
+        await h.shot("cdp-shots/tools-add-1-form.png");
+        rec(
+            "1. Add your own tool opens the form: a name, a command and, for a new tool, the line that PATH is looked at on save",
+            up && form && filled.name === "PR dashboard" && filled.command === "node" && filled.hint.includes("looks for the program on PATH"),
+            JSON.stringify({ up, form, ...filled })
+        );
+
+        await ttClick(h, "[data-tool-add-save]");
+        const added = await polishWaitFor(h, `!document.querySelector("[data-tool-form]") && !!document.querySelector('[data-tools-row="pr-dashboard"]')`, 8000);
+        await polishNap(300);
+        const row = await h.ev(`(() => {
+            const g = document.querySelector('[data-tools-row="pr-dashboard"]')?.closest('[role="group"]');
+            return {
+                group: g?.getAttribute("aria-label") ?? null,
+                status: ${TT_ROW_STATUS("pr-dashboard")},
+                detail: ${TT_FLAT}(document.querySelector('[data-tools-detail="pr-dashboard"]')),
+            };
+        })()`);
+        await h.shot("cdp-shots/tools-add-2-saved.png");
+        rec(
+            "2. the saved tool is under Yours, on PATH, and its detail says where its command was found",
+            added && row.group === "Yours" && row.status === "on PATH" && row.detail.includes("found at"),
+            JSON.stringify({ added, ...row, detail: row.detail?.slice(0, 160) })
+        );
+
+        await ttClick(h, '[data-tools-detail="pr-dashboard"] [data-tool-edit]');
+        const editing = await polishWaitFor(h, `!!document.querySelector("[data-tool-form]")`, 4000);
+        await polishNap(300);
+        const check = await h.ev(
+            `${TT_FLAT}(document.querySelector("[data-tool-command]")?.closest("div")?.parentElement?.lastElementChild)`
+        );
+        await h.shot("cdp-shots/tools-add-3-edit.png");
+        rec("3. Edit on the saved tool reads node is on PATH under the command", editing && check === "node is on PATH", JSON.stringify({ editing, check }));
+        await ttClick(h, "[data-tool-add-cancel]");
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await ttTeardown(h, ctx, "tools-add");
+    },
+};
+
+// an install terminal's row state in the tree, by the name its row carries
+const TT_INSTALL_STATE = (name) => `(() => {
+    const row = [...document.querySelectorAll("[data-tree-terminal-row]")].find((r) => ${TT_FLAT}(r).includes(${JSON.stringify(name)}));
+    return row?.getAttribute("data-terminal-state") ?? null;
+})()`;
+// a key where the picker's search box has the keyboard, which is where its dialog reads them
+const ttPickerKey = (key, code, mods = {}) =>
+    `(() => {
+        const el = document.querySelector("[data-tool-picker-input]");
+        if (!el) return false;
+        el.dispatchEvent(new KeyboardEvent("keydown", ${JSON.stringify({ key, code, bubbles: true, cancelable: true, ...mods })}));
+        return true;
+    })()`;
+const TT_OPEN_PICKER = modChord("T", "KeyT", true);
+const TT_PICKER_ROW = (id) => `document.querySelector('[data-tool-picker-row="${id}"]')`;
+// the rows of the tree that read panel: the tab ids of the terminals docked
+const TT_PANEL_ROWS = `[...document.querySelectorAll('[data-tree-terminal-row] [data-terminal-place="panel"]')]
+    .map((el) => el.closest("[data-tree-terminal-row]").getAttribute("data-tree-terminal-row"))`;
+const TT_CTRL_I_TOOL = {
+    command: "arc-ctrl-i-cmd",
+    "install:windows": TT_SLEEP,
+    "install:darwin": TT_SLEEP,
+};
+
+// --- tools-picker: Open a tool (board Picker), from Ctrl+Shift+T and the agent header's Tool button. Rows say what a
+// tool is doing: an install under way offers Show, a failed one Try again, a command that is not on PATH its Edit. Enter
+// opens the selected tool in the centre, Shift+Enter in the panel, Ctrl+I installs one that is not installed.
+const toolsPicker = {
+    name: "tools-picker",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            // gitui stands in for a built-in that is not installed: its command is one that is not on PATH and its
+            // install line is the fixture's, so Ctrl+I runs no real install. teardown removes the override.
+            await ttArrange(h, ctx, { overrides: { gitui: TT_CTRL_I_TOOL } });
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const arranged = ctx.arrangeError == null && ctx.inRoster === true;
+        rec("0. the fixture agent and the tools are arranged", arranged, ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster }));
+        if (!arranged) return steps;
+
+        // the installs the states step reads: one running, one that exits 1
+        const started = [];
+        for (const id of ["arc-slow-install", "arc-bad-install"]) started.push(await ttStartInstall(h, id));
+        await h.goto("agent");
+        const bad = await polishWaitFor(h, `(${TT_INSTALL_STATE("Install arc-bad-install")}) === "failed"`, 30000);
+
+        await ttToSurface(h);
+        await h.ev(TT_OPEN_PICKER);
+        const up = await polishWaitFor(h, `!!${TT_PICKER}`, 5000);
+        await polishNap(400);
+        const open = await h.ev(`({
+            focused: document.activeElement === document.querySelector("[data-tool-picker-input]"),
+            context: ${TT_FLAT}(document.querySelector("[data-tool-picker-context]")),
+            rows: [...document.querySelectorAll("[data-tool-picker-row]")].length,
+        })`);
+        await h.shot("cdp-shots/tools-picker-1-open.png");
+        rec(
+            "1. Ctrl+Shift+T opens the picker with the keyboard in its search box and a context line naming where tools open",
+            started.every(Boolean) && bad && up && open.focused && open.context.startsWith("Opens in") && open.context.includes(TT_PROJECT) && open.rows > 0,
+            JSON.stringify({ started, bad, ...open })
+        );
+
+        const states = await h.ev(`(() => {
+            const info = (id) => {
+                const r = document.querySelector('[data-tool-picker-row="' + id + '"]');
+                return r == null ? null : {
+                    state: r.getAttribute("data-tool-picker-state"),
+                    show: !!r.querySelector("[data-tool-picker-show]"),
+                    retry: !!r.querySelector("[data-tool-picker-retry]"),
+                    edit: !!r.querySelector("[data-tool-picker-edit]"),
+                    text: ${TT_FLAT}(r),
+                };
+            };
+            return { slow: info("arc-slow-install"), bad: info("arc-bad-install"), missing: info("arc-missing") };
+        })()`);
+        await h.shot("cdp-shots/tools-picker-2-states.png");
+        rec(
+            "2. states: arc-slow-install offers Show, arc-bad-install Try again, arc-missing says not on PATH and offers Edit",
+            states.slow?.state === "installing" &&
+                states.slow.show &&
+                states.bad?.state === "failed" &&
+                states.bad.retry &&
+                states.missing?.state === "not-on-path" &&
+                states.missing.edit &&
+                states.missing.text.includes("not on PATH"),
+            JSON.stringify(states)
+        );
+
+        await h.ev(PEEKS_ESC);
+        const closed = await polishWaitFor(h, `!${TT_PICKER}`, 3000);
+        await ttClick(h, "[data-agent-tool-button]");
+        const again = await polishWaitFor(h, `!!${TT_PICKER}`, 4000);
+        await h.ev(setFieldExpr(`document.querySelector("[data-tool-picker-input]")`, "arc-fixture"));
+        const only = await polishWaitFor(h, `${TT_PICKER_ROW("arc-fixture")} != null && document.querySelectorAll("[data-tool-picker-row]").length === 1`, 4000);
+        await h.shot("cdp-shots/tools-picker-3-header-button.png");
+        await h.ev(ttPickerKey("Enter", "Enter"));
+        const centre = await polishWaitFor(h, `!${TT_PICKER} && (${TT_CENTRE}).startsWith("terminal:")`, 15000);
+        const opened = await h.ev(`(() => {
+            const head = document.querySelector("[data-terminal-pane-head]");
+            return { id: head?.getAttribute("data-terminal-pane-head") ?? null, name: ${TT_FLAT}(head?.querySelector("span.font-semibold")) };
+        })()`);
+        rec(
+            "3. header-button: Esc closes it, the agent header's Tool button opens it again, and Enter opens the selected tool in the centre",
+            closed && again && only && centre && opened.name === "arc-fixture",
+            JSON.stringify({ closed, again, only, centre, ...opened })
+        );
+
+        await ttToSurface(h);
+        await h.ev(TT_OPEN_PICKER);
+        await polishWaitFor(h, `!!${TT_PICKER}`, 4000);
+        await h.ev(setFieldExpr(`document.querySelector("[data-tool-picker-input]")`, "arc-fixture"));
+        await polishWaitFor(h, `${TT_PICKER_ROW("arc-fixture")} != null`, 4000);
+        await h.ev(ttPickerKey("Enter", "Enter", { shiftKey: true }));
+        const panelUp = await polishWaitFor(h, `!${TT_PICKER} && (${TT_PANEL_ROWS}).length === 1`, 15000);
+        const panel = await h.ev(`({ rows: ${TT_PANEL_ROWS}, grid: ${TT_GRID} })`);
+        await h.shot("cdp-shots/tools-picker-4-shift-enter.png");
+        rec(
+            "4. shift-enter: Shift+Enter opens the selected tool in the panel, and its row reads panel",
+            panelUp && panel.rows.length === 1 && panel.grid.docked === panel.rows[0],
+            JSON.stringify(panel)
+        );
+
+        await ttToSurface(h);
+        await h.ev(TT_OPEN_PICKER);
+        await polishWaitFor(h, `!!${TT_PICKER}`, 4000);
+        await h.ev(setFieldExpr(`document.querySelector("[data-tool-picker-input]")`, "gitui"));
+        const notInstalled = await polishWaitFor(h, `${TT_PICKER_ROW("gitui")}?.getAttribute("data-tool-picker-state") === "not-installed"`, 4000);
+        await h.ev(ttPickerKey("i", "KeyI", { ctrlKey: true }));
+        const installing = await polishWaitFor(
+            h,
+            `${TT_PICKER_ROW("gitui")}?.getAttribute("data-tool-picker-state") === "installing" && !!${TT_PICKER_ROW("gitui")}?.querySelector("[data-tool-picker-show]")`,
+            15000
+        );
+        await h.shot("cdp-shots/tools-picker-5-ctrl-i.png");
+        rec(
+            "5. ctrl-i: Ctrl+I on a tool that is not installed starts its install, and the row turns into installing with Show",
+            notInstalled && installing,
+            JSON.stringify({ notInstalled, installing, state: await h.ev(`${TT_PICKER_ROW("gitui")}?.getAttribute("data-tool-picker-state")`) })
+        );
+        await h.ev(PEEKS_ESC);
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await ttTeardown(h, ctx, "tools-picker");
+    },
+};
+
+// --- tools-launcher: the New dialog's Tool row (board Launcher). Picking it by its digit retitles the dialog Open a
+// tool; Tab twice reaches the Tool list, a letter picks a row and the primary button (its text carries the enter key's
+// hint) reads Open <tool>; All tools in
+// Setup closes the dialog and shows the library.
+const toolsLauncher = {
+    name: "tools-launcher",
+    surface: "cockpit",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            await ttArrange(h, ctx);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const arranged = ctx.arrangeError == null && ctx.inRoster === true;
+        rec("0. the fixture agent and the tools are arranged", arranged, ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster }));
+        if (!arranged) return steps;
+        await h.goto("cockpit");
+        const primary = `(() => {
+            const d = ${LAUNCHER};
+            const b = [...(d?.querySelectorAll("button") ?? [])].find((x) => /^Open /.test(${TT_FLAT}(x)));
+            return b ? { text: ${TT_FLAT}(b), disabled: b.disabled } : null;
+        })()`;
+
+        await h.ev(OPEN_NEW_AGENT);
+        const up = await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
+        await polishNap(400);
+        const rows = (await h.ev(launcherState))?.startRows ?? [];
+        const digit = rows.indexOf("tool") + 1;
+        if (digit > 0) await launcherPress(h, String(digit));
+        const tool = await polishWaitFor(h, `${LAUNCHER}?.querySelector('[data-start-row][aria-checked="true"]')?.getAttribute("data-start-row") === "tool"`, 3000);
+        const state = await h.ev(launcherState);
+        await h.shot("cdp-shots/tools-launcher-1-tool-row.png");
+        rec(
+            "1. title: the Tool start row, picked by its digit, retitles the dialog Open a tool",
+            up && digit > 0 && tool && state.title === "Open a tool",
+            JSON.stringify({ up, startRows: rows, digit, title: state.title })
+        );
+
+        await launcherPress(h, "Tab");
+        await launcherPress(h, "Tab");
+        const inList = await polishWaitFor(h, `document.activeElement?.hasAttribute("data-launcher-tool-list") === true`, 3000);
+        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector("[data-launcher-tool]")`, 5000);
+        await launcherPress(h, "a");
+        const picked = await h.ev(`(() => {
+            const rows = [...${LAUNCHER}.querySelectorAll("[data-launcher-tool]")];
+            return { ids: rows.map((r) => r.getAttribute("data-launcher-tool")), selected: rows.findIndex((r) => r.getAttribute("aria-selected") === "true") };
+        })()`);
+        const first = await h.ev(primary);
+        // arc-fixture is a tool that runs: its own letter picks it, and the primary is then enabled
+        const letter = String.fromCharCode(97 + picked.ids.indexOf("arc-fixture"));
+        if (picked.ids.includes("arc-fixture")) await launcherPress(h, letter);
+        await polishNap(200);
+        const fixture = await h.ev(primary);
+        await h.shot("cdp-shots/tools-launcher-2-list.png");
+        rec(
+            "2. Tab twice reaches the Tool list, a letter picks its row and the primary reads Open <tool>",
+            inList && picked.selected === 0 && first?.text.startsWith("Open ") && fixture?.text.startsWith("Open arc-fixture") && fixture.disabled === false,
+            JSON.stringify({ inList, picked, first, letter, fixture })
+        );
+
+        await ttClick(h, "[data-launcher-tool-all]");
+        const all = await polishWaitFor(h, `!${LAUNCHER} && !!${TT_LIBRARY}`, 6000);
+        await h.shot("cdp-shots/tools-launcher-3-all-tools.png");
+        rec("3. all-tools: All tools in Setup closes the dialog and shows the library", all, JSON.stringify({ surface: await h.activeSurfaceLabel() }));
+        return steps;
+    },
+    async teardown(h, ctx) {
+        // the dialog, if a failed step left it open
+        await h.ev(PEEKS_ESC).catch(() => {});
+        await ttTeardown(h, ctx, "tools-launcher");
+    },
+};
+
+// --- tools-worktree-gone: a terminal whose folder was removed (boards WorktreeGone and Sidebar). Its row reads
+// removed with the branch chip struck through; shown, the pane carries the card with Reopen in <project> and Close.
+const toolsWorktreeGone = {
+    name: "tools-worktree-gone",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            await ttArrange(h, ctx, {
+                terminals: [
+                    { key: "gone", cwd: "gone/feat-removed" },
+                    { key: "live", cwd: "root/feat-live" },
+                ],
+            });
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const arranged = ctx.arrangeError == null && ctx.inRoster === true;
+        rec("0. the fixture agent and the terminal in a removed folder are in the tree", arranged, ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster }));
+        if (!arranged) return steps;
+        const [gone, live] = ctx.terminals;
+
+        const removed = await polishWaitFor(h, `${TT_TERM_ROW(gone.tabId)}?.getAttribute("data-terminal-state") === "removed"`, 10000);
+        const row = await h.ev(`(() => {
+            const r = ${TT_TERM_ROW(gone.tabId)};
+            const chip = r?.querySelector("[data-terminal-branch] > span");
+            return {
+                state: r?.getAttribute("data-terminal-state") ?? null,
+                chip: ${TT_FLAT}(chip),
+                struck: chip ? getComputedStyle(chip).textDecorationLine.includes("line-through") : null,
+                word: ${TT_FLAT}(r).includes("removed"),
+            };
+        })()`);
+        await h.shot("cdp-shots/tools-worktree-gone-1-row.png");
+        rec(
+            "1. the terminal's row reads removed, with its folder chip struck through",
+            removed && row.state === "removed" && row.chip === "feat-removed" && row.struck === true && row.word,
+            JSON.stringify(row)
+        );
+
+        // a folder that goes while the app is running: its terminal has no shell yet (a pane mounts when first shown), so
+        // nothing holds the folder. It reads as removed on the next window focus, with no reload.
+        const before = await h.ev(`${TT_TERM_ROW(live.tabId)}?.getAttribute("data-terminal-state") ?? null`);
+        rmSync(join(ctx.root, "feat-live"), { recursive: true, force: true });
+        await h.ev(`window.dispatchEvent(new Event("focus"))`);
+        const liveRemoved = await polishWaitFor(
+            h,
+            `${TT_TERM_ROW(live.tabId)}?.getAttribute("data-terminal-state") === "removed"`,
+            8000
+        );
+        rec(
+            "1b. a folder deleted while the app runs turns its terminal's row to removed on the next window focus",
+            before == null && liveRemoved,
+            JSON.stringify({ before, liveRemoved })
+        );
+
+        await ttClick(h, `[data-tree-terminal-row="${gone.tabId}"]`);
+        const card = await polishWaitFor(h, `!!document.querySelector('[data-worktree-gone="${gone.tabId}"]')`, 8000);
+        await polishNap(400);
+        const text = await h.ev(`({
+            reopen: ${TT_FLAT}(document.querySelector("[data-worktree-reopen]")),
+            close: !!document.querySelector("[data-worktree-close]"),
+        })`);
+        await h.shot("cdp-shots/tools-worktree-gone-2-card.png");
+        rec(
+            "2. shown, the pane carries the worktree-removed card with Reopen in the project and Close",
+            card && text.reopen === `Reopen in ${TT_PROJECT}` && text.close,
+            JSON.stringify({ card, ...text })
+        );
+
+        await ttClick(h, "[data-worktree-reopen]");
+        const reopened = await polishWaitFor(
+            h,
+            `!${TT_TERM_ROW(gone.tabId)} && [...document.querySelectorAll("[data-tree-terminal-row]")].length === 2 && [...document.querySelectorAll('[data-terminal-state="removed"]')].length === 1`,
+            15000
+        );
+        // the old tab closed itself; the new one is under the fixture project, which teardown closes
+        if (reopened) ctx.terminals = ctx.terminals.filter((t) => t.tabId !== gone.tabId);
+        await h.shot("cdp-shots/tools-worktree-gone-3-reopened.png");
+        rec("3. Reopen opens a terminal in the project's root and closes the removed one", reopened, JSON.stringify({ reopened }));
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await ttTeardown(h, ctx, "tools-worktree-gone");
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -31971,4 +33204,13 @@ export const SCENARIOS = [
     floatMini,
     jarvisModes,
     settingsStorage,
+    toolsTree,
+    toolsCentre,
+    toolsSplit,
+    toolsDockStrip,
+    toolsLibrary,
+    toolsAdd,
+    toolsPicker,
+    toolsLauncher,
+    toolsWorktreeGone,
 ];
