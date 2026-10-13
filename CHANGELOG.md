@@ -45,8 +45,8 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
 - **The Dock icon brings arcterm back over a full-screen app on a Mac**: with the window folded into Sprout above a
   full-screen app, clicking the Dock icon (or ⌘Tab, or a double-click on Sprout) now takes you to arcterm's desktop
   instead of leaving the screen on the full-screen app.
-- **Mission Control shows arcterm while it is folded into Sprout on a Mac**: the folded window used to be left out of
-  Mission Control altogether; now Sprout shows there with your other windows.
+- **Mission Control shows arcterm while it is folded into Sprout or pinned in Float on a Mac**: a window kept on top
+  used to be left out of Mission Control altogether; now it shows there with your other windows.
 - **A sleeping agent keeps its conversation's title** instead of reading as its project's name: when it slept long
   enough ago that newer conversations pushed it out of Conversations, its title now comes from its own transcript.
 - **Resuming a conversation that a tab already holds takes you to that tab** instead of opening a second one on the

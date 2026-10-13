@@ -2,7 +2,8 @@
 // on every Space, beside a full-screen app's too, so Sprout follows you; and send the yellow button and ⌘M to Sprout
 // instead of the Dock while window:minimize says so. Tauri can do none of the three, so this talks to AppKit. Commands that are not async run on the main thread, which AppKit requires; the marker check turns a
 // mistake there into an error instead of undefined behaviour. Both are no-ops on other platforms. It also takes ⌘W off
-// the menu's Close Window, so a reflex ⌘W never quits arcterm; the cockpit closes the focused agent on ⌘⇧W.
+// the menu's Close Window, so a reflex ⌘W never quits arcterm; the cockpit closes the focused agent on ⌘⇧W. And it
+// keeps the window in Mission Control while it is always on top (in_mission_control).
 //
 // A folded window grows back on its own focus (floatstore.ts setupAutoSprout). ⌘Tab back to arcterm sometimes left it
 // folded while a click on the Dock icon grew it back, so each arrival while folded is logged with what AppKit gave, and
@@ -207,20 +208,33 @@ mod imp {
         }
     }
 
+    // Pinned in Float or folded, the window is always on top, a level whose default collection behavior is Transient,
+    // which Mission Control hides: Managed keeps it there. At the normal level Managed is the default already. AppKit
+    // throws on more than one of managed, transient and stationary.
+    fn in_mission_control(was: NSWindowCollectionBehavior) -> NSWindowCollectionBehavior {
+        let behavior = was & !(NSWindowCollectionBehavior::Transient | NSWindowCollectionBehavior::Stationary);
+        behavior | NSWindowCollectionBehavior::Managed
+    }
+
+    // Runs from setup, on the main thread. The fold gives back the behavior it found, so this one holds for good.
+    pub fn show_in_mission_control(window: &WebviewWindow) {
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        if let Ok(ns) = ns_window(window, mtm) {
+            ns.setCollectionBehavior(in_mission_control(ns.collectionBehavior()));
+        }
+    }
+
     // The folded window's collection behavior, from its own: on every Space, and allowed beside a full-screen window.
-    // Folded it is always on top, a level whose default is Transient, which Mission Control hides: Managed keeps it
-    // there. AppKit throws on a behavior that is both full-screen primary and auxiliary, both joins all Spaces and moves
-    // to the active one, or more than one of managed, transient and stationary, so those come off.
+    // AppKit throws on a behavior that is both full-screen primary and auxiliary, or both joins all Spaces and moves to
+    // the active one, so those come off.
     fn folded_behavior(was: NSWindowCollectionBehavior) -> NSWindowCollectionBehavior {
-        let mut behavior = was;
+        let mut behavior = in_mission_control(was);
         behavior &= !(NSWindowCollectionBehavior::MoveToActiveSpace
             | NSWindowCollectionBehavior::FullScreenPrimary
-            | NSWindowCollectionBehavior::FullScreenNone
-            | NSWindowCollectionBehavior::Transient
-            | NSWindowCollectionBehavior::Stationary);
-        behavior |= NSWindowCollectionBehavior::CanJoinAllSpaces
-            | NSWindowCollectionBehavior::FullScreenAuxiliary
-            | NSWindowCollectionBehavior::Managed;
+            | NSWindowCollectionBehavior::FullScreenNone);
+        behavior |= NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::FullScreenAuxiliary;
         behavior
     }
 
@@ -393,8 +407,15 @@ mod imp {
 
     #[cfg(test)]
     mod tests {
-        use super::folded_behavior;
+        use super::{folded_behavior, in_mission_control};
         use objc2_app_kit::NSWindowCollectionBehavior as B;
+
+        #[test]
+        fn a_window_kept_on_top_still_shows_in_mission_control() {
+            let pinned = in_mission_control(B::Transient | B::FullScreenPrimary);
+            assert!(pinned.contains(B::Managed | B::FullScreenPrimary));
+            assert!(!pinned.intersects(B::Transient | B::Stationary));
+        }
 
         #[test]
         fn the_folded_window_shows_in_mission_control() {
@@ -416,6 +437,14 @@ mod imp {
 pub fn free_close_window_key() {
     #[cfg(target_os = "macos")]
     imp::free_close_window_key();
+}
+
+// Runs from setup, on the main thread.
+pub fn show_in_mission_control(window: &WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    imp::show_in_mission_control(window);
+    #[cfg(not(target_os = "macos"))]
+    let _ = window;
 }
 
 // Runs from setup, on the main thread.
