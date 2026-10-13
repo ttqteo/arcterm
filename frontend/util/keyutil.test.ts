@@ -43,18 +43,18 @@ describe("Mod", () => {
     });
 });
 
-// TMod is the terminal chord: Command on a Mac, Ctrl+Shift elsewhere, where Ctrl+letter is the terminal's
-describe("TMod", () => {
-    it("is the Command key on macOS", () => {
+// Mod+Shift is Command+Shift on a Mac and Ctrl+Shift elsewhere; the shift turns the key upper case, which still matches
+describe("Mod:Shift", () => {
+    it("is Command+Shift on macOS, and plain Command is not it", () => {
         setPlatform("darwin");
-        expect(checkKeyPressed(ev("p", "KeyP", { meta: true }), "TMod:p")).toBe(true);
-        expect(checkKeyPressed(ev("P", "KeyP", { meta: true, shift: true }), "TMod:p")).toBe(false);
+        expect(checkKeyPressed(ev("W", "KeyW", { meta: true, shift: true }), "Mod:Shift:w")).toBe(true);
+        expect(checkKeyPressed(ev("w", "KeyW", { meta: true }), "Mod:Shift:w")).toBe(false);
     });
 
     it("is Ctrl+Shift on Windows, and plain Ctrl is not it", () => {
         setPlatform("win32");
-        expect(checkKeyPressed(ev("P", "KeyP", { ctrl: true, shift: true }), "TMod:p")).toBe(true);
-        expect(checkKeyPressed(ev("p", "KeyP", { ctrl: true }), "TMod:p")).toBe(false);
+        expect(checkKeyPressed(ev("W", "KeyW", { ctrl: true, shift: true }), "Mod:Shift:w")).toBe(true);
+        expect(checkKeyPressed(ev("w", "KeyW", { ctrl: true }), "Mod:Shift:w")).toBe(false);
     });
 });
 

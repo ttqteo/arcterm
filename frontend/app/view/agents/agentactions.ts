@@ -13,11 +13,10 @@ import type { AgentVM } from "./agentsviewmodel";
 import { dismissKey, toggleInSet } from "./cockpitsurfacemodel";
 import { leadRunTabIds } from "./runlineage";
 
-// The close-agent chord (bindings.ts), as a terminal app closes its tab: a terminal chord (TMod), so ⌘W on a Mac, where
-// the menu's Close Window gave the key up (macwindow.rs), and Windows Terminal's Ctrl+Shift+W on Windows, where Ctrl+W
-// is the shell's delete-word.
+// The close-agent chord (bindings.ts), as a terminal app closes its tab: Windows Terminal's Ctrl+Shift+W on Windows,
+// where Ctrl+W is the shell's delete-word, and the same shape on a Mac, ⌘⇧W.
 export function closeAgentChord(): string {
-    return "TMod:w";
+    return "Mod:Shift:w";
 }
 
 function closeTabs(workspaceId: string, tabIds: string[]): void {

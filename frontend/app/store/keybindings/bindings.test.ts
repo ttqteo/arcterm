@@ -137,7 +137,7 @@ describe("closeTarget", () => {
     });
 });
 
-// ⌘W on a Mac, as a terminal app closes its tab; Ctrl+Shift+W on Windows, where Ctrl+W deletes a word in the terminal
+// ⌘⇧W on a Mac and Ctrl+Shift+W on Windows, as a terminal app closes its tab; Ctrl+W deletes a word in the terminal
 describe("close-agent chord", () => {
     beforeEach(() => vi.stubGlobal("document", { activeElement: null }));
     afterEach(() => {
@@ -153,11 +153,11 @@ describe("close-agent chord", () => {
             focusIdAtom: atom<string | undefined>("a1"),
         }) as any;
 
-    it("is the terminal chord TMod+W: ⌘W on a Mac, Ctrl+Shift+W on Windows, with no plain Ctrl+W", () => {
-        expect(buildGlobalBindings(model()).find((x) => x.id === "close-agent")!.keys).toBe("TMod:w");
+    it("is Mod+Shift+W: ⌘⇧W on a Mac, Ctrl+Shift+W on Windows, with no plain Ctrl+W", () => {
+        expect(buildGlobalBindings(model()).find((x) => x.id === "close-agent")!.keys).toBe("Mod:Shift:w");
         setPlatform("win32");
         const all = buildGlobalBindings(model());
-        expect(all.find((x) => x.id === "close-agent")!.keys).toBe("TMod:w");
+        expect(all.find((x) => x.id === "close-agent")!.keys).toBe("Mod:Shift:w");
         expect(all.find((x) => x.id === "close-agent:ctrl")).toBeUndefined();
     });
 

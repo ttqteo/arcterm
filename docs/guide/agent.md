@@ -384,7 +384,7 @@ Với phiên Claude đã kết thúc: chuột phải hàng → **Delete session*
 
 ## Đóng và khôi phục agent
 
-- **Đóng:** nút `×` ở header, **Close agent** trong menu chuột phải, `Cmd+W` trên macOS hoặc `Ctrl+Shift+W` trên Windows (như đóng một tab; dùng được cả khi đang gõ trong terminal), nút **✓ Close** (ở dòng sidebar và ở header, kèm số token) khi agent đã commit xong, hoặc **Stop** trong panel **Consumers**. Luôn có hộp xác nhận; thao tác kết thúc phiên và không hoàn tác được. Terminal thường dùng **Close terminal**, và cũng đóng được bằng phím đó. `Ctrl+C` luôn đi thẳng vào terminal.
+- **Đóng:** nút `×` ở header, **Close agent** trong menu chuột phải, `Cmd+Shift+W` trên macOS hoặc `Ctrl+Shift+W` trên Windows (như đóng một tab; dùng được cả khi đang gõ trong terminal), nút **✓ Close** (ở dòng sidebar và ở header, kèm số token) khi agent đã commit xong, hoặc **Stop** trong panel **Consumers**. Luôn có hộp xác nhận; thao tác kết thúc phiên và không hoàn tác được. Terminal thường dùng **Close terminal**, và cũng đóng được bằng phím đó. `Ctrl+C` luôn đi thẳng vào terminal.
 - **Đóng lead của run có worker:** hộp thoại hỏi **Close run** (đóng tất cả) hay **Close lead only** (worker vẫn chạy).
 - **Đánh thức agent đang rảnh:** nút **Resume** ở chân rail gõ `continue` vào terminal.
 - **Sau khi tắt hoặc cập nhật app:** các agent claude, codex, opencode, pi và agy đang chạy lúc đó tự mở lại, mỗi cái vào phiên của nó, mà không phải mở từng cái từ lịch sử. Agent chưa báo phiên của nó lên cockpit (ví dụ Codex khi hook chưa được trust) không tự mở lại; hãy mở từ **Conversations**. Lượt đang dở của một agent bị cắt lúc app tắt, nên nó thường ngồi ở trạng thái rảnh sau khi mở lại; dùng **Resume** ở chân rail để bảo nó tiếp tục. Worker của run được khôi phục theo run, xem [Orchestrator](orchestrator.md).
@@ -407,11 +407,11 @@ Phím đơn (`j`, `k`, `d`, `f`, `r`, `c`, `Esc`…) chỉ có tác dụng khi b
 | `c` | Hiện canvas của agent / về terminal |
 | `Esc` | Về Cockpit; thoát toàn màn hình trước; từ History hoặc transcript thì về terminal; trong subagent thì về agent cha |
 | `Shift+Esc` | Từ trong terminal trả focus về sidebar |
-| `Cmd+W` (macOS) / `Ctrl+Shift+W` (Windows) | Đóng agent hoặc terminal đang focus, có hỏi xác nhận (dùng được cả trong terminal; trên Windows `Ctrl+W` vẫn là xóa một từ trong terminal) |
+| `Cmd+Shift+W` (macOS) / `Ctrl+Shift+W` (Windows) | Đóng agent hoặc terminal đang focus, có hỏi xác nhận (dùng được cả trong terminal; trên Windows `Ctrl+W` vẫn là xóa một từ trong terminal) |
 | `Ctrl+N` / `Ctrl+Shift+R` | Hộp thoại New agent / New run |
 | `Ctrl+G` `s` | Mở Conversation History |
 
-`Ctrl+P`, `Ctrl+N`, `Ctrl+G`, `Ctrl+M` (`⌘` trên Mac) dùng được cả khi đang gõ trong terminal. `Ctrl+J` (What's waiting) cũng vậy; trong terminal xuống dòng bằng `Shift+Enter`. Chỉ đóng agent cần thêm `Shift` trên Windows (`Ctrl+Shift+W`), vì `Ctrl+W` là xóa một từ trong terminal.
+`Ctrl+P`, `Ctrl+N`, `Ctrl+G`, `Ctrl+M` (`⌘` trên Mac) dùng được cả khi đang gõ trong terminal. `Ctrl+J` (What's waiting) cũng vậy; trong terminal xuống dòng bằng `Shift+Enter`. Chỉ đóng agent cần thêm `Shift` (`Ctrl+Shift+W`, `⌘⇧W` trên Mac), vì `Ctrl+W` là xóa một từ trong terminal.
 
 Khi History hoặc transcript của phiên đã kết thúc đang phủ lên terminal, các phím tác động lên agent đang focus (`j`/`k`, `d`, `f`, `r`, `c`…) tạm nhường; trong History `j`/`k` di chuyển con trỏ trong danh sách, `Enter` nhảy tới phiên đang chạy hoặc resume phiên đã kết thúc. Toàn bộ phím: [Phím tắt](../keyboard-shortcuts.md).
 

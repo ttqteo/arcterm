@@ -2,7 +2,7 @@
 // on every Space, beside a full-screen app's too, so Sprout follows you; and send the yellow button and ⌘M to Sprout
 // instead of the Dock while window:minimize says so. Tauri can do none of the three, so this talks to AppKit. Commands that are not async run on the main thread, which AppKit requires; the marker check turns a
 // mistake there into an error instead of undefined behaviour. Both are no-ops on other platforms. It also takes ⌘W off
-// the menu's Close Window, so the key reaches the cockpit, which closes the focused agent with it.
+// the menu's Close Window, so a reflex ⌘W never quits arcterm; the cockpit closes the focused agent on ⌘⇧W.
 //
 // A folded window grows back on its own focus (floatstore.ts setupAutoSprout). ⌘Tab back to arcterm sometimes left it
 // folded while a click on the Dock icon grew it back, so each arrival while folded is logged with what AppKit gave, and
