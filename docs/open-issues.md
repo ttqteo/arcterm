@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (Canvases reopen from the palette)**
+
+- [ ] (arcterm) **Open a canvas after a restart.** Restart arcterm, select an agent in this repo, open the palette
+  and type “canvas”: a Canvases group lists the folders under `.superpowers/design` (terminal-tui, arc-pet…). Enter
+  switches to that agent in canvas mode on the board. With no agent selected there is no group; a canvas another agent
+  already has open lands on that agent. `command-palette.tsx` canvasItems, `openref.ts` loadCanvas.
+
 **2026-10-13 (Resume with a message; Transcript in the New dialog's footer)**
 
 - [ ] (arcterm) **Resume from the transcript with a message.** Open an ended session's transcript (History, or

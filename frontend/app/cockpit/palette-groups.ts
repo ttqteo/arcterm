@@ -18,6 +18,7 @@ export type GroupKind =
     | "record"
     | "effort"
     | "channel"
+    | "canvas" // a design canvas in the selected agent's project
     | "action" // a verb row: one of a thing's actions, "Cancel run · <run>"
     | "command"
     | "file"
@@ -58,6 +59,7 @@ export const KIND_LABELS: Partial<Record<GroupKind, string>> = {
     record: "Records",
     effort: "Initiatives", // the user-facing word for an effort (briefpalette's BRIEF_KIND_LABELS)
     channel: "Projects",
+    canvas: "Canvases",
     action: "Actions",
     command: "Commands",
     theme: "Themes",
@@ -75,6 +77,7 @@ export const ALL_KIND_ORDER: GroupKind[] = [
     "record",
     "effort",
     "channel",
+    "canvas",
     "command",
 ];
 

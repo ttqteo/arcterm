@@ -20,6 +20,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - **A green dot and a count on an agent's sidebar row while background tasks it started still run** (a build, a dev
   server), even after its turn has ended; hover it to see which. The rail's Background tasks marks a running one with
   the same green dot.
+- **Your design canvases are back after a restart**: the palette (search “canvas”) lists the canvases in the
+  selected agent’s project, and opening one shows it on that agent.
 - **Usage → Insights answers in English or Vietnamese**: an EN / VI switch beside Analyze picks the language, and
   re-runs an analysis that is on screen in the other one.
 

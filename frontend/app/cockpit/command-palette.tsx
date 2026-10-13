@@ -13,10 +13,13 @@ import { launchAgent } from "@/app/cockpit/cockpit-actions";
 import { ModalShell } from "@/app/modals/modalshell";
 import { globalStore } from "@/app/store/jotaiStore";
 import { bindingsAtom } from "@/app/store/keybindings/store";
+import { resolveCwd } from "@/app/view/agents/agentcwdresolve";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { askingLabel, formatAge } from "@/app/view/agents/agentsviewmodel";
 import { answerAgentAsk } from "@/app/view/agents/askanswer";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
+import { listCanvasTopics } from "@/app/view/agents/canvaslist";
+import { canvasOwner } from "@/app/view/agents/canvasstore";
 import { sendChannelMessage } from "@/app/view/agents/channelactions";
 import { activeChannelAtom, channelsAtom, primeChannels } from "@/app/view/agents/channelsstore";
 import type { Runtime } from "@/app/view/agents/launch";
@@ -223,6 +226,8 @@ function runStatusLabel(r: Run, label: string): string {
 export function CommandPalette({ model }: { model: AgentsViewModel }) {
     const open = useAtomValue(model.paletteOpenAtom);
     const agents = useAtomValue(model.agentsAtom);
+    const terminals = useAtomValue(model.terminalsAtom);
+    const focusId = useAtomValue(model.focusIdAtom);
     const sessions = useAtomValue(sessionsArchiveAtom);
     const channel = useAtomValue(activeChannelAtom);
     const channels = useAtomValue(channelsAtom);
@@ -255,6 +260,8 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
     const [paletteError, setPaletteError] = useState<string | undefined>(undefined);
     // Files: the target's listing, re-read each time the scope is shown
     const [loadedFiles, setLoadedFiles] = useState<{ path: string; index?: CodeIndex; error?: string } | null>(null);
+    // Canvases: the selected agent's project's, re-read per open
+    const [canvases, setCanvases] = useState<{ agentId: string; topics: string[] } | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
     const loadedRef = useRef(false);
@@ -302,6 +309,31 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
         const raf = requestAnimationFrame(() => inputRef.current?.focus());
         return () => cancelAnimationFrame(raf);
     }, [open]);
+
+    // --- Canvases ---------------------------------------------------------------------------------
+    // The selected agent is where openref lands a canvas nobody has open, so its project's are the ones listed.
+    const focused = useMemo(
+        () => (focusId ? [...agents, ...terminals].find((a) => a.id === focusId) : undefined),
+        [focusId, agents, terminals]
+    );
+    useEffect(() => {
+        if (!open || focused == null) {
+            setCanvases(null);
+            return;
+        }
+        let live = true;
+        const agentId = focused.id;
+        fireAndForget(async () => {
+            const cwd = focused.cwd || (await resolveCwd(focused.transcriptPath, focused.blockId));
+            const topics = cwd ? await listCanvasTopics(cwd) : [];
+            if (live) {
+                setCanvases({ agentId, topics });
+            }
+        });
+        return () => {
+            live = false;
+        };
+    }, [open, focused?.id]);
 
     // --- Files ------------------------------------------------------------------------------------
     // On Code, the project Code has open; elsewhere, the active project — not whatever Code last had.
@@ -585,6 +617,29 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
                 };
             });
     }, [sessions, model]);
+
+    const canvasItems = useMemo<PaletteItem[]>(() => {
+        if (canvases == null || canvases.agentId !== focused?.id) {
+            return [];
+        }
+        return canvases.topics.map((topic) => {
+            const owner = canvasOwner(topic);
+            const on = owner != null ? [...agents, ...terminals].find((a) => a.id === owner) : focused;
+            return {
+                key: `canvas:${topic}`,
+                kind: "canvas" as const,
+                search: `canvas ${topic}`,
+                title: topic,
+                meta: on?.name,
+                verb: "Open",
+                echo: `Opens the canvas ${topic} on ${on?.name ?? "the agent"}`,
+                run: () => {
+                    fireAndForget(() => openTarget(model, { kind: "canvas", topic }));
+                    close();
+                },
+            };
+        });
+    }, [canvases, focused, agents, terminals, model]);
 
     // Enter switches the active project and opens it.
     const channelItems = useMemo<PaletteItem[]>(
@@ -914,6 +969,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
                 ...runItems,
                 ...sessionItems,
                 ...channelItems,
+                ...canvasItems,
                 ...commandItems,
                 // last, so a tie with the thing's own row keeps the thing first
                 ...verbItems,

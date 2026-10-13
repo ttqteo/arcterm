@@ -15,6 +15,7 @@ import { globalStore } from "@/app/store/global";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { resolveCwd } from "../agents/agentcwdresolve";
 import type { AgentsViewModel } from "../agents/agents";
 import { setAgentView } from "../agents/agentview";
 import { canvasDir, canvasProjectDir } from "../agents/canvasmodel";
@@ -381,8 +382,10 @@ function selectAgent(model: AgentsViewModel, tabId: string): OpenResult {
 // A reveal names its caller: the canvas is that agent's, in its cwd. The agent reveals on every revision, so its
 // reveal only attaches: the user may be anywhere, and moving them there each time pulls them off their work. The
 // trail toast and the header's Canvas toggle say it is there. A palette or citation open has no caller, so it is
-// the user asking to see it: it lands on whichever agent already has the topic open, in canvas mode.
-type CanvasLanding = { owner: string } | { agentId: string; dir: string; cwd: string };
+// the user asking to see it: it lands on whichever agent already has the topic open, in canvas mode. A canvas
+// nobody has open (every one, after a restart: which agent has which canvas is not kept) opens on the selected
+// agent, from its working folder.
+type CanvasLanding = { owner: string } | { agentId: string; dir: string; cwd: string; show: boolean };
 
 async function loadCanvas(
     model: AgentsViewModel,
@@ -395,16 +398,41 @@ async function loadCanvas(
     if (!isCanvasSegment(topic) || (board != null && !isCanvasSegment(board))) {
         return { ok: false, reason: "unsupported", message: `Not a canvas name: ${topic}` };
     }
+    const roster = [...globalStore.get(model.agentsAtom), ...globalStore.get(model.terminalsAtom)];
     if (caller == null) {
         const owner = canvasOwner(topic);
-        return owner != null ? loaded({ owner }) : unavailable(`No agent has the canvas ${topic} open`);
+        if (owner != null) {
+            return loaded({ owner });
+        }
+        const focusId = globalStore.get(model.focusIdAtom);
+        const focused = focusId ? roster.find((a) => a.id === focusId) : undefined;
+        if (focused == null) {
+            return unavailable(`Select an agent to open the canvas ${topic} on`);
+        }
+        const cwd = focused.cwd || (await resolveCwd(focused.transcriptPath, focused.blockId));
+        if (!current()) {
+            return SUPERSEDED;
+        }
+        if (!cwd) {
+            return unavailable(`Can't tell which folder ${focused.name} works in`);
+        }
+        return loadCanvasAt(focused.id, cwd, topic, current, true);
     }
-    const roster = [...globalStore.get(model.agentsAtom), ...globalStore.get(model.terminalsAtom)];
     const agent = roster.find((a) => a.blockId != null && a.blockId === caller.blockId);
     if (agent == null || !caller.cwd) {
         return unavailable(`Run wsh ui reveal canvas:${topic} from the agent's terminal`);
     }
-    const dir = canvasDir(caller.cwd, topic);
+    return loadCanvasAt(agent.id, caller.cwd, topic, current, false);
+}
+
+async function loadCanvasAt(
+    agentId: string,
+    cwd: string,
+    topic: string,
+    current: () => boolean,
+    show: boolean
+): Promise<Loaded<CanvasLanding>> {
+    const dir = canvasDir(cwd, topic);
     const project = canvasProjectDir(dir);
     const info = await RpcApi.FileInfoCommand(TabRpcClient, { info: { path: project } });
     if (!current()) {
@@ -413,7 +441,7 @@ async function loadCanvas(
     if (info == null || info.notfound) {
         return unavailable(`No canvas at ${project}`);
     }
-    return loaded({ agentId: agent.id, dir, cwd: caller.cwd });
+    return loaded({ agentId, dir, cwd, show });
 }
 
 function selectCanvas(model: AgentsViewModel, target: CanvasTarget, landing: CanvasLanding): OpenResult {
@@ -427,6 +455,10 @@ function selectCanvas(model: AgentsViewModel, target: CanvasTarget, landing: Can
         return OK;
     }
     attachCanvas(landing.agentId, { topic, dir: landing.dir, projectDir: landing.cwd, board }, Date.now());
+    if (landing.show) {
+        setAgentView(landing.agentId, "canvas", Date.now());
+        jumpToAgent(model, landing.agentId);
+    }
     return OK;
 }
 

@@ -16,6 +16,7 @@ const rpc = vi.hoisted(() => ({
     ReadVaultNoteCommand: vi.fn(),
 }));
 const loadAndPin = vi.hoisted(() => vi.fn());
+const resolveCwd = vi.hoisted(() => vi.fn());
 const pushToast = vi.hoisted(() => vi.fn());
 
 vi.mock("@/app/store/wshclientapi", () => ({ RpcApi: rpc }));
@@ -28,6 +29,7 @@ vi.mock("@/app/store/wos", async () => {
         getWaveObjectAtom: () => atom(null),
     };
 });
+vi.mock("../agents/agentcwdresolve", () => ({ resolveCwd: (...a: unknown[]) => resolveCwd(...a) }));
 vi.mock("@/app/cockpit/notificationstore", () => ({ pushToast: (...a: unknown[]) => pushToast(...a) }));
 
 import { globalStore } from "@/app/store/jotaiStore";
@@ -525,14 +527,53 @@ describe("canvas landing", () => {
         expect(rpc.FileInfoCommand).not.toHaveBeenCalled();
     });
 
-    it("without a caller or an owner, says no agent has it open", async () => {
+    it("without a caller, an owner or a selected agent, asks for an agent to open it on", async () => {
         const model = makeModel(["a1"]);
         expect(await openAddress(model, "canvas:t", undefined, noReport)).toEqual({
             ok: false,
             reason: "unavailable",
-            message: "No agent has the canvas t open",
+            message: "Select an agent to open the canvas t on",
         });
         expect(globalStore.get(model.surfaceAtom)).toBe("cockpit");
+        expect(rpc.FileInfoCommand).not.toHaveBeenCalled();
+    });
+
+    it("without a caller or an owner, opens the canvas on the selected agent from its folder", async () => {
+        const model = makeModel(["a1", "a2"]);
+        globalStore.set(model.focusIdAtom, "a2");
+        resolveCwd.mockResolvedValue(CWD);
+        rpc.FileInfoCommand.mockResolvedValue({ path: "x" });
+        expect(await openAddress(model, "canvas:t/States", undefined, noReport)).toEqual({ ok: true });
+        expect(resolveCwd).toHaveBeenCalledWith(undefined, "block-a2");
+        expect(rpc.FileInfoCommand).toHaveBeenCalledWith(expect.anything(), { info: { path: `${DIR}\\project` } });
+        const s = getCanvas("a2");
+        expect(s?.dir).toBe(DIR);
+        expect(s?.projectDir).toBe(CWD);
+        expect(s?.board).toBe("States.dc.html");
+        expect(s?.mode).toBe("canvas");
+        expect(getCanvas("a1")).toBeNull();
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+    });
+
+    it("without a caller or an owner, refuses a selected agent with no canvas of that name", async () => {
+        const model = makeModel(["a1"]);
+        globalStore.set(model.focusIdAtom, "a1");
+        resolveCwd.mockResolvedValue(CWD);
+        rpc.FileInfoCommand.mockResolvedValue({ notfound: true });
+        const result = await openAddress(model, "canvas:t", undefined, noReport);
+        expect("reason" in result ? result.message : "").toBe(`No canvas at ${DIR}\\project`);
+        expect(getCanvas("a1")).toBeNull();
+        expect(globalStore.get(model.surfaceAtom)).toBe("cockpit");
+    });
+
+    it("without a caller or an owner, refuses a selected agent whose folder is unknown", async () => {
+        const model = makeModel(["a1"]);
+        globalStore.set(model.focusIdAtom, "a1");
+        resolveCwd.mockResolvedValue(null);
+        const result = await openAddress(model, "canvas:t", undefined, noReport);
+        expect("reason" in result ? result.reason : null).toBe("unavailable");
+        expect(rpc.FileInfoCommand).not.toHaveBeenCalled();
+        expect(getCanvas("a1")).toBeNull();
     });
 
     it("refuses a target built in code with a path in its topic", async () => {
