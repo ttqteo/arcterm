@@ -207,6 +207,23 @@ mod imp {
         }
     }
 
+    // The folded window's collection behavior, from its own: on every Space, and allowed beside a full-screen window.
+    // Folded it is always on top, a level whose default is Transient, which Mission Control hides: Managed keeps it
+    // there. AppKit throws on a behavior that is both full-screen primary and auxiliary, both joins all Spaces and moves
+    // to the active one, or more than one of managed, transient and stationary, so those come off.
+    fn folded_behavior(was: NSWindowCollectionBehavior) -> NSWindowCollectionBehavior {
+        let mut behavior = was;
+        behavior &= !(NSWindowCollectionBehavior::MoveToActiveSpace
+            | NSWindowCollectionBehavior::FullScreenPrimary
+            | NSWindowCollectionBehavior::FullScreenNone
+            | NSWindowCollectionBehavior::Transient
+            | NSWindowCollectionBehavior::Stationary);
+        behavior |= NSWindowCollectionBehavior::CanJoinAllSpaces
+            | NSWindowCollectionBehavior::FullScreenAuxiliary
+            | NSWindowCollectionBehavior::Managed;
+        behavior
+    }
+
     pub fn set_folded_chrome(window: &WebviewWindow, folded: bool) -> Result<(), String> {
         let mtm = MainThreadMarker::new().ok_or("not on the main thread")?;
         let ns = ns_window(window, mtm)?;
@@ -216,17 +233,10 @@ mod imp {
                 button.setHidden(folded);
             }
         }
-        // On every Space, and allowed beside a full-screen window. AppKit throws on a behavior that is both full-screen
-        // primary and auxiliary, or both joins all Spaces and moves to the active one, so those come off while folded.
         if folded {
             let was = ns.collectionBehavior();
             UNFOLDED_BEHAVIOR.with(|cell| cell.set(Some(cell.get().unwrap_or(was))));
-            let mut behavior = was;
-            behavior &= !(NSWindowCollectionBehavior::MoveToActiveSpace
-                | NSWindowCollectionBehavior::FullScreenPrimary
-                | NSWindowCollectionBehavior::FullScreenNone);
-            behavior |= NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::FullScreenAuxiliary;
-            ns.setCollectionBehavior(behavior);
+            ns.setCollectionBehavior(folded_behavior(was));
         } else if let Some(was) = UNFOLDED_BEHAVIOR.with(|cell| cell.take()) {
             ns.setCollectionBehavior(was);
             let _ = APP.set(window.app_handle().clone());
@@ -379,6 +389,26 @@ mod imp {
             }
         });
         Ok(())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::folded_behavior;
+        use objc2_app_kit::NSWindowCollectionBehavior as B;
+
+        #[test]
+        fn the_folded_window_shows_in_mission_control() {
+            let folded = folded_behavior(B::Default);
+            assert!(folded.contains(B::Managed));
+            assert!(!folded.intersects(B::Transient | B::Stationary));
+        }
+
+        #[test]
+        fn the_folded_window_drops_what_appkit_will_not_take_beside_its_own() {
+            let folded = folded_behavior(B::MoveToActiveSpace | B::FullScreenPrimary | B::Transient);
+            assert!(folded.contains(B::CanJoinAllSpaces | B::FullScreenAuxiliary | B::Managed));
+            assert!(!folded.intersects(B::MoveToActiveSpace | B::FullScreenPrimary | B::Transient));
+        }
     }
 }
 
