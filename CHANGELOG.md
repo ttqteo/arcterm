@@ -12,6 +12,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- **A Claude agent that restarts on Claude Code's classic renderer scrolls again.** When arcterm restarted while a
+  resumed Claude was still starting, Claude Code fell back to its classic renderer on the next launch and drew it
+  inside the fullscreen screen left over from before, which has no scrollback, so the wheel did nothing.
 - **A canvas with only a few boards has ‹ and › beside its tabs too**, and on a canvas `←` / `→` step the boards as
   `[` and `]` do (`↑` / `↓` and `j` / `k` still move between agents).
 - **Closing the agent or terminal you are looking at opens the one beside it** in the sidebar (the one below, or above

@@ -572,6 +572,7 @@ func GetTerminalResetSeq() string {
 	resetSeq += "\x1b[?1007l"         // disable Enable Alternate Scroll Mode
 	resetSeq += "\x1b[?2004l"         // disable bracketed paste mode
 	resetSeq += "\x1b[?2026l"         // synchronized output off
+	resetSeq += "\x1b[?1047l"         // leave the alternate screen in-stream (a no-op on the normal one); the OSC R below is skipped while the frontend replays the log
 	resetSeq += FormatOSC(16162, "R") // disable alternate screen mode
 	return resetSeq
 }

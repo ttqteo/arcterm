@@ -27,6 +27,12 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (Classic-renderer Claude after a restart scrolls)**
+
+- [ ] (arcterm) **A Claude that comes back on the classic renderer scrolls.** Rebuild wavesrv, then restart arcterm twice
+  within ~10 s so a resumed Claude prints "fullscreen renderer didn't finish starting last time": its pane should
+  scroll with the wheel (normal screen, scrollback), not sit stuck. `pkg/util/shellutil` reset sequence (`?1047l`).
+
 **2026-10-13 (Usage cold first open)**
 
 - [ ] (arcterm) **Usage fills in after a fresh start.** Restart arcterm (the build with this fix), open Usage at once:
