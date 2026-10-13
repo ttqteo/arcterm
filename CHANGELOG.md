@@ -35,6 +35,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
   the picked session's transcript from anywhere but the Task box, and Launch shows its key as Enter.
 - **A sleeping agent's conversation has a message box under it** on the Agent screen: type and press Enter to wake the
   agent with that as its next message, without pressing Wake first.
+- **New dialog: Open asleep** replaces Transcript beside Launch (Shift+Enter) when a Claude, pi or agy session is
+  picked to resume: the session goes on the agent list asleep, showing its conversation, and starts only when you wake
+  it or send it a message. A codex session, which cannot sleep, keeps Transcript.
 - **Ctrl+V in the New dialog pastes into the Task** (or a run's Goal) wherever focus is outside a text field, images
   included, and leaves the cursor there.
 - **An agent's ✳ in the sidebar now shows its state** in place of the dot on its second line: it pulses in the accent
@@ -59,6 +62,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- A sleeping agent stays on the agent list with its conversation after arcterm restarts or reloads, instead of
+  turning into a plain terminal or losing its transcript.
 - A plan run no longer cancels itself at submit when its plan or spec differs from the committed copy only in line
   endings (a file saved with Windows CRLF).
 - **Fold when you leave** no longer folds arcterm for a screenshot, the lock screen, Alt+Tab's switcher or the Start

@@ -8,6 +8,7 @@ import * as WOS from "@/app/store/wos";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { showTerminal } from "@/app/view/agents/agentcenter";
 import { AgentsViewModel } from "@/app/view/agents/agents";
+import { asleepLaunchMeta, type AsleepLaunch } from "@/app/view/agents/agentsleep";
 import type { PendingLaunch } from "@/app/view/agents/agentsviewmodel";
 import { buildLaunchMeta, runtimeCreatesAgentPanel, type Runtime } from "@/app/view/agents/launch";
 
@@ -23,6 +24,9 @@ export interface LaunchAgentOpts {
     resumePath?: string; // pi transcript path; preflighted before any worktree/tab is created
     label?: string; // the session's name in the roster (session:label), e.g. the initiative it works on
     effortORef?: string; // the initiative it works on (session:effort), "effort:<oid>"
+    // open asleep: the tab is made with its resume command and marked asleep, so it shows the session's transcript and
+    // starts on Wake or a message (asleepLaunchMeta). Its process never starts here.
+    asleep?: AsleepLaunch;
 }
 
 // Launch a runtime as its OWN session tab. Agent runtimes get a pending roster row; terminals only
@@ -67,14 +71,17 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
     const blockORef = WOS.makeORef("block", blockId);
     await RpcApi.SetMetaCommand(TabRpcClient, {
         oref: blockORef,
-        meta: buildLaunchMeta({
-            runtime: opts.runtime,
-            startupCommand: opts.startupCommand,
-            startupArgs: opts.startupArgs,
-            task: opts.task,
-            extraArgs: opts.extraArgs,
-            cwd,
-        }),
+        meta: {
+            ...buildLaunchMeta({
+                runtime: opts.runtime,
+                startupCommand: opts.startupCommand,
+                startupArgs: opts.startupArgs,
+                task: opts.task,
+                extraArgs: opts.extraArgs,
+                cwd,
+            }),
+            ...(opts.asleep ? asleepLaunchMeta(opts.asleep) : {}),
+        },
     });
     // Refresh the frontend's cached block object. getWaveObjectAtom does a one-time fetch and does
     // NOT subscribe, so the session sidebar's read of this block stays pinned to the pre-SetMeta
@@ -95,7 +102,8 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
         tabMeta["session:effort"] = opts.effortORef;
     }
     await RpcApi.SetMetaCommand(TabRpcClient, { oref: WOS.makeORef("tab", tabId), meta: tabMeta });
-    if (agentPanel) {
+    // an agent opened asleep is on the roster at once (sleepingStatus): it never reports in, so no pending row waits on it
+    if (agentPanel && !opts.asleep) {
         const pending: PendingLaunch = {
             tabId,
             blockId,
@@ -115,8 +123,10 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
         showTerminal();
         // and its terminal takes the keyboard: from the Agent surface itself nothing else moves focus there (the
         // arrival hand-off only runs on a surface switch), and the New agent dialog's restore lands on the old
-        // cell's hidden xterm or the button that opened it
-        globalStore.set(model.typingFollowsAtom, tabId);
+        // cell's hidden xterm or the button that opened it. Not one opened asleep: it has no process to type into.
+        if (!opts.asleep) {
+            globalStore.set(model.typingFollowsAtom, tabId);
+        }
     }
     return tabId;
 }

@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EMPTY_GRID } from "./agentgrid";
 import {
+    asleepLaunchMeta,
     backgroundConfirmText,
     sleepingAge,
     sleepingOf,
+    sleepingStatus,
     sleepToastText,
     sleepWithConfirm,
     viewingTabIds,
@@ -59,6 +61,57 @@ describe("sleepingOf", () => {
         expect(sleepingOf({ cmd: "claude" })).toBeUndefined();
         expect(sleepingOf(undefined)).toBeUndefined();
         expect(sleepingOf(null)).toBeUndefined();
+    });
+});
+
+describe("asleepLaunchMeta", () => {
+    it("marks the block asleep since the session last moved, with the session's transcript", () => {
+        expect(asleepLaunchMeta({ since: SINCE, transcriptPath: "/t/s1.jsonl" })).toEqual({
+            "agent:sleeping": SINCE,
+            "agent:transcriptpath": "/t/s1.jsonl",
+        });
+    });
+
+    it("counts a missing time as now, never 0 (which reads as awake), and leaves out an empty transcript", () => {
+        expect(asleepLaunchMeta({ since: 0, transcriptPath: "" }, 42)).toEqual({ "agent:sleeping": 42 });
+    });
+});
+
+describe("sleepingStatus", () => {
+    const OREF = "block:b1";
+    const asleep = {
+        cmd: "claude",
+        "agent:sleeping": SINCE,
+        "agent:transcriptpath": "/t/s1.jsonl",
+        "cmd:cwd": "/repo",
+    };
+
+    it("gives a sleeping agent with no status (a restart, or opened asleep) one from its block meta", () => {
+        expect(sleepingStatus(null, asleep, OREF)).toEqual({
+            oref: OREF,
+            state: "idle",
+            agent: "claude",
+            ts: SINCE,
+            transcriptpath: "/t/s1.jsonl",
+            cwd: "/repo",
+        });
+    });
+
+    it("fills the transcript and cwd the bare exit idle left out, keeping the rest of the status", () => {
+        const bare = { oref: OREF, state: "idle", agent: "claude", ts: 5, title: "fix the build" };
+        expect(sleepingStatus(bare, asleep, OREF)).toEqual({ ...bare, transcriptpath: "/t/s1.jsonl", cwd: "/repo" });
+    });
+
+    it("keeps a transcript the status already names", () => {
+        const full = { oref: OREF, state: "idle", ts: 5, transcriptpath: "/t/live.jsonl" };
+        expect(sleepingStatus(full, asleep, OREF)?.transcriptpath).toBe("/t/live.jsonl");
+    });
+
+    it("leaves an awake block, or a cmd that cannot sleep, as it is", () => {
+        const st = { oref: OREF, state: "working", ts: 5 };
+        expect(sleepingStatus(st, { ...asleep, "agent:sleeping": 0 }, OREF)).toBe(st);
+        expect(sleepingStatus(null, { ...asleep, cmd: "codex" }, OREF)).toBeNull();
+        expect(sleepingStatus(undefined, { ...asleep, cmd: "bash" }, OREF)).toBeUndefined();
     });
 });
 

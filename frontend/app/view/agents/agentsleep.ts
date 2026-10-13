@@ -46,6 +46,62 @@ export function sleepingOf(meta: Record<string, unknown> | undefined | null): Ag
     };
 }
 
+// the harnesses wavesrv can sleep: the ones that resume a conversation (agentsleep.Harnesses; codex cannot)
+export const SLEEPABLE_AGENTS: ReadonlySet<string> = new Set(["claude", "pi", "agy"]);
+
+/** Pure: a block's agent status, filled from its meta while it sleeps. The status is the server's last agent:status
+ *  event, which lives only in wavesrv's memory: a restart of arcterm leaves a sleeping agent none (nothing runs to
+ *  report), and the bare idle its process published on exit names no transcript, which a reload is left with. Its
+ *  block meta keeps both (wshserver's applySleepMeta reads the same), and an agent opened asleep has only that. An
+ *  awake block, or one whose cmd cannot sleep, gets its status back unchanged. */
+export function sleepingStatus(
+    status: AgentStatusData | null | undefined,
+    meta: Record<string, unknown> | undefined | null,
+    oref: string
+): AgentStatusData | null | undefined {
+    const sleeping = sleepingOf(meta);
+    const cmd = meta?.["cmd"];
+    if (!sleeping || typeof cmd !== "string" || !SLEEPABLE_AGENTS.has(cmd)) {
+        return status;
+    }
+    const transcript = meta?.["agent:transcriptpath"];
+    const cwd = meta?.["cmd:cwd"];
+    const fromMeta: AgentStatusData = {
+        oref,
+        state: "idle",
+        agent: cmd,
+        ts: sleeping.since,
+        ...(typeof transcript === "string" && transcript !== "" ? { transcriptpath: transcript } : {}),
+        ...(typeof cwd === "string" && cwd !== "" ? { cwd } : {}),
+    };
+    if (!status?.state) {
+        return fromMeta;
+    }
+    return {
+        ...status,
+        transcriptpath: status.transcriptpath || fromMeta.transcriptpath,
+        cwd: status.cwd || fromMeta.cwd,
+    };
+}
+
+/** An agent opened asleep: since is when its session last moved, so its row and card read its age, not when it was
+ *  opened; transcriptPath is the session's, which no hook has reported yet. */
+export interface AsleepLaunch {
+    since: number;
+    transcriptPath?: string;
+}
+
+/** Pure: the block meta that opens an agent asleep, laid over its launch meta. agent:sleeping keeps its process from
+ *  starting (the mount's relaunch and the server's controller both refuse a sleeping block) until a Wake, which runs
+ *  the resume command the launch meta already holds. A missing time counts as now: 0 would read as awake. */
+export function asleepLaunchMeta(asleep: AsleepLaunch, now = Date.now()): Record<string, unknown> {
+    const meta: Record<string, unknown> = { "agent:sleeping": asleep.since > 0 ? asleep.since : now };
+    if (asleep.transcriptPath) {
+        meta["agent:transcriptpath"] = asleep.transcriptPath;
+    }
+    return meta;
+}
+
 /** Pure: the age column of a sleeping agent ("sleeping 2h"), "" for one that is awake. */
 export function sleepingAge(vm: Pick<AgentVM, "sleeping">, now: number): string {
     return vm.sleeping ? `sleeping ${formatAgeShort(Math.max(0, now - vm.sleeping.since))}` : "";

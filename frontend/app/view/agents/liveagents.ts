@@ -28,7 +28,7 @@ import {
     type AgentEntry,
     type AgentVM,
 } from "./agentsviewmodel";
-import { sleepingOf } from "./agentsleep";
+import { sleepingOf, sleepingStatus } from "./agentsleep";
 import { fetchPreviousInfo } from "./previousinfo";
 import { registeredProjectFor } from "./projectlabel";
 import { projectsAtom } from "./projectsstore";
@@ -61,11 +61,12 @@ export const liveAgentBaseAtom: Atom<AgentVM[]> = atom((get) => {
         if (!row.termBlockOref) {
             continue;
         }
-        const status = get(getAgentStatusAtom(row.termBlockOref));
+        const block = get(WOS.getWaveObjectAtom<Block>(row.termBlockOref));
+        // a sleeping agent's block meta stands in for the status it has no process to report (sleepingStatus)
+        const status = sleepingStatus(get(getAgentStatusAtom(row.termBlockOref)), block?.meta, row.termBlockOref);
         if (!status?.state) {
             continue; // not an agent (no status emitted) — skip
         }
-        const block = get(WOS.getWaveObjectAtom<Block>(row.termBlockOref));
         const vm = agentVMFromInput(
             {
                 id: row.tabId,
@@ -106,7 +107,8 @@ export const liveTerminalsAtom: Atom<AgentVM[]> = atom((get) => {
     const projects = get(projectsAtom);
     return deriveTerminalVMs(
         flattenVisualOrder(vm),
-        (oref) => !!get(getAgentStatusAtom(oref))?.state,
+        (oref) =>
+            !!sleepingStatus(get(getAgentStatusAtom(oref)), get(WOS.getWaveObjectAtom<Block>(oref))?.meta, oref)?.state,
         (cwd) => registeredProjectFor(cwd, projects),
         (blockId) => get(getLastCommandAtom(blockId)),
         (blockId) => get(getCommandRunningAtom(blockId))

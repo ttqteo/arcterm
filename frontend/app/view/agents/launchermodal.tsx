@@ -27,6 +27,7 @@ import { Check, House, Network, Search, SquareTerminal, X, Zap } from "lucide-re
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
+import { SLEEPABLE_AGENTS } from "./agentsleep";
 import { channelsAtom, primeChannels } from "./channelsstore";
 import { harnessesAtom, harnessPreferenceAtom, resolveDefaultRuntime } from "./harnessstore";
 import {
@@ -488,7 +489,9 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         showSession(model, sessionKey(s));
     };
 
-    const launchAgentRow = async (p: ProjectRow) => {
+    // Open asleep: the picked session on the roster with its transcript and a box to wake it, its process not started
+    // (asleepLaunchMeta). The Task is not sent: what was typed stays in the dialog for a later New.
+    const launchAgentRow = async (p: ProjectRow, asleep = false) => {
         let branch: string | undefined;
         if (wantsWorktree) {
             if (!chosenBranch) {
@@ -503,7 +506,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         // the task with its images: codex starting fresh takes them as --image after the prompt, the rest as a block
         const { task: fullTask, extraArgs } = composeTaskWithImages(
             runtime,
-            runtimeShowsTask(runtime) ? task : "",
+            runtimeShowsTask(runtime) && !asleep ? task : "",
             images.flatMap((i) => (i.path ? [i.path] : [])),
             resume != null
         );
@@ -529,6 +532,9 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 projectName: p.name,
                 branch,
                 ...spec,
+                ...(asleep && resume
+                    ? { asleep: { since: resume.lastactivets, transcriptPath: resume.transcriptpath } }
+                    : {}),
             });
             // Remember off: flags are single-use, cleared for the next agent
             if (!globalStore.get(naRememberFlagsAtom)) {
@@ -538,13 +544,29 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             if (!atHome) {
                 noteRecentProject(p.name);
             }
-            endLauncherDraft();
+            if (!asleep || task.trim() === "") {
+                endLauncherDraft();
+            }
             close();
         } catch (e) {
             setError(String(e));
         } finally {
             endLauncherLaunch();
         }
+    };
+
+    // the footer's second button for a picked session: Open asleep for an agent that can sleep, the transcript for one
+    // that cannot (codex has no resume to wake into)
+    const canOpenAsleep = resume != null && SLEEPABLE_AGENTS.has(runtime);
+    const resumeSecondary = (s: SessionInfo) => {
+        if (!canOpenAsleep) {
+            viewTranscript(s);
+            return;
+        }
+        if (project == null || imagesWriting) {
+            return;
+        }
+        void launchAgentRow(project, true);
     };
 
     const startRun = (p: ProjectRow) => {
@@ -706,9 +728,9 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             case "launch":
                 launch();
                 return;
-            case "view-transcript":
+            case "resume-secondary":
                 if (resume != null) {
-                    viewTranscript(resume);
+                    resumeSecondary(resume);
                 }
                 return;
             case "dismiss-inner":
@@ -1022,7 +1044,18 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                         <DialogButton variant="secondary" hint="esc" onClick={close}>
                             Cancel
                         </DialogButton>
-                        {resume != null ? (
+                        {resume != null && canOpenAsleep ? (
+                            <DialogButton
+                                variant="secondary"
+                                hint="shift+enter"
+                                data-launcher-asleep
+                                title="Open it asleep: its transcript in the sidebar, started when you wake it or send a message (Shift+Enter)"
+                                disabled={primaryDisabled}
+                                onClick={() => resumeSecondary(resume)}
+                            >
+                                Open asleep
+                            </DialogButton>
+                        ) : resume != null ? (
                             <DialogButton
                                 variant="secondary"
                                 hint="shift+enter"

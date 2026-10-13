@@ -14,8 +14,14 @@ const BTN =
 const BTN_PRIMARY = cn(BTN, "text-accent-soft hover:text-accent-100");
 const BTN_QUIET = cn(BTN, "text-muted hover:text-primary");
 
+// the time alone when it is today; with its day otherwise, as for an agent opened asleep from an older session
 function since(ts: number): string {
-    return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+    const d = new Date(ts);
+    const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+    if (d.toDateString() === new Date().toDateString()) {
+        return time;
+    }
+    return `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
 }
 
 // A sleeping agent's card over its terminal: its conversation shows below in the terminal's place

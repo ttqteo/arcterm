@@ -327,18 +327,18 @@ describe("launcherKey", () => {
         expect(launcherKey(at("resume"), key("ArrowUp"))).toEqual({ kind: "none" });
         expect(launcherKey(at("resume"), key("3"))).toEqual({ kind: "none" });
     });
-    it("Shift+Enter on a picked session opens its transcript instead of resuming it", () => {
+    it("Shift+Enter on a picked session takes the footer's second button (Open asleep, or Transcript) instead of resuming it", () => {
         const picked = at("resume", "", { resumePicked: true });
-        expect(launcherKey(picked, key("Enter", { shift: true }))).toEqual({ kind: "view-transcript" });
+        expect(launcherKey(picked, key("Enter", { shift: true }))).toEqual({ kind: "resume-secondary" });
         expect(launcherKey(picked, key("Enter"))).toEqual({ kind: "launch" });
-        // the New session row has no transcript to read
+        // the New session row has no session to open asleep or read
         expect(launcherKey(at("resume"), key("Enter", { shift: true }))).toEqual({ kind: "launch" });
-        // wherever Enter launches, as the footer's Transcript button says; the Task box keeps it as its newline
+        // wherever Enter launches, as the footer's second button says; the Task box keeps it as its newline
         expect(launcherKey(at("project", "", { resumePicked: true }), key("Enter", { shift: true }))).toEqual({
-            kind: "view-transcript",
+            kind: "resume-secondary",
         });
         expect(launcherKey(at("start", "", { resumePicked: true }), key("Enter", { shift: true }))).toEqual({
-            kind: "view-transcript",
+            kind: "resume-secondary",
         });
         expect(launcherKey(at("textarea", "", { resumePicked: true }), key("Enter", { shift: true }))).toEqual({
             kind: "none",

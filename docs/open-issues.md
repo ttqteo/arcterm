@@ -50,6 +50,15 @@ does not, say what you saw and it becomes a bug row under Actionable.
   its conversation, a box reading "message <name> to wake it… (Enter)", lined up with the transcript. Type a line and
   press Enter: the button reads Waking…, the agent wakes and the line arrives as its next message. In a 2x2 grid each
   sleeping cell has its own box. `sleepingtranscript.tsx`; CDP `agent-sleep` step 4b.
+- [ ] (arcterm) **Open asleep from the New dialog.** New → Claude → pick a session under Resume: the footer reads
+  Cancel · Open asleep shift+enter · Resume enter. Open asleep (or Shift+Enter): the dialog closes, the session is a
+  new row on the agent list with the moon, its cell shows the conversation and the card "Sleeping since <its last
+  activity>" (with the day when not today), and no claude process starts. Type in the box under it and press Enter:
+  it wakes on that session and the line arrives. Pick a codex session: the button is still Transcript.
+  `launchermodal.tsx` resumeSecondary, `agentsleep.ts` asleepLaunchMeta.
+- [ ] (arcterm) **A sleeping agent survives a restart.** Sleep an agent, quit arcterm and reopen it: the agent is still
+  on the agent list with the moon (not under Terminals) and its cell shows its conversation, not "No transcript
+  found". Same after a reload (Ctrl+R). `agentsleep.ts` sleepingStatus, `liveagents.ts`.
 
 **2026-10-13 (New: Ctrl+V pastes into the Task)**
 

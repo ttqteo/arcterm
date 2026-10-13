@@ -232,7 +232,7 @@ export type LauncherKeyAction =
     | { kind: "filter"; next: string }
     | { kind: "write" }
     | { kind: "launch" }
-    | { kind: "view-transcript" }
+    | { kind: "resume-secondary" }
     | { kind: "dismiss-inner"; what: LauncherInner }
     | { kind: "close" };
 
@@ -266,9 +266,10 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
         if (zone !== "start" && zone !== "project" && zone !== "resume" && zone !== "input") {
             return NONE;
         }
-        // reading a session back costs nothing; resuming it starts the agent and reloads its whole context. The
-        // footer's Transcript button names Shift+Enter, so it holds wherever Enter launches.
-        return k.shift && ctx.resumePicked ? { kind: "view-transcript" } : { kind: "launch" };
+        // opening a session asleep (or reading it back, for an agent that cannot sleep) costs nothing; resuming it
+        // starts the agent and reloads its whole context. The footer's second button names Shift+Enter, so it holds
+        // wherever Enter launches.
+        return k.shift && ctx.resumePicked ? { kind: "resume-secondary" } : { kind: "launch" };
     }
     if (zone !== "start" && zone !== "project") {
         return NONE;

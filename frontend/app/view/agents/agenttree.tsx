@@ -102,7 +102,7 @@ import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "./
 import { runSessionPrimary, SEG_COLOR, StatusMark } from "./sessionsdetail";
 import { defaultMember, runView, type RunView } from "./sessionsruns";
 import { duplicateSession } from "./session-models/sessionsidebarmodel";
-import { sleepingAge, sleepWithConfirm, wakeAgent, wakeErrorToast } from "./agentsleep";
+import { SLEEPABLE_AGENTS, sleepingAge, sleepWithConfirm, wakeAgent, wakeErrorToast } from "./agentsleep";
 import {
     askingCount,
     askingLabel,
@@ -326,9 +326,6 @@ function runMenuItems(
     items.push(copyId);
     return { items, danger };
 }
-
-// the harnesses wavesrv can sleep: the ones that resume a conversation (agentsleep.Harnesses; codex cannot)
-const SLEEPABLE_AGENTS = new Set(["claude", "pi", "agy"]);
 
 // Wake for a sleeping agent, Sleep for an awake idle one that the server may sleep: a terminal, a background agent,
 // a codex agent and anything a run owns (its engine wakes and ends those) are refused there, so the menu leaves
