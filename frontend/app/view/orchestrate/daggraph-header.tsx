@@ -6,7 +6,7 @@ import { useRunUsage } from "../agents/runtokenstore";
 import { modelsText, summarizeUsage, usageText } from "../agents/runusage";
 import { chipGroups, pickNext, type ChipGroup } from "./dagcanvas";
 import { selectedTaskIdAtom } from "./dagstore";
-import { reviewersChip, workersChip } from "./taskroute";
+import { dagStatusPill, reviewersChip, workersChip, type DagStatusPill } from "./taskroute";
 
 // a chip's dot: filled for the groups that are doing or done something, an open ring for those that are not
 const CHIP_DOT = new Map<ChipGroup["key"], string>([
@@ -44,21 +44,21 @@ function SummaryChips({ tasks }: { tasks: TaskNode[] }) {
 const ROUTE_CHIP =
     "flex-none rounded-[5px] border border-edge-mid px-[7px] py-0.5 text-[10.5px] text-ink-mid";
 
+const PILL_TONE: Record<DagStatusPill["tone"], string> = {
+    done: "border-success/50 bg-success/10 text-success",
+    waiting: "border-warning/60 bg-warning/10 text-warning",
+    muted: "border-edge-mid bg-surface-raised text-muted",
+    active: "border-accent/50 bg-accent/10 text-accent-soft",
+};
+
 // graph header: the owning run's goal, the summary chips, the workers and reviewers routes, the derived status
 // pill, cancel. No back button: the modal header above it already closes, and a second close one row down read
 // as two different exits.
 // No dag id either: the modal subtitle names the run, and the dag's uuid identified it to nobody.
 export function DagGraphHeader({ group, owner }: { group: TaskGroup; owner: Run }) {
-    const status = group.status;
-    const tone =
-        status === "done" || status === "awaiting-review"
-            ? "border-success/50 bg-success/10 text-success"
-            : status === "blocked" || status === "awaiting-plan"
-              ? "border-warning/60 bg-warning/10 text-warning"
-              : status === "cancelled"
-                ? "border-edge-mid bg-surface-raised text-muted"
-                : "border-accent/50 bg-accent/10 text-accent-soft";
-    const label = status.split("-").join(" ");
+    const pill = dagStatusPill(group);
+    const tone = PILL_TONE[pill.tone];
+    const label = pill.label;
     const done = group.tasks.filter((t) => t.state === "done").length;
     const usage = useRunUsage(group.channelid, group.runid);
     const spent = summarizeUsage(usage?.rows);

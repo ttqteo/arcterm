@@ -11,6 +11,7 @@ import (
 	"log"
 	"reflect"
 	"runtime/pprof"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,6 +27,15 @@ import (
 )
 
 const DefaultTimeoutMs = 5000
+
+// timeoutErrPrefix starts the error a call returns when its reply did not come back within its timeout.
+const timeoutErrPrefix = "EC-TIME"
+
+// IsTimeoutErr reports a call whose reply did not come back in time. The request may still have been handled.
+func IsTimeoutErr(err error) bool {
+	return err != nil && strings.HasPrefix(err.Error(), timeoutErrPrefix)
+}
+
 const RespChSize = 32
 const DefaultMessageChSize = 32
 const CtxDoneChSize = 10
@@ -436,7 +446,7 @@ outer:
 			if w.Debug {
 				log.Printf("[%s] received request timeout: %s\n", w.DebugName, resIdTimeout)
 			}
-			w.unregisterRpc(resIdTimeout, fmt.Errorf("EC-TIME: timeout waiting for response"))
+			w.unregisterRpc(resIdTimeout, fmt.Errorf("%s: timeout waiting for response", timeoutErrPrefix))
 			continue
 		}
 

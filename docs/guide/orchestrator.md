@@ -185,6 +185,7 @@ Nó cũng báo các lỗ hổng trong spec và chỗ spec với plan mâu thuẫ
 - **Pass:** worker bắt đầu, lead nhận một dòng yên lặng `plan review passed; workers are starting: …`.
 - **Fail:** lead được đánh thức với các phát hiện. Nó sửa plan, đưa thay đổi spec cho bạn quyết, rồi chạy lại `wsh jarvis dag submit`. Khi chưa task nào được dispatch, lần submit lại thay thế plan hỏng và mở **vòng review 2**. Run bắt đầu từ plan file mà chưa có lead thì được mở một lead bởi lần đánh thức này.
 - **Vòng 2 cũng hỏng** (tối đa hai vòng): lead bắt buộc đưa cho bạn một câu hỏi **Plan review**: đường dẫn plan và mỗi phát hiện một dòng, mở thành [hộp review](jarvis.md#hộp-spec-review-và-plan-review). Nếu bạn nói cứ tiếp tục, nó đưa từng phát hiện đã chấp nhận vào các task chờ bị ảnh hưởng bằng `dag amend` (mọi task vẫn đang chờ), rồi chạy `wsh jarvis dag planreview accept "<lý do của bạn>"`, và việc dispatch bắt đầu trên plan như hiện có. `accept` chỉ dùng được khi review đang ở trạng thái hỏng.
+- **Đọc trạng thái:** status của dag đọc `plan-review` cả khi reviewer đang làm lẫn khi review đã hỏng, nên `wsh jarvis dag status` in một dòng `plan review <state> round=N`: `reviewing` kèm tuổi, hoặc `failed` kèm phần đầu các phát hiện và nó đang chờ ai. `dag submit` in đúng dòng đó cho vòng nó vừa mở. Lần submit không nhận được trả lời kịp thì đọc lại dag và nói plan đã vào, chưa vào (gửi lại an toàn), hay không xác định được.
 
 Lần submit lại của lead thay plan, **không** thay cài đặt của bạn: cài đặt workers và route reviewer vẫn giữ, kể cả thay đổi bạn làm trong run sheet trước đó. Dòng Check hoặc Setup mới trong plan sửa đặt lại bước kiểm Check nền.
 
@@ -461,7 +462,7 @@ Trong terminal của lead hoặc worker, run được suy ra. Ở nơi khác th�
 |---|---|
 | `dag submit --plan <md> [--spec <md>]` | kiểm tra plan và khởi động engine trên nó (một dag cho mỗi run); sau một plan review hỏng, submit lại plan đã sửa |
 | `dag submit --round --plan <fix plan>` | sau final stage hỏng, nối task của fix plan thành một fix round |
-| `dag status` | digest từng task, số liệu báo cáo, commit đã land, lỗi Verify và merge, những gì bạn đã nhắn worker, ghi chú unverified, final stage, token |
+| `dag status` | digest từng task, trạng thái và vòng của plan review, số liệu báo cáo, commit đã land, lỗi Verify và merge, những gì bạn đã nhắn worker, ghi chú unverified, final stage, token |
 | `dag report <task> [section]` | in báo cáo của worker, đầy đủ hoặc một mục (`done`, `differs`, `not-verified`, `for-later`, `found-not-fixed`) |
 | `dag asks` | câu hỏi lead đang giữ, cũ nhất trước, kèm mọi lựa chọn |
 | `dag answer <task> <answers-json>` | trả lời với tư cách lead |

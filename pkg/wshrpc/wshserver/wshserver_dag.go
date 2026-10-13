@@ -6,6 +6,7 @@ package wshserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -510,7 +511,7 @@ func (ws *WshServer) DagStatusCommand(ctx context.Context, data wshrpc.CommandDa
 		return nil, fmt.Errorf("loading run: %w", err)
 	}
 	if run.DagORef == "" {
-		return nil, fmt.Errorf("run has no dag")
+		return nil, errors.New(wshrpc.DagErrRunHasNoDag)
 	}
 	g, err := wstore.GetDag(ctx, run.DagORef)
 	if err != nil {

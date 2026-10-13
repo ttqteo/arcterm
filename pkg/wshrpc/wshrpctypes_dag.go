@@ -74,6 +74,9 @@ type DagPlanShape struct {
 	LongestChain int `json:"longestchain"`
 }
 
+// DagErrRunHasNoDag is DagStatusCommand's error for a run that holds no dag yet; a caller tells it from a failed read.
+const DagErrRunHasNoDag = "run has no dag"
+
 type CommandDagStatusData struct {
 	ChannelId string `json:"channelid"`
 	RunId     string `json:"runid"`
