@@ -13,7 +13,6 @@ import {
     homeOffered,
     launcherKey,
     launcherTitle,
-    letterHint,
     pickedTool,
     primaryLabel,
     projectAfterFilter,
@@ -117,11 +116,6 @@ describe("the words for a pick", () => {
         expect(primaryLabel("tool", "claude", false, "lazygit")).toBe("Open lazygit");
         expect(primaryLabel("tool", "claude", true, "PR dashboard")).toBe("Open PR dashboard");
         expect(primaryLabel("tool", "claude", false, "")).toBe("Open a tool");
-    });
-    it("the letter hint names what a letter does in the pick", () => {
-        expect(letterHint("agent")).toBe("task");
-        expect(letterHint("run")).toBe("goal");
-        expect(letterHint("tool")).toBe("tool");
     });
 });
 
@@ -315,6 +309,8 @@ describe("launcherKey", () => {
         branchListOpen: !!open.branchListOpen,
         resumePicked: !!open.resumePicked,
         textField: true,
+        homeShown: true,
+        third: "resume",
     });
     const key = (k: string, extra: { shift?: boolean; mod?: boolean; paste?: boolean } = {}) => ({
         key: k,
@@ -340,12 +336,20 @@ describe("launcherKey", () => {
         expect(launcherKey(at("project"), key("ArrowUp"))).toEqual({ kind: "move", column: "project", delta: -1 });
         expect(launcherKey(at("textarea"), key("ArrowDown"))).toEqual({ kind: "none" });
     });
-    it("→ goes from Start to Project and ← comes back; neither leaves the pair", () => {
+    it("→ steps Start, Project, then the third column's list, and ← steps back", () => {
         expect(launcherKey(at("start"), key("ArrowRight"))).toEqual({ kind: "column", to: "project" });
         expect(launcherKey(at("project", "ok"), key("ArrowLeft"))).toEqual({ kind: "column", to: "start" });
+        expect(launcherKey(at("project"), key("ArrowRight"))).toEqual({ kind: "column", to: "third" });
         expect(launcherKey(at("start"), key("ArrowLeft"))).toEqual({ kind: "none" });
-        expect(launcherKey(at("project"), key("ArrowRight"))).toEqual({ kind: "none" });
         expect(launcherKey(at("input"), key("ArrowLeft"))).toEqual({ kind: "none" });
+    });
+    it("→ from Project does nothing when the third column holds no list (a run, a terminal, Home)", () => {
+        expect(launcherKey({ ...at("project"), third: null }, key("ArrowRight"))).toEqual({ kind: "none" });
+    });
+    it("0 picks Home in the Project column while Home is offered, so the digits never move when a project is added", () => {
+        expect(launcherKey(at("project"), key("0"))).toEqual({ kind: "pick-home" });
+        expect(launcherKey({ ...at("project"), homeShown: false }, key("0"))).toEqual({ kind: "none" });
+        expect(launcherKey(at("start"), key("0"))).toEqual({ kind: "none" });
     });
     it("letters filter the Project column", () => {
         expect(launcherKey(at("project", "ok"), key("i"))).toEqual({ kind: "filter", next: "oki" });
@@ -423,11 +427,11 @@ describe("launcherKey", () => {
         expect(launcherKey(at("tools"), key("Process"))).toEqual({ kind: "none" });
         expect(launcherKey({ ...at("tools"), toolCount: 0 }, key("a"))).toEqual({ kind: "none" });
     });
-    it("arrows move in the Tool list, which leaves → and ← to Tab", () => {
+    it("arrows move in the Tool list, and ← steps back to Project", () => {
         expect(launcherKey(at("tools"), key("ArrowDown"))).toEqual({ kind: "move", column: "tools", delta: 1 });
         expect(launcherKey(at("tools"), key("ArrowUp"))).toEqual({ kind: "move", column: "tools", delta: -1 });
         expect(launcherKey(at("tools"), key("ArrowRight"))).toEqual({ kind: "none" });
-        expect(launcherKey(at("tools"), key("ArrowLeft"))).toEqual({ kind: "none" });
+        expect(launcherKey(at("tools"), key("ArrowLeft"))).toEqual({ kind: "column", to: "project" });
     });
     it("Enter in the Tool list opens the picked tool; Escape and a modified key behave as everywhere", () => {
         expect(launcherKey(at("tools"), key("Enter"))).toEqual({ kind: "launch" });

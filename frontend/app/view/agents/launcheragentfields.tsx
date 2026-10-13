@@ -28,7 +28,6 @@ import {
 } from "./launch";
 import { imageFilesOf } from "./launcherimages";
 import { resumeLaunchSpec } from "./launcherresume";
-import { ResumeList } from "./launcherresumelist";
 import {
     addTaskImages,
     launcherBranchAtom,
@@ -205,8 +204,7 @@ interface AgentFieldsProps {
     currentBranch: string;
     branches: BranchInfo[];
     ramWarning: string | null;
-    // the picked agent's recent sessions in the picked project, and the one picked to resume (null: a new session)
-    resumeChoices: SessionInfo[];
+    // the session picked to resume in the Session column (null: a new session)
     resume: SessionInfo | null;
     // started in Home, the home folder outside any project: no worktree, and Claude Code runs ask-only
     home: boolean;
@@ -214,16 +212,7 @@ interface AgentFieldsProps {
     taskRef: RefObject<HTMLTextAreaElement>;
 }
 
-export function AgentFields({
-    runtime,
-    currentBranch,
-    branches,
-    ramWarning,
-    resumeChoices,
-    resume,
-    home,
-    taskRef,
-}: AgentFieldsProps) {
+export function AgentFields({ runtime, currentBranch, branches, ramWarning, resume, home, taskRef }: AgentFieldsProps) {
     const task = useAtomValue(launcherTaskAtom);
     const commands = useAtomValue(launcherCommandAtom);
     const naFlags = useAtomValue(naFlagsAtom);
@@ -257,94 +246,175 @@ export function AgentFields({
     const taskHint = resume
         ? "optional · sent as the next message · paste or drop images"
         : "optional · sent as the first prompt · paste or drop images";
-    // with sessions to resume, Resume and Task sit side by side, 4:6, so the dialog fits without scrolling; Resume comes
-    // first, since which session is picked decides what the task is (a first prompt or the next message). The picked
-    // session's Transcript button sits in the footer, beside Launch.
-    const withResume = runtimeShowsTask(runtime) && resumeChoices.length > 0;
+    // the worktree switch shares the Command row, so the dialog fits without scrolling
+    const showWorktree = runtimeSupportsWorktree(runtime) && resume == null && !home;
     return (
         <>
             {runtimeShowsTask(runtime) ? (
-                <div className={cn(withResume && "grid grid-cols-[minmax(0,4fr)_minmax(0,6fr)] gap-4")}>
-                    {withResume ? <ResumeList choices={resumeChoices} pickedId={resume?.id ?? null} /> : null}
-                    <div className="flex min-w-0 flex-col gap-2">
-                        <div className="flex items-baseline gap-2">
-                            <label htmlFor="launcher-task" className={LAUNCHER_LABEL}>
-                                Task
-                            </label>
-                            <span title={taskHint} className="min-w-0 truncate text-[11px] text-muted">
-                                {taskHint}
-                            </span>
-                        </div>
-                        {/* grows with what is typed, up to about eleven lines, then scrolls; beside Resume it fills the row */}
-                        <textarea
-                            ref={taskRef}
-                            id="launcher-task"
-                            value={task}
-                            onChange={(e) => globalStore.set(launcherTaskAtom, e.target.value)}
-                            onPaste={pasteIntoTask}
-                            onDragOver={(e) => {
-                                if (dragHasFiles(e.dataTransfer)) {
-                                    e.preventDefault();
-                                }
-                            }}
-                            onDrop={dropIntoTask}
-                            placeholder="What should it work on? Leave empty to just open the session."
-                            className="block field-sizing-content min-h-16 max-h-[240px] w-full grow resize-none overflow-y-auto rounded-[10px] border border-edge-mid bg-surface px-3 py-[10px] text-[13px] leading-normal text-primary outline-none placeholder:text-muted focus:border-accent-700"
-                        />
-                        <TaskImages />
+                <div className="flex min-w-0 flex-col gap-2">
+                    <div className="flex items-baseline gap-2">
+                        <label htmlFor="launcher-task" className={LAUNCHER_LABEL}>
+                            Task
+                        </label>
+                        <span title={taskHint} className="min-w-0 truncate text-[11px] text-muted">
+                            {taskHint}
+                        </span>
                     </div>
+                    {/* grows with what is typed, up to about eleven lines, then scrolls */}
+                    <textarea
+                        ref={taskRef}
+                        id="launcher-task"
+                        value={task}
+                        onChange={(e) => globalStore.set(launcherTaskAtom, e.target.value)}
+                        onPaste={pasteIntoTask}
+                        onDragOver={(e) => {
+                            if (dragHasFiles(e.dataTransfer)) {
+                                e.preventDefault();
+                            }
+                        }}
+                        onDrop={dropIntoTask}
+                        placeholder="What should it work on? Leave empty to just open the session."
+                        className="block field-sizing-content min-h-16 max-h-[240px] w-full grow resize-none overflow-y-auto rounded-[10px] border border-edge-mid bg-surface px-3 py-[10px] text-[13px] leading-normal text-primary outline-none placeholder:text-muted focus:border-accent-700"
+                    />
+                    <TaskImages />
                 </div>
             ) : null}
             <div className="flex flex-col gap-2">
                 <label htmlFor="launcher-cmd" className={LAUNCHER_LABEL}>
                     Command
                 </label>
-                <div className="flex min-h-[38px] flex-wrap items-center gap-[6px] rounded-[8px] border border-edge-mid bg-surface py-[5px] pl-3 pr-[6px] focus-within:border-accent-700">
-                    <span className="font-mono text-[12.5px] font-semibold text-success">›</span>
-                    <input
-                        id="launcher-cmd"
-                        value={startup}
-                        readOnly={resume != null}
-                        onChange={(e) => setStartup(e.target.value)}
-                        placeholder={runtime === "terminal" ? "default shell" : runtimeStartupCommand(runtime)}
-                        style={{
-                            width: `${Math.max(startup.length + 1, runtime === "terminal" && !startup ? 14 : 4)}ch`,
-                        }}
-                        className="bg-transparent font-mono text-[12.5px] text-secondary outline-none"
-                    />
-                    {enabledFlags.map((f) => (
-                        <span
-                            key={f.id}
-                            title={f.desc}
-                            className="flex items-center gap-0.5 rounded-[6px] border border-accent-700 bg-accentbg py-0.5 pl-2 pr-0.5"
-                        >
-                            <span className="font-mono text-[11.5px] font-semibold text-accent-soft">{f.flag}</span>
+                <div className="flex items-center gap-3">
+                    <div className="flex min-h-[38px] min-w-0 flex-1 flex-wrap items-center gap-[6px] rounded-[8px] border border-edge-mid bg-surface py-[5px] pl-3 pr-[6px] focus-within:border-accent-700">
+                        <span className="font-mono text-[12.5px] font-semibold text-success">›</span>
+                        <input
+                            id="launcher-cmd"
+                            value={startup}
+                            readOnly={resume != null}
+                            onChange={(e) => setStartup(e.target.value)}
+                            placeholder={runtime === "terminal" ? "default shell" : runtimeStartupCommand(runtime)}
+                            style={{
+                                width: `${Math.max(startup.length + 1, runtime === "terminal" && !startup ? 14 : 4)}ch`,
+                            }}
+                            className="bg-transparent font-mono text-[12.5px] text-secondary outline-none"
+                        />
+                        {enabledFlags.map((f) => (
+                            <span
+                                key={f.id}
+                                title={f.desc}
+                                className="flex items-center gap-0.5 rounded-[6px] border border-accent-700 bg-accentbg py-0.5 pl-2 pr-0.5"
+                            >
+                                <span className="font-mono text-[11.5px] font-semibold text-accent-soft">{f.flag}</span>
+                                <button
+                                    type="button"
+                                    aria-label={`Remove ${f.flag}`}
+                                    onClick={() => setFlag(f.id, false)}
+                                    className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[4px] text-muted hover:text-primary"
+                                >
+                                    <X size={11} strokeWidth={2.4} />
+                                </button>
+                            </span>
+                        ))}
+                        <div className="flex-1" />
+                        {flagCatalog.length > 0 ? (
                             <button
                                 type="button"
-                                aria-label={`Remove ${f.flag}`}
-                                onClick={() => setFlag(f.id, false)}
-                                className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[4px] text-muted hover:text-primary"
+                                aria-expanded={flagMenuOpen}
+                                onClick={() => setFlagMenuOpen(!flagMenuOpen)}
+                                className={cn(
+                                    "flex cursor-pointer items-center gap-[5px] rounded-[6px] px-2 py-1 text-[11.5px] font-semibold",
+                                    flagMenuOpen
+                                        ? "bg-accentbg text-accent-soft"
+                                        : "text-ink-mid hover:bg-surface-hover hover:text-primary"
+                                )}
                             >
-                                <X size={11} strokeWidth={2.4} />
+                                <Plus size={12} strokeWidth={2.2} />
+                                <span>Flag</span>
                             </button>
-                        </span>
-                    ))}
-                    <div className="flex-1" />
-                    {flagCatalog.length > 0 ? (
-                        <button
-                            type="button"
-                            aria-expanded={flagMenuOpen}
-                            onClick={() => setFlagMenuOpen(!flagMenuOpen)}
-                            className={cn(
-                                "flex cursor-pointer items-center gap-[5px] rounded-[6px] px-2 py-1 text-[11.5px] font-semibold",
-                                flagMenuOpen
-                                    ? "bg-accentbg text-accent-soft"
-                                    : "text-ink-mid hover:bg-surface-hover hover:text-primary"
-                            )}
-                        >
-                            <Plus size={12} strokeWidth={2.2} />
-                            <span>Flag</span>
-                        </button>
+                        ) : null}
+                    </div>
+                    {showWorktree ? (
+                        <>
+                            <button
+                                type="button"
+                                role="switch"
+                                aria-checked={worktreeOn}
+                                onClick={() => globalStore.set(launcherWorktreeAtom, (v) => !v)}
+                                className="flex cursor-pointer items-center gap-[10px]"
+                            >
+                                <span
+                                    className={cn(
+                                        "relative h-[20px] w-[34px] shrink-0 rounded-full transition-colors",
+                                        worktreeOn ? "bg-accent" : "bg-edge-strong"
+                                    )}
+                                >
+                                    <span
+                                        className={cn(
+                                            "absolute top-[3px] h-[14px] w-[14px] rounded-full bg-background transition-all",
+                                            worktreeOn ? "left-[18px]" : "left-[2px]"
+                                        )}
+                                    />
+                                </span>
+                                <span className="whitespace-nowrap text-[12.5px] font-medium text-secondary">
+                                    Isolated git worktree
+                                </span>
+                            </button>
+                            {worktreeOn ? (
+                                <div className="relative flex w-[240px] flex-none items-center gap-2">
+                                    <span className="text-[11.5px] text-muted">on</span>
+                                    <div className="flex min-w-0 flex-1 items-center rounded-[8px] border border-edge-mid bg-surface focus-within:border-accent-700">
+                                        <input
+                                            aria-label="Branch"
+                                            value={effectiveBranch}
+                                            onChange={(e) => globalStore.set(launcherBranchAtom, e.target.value)}
+                                            onFocus={() => setBranchListOpen(true)}
+                                            placeholder={currentBranch || "feat/new-agent"}
+                                            className="min-w-0 flex-1 bg-transparent px-[10px] py-[7px] text-[12.5px] text-secondary outline-none"
+                                        />
+                                        {branches.length > 0 ? (
+                                            <button
+                                                type="button"
+                                                aria-label="Show branches"
+                                                onClick={() => setBranchListOpen(!branchListOpen)}
+                                                className="cursor-pointer px-[10px] py-[7px] text-muted hover:text-primary"
+                                            >
+                                                <ChevronDown size={12} />
+                                            </button>
+                                        ) : null}
+                                    </div>
+                                    <PopoverReveal
+                                        open={branchListOpen && branches.length > 0}
+                                        origin="bottom left"
+                                        className="absolute bottom-full left-[20px] right-0 z-10 mb-1 max-h-[168px] overflow-y-auto rounded border border-edge-mid bg-modalbg py-1 shadow-popover"
+                                    >
+                                        {branches.map((b) => (
+                                            <button
+                                                key={b.name}
+                                                type="button"
+                                                onClick={() => {
+                                                    globalStore.set(launcherBranchAtom, b.name);
+                                                    setBranchListOpen(false);
+                                                }}
+                                                className={cn(
+                                                    "flex w-full cursor-pointer items-center gap-2 px-3 py-[7px] text-left hover:bg-surface-hover",
+                                                    b.name === effectiveBranch ? "text-primary" : "text-secondary"
+                                                )}
+                                            >
+                                                <span
+                                                    className={cn(
+                                                        "h-[6px] w-[6px] shrink-0 rounded-full",
+                                                        b.name === effectiveBranch ? "bg-accent" : "bg-muted"
+                                                    )}
+                                                />
+                                                <span className="flex-1 truncate text-[12px]">{b.name}</span>
+                                                {b.age ? (
+                                                    <span className="shrink-0 text-[10.5px] text-muted">{b.age}</span>
+                                                ) : null}
+                                            </button>
+                                        ))}
+                                    </PopoverReveal>
+                                </div>
+                            ) : null}
+                        </>
                     ) : null}
                 </div>
                 <AnimatePresence>
@@ -399,6 +469,11 @@ export function AgentFields({
                     )}
                 </AnimatePresence>
             </div>
+            {showWorktree && worktreeOn ? (
+                <span className="-mt-1.5 text-[11.5px] text-muted">
+                    {worktreeOutcome({ branch: effectiveBranch, currentBranch, branchNames })}
+                </span>
+            ) : null}
             {home && runtime === "claude" ? (
                 <span data-launcher-ask className="flex items-start gap-1.5 text-[11.5px] leading-normal text-muted">
                     <Lock size={12} strokeWidth={2} className="mt-[2px] shrink-0" />
@@ -415,97 +490,6 @@ export function AgentFields({
                         ? "A plain shell in your home folder. A command typed above runs in it when it opens."
                         : "A plain shell in the project folder. A command typed above runs in it when it opens."}
                 </span>
-            ) : null}
-            {runtimeSupportsWorktree(runtime) && resume == null && !home ? (
-                <div className="flex flex-col gap-[7px]">
-                    <div className="flex min-h-[34px] items-center gap-3">
-                        <button
-                            type="button"
-                            role="switch"
-                            aria-checked={worktreeOn}
-                            onClick={() => globalStore.set(launcherWorktreeAtom, (v) => !v)}
-                            className="flex cursor-pointer items-center gap-[10px]"
-                        >
-                            <span
-                                className={cn(
-                                    "relative h-[20px] w-[34px] shrink-0 rounded-full transition-colors",
-                                    worktreeOn ? "bg-accent" : "bg-edge-strong"
-                                )}
-                            >
-                                <span
-                                    className={cn(
-                                        "absolute top-[3px] h-[14px] w-[14px] rounded-full bg-background transition-all",
-                                        worktreeOn ? "left-[18px]" : "left-[2px]"
-                                    )}
-                                />
-                            </span>
-                            <span className="whitespace-nowrap text-[12.5px] font-medium text-secondary">
-                                Isolated git worktree
-                            </span>
-                        </button>
-                        {worktreeOn ? (
-                            <div className="relative flex min-w-0 flex-1 items-center gap-2">
-                                <span className="text-[11.5px] text-muted">on branch</span>
-                                <div className="flex min-w-0 flex-1 items-center rounded-[8px] border border-edge-mid bg-surface focus-within:border-accent-700">
-                                    <input
-                                        aria-label="Branch"
-                                        value={effectiveBranch}
-                                        onChange={(e) => globalStore.set(launcherBranchAtom, e.target.value)}
-                                        onFocus={() => setBranchListOpen(true)}
-                                        placeholder={currentBranch || "feat/new-agent"}
-                                        className="min-w-0 flex-1 bg-transparent px-[10px] py-[7px] text-[12.5px] text-secondary outline-none"
-                                    />
-                                    {branches.length > 0 ? (
-                                        <button
-                                            type="button"
-                                            aria-label="Show branches"
-                                            onClick={() => setBranchListOpen(!branchListOpen)}
-                                            className="cursor-pointer px-[10px] py-[7px] text-muted hover:text-primary"
-                                        >
-                                            <ChevronDown size={12} />
-                                        </button>
-                                    ) : null}
-                                </div>
-                                <PopoverReveal
-                                    open={branchListOpen && branches.length > 0}
-                                    origin="bottom left"
-                                    className="absolute bottom-full left-[64px] right-0 z-10 mb-1 max-h-[168px] overflow-y-auto rounded border border-edge-mid bg-modalbg py-1 shadow-popover"
-                                >
-                                    {branches.map((b) => (
-                                        <button
-                                            key={b.name}
-                                            type="button"
-                                            onClick={() => {
-                                                globalStore.set(launcherBranchAtom, b.name);
-                                                setBranchListOpen(false);
-                                            }}
-                                            className={cn(
-                                                "flex w-full cursor-pointer items-center gap-2 px-3 py-[7px] text-left hover:bg-surface-hover",
-                                                b.name === effectiveBranch ? "text-primary" : "text-secondary"
-                                            )}
-                                        >
-                                            <span
-                                                className={cn(
-                                                    "h-[6px] w-[6px] shrink-0 rounded-full",
-                                                    b.name === effectiveBranch ? "bg-accent" : "bg-muted"
-                                                )}
-                                            />
-                                            <span className="flex-1 truncate text-[12px]">{b.name}</span>
-                                            {b.age ? (
-                                                <span className="shrink-0 text-[10.5px] text-muted">{b.age}</span>
-                                            ) : null}
-                                        </button>
-                                    ))}
-                                </PopoverReveal>
-                            </div>
-                        ) : null}
-                    </div>
-                    {worktreeOn ? (
-                        <span className="pl-[44px] text-[11.5px] text-muted">
-                            {worktreeOutcome({ branch: effectiveBranch, currentBranch, branchNames })}
-                        </span>
-                    ) : null}
-                </div>
             ) : null}
             {ramWarning ? (
                 <div data-ram-warn className="flex items-center gap-1.5 text-[12px] text-warning">

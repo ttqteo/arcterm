@@ -1,115 +1,172 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The New launcher's Resume list: the picked agent's recent sessions in the picked project, under a first row that
-// starts a new one (docs/superpowers/specs/2026-10-09-launcher-resume-and-images-design.md). Which sessions are offered
-// is launcherresume.ts; the pick is launcherResumeAtom. The rows are one radio group with a roving tab stop, so Tab
-// lands on the picked row and ↑↓ move the pick. Enter bubbles to the dialog, which launches from this zone.
+// The New launcher's Session column: the picked agent's recent sessions in the picked project, under a pinned first row
+// that starts a new one (docs/superpowers/specs/2026-10-09-launcher-resume-and-images-design.md). Which sessions are
+// offered is launcherresume.ts; the pick is launcherResumeAtom. The rows are one radio group with a roving tab stop, so
+// Tab lands on the picked row. It keys as the Project column does (resumeListKey): a digit picks the nth visible row,
+// letters filter, ↑↓ move, ← steps back to Project; Enter bubbles to the dialog, which launches from this zone. The
+// sessions scroll under New session, so a long list never makes the dialog taller.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
-import { useRef, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
 import { formatAge, formatTokens } from "./agentsviewmodel";
 import { stepIndex } from "./launcher";
-import { LAUNCHER_LABEL } from "./launcheragentfields";
+import { filterSessions, resumeListKey, sessionTitle } from "./launcherresume";
+import { ColumnLabel, digitOf, FilterLine, Keycap, rowTone } from "./launcherrows";
 import { launcherResumeAtom } from "./launcherstore";
-
-const UNTITLED = "(untitled session)";
 
 interface ResumeListProps {
     choices: SessionInfo[];
     // null is the "New session" row
     pickedId: string | null;
+    // ← from the column: focus goes back to Project
+    onBack: () => void;
 }
 
-export function ResumeList({ choices, pickedId }: ResumeListProps) {
+export function ResumeList({ choices, pickedId, onBack }: ResumeListProps) {
     const groupRef = useRef<HTMLDivElement>(null);
-    if (choices.length === 0) {
-        return null;
-    }
-    const now = Date.now();
-    // row 0 is "New session", row i + 1 is choices[i]
-    const picked = pickedId == null ? 0 : choices.findIndex((s) => s.id === pickedId) + 1;
-    const pickRow = (row: number) => globalStore.set(launcherResumeAtom, row === 0 ? null : choices[row - 1].id);
+    const [focused, setFocused] = useState(false);
+    const [filter, setFilter] = useState("");
+    const shown = filterSessions(choices, filter);
+    // row 0 is "New session", row i + 1 is shown[i]; -1 is a picked session the filter hides
+    const at = shown.findIndex((s) => s.id === pickedId);
+    const picked = pickedId == null ? 0 : at < 0 ? -1 : at + 1;
+    const rowCount = shown.length + 1;
 
-    const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-        if (e.key !== "ArrowDown" && e.key !== "ArrowUp") {
-            return;
-        }
-        // the dialog's column navigation must not see these
-        e.stopPropagation();
-        e.preventDefault();
-        const next = stepIndex(choices.length + 1, picked, e.key === "ArrowDown" ? 1 : -1);
-        pickRow(next);
-        groupRef.current?.querySelectorAll<HTMLElement>('[role="radio"]')[next]?.focus();
+    // the picked row stays in view as the keys move it down a long list
+    useEffect(() => {
+        groupRef.current?.querySelector('[role="radio"][aria-checked="true"]')?.scrollIntoView({ block: "nearest" });
+    }, [pickedId, filter]);
+
+    const pickRow = (row: number, list = shown) => {
+        globalStore.set(launcherResumeAtom, row === 0 ? null : list[row - 1].id);
+        groupRef.current?.querySelectorAll<HTMLElement>('[role="radio"]')[row]?.focus();
     };
 
-    const rowClass = (on: boolean) =>
-        cn(
-            "flex cursor-pointer items-center gap-[10px] rounded-[7px] px-2.5 py-[7px] outline-none",
-            "focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent-700",
-            on ? "bg-accentbg" : "hover:bg-surface-hover"
+    const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+        const action = resumeListKey(
+            { key: e.key, mod: e.metaKey || e.ctrlKey || e.altKey },
+            { rows: rowCount, filter }
         );
-    const dot = (on: boolean) => (
-        <span className={cn("h-[6px] w-[6px] shrink-0 rounded-full", on ? "bg-accent" : "bg-muted")} />
-    );
+        if (action.kind === "none") {
+            return;
+        }
+        // the dialog's own keys must not see these; a handled Escape (a filter cleared) must not close it
+        e.stopPropagation();
+        e.preventDefault();
+        switch (action.kind) {
+            case "pick":
+                pickRow(action.index);
+                return;
+            case "move":
+                pickRow(stepIndex(rowCount, picked < 0 ? 0 : picked, action.delta));
+                return;
+            case "back":
+                onBack();
+                return;
+            case "filter": {
+                setFilter(action.next);
+                // a pick the filter hides moves to the first match; with no match it stays, as the Project column's does
+                const next = filterSessions(choices, action.next);
+                if (pickedId != null && next.length > 0 && !next.some((s) => s.id === pickedId)) {
+                    globalStore.set(launcherResumeAtom, next[0].id);
+                }
+                return;
+            }
+        }
+    };
+
+    // a list narrowed by a query you can no longer see reads as sessions gone missing
+    const onBlur = (e: FocusEvent<HTMLDivElement>) => {
+        if (!groupRef.current?.contains(e.relatedTarget as Node | null)) {
+            setFocused(false);
+            setFilter("");
+        }
+    };
+
+    const now = Date.now();
+    let hint = `${choices.length} · newest first`;
+    if (focused) {
+        hint = filter === "" ? `type to filter · 1–${Math.min(9, rowCount)}` : "";
+    }
+    const newOn = picked === 0;
 
     return (
-        <div className="flex min-w-0 flex-col gap-2">
-            <span id="launcher-resume-label" className={LAUNCHER_LABEL}>
-                Resume
+        <div className="flex min-h-0 flex-1 flex-col">
+            <ColumnLabel label="Session" hint={hint} focused={focused} />
+            <span id="launcher-resume-label" className="sr-only">
+                Session
             </span>
+            {filter !== "" ? (
+                <FilterLine
+                    query={filter}
+                    shown={shown.length}
+                    total={choices.length}
+                    attr="data-launcher-session-filter"
+                />
+            ) : null}
             <div
                 ref={groupRef}
                 role="radiogroup"
                 aria-labelledby="launcher-resume-label"
                 data-launcher-resume
                 onKeyDown={onKeyDown}
-                className="flex max-h-[216px] flex-col gap-px overflow-y-auto rounded-[10px] border border-edge-mid bg-surface p-1"
+                onFocus={() => setFocused(true)}
+                onBlur={onBlur}
+                className="flex min-h-0 flex-1 flex-col gap-px"
             >
                 <div
                     role="radio"
-                    aria-checked={picked === 0}
-                    tabIndex={picked === 0 ? 0 : -1}
+                    aria-checked={newOn}
+                    tabIndex={newOn || picked < 0 ? 0 : -1}
                     data-resume-new
                     onClick={() => pickRow(0)}
-                    className={rowClass(picked === 0)}
+                    className={cn(rowTone(newOn, focused), "shrink-0 gap-[10px] py-2 outline-none")}
                 >
-                    {dot(picked === 0)}
+                    <Keycap k="1" lit={focused} />
                     <span
-                        className={cn(
-                            "text-[12.5px] font-semibold",
-                            picked === 0 ? "text-primary" : "text-muted-foreground"
-                        )}
+                        className={cn("text-[12.5px] font-semibold", newOn ? "text-primary" : "text-muted-foreground")}
                     >
                         New session
                     </span>
                 </div>
-                {choices.map((s, i) => {
-                    const on = picked === i + 1;
-                    return (
-                        <div
-                            key={s.id}
-                            role="radio"
-                            aria-checked={on}
-                            tabIndex={on ? 0 : -1}
-                            data-resume-id={s.id}
-                            onClick={() => pickRow(i + 1)}
-                            className={rowClass(on)}
-                        >
-                            {dot(on)}
-                            <span className="flex min-w-0 flex-1 flex-col gap-px">
-                                <span className="truncate text-[12.5px] font-semibold text-primary">
-                                    {s.task || UNTITLED}
+                <div className="flex min-h-0 flex-1 flex-col gap-px overflow-y-auto">
+                    {shown.map((s, i) => {
+                        const on = picked === i + 1;
+                        return (
+                            <div
+                                key={s.id}
+                                role="radio"
+                                aria-checked={on}
+                                tabIndex={on ? 0 : -1}
+                                data-resume-id={s.id}
+                                title={`${sessionTitle(s)}${s.branch ? ` · ${s.branch}` : ""}`}
+                                onClick={() => pickRow(i + 1)}
+                                className={cn(rowTone(on, focused), "shrink-0 gap-[10px] py-2 outline-none")}
+                            >
+                                <Keycap k={digitOf(i + 1)} lit={focused} />
+                                <span
+                                    className={cn(
+                                        "min-w-0 truncate text-[12.5px]",
+                                        on ? "font-semibold text-primary" : "text-muted-foreground"
+                                    )}
+                                >
+                                    {sessionTitle(s)}
                                 </span>
-                                <span className="truncate text-[10.5px] text-muted">
-                                    {s.branch || "—"} · {formatAge(now - s.lastactivets)} ·{" "}
-                                    {formatTokens(s.tokenstotal)} tok
+                                <span className="min-w-[64px] flex-1 truncate text-right text-[11px] tabular-nums text-muted">
+                                    {formatAge(now - s.lastactivets)} · {formatTokens(s.tokenstotal)} tok
                                 </span>
-                            </span>
-                        </div>
-                    );
-                })}
+                            </div>
+                        );
+                    })}
+                    {shown.length === 0 && filter !== "" ? (
+                        <span data-launcher-session-nomatch className="px-2 py-1.5 text-[12px] text-muted">
+                            No session matches “{filter}”. Esc clears the filter.
+                        </span>
+                    ) : null}
+                </div>
             </div>
         </div>
     );

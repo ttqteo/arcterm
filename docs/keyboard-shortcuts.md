@@ -59,21 +59,24 @@ Setup and Settings have no `Mod`+number slot — the positions are bound to `SUR
 
 ## The New dialog (New agent, New run, Open a tool)
 
-One dialog starts an agent, a terminal, a run or a tool. It opens with focus on the Start column. The Tool row is the
-last in Start, so the other rows keep their digits.
+One dialog starts an agent, a terminal, a run or a tool. It opens with focus on the Start column. Three columns sit
+side by side: Start, Project, and the pick's own list (an agent's sessions, the tools; a run's model, or its start and
+width). They keep one height: a long Project, Session or Tool list scrolls inside its column. The Tool row is the last
+in Start, so the other rows keep their digits.
 
 | Keys | Action |
 |---|---|
-| `1`…`9` | Pick that row in the focused column (Start or Project) |
+| `1`…`9` | Pick that row in the focused column (Start, Project or Session); in Session `1` is New session |
+| `0` | In the Project column: Home, pinned under the projects |
 | `↑` / `↓` | Move in the focused column |
-| `→` / `←` | From the Start column to the Project column, and back |
-| letters | In the Start column, start typing the task (or a run's goal): focus moves to that box with the letter in it (not with the Tool row picked, which has no task box). In the Project column, filter projects by name; `Backspace` shortens the filter |
-| `a`…`z` | In the Tool list (the third `Tab` stop after Start and Project, with the Tool row picked): pick the nth tool. `↑` / `↓` walk the list, `Enter` opens the tool |
-| `Tab` / `Shift`+`Tab` | Next / previous: Start, Project, each field (the Tool list with the Tool row picked), Cancel, the launch button, and round again |
+| `→` / `←` | Step Start, Project, then the Session or Tool column, and back |
+| letters | In the Start column, start typing the task (or a run's goal): focus moves to that box with the letter in it (not with the Tool row picked, which has no task box). In the Project or Session column, filter it by name; `Backspace` shortens the filter |
+| `a`…`z` | In the Tool column (with the Tool row picked): pick the nth tool. `↑` / `↓` walk the list, `Enter` opens the tool |
+| `Tab` / `Shift`+`Tab` | Next / previous: Start, Project, the Session or Tool column, each field, Cancel, the launch button, and round again |
 | `Enter` | Launch, from a column, the Tool list or a one-line field; in the task or goal box it starts a new line |
-| `Shift`+`Enter` | In the Resume list, on a session: read its transcript on the Agent surface instead of resuming it |
+| `Shift`+`Enter` | With a session picked: open it asleep (or read its transcript, for an agent that cannot sleep) instead of resuming it |
 | `Mod`+`Enter` | Launch, from anywhere in the dialog |
-| `Esc` | Close the open menu or the project filter first, then the dialog. What you typed is kept for the next open |
+| `Esc` | Close the open menu or a column's filter first, then the dialog. What you typed is kept for the next open |
 
 ## Open a tool (`Mod`+`Shift`+`T`)
 

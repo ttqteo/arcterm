@@ -85,11 +85,6 @@ export function primaryLabel(kind: LauncherKind, runtime: Runtime, resuming = fa
     return resuming ? "Resume agent" : runtimeLaunchLabel(runtime);
 }
 
-// What the header's a–z hint says a letter does: starts the Task or Goal box's text, or picks a tool
-export function letterHint(kind: LauncherKind): "task" | "goal" | "tool" {
-    return kind === "tool" ? "tool" : kind === "run" ? "goal" : "task";
-}
-
 export interface FooterInput {
     kind: LauncherKind;
     shape: RunShape;
@@ -272,8 +267,8 @@ export function draftShown(draft: LauncherDraft): boolean {
     return [draft.task, draft.goal, draft.planPath, draft.prototype].some((v) => v.trim() !== "") || draft.images > 0;
 }
 
-// "resume" is the Resume list: it takes ↑↓ itself (launcheragentfields), so only Enter is the dialog's. "tools" is the
-// Tool list a Tool pick shows in the lower area (launchertoolfields): the dialog's third column, picked by letters.
+// "resume" is the Session column: it takes its own digits, arrows and filter (launcherresumelist), so only Enter is the
+// dialog's. "tools" is the Tool column (launchertoolfields), picked by letters.
 export type FocusZone = "start" | "project" | "tools" | "resume" | "textarea" | "input" | "other";
 
 // What an Escape can close before the dialog, innermost first
@@ -282,8 +277,13 @@ export type LauncherInner = "flags" | "branches" | "filter";
 export interface LauncherKeyCtx {
     zone: FocusZone;
     startCount: number;
-    // the visible project rows
+    // the visible project rows, Home not counted: Home is 0, so a project added never moves its digit
     projectCount: number;
+    // Home is offered and matches the filter
+    homeShown: boolean;
+    // the list the third column holds, which → from Project steps into; null when it holds none (a run, a terminal,
+    // an agent in Home)
+    third: "resume" | "tools" | null;
     // the tools in the Tool list; 0 while no Tool is picked
     toolCount: number;
     filter: string;
@@ -309,9 +309,10 @@ export type LauncherKeyAction =
     | { kind: "none" }
     | { kind: "pick-start"; index: number }
     | { kind: "pick-project"; index: number }
+    | { kind: "pick-home" }
     | { kind: "pick-tool"; index: number }
     | { kind: "move"; column: "start" | "project" | "tools"; delta: 1 | -1 }
-    | { kind: "column"; to: "start" | "project" }
+    | { kind: "column"; to: "start" | "project" | "third" }
     | { kind: "filter"; next: string }
     | { kind: "write" }
     | { kind: "launch" }
@@ -354,8 +355,11 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
         // wherever Enter launches.
         return k.shift && ctx.resumePicked ? { kind: "resume-secondary" } : { kind: "launch" };
     }
-    // the Tool list is lettered, not numbered: a letter picks the nth tool and ↑↓ walk it. → and ← are Tab's job here.
+    // the Tool list is lettered, not numbered: a letter picks the nth tool and ↑↓ walk it; ← steps back to Project
     if (zone === "tools") {
+        if (k.key === "ArrowLeft") {
+            return { kind: "column", to: "project" };
+        }
         if (/^[a-z]$/i.test(k.key)) {
             const index = k.key.toLowerCase().charCodeAt(0) - "a".charCodeAt(0);
             return index < ctx.toolCount ? { kind: "pick-tool", index } : NONE;
@@ -367,6 +371,9 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
     if (zone !== "start" && zone !== "project") {
         return NONE;
     }
+    if (k.key === "0") {
+        return zone === "project" && ctx.homeShown ? { kind: "pick-home" } : NONE;
+    }
     if (/^[1-9]$/.test(k.key)) {
         const index = Number(k.key) - 1;
         if (zone === "start") {
@@ -377,9 +384,13 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
     if (k.key === "ArrowDown" || k.key === "ArrowUp") {
         return { kind: "move", column: zone, delta: k.key === "ArrowDown" ? 1 : -1 };
     }
-    // → is the step from Start to Project, ← the step back; the columns sit side by side, so the arrows read as such
+    // → steps Start, Project, then the third column's list; ← steps back. The columns sit side by side, so the arrows
+    // read as such.
     if (k.key === "ArrowRight") {
-        return zone === "start" ? { kind: "column", to: "project" } : NONE;
+        if (zone === "start") {
+            return { kind: "column", to: "project" };
+        }
+        return ctx.third != null ? { kind: "column", to: "third" } : NONE;
     }
     if (k.key === "ArrowLeft") {
         return zone === "project" ? { kind: "column", to: "start" } : NONE;

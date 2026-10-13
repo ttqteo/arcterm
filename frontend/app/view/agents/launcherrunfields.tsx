@@ -1,9 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The New launcher's details for a run row. Quick: the goal and the lead model. Orchestrate: where it starts (a goal
-// or a plan file) and how wide, then the goal or the plan with its preview, then the three route pickers. Every
-// control writes the run launcher's own atoms (runconfigstore), the same ones the Brief's launcher reads.
+// The New launcher's run row. Its third column (RunColumn): the lead model for a Quick run; where an Orchestrate starts
+// (a goal or a plan file) and how wide. Below the columns (RunFields): the goal or the plan with its preview, then an
+// Orchestrate's three route pickers. Every control writes the run launcher's own atoms (runconfigstore), the same ones
+// the Brief's launcher reads.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
@@ -21,6 +22,7 @@ import { planShapeText, planWarnings } from "../orchestrate/dagdigest";
 import { CapacityWarn } from "./capacitywarn";
 import { leadRuntimesAtom } from "./harnessstore";
 import { LAUNCHER_LABEL } from "./launcheragentfields";
+import { ColumnLabel, rowTone } from "./launcherrows";
 import { launcherGoalAtom, launcherPrototypeAtom } from "./launcherstore";
 import { RoutePicker } from "./routepicker";
 import { START_OPTIONS, startNote, type StartFrom } from "./runconfig";
@@ -42,7 +44,7 @@ import {
     stepParallelism,
     workerRouteAtom,
 } from "./runconfigstore";
-import { pickTone, START_LABEL, usePlanPreview, WorkerStepper } from "./runlauncher";
+import { START_LABEL, usePlanPreview, WorkerStepper } from "./runlauncher";
 import { capacityWarnTitle, extraWorkers, overCapacity } from "./workercapacity";
 import { useWorkerCapacity } from "./workercapacitystore";
 
@@ -60,10 +62,10 @@ const MODEL_TONE: Record<PlanModelTone, string> = {
 const FIELD =
     "block field-sizing-content max-h-[240px] w-full resize-none overflow-y-auto rounded-[10px] border border-edge-mid bg-surface px-3 py-[10px] text-[13px] leading-normal text-primary outline-none placeholder:text-muted focus:border-accent-700";
 
-// the Brief launcher's own Start from buttons, side by side on the Workers row
-function StartToggle({ start }: { start: StartFrom }) {
+// where an Orchestrate starts, as two rows of the third column; the note under the goal or the plan says what each does
+function StartRows({ start }: { start: StartFrom }) {
     return (
-        <div role="group" aria-label="Start from" className="flex flex-none gap-1.5">
+        <div role="group" aria-label="Start from" className="flex shrink-0 flex-col gap-px">
             {START_OPTIONS.map((option) => (
                 <button
                     key={option}
@@ -71,8 +73,9 @@ function StartToggle({ start }: { start: StartFrom }) {
                     aria-pressed={start === option}
                     onClick={() => setStart(option)}
                     className={cn(
-                        "cursor-pointer rounded-[7px] border px-3 py-[5px] text-[11.5px] font-semibold",
-                        pickTone(start === option)
+                        rowTone(start === option, false),
+                        "w-full py-2 text-left text-[12.5px]",
+                        start === option ? "font-semibold text-primary" : "text-muted-foreground"
                     )}
                 >
                     {START_LABEL[option]}
@@ -182,14 +185,11 @@ function ModelPick({ label, children }: { label: string; children: ReactNode }) 
     );
 }
 
-function RunModels({ orchestrator }: { orchestrator: boolean }) {
+function LeadPicker() {
     const route = useAtomValue(runRouteAtom);
-    const workerRoute = useAtomValue(workerRouteAtom);
-    const reviewerPicks = useAtomValue(reviewerPicksAtom);
-    const reviewerRoute = useAtomValue(reviewerRouteAtom);
     const openRequest = useAtomValue(routeOpenRequestAtom);
     const leadRuntimes = useAtomValue(leadRuntimesAtom);
-    const lead = (
+    return (
         <RoutePicker
             value={route}
             onChange={setRunRoute}
@@ -199,17 +199,18 @@ function RunModels({ orchestrator }: { orchestrator: boolean }) {
             runtimes={leadRuntimes}
         />
     );
-    if (!orchestrator) {
-        return (
-            <div className="flex items-center gap-2.5">
-                <span className={cn(LAUNCHER_LABEL, "w-16 flex-none")}>Model</span>
-                <div className="min-w-0">{lead}</div>
-            </div>
-        );
-    }
+}
+
+function RunModels() {
+    const workerRoute = useAtomValue(workerRouteAtom);
+    const reviewerPicks = useAtomValue(reviewerPicksAtom);
+    const reviewerRoute = useAtomValue(reviewerRouteAtom);
+    const leadRuntimes = useAtomValue(leadRuntimesAtom);
     return (
         <div className="grid grid-cols-3 gap-2.5">
-            <ModelPick label="Lead">{lead}</ModelPick>
+            <ModelPick label="Lead">
+                <LeadPicker />
+            </ModelPick>
             <ModelPick label="Workers">
                 <RoutePicker
                     value={workerRoute}
@@ -244,45 +245,23 @@ interface RunFieldsProps {
     projectPath: string;
     goalRef: RefObject<HTMLTextAreaElement>;
     planRef: RefObject<HTMLInputElement>;
-    // a Quick run's low-RAM line; an orchestrator warns on the line under its stepper instead
+    // a Quick run's low-RAM line; an orchestrator warns under its stepper, in the third column
     ramWarning: string | null;
 }
 
 export function RunFields({ projectPath, goalRef, planRef, ramWarning }: RunFieldsProps) {
     const shape = useAtomValue(runShapeAtom);
     const start = useAtomValue(startAtom);
-    const parallelism = useAtomValue(parallelismAtom);
     const workerRoute = useAtomValue(workerRouteAtom);
     const runRoute = useAtomValue(runRouteAtom);
     const reviewerPicks = useAtomValue(reviewerPicksAtom);
     const goal = useAtomValue(launcherGoalAtom);
     const prototype = useAtomValue(launcherPrototypeAtom);
-    const cap = useWorkerCapacity();
-    const extra = extraWorkers(parallelism);
     const orchestrator = shape === "orchestrator";
-    const over = overCapacity(cap, extra);
     // a plan start is named by its plan, so it has no goal field
     const planStart = orchestrator && start === "plan";
     return (
         <>
-            {orchestrator ? (
-                <div className="flex items-center gap-3">
-                    <span className={LAUNCHER_LABEL}>Start from</span>
-                    <StartToggle start={start} />
-                    <div className="flex-1" />
-                    <span className="text-[12px] text-ink-mid">Workers at once</span>
-                    <div className="flex items-center gap-1.5">
-                        <WorkerStepper value={parallelism} onStep={stepParallelism} warn={over} />
-                    </div>
-                </div>
-            ) : null}
-            {orchestrator && cap != null && over ? (
-                // the line under the stepper (spec, Orchestrate board): the mark with its reason spelled out
-                <div className="-mt-1.5 flex items-center justify-end gap-1.5 text-[11.5px] text-warning">
-                    <CapacityWarn cap={cap} extra={extra} />
-                    <span>{capacityWarnTitle(cap)}</span>
-                </div>
-            ) : null}
             {planStart ? (
                 <div className="flex flex-col gap-2">
                     <PlanPane
@@ -318,7 +297,7 @@ export function RunFields({ projectPath, goalRef, planRef, ramWarning }: RunFiel
                     ) : null}
                 </div>
             )}
-            <RunModels orchestrator={orchestrator} />
+            {orchestrator ? <RunModels /> : null}
             {orchestrator && prototype !== "" ? (
                 <div data-launcher-prototype className="flex items-center gap-1.5">
                     <span title={prototype} className="min-w-0 truncate text-[11px] text-muted">
@@ -341,5 +320,43 @@ export function RunFields({ projectPath, goalRef, planRef, ramWarning }: RunFiel
                 </div>
             ) : null}
         </>
+    );
+}
+
+// The third column for a run row: a Quick run's lead model; an Orchestrate's start and width, with the capacity line
+// under the stepper (spec, Orchestrate board) spelled out
+export function RunColumn() {
+    const shape = useAtomValue(runShapeAtom);
+    const start = useAtomValue(startAtom);
+    const parallelism = useAtomValue(parallelismAtom);
+    const cap = useWorkerCapacity();
+    const extra = extraWorkers(parallelism);
+    const over = overCapacity(cap, extra);
+    if (shape !== "orchestrator") {
+        return (
+            <div className="flex min-h-0 flex-1 flex-col">
+                <ColumnLabel label="Model" focused={false} />
+                <div className={cn(FULL_WIDTH_PICKER, "px-1")}>
+                    <LeadPicker />
+                </div>
+            </div>
+        );
+    }
+    return (
+        <div className="flex min-h-0 flex-1 flex-col">
+            <ColumnLabel label="Start from" focused={false} />
+            <StartRows start={start} />
+            <div aria-hidden className="mx-2 my-2 h-px shrink-0 bg-border" />
+            <div className="flex shrink-0 items-center gap-2 px-2">
+                <span className={cn(LAUNCHER_LABEL, "flex-1")}>Workers at once</span>
+                <WorkerStepper value={parallelism} onStep={stepParallelism} warn={over} />
+            </div>
+            {cap != null && over ? (
+                <div className="mt-2 flex shrink-0 items-start gap-1.5 px-2 text-[11.5px] leading-[1.45] text-warning">
+                    <CapacityWarn cap={cap} extra={extra} />
+                    <span>{capacityWarnTitle(cap)}</span>
+                </div>
+            ) : null}
+        </div>
     );
 }

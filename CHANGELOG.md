@@ -27,6 +27,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
   or off. All stay on unless you turn one off.
 - The app bar's usage meters keep to Claude's 5-hour and weekly windows: a model's own weekly window (Fable wk) is
   only on the Usage surface now.
+- **The New dialog lists everything in three columns and keeps one height**: Agent, Project, and the pick's own list
+  (an agent's sessions, the tools, a run's model or its start and width). A long project or session list scrolls in
+  its column instead of growing the dialog; type in the Session column to filter it, as in Project, and Home is `0`.
+  It now offers up to 30 recent sessions to resume, not 5.
 
 ## 0.15.11 — 2026-10-13
 
