@@ -17,6 +17,7 @@ import {
     waitingTarget,
     rollUpStatus,
     sessionRunORef,
+    sessionTitle,
     subagentExpanded,
     visibleSubagents,
     toggleCollapsed,
@@ -261,6 +262,20 @@ describe("buildSessionViewModel — title (task summary)", () => {
             input({ tabId: "t1", agent: "claude", title: "Refactor auth", cwd: "/src/CorrelationEngine", pinned: true }),
         ]);
         expect(vm.pinned[0].label).toBe("Refactor auth · CorrelationEngine");
+    });
+});
+
+describe("sessionTitle", () => {
+    it("takes the live status's ai-title first", () => {
+        expect(sessionTitle("Live title", "Scanned title")).toBe("Live title");
+    });
+    it("falls back to the archive's title when the status has none (a sleeping agent)", () => {
+        expect(sessionTitle(undefined, "Scanned title")).toBe("Scanned title");
+        expect(sessionTitle("", "Scanned title")).toBe("Scanned title");
+    });
+    it("is undefined when neither has one, so the row falls back to its project", () => {
+        expect(sessionTitle(undefined, undefined)).toBeUndefined();
+        expect(sessionTitle("", "")).toBeUndefined();
     });
 });
 

@@ -150,6 +150,13 @@ export function labelChanged(draft: string, current: string | undefined): boolea
     return draft.trim() !== (current ?? "").trim();
 }
 
+/** Pure: a session's auto title. The live status carries the ai-title its hook read; a sleeping agent has no process to
+ *  report one (its exit publishes a bare idle, and a restart leaves it no status at all), and codex reports none, so the
+ *  title the Conversations archive scanned from the same transcript stands in. */
+export function sessionTitle(statusTitle: string | undefined, scannedTask: string | undefined): string | undefined {
+    return statusTitle || scannedTask || undefined;
+}
+
 function rowLabel(s: SessionInput, includeService: boolean): string {
     const custom = s.customLabel && s.customLabel.length > 0 ? s.customLabel : undefined;
     const title = s.title && s.title.trim().length > 0 ? s.title.trim() : undefined;

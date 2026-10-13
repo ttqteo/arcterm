@@ -27,6 +27,12 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (sleeping agent title)**
+
+- [ ] (arcterm) **A sleeping agent's row keeps its title.** Open the Agent surface with agents asleep (or put one to
+  sleep from its row's menu): each row reads the conversation's title, as its Conversation History row does, not just
+  the project name ("portal"). Holds after an arcterm restart too, once the Conversations scan has loaded.
+
 **2026-10-13 (Alt+Tab grows Sprout back; Jarvis card link)**
 
 - [ ] (arcterm) **Alt+Tab grows any fold back.** Fold with the Sprout button (not Fold when you leave), click into

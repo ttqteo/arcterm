@@ -15,6 +15,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { fireAndForget } from "@/util/util";
 import { atom } from "jotai";
 import { showTerminal } from "../agentcenter";
+import { sleepingStatus } from "../agentsleep";
 import type { AgentsViewModel } from "../agents";
 import type { PendingLaunch } from "../agentsviewmodel";
 import { getAgentStatusAtom, getSubagentExpandAtom } from "./agentstatusstore";
@@ -27,6 +28,7 @@ import {
     findSessionTermBlock,
     reorderWithinGroup,
     sessionRunORef,
+    sessionTitle,
     subagentExpanded,
     type ResolvedSessionBlock,
     type SessionInput,
@@ -85,7 +87,9 @@ export const sessionSidebarViewModelAtom = atom<SidebarViewModel>((get) => {
         let termBlockOref: string | undefined;
         if (termBlockId) {
             termBlockOref = WOS.makeORef("block", termBlockId);
-            const agentStatus = get(getAgentStatusAtom(termBlockOref));
+            // a sleeping agent's block meta stands in for the status it has no process to report (sleepingStatus): its
+            // transcript path is what finds its title in the archive
+            const agentStatus = sleepingStatus(get(getAgentStatusAtom(termBlockOref)), termBlock?.meta, termBlockOref);
             if (agentStatus?.state) {
                 status = agentStatus.state as SessionStatus;
                 detail = agentStatus.detail;
@@ -102,7 +106,7 @@ export const sessionSidebarViewModelAtom = atom<SidebarViewModel>((get) => {
                 tab?.meta?.["session:agent"],
                 agentStatus?.transcriptpath
             );
-            title = agentStatus?.title || (runtime === "codex" ? scanned?.task : undefined);
+            title = sessionTitle(agentStatus?.title, scanned?.task);
             subagentsExpanded = subagentExpanded(subagents, get(getSubagentExpandAtom(termBlockOref)));
         }
 

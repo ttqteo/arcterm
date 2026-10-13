@@ -19,6 +19,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - **A long "Open …" link in the Jarvis card no longer runs off its edge**: it ends in "…", and hovering it shows the
   whole title.
+- **A sleeping agent keeps its title in the Agent sidebar** instead of showing only its project name: the row reads the
+  conversation's title from Conversation History while the agent has no process to report it.
 
 ## 0.15.11 — 2026-10-13
 
