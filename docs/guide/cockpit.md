@@ -253,7 +253,7 @@ Biểu tượng cảnh báo ở chế độ Tokens đánh dấu agent đốt nhi
 
 Trên Windows, arcterm đọc được từng tiến trình mà agent khởi chạy, nên panel gọn hơn và có thêm CPU:
 
-- **Đầu panel một dòng:** `6.2 GB free · CPU 14% · 5h 62% · Usage →`. Rê chuột lên "free" để xem RAM của arcterm so với app khác. CPU chuyển vàng kèm `high CPU` / `high memory` khi Arc dùng nhiều, và chip RAM trên app bar cũng chuyển vàng kèm ⚠.
+- **Đầu panel một dòng:** `6.2 GB free · arcterm 5.9 GB · 4% CPU · 5h 62% · Usage →`. `arcterm` là RAM mà arcterm giữ (tiến trình của nó cộng mọi agent) và CPU nó dùng, tính trên tổng mọi nhân như Task Manager (4% trên máy 12 luồng ≈ nửa nhân); CPU hiện sau 2–4 giây đầu. Rê chuột lên "free" để xem RAM của app khác và tổng RAM. Phần arcterm chuyển vàng kèm `high CPU` / `high memory` khi Arc dùng nhiều, và chip RAM trên app bar cũng chuyển vàng kèm ⚠.
 - **Mỗi agent một dòng:** tên, rồi lệnh nặng nhất nó đang chạy bằng chữ mờ (`git log --all -p`, đã bỏ các lớp shell bọc ngoài), CPU, RAM và chi phí 10 phút. Model và số token nằm trong tooltip của dòng. CPU ghi `–` trong 2–4 giây đầu, tới khi có mẫu thứ hai.
 - **Nút ⋯ cuối dòng** gom mọi thao tác: **Kill** lệnh đang chạy (hỏi trước; agent vẫn chạy tiếp, kết quả ghi ngay dưới dòng), **Switch to Sonnet**, **Sleep**, **Stop agent** / **Stop worker**. Agent đang ngủ có nút **Wake**.
 - Không có phần *arcterm* ở chân panel.

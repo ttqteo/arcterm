@@ -118,7 +118,7 @@ does not, say what you saw and it becomes a bug row under Actionable.
   dismiss it in Claude's dialog: the cockpit card goes away and the agent reads idle. Then answer one from the card: the
   dialog closes. `claude/arc-mod/hooks/register.ts` (ask kept ours; cache-miss band added from the fork).
 - [ ] (arcterm) **Consumers with CPU and commands (Windows).** Have an agent run something long (`git log --all -p` in a
-  big repo), click the app bar's RAM chip: the panel reads `N GB free · CPU N% · 5h N%` on one line; the agent's row
+  big repo), click the app bar's RAM chip: the panel reads `N GB free · arcterm N GB · N% CPU · 5h N%` on one line; the agent's row
   names `git log --all -p` after its name with its CPU, RAM and 10-minute spend (CPU reads – for the first 2-4 s);
   ⋯ → Kill git log --all -p asks, then kills it and notes "Killed git log --all -p." under the row while the agent
   keeps running. No Resource Manager popover, no footer readout. `frontend/app/view/agents/consumerspanel.tsx`,

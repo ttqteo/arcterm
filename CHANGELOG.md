@@ -29,9 +29,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
   Float, or a smaller window); the taskbar button does the same. On macOS ⌘Tab still gives back the size it folded from.
 - **The Resource Manager is now part of the Consumers panel.** On Windows the app bar's RAM chip opens Consumers again,
   one line per agent: its CPU, RAM, spend of the last 10 minutes, and the heaviest command it runs
-  (`git log --all -p`), with Kill, Switch to Sonnet, Sleep and Stop in one ⋯ menu; the header reads free RAM, Arc's
-  CPU and the 5-hour quota on one line. The separate popover and `Mod`+`G` `m` are gone. On macOS the panel is
-  unchanged.
+  (`git log --all -p`), with Kill, Switch to Sonnet, Sleep and Stop in one ⋯ menu; the header reads free RAM, what
+  arcterm itself holds and its CPU share, and the 5-hour quota on one line (`6.2 GB free · arcterm 5.9 GB · 4% CPU`).
+  The separate popover and `Mod`+`G` `m` are gone. On macOS the panel is unchanged.
 - **A sleeping agent reads apart from an idle one in the sidebar**: a moon takes its ✳ at the head of the row and the
   row fades, its age is how long it has slept. **Background commands an agent left running** show as a still,
   grey terminal icon with their count instead of a pulsing green dot, which read as the agent itself still working.

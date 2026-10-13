@@ -29786,20 +29786,21 @@ const consumersPopover = {
         await h.ev(`window.__resmonFixture?.set(${JSON.stringify(consumersResmon(false))})`);
         await settle(200);
         const compactUp = await openFromChip();
-        await polishWaitFor(h, `!!document.querySelector("[data-consumers-cpu]") && !!document.querySelector("[data-consumer-command]")`, 3000);
+        await polishWaitFor(h, `!!document.querySelector("[data-consumers-arc]") && !!document.querySelector("[data-consumer-command]")`, 3000);
         await settle(400);
         const first = await h.ev(`({
             cpu: ${consumersCells("[data-consumer-cpu]")},
             command: ${consumersCells("[data-consumer-command]")},
-            header: document.querySelector("[data-consumers-cpu]")?.textContent.trim() ?? null,
+            arc: document.querySelector("[data-consumers-arc]")?.textContent.replace(/\s+/g, " ").trim() ?? null,
             own: document.querySelectorAll("[data-consumers-own]").length,
             hoverButtons: document.querySelectorAll("[data-consumer-sonnet], [data-consumer-sleep], [data-consumer-stop]").length,
         })`);
         await h.shot("cdp-shots/consumers-compact-first.png");
         rec(
-            "20. compact (Windows), before the second sample: every CPU reads –, mine names git log --all -p, no arcterm section, actions in the ⋯ menu",
+            "20. compact (Windows), before the second sample: every CPU reads –, the header names arcterm's RAM (its CPU not yet), mine names git log --all -p, no arcterm section, actions in the ⋯ menu",
             compactUp && Object.values(first.cpu).every((c) => c === "–") && first.command["fx-consumers-mine"] === "git log --all -p" &&
-                first.command["fx-consumers-worker"] === "node vitest run frontend/app/view/agents" && first.header === "CPU –" &&
+                first.command["fx-consumers-worker"] === "node vitest run frontend/app/view/agents" && /^arcterm \d/.test(first.arc ?? "") &&
+                !(first.arc ?? "").includes("CPU") &&
                 first.own === 0 && first.hoverButtons === 0,
             JSON.stringify(first)
         );
@@ -29808,12 +29809,13 @@ const consumersPopover = {
         const filled = await polishWaitFor(h, `${consumersCells("[data-consumer-cpu]")}["fx-consumers-mine"] === "4.1%"`, 3000);
         const ready = await h.ev(`({
             cpu: ${consumersCells("[data-consumer-cpu]")},
-            header: document.querySelector("[data-consumers-cpu]")?.textContent.trim() ?? null,
+            arc: document.querySelector("[data-consumers-arc]")?.textContent.replace(/\s+/g, " ").trim() ?? null,
         })`);
         await h.shot("cdp-shots/consumers-compact.png");
         rec(
-            "21. the second sample fills each agent's CPU (pi has no job: –) and Arc's in the header",
-            filled && ready.cpu["fx-consumers-worker"] === "14.6%" && ready.cpu["fx-consumers-pi"] === "–" && ready.header === "CPU 14%",
+            "21. the second sample fills each agent's CPU (pi has no job: –) and arcterm's beside its RAM in the header",
+            filled && ready.cpu["fx-consumers-worker"] === "14.6%" && ready.cpu["fx-consumers-pi"] === "–" &&
+                /^arcterm \S+ \S+ · 14% CPU$/.test(ready.arc ?? ""),
             JSON.stringify(ready)
         );
 
@@ -29829,7 +29831,7 @@ const consumersPopover = {
         const killText = `Kill git log --all -p and what it started? ${CONSUMERS_MINE} keeps running.`;
         const asked = await polishWaitFor(h, `!!${consumersDialogExpr(killText)}`, 3000);
         await h.ev(`window.__resmonFixture?.killOutcome({ outcome: "killed", killed: 3 })`);
-        await h.ev(`[...(${consumersDialogExpr(killText)}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Kill")?.click()`);
+        await h.ev(`[...(${consumersDialogExpr(killText)}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim().startsWith("Kill"))?.click()`);
         const noted = await polishWaitFor(h, `${consumersRowExpr("fx-consumers-mine")}?.parentElement?.querySelector("[data-consumer-note]")?.textContent.trim() === "Killed git log --all -p."`, 3000);
         await h.shot("cdp-shots/consumers-compact-killed.png");
         rec(

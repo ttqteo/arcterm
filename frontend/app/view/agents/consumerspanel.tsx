@@ -510,7 +510,16 @@ function CompactRow({ row, model, ready }: { row: ConsumerRow; model: AgentsView
                             data-consumer-menu
                             aria-label={`Actions for ${row.name}`}
                             aria-haspopup="menu"
-                            onClick={(e) => ContextMenuModel.getInstance().showContextMenu(rowMenu(row, model), e)}
+                            onClick={(e) => {
+                                // under the button, not at the pointer: Enter or Space on it has no pointer position
+                                const r = e.currentTarget.getBoundingClientRect();
+                                ContextMenuModel.getInstance().showContextMenu(rowMenu(row, model), {
+                                    preventDefault: () => e.preventDefault(),
+                                    stopPropagation: () => e.stopPropagation(),
+                                    clientX: r.left,
+                                    clientY: r.bottom + 2,
+                                } as React.MouseEvent);
+                            }}
                             className={ICON_ACTION}
                         >
                             <Ellipsis size={14} />
@@ -566,13 +575,17 @@ function CompactHeader({
 }) {
     const bar = view ? ramBar(view) : null;
     const busy = snap?.ready ? busyWords(snap) : null;
-    const split =
-        view && bar
-            ? `arcterm ${view.appBytes === undefined ? "—" : ramLabel(view.appBytes)} · other apps ${ramLabel(bar.otherBytes)} · ${formatGB(view.totalBytes)} in all`
-            : undefined;
     return (
         <div className="flex items-baseline gap-3.5 border-b border-border px-3 py-2.5 text-[12px] text-muted">
-            <span data-consumers-header title={split} className="flex-1">
+            <span
+                data-consumers-header
+                title={
+                    view && bar
+                        ? `other apps ${ramLabel(bar.otherBytes)} · ${formatGB(view.totalBytes)} in all`
+                        : undefined
+                }
+                className="flex-1"
+            >
                 {view ? (
                     <>
                         <span className="text-[13px] font-semibold text-primary">{formatGB(view.freeBytes)}</span> free
@@ -581,15 +594,29 @@ function CompactHeader({
                     "Reading…"
                 )}
             </span>
+            {/* what arcterm itself holds: its own processes and every agent, and their CPU as a share of all cores, as
+                Task Manager counts it; the CPU joins once a second sample gives it */}
             <span
-                data-consumers-cpu
-                title="What arcterm and its agents use of all cores"
+                data-consumers-arc
+                title="What arcterm and its agents use: memory, and CPU as a share of all cores (as Task Manager counts it)"
                 className={busy ? "text-warning-soft" : undefined}
             >
-                CPU{" "}
+                arcterm{" "}
                 <span className={cn("tabular-nums", busy ? "font-semibold text-warning" : "text-secondary")}>
-                    {snap?.ready ? fmtCpu(snap.cpu, 0) : "–"}
+                    {view?.appBytes === undefined ? "—" : ramLabel(view.appBytes)}
                 </span>
+                {snap?.ready ? (
+                    <>
+                        {" · "}
+                        <span
+                            data-consumers-cpu
+                            className={cn("tabular-nums", busy ? "font-semibold text-warning" : "text-secondary")}
+                        >
+                            {fmtCpu(snap.cpu, 0)}
+                        </span>{" "}
+                        CPU
+                    </>
+                ) : null}
                 {busy ? ` · ${busy}` : null}
             </span>
             {fiveHour != null ? (
