@@ -37007,6 +37007,105 @@ const toolsWorktreeGone = {
     },
 };
 
+// --- What's new (frontend/app/cockpit/whatsnewsheet.tsx) -------------------------------------------------------------
+// The footer's version opens the release notes read from CHANGELOG.md. An older seen version makes the build read as just
+// updated: the version says What's new until the notes open, they list the releases since, and Try it lands on its feature.
+const WN_SEEN_KEY = "whatsnew.seen";
+const WN_OLD_SEEN = "0.15.0";
+
+const whatsNew = {
+    name: "whats-new",
+    surface: "cockpit",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            ctx.prevSeen = await h.ev(`localStorage.getItem(${JSON.stringify(WN_SEEN_KEY)})`);
+            // atomWithStorage keeps the value as JSON, and reads it once at boot
+            await h.ev(`localStorage.setItem(${JSON.stringify(WN_SEEN_KEY)}, ${JSON.stringify(JSON.stringify(WN_OLD_SEEN))})`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.arrangeError) return [{ step: "arrange", ok: false, detail: ctx.arrangeError }];
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+        await h.goto("cockpit");
+        await polishWaitFor(h, `!!document.querySelector("[data-app-version]")`, 8000);
+        const footer = await h.ev(`(() => {
+            const v = document.querySelector("[data-app-version]");
+            const help = document.querySelector('button[aria-label="Keyboard shortcuts"]');
+            return {
+                text: v?.textContent ?? null,
+                font: v ? getComputedStyle(v).fontFamily : null,
+                helpIcon: !!help?.querySelector("svg"),
+                helpText: (help?.textContent ?? "").trim(),
+            };
+        })()`);
+        rec(
+            "1. after an update the footer's version reads What's new, in the UI font",
+            footer.text?.includes("What's new") && !/mono/i.test(footer.font ?? ""),
+            JSON.stringify(footer)
+        );
+        rec("2. the shortcuts button is a round help icon, not a boxed ?", footer.helpIcon && footer.helpText === "", JSON.stringify(footer));
+        await h.shot("cdp-shots/whats-new-1-footer.png");
+
+        await h.ev(`document.querySelector("[data-app-version]").click()`);
+        await polishWaitFor(h, `!!document.querySelector("[data-whats-new] [data-release]")`, 8000);
+        const sheet = await h.ev(`(() => {
+            const rs = [...document.querySelectorAll("[data-whats-new] [data-release]")];
+            return {
+                releases: rs.map((r) => r.dataset.release),
+                marked: rs.filter((r) => [...r.querySelectorAll("span")].some((s) => s.textContent === "New")).length,
+                tries: [...document.querySelectorAll("[data-whats-new-try]")].map((b) => b.dataset.whatsNewTry),
+                version: document.querySelector("[data-app-version]")?.textContent ?? null,
+            };
+        })()`);
+        rec(
+            "3. the notes list every release since the seen one, each marked New, with Try it buttons",
+            sheet.releases.length > 1 && !sheet.releases.includes(WN_OLD_SEEN) && sheet.marked === sheet.releases.length && sheet.tries.length > 0,
+            JSON.stringify({ ...sheet, tries: sheet.tries.length })
+        );
+        rec("4. opening the notes takes What's new off the footer", sheet.version != null && !sheet.version.includes("What's new"), sheet.version);
+        await h.shot("cdp-shots/whats-new-2-sheet.png");
+
+        // headlines first: an entry is its bold lead until it is clicked open
+        const ENTRY = `document.querySelector('[data-whats-new] li button[aria-expanded]')`;
+        const before = await h.ev(`(() => { const b = ${ENTRY}; return b ? { open: b.getAttribute("aria-expanded"), len: b.textContent.length } : null })()`);
+        await h.ev(`${ENTRY}.click()`);
+        await briefNap(200);
+        const after = await h.ev(`(() => { const b = ${ENTRY}; return { open: b.getAttribute("aria-expanded"), len: b.textContent.length } })()`);
+        rec(
+            "4b. an entry shows only its headline until clicked, then the whole note",
+            before?.open === "false" && after.open === "true" && after.len > before.len,
+            JSON.stringify({ before, after })
+        );
+        await h.shot("cdp-shots/whats-new-2b-opened.png");
+
+        const hasUsage = await h.ev(`!!document.querySelector('[data-whats-new-try="go:usage"]')`);
+        if (!hasUsage) {
+            rec("5. Try it on a Usage note goes to Usage and closes the notes", false, "no go:usage note in the releases shown");
+            return steps;
+        }
+        await h.ev(`document.querySelector('[data-whats-new-try="go:usage"]').click()`);
+        await polishWaitFor(h, `!document.querySelector("[data-whats-new]")`, 4000);
+        const landed = { surface: await h.activeSurfaceLabel(), open: await h.ev(`!!document.querySelector("[data-whats-new]")`) };
+        rec("5. Try it on a Usage note goes to Usage and closes the notes", landed.surface === SURFACE_LABEL.usage && !landed.open, JSON.stringify(landed));
+        await h.shot("cdp-shots/whats-new-3-tried.png");
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await h.ev(
+            ctx.prevSeen == null
+                ? `localStorage.removeItem(${JSON.stringify(WN_SEEN_KEY)})`
+                : `localStorage.setItem(${JSON.stringify(WN_SEEN_KEY)}, ${JSON.stringify(ctx.prevSeen)})`
+        );
+        await h.goto("cockpit");
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -37136,4 +37235,5 @@ export const SCENARIOS = [
     toolsPicker,
     toolsLauncher,
     toolsWorktreeGone,
+    whatsNew,
 ];

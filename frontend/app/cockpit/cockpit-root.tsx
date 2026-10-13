@@ -48,6 +48,7 @@ import {
     type HintEvent,
 } from "./digithints";
 import { ShortcutsCheatSheet } from "./shortcuts-cheatsheet";
+import { WhatsNewSheet } from "./whatsnewsheet";
 import { SproutMini } from "./sprout-mini";
 import { makeSyntheticNodeModel } from "./synthetic-node-model";
 import { FloatLedge } from "./float-ledge";
@@ -207,6 +208,7 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
                 <NewInitiativeHost model={model} />
                 <CommandPalette model={model} />
                 <ShortcutsCheatSheet model={model} />
+                <WhatsNewSheet model={model} />
                 <ModalsRenderer />
                 <ContextMenuHost />
                 <NotificationToasts />

@@ -8,6 +8,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
+The app reads this file for What's new (the version at the bottom right). A line about something you can open may end
+with `<!-- try: <id> -->`, the id of a global keybinding (`buildGlobalBindings` in
+`frontend/app/store/keybindings/bindings.ts`, such as `go:usage` or `open-tool`): its note gets a Try it button that
+runs it. `whatsnew.test.ts` fails on an id that is gone.
+
 ## Unreleased
 
 ### Added
@@ -17,6 +22,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
   closed agents' conversations stay under Conversations. A run's lead and workers still close with their run.
 - **Pick one project's sleeping agents in the Consumers panel**: when the agents asleep come from more than one
   project, Sleeping lists them under a head per project, with a tick that picks just that project's.
+- **What's new**: after an update, the version at the bottom right reads What's new, with a dot, until you open it.
+  Click the version any time for the latest release notes; **Try it** on a note takes you to that feature. The
+  shortcuts button beside it is now a round help icon.
 
 ### Changed
 
@@ -49,36 +57,36 @@ Add one line in the same commit as any change a user would notice, under `Added`
   type (`2h`, `30m`, `14:30`). While it holds, the card says until when, with Resume to end it.
 - **The New agent dialog says which Claude account a Claude Code launch runs on** ("· Claude: Max 2", or your
   /login email for Default), once you have added a token account in Settings → Agents → Claude account. With only
-  /login, the footer is unchanged.
+  /login, the footer is unchanged. <!-- try: new-agent -->
 
 - **A library of terminal tools (lazygit, yazi, btop and more) that opens in the right folder**: Setup → Tools lists
   nine built-in tools and any of your own, shows which are installed, and installs one with winget or brew in a
   terminal you can watch. **Open a tool** (`Ctrl+Shift+T`, the agent header's Tool button, the tool button on a
   project folder, or Search) opens one in the focused agent's folder, and the New dialog's Tool row opens one in a
-  project's root.
+  project's root. <!-- try: open-tool -->
 - **Resource Manager** (from the kaeltran16 fork): the footer shows arcterm's CPU and RAM; click it, or `Mod`+`G` `m`,
   for a popover of every process arcterm and its agents started, grouped by agent, with `x` to kill a runaway process
   and its children (asks first, never the agent itself).
 - **Mark files reviewed in the Diff surface's log**: a check at each file's right end, `v` or **Mark reviewed** in the
-  diff header to mark the open file and step to the next unreviewed one, and an *n/m reviewed* bar over the list.
+  diff header to mark the open file and step to the next unreviewed one, and an *n/m reviewed* bar over the list. <!-- try: go:files -->
 - **Notes in the palette**: the palette's Notes scope lists, previews, copies, edits and deletes your notes, and
-  `wsh note add` lets an agent write one.
+  `wsh note add` lets an agent write one. <!-- try: go:palette -->
 - **A run's final stage has its own row**: a Final verification row under the run in the agent list, with the step
   pipeline, the running command and End final stage, and the stage as the last node of the run's DAG.
 - **A missed prompt cache is named**: when a Claude turn re-billed a cache miss, a line above Claude's prompt says
   how much, and arcterm shows it as a notice.
 - A new waiting item flashes arcterm's taskbar button while arcterm is in the background.
 - A finished orchestrator run takes one more round for the leftovers inside its goal before it completes.
-- Spider-Man as a third Jarvis character (Settings → Appearance → Character): the Homecoming suit at work, Peter Parker at rest. He walks the footer side-on, thwips when he speaks, hangs from a strand when you drag him and rappels down when you let go, now and then crawls along under the app bar and hangs upside down until your cursor comes near, web-swings out and back when the window folds, and folded sits on a rooftop whose windows light up for each running agent, with his web and the count of agents at work beside it.
+- Spider-Man as a third Jarvis character (Settings → Appearance → Character): the Homecoming suit at work, Peter Parker at rest. He walks the footer side-on, thwips when he speaks, hangs from a strand when you drag him and rappels down when you let go, now and then crawls along under the app bar and hangs upside down until your cursor comes near, web-swings out and back when the window folds, and folded sits on a rooftop whose windows light up for each running agent, with his web and the count of agents at work beside it. <!-- try: go:settings -->
 - A Spider theme (Settings → Appearance → Theme): Claude's colours with the suit's soft blue as the accent and its red
   in the spider decor, a spider in place of the arcterm logo, a small spider that drops on its thread over the agent list and
   senses an agent asking you, another hanging over the empty Agent screen, and a web in the top-left corner behind
   the sidebar's icons. Picking Spider-Man as Jarvis asks whether to switch to it, and as Jarvis he now and then says a
   line from his films.
 - **Your design canvases are back after a restart**: the palette (search “canvas”) lists the canvases in the
-  selected agent’s project, and opening one shows it on that agent.
+  selected agent’s project, and opening one shows it on that agent. <!-- try: go:palette -->
 - **Usage → Insights answers in English or Vietnamese**: an EN / VI switch beside Analyze picks the language, and
-  re-runs an analysis that is on screen in the other one.
+  re-runs an analysis that is on screen in the other one. <!-- try: go:usage -->
 
 ### Changed
 
@@ -93,7 +101,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
   and the rail's Background tasks list them; Close still waits for them), its canvas is a grid icon beside its name,
   Close is a green check alone, and the Later bookmark is grey instead of yellow.
 - **Choose what an agent row shows**: Settings → Appearance → Agent sidebar turns its model, branch, tokens and age on
-  or off. All stay on unless you turn one off.
+  or off. All stay on unless you turn one off. <!-- try: go:settings -->
 - **A split no longer moves anything in the sidebar.** Its agents and terminals keep their rows in their own folders,
   each marked with a split icon, so the row you click stays under the pointer (Remove from split and End split are on
   the row's menu). Moving between a split's cells keeps the agent's header and details panel, so the panes no longer
@@ -129,7 +137,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - **Usage → Insights ranks what to change by what it would save**: each fix (long context, oversized reads, noisy
   Bash output, Opus on clear work, cold resumes) shows at most how much of the window's spend it recovers, the tabs
   behind it open with a click, and a General tips row holds advice your numbers do not measure. Re-analyze once to
-  get the new card.
+  get the new card. <!-- try: go:usage -->
 - **Terminals sit with their project's agents in the sidebar and open in the centre**: the Active and Terminals
   sections are one tree, a folder per project with its agents, then its terminals and tools. Picking a terminal (in
   the tree, with `j` / `k`, `Ctrl+Tab` or Search) shows it in the centre, and a quick `Ctrl+Tab` goes back to the
@@ -180,7 +188,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
   room to type in.
 - **Usage → Analyze now sees oversized tool results**: whole-file reads and long command output (over 20k characters)
   are counted per tool and per tab, and its advice names concrete fixes such as reading a file by range, making a
-  command print only failures, or compacting before you step away.
+  command print only failures, or compacting before you step away. <!-- try: go:usage -->
 
 ### Fixed
 
@@ -236,7 +244,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
 ### Added
 
 - Jarvis: a **New run** button in the header, **Work on this chunk** in the chunk panel, and ideas you jot down
-  inline.
+  inline. <!-- try: go:jarvis -->
 - **Type straight into the task in the New dialog**: with focus on the Start column, a letter moves you into the Task
   box (or a run's Goal) with that letter in it, so a digit, then the task, then Enter launches.
 - **Images open in the Agent panel's File tab and in Code**: a `.png`, `.jpg`, `.gif`, `.webp`, `.svg` or other image
@@ -251,9 +259,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
   the command palette.
 - **Read a past session without resuming it**: in the New dialog's Resume list, **Transcript** on a session (or
   Shift+Enter, which the picked session's button shows) opens its transcript on the Agent surface instead of starting
-  the agent again.
+  the agent again. <!-- try: new-agent -->
 - **A `?` button on the bottom bar** opens the keyboard shortcuts on every surface, also while you type in a
-  terminal, where the `?` key itself is text.
+  terminal, where the `?` key itself is text. <!-- try: help -->
 - **⌘⇧Enter toggles terminal fullscreen** (Ctrl+Shift+Enter on Windows), from inside the terminal too: the same
   chord on both platforms, since a Mac keyboard has no F11 of its own. F11 still works.
 - **Fold when you leave**: switch to another app whose window hides arcterm (maximized or full screen on its screen)
@@ -262,14 +270,14 @@ Add one line in the same commit as any change a user would notice, under `Added`
   right-click the Sprout button in the app bar to switch it, or Settings → General → Window. Your own dialogs (a file
   picker) leave it be.
 - **⌘J opens Jarvis's What's waiting popup** in one chord, from any surface and from inside a terminal (Ctrl+J on
-  Windows, where Shift+Enter is the terminal's newline). Hold ⌘ on its own and the creature shows a J.
+  Windows, where Shift+Enter is the terminal's newline). Hold ⌘ on its own and the creature shows a J. <!-- try: go:waiting -->
 - **@mention another agent** without looking up its id: right-click an agent in the sidebar (or a segment of the split
   row) → **Copy @mention**, its `@` token shown beside the label. Or drag an agent onto a Claude agent's pane holding
   ⌥ (Alt on Windows) to type its token at that prompt; a drag without the key still places it in the split.
 - **Home** in the New agent dialog: the last row of the Project column starts Claude Code or a terminal in your home
   folder, outside any project. Claude Code there is ask-only: it cannot edit files, every shell command asks first
   (even one you once allowed for good), keys and `.env` files stay unreadable, and bypass and auto mode are off.
-  Resuming one of those sessions keeps it ask-only.
+  Resuming one of those sessions keeps it ask-only. <!-- try: new-agent -->
 - Your pet (Sprout or the Minion) **teleports** when you minimize into it and back: it turns to light and leaves in a
   blue beam from where it walks, then lands in the screen's corner on a ring with a burst of sparks; Restore plays it
   the other way. Reduced motion skips it.
@@ -281,7 +289,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - **Code** can pin files: right-click a file → **Pin**, or **Pin** in the bar above the editor. Pinned files list at
   the top of the Files tab, per project; clicking one opens it and shows where it lives in the tree, and the
   file search (Ctrl+P, ⌘P on a Mac) lists them first. The agent panel's **Files** tab shows the same pins above its
-  tree for the agent's folder, and right-clicking a file there pins or unpins it on both sides.
+  tree for the agent's folder, and right-clicking a file there pins or unpins it on both sides. <!-- try: go:code -->
 - An **HTML file** opens as the page itself in **Code** and the agent panel's file tab, with **Source** one toggle
   away: images, styles and scripts beside it load, so an exported slide deck shows and pages through as it would in a
   browser. It shows the saved file, and a page too big to open as text still previews.
@@ -318,7 +326,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
   `[` and `]` still stepping), the header's buttons no longer get cut off, and All shows the boards as a grid of
   tiles at least 560px wide instead of shrinking them all into one picture. A click on a tile opens that board.
 - **⌘, / Ctrl+, opens Settings**, as in VS Code, and **⌘⇧E / Ctrl+Shift+E** focuses Code's file tree (VS Code's
-  Explorer key; Alt+T still works).
+  Explorer key; Alt+T still works). <!-- try: settings -->
 - The **Launch a Pi tab** shortcut (⌘⇧N / Ctrl+Shift+N) is gone; the New dialog's Pi row starts one.
 - **Every file wraps long lines by default** in Code, Diff and the agent panel's File tab, not only prose; **Wrap**
   (Alt+Z) still turns it off for a file.
