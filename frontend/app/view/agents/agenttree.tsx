@@ -31,6 +31,7 @@ import {
     Check,
     Bookmark,
     BookmarkCheck,
+    Bot,
     ChevronDown,
     ChevronRight,
     ChevronUp,
@@ -489,16 +490,49 @@ function CanvasTag({ model, id }: { model: AgentsViewModel; id: string }) {
     );
 }
 
-// A folder's agents working now, folded or open: the working dot and the count
+// A folder's agents working now, folded or open: the working dot an agent's row draws, and how many; the words are its
+// label, so the folded row has room for its name
 function RunningBadge({ n }: { n: number }) {
     return (
         <span
             data-folder-running={n}
+            title={`${n} running`}
             aria-label={`${n} running`}
             className="flex flex-none items-center gap-[4px] whitespace-nowrap text-[11px] tabular-nums text-muted"
         >
             <StatusDot state="working" pulse className="!h-[6px] !w-[6px]" />
-            {n} running
+            {n}
+        </span>
+    );
+}
+
+// What a folded folder holds, the nav rail's agent mark and a terminal's, each with its number, so it fits beside the
+// name and the badges; folderCounts' words are its label. It is the part of the far end that gives way: a mark that
+// finds no room wraps onto a hidden second line, whole.
+function FolderCounts({ agents, terminals }: { agents: number; terminals: number }) {
+    const label = folderCounts(agents, terminals);
+    if (label === "") {
+        return null;
+    }
+    return (
+        <span
+            data-folder-counts={label}
+            title={label}
+            aria-label={label}
+            className="flex h-[14px] min-w-0 flex-wrap content-start items-center gap-x-[6px] overflow-hidden whitespace-nowrap text-[11px] tabular-nums text-ink-faint"
+        >
+            {agents > 0 ? (
+                <span className="flex h-[14px] flex-none items-center gap-[3px]">
+                    <Bot size={11} aria-hidden />
+                    {agents}
+                </span>
+            ) : null}
+            {terminals > 0 ? (
+                <span className="flex h-[14px] flex-none items-center gap-[3px]">
+                    <SquareTerminal size={11} aria-hidden />
+                    {terminals}
+                </span>
+            ) : null}
         </span>
     );
 }
@@ -1786,7 +1820,7 @@ function FolderRow({
             data-agent-folder={project}
             data-agent-folder-section={section}
             data-project-folder={section === "active" ? project : undefined}
-            className="flex w-full cursor-pointer items-center gap-[7px] rounded-[6px] px-[8px] py-[6px] text-left hover:bg-surface-hover"
+            className="flex w-full cursor-pointer items-center gap-[7px] overflow-hidden rounded-[6px] px-[8px] py-[6px] text-left hover:bg-surface-hover"
         >
             <ChevronRight
                 size={12}
@@ -1798,7 +1832,8 @@ function FolderRow({
             ) : (
                 <Folder size={14} aria-hidden className="shrink-0 text-muted" />
             )}
-            <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">{label ?? project}</span>
+            {/* the name keeps a few letters however much the far end holds */}
+            <span className="min-w-[40px] flex-1 truncate text-[13px] text-secondary">{label ?? project}</span>
             {trailing}
         </button>
     );
@@ -2297,15 +2332,10 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                                 trailing={
                                                     <>
                                                         {r.running > 0 ? <RunningBadge n={r.running} /> : null}
-                                                        {r.open ? null : (
-                                                            <span
-                                                                data-folder-counts
-                                                                className="whitespace-nowrap text-[11px] tabular-nums text-ink-faint"
-                                                            >
-                                                                {folderCounts(r.agents, r.terminals)}
-                                                            </span>
-                                                        )}
                                                         {r.attn > 0 ? <AskingBadge n={r.attn} /> : null}
+                                                        {r.open ? null : (
+                                                            <FolderCounts agents={r.agents} terminals={r.terminals} />
+                                                        )}
                                                     </>
                                                 }
                                             />

@@ -35923,16 +35923,22 @@ const toolsTree = {
                 const f = document.querySelector('[data-project-folder="${project}"]');
                 return {
                     expanded: f?.getAttribute("aria-expanded"),
-                    counts: ${TT_FLAT}(f?.querySelector("[data-folder-counts]")) || null,
+                    counts: f?.querySelector("[data-folder-counts]")?.getAttribute("data-folder-counts") || null,
                     rows: document.querySelectorAll("[data-tree-terminal-row]").length,
+                    // the counts are marks beside the whole name, and nothing runs past the row
+                    name: Math.round(f?.querySelector("span.truncate")?.getBoundingClientRect().width ?? 0),
+                    fits: f != null && f.scrollWidth <= f.clientWidth,
                 };
             })()`);
         };
         const foldedMain = await folded(TT_PROJECT);
         await h.shot("cdp-shots/tools-tree-2-folded.png");
         rec(
-            "3. folded, the folder reads 1 agent · 2 terminals",
-            foldedMain.expanded === "false" && foldedMain.counts === "1 agent · 2 terminals",
+            "3. folded, the folder reads 1 agent · 2 terminals, beside its whole name",
+            foldedMain.expanded === "false" &&
+                foldedMain.counts === "1 agent · 2 terminals" &&
+                foldedMain.name >= 48 &&
+                foldedMain.fits,
             JSON.stringify(foldedMain)
         );
         await ttClick(h, `[data-project-folder="${TT_PROJECT}"]`);

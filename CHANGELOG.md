@@ -20,6 +20,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- **A folded project folder in the Agent sidebar stays inside the sidebar** when its agents are running: its running
+  agents read as the working dot and a number, its agents and terminals as a mark and a number each (hover for the
+  words), and the project's name always shows.
 - **The Dock icon brings arcterm back over a full-screen app on a Mac**: with the window folded into Sprout above a
   full-screen app, clicking the Dock icon (or ⌘Tab, or a double-click on Sprout) now takes you to arcterm's desktop
   instead of leaving the screen on the full-screen app.
