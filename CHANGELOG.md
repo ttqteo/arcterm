@@ -29,6 +29,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   with it (empty, Enter just resumes); Shift+Enter is a newline.
 - **The New dialog's Transcript button moved to the footer**, beside Launch, with its key Shift+Enter, which now opens
   the picked session's transcript from anywhere but the Task box, and Launch shows its key as Enter.
+- **A sleeping agent's conversation has a message box under it** on the Agent screen: type and press Enter to wake the
+  agent with that as its next message, without pressing Wake first.
 - **Ctrl+V in the New dialog pastes into the Task** (or a run's Goal) wherever focus is outside a text field, images
   included, and leaves the cursor there.
 - **An agent's ✳ in the sidebar now shows its state** in place of the dot on its second line: it pulses in the accent

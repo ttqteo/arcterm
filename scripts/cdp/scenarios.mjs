@@ -26385,6 +26385,33 @@ const agentSleep = {
         await asRelease(h);
         await asMode(h, "wake", "ok");
 
+        // 4b. under the conversation in the sleeping agent's cell, a composer: Enter wakes it with the typed line
+        const CELL_COMPOSER = `document.querySelector('[data-sleeping-composer="${AS_SLEEPING_ID}"] textarea')`;
+        const cellComposer = await polishWaitFor(h, `!!${CELL_COMPOSER}`, 3000);
+        const cellWakesBefore = (await asCalls(h, "agentswake")).length;
+        await asMode(h, "wake", "hold");
+        if (cellComposer) {
+            await h.ev(`${CELL_COMPOSER}.focus()`);
+            await h.cdp("Input.insertText", { text: "look again" });
+            for (const type of ["keyDown", "keyUp"]) {
+                await h.cdp("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+            }
+        }
+        const cellWaking = await polishWaitFor(
+            h,
+            `(() => { const b = document.querySelector('[data-sleeping-composer="${AS_SLEEPING_ID}"] button'); return !!b && b.textContent.trim() === "Waking…"; })()`,
+            3000
+        );
+        const cellSend = (await asCalls(h, "agentswake")).slice(cellWakesBefore)[0];
+        await h.shot("cdp-shots/agent-sleep-cell-composer.png");
+        rec(
+            "4b. the sleeping cell has a composer under its conversation; Enter wakes the agent with the typed message",
+            cellComposer && cellWaking && cellSend?.data?.tab === AS_SLEEPING_ID && cellSend.data.message === "look again",
+            JSON.stringify({ cellComposer, cellWaking, cellSend })
+        );
+        await asRelease(h);
+        await asMode(h, "wake", "ok");
+
         // 5. Sleep in the awake row's menu asks before it stops background work, and the confirmed one forces
         await asMode(h, "sleep", "background");
         await h.ev(`(() => {

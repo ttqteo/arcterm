@@ -36,6 +36,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) **Transcript sits beside Launch.** New dialog → pick a session under Resume: the footer reads Cancel ·
   Transcript shift+enter · Resume enter and the row has no button. Shift+Enter from the Start or Project column
   opens the transcript; in the Task box it is a newline. `launchermodal.tsx` footer, `launcher.ts` launcherKey.
+- [ ] (arcterm) **A sleeping agent's cell has a message box.** Sleep an idle agent (row menu → Sleep), select it: under
+  its conversation, a box reading "message <name> to wake it… (Enter)", lined up with the transcript. Type a line and
+  press Enter: the button reads Waking…, the agent wakes and the line arrives as its next message. In a 2x2 grid each
+  sleeping cell has its own box. `sleepingtranscript.tsx`; CDP `agent-sleep` step 4b.
 
 **2026-10-13 (New: Ctrl+V pastes into the Task)**
 
