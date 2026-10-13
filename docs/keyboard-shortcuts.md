@@ -180,7 +180,7 @@ The answer form (a question with several parts or several picks; `Enter` or **An
 | Keys | Action |
 |---|---|
 | `↑` / `↓` | Move the cursor through the groups and their processes |
-| `Enter` | Confirm an open kill; on a group's `+ N helper processes` line, show or hide its launchers, consoles and wrapping shells; else expand or collapse the cursor's group |
+| `Enter` | Confirm an open kill; on a group's `+ N helper processes` line, show or hide its launchers, consoles, and wrapping or idle shells; else expand or collapse the cursor's group |
 | `x` | Kill the process under the cursor and its children (asks first; never the agent itself) |
 | `Shift`+`X` | Kill every process the cursor's group started, keeping the agent and its console (asks first) |
 | `Esc` | Cancel an open kill, else close the popover |

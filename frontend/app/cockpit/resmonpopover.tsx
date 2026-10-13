@@ -21,6 +21,7 @@ import {
     fmtAge,
     fmtCpu,
     fmtMem,
+    groupHeadline,
     groupView,
     isExpanded,
     killChildrenConfirmText,
@@ -168,17 +169,24 @@ function ProcessRow({ g, line, ui, now }: { g: ResMonGroup; line: ResMonLine; ui
         <div
             data-resmon-row={row.pid}
             data-resmon-cursor={cursor ? "" : undefined}
-            title={`pid ${row.pid}`}
+            title={
+                line.leaf ? `pid ${row.pid}, running ${rowLabel(line.leaf).name} (${line.leaf.pid})` : `pid ${row.pid}`
+            }
             className={cn(GRID, "h-7", cursor && "bg-surface-selected")}
         >
             <span className="flex min-w-0 items-baseline gap-2" style={{ paddingLeft: depth * INDENT_PX }}>
                 <span className="w-2.5 shrink-0 text-[11px] text-ink-faint">{depth > 0 ? "└" : ""}</span>
                 <span className="whitespace-nowrap text-[12px] text-secondary">{label.name}</span>
                 <span className="truncate text-[11px] text-muted">{label.cmd}</span>
+                {line.leaf && (
+                    <span className="shrink-0 whitespace-nowrap text-[11px] text-ink-mid">
+                        → {rowLabel(line.leaf).name}
+                    </span>
+                )}
             </span>
             <span className="text-right tabular-nums text-[11px] text-ink-mid">{fmtAge(row.createts ?? 0, now)}</span>
-            <span className="text-right tabular-nums text-[12px] text-primary">{fmtCpu(row.cpu)}</span>
-            <span className="text-right tabular-nums text-[12px] text-secondary">{fmtMem(row.mem)}</span>
+            <span className="text-right tabular-nums text-[12px] text-primary">{fmtCpu(line.cpu)}</span>
+            <span className="text-right tabular-nums text-[12px] text-secondary">{fmtMem(line.mem)}</span>
             <span className="flex justify-end">
                 {row.tag ? (
                     <span className="rounded-[4px] bg-white/[0.05] px-1.5 py-px text-[10.5px] text-muted">
@@ -211,7 +219,7 @@ function MoreRow({ g, view, ui }: { g: ResMonGroup; view: ResMonView; ui: ResMon
         >
             <button
                 type="button"
-                title="Launchers, consoles, wsh, and the shells that only wrap a command"
+                title="Launchers, consoles, wsh, and the shells that only wrap a command or sit idle"
                 onClick={() => dispatchResMon({ type: "toggleFull", groups: orderGroups(currentGroups()), key: g.key })}
                 className="flex min-w-0 cursor-pointer items-baseline gap-2 text-left text-[11.5px] text-muted hover:text-secondary"
                 style={{ paddingLeft: INDENT_PX }}
@@ -242,6 +250,8 @@ function GroupBlock({ g, ui, now }: { g: ResMonGroup; ui: ResMonUi; now: number 
     const groupConfirm = ui.confirm?.kind === "group" && ui.confirm.key === g.key;
     const note = ui.notes[g.key];
     const cursor = ui.cursor === g.key;
+    // folded, the header says what the group runs; open, its rows do
+    const headline = expanded ? null : groupHeadline(g);
     return (
         <div data-resmon-group={g.key} className="border-b border-border">
             <div
@@ -266,7 +276,7 @@ function GroupBlock({ g, ui, now }: { g: ResMonGroup; ui: ResMonUi; now: number 
                         {g.label}
                     </span>
                     <span className="min-w-0 truncate text-[11px] text-muted">
-                        {ownerKindWords(g.ownerkind)} · {count(g.rows.length, "process")}
+                        {ownerKindWords(g.ownerkind)} · {headline ?? count(g.rows.length, "process")}
                     </span>
                 </button>
                 <span />

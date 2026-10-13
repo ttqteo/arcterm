@@ -187,6 +187,9 @@ export interface ResMonLine {
     row: ProcessInfo;
     index: number; // into g.rows, which subtreeSize and the kill confirm count from
     depth: number;
+    leaf?: ProcessInfo; // the bottom of a chain the compact view folds into this line
+    cpu: number; // the line's own, or its whole folded chain's
+    mem: number;
 }
 
 export interface ResMonView {
@@ -197,10 +200,14 @@ export interface ResMonView {
     hiddenMem: number;
 }
 
-// The compact view keeps the agent and the commands it runs, and leaves out the plumbing and the shells that only
-// wrap a command (Claude Code's `bash -c "source …snapshot…"` chain): git log sits right under the agent instead of
-// five levels down. A kept row is indented by its kept ancestors; one whose parent has exited sits under the agent.
-// Arc's own tree has neither, so it is always shown whole.
+// a shell at or above this is doing work of its own, so the compact view keeps it even with no command under it
+const BUSY_SHELL_CPU = 1;
+
+// The compact view keeps the agent and the commands it runs. It leaves out the plumbing, the shells that only wrap a
+// command (Claude Code's `bash -c "source …snapshot…"` chain) and the idle shells left with nothing in them, and folds
+// a chain of single children (`task tauri:build` → … → `makensis`) into one line: its top, its bottom, and its total.
+// A kept row is indented by its kept ancestors; one whose parent has exited sits under the agent. Arc's own tree has
+// neither, so it is always shown whole.
 export function groupView(g: ResMonGroup, ui: ResMonUi): ResMonView {
     const rows = g.rows;
     const plumbing = rows.map(isPlumbing);
@@ -219,7 +226,7 @@ export function groupView(g: ResMonGroup, ui: ResMonUi): ResMonView {
                 return true;
             }
         }
-        return false;
+        return r.cpu < BUSY_SHELL_CPU;
     });
     let hidden = 0;
     let hiddenCpu = 0;
@@ -232,29 +239,82 @@ export function groupView(g: ResMonGroup, ui: ResMonUi): ResMonView {
         }
     });
     const full = hidden > 0 && (ui.full[g.key] ?? false);
-    if (full || hidden === 0) {
+    if (full || g.key === ARC_KEY) {
         return {
-            lines: rows.map((row, index) => ({ row, index, depth: row.depth })),
+            lines: rows.map((row, index) => ({ row, index, depth: row.depth, cpu: row.cpu, mem: row.mem })),
             full,
             hidden,
             hiddenCpu,
             hiddenMem,
         };
     }
-    const anchored = rows.some((r, i) => r.tag && !hide[i]);
-    const lines: ResMonLine[] = [];
-    const stack: { depth: number; kept: boolean }[] = [];
+    // the kept rows as a tree: each one's nearest kept ancestor
+    const children = new Map<number, number[]>();
+    const roots: number[] = [];
+    const stack: { depth: number; index: number; kept: boolean }[] = [];
     rows.forEach((row, index) => {
         while (stack.length > 0 && stack[stack.length - 1].depth >= row.depth) {
             stack.pop();
         }
-        const kept = stack.filter((s) => s.kept).length;
         if (!hide[index]) {
-            lines.push({ row, index, depth: kept + (anchored && !row.tag && kept === 0 ? 1 : 0) });
+            const parent = [...stack].reverse().find((s) => s.kept);
+            if (parent == null) {
+                roots.push(index);
+            } else {
+                children.set(parent.index, [...(children.get(parent.index) ?? []), index]);
+            }
         }
-        stack.push({ depth: row.depth, kept: !hide[index] });
+        stack.push({ depth: row.depth, index, kept: !hide[index] });
     });
+    const anchored = rows.some((r, i) => r.tag && !hide[i]);
+    const lines: ResMonLine[] = [];
+    const emit = (index: number, depth: number) => {
+        const row = rows[index];
+        let bottom = index;
+        let cpu = Math.max(0, row.cpu);
+        let mem = Math.max(0, row.mem);
+        for (let next = children.get(bottom) ?? []; !row.tag && next.length === 1 && !rows[next[0]].tag; ) {
+            bottom = next[0];
+            cpu += Math.max(0, rows[bottom].cpu);
+            mem += Math.max(0, rows[bottom].mem);
+            next = children.get(bottom) ?? [];
+        }
+        const folded = bottom !== index;
+        lines.push({
+            row,
+            index,
+            depth,
+            leaf: folded ? rows[bottom] : undefined,
+            cpu: folded ? cpu : row.cpu,
+            mem: folded ? mem : row.mem,
+        });
+        for (const child of children.get(bottom) ?? []) {
+            emit(child, depth + 1);
+        }
+    };
+    for (const index of roots) {
+        emit(index, anchored && !rows[index].tag ? 1 : 0);
+    }
     return { lines, full, hidden, hiddenCpu, hiddenMem };
+}
+
+// what a folded group's header says it is running: the top of each command the compact view shows, by name and its
+// first plain argument (`task tauri:build`, `sleep 10`), or null when it runs none
+export function groupHeadline(g: ResMonGroup): string | null {
+    if (g.key === ARC_KEY) {
+        return null;
+    }
+    const view = groupView(g, RESMON_UI_INITIAL);
+    const top = Math.min(...view.lines.filter((l) => !l.row.tag).map((l) => l.depth));
+    const words = view.lines
+        .filter((l) => !l.row.tag && l.depth === top)
+        .map((l) => {
+            const { name, cmd } = rowLabel(l.row);
+            const first = cmd.split(/\s+/)[0] ?? "";
+            const arg = /^[\w.:/@-]+$/.test(first) && !first.startsWith("-") ? ` ${first}` : "";
+            return name.replace(/\.exe$/i, "") + arg;
+        });
+    return words.length > 0 ? words.join(", ") : null;
 }
 
 function processes(n: number): string {
@@ -353,10 +413,9 @@ export type ResMonAction =
 
 export const RESMON_UI_INITIAL: ResMonUi = { cursor: null, expanded: {}, full: {}, confirm: null, notes: {} };
 
-// Arc is collapsed by default (it is always there and rarely the culprit), and so is an idle group: an agent or a
-// shell running nothing has no row worth a line. A group running a command is expanded.
+// Every group starts as one line, its header naming what it runs (groupHeadline); ⏎ or a click opens its rows.
 export function isExpanded(ui: ResMonUi, g: ResMonGroup): boolean {
-    return ui.expanded[g.key] ?? (g.key !== ARC_KEY && groupView(g, ui).lines.some((l) => !l.row.tag));
+    return ui.expanded[g.key] ?? false;
 }
 
 function parseCursor(cursor: string | null): { key: string; pid: number | null } | null {

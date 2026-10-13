@@ -32616,6 +32616,7 @@ const RESMON_POPOVER_STATE = `(() => {
             tags: [...g.querySelectorAll('[data-resmon-row]')].filter((row) => !row.querySelector('button')).length,
             kills: g.querySelectorAll('[data-resmon-row] button[aria-label^="Kill"]').length,
             buttons: g.querySelectorAll('button').length,
+            head: g.querySelector('button[aria-expanded]')?.textContent ?? '',
         })),
         order: [...p.querySelectorAll('[data-resmon-group] > div:first-child, [data-resmon-row], [data-resmon-more]')].map(where),
         cursor: cursor ? where(cursor) : null,
@@ -32835,6 +32836,9 @@ const resmonLive = {
         await resmonBlur(h);
         await polishWaitFor(h, `!!${RESMON_CHIP}`, RESMON_CHIP_WAIT_MS);
         await h.ev(resmonClick(RESMON_CHIP));
+        // every group starts folded to its header
+        await polishWaitFor(h, `!!${resmonChevron(found.group)}`, 10000);
+        await h.ev(resmonClick(resmonChevron(found.group)));
         await polishWaitFor(h, `!!document.querySelector('[data-resmon-row="${found.pid}"]')`, 10000);
         await shot("1-listed");
         const clicked = await h.ev(
@@ -32890,8 +32894,7 @@ const resmonMain = {
         const chip = await h.ev(`(() => { const r = ${RESMON_CHIP}?.getBoundingClientRect(); return r ? { bottom: r.bottom, right: Math.round(window.innerWidth - r.right) } : null; })()`);
         await shot("1-open");
         const by = (k) => s1?.groups.find((g) => g.key === k) ?? {};
-        // compact: claude, go, orchestrate.test, vite (bash and cmd wrappers, conhost folded); pi and vitest; verify's
-        // node, go, jarvis.test (its bash wrapper folded, so a helper-line button beside the chevron); obsidian idle
+        // every group folded to one line, its header naming the top of each command it runs; obsidian runs none
         const ok1 =
             s1 != null &&
             chip != null &&
@@ -32899,13 +32902,25 @@ const resmonMain = {
             Math.abs(s1.right - chip.right) <= 1 &&
             s1.top >= chip.bottom + 5 &&
             JSON.stringify(s1.groups.map((g) => g.key)) === JSON.stringify(RESMON_GROUP_ORDER) &&
-            by("arc").rows === 0 &&
-            by("job:14820").rows === 4 && by("job:14820").tags === 1 && by("job:14820").kills === 3 &&
-            by("job:13060").rows === 2 && by("job:13060").tags === 1 && by("job:13060").kills === 1 &&
-            by("job:22410").rows === 3 && by("job:22410").buttons === 2 &&
-            by("job:7716").rows === 0;
-        rec("1. click the RAM chip: 700px, under the chip; Arc first and collapsed; by CPU; each agent with its commands, wrappers folded; idle obsidian-notes folded",
+            s1.groups.every((g) => g.rows === 0) &&
+            by("job:14820").head?.endsWith("Agent tab · go test, node vite") &&
+            by("job:13060").head?.endsWith("Run worker · node vitest") &&
+            by("job:22410").head?.endsWith("Run command, read-only · node scripts/verify.mjs") &&
+            by("job:7716").head?.endsWith("Agent tab · 2 processes");
+        rec("1. click the RAM chip: 700px, under the chip; Arc first; by CPU; every group one line naming what it runs",
             ok1, JSON.stringify({ width: s1?.width, right: s1?.right, top: s1?.top, chip, groups: s1?.groups }));
+
+        await h.ev(resmonClick(resmonChevron("job:14820")));
+        await resmonNap(200);
+        const s1a = await resmonPopover(h);
+        const wt = s1a?.groups.find((g) => g.key === "job:14820") ?? {};
+        const chain = await h.ev(`document.querySelector('[data-resmon-popover] [data-resmon-row="18244"]')?.textContent ?? null`);
+        await shot("1a-waveterm-open");
+        // claude, go → orchestrate.test (one folded line), vite; the bash and cmd wrappers and conhost left out
+        rec("1a. waveterm's chevron opens it: claude, go folded down to orchestrate.test, and vite",
+            wt.rows === 3 && wt.tags === 1 && wt.kills === 2 && !wt.head?.includes("go test") &&
+                chain?.includes("→ orchestrate.test.exe"),
+            JSON.stringify({ wt, chain }));
 
         const more = `document.querySelector('[data-resmon-popover] [data-resmon-group="job:14820"] [data-resmon-more] button')`;
         const moreText = await h.ev(`${more}?.textContent.trim() ?? null`);
@@ -32918,7 +32933,7 @@ const resmonMain = {
         await resmonNap(200);
         const compact = (await resmonPopover(h))?.groups.find((g) => g.key === "job:14820")?.rows;
         rec("1b. waveterm's + 3 helper processes line shows its whole tree, and Hide folds it again",
-            moreText === "+ 3 helper processes" && full === 7 && fullText === "Hide 3 helper processes" && compact === 4,
+            moreText === "+ 3 helper processes" && full === 7 && fullText === "Hide 3 helper processes" && compact === 3,
             JSON.stringify({ moreText, full, fullText, compact }));
 
         await h.ev(resmonClick(resmonChevron("arc")));
@@ -32940,12 +32955,11 @@ const resmonMain = {
         rec("3. ↓ puts the cursor on Arc's header, ⏎ expands it", c3 === "arc" && opened3 === 9,
             `cursor=${c3} arcRows=${opened3}`);
 
-        await h.ev(resmonClick(resmonRowKill(18311)));
+        await h.ev(resmonClick(resmonRowKill(9958)));
         await resmonNap(200);
         const c4 = (await resmonPopover(h))?.confirm;
         await shot("4-row-confirm");
-        rec("4. × on orchestrate.test.exe asks to kill it alone",
-            c4 === "Kill orchestrate.test.exe (18311)? It has no child processes.", c4);
+        rec("4. × on vite's node.exe asks to kill it alone", c4 === "Kill node.exe (9958)? It has no child processes.", c4);
 
         await resmonBlur(h);
         await resmonKey(h, ctx, "Escape");
@@ -33045,6 +33059,9 @@ const resmonStates = {
             JSON.stringify({ confirm: c4, clicked: clicked4, status: s4?.status }));
 
         await resmonArm(h, { outcome: "gone", killed: 0 });
+        // the pi worker starts folded; open it to reach its vitest row
+        await h.ev(resmonClick(resmonChevron("job:13060")));
+        await resmonNap(200);
         await h.ev(resmonClick(resmonRowKill(21890)));
         await resmonNap(200);
         const clicked5 = await h.ev(resmonClick(resmonConfirmButton("Kill")));

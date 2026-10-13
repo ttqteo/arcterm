@@ -16,6 +16,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
   Float, or a smaller window); the taskbar button does the same. On macOS ⌘Tab still gives back the size it folded from.
 - **The Resource Manager reads in the interface font**: process names, their command lines, and the CPU, memory and
   age columns are no longer monospaced; the numbers still line up.
+- **The Resource Manager opens with one line per agent**, saying what it runs (`Agent tab · task tauri:build, sleep 10`);
+  open a group to see its commands, where a chain of processes that each start just one more reads as one line
+  (`task.exe tauri:build → makensis.exe`, with the chain's total CPU and memory) and idle shells fold into
+  `+ N helper processes`.
 
 ## 0.15.11 — 2026-10-13
 

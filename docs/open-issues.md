@@ -91,8 +91,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
   dismiss it in Claude's dialog: the cockpit card goes away and the agent reads idle. Then answer one from the card: the
   dialog closes. `claude/arc-mod/hooks/register.ts` (ask kept ours; cache-miss band added from the fork).
 - [ ] (arcterm) **Resource Manager under the RAM chip (Windows).** Click the app bar's RAM chip: the popover hangs below
-  it with `Arc N% CPU · N GB · N GB free` at its top; a busy agent shows `claude.exe` and its commands (`git log`…) with
-  a `+ N helper processes` line that opens the whole tree; an idle agent starts folded; `x` asks before killing. The
+  it with `Arc N% CPU · N GB · N GB free` at its top; every group starts as one line naming what it runs; opened, an
+  agent shows `claude.exe` and its commands (a single-child chain folded to `top → bottom`) with a `+ N helper
+  processes` line that opens the whole tree; `x` asks before killing. The
   footer has no readout, and the quota meters open Consumers with no RAM column. `frontend/app/cockpit/resmon*.tsx`,
   `frontend/app/view/agents/usagemeters.tsx`, `consumerspanel.tsx`.
 - [ ] (arcterm) **Review marks in the Diff surface's Log tab.** Open a commit's file, press `v`: the row's check fills and

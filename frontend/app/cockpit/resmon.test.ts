@@ -8,6 +8,7 @@ import {
     fmtAge,
     fmtCpu,
     fmtMem,
+    groupHeadline,
     groupView,
     isExpanded,
     killChildrenConfirmText,
@@ -303,12 +304,47 @@ describe("groupView", () => {
         expect(pids(v)).toEqual([
             [14820, 0],
             [18244, 1],
-            [18311, 2],
             [9958, 1],
         ]);
         expect(v.hidden).toBe(3);
         expect(v.hiddenMem).toBe(30 * MB);
         expect(v.full).toBe(false);
+    });
+    it("folds a chain of single children into its top line, naming its bottom and summing the chain", () => {
+        const g = group("job:3", "agenttab", "arcterm", [
+            proc(1, 0, "claude.exe", { tag: "agent" }),
+            proc(2, 1, "task.exe", { command: "task.exe tauri:build", cpu: 0.1 }),
+            proc(3, 2, "node.exe", { cpu: 0.2 }),
+            proc(4, 3, "cargo.exe", { cpu: 0.3 }),
+            proc(5, 4, "makensis.exe", { cpu: 8 }),
+            proc(6, 4, "vctip.exe"),
+            proc(7, 1, "sleep.exe", { command: "sleep.exe 10" }),
+        ]);
+        const v = groupView(g, RESMON_UI_INITIAL);
+        expect(pids(v)).toEqual([
+            [1, 0],
+            [2, 1],
+            [5, 2],
+            [6, 2],
+            [7, 1],
+        ]);
+        expect(v.lines[1]).toMatchObject({ leaf: { pid: 4 }, mem: 30 * MB });
+        expect(v.lines[1].cpu).toBeCloseTo(0.6);
+        expect(v.lines[2].leaf).toBeUndefined();
+        expect(v.lines[4]).toMatchObject({ leaf: undefined, cpu: 0, mem: 10 * MB });
+        expect(groupHeadline(g)).toBe("task tauri:build, sleep 10");
+    });
+    it("names no headline for Arc or a group running nothing, and leaves out a flag or a quoted argument", () => {
+        const idle = group("job:4", "agenttab", "obsidian", [proc(1, 0, "claude.exe", { tag: "agent" })]);
+        expect(groupHeadline(arc)).toBeNull();
+        expect(groupHeadline(idle)).toBeNull();
+        const g = group("job:5", "agenttab", "x", [
+            proc(1, 0, "claude.exe", { tag: "agent" }),
+            proc(2, 1, "vctip.exe"),
+            proc(3, 1, "git.exe", { command: "git.exe -C D:/x log" }),
+            proc(4, 1, "node.exe", { command: 'node.exe "C:/a b/x.js"' }),
+        ]);
+        expect(groupHeadline(g)).toBe("vctip, git, node");
     });
     it("leaves out a launcher, wsh agentctl and Claude's nested bash chain; an orphaned command sits under the agent", () => {
         const g = group("job:1", "agenttab", "arcterm", [
@@ -333,16 +369,20 @@ describe("groupView", () => {
         ]);
         expect(v.hidden).toBe(7);
     });
-    it("keeps a shell that wraps nothing but plumbing, and shows Arc whole", () => {
+    it("leaves out an idle shell with nothing in it, keeps a busy one, and shows Arc whole", () => {
         const g = group("job:2", "agenttab", "portal", [
             proc(1, 0, "claude.exe", { tag: "agent" }),
             proc(2, 1, "cmd.exe"),
             proc(3, 2, "conhost.exe"),
+            proc(4, 1, "bash.exe", { command: 'bash.exe -c "source snapshot"' }),
+            proc(5, 2, "bash.exe"),
+            proc(6, 1, "powershell.exe", { cpu: 12 }),
         ]);
         expect(pids(groupView(g, RESMON_UI_INITIAL))).toEqual([
             [1, 0],
-            [2, 1],
+            [6, 1],
         ]);
+        expect(groupView(g, RESMON_UI_INITIAL).hidden).toBe(4);
         expect(groupView(arc, RESMON_UI_INITIAL)).toMatchObject({ hidden: 0, full: false });
         expect(groupView(arc, RESMON_UI_INITIAL).lines).toHaveLength(2);
     });
@@ -356,40 +396,38 @@ describe("groupView", () => {
 describe("resmonReduce", () => {
     const groups = [arc, waveterm, verify];
     const at = (ui: ResMonUi, cursor: string): ResMonUi => ({ ...ui, cursor });
+    // the agent groups opened, Arc left folded
+    const OPEN: ResMonUi = { ...RESMON_UI_INITIAL, expanded: { [waveterm.key]: true, [verify.key]: true } };
 
-    it("starts with Arc and idle groups collapsed, a group running a command expanded", () => {
-        const idle = group("job:7716:1", "agenttab", "obsidian", [
-            proc(7716, 0, "claude.exe", { tag: "agent" }),
-            proc(7724, 1, "conhost.exe", { tag: "console" }),
-        ]);
-        expect(isExpanded(RESMON_UI_INITIAL, arc)).toBe(false);
-        expect(isExpanded(RESMON_UI_INITIAL, waveterm)).toBe(true);
-        expect(isExpanded(RESMON_UI_INITIAL, verify)).toBe(true);
-        expect(isExpanded(RESMON_UI_INITIAL, idle)).toBe(false);
-        expect(cursorRows(groups, RESMON_UI_INITIAL)).toEqual([
+    it("starts with every group folded to its header", () => {
+        for (const g of groups) {
+            expect(isExpanded(RESMON_UI_INITIAL, g)).toBe(false);
+        }
+        expect(cursorRows(groups, RESMON_UI_INITIAL)).toEqual(["arc", waveterm.key, verify.key]);
+        expect(cursorRows(groups, OPEN)).toEqual([
             "arc",
             waveterm.key,
-            ...[14820, 18244, 18311, 9958].map((pid) => `${waveterm.key}/${pid}`),
+            ...[14820, 18244, 9958].map((pid) => `${waveterm.key}/${pid}`),
             `${waveterm.key}/more`,
             verify.key,
             ...verify.rows.map((r) => `${verify.key}/${r.pid}`),
         ]);
     });
     it("moves across a collapsed Arc group straight to the next header, and clamps at the ends", () => {
-        let ui = resmonReduce(RESMON_UI_INITIAL, { type: "move", delta: 1, groups });
+        let ui = resmonReduce(OPEN, { type: "move", delta: 1, groups });
         expect(ui.cursor).toBe("arc");
         ui = resmonReduce(ui, { type: "move", delta: 1, groups });
         expect(ui.cursor).toBe(waveterm.key);
         ui = resmonReduce(ui, { type: "move", delta: -1, groups });
         ui = resmonReduce(ui, { type: "move", delta: -1, groups });
         expect(ui.cursor).toBe("arc");
-        expect(resmonReduce(RESMON_UI_INITIAL, { type: "move", delta: -1, groups }).cursor).toBe(`${verify.key}/22418`);
+        expect(resmonReduce(OPEN, { type: "move", delta: -1, groups }).cursor).toBe(`${verify.key}/22418`);
     });
     it("toggles the cursor's group, and a collapse pulls a row cursor up to its header", () => {
         let ui = resmonReduce(at(RESMON_UI_INITIAL, "arc"), { type: "toggle", groups });
         expect(isExpanded(ui, arc)).toBe(true);
         expect(resmonReduce(ui, { type: "move", delta: 1, groups }).cursor).toBe("arc/2476");
-        ui = resmonReduce(at(RESMON_UI_INITIAL, `${waveterm.key}/18311`), { type: "toggle", groups });
+        ui = resmonReduce(at(OPEN, `${waveterm.key}/18244`), { type: "toggle", groups });
         expect(isExpanded(ui, waveterm)).toBe(false);
         expect(ui.cursor).toBe(waveterm.key);
         ui = resmonReduce(ui, { type: "toggle", groups, key: "arc" });
@@ -398,7 +436,7 @@ describe("resmonReduce", () => {
         expect(resmonReduce(RESMON_UI_INITIAL, { type: "toggle", groups })).toBe(RESMON_UI_INITIAL);
     });
     it("⏎ on a group's helper line shows its whole tree; back to compact, a hidden cursor moves to that line", () => {
-        let ui = resmonReduce(at(RESMON_UI_INITIAL, `${waveterm.key}/more`), { type: "toggle", groups });
+        let ui = resmonReduce(at(OPEN, `${waveterm.key}/more`), { type: "toggle", groups });
         expect(groupView(waveterm, ui).full).toBe(true);
         expect(isExpanded(ui, waveterm)).toBe(true);
         expect(cursorRows([waveterm], ui)).toEqual([
@@ -409,9 +447,9 @@ describe("resmonReduce", () => {
         ui = resmonReduce(at(ui, `${waveterm.key}/18240`), { type: "toggleFull", groups, key: waveterm.key });
         expect(groupView(waveterm, ui).full).toBe(false);
         expect(ui.cursor).toBe(`${waveterm.key}/more`);
-        ui = resmonReduce(at(ui, `${waveterm.key}/18311`), { type: "toggleFull", groups, key: waveterm.key });
+        ui = resmonReduce(at(ui, `${waveterm.key}/18244`), { type: "toggleFull", groups, key: waveterm.key });
         ui = resmonReduce(ui, { type: "toggleFull", groups, key: waveterm.key });
-        expect(ui.cursor).toBe(`${waveterm.key}/18311`);
+        expect(ui.cursor).toBe(`${waveterm.key}/18244`);
     });
     it("asks to kill an untagged row in a killable group", () => {
         const ui = resmonReduce(at(RESMON_UI_INITIAL, `${waveterm.key}/18244`), { type: "askKill", groups });
