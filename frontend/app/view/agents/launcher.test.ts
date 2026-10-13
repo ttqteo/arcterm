@@ -250,10 +250,11 @@ describe("launcherKey", () => {
         resumePicked: !!open.resumePicked,
         textField: true,
     });
-    const key = (k: string, extra: { shift?: boolean; mod?: boolean } = {}) => ({
+    const key = (k: string, extra: { shift?: boolean; mod?: boolean; paste?: boolean } = {}) => ({
         key: k,
         shift: !!extra.shift,
         mod: !!extra.mod,
+        paste: !!extra.paste,
     });
 
     it("a digit picks the nth row of the focused column", () => {
@@ -296,6 +297,17 @@ describe("launcherKey", () => {
         expect(launcherKey(at("start"), key("Dead"))).toEqual({ kind: "none" });
         // the digits still pick
         expect(launcherKey(at("start"), key("2"))).toEqual({ kind: "pick-start", index: 1 });
+    });
+    it("a paste outside a text field writes into the pick's Task or Goal box", () => {
+        const paste = key("v", { mod: true, paste: true });
+        expect(launcherKey(at("start"), paste)).toEqual({ kind: "write" });
+        expect(launcherKey(at("project", "ok"), paste)).toEqual({ kind: "write" });
+        expect(launcherKey(at("resume"), paste)).toEqual({ kind: "write" });
+        expect(launcherKey(at("other"), paste)).toEqual({ kind: "write" });
+        // a text field takes its own paste, and a pick with no box leaves it alone
+        expect(launcherKey(at("textarea"), paste)).toEqual({ kind: "none" });
+        expect(launcherKey(at("input"), paste)).toEqual({ kind: "none" });
+        expect(launcherKey({ ...at("start"), textField: false }, paste)).toEqual({ kind: "none" });
     });
     it("Backspace shortens the filter and does nothing on an empty one", () => {
         expect(launcherKey(at("project", "oki"), key("Backspace"))).toEqual({ kind: "filter", next: "ok" });

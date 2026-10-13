@@ -24,6 +24,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- **Ctrl+V in the New dialog pastes into the Task** (or a run's Goal) wherever focus is outside a text field, images
+  included, and leaves the cursor there.
 - **An agent's ✳ in the sidebar now shows its state** in place of the dot on its second line: it pulses in the accent
   colour while working, in yellow while asking, and goes grey when idle or asleep.
 - **Fold when you leave** is simpler and calmer: on Windows it folds only when the app you switch to is maximized or

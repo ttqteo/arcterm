@@ -657,14 +657,21 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 resumePicked: resume != null,
                 textField: textField != null,
             },
-            { key: e.key, shift: e.shiftKey, mod }
+            {
+                key: e.key,
+                shift: e.shiftKey,
+                mod,
+                paste:
+                    ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "v") ||
+                    (e.shiftKey && !mod && e.key === "Insert"),
+            }
         );
         if (action.kind === "none") {
             return;
         }
         if (action.kind === "write") {
-            // no preventDefault: the key lands in the box focus moved to, after what is already there, so a Telex or
-            // IME edit that follows applies to it
+            // no preventDefault: the key (or the paste) lands in the box focus moved to, after what is already there, so
+            // a Telex or IME edit that follows applies to it
             const end = textField.value.length;
             textField.focus();
             textField.setSelectionRange(end, end);

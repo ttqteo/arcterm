@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (New: Ctrl+V pastes into the Task)**
+
+- [ ] (arcterm) **Ctrl+V in the New dialog lands in the Task.** Open New (an agent row picked, focus on the Start or
+  Project column), press Ctrl+V with text copied: focus moves to the Task box and the text lands at its end; with an
+  image copied, a thumbnail appears under it. On a run picked from a goal it lands in the Goal. `launcher.ts`
+  launcherKey `paste`, `launchermodal.tsx` onKeyDown.
+
 **2026-10-13 (Fold when you leave: stricter, on top; Sprout click opens the chat)**
 
 - [ ] (arcterm) **Auto fold only for a maximized or full-screen app, and Sprout on top of it.** Windows, Fold when you

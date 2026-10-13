@@ -219,6 +219,8 @@ export interface LauncherKeyIn {
     shift: boolean;
     // Cmd, Ctrl or Alt held
     mod: boolean;
+    // the paste shortcut: Ctrl+V, Cmd+V on a Mac, or Shift+Insert
+    paste?: boolean;
 }
 
 export type LauncherKeyAction =
@@ -251,6 +253,11 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
         }
         // the filter clears when focus leaves the Project column, so a filter means focus is there
         return ctx.filter !== "" ? { kind: "dismiss-inner", what: "filter" } : { kind: "close" };
+    }
+    // a paste outside a text field goes to the Task or Goal box: focus moves there and the browser's paste lands in it,
+    // images included. A text field takes its own paste.
+    if (k.paste) {
+        return ctx.textField && zone !== "textarea" && zone !== "input" ? { kind: "write" } : NONE;
     }
     if (k.mod) {
         return NONE;
