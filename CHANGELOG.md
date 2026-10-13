@@ -14,6 +14,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - **Close the agent or terminal in focus with ⌘⇧W on a Mac**, the same shape as Ctrl+Shift+W on Windows. ⌘W on its
   own now does nothing.
+- **One click on the folded Sprout opens its card of agents and terminals** and keeps it open, instead of the Jarvis
+  chat: pick one to float on it, or open the chat from the card. Click Sprout again, press Esc or click away to close
+  it; a double-click still restores the window.
 
 ## 0.15.11 — 2026-10-13
 

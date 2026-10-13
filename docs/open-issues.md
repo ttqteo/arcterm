@@ -32,9 +32,16 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] Jarvis → Initiatives: a row whose chunks are all pending (e.g. Repo hygiene 0/2) shows an all-grey bar, no
   accent segment; a chunk set to active is still accent. `effortmodel.ts` `buildEffortCard` segments.
 
+**2026-10-13 (one click on the folded Sprout holds its card)**
+
+- [ ] Fold into Sprout, click it once: after a beat the card of agents and terminals opens (no Jarvis chat) and stays
+  with the cursor moved off it; a click on a row floats on it. Click Sprout again, press Esc, or click another app:
+  the card closes and does not pop back while the cursor still rests on Sprout. A double-click restores.
+  `sprout-mini.tsx`, `miniclickthrough.ts`.
+
 **2026-10-13 (Jarvis popup: folded chat closes on a click away, no Ask while folded, compact composer)**
 
-- [ ] Fold into Sprout, click it to open the Jarvis chat, then click another app (or the desktop): the chat closes.
+- [ ] Fold into Sprout, open the Jarvis chat from its card, then click another app (or the desktop): the chat closes.
   Clicking inside the chat, or the chat resizing the folded window, must not close it. `sprout-mini.tsx`.
 - [ ] Folded, the chat has no Ask field; the hover card's row reads "N waiting on you" / "New reply" / "Nothing
   waiting". Ask Jarvis from the full window, fold before the reply lands: the "New reply" bubble opens the chat

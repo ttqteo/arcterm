@@ -3,10 +3,11 @@
 //
 // The window folded into Sprout (floatstore.ts foldToSprout): the see-through window holds only this. Sprout, the same
 // 48px as on the footer and the float's ledge, sits in the window's corner away from where things open (floatwindow.ts
-// miniSides), bobs, wears what waits on you (petmini.ts), and is dragged by a press that moves. A click opens or closes
-// the Jarvis chat (the pet peek); a double-click gives back the size it was folded from. A cursor resting on it opens the
-// hover card: the agents (a click floats on one), the row that opens the chat, Restore, and "Don't fold
-// for", which restores and holds the fold on leaving the app off for a while (foldpause.ts). What Sprout says
+// miniSides), bobs, wears what waits on you (petmini.ts), and is dragged by a press that moves. A cursor resting on it
+// opens the card: the agents and terminals (a click floats on one), the row that opens the Jarvis chat (the pet peek),
+// Restore, and "Don't fold for", which restores and holds the fold on leaving the app off for a while (foldpause.ts). A
+// click opens the card too and holds it, until another click on Sprout, Esc, a click away or the chat; with the chat
+// open a click closes it. A double-click gives back the size it was folded from. What Sprout says
 // (petBubbleAtom), and a reply that landed while the chat was folded, show in a bubble beside it, and give way to the
 // card. Spider-Man folds into a rooftop scene instead (petmini.ts spideyFoldLook): windows lit for the
 // agents working, spider-sense for what waits, and his web with the count beside it, since the windows stop at four.
@@ -35,7 +36,7 @@ import {
     parsePauseText,
     pauseEndLabel,
 } from "@/app/view/agents/foldpause";
-import { miniHoverAtom } from "@/app/view/agents/miniclickthrough";
+import { dismissMiniHover, miniHoverAtom } from "@/app/view/agents/miniclickthrough";
 import { writeConfig } from "@/app/view/agents/settingsui";
 import { foldedList, workingCount } from "@/app/view/agents/sproutroster";
 import { StatusDot } from "@/app/view/agents/statusdot";
@@ -85,7 +86,7 @@ import {
 
 const BOB_MS = 700;
 const DRAG_PX = 4;
-// how long a click waits for a second one: a single click opens the chat, a double-click restores
+// how long a click waits for a second one: a single click opens the card, a double-click restores
 const DOUBLE_CLICK_MS = 250;
 // the key that folds and gives the window back (floatstore.ts minimizeRequested), as the card names it
 const FOLD_KEY = isMacOS() ? "⌘M" : "Ctrl+M";
@@ -94,6 +95,8 @@ const MINI_TILE = false;
 
 // a reply that landed while the chat was folded (petmini.ts nextUnread)
 const miniUnreadAtom = atom(false) as PrimitiveAtom<boolean>;
+// the card a click on Sprout opened: it stays without the cursor on it
+const miniCardHeldAtom = atom(false) as PrimitiveAtom<boolean>;
 
 // the DEV contract's override: replaces those fold-look inputs until force(null), so a CDP step can light windows and
 // raise spider-sense without arranging working agents or an attention item, or hold the hover card open, which the
@@ -283,6 +286,7 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
     const sides = useAtomValue(miniSidesAtom);
     const resizing = useAtomValue(miniResizingAtom);
     const hovered = useAtomValue(miniHoverAtom);
+    const held = useAtomValue(miniCardHeldAtom);
     const chatOpen = useAtomValue(petPeekOpenAtom);
     const errand = useAtomValue(petErrandAtom);
     const unread = useAtomValue(miniUnreadAtom);
@@ -333,6 +337,7 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
     useEffect(() => {
         // a fold starts with nothing unread: a reply read before it is not news again
         globalStore.set(miniUnreadAtom, false);
+        globalStore.set(miniCardHeldAtom, false);
         let prev = globalStore.get(petErrandAtom);
         const step = () => {
             const next = globalStore.get(petErrandAtom);
@@ -345,6 +350,10 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
         const unErrand = globalStore.sub(petErrandAtom, step);
         const unOpen = globalStore.sub(petPeekOpenAtom, () => {
             step();
+            // the chat takes the card's place
+            if (globalStore.get(petPeekOpenAtom)) {
+                globalStore.set(miniCardHeldAtom, false);
+            }
             void resizeMini(globalStore.get(petPeekOpenAtom)).catch((e) => console.error("sizing the chat failed", e));
         });
         return () => {
@@ -353,11 +362,11 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
         };
     }, []);
 
-    // a click away from the open chat: the see-through window lets it through to the app behind, so the peek's
-    // backdrop never sees it. The window losing the focus to another app closes the chat instead; the fold's own
+    // a click away from the open chat or the held card: the see-through window lets it through to the app behind, so
+    // the peek's backdrop never sees it. The window losing the focus to another app closes them instead; the fold's own
     // window changes blur it too while arcterm stays in front (floatstore.ts), so the host says which it was.
     useEffect(() => {
-        if (!chatOpen) {
+        if (!chatOpen && !held) {
             return;
         }
         let live = true;
@@ -368,7 +377,11 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
             void invoke<Foreground>("app_foreground")
                 .catch((): Foreground => "beside")
                 .then((foreground) => {
-                    if (live && foreground !== "ours" && globalStore.get(petPeekOpenAtom)) {
+                    if (!live || foreground === "ours") {
+                        return;
+                    }
+                    globalStore.set(miniCardHeldAtom, false);
+                    if (globalStore.get(petPeekOpenAtom)) {
                         closePeek();
                     }
                 });
@@ -377,7 +390,22 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
             live = false;
             void unlisten.then((fn) => fn());
         };
-    }, [chatOpen]);
+    }, [chatOpen, held]);
+
+    // Esc lets go of the held card
+    useEffect(() => {
+        if (!held) {
+            return;
+        }
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") {
+                globalStore.set(miniCardHeldAtom, false);
+                dismissMiniHover();
+            }
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [held]);
 
     // Dev-only: the CDP harness reads the rooftop's look and forces its inputs through this, like petview.tsx's
     // __jarvisPet. Folded out of production builds — import.meta.env.DEV is statically false there.
@@ -424,7 +452,20 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
     };
     // to the size it was folded from, or to Float on an agent picked in the list
     const restore = (agentId?: string) => fireAndForget(() => restoreFromSprout(model, agentId));
-    // one click opens or closes the chat, once it is no double-click's first; a double-click restores
+    // one click closes the chat, or opens and holds the card or lets it go, once it is no double-click's first. A cursor
+    // still resting on Sprout must not open the card again right away.
+    const clickSprout = () => {
+        if (globalStore.get(petPeekOpenAtom)) {
+            closePeek();
+            dismissMiniHover();
+        } else if (globalStore.get(miniCardHeldAtom)) {
+            globalStore.set(miniCardHeldAtom, false);
+            dismissMiniHover();
+        } else {
+            globalStore.set(miniCardHeldAtom, true);
+        }
+    };
+    // a double-click restores
     const onClick = (e: ReactMouseEvent) => {
         if (dragged.current) {
             dragged.current = false;
@@ -435,15 +476,12 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
             restore();
             return;
         }
-        clickTimer.current = setTimeout(
-            () => (globalStore.get(petPeekOpenAtom) ? closePeek() : openPetPeek()),
-            e.detail === 0 ? 0 : DOUBLE_CLICK_MS
-        );
+        clickTimer.current = setTimeout(clickSprout, e.detail === 0 ? 0 : DOUBLE_CLICK_MS);
     };
     // the card takes the place of the bubbles while it shows: they come back when it closes
     // "…" and how many work, or Spider-Man's web: for him also while Jarvis thinks, with nothing to count
     const dots = teleport == null && (look.working != null || roof?.thinking === true);
-    const card = (forced?.hover ?? (hovered || typing)) && !chatOpen;
+    const card = (forced?.hover ?? (hovered || typing || held)) && !chatOpen;
     const speaking = bubble != null && !chatOpen && !card;
     const told = unread && !chatOpen && errand != null && bubble == null && !card;
     const fromFloat = origin !== "full";

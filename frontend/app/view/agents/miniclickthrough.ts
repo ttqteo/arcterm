@@ -10,7 +10,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { isMacOS } from "@/util/platformutil";
 import { cursorPosition, getCurrentWindow, primaryMonitor } from "@tauri-apps/api/window";
 import { atom, type PrimitiveAtom } from "jotai";
-import { HOVER_NONE, hitAny, nextHover, toPagePoint, type HoverState } from "./minihit";
+import { HOVER_DISMISSED, HOVER_NONE, hitAny, nextHover, toPagePoint, type HoverState } from "./minihit";
 
 const POLL_MS = 1000 / 15;
 
@@ -19,6 +19,7 @@ export const miniHoverAtom = atom(false) as PrimitiveAtom<boolean>;
 let timer: ReturnType<typeof setInterval> | null = null;
 // bumped by every stop: a tick still awaiting the cursor when the fold ends must not set the window deaf again
 let generation = 0;
+let hover: HoverState = HOVER_NONE;
 
 function boxes(selector: string): DOMRect[] {
     return Array.from(document.querySelectorAll(selector), (el) => el.getBoundingClientRect());
@@ -33,7 +34,7 @@ export function startClickThrough(): void {
     const gen = ++generation;
     let ignoring: boolean | null = null;
     let inFlight = false;
-    let hover: HoverState = HOVER_NONE;
+    hover = HOVER_NONE;
     timer = setInterval(async () => {
         if (inFlight) {
             return;
@@ -68,6 +69,12 @@ export function startClickThrough(): void {
             inFlight = false;
         }
     }, POLL_MS);
+}
+
+// A click on Sprout closed the card (sprout-mini.tsx): the cursor resting on it must not open it again at once.
+export function dismissMiniHover(): void {
+    hover = HOVER_DISMISSED;
+    globalStore.set(miniHoverAtom, false);
 }
 
 export function stopClickThrough(): void {

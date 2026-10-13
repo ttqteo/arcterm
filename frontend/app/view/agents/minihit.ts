@@ -50,12 +50,18 @@ export interface HoverState {
     shown: boolean;
     // when the cursor came onto Sprout with the card closed, or left both with it open; null while neither waits
     since: number | null;
+    // a click on Sprout closed the card: a cursor still resting on it opens nothing until it has left
+    dismissed?: boolean;
 }
 
 export const HOVER_NONE: HoverState = { shown: false, since: null };
+export const HOVER_DISMISSED: HoverState = { shown: false, since: null, dismissed: true };
 
 // One poll's step: over is the cursor on Sprout, or on the card while it shows.
 export function nextHover(prev: HoverState, over: boolean, now: number): HoverState {
+    if (prev.dismissed) {
+        return over ? prev : HOVER_NONE;
+    }
     if (over === prev.shown) {
         return prev.since == null ? prev : { shown: prev.shown, since: null };
     }

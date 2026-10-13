@@ -2,7 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { HOVER_ENTER_MS, HOVER_LEAVE_MS, HOVER_NONE, hitAny, nextHover, toPagePoint, type HoverState } from "./minihit";
+import {
+    HOVER_DISMISSED,
+    HOVER_ENTER_MS,
+    HOVER_LEAVE_MS,
+    HOVER_NONE,
+    hitAny,
+    nextHover,
+    toPagePoint,
+    type HoverState,
+} from "./minihit";
 
 const sprout = { left: 260, top: 32, right: 340, bottom: 112 };
 const chip = { left: 40, top: 70, right: 250, bottom: 100 };
@@ -74,5 +83,13 @@ describe("nextHover", () => {
         const open: HoverState = { shown: true, since: null };
         const away = nextHover(open, false, 0);
         expect(nextHover(away, true, 100)).toEqual(open);
+    });
+    it("opens nothing for a cursor still resting on Sprout after a click closed the card", () => {
+        expect(poll(HOVER_DISMISSED, true, HOVER_ENTER_MS * 4).state.shown).toBe(false);
+    });
+    it("opens the card again once the cursor has left and come back to rest", () => {
+        const gone = nextHover(HOVER_DISMISSED, false, 0);
+        expect(gone).toEqual(HOVER_NONE);
+        expect(poll(gone, true, HOVER_ENTER_MS + 70, 67).state.shown).toBe(true);
     });
 });

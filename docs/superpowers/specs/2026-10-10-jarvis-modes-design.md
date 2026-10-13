@@ -48,7 +48,7 @@ One Sprout, 48 px (3 px a cell) in every size, the same marks and the same chat.
 |---|---|---|---|
 | Where | Walks the footer, as today | Walks a **52 px ledge** at the bottom of the float window | Alone on the desktop, bobbing; dragging moves the window |
 | What waits | Posture mark over its head; the count is the nav rail badge | Mark, and an amber **count chip** beside it | Mark and count chip |
-| One click | Opens the chat | Opens the chat, risen from the ledge | Opens the chat |
+| One click | Opens the chat | Opens the chat, risen from the ledge | Opens and holds the hover card (2026-10-13); its chat row opens the chat |
 | In-app notices | Bubbles and toasts, as today | **Sprout's bubbles** instead of toasts | Sprout's bubbles |
 
 - **Float shows one terminal** (the focused agent's) and gains an **agent switcher** in the float bar: one status dot
