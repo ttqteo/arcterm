@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (Initiative bar: the next chunk is no longer accent)**
+
+- [ ] Jarvis → Initiatives: a row whose chunks are all pending (e.g. Repo hygiene 0/2) shows an all-grey bar, no
+  accent segment; a chunk set to active is still accent. `effortmodel.ts` `buildEffortCard` segments.
+
 **2026-10-13 (Jarvis popup: folded chat closes on a click away, no Ask while folded, compact composer)**
 
 - [ ] Fold into Sprout, click it to open the Jarvis chat, then click another app (or the desktop): the chat closes.

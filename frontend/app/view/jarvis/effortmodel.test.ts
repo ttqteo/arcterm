@@ -56,14 +56,14 @@ describe("buildEffortCard", () => {
         expect(buildEffortCard({ ...base, total: 30, chunks: many } as EffortSummary).segments).toHaveLength(30);
     });
 
-    it("marks the active chunk's segment even while its stored status is still pending", () => {
+    it("leaves the next chunk's segment pending while its stored status is pending", () => {
         const chunks = [
             { label: "a", status: "done" },
             { label: "b", status: "pending" },
-            { label: "c", status: "pending" },
+            { label: "c", status: "active" },
         ];
         const m = buildEffortCard({ ...base, total: 3, done: 1, activechunk: "b", chunks } as EffortSummary);
-        expect(m.segments).toEqual(["done", "active", "pending"]);
+        expect(m.segments).toEqual(["done", "pending", "active"]);
     });
 
     it("caps chips at 12 with an overflow count", () => {

@@ -20,6 +20,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- **An initiative's progress bar no longer paints its next chunk in the accent colour**, which read as work under
+  way when nobody had picked it up. Only a chunk actually marked active is accent; the next one stays grey.
 - **The folded Sprout's Jarvis chat closes when you click away** to another app, as a popup should, instead of
   staying open over it.
 
