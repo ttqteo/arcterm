@@ -10,6 +10,12 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ## Unreleased
 
+### Added
+
+- **Stop the fold that follows you out of arcterm for a while**: with "Fold when you leave arcterm" on, the folded
+  Sprout's hover card restores the window and holds the fold off for 1 hour, until the next 8:00, or until a time you
+  type (`2h`, `30m`, `14:30`). While it holds, the card says until when, with Resume to end it.
+
 ### Changed
 
 - The RAM popup on Windows now shows what arcterm's total is made of, on one line under the agents: Agents,

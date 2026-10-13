@@ -27,6 +27,15 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (Don't fold for, on the folded Sprout)**
+
+- [ ] (arcterm) **The folded Sprout's card holds the auto fold off.** Turn on "Fold when you leave arcterm" (right-click
+  the app bar's Sprout), leave for an app that covers arcterm so it folds, and rest the cursor on Sprout: the card ends
+  with "Restore, don't fold for" and `1 hour`, `till 8:00` and a box. Typing `2h` shows "until …" under it; Enter (or a
+  chip) restores the window, and leaving again does not fold. Folded by hand, the card then reads "No fold until …"
+  with Resume. Check the card is not cut off at the top with four agents listed (the folded window grew to 320x336),
+  and that typing keeps the card open when the cursor leaves it. (`sprout-mini.tsx` `FoldPauseRow`, `foldpause.ts`)
+
 **2026-10-13 (arcterm's RAM broken down in the compact popup)**
 
 - [ ] (arcterm) **The compact RAM popup lists what arcterm's figure is made of.** Open the RAM chip on Windows: under

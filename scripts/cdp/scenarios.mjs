@@ -7841,7 +7841,7 @@ const miniForce = async (h, o, ok, ms = 3000) => {
     await h.ev(`window.__jarvisMini?.force(${JSON.stringify(o)})`);
     return petUntil(() => miniRead(h), ok, ms, 100);
 };
-// the folded window is 320x264, so its shot is small; the 64px box gets the same 4x crop the creature does
+// the folded window is 320x336, so its shot is small; the 64px box gets the same 4x crop the creature does
 async function miniShot(h, name) {
     await h.shot(`cdp-shots/${name}.png`);
     await petCropOf(h, `${name}-zoom`, '[data-mini-hit="sprout"]', 8);

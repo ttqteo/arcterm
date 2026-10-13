@@ -3217,6 +3217,7 @@ declare global {
         "window:magnifiedblockblursecondarypx"?: number;
         "window:minimize"?: string;
         "window:autosprout"?: boolean;
+        "window:autosproutpauseuntil"?: number;
         "conn:*"?: boolean;
         "conn:localhostdisplayname"?: string;
         "debug:*"?: boolean;

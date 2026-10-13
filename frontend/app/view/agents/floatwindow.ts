@@ -106,7 +106,7 @@ export function parseRestore(raw: unknown): FloatRestore | null {
 // grows for the chat, always around Sprout's own place on screen, so Sprout never moves when the chat opens or closes.
 // Sizes are logical here and in the fold's space in the rects (toSpace).
 export const MINI_SPROUT_BOX = 64; // the 48px sprite (petsprite.ts PET_PX) with room for its bob and the count chip
-export const MINI_REST_SIZE = { width: 320, height: 264 }; // room beside Sprout for the hover card and the bubble
+export const MINI_REST_SIZE = { width: 320, height: 336 }; // room beside Sprout for the hover card and the bubble
 export const MINI_CHAT_SIZE = { width: 380, height: 620 };
 const MINI_MARGIN = 24;
 

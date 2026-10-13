@@ -5,7 +5,8 @@
 // 48px as on the footer and the float's ledge, sits in the window's corner away from where things open (floatwindow.ts
 // miniSides), bobs, wears what waits on you (petmini.ts), and is dragged by a press that moves. A click opens or closes
 // the Jarvis chat (the pet peek); a double-click gives back the size it was folded from. A cursor resting on it opens the
-// hover card: the agents (a click floats on one), the row that opens the chat, and Restore. What Sprout says
+// hover card: the agents (a click floats on one), the row that opens the chat, Restore, and "Don't fold
+// for", which restores and holds the fold on leaving the app off for a while (foldpause.ts). What Sprout says
 // (petBubbleAtom), and a reply that landed while the chat was folded, show in a bubble beside it, and give way to the
 // card. Spider-Man folds into a rooftop scene instead (petmini.ts spideyFoldLook): windows lit for the
 // agents working, spider-sense for what waits, and his web with the count beside it, since the windows stop at four.
@@ -13,6 +14,7 @@
 // here carries a title or a drop shadow, and Sprout has no ground shadow: over a light app behind the see-through
 // window, they read as dark smears. A border keeps each one apart from what is behind it.
 
+import { getSettingsKeyAtom } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { STATE_COLOR, STATE_LABEL } from "@/app/view/agents/agentheader";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
@@ -25,9 +27,19 @@ import {
     restoreFromSprout,
 } from "@/app/view/agents/floatstore";
 import type { MiniSides } from "@/app/view/agents/floatwindow";
+import {
+    foldPaused,
+    HOUR_PAUSE_MS,
+    MORNING_HOUR,
+    nextMorning,
+    parsePauseText,
+    pauseEndLabel,
+} from "@/app/view/agents/foldpause";
 import { miniHoverAtom } from "@/app/view/agents/miniclickthrough";
+import { writeConfig } from "@/app/view/agents/settingsui";
 import { foldedList, workingCount } from "@/app/view/agents/sproutroster";
 import { StatusDot } from "@/app/view/agents/statusdot";
+import { autoSproutOn } from "@/app/view/agents/windowsize";
 import { closePeek, openPetPeek } from "@/app/view/jarvis/peekstore";
 import { PetBubble } from "@/app/view/jarvis/petbubble";
 import { petCharacter } from "@/app/view/jarvis/petcharacter";
@@ -60,7 +72,7 @@ import { cn, fireAndForget } from "@/util/util";
 import type { Placement } from "@floating-ui/react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
-import { MessageCircle, PictureInPicture2, X } from "lucide-react";
+import { CornerDownLeft, MessageCircle, Pause, PictureInPicture2, X } from "lucide-react";
 import {
     useEffect,
     useMemo,
@@ -154,6 +166,113 @@ function openPlacement(sides: MiniSides): Placement {
 const ROW =
     "flex cursor-pointer items-center gap-2 rounded-[7px] px-2 text-left hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
+const CHIP =
+    "flex h-6 flex-none cursor-pointer items-center rounded-[6px] border border-edge-mid px-2 text-[11px] font-semibold text-secondary hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+
+// The card's last row while window:autosprout is on: restore, and no fold on leaving for an hour, until the next 8:00,
+// or until a typed time; while such a pause holds, when it ends and a way to end it now. onTyping keeps the card open
+// while there is text in the box, so the cursor can leave it.
+function FoldPauseRow({ onPause, onTyping }: { onPause: () => void; onTyping: (typing: boolean) => void }) {
+    const on = autoSproutOn(useAtomValue(getSettingsKeyAtom("window:autosprout")));
+    const until = useAtomValue(getSettingsKeyAtom("window:autosproutpauseuntil"));
+    const [text, setText] = useState("");
+    // the chat opening hides the card and drops the text: it must not hold the card open after
+    useEffect(() => () => onTyping(false), [onTyping]);
+    if (!on) {
+        return null;
+    }
+    const now = Date.now();
+    if (foldPaused(until, now)) {
+        return (
+            <div data-mini-pause className="flex h-7 items-center gap-1.5 px-2 text-[11.5px] text-muted">
+                <Pause size={12} strokeWidth={2} aria-hidden />
+                <span className="min-w-0 flex-1 truncate">No fold until {pauseEndLabel(until, now)}</span>
+                <button
+                    type="button"
+                    data-mini-pause-end
+                    onClick={() => writeConfig({ "window:autosproutpauseuntil": 0 })}
+                    className={CHIP}
+                >
+                    Resume
+                </button>
+            </div>
+        );
+    }
+    const typed = parsePauseText(text, now);
+    const pauseUntil = (end: number) => {
+        writeConfig({ "window:autosproutpauseuntil": end });
+        setText("");
+        onTyping(false);
+        onPause();
+    };
+    return (
+        <div data-mini-pause className="flex flex-col gap-1 px-2 pb-1 pt-0.5">
+            <span className="flex h-6 items-center gap-1.5 text-[11.5px] font-semibold text-secondary">
+                <Pause size={12} strokeWidth={2} aria-hidden />
+                Restore, don&apos;t fold for
+            </span>
+            <div className="flex items-center gap-1">
+                <button
+                    type="button"
+                    data-mini-pause-hour
+                    onClick={() => pauseUntil(now + HOUR_PAUSE_MS)}
+                    className={CHIP}
+                >
+                    1 hour
+                </button>
+                <button
+                    type="button"
+                    data-mini-pause-morning
+                    onClick={() => pauseUntil(nextMorning(now))}
+                    className={CHIP}
+                >
+                    till {MORNING_HOUR}:00
+                </button>
+                <form
+                    className="flex h-6 min-w-0 flex-1 items-center rounded-[6px] border border-edge-mid bg-surface focus-within:border-accent"
+                    onSubmit={(e) => {
+                        e.preventDefault();
+                        if (typed != null) {
+                            pauseUntil(typed);
+                        }
+                    }}
+                >
+                    <input
+                        data-mini-pause-input
+                        value={text}
+                        onChange={(e) => {
+                            setText(e.target.value);
+                            onTyping(e.target.value !== "");
+                        }}
+                        onKeyDown={(e) => {
+                            if (e.key === "Escape") {
+                                setText("");
+                                onTyping(false);
+                            }
+                        }}
+                        placeholder="2h, 14:30"
+                        aria-label="Don't fold for a while, or until a time"
+                        className="min-w-0 flex-1 bg-transparent px-1.5 text-[11px] text-primary outline-none placeholder:text-muted"
+                    />
+                    <button
+                        type="submit"
+                        aria-label="Restore and don't fold until then"
+                        disabled={typed == null}
+                        className="flex h-full cursor-pointer items-center px-1 text-muted hover:text-primary disabled:cursor-default disabled:opacity-40"
+                    >
+                        <CornerDownLeft size={11} strokeWidth={2} aria-hidden />
+                    </button>
+                </form>
+            </div>
+            {text.trim() !== "" ? (
+                <span className="text-[10.5px] text-muted">
+                    {typed != null ? `until ${pauseEndLabel(typed, now)}` : "a length (2h, 30m) or a time (14:30)"}
+                </span>
+            ) : null}
+        </div>
+    );
+}
+
 export function SproutMini({ model }: { model: AgentsViewModel }) {
     const signals = usePetSignals(model);
     const sides = useAtomValue(miniSidesAtom);
@@ -173,6 +292,8 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
     const liveWaiting = useWaitingCount(model);
     const liveWorking = useMemo(() => workingCount(agents), [agents]);
     const [forced, setForced] = useState<MiniForce | null>(null);
+    // text in the card's pause box: the card stays while it is there
+    const [typing, setTyping] = useState(false);
     const look = miniLook({
         posture: forced?.posture ?? postureFor(signals),
         waiting: forced?.waiting ?? liveWaiting,
@@ -291,7 +412,7 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
     // the card takes the place of the bubbles while it shows: they come back when it closes
     // "…" and how many work, or Spider-Man's web: for him also while Jarvis thinks, with nothing to count
     const dots = teleport == null && (look.working != null || roof?.thinking === true);
-    const card = (forced?.hover ?? hovered) && !chatOpen;
+    const card = (forced?.hover ?? (hovered || typing)) && !chatOpen;
     const speaking = bubble != null && !chatOpen && !card;
     const told = unread && !chatOpen && errand != null && bubble == null && !card;
     const fromFloat = origin !== "full";
@@ -447,6 +568,7 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
                         {fromFloat ? "Restore float" : "Restore window"}
                         <span className="ml-auto text-[10.5px] font-medium text-muted">double-click · {FOLD_KEY}</span>
                     </button>
+                    <FoldPauseRow onPause={() => restore()} onTyping={setTyping} />
                 </div>
             ) : null}
 

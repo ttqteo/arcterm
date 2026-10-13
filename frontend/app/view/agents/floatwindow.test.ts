@@ -141,9 +141,9 @@ describe("miniWindowRect", () => {
     it("rests in a box with Sprout in its bottom-right corner when things open left and up", () => {
         expect(miniWindowRect(corner, MINI_REST_SIZE, { h: "left", v: "up" }, laptop, 2)).toEqual({
             x: 2600 + 128 - 640,
-            y: 1600 + 128 - 528,
+            y: 1600 + 128 - 672,
             width: 640,
-            height: 528,
+            height: 672,
         });
     });
     it("opens right and down from a Sprout in the top-left corner", () => {

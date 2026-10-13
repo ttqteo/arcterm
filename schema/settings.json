@@ -144,6 +144,9 @@
         "window:autosprout": {
           "type": "boolean"
         },
+        "window:autosproutpauseuntil": {
+          "type": "integer"
+        },
         "conn:*": {
           "type": "boolean"
         },

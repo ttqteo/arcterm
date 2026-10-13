@@ -58,6 +58,7 @@ const (
 	ConfigKey_WindowMagnifiedBlockBlurSecondaryPx = "window:magnifiedblockblursecondarypx"
 	ConfigKey_WindowMinimize                 = "window:minimize"
 	ConfigKey_WindowAutoSprout               = "window:autosprout"
+	ConfigKey_WindowAutoSproutPauseUntil     = "window:autosproutpauseuntil"
 
 	ConfigKey_ConnClear                      = "conn:*"
 	ConfigKey_ConnLocalHostnameDisplay       = "conn:localhostdisplayname"

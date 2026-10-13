@@ -57,6 +57,7 @@ import {
     type Screen,
     type WinRect,
 } from "./floatwindow";
+import { foldPaused } from "./foldpause";
 import { MINIMIZE_EVENT, redirectMinimize, REOPEN_EVENT, setFoldedChrome } from "./macwindow";
 import { startClickThrough, stopClickThrough } from "./miniclickthrough";
 import { terminalFullscreenAtom } from "./railstore";
@@ -828,6 +829,8 @@ async function recoverFold(win: Window, restore: MiniRestore): Promise<void> {
 function setupAutoSprout(model: AgentsViewModel): () => void {
     const win = getCurrentWindow();
     const setting = getSettingsKeyAtom("window:autosprout");
+    // the folded Sprout's "Don't fold for" (foldpause.ts) holds it off until then
+    const pauseSetting = getSettingsKeyAtom("window:autosproutpauseuntil");
     let leaveTimer: ReturnType<typeof setTimeout> | undefined;
     let returnTimer: ReturnType<typeof setTimeout> | undefined;
     let armed = false;
@@ -848,7 +851,7 @@ function setupAutoSprout(model: AgentsViewModel): () => void {
             win.isVisible(),
             win.isFocused(),
         ]);
-        const on = autoSproutOn(globalStore.get(setting));
+        const on = autoSproutOn(globalStore.get(setting)) && !foldPaused(globalStore.get(pauseSetting), Date.now());
         if (focused || !autoFoldOnLeave({ on, size: currentSize().size, foreground, minimized, visible })) {
             return;
         }
