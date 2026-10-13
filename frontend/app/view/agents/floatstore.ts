@@ -47,9 +47,12 @@ import {
     parseMiniRestore,
     parseRect,
     parseRestore,
+    parseSpot,
     screenFor,
     spaceScale,
+    spotRect,
     sproutFromWindow,
+    sproutSpot,
     toSpace,
     type FloatRestore,
     type MiniRestore,
@@ -112,6 +115,8 @@ export const miniResizingAtom = atom(false) as PrimitiveAtom<boolean>;
 
 // the origin, frame and pin to give back; session, so a reload mid-fold can still give them back
 const MINI_RESTORE_KEY = "arc.float.miniRestore";
+// where the last drag left Sprout, for the next fold (floatwindow.ts SproutSpot)
+const SPROUT_SPOT_KEY = "arc.float.sproutSpot";
 
 function readJson(storage: () => Storage, key: string): unknown {
     try {
@@ -513,7 +518,12 @@ export function foldToSprout(): Promise<void> {
             };
             writeJson(session, MINI_RESTORE_KEY, restore);
             const screen = await screenOfRect(frame);
-            const spot = miniSproutRect(null, screen.area, screen.scale);
+            const kept = parseSpot(readJson(local, SPROUT_SPOT_KEY));
+            const spot = miniSproutRect(
+                kept == null ? null : spotRect(kept, screen.area, screen.scale),
+                screen.area,
+                screen.scale
+            );
             const motion = !reducedMotion();
             closePeek();
             globalStore.set(foldOriginAtom, origin);
@@ -780,8 +790,8 @@ function exitMini(): Promise<void> {
     });
 }
 
-// A drag moves the window: pull Sprout back on screen when it was dropped past an edge, and turn the window around
-// when Sprout crossed the middle.
+// A drag moves the window: pull Sprout back on screen when it was dropped past an edge, keep the spot for the next
+// fold, and turn the window around when Sprout crossed the middle.
 function settleMove(): Promise<void> {
     return miniOps(async () => {
         if (!globalStore.get(floatMiniAtom) || sprout == null) {
@@ -791,6 +801,7 @@ function settleMove(): Promise<void> {
         const moved = await sproutNow(win);
         const screen = await screenOfRect(moved);
         sprout = miniSproutRect(moved, screen.area, screen.scale);
+        writeJson(local, SPROUT_SPOT_KEY, sproutSpot(sprout, screen.area, screen.scale));
         const sides = globalStore.get(miniSidesAtom);
         const next = miniSides(sprout, screen.area);
         const pulled = sprout.x !== moved.x || sprout.y !== moved.y;

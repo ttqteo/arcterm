@@ -17,9 +17,12 @@ import {
     parseMiniRestore,
     parseRect,
     parseRestore,
+    parseSpot,
     screenFor,
     spaceScale,
+    spotRect,
     sproutFromWindow,
+    sproutSpot,
     toSpace,
     type MiniSides,
 } from "./floatwindow";
@@ -88,7 +91,7 @@ describe("parseRect and parseRestore", () => {
 });
 
 describe("miniSproutRect", () => {
-    it("puts a Sprout with no spot, a fold's, in the bottom-right corner of the work area, 24px in", () => {
+    it("puts a Sprout with no spot, a first fold's, in the bottom-right corner of the work area, 24px in", () => {
         expect(miniSproutRect(null, laptop, 2)).toEqual({
             x: laptop.x + laptop.width - 128 - 48,
             y: laptop.y + laptop.height - 128 - 48,
@@ -124,6 +127,61 @@ describe("miniSproutRect", () => {
         const r = miniSproutRect(gone, screen.area, screen.scale);
         expect(r.x + r.width).toBeLessThanOrEqual(laptop.x + laptop.width);
         expect(r.y).toBeGreaterThanOrEqual(laptop.y);
+    });
+});
+
+describe("sproutSpot and spotRect", () => {
+    it("keeps the first fold's corner as 24px in from the bottom right", () => {
+        expect(sproutSpot(miniSproutRect(null, laptop, 2), laptop, 2)).toEqual({
+            h: "right",
+            v: "bottom",
+            dx: 24,
+            dy: 24,
+        });
+    });
+    it("keeps a Sprout dragged up off the corner, so the next fold does not cover what sits there", () => {
+        const dragged = {
+            x: laptop.x + laptop.width - 128 - 48,
+            y: laptop.y + laptop.height - 128 - 400,
+            width: 128,
+            height: 128,
+        };
+        const spot = sproutSpot(dragged, laptop, 2);
+        expect(spot).toEqual({ h: "right", v: "bottom", dx: 24, dy: 200 });
+        expect(spotRect(spot, laptop, 2)).toEqual(dragged);
+    });
+    it("measures from the nearest corner", () => {
+        expect(sproutSpot({ x: laptop.x + 80, y: laptop.y + 60, width: 128, height: 128 }, laptop, 2)).toEqual({
+            h: "left",
+            v: "top",
+            dx: 40,
+            dy: 30,
+        });
+    });
+    it("lands the same distance from its corner on a screen of another size and scale", () => {
+        const spot = sproutSpot({ x: 2600, y: 1200, width: 128, height: 128 }, laptop, 2);
+        expect(spotRect(spot, side, 1)).toEqual({
+            x: side.x + side.width - 64 - spot.dx,
+            y: side.y + side.height - 64 - spot.dy,
+            width: 64,
+            height: 64,
+        });
+    });
+    it("a spot past a smaller screen's edge is pulled back onto it", () => {
+        const far = { h: "left" as const, v: "top" as const, dx: 3000, dy: 3000 };
+        expect(miniSproutRect(spotRect(far, side, 1), side, 1)).toEqual({
+            x: side.x + side.width - 64,
+            y: side.y + side.height - 64,
+            width: 64,
+            height: 64,
+        });
+    });
+    it("parses a stored spot and drops a broken one", () => {
+        expect(parseSpot({ h: "right", v: "top", dx: 10, dy: 300 })).toEqual({ h: "right", v: "top", dx: 10, dy: 300 });
+        expect(parseSpot({ h: "middle", v: "top", dx: 10, dy: 300 })).toBeNull();
+        expect(parseSpot({ h: "right", v: "top", dx: "10", dy: 300 })).toBeNull();
+        expect(parseSpot(null)).toBeNull();
+        expect(parseSpot("corner")).toBeNull();
     });
 });
 

@@ -137,7 +137,7 @@ export function miniSides(sprout: WinRect, work: WinRect): MiniSides {
     };
 }
 
-// Sprout's box on screen: where a drag left it, pulled back on screen; with no spot, a fold's, the work area's
+// Sprout's box on screen: where a drag left it, pulled back on screen; with no spot, a first fold's, the work area's
 // bottom-right corner, so Sprout is always found in the same place
 export function miniSproutRect(spot: WinRect | null, work: WinRect, scale: number): WinRect {
     const size = MINI_SPROUT_BOX * scale;
@@ -150,6 +150,51 @@ export function miniSproutRect(spot: WinRect | null, work: WinRect, scale: numbe
         width: size,
         height: size,
     };
+}
+
+// Where a drag left Sprout, kept from fold to fold, since the bottom-right corner is where many pages keep their own
+// buttons (a chat's heads, a help bubble): how far in its box is from the work area's nearest corner, in logical pixels,
+// so it lands in the same place on a screen of another size or scale
+export interface SproutSpot {
+    h: "left" | "right";
+    v: "top" | "bottom";
+    dx: number;
+    dy: number;
+}
+
+export function sproutSpot(sprout: WinRect, work: WinRect, scale: number): SproutSpot {
+    const right = sprout.x + sprout.width / 2 >= work.x + work.width / 2;
+    const bottom = sprout.y + sprout.height / 2 >= work.y + work.height / 2;
+    const dx = right ? work.x + work.width - sprout.x - sprout.width : sprout.x - work.x;
+    const dy = bottom ? work.y + work.height - sprout.y - sprout.height : sprout.y - work.y;
+    return {
+        h: right ? "right" : "left",
+        v: bottom ? "bottom" : "top",
+        dx: Math.round(dx / scale),
+        dy: Math.round(dy / scale),
+    };
+}
+
+// Sprout's box at a kept spot on this screen, for miniSproutRect to pull on screen
+export function spotRect(spot: SproutSpot, work: WinRect, scale: number): WinRect {
+    const size = MINI_SPROUT_BOX * scale;
+    return {
+        x: spot.h === "right" ? work.x + work.width - size - spot.dx * scale : work.x + spot.dx * scale,
+        y: spot.v === "bottom" ? work.y + work.height - size - spot.dy * scale : work.y + spot.dy * scale,
+        width: size,
+        height: size,
+    };
+}
+
+export function parseSpot(raw: unknown): SproutSpot | null {
+    const s = raw as Partial<SproutSpot> | null;
+    if (s == null || typeof s !== "object" || !isNum(s.dx) || !isNum(s.dy)) {
+        return null;
+    }
+    if ((s.h !== "left" && s.h !== "right") || (s.v !== "top" && s.v !== "bottom")) {
+        return null;
+    }
+    return { h: s.h, v: s.v, dx: s.dx, dy: s.dy };
 }
 
 // The window around Sprout's box at a logical size, Sprout in the corner away from where things open, cut to the room
