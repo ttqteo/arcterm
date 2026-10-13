@@ -111,9 +111,9 @@ Code: `agentsidebarmodel.ts` (buildAgentTree, `splitActive`) builds the one tree
 
 A third tab after Instructions and Skills. Left: search and the catalog by category, each row with its status
 (installed, not installed, installing, install failed, on PATH / not on PATH for yours), and "Add your own tool". Right,
-for the selected tool: purpose, primary action "Open lazygit" (in the focused agent's folder), then Opens in, Shows, Shortcut, "In Open a tool"
+for the selected tool: purpose, primary action "Open lazygit" (in the focused agent's folder), then Opens in, Shows, "In Open a tool"
 (pinned to the picker's top), Command with where it was found, Install (command and Update), and Open now (its running
-blocks with Show).
+blocks with Show). A per-tool Shortcut field is deferred until the chord question below is settled (`docs/deferred.md`).
 
 ### Open a tool (board Picker)
 
@@ -169,5 +169,5 @@ project, for when no agent is in focus (the picker always follows the focused ag
 
 - `tools.json` file versus a `tools` key in settings.
 - The global chords: `Ctrl`+`Shift`+`T` for the picker, `Ctrl`+`` ` `` for the panel, per-tool shortcuts as `Ctrl`+`G`
-  leader chords.
+  leader chords (deferred: this change ships no per-tool shortcut, and the library has no Shortcut field yet).
 - Whether the Conversations section should also fold into project folders later (not part of this change).

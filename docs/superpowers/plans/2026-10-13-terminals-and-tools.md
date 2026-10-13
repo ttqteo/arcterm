@@ -32,10 +32,12 @@ Ground rules for every task:
 - Colors only from `@theme` tokens (`frontend/tailwindsetup.css`); match the boards in the Prototype folder for sizes,
   copy and states. Read `DESIGN.md` before styling.
 - Never hand-edit generated files; run `task generate` after Go type changes.
-- Typecheck with `task check:ts` (about 2 minutes, give it a longer timeout); never `npx tsc`.
+- Typecheck with `node --stack-size=4000 node_modules/typescript/lib/tsc.js --noEmit` (about 2 minutes, give it a longer timeout). Never `task check:ts`: in an engine
+  worktree it runs `npm install`, which replaces the `node_modules` junction. Never `npx tsc` (it stack-overflows).
 - Commit only the files your task lists (`git commit -- <paths>`); no `Co-Authored-By` trailer. Leave `CHANGELOG.md`
   and docs to Task 11.
-- The `data-*` attributes named in each task are what Task 10's scenarios select on: use them exactly.
+- The `data-*` attributes named in each task are what Task 10's scenarios select on: use them exactly. Each UI task's
+  **Shown by** line names the Task 10 scenario steps that show its views; build what those steps select.
 
 ### Task 1: Tool catalog, user tools config and status RPC (Go)
 
@@ -104,7 +106,8 @@ config dir is read and watched like `projects.json`. Add `SetUserTool(id string,
 `tools.json` with that entry set (nil removes it), following `SetProjectConfigValue` / `DeleteProjectConfigValue`.
 
 **Step 4: Merge.** In `catalog.go` add `func Merge(builtin []Tool, user map[string]wconfig.ToolKeywords) []Tool`
-implementing the test above. Run the Step 2 command. Expected: PASS.
+implementing the test above; a user entry's `InstallWindows` / `InstallDarwin` become its `Install` lines (assert this
+in `TestMergeUserTools` too). Run the Step 2 command. Expected: PASS.
 
 **Step 5: Status, failing test first.** `pkg/arctools/status.go`:
 
@@ -156,9 +159,9 @@ Check that `frontend/app/store/wshclientapi.ts` now has `ToolsStatusCommand` and
 
 ### Task 2: One tree per project (pure model)
 
-**Depends on:** none
+**Depends on:** Task 1
 
-**Files:** `frontend/app/view/agents/agentsidebarmodel.ts`, `frontend/app/view/agents/agentsidebarmodel.test.ts`, `frontend/app/view/agents/activenav.ts`, `frontend/app/view/agents/agentsviewmodel.ts`
+**Files:** `frontend/app/view/agents/agentsidebarmodel.ts`, `frontend/app/view/agents/agentsidebarmodel.test.ts`, `frontend/app/view/agents/activenav.ts`, `frontend/app/view/agents/agentsviewmodel.ts`, `frontend/app/view/agents/agentsviewmodel.test.ts`, `frontend/app/view/agents/liveagents.ts`
 
 Facts: `buildAgentTree` (`agenttreemodel.ts:205`) emits a `group` row per project then its body; `activeView`
 (`agentsidebarmodel.ts:283`), `splitActive` (`:344`, lifts only `parent` rows), `terminalTree` (`:406`) and
@@ -167,9 +170,15 @@ Facts: `buildAgentTree` (`agenttreemodel.ts:205`) emits a `group` row per projec
 `cwd` in its input but does not put it on the VM. Test fixtures in `agentsidebarmodel.test.ts`: `agent()` `:65`,
 `treeOf()` `:86`, local `term(id, project)` `:732`.
 
-**Step 1: Carry cwd on terminal VMs.** In `deriveTerminalVMs`, set `cwd` on the VM from the row input (the field
-already exists on `AgentVM`, `:99`; update its comment: background agents and terminals). No test of its own; Step 2
-covers the use.
+**Step 1: Carry cwd and the tool id on terminal VMs.** In `deriveTerminalVMs`, set `cwd` on the VM from the row input
+(the field already exists on `AgentVM`, `:99`; update its comment: background agents and terminals). Add
+`toolId?: string` to `AgentVM` (a terminal opened from the tool library: block meta `tool:id`, which Task 1 added) and a
+`toolId: (blockId) => string | undefined` callback to `deriveTerminalVMs` (default `() => undefined`, like its other
+callbacks) that sets it. `liveTerminalsAtom` (`liveagents.ts:104`) passes a callback reading
+`get(WOS.getWaveObjectAtom<Block>("block:" + blockId))?.meta?.["tool:id"]`. Test in `agentsviewmodel.test.ts` beside
+the existing `deriveTerminalVMs` cases: `it("carries a terminal's cwd and tool id")`. This is what lets a tool row show
+the tool's name and icon (Task 5), Library's Open now find its terminals (Task 6) and the worktree-removed card reopen
+the same tool (Task 9).
 
 **Step 2: Write the failing tests** in `agentsidebarmodel.test.ts`, a new `describe("projectTree")`:
 
@@ -227,33 +236,43 @@ well (Task 3 makes the grid accept them).
 
 **Depends on:** Task 2
 
-**Files:** `frontend/app/view/agents/gridstore.ts`, `frontend/app/view/agents/gridstore.test.ts`, `frontend/app/view/agents/terminaldock.ts`, `frontend/app/view/agents/terminaldock.test.ts`, `frontend/app/view/agents/railstore.ts`, `frontend/app/view/agents/terminaldockbar.tsx`, `frontend/app/view/agents/agentsurface.tsx`, `frontend/app/view/agents/agentheader.tsx`, `frontend/app/view/agents/terminalpanehead.ts`, `frontend/app/view/agents/terminalpanehead.test.ts`, `frontend/app/view/agents/cockpitsurfacemodel.ts`, `frontend/app/store/keybindings/bindings.ts`
+**Files:** `frontend/app/view/agents/gridstore.ts`, `frontend/app/view/agents/gridstore.test.ts`, `frontend/app/view/agents/terminaldock.ts`, `frontend/app/view/agents/terminaldock.test.ts`, `frontend/app/view/agents/railstore.ts`, `frontend/app/view/agents/terminaldockbar.tsx`, `frontend/app/view/agents/agentsurface.tsx`, `frontend/app/view/agents/agentheader.tsx`, `frontend/app/view/agents/terminalpanehead.ts`, `frontend/app/view/agents/terminalpanehead.test.ts`, `frontend/app/view/agents/terminalpanehead.tsx`, `frontend/app/view/agents/cockpitsurfacemodel.ts`, `frontend/app/view/agents/cockpitsurfacemodel.test.ts`, `frontend/app/view/agents/agentgridfocus.test.ts`, `frontend/app/store/keybindings/bindings.ts`
 
 Facts: `eligibleIds(agents)` (`gridstore.ts:46`) is the only "agents only" gate, and callers pass `agentsAtom`;
 `GridModel` (`:40`) has no `terminalsAtom`. `splitDock` (`terminaldock.ts:51`, rule `:55-58`) docks a focused terminal
 under its host agent and the surface writes `focusIdAtom` back to the agent (`agentsurface.tsx:112, 139-151`).
-`resolveShownAgent` (`cockpitsurfacemodel.ts`) shows a terminal only when no agent exists (`agentsurface.tsx:98`).
+`resolveShownAgent` (`cockpitsurfacemodel.ts:48`) already returns a focused terminal; it is `splitDock` running first
+that swaps a focused terminal for its host agent, and the fallback with nothing in focus picks a terminal only when no
+agent exists (`agentsurface.tsx:98-124`). `agentgridfocus.test.ts:80-86` asserts a focused terminal leaves the grid
+untouched, the rule this task changes.
 Dock state: `railstore.ts:66-78`; dock bar `terminaldockbar.tsx`; surface dock wrapper `agentsurface.tsx:571-615`.
 `agentheader.tsx:251` `canSplit` excludes terminals; `:669` hides the agent header for a terminal. Ctrl+Tab's recent
 list follows `focusIdAtom` (`tabswitcherstore.ts`), so a terminal must be able to hold `focusIdAtom`.
 
 **Step 1: Failing tests.**
-- `terminaldock.test.ts`: picking a terminal no longer docks it: `splitDock({focused: terminal, docked: undefined,
-  host: agent, ...})` returns `focused: terminal`, `dockedId: undefined`; an explicitly docked id (`docked` set by
+- `terminaldock.test.ts`: picking a terminal no longer docks it: `splitDock({focused: terminal, docked: null,
+  host: agent, ...})` returns `focused: terminal`, `dockedId: null`; an explicitly docked id (`docked` set by
   "Move to the panel") stays docked under the shown agent; a docked terminal that becomes focused is undocked.
 - `gridstore.test.ts`: `canOpenInSplit` / `openInSplit` / `dropAgentOnGrid` accept a terminal with a `blockId` once
   `GridModel` carries `terminalsAtom`; `eligibleIds` of agents + terminals.
-- `terminalpanehead.test.ts` for a new pure `terminalPaneHead(terminal, previous)`: returns `{ name, place, backTo }`
-  where `place` is Task 2's `terminalPlace(cwd, root)` and `backTo` is the name of the previous tab from the recent list when it is an
-  agent, else `undefined`.
+- `terminalpanehead.test.ts` for a new pure `terminalPaneHead(terminal, previous, roots)` (`roots`: project name →
+  root path, as Task 2's `projectTree` takes): returns `{ name, place, backTo }` where `name` is the terminal's name
+  (Task 5 adds the tool's name and icon), `place` is Task 2's `terminalPlace(terminal.cwd, roots.get(terminal.project))`
+  and `backTo` is the name of the previous tab from the recent list when it is an agent, else `undefined`.
+- `cockpitsurfacemodel.test.ts`: `it("a focused terminal is shown while agents exist, and with nothing focused an
+  agent still comes before a terminal")`; update the `resolveShownAgent` doc comment to say so.
+- `agentgridfocus.test.ts`: replace "a terminal or a done worker leaves the grid untouched…" with
+  `it("a terminal with a block takes a cell by the agents' rule, and a done worker leaves the grid untouched")`
+  (terminal ids are now in `eligible`).
 
-Run: `npx vitest run frontend/app/view/agents/terminaldock.test.ts frontend/app/view/agents/gridstore.test.ts frontend/app/view/agents/terminalpanehead.test.ts` — FAIL.
+Run: `npx vitest run frontend/app/view/agents/terminaldock.test.ts frontend/app/view/agents/gridstore.test.ts frontend/app/view/agents/terminalpanehead.test.ts frontend/app/view/agents/cockpitsurfacemodel.test.ts frontend/app/view/agents/agentgridfocus.test.ts` — FAIL.
 
 **Step 2: Implement.**
 - `splitDock`: dock only `docked` (an explicit choice); a focused terminal is shown in the centre. Keep the size
   helpers as they are.
-- `resolveShownAgent`: a focused terminal is shown even when agents exist. `focusIdAtom` keeps the terminal's id (it
-  is how Ctrl+Tab's quick flip returns to the agent).
+- `agentsurface.tsx`: a focused terminal is shown even when agents exist; drop the effects that write `focusIdAtom`
+  back to the host agent (`:139-151`), so `focusIdAtom` keeps the terminal's id (it is how Ctrl+Tab's quick flip returns
+  to the agent). Update the comments at `:98-112`.
 - `GridModel` gains `terminalsAtom`; every `eligibleIds` caller you own passes agents and terminals; `liveIds` covers
   both. `agentsurface.tsx:106` passes both.
 - `railstore.ts`: `terminalDockFoldedAtom` (localStorage `agent.terminalDock.folded`, default `false`) and a
@@ -261,19 +280,24 @@ Run: `npx vitest run frontend/app/view/agents/terminaldock.test.ts frontend/app/
 - `terminaldockbar.tsx` + the surface's dock wrapper: when folded, the dock is a 32 px strip (`data-dock-strip`):
   terminal icon, name, running dot, the latest output line truncated (read the block's last line the way the
   terminal's title is derived today; if there is no cheap source, show the cwd instead and note it in the commit),
-  the chord chip and an expand button. Unfolded it is today's panel plus a fold button. Board: Compact (strip),
-  Main (panel open).
+  the chord chip and an expand button. Unfolded it is today's panel plus a fold button and "Open in split"
+  (`data-dock-open-split`: `undock`, then `openInSplit` beside the shown agent). Board: Compact (strip), Main (panel
+  open).
 - Terminal pane header (the header shown for a terminal in the centre or a cell; `agentheader.tsx` hides the agent
-  header for terminals at `:669`, so render a slim one): icon, name, branch chip from `place`, project name, the hint
+  header for terminals at `:669`, so render a slim one, the component in `terminalpanehead.tsx`): icon, name, branch chip from `place`, project name, the hint
   "Ctrl Tab back to <agent>" when `backTo` is set, then buttons Open beside <agent> (split, via `openInSplit`), Move
-  to the panel (`moveToDock`) and Close. Attributes: `data-terminal-pane-head`, `data-terminal-open-split`,
-  `data-terminal-to-dock`. Board: Compact.
+  to the panel (`moveToDock`) and Close (closes the terminal's tab, as the tree's context menu does). Attributes:
+  `data-terminal-pane-head`, `data-terminal-open-split`, `data-terminal-to-dock`, `data-terminal-close`. Board:
+  Compact.
 - `canSplit` (`agentheader.tsx:251`) allows a terminal with a block.
 - `bindings.ts`: a global `Ctrl`+`` ` `` (`Cmd`+`` ` `` on a Mac, follow the `Mod` convention in the file) labelled
   "Fold or open the terminal panel", active on the Agent surface, also from inside a terminal like the other `Mod`
   chords. Check no binding already uses it.
 
-**Step 3: Run** the Step 1 command — PASS. Run `task check:ts` (long timeout) — exit 0.
+**Shown by:** `tools-centre` (pane head, "Ctrl Tab back to …", the quick flip back, Close), `tools-split` (Open beside
+the agent, a terminal cell), `tools-dock-strip` (Move to the panel, the chord, the strip, the panel's Open in split).
+
+**Step 3: Run** the Step 1 command — PASS. Run the typecheck (`node --stack-size=4000 node_modules/typescript/lib/tsc.js --noEmit`, long timeout) — exit 0.
 
 **Step 4: Commit** with `feat(agents): a picked terminal takes the centre, terminals can be split cells, the panel folds to a strip`.
 
@@ -298,6 +322,10 @@ Facts: a Terminal launch is `buildLaunchMeta` (`launch.ts:170`) → `{view: "ter
   `root` → projectRoot ?? home; `home` → home.
 - `toolCommandLine(tool)` → `command` plus `args` when set.
 - `installCommand(tool, platform)` → the platform's line or `undefined`.
+- `toolTerminalName(terminal: { name: string; toolId?: string }, tools)` → the tool's name while the terminal's name is
+  still its launch (the tool's command line, or the "Terminal N" placeholder before any command), else the terminal's
+  own name (a rename, or the last command once the tool has quit, spec "Tool exits"); `toolIcon(tool)` → an icon name
+  per category (a terminal with no tool keeps the terminal icon).
 Run `npx vitest run frontend/app/view/agents/toolsmodel.test.ts` — FAIL; implement `toolsmodel.ts`; PASS.
 
 **Step 2: Launch meta.** `buildLaunchMeta` takes an optional `toolId`; a terminal with one gets `"tool:id"` and
@@ -314,14 +342,16 @@ the shell controller stays, `tool:id` is set. Run `npx vitest run frontend/app/v
   `cockpit-actions.ts:119-123`); `"panel"` keeps the agent focused and sets `dockedTerminalAtom` (`railstore.ts:66`) to the new tab, which docks it.
 - `installTool(model, tool, project)`: launches a terminal named "Install <name>" running the install line with
   `cmd:closeonexit` so it closes on exit 0 (check the key's semantics in `pkg/waveobj/wtypemeta.go` and the term
-  controller; if it closes on any exit, use the key that closes only on success); tracks the block in an
-  `installingAtom` and moves it to a `failedAtom` when it exits non-zero; reloads status when it ends.
+  controller; if it closes on any exit, use the key that closes only on success); tracks it in
+  `installingAtom: Record<toolId, tabId>` and moves it to `failedAtom: Record<toolId, tabId>` when it exits non-zero
+  (its tab stays open with the output); reloads status when it ends. `retryInstall(model, tool)` closes the failed tab
+  and installs again; `showInstall(model, toolId)` focuses the installing or failed tab (Open output / Show).
 - `addUserTool(id, keywords)` / `removeUserTool(id)` via `RpcApi.ToolsSetUserCommand`, then `loadTools()`.
 `cockpit-actions.ts`: `LaunchAgentOpts` gains `toolId?` and `focus?: boolean` (a tool launch focuses; a plain
 Terminal launch keeps today's background behaviour).
 
 **Step 4: Check.** `npx vitest run frontend/app/view/agents/toolsmodel.test.ts frontend/app/view/agents/launch.test.ts`
-and `task check:ts` — PASS / exit 0.
+and the typecheck (`node --stack-size=4000 node_modules/typescript/lib/tsc.js --noEmit`) — PASS / exit 0.
 
 **Step 5: Commit** with `feat(tools): the tools model, status store, and open/install actions`.
 
@@ -329,7 +359,7 @@ and `task check:ts` — PASS / exit 0.
 
 **Depends on:** Task 2, Task 3, Task 4
 
-**Files:** `frontend/app/view/agents/agenttree.tsx`, `frontend/app/view/agents/terminalsrail.tsx`, `frontend/app/view/agents/agentsidebarmodel.ts`, `frontend/app/view/agents/agentsidebarmodel.test.ts`, `frontend/app/cockpit/command-palette.tsx`
+**Files:** `frontend/app/view/agents/agenttree.tsx`, `frontend/app/view/agents/terminalsrail.tsx`, `frontend/app/view/agents/agentsidebarmodel.ts`, `frontend/app/view/agents/agentsidebarmodel.test.ts`, `frontend/app/view/agents/terminalpanehead.ts`, `frontend/app/view/agents/terminalpanehead.test.ts`, `frontend/app/view/agents/terminalpanehead.tsx`, `frontend/app/cockpit/command-palette.tsx`
 
 Facts: `AgentTree` (`agenttree.tsx:2100`) renders Active (`:2171-2331`, `SplitRow` at `:2187`), `ConversationsSection`
 (`:2334`) and the pinned `TerminalsSection` (`:1857-1922`, `TerminalRow` `:1816`). `terminalsrail.tsx` only holds
@@ -339,22 +369,33 @@ Facts: `AgentTree` (`agenttree.tsx:2100`) renders Active (`:2171-2331`, `SplitRo
 **Step 1: Render the model.** `AgentTree` renders `projectTree(...)` (Task 2) instead of `activeView` + the separate
 Terminals section: group rows (`FolderRow`, now showing `2 agents · 1 terminal` when folded, `data-project-folder`),
 the agent rows as today, a 1 px divider (`data-project-divider`), terminal rows (`TerminalRow`, now
-`data-tree-terminal-row`, with the branch chip from `place` and a where-it-shows word `split` / `panel` in
-`data-terminal-place`), and the split row inside its folder (or on top when `crossProject`). Delete
+`data-tree-terminal-row`, with the name and icon from `toolTerminalName` / `toolIcon` (Task 4), the branch chip from
+`place` and a where-it-shows word `split` / `panel` in `data-terminal-place`), and the split row inside its folder (or
+on top when `crossProject`, `data-split-cross`, each segment naming its project). An install terminal (its tab id in
+Task 4's `installingAtom` / `failedAtom`) reads `installing` with a spinner or `install failed` in the danger token, in
+`data-terminal-state="installing"` / `"failed"` (Task 9 adds `"removed"`). Add a pure
+`terminalRowState(tabId, installing, failed)` to `agentsidebarmodel.ts` with a test. The terminal pane head (Task 3's
+`terminalPaneHead`, now also taking `tools`, Task 4's `toolsStatusAtom` value) returns `icon` too and takes `name` and
+`icon` from the same two functions; extend `terminalpanehead.test.ts` with a tool terminal. Delete
 `TerminalsSection` and any model export Task 2 kept only for it, with their tests. Keep the existing
 `data-agent-terminal-row` attribute on terminal rows too, so older scenarios keep finding them. Conversations stays at
 the bottom. Board: ProjectTree, Sidebar.
 
 **Step 2: Terminal rows act like agent rows.** They are drag sources onto the grid (`dragSource`, now allowed for a
 terminal with a `blockId`), take Alt-digit hints, and their context menu (`terminalsrail.tsx`) gains Open in split and
-Move to the panel. Folder hover shows `tool` (opens the picker with that project: `openToolPicker` from Task 4) and
+Move to the panel. Folder hover shows `tool` (`data-folder-tool`; opens the picker with that project: `openToolPicker` from Task 4) and
 `+` (new terminal, as today).
 
 **Step 3: Palette.** The Agents group also lists `model.terminalsAtom` (kind `"terminal"`, key `terminal:${id}`,
 labelled with the terminal's name and project), opening it with `model.openTerminal(id)`. Add the palette command
-"Open a tool…" that calls `openToolPicker(model)`.
+"Open a tool…" (key `cmd:open-tool`) that calls `openToolPicker(model)`. Each palette row carries `data-palette-key`
+with its item key, if rows have no such attribute yet.
 
-**Step 4: Check.** `npx vitest run frontend/app/view/agents/agentsidebarmodel.test.ts` and `task check:ts` — PASS / exit 0.
+**Shown by:** `tools-tree` (folder, divider, terminal rows, branch chip, folded counts, the folder's `tool` button, the
+installing and install-failed rows), `tools-split` (the split row in its folder, the cross-project row on top),
+`tools-centre` (`j`/`k` onto a terminal, the terminal in the palette, "Open a tool…").
+
+**Step 4: Check.** `npx vitest run frontend/app/view/agents/agentsidebarmodel.test.ts frontend/app/view/agents/terminalpanehead.test.ts` and the typecheck (`node --stack-size=4000 node_modules/typescript/lib/tsc.js --noEmit`) — PASS / exit 0.
 
 **Step 5: Commit** with `feat(agents): one tree per project in the sidebar; terminals in the palette`.
 
@@ -378,19 +419,24 @@ category in the order Git, Files, System, Containers, Docs and data, Yours, each
 switch three ways. `toolslibrary.tsx` draws board Library: left list (search, groups, rows with status, "Add your
 own tool"), right detail for the selected tool: purpose, primary "Open <name>" (calls `openTool` with the focused
 agent), Opens in and Shows segmented controls (for a built-in they write a user override through `addUserTool`), In
-Open a tool (the pinned switch), Command with the found path, Install with its command and Install / Update /
-Try again, and Open now (the tool's live terminals, each with Show). Board LibraryAdd: the add form (Name, Command
+Open a tool (the pinned switch), Command with the found path, Install with its command and Install / Update, and Open
+now (`model.terminalsAtom` filtered by `toolId`, each with Show). No Shortcut field: per-tool shortcuts are deferred
+(spec). A tool whose install failed shows `install failed` with Open output (`data-tool-open-output`, Task 4's
+`showInstall`) and Try again (`data-tool-retry`, `retryInstall`); each row's status word is in `data-tools-status`. Board LibraryAdd: the add form (Name, Command
 with an "on PATH" line after a status reload, Opens in, Shows, Install command) saving through `addUserTool`.
-Attributes: `data-setup-tab="tools"`, `data-tools-library`, `data-tools-row="<id>"`, `data-tools-detail`,
-`data-tool-add`, `data-tool-add-save`.
+Attributes: `data-setup-tab="tools"`, `data-tools-library`, `data-tools-row="<id>"`, `data-tools-status`,
+`data-tools-detail`, `data-tool-install`, `data-tool-add`, `data-tool-add-save`.
 
-**Step 3: Check.** `task check:ts` — exit 0.
+**Shown by:** `tools-library` (Setup → Tools, a selected row's detail, Install, the install-failed row with Open output
+and Try again), `tools-add` (the add form, the new tool under Yours).
+
+**Step 3: Check.** `node --stack-size=4000 node_modules/typescript/lib/tsc.js --noEmit` — exit 0.
 
 **Step 4: Commit** with `feat(tools): Setup → Tools, the tool library`.
 
 ### Task 7: The Open a tool picker and its entry points
 
-**Depends on:** Task 3, Task 4, Task 5
+**Depends on:** Task 3, Task 4, Task 5, Task 6
 
 **Files:** `frontend/app/view/agents/toolpicker.tsx`, `frontend/app/view/agents/toolpickermodel.ts`, `frontend/app/view/agents/toolpickermodel.test.ts`, `frontend/app/view/agents/agentheader.tsx`, `frontend/app/store/keybindings/bindings.ts`, `frontend/app/view/agents/cockpitshell.tsx`
 
@@ -402,23 +448,27 @@ PASS.
 
 **Step 2: The dialog.** `toolpicker.tsx` draws board Picker in the command palette's modal shell: the "Open a tool"
 chip, the search box, the context line, groups Installed / Not installed / Yours with the states drawn (installing
-with "Show", failed with "Open output" and "Try again", a user tool not on PATH with "Edit"), and the footer hints.
-Render it once in the always-mounted shell (`cockpitshell.tsx`) from `toolPickerAtom`. Attributes:
-`data-tool-picker`, `data-tool-picker-row="<id>"`.
+with "Show", failed with "Open output" and "Try again", a user tool not on PATH with "Edit", which opens Setup → Tools
+on that tool), and the footer hints. Render it once in the always-mounted shell (`cockpitshell.tsx`) from
+`toolPickerAtom`. Attributes: `data-tool-picker`, `data-tool-picker-row="<id>"`, `data-tool-picker-show`,
+`data-tool-picker-retry`, `data-tool-picker-edit`.
 
 **Step 3: Entry points.** A `Tool` button in the agent header (`agentheader.tsx`, `data-agent-tool-button`) opens the
 picker for that agent; a global binding "Open a tool" on `Ctrl`+`Shift`+`T` (`Mod` convention; check it is free) in
 `bindings.ts`, usable from inside a terminal like the other `Mod` chords.
 
-**Step 4: Check.** `task check:ts` — exit 0.
+**Shown by:** `tools-picker` (Ctrl+Shift+T, the agent header's Tool button, the installing / failed / not-on-PATH rows
+with Show / Try again / Edit, Enter opening a tool in the centre).
+
+**Step 4: Check.** `node --stack-size=4000 node_modules/typescript/lib/tsc.js --noEmit` — exit 0.
 
 **Step 5: Commit** with `feat(tools): the Open a tool picker, from the agent header and Ctrl+Shift+T`.
 
 ### Task 8: A Tool row in the New dialog
 
-**Depends on:** Task 4
+**Depends on:** Task 4, Task 6
 
-**Files:** `frontend/app/view/agents/launcher.ts`, `frontend/app/view/agents/launcher.test.ts`, `frontend/app/view/agents/launchermodal.tsx`, `frontend/app/view/agents/launchertoolfields.tsx`, `frontend/app/view/agents/launcherstore.ts`
+**Files:** `frontend/app/view/agents/launcher.ts`, `frontend/app/view/agents/launcher.test.ts`, `frontend/app/view/agents/launchermodal.tsx`, `frontend/app/view/agents/launchertoolfields.tsx`, `frontend/app/view/agents/launcherstore.ts`, `frontend/app/cockpit/app-bar.tsx`
 
 Facts: `LauncherKind = "agent" | "run"` (`launcher.ts:12`), `startRows` (`:40-54`) numbers rows 1..n, digits are
 `/^[1-9]$/` (`:277`), `launcherTitle` (`:69`), `primaryLabel` (`:73`), `FocusZone` (`:197`), `launcherKey` (`:243`);
@@ -434,12 +484,16 @@ desc "lazygit, yazi, btop…") after the run rows, so earlier rows keep their di
 **Step 2: Implement.** `LauncherKind` gains `"tool"`; `startRows` appends the Tool row; the modal renders a "Tool"
 label and the row after Run. With Tool picked the lower area is `launchertoolfields.tsx` (board Launcher): the Tool
 list (`role="listbox"`, the third Tab stop, `data-launcher-tool-list`, rows `data-launcher-tool="<id>"`, letters
-`a`…, ordered by `pickerOrder`, ending with "All tools in Setup" which opens Setup → Tools), an About card, and the
+`a`…, ordered by `pickerOrder`, ending with "All tools in Setup", `data-launcher-tool-all`, which closes the dialog and
+opens Setup → Tools, the tab Task 6 adds), an About card, and the
 Command line showing the tool's command; no Task, Flag or worktree toggle. The footer reads "Opens in <path> · on
 <branch>" and the primary button "Open <name>" calls `openTool` with the picked project (Home allowed) and `place:
-"centre"`. Remember the last picked tool in `launcherstore.ts`.
+"centre"`. Remember the last picked tool in `launcherstore.ts`. The app bar's `+ New` tooltip
+(`app-bar.tsx:139`, "New agent or run") becomes "New agent, terminal, run or tool".
 
-**Step 3: Check.** `npx vitest run frontend/app/view/agents/launcher.test.ts` and `task check:ts` — PASS / exit 0.
+**Shown by:** `tools-launcher` (the Tool row by its digit, the tool list, letter `a`, "Open …", All tools in Setup).
+
+**Step 3: Check.** `npx vitest run frontend/app/view/agents/launcher.test.ts` and the typecheck (`node --stack-size=4000 node_modules/typescript/lib/tsc.js --noEmit`) — PASS / exit 0.
 
 **Step 4: Commit** with `feat(launcher): a Tool row that opens a tool in a project`.
 
@@ -455,11 +509,14 @@ reopen in, or home. Run `npx vitest run frontend/app/view/agents/worktreegone.te
 
 **Step 2: Wire it.** A small store checks each terminal's cwd with the existing file-info RPC (grep
 `FileInfoCommand` in `frontend/app/store/wshclientapi.ts`) when the terminal list changes and when a run lands; the
-terminal's row shows its branch chip struck through and "removed"; its pane shows board WorktreeGone's card
-(`data-worktree-gone`) over the dimmed last screen with "Reopen in <project>" (a new terminal in the root running the
-same tool or shell, then close this one) and "Close terminal".
+terminal's row shows its branch chip struck through and "removed" (`data-terminal-state="removed"`); its pane shows
+board WorktreeGone's card (`data-worktree-gone`) over the dimmed last screen with "Reopen in <project>"
+(`data-worktree-reopen`: a new terminal in the root, running the same tool through Task 4's `openTool` when the
+terminal has a `toolId`, else a plain shell, then close this one) and "Close terminal".
 
-**Step 3: Check.** `task check:ts` — exit 0.
+**Shown by:** `tools-worktree-gone` (the card, the struck-through row, Reopen).
+
+**Step 3: Check.** `node --stack-size=4000 node_modules/typescript/lib/tsc.js --noEmit` — exit 0.
 
 **Step 4: Commit** with `feat(agents): a terminal whose worktree was removed offers to reopen in the project`.
 
@@ -475,20 +532,40 @@ depend on lazygit or any real tool being installed: arrange writes a user tool t
 `ToolsSetUserCommand` (command `node`, args printing a fixed screen and waiting) and removes it in teardown. Each
 scenario shoots its board and asserts the `data-*` attributes the tasks named:
 
+User tools the scenarios write (all removed in teardown): `arc-fixture` (runs), `arc-slow-install` (command not on
+PATH; `install:windows` and `install:darwin` both `node -e "setTimeout(()=>{},120000)"`), `arc-bad-install` (command not
+on PATH; install lines `node -e "process.exit(1)"`) and `arc-missing` (command `arc-missing-xyz`, no install line).
+Arrange starts the two installs from Setup → Tools (`data-tool-install` on each row) where a step needs them; teardown
+closes their terminals.
+
 - `tools-tree` (boards ProjectTree, Sidebar): a project folder with an agent, the divider and two terminals, one with
-  a branch chip; fold it and read "1 agent · 2 terminals".
+  a branch chip; fold it and read "1 agent · 2 terminals"; step `folder-tool`: hover the folder, `data-folder-tool`
+  opens `data-tool-picker` whose context line names that project, Esc; step `row-installing`: the "Install
+  arc-slow-install" row has `data-terminal-state="installing"`; step `row-failed`: the "Install arc-bad-install" row
+  has `data-terminal-state="failed"`. Shoot the sidebar for each state.
 - `tools-centre` (board Compact): pick the terminal row; the centre shows `data-terminal-pane-head` with "Ctrl Tab back
-  to <agent>"; a quick Ctrl+Tab returns to the agent.
-- `tools-split` (board Main): Open beside the agent; two cells, one a terminal; the row reads `split`.
+  to <agent>"; a quick Ctrl+Tab returns to the agent; step `jk`: from the agent, `j` lands on the terminal (its pane
+  head shows) and `k` returns; step `palette`: the palette lists the terminal (`data-palette-key="terminal:<id>"`) and
+  "Open a tool…" (`data-palette-key="cmd:open-tool"`), which opens `data-tool-picker`, Esc; step `close`:
+  `data-terminal-close` on a second terminal opened in arrange removes its row.
+- `tools-split` (board Main): Open beside the agent; two cells, one a terminal; the row reads `split` and the split
+  row sits inside the project folder; step `cross-project`: a Home terminal opened in split as well moves the split row
+  to the top with `data-split-cross`, each segment naming its project.
 - `tools-dock-strip` (board Compact strip, Main panel): Move to the panel, fold with the chord, `data-dock-strip`
-  shows, unfold.
+  shows, unfold; step `panel-split`: `data-dock-open-split` moves the terminal into the grid (two cells, the dock
+  empty).
 - `tools-library` (board Library) and `tools-add` (board LibraryAdd): Setup → Tools, select a row, add a tool, see it
-  under Yours.
-- `tools-picker` (board Picker): Ctrl+Shift+T opens `data-tool-picker`; Enter opens the selected tool in the centre.
+  under Yours; `tools-library` step `install-failed`: the `arc-bad-install` row's `data-tools-status` reads "install
+  failed" and its detail shows `data-tool-open-output` and `data-tool-retry`.
+- `tools-picker` (board Picker): Ctrl+Shift+T opens `data-tool-picker`; step `states`: `arc-slow-install` shows
+  `data-tool-picker-show`, `arc-bad-install` `data-tool-picker-retry`, `arc-missing` "not on PATH" with
+  `data-tool-picker-edit`; step `header-button`: Esc, then `data-agent-tool-button` in the agent header opens the
+  picker again; Enter opens the selected tool in the centre.
 - `tools-launcher` (board Launcher): the New dialog, pick the Tool row by its digit, Tab twice to
-  `data-launcher-tool-list`, letter `a`, primary reads "Open …".
-- `tools-worktree-gone` (board WorktreeGone): a terminal whose cwd is a temp folder deleted in arrange shows
-  `data-worktree-gone`.
+  `data-launcher-tool-list`, letter `a`, primary reads "Open …"; step `all-tools`: `data-launcher-tool-all` closes the
+  dialog and shows `data-tools-library`.
+- `tools-worktree-gone` (boards WorktreeGone, Sidebar): a terminal whose cwd is a temp folder deleted in arrange shows
+  `data-worktree-gone`, and its row has `data-terminal-state="removed"` with the branch chip struck through.
 
 Also update any existing scenario that selected `data-agent-terminals` (the removed section) or relied on a terminal
 docking when picked (grep the file for `data-agent-terminals`, `data-terminal-dock`, `dockedTerminal`).
@@ -502,7 +579,7 @@ scenario, not the app, only when the scenario is wrong. **Step 3:** commit with
 
 **Depends on:** Task 5, Task 6, Task 7, Task 8, Task 9
 
-**Files:** `CHANGELOG.md`, `docs/guide/agent.md`, `docs/guide/settings.md`, `docs/keyboard-shortcuts.md`, `AGENTS.md`, `docs/open-issues.md`
+**Files:** `CHANGELOG.md`, `docs/guide/agent.md`, `docs/guide/settings.md`, `docs/keyboard-shortcuts.md`, `AGENTS.md`, `docs/open-issues.md`, `docs/deferred.md`
 
 - `CHANGELOG.md` under `## Unreleased`: Added — the tool library (Setup → Tools, Open a tool, the New dialog's Tool
   row); Changed — terminals sit with their project's agents in the sidebar and open in the centre, and the terminal
@@ -518,5 +595,7 @@ scenario, not the app, only when the scenario is wrong. **Step 3:** commit with
 - `docs/open-issues.md`: remove "Plain terminals are reachable only by mouse"; add `- [ ]` hand-check lines under
   "0 · Waiting on a hand check" for: winget installs of two tools, a tool in a Mac build (brew), the strip's latest
   output line.
+- `docs/deferred.md`: an "(arcterm) Per-tool shortcuts in the tool library" entry: the Library has no Shortcut field
+  until the `Ctrl`+`G` leader-chord question in the spec is settled.
 
 Commit with `docs: terminals and tools`.
