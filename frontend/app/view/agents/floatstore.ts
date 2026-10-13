@@ -868,11 +868,20 @@ function setupAutoSprout(model: AgentsViewModel): () => void {
         armed = false;
         const at = Date.now();
         clearTimeout(returnTimer);
-        returnTimer = setTimeout(() => comeBack(at), AUTO_RESTORE_SETTLE_MS);
+        returnTimer = setTimeout(
+            () => void comeBack(at).catch((e) => console.error("growing back on return failed", e)),
+            AUTO_RESTORE_SETTLE_MS
+        );
     };
-    const comeBack = (at: number) => {
+    const comeBack = async (at: number) => {
         const pressGapMs = lastPress == null ? null : lastPress - at;
         const chatOpened = globalStore.get(petPeekOpenAtom) && !chatAtLeave;
+        // gone again within the settle, to another app: no return
+        const foreground = await invoke<Foreground>("app_foreground").catch((): Foreground => "ours");
+        if (foreground !== "ours") {
+            foldLog(`back in arcterm: left again (${foreground}), staying folded`);
+            return;
+        }
         if (autoRestoreOnReturn({ size: currentSize().size, pressGapMs, chatOpened })) {
             foldLog(`back in arcterm: growing back${MAC ? "" : " to Full, maximized"}`);
             void (MAC ? restoreFromSprout(model) : returnFromSprout(model));
@@ -882,7 +891,8 @@ function setupAutoSprout(model: AgentsViewModel): () => void {
     };
     const unlistenFocus = win.onFocusChanged(({ payload: focused }) => {
         clearTimeout(leaveTimer);
-        clearTimeout(returnTimer);
+        // a return's pending grow-back stays: on Windows the host's main-foreground and the focus event come together,
+        // and the second cleared the first's timer (comeBack checks the foreground itself)
         const seq = ++focusSeq;
         if (currentSize().size === "sprout") {
             // with the host's arrival line (macwindow.rs), says which way a return that left it folded went
