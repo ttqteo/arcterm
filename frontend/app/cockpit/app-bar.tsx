@@ -78,7 +78,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
     // the lights hide in macOS fullscreen, so their room goes with them
     const fullscreen = useAtomValue(atoms.isFullScreen);
     const newAgentKeys = useBindingKeys("new-agent");
-    // the Spider theme swaps the t> mark for its spider, in the theme's accent (themedecorview.tsx)
+    // the Spider theme swaps the t> mark for its spider, in the suit's red against the theme's blue accent (themedecorview.tsx)
     const spider = useSpiderDecor();
     return (
         <div
@@ -94,7 +94,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
             )}
         >
             <div data-tauri-drag-region className="flex items-center gap-[9px]">
-                <span data-tauri-drag-region className={clsx("flex shrink-0", spider ? "text-accent" : "text-primary")}>
+                <span data-tauri-drag-region className={clsx("flex shrink-0", spider ? "text-spidey-red" : "text-primary")}>
                     {spider ? <SpiderMark /> : <ArctermMark />}
                 </span>
                 <span data-tauri-drag-region className="text-[14.5px] font-bold tracking-[-0.01em] text-primary">

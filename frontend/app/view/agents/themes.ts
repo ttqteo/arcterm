@@ -264,7 +264,7 @@ export const THEMES: ThemeDef[] = [
         name: "Spider",
         // Claude's palette with Spider-Man's blue as the accent: the suit's (--color-spidey-blue #1f4aa8, 2.06:1 on bg)
         // lifted to read as link text (6.12:1). A red accent (#f05252) glared across the whole UI, so the suit's red
-        // stays in the decor only (the small spiders' bodies, the pet). The error stays pink so a failure never reads as
+        // stays in the decor only (the app-bar spider logo, the small spiders' bodies, the pet). The error stays pink so a failure never reads as
         // the red decor. No claudeMark: the accent is not Claude's clay, so the Claude mark keeps the brand clay as in
         // every other theme. The terminal's blue is the suit's lifted to 5.12:1.
         palette: {

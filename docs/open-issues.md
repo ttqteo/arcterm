@@ -30,7 +30,7 @@ does not, say what you saw and it becomes a bug row under Actionable.
 **2026-10-13 (Spider theme: blue accent)**
 
 - [ ] (arcterm) **The Spider theme's accent is the suit's blue (#7a9ce6), not red.** Setup → Appearance → Theme →
-  Spider: links, focus rings, the selected row and the app-bar spider logo read soft blue, nothing glares red; the
+  Spider: links, focus rings and the selected row read soft blue, nothing glares red; the app-bar spider logo, the
   small spiders in the corners and the pet keep the suit's red; the Spider chip shows a red and a blue swatch.
   Commit: "feat(theme): the Spider theme's accent is the suit's soft blue".
 
