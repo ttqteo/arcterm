@@ -11,7 +11,7 @@ import { getApi } from "@/app/store/global";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronDown, SquareDashed, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, SquareDashed, X } from "lucide-react";
 import { useEffect, useState, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
 import type { AgentsViewModel } from "./agents";
 import { projectOf, type AgentVM } from "./agentsviewmodel";
@@ -30,6 +30,7 @@ import {
     shownBoard,
     shownBoards,
     stepKeys,
+    stripWindow,
     tabsFitStrip,
     updatedAgo,
     type BoardFrame,
@@ -42,6 +43,7 @@ import {
     detachCanvas,
     selectCanvasTab,
     setMarking,
+    stepCanvasBoard,
     updateCanvas,
     type CanvasState,
 } from "./canvasstore";
@@ -103,6 +105,7 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
                         boards={s.boards}
                         value={currentTab(s)}
                         onChange={(t) => selectCanvasTab(agent.id, t)}
+                        onStep={(delta) => stepCanvasBoard(agent.id, delta)}
                     />
                 ) : s.boards.length > 0 ? (
                     <SwapTabs
@@ -199,16 +202,18 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
     );
 }
 
-// The header's board picker once the boards outnumber a row of tabs: the shown tab's name and where it sits, and a
-// menu of All and every board
+// The header's boards once they outnumber a row of tabs: three tabs around the shown one, between a previous and a
+// next arrow that step as [ and ] do, and where the shown one sits, which opens a menu of All and every board
 function BoardPicker({
     boards,
     value,
     onChange,
+    onStep,
 }: {
     boards: CanvasBoard[];
     value: string;
     onChange: (tab: string) => void;
+    onStep: (delta: number) => void;
 }) {
     const at = boards.findIndex((b) => b.name === value);
     const open = (e: React.MouseEvent) => {
@@ -238,20 +243,55 @@ function BoardPicker({
         );
     };
     return (
-        <button
-            type="button"
-            data-canvas-board-picker
-            aria-haspopup="menu"
-            title={`Pick a board (${formatChordString("[")} and ${formatChordString("]")} step through them)`}
-            onClick={open}
-            className={cn(SWAP_BTN, "min-w-0 flex-initial")}
-        >
-            <span className="truncate">{value === ALL_TAB ? "All boards" : boardLabel(value)}</span>
-            <span className="flex-none tabular-nums font-normal text-muted">
-                {at < 0 ? boards.length : `${at + 1}/${boards.length}`}
-            </span>
-            <ChevronDown size={13} strokeWidth={1.9} className="flex-none text-muted" aria-hidden />
-        </button>
+        <div className="flex min-w-0 flex-initial items-center gap-[4px] self-stretch">
+            <button
+                type="button"
+                data-canvas-board-step="prev"
+                title={`Previous board (${formatChordString("[")})`}
+                aria-label="Previous board"
+                onClick={() => onStep(-1)}
+                className={cn(SWAP_BTN, "px-[5px]")}
+            >
+                <ChevronLeft size={13} strokeWidth={1.9} aria-hidden />
+            </button>
+            <SwapTabs
+                ariaLabel="Nearby boards"
+                value={value}
+                options={stripWindow(canvasTabs(boards), value).map((t) => ({
+                    key: t,
+                    label: (
+                        <span className="max-w-[140px] truncate" title={t === ALL_TAB ? "All boards" : boardLabel(t)}>
+                            {t === ALL_TAB ? "All" : boardLabel(t)}
+                        </span>
+                    ),
+                }))}
+                onChange={onChange}
+                className="min-w-0"
+            />
+            <button
+                type="button"
+                data-canvas-board-picker
+                aria-haspopup="menu"
+                title={`Pick a board (${formatChordString("[")} and ${formatChordString("]")} step through them)`}
+                onClick={open}
+                className={SWAP_BTN}
+            >
+                <span className="tabular-nums font-normal text-muted">
+                    {at < 0 ? boards.length : `${at + 1}/${boards.length}`}
+                </span>
+                <ChevronDown size={13} strokeWidth={1.9} className="flex-none text-muted" aria-hidden />
+            </button>
+            <button
+                type="button"
+                data-canvas-board-step="next"
+                title={`Next board (${formatChordString("]")})`}
+                aria-label="Next board"
+                onClick={() => onStep(1)}
+                className={cn(SWAP_BTN, "px-[5px]")}
+            >
+                <ChevronRight size={13} strokeWidth={1.9} aria-hidden />
+            </button>
+        </div>
     );
 }
 

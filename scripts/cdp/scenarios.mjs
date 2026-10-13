@@ -21558,10 +21558,11 @@ const canvasManyBoards = {
         const first = await canvasManyState(h);
         await h.shot("cdp-shots/canvas-many-boards-main.png");
         rec(
-            "1. six boards get a board menu reading Main 1/6, no tab row, and the header keeps Build this… and its meta whole",
+            "1. six boards get three tabs (All, Main, Current; Main picked) and a menu reading 1/6, no full tab row, and the header keeps Build this… and its meta whole",
             loaded &&
                 !first.tablist &&
-                first.picker.startsWith("Main") &&
+                JSON.stringify(first.nearby) === JSON.stringify(["All", "Main", "Current"]) &&
+                first.current === "Main" &&
                 first.picker.includes("1/6") &&
                 first.buildInBar &&
                 first.metaOneLine,
@@ -21578,24 +21579,27 @@ const canvasManyBoards = {
         await h.shot("cdp-shots/canvas-many-boards-all.png");
         rec(
             "2. the menu lists All boards and every board; All draws all six as tiles no narrower than 560px",
-            menu && all.frames.length === 6 && all.widths.every((w) => w >= 559) && all.picker.startsWith("All boards"),
+            menu && all.frames.length === 6 && all.widths.every((w) => w >= 559) && all.current === "All",
             JSON.stringify({ menu, ...all })
         );
 
         await h.ev(
             `document.querySelector('[data-canvas-frame="Proposed-RunSheet.dc.html"] button[aria-label^="Open"]')?.click()`
         );
+const CANVAS_NEARBY = `document.querySelector('[role="tablist"][aria-label="Nearby boards"]')`;
         await polishNap(600);
         const one = await canvasManyState(h);
         await h.shot("cdp-shots/canvas-many-boards-open.png");
         rec(
-            "3. a click on a tile opens that board alone, and the menu reads Proposed-RunSheet 5/6",
+            "3. a click on a tile opens that board alone, its tab picked and the menu reading 5/6",
             JSON.stringify(one.frames) === JSON.stringify(["Proposed-RunSheet.dc.html"]) &&
-                one.picker.startsWith("Proposed-RunSheet") &&
+                one.current === "Proposed-RunSheet" &&
                 one.picker.includes("5/6"),
             JSON.stringify(one)
         );
         return steps;
+            nearby: [...(${CANVAS_NEARBY}?.querySelectorAll('[role="tab"]') ?? [])].map((t) => (t.textContent || "").trim()),
+            current: (${CANVAS_NEARBY}?.querySelector('[aria-selected="true"]')?.textContent || "").trim(),
     },
     teardown: (h, ctx) => teardownCanvasBoards(h, ctx, "canvas-many-boards"),
 };
@@ -21679,6 +21683,41 @@ async function arrangeRailSections(h, ctx) {
     const wslist = await h.rpc("workspacelist", null);
     const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
     ctx.workspaceId = ws.workspacedata.oid;
+
+        const step = (dir) => h.ev(`document.querySelector('[data-canvas-board-step="${dir}"]')?.click()`);
+        await step("next");
+        await polishNap(400);
+        const next = await canvasManyState(h);
+        await step("prev");
+        await step("prev");
+        await polishNap(400);
+        const prev = await canvasManyState(h);
+        await h.shot("cdp-shots/canvas-many-boards-arrows.png");
+        rec(
+            "4. the arrows step boards and slide the three tabs: › picks Proposed-RunStates 6/6 at the end of the run, ‹ twice Proposed-ChunkPanel 4/6 in the middle, Build this… still in the bar",
+            next.current === "Proposed-RunStates" &&
+                next.picker.includes("6/6") &&
+                JSON.stringify(next.nearby) ===
+                    JSON.stringify(["Proposed-ChunkPanel", "Proposed-RunSheet", "Proposed-RunStates"]) &&
+                prev.current === "Proposed-ChunkPanel" &&
+                prev.picker.includes("4/6") &&
+                JSON.stringify(prev.nearby) === JSON.stringify(["Proposed-Brief", "Proposed-ChunkPanel", "Proposed-RunSheet"]) &&
+                prev.buildInBar,
+            JSON.stringify({ next, prev })
+        );
+
+        await h.ev(
+            `[...(${CANVAS_NEARBY}?.querySelectorAll('[role="tab"]') ?? [])].find((t) => (t.textContent || "").trim() === "Proposed-Brief")?.click()`
+        );
+        await polishNap(400);
+        const tab = await canvasManyState(h);
+        rec(
+            "5. a click on a neighbour's tab opens it: Proposed-Brief 3/6",
+            tab.current === "Proposed-Brief" &&
+                tab.picker.includes("3/6") &&
+                JSON.stringify(tab.frames) === JSON.stringify(["Proposed-Brief.dc.html"]),
+            JSON.stringify(tab)
+        );
     for (const project of [RAIL_SECTIONS_PROJECT_A, RAIL_SECTIONS_PROJECT_B]) {
         await openRailTerminal(h, ctx, project);
     }

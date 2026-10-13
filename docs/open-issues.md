@@ -27,6 +27,14 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (Canvas: three board tabs and arrows)**
+
+- [ ] (arcterm) **Three tabs and ‹ › on a canvas with many boards.** Open a canvas with more boards than fit a tab
+  row (terminal-tui, 8): on LibraryAdd the bar reads `‹ Library [LibraryAdd] Main 2/8 ⌄ ›`, the open board underlined in
+  the middle; › moves to the next board and the three tabs slide with it, ‹ back, a click on a neighbour opens it, and
+  4/8 opens the menu. Mark and Build this… stay whole in the bar. `canvaspane.tsx` BoardPicker, `canvasmodel.ts`
+  stripWindow; CDP `canvas-many-boards` steps 1–5, not yet run.
+
 **2026-10-13 (Canvases reopen from the palette)**
 
 - [ ] (arcterm) **Open a canvas after a restart.** Restart arcterm, select an agent in this repo, open the palette

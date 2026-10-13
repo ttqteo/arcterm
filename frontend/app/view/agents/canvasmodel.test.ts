@@ -20,6 +20,7 @@ import {
     shownBoards,
     stepKeys,
     stepTab,
+    stripWindow,
     tabsFitStrip,
     updatedAgo,
     type CanvasBoard,
@@ -162,6 +163,22 @@ describe("tabsFitStrip", () => {
         expect(tabsFitStrip(named(1))).toBe(true);
         expect(tabsFitStrip(named(4))).toBe(true);
         expect(tabsFitStrip(named(5))).toBe(false);
+    });
+});
+
+describe("stripWindow", () => {
+    const tabs = [ALL_TAB, "A", "B", "C", "D", "E"];
+
+    it("centres the current tab, and holds at either end", () => {
+        expect(stripWindow(tabs, "C")).toEqual(["B", "C", "D"]);
+        expect(stripWindow(tabs, ALL_TAB)).toEqual([ALL_TAB, "A", "B"]);
+        expect(stripWindow(tabs, "A")).toEqual([ALL_TAB, "A", "B"]);
+        expect(stripWindow(tabs, "E")).toEqual(["C", "D", "E"]);
+    });
+
+    it("shows every tab when they fit, and starts at the first for an unknown current", () => {
+        expect(stripWindow(["A", "B"], "B")).toEqual(["A", "B"]);
+        expect(stripWindow(tabs, "gone")).toEqual([ALL_TAB, "A", "B"]);
     });
 });
 

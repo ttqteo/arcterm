@@ -153,6 +153,20 @@ export function tabsFitStrip(boards: CanvasBoard[]): boolean {
     return canvasTabs(boards).length <= MAX_STRIP_TABS;
 }
 
+// how many tabs the header shows beside the board menu once the tabs outnumber a row
+export const STRIP_WINDOW = 3;
+
+// The run of `size` tabs the header shows around the current one: it in the middle where the ends allow, so its
+// neighbours stay one click away and ‹ and › slide the run along
+export function stripWindow(tabs: string[], current: string | null, size = STRIP_WINDOW): string[] {
+    if (tabs.length <= size) {
+        return tabs;
+    }
+    const at = Math.max(0, tabs.indexOf(current));
+    const start = Math.min(Math.max(0, at - Math.floor(size / 2)), tabs.length - size);
+    return tabs.slice(start, start + size);
+}
+
 export function boardLabel(name: string): string {
     return name.endsWith(BOARD_EXT) ? name.slice(0, -BOARD_EXT.length) : name;
 }
