@@ -75,6 +75,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   menu.
 - **Fold when you leave works on macOS**: switching to an app whose window covers most of arcterm, such as a maximized
   Chrome, folds it into Sprout. Before, nothing folded it on a Mac.
+- Settings: **Fold when you leave** now describes the rule of your OS: on Windows only a maximized or full-screen
+  window folds arcterm, however big an unmaximized one is; on macOS any window covering most of arcterm does.
 - **A window folded on leaving grows back on ⌘Tab** on macOS: coming back to arcterm with ⌘Tab sometimes left it in
   Sprout until you clicked the Dock icon.
 - On Windows, Sprout folded on leaving now floats above the app you switched to instead of hiding under it, and a

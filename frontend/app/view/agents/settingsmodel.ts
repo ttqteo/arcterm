@@ -6,6 +6,7 @@
 // what lets the left pane count and search rows it does not render, and it is the single source of
 // each row's prose so the index and the detail pane cannot disagree.
 
+import { isMacOS } from "@/util/platformutil";
 import { formatAgo } from "./agentsviewmodel";
 import { RUNTIME_FLAGS, type Runtime } from "./launch";
 import { CARD_COPY, CARD_ORDER } from "./storagemodel";
@@ -169,7 +170,10 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                         {
                             id: "window.autosprout",
                             title: "Fold when you leave",
-                            desc: "Once you switch to another app whose window hides most of arcterm (maximized, full screen, or a big window over it), the full window folds into Sprout; an app beside it, one on another screen, a screenshot or the lock screen leave it be. Coming back to arcterm, whichever way, grows it back. Off keeps the cockpit as it is, say on a second screen. Right-click the Sprout button to switch it.",
+                            // foreground.rs decides "covered" differently on each OS, so each reads its own rule
+                            desc: isMacOS()
+                                ? "Once you switch to another app whose window covers most of arcterm (a big window over it, or a full-screen app) for about 3 seconds, the full window folds into Sprout; a smaller window beside it, one on another screen, a screenshot or the lock screen leave it be. Coming back to arcterm, whichever way, grows it back. Off keeps the cockpit as it is, say on a second screen. Right-click the Sprout button to switch it."
+                                : "Once you switch to another app whose window is maximized or full screen on arcterm's screen for about 3 seconds, the full window folds into Sprout; a window that is not maximized, however big, a dialog or popup, one on another screen, a screenshot or the lock screen leave it be. Coming back to arcterm, whichever way, grows it back. Off keeps the cockpit as it is, say on a second screen. Right-click the Sprout button to switch it.",
                             key: "window:autosprout",
                             scope: "synced",
                             config: true,
