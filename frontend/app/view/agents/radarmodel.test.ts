@@ -103,7 +103,12 @@ describe("resolveSelection", () => {
 describe("buildRunDraft", () => {
     it("keeps report, finding, and fingerprint ids distinct", () => {
         const r = report({ oid: "report-1" });
-        const f = finding("finding-1", "new", { fingerprint: "fp-9", mission: "add tests", files: ["a.ts"], signalids: ["s1"] });
+        const f = finding("finding-1", "new", {
+            fingerprint: "fp-9",
+            mission: "add tests",
+            files: ["a.ts"],
+            signalids: ["s1"],
+        });
         const draft = buildRunDraft(r, f);
         expect(draft.reportId).toBe("report-1");
         expect(draft.findingId).toBe("finding-1");

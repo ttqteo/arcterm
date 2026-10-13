@@ -151,9 +151,10 @@ commit touching it (`git log -1 -- <file>`); it is the target's revision, so a f
 when it changed since its last review.
 
 The prompt is `CONTRACT.hotspot` with the file, its fix count, the window's fix subjects for that file
-(normalized, deduplicated, each clipped) and, when the baseline report holds findings in that file (any kind,
-any group), a list of them: `- line <n>: <risk>`. The contract tells the session these are already reported,
-open or dismissed, and not to report them again. Both lists are fenced as untrusted.
+(normalized, each clipped, one per fix so a repeated subject stays and the list's length is the count) and,
+when the baseline report holds findings in that file (any kind, any group), a list of them:
+`- line <n>: <risk>`. The contract tells the session these are already reported, open or dismissed, and not
+to report them again. Both lists are fenced as untrusted.
 
 ## 4. Prompt and reply
 

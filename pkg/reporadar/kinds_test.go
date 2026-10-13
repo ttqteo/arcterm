@@ -137,8 +137,8 @@ func TestSelectHotspot(t *testing.T) {
 	if warm.Commit != touch || warm.Subject != "chore: touch warm" {
 		t.Errorf("warm.go revision = %s %q, want the last commit touching it (%s), fix or not", warm.Commit, warm.Subject, touch)
 	}
-	if want := []string{"fix: b", "fix: a"}; !reflect.DeepEqual(hot.FixSubjects, want) {
-		t.Errorf("fix subjects = %q, want %q (normalized, deduplicated, newest first)", hot.FixSubjects, want)
+	if want := []string{"fix: b", "fix: b", "fix: a"}; !reflect.DeepEqual(hot.FixSubjects, want) {
+		t.Errorf("fix subjects = %q, want %q (normalized, one per fix, newest first)", hot.FixSubjects, want)
 	}
 
 	long := []classifiedCommit{

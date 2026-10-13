@@ -273,14 +273,12 @@ func fileRevision(ctx context.Context, projectPath, file string) (auditTarget, e
 	return auditTarget{Kind: KindHotspot, Commit: parts[0], Subject: parts[2], Ts: ts * 1000}, nil
 }
 
-// fixSubjects are the fixes' normalized subjects, deduplicated and clipped, in the given (newest first) order.
+// fixSubjects are the fixes' normalized, clipped subjects in the given (newest first) order, one per fix: the
+// prompt, mission and row read the fix count from its length, so a repeated subject stays.
 func fixSubjects(fixes []classifiedCommit) []string {
 	var out []string
 	for _, c := range fixes {
-		s := clip(normalizeSubject(c.Subject), maxFixSubjectBytes)
-		if !slices.Contains(out, s) {
-			out = append(out, s)
-		}
+		out = append(out, clip(normalizeSubject(c.Subject), maxFixSubjectBytes))
 	}
 	return out
 }
