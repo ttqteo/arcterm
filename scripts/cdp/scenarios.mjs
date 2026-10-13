@@ -35446,9 +35446,10 @@ const settingsStorage = {
     },
 };
 
-// --- sidebar-agent-glyph: an agent row's ✳ carries its state, and a muted terminal its running background tasks. Four fixture
-// agents in one project: working, asking, idle with a committed last turn (it offers ✓ Close), and the same idle one whose
-// transcript left a command running with run_in_background (the terminal, no Close).
+// --- sidebar-agent-glyph: an agent row's ✳ carries its state; running background tasks draw no mark (Servers and the
+// rail list them) but hold back Close. Four fixture agents in one project: working, asking, idle with a committed last
+// turn (it offers ✓ Close), and the same idle one whose transcript left a command running with run_in_background (no
+// mark, no Close).
 const SAG_PROJECT = "verify-sidebar-glyph";
 const SAG_ID = { working: "fx-sag-working", asking: "fx-sag-asking", idle: "fx-sag-idle", bg: "fx-sag-bg" };
 const sagRow = (id) => `document.querySelector('[data-agent-row="${id}"]')`;
@@ -35462,7 +35463,7 @@ const sagFacts = (id) => `(() => {
         state: glyph?.dataset.agentGlyphState ?? null,
         color: glyph ? getComputedStyle(glyph).color : null,
         pulse: !!glyph?.classList.contains("pulse-dot"),
-        dot: dot ? { n: Number(dot.dataset.agentBackground), title: dot.title, color: getComputedStyle(dot).color, pulse: /pulse/.test(dot.className) } : null,
+        dot: !!dot,
         close: !!row.querySelector("[data-agent-done]"),
         stateDot: !!row.querySelector("span.rounded-full[style*='background-color']"),
     };
@@ -35515,8 +35516,12 @@ const sidebarAgentGlyph = {
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
             await h.goto("agent");
             if (!(await polishWaitFor(h, `!!${sagRow(SAG_ID.bg)}`, 15000))) throw new Error("the fixture rows never showed");
-            // the tracker reads the transcript on enter; the dot follows once it lands
-            ctx.dotSeen = await polishWaitFor(h, `!!${sagRow(SAG_ID.bg)}?.querySelector("[data-agent-background]")`, 15000);
+            // the tracker reads the transcript on enter; until it lands the background agent offers Close like the idle one
+            ctx.bgLanded = await polishWaitFor(
+                h,
+                `!!${sagRow(SAG_ID.idle)}?.querySelector("[data-agent-done]") && !${sagRow(SAG_ID.bg)}?.querySelector("[data-agent-done]")`,
+                15000
+            );
             await h.ev(`${sagRow(SAG_ID.working)}?.closest("[data-agent-active-rows]")?.scrollIntoView({ block: "start" }) ?? true`);
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
@@ -35556,15 +35561,11 @@ const sidebarAgentGlyph = {
             JSON.stringify(Object.fromEntries(Object.entries(f).map(([k, x]) => [k, x?.stateDot])))
         );
         rec(
-            "5. the agent with a running background task shows one muted, still terminal naming it",
-            ctx.dotSeen &&
-                f.bg?.dot?.n === 1 &&
-                f.bg.dot.color === muted &&
-                !f.bg.dot.pulse &&
-                f.bg.dot.title.includes("Start the dev server"),
-            JSON.stringify({ dot: f.bg?.dot, muted })
+            "5. no row draws a background-task mark: the agent with a running task looks like any idle one",
+            Object.values(f).every((x) => x && !x.dot),
+            JSON.stringify(Object.fromEntries(Object.entries(f).map(([k, x]) => [k, x?.dot])))
         );
-        rec("6. no other row shows the dot", !f.working?.dot && !f.asking?.dot && !f.idle?.dot, "");
+        rec("6. the background task's transcript was read", ctx.bgLanded === true, "");
         rec(
             "7. Close waits for the background task: the idle committed agent offers it, the one with the task does not",
             f.idle?.close === true && f.bg?.close === false,

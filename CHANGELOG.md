@@ -14,6 +14,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - The RAM popup on Windows now shows what arcterm's total is made of, on one line under the agents: Agents,
   Interface (the webview), Server, Host and Terminals.
+- **Agent rows in the sidebar are calmer.** Background commands an agent left running no longer mark its row (Servers
+  and the rail's Background tasks list them; Close still waits for them), its canvas is a grid icon beside its name,
+  Close is a green check alone, and the Later bookmark is grey instead of yellow.
 
 ## 0.15.11 — 2026-10-13
 

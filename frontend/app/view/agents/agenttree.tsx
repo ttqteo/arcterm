@@ -45,6 +45,7 @@ import {
     Hash,
     History as HistoryIcon,
     Loader2,
+    LayoutGrid,
     Moon,
     Pencil,
     Play,
@@ -177,7 +178,7 @@ import { DigitHint } from "./digithint";
 import { StatusDot } from "./statusdot";
 import { backgroundTasksByIdAtom, focusSubagentAtom, subagentsByIdAtom } from "./subagentsstore";
 import { useSubagentTracking } from "./subagenttracking";
-import { runningBackgroundTasks, type BackgroundTask } from "./transcriptprojection";
+import { runningBackgroundTasks } from "./transcriptprojection";
 import { unreadLabel } from "./unreadagents";
 import { unreadAgentsAtom } from "./unreadagentsstore";
 import { showTerminalMenu, ToolGlyph } from "./terminalsrail";
@@ -442,13 +443,14 @@ function FoldChip({
 }
 
 // One click from anywhere on the surface to an agent's canvas, and back to its terminal when that canvas is the
-// one showing. The click must not reach the row, which would only focus the agent in whatever mode it was left
+// one showing: a grid icon beside the name, with the accent dot while it holds boards you have not looked at. The click must not reach the row, which would only focus the agent in whatever mode it was left
 function CanvasTag({ model, id }: { model: AgentsViewModel; id: string }) {
     const canvas = useAtomValue(canvasStateAtom(id));
     const showing = useSelectedRowId(model) === id && canvas?.mode === "canvas";
     if (canvas == null) {
         return null;
     }
+    const unseen = isUnseen(canvas);
     return (
         <button
             type="button"
@@ -459,15 +461,26 @@ function CanvasTag({ model, id }: { model: AgentsViewModel; id: string }) {
                 showTerminal();
                 setAgentView(id, showing ? "terminal" : "canvas", Date.now());
             }}
-            title={showing ? "Back to the terminal" : "Show the canvas"}
+            title={
+                showing
+                    ? "Back to the terminal"
+                    : unseen
+                      ? "Show the canvas (updated since you last looked)"
+                      : "Show the canvas"
+            }
+            aria-label={showing ? "Back to the terminal" : "Show the canvas"}
+            data-agent-canvas={id}
             className={cn(
-                "flex flex-none cursor-pointer items-center gap-[4px] rounded-[5px] border px-[6px] py-[1px] text-[10.5px] font-semibold text-accent-soft",
-                showing ? "border-accent bg-accentbg" : "border-edge-mid hover:border-edge-strong"
+                "relative flex h-[16px] w-[16px] flex-none cursor-pointer items-center justify-center rounded-[4px]",
+                showing ? "bg-accentbg text-accent" : "text-accent-soft hover:bg-surface-hover"
             )}
         >
-            canvas
-            {isUnseen(canvas) ? (
-                <span aria-label="updated since you last looked" className="h-[5px] w-[5px] rounded-full bg-accent" />
+            <LayoutGrid size={11} strokeWidth={2} aria-hidden />
+            {unseen ? (
+                <span
+                    aria-label="updated since you last looked"
+                    className="absolute right-[0px] top-[0px] h-[5px] w-[5px] rounded-full bg-accent"
+                />
             ) : null}
         </button>
     );
@@ -672,15 +685,13 @@ function ParentRow({
     // its last turn committed, you have read it and no run it started is still going: the row offers to close it
     // (donesuggest.ts). A sleeping agent offers no Close even when its last turn committed: it is parked, not finished
     const lineageRuns = useAtomValue(model.lineageAtom).runs;
-    // the shell commands it left running in the background (a build, a dev server): a dot shows while any runs, and
-    // Close waits for them, since closing the agent would end them
+    // the shell commands it left running in the background (a build, a dev server): the row draws no mark for them
+    // (Servers and the rail's Background tasks list them), but Close waits for them, since closing the agent would end them
     const background = runningBackgroundTasks(useAtomValue(backgroundTasksByIdAtom)[agent.id]);
     const done = !agent.sleeping && doneSuggestion(agent, unreadCount, lineageRuns, background.length);
     // a sleeping row steps back to the faintest ink, so it reads apart from an idle one at a glance; being chosen or
     // holding unread turns brings its name back
     const dim = agent.sleeping != null && !selected;
-    // the canvas tag and a worded Close overflow the second line together, so beside the tag Close is its check alone
-    const compactClose = useAtomValue(canvasStateAtom(agent.id)) != null;
     // m4: one-shot settle when this agent reaches idle (working/asking -> idle)
     const settling = useSettle(agent.state === "idle");
 
@@ -750,14 +761,13 @@ function ParentRow({
               }
             : undefined;
 
-    // the canvas tag, then the state: words when it wants something, else its dot, tokens and age. They end the
-    // row's second line (a lead's after its workers chip and progress), so the name keeps the first line's full width
+    // the state: words when it wants something, else tokens and age. They end the row's second line (a lead's after
+    // its workers chip and progress), so the name keeps the first line's full width
     const badges = (
         <>
-            <CanvasTag model={model} id={agent.id} />
-            {/* a row names its state in words only when it wants something; otherwise its glyph says working or
-                idle, a dot says background tasks still run, and a count says how many finished turns you have not
-                read, or the part a turn stopped on waiting for your reply */}
+            {/* a row names its state in words only when it wants something; otherwise its glyph says working, idle or
+                sleeping, and a count says how many finished turns you have not read, or the part a turn stopped on
+                waiting for your reply */}
             {review ? (
                 // a Spec or Plan review opens its dialog over whatever agent is focused, and a Doc review
                 // focuses its agent in review mode itself, so the click must not reach the row either way
@@ -789,8 +799,8 @@ function ParentRow({
                 </>
             ) : (
                 <>
-                    {/* its glyph carries working, idle or (a moon) sleeping; this slot holds its queued command, the
-                        Close a finished one offers, or the terminal of background tasks still running */}
+                    {/* its glyph carries working, idle or (a moon) sleeping; this slot holds its queued command or the
+                        Close a finished one offers */}
                     {queued ? (
                         <QueuedJobTag job={queued} />
                     ) : done ? (
@@ -803,17 +813,11 @@ function ParentRow({
                                 confirmCloseSession(agent, model);
                             }}
                             title={DONE_TITLE}
-                            aria-label={compactClose ? "Close" : undefined}
-                            className={cn(
-                                "flex flex-none cursor-pointer items-center gap-[3px] rounded-[5px] border border-success/45 py-[1px] text-[10.5px] font-semibold text-success hover:border-success",
-                                compactClose ? "px-[3px]" : "px-[5px]"
-                            )}
+                            aria-label="Close"
+                            className="flex h-[16px] w-[16px] flex-none cursor-pointer items-center justify-center rounded-[4px] text-success hover:bg-surface-hover"
                         >
-                            <Check size={10} strokeWidth={2.4} aria-hidden />
-                            {compactClose ? null : "Close"}
+                            <Check size={12} strokeWidth={2.4} aria-hidden />
                         </button>
-                    ) : background.length > 0 ? (
-                        <BackgroundTag tasks={background} />
                     ) : null}
                     {tokens ? (
                         <span className={cn(TOKENS_COL, dim && "text-ink-faint")}>{formatTokens(tokens)}</span>
@@ -890,6 +894,7 @@ function ParentRow({
                         >
                             {agent.name}
                         </span>
+                        <CanvasTag model={model} id={agent.id} />
                         {laterAt != null ? <LaterMark title={laterTitle(laterAt, now, formatAgeShort)} /> : null}
                         {/* a lead's second line already holds its workers chip, progress and badges */}
                         {lead ? subsChip : null}
@@ -1428,24 +1433,6 @@ function SleepGlyph({ id, runtime }: { id: string; runtime: string }) {
 
 const GLYPH_COLOR: Record<AgentState, string> = { working: "text-accent", asking: "text-warning", idle: "text-muted" };
 
-// the terminal on an agent's second line, with their count: shell commands it left running in the background, which
-// outlive its turn. Muted and still: a green pulsing dot read as the agent itself still working
-function BackgroundTag({ tasks }: { tasks: BackgroundTask[] }) {
-    const n = tasks.length;
-    const title = `${n} background ${n === 1 ? "task" : "tasks"} running:\n${tasks.map((t) => t.label).join("\n")}`;
-    return (
-        <span
-            data-agent-background={n}
-            title={title}
-            aria-label={`${n} background ${n === 1 ? "task" : "tasks"} running`}
-            className="flex flex-none items-center gap-[3px] text-[10.5px] tabular-nums text-muted"
-        >
-            <SquareTerminal size={11} strokeWidth={2} aria-hidden />
-            <span aria-hidden>{n}</span>
-        </span>
-    );
-}
-
 function BranchLabel({ branch }: { branch: string }) {
     return (
         <span className="flex min-w-0 items-center gap-[3px]" title={branch}>
@@ -1495,7 +1482,7 @@ function laterMenuItem(transcriptPath: string | undefined, marked: boolean): Con
 // The mark after a row's name for a session marked for later; `title` says since when.
 function LaterMark({ title }: { title: string }) {
     return (
-        <span role="img" aria-label={title} title={title} data-agent-later className="flex flex-none text-warning">
+        <span role="img" aria-label={title} title={title} data-agent-later className="flex flex-none text-ink-faint">
             <Bookmark size={11} fill="currentColor" aria-hidden />
         </span>
     );

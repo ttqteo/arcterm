@@ -35,11 +35,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
 
 **2026-10-13 (Sleeping and background-task rows in the sidebar)**
 
-- [ ] (arcterm) **Sleeping rows read apart from idle ones; the background mark is not a running dot.** In the Agent
-  sidebar a sleeping agent shows a moon in place of its ✳, a faded name and meta, and a bare age (`19m`); an idle one
-  keeps its ✳ and `text-secondary` name. An agent with a background command shows a grey, still terminal icon and a
-  count, the commands on hover. Selected or unread, a sleeping row's name is bright again. `agenttree.tsx`
-  (`SleepGlyph`, `BackgroundTag`); scenarios `agent-sleep`, `sidebar-agent-glyph`.
+- [ ] (arcterm) **Sleeping rows read apart from idle ones; rows carry fewer marks.** In the Agent sidebar a sleeping
+  agent shows a moon in place of its ✳, a faded name and meta, and a bare age (`19m`); an idle one keeps its ✳ and
+  `text-secondary` name. Selected or unread, a sleeping row's name is bright again. An agent with a background command
+  shows no mark (and no ✓ while it runs); one with a canvas shows a grid icon after its name (accent dot when
+  updated; a click shows the canvas, again goes back to the terminal); a finished one a bare green ✓; the Later
+  bookmark is grey. `agenttree.tsx` (`SleepGlyph`, `CanvasTag`); scenarios `agent-sleep`, `sidebar-agent-glyph`.
 
 **2026-10-13 (Classic-renderer Claude after a restart scrolls)**
 
