@@ -136,7 +136,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                     type="button"
                     data-launcher-open
                     aria-haspopup="dialog"
-                    title={withChord("New agent or run", newAgentKeys)}
+                    title={withChord("New agent, terminal, run or tool", newAgentKeys)}
                     onClick={() => reopenLauncher(model)}
                     className="flex h-[26px] cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[7px] bg-accent px-2.5 text-[12px] font-semibold text-background hover:bg-accenthover"
                 >
