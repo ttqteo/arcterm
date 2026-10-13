@@ -208,14 +208,14 @@ describe("run actions", () => {
             });
         });
 
-        it("flips the setting and sends the other dials as they stand", async () => {
+        it("flips the setting, sends the routes as they stand and leaves the width alone", async () => {
             const save = vi.spyOn(RpcApi, "SetRunSettingsCommand").mockResolvedValue(undefined);
             const base = { channelid: "c1", runid: "r1", reviewerpicks: false, ...routes };
             await autonomous.run(thing(engine({ dagoref: undefined, parallelism: 2, ...routes })), { model: null });
-            expect(save.mock.lastCall[1]).toEqual({ ...base, parallelism: 2, autonomous: true });
+            expect(save.mock.lastCall[1]).toEqual({ ...base, autonomous: true });
             const lin = lineage(info({ dag: { ...info().dag, ...routes, autonomous: true } }));
             await autonomous.run(thing(engine(), [lead], lin), { model: null });
-            expect(save.mock.lastCall[1]).toEqual({ ...base, parallelism: 3, autonomous: false });
+            expect(save.mock.lastCall[1]).toEqual({ ...base, autonomous: false });
             save.mockRestore();
         });
     });
