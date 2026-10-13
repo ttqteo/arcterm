@@ -5,6 +5,7 @@ package wshserver
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -426,5 +427,68 @@ func TestSetChannelProfileStoresEngineDefaults(t *testing.T) {
 	}
 	if got.Resolved.WorkerRoute == nil || *got.Resolved.WorkerRoute != *route {
 		t.Fatalf("resolved worker route missing: %+v", got.Resolved.WorkerRoute)
+	}
+}
+
+// The switch fires only on an actual change of the effective value, on the Run before a dag and on the
+// group after.
+func TestSetRunSettingsAutonomousSwitch(t *testing.T) {
+	type call struct {
+		runId string
+		on    bool
+	}
+	var calls []call
+	old := applyAutonomousSwitchFn
+	applyAutonomousSwitchFn = func(_ context.Context, _, runId string, on bool) error {
+		calls = append(calls, call{runId, on})
+		return nil
+	}
+	t.Cleanup(func() { applyAutonomousSwitchFn = old })
+
+	for _, withDag := range []bool{false, true} {
+		ctx := context.Background()
+		ch, run := newEngineRun(t, ctx, "rs-switch", jarvis.Orchestration_Engine)
+		if withDag {
+			submitPlan(t, ctx, ch, run.ID)
+		}
+		ws := &WshServer{}
+		for _, step := range []struct {
+			name string
+			sent *bool
+			want []call
+		}{
+			{"nil", nil, nil},
+			{"false->true", boolPtr(true), []call{{run.ID, true}}},
+			{"true->true", boolPtr(true), nil},
+			{"nil while on", nil, nil},
+			{"true->false", boolPtr(false), []call{{run.ID, false}}},
+			{"false->false", boolPtr(false), nil},
+		} {
+			calls = nil
+			if err := ws.SetRunSettingsCommand(ctx, wshrpc.CommandSetRunSettingsData{ChannelId: ch.OID, RunId: run.ID, Autonomous: step.sent}); err != nil {
+				t.Fatalf("dag %v, %s: %v", withDag, step.name, err)
+			}
+			if len(calls) != len(step.want) || (len(calls) == 1 && calls[0] != step.want[0]) {
+				t.Fatalf("dag %v, %s: switch calls %+v, want %+v", withDag, step.name, calls, step.want)
+			}
+		}
+	}
+}
+
+// The setting is saved even when the switch could not hand the lead's question back, and the caller hears why.
+func TestSetRunSettingsAutonomousSwitchErrorKeepsSetting(t *testing.T) {
+	old := applyAutonomousSwitchFn
+	applyAutonomousSwitchFn = func(context.Context, string, string, bool) error {
+		return errors.New("approvals saved as autonomous, but the lead's question still needs an answer in its terminal")
+	}
+	t.Cleanup(func() { applyAutonomousSwitchFn = old })
+	ctx := context.Background()
+	ch, run := newEngineRun(t, ctx, "rs-switch-err", jarvis.Orchestration_Engine)
+	err := (&WshServer{}).SetRunSettingsCommand(ctx, wshrpc.CommandSetRunSettingsData{ChannelId: ch.OID, RunId: run.ID, Autonomous: boolPtr(true)})
+	if err == nil || !strings.Contains(err.Error(), "still needs an answer") {
+		t.Fatalf("the switch's error reaches the caller, got %v", err)
+	}
+	if !mustRun(t, ctx, ch.OID, run.ID).Autonomous {
+		t.Fatal("the setting saved before the switch ran")
 	}
 }

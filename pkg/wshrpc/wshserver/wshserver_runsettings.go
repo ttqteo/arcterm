@@ -117,6 +117,18 @@ var errDagLinkedDuringSettings = errors.New("run gained a dag during the setting
 // runSettingsAfterAuthorityRead is a test seam for that window. Nothing in production changes it.
 var runSettingsAfterAuthorityRead = func() {}
 
+// applyAutonomousSwitchFn carries an Approvals change to the run's lead. A var for tests.
+var applyAutonomousSwitchFn = orchestrate.ApplyAutonomousSwitch
+
+// switchAutonomous runs the mid-run side effects of an Approvals change the write actually made. The
+// setting is saved whatever they return, and their error says so.
+func switchAutonomous(ctx context.Context, data wshrpc.CommandSetRunSettingsData, before, after bool) error {
+	if data.Autonomous == nil || before == after {
+		return nil
+	}
+	return applyAutonomousSwitchFn(ctx, data.ChannelId, data.RunId, after)
+}
+
 // runSettingsAttempts bounds the Run -> TaskGroup handoff retry. One retry is the real case (a single
 // submission); the rest is headroom for a pathological caller, not a loop.
 const runSettingsAttempts = 4
@@ -172,6 +184,7 @@ func (ws *WshServer) SetRunSettingsCommand(ctx context.Context, data wshrpc.Comm
 
 		if group == nil {
 			raced := false
+			var before, after bool
 			uerr := wstore.UpdateRun(ctx, data.ChannelId, data.RunId, func(r *waveobj.Run) error {
 				if r.DagORef != "" {
 					raced = true
@@ -183,7 +196,9 @@ func (ws *WshServer) SetRunSettingsCommand(ctx context.Context, data wshrpc.Comm
 				if blocker := jarvis.EngineSettingsBlocker(r); blocker != "" {
 					return errors.New(blocker)
 				}
+				before = jarvis.EffectiveAutonomous(r, nil)
 				*r = jarvis.ApplyPendingEngineSettings(*r, settings)
+				after = jarvis.EffectiveAutonomous(r, nil)
 				return nil
 			})
 			if raced {
@@ -193,9 +208,10 @@ func (ws *WshServer) SetRunSettingsCommand(ctx context.Context, data wshrpc.Comm
 				return fmt.Errorf("updating run settings: %w", uerr)
 			}
 			publishRunUpdate(data.ChannelId, data.RunId)
-			return nil
+			return switchAutonomous(ctx, data, before, after)
 		}
 
+		var before, after bool
 		// re-read and re-validate inside the critical section: the run may have gone terminal, the gate may
 		// have been approved, and a task may have been dispatched since the request was read.
 		if derr := orchestrate.WithDagMutation(group.OID, func() error {
@@ -214,7 +230,9 @@ func (ws *WshServer) SetRunSettingsCommand(ctx context.Context, data wshrpc.Comm
 				return fmt.Errorf("cannot change run settings: %s", blocker)
 			}
 			return wstore.UpdateDag(ctx, group.OID, func(cur *waveobj.TaskGroup) error {
+				before = jarvis.EffectiveAutonomous(freshRun, cur)
 				*cur = jarvis.ApplyLiveEngineSettings(*cur, settings)
+				after = jarvis.EffectiveAutonomous(freshRun, cur)
 				return nil
 			})
 		}); derr != nil {
@@ -222,7 +240,7 @@ func (ws *WshServer) SetRunSettingsCommand(ctx context.Context, data wshrpc.Comm
 		}
 		wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Dag, group.OID))
 		publishRunUpdate(data.ChannelId, data.RunId)
-		return nil
+		return switchAutonomous(ctx, data, before, after)
 	}
 	return fmt.Errorf("run settings were not applied: the run changed under the write")
 }
