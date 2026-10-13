@@ -15,6 +15,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - **A canvas with only a few boards has ‹ and › beside its tabs too**, stepping boards as `[` and `]` do.
 - **Closing the agent or terminal you are looking at opens the one beside it** in the sidebar (the one below, or above
   when it was last), instead of jumping back to the first agent.
+- **Usage no longer sits on its loading placeholders after arcterm starts**: the first scan of your transcripts could
+  outlast a 5-second limit and lose its answer, leaving By session and Subagent cost blank until you switched the
+  window. The scans now get up to a minute, and opening Usage reads each transcript once instead of up to three times.
 
 ### Changed
 

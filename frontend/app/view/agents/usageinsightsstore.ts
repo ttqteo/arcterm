@@ -12,6 +12,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type PrimitiveAtom } from "jotai";
 import { hasInsights } from "./usagelevers";
+import { USAGE_SCAN_TIMEOUT_MS } from "./usagestore";
 
 export const sessionUsageAtom = atom<UsageSession[]>([]) as PrimitiveAtom<UsageSession[]>;
 export const sessionUsageLoadedAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
@@ -175,11 +176,15 @@ export async function loadSessionUsage(windowDays: number, fiveHourReset?: numbe
             sessions = fixture.sessions ?? [];
             windows = { fiveHour: fixture.windowfivehourtokens ?? 0, week: fixture.windowweektokens ?? 0 };
         } else {
-            const rtn = await RpcApi.GetSessionUsageCommand(TabRpcClient, {
-                windowdays: windowDays,
-                fivehourcutoff: fiveHourReset != null ? fiveHourReset - FIVE_HOUR_S : undefined,
-                weekcutoff: weekReset != null ? weekReset - WEEK_S : undefined,
-            });
+            const rtn = await RpcApi.GetSessionUsageCommand(
+                TabRpcClient,
+                {
+                    windowdays: windowDays,
+                    fivehourcutoff: fiveHourReset != null ? fiveHourReset - FIVE_HOUR_S : undefined,
+                    weekcutoff: weekReset != null ? weekReset - WEEK_S : undefined,
+                },
+                { timeout: USAGE_SCAN_TIMEOUT_MS }
+            );
             sessions = rtn.sessions ?? [];
             windows = { fiveHour: rtn.windowfivehourtokens ?? 0, week: rtn.windowweektokens ?? 0 };
         }
@@ -208,7 +213,8 @@ export async function loadSubagentCosts(): Promise<void> {
             await devDelay(fixture);
             costs = fixture.costs ?? [];
         } else {
-            costs = (await RpcApi.GetSubagentCostsCommand(TabRpcClient)).costs ?? [];
+            costs =
+                (await RpcApi.GetSubagentCostsCommand(TabRpcClient, { timeout: USAGE_SCAN_TIMEOUT_MS })).costs ?? [];
         }
         if (seq === costsSeq) {
             globalStore.set(subagentCostsAtom, costs);

@@ -15,6 +15,11 @@ import { aggregateBuckets } from "./usagestats";
 
 const DEFAULT_WINDOW_DAYS = 7;
 
+// The transcript scans (usage stats, session usage, subagent costs) pass this: a scan of a cold parse cache can run
+// past wshrpc's default 5 s, and a server handler past its deadline may drop its reply, which with no timeout on
+// this side left the call pending and the surface on its skeleton for good.
+export const USAGE_SCAN_TIMEOUT_MS = 60_000;
+
 export const usageBucketsAtom = atom<UsageBucket[]>([]) as PrimitiveAtom<UsageBucket[]>;
 // what each bucket's session was: its title, project, run and role. set from the same reply as the buckets
 export const usageSessionsAtom = atom<UsageSessionMeta[]>([]) as PrimitiveAtom<UsageSessionMeta[]>;
@@ -74,7 +79,13 @@ export async function loadUsage(windowDays = DEFAULT_WINDOW_DAYS): Promise<void>
         globalStore.set(usageLoadedAtom, false);
     }
     try {
-        const reply = devUsageFixture() ?? (await RpcApi.GetUsageStatsCommand(TabRpcClient, { windowdays: windowDays }));
+        const reply =
+            devUsageFixture() ??
+            (await RpcApi.GetUsageStatsCommand(
+                TabRpcClient,
+                { windowdays: windowDays },
+                { timeout: USAGE_SCAN_TIMEOUT_MS }
+            ));
         if (seq !== loadSeq) {
             return; // a newer load superseded this one — ignore its result
         }

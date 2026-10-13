@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1043,5 +1044,48 @@ func TestParseCacheKeepsMeta(t *testing.T) {
 	writeScanFile(t, body("Renamed", "/repo/bbb"), path)
 	if got := scan(); got.Title != "Renamed" || got.Cwd != "/repo/bbb" {
 		t.Fatalf("changed file = %+v, want it read again", got)
+	}
+}
+
+// scans that run at once (the Usage surface fires several) read a file the cache lacks once between them: the
+// others wait on that read rather than parse the same transcript beside it.
+func TestCachedFileParseSharesInflightRead(t *testing.T) {
+	claude := filepath.Join(t.TempDir(), "claude")
+	path := writeScanFile(t, claudeTurnLine("m", time.Now(), 1, "/repo"), claude, "slug", "c1.jsonl")
+	parseCache.Delete(path)
+	t.Cleanup(func() { parseCache.Delete(path) })
+
+	release := make(chan struct{})
+	var reads atomic.Int32
+	orig := readFileParse
+	readFileParse = func(f scanFile) fileParse {
+		reads.Add(1)
+		<-release
+		return orig(f)
+	}
+	t.Cleanup(func() { readFileParse = orig })
+
+	const callers = 4
+	results := make(chan fileParse, callers)
+	for range callers {
+		go func() { results <- cachedFileParse(scanFile{path: path, kind: scanClaude}) }()
+	}
+	// let every caller reach the read or the wait on it before the read finishes
+	deadline := time.Now().Add(5 * time.Second)
+	for reads.Load() == 0 || inflightCount() < 1 {
+		if time.Now().After(deadline) {
+			t.Fatal("no read started")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	for range callers {
+		if p := <-results; len(p.records) != 1 {
+			t.Fatalf("a caller got %d records, want 1", len(p.records))
+		}
+	}
+	if n := reads.Load(); n != 1 {
+		t.Fatalf("file read %d times, want 1", n)
 	}
 }

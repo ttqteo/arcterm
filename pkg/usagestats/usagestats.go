@@ -705,23 +705,71 @@ type fileParse struct {
 // entries no recent scan read if its memory matters.
 var parseCache sync.Map
 
+// inflight holds the reads under way, by path. The Usage surface fires several scans at once, and on a cold cache
+// each would otherwise parse the same transcripts beside the others.
+var (
+	inflightMu sync.Mutex
+	inflight   = map[string]*inflightRead{}
+)
+
+type inflightRead struct {
+	done chan struct{}
+	p    fileParse
+}
+
+// readFileParse is parseFile, a seam for the inflight test
+var readFileParse = parseFile
+
+func inflightCount() int {
+	inflightMu.Lock()
+	defer inflightMu.Unlock()
+	return len(inflight)
+}
+
 // cachedFileParse returns f's parse, reading the file only when its modtime or size differs from the
-// cached one. The returned slices are shared with the cache and must not be modified.
+// cached one. A file another scan is reading is waited on, not read again. The returned slices are shared with
+// the cache and must not be modified.
 func cachedFileParse(f scanFile) fileParse {
 	info, err := os.Stat(f.path)
 	if err != nil {
 		parseCache.Delete(f.path)
 		return fileParse{}
 	}
-	if v, ok := parseCache.Load(f.path); ok {
-		if c := v.(fileParse); c.size == info.Size() && c.mod.Equal(info.ModTime()) {
-			return c
+	fresh := func() (fileParse, bool) {
+		if v, ok := parseCache.Load(f.path); ok {
+			if c := v.(fileParse); c.size == info.Size() && c.mod.Equal(info.ModTime()) {
+				return c, true
+			}
 		}
+		return fileParse{}, false
 	}
-	p := parseFile(f)
-	p.mod, p.size = info.ModTime(), info.Size()
-	parseCache.Store(f.path, p)
-	return p
+	if c, ok := fresh(); ok {
+		return c
+	}
+	inflightMu.Lock()
+	// a read that finished since the check above stored its parse before leaving inflight
+	if c, ok := fresh(); ok {
+		inflightMu.Unlock()
+		return c
+	}
+	if r, ok := inflight[f.path]; ok {
+		inflightMu.Unlock()
+		<-r.done
+		return r.p
+	}
+	r := &inflightRead{done: make(chan struct{})}
+	inflight[f.path] = r
+	inflightMu.Unlock()
+	defer func() {
+		inflightMu.Lock()
+		delete(inflight, f.path)
+		inflightMu.Unlock()
+		close(r.done)
+	}()
+	r.p = readFileParse(f)
+	r.p.mod, r.p.size = info.ModTime(), info.Size()
+	parseCache.Store(f.path, r.p)
+	return r.p
 }
 
 // SessionMeta is what a session's own transcript says about it. Cwd and Title are empty when the
