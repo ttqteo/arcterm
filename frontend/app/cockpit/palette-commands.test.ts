@@ -105,12 +105,13 @@ describe("buildCommandItems", () => {
 });
 
 describe("buildExtraItems", () => {
-    const deps = () => ({ openNewProject: vi.fn() });
+    const deps = () => ({ openNewProject: vi.fn(), openToolPicker: vi.fn() });
 
-    it("offers the chordless modal and one drill row for themes", () => {
+    it("offers the chordless modals and one drill row for themes", () => {
         const items = buildExtraItems(deps());
         expect(items.map((i) => [i.key, i.drill])).toEqual([
             ["cmd:new-project", undefined],
+            ["cmd:open-tool", undefined],
             ["cmd:theme", "theme"],
         ]);
     });
@@ -121,6 +122,14 @@ describe("buildExtraItems", () => {
         const d = deps();
         buildExtraItems(d)[0].run();
         expect(d.openNewProject).toHaveBeenCalled();
+    });
+    it("opens the tool picker from Open a tool…", () => {
+        const d = deps();
+        const item = buildExtraItems(d).find((i) => i.key === "cmd:open-tool");
+        expect(item?.title).toBe("Open a tool…");
+        item?.run();
+        expect(d.openToolPicker).toHaveBeenCalled();
+        expect(d.openNewProject).not.toHaveBeenCalled();
     });
 });
 

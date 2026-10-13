@@ -1,15 +1,14 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pure model for the Agent surface's sidebar once it carries conversations as well as live agents. Two sections, each
+// Pure model for the Agent surface's sidebar once it carries conversations as well as live agents. Two parts, each
 // collapsible. The project tree (projectTree) is one collapsible folder per project: the live agents as the tree builds
 // them (agenttreemodel.ts), a divider, then the project's plain terminals and tools. Terminals with no project sit in a
 // Home folder at the end, and a split of two or more cells is one row of its own: inside its project's folder when every
-// cell is in it, else at the top. activeView, terminalTree and splitActive are the models of the two sections it
-// merges, kept while the sidebar still reads them. Conversations holds every ended session, in a collapsible folder per
+// cell is in it, else at the top. Conversations holds every ended session, in a collapsible folder per
 // project (the folder with the newest conversation first, newest first inside it, each row reading its own age), and
 // "Show more" pages a folder (CONVERSATION_PAGE per press). The app bar's project switcher narrows both to one
-// project, which then needs no folder: each section is a flat list, and activeView counts the agents it hides so one
+// project, which then needs no folder: each part is a flat list, and agentsElsewhere counts the agents it hides so one
 // asking elsewhere is not lost. Live and ended never mix: a live agent and its session record are one row, in the
 // tree, joined by normalized transcript path (overlayLive), and the sessions an orchestrator run launched fold into one
 // entry for the run, listed once none of them is live (until then the run is in the tree). Status filters live in
@@ -17,7 +16,7 @@
 // store; nothing here calls either.
 
 import { formatAgeShort, projectOf, type AgentVM } from "./agentsviewmodel";
-import { foldCollapsedProjects, UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
+import { UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
 import { overlayLive, type LiveSession } from "./sessionsarchivestore";
 import { groupRunSessions, memberSession, runSelKey, sessionKey, type RunSessions } from "./sessionsruns";
 
@@ -272,57 +271,16 @@ export function registeredConversations(
     return { ended: kept, elsewhere };
 }
 
-export interface ActiveView {
-    rows: AgentTreeRow[];
-    count: number; // the agents the section holds, for its header; a collapsed folder still counts what it hides
-    elsewhere: { agents: number; asking: number }; // what the project filter hides
-}
-
-/** Pure: the Active section, `tree` being buildAgentTree's output (a group row, then that project's agent rows).
- *  Unfiltered, a collapsed project keeps its group row, which carries the count and attention of what it hides, and
- *  loses the rows under it. Filtered to a project (the app bar's switcher; strict, as the Cockpit filters, so an agent
- *  with no project is hidden too), the section is that project's rows alone with no group row, so no fold applies,
- *  and `elsewhere` counts the agents of every other group and how many of them are asking. */
-export function activeView(tree: AgentTreeRow[], filter: string, collapsed: ReadonlySet<string>): ActiveView {
-    const groups = tree.filter((r): r is Extract<AgentTreeRow, { kind: "group" }> => r.kind === "group");
+/** Pure: what the project filter hides, for the row under the tree: the agents of every other project (`tree` being
+ *  buildAgentTree's output, a group row per project) and how many of them are asking. Nothing is hidden with no filter. */
+export function agentsElsewhere(tree: AgentTreeRow[], filter: string): { agents: number; asking: number } {
     if (filter === ALL_PROJECTS) {
-        const count = groups.reduce((n, g) => n + g.count, 0);
-        return { rows: foldCollapsedProjects(tree, collapsed), count, elsewhere: { agents: 0, asking: 0 } };
+        return { agents: 0, asking: 0 };
     }
-    const rows: AgentTreeRow[] = [];
-    let inProject = false;
-    for (const r of tree) {
-        if (r.kind === "group") {
-            inProject = r.project === filter;
-        } else if (inProject) {
-            rows.push(r);
-        }
-    }
-    const others = groups.filter((g) => g.project !== filter);
-    return {
-        rows,
-        count: groups.filter((g) => g.project === filter).reduce((n, g) => n + g.count, 0),
-        elsewhere: {
-            agents: others.reduce((n, g) => n + g.count, 0),
-            asking: others.reduce((n, g) => n + g.attn, 0),
-        },
-    };
-}
-
-/** Pure: the agents the Active section shows, top to bottom: the split's, then each agent row's (a done task's row
- *  with no session left has none). The agent keys and Ctrl+Tab step through this, so they move the way the list reads
- *  and reach every agent it shows, wherever the agent sits in the Cockpit's order. */
-export function activeAgentIds(split: AgentVM[], rows: AgentTreeRow[]): string[] {
-    const ids = split.map((a) => a.id);
-    for (const r of rows) {
-        if (
-            (r.kind === "parent" || r.kind === "lead" || r.kind === "worker" || r.kind === "stage") &&
-            r.agent != null
-        ) {
-            ids.push(r.agent.id);
-        }
-    }
-    return ids;
+    const others = tree.filter(
+        (r): r is Extract<AgentTreeRow, { kind: "group" }> => r.kind === "group" && r.project !== filter
+    );
+    return { agents: others.reduce((n, g) => n + g.count, 0), asking: others.reduce((n, g) => n + g.attn, 0) };
 }
 
 /** Pure: the digit Alt+1..9 jumps to for each of the first nine agents the Active section shows (activeAgentIds order),
@@ -331,25 +289,6 @@ export const AGENT_DIGITS = 9;
 
 export function agentDigits(ids: readonly string[]): Map<string, number> {
     return new Map(ids.slice(0, AGENT_DIGITS).map((id, i) => [id, i + 1]));
-}
-
-export interface SplitActive {
-    split: AgentVM[]; // the split's agents in cell order; empty when nothing is split
-    rows: AgentTreeRow[]; // the Active rows without them
-}
-
-/** Pure: the Active section while the Agent surface shows a split. Its agents (`cells`, the grid's ids in cell order)
- *  leave their folders for the one split row at the top, so a split reads as one thing however many projects it
- *  spans. Only a plain agent's row moves: a lead's or worker's stays inside its run. `rows` is buildAgentTree's whole
- *  tree, before activeView folds it, so a collapsed folder loses the agents it holds too: a folder stops counting what
- *  the split took, its asking badge included, and one the split emptied goes. Fewer than two cells on the roster is no
- *  split. */
-export function splitActive(rows: AgentTreeRow[], cells: readonly string[], roster: AgentVM[]): SplitActive {
-    const split = resolveSplit(cells, roster);
-    if (split.length === 0) {
-        return { split, rows };
-    }
-    return { split, rows: liftFromFolders(rows, new Set(split.map((a) => a.id))) };
 }
 
 // the split's cells on the roster, in cell order: a cell that left the roster is skipped, and fewer than two left is no
@@ -555,6 +494,54 @@ export function terminalPlace(cwd: string | undefined, root: string | undefined)
     );
 }
 
+/** Pure: a folder's name as the tree reads it. The terminals with no project sit in Home (HOME_PROJECT is the key the
+ *  model and the fold list use); the agents with no project keep their own "ungrouped" folder, so the two never read as
+ *  one. Every other folder is the project's name. */
+export function projectLabel(project: string): string {
+    return project === HOME_PROJECT ? "Home" : project;
+}
+
+/** Pure: what a folded folder says it holds: "2 agents · 1 terminal", only "2 terminals" when it holds no agent and only
+ *  "2 agents" when it holds no terminal, "" for neither. */
+export function folderCounts(agents: number, terminals: number): string {
+    const part = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+    return [agents > 0 ? part(agents, "agent") : "", terminals > 0 ? part(terminals, "terminal") : ""]
+        .filter(Boolean)
+        .join(" · ");
+}
+
+export type TerminalRowState = "installing" | "failed";
+
+/** Pure: how a terminal row stands when it is an install terminal. `installing` and `failed` map a tool's id to the tab
+ *  of its install terminal (toolsstore's installingAtom and failedAtom): "installing" while the install runs, "failed"
+ *  once it exited non-zero and was kept open with its output (also when both name the tab: the exit is the later fact).
+ *  Undefined for every other terminal. */
+export function terminalRowState(
+    tabId: string,
+    installing: Readonly<Record<string, string>>,
+    failed: Readonly<Record<string, string>>
+): TerminalRowState | undefined {
+    if (Object.values(failed).includes(tabId)) {
+        return "failed";
+    }
+    return Object.values(installing).includes(tabId) ? "installing" : undefined;
+}
+
+export type TerminalShows = "split" | "panel";
+
+/** Pure: where a terminal shows when that is not the centre: "panel" while it is the docked one, "split" while it is a
+ *  cell of a split (a grid of one cell is no split), nothing otherwise. `cells` are the grid's ids. */
+export function terminalShows(
+    id: string,
+    cells: readonly string[],
+    dockedId: string | null | undefined
+): TerminalShows | undefined {
+    if (dockedId === id) {
+        return "panel";
+    }
+    return cells.length > 1 && cells.includes(id) ? "split" : undefined;
+}
+
 /** Pure: the ids the agent keys (j/k, the arrows, Alt+1..9, Ctrl+Tab) step through, agents and terminals together: the
  *  split's cells first, then each row's agent or terminal in the order the tree reads. A folded project's rows are not
  *  in `rows`, so they are not in it; a worker row with no session left has none; an id the split and a row both name
@@ -576,11 +563,6 @@ export function treeNavIds(rows: ProjectTreeRow[]): string[] {
     return [...new Set(ids)];
 }
 
-// the Terminals section's rows: a project's folder, and the plain terminals under it
-export type TerminalTreeRow =
-    | { kind: "folder"; project: string; count: number; open: boolean }
-    | { kind: "terminal"; project: string; terminal: AgentVM };
-
 /** Pure: the git branch each live agent's session is on, by agent id, for its Active row's second line. Read from the
  *  archive's record of the transcript the agent is writing (overlayLive's join); an agent the scan has not seen yet, or
  *  one whose session names no branch, is absent. `base` is null until the scan loads. */
@@ -593,37 +575,6 @@ export function liveBranches(base: SessionActivity[] | null, roster: AgentVM[]):
     for (const s of overlayLive(base, roster, 0)) {
         if (s.liveId != null && s.branch) {
             out.set(s.liveId, s.branch);
-        }
-    }
-    return out;
-}
-
-/** Pure: the Terminals section. A folder per project the plain terminals were launched in (projectOf; "ungrouped" for
- *  none, as the Active section files an agent), the projects in the roster's order, then, unless it is collapsed, the
- *  folder's terminals in that order. Filtered to a project, its terminals alone in that order, flat and unfolded, with
- *  those that name no project: a shell attributed to no project shows under every one. */
-export function terminalTree(terminals: AgentVM[], filter: string, collapsed: ReadonlySet<string>): TerminalTreeRow[] {
-    if (filter !== ALL_PROJECTS) {
-        return terminals
-            .filter((t) => projectOf(t) === "" || projectOf(t) === filter)
-            .map((terminal) => ({ kind: "terminal", project: projectOf(terminal) || UNGROUPED_PROJECT, terminal }));
-    }
-    const byProject = new Map<string, AgentVM[]>();
-    for (const t of terminals) {
-        const project = projectOf(t) || UNGROUPED_PROJECT;
-        const list = byProject.get(project);
-        if (list == null) {
-            byProject.set(project, [t]);
-        } else {
-            list.push(t);
-        }
-    }
-    const out: TerminalTreeRow[] = [];
-    for (const [project, list] of byProject) {
-        const open = !collapsed.has(project);
-        out.push({ kind: "folder", project, count: list.length, open });
-        if (open) {
-            out.push(...list.map((terminal): TerminalTreeRow => ({ kind: "terminal", project, terminal })));
         }
     }
     return out;

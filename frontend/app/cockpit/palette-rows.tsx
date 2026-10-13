@@ -141,6 +141,7 @@ function RichRow({ it, idx, active, onHover, onFire }: RowProps) {
             role="option"
             aria-selected={active}
             data-idx={idx}
+            data-palette-key={it.key}
             onMouseMove={() => onHover(idx)}
             onClick={() => onFire(it)}
             className={cn(
@@ -187,6 +188,7 @@ function AnswerRow({ it, onFire }: Pick<RowProps, "it" | "onFire">) {
     return (
         <button
             type="button"
+            data-palette-key={it.key}
             onClick={() => onFire(it)}
             className="flex h-[30px] w-full cursor-pointer items-center gap-2.5 rounded-lg pl-[34px] pr-2.5 text-left transition-colors duration-[140ms] hover:bg-surface-hover"
         >
@@ -207,6 +209,7 @@ function PlainRow({ it, idx, active, query, onHover, onFire, onActions }: RowPro
             role="option"
             aria-selected={active}
             data-idx={idx}
+            data-palette-key={it.key}
             onMouseMove={() => onHover(idx)}
             onClick={() => onFire(it)}
             className={cn(
