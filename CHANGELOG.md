@@ -17,11 +17,12 @@ Add one line in the same commit as any change a user would notice, under `Added`
   terminal you can watch. **Open a tool** (`Ctrl+Shift+T`, the agent header's Tool button, the tool button on a
   project folder, or Search) opens one in the focused agent's folder, and the New dialog's Tool row opens one in a
   project's root.
-- Spider-Man as a third Jarvis character (Settings → Appearance → Character): the Homecoming suit at work, Peter Parker at rest. He walks the footer side-on, thwips when he speaks, hangs from a strand when you drag him and rappels down when you let go, now and then crawls along under the app bar and hangs upside down until your cursor comes near, web-swings out and back when the window folds, and folded sits on a rooftop whose windows light up for each running agent.
+- Spider-Man as a third Jarvis character (Settings → Appearance → Character): the Homecoming suit at work, Peter Parker at rest. He walks the footer side-on, thwips when he speaks, hangs from a strand when you drag him and rappels down when you let go, now and then crawls along under the app bar and hangs upside down until your cursor comes near, web-swings out and back when the window folds, and folded sits on a rooftop whose windows light up for each running agent, with his web and the count of agents at work beside it.
 - A Spider theme (Settings → Appearance → Theme): Claude's colours with Spider-Man's red accent and the suit's blue in
   the terminal, a spider in place of the arcterm logo, a small spider that drops on its thread over the agent list and
-  senses an agent asking you, another hanging over the empty Agent screen, and webs in two corners. Picking
-  Spider-Man as Jarvis asks whether to switch to it, and as Jarvis he now and then says a line from his films.
+  senses an agent asking you, another hanging over the empty Agent screen, and a web in the top-left corner behind
+  the sidebar's icons. Picking Spider-Man as Jarvis asks whether to switch to it, and as Jarvis he now and then says a
+  line from his films.
 - **A green dot and a count on an agent's sidebar row while background tasks it started still run** (a build, a dev
   server), even after its turn has ended; hover it to see which. The rail's Background tasks marks a running one with
   the same green dot.
@@ -39,6 +40,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
   landed) offers to reopen in the project.
 - **The terminal panel folds to a strip** showing the terminal's name and latest output line; `` Ctrl+` `` opens and folds
   it. Moving a terminal into the panel is now a button, not what picking it does.
+- **The sidebar's Conversations section and its project folders open and close smoothly**: folding them slides their
+  rows closed instead of dropping them at once.
+- **A run's line in the sidebar fits again**: it reads `Plan review · 0/11` and no longer cuts off at the count;
+  whether its lead has started is in the tooltip, and in a narrow sidebar the workers chip keeps just its number.
 - **Click a file's path to copy it**: in the Agent panel's File tab and in Code, the path at the top copies its full
   path on click, in place of a separate copy button.
 - **Right-click in a terminal copies or pastes**: with text selected it copies it, with nothing selected it pastes;

@@ -52,6 +52,45 @@ does not, say what you saw and it becomes a bug row under Actionable.
   "This terminal's folder was removed" over its last screen; **Reopen in `<project>`** opens a terminal at the project
   root, **Close terminal** closes it. `301dae8bc`
 
+**2026-10-13 (Spider-Man pet: held strand, crawl art, a grab mid-descent, idle mid-hang)**
+
+- [ ] (arcterm) **Spider-Man hangs under the pointer.** With Spider-Man as Jarvis, press him anywhere and drag: he
+  eases 4 cells under the pointer with his raised hand right under it, and the strand runs from the pointer to that
+  hand; let go and the strand stays where you let go while he rappels down, his hand drifting back to centre.
+  Hover him while he hangs under the app bar and grab him at once, while he is still coming down: he stays under the
+  pointer instead of sliding off it. Under the app bar, the crawl reads as one body (boots and gloves on the bar, the
+  head with its eye in front). `petview.tsx`, `petsprite.ts` SPIDEY_CRAWL.
+
+**2026-10-13 (Spider theme: the web sits behind the sidebar)**
+
+- [ ] (arcterm) **The web is behind the icons.** Under the Spider theme on the Agent surface, the top-left web shows
+  through the gaps of the nav rail and the agent tree, under the Cockpit/Jarvis icons and the Conversation History row,
+  and reads as one web across the rail's border (also after narrowing the window until the rail drops its labels); no
+  web at the bottom right over the terminal or the Stop button. `frontend/app/view/agents/themedecorview.tsx`
+  (`PanelWeb`).
+
+**2026-10-13 (Folded Spider-Man shows how many agents work)**
+
+- [ ] (arcterm) **Folded Spider-Man carries the count.** With Spider-Man as Jarvis and two or more agents working,
+  fold the window (Ctrl+M): beside the rooftop's top-right corner a pill shows his web and the number working, matching
+  `wsh agents list`'s `working` rows, also past four, where the lit windows stop; with none working and Jarvis idle the
+  pill is gone, and a waiting chip sits under the pill. `frontend/app/cockpit/sprout-mini.tsx`.
+
+**2026-10-13 (Sidebar: folds slide open and closed)**
+
+- [ ] (arcterm) **Sidebar folds animate.** Click the Conversations header and a project folder in Conversations: the
+  rows slide closed and open (~0.3 s) instead of vanishing; the first paint and a section reopened with its folders
+  open do not replay. Tab to a row after it opens: its focus ring is not clipped. (The Active and Terminals sections
+  became the one project tree, whose folders animate row by row.) `agenttree.tsx` FoldBody, `motiontokens.ts`
+  foldReveal, `agentsidebarmodel.ts` folderBlocks.
+
+**2026-10-13 (Sidebar: a plan run's line drops the lead suffix)**
+
+- [ ] (arcterm) **A run's line shows its count.** Start a run from a plan file and look at its row, and its lead's
+  row (with tokens and age), in a narrow sidebar: the line reads `⌄ 1  Plan review · 0/N` (later `Working · k/N`)
+  without being cut; widen the sidebar and the chip reads `1 worker` again. Hovering the progress shows
+  `… · lead starts if needed` (or `lead closed`), hovering the chip `1 worker`.
+
 **2026-10-13 (Click a file's path to copy it)**
 
 - [ ] (arcterm) **The path copies on click.** Open a file in an agent's File tab, hover its path (a grey fill, the
