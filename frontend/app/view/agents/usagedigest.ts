@@ -6,10 +6,13 @@
 // the one price table (usagepricing.ts), and it carries numbers, session titles, project names and tool names only,
 // never conversation text. Same input, same string. No React, no Wave runtime imports.
 
+import { sessionRef } from "./usagelevers";
 import { SESSION_ROWS, type SessionRow } from "./usagesessions";
 import { fmt, usd, type UsageStats } from "./usagestats";
 
 const TITLE_MAX = 80;
+const LEVER_TABLE_ROWS = 5; // sessions a lever's table lists
+const OPUS_TABLE_ROWS = 40; // the opus table lists more: Claude picks the clear-work tabs from it
 
 // A tool result over this many characters is oversized: mirrors BigResultChars in pkg/usagestats/toolresults.go.
 export const BIG_RESULT_CHARS = 20_000;
@@ -94,12 +97,56 @@ function table(header: string[], body: string[][]): string[] {
     ];
 }
 
+// One "### <key>" block per lever: what it could recover at most, then its heaviest sessions by ref. Claude copies the
+// keys and refs back, so they print exactly as the request carries them.
+function leverLines(levers: UsageLever[], rows: SessionRow[], rowSpend: number): string[] {
+    const out = ["", "## Levers (what each fix could recover at most)"];
+    if (levers.length === 0) {
+        out.push("No lever applies in this window.");
+        return out;
+    }
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    for (const l of levers) {
+        const total = l.sessions.reduce((sum, s) => sum + s.saveusd, 0);
+        out.push("", `### ${l.key}: at most ${usd(total)} (${pct(rowSpend > 0 ? total / rowSpend : 0)} of spend)`);
+        if (l.key === "opus") {
+            out.push(
+                ...table(
+                    ["ref", "title", "project", "models", "spend", "saves on Sonnet"],
+                    l.sessions.slice(0, OPUS_TABLE_ROWS).map((s) => {
+                        const r = byId.get(s.id);
+                        return [
+                            s.ref,
+                            cell(s.title),
+                            cell(r?.project ?? ""),
+                            cell(r?.models.join(", ") ?? ""),
+                            r != null ? usd(r.spendUsd) : "—",
+                            usd(s.saveusd),
+                        ];
+                    })
+                )
+            );
+            continue;
+        }
+        out.push(
+            ...table(
+                ["ref", "title", "project", "saves"],
+                l.sessions
+                    .slice(0, LEVER_TABLE_ROWS)
+                    .map((s) => [s.ref, cell(s.title), cell(byId.get(s.id)?.project ?? ""), usd(s.saveusd)])
+            )
+        );
+    }
+    return out;
+}
+
 export function buildUsageDigest(input: {
     windowLabel: string; // "last 7 days" | "all time"
     stats: UsageStats; // the Claude-scoped stats the surface already derives
-    rows: SessionRow[]; // every session, sorted by spend
+    rows: SessionRow[]; // every session, sorted by spend: a session's ref is S + its place here
+    levers: UsageLever[]; // buildLevers(rows): the candidates the request carries, so the refs agree
 }): string {
-    const { windowLabel, stats, rows } = input;
+    const { windowLabel, stats, rows, levers } = input;
     const out: string[] = [];
     const rowSpend = rows.reduce((sum, r) => sum + r.spendUsd, 0);
 
@@ -234,7 +281,7 @@ export function buildUsageDigest(input: {
     out.push(
         ...table(
             [
-                "#",
+                "ref",
                 "title",
                 "project",
                 "models",
@@ -248,7 +295,7 @@ export function buildUsageDigest(input: {
                 "lifetime",
             ],
             top.map((r, i) => [
-                String(i + 1),
+                sessionRef(i),
                 cell(r.title),
                 cell(r.project),
                 cell(r.models.join(", ")),
@@ -263,5 +310,6 @@ export function buildUsageDigest(input: {
             ])
         )
     );
+    out.push(...leverLines(levers, rows, rowSpend));
     return out.join("\n");
 }

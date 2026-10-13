@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (Usage → Insights: ranked levers)**
+
+- [ ] (arcterm) Usage → Insights levers: Re-analyze once in the installed app; Claude's reply parses and the levers' sizes look plausible against the By session table.
+
 **2026-10-13 (Sidebar: folds slide open and closed)**
 
 - [ ] (arcterm) **Sidebar folds animate.** Click the Active, Conversations and Terminals headers, and a project folder
