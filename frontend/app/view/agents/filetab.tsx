@@ -14,7 +14,7 @@ import { codePinsAtom, toggleCodePinIn } from "@/app/view/code/codestore";
 import { toggleWrap, useWrap } from "@/app/view/code/codewrap";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { Check, ChevronLeft, ChevronRight, Copy, FileCode2, GitCompare, Pin, WrapText } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, FileCode2, GitCompare, Pin, WrapText } from "lucide-react";
 import type * as MonacoTypes from "monaco-editor";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { agentDiffScope, openDiff } from "./agentdiffnav";
@@ -370,11 +370,28 @@ export function FileTab({
                         </button>
                     </>
                 ) : null}
-                <span data-file-head title={ref.abs} className="min-w-0 flex-1 truncate pl-1 text-[11.5px]">
-                    <span className="text-muted">{dir}</span>
-                    <span className="text-ink-hi">{name}</span>
-                    {ref.line != null ? <span className="text-muted">:{ref.line}</span> : null}
-                </span>
+                {/* the path is the copy button: a click copies the absolute path */}
+                <button
+                    type="button"
+                    data-file-head
+                    aria-label={copied ? "Copied" : `Copy path: ${ref.abs}`}
+                    title={copied ? "Copied" : `${ref.abs}\nClick to copy`}
+                    onClick={() => {
+                        void navigator.clipboard?.writeText(ref.abs);
+                        setCopied(true);
+                        window.setTimeout(() => setCopied(false), COPIED_MS);
+                    }}
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-[4px] border-0 bg-transparent py-[2px] pl-1 text-left text-[11.5px] hover:bg-surface-hover"
+                >
+                    <span className="min-w-0 truncate">
+                        <span className="text-muted">{dir}</span>
+                        <span className="text-ink-hi">{name}</span>
+                        {ref.line != null ? <span className="text-muted">:{ref.line}</span> : null}
+                    </span>
+                    {copied ? (
+                        <Check size={12} strokeWidth={2} aria-hidden className="flex-none text-accent-soft" />
+                    ) : null}
+                </button>
                 {views.length > 0 ? (
                     <div
                         role="group"
@@ -475,20 +492,6 @@ export function FileTab({
                         <GitCompare size={13} aria-hidden />
                     </button>
                 ) : null}
-                <button
-                    type="button"
-                    data-file-copy-path
-                    aria-label={copied ? "Copied" : "Copy path"}
-                    title={copied ? "Copied" : `Copy path: ${ref.abs}`}
-                    onClick={() => {
-                        void navigator.clipboard?.writeText(ref.abs);
-                        setCopied(true);
-                        window.setTimeout(() => setCopied(false), COPIED_MS);
-                    }}
-                    className={cn(ICON_BTN, copied && "text-accent-soft hover:text-accent-soft")}
-                >
-                    {copied ? <Check size={13} strokeWidth={2} aria-hidden /> : <Copy size={13} aria-hidden />}
-                </button>
                 {ref.live ? null : (
                     <button
                         type="button"

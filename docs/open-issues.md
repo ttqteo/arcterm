@@ -27,6 +27,12 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (Click a file's path to copy it)**
+
+- [ ] (arcterm) **The path copies on click.** Open a file in an agent's File tab, hover its path (a grey fill, the
+  tooltip shows the full path and "Click to copy"), click it (a check shows after the path, the full path is on the
+  clipboard); no copy icon beside Pin. The same in Code's path bar above the editor.
+
 **2026-10-13 (Canvas: three board tabs and arrows)**
 
 - [ ] (arcterm) **Three tabs and ‹ › on a canvas with many boards.** Open a canvas with more boards than fit a tab

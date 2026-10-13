@@ -12,7 +12,7 @@
 import { joinRepoPath } from "@/util/paths";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { Check, Columns2, Copy, Pin, WrapText } from "lucide-react";
+import { Check, Columns2, Pin, WrapText } from "lucide-react";
 import { useState } from "react";
 import { resolveViewMode, viewModesFor } from "./codeclassify";
 import { isPinned } from "./codepins";
@@ -33,7 +33,8 @@ import {
 } from "./codestore";
 import { toggleWrap, useWrap } from "./codewrap";
 
-// Wrap, Pin and Copy path are icons, as in the Agent panel's File tab (filetab.tsx); an on toggle takes the accent
+// Wrap and Pin are icons, and the path itself copies on click, as in the Agent panel's File tab (filetab.tsx); an on
+// toggle takes the accent
 const ICON_BTN =
     "flex h-6 w-6 flex-none cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted hover:bg-surface-hover hover:text-secondary";
 const ICON_ON = "text-accent-soft hover:text-accent-soft";
@@ -57,9 +58,22 @@ export function CodePathBar({ sideHidden }: { sideHidden?: string | null }) {
 
     return (
         <div className="flex flex-none items-center gap-1.5 border-b border-border px-3 py-1">
-            <span data-code-path={file.path} className="min-w-0 truncate text-[11.5px] text-secondary">
-                {file.path}
-            </span>
+            {/* the path is the copy button: a click copies the absolute path */}
+            <button
+                type="button"
+                data-code-path={file.path}
+                aria-label={copied ? "Copied" : `Copy path: ${abs}`}
+                title={copied ? "Copied" : `${abs}\nClick to copy`}
+                onClick={() => {
+                    void navigator.clipboard?.writeText(abs);
+                    setCopied(true);
+                    window.setTimeout(() => setCopied(false), 1200);
+                }}
+                className="flex min-w-0 cursor-pointer items-center gap-1 rounded-[4px] border-0 bg-transparent px-1 py-[2px] text-left text-[11.5px] text-secondary hover:bg-surface-hover"
+            >
+                <span className="min-w-0 truncate">{file.path}</span>
+                {copied ? <Check size={12} strokeWidth={2} aria-hidden className="flex-none text-accent-soft" /> : null}
+            </button>
             {dirty ? (
                 <span
                     aria-label="Unsaved edits"
@@ -93,19 +107,6 @@ export function CodePathBar({ sideHidden }: { sideHidden?: string | null }) {
             ) : null}
             {file.kind === "text" ? <WrapToggle on={wrap} onToggle={() => toggleWrap(abs)} /> : null}
             <PinToggle on={isPinned(pins, project.path, file.path)} onToggle={() => toggleCodePin(file.path)} />
-            <button
-                type="button"
-                aria-label={copied ? "Copied" : "Copy absolute path"}
-                title={copied ? "Copied" : `Copy path: ${abs}`}
-                onClick={() => {
-                    void navigator.clipboard?.writeText(abs);
-                    setCopied(true);
-                    window.setTimeout(() => setCopied(false), 1200);
-                }}
-                className={cn(ICON_BTN, copied && ICON_ON)}
-            >
-                {copied ? <Check size={13} strokeWidth={2} aria-hidden /> : <Copy size={13} aria-hidden />}
-            </button>
         </div>
     );
 }

@@ -27,6 +27,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- **Click a file's path to copy it**: in the Agent panel's File tab and in Code, the path at the top copies its full
+  path on click, in place of a separate copy button.
 - **A canvas with too many boards for a row of tabs shows three of them**, the open one with its neighbours, between
   ‹ and › that step to the previous and next board as [ and ] do; beside them, where you are (4/8) opens the menu of
   every board.
