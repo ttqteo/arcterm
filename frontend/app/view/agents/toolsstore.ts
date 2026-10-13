@@ -160,7 +160,7 @@ export function closeToolPicker(): void {
 
 // ---- opening a tool ----
 
-interface ToolContext {
+export interface ToolContext {
     project?: string;
     projectRoot?: string;
     agentCwd?: string;
@@ -169,7 +169,8 @@ interface ToolContext {
 // Where a tool would open from. A project named by the caller (a folder's tool button, the New dialog) is its root and
 // nothing more; otherwise the focused agent or terminal, which gives its project and the folder it is in: its worktree
 // when it has one (the rail's resolved cwd, else the block's cmd:cwd). Nothing in focus gives nothing, which opens Home.
-function toolContext(model: AgentsViewModel, project?: string): ToolContext {
+// The picker reads it too, so the line it shows is where the tool opens.
+export function toolContext(model: AgentsViewModel, project?: string): ToolContext {
     const registry = globalStore.get(atoms.fullConfigAtom)?.projects ?? {};
     if (project) {
         return { project, projectRoot: registry[project]?.path || undefined };

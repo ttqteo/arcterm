@@ -46,6 +46,7 @@ import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { resolveActiveRunId } from "@/app/view/agents/runmodel";
 import { backgroundTasksByIdAtom, focusSubagentAtom } from "@/app/view/agents/subagentsstore";
 import { closeSwitcher, switcherKey, tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
+import { openToolPicker } from "@/app/view/agents/toolsstore";
 import { runningBackgroundTasks } from "@/app/view/agents/transcriptprojection";
 import { unreadAgentsAtom } from "@/app/view/agents/unreadagentsstore";
 import { panelShownFoldedAtom, refreshSidebar } from "@/app/view/agents/worktreesidebarstore";
@@ -363,6 +364,17 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             label: "New run",
             when: (ctx) => !ctx.modalOpen,
             run: () => openLauncher(model, "run"),
+        },
+        {
+            // Open a tool (lazygit, yazi, btop…) in the focused agent's folder, from a focused terminal too. Not bare
+            // Mod+T: on Windows that is Ctrl+T, which a TUI (fzf, the shell's transpose) may take.
+            id: "open-tool",
+            keys: "Mod:Shift:t",
+            group: "Global",
+            label: "Open a tool",
+            paletteHidden: true, // the palette's own "Open a tool…" row (palette-commands.ts) is the same action
+            when: (ctx) => !ctx.modalOpen,
+            run: () => openToolPicker(model),
         },
         {
             // ⌘, / Ctrl+, as in VS Code and every Mac app. A comma is no terminal key, so it is the same chord in a terminal.

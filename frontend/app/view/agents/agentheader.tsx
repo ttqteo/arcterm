@@ -34,6 +34,7 @@ import {
     Plus,
     RotateCw,
     Workflow,
+    Wrench,
     X,
 } from "lucide-react";
 import { motion } from "motion/react";
@@ -61,6 +62,7 @@ import { runtimeMeta } from "./runtimemeta";
 import { splitMenuState } from "./splitmenu";
 import { StatusDot } from "./statusdot";
 import { backgroundTasksByIdAtom } from "./subagentsstore";
+import { openToolPicker } from "./toolsstore";
 import { runningBackgroundTasks } from "./transcriptprojection";
 import { unreadAgentsAtom } from "./unreadagentsstore";
 import { openLauncher } from "./launcherstore";
@@ -535,6 +537,19 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         ]}
                         onChange={(v) => setAgentView(agent.id, v, Date.now())}
                     />
+                ) : null}
+                {canSplit ? (
+                    // the header is the focused agent's, which is whose folder the picker opens a tool in
+                    <button
+                        type="button"
+                        data-agent-tool-button
+                        onClick={() => openToolPicker(model)}
+                        title={`Open a tool (lazygit, yazi, btop…) in this agent's folder (${formatChordString("Mod:Shift:t")})`}
+                        className={cn(ICON_BTN, "gap-[6px] px-[8px] text-[12px] font-medium")}
+                    >
+                        <Wrench size={14} strokeWidth={1.8} aria-hidden />
+                        Tool
+                    </button>
                 ) : null}
                 {canSplit ? (
                     <button
