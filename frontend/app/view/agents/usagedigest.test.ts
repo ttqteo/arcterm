@@ -152,6 +152,34 @@ describe("buildUsageDigest", () => {
         expect(lines.some((l) => l.includes("claude-sonnet-5-5"))).toBe(true);
     });
 
+    it("lists the class and model tables whenever Claude buckets exist, and only Claude's", () => {
+        // built the way the surface builds it: every harness's buckets in, filtered to Claude
+        const now = new Date(2026, 9, 13, 12).getTime();
+        const day = "2026-10-12";
+        const scoped = aggregateBuckets(
+            [
+                bucket("claude-opus-5-5", day, {
+                    input: 1_000,
+                    output: 2_000,
+                    cacheread: 900_000,
+                    cachecreate: 80_000,
+                }),
+                bucket("claude-sonnet-5-5", day, { input: 500, output: 800, cacheread: 300_000, cachecreate: 20_000 }),
+                bucket("gpt-5.5", day, { harness: "codex", provider: "openai", input: 100, output: 100 }),
+            ],
+            now,
+            "claude"
+        );
+        const digest = buildUsageDigest({ windowLabel: "last 7 days", stats: scoped, rows: [] });
+        const classes = section(digest, "Tokens and spend by class");
+        const models = section(digest, "Spend by model");
+        expect(classes.some((l) => l.startsWith("| Cache read |"))).toBe(true);
+        expect(classes.some((l) => l.startsWith("| Output |"))).toBe(true);
+        expect(models.some((l) => l.startsWith("| claude-opus-5-5 |"))).toBe(true);
+        expect(models.some((l) => l.startsWith("| claude-sonnet-5-5 |"))).toBe(true);
+        expect(models.some((l) => l.includes("gpt-5.5"))).toBe(false);
+    });
+
     it("gives tokens and spend for each day with usage and skips the idle one", () => {
         const lines = section(digestOf(manyRows(2)), "Per day");
         expect(lines.some((l) => l.includes("2026-10-06"))).toBe(true);

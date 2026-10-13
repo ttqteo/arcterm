@@ -56,6 +56,7 @@ const ANALYZE_TIMEOUT_MS = 150_000;
 //             "hang" never settles
 //   result    the analysis "ok" returns
 //   heldPct   overrides Claude's 5-hour reading, for the held check only (devHeldPct)
+//   lastdigest  written, not read: the digest the last Analyze sent, for a scenario to read back
 // A malformed or absent fixture falls through to the RPC.
 const DEV_INSIGHTS_KEY = "wave:dev-usage-insights";
 const DEV_ANALYZE_MS = 1500;
@@ -71,6 +72,7 @@ interface DevInsightsFixture {
     analyze?: "ok" | "error" | "hang";
     result?: UsageInsights;
     heldPct?: number;
+    lastdigest?: string;
 }
 
 function devInsights(): DevInsightsFixture | undefined {
@@ -95,6 +97,17 @@ export function devHeldPct(): number | undefined {
 async function devDelay(fixture: DevInsightsFixture): Promise<void> {
     if (fixture.delayms != null && fixture.delayms > 0) {
         await new Promise((r) => setTimeout(r, fixture.delayms));
+    }
+}
+
+// a scenario reads back what the surface sent (usage-insights-levers)
+function devRecordDigest(digest: string): void {
+    try {
+        const raw = localStorage.getItem(DEV_INSIGHTS_KEY);
+        const value = raw != null ? JSON.parse(raw) : {};
+        localStorage.setItem(DEV_INSIGHTS_KEY, JSON.stringify({ ...value, lastdigest: digest }));
+    } catch {
+        // a fixture that cannot be rewritten only loses the record
     }
 }
 
@@ -223,6 +236,9 @@ export async function analyzeUsage(windowDays: number, digest: string, lang: "en
     globalStore.set(insightsErrorAtom, undefined);
     try {
         const fixture = devInsights();
+        if (fixture != null) {
+            devRecordDigest(digest);
+        }
         const ins =
             fixture != null
                 ? await devAnalyze(fixture, windowDays, lang)
