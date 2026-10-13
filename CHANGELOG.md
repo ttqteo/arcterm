@@ -10,6 +10,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ## Unreleased
 
+### Fixed
+
+- **Closing the agent or terminal you are looking at opens the one beside it** in the sidebar (the one below, or above
+  when it was last), instead of jumping back to the first agent.
+
 ### Changed
 
 - **On Windows, Alt+Tab back to a folded arcterm opens it maximized**, in Full, whatever size it was folded from (Full,

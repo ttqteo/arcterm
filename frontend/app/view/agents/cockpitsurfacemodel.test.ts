@@ -6,6 +6,7 @@ import type { GridState } from "./agentgrid";
 import type { AgentVM } from "./agentsviewmodel";
 import {
     cardHasContent,
+    closedNeighbour,
     dismissKey,
     hiddenAgentIds,
     resolveShownAgent,
@@ -195,5 +196,30 @@ describe("resolveShownAgent", () => {
             agent: undefined,
             hold: false,
         });
+    });
+    it("takes a closed item's neighbour over the roster's first, but not over a live grid cell", () => {
+        expect(resolveShownAgent(input({ neighbour: "b" })).agent).toBe(b);
+        expect(resolveShownAgent(input({ neighbour: "term" })).agent).toBe(term);
+        expect(resolveShownAgent(input({ neighbour: "b", grid: grid(["a"]) })).agent).toBe(a);
+        expect(resolveShownAgent(input({ neighbour: "gone" })).agent).toBe(c);
+    });
+});
+
+describe("closedNeighbour", () => {
+    const live = (...ids: string[]) => new Set(ids);
+
+    it("takes the first live row below the closed one", () => {
+        expect(closedNeighbour(["a", "b", "c", "d"], "b", live("a", "c", "d"))).toBe("c");
+    });
+    it("skips rows that closed with it, below and then above", () => {
+        expect(closedNeighbour(["a", "b", "c", "d"], "b", live("a", "d"))).toBe("d");
+        expect(closedNeighbour(["a", "b", "c", "d"], "c", live("a"))).toBe("a");
+    });
+    it("takes the row above when the closed one was last", () => {
+        expect(closedNeighbour(["a", "b", "c"], "c", live("a", "b"))).toBe("b");
+    });
+    it("has none when the closed id was not in the order or nothing is left", () => {
+        expect(closedNeighbour(["a", "b"], "x", live("a", "b"))).toBeUndefined();
+        expect(closedNeighbour(["a"], "a", live())).toBeUndefined();
     });
 });

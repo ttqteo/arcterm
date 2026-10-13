@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (close hands focus to the neighbour)**
+
+- [ ] (arcterm) **Closing the shown agent opens its neighbour.** In one pane, with three or more agents in a project,
+  pick the middle one and close it (Ctrl+Shift+W or the header's Close): the one below it in the sidebar takes the
+  centre, not the first agent; close the last one in a folder and the one above it takes it. Same for a plain terminal.
+  commit "close opens the neighbour".
+
 **2026-10-13 (Resource Manager font)**
 
 - [ ] (arcterm) **The Resource Manager uses the interface font.** Open the app bar's RAM chip: process names, command

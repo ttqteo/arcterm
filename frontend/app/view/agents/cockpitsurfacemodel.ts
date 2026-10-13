@@ -32,6 +32,7 @@ export interface ShownAgentInput<T extends { id: string }> {
     grid: GridState; // the saved grid, as stored
     eligible: ReadonlySet<string>; // live agents and terminals that have a terminal (gridstore eligibleIds)
     seeded: boolean; // the roster has been read once (rosterSeededAtom)
+    neighbour?: string; // the row beside the focused item that just closed (closedNeighbour)
 }
 
 export interface ShownAgent<T> {
@@ -41,13 +42,15 @@ export interface ShownAgent<T> {
 
 // The agent the Agent surface shows. The focused one wins, a plain terminal included even while agents exist (picking
 // one takes the centre, terminaldock.ts). With nothing in focus (a launch, or the focused tab just exited) it is, in
-// order: the grid's focused cell, else the grid's first live cell (an agent or a terminal), then the roster's first
-// agent in order, then agents[0], then terminals[0] (a plain terminal only when there is no agent). The grid comes
-// before the roster so the surface resumes on a saved cell rather than on an agent the focus rule would then swap
-// into one. Once the roster is read the grid is pruned first, so a cell whose tab exited hands over to its
-// neighbour; before that the raw grid is used, since pruning it would drop cells that have not arrived yet.
+// order: the grid's focused cell, else the grid's first live cell (an agent or a terminal), then the tree row beside
+// a focused item that just closed, then the roster's first agent in order, then agents[0], then terminals[0] (a plain
+// terminal only when there is no agent). The grid comes before the roster so the surface resumes on a saved cell
+// rather than on an agent the focus rule would then swap into one. Once the roster is read the grid is pruned first,
+// so a cell whose tab exited hands over to its neighbour; before that the raw grid is used, since pruning it would
+// drop cells that have not arrived yet. In one pane the pruned grid is empty, so a close falls to the tree's neighbour
+// instead of jumping to the top of the roster.
 export function resolveShownAgent<T extends { id: string }>(input: ShownAgentInput<T>): ShownAgent<T> {
-    const { focused, agents, terminals, firstInOrder, grid, eligible, seeded } = input;
+    const { focused, agents, terminals, firstInOrder, grid, eligible, seeded, neighbour } = input;
     if (focused != null) {
         return { agent: focused, hold: false };
     }
@@ -55,12 +58,34 @@ export function resolveShownAgent<T extends { id: string }>(input: ShownAgentInp
         return { agent: undefined, hold: true };
     }
     const fromGrid = gridFallbackFocus(seeded ? pruneMissing(grid, eligible) : grid, eligible);
+    const roster = [...agents, ...terminals];
     const agent =
-        [...agents, ...terminals].find((a) => a.id === fromGrid) ??
+        roster.find((a) => a.id === fromGrid) ??
+        (neighbour != null ? roster.find((a) => a.id === neighbour) : undefined) ??
         agents.find((a) => a.id === firstInOrder) ??
         agents[0] ??
         terminals[0];
     return { agent, hold: false };
+}
+
+// Where a closed item's place goes, as a closed browser tab hands it to the one beside it: the first live id below
+// `goneId` in the tree's nav order from before the close (activeNavOrder), else the nearest live one above.
+export function closedNeighbour(
+    order: readonly string[],
+    goneId: string,
+    live: ReadonlySet<string>
+): string | undefined {
+    const at = order.indexOf(goneId);
+    if (at < 0) {
+        return undefined;
+    }
+    return (
+        order.slice(at + 1).find((id) => live.has(id)) ??
+        order
+            .slice(0, at)
+            .reverse()
+            .find((id) => live.has(id))
+    );
 }
 
 // within-grace idle agents keep their full row (recently); dismissed or aged-out ones park in the idle list.

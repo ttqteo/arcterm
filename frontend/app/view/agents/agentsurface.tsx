@@ -34,6 +34,7 @@ import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { MotionConfig } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { activeNavOrder } from "./activenav";
 import { centerModeAtom, showTerminal, type CenterMode } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { AgentDetailsRail } from "./agentdetailsrail";
@@ -46,7 +47,7 @@ import { asksInTerminal, projectOf } from "./agentsviewmodel";
 import { CanvasPane } from "./canvaspane";
 import { useCanvasPoller } from "./canvaspoller";
 import { canvasStateAtom } from "./canvasstore";
-import { resolveShownAgent, rosterLoadPhase } from "./cockpitsurfacemodel";
+import { closedNeighbour, resolveShownAgent, rosterLoadPhase } from "./cockpitsurfacemodel";
 import { autoOpenedAskIdsAtom, shouldAutoOpen } from "./docreview";
 import { DocReviewPane } from "./docreviewpane";
 import { docReviewStateAtom, openReview } from "./docreviewstore";
@@ -124,6 +125,16 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         () => eligibleIds([...agents, ...terminals.filter((t) => t.id !== dock.dockedId)]),
         [agents, terminals, dock.dockedId]
     );
+    // the tree's nav order while the chosen item is live, so when it closes its place goes to the row beside it
+    // rather than the top of the roster
+    const navOrderRef = useRef<string[]>([]);
+    useEffect(() => {
+        if (chosen != null) {
+            navOrderRef.current = activeNavOrder(model);
+        }
+    }, [chosen?.id, agents, terminals, model]);
+    const neighbour =
+        focusId != null && chosen == null ? closedNeighbour(navOrderRef.current, focusId, eligible) : undefined;
     const { agent, hold: holdForGrid } = resolveShownAgent({
         focused,
         agents,
@@ -132,6 +143,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         grid: gridState,
         eligible,
         seeded,
+        neighbour,
     });
     const showSub = focusSub != null && focusSub.parentId === agent?.id;
     const canvasMode = useAtomValue(canvasStateAtom(agent?.id ?? ""))?.mode === "canvas";
