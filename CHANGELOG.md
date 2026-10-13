@@ -8,33 +8,6 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
-## Unreleased
-
-### Changed
-
-- **Alt+Tab back to arcterm opens the window again from Sprout**, however it was folded (the Sprout button, minimize,
-  or Fold when you leave), as ⌘Tab does on macOS; a click on Sprout itself still leaves it folded.
-- **Spider-Man shows the same working dots as Sprout** in place of the small web, which read as a green smudge.
-- **RAM is read in one place.** On Windows the app bar's RAM chip opens the Resource Manager, which now names Arc's
-  total CPU and memory and the free RAM at its top; the footer's `Arc … CPU` readout is gone, and Consumers keeps
-  tokens and spend alone. On macOS the chip opens Consumers by RAM as before.
-- **The Resource Manager shows an agent and the commands it runs**, not every launcher, console and wrapping shell:
-  they fold into a `+ N helper processes` line that opens the whole tree, and an agent running nothing starts folded.
-- **A project folder in the Agent sidebar says how many of its agents are running**, open or folded; its hover keeps
-  only the `+` for a new terminal, and a tool opens from New.
-
-### Fixed
-
-- **A dev server whose launcher exited still names the agent that started it.** `pnpm run dev` on Astro 7 starts
-  the server and returns, so the agent's Servers list read `already running` and the footer's Servers popover read
-  `no owner`; both now say the agent, and its log opens from the task that started it.
-- **A long "Open …" link in the Jarvis card no longer runs off its edge**: it ends in "…", and hovering it shows the
-  whole title.
-- **A sleeping agent keeps its title in the Agent sidebar** instead of showing only its project name: the row reads the
-  conversation's title from Conversation History while the agent has no process to report it.
-- **Spider-Man's corner web no longer splits in two** after opening the Agent surface from another one: the tree's
-  half sat at the tree's own edge until the window was resized.
-
 ## 0.15.11 — 2026-10-13
 
 ### Added
@@ -77,6 +50,16 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- **Alt+Tab back to arcterm opens the window again from Sprout**, however it was folded (the Sprout button, minimize,
+  or Fold when you leave), as ⌘Tab does on macOS; a click on Sprout itself still leaves it folded.
+- **Spider-Man shows the same working dots as Sprout** in place of the small web, which read as a green smudge.
+- **RAM is read in one place.** On Windows the app bar's RAM chip opens the Resource Manager, which now names Arc's
+  total CPU and memory and the free RAM at its top; the footer's `Arc … CPU` readout is gone, and Consumers keeps
+  tokens and spend alone. On macOS the chip opens Consumers by RAM as before.
+- **The Resource Manager shows an agent and the commands it runs**, not every launcher, console and wrapping shell:
+  they fold into a `+ N helper processes` line that opens the whole tree, and an agent running nothing starts folded.
+- **A project folder in the Agent sidebar says how many of its agents are running**, open or folded; its hover keeps
+  only the `+` for a new terminal, and a tool opens from New.
 - **The free RAM and the plan-usage meters in the app bar are now one button**, since both open the same panel: click
   the RAM figure for the list ranked by RAM, the meters for it ranked by tokens. Hovering a meter now says when the
   window resets ("resets at 14:30", "resets Tue 09:00") instead of repeating the countdown.
@@ -138,6 +121,15 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- **A dev server whose launcher exited still names the agent that started it.** `pnpm run dev` on Astro 7 starts
+  the server and returns, so the agent's Servers list read `already running` and the footer's Servers popover read
+  `no owner`; both now say the agent, and its log opens from the task that started it.
+- **A long "Open …" link in the Jarvis card no longer runs off its edge**: it ends in "…", and hovering it shows the
+  whole title.
+- **A sleeping agent keeps its title in the Agent sidebar** instead of showing only its project name: the row reads the
+  conversation's title from Conversation History while the agent has no process to report it.
+- **Spider-Man's corner web no longer splits in two** after opening the Agent surface from another one: the tree's
+  half sat at the tree's own edge until the window was resized.
 - A sleeping agent stays on the agent list with its conversation after arcterm restarts or reloads, instead of
   turning into a plain terminal or losing its transcript.
 - A plan run no longer cancels itself at submit when its plan or spec differs from the committed copy only in line
