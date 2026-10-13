@@ -195,7 +195,6 @@ export class TermWrap {
     onSearchResultsDidChange?: (result: { resultIndex: number; resultCount: number }) => void;
     toDispose: TermTypes.IDisposable[] = [];
     webglAddon: WebglAddon | null = null;
-    webglContextLossDisposable: TermTypes.IDisposable | null = null;
     webglEnabledAtom: jotai.PrimitiveAtom<boolean>;
     // the renderer asked for (settings, the toggle, a lost context); a hidden pane may park WebGL without changing it
     wantWebGl = false;
@@ -430,6 +429,19 @@ export class TermWrap {
             },
         });
         this.logFit("mount");
+        // a gpu reset paints a lost webgl canvas white (with a sad face) while the addon waits up to 3s
+        // for a restore; drop to the dom renderer at once instead. the event doesn't bubble, so capture it.
+        const contextLostHandler = () => {
+            this.fitDiag.contextLosses++;
+            this.logFit("context-lost");
+            this.setTermRenderer("dom");
+        };
+        this.connectElem.addEventListener("webglcontextlost", contextLostHandler, true);
+        this.toDispose.push({
+            dispose: () => {
+                this.connectElem.removeEventListener("webglcontextlost", contextLostHandler, true);
+            },
+        });
         this.handleResize();
         startFitAudit();
         const pasteHandler = this.pasteHandler.bind(this);
@@ -538,19 +550,12 @@ export class TermWrap {
             }
         }
         if (this.webglAddon != null) {
-            this.webglContextLossDisposable?.dispose();
-            this.webglContextLossDisposable = null;
             this.webglAddon.dispose();
             this.webglAddon = null;
             globalStore.set(this.webglEnabledAtom, false);
         }
         if (renderer === "webgl") {
             const addon = new WebglAddon();
-            this.webglContextLossDisposable = addon.onContextLoss(() => {
-                this.fitDiag.contextLosses++;
-                this.logFit("context-lost");
-                this.setTermRenderer("dom");
-            });
             this.terminal.loadAddon(addon);
             this.webglAddon = addon;
             globalStore.set(this.webglEnabledAtom, true);
@@ -667,8 +672,6 @@ export class TermWrap {
             clearTimeout(this.webglParkTimer);
             this.webglParkTimer = null;
         }
-        this.webglContextLossDisposable?.dispose();
-        this.webglContextLossDisposable = null;
         this.terminal.dispose();
         this.toDispose.forEach((d) => {
             try {
