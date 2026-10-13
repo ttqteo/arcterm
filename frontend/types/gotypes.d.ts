@@ -518,6 +518,8 @@ declare global {
         windowdays: number;
         digest: string;
         lang?: string;
+        levers?: UsageLever[];
+        spendusd?: number;
     };
 
     // wshrpc.CommandAnswerAgentData
@@ -3430,6 +3432,7 @@ declare global {
         sub?: boolean;
         count: number;
         chars: number;
+        rereadtokens?: number;
     };
 
     // wshrpc.UsageBucket
@@ -3451,10 +3454,33 @@ declare global {
     // wshrpc.UsageInsights
     type UsageInsights = {
         markdown: string;
+        headline?: string;
+        levers?: UsageLever[];
+        opusclear?: string[];
+        tips?: string[];
+        spendusd?: number;
         analyzedts: number;
         windowdays: number;
         model: string;
         lang?: string;
+    };
+
+    // wshrpc.UsageLever
+    type UsageLever = {
+        key: string;
+        count?: number;
+        tokens?: number;
+        sessions: UsageLeverSession[];
+        fix?: string;
+        tabs?: string[];
+    };
+
+    // wshrpc.UsageLeverSession
+    type UsageLeverSession = {
+        ref: string;
+        id: string;
+        title: string;
+        saveusd: number;
     };
 
     // waveobj.UsageRow

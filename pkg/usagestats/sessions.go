@@ -51,12 +51,48 @@ type SessionBigResults struct {
 	Sub   bool
 	Count int
 	Chars int
+	// RereadTokens is how many tokens of these results were read back from the cache on later turns. Main-conversation
+	// results only: a subagent's records carry no agent id, so its later turns cannot be told apart.
+	RereadTokens int
 }
 
 const (
 	coldGap      = 60 * time.Minute // Claude Code's prompt cache lives an hour
 	coldMinWrite = 50_000
+	// charsPerToken is the characters-to-tokens estimate the digest also uses (CHARS_PER_TOKEN in usagedigest.ts).
+	charsPerToken = 4
 )
+
+// mainTurn is one main-conversation turn: when it ran and the context it carried.
+type mainTurn struct {
+	ts  time.Time
+	ctx int
+}
+
+// rereadOf is how many tokens a main-conversation result is read back from the cache: its size once for every main
+// turn after the one that wrote it, until a turn whose context falls by at least its size (a /compact or /clear
+// dropped it). turns are in time order.
+func rereadOf(b BigToolResult, turns []mainTurn) int {
+	tokens := b.Chars / charsPerToken
+	total := 0
+	wrote := false
+	prev := -1
+	for _, t := range turns {
+		if !t.ts.After(b.TS) {
+			continue
+		}
+		if prev >= 0 && prev-t.ctx >= tokens {
+			break
+		}
+		prev = t.ctx
+		if !wrote {
+			wrote = true
+			continue
+		}
+		total += tokens
+	}
+	return total
+}
 
 // engineRunProject is the Project of a session that ran in one of the engine's worktrees: a run's tasks
 // each get a worktree (and so a cwd) of their own, which would otherwise list as a project apiece.
@@ -109,7 +145,8 @@ func foldSessions(recs []Record, big []BigToolResult) []SessionUsage {
 		s        SessionUsage
 		models   map[modelKey]*SessionModelTokens
 		ctxSum   int
-		lastMain time.Time // zero until the first main turn
+		lastMain time.Time  // zero until the first main turn
+		turns    []mainTurn // main turns in time order
 	}
 	bySession := map[string]*acc{}
 	for _, r := range recs {
@@ -152,6 +189,7 @@ func foldSessions(recs []Record, big []BigToolResult) []SessionUsage {
 			a.s.Project = projectOf(r.Cwd)
 		}
 		ctx := r.Input + r.CacheRead + r.CacheCreate
+		a.turns = append(a.turns, mainTurn{r.TS, ctx})
 		a.ctxSum += ctx
 		if ctx > a.s.MaxCtx {
 			a.s.MaxCtx = ctx
@@ -182,6 +220,9 @@ func foldSessions(recs []Record, big []BigToolResult) []SessionUsage {
 		}
 		byTool[k].Count++
 		byTool[k].Chars += b.Chars
+		if !b.Sub {
+			byTool[k].RereadTokens += rereadOf(b, bySession[b.Session].turns)
+		}
 	}
 	for id, byTool := range bigBySession {
 		a := bySession[id]
