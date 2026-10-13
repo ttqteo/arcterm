@@ -84,7 +84,7 @@ func LandRun(ctx context.Context, channelID, runID string, force bool) (*waveobj
 	case LandState_Held:
 		appendRunEvent(ctx, channelID, runID, waveobj.RunEventKindLandHeld, nil, map[string]any{"reason": land.Reason})
 	case LandState_Landed:
-		appendRunEvent(ctx, channelID, runID, waveobj.RunEventKindLanded, nil, map[string]any{"commit": land.Commit, "title": landTitle(run, g)})
+		appendRunEvent(ctx, channelID, runID, waveobj.RunEventKindLanded, nil, map[string]any{"commit": land.Commit, "title": landedTitle(ctx, run, g, land.Commit)})
 		// the land runs after the lead's `complete`, whose close check saw a run not yet landed: a run landed past
 		// a failed final stage keeps its dag blocked, so no later tick would look at its lead again
 		if fresh, err := wstore.GetRun(ctx, channelID, runID); err == nil {
@@ -149,7 +149,8 @@ func landRun(ctx context.Context, run *waveobj.Run, g *waveobj.TaskGroup, force 
 	if err != nil {
 		return heldLand("reading the checkout's head: " + err.Error())
 	}
-	if _, err := git(ctx, project, "merge", "--no-ff", "-m", landTitle(run, g), "-m", "Arc-Run: "+run.ID, branch); err != nil {
+	title := landTitle(run, g, branchSubjects(ctx, project, pre, branch))
+	if _, err := git(ctx, project, "merge", "--no-ff", "-m", title, "-m", "Arc-Run: "+run.ID, branch); err != nil {
 		return heldLand(mergeRefusal(ctx, project, run.BaseBranch, err))
 	}
 	land := &waveobj.RunLand{State: LandState_Landed}
@@ -532,17 +533,99 @@ func changeTitle(title string) string {
 // a thousand characters.
 const maxLandTitleLen = 72
 
-// landTitle is the merge commit's subject: the plan's title, else the goal's first line, each cut by landSubject.
-func landTitle(run *waveobj.Run, g *waveobj.TaskGroup) string {
+// landTitle is the merge commit's subject: the plan's title, else the goal's first line, as a conventional
+// subject typed from the branch's own commit subjects.
+func landTitle(run *waveobj.Run, g *waveobj.TaskGroup, subjects []string) string {
 	if g != nil {
 		if title := changeTitle(g.Title); title != "" {
-			return landSubject(title)
+			return conventionalTitle(title, subjects)
 		}
 	}
 	if goal, _, _ := strings.Cut(strings.TrimSpace(run.Goal), "\n"); strings.TrimSpace(goal) != "" {
-		return landSubject(strings.TrimSpace(goal))
+		return conventionalTitle(strings.TrimSpace(goal), subjects)
 	}
-	return "Land run " + run.ID
+	return conventionalTitle("Land run "+run.ID, subjects)
+}
+
+// landedTitle is the subject the land committed. The branch is gone by then, so landTitle could no longer type it.
+func landedTitle(ctx context.Context, run *waveobj.Run, g *waveobj.TaskGroup, commit string) string {
+	if commit != "" {
+		if s, err := git(ctx, run.ProjectPath, "log", "-1", "--format=%s", commit); err == nil && s != "" {
+			return s
+		}
+	}
+	return landTitle(run, g, nil)
+}
+
+// branchSubjects are the subjects of the commits branch adds over base, merges left out.
+func branchSubjects(ctx context.Context, project, base, branch string) []string {
+	out, err := git(ctx, project, "log", "--no-merges", "--format=%s", base+".."+branch)
+	if err != nil {
+		log.Printf("reading the subjects of %s: %v", branch, err)
+		return nil
+	}
+	return strings.Split(out, "\n")
+}
+
+// conventionalSubjectRe matches a conventional-commit subject's "type(scope)!: " head.
+var conventionalSubjectRe = regexp.MustCompile(`^([a-z]+)(?:\(([^()\s]+)\))?!?: \S`)
+
+// conventionalTypes ranks the types by what a reader of the log most needs to know: a commit gathering a
+// feature and its fixes is a feature.
+var conventionalTypes = []string{"feat", "fix", "perf", "refactor", "test", "docs", "build", "ci", "style", "chore"}
+
+// fallbackType types a commit whose gathered subjects name no known type.
+const fallbackType = "chore"
+
+// conventionalTitle makes title a conventional subject, cut to maxLandTitleLen. A title that already is one is
+// kept; otherwise the prefix comes from conventionalPrefix.
+func conventionalTitle(title string, subjects []string) string {
+	if conventionalSubjectRe.MatchString(title) {
+		return landSubject(title, maxLandTitleLen)
+	}
+	prefix := conventionalPrefix(subjects)
+	return prefix + landSubject(title, maxLandTitleLen-len([]rune(prefix)))
+}
+
+// conventionalPrefix is the "type(scope): " of the highest-ranked type among subjects, with the scope its
+// subjects use most; a tie names none, since the change spans them.
+func conventionalPrefix(subjects []string) string {
+	type head struct{ typ, scope string }
+	var heads []head
+	rank := len(conventionalTypes)
+	for _, s := range subjects {
+		m := conventionalSubjectRe.FindStringSubmatch(strings.TrimSpace(s))
+		if m == nil {
+			continue
+		}
+		if i := slices.Index(conventionalTypes, m[1]); i >= 0 {
+			heads = append(heads, head{m[1], m[2]})
+			rank = min(rank, i)
+		}
+	}
+	if rank == len(conventionalTypes) {
+		return fallbackType + ": "
+	}
+	typ := conventionalTypes[rank]
+	counts := map[string]int{}
+	for _, h := range heads {
+		if h.typ == typ && h.scope != "" {
+			counts[h.scope]++
+		}
+	}
+	scope, top := "", 0
+	for s, n := range counts {
+		switch {
+		case n > top:
+			scope, top = s, n
+		case n == top:
+			scope = ""
+		}
+	}
+	if scope == "" {
+		return typ + ": "
+	}
+	return typ + "(" + scope + "): "
 }
 
 // absPathToken is a word that is an absolute path (a drive, a share, root or home); trailing punctuation belongs
@@ -552,8 +635,8 @@ var absPathToken = regexp.MustCompile(`^([A-Za-z]:[\\/]|\\\\|/|~/)(.*?)([.,;:)]*
 var sentenceEnd = regexp.MustCompile(`[.?!]\s`)
 
 // landSubject makes one line of text a merge subject: absolute paths shrink to their base name, the text stops at
-// its first sentence, and a subject over maxLandTitleLen is cut at a word, so it never ends inside a path.
-func landSubject(s string) string {
+// its first sentence, and a subject over limit runes is cut at a word, so it never ends inside a path.
+func landSubject(s string, limit int) string {
 	words := strings.Fields(s)
 	for i, w := range words {
 		m := absPathToken.FindStringSubmatch(w)
@@ -570,14 +653,14 @@ func landSubject(s string) string {
 		s = strings.TrimSuffix(s[:loc[0]+1], ".")
 	}
 	r := []rune(s)
-	if len(r) <= maxLandTitleLen {
+	if len(r) <= limit {
 		return s
 	}
-	head := string(r[:maxLandTitleLen])
+	head := string(r[:limit])
 	if i := strings.LastIndex(head, " "); i > 0 {
 		return strings.TrimRight(head[:i], ",;: ") + "…"
 	}
-	return clipRunes(s, maxLandTitleLen)
+	return clipRunes(s, limit)
 }
 
 // movedBaseNote is set when the base branch took commits the land's check did not see: all of them when nothing

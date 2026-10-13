@@ -29,7 +29,7 @@ func landFixture(t *testing.T) (*mergeFixture, string) {
 	tree := f.land(t)
 	writeFile(t, filepath.Join(tree, "feature.txt"), "feature\n")
 	gitCmd(t, tree, "add", ".")
-	gitCmd(t, tree, "commit", "-m", "add feature")
+	gitCmd(t, tree, "commit", "-m", "feat(coupons): add feature")
 	head := gitCmd(t, tree, "rev-parse", "HEAD")
 	if err := wstore.UpdateRun(f.ctx, f.channel, f.ownerID, func(r *waveobj.Run) error {
 		r.BaseBranch, r.BaseCommit, r.Status = "main", base, jarvis.RunStatus_Done
@@ -123,8 +123,8 @@ func TestLandMergesTheBranchIntoACleanCheckout(t *testing.T) {
 		t.Fatalf("head has parents %v, want a --no-ff merge", parents)
 	}
 	msg := gitCmd(t, f.project, "log", "-1", "--format=%B")
-	if !strings.HasPrefix(msg, "Coupon codes\n") || !strings.Contains(msg, "Arc-Run: "+f.ownerID) {
-		t.Fatalf("merge message %q, want the plan title and the Arc-Run line", msg)
+	if !strings.HasPrefix(msg, "feat(coupons): Coupon codes\n") || !strings.Contains(msg, "Arc-Run: "+f.ownerID) {
+		t.Fatalf("merge message %q, want the plan title typed from the branch and the Arc-Run line", msg)
 	}
 	// core.autocrlf may check it out with CRLF
 	if got := strings.ReplaceAll(readFile(t, filepath.Join(f.project, "feature.txt")), "\r\n", "\n"); got != "feature\n" {
@@ -187,28 +187,54 @@ func TestLandTitleNamesTheChangeOnOneLine(t *testing.T) {
 	cases := []struct {
 		name, title, goal, want string
 	}{
-		{"the plan's title", "Coupon codes", "a goal", "Coupon codes"},
-		{"the template's suffix dropped", "Orchestrator small findings Implementation Plan", "", "Orchestrator small findings"},
-		{"a title that is only the suffix", " Implementation Plan", "Add coupons\nmore", "Implementation Plan"},
-		{"the goal's first line with no title", "", "Add coupons\nand more", "Add coupons"},
-		{"run 2993e463's goal is cut before the path", "", goal2993, "Close the last open orchestrator gaps in…"},
-		{"an absolute path becomes its base name", "", `Fix the land title in C:\x\pkg\orchestrate\land.go`, "Fix the land title in land.go"},
-		{"a unix path becomes its base name", "", "Fix /home/u/src/land.go, then ship", "Fix land.go, then ship"},
-		{"the first sentence only", "", "Fix it. Then more", "Fix it"},
-		{"a question keeps its mark", "", "Why does it hang? Find out", "Why does it hang?"},
-		{"a long goal is cut at a word", "", long, "fix the orchestrator findings fix the orchestrator findings fix the…"},
-		{"a long title is cut at a word", long, "", "fix the orchestrator findings fix the orchestrator findings fix the…"},
-		{"one long token is clipped", "", strings.Repeat("x", 100), strings.Repeat("x", 71) + "…"},
-		{"nothing to go on", "", "", "Land run r-1"},
+		{"the plan's title", "Coupon codes", "a goal", "chore: Coupon codes"},
+		{"the template's suffix dropped", "Orchestrator small findings Implementation Plan", "", "chore: Orchestrator small findings"},
+		{"a title that is only the suffix", " Implementation Plan", "Add coupons\nmore", "chore: Implementation Plan"},
+		{"the goal's first line with no title", "", "Add coupons\nand more", "chore: Add coupons"},
+		{"run 2993e463's goal is cut before the path", "", goal2993, "chore: Close the last open orchestrator gaps in…"},
+		{"an absolute path becomes its base name", "", `Fix the land title in C:\x\pkg\orchestrate\land.go`, "chore: Fix the land title in land.go"},
+		{"a unix path becomes its base name", "", "Fix /home/u/src/land.go, then ship", "chore: Fix land.go, then ship"},
+		{"the first sentence only", "", "Fix it. Then more", "chore: Fix it"},
+		{"a question keeps its mark", "", "Why does it hang? Find out", "chore: Why does it hang?"},
+		{"a long goal is cut at a word", "", long, "chore: fix the orchestrator findings fix the orchestrator findings fix…"},
+		{"a long title is cut at a word", long, "", "chore: fix the orchestrator findings fix the orchestrator findings fix…"},
+		{"one long token is clipped", "", strings.Repeat("x", 100), "chore: " + strings.Repeat("x", 64) + "…"},
+		{"a conventional title is kept", "fix(land): type the merge", "", "fix(land): type the merge"},
+		{"nothing to go on", "", "", "chore: Land run r-1"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := landTitle(&waveobj.Run{ID: "r-1", Goal: c.goal}, &waveobj.TaskGroup{Title: c.title})
+			got := landTitle(&waveobj.Run{ID: "r-1", Goal: c.goal}, &waveobj.TaskGroup{Title: c.title}, nil)
 			if got != c.want {
 				t.Fatalf("landTitle = %q, want %q", got, c.want)
 			}
 			if n := len([]rune(got)); n > subjectLen {
 				t.Fatalf("landTitle is %d runes, over %d", n, subjectLen)
+			}
+		})
+	}
+}
+
+// a land is typed by the most telling change on its branch: run 1062afff's feat(agents) lanes, with a
+// fix(jarvis) and the docs snapshot beside them, landed as a bare "Shell Task Standing-By"
+func TestConventionalPrefixTypesTheBranch(t *testing.T) {
+	cases := []struct {
+		name     string
+		subjects []string
+		want     string
+	}{
+		{"a feature outranks its fixes and docs", []string{"docs: spec and plan for X", "feat(agents): a", "fix(jarvis): b", "feat(agents): c", "test(agents): d"}, "feat(agents): "},
+		{"the scope its type uses most", []string{"fix(ui): a", "fix(land): b", "fix(land): c"}, "fix(land): "},
+		{"a scope tie names none", []string{"feat(schema): a", "feat(ui): b"}, "feat: "},
+		{"unscoped commits name no scope", []string{"fix: a", "docs(x): b"}, "fix: "},
+		{"a breaking mark still types it", []string{"refactor(api)!: a"}, "refactor(api): "},
+		{"no conventional subject", []string{"add feature", "Merge branch 'main'", "WIP: x"}, "chore: "},
+		{"no subjects", nil, "chore: "},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := conventionalPrefix(c.subjects); got != c.want {
+				t.Fatalf("conventionalPrefix = %q, want %q", got, c.want)
 			}
 		})
 	}

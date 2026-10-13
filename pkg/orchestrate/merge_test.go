@@ -77,7 +77,7 @@ func TestMergeSquashOfASeveralTaskLaneNamesEveryTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "schema; ui\n\nfeat(schema): add the table\n\nfeat(ui): show the table\n\nArc-Run: run-1\nArc-Task: t-1\nArc-Task: t-4\nArc-Model: t-1 claude claude-opus-5-5\nArc-Model: t-4 pi opencode-go/deepseek-v4-flash"
+	want := "feat: schema; ui\n\nfeat(schema): add the table\n\nfeat(ui): show the table\n\nArc-Run: run-1\nArc-Task: t-1\nArc-Task: t-4\nArc-Model: t-1 claude claude-opus-5-5\nArc-Model: t-4 pi opencode-go/deepseek-v4-flash"
 	if got := gitCmd(t, dir, "log", "-1", "--format=%B"); got != want {
 		t.Fatalf("squash message = %q, want %q", got, want)
 	}
@@ -101,7 +101,7 @@ func TestMergeSquashOfASeveralTaskLaneCutsItsSubjectLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	subject := gitCmd(t, dir, "log", "-1", "--format=%s")
-	if n := utf8.RuneCountInString(subject); n > maxLandTitleLen || !strings.HasPrefix(subject, "F16 — the digest carries") {
+	if n := utf8.RuneCountInString(subject); n > maxLandTitleLen || !strings.HasPrefix(subject, "feat: F16 — the digest carries") {
 		t.Fatalf("subject = %q (%d runes), want the lane title cut to %d", subject, n, maxLandTitleLen)
 	}
 	body := gitCmd(t, dir, "log", "-1", "--format=%b")
@@ -160,7 +160,7 @@ func TestMergeSquashFallsBackToTheLaneLabel(t *testing.T) {
 	if _, err := MergeRunWorktree(context.Background(), dir, "run-1", MergeLane{Title: "Add the feature"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := gitCmd(t, dir, "log", "-1", "--format=%B"), "Add the feature\n\nArc-Run: run-1"; got != want {
+	if got, want := gitCmd(t, dir, "log", "-1", "--format=%B"), "chore: Add the feature\n\nArc-Run: run-1"; got != want {
 		t.Fatalf("squash message = %q, want %q", got, want)
 	}
 }
