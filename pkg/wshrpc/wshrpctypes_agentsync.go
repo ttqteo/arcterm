@@ -12,6 +12,9 @@ type AgentSyncCommands interface {
 	AgentSyncApplyCommand(ctx context.Context, data CommandAgentSyncApplyData) (*CommandAgentSyncApplyRtnData, error)
 	AgentSyncAdoptCommand(ctx context.Context, data CommandAgentSyncAdoptData) (*CommandAgentSyncAdoptRtnData, error)
 	AgentSyncSkillsCommand(ctx context.Context) (*CommandAgentSyncSkillsRtnData, error)
+	AgentSyncSkillReadCommand(ctx context.Context, data CommandAgentSyncSkillReadData) (*CommandAgentSyncSkillDocRtnData, error)
+	AgentSyncSkillWriteCommand(ctx context.Context, data CommandAgentSyncSkillWriteData) (*CommandAgentSyncSteeringWriteRtnData, error)
+	AgentSyncSkillCreateCommand(ctx context.Context, data CommandAgentSyncSkillCreateData) (*CommandAgentSyncSkillDocRtnData, error)
 }
 
 type AgentSyncHarness struct {
@@ -93,6 +96,8 @@ type AgentSyncSkill struct {
 	States map[string]string `json:"states"`
 	// Deltas maps runtime -> the frontmatter keys and sidecar files it overrides.
 	Deltas map[string][]string `json:"deltas,omitempty"`
+	// Shipped marks a skill arcterm ships: its vault copy is reseeded on every sync, so it is not edited.
+	Shipped bool `json:"shipped,omitempty"`
 }
 
 // AgentSyncSkillColumn is one column of the skills matrix: a harness with a fixed skills directory.
@@ -100,6 +105,8 @@ type AgentSyncSkillColumn struct {
 	Runtime string `json:"runtime"`
 	Label   string `json:"label"`
 	Present bool   `json:"present"`
+	// Path is the harness's skills folder, where arcterm writes its copy of each vault skill.
+	Path string `json:"path"`
 }
 
 type CommandAgentSyncSkillsRtnData struct {
@@ -109,4 +116,26 @@ type CommandAgentSyncSkillsRtnData struct {
 	// Unmanaged and Unresolved are what an adopt would do, ungrouped: the frontend groups them.
 	Unmanaged  []AgentSyncSkillMove `json:"unmanaged"`
 	Unresolved []string             `json:"unresolved"`
+}
+
+type CommandAgentSyncSkillReadData struct {
+	Name string `json:"name"`
+}
+
+// CommandAgentSyncSkillDocRtnData is one vault skill's SKILL.md, with its mtime for the save guard.
+type CommandAgentSyncSkillDocRtnData struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+	Mtime   int64  `json:"mtime"`
+}
+
+type CommandAgentSyncSkillWriteData struct {
+	Name      string `json:"name"`
+	Content   string `json:"content"`
+	BaseMtime int64  `json:"basemtime"`
+}
+
+type CommandAgentSyncSkillCreateData struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }

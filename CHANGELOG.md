@@ -17,6 +17,9 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
 
 ### Added
 
+- **Edit and create skills in Setup**: on Setup → Skills, **Edit** opens a vault skill's `SKILL.md` right in the side
+  panel and **Save** copies it into every harness at once; **New skill** asks a name and a description, then opens the
+  new skill to write. Skills that ship with arcterm stay read-only.
 - **Close several agents at once from the Consumers panel**: hover a row and tick it, or tick Sleeping to pick every
   sleeping agent, then press Close in the bar under the list. It asks first only when a ticked agent is working; the
   closed agents' conversations stay under Conversations. A run's lead and workers still close with their run.
@@ -32,6 +35,9 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
 
 ### Changed
 
+- **Setup says where a skill's copy is, not "Synced"**: a cell now reads **Up to date** or **Out of date** against
+  the copy in that harness's skills folder on this machine, and the side panel lists those folders under Copied into.
+  The Instructions tab says Up to date too.
 - **A tidier agent header**: Open a tool, Float and Redraw moved into a new `…` button (the same menu as a right-click
   on the header), leaving `…`, Split, Fullscreen and Close. A project folder in the sidebar no longer shows a `+` on
   hover; open a terminal from **New**.

@@ -76,6 +76,9 @@ const AGENTSYNC = [
     ["agentsyncsteeringwrite", { content: "x", basemtime: 1000, baseexists: true }],
     ["agentsyncapply", {}],
     ["agentsyncadopt", { apply: false, names: [] }],
+    ["agentsyncskillread", { name: "commit-helper" }],
+    ["agentsyncskillwrite", { name: "commit-helper", content: "x", basemtime: 0 }],
+    ["agentsyncskillcreate", { name: "fresh-skill", description: "d" }],
 ];
 
 describe("setup fixture safety", () => {
@@ -268,6 +271,34 @@ function runtimeFor(name = "setup-import") {
 }
 
 describe("setup fixture transitions", () => {
+    it("edits a vault skill with the mtime guard, refuses a shipped one, and apply copies it out", async () => {
+        const { rt, summary } = runtimeFor("setup-skills");
+        const doc = await rt.call("agentsyncskillread", { name: "commit-helper" });
+        expect(doc.content).toContain("commit-helper vault source body");
+        await rt.call("agentsyncskillwrite", { name: "commit-helper", content: "edited", basemtime: doc.mtime });
+        const stale = await rt.call("agentsyncskillwrite", { name: "commit-helper", content: "again", basemtime: doc.mtime });
+        expect(stale.conflict).toBe(true);
+        await expect(rt.call("agentsyncskillwrite", { name: "design-local", content: "x", basemtime: 0 })).rejects.toThrow(/ships/);
+        let row = (await rt.call("agentsyncskills")).skills.find((k) => k.name === "commit-helper");
+        expect(row.states).toEqual({ claude: "differs", codex: "unmanaged" });
+        await rt.call("agentsyncapply", {});
+        row = (await rt.call("agentsyncskills")).skills.find((k) => k.name === "commit-helper");
+        expect(row.states).toEqual({ claude: "synced", codex: "unmanaged" });
+        expect(summary()).toMatchObject({ skillWrites: 1 });
+    });
+
+    it("creates a vault skill once, under a valid free name", async () => {
+        const { rt, summary } = runtimeFor("setup-skills");
+        const doc = await rt.call("agentsyncskillcreate", { name: "trade-check", description: "Use when trading" });
+        expect(doc.content).toContain("name: trade-check\ndescription: Use when trading\n");
+        await expect(rt.call("agentsyncskillcreate", { name: "trade-check", description: "d" })).rejects.toThrow(/exists/);
+        await expect(rt.call("agentsyncskillcreate", { name: "identical-copy", description: "d" })).rejects.toThrow(/exists/);
+        await expect(rt.call("agentsyncskillcreate", { name: "Bad Name", description: "d" })).rejects.toThrow(/not a skill name/);
+        const skills = (await rt.call("agentsyncskills")).skills.map((k) => k.name);
+        expect(skills).toContain("trade-check");
+        expect(summary()).toMatchObject({ skillCreates: 1 });
+    });
+
     it("separates apply-only from save then apply", async () => {
         const { rt, summary } = runtimeFor();
         await rt.call("agentsyncapply", {});

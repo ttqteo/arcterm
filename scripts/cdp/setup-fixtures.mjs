@@ -1,6 +1,6 @@
 // Isolated CDP fixtures for the Setup surface scenarios. A scenario must never reach the real
 // agentsync RPCs (write/apply/adopt touch the user's real harness files, vault and skills), so these
-// helpers swap RpcApi's mock client for a deterministic in-page simulation of all six agentsync
+// helpers swap RpcApi's mock client for a deterministic in-page simulation of all nine agentsync
 // commands, delegate every other command to the original route, and put any source file a scenario
 // opens under a temporary folder. Installation is all-or-nothing: a partial install rolls itself back.
 //
@@ -314,6 +314,69 @@ export function createFixtureRuntime(fixture) {
         return p.result;
     };
 
+    // ---- vault skills: read, write, create (the Skills rail's editor and New skill) ----
+
+    const skillMtimes = {};
+    const skillRow = (name) => (s.skills.skills ?? []).find((k) => k.name === name);
+    const skillPath = (name) => `${s.adopt.vaultRoot}/${name}/SKILL.md`;
+    const markDiffers = (row) =>
+        Object.keys(row.states).forEach((rt) => {
+            if (row.states[rt] !== "unmanaged") {
+                row.states[rt] = "differs";
+            }
+        });
+
+    const skillRead = (d) => {
+        if (!skillRow(d.name)) {
+            note({ kind: "read", command: "agentsyncskillread", outcome: "error" });
+            throw new Error(`no skill named "${d.name}" in the vault`);
+        }
+        note({ kind: "read", command: "agentsyncskillread", outcome: "ok" });
+        return { path: skillPath(d.name), content: s.contents.vault[d.name] ?? "", mtime: skillMtimes[d.name] ?? 1 };
+    };
+
+    const skillWrite = (d) => {
+        const entry = { kind: "skill-write", name: d.name, basemtime: d.basemtime };
+        const row = skillRow(d.name);
+        if (!row || row.shipped) {
+            note({ ...entry, outcome: "error" });
+            throw new Error(row ? `"${d.name}" ships with arcterm` : `no skill named "${d.name}" in the vault`);
+        }
+        const mtime = skillMtimes[d.name] ?? 1;
+        if (d.basemtime !== 0 && d.basemtime !== mtime) {
+            note({ ...entry, outcome: "conflict" });
+            return { mtime, conflict: true };
+        }
+        s.contents.vault[d.name] = d.content;
+        skillMtimes[d.name] = ++clock;
+        markDiffers(row);
+        lastMutation = "skill-write";
+        note({ ...entry, outcome: "accepted", content: d.content });
+        return { mtime: skillMtimes[d.name], conflict: false };
+    };
+
+    const skillCreate = (d) => {
+        const entry = { kind: "skill-create", name: d.name, description: d.description };
+        const taken = (s.skills.skills ?? []).some((k) => k.name === d.name) || unmanaged().some((m) => m.name === d.name);
+        if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(d.name ?? "") || !d.description || taken) {
+            note({ ...entry, outcome: "error" });
+            throw new Error(taken ? `"${d.name}" already exists` : `"${d.name}" is not a skill name`);
+        }
+        const content = `---\nname: ${d.name}\ndescription: ${d.description}\n---\n\n# ${d.name}\n\n`;
+        const states = {};
+        for (const col of s.skills.columns ?? []) {
+            if (col.present) {
+                states[col.runtime] = "differs";
+            }
+        }
+        s.skills.skills.push({ name: d.name, description: d.description, states });
+        s.contents.vault[d.name] = content;
+        skillMtimes[d.name] = ++clock;
+        lastMutation = "skill-create";
+        note({ ...entry, outcome: "accepted" });
+        return { path: skillPath(d.name), content, mtime: skillMtimes[d.name] };
+    };
+
     // ---- dispatch ----
 
     const handlers = {
@@ -330,6 +393,9 @@ export function createFixtureRuntime(fixture) {
             write(d, { content: d.content, basemtime: d.basemtime, baseexists: d.baseexists, overwrite: d.overwrite === true }),
         agentsyncapply: apply,
         agentsyncadopt: adopt,
+        agentsyncskillread: skillRead,
+        agentsyncskillwrite: skillWrite,
+        agentsyncskillcreate: skillCreate,
     };
 
     const call = async (command, data) => {
@@ -471,6 +537,9 @@ export function callSummary(snapshot) {
         lastWrite: last(writes),
         lastReview: last(reviews),
         lastAdoptApply: last(adoptApplies),
+        skillWrites: only("skill-write").filter((e) => e.outcome === "accepted").length,
+        skillCreates: only("skill-create").filter((e) => e.outcome === "accepted").length,
+        lastSkillWrite: last(only("skill-write")),
     };
 }
 
@@ -530,6 +599,7 @@ function buildFixture(name, ownedDir) {
             name: n,
             description: `${n} fixture skill`,
             states: { claude: "differs", codex: "synced" },
+            shipped: true,
             sourcekind: "shipped",
             sourcepath: `skills/${n}/${SKILL_FILE}`,
             ...over,
@@ -609,9 +679,9 @@ function buildFixture(name, ownedDir) {
     };
 
     const columns = [
-        { runtime: "claude", label: "Claude Code", present: true },
-        { runtime: "codex", label: "Codex", present: true },
-        { runtime: "opencode", label: "OpenCode", present: false },
+        { runtime: "claude", label: "Claude Code", present: true, path: posix(roots.claude) },
+        { runtime: "codex", label: "Codex", present: true, path: posix(roots.codex) },
+        { runtime: "opencode", label: "OpenCode", present: false, path: posix(join(home, ".config", "opencode", "skills")) },
     ];
     const skills = {
         skills: managed,

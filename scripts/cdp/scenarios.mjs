@@ -25,6 +25,13 @@ import { fileURLToPath } from "node:url";
 import { SURFACE_LABEL } from "./attach.mjs";
 import { narrationFeed } from "./narrationfeed.mjs";
 import { notesWsh, vaultRemote, vaultRoot } from "./notes-wsh.mjs";
+import {
+    arrangeSetupFixture,
+    assertSetupFixtureInstalled,
+    callSummary,
+    readSetupFixture,
+    teardownSetupFixture,
+} from "./setup-fixtures.mjs";
 
 // Mod is Command on a Mac and Control elsewhere (keyutil.ts parseKeyDescription), and the app reads the platform off the
 // machine it runs on, which is this one: a scenario that presses a Mod binding sends what a person there would. A
@@ -36704,6 +36711,129 @@ const toolsDockStrip = {
     },
 };
 
+// --- setup-skill-edit: Setup → Skills edits a vault skill in its rail and makes a new one, on the isolated Setup fixture
+// (setup-fixtures.mjs), so no real vault or harness folder is touched. The cells say whether each harness's local copy
+// matches the vault (never "Synced"); a skill of the user's has Edit, a shipped one is read-only; Edit opens SKILL.md in
+// the rail, Save writes it and copies it out; New skill refuses a bad name, then Create opens the new skill in the editor.
+const SK_RAIL = (name) => `document.querySelector('[data-skill-rail="${name}"]')`;
+const skSetValue = (selector, value) => `(() => {
+    const el = document.querySelector(${JSON.stringify(selector)});
+    if (!el) return false;
+    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, "value").set.call(el, ${JSON.stringify(value)});
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+})()`;
+const skClick = (selector) => `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el || el.disabled) return false; el.click(); return true; })()`;
+const setupSkillEdit = {
+    name: "setup-skill-edit",
+    surface: "setup",
+    async arrange(h) {
+        try {
+            return await arrangeSetupFixture(h, "setup-skills");
+        } catch (e) {
+            return { arrangeError: String(e?.message ?? e) };
+        }
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        rec("0. the Setup fixture intercepts agentsync", ctx.arrangeError == null, ctx.arrangeError ?? "installed");
+        if (ctx.arrangeError != null) return steps;
+        await assertSetupFixtureInstalled(h);
+
+        await h.ev(skClick('[data-setup-tab="skills"]'));
+        const listed = await polishWaitFor(h, `!!document.querySelector('[data-skill-row="commit-helper"]')`, 6000);
+        await h.ev(skClick('[data-skill-row="commit-helper"]'));
+        const railUp = await polishWaitFor(h, `!!${SK_RAIL("commit-helper")}?.querySelector('[data-skill-edit]')`, 4000);
+        await polishNap(300);
+        const first = await h.ev(`(() => {
+            const cells = [...document.querySelectorAll('[role="table"][aria-label="Skills by harness"] [role="cell"]')].map((c) => c.textContent.trim());
+            const rail = ${SK_RAIL("commit-helper")};
+            return {
+                synced: cells.some((t) => /synced/i.test(t)),
+                upToDate: cells.includes("Up to date"),
+                outOfDate: cells.includes("Out of date"),
+                copies: [...(rail?.querySelectorAll('[data-skill-copies] [title]') ?? [])].map((e) => e.getAttribute("title")),
+                note: rail?.innerText.includes("on this machine") ?? false,
+            };
+        })()`);
+        await h.shot("cdp-shots/setup-skill-edit-1-rail.png");
+        rec(
+            "1. the cells read Up to date / Out of date (no Synced); a vault skill's rail has Edit and lists the local folders it is copied into",
+            listed && railUp && !first.synced && first.upToDate && first.outOfDate && first.copies.length === 2 && first.note,
+            JSON.stringify(first)
+        );
+
+        await h.ev(skClick('[data-skill-row="design-local"]'));
+        const shippedUp = await polishWaitFor(h, `!!${SK_RAIL("design-local")}`, 4000);
+        await polishNap(300);
+        const shipped = await h.ev(`({
+            edit: !!${SK_RAIL("design-local")}?.querySelector('[data-skill-edit]'),
+            readOnly: ${SK_RAIL("design-local")}?.innerText.includes("read-only") ?? false,
+        })`);
+        await h.shot("cdp-shots/setup-skill-edit-2-shipped.png");
+        rec("2. a shipped skill has no Edit and says it is read-only", shippedUp && !shipped.edit && shipped.readOnly, JSON.stringify(shipped));
+
+        await h.ev(skClick('[data-skill-row="commit-helper"]'));
+        await polishWaitFor(h, `!!${SK_RAIL("commit-helper")}?.querySelector('[data-skill-edit]')`, 4000);
+        await h.ev(skClick("[data-skill-edit]"));
+        const editorUp = await polishWaitFor(h, `!!document.querySelector('[data-skill-editor] textarea')?.value.includes("commit-helper vault source body")`, 4000);
+        const draft = (await h.ev(`document.querySelector('[data-skill-editor] textarea').value`)) + "\nEdited in the rail.\n";
+        await h.ev(skSetValue("[data-skill-editor] textarea", draft));
+        const dirty = await polishWaitFor(h, `!!document.querySelector('[data-skill-save]:not([disabled])') && document.querySelector('[data-skill-row="commit-helper"]')?.innerText.includes("edited")`, 3000);
+        await polishNap(300);
+        await h.shot("cdp-shots/setup-skill-edit-3-editing.png");
+        rec("3. Edit opens SKILL.md in the rail; typing enables Save and marks the row edited", editorUp && dirty, JSON.stringify({ editorUp, dirty }));
+
+        await h.ev(skClick("[data-skill-save]"));
+        const saved = await polishWaitFor(h, `!document.querySelector('[data-skill-editor]') && (${SK_RAIL("commit-helper")}?.innerText.includes("Edited in the rail.") ?? false)`, 5000);
+        const afterSave = callSummary(await readSetupFixture(h));
+        await polishNap(300);
+        await h.shot("cdp-shots/setup-skill-edit-4-saved.png");
+        rec(
+            "4. Save writes the vault copy, copies it out (apply after the write), and the rail shows the saved text",
+            saved && afterSave.skillWrites === 1 && afterSave.applies >= 1 && afterSave.lastSkillWrite?.content === draft,
+            JSON.stringify({ saved, skillWrites: afterSave.skillWrites, applies: afterSave.applies })
+        );
+
+        await h.ev(skClick("[data-skill-new]"));
+        const formUp = await polishWaitFor(h, `!!document.querySelector('[data-new-skill-form]')`, 3000);
+        await h.ev(skSetValue("[data-new-skill-name]", "Bad Name"));
+        await h.ev(skSetValue("[data-new-skill-description]", "Use when checking trades"));
+        await polishNap(300);
+        const bad = await h.ev(`({
+            error: document.querySelector('[data-new-skill-name-error]')?.textContent ?? "",
+            disabled: document.querySelector('[data-new-skill-create]')?.disabled ?? false,
+        })`);
+        await h.shot("cdp-shots/setup-skill-edit-5-new-bad-name.png");
+        rec("5. New skill opens its form in the rail; a bad name is explained and Create stays off", formUp && /Lowercase/.test(bad.error) && bad.disabled, JSON.stringify(bad));
+
+        await h.ev(skSetValue("[data-new-skill-name]", "trade-check"));
+        await polishWaitFor(h, `!!document.querySelector('[data-new-skill-create]:not([disabled])')`, 2000);
+        await h.ev(skClick("[data-new-skill-create]"));
+        const created = await polishWaitFor(
+            h,
+            `!!document.querySelector('[data-skill-row="trade-check"]') && !!${SK_RAIL("trade-check")}?.querySelector('[data-skill-editor] textarea')?.value.includes("name: trade-check")`,
+            5000
+        );
+        const afterCreate = callSummary(await readSetupFixture(h));
+        await polishNap(300);
+        await h.shot("cdp-shots/setup-skill-edit-6-created.png");
+        rec(
+            "6. Create makes the vault skill, adds its row, and opens its SKILL.md in the rail's editor",
+            created && afterCreate.skillCreates === 1,
+            JSON.stringify({ created, skillCreates: afterCreate.skillCreates })
+        );
+        // leave no open editor in the module atoms for the next scenario
+        await h.ev(skClick("[data-skill-cancel]"));
+        return steps;
+    },
+    async teardown(h, ctx) {
+        if (ctx.handle != null) await teardownSetupFixture(h, ctx);
+    },
+};
+
 // Setup → Tools: the tab open on the library
 const TT_LIBRARY = `document.querySelector("[data-tools-library]")`;
 async function ttOpenLibrary(h) {
@@ -37395,5 +37525,6 @@ export const SCENARIOS = [
     toolsPicker,
     toolsLauncher,
     toolsWorktreeGone,
+    setupSkillEdit,
     whatsNew,
 ];

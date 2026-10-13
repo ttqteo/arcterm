@@ -39,6 +39,7 @@ export interface SkillRow {
     needsKeep: boolean;
     copies: SkillCopy[]; // unmanaged copies in column order; empty for a managed skill
     deltas: Record<string, string[]>; // managed only: what each harness overrides
+    shipped: boolean; // managed only: arcterm ships it, so its vault copy is not edited
     cells: SkillCell[];
 }
 
@@ -99,15 +100,24 @@ function validKeep(keep: SkillKeep, name: string, copies: SkillCopy[]): string |
     return runtime != null && copies.some((c) => c.runtime === runtime) ? runtime : null;
 }
 
+// The copy arcterm keeps in a harness's skills folder. It is a local copy, so the labels say whether it matches the
+// vault rather than "synced", which reads as an upload.
 function managedCell(skill: AgentSyncSkill, col: AgentSyncSkillColumn): SkillCell {
     const state = col.present ? skill.states?.[col.runtime] : "absent";
     const over = skill.deltas?.[col.runtime] ?? [];
-    const title = over.length > 0 ? `Overrides ${over.join(", ")}` : undefined;
+    const copy = col.path ? joinRepoPath(col.path, skill.name) : `${col.label}'s skills folder`;
+    const title = (fact: string) =>
+        [fact, over.length > 0 ? `Overrides ${over.join(", ")}` : null].filter(Boolean).join(". ");
     switch (state) {
         case "synced":
-            return { runtime: col.runtime, label: "Synced", tone: "ok", title };
+            return { runtime: col.runtime, label: "Up to date", tone: "ok", title: title(`${copy} matches the vault`) };
         case "differs":
-            return { runtime: col.runtime, label: "Not synced", tone: "warn", title };
+            return {
+                runtime: col.runtime,
+                label: "Out of date",
+                tone: "warn",
+                title: title(`${copy} is older than the vault; saving or the next agent launch updates it`),
+            };
         case "unmanaged":
             return { runtime: col.runtime, label: "Own copy", tone: "none" };
     }
@@ -165,6 +175,7 @@ export function skillRows(data: SkillsData, keep: SkillKeep): SkillRow[] {
         needsKeep: false,
         copies: [],
         deltas: s.deltas ?? {},
+        shipped: s.shipped === true,
         cells: columns.map((col) => managedCell(s, col)),
     }));
     for (const [name, copies] of unmanagedByName(data)) {
@@ -181,6 +192,7 @@ export function skillRows(data: SkillsData, keep: SkillKeep): SkillRow[] {
             needsKeep,
             copies,
             deltas: {},
+            shipped: false,
             cells: columns.map((col) => unmanagedCell(copies, kept, col.runtime)),
         });
     }
@@ -360,6 +372,45 @@ export function skillNote(row: SkillRow): string {
         case "only":
             return `Kept in ${row.copies[0].label}'s skills folder only. Managing it in arcterm also writes it into the other harnesses.`;
         case "managed":
-            return "One copy in the vault, written into every harness.";
+            return row.shipped
+                ? "Ships with arcterm. Every launch puts its vault copy back, so it is read-only here."
+                : "One copy in the vault on this machine. arcterm copies it into each harness's skills folder when you save, and again at every agent launch.";
     }
+}
+
+export interface SkillCopyTarget {
+    runtime: string;
+    label: string;
+    path: string;
+}
+
+// Where a vault skill is copied: each harness that is set up, at <its skills folder>/<name>.
+export function skillCopyTargets(row: SkillRow, columns: AgentSyncSkillColumn[]): SkillCopyTarget[] {
+    if (row.kind !== "managed") {
+        return [];
+    }
+    return columns
+        .filter((c) => c.present && c.path)
+        .map((c) => ({ runtime: c.runtime, label: c.label, path: joinRepoPath(c.path, row.name) }));
+}
+
+// Mirrors the backend's rule (agentsync.CreateSkill): lowercase words joined by single hyphens, at most 64 characters,
+// and a name no skill row already has, managed or not.
+const SKILL_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+export const MAX_SKILL_NAME = 64;
+
+export function skillNameError(name: string, taken: string[]): string | null {
+    if (name === "") {
+        return null;
+    }
+    if (name.length > MAX_SKILL_NAME) {
+        return `At most ${MAX_SKILL_NAME} characters.`;
+    }
+    if (!SKILL_NAME.test(name)) {
+        return "Lowercase letters, digits and single hyphens, like trade-check.";
+    }
+    if (taken.includes(name)) {
+        return `A skill named ${name} already exists.`;
+    }
+    return null;
 }

@@ -25,7 +25,7 @@ export function harnessRowState(h: Pick<AgentSyncHarness, "present" | "steering"
 export function harnessRowLabel(state: HarnessRowState): string {
     switch (state) {
         case "in-sync":
-            return "In sync";
+            return "Up to date";
         case "out-of-date":
             return "Out of date";
         case "not-written":
@@ -66,7 +66,7 @@ export function headerStatus(rows: Pick<AgentSyncHarness, "present" | "steering"
     }
     const behind = present.filter((r) => r.steering !== "current").length;
     if (behind === 0) {
-        return { text: `${n} ${n === 1 ? "harness" : "harnesses"} in sync`, tone: "ok" };
+        return { text: `${n} ${n === 1 ? "harness" : "harnesses"} up to date`, tone: "ok" };
     }
     return { text: `${behind} of ${n} harnesses out of date`, tone: "warn" };
 }
