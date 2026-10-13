@@ -47,6 +47,28 @@ const PEEK_GLYPH = `space · ${ON_MAC ? "⌘-click" : "ctrl+click"}`;
 // skip stays a standing invitation to make the step real rather than a permanent shrug.
 const skipStep = (step, detail) => ({ step, skip: true, detail });
 
+// Opens the agent header's "…" menu with a real click (the menu opens at the pointer) and picks the row labelled `label`
+// (contextmenu.tsx marks each row data-menu-item). False when the header's button or the row is not there.
+async function pickHeaderMenu(h, label) {
+    const box = await h.ev(`(() => {
+        const r = document.querySelector("[data-agent-header-more]")?.getBoundingClientRect();
+        return r && r.width > 0 ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null;
+    })()`);
+    if (box == null) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y });
+    for (const type of ["mousePressed", "mouseReleased"]) {
+        await h.cdp("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button: "left", clickCount: 1 });
+    }
+    return h.ev(`(async () => {
+        for (let i = 0; i < 30; i++) {
+            const row = [...document.querySelectorAll("[data-menu-item]")].find((r) => r.dataset.menuItem === ${JSON.stringify(label)});
+            if (row) { row.click(); return true; }
+            await new Promise((r) => setTimeout(r, 100));
+        }
+        return false;
+    })()`);
+}
+
 const workerOf = (phase) => phase && phase.workerorefs && phase.workerorefs[0];
 
 // a channel's runs are their own rows: the getchannels reply is channel metadata, with no run list
@@ -34945,8 +34967,8 @@ const floatMini = {
         await h.goto("agent");
         const chosen = await floatMiniWait(h, `!!document.querySelector('[data-agent-row="${term.tabId}"]')`);
         await h.ev(`document.querySelector('[data-agent-row="${term.tabId}"]')?.click()`);
-        await floatMiniWait(h, `!!document.querySelector("[data-agent-float]")`);
-        await h.ev(`document.querySelector("[data-agent-float]")?.click()`);
+        await floatMiniWait(h, `!!document.querySelector("[data-agent-header-more]")`);
+        await pickHeaderMenu(h, "Float window");
         const floated = await floatMiniWait(h, `!!document.querySelector("[data-float-bar]")`);
         await h.ev("new Promise((r) => setTimeout(r, 1200))");
         const before = await floatMiniTermSize(h, term.blockId);
@@ -35112,7 +35134,7 @@ const jarvisModes = {
         });
 
         // 5. Float: Sprout walks the ledge and opens the chat
-        await h.ev(`document.querySelector("[data-agent-float]")?.click()`);
+        await pickHeaderMenu(h, "Float window");
         const floated = await wait(shown("[data-float-bar]"));
         await h.ev("new Promise((r) => setTimeout(r, 1500))");
         const onLedge = await h.ev(`(() => {
@@ -36154,19 +36176,16 @@ const toolsTree = {
         );
         if (homeKey != null) await ttClick(h, `[data-project-folder="${homeKey}"]`);
 
-        // the hover action is display:none until the folder is hovered, so the move is real
+        // a terminal or a tool opens from New, so a hovered folder row holds no button of its own
         const hovered = await ttMouse(h, `[data-project-folder="${TT_PROJECT}"]`, "move");
         const hoverAction = await h.ev(`(() => {
-            const b = document.querySelector('[data-agent-new-terminal="${TT_PROJECT}"]');
-            return {
-                plus: !!b && getComputedStyle(b.parentElement).display !== "none",
-                buttons: b?.parentElement?.querySelectorAll("button").length ?? 0,
-            };
+            const f = document.querySelector('[data-project-folder="${TT_PROJECT}"]');
+            return { inside: f?.querySelectorAll("button").length ?? -1, beside: f?.parentElement?.querySelectorAll("button").length ?? -1 };
         })()`);
         await h.shot("cdp-shots/tools-tree-3-folder-hover.png");
         rec(
-            "5. folder-hover: hovering the folder shows only its + (a tool opens from New)",
-            hovered && hoverAction.plus && hoverAction.buttons === 1,
+            "5. folder-hover: hovering the folder shows no button (a terminal or a tool opens from New)",
+            hovered && hoverAction.inside === 0 && hoverAction.beside === 1,
             JSON.stringify({ hovered, hoverAction })
         );
         // the pointer off the folder, so its tooltip is not in the shots that follow
@@ -36779,11 +36798,15 @@ const toolsPicker = {
 
         await h.ev(PEEKS_ESC);
         const closed = await polishWaitFor(h, `!${TT_PICKER}`, 3000);
-        await ttClick(h, "[data-agent-tool-button]");
+        // the Tool button lives in the header's "…" menu now: open it, show it, pick its row
+        await ttMouse(h, "[data-agent-header-more]");
+        const menu = await polishWaitFor(h, `!!document.querySelector('[data-menu-item="Open a tool…"]')`, 3000);
+        await h.shot("cdp-shots/tools-picker-3-header-menu.png");
+        await ttClick(h, '[data-menu-item="Open a tool…"]');
         const again = await polishWaitFor(h, `!!${TT_PICKER}`, 4000);
         await h.ev(setFieldExpr(`document.querySelector("[data-tool-picker-input]")`, "arc-fixture"));
         const only = await polishWaitFor(h, `${TT_PICKER_ROW("arc-fixture")} != null && document.querySelectorAll("[data-tool-picker-row]").length === 1`, 4000);
-        await h.shot("cdp-shots/tools-picker-3-header-button.png");
+        await h.shot("cdp-shots/tools-picker-3-filtered.png");
         await h.ev(ttPickerKey("Enter", "Enter"));
         const centre = await polishWaitFor(h, `!${TT_PICKER} && (${TT_CENTRE}).startsWith("terminal:")`, 15000);
         const opened = await h.ev(`(() => {
@@ -36791,9 +36814,9 @@ const toolsPicker = {
             return { id: head?.getAttribute("data-terminal-pane-head") ?? null, name: ${TT_FLAT}(head?.querySelector("span.font-semibold")) };
         })()`);
         rec(
-            "3. header-button: Esc closes it, the agent header's Tool button opens it again, and Enter opens the selected tool in the centre",
-            closed && again && only && centre && opened.name === "arc-fixture",
-            JSON.stringify({ closed, again, only, centre, ...opened })
+            "3. header-menu: Esc closes it, the agent header's … menu opens it again, and Enter opens the selected tool in the centre",
+            closed && menu && again && only && centre && opened.name === "arc-fixture",
+            JSON.stringify({ closed, menu, again, only, centre, ...opened })
         );
 
         await ttToSurface(h);

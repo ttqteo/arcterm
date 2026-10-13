@@ -82,9 +82,8 @@ in Start, so the other rows keep their digits.
 ## Open a tool (`Mod`+`Shift`+`T`)
 
 A palette-style picker for the tool library (Setup → Tools). Its first line says where the tool will open: the focused
-agent's folder (its worktree when it has one), else the project root, else Home. Other ways in: the Tool button in an
-agent's header, the `tool` button on a project folder in the tree (opens in the project root), and Search → Commands →
-"Open a tool…". The search box has focus on open.
+agent's folder (its worktree when it has one), else the project root, else Home. Other ways in: Open a tool… in an
+agent's header `…` menu, and Search → Commands → "Open a tool…". The search box has focus on open.
 
 | Keys | Action |
 |---|---|

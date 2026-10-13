@@ -120,7 +120,7 @@ does not, say what you saw and it becomes a bug row under Actionable.
 
 - [ ] (arcterm) **A project folder counts its running agents.** With an agent working in a project, its folder row in
   the Agent sidebar reads a pulsing dot and `1` (hover: "1 running"), open or folded, and drops it when the agent goes
-  idle; hovering the folder shows only the `+` (no `tool` button). commit "project folders count running agents"; the
+  idle; hovering the folder shows no button (a terminal or a tool opens from New). commit "project folders count running agents"; the
   dot and number, commit "folded folder stays inside the sidebar".
 - [ ] (arcterm) **A folded folder stays inside the sidebar.** Fold a project with 10+ agents while one runs and one
   asks: the row reads its name (at least a few letters), the dot and number, `N asking`, then the agent and terminal

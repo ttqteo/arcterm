@@ -50,7 +50,6 @@ import {
     Moon,
     Pencil,
     Play,
-    Plus,
     RotateCcw,
     Square,
     SquareTerminal,
@@ -1793,8 +1792,7 @@ function FoldBody({ open, children }: { open: boolean; children: React.ReactNode
 
 // A project's folder row, in either section: the chevron and the folder say whether it is open, then the project's name
 // (`label` where the folder's key reads otherwise: Home) and, at the far end, `trailing`, which a folded folder keeps
-// (what in it wants you, how much it holds). `action` is a button over the far end that shows while the row is hovered,
-// outside the toggle so its click never folds the folder.
+// (what in it wants you, how much it holds).
 function FolderRow({
     section,
     project,
@@ -1802,7 +1800,6 @@ function FolderRow({
     open,
     onToggle,
     trailing,
-    action,
 }: {
     section: SidebarSection;
     project: string;
@@ -1810,9 +1807,8 @@ function FolderRow({
     open: boolean;
     onToggle: () => void;
     trailing?: React.ReactNode;
-    action?: React.ReactNode;
 }) {
-    const row = (
+    return (
         <button
             type="button"
             onClick={onToggle}
@@ -1837,22 +1833,11 @@ function FolderRow({
             {trailing}
         </button>
     );
-    if (action == null) {
-        return row;
-    }
-    return (
-        <div className="group/folder relative">
-            {row}
-            <div className="absolute inset-y-0 right-[4px] hidden items-center gap-[4px] group-hover/folder:flex group-focus-within/folder:flex">
-                {action}
-            </div>
-        </div>
-    );
 }
 
 // Opens a plain terminal in a registered project, the New launcher's Terminal pick without the dialog. Like the
 // launcher's, it starts in the background and lands in its project's folder. The Diff panel's sync failure opens one
-// in its worktree, so it is exported.
+// in its worktree with it.
 export function quickTerminal(model: AgentsViewModel, project: string, path: string) {
     fireAndForget(() =>
         launchAgent(model, {
@@ -1862,25 +1847,6 @@ export function quickTerminal(model: AgentsViewModel, project: string, path: str
             projectPath: path,
             projectName: project,
         })
-    );
-}
-
-// The small "+" that opens a terminal in `project` (a folder row's hover action, the filtered header's trailing)
-function NewTerminalButton({ model, project, path }: { model: AgentsViewModel; project: string; path: string }) {
-    return (
-        <button
-            type="button"
-            data-agent-new-terminal={project}
-            title={`New terminal in ${project}`}
-            aria-label={`New terminal in ${project}`}
-            onClick={(e) => {
-                e.stopPropagation();
-                quickTerminal(model, project, path);
-            }}
-            className="flex h-[20px] w-[20px] flex-none cursor-pointer items-center justify-center rounded-[5px] bg-surface text-muted hover:bg-surface-hover hover:text-primary"
-        >
-            <Plus size={13} aria-hidden />
-        </button>
     );
 }
 
@@ -2299,7 +2265,6 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                             );
                             switch (r.kind) {
                                 case "group": {
-                                    const path = registered?.[r.project]?.path;
                                     return (
                                         <motion.div
                                             key={`g-${r.project}`}
@@ -2316,18 +2281,6 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                                         collapsedProjectsAtom,
                                                         toggleFold(collapsedList, r.project)
                                                     )
-                                                }
-                                                // the + only where the project is registered with a path to open in
-                                                // (ungrouped, Home and unregistered folders have none); a tool opens
-                                                // from New
-                                                action={
-                                                    path ? (
-                                                        <NewTerminalButton
-                                                            model={model}
-                                                            project={r.project}
-                                                            path={path}
-                                                        />
-                                                    ) : null
                                                 }
                                                 trailing={
                                                     <>

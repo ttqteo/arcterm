@@ -109,17 +109,17 @@ Chân hộp thoại có một dòng cho biết điều sẽ xảy ra (`Starts in
 Header phía trên terminal là một hàng gọn:
 
 - chấm trạng thái, **tên**, logo harness, **trạng thái** (`working`, `idle`, `asking`), **model**, **context** đã dùng (số token, đổi màu khi đầy), rồi `· <project>`. Agent gắn với initiative thì có thêm liên kết tới initiative trong [Jarvis](jarvis.md); lead của run ghi `orchestrator run <id>`; worker ghi `↑ <tên lead>` (bấm để tới lead).
-- bên phải: nút màu cam **Spec review** / **Plan review** khi agent đang xin duyệt (xem [bên dưới](#duyệt-tài-liệu-do-agent-yêu-cầu)); nút chuyển **Terminal | Canvas | Review** khi agent có canvas hoặc Doc review; nút **Split**; nút **✓ Close · N tok** khi agent trông như đã xong; nút **Redraw**; nút **Float**; nút toàn màn hình; nút `×` đóng.
+- bên phải: nút màu cam **Spec review** / **Plan review** khi agent đang xin duyệt (xem [bên dưới](#duyệt-tài-liệu-do-agent-yêu-cầu)); nút chuyển **Terminal | Canvas | Review** khi agent có canvas hoặc Doc review; nút `…`; nút **Split**; nút **✓ Close · N tok** khi agent trông như đã xong; nút toàn màn hình; nút `×` đóng.
 
-Chuột phải vào header: **Interrupt turn**, **Fullscreen terminal** / **Exit fullscreen**, **Float window** / **Leave float**, **Redraw terminal**, **Show details** / **Hide details**, **Close agent**.
+Nút `…` (hoặc chuột phải vào header) mở menu còn lại: **Open a tool…**, **Float window**, **Redraw terminal**, **Interrupt turn**, **Fullscreen terminal** / **Exit fullscreen**, **Show details** / **Hide details**, **Close agent**.
 
 Bấm vào terminal để gõ cho agent. Nhấn `Shift+Esc` để trả focus về sidebar (khi đó `j`/`k`, `d`, `f`… lại là phím điều khiển). Ngoài ra:
 
 | Việc | Cách làm |
 |---|---|
 | Toàn màn hình terminal | `f` hoặc `F11` (`F11` dùng được cả khi đang gõ trong terminal); `Esc` thoát toàn màn hình |
-| Thu cửa sổ thành ô nổi (Float) | Nút **Float** trên header hoặc `Shift+F`: cửa sổ thu lại chỉ còn terminal của agent đang chọn, một thanh tiêu đề ghi tên, trạng thái, model và context của agent (header của agent ẩn đi), và một gờ dưới đáy cho Sprout đi lại kèm số việc đang chờ; nó luôn nằm trên các app khác ngay khi bật (nút ghim trên thanh tắt điều đó). Dãy chấm trên thanh, mỗi chấm một agent, đổi sang terminal của agent khác. Thoát bằng nút trên thanh, `Shift+F`, hoặc thoát toàn màn hình; cửa sổ trở lại kích thước cũ, lần Float sau mở lại đúng chỗ lần trước. Nút **Sprout** trên thanh (hoặc nút minimize, nút vàng hay `⌘M` trên macOS) thu cửa sổ vào Sprout ngay chỗ nó đứng, xem [Con vật Jarvis](cockpit.md#con-vật-jarvis) |
-| Terminal bị vỡ chữ, chồng dòng hoặc lệch cột | Nút **Redraw** trên header (hoặc **Redraw terminal** trong menu chuột phải): vẽ lại terminal và cho agent tự vẽ lại toàn màn hình ở đúng kích thước, phiên vẫn chạy tiếp, không mất gì |
+| Thu cửa sổ thành ô nổi (Float) | **Float window** trong menu `…` của header hoặc `Shift+F`: cửa sổ thu lại chỉ còn terminal của agent đang chọn, một thanh tiêu đề ghi tên, trạng thái, model và context của agent (header của agent ẩn đi), và một gờ dưới đáy cho Sprout đi lại kèm số việc đang chờ; nó luôn nằm trên các app khác ngay khi bật (nút ghim trên thanh tắt điều đó). Dãy chấm trên thanh, mỗi chấm một agent, đổi sang terminal của agent khác. Thoát bằng nút trên thanh, `Shift+F`, hoặc thoát toàn màn hình; cửa sổ trở lại kích thước cũ, lần Float sau mở lại đúng chỗ lần trước. Nút **Sprout** trên thanh (hoặc nút minimize, nút vàng hay `⌘M` trên macOS) thu cửa sổ vào Sprout ngay chỗ nó đứng, xem [Con vật Jarvis](cockpit.md#con-vật-jarvis) |
+| Terminal bị vỡ chữ, chồng dòng hoặc lệch cột | **Redraw terminal** trong menu `…` của header (hoặc menu chuột phải): vẽ lại terminal và cho agent tự vẽ lại toàn màn hình ở đúng kích thước, phiên vẫn chạy tiếp, không mất gì |
 | Ngắt lượt đang chạy | **Interrupt turn** trong menu header, hoặc `Esc` trong terminal, hoặc nút **Stop** ở chân rail |
 | Chuyển sang agent hoặc terminal khác | Giữ `Ctrl`, bấm `Tab`: một thanh hiện giữa màn hình với các agent và terminal, mới dùng gần đây nhất đứng đầu; bấm `Tab` tiếp (hoặc `Shift+Tab` để lùi) rồi thả `Ctrl` để mở cái đang chọn, `Esc` để ở lại. Bấm nhanh `Ctrl+Tab` thì quay về tab vừa xem, không hiện thanh. Dùng được cả khi con trỏ đang ở trong terminal (gõ phím theo sang terminal mới), cả khi Float hay toàn màn hình; trên macOS `Option+Tab` cũng được |
 | Mở file/đường dẫn in ra trong terminal | `Ctrl+click` trên đường dẫn: mở ở tab **File** của rail; trong một terminal thường thì mở ở [Code](code.md) |
@@ -149,7 +149,6 @@ Cột trái 248 px, từ trên xuống: nút **Conversation History**, rồi hai
 Mỗi project là một **thư mục**; bấm tên thư mục để gấp/mở. Trong thư mục là các hàng agent, một **đường kẻ mảnh**, rồi các **terminal và tool** của project, cái dùng gần nhất lên trước. Terminal là hàng ngang hàng với agent: chọn nó (bấm, `j` / `k`, `Ctrl+Tab`, `Ctrl+P`) thì nó chiếm trung tâm, xem [Terminal thường và tool ở giữa](#terminal-thường-và-tool-ở-giữa). Thư mục đang gấp ghi nó chứa gì, ví dụ `2 agents · 1 terminal`.
 
 - Terminal thuộc project mà thư mục hiện tại của nó nằm trong (`cd` sang project khác thì nó chuyển thư mục theo), không thì project của tab đã mở nó. **Home** là thư mục cuối, chứa terminal và tool không thuộc project nào (btop chẳng hạn); agent không có project nằm ở thư mục `ungrouped` riêng.
-- Rê chuột vào một thư mục: nút **+** mở ngay một terminal trong project đó, nút **tool** mở [Open a tool](#open-a-tool-chọn-nhanh) ở gốc project.
 - Một [split](#lưới-terminal-2x2) hiện thành **một hàng** gồm các ô nhỏ, mỗi ô một agent hoặc terminal, nằm đầu thư mục của project khi mọi ô cùng project; nếu các ô thuộc nhiều project thì hàng nằm trên cùng cây và mỗi ô ghi thêm project của nó. Các ô của split rời hàng riêng của mình (và khỏi số đếm của thư mục) cho tới khi split kết thúc.
 - Chọn một project ở app bar thì thư mục biến mất, danh sách phẳng (agent, đường kẻ, terminal), và một dòng `N in other projects · M asking` cho biết agent ở project khác (bấm để xem tất cả project).
 
@@ -258,8 +257,7 @@ Tab thứ ba của [Setup](setup.md), sau Instructions và Skills (`Ctrl+G` rồ
 Hộp thoại kiểu palette để mở tool ngay, trong thư mục của agent đang focus. Mở bằng:
 
 - `Ctrl+Shift+T` (`Cmd+Shift+T` trên macOS), từ bất kỳ đâu, kể cả khi đang gõ trong terminal.
-- Nút **Tool** trên header của agent (chỉ agent đang có terminal).
-- Nút **tool** hiện khi rê chuột vào một thư mục project trong cây: mở ở **gốc project**.
+- **Open a tool…** trong menu `…` trên header của agent (chỉ agent đang có terminal).
 - `Ctrl+P` → **Open a tool…**.
 
 Dòng đầu hộp thoại nói tool sẽ mở ở đâu (`Opens in fix-login's worktree`, `Opens in arcterm`, `Opens in Home`). Bên dưới là các nhóm **Installed** (tool ghim ở trên), **Not installed** (chỉ hai tool để gợi ý; khi bạn gõ lọc thì hiện mọi tool khớp) và **Yours**.
@@ -279,7 +277,7 @@ Tool chưa cài, đang cài hay lỗi trả lời bằng một dòng ngay trong 
 
 Khi không có agent nào đang focus (Open a tool luôn đi theo agent đang focus), hộp thoại `Ctrl+N` cũng mở được tool trong một project. Cột **Start** có thêm một hàng **Tool** cuối cùng, dưới nhãn **Tool** sau nhóm Run, nên các hàng khác giữ nguyên phím số của chúng.
 
-- Chọn **Tool** thì phần dưới (nơi agent có Resume và Task) là danh sách **Tool**, điểm dừng thứ ba của `Tab` sau Start và Project. Các chữ `a`–`z` chọn trong đó (gợi ý ở đầu hộp thoại ghi `a–z tool`): tool đã cài trước (ghim lên đầu), rồi tool của bạn, rồi một hai tool chưa cài, và **All tools in Setup**. Bên cạnh là phần About: tool làm gì và nó chạy ở gốc project (worktree của một agent thì dùng nút **Tool** của agent đó).
+- Chọn **Tool** thì phần dưới (nơi agent có Resume và Task) là danh sách **Tool**, điểm dừng thứ ba của `Tab` sau Start và Project. Các chữ `a`–`z` chọn trong đó (gợi ý ở đầu hộp thoại ghi `a–z tool`): tool đã cài trước (ghim lên đầu), rồi tool của bạn, rồi một hai tool chưa cài, và **All tools in Setup**. Bên cạnh là phần About: tool làm gì và nó chạy ở gốc project (worktree của một agent thì dùng **Open a tool…** trong menu `…` của agent đó).
 - Ô **Command** hiện lệnh của tool; không có Task, Flag hay công tắc worktree. **Project** và **Home** dùng như với Terminal.
 - Tiêu đề hộp thoại đổi theo hàng đã chọn (**Open a tool**) và nút chính ghi tên tool (**Open lazygit**); tool chưa có trên `PATH` thì nút chính mờ và chân hộp thoại nói lý do.
 - Tool mở ra chiếm trung tâm và nằm trong thư mục của project ở cây, như khi mở từ chỗ khác. Nút **+ New** ở app bar giữ nguyên; tooltip của nó là *New agent, terminal, run or tool*.

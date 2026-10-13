@@ -27,6 +27,7 @@ import {
     ChevronLeft,
     CircleStop,
     Columns2,
+    Ellipsis,
     Maximize2,
     Minimize2,
     PanelRight,
@@ -86,7 +87,7 @@ export const CTX_TEXT: Record<"ok" | "warn" | "hot", string> = {
 // turns on (ICON_BTN_ON) keeps its size.
 export const ICON_BTN =
     "flex cursor-pointer items-center justify-center rounded-[6px] border border-transparent p-[5px] text-muted hover:bg-surface-hover hover:text-primary";
-// an icon-button that is on (split shown, floating, fullscreen, pinned)
+// an icon-button that is on (split shown, fullscreen, pinned)
 export const ICON_BTN_ON = "border-accent/50 bg-accentbg text-accent hover:bg-accentbg hover:text-accent";
 
 // useRunLineage reads what the header says about an agent a run spawned: a lead's run, a worker's task and
@@ -213,9 +214,6 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const railVisible = useAtomValue(railVisibleAtom);
     const fullscreen = useAtomValue(terminalFullscreenAtom);
     const floating = useAtomValue(floatModeAtom);
-    const floatTitle = floating
-        ? `Leave float (${formatChordString("Shift:f")})`
-        : `Float: shrink the window to this terminal, to keep on top of other apps (${formatChordString("Shift:f")})`;
     const canvas = useAtomValue(canvasStateAtom(agent.id));
     const lineage = useRunLineage(model, agent);
     const project = agentProject(useAtomValue(model.lineageAtom), useAtomValue(model.agentsAtom), agent);
@@ -337,24 +335,37 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
         }
     };
 
-    // Right-click the header for the same controls as the button row (plus the details toggle).
-    const onContextMenu = (e: React.MouseEvent) => {
+    // The "…" button and a right-click on the header open the one menu: what the button row leaves out (a tool, Float,
+    // Redraw, Interrupt, the details toggle), then Fullscreen and Close again.
+    const openHeaderMenu = (e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
         const items: ContextMenuItem[] = [];
+        if (canSplit) {
+            // the header is the focused agent's, which is whose folder the picker opens a tool in
+            items.push({
+                label: "Open a tool…",
+                sublabel: "lazygit, yazi, btop… in this agent's folder",
+                icon: <Wrench size={15} />,
+                accel: "Mod:Shift:t",
+                click: () => openToolPicker(model),
+            });
+        }
         if (blockId != null) {
+            items.push({
+                label: floating ? "Leave float" : "Float window",
+                icon: <PictureInPicture2 size={15} />,
+                accel: "Shift:f",
+                click: () => fireAndForget(() => toggleFloat(model)),
+            });
+            items.push({ label: "Redraw terminal", icon: <RotateCw size={15} />, click: redraw });
             items.push({ label: "Interrupt turn", icon: <CircleStop size={15} />, click: interrupt });
             items.push({
                 label: fullscreen ? "Exit fullscreen" : "Fullscreen terminal",
                 icon: fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />,
+                accel: "f",
                 click: () => globalStore.set(terminalFullscreenAtom, !fullscreen),
             });
-            items.push({
-                label: floating ? "Leave float" : "Float window",
-                icon: <PictureInPicture2 size={15} />,
-                click: () => fireAndForget(() => toggleFloat(model)),
-            });
-            items.push({ label: "Redraw terminal", icon: <RotateCw size={15} />, click: redraw });
         }
         items.push({
             label: railVisible ? "Hide details" : "Show details",
@@ -363,7 +374,13 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
         });
         if (blockId != null) {
             items.push({ type: "separator" });
-            items.push({ label: closeLabel, icon: <X size={15} />, danger: true, click: closeTerminal });
+            items.push({
+                label: closeLabel,
+                icon: <X size={15} />,
+                danger: true,
+                accel: closeAgentChord(),
+                click: closeTerminal,
+            });
         }
         ContextMenuModel.getInstance().showContextMenu(items, e);
     };
@@ -371,7 +388,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     return (
         <div
             data-agent-header
-            onContextMenu={onContextMenu}
+            onContextMenu={openHeaderMenu}
             className="flex shrink-0 select-none items-center gap-[10px] border-b border-border bg-background px-[18px] py-[8px]"
         >
             {stage ? null : ended ? (
@@ -545,17 +562,17 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         onChange={(v) => setAgentView(agent.id, v, Date.now())}
                     />
                 ) : null}
-                {canSplit ? (
-                    // the header is the focused agent's, which is whose folder the picker opens a tool in
+                {blockId != null ? (
                     <button
                         type="button"
-                        data-agent-tool-button
-                        onClick={() => openToolPicker(model)}
-                        title={`Open a tool (lazygit, yazi, btop…) in this agent's folder (${formatChordString("Mod:Shift:t")})`}
-                        className={cn(ICON_BTN, "gap-[6px] px-[8px] text-[12px] font-medium")}
+                        data-agent-header-more
+                        aria-haspopup="menu"
+                        aria-label="More"
+                        onClick={openHeaderMenu}
+                        title="More: open a tool, float, redraw, interrupt, details"
+                        className={ICON_BTN}
                     >
-                        <Wrench size={14} strokeWidth={1.8} aria-hidden />
-                        Tool
+                        <Ellipsis size={15} strokeWidth={1.8} aria-hidden />
                     </button>
                 ) : null}
                 {canSplit ? (
@@ -591,27 +608,6 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 ) : null}
                             </button>
                         ) : null}
-                        <button
-                            type="button"
-                            data-agent-redraw
-                            onClick={redraw}
-                            title="Redraw terminal: repaint garbled text; the session keeps running"
-                            aria-label="Redraw terminal"
-                            className={ICON_BTN}
-                        >
-                            <RotateCw size={15} strokeWidth={1.8} />
-                        </button>
-                        <button
-                            type="button"
-                            data-agent-float
-                            onClick={() => fireAndForget(() => toggleFloat(model))}
-                            title={floatTitle}
-                            aria-label={floating ? "Leave float" : "Float window"}
-                            aria-pressed={floating}
-                            className={cn(ICON_BTN, floating && ICON_BTN_ON)}
-                        >
-                            <PictureInPicture2 size={15} strokeWidth={1.8} />
-                        </button>
                         <motion.button
                             type="button"
                             onClick={() => globalStore.set(terminalFullscreenAtom, !fullscreen)}

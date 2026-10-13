@@ -154,6 +154,7 @@ function MenuRow({
     return (
         <div
             ref={ref}
+            data-menu-item={item.label}
             className={cn(ITEM, danger && !highlighted && ITEM_DANGER, highlighted && activeCls, disabled && ITEM_DISABLED)}
             onMouseEnter={onEnter}
             onClick={() => (hasSub ? undefined : runClick(item))}
