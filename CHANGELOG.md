@@ -29,6 +29,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - **Click a file's path to copy it**: in the Agent panel's File tab and in Code, the path at the top copies its full
   path on click, in place of a separate copy button.
+- **Right-click in a terminal copies or pastes**: with text selected it copies it, with nothing selected it pastes;
+  right-click twice to open the terminal menu. Highlighting text now copies it by default too. Both are switches in
+  Settings → Terminal (Copy on select, Right-click to paste).
 - **A canvas with too many boards for a row of tabs shows three of them**, the open one with its neighbours, between
   ‹ and › that step to the previous and next board as [ and ] do; beside them, where you are (4/8) opens the menu of
   every board.

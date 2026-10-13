@@ -33,6 +33,14 @@ does not, say what you saw and it becomes a bug row under Actionable.
   tooltip shows the full path and "Click to copy"), click it (a check shows after the path, the full path is on the
   clipboard); no copy icon beside Pin. The same in Code's path bar above the editor.
 
+**2026-10-13 (Terminal: right-click copies or pastes)**
+
+- [ ] (arcterm) **Right-click copy/paste in a terminal.** In an agent's or a shell terminal: highlight text (it lands
+  on the clipboard), right-click once with it still selected (copies, the highlight clears); right-click with nothing
+  selected (the clipboard pastes after a short beat); right-click twice quickly (the menu opens, nothing pastes).
+  Settings → Terminal → Right-click to paste off: one right-click opens the menu again. Also try it on a Mac (no word
+  gets selected under the pointer). `term.tsx` handleContextMenu, `termrightclick.ts`.
+
 **2026-10-13 (Canvas: three board tabs and arrows)**
 
 - [ ] (arcterm) **Three tabs and ‹ › on a canvas with many boards.** Open a canvas with more boards than fit a tab

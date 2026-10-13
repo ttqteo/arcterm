@@ -210,6 +210,7 @@ describe("settingsSections", () => {
             "term:cursorblink",
             "term:scrollback",
             "term:copyonselect",
+            "term:rightclickpaste",
             "agents:sleepidle",
             "agents:sleepaftermin",
             "storage:autoclean",
@@ -318,7 +319,11 @@ describe("settings pages", () => {
         ]);
         expect(cards["terminal/text"]).toEqual(["fonts.term", "terminal.fontsize"]);
         expect(cards["terminal/cursor"]).toEqual(["terminal.cursor", "terminal.cursorblink"]);
-        expect(cards["terminal/behavior"]).toEqual(["terminal.scrollback", "terminal.copyonselect"]);
+        expect(cards["terminal/behavior"]).toEqual([
+            "terminal.scrollback",
+            "terminal.copyonselect",
+            "terminal.rightclickpaste",
+        ]);
         expect(cards["agents/claudeaccount"]).toEqual([]);
         expect(cards["agents/sleep"]).toEqual(["agents.sleepidle", "agents.sleepaftermin"]);
         expect(cards["agents/runs"]).toEqual(["run.route"]);
@@ -340,7 +345,7 @@ describe("settings pages", () => {
             .flatMap(sectionRows)
             .map((r) => r.id);
         expect(new Set(ids).size).toBe(ids.length);
-        expect(ids).toHaveLength(42 + RUNTIME_FLAGS.claude.length);
+        expect(ids).toHaveLength(43 + RUNTIME_FLAGS.claude.length);
     });
 
     it("leaves the backend-authoritative run route off the config path", () => {

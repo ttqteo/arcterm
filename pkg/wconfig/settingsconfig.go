@@ -61,6 +61,7 @@ type SettingsType struct {
 	TermGitBashPath            string   `json:"term:gitbashpath,omitempty"`
 	TermScrollback             *int64   `json:"term:scrollback,omitempty"`
 	TermCopyOnSelect           *bool    `json:"term:copyonselect,omitempty"`
+	TermRightClickPaste        *bool    `json:"term:rightclickpaste,omitempty"`
 	TermAllowBracketedPaste    *bool    `json:"term:allowbracketedpaste,omitempty"`
 	TermShiftEnterNewline      *bool    `json:"term:shiftenternewline,omitempty"`
 	TermMacOptionIsMeta        *bool    `json:"term:macoptionismeta,omitempty"`

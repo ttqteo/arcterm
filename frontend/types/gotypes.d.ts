@@ -3070,6 +3070,7 @@ declare global {
         "term:gitbashpath"?: string;
         "term:scrollback"?: number;
         "term:copyonselect"?: boolean;
+        "term:rightclickpaste"?: boolean;
         "term:allowbracketedpaste"?: boolean;
         "term:shiftenternewline"?: boolean;
         "term:macoptionismeta"?: boolean;

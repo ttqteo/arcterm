@@ -14,7 +14,8 @@ export function TerminalPage() {
     const scrollback = (useAtomValue(getSettingsKeyAtom("term:scrollback")) as number) ?? 1000;
     const cursorRaw = (useAtomValue(getSettingsKeyAtom("term:cursor")) as string) ?? "block";
     const cursorBlink = (useAtomValue(getSettingsKeyAtom("term:cursorblink")) as boolean) ?? false;
-    const copyOnSelect = (useAtomValue(getSettingsKeyAtom("term:copyonselect")) as boolean) ?? false;
+    const copyOnSelect = (useAtomValue(getSettingsKeyAtom("term:copyonselect")) as boolean) ?? true;
+    const rightClickPaste = (useAtomValue(getSettingsKeyAtom("term:rightclickpaste")) as boolean) ?? true;
     // the terminal face is stored as the full stack string; match it back to a catalog id for the control
     const termFontStack = (useAtomValue(getSettingsKeyAtom("term:fontfamily")) as string) ?? "";
     const termFontId = MONO_FONTS.find((f) => f.stack === termFontStack)?.id ?? DEFAULT_TERM_FONT;
@@ -75,6 +76,13 @@ export function TerminalPage() {
                         on={copyOnSelect}
                         onToggle={() => writeConfig({ "term:copyonselect": !copyOnSelect })}
                         label="Copy on select"
+                    />
+                </SettingRow>
+                <SettingRow id="terminal.rightclickpaste">
+                    <Toggle
+                        on={rightClickPaste}
+                        onToggle={() => writeConfig({ "term:rightclickpaste": !rightClickPaste })}
+                        label="Right-click to paste"
                     />
                 </SettingRow>
             </SettingCard>

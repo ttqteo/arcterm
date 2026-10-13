@@ -11,12 +11,14 @@ import { activePalette, deriveTermTheme } from "@/app/view/agents/themes";
 import { themeOverridesAtom, themePresetAtom } from "@/app/view/agents/themestore";
 import type { TermViewModel } from "@/app/view/term/term-model";
 import { atoms, getOverrideConfigAtom, getSettingsPrefixAtom, WOS } from "@/store/global";
+import { isMacOS } from "@/util/platformutil";
 import { fireAndForget, useAtomValueSafe } from "@/util/util";
 import { ISearchOptions } from "@xterm/addon-search";
 import debug from "debug";
 import * as jotai from "jotai";
 import * as React from "react";
 import { TermLinkTooltip } from "./term-tooltip";
+import { makeRightClickGate, singleRightClickAction } from "./termrightclick";
 import { pendingTermSearchAtom } from "./termsearch";
 import { TermStickers } from "./termsticker";
 import { TermThemeUpdater } from "./termtheme";
@@ -142,6 +144,8 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
         const termMacOptionIsMeta = globalStore.get(termMacOptionIsMetaAtom) ?? false;
         const termCursorStyle = normalizeCursorStyle(globalStore.get(getOverrideConfigAtom(blockId, "term:cursor")));
         const termCursorBlink = globalStore.get(getOverrideConfigAtom(blockId, "term:cursorblink")) ?? false;
+        // a right-click that copies or pastes must not first select the word under the pointer (xterm does on a Mac)
+        const termRightClickSelectsWord = termSettings?.["term:rightclickpaste"] === false && isMacOS();
         const wasFocused = model.termRef.current != null && globalStore.get(model.nodeModel.isFocused);
         const termWrap = new TermWrap(
             tabModel.tabId,
@@ -166,6 +170,7 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
                 cursorStyle: termCursorStyle,
                 cursorBlink: termCursorBlink,
                 overviewRuler: { width: 6 },
+                rightClickSelectsWord: termRightClickSelectsWord,
             },
             {
                 keydownHandler: model.handleTerminalKeydown.bind(model),
@@ -205,14 +210,42 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
         blockId: blockId,
     };
 
+    const showTermMenu = React.useCallback(
+        (e: React.MouseEvent<HTMLDivElement>) => {
+            ContextMenuModel.getInstance().showContextMenu(model.getContextMenuItems(), e);
+        },
+        [model]
+    );
+    // term:rightclickpaste: right-click copies the selection or pastes, right-click twice opens the menu
+    const rightClickPaste = termSettings?.["term:rightclickpaste"] !== false;
+    const rightClickGate = React.useMemo(
+        () =>
+            makeRightClickGate<React.MouseEvent<HTMLDivElement>>({
+                onSingle: () => {
+                    const terminal = model.termRef.current?.terminal;
+                    if (singleRightClickAction(terminal?.hasSelection() ?? false) === "copy") {
+                        model.copySelection();
+                        terminal.clearSelection();
+                    } else {
+                        model.termRef.current?.pasteHandler();
+                    }
+                },
+                onDouble: showTermMenu,
+            }),
+        [model, showTermMenu]
+    );
+    React.useEffect(() => () => rightClickGate.dispose(), [rightClickGate]);
     const handleContextMenu = React.useCallback(
         (e: React.MouseEvent<HTMLDivElement>) => {
             e.preventDefault();
             e.stopPropagation();
-            const menuItems = model.getContextMenuItems();
-            ContextMenuModel.getInstance().showContextMenu(menuItems, e);
+            if (rightClickPaste) {
+                rightClickGate.click(e);
+            } else {
+                showTermMenu(e);
+            }
         },
-        [model]
+        [rightClickPaste, rightClickGate, showTermMenu]
     );
 
     return (

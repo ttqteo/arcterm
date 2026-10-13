@@ -65,6 +65,9 @@
         "term:copyonselect": {
           "type": "boolean"
         },
+        "term:rightclickpaste": {
+          "type": "boolean"
+        },
         "term:allowbracketedpaste": {
           "type": "boolean"
         },
