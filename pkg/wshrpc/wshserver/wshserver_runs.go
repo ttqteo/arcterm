@@ -47,6 +47,10 @@ const ErrWorkerReportRequired = "a task worker completes with --report <file>"
 // can't hold the response past the caller's client timeout. A var so tests can run it inline.
 var sealAsync = func(fn func()) { go fn() }
 
+// stopStageSession stops a finished plan reviewer's or final verifier's worker off the handler's goroutine:
+// its process is the caller of the complete being handled. A var so tests see what was stopped.
+var stopStageSession = func(run waveobj.Run) { go stopRunWorkers(context.Background(), &run) }
+
 // landRun is the land a completed run gets. A var so a test can read what it was asked for.
 var landRun = orchestrate.LandRun
 
@@ -879,6 +883,11 @@ func advanceRun(ctx context.Context, data wshrpc.CommandAdvanceRunData) (sealDue
 			// the transition is durable; the tick it pokes can merge, run Setup and spawn, which outlasts the
 			// child's RPC budget and reads to the child as a failed complete (run 28caa81f's t-4)
 			scheduleDag(grp.OID)
+		}
+		// a stage session completes right after its verdict, then idles at its prompt in the landing tree,
+		// which no lane cleanup reaps: without this it lives until the app quits
+		if run.StageRole != "" {
+			stopStageSession(*run)
 		}
 	}
 	// continuity (sub-project E): on entering a rest state (awaiting-review | blocked | done), write the

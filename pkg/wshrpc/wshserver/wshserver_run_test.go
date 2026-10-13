@@ -872,3 +872,39 @@ func TestRunLifecycleEventsAppended(t *testing.T) {
 		t.Fatalf("events %v:\n want %v", got, want)
 	}
 }
+
+// A plan reviewer or final verifier idles at its prompt after its verdict, in the landing tree no lane cleanup
+// reaps, so its own complete is what stops it. A run that is not a stage session keeps its worker.
+func TestCompleteStopsOnlyAStageSession(t *testing.T) {
+	ctx := context.Background()
+	ch, err := wstore.CreateChannel(ctx, "stage-stop", t.TempDir())
+	if err != nil {
+		t.Fatalf("CreateChannel: %v", err)
+	}
+	stage := jarvis.NewRun("review the plan", "ws-1", ch.ProjectPath, nil, jarvis.RunMode_Quick, jarvis.QuickPlaybook(), 1)
+	stage.StageRole = jarvis.UsageRole_PlanReviewer
+	plain := jarvis.NewRun("finish it", "ws-1", ch.ProjectPath, nil, jarvis.RunMode_Quick, jarvis.QuickPlaybook(), 1)
+	for _, r := range []waveobj.Run{stage, plain} {
+		if err := wstore.AppendRun(ctx, ch.OID, r); err != nil {
+			t.Fatalf("AppendRun: %v", err)
+		}
+	}
+	oldSeal := sealAsync
+	sealAsync = func(func()) {}
+	t.Cleanup(func() { sealAsync = oldSeal })
+	var stopped []string
+	oldStop := stopStageSession
+	stopStageSession = func(run waveobj.Run) { stopped = append(stopped, run.ID) }
+	t.Cleanup(func() { stopStageSession = oldStop })
+
+	for _, id := range []string{stage.ID, plain.ID} {
+		if err := (&WshServer{}).AdvanceRunCommand(ctx, wshrpc.CommandAdvanceRunData{
+			ChannelId: ch.OID, RunId: id, PhaseIdx: 0, Action: jarvis.RunAction_Complete,
+		}); err != nil {
+			t.Fatalf("AdvanceRunCommand %s: %v", id, err)
+		}
+	}
+	if !reflect.DeepEqual(stopped, []string{stage.ID}) {
+		t.Fatalf("stopped %v, want only the stage session %s", stopped, stage.ID)
+	}
+}
