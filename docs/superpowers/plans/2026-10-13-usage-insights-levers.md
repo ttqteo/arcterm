@@ -72,7 +72,8 @@ it("lists the class and model tables whenever Claude buckets exist", () => {
 ```
 
 Check the `UsageBucket` field names against `frontend/types/gotypes.d.ts` and the class label against
-`CLASS_LABEL` in `usagestats.ts` before running; adjust the literals to match, not the code.
+`CLASS_LABEL` in `usagestats.ts` before running; adjust the literals to match, not the code. The call has no `levers`
+yet; Task 5 makes that field required and adds `levers: []` to this call.
 
 **Step 2: Run it.** `npx vitest run frontend/app/view/agents/usagedigest.test.ts`. Expected: PASS. If it fails, the
 bug is in `buildUsageDigest` or `aggregateBuckets`: find it with superpowers:systematic-debugging, fix it, and keep the
@@ -246,8 +247,23 @@ type Request struct {
 `SpendUsd float64 \`json:"spendusd,omitempty"\``. `Markdown` stays: it is what a result saved before this change holds,
 and a new result leaves it "".
 
-**Step 2: Write the failing tests** in `usageinsights_test.go` for a new `parseReply(reply string, levers []Lever)
-(reply, error)`, using the existing `run` seam style for `Analyze`:
+**Step 2: Write the failing tests** in `usageinsights_test.go` for a new `parseReply(text string, levers []Lever)
+(replyJSON, error)` (the parameter is `text` and the type `replyJSON`, so neither shadows the other), using the
+existing `run` seam style for `Analyze`.
+
+First update the existing tests for the new shape:
+
+- `Analyze` now takes a `Request`: rewrite every `Analyze(ctx, dir, 7, "d", lang, fixedNow)` call as
+  `Analyze(ctx, dir, Request{WindowDays: 7, Digest: "d", Lang: lang}, fixedNow)`.
+- The stubs that reply in markdown would now fail with `ErrFormat`: `TestAnalyzeSavesAndLoads`,
+  `TestAnalyzeRecordsItsLanguage` and `TestAnalyzeBusy` reply with a minimal JSON answer instead
+  (`{"headline":"A","levers":[],"opusclear":[],"tips":[]}`), and `TestAnalyzeSavesAndLoads` expects `Headline: "A"`
+  and an empty `Markdown`. `TestAnalyzeEmptyReplyKeepsSaved` and `TestAnalyzeRunErrorKeepsSaved` stay as they are.
+- `Insights` now holds slices, so `got != want`, `loaded != want` and `got != (Insights{})` no longer compile: compare
+  with `reflect.DeepEqual`. The same applies to `*got != (wshrpc.UsageInsights{...})` in
+  `pkg/wshrpc/wshserver/wshserver_usageinsights_test.go` (`reflect` is already imported there).
+
+Then the new cases:
 
 - bare JSON parses; the same JSON inside a ```json fence parses; JSON after one line of preamble parses;
 - a lever with an unknown `key` is dropped; a `tabs` ref not among any lever's sessions is dropped;
@@ -267,7 +283,7 @@ Run `go test ./pkg/usageinsights` — expected FAIL (undefined).
 - `parseReply`: take the text from the first `{` to the last `}` (this covers a fence and a preamble), unmarshal into
 
   ```go
-  type reply struct {
+  type replyJSON struct {
   	Headline string `json:"headline"`
   	Levers   []struct {
   		Key  string   `json:"key"`
@@ -301,7 +317,8 @@ Run `go test ./pkg/usageinsights` — expected FAIL (undefined).
 - Wire: `UsageLeverSession`, `UsageLever` mirror the Go types with the same json tags; `CommandAnalyzeUsageData`
   gains `Levers []UsageLever \`json:"levers,omitempty"\`` and `SpendUsd float64 \`json:"spendusd,omitempty"\``;
   `UsageInsights` gains the five new fields. `AnalyzeUsageCommand` builds a `usageinsights.Request`;
-  `usageInsightsToWire` copies everything. Update `wshserver_usageinsights_test.go` for the new signature.
+  `usageInsightsToWire` copies everything. Update `wshserver_usageinsights_test.go` for the new signature and the
+`reflect.DeepEqual` comparison above.
 
 **Step 4: Run.** `go test ./pkg/usageinsights ./pkg/wshrpc/wshserver -run 'Insights|Analyze|Usage'` — expected PASS.
 Then `task generate`.
@@ -411,7 +428,8 @@ model … No React, no Wave runtime imports"), pricing through `priceFor` (`usag
 
 **Step 1: Tests first.**
 
-- `usagedigest.test.ts`: `buildUsageDigest` takes `levers: UsageLever[]`. The top sessions table's first column is
+- `usagedigest.test.ts`: `buildUsageDigest` takes `levers: UsageLever[]`, required (no default). Every existing
+  call passes it: `levers: []` in the `digestOf` helper and in Task 1's "lists the class and model tables" case. The top sessions table's first column is
   `ref` with `S1`, `S2`…; a `## Levers (what each fix could recover at most)` section has one `### <key>: at most
   $X (Y% of spend)` heading per lever and a table `ref | title | project | saves` of its five heaviest sessions; the
   `opus` lever's table lists every candidate (cap 40) with `models | spend | saves on Sonnet`. No levers →
@@ -476,15 +494,24 @@ An unknown or missing key means the first lever.
   `hidden @3xl:flex flex-1 min-w-0 flex-col gap-3 border-l border-edge-mid pl-7` with `data-usage-lever-detail={key}`:
   the selected lever's title (`REGION_LABEL text-muted`) and evidence, the fix (13px leading-[1.6] ink-hi
   max-w-[64ch]), the tab chips; or for tips the title, a bordered "not from your numbers" tag and the tips as a list.
-- **Narrow**: the same rows; under the selected row (`@3xl:hidden`) its chips and fix, indented to the title.
+- **Narrow** (below `@3xl`, as `Narrow.dc.html` draws it): one column, the detail column hidden. Each option is
+  `flex flex-col gap-[7px] py-2.5 border-b border-edge-mid`: a first line of rank, then the title with its evidence
+  inline after it (12px `text-muted`, regular weight; the same evidence string the wide detail shows), then the value;
+  and the bar on its own line under that one, full width, indented 22px to the title (`@3xl:hidden`; the wide bar
+  beside the title is `hidden @3xl:block`). Under the selected option only (`@3xl:hidden`, indented 22px): its chips
+  first, then its fix (12.5px leading-[1.55] `text-secondary`). The other options stay one line plus the bar. The
+  General tips option keeps its lightbulb, label and "not from your numbers"; when it is selected, its tips open under
+  it the same way, as the same list the wide detail shows, with no chips. Mark the narrow block under a row with
+  `data-usage-lever-inline={key}` and the narrow bar with `data-usage-lever-bar` so the scenario can find them.
 - **Chips**: `<button data-usage-lever-tab={session.id} title="Open this tab">` with the session title,
   `h-6 rounded-md border border-edge-mid bg-surface px-[9px] text-[11.5px] text-secondary hover:border-edge-strong`;
   then "+N" (11.5px muted) when `more > 0`. Click → `onOpenSession(session.id)`.
-- **Keys**: `onKeyDown` on the listbox: ArrowDown / ArrowUp move the selection (tips last), move focus to the newly
-  selected option, `preventDefault()` and `stopPropagation()` so the surface's own bindings do not also run. Check
-  `buildUsageBindings` in `frontend/app/store/keybindings/bindings.ts` and the session table's cursor keys: if the
-  bindings listen in the capture phase, stopping propagation is not enough; then skip the global binding while
-  `document.activeElement` is inside `[data-usage-levers]` instead.
+- **Keys**: the listbox carries `data-owns-keys`. The keybinding dispatcher runs in the window's capture phase
+  (`bindings.ts:423`), and on the Usage surface `list:next` / `list:prev` take ArrowDown / ArrowUp
+  (`useSurfaceListNav`), so `stopPropagation` cannot keep them out; `ownsKeys` (`dispatcher.ts:71`) makes focus inside
+  a `[data-owns-keys]` region count as editable, and the surface's navigation bindings stand down there. Then
+  `onKeyDown` on the listbox: ArrowDown / ArrowUp move the selection (tips last), move focus to the newly selected
+  option, and `preventDefault()`. Do not edit `bindings.ts` or the dispatcher.
 - Footer: "Levers overlap, so they don't add up." (11px muted).
 - No motion beyond what `motiontokens.ts` offers; none is needed here.
 
@@ -496,14 +523,19 @@ skeleton shape (`SkeletonLine`s: a 56% headline line, five rows on the left, thr
 `@3xl`).
 
 **Step 4: Check.** `task check:ts` (exit 0); `npx vitest run frontend/app/view/agents/`;
-`npx prettier --check` and `npx eslint` on the touched files.
+`npx prettier --check` and `npx eslint` on the touched files. The card's rendered states are proven by Task 7's
+`usage-insights-levers` scenario, which the run's Final executes: step 1 the wide card with a lever selected and the
+arrow keys, step 2 General tips, step 3 a chip opening its tab, step 4 the narrow card (bar under the title,
+evidence, the selected row's chips and fix, tips opened under their row), step 5 the running skeleton, step 6 the
+VI result. Build every element those steps name (`data-usage-levers`, `data-usage-lever`, `data-usage-lever-detail`,
+`data-usage-lever-tab`, `data-usage-lever-inline`, `data-usage-lever-bar`).
 
 **Step 5: Commit** the files by name:
 `git commit -m "feat(usage): Insights shows ranked levers with a detail column and general tips" -- <files>`
 
 ---
 
-### Task 7: CDP scenario, changelog, hand check
+### Task 7: CDP scenario, changelog, live note
 
 **Depends on:** Task 6
 **Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/open-issues.md`
@@ -522,9 +554,20 @@ analyzedts: now, windowdays: 7, model: "sonnet", lang: "en" }` built from those 
 2. **wide, general tips**: click `[data-usage-lever="tips"]`; the detail shows "not from your numbers" and three items.
 3. **chip opens the tab**: click a `[data-usage-lever-tab]` of an ended session; the Agent surface shows its
    transcript (assert the way `usage-insights` checks a By session row opening).
-4. **narrow**: viewport 900×950; the detail column is hidden and the selected row shows its fix under it.
+4. **narrow**: viewport 900×950; `[data-usage-lever-detail]` is not visible. For the first option: its evidence text
+   is inside the option, its `[data-usage-lever-bar]` is visible and its top is below the title's bottom (bar under
+   the title, not beside it), and `[data-usage-lever-inline]` under it shows its fix and chips; the second option has
+   no inline block. Click `[data-usage-lever="tips"]`: its inline block shows the three tips and no chip, and the
+   first option's inline block is gone. Shot each.
 5. **running**: set the fixture's `analyze` to `"hang"`, press `a`; the running skeleton has the two-column shape.
-6. **the digest the surface sent**: with `analyze: "ok"` and seeded buckets, press `a`, wait for `done`, read
+6. **VI words, English labels**: set the fixture's `analyze` to `"ok"` and `result` to a levers result with
+   `lang: "vi"` whose headline, fixes and tips are Vietnamese (built from the same refs as `saved`). Click the VI
+   button inside `[data-usage-insights-lang]` (a language change re-runs the analysis, `relangRuns`; press `a` only if
+   no run started), wait for `done`. Assert the headline is the Vietnamese one
+   and differs from step 1's, the selected lever's fix is the Vietnamese one, and the labels stay English: the option
+   titles ("Long context", …), "Recoverable", "General tips" and the footer "Levers overlap, so they don't add up."
+   Shot. Restore EN in teardown.
+7. **the digest the surface sent**: with `analyze: "ok"` and seeded buckets, press `a`, wait for `done`, read
    `lastdigest` from the fixture: it holds a non-empty "Tokens and spend by class" table, a non-empty "Spend by model"
    table and a "## Levers" section (Task 1's check, end to end).
 
@@ -543,8 +586,10 @@ which must still render).
 
 Stage only that hunk if the file has other unstaged edits (`git add -p CHANGELOG.md`), then a bare `git commit`.
 
-**Step 3: Hand check.** Add to `docs/open-issues.md` under "0 · Waiting on a hand check":
-`- [ ] (arcterm) Usage → Insights levers: Re-analyze in the installed app; the levers' sizes look plausible against the By session table, chips open their tabs, EN/VI changes the words only.`
+**Step 3: Live note.** The scenario covers the card, the chips and EN/VI. What no fixture can show is a real
+Claude answer on real numbers, so add to `docs/open-issues.md` under "0 · Waiting on a hand check" (a note for after
+the run, not part of its acceptance):
+`- [ ] (arcterm) Usage → Insights levers: Re-analyze once in the installed app; Claude's reply parses and the levers' sizes look plausible against the By session table.`
 
 **Step 4: Commit** `scripts/cdp/scenarios.mjs` and `docs/open-issues.md` by path (the CHANGELOG hunk as above):
-`git commit -m "test(usage): usage-insights-levers scenario; changelog and hand check" -- scripts/cdp/scenarios.mjs docs/open-issues.md`
+`git commit -m "test(usage): usage-insights-levers scenario; changelog and live note" -- scripts/cdp/scenarios.mjs docs/open-issues.md`
