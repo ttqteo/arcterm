@@ -8,6 +8,7 @@
 import { lstatSync, mkdirSync, realpathSync, rmdirSync, rmSync, symlinkSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const SHARE_DIRS = ["node_modules", "src-tauri/target", "dist/bin"];
 
@@ -32,14 +33,8 @@ function isJunction(p) {
     }
 }
 
-export function prepare(cwd) {
-    // resolve to the git toplevel so running from a subdir (e.g. frontend/) still junctions at the worktree root
-    const wtPath = git(["rev-parse", "--show-toplevel"], cwd);
-    const main = mainCheckout(wtPath);
-    if (resolve(main) === resolve(wtPath)) {
-        console.log("this is the main checkout; nothing to junction. run inside a worktree.");
-        return;
-    }
+// junction each of SHARE_DIRS in wtPath to the main checkout's copy; scripts/release-build.mjs uses it too
+export function linkShared(wtPath, main) {
     for (const rel of SHARE_DIRS) {
         const wtDir = join(wtPath, rel);
         const mainDir = join(main, rel);
@@ -64,13 +59,24 @@ export function prepare(cwd) {
         symlinkSync(mainDir, wtDir, "junction");
         console.log(`${rel}: junctioned -> ${mainDir}`);
     }
+}
+
+export function prepare(cwd) {
+    // resolve to the git toplevel so running from a subdir (e.g. frontend/) still junctions at the worktree root
+    const wtPath = git(["rev-parse", "--show-toplevel"], cwd);
+    const main = mainCheckout(wtPath);
+    if (resolve(main) === resolve(wtPath)) {
+        console.log("this is the main checkout; nothing to junction. run inside a worktree.");
+        return;
+    }
+    linkShared(wtPath, main);
     console.log("run `task dev`; if the main dev app is already on :9222, use");
     console.log('  WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9223" WEBVIEW2_USER_DATA_FOLDER="$TEMP/wave-wt-profile" task dev');
     console.log("then `CDP_PORT=9223 task verify:ui`.");
 }
 
-export function cleanup(wtPath) {
-    const main = mainCheckout(wtPath);    // junction links first: removing them is what keeps the main checkout's dirs alive
+// remove the SHARE_DIRS junction links in wtPath, never a real directory
+export function unlinkShared(wtPath) {
     for (const rel of SHARE_DIRS) {
         const d = join(wtPath, rel);
         if (!existsSync(d)) continue;
@@ -89,6 +95,12 @@ export function cleanup(wtPath) {
             console.warn(`${rel}: real directory, not removing`);
         }
     }
+}
+
+export function cleanup(wtPath) {
+    const main = mainCheckout(wtPath);
+    // junction links first: removing them is what keeps the main checkout's dirs alive
+    unlinkShared(wtPath);
     if (resolve(main) === resolve(wtPath)) return;
     const branch = git(["branch", "--show-current"], wtPath);
     if (!branch) {
@@ -114,13 +126,16 @@ export function cleanup(wtPath) {
     }
 }
 
-const [sub, arg] = process.argv.slice(2);
-if (sub === "prepare") {
-    prepare(process.cwd());
-} else if (sub === "cleanup") {
-    // no path arg: resolve cwd to its git toplevel (cleanup() needs the worktree root, not a subdir)
-    cleanup(arg ? resolve(arg) : git(["rev-parse", "--show-toplevel"], process.cwd()));
-} else {
-    console.error("usage: node scripts/worktree-junctions.mjs prepare|cleanup [worktree-path]");
-    process.exitCode = 2;
+// the CLI runs only when this file is the entry point, not when release-build.mjs imports it
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+    const [sub, arg] = process.argv.slice(2);
+    if (sub === "prepare") {
+        prepare(process.cwd());
+    } else if (sub === "cleanup") {
+        // no path arg: resolve cwd to its git toplevel (cleanup() needs the worktree root, not a subdir)
+        cleanup(arg ? resolve(arg) : git(["rev-parse", "--show-toplevel"], process.cwd()));
+    } else {
+        console.error("usage: node scripts/worktree-junctions.mjs prepare|cleanup [worktree-path]");
+        process.exitCode = 2;
+    }
 }

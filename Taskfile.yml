@@ -50,20 +50,17 @@ tasks:
         cmd: node scripts/sync-tauri-version.mjs --check
 
     tauri:build:
-        desc: "Production build: optionally bump the version, sync it everywhere, build the backend, and bundle the installer. BUMP=none|patch|minor|major (default none) controls the bump — pass one for a release."
+        desc: "Production build of a commit, not the working tree (scripts/release-build.mjs): checks it out into .worktrees/release-build so edits other agents make meanwhile stay out, builds there, and copies the installer to releases/ named with the commit. BUMP=none|patch|minor|major (default none) bumps first — pass one for a release. FROM=<commit> (default HEAD), or FROM=tree to build the checkout with its uncommitted edits."
         aliases:
             - build:app
-        cmds:
-            # The bump must run in its own `task` process. Task resolves the global VERSION var once
-            # per invocation, so bumping and building in one run would stamp the Go binaries and the
-            # wsh-<version> filenames with the pre-bump version.
-            - node version.cjs {{.BUMP | default "none"}}
-            # a nested `task:` call would reuse this process and its stale VERSION, so shell out.
-            # That makes it a CLI invocation, which is why the callee cannot be marked internal.
-            - task tauri:build:post-bump
+        # the script runs the post-bump half as its own `task` process: Task resolves the global VERSION var once
+        # per invocation, so bumping and building in one run would stamp the Go binaries and the wsh-<version>
+        # filenames with the pre-bump version. That makes it a CLI invocation, which is why the callee cannot be
+        # marked internal.
+        cmd: node scripts/release-build.mjs --bump {{.BUMP | default "none"}} --from {{.FROM | default "HEAD"}}
 
     tauri:build:post-bump:
-        desc: The post-bump half of tauri:build. Call tauri:build instead — on its own this builds whatever version package.json currently holds, without bumping.
+        desc: The build half of tauri:build, run in the directory it builds. Call tauri:build instead — on its own this builds the working tree at whatever version package.json holds, and copies nothing to releases/.
         cmds:
             - task: tauri:sync-version
             - task: check:version
@@ -73,11 +70,6 @@ tasks:
             # CI=true makes the bundler pass --skip-jenkins to bundle_dmg.sh, which skips the AppleScript that opens
             # the new DMG in a Finder window to lay out its icons. The DMG keeps the app and the Applications link.
             - cmd: CI=true cargo tauri build
-              platforms: [darwin]
-            # a copy of the installer where it is easy to find, beside the repo's top level; releases/ is gitignored
-            - cmd: mkdir -p releases && cp "src-tauri/target/release/bundle/nsis/arcterm_{{.VERSION}}_x64-setup.exe" releases/
-              platforms: [windows]
-            - cmd: mkdir -p releases && cp src-tauri/target/release/bundle/dmg/*.dmg releases/
               platforms: [darwin]
 
     install:
