@@ -347,7 +347,7 @@ func TestCompactTokens(t *testing.T) {
 func TestDagRulesTextOnlyForTheLead(t *testing.T) {
 	st := &wshrpc.CommandDagStatusRtnData{Group: &waveobj.TaskGroup{RunID: "lead-run", PlanPath: "C:/p/plan.md", SpecPath: "C:/p/spec.md", EffortOID: "eff-1"}}
 	lead := &wshrpc.CommandJarvisCtxRtnData{ChannelId: "ch", RunId: "lead-run", DagOID: "dag-1"}
-	if got, want := dagRulesText(lead, st, ""), jarvis.OrchestrationRules("lead-run", "C:/p/spec.md", "C:/p/plan.md", "eff-1"); got != want {
+	if got, want := dagRulesText(lead, st, ""), jarvis.OrchestrationRules("lead-run", "C:/p/spec.md", "C:/p/plan.md", "eff-1", false); got != want {
 		t.Fatalf("lead rules = %q, want %q", got, want)
 	}
 	// a dag child resolves to its own run, which the dag does not name
@@ -365,9 +365,18 @@ func TestDagRulesTextNamesTheLeadsOwnDocs(t *testing.T) {
 	tree := t.TempDir()
 	st := &wshrpc.CommandDagStatusRtnData{Group: &waveobj.TaskGroup{RunID: "lead-run", PlanPath: "docs/plans/p.md", SpecPath: "docs/specs/s.md"}}
 	lead := &wshrpc.CommandJarvisCtxRtnData{ChannelId: "ch", RunId: "lead-run", DagOID: "dag-1"}
-	want := jarvis.OrchestrationRules("lead-run", filepath.Join(tree, "docs/specs/s.md"), filepath.Join(tree, "docs/plans/p.md"), "")
+	want := jarvis.OrchestrationRules("lead-run", filepath.Join(tree, "docs/specs/s.md"), filepath.Join(tree, "docs/plans/p.md"), "", false)
 	if got := dagRulesText(lead, st, tree); got != want {
 		t.Fatalf("lead rules = %q, want %q", got, want)
+	}
+}
+
+// the rules come back after every compaction, so they follow the group's Approvals, which a mid-run switch changes
+func TestDagRulesTextFollowsTheGroupsApprovals(t *testing.T) {
+	st := &wshrpc.CommandDagStatusRtnData{Group: &waveobj.TaskGroup{RunID: "lead-run", PlanPath: "C:/p/plan.md", Autonomous: true}}
+	lead := &wshrpc.CommandJarvisCtxRtnData{ChannelId: "ch", RunId: "lead-run", DagOID: "dag-1"}
+	if got, want := dagRulesText(lead, st, ""), jarvis.OrchestrationRules("lead-run", "", "C:/p/plan.md", "", true); got != want {
+		t.Fatalf("autonomous group's rules = %q, want %q", got, want)
 	}
 }
 

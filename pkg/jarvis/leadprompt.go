@@ -60,28 +60,70 @@ func QuotedNotesRule(approveLabel string) string {
 	return fmt.Sprintf("The human can quote passages of the document with a note on each, so an answer that starts with `%s` is an approval, and its `> ` quoted notes are applied before proceeding; any other text is a change request.", approveLabel)
 }
 
+// AutonomousRules is the one text an autonomous run's lead works by: the launch prompt, the orchestration
+// rules and the mid-run ON wake all carry it. One line, so it can ride in a wake. It names no ask tool and no
+// review header, since an autonomous launch prompt must not invite either.
+const AutonomousRules = "Approvals for this run are autonomous: nobody is at the cockpit. Wherever these rules say to put something to the human or ask the human, take the option you would recommend instead, and record the call and why in your report; never raise a question for the human, since nobody is there to answer it. " +
+	"Plan review failed after the last round, or its reviewer was lost: carry each finding into the pending tasks it affects with `wsh jarvis dag amend <task> \"<note>\"`, then run `wsh jarvis dag planreview accept \"autonomous run\"`; a finding no pending task can take is an open issue in your report. " +
+	"Spec changes while you revise the plan: make them and record them in your report. " +
+	"`wsh jarvis dag forward` is refused, so decide yourself (answer, retry, escalate, skip or send back) and record why. " +
+	"Final stage failed after the last round: run the plain `wsh jarvis complete --report <file>`, which holds the land, never with `--force-land`, and say in the report that the land is held and why."
+
+// AutonomousOnAnswer answers the lead's own waiting question when the run turns autonomous. It is typed at
+// 60ms per rune, so it stays one short line.
+const AutonomousOnAnswer = "The human is away and this run is now autonomous: decide this as you would recommend, record the call in your report, and stop asking."
+
+// AutonomousOnWake tells a running lead its run turned autonomous. A wake is typed as one line.
+const AutonomousOnWake = "wake: approvals for this run are now autonomous and the human is away. " + AutonomousRules
+
+// AutonomousOffWake tells a running lead its run is back to asking the human.
+const AutonomousOffWake = "wake: approvals for this run are back to Ask me: from your next decision, put the decisions these rules give the human to the human again; calls you already made stand."
+
+// writePlanAndSubmit is the architectural path's plan step, shared by the asking and the autonomous launch.
+const writePlanAndSubmit = "write the plan with superpowers:writing-plans in the plan format below, except its complete-code rule: a task carries the design decisions it makes, the files it owns, any interface or signature another task relies on, and its acceptance criteria with the focused tests that prove them, but not the implementation, which its worker writes. Break it up by what can proceed independently: the engine runs those tasks at the same time, and a plan that is one serial chain gets none of that. Don't commit the spec or plan yourself (the engine commits the spec and plan to the run's branch at submit, and they land with the run) and don't execute the plan: run `wsh jarvis dag submit --plan <plan path> --spec <spec path>` with absolute paths and stop."
+
 // writeLaunchPrompt is an engine lead's prompt for a goal run (spec §2). The lead brainstorms with the
 // human and the skill's classification picks the path; only an architectural goal reaches the engine,
-// as a plan file the engine parses.
-func writeLaunchPrompt(b *strings.Builder, goal, runtime string) {
+// as a plan file the engine parses. An autonomous lead classifies and decides alone.
+func writeLaunchPrompt(b *strings.Builder, goal, runtime string, autonomous bool) {
 	fmt.Fprintf(b, "Goal: %s\n", goal)
-	fmt.Fprintf(b, "Work this goal with the superpowers:brainstorming skill; the human is at this terminal. Put every question and every approval through %s, never plain text, which does not reach the cockpit.\n", AskTool(runtime))
-	b.WriteString("State the path you take (spike, bounded or architectural) and proceed; ask about the path only when it is genuinely unclear. Any approval of something longer than its question carries the file's absolute path on its first line.\n")
-	// the report goes in with complete: the seal runs then, and with none it takes the last line written before it
-	b.WriteString("- spike: write the answer as your final report with your file-writing tool to a file in the system temp directory, not in the repository, then `wsh jarvis complete --report <that file>`.\n")
-	b.WriteString("- bounded: after the human's yes, implement it here, get the tests passing, commit, write your final report (what you did, and what you could not verify and why) to a temp file the same way, then `wsh jarvis complete --commit $(git rev-parse HEAD) --report <that file>`. A goal that needs a plan worked task by task, a subagent per task, is not bounded: it is architectural, and the engine runs it.\n")
-	fmt.Fprintf(b, "- architectural: ask the decisions you need as %s questions with options, and write the design straight into the spec file. Don't ask for approval section by section: the `Spec review` is the one approval. ", AskTool(runtime))
-	b.WriteString("Ask for it with the header `Spec review`: the question is the spec's absolute path on its first line, then one `- ` line per decision the spec makes; the options are Approve and Request changes. " + QuotedNotesRule("Approve") + " When the goal names a mockup or design canvas that settles the design, write no spec file: the `Spec review` question is the mockup's absolute path on its first line, then one `- ` line per decision you make beyond it; put its absolute path on the plan's `**Prototype:**` line, and submit without `--spec`. After the approval, write the plan with superpowers:writing-plans in the plan format below, except its complete-code rule: a task carries the design decisions it makes, the files it owns, any interface or signature another task relies on, and its acceptance criteria with the focused tests that prove them, but not the implementation, which its worker writes. Break it up by what can proceed independently: the engine runs those tasks at the same time, and a plan that is one serial chain gets none of that. Don't commit the spec or plan yourself (the engine commits the spec and plan to the run's branch at submit, and they land with the run) and don't execute the plan: run `wsh jarvis dag submit --plan <plan path> --spec <spec path>` with absolute paths and stop. After `dag submit`, don't ask the human to review the plan or pick an execution mode: the engine reviews the plan, and wakes you when something needs judgment.\n")
+	if autonomous {
+		writeAutonomousPaths(b)
+	} else {
+		writeAskingPaths(b, runtime)
+	}
 	// the bounded path commits here, before any dag exists to hand it OrchestrationRules
 	b.WriteString(NoAttributionRule + "\n")
 	b.WriteString(SubagentCapRule + "\n\n")
 	b.WriteString(PlanFormat)
 }
 
+// the report goes in with complete: the seal runs then, and with none it takes the last line written before it
+const spikePath = "- spike: write the answer as your final report with your file-writing tool to a file in the system temp directory, not in the repository, then `wsh jarvis complete --report <that file>`.\n"
+
+func writeAutonomousPaths(b *strings.Builder) {
+	b.WriteString("Work this goal on your own: nobody is at this terminal. Ask no questions and wait for no yes; make each call the human would otherwise make as you would recommend it.\n")
+	b.WriteString("Classify the path yourself (spike, bounded or architectural), state it, and proceed.\n")
+	b.WriteString(spikePath)
+	b.WriteString("- bounded: implement it here, get the tests passing, commit, write your final report (what you did, the calls you made and why, and what you could not verify and why) to a temp file the same way, then `wsh jarvis complete --commit $(git rev-parse HEAD) --report <that file>`. A goal that needs a plan worked task by task, a subagent per task, is not bounded: it is architectural, and the engine runs it.\n")
+	b.WriteString("- architectural: make the design decisions yourself and write the design straight into the spec file, with each decision and why. When the goal names a mockup or design canvas that settles the design, write no spec file: write the decisions you make beyond it, with why, into the plan's header, put its absolute path on the plan's `**Prototype:**` line, and submit without `--spec`. Then " + writePlanAndSubmit + " The engine reviews the plan after `dag submit`, and wakes you when something needs judgment.\n")
+	b.WriteString(AutonomousRules + "\n")
+}
+
+func writeAskingPaths(b *strings.Builder, runtime string) {
+	fmt.Fprintf(b, "Work this goal with the superpowers:brainstorming skill; the human is at this terminal. Put every question and every approval through %s, never plain text, which does not reach the cockpit.\n", AskTool(runtime))
+	b.WriteString("State the path you take (spike, bounded or architectural) and proceed; ask about the path only when it is genuinely unclear. Any approval of something longer than its question carries the file's absolute path on its first line.\n")
+	b.WriteString(spikePath)
+	b.WriteString("- bounded: after the human's yes, implement it here, get the tests passing, commit, write your final report (what you did, and what you could not verify and why) to a temp file the same way, then `wsh jarvis complete --commit $(git rev-parse HEAD) --report <that file>`. A goal that needs a plan worked task by task, a subagent per task, is not bounded: it is architectural, and the engine runs it.\n")
+	fmt.Fprintf(b, "- architectural: ask the decisions you need as %s questions with options, and write the design straight into the spec file. Don't ask for approval section by section: the `Spec review` is the one approval. ", AskTool(runtime))
+	b.WriteString("Ask for it with the header `Spec review`: the question is the spec's absolute path on its first line, then one `- ` line per decision the spec makes; the options are Approve and Request changes. " + QuotedNotesRule("Approve") + " When the goal names a mockup or design canvas that settles the design, write no spec file: the `Spec review` question is the mockup's absolute path on its first line, then one `- ` line per decision you make beyond it; put its absolute path on the plan's `**Prototype:**` line, and submit without `--spec`. After the approval, " + writePlanAndSubmit + " After `dag submit`, don't ask the human to review the plan or pick an execution mode: the engine reviews the plan, and wakes you when something needs judgment.\n")
+}
+
 // OrchestrationRules is what a lead holding a dag works by (spec §2). A compaction drops the launch
 // prompt, so these come back after every compaction of a lead session. specPath and planPath are empty
-// for a dag submitted without files; effortOID is empty for a run with no effort.
-func OrchestrationRules(runId, specPath, planPath, effortOID string) string {
+// for a dag submitted without files; effortOID is empty for a run with no effort. autonomous comes from the
+// group, so the rules a compaction brings back follow a mid-run switch.
+func OrchestrationRules(runId, specPath, planPath, effortOID string, autonomous bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are the lead for run %s.", runId)
 	if specPath != "" {
@@ -109,18 +151,21 @@ func OrchestrationRules(runId, specPath, planPath, effortOID string) string {
 	fmt.Fprintf(&b, "End each commit you make for this run with the line `Arc-Run: %s`.\n", runId)
 	b.WriteString("Never re-plan and never do a task's own work. " + NoAttributionRule + "\n")
 	b.WriteString(SubagentCapRule)
+	if autonomous {
+		b.WriteString("\n" + AutonomousRules)
+	}
 	return b.String()
 }
 
 // PlanLeadPrompt is the launch prompt of a lead started after its plan was submitted (spec §1, G5). There is
 // no goal to brainstorm, so it starts from the orchestration rules, and the wake that needed a lead is its
 // first message: one turn, with nothing typed after it.
-func PlanLeadPrompt(principles waveobj.PrincipleList, runId, specPath, planPath, effortOID, wake string) string {
+func PlanLeadPrompt(principles waveobj.PrincipleList, runId, specPath, planPath, effortOID string, autonomous bool, wake string) string {
 	var b strings.Builder
 	if rendered := RenderPrinciples(principles); rendered != "" {
 		fmt.Fprintf(&b, "Work by these principles:\n%s\n%s\n\n", rendered, ContractWinsLine)
 	}
-	b.WriteString(OrchestrationRules(runId, specPath, planPath, effortOID))
+	b.WriteString(OrchestrationRules(runId, specPath, planPath, effortOID, autonomous))
 	b.WriteString("\n\n")
 	b.WriteString(wake)
 	return b.String()

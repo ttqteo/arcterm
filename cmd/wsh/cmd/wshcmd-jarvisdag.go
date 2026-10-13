@@ -1240,7 +1240,7 @@ func dagRulesText(ctx *wshrpc.CommandJarvisCtxRtnData, st *wshrpc.CommandDagStat
 		return ""
 	}
 	g := st.Group
-	return jarvis.OrchestrationRules(ctx.RunId, orchestrate.DocPath(g, tree, g.SpecPath), orchestrate.DocPath(g, tree, g.PlanPath), g.EffortOID)
+	return jarvis.OrchestrationRules(ctx.RunId, orchestrate.DocPath(g, tree, g.SpecPath), orchestrate.DocPath(g, tree, g.PlanPath), g.EffortOID, g.Autonomous)
 }
 
 // leadTree is the root of the repository tree the caller runs in, which for a lead is its landing tree,
