@@ -55,8 +55,11 @@ func TestScanSessionUsageCountsBigToolResults(t *testing.T) {
 	)
 	sessions := scanSessionRoot(root, 7)
 	n := len(big)
+	// the main turns (a1..a4) never shrink the context, so the first Read (n/4 tokens, written by a2) is read back by
+	// a3 and a4 and the second (2n/4, written by a3) by a4. The Bash result is only written by a4, the unknown one has
+	// no turn after it, and a subagent's results are never counted.
 	want := []SessionBigResults{
-		{Tool: "Read", Count: 2, Chars: 3 * n},
+		{Tool: "Read", Count: 2, Chars: 3 * n, RereadTokens: 2*(n/4) + 2*n/4},
 		{Tool: "Bash", Count: 1, Chars: n},
 		{Tool: "Read", Sub: true, Count: 1, Chars: n},
 		{Tool: "unknown", Count: 1, Chars: n},

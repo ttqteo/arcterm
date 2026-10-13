@@ -52,6 +52,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   "This terminal's folder was removed" over its last screen; **Reopen in `<project>`** opens a terminal at the project
   root, **Close terminal** closes it. `301dae8bc`
 
+**2026-10-13 (Usage → Insights: ranked levers)**
+
+- [ ] (arcterm) Usage → Insights levers: Re-analyze once in the installed app; Claude's reply parses and the levers' sizes look plausible against the By session table.
+
 **2026-10-13 (Spider-Man pet: held strand, crawl art, a grab mid-descent, idle mid-hang)**
 
 - [ ] (arcterm) **Spider-Man hangs under the pointer.** With Spider-Man as Jarvis, press him anywhere and drag: he
@@ -224,6 +228,16 @@ does not, say what you saw and it becomes a bug row under Actionable.
   arcterm, then wheel over that agent: the conversation scrolls. Before, the restored pane sent X10 mouse reports
   Claude ignores (the cache lost `ESC[?1006h`). A pane restored before this fix stays broken until its Claude is
   relaunched. `termmodes.ts`, `termwrap.ts` processAndCacheData.
+
+**2026-10-12 (Run sheet with a long goal)**
+
+- [ ] (arcterm) **A long goal opened with Show more no longer swallows the run sheet.** In Jarvis, open a run whose
+  goal is several paragraphs and click Show more: the top (verb, meter, goal) scrolls on its own within half the
+  sheet, the tasks below still scroll, and the dock at the bottom (with the screenshots button) stays in view.
+  `runsheet.tsx` Reading.
+- [ ] (arcterm) **An earlier Final round's screenshots stay while the next round runs.** On a run whose Final is on
+  round 2 or later and still running (reading says "final: running Verify"), the dock shows **Screenshots · N**, and
+  the Final check row under the tasks reads "N shots · round 1"; both open round 1's shots. `finalshotsmodel.ts`.
 
 **2026-10-12 (Outline with many headings)**
 

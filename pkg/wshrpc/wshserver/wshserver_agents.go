@@ -85,7 +85,7 @@ func sessionUsageToWire(s usagestats.SessionUsage) wshrpc.UsageSession {
 	}
 	var big []wshrpc.UsageBigResults
 	for _, b := range s.BigResults {
-		big = append(big, wshrpc.UsageBigResults{Tool: b.Tool, Sub: b.Sub, Count: b.Count, Chars: b.Chars})
+		big = append(big, wshrpc.UsageBigResults{Tool: b.Tool, Sub: b.Sub, Count: b.Count, Chars: b.Chars, RereadTokens: b.RereadTokens})
 	}
 	return wshrpc.UsageSession{
 		ID: s.ID, Title: s.Title, Project: s.Project, Models: models,
@@ -95,9 +95,36 @@ func sessionUsageToWire(s usagestats.SessionUsage) wshrpc.UsageSession {
 	}
 }
 
+func usageLeversToWire(levers []usageinsights.Lever) []wshrpc.UsageLever {
+	var out []wshrpc.UsageLever
+	for _, l := range levers {
+		// a lever lists its sessions as [], not null, so the frontend can map it unguarded
+		sessions := make([]wshrpc.UsageLeverSession, len(l.Sessions))
+		for i, s := range l.Sessions {
+			sessions[i] = wshrpc.UsageLeverSession{Ref: s.Ref, ID: s.ID, Title: s.Title, SaveUsd: s.SaveUsd}
+		}
+		out = append(out, wshrpc.UsageLever{Key: l.Key, Count: l.Count, Tokens: l.Tokens, Sessions: sessions, Fix: l.Fix, Tabs: l.Tabs})
+	}
+	return out
+}
+
+func usageLeversFromWire(levers []wshrpc.UsageLever) []usageinsights.Lever {
+	var out []usageinsights.Lever
+	for _, l := range levers {
+		sessions := make([]usageinsights.LeverSession, len(l.Sessions))
+		for i, s := range l.Sessions {
+			sessions[i] = usageinsights.LeverSession{Ref: s.Ref, ID: s.ID, Title: s.Title, SaveUsd: s.SaveUsd}
+		}
+		out = append(out, usageinsights.Lever{Key: l.Key, Count: l.Count, Tokens: l.Tokens, Sessions: sessions, Fix: l.Fix, Tabs: l.Tabs})
+	}
+	return out
+}
+
 func usageInsightsToWire(ins usageinsights.Insights) *wshrpc.UsageInsights {
 	return &wshrpc.UsageInsights{
-		Markdown: ins.Markdown, AnalyzedTs: ins.AnalyzedTs, WindowDays: ins.WindowDays, Model: ins.Model, Lang: ins.Lang,
+		Markdown: ins.Markdown, Headline: ins.Headline, Levers: usageLeversToWire(ins.Levers),
+		OpusClear: ins.OpusClear, Tips: ins.Tips, SpendUsd: ins.SpendUsd,
+		AnalyzedTs: ins.AnalyzedTs, WindowDays: ins.WindowDays, Model: ins.Model, Lang: ins.Lang,
 	}
 }
 
@@ -127,7 +154,11 @@ func (ws *WshServer) AnalyzeUsageCommand(ctx context.Context, data wshrpc.Comman
 	if lang == "" {
 		lang = wconfig.GetWatcher().GetFullConfig().Settings.UsageInsightsLang
 	}
-	ins, err := usageinsights.Analyze(ctx, usageinsights.Dir(), data.WindowDays, data.Digest, lang, time.Now)
+	req := usageinsights.Request{
+		WindowDays: data.WindowDays, Digest: data.Digest, Lang: lang,
+		Levers: usageLeversFromWire(data.Levers), SpendUsd: data.SpendUsd,
+	}
+	ins, err := usageinsights.Analyze(ctx, usageinsights.Dir(), req, time.Now)
 	if err != nil {
 		return nil, err
 	}

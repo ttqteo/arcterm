@@ -162,10 +162,11 @@ type UsageSession struct {
 // UsageBigResults is one tool's oversized results in a session: tool results over usagestats.BigResultChars
 // characters, a subagent's apart from the main conversation's.
 type UsageBigResults struct {
-	Tool  string `json:"tool"`
-	Sub   bool   `json:"sub,omitempty"`
-	Count int    `json:"count"`
-	Chars int    `json:"chars"`
+	Tool         string `json:"tool"`
+	Sub          bool   `json:"sub,omitempty"`
+	Count        int    `json:"count"`
+	Chars        int    `json:"chars"`
+	RereadTokens int    `json:"rereadtokens,omitempty"` // tokens of these results read back on later main turns, see usagestats.SessionBigResults
 }
 
 type CommandGetSessionUsageData struct {
@@ -180,19 +181,46 @@ type CommandGetSessionUsageRtnData struct {
 	WindowWeekTokens     int            `json:"windowweektokens"`
 }
 
-type CommandAnalyzeUsageData struct {
-	WindowDays int    `json:"windowdays"`
-	Digest     string `json:"digest"`         // the numbers-only digest the frontend builds (usagedigest.ts)
-	Lang       string `json:"lang,omitempty"` // the language to answer in; "" falls back to the usage:insightslang setting
+// UsageLeverSession is one session a usage lever could recover spend from; Ref ("S1") is how the digest and Claude name it.
+type UsageLeverSession struct {
+	Ref     string  `json:"ref"`
+	ID      string  `json:"id"`
+	Title   string  `json:"title"`
+	SaveUsd float64 `json:"saveusd"` // the most this session's spend could drop by under this lever
 }
 
-// UsageInsights is one saved usage analysis. The zero value (empty Markdown) means none has run yet.
+// UsageLever is one fix the frontend priced (usagelevers.ts). Count and Tokens are the evidence the card shows; what
+// they count depends on Key. Fix and Tabs are Claude's words, set only on a saved result.
+type UsageLever struct {
+	Key      string              `json:"key"`
+	Count    int                 `json:"count,omitempty"`
+	Tokens   int                 `json:"tokens,omitempty"`
+	Sessions []UsageLeverSession `json:"sessions"`
+	Fix      string              `json:"fix,omitempty"`
+	Tabs     []string            `json:"tabs,omitempty"` // session refs, most telling first
+}
+
+type CommandAnalyzeUsageData struct {
+	WindowDays int          `json:"windowdays"`
+	Digest     string       `json:"digest"`             // the numbers-only digest the frontend builds (usagedigest.ts)
+	Lang       string       `json:"lang,omitempty"`     // the language to answer in; "" falls back to the usage:insightslang setting
+	Levers     []UsageLever `json:"levers,omitempty"`   // the candidates the frontend priced; Claude's answer is checked against them and they are saved with it
+	SpendUsd   float64      `json:"spendusd,omitempty"` // the window's Claude spend, the levers' denominator
+}
+
+// UsageInsights is one saved usage analysis. The zero value (no headline and empty Markdown) means none has run yet;
+// a result saved before the levers shipped has Markdown and no Headline.
 type UsageInsights struct {
-	Markdown   string `json:"markdown"`
-	AnalyzedTs int64  `json:"analyzedts"` // unix ms
-	WindowDays int    `json:"windowdays"` // the window the digest covered
-	Model      string `json:"model"`
-	Lang       string `json:"lang,omitempty"` // the language code it answered in; "" in one saved before this was kept
+	Markdown   string       `json:"markdown"`
+	Headline   string       `json:"headline,omitempty"`
+	Levers     []UsageLever `json:"levers,omitempty"`
+	OpusClear  []string     `json:"opusclear,omitempty"` // refs of the opus lever's sessions Claude judged clear work for Sonnet
+	Tips       []string     `json:"tips,omitempty"`
+	SpendUsd   float64      `json:"spendusd,omitempty"` // the window's Claude spend when it ran
+	AnalyzedTs int64        `json:"analyzedts"`         // unix ms
+	WindowDays int          `json:"windowdays"`         // the window the digest covered
+	Model      string       `json:"model"`
+	Lang       string       `json:"lang,omitempty"` // the language code it answered in; "" in one saved before this was kept
 }
 
 type CommandGetRecentSessionsData struct {

@@ -79,10 +79,10 @@ Tab Claude có thêm mục **Insights**. Nó nhờ Claude đọc một bản tó
 1. Mở tab **Claude** của Usage và chọn khoảng thời gian cần phân tích (7 days hoặc All time).
 2. Chọn ngôn ngữ trả lời bằng nút **EN** / **VI** cạnh nút Analyze (setting `usage:insightslang`). Nếu thẻ đang hiện một kết quả bằng ngôn ngữ kia, bấm sẽ phân tích lại ngay bằng ngôn ngữ mới (một lần gọi Sonnet, như **Re-analyze**); chưa có kết quả thì lần **Analyze** đầu tiên dùng ngôn ngữ đó. Dòng phụ đề ghi ngôn ngữ của kết quả (`· VI`).
 3. Bấm **Analyze** (hoặc `a`). Mất khoảng 30 giây; trong lúc đó thẻ ghi "Analysing…".
-4. Đọc kết quả. Phần lớn nằm ở cột trái; mục `##` cuối cùng (thường là "What to change") nằm ở ô riêng bên phải. Dòng phụ đề ghi giờ phân tích, khoảng thời gian và model (`analysed 14:30 · 7 days · sonnet`).
+4. Đọc kết quả. Trên cùng là một câu tóm tắt; bên dưới là danh sách **Recoverable**: mỗi hàng là một cách sửa (context quá dài, Read quá lớn, Bash in quá nhiều, dùng Opus cho việc rõ ràng, resume tab đã nguội), xếp theo số tiền nó gỡ lại được nhiều nhất, ghi bằng % chi tiêu của khoảng thời gian (cách sửa dưới 1% bị ẩn). Chọn một hàng (click hoặc mũi tên lên/xuống) để xem ở cột phải: bằng chứng, cách sửa Claude viết, và các chip tab đứng sau nó; click chip để mở tab đó. Hàng **General tips** cuối danh sách là lời khuyên không đo từ số liệu của bạn. Các nhãn giữ tiếng Anh; chỉ phần chữ Claude viết theo ngôn ngữ đã chọn. Cửa sổ hẹp thì chip và cách sửa hiện ngay dưới hàng đang chọn. Kết quả lưu từ trước bản này vẫn hiện dạng văn bản cũ cho tới lần Re-analyze tiếp theo. Dòng phụ đề ghi giờ phân tích, khoảng thời gian và model (`analysed 14:30 · 7 days · sonnet`).
 5. Muốn phân tích lại thì bấm **Re-analyze**. Nếu lần chạy lỗi, nút đổi thành **Try again** và kết quả trước (nếu có) vẫn nằm bên dưới thông báo lỗi.
 
-<!-- shot: usage-insights-sessions.png | Tab Claude với thẻ Insights đã có kết quả (cột chính và ô "What to change") và bảng By session bên dưới, vài hàng có chip | Dùng scenario CDP `usage-insights` (nó nạp session giả và một kết quả Insights đã lưu); Usage → tab Claude, selector `[data-usage-insights="done"]` và `[data-usage-sessions]` -->
+<!-- shot: usage-insights-sessions.png | Tab Claude với thẻ Insights đã có kết quả (danh sách Recoverable, một hàng đang chọn với cách sửa và chip ở cột phải) và bảng By session bên dưới | Dùng scenario CDP `usage-insights-levers` (nó nạp session giả và một kết quả levers đã lưu); Usage → tab Claude, selector `[data-usage-levers]` và `[data-usage-sessions]` -->
 
 Cần biết:
 

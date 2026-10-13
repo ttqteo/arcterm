@@ -67,6 +67,7 @@ import {
     usageSessionCursorAtom,
 } from "./usageinsightsstore";
 import { kpiGridClass, soloHarness, statGridClass, visibleClasses } from "./usagelayout";
+import { buildLevers } from "./usagelevers";
 import {
     buildUsageRail,
     countReporting,
@@ -637,12 +638,16 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
         if (!claude || sessionRows.length === 0 || insightsRunning || held != null) {
             return;
         }
+        // the levers come from the same rows the digest numbers its sessions by, so their refs agree
+        const levers = buildLevers(sessionRows);
+        const spendUsd = sessionRows.reduce((sum, r) => sum + r.spendUsd, 0);
         const digest = buildUsageDigest({
             windowLabel,
             stats: aggregateBuckets(buckets, Date.now(), "claude"),
             rows: sessionRows,
+            levers,
         });
-        void analyzeUsage(windowDays, digest, lang);
+        void analyzeUsage(windowDays, digest, lang, levers, spendUsd);
     };
     // Picking a language saves it, and re-runs at once when the analysis on screen is in the other one.
     const pickLang = (lang: InsightsLang) => {
@@ -666,6 +671,17 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
             }
         },
         [model, setSessionCursor]
+    );
+
+    // An Insights lever's chip names a session by id; one outside the loaded window opens nothing.
+    const openSessionById = useCallback(
+        (id: string) => {
+            const row = sessionRows.find((r) => r.id === id);
+            if (row != null) {
+                openSession(row);
+            }
+        },
+        [sessionRows, openSession]
     );
 
     // j / k / Enter drive the By session table on the Claude tab; the tabs are ← / →.
@@ -938,6 +954,7 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                                     lang={insightsLang}
                                     onLang={pickLang}
                                     onAnalyze={() => analyze()}
+                                    onOpenSession={openSessionById}
                                 />
                                 {sessionRows.length > 0 ? (
                                     <UsageSessionTable

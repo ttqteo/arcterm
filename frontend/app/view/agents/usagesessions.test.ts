@@ -124,6 +124,62 @@ describe("buildSessionRows pricing", () => {
     });
 });
 
+describe("buildSessionRows opus pricing", () => {
+    it("prices Opus tokens at the Sonnet of the same generation", () => {
+        const cacheRead = buildSessionRows(
+            [sess("a", { models: [mdl("claude-opus-5-5", { cacheread: 1_000_000 })] })],
+            none
+        )[0];
+        expect(cacheRead.opusSpendUsd).toBeCloseTo(0.2, 10);
+        expect(cacheRead.opusAsSonnetUsd).toBeCloseTo(0.2, 10); // the cache-read rates are equal
+        const output = buildSessionRows(
+            [sess("a", { models: [mdl("claude-opus-5-5", { output: 1_000_000 })] })],
+            none
+        )[0];
+        expect(output.opusSpendUsd).toBeCloseTo(20, 10);
+        expect(output.opusAsSonnetUsd).toBeCloseTo(10, 10);
+    });
+
+    it("prices an older Opus against Sonnet 4.5", () => {
+        const [row] = buildSessionRows([sess("a", { models: [mdl("claude-opus-4-1", { output: 1_000_000 })] })], none);
+        expect(row.opusSpendUsd).toBeCloseTo(25, 10);
+        expect(row.opusAsSonnetUsd).toBeCloseTo(15, 10);
+    });
+
+    it("counts the subagents' Opus and leaves other models out", () => {
+        const [row] = buildSessionRows(
+            [
+                sess("a", {
+                    models: [
+                        mdl("claude-opus-5-5", { output: 1_000_000 }),
+                        mdl("claude-opus-5-5", { sub: true, output: 1_000_000 }),
+                        mdl("claude-sonnet-5-5", { output: 1_000_000 }),
+                        mdl("claude-haiku-4-5", { sub: true, output: 1_000_000 }),
+                    ],
+                }),
+            ],
+            none
+        );
+        expect(row.opusSpendUsd).toBeCloseTo(40, 10);
+        expect(row.opusAsSonnetUsd).toBeCloseTo(20, 10);
+    });
+
+    it("is 0 for a session with no Opus", () => {
+        const [row] = buildSessionRows([sess("a", { models: [mdl("claude-sonnet-5-5", { output: 5_000 })] })], none);
+        expect(row.opusSpendUsd).toBe(0);
+        expect(row.opusAsSonnetUsd).toBe(0);
+    });
+
+    it("carries the main model's unstripped id", () => {
+        const models = [
+            mdl("claude-sonnet-5-5", { output: 9_000 }),
+            mdl("claude-haiku-4-5", { sub: true, output: 9_000_000 }),
+        ];
+        expect(buildSessionRows([sess("a", { models })], none)[0].mainModel).toBe("claude-sonnet-5-5");
+        expect(buildSessionRows([sess("a", { models: [] })], none)[0].mainModel).toBeUndefined();
+    });
+});
+
 describe("buildSessionRows models", () => {
     it("lists each model once, main first, without the claude- prefix", () => {
         const models = [

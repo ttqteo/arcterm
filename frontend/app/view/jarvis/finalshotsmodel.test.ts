@@ -92,6 +92,18 @@ describe("finalCheckEntry: the States board", () => {
         });
     });
 
+    // the earlier round's shots stay reachable while the next round runs: hiding them left a long Final with
+    // no screenshots at all until it finished
+    it("keeps the earlier round while the next round's commands or verifier run", () => {
+        for (const state of ["checking", "final", "verifying"]) {
+            expect(entryText(group({ state, round: 2 }, [stage("failed", 1, boardShots(1))]))).toMatchObject({
+                head: "failed · jarvis-peek 2 steps",
+                right: "16 shots · round 1",
+                dock: "Screenshots · 16",
+            });
+        }
+    });
+
     it("passed", () => {
         expect(entryText(group(stage("passed", 1, boardShots(2))))).toEqual({
             tone: "pass",
@@ -188,14 +200,9 @@ describe("finalCheckEntry: when there is none", () => {
         expect(finalCheckEntry(group(stage("passed", 1, boardShots(2)), undefined, ""))).toBeNull();
     });
 
-    it("is null while a round's commands or verifier run, even with an earlier round", () => {
-        for (const state of ["checking", "final", "verifying"]) {
-            expect(finalCheckEntry(group({ state, round: 2 }, [stage("failed", 1, boardShots(1))]))).toBeNull();
-        }
-    });
-
     it("is null before any round finished, and for no dag", () => {
         expect(finalCheckEntry(group({ state: "", round: 1 }))).toBeNull();
+        expect(finalCheckEntry(group({ state: "checking", round: 1 }))).toBeNull();
         expect(finalCheckEntry(group(undefined))).toBeNull();
         expect(finalCheckEntry(null)).toBeNull();
     });
