@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+    applyApprovals,
+    approvalsRow,
     defaultReach,
     DIAGNOSTIC_MISSING_DISABLED,
     DIAGNOSTIC_MISSING_REPLACEMENT,
@@ -14,6 +16,7 @@ import {
     reducePlaybook,
     reducePrinciplePatch,
     resetActionState,
+    resetRow,
 } from "./profilemodel";
 
 const G: Principle[] = [
@@ -155,6 +158,7 @@ describe("profileOverrideIsEmpty", () => {
         ["lead route", { route: { runtime: "pi" } }, false],
         ["default mode", { defaultmode: "orchestrator" }, false],
         ["landing", { landing: "branch" }, false],
+        ["approvals", { autonomous: false }, false],
         ["patch with a disable", { principles: { disabled: ["a"] } }, false],
     ];
     for (const [name, override, want] of cases) {
@@ -255,6 +259,51 @@ describe("principleSummary", () => {
         expect(principleSummary(principleRows(G, patch, []))).toBe(
             "3 from global · 1 customized · 1 added · 1 disabled"
         );
+    });
+});
+
+// The Approvals row: a project's own value, Ask me included, holds over the global; Reset drops it back.
+describe("approvals row", () => {
+    const global = (autonomous?: boolean): JarvisProfile => ({ autonomous }) as JarvisProfile;
+
+    it("an override with only autonomous is not empty and reads as Project", () => {
+        const o: ProfileOverride = { autonomous: true };
+        expect(profileOverrideIsEmpty(o)).toBe(false);
+        expect(approvalsRow(o, global(), true)).toEqual({ autonomous: true, inherited: false });
+        expect(overrideSummary(o)).toBe("1 set for this project");
+    });
+    it("Reset removes it and the row reads Global", () => {
+        const after = resetRow({ autonomous: true, landing: "checkout" }, "autonomous");
+        expect(after).toEqual({ landing: "checkout" });
+        expect(approvalsRow(after, global(true), true)).toEqual({ autonomous: true, inherited: true });
+        expect(profileOverrideIsEmpty(resetRow({ autonomous: false }, "autonomous"))).toBe(true);
+    });
+    it("a project false over a global true is a stated value, not inheritance", () => {
+        const o = applyApprovals<ProfileOverride>({}, false, true);
+        expect(o).toEqual({ autonomous: false });
+        expect(approvalsRow(o, global(true), true)).toEqual({ autonomous: false, inherited: false });
+    });
+    it("global scope unsets Ask me rather than storing false", () => {
+        const g = global(true);
+        expect("autonomous" in applyApprovals(g, false, false)).toBe(false);
+        expect(applyApprovals({} as JarvisProfile, true, false).autonomous).toBe(true);
+        expect(approvalsRow(g, g, false)).toEqual({ autonomous: true, inherited: false });
+    });
+    it("counts a project's own approvals against the global one", () => {
+        expect(defaultReach([P("opal"), P("wave", { autonomous: false })], "autonomous")).toEqual({
+            main: "1 of 2 projects",
+            sub: "wave sets its own",
+        });
+    });
+});
+
+// a row's Reset drops just that row; the workers row drops both halves of its pair
+describe("resetRow", () => {
+    it("drops only the named key", () => {
+        expect(resetRow({ landing: "checkout", parallelism: 3 }, "landing")).toEqual({ parallelism: 3 });
+    });
+    it("drops worker route and reviewer picks together", () => {
+        expect(resetRow({ reviewerpicks: false, landing: "branch" }, "workerroute")).toEqual({ landing: "branch" });
     });
 });
 

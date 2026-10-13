@@ -39,7 +39,9 @@ import { briefUndo } from "./briefundo";
 import { GlobalPrinciplesEditor } from "./globalprincipleseditor";
 import { PrinciplesEditor, PROFILE_PANEL } from "./principleseditor";
 import {
+    applyApprovals,
     applyWorkersChoice,
+    approvalsRow,
     defaultReach,
     globalProfileIsDirty,
     isDirty,
@@ -50,6 +52,7 @@ import {
     principleSummary,
     profileOverrideIsEmpty,
     resetActionState,
+    resetRow,
     reviewerRow,
     workersRow,
     type GlobalDefaultKey,
@@ -74,6 +77,15 @@ const LANDINGS = [
     ["checkout", "Project checkout"],
     ["branch", "Own branch"],
 ] as const;
+const APPROVALS = [
+    [false, "Ask me"],
+    [true, "Autonomous"],
+] as const;
+const APPROVALS_NOTE = {
+    ask: "The lead stops for the spec review, a plan review that failed twice, product calls, and the last failed final stage.",
+    autonomous:
+        "The lead takes the option it would recommend at each of those points and records why in its report. If the final stage still fails after the last round, the land stays held for you.",
+};
 
 type Scope = "project" | "global";
 type Loaded = { global: JarvisProfile; override: ProfileOverride; diagnostics: PrincipleDiagnostic[] };
@@ -84,29 +96,35 @@ function channelOptionsOf(rows: ProjectRow[]): Map<string, string> {
 }
 
 // one row of the run-defaults panel: the label with its explanation, the control, and a right-hand cell
-// that says where the value comes from (project scope) or how far it reaches (global scope)
+// that says where the value comes from (project scope) or how far it reaches (global scope). alignTop keeps the
+// label and that cell level with the control when a line of text sits under it.
 function DefaultRow({
     label,
     hint,
     aside,
+    alignTop = false,
     children,
 }: {
     label: string;
     hint: string;
     aside: ReactNode;
+    alignTop?: boolean;
     children: ReactNode;
 }) {
     return (
         <div
             data-jarvis-profile-row={label}
-            className="grid grid-cols-[156px_minmax(0,1fr)_140px] items-center gap-x-3.5 px-3.5 py-[11px]"
+            className={cn(
+                "grid grid-cols-[156px_minmax(0,1fr)_140px] gap-x-3.5 px-3.5 py-[11px]",
+                alignTop ? "items-start" : "items-center"
+            )}
         >
-            <div className="flex flex-col gap-0.5">
+            <div className={cn("flex flex-col gap-0.5", alignTop && "pt-0.5")}>
                 <span className="text-[13px] font-medium text-ink-hi">{label}</span>
                 <span className="text-[11.5px] leading-[1.35] text-muted">{hint}</span>
             </div>
             <div className="flex min-w-0 flex-wrap items-center gap-1.5">{children}</div>
-            {aside}
+            {alignTop ? <div className="pt-1">{aside}</div> : aside}
         </div>
     );
 }
@@ -181,6 +199,7 @@ function DefaultsFields({
     aside,
     routeRow,
     setWorkers,
+    setApprovals,
 }: {
     inheritable: boolean;
     draft: ProfileDefaults;
@@ -191,6 +210,7 @@ function DefaultsFields({
     aside: (key: GlobalDefaultKey, label: string) => ReactNode;
     routeRow?: ReactNode;
     setWorkers: (choice: WorkersChoice) => void;
+    setApprovals: (autonomous: boolean) => void;
 }) {
     const leadRuntimes = useAtomValue(leadRuntimesAtom);
     const shape = draft.defaultmode ?? base.defaultmode ?? "quick";
@@ -199,6 +219,7 @@ function DefaultsFields({
     const landing = draft.landing || base.landing || "branch";
     const workers = workersRow(draft, base, inheritable);
     const reviewers = reviewerRow(draft, base, inheritable);
+    const { autonomous } = approvalsRow(draft, base, inheritable);
     return (
         <div className={PROFILE_PANEL}>
             <DefaultRow
@@ -306,6 +327,36 @@ function DefaultsFields({
                             {label}
                         </button>
                     ))}
+                </div>
+            </DefaultRow>
+            <DefaultRow
+                label="Approvals"
+                hint="When the lead needs a decision from you"
+                aside={aside("autonomous", "Approvals")}
+                alignTop
+            >
+                <div className="flex min-w-0 flex-col gap-[7px]">
+                    <div role="group" aria-label="Approvals" className={cn(SEGMENTS, "bg-surface-raised")}>
+                        {APPROVALS.map(([on, label]) => (
+                            <button
+                                key={label}
+                                type="button"
+                                aria-pressed={autonomous === on}
+                                disabled={saving}
+                                onClick={() => setApprovals(on)}
+                                className={cn(
+                                    SEGMENT,
+                                    "h-6 px-[11px] text-[12.5px] font-medium",
+                                    segmentTone(autonomous === on)
+                                )}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                    <span className="text-[11.5px] leading-[1.5] text-muted">
+                        {autonomous ? APPROVALS_NOTE.autonomous : APPROVALS_NOTE.ask}
+                    </span>
                 </div>
             </DefaultRow>
         </div>
@@ -522,9 +573,7 @@ export function BriefProfileModal({
             label={label}
             inherited={!overridesRow(draft, key)}
             saving={saving}
-            onReset={() =>
-                key === "workerroute" ? setDraft((d) => applyWorkersChoice(d, { kind: "reset" }, true)) : drop(key)
-            }
+            onReset={() => setDraft((d) => resetRow(d, key))}
         />
     );
     const leadRouteRow =
@@ -642,6 +691,7 @@ export function BriefProfileModal({
                                     setWorkers={(choice) =>
                                         setGlobalDraft((g) => (g ? applyWorkersChoice(g, choice, false) : g))
                                     }
+                                    setApprovals={(on) => setGlobalDraft((g) => (g ? applyApprovals(g, on, false) : g))}
                                 />
                                 <p className="m-0 text-[11.5px] leading-[1.45] text-muted">
                                     Lead route is set per project; autonomy lives in the Brief header.
@@ -672,6 +722,7 @@ export function BriefProfileModal({
                                     aside={sourceCell}
                                     routeRow={leadRouteRow}
                                     setWorkers={(choice) => setDraft((d) => applyWorkersChoice(d, choice, true))}
+                                    setApprovals={(on) => setDraft((d) => applyApprovals(d, on, true))}
                                 />
                             </section>
                             <section className="flex flex-col gap-2">
