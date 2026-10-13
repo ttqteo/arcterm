@@ -38,8 +38,9 @@ Design rule from the review: **compact by default.** One pane in focus; anything
 ## Model
 
 - A terminal is a term block as today. New block meta records:
-  - `project` (or Home) and `cwd` at open time; the tree groups by `project`, the branch chip shows when `cwd` is not the
-    project root;
+  - the project (or Home) is the tab's `session:project`, which a launch already stamps, and the folder is the
+    terminal's `cwd`; the tree groups by the live cwd's registered project, else `session:project` (so a worktree
+    outside every registered root stays in its project), and the branch chip shows when `cwd` is not the project root;
   - `tool:id` for a block started from the library. A tool is a plain terminal (`controller: "shell"`) whose
     `cmd:firstcommand` is the tool's command line, as a Terminal launch with a command is today, so the shell finds the
     program and quitting the tool leaves a prompt in the same folder;
