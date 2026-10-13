@@ -35,6 +35,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
 
 **2026-10-13 (Alt+Tab grows Sprout back; Jarvis card link)**
 
+- [ ] (arcterm) **Spider-Man shows Sprout's working dots.** With Spider-Man as the pet and an agent working, fold into
+  Sprout: the pill at his top right shows three pulsing green dots and the count, no web; the same in Float, and the
+  dots alone while Jarvis thinks. `task verify:ui -- jarvis-pet` (steps 15b, 22) checks it.
+
 - [ ] (arcterm) **Alt+Tab grows any fold back.** Fold with the Sprout button (not Fold when you leave), click into
   another app, Alt+Tab back to arcterm: the window grows back to the size it folded from. A click on Sprout from the
   other app leaves it folded; a toast click that opens the chat leaves it folded too. `waveapp.log` logs

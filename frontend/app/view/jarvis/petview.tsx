@@ -981,7 +981,7 @@ function PetSprite({
                 </span>
             ) : null}
             {shownWorking != null && !teleporting ? (
-                <WorkingDots count={shownWorking} character={character} className="absolute -right-2 -top-1" />
+                <WorkingDots count={shownWorking} className="absolute -right-2 -top-1" />
             ) : null}
             {/* the rail's digit badge (digithint.tsx), on the same bottom-right corner */}
             {keyHint ? (

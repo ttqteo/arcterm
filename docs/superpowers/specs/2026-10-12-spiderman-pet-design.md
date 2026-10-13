@@ -99,8 +99,8 @@ four windows below. What the fold already shows maps onto it:
   amber (`--color-asking`) jags spark either side of and over his head, in place of the posture mark; the waiting chip
   stays, at the right.
 - **Rest → swinging legs**: the bob's two frames swing his legs instead of lifting the sprite.
-- **Unread** keeps its mark at its usual cells; **Jarvis thinking** (an errand streaming) shows the 12px working web
-  beside his head.
+- **Unread** keeps its mark at its usual cells; **Jarvis thinking** (an errand streaming) shows Sprout's working dots
+  beside his head (a 12px web until 2026-10-13, dropped: at that size it read as a smudge).
 - The hover list, Restore, the bubble and the drag are unchanged; folding in and out is the web-swing (§2.4).
 
 ## 5. Verification

@@ -183,7 +183,7 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
         frame,
     });
     const sprite = spriteFor(look.pose, look.marks, petOutfit(petOutfitChoice(outfitChoice), new Date()), character);
-    // Spider-Man's rooftop: what it draws (lit windows, spider-sense, swinging legs, the unread mark) and the working web
+    // Spider-Man's rooftop: what it draws (lit windows, spider-sense, swinging legs, the unread mark) and the working dots
     const spidey = character === "spidey";
     const roofLook = spideyFoldLook(look, frame);
     const roof: SpideyFoldLook | null = spidey
@@ -334,16 +334,14 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
                         data-mini-chip
                         className={cn(
                             "pointer-events-none absolute min-w-4 rounded-full bg-warning px-1 text-center text-[10px] font-bold leading-4 text-on-warning tabular-nums",
-                            // Spider-Man's sits at the right, under the working web while that shows
+                            // Spider-Man's sits at the right, under the working dots while they show
                             spidey ? (dots ? "right-0 top-5" : "right-0 top-3") : "left-1 top-3"
                         )}
                     >
                         {look.chip}
                     </span>
                 ) : null}
-                {dots ? (
-                    <WorkingDots count={look.working ?? 0} character={character} className="absolute right-0 top-0" />
-                ) : null}
+                {dots ? <WorkingDots count={look.working ?? 0} className="absolute right-0 top-0" /> : null}
             </div>
 
             {told ? (

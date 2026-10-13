@@ -65,7 +65,7 @@ export function miniChatLabel(waiting: number, unread: boolean): string {
 }
 
 // What Spider-Man's rooftop shows for a fold look: lit windows for the working agents, spider-sense for what waits,
-// swinging legs on the bob's beat, the unread mark, and the working web while Jarvis types.
+// swinging legs on the bob's beat, the unread mark, and the working dots while Jarvis types.
 export interface SpideyFoldLook {
     lit: number;
     sense: boolean;

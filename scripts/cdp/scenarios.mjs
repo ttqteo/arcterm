@@ -7829,7 +7829,6 @@ const MINI_READ = `(() => {
         roof: box(document.querySelector("[data-spidey-roof]")),
         chipText: chip?.textContent?.trim() ?? null,
         chipBox: box(chip),
-        web: !!document.querySelector("[data-sprout-mini] [data-working-web]"),
         dots: document.querySelector("[data-sprout-mini] [data-working-dots]")?.textContent?.trim() ?? null,
         brick: ${petFillCount("[data-spidey-roof]", "--color-city-brick")},
         lit: ${petFillCount("[data-spidey-roof]", "--color-city-window-lit")},
@@ -8457,7 +8456,6 @@ const jarvisPet = {
         // state it needs rather than assuming one.
         const RED = "var(--color-spidey-red)";
         const BLUE = "var(--color-spidey-blue)";
-        const WEB = "var(--color-spidey-web)";
         const EYE = "var(--color-spidey-eye)";
         const HAIR = "var(--color-peter-hair)";
         const spideyWebs = () => h.ev(petFillCount(PET_SVG_SELECTOR, "--color-spidey-web"));
@@ -8521,39 +8519,37 @@ const jarvisPet = {
             }
         );
 
-        // 15b. the working mark beside the footer creature (Float's, which a DEV force draws on the footer too): a web in
-        // place of the dots, with the count
+        // 15b. the working mark beside the footer creature (Float's, which a DEV force draws on the footer too): the
+        // same dots as Sprout's, with the count
         await petForce(h, { ...PET_CALM, working: 2 });
         const web15b = await petUntil(
             () =>
                 h.ev(`(() => {
-                    const web = document.querySelector("[data-pet-sprite] [data-working-web]");
+                    const mark = document.querySelector("[data-pet-sprite] [data-working-dots]");
                     const root = ${PET}?.getBoundingClientRect();
-                    const b = web?.getBoundingClientRect();
-                    return web == null || root == null || b == null
+                    const b = mark?.getBoundingClientRect();
+                    return mark == null || root == null || b == null
                         ? null
                         : {
                               w: b.width,
-                              h: b.height,
                               dTop: b.top - root.top,
                               dRight: b.right - root.right,
-                              count: web.parentElement?.textContent?.trim() ?? null,
-                              strokes: [...new Set([...web.querySelectorAll("line")].map((l) => l.getAttribute("stroke")))],
+                              count: mark.textContent?.trim() ?? null,
+                              dots: mark.querySelectorAll(":scope > span:not(:last-child)").length,
                           };
                 })()`),
             (v) => v != null && v.w > 0,
             3000,
             100
         );
-        await petZoom(h, "jarvis-pet-15b-working-web");
+        await petZoom(h, "jarvis-pet-15b-working-dots");
         await petForce(h, null);
         rec(
-            "15b. with Spider-Man picked, the working mark beside the footer creature is the 12px web in the web token, with its count, at his top right corner",
+            "15b. with Spider-Man picked, the working mark beside the footer creature is Sprout's three dots, with its count, at his top right corner",
             web15b != null &&
-                web15b.w === 12 &&
-                web15b.h === 12 &&
+                web15b.w > 0 &&
                 web15b.count === "2" &&
-                web15b.strokes.includes(WEB) &&
+                web15b.dots === 3 &&
                 web15b.dTop >= -8 &&
                 web15b.dTop <= 8 &&
                 web15b.dRight >= -16 &&
@@ -9017,11 +9013,11 @@ const jarvisPet = {
         // the windows: 2x2 each, the first min(working, 4) lit
         const lit3 = await miniForce(h, { working: 3, waiting: 0, posture: "none" }, (r) => r.lit === 12 && r.look?.lit === 3);
         await miniShot(h, "jarvis-pet-22-windows");
-        // past four, the web beside him carries the count the windows cannot
+        // past four, the dots beside him carry the count the windows cannot
         const lit9 = await miniForce(
             h,
             { working: 9, waiting: 0, posture: "none" },
-            (r) => r.lit === 16 && r.look?.lit === 4 && r.web === true && r.dots === "9"
+            (r) => r.lit === 16 && r.look?.lit === 4 && r.dots === "9"
         );
         await miniShot(h, "jarvis-pet-22-count");
         const lit0 = await miniForce(h, { working: null, waiting: 0, posture: "none" }, (r) => r.lit === 0 && r.look?.lit === 0);
@@ -9042,11 +9038,11 @@ const jarvisPet = {
             { working: 0, waiting: 0, posture: "none" },
             (r) => r.asking === 0 && r.look?.sense === false
         );
-        // the working web, while Jarvis thinks
+        // the working dots, with no count, while Jarvis thinks
         const think22 = await miniForce(
             h,
             { working: 0, waiting: 0, posture: "none", thinking: true },
-            (r) => r.web === true
+            (r) => r.dots === ""
         );
         await miniShot(h, "jarvis-pet-22-thinking");
         await h.ev(`window.__jarvisMini?.force(null)`);
@@ -9073,7 +9069,6 @@ const jarvisPet = {
                 lit3.look?.lit === 3 &&
                 lit9.lit === 16 &&
                 lit9.look?.lit === 4 &&
-                lit9.web === true &&
                 lit9.dots === "9" &&
                 lit0.lit === 0 &&
                 sense1.asking === 8 &&
@@ -9082,7 +9077,7 @@ const jarvisPet = {
                 sense2.chipText === "2" &&
                 sense2.chipBox.left > sense2.roof.left + sense2.roof.width / 2 &&
                 sense0.asking === 0 &&
-                think22.web === true &&
+                think22.dots === "" &&
                 restored22 === true,
             {
                 folded: folded22,
@@ -9090,13 +9085,13 @@ const jarvisPet = {
                 web: web22,
                 roof: { character: roof22.character, box: roof22.roof, brick: roof22.brick },
                 legs: { swung: swung22.length, still: still22.length, differ: modeSig(swung22) !== modeSig(still22) },
-                lit: { three: [lit3.lit, lit3.look?.lit], nine: [lit9.lit, lit9.look?.lit, lit9.web, lit9.dots], none: [lit0.lit, lit0.look?.lit] },
+                lit: { three: [lit3.lit, lit3.look?.lit], nine: [lit9.lit, lit9.look?.lit, lit9.dots], none: [lit0.lit, lit0.look?.lit] },
                 sense: {
                     posture: [sense1.asking, sense1.look?.sense],
                     waiting: [sense2.asking, sense2.chipText, sense2.chipBox?.left, sense2.roof?.left, sense2.roof?.width],
                     none: [sense0.asking, sense0.look?.sense],
                 },
-                thinking: think22.web,
+                thinking: think22.dots,
                 restored: restored22,
             }
         );

@@ -14,6 +14,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - **Alt+Tab back to arcterm opens the window again from Sprout**, however it was folded (the Sprout button, minimize,
   or Fold when you leave), as ⌘Tab does on macOS; a click on Sprout itself still leaves it folded.
+- **Spider-Man shows the same working dots as Sprout** in place of the small web, which read as a green smudge.
 
 ### Fixed
 
