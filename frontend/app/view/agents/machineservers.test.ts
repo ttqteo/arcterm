@@ -79,6 +79,42 @@ describe("buildMachineServers", () => {
         expect(v.noOwnerCount).toBe(0);
     });
 
+    // the 2026-10-13 :4310 case: `pnpm run dev` ran Astro 7's `astro dev`, which started the server and exited, so the
+    // task completed with the server still listening and no live launcher to match
+    const daemonized = row({
+        pid: 192132,
+        createms: Date.parse("2026-10-13T06:50:34Z"),
+        ports: [4310],
+        cmdline: "node astro.mjs dev --json",
+        repo: "D:\\Workspace\\SIEM\\apps\\portal",
+        owner: { kind: "detached" },
+        launchercmdline: "node astro.mjs dev --json",
+    });
+    const devTask: BackgroundTask = {
+        toolUseId: "u2",
+        label: "Start the portal dev server",
+        command: "pnpm run dev",
+        status: "completed",
+        outputFile: "C:\\tmp\\b1f.output",
+        startMs: Date.parse("2026-10-13T06:49:45Z"),
+        endMs: Date.parse("2026-10-13T06:50:49Z"),
+    };
+
+    it("a detached server that came up while a task ran to its end belongs to that task's agent", () => {
+        const v = buildMachineServers([daemonized], agents, { "tab-p": [devTask] });
+        const r = v.groups[0].rows[0];
+        expect(r.badge).toEqual({ kind: "agent", text: "claude · portal", tabId: "tab-p" });
+        expect(r.log).toEqual({ agentId: "tab-p", task: devTask });
+        expect(v.noOwnerCount).toBe(0);
+    });
+
+    it("a detached server started outside an ended task's run, or after it was stopped, has no owner", () => {
+        const later = { ...daemonized, createms: devTask.endMs! + 1000 };
+        expect(buildMachineServers([later], agents, { "tab-p": [devTask] }).noOwnerCount).toBe(1);
+        const stopped = { ...devTask, status: "stopped" as const };
+        expect(buildMachineServers([daemonized], agents, { "tab-p": [stopped] }).noOwnerCount).toBe(1);
+    });
+
     it("a detached server no running task matches has no owner", () => {
         const v = buildMachineServers([portal], agents, { "tab-p": [{ ...pnpmTask, status: "stopped" }] });
         expect(v.groups[0].rows[0].badge).toEqual({ kind: "noowner", text: "no owner" });

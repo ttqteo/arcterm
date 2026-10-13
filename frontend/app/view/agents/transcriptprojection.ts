@@ -430,6 +430,8 @@ export interface BackgroundTask {
     command?: string;
     status: BackgroundTaskStatus;
     outputFile?: string; // where Claude Code writes the command's output, from its start result or its notification
+    startMs?: number; // when the agent ran the command: its tool_use record's timestamp
+    endMs?: number; // when it ended: the first notification that gave it an end status
 }
 
 /** Pure: the tasks of an agent still running, which ending its process would end too. */
@@ -482,7 +484,7 @@ function notificationTexts(rec: any): string[] {
  *  tasks stay "running"; the caller decides what that means for a session that is no longer live. First-seen
  *  order. Background subagents are left to extractSubagentSpawns. */
 export function extractBackgroundTasks(lines: string[]): BackgroundTask[] {
-    const calls = new Map<string, { label: string; command?: string }>();
+    const calls = new Map<string, { label: string; command?: string; ts: number }>();
     const tasks = new Map<string, BackgroundTask>();
     const byTaskId = new Map<string, BackgroundTask>();
     const startTask = (toolUseId: string): BackgroundTask | undefined => {
@@ -495,6 +497,9 @@ export function extractBackgroundTasks(lines: string[]): BackgroundTask[] {
         if (call.command !== undefined) {
             t.command = call.command;
         }
+        if (!Number.isNaN(call.ts)) {
+            t.startMs = call.ts;
+        }
         tasks.set(toolUseId, t);
         return t;
     };
@@ -505,6 +510,7 @@ export function extractBackgroundTasks(lines: string[]): BackgroundTask[] {
         } catch {
             continue;
         }
+        const ts = typeof rec?.timestamp === "string" ? Date.parse(rec.timestamp) : NaN;
         const content = rec?.message?.content;
         if (Array.isArray(content)) {
             for (const block of content) {
@@ -513,7 +519,7 @@ export function extractBackgroundTasks(lines: string[]): BackgroundTask[] {
                     if (SHELL_TOOLS.has(block.name)) {
                         const command = typeof input.command === "string" ? input.command : undefined;
                         const desc = typeof input.description === "string" ? input.description.trim() : "";
-                        calls.set(block.id, { label: desc || command || "background command", command });
+                        calls.set(block.id, { label: desc || command || "background command", command, ts });
                         if (input.run_in_background === true) {
                             startTask(block.id);
                         }
@@ -557,6 +563,10 @@ export function extractBackgroundTasks(lines: string[]): BackgroundTask[] {
                 for (const t of targets) {
                     if (t && status) {
                         t.status = status;
+                        // one notification is written several times (queued, then dequeued): the earliest is the end
+                        if (status !== "running" && !Number.isNaN(ts) && (t.endMs == null || ts < t.endMs)) {
+                            t.endMs = ts;
+                        }
                     }
                     if (t && outputFile) {
                         t.outputFile = outputFile;

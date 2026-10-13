@@ -5,7 +5,14 @@
 // listening process grouped by repo, each row's owner badge, the log a background task wrote for it, its Stop
 // confirm, and the chip's counts. machineserversstore.ts polls; machineserverspanel.tsx draws.
 
-import { matchLauncherTask, serverLabel, terminalLog, type DevServerRow, type TerminalLog } from "./devserversmodel";
+import {
+    matchEndedTask,
+    matchLauncherTask,
+    serverLabel,
+    terminalLog,
+    type DevServerRow,
+    type TerminalLog,
+} from "./devserversmodel";
 import type { BackgroundTask } from "./transcriptprojection";
 
 export type BadgeKind = "agent" | "terminal" | "app" | "noowner";
@@ -89,6 +96,13 @@ function resolveRow(s: DevServerRow, agents: MachineAgent[], bgTasks: Record<str
         default:
             for (const [agentId, tasks] of Object.entries(bgTasks)) {
                 const task = matchLauncherTask(s.launchercmdline, tasks);
+                if (task) {
+                    return { ...base, badge: agentBadge(agentId), log: { agentId, task } };
+                }
+            }
+            // a launcher that started the server and exited (`astro dev` daemonizes): the task that ended as it came up
+            for (const [agentId, tasks] of Object.entries(bgTasks)) {
+                const task = matchEndedTask(s.createms, tasks);
                 if (task) {
                     return { ...base, badge: agentBadge(agentId), log: { agentId, task } };
                 }

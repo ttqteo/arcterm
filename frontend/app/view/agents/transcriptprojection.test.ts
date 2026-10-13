@@ -510,6 +510,22 @@ describe("extractBackgroundTasks", () => {
         expect(extractBackgroundTasks(quiet)[0]).toMatchObject({ status: "completed", outputFile: "/tmp/b8.output" });
     });
 
+    it("keeps when a task started and when its first end notification landed", () => {
+        const at = (line: string, timestamp: string) => JSON.stringify({ ...JSON.parse(line), timestamp });
+        const lines = [
+            at(bash("t9", { command: "pnpm run dev", run_in_background: true }), "2026-10-13T06:49:45Z"),
+            result("t9", "Command running in background with ID: b9"),
+            at(notify("t9", "completed"), "2026-10-13T06:53:22Z"),
+            at(notify("t9", "completed"), "2026-10-13T06:50:49Z"),
+        ];
+        expect(extractBackgroundTasks(lines)[0]).toMatchObject({
+            status: "completed",
+            startMs: Date.parse("2026-10-13T06:49:45Z"),
+            endMs: Date.parse("2026-10-13T06:50:49Z"),
+        });
+        expect(extractBackgroundTasks(lines.slice(0, 2))[0].endMs).toBeUndefined();
+    });
+
     it("a plain foreground command is not a task", () => {
         expect(extractBackgroundTasks([bash("t3", { command: "ls" }), result("t3", "a\nb")])).toEqual([]);
     });

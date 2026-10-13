@@ -100,6 +100,8 @@ describe("serverUrl, portsLabel, ownerLabel, copyText", () => {
     it("says who started the server", () => {
         expect(ownerLabel(row({ byagent: true }))).toBe("this agent");
         expect(ownerLabel(row({ byagent: false }))).toBe("already running");
+        // a launcher that exited leaves the server with no parent: the task that started it names the agent
+        expect(ownerLabel(row({ byagent: false }), { toolUseId: "t1" })).toBe("this agent");
     });
 
     it("copies the PID and the full command line", () => {
@@ -167,6 +169,8 @@ describe("matchLogTask", () => {
         command?: string;
         status: string;
         outputFile?: string;
+        startMs?: number;
+        endMs?: number;
     }
     const task = (over: Partial<Task> = {}): Task => ({
         toolUseId: "t1",
@@ -201,6 +205,31 @@ describe("matchLogTask", () => {
 
     it("skips a task whose command is not in the launcher command line", () => {
         expect(matchLogTask(launched, [task({ command: "npm run build" })])).toBeUndefined();
+    });
+
+    it("matches a server whose launcher exited to the task that ended as it came up", () => {
+        const ended = task({ status: "completed", startMs: 1000, endMs: 5000 });
+        expect(matchLogTask(row({ createms: 3000 }), [ended])).toBe(ended);
+        expect(matchLogTask(row({ createms: 1000 }), [ended])).toBe(ended);
+        expect(matchLogTask(row({ createms: 5000 }), [ended])).toBe(ended);
+        const failed = task({ status: "failed", startMs: 1000, endMs: 5000 });
+        expect(matchLogTask(row({ createms: 3000 }), [failed])).toBe(failed);
+    });
+
+    it("never matches an ended task to a server outside its run, a stopped task, or a terminal's server", () => {
+        const ended = task({ status: "completed", startMs: 1000, endMs: 5000 });
+        expect(matchLogTask(row({ createms: 999 }), [ended])).toBeUndefined();
+        expect(matchLogTask(row({ createms: 5001 }), [ended])).toBeUndefined();
+        expect(
+            matchLogTask(row({ createms: 0 }), [task({ status: "completed", startMs: 0, endMs: 5000 })])
+        ).toBeUndefined();
+        expect(
+            matchLogTask(row({ createms: 3000 }), [task({ status: "stopped", startMs: 1000, endMs: 5000 })])
+        ).toBeUndefined();
+        expect(matchLogTask(row({ createms: 3000 }), [task({ status: "completed", startMs: 1000 })])).toBeUndefined();
+        expect(matchLogTask(row({ createms: 3000 }), [task({ status: "running", startMs: 1000 })])).toBeUndefined();
+        const owner = { kind: "terminal" as const, tabid: "tab", blockid: "blk", name: "api" };
+        expect(matchLogTask(row({ createms: 3000, owner }), [ended])).toBeUndefined();
     });
 
     it("never matches a server the agent did not start", () => {

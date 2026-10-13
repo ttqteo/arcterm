@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (server whose launcher exited)**
+
+- [ ] (arcterm) **A daemonized dev server keeps its agent.** Have a Claude agent start Astro 7 in the background
+  (`pnpm run dev`, whose `astro dev` returns once the server is up): its task reads completed, yet the agent's
+  Servers row reads `this agent` with a log button, and the footer's Servers popover badges it `claude · <agent>`,
+  not `no owner`. `frontend/app/view/agents/devserversmodel.ts` (`matchEndedTask`).
+
 **2026-10-13 (sleeping agent title)**
 
 - [ ] (arcterm) **A sleeping agent's row keeps its title.** Open the Agent surface with agents asleep (or put one to

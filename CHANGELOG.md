@@ -18,6 +18,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- **A dev server whose launcher exited still names the agent that started it.** `pnpm run dev` on Astro 7 starts
+  the server and returns, so the agent's Servers list read `already running` and the footer's Servers popover read
+  `no owner`; both now say the agent, and its log opens from the task that started it.
 - **A long "Open …" link in the Jarvis card no longer runs off its edge**: it ends in "…", and hovering it shows the
   whole title.
 - **A sleeping agent keeps its title in the Agent sidebar** instead of showing only its project name: the row reads the

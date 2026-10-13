@@ -105,9 +105,10 @@ export function portsLabel(ports: number[]): string {
     return ports.map((p) => `:${p}`).join(" ");
 }
 
-// who holds the server, as the row's second line says it
-export function ownerLabel(row: DevServerRow): string {
-    if (row.byagent) {
+// who holds the server, as the row's second line says it. task is the background task of this agent that started it
+// (matchLogTask), which names the agent as its owner after the launcher exited.
+export function ownerLabel(row: DevServerRow, task?: unknown): string {
+    if (row.byagent || task != null) {
         return "this agent";
     }
     if (row.owner?.kind === "terminal") {
@@ -175,13 +176,38 @@ export function matchLauncherTask<T extends { command?: string; status: string; 
     });
 }
 
-// The running background task whose command launched this server. Only a server this agent started has one (its
-// launcher command line holds the task's command).
-export function matchLogTask<T extends { command?: string; status: string; outputFile?: string }>(
-    row: DevServerRow,
+// The background task that ended on its own while the server it started came up: a launcher that daemonizes the
+// server and exits (Astro 7's `astro dev`, a `start` that forks), leaving the server with no parent to trace. It is
+// the task that was running when the server's process was created. A stopped task is not one: whoever stopped it
+// meant the server to go, and what outlived it is a stray.
+export function matchEndedTask<T extends { status: string; outputFile?: string; startMs?: number; endMs?: number }>(
+    createms: number,
     tasks: T[]
 ): T | undefined {
-    return row.byagent ? matchLauncherTask(row.launchercmdline, tasks) : undefined;
+    if (!(createms > 0)) {
+        return undefined;
+    }
+    return tasks.find(
+        (t) =>
+            (t.status === "completed" || t.status === "failed") &&
+            t.outputFile &&
+            t.startMs != null &&
+            t.endMs != null &&
+            t.startMs <= createms &&
+            createms <= t.endMs
+    );
+}
+
+// The background task that launched this server: the running task whose command its launcher command line holds,
+// or for a server whose launcher exited, the task that ended as it came up (matchEndedTask). A server a terminal holds
+// has none.
+export function matchLogTask<
+    T extends { command?: string; status: string; outputFile?: string; startMs?: number; endMs?: number },
+>(row: DevServerRow, tasks: T[]): T | undefined {
+    if (row.byagent) {
+        return matchLauncherTask(row.launchercmdline, tasks);
+    }
+    return row.owner?.kind === "terminal" ? undefined : matchEndedTask(row.createms, tasks);
 }
 
 // how often the rail asks for listening servers: fast while the rail is on screen, slow enough to keep the strip's

@@ -64,7 +64,11 @@ a RAM column; notifications pushed when a new unowned server appears; stopping u
 
    The frontend resolves `detached` rows: if a running background task of any agent in `backgroundTasksByIdAtom`
    matches the launcher command line, the way the rail's `matchLogTask` matches (`devserversmodel.ts`), the row
-   belongs to that agent. Otherwise a row in a repo is **no owner**, and a row outside any repo reads as its own app:
+   belongs to that agent. Failing that, a task that ran to its end (completed or failed, not stopped) between the
+   agent running it and its notification, while the server's process was created, owns it: a launcher that
+   daemonizes the server and exits leaves no live ancestor to match (2026-10-13: Astro 7's `astro dev` under
+   `pnpm run dev`). The rail's `matchLogTask` does the same for a server it lists that the agent no longer parents, and
+   reads it as `this agent`, not `already running`. Otherwise a row in a repo is **no owner**, and a row outside any repo reads as its own app:
    on the 2026-10-08 machine Docker Desktop, OneDrive and `wavesrv` all had launchers that had exited.
 
    Badges: `claude · <agent name>` (click opens it through `openTarget`), `terminal · <tab name>` (click opens it),

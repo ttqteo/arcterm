@@ -140,7 +140,7 @@ function DevServerItem({
                 </div>
                 <div className="flex min-w-0 items-center gap-[6px]">
                     <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-muted">
-                        PID {row.pid} · {ownerLabel(row)}
+                        PID {row.pid} · {ownerLabel(row, logTask)}
                     </span>
                     <span
                         className={
@@ -203,8 +203,8 @@ export function ServersSection({
     bgTasks: BackgroundTask[];
     now: number;
 }) {
-    // a server's log is its launching background task's output file, followed live (the task is running), its tab
-    // named by the server's ports and command
+    // a server's log is its launching background task's output file, followed live (the task, or the server it left
+    // behind, may still write it), its tab named by the server's ports and command
     const openLog = (task: BackgroundTask, title: string) =>
         openFileInPanel(model, agentId, { abs: task.outputFile!, root: null, reread: Date.now(), live: true, title });
     return (
