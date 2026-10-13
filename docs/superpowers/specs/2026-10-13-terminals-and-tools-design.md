@@ -1,6 +1,6 @@
 # Terminals and tools: one tree per project, terminals as peers of agents, a tool library
 
-Date: 2026-10-13. Status: design agreed, not planned yet.
+Date: 2026-10-13. Status: shipped 2026-10-13 (run 41df6bc1); the hand checks are in `docs/open-issues.md`.
 
 Prototype: `D:\work\arcterm\.superpowers\design\terminal-tui\project\` (canvas `terminal-tui`; boards Compact,
 Main, ProjectTree, Library, LibraryAdd, Picker, Launcher, Sidebar, WorktreeGone).
@@ -49,9 +49,9 @@ Design rule from the review: **compact by default.** One pane in focus; anything
 ## Sidebar: one tree per project
 
 - Folder order and agent rows are as today. Under a divider: terminals and tools, most recent first.
-- A terminal row: icon, name (the tool's name, else the last command as today), branch chip when not at the root, and a
-  short where-it-shows word when it is not the centre: `split`, `panel`; nothing otherwise. A running command
-  keeps the pulsing dot.
+- A terminal row: icon, name (the tool's name, else the last command as today), branch chip when not at the root, and
+  `panel` when it is docked under the agent; nothing otherwise. A terminal in a split is not a row of its own: it shows
+  as a segment of the split row, as the Main board draws it. A running command keeps the pulsing dot.
 - The split row (`SplitRow` in `agenttree.tsx`) moves inside its project folder when every cell is in that project. A
   split across projects keeps it at the top, each segment naming its project.
 - A folded folder says what it holds: `2 agents · 1 terminal`.
