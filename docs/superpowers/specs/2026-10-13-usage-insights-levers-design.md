@@ -23,7 +23,7 @@ The card shows Claude's markdown in two columns, and on a wide window it reads b
 
 A pure `usagelevers.ts` turns the window's `SessionRow`s into levers. Each lever is a set of candidate sessions,
 each with the spend that lever could recover; a lever's total is the sum, shown as a share of the window's Claude
-spend. Every figure is an upper bound and the UI says "tối đa" / "at most".
+spend. Every figure is an upper bound and the UI says "at most".
 
 | key | sessions | recoverable per session |
 |---|---|---|
@@ -42,11 +42,12 @@ and "points" needed explaining.
 
 ### 2. `rereadtokens` on each oversized tool result (Go)
 
-`BigToolResult` (`pkg/usagestats/toolresults.go`) gains `RereadTokens`: the result's tokens (chars / 4) counted
-once for every later turn of the same conversation (main or that subagent, by `Sub`) that carried it, stopping at
-the first turn whose context falls by at least the result's tokens (a `/compact` or `/clear` dropped it). It is
-filled in `foldSessions` (`pkg/usagestats/sessions.go`), which has the turns, and summed per tool into
-`UsageBigResults.rereadtokens`. Wire type change: `task generate`.
+`SessionBigResults` (`pkg/usagestats/sessions.go`) gains `RereadTokens`: for each main-conversation result, its
+tokens (chars / 4) counted once for every main turn after the one that wrote it to the cache, stopping at the first
+turn whose context falls by at least the result's tokens (a `/compact` or `/clear` dropped it). It is filled in
+`foldSessions`, which has the turns, and summed per tool into `UsageBigResults.rereadtokens`. A subagent's result
+gets 0: a session's subagent records carry no agent id, so one subagent's turns cannot be told from another's, and
+its lever counts only the cache write. Wire type change: `task generate`.
 
 ### 3. Claude writes words, not numbers
 
@@ -78,24 +79,26 @@ A saved analysis with markdown and no levers (every one before this ships) still
 
 ### 4. The card
 
-The rule above the card is unchanged (meta, EN/VI, Analyze). Inside the panel:
+The rule above the card is unchanged (meta, EN/VI, Analyze). The card's own labels stay English like the rest of the
+app; EN/VI picks the language of what Claude writes (headline, fixes, tips). The prototype draws the labels in
+Vietnamese; the build uses the English ones named here. Inside the panel:
 
 - **Headline**, 15px semibold, at most 72ch.
 - **Wide container (`@3xl` and up)**: two columns.
-  - Left, fixed 520px: "Có thể lấy lại · tối đa · % chi phí", then one row per lever, ranked: rank, title,
+  - Left, fixed 520px: "Recoverable · at most · % of spend", then one row per lever, ranked: rank, title,
     a 2px bar (`muted` fill on `edge-strong`, scaled to the largest lever), the value (`~22%`, `tabular-nums`).
     The selected row is `bg-surface-selected`. The rows are a `listbox`: ↑/↓ move the selection while it has
     focus (a local handler, not a surface binding, so no global key is taken). The first lever starts selected.
-  - Below the levers, after a divider: a **Mẹo chung** row marked by a lightbulb icon in place of the rank, no
-    bar, no value, and "không tính từ số liệu" in muted text.
-  - Right, `border-l border-edge-mid`: the selected lever's title and evidence ("41 tab, trung bình 314k"), its
-    fix line (13px, at most 64ch), then up to five tab chips and "+N". For Mẹo chung: the title, a bordered
-    "không tính từ số liệu của bạn" tag, and the tips as a list.
+  - Below the levers, after a divider: a **General tips** row marked by a lightbulb icon in place of the rank, no
+    bar, no value, and "not from your numbers" in muted text.
+  - Right, `border-l border-edge-mid`: the selected lever's title and evidence ("41 tabs, avg 314k"), its
+    fix line (13px, at most 64ch), then up to five tab chips and "+N". For General tips: the title, a bordered
+    "not from your numbers" tag, and the tips as a list.
 - **Narrow container**: one column; the bar moves under the title; the selected lever opens its chips and fix
   under its row, the others stay one line.
 - A tab chip opens its session through the same `openSession` the By session table uses (a live tab through the
   router, an ended one as its transcript).
-- Footer: "Các đòn bẩy chồng lên nhau, nên không cộng lại được."
+- Footer: "Levers overlap, so they don't add up."
 - Running: the skeleton takes the two-column shape. Never, held, no-sessions, error and the stale note are
   unchanged.
 
@@ -115,4 +118,4 @@ the Claude buckets are.
 - `pkg/usageinsights`: fenced and bare JSON parse; unknown key and id dropped; garbage is an error that keeps the
   saved result; a legacy markdown-only file still loads.
 - CDP scenario `usage-insights-levers`: a saved levers result as fixture; shots of the wide card with a lever
-  selected, with Mẹo chung selected, and the narrow card.
+  selected, with General tips selected, and the narrow card.
