@@ -1,4 +1,4 @@
-# Terminals and tools: one tree per project, tools over their agent, a tool library
+# Terminals and tools: one tree per project, terminals as peers of agents, a tool library
 
 Date: 2026-10-13. Status: design agreed, not planned yet.
 
@@ -27,9 +27,9 @@ Design rule from the review: **compact by default.** One pane in focus; anything
    worktree when it has one, else the project root.
 2. **One tree per project** (board ProjectTree). The sidebar's Active and Terminals sections merge: each project folder
    lists its agents, a thin divider, then its terminals and tools. Conversations stays its own section at the bottom.
-3. **A tool opens over its agent** (board Compact). It takes the agent's centre pane; the agent header's view switch,
-   today Terminal | Canvas | Review, gains one entry per tool opened from that agent (Claude | lazygit). The agent keeps
-   running underneath.
+3. **A terminal is a peer of an agent** (board Compact). A terminal or tool is a row at the same level as the agents in
+   its project folder; picking it gives it the centre, as picking an agent does. The quick Ctrl+Tab flips back to the
+   agent. No switch in the agent header, no "hosted on" link: the branch chip says which worktree it runs in.
 4. **Split and panel are on demand** (board Main). A tool or terminal can go into the grid beside the agent ("Open in
    split") or into the panel under it; the panel folds to a 32 px strip when not in use.
 5. **A tool library** under Setup → Tools (boards Library, LibraryAdd), with a quick picker, "Open a tool" (board
@@ -42,17 +42,14 @@ Design rule from the review: **compact by default.** One pane in focus; anything
     project root;
   - `tool:id` for a block started from the library (`controller: "cmd"`, as `claude-signin-modal.tsx` already starts
     a command block);
-  - `tool:host`, the agent block it was opened over, when opened from an agent. This only decides where it shows; it
-    is not ownership, so closing the agent leaves the tool in the project.
 - No new `waveobj` type, so no migration. Meta keys are Go-side (`pkg/waveobj` metaconsts) and need `task generate`.
 
 ## Sidebar: one tree per project
 
 - Folder order and agent rows are as today. Under a divider: terminals and tools, most recent first.
 - A terminal row: icon, name (the tool's name, else the last command as today), branch chip when not at the root, and a
-  short where-it-shows word: `on fix-login` (over an agent), `split`, `panel`; nothing when hidden. A running command
+  short where-it-shows word when it is not the centre: `split`, `panel`; nothing otherwise. A running command
   keeps the pulsing dot.
-- The agent row a tool is shown over names the tool at its right (`lazygit`).
 - The split row (`SplitRow` in `agenttree.tsx`) moves inside its project folder when every cell is in that project. A
   split across projects keeps it at the top, each segment naming its project.
 - A folded folder says what it holds: `2 agents · 1 terminal`.
@@ -66,15 +63,17 @@ States (board Sidebar): running, exited (row stays until closed so the last scre
 Code: `agentsidebarmodel.ts` (buildAgentTree, `splitActive`) builds the one tree; `TerminalsSection` in
 `agenttree.tsx` and `terminalsrail.tsx` fold into it. Pure model changes get tests beside them.
 
-## Centre: a tool over its agent (default)
+## Centre: a terminal picked takes it (default)
 
-- `AgentView` (`agentview.ts`, today `"terminal" | "canvas" | "review"`) grows a tool entry per tool block hosted on the
-  agent. The switch in `agentheader.tsx` shows `Claude` (the harness name) and each tool; the existing `Alt`+`c` chord
-  cycles it from inside a terminal. A `+` in the switch opens the picker for this agent.
-- The tool's block keeps its pane mounted once shown, like an agent's (`panemounts.ts`), so switching back and forth
-  never replays the TUI.
-- Header buttons while a tool shows: Open in split, Close tool.
-- Closing the agent leaves its tools as plain rows in the project; selecting one then shows it in the centre.
+- Picking a terminal or tool row (tree, `j`/`k`, Ctrl+Tab, palette, the picker) shows it in the centre, as an agent
+  is shown. This replaces today's rule that a terminal chosen while an agent shows docks under it
+  (`terminaldock.ts` `splitDock`); the panel becomes a place you move a terminal to, not where picking sends it.
+- A quick Ctrl+Tab returns to the tab shown before (the agent), so agent ↔ tool is one chord; the pane header says so
+  ("Ctrl Tab back to fix-login").
+- The terminal's pane keeps its mount once shown, like an agent's (`panemounts.ts`), so flipping never replays the
+  TUI. `focusIdAtom` stays the one selected agent; the centre's shown terminal is its own selection.
+- The pane header: icon, name, branch chip, project, then Open beside <agent> (split), Move to the panel, Close.
+- The agent header keeps its Terminal | Canvas | Review switch unchanged.
 
 ## Split and panel (on demand)
 
@@ -91,7 +90,7 @@ Code: `agentsidebarmodel.ts` (buildAgentTree, `splitActive`) builds the one tree
 
 - Built in: about 9 entries in categories, as drawn: Git (lazygit, gitui), Files (yazi, broot), System (btop),
   Containers (lazydocker, k9s), Docs and data (glow, visidata). Each entry: id, name, one-line purpose, command,
-  default "opens in" (agent's folder, project root, Home) and "shows" (over the agent, panel), and install commands per
+  default "opens in" (agent's folder, project root, Home) and "shows" (centre, panel), and install commands per
   OS (winget on Windows, brew on a Mac). The winget ids must be checked before shipping; the canvas ones are
   illustrations.
 - The user's own tools: same fields, kept in a config file the user can edit (proposed `tools.json` in the config dir,
@@ -110,15 +109,15 @@ Code: `agentsidebarmodel.ts` (buildAgentTree, `splitActive`) builds the one tree
 
 A third tab after Instructions and Skills. Left: search and the catalog by category, each row with its status
 (installed, not installed, installing, install failed, on PATH / not on PATH for yours), and "Add your own tool". Right,
-for the selected tool: purpose, primary action "Open beside <agent>", then Opens in, Shows, Shortcut, "In Open a tool"
+for the selected tool: purpose, primary action "Open lazygit" (in the focused agent's folder), then Opens in, Shows, Shortcut, "In Open a tool"
 (pinned to the picker's top), Command with where it was found, Install (command and Update), and Open now (its running
 blocks with Show).
 
 ### Open a tool (board Picker)
 
 Palette-style dialog (`command-palette.tsx` shell): a line saying where it opens (agent, branch, path), groups
-Installed, Not installed, Yours; `↵` opens over the focused agent, `Shift`+`↵` in the panel, `Ctrl`+`I` installs. Entry
-points: the `+` in the agent header switch, a folder's `tool` button on hover, the palette ("Open a tool…") and a
+Installed, Not installed, Yours; `↵` opens it in the centre, `Shift`+`↵` in the panel, `Ctrl`+`I` installs. Entry
+points: a Tool button in the agent header, a folder's `tool` button on hover, the palette ("Open a tool…") and a
 global chord (proposed `Ctrl`+`Shift`+`T`, to be checked against `bindings.ts`).
 
 ### The New dialog (board Launcher)
@@ -133,8 +132,7 @@ project, for when no agent is in focus (the picker always follows the focused ag
   tools first, then yours, then a not-installed one or two, and "All tools in Setup". Beside it, About: what the tool
   does and that it runs in the project root (an agent's worktree is the agent's Tool button).
 - Command shows the tool's command; there is no Task, Flag or worktree toggle. Project and Home work as for Terminal.
-- With no agent to stand over, the tool takes the centre, as a terminal does with no agent, and sits in its project
-  folder in the tree.
+- The tool takes the centre and sits in its project folder in the tree, as from anywhere else.
 - The dialog's title follows the row picked (New agent, New terminal, New run, Open a tool); the primary button names
   the tool (Open lazygit).
 - The app bar's one `+ New` button (`app-bar.tsx`) stays as it is; its tooltip becomes "New agent, terminal, run or
@@ -147,17 +145,17 @@ project, for when no agent is in focus (the picker always follows the focused ag
   Close terminal.
 - **Tool exits:** the block stays with its last screen and an "exited" row until closed; reopening reruns the command.
 - **Command missing:** a user tool not on PATH says so in the picker and library, with Edit; never a failed spawn.
-- **No focused agent:** the picker opens in the project root (or Home) and Shows falls back to the centre.
+- **No focused agent:** the picker opens in the project root (or Home).
 - **Key collisions:** a TUI needs `Esc`, arrows and `Ctrl` keys. The app's global chords already pass through a
   focused terminal by the rules in `docs/keyboard-shortcuts.md`; no new bare key is taken while a tool has focus.
 
 ## Testing
 
 - Pure models with tests beside them: the merged tree (grouping, divider, split placement, folded counts), the
-  `AgentView` tool entries and cycling, the dock's folded state, catalog status and the picker's grouping.
+  picking a terminal takes the centre (no auto-dock), the dock's folded state, catalog status and the picker's grouping.
 - Go: the tool status command (PATH resolution, built-in plus user entries).
-- CDP scenarios (`scripts/cdp/scenarios.mjs`): the project tree with a terminal and a tool, a tool over its agent and
-  back via the switch, open in split, the folded panel strip, Setup → Tools, the picker, the worktree-removed card.
+- CDP scenarios (`scripts/cdp/scenarios.mjs`): the project tree with a terminal and a tool, a tool picked in the tree and
+  back with a quick Ctrl+Tab, open in split, the folded panel strip, Setup → Tools, the picker, the worktree-removed card.
 
 ## Out of scope
 
