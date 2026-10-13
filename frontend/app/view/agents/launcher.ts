@@ -263,13 +263,12 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
         return NONE;
     }
     if (k.key === "Enter") {
-        // reading a session back costs nothing; resuming it starts the agent and reloads its whole context
-        if (k.shift && zone === "resume" && ctx.resumePicked) {
-            return { kind: "view-transcript" };
+        if (zone !== "start" && zone !== "project" && zone !== "resume" && zone !== "input") {
+            return NONE;
         }
-        return zone === "start" || zone === "project" || zone === "resume" || zone === "input"
-            ? { kind: "launch" }
-            : NONE;
+        // reading a session back costs nothing; resuming it starts the agent and reloads its whole context. The
+        // footer's Transcript button names Shift+Enter, so it holds wherever Enter launches.
+        return k.shift && ctx.resumePicked ? { kind: "view-transcript" } : { kind: "launch" };
     }
     if (zone !== "start" && zone !== "project") {
         return NONE;

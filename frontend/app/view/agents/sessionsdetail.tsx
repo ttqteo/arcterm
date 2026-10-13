@@ -11,7 +11,7 @@ import { openOrPeek } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { ArrowLeft, Check, Trash2 } from "lucide-react";
-import { Fragment, useLayoutEffect, useRef, type ReactNode } from "react";
+import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { showTerminal } from "./agentcenter";
 import { openDiff, projectDiffScope } from "./agentdiffnav";
 import type { AgentsViewModel } from "./agents";
@@ -91,21 +91,24 @@ export function runSessionPrimary(model: AgentsViewModel, session: LiveSession) 
         return;
     }
     if (session.resumecommand) {
-        const piResume =
-            session.runtime === "pi" && session.resumeargs?.length
-                ? { startupArgs: session.resumeargs, resumePath: session.transcriptpath }
-                : {};
-        fireAndForget(() =>
-            launchAgent(model, {
-                runtime: session.runtime as Runtime,
-                startupCommand: session.resumecommand,
-                task: "",
-                projectPath: session.projectpath,
-                projectName: session.projectname || "agent",
-                ...piResume,
-            })
-        );
+        fireAndForget(() => resumeSession(model, session));
     }
+}
+
+// Resume an ended session into a new tab on the same transcript; message, when given, goes in as its next message
+async function resumeSession(model: AgentsViewModel, session: LiveSession, message = ""): Promise<void> {
+    const piResume =
+        session.runtime === "pi" && session.resumeargs?.length
+            ? { startupArgs: session.resumeargs, resumePath: session.transcriptpath }
+            : {};
+    await launchAgent(model, {
+        runtime: session.runtime as Runtime,
+        startupCommand: session.resumecommand,
+        task: message.trim(),
+        projectPath: session.projectpath,
+        projectName: session.projectname || "agent",
+        ...piResume,
+    });
 }
 
 function PrimaryButton({ model, session, strong }: { model: AgentsViewModel; session: LiveSession; strong?: boolean }) {
@@ -127,6 +130,54 @@ function PrimaryButton({ model, session, strong }: { model: AgentsViewModel; ses
         >
             {primary === "jump" ? "Jump →" : "Resume →"}
         </button>
+    );
+}
+
+// Resume with a message: under an ended session's transcript, the box whose Enter resumes it and sends what is typed as
+// its next message (empty, it only resumes). Shift+Enter is the newline; an IME's Enter stays the IME's.
+function ResumeComposer({ model, session }: { model: AgentsViewModel; session: LiveSession }) {
+    const [text, setText] = useState("");
+    // one resume at a time: a second Enter while the tab is opening would start the session twice. On success the
+    // centre goes to the new terminal; on a failure the text stays to try again.
+    const [busy, setBusy] = useState(false);
+    const resume = () => {
+        if (busy) {
+            return;
+        }
+        setBusy(true);
+        fireAndForget(async () => {
+            try {
+                await resumeSession(model, session, text);
+            } finally {
+                setBusy(false);
+            }
+        });
+    };
+    return (
+        <div data-agent-session-composer className="flex flex-none items-end gap-2 border-t border-edge-faint pt-2.5">
+            <textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                        e.preventDefault();
+                        resume();
+                    }
+                }}
+                placeholder="Message to send on resume. Leave empty to just resume."
+                className="block field-sizing-content min-h-[38px] max-h-[160px] min-w-0 flex-1 resize-none overflow-y-auto rounded-[8px] border border-edge-mid bg-surface px-3 py-[9px] text-[13px] leading-normal text-primary outline-none placeholder:text-muted focus:border-accent-700"
+            />
+            <button
+                type="button"
+                onClick={resume}
+                disabled={busy}
+                title="Resume (Enter)"
+                className="flex h-[38px] flex-none cursor-pointer items-center gap-1.5 rounded-[8px] bg-accent px-[13px] text-[12px] font-semibold text-background hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-45"
+            >
+                {busy ? "Resuming…" : "Resume"}
+                <kbd className="font-mono text-[10px] font-normal opacity-60">⏎</kbd>
+            </button>
+        </div>
     );
 }
 
@@ -359,6 +410,7 @@ export function SoloDetail({
             ? { key: "asking", text: "asking" }
             : { key: "running", text: "running" }
         : { key: "done", text: "done" };
+    const resumable = sessionPrimary(session) === "resume";
     return (
         <div className="flex h-full min-h-0 flex-col">
             <div className="mb-1 flex flex-none items-center gap-2.5 border-b border-edge-faint pb-2">
@@ -394,9 +446,11 @@ export function SoloDetail({
                     session={session}
                     onDeleted={() => (onBack ? onBack() : globalStore.set(model.sessionsSelAtom, "all"))}
                 />
-                <PrimaryButton model={model} session={session} strong />
+                {/* a resumable session resumes from its composer, below */}
+                {resumable ? null : <PrimaryButton model={model} session={session} strong />}
             </div>
             <SessionBody model={model} session={session} empty="" className="pb-2" />
+            {resumable ? <ResumeComposer key={session.id} model={model} session={session} /> : null}
         </div>
     );
 }

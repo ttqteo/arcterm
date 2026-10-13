@@ -333,9 +333,15 @@ describe("launcherKey", () => {
         expect(launcherKey(picked, key("Enter"))).toEqual({ kind: "launch" });
         // the New session row has no transcript to read
         expect(launcherKey(at("resume"), key("Enter", { shift: true }))).toEqual({ kind: "launch" });
-        // outside the list Shift+Enter is still a launch
+        // wherever Enter launches, as the footer's Transcript button says; the Task box keeps it as its newline
         expect(launcherKey(at("project", "", { resumePicked: true }), key("Enter", { shift: true }))).toEqual({
-            kind: "launch",
+            kind: "view-transcript",
+        });
+        expect(launcherKey(at("start", "", { resumePicked: true }), key("Enter", { shift: true }))).toEqual({
+            kind: "view-transcript",
+        });
+        expect(launcherKey(at("textarea", "", { resumePicked: true }), key("Enter", { shift: true }))).toEqual({
+            kind: "none",
         });
     });
     it("Tab is no action: the dialog's focus trap takes it before asking", () => {

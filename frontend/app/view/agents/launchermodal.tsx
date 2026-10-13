@@ -989,7 +989,6 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                 ramWarning={ramWarning}
                                 resumeChoices={choices}
                                 resume={resume}
-                                onViewTranscript={viewTranscript}
                                 home={atHome}
                                 taskRef={taskRef}
                             />
@@ -1023,9 +1022,22 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                         <DialogButton variant="secondary" hint="esc" onClick={close}>
                             Cancel
                         </DialogButton>
+                        {resume != null ? (
+                            <DialogButton
+                                variant="secondary"
+                                hint="⇧⏎"
+                                data-launcher-transcript
+                                title="View transcript (Shift+Enter)"
+                                onClick={() => viewTranscript(resume)}
+                            >
+                                Transcript
+                            </DialogButton>
+                        ) : null}
+                        {/* Enter launches from every zone but the Task box, where Mod+Enter does */}
                         <DialogButton
                             variant="primary"
-                            hint={formatChordString("Cmd:Enter")}
+                            hint="⏎"
+                            title={`Enter, or ${formatChordString("Cmd:Enter")} from the Task box`}
                             disabled={primaryDisabled}
                             onClick={launch}
                             className="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-300"

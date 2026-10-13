@@ -208,8 +208,6 @@ interface AgentFieldsProps {
     // the picked agent's recent sessions in the picked project, and the one picked to resume (null: a new session)
     resumeChoices: SessionInfo[];
     resume: SessionInfo | null;
-    // reads a session back instead of resuming it
-    onViewTranscript: (s: SessionInfo) => void;
     // started in Home, the home folder outside any project: no worktree, and Claude Code runs ask-only
     home: boolean;
     // a letter typed in the Start column moves focus here
@@ -223,7 +221,6 @@ export function AgentFields({
     ramWarning,
     resumeChoices,
     resume,
-    onViewTranscript,
     home,
     taskRef,
 }: AgentFieldsProps) {
@@ -261,20 +258,14 @@ export function AgentFields({
         ? "optional · sent as the next message · paste or drop images"
         : "optional · sent as the first prompt · paste or drop images";
     // with sessions to resume, Resume and Task sit side by side, 4:6, so the dialog fits without scrolling; Resume comes
-    // first, since which session is picked decides what the task is (a first prompt or the next message). Narrower than
-    // 4 parts, the picked row's Transcript Shift+Enter button leaves its title no room.
+    // first, since which session is picked decides what the task is (a first prompt or the next message). The picked
+    // session's Transcript button sits in the footer, beside Launch.
     const withResume = runtimeShowsTask(runtime) && resumeChoices.length > 0;
     return (
         <>
             {runtimeShowsTask(runtime) ? (
                 <div className={cn(withResume && "grid grid-cols-[minmax(0,4fr)_minmax(0,6fr)] gap-4")}>
-                    {withResume ? (
-                        <ResumeList
-                            choices={resumeChoices}
-                            pickedId={resume?.id ?? null}
-                            onViewTranscript={onViewTranscript}
-                        />
-                    ) : null}
+                    {withResume ? <ResumeList choices={resumeChoices} pickedId={resume?.id ?? null} /> : null}
                     <div className="flex min-w-0 flex-col gap-2">
                         <div className="flex items-baseline gap-2">
                             <label htmlFor="launcher-task" className={LAUNCHER_LABEL}>
