@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (Resource Manager font)**
+
+- [ ] (arcterm) **The Resource Manager uses the interface font.** Open the app bar's RAM chip: process names, command
+  lines and the Running / CPU / Memory columns read in the interface font (Settings → Appearance → Fonts), not
+  JetBrains Mono, and the numbers stay right-aligned in columns; only the footer keycaps are mono. commit "resmon
+  interface font".
+
 **2026-10-13 (folder running count, Spider-Man web)**
 
 - [ ] (arcterm) **A project folder counts its running agents.** With an agent working in a project, its folder row in

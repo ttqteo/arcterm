@@ -14,6 +14,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - **On Windows, Alt+Tab back to a folded arcterm opens it maximized**, in Full, whatever size it was folded from (Full,
   Float, or a smaller window); the taskbar button does the same. On macOS ⌘Tab still gives back the size it folded from.
+- **The Resource Manager reads in the interface font**: process names, their command lines, and the CPU, memory and
+  age columns are no longer monospaced; the numbers still line up.
 
 ## 0.15.11 — 2026-10-13
 

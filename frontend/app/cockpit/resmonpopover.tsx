@@ -172,13 +172,13 @@ function ProcessRow({ g, line, ui, now }: { g: ResMonGroup; line: ResMonLine; ui
             className={cn(GRID, "h-7", cursor && "bg-surface-selected")}
         >
             <span className="flex min-w-0 items-baseline gap-2" style={{ paddingLeft: depth * INDENT_PX }}>
-                <span className="w-2.5 shrink-0 font-mono text-[11px] text-ink-faint">{depth > 0 ? "└" : ""}</span>
-                <span className="whitespace-nowrap font-mono text-[12px] text-secondary">{label.name}</span>
-                <span className="truncate font-mono text-[11px] text-muted">{label.cmd}</span>
+                <span className="w-2.5 shrink-0 text-[11px] text-ink-faint">{depth > 0 ? "└" : ""}</span>
+                <span className="whitespace-nowrap text-[12px] text-secondary">{label.name}</span>
+                <span className="truncate text-[11px] text-muted">{label.cmd}</span>
             </span>
-            <span className="text-right font-mono text-[11px] text-ink-mid">{fmtAge(row.createts ?? 0, now)}</span>
-            <span className="text-right font-mono text-[12px] text-primary">{fmtCpu(row.cpu)}</span>
-            <span className="text-right font-mono text-[12px] text-secondary">{fmtMem(row.mem)}</span>
+            <span className="text-right tabular-nums text-[11px] text-ink-mid">{fmtAge(row.createts ?? 0, now)}</span>
+            <span className="text-right tabular-nums text-[12px] text-primary">{fmtCpu(row.cpu)}</span>
+            <span className="text-right tabular-nums text-[12px] text-secondary">{fmtMem(row.mem)}</span>
             <span className="flex justify-end">
                 {row.tag ? (
                     <span className="rounded-[4px] bg-white/[0.05] px-1.5 py-px text-[10.5px] text-muted">
@@ -220,10 +220,10 @@ function MoreRow({ g, view, ui }: { g: ResMonGroup; view: ResMonView; ui: ResMon
                 {view.full ? `Hide ${what}` : `+ ${what}`}
             </button>
             <span />
-            <span className="text-right font-mono text-[11px] text-muted">
+            <span className="text-right tabular-nums text-[11px] text-muted">
                 {view.full ? "" : fmtCpu(view.hiddenCpu)}
             </span>
-            <span className="text-right font-mono text-[11px] text-muted">
+            <span className="text-right tabular-nums text-[11px] text-muted">
                 {view.full ? "" : fmtMem(view.hiddenMem)}
             </span>
             <span />
@@ -270,8 +270,8 @@ function GroupBlock({ g, ui, now }: { g: ResMonGroup; ui: ResMonUi; now: number 
                     </span>
                 </button>
                 <span />
-                <span className="text-right font-mono text-[12px] font-medium text-primary">{fmtCpu(g.cpu)}</span>
-                <span className="text-right font-mono text-[12px] text-secondary">{fmtMem(g.mem)}</span>
+                <span className="text-right tabular-nums text-[12px] font-medium text-primary">{fmtCpu(g.cpu)}</span>
+                <span className="text-right tabular-nums text-[12px] text-secondary">{fmtMem(g.mem)}</span>
                 <span className="flex justify-end">
                     {g.killable && targets.length > 0 && (
                         <button
@@ -398,9 +398,11 @@ export function ResMonPopover({ model }: { model: AgentsViewModel }) {
                                 className={cn("ml-auto text-[11.5px]", busy ? "text-warning-soft" : "text-muted")}
                             >
                                 Arc{" "}
-                                <span className={cn("font-mono", !busy && "text-primary")}>{fmtCpu(snap.cpu, 0)}</span>{" "}
+                                <span className={cn("tabular-nums", !busy && "text-primary")}>
+                                    {fmtCpu(snap.cpu, 0)}
+                                </span>{" "}
                                 CPU ·{" "}
-                                <span className={cn("font-mono", !busy && "text-primary")}>{fmtMem(snap.mem)}</span>
+                                <span className={cn("tabular-nums", !busy && "text-primary")}>{fmtMem(snap.mem)}</span>
                                 {busy ? <span className="font-semibold text-warning"> · {busy}</span> : null}
                                 {cap != null ? ` · ${capacityChipLabel(cap)}` : null}
                             </span>
