@@ -542,7 +542,9 @@ export function stepWalker(state: WalkerState, input: WalkerInput, now: number, 
         return view(still(s, "hold"), input, now, null);
     }
 
-    if (isIdle(input, now)) {
+    // idleness that comes over him under the app bar waits for the hang to play out: he comes down, then sleeps
+    const midHang = s.name === "rest" && s.restPose === "hang" && s.hang != null && input.hangs && now < s.due;
+    if (isIdle(input, now) && !midHang) {
         // it sleeps where it stands when that is clear, and walks off the span to sleep when it is not
         const spot = clearSpot(s.x, ledge, avoid);
         if (spot === s.x) {

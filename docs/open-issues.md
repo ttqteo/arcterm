@@ -31,6 +31,30 @@ does not, say what you saw and it becomes a bug row under Actionable.
 
 - [ ] (arcterm) Usage → Insights levers: Re-analyze once in the installed app; Claude's reply parses and the levers' sizes look plausible against the By session table.
 
+**2026-10-13 (Spider-Man pet: held strand, crawl art, a grab mid-descent, idle mid-hang)**
+
+- [ ] (arcterm) **Spider-Man hangs under the pointer.** With Spider-Man as Jarvis, press him anywhere and drag: he
+  eases 4 cells under the pointer with his raised hand right under it, and the strand runs from the pointer to that
+  hand; let go and the strand stays where you let go while he rappels down, his hand drifting back to centre.
+  Hover him while he hangs under the app bar and grab him at once, while he is still coming down: he stays under the
+  pointer instead of sliding off it. Under the app bar, the crawl reads as one body (boots and gloves on the bar, the
+  head with its eye in front). `petview.tsx`, `petsprite.ts` SPIDEY_CRAWL.
+
+**2026-10-13 (Spider theme: the web sits behind the sidebar)**
+
+- [ ] (arcterm) **The web is behind the icons.** Under the Spider theme on the Agent surface, the top-left web shows
+  through the gaps of the nav rail and the agent tree, under the Cockpit/Jarvis icons and the Conversation History row,
+  and reads as one web across the rail's border (also after narrowing the window until the rail drops its labels); no
+  web at the bottom right over the terminal or the Stop button. `frontend/app/view/agents/themedecorview.tsx`
+  (`PanelWeb`).
+
+**2026-10-13 (Folded Spider-Man shows how many agents work)**
+
+- [ ] (arcterm) **Folded Spider-Man carries the count.** With Spider-Man as Jarvis and two or more agents working,
+  fold the window (Ctrl+M): beside the rooftop's top-right corner a pill shows his web and the number working, matching
+  `wsh agents list`'s `working` rows, also past four, where the lit windows stop; with none working and Jarvis idle the
+  pill is gone, and a waiting chip sits under the pill. `frontend/app/cockpit/sprout-mini.tsx`.
+
 **2026-10-13 (Sidebar: folds slide open and closed)**
 
 - [ ] (arcterm) **Sidebar folds animate.** Click the Active, Conversations and Terminals headers, and a project folder

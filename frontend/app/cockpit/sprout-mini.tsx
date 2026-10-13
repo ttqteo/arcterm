@@ -8,7 +8,7 @@
 // hover card: the agents (a click floats on one), the row that opens the chat, and Restore. What Sprout says
 // (petBubbleAtom), and a reply that landed while the chat was folded, show in a bubble beside it, and give way to the
 // card. Spider-Man folds into a rooftop scene instead (petmini.ts spideyFoldLook): windows lit for the
-// agents working, spider-sense for what waits.
+// agents working, spider-sense for what waits, and his web with the count beside it, since the windows stop at four.
 // Every element the cursor may use carries data-mini-hit, or the click-through poll lets clicks fall through it. Nothing
 // here carries a title or a drop shadow, and Sprout has no ground shadow: over a light app behind the see-through
 // window, they read as dark smears. A border keeps each one apart from what is behind it.
@@ -289,6 +289,8 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
         );
     };
     // the card takes the place of the bubbles while it shows: they come back when it closes
+    // "…" and how many work, or Spider-Man's web: for him also while Jarvis thinks, with nothing to count
+    const dots = teleport == null && (look.working != null || roof?.thinking === true);
     const card = (forced?.hover ?? hovered) && !chatOpen;
     const speaking = bubble != null && !chatOpen && !card;
     const told = unread && !chatOpen && errand != null && bubble == null && !card;
@@ -333,14 +335,13 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
                         className={cn(
                             "pointer-events-none absolute min-w-4 rounded-full bg-warning px-1 text-center text-[10px] font-bold leading-4 text-on-warning tabular-nums",
                             // Spider-Man's sits at the right, under the working web while that shows
-                            spidey ? (roof?.thinking ? "right-0 top-5" : "right-0 top-3") : "left-1 top-3"
+                            spidey ? (dots ? "right-0 top-5" : "right-0 top-3") : "left-1 top-3"
                         )}
                     >
                         {look.chip}
                     </span>
                 ) : null}
-                {/* Spider-Man's windows carry the count; his web shows only while Jarvis thinks */}
-                {teleport == null && (roof != null ? roof.thinking : look.working != null) ? (
+                {dots ? (
                     <WorkingDots count={look.working ?? 0} character={character} className="absolute right-0 top-0" />
                 ) : null}
             </div>

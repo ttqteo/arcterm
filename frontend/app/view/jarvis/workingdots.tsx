@@ -50,6 +50,7 @@ export function WorkingDots({
     return (
         <span
             aria-hidden
+            data-working-dots
             className={cn(
                 "pointer-events-none flex h-4 items-center gap-[3px] rounded-full border border-edge-mid bg-surface-raised pl-[5px] pr-1 text-[10px] font-semibold leading-none text-secondary tabular-nums",
                 className

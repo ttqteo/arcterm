@@ -7158,6 +7158,7 @@ const MINI_READ = `(() => {
         chipText: chip?.textContent?.trim() ?? null,
         chipBox: box(chip),
         web: !!document.querySelector("[data-sprout-mini] [data-working-web]"),
+        dots: document.querySelector("[data-sprout-mini] [data-working-dots]")?.textContent?.trim() ?? null,
         brick: ${petFillCount("[data-spidey-roof]", "--color-city-brick")},
         lit: ${petFillCount("[data-spidey-roof]", "--color-city-window-lit")},
         asking: ${petFillCount("[data-spidey-roof]", "--color-asking")},
@@ -8062,17 +8063,18 @@ const jarvisPet = {
         await petForce(h, null);
         const strand19 = heldFrame19?.strands?.[0];
         const heldTop19 = heldFrame19?.sprite?.top;
-        // the held strand runs from the root's top (where he was picked up) to the svg's top, which hangs 4 cells under it
+        // the held strand runs from the pointer down to his raised hand at the svg's top, which hangs 4 cells (12px) under
+        // the pointer with the hand right under it
         const heldOk19 =
             held19?.pet?.state === "dragged" &&
             heldFrame19?.pet?.pose === "dangle" &&
             heldFrame19.strands.length === 1 &&
-            Math.abs(strand19.top - heldFrame19.root.top) <= 2 &&
+            Math.abs(strand19.top - to19.y) <= 2 &&
             Math.abs(strand19.bottom - heldFrame19.sprite.top) <= 4 &&
+            Math.abs(heldFrame19.sprite.top - to19.y - 12) <= 3 &&
+            Math.abs((strand19.left + strand19.right) / 2 - to19.x) <= 3 &&
             strand19.left >= heldFrame19.sprite.left - 1 &&
-            strand19.right <= heldFrame19.sprite.right + 1 &&
-            to19.y >= heldFrame19.root.top &&
-            to19.y <= heldFrame19.root.bottom;
+            strand19.right <= heldFrame19.sprite.right + 1;
         // from the release the strand stays stuck where he was let go while he goes down it
         const down19 = samples19.filter((s) => s.state === "dragged" && s.top != null && heldTop19 != null && s.top > heldTop19 + 6);
         const lastDown19 = down19.length === 0 ? -1 : samples19.lastIndexOf(down19[down19.length - 1]);
@@ -8080,7 +8082,7 @@ const jarvisPet = {
         const final19 = samples19[samples19.length - 1];
         const onLedge19 = (s) => s != null && s.ledgeTop != null && s.bottom != null && Math.abs(s.bottom - s.ledgeTop) <= 1;
         rec(
-            "19. held (a real drag): dangle with one strand from where he was picked up to his raised hand; let go, he rappels down it with the strand stuck where he was released, and lands on the ledge with no strand left",
+            "19. held (a real drag): dangle 4 cells under the pointer with one strand from it to his raised hand; let go, he rappels down it with the strand stuck where he was released, and lands on the ledge with no strand left",
             heldOk19 &&
                 down19.length >= 2 &&
                 down19.every((s) => s.strands.length === 1 && Math.abs(s.strands[0].bottom - s.top) <= 4) &&
@@ -8098,7 +8100,7 @@ const jarvisPet = {
                 strands: heldFrame19?.strands?.length,
                 root: heldFrame19?.root,
                 sprite: heldFrame19?.sprite,
-                pointerY: to19.y,
+                pointer: to19,
                 samples: samples19.length,
                 descent: down19.map((s) => [Math.round(s.top), s.strands.length, Math.round(s.strands[0]?.top ?? 0)]),
                 landed: landed19 == null ? null : { bottom: landed19.bottom, ledgeTop: landed19.ledgeTop, strands: landed19.strands.length },
@@ -8343,7 +8345,13 @@ const jarvisPet = {
         // the windows: 2x2 each, the first min(working, 4) lit
         const lit3 = await miniForce(h, { working: 3, waiting: 0, posture: "none" }, (r) => r.lit === 12 && r.look?.lit === 3);
         await miniShot(h, "jarvis-pet-22-windows");
-        const lit9 = await miniForce(h, { working: 9, waiting: 0, posture: "none" }, (r) => r.lit === 16 && r.look?.lit === 4);
+        // past four, the web beside him carries the count the windows cannot
+        const lit9 = await miniForce(
+            h,
+            { working: 9, waiting: 0, posture: "none" },
+            (r) => r.lit === 16 && r.look?.lit === 4 && r.web === true && r.dots === "9"
+        );
+        await miniShot(h, "jarvis-pet-22-count");
         const lit0 = await miniForce(h, { working: null, waiting: 0, posture: "none" }, (r) => r.lit === 0 && r.look?.lit === 0);
         // spider-sense: the eight amber jags for a posture or a count waiting, the chip at the right
         const sense1 = await miniForce(
@@ -8378,7 +8386,7 @@ const jarvisPet = {
         );
         await polishNap(1200);
         rec(
-            "22. folded, Spider-Man sits on a rooftop: the fold drew his web (departing or arriving), the rooftop is 60x60 in brick, the legs swing, 3 working agents light 3 windows (12 rects, 9 cap at 4), a posture or a waiting count raises 8 jags of spider-sense with the chip at the right, Jarvis thinking draws the web, and a double-click restores",
+            "22. folded, Spider-Man sits on a rooftop: the fold drew his web (departing or arriving), the rooftop is 60x60 in brick, the legs swing, 3 working agents light 3 windows (12 rects, 9 cap at 4 with the web reading 9), a posture or a waiting count raises 8 jags of spider-sense with the chip at the right, Jarvis thinking draws the web, and a double-click restores",
             folded22 === true &&
                 roofShown22 === true &&
                 (web22.footer > 0 || web22.mini > 0) &&
@@ -8393,6 +8401,8 @@ const jarvisPet = {
                 lit3.look?.lit === 3 &&
                 lit9.lit === 16 &&
                 lit9.look?.lit === 4 &&
+                lit9.web === true &&
+                lit9.dots === "9" &&
                 lit0.lit === 0 &&
                 sense1.asking === 8 &&
                 sense1.look?.sense === true &&
@@ -8408,7 +8418,7 @@ const jarvisPet = {
                 web: web22,
                 roof: { character: roof22.character, box: roof22.roof, brick: roof22.brick },
                 legs: { swung: swung22.length, still: still22.length, differ: modeSig(swung22) !== modeSig(still22) },
-                lit: { three: [lit3.lit, lit3.look?.lit], nine: [lit9.lit, lit9.look?.lit], none: [lit0.lit, lit0.look?.lit] },
+                lit: { three: [lit3.lit, lit3.look?.lit], nine: [lit9.lit, lit9.look?.lit, lit9.web, lit9.dots], none: [lit0.lit, lit0.look?.lit] },
                 sense: {
                     posture: [sense1.asking, sense1.look?.sense],
                     waiting: [sense2.asking, sense2.chipText, sense2.chipBox?.left, sense2.roof?.left, sense2.roof?.width],
