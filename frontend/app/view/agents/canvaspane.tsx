@@ -108,16 +108,20 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
                         onStep={(delta) => stepCanvasBoard(agent.id, delta)}
                     />
                 ) : s.boards.length > 0 ? (
-                    <SwapTabs
-                        ariaLabel="Boards"
-                        title={`Previous and next board (${formatChordString("[")} and ${formatChordString("]")})`}
-                        value={currentTab(s)}
-                        options={canvasTabs(s.boards).map((t) => ({
-                            key: t,
-                            label: t === ALL_TAB ? "All" : boardLabel(t),
-                        }))}
-                        onChange={(tab) => selectCanvasTab(agent.id, tab)}
-                    />
+                    <div className="flex flex-none items-center gap-[4px] self-stretch">
+                        <StepButton dir="prev" onStep={(delta) => stepCanvasBoard(agent.id, delta)} />
+                        <SwapTabs
+                            ariaLabel="Boards"
+                            title={`Previous and next board (${formatChordString("[")} and ${formatChordString("]")})`}
+                            value={currentTab(s)}
+                            options={canvasTabs(s.boards).map((t) => ({
+                                key: t,
+                                label: t === ALL_TAB ? "All" : boardLabel(t),
+                            }))}
+                            onChange={(tab) => selectCanvasTab(agent.id, tab)}
+                        />
+                        <StepButton dir="next" onStep={(delta) => stepCanvasBoard(agent.id, delta)} />
+                    </div>
                 ) : null}
                 <div className="flex-1" />
                 {pane === "board" ? (
@@ -244,16 +248,7 @@ function BoardPicker({
     };
     return (
         <div className="flex min-w-0 flex-initial items-center gap-[4px] self-stretch">
-            <button
-                type="button"
-                data-canvas-board-step="prev"
-                title={`Previous board (${formatChordString("[")})`}
-                aria-label="Previous board"
-                onClick={() => onStep(-1)}
-                className={cn(SWAP_BTN, "px-[5px]")}
-            >
-                <ChevronLeft size={13} strokeWidth={1.9} aria-hidden />
-            </button>
+            <StepButton dir="prev" onStep={onStep} />
             <SwapTabs
                 ariaLabel="Nearby boards"
                 value={value}
@@ -281,17 +276,29 @@ function BoardPicker({
                 </span>
                 <ChevronDown size={13} strokeWidth={1.9} className="flex-none text-muted" aria-hidden />
             </button>
-            <button
-                type="button"
-                data-canvas-board-step="next"
-                title={`Next board (${formatChordString("]")})`}
-                aria-label="Next board"
-                onClick={() => onStep(1)}
-                className={cn(SWAP_BTN, "px-[5px]")}
-            >
-                <ChevronRight size={13} strokeWidth={1.9} aria-hidden />
-            </button>
+            <StepButton dir="next" onStep={onStep} />
         </div>
+    );
+}
+
+// ‹ or › beside the board tabs, a step as [ or ] takes
+function StepButton({ dir, onStep }: { dir: "prev" | "next"; onStep: (delta: number) => void }) {
+    const prev = dir === "prev";
+    return (
+        <button
+            type="button"
+            data-canvas-board-step={dir}
+            title={`${prev ? "Previous" : "Next"} board (${formatChordString(prev ? "[" : "]")})`}
+            aria-label={prev ? "Previous board" : "Next board"}
+            onClick={() => onStep(prev ? -1 : 1)}
+            className={cn(SWAP_BTN, "px-[5px]")}
+        >
+            {prev ? (
+                <ChevronLeft size={13} strokeWidth={1.9} aria-hidden />
+            ) : (
+                <ChevronRight size={13} strokeWidth={1.9} aria-hidden />
+            )}
+        </button>
     );
 }
 

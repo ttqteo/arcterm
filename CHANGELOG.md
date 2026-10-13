@@ -12,6 +12,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- **A canvas with only a few boards has ‹ and › beside its tabs too**, stepping boards as `[` and `]` do.
 - **Closing the agent or terminal you are looking at opens the one beside it** in the sidebar (the one below, or above
   when it was last), instead of jumping back to the first agent.
 

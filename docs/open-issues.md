@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (canvas arrows with few boards)**
+
+- [ ] (arcterm) **A canvas with five tabs or fewer has ‹ and › too.** Open a canvas with two to four boards (Canvas in
+  the header): ‹ and › sit either side of the All / board tabs, and each steps one board as `[` and `]` do. CDP
+  scenario `canvas-tabs` step 4 checks ‹; it has not run in the app yet.
+  commit "a canvas with few boards gets ‹ › too".
+
 **2026-10-13 (close hands focus to the neighbour)**
 
 - [ ] (arcterm) **Closing the shown agent opens its neighbour.** In one pane, with three or more agents in a project,

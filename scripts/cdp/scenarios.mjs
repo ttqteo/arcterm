@@ -25067,6 +25067,16 @@ const canvasTabsScenario = {
             JSON.stringify(cards.frames) === JSON.stringify(["Cards.dc.html"]),
             JSON.stringify(cards)
         );
+        await h.ev(`document.querySelector('[data-canvas-board-step="prev"]')?.click()`);
+        await polishNap(400);
+        const prev = await canvasTabFrames(h);
+        await h.shot("cdp-shots/canvas-tabs-arrows.png");
+        rec(
+            "4. a row of tabs still has ‹ and ›: ‹ from Cards opens Main",
+            JSON.stringify(prev.frames) === JSON.stringify(["Main.dc.html"]) &&
+                (await h.ev(`!!document.querySelector('[data-canvas-board-step="next"]')`)),
+            JSON.stringify(prev)
+        );
         return steps;
     },
     teardown: (h, ctx) => teardownCanvasBoards(h, ctx, "canvas-tabs"),
