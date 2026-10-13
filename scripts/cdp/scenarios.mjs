@@ -33259,11 +33259,12 @@ const toolsDockStrip = {
             line: (${TT_FLAT})(document.querySelector("[data-dock-strip] [data-dock-strip-line]")),
             folded: document.querySelector("[data-agent-grid]")?.getAttribute("data-terminal-dock-folded"),
             height: Math.round(document.querySelector("[data-dock-strip]")?.getBoundingClientRect().height ?? 0),
+            name: (document.querySelector("[data-dock-strip] [data-dock-strip-name]")?.textContent || "").trim(),
         }))()`);
         await h.shot("cdp-shots/tools-dock-strip-2-strip.png");
         rec(
-            "2. the chord folds the panel to a strip that quotes arc-fixture's screen line",
-            stripUp && line && strip.folded === "true",
+            "2. the chord folds the panel to a strip that names the tool (arc-fixture) and quotes its screen line",
+            stripUp && line && strip.folded === "true" && strip.name === "arc-fixture",
             JSON.stringify(strip)
         );
 

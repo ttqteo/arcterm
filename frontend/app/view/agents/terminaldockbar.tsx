@@ -14,11 +14,23 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { latestTerminalLine } from "@/app/view/term/termwrap";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
-import { ChevronDown, ChevronUp, Columns2, Maximize2, Minimize2, SquareTerminal, X } from "lucide-react";
+import { useAtomValue } from "jotai";
+import { ChevronDown, ChevronUp, Columns2, Maximize2, Minimize2, X } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { projectOf, type AgentVM } from "./agentsviewmodel";
 import { terminalDockDragAtom, terminalDockHeightAtom } from "./railstore";
 import { clampDockHeight, DOCK_DEFAULT_PX, DOCK_MIN_PX } from "./terminaldock";
+import { ToolGlyph } from "./terminalsrail";
+import { toolIcon, toolTerminalName } from "./toolsmodel";
+import { toolsStatusAtom } from "./toolsstore";
+
+// The panel names a tool terminal as the tree, the pane head and the split do: the tool's name and icon
+// (toolTerminalName, toolIcon), a plain terminal its own name and the terminal icon
+function useDockLabel(terminal: AgentVM) {
+    const tools = useAtomValue(toolsStatusAtom) ?? [];
+    const tool = terminal.toolId ? tools.find((t) => t.id === terminal.toolId) : undefined;
+    return { name: toolTerminalName(terminal, tools), icon: toolIcon(tool) };
+}
 
 // the strip's size: the folded panel's whole height
 export const DOCK_STRIP_PX = 32;
@@ -115,6 +127,7 @@ export function TerminalDockBar({
     onOpenSplit: () => void;
 }) {
     const project = projectOf(terminal);
+    const label = useDockLabel(terminal);
     // the bar's own double-click, not one on its buttons or on the edge (which resets the height)
     const onDoubleClick = (e: React.MouseEvent) => {
         if (e.target instanceof Element && e.target.closest("button, [data-terminal-dock-grip]") != null) {
@@ -130,15 +143,15 @@ export function TerminalDockBar({
             className="relative flex h-[26px] shrink-0 select-none items-center gap-[7px] border-b border-border bg-surface px-[8px] text-muted"
         >
             {maximized ? null : <DockResizeGrip height={height} available={available} />}
-            <SquareTerminal size={12} aria-hidden className="shrink-0" />
-            <span title={terminal.name} className="min-w-0 truncate text-[12px] font-medium text-primary">
-                {terminal.name}
+            <ToolGlyph name={label.icon} size={12} />
+            <span title={label.name} className="min-w-0 truncate text-[12px] font-medium text-primary">
+                {label.name}
             </span>
             {project ? <span className="min-w-0 shrink truncate text-[11px] text-muted">{project}</span> : null}
             <button
                 type="button"
                 data-dock-open-split
-                aria-label={`Open ${terminal.name} in the split`}
+                aria-label={`Open ${label.name} in the split`}
                 title="Open in split: the terminal gets a cell beside the agent"
                 onClick={onOpenSplit}
                 className={cn(BUTTON, "ml-auto")}
@@ -171,7 +184,7 @@ export function TerminalDockBar({
             <button
                 type="button"
                 data-terminal-dock-close
-                aria-label={`Close the ${terminal.name} panel`}
+                aria-label={`Close the ${label.name} panel`}
                 title="Hide the terminal panel (the shell keeps running)"
                 onClick={onClose}
                 className={BUTTON}
@@ -201,6 +214,7 @@ function useLatestOutputLine(blockId: string | undefined): string | undefined {
 
 export function TerminalDockStrip({ terminal, onOpen }: { terminal: AgentVM; onOpen: () => void }) {
     const line = useLatestOutputLine(terminal.blockId);
+    const label = useDockLabel(terminal);
     const chord = formatChordString("Mod:`");
     const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
         if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
@@ -213,15 +227,17 @@ export function TerminalDockStrip({ terminal, onOpen }: { terminal: AgentVM; onO
             role="button"
             tabIndex={0}
             data-dock-strip={terminal.id}
-            aria-label={`Terminal panel, folded: ${terminal.name}. Open the panel`}
+            aria-label={`Terminal panel, folded: ${label.name}. Open the panel`}
             title={`Open the panel (${chord})`}
             onClick={onOpen}
             onKeyDown={onKeyDown}
             style={{ height: DOCK_STRIP_PX }}
             className="flex shrink-0 cursor-pointer select-none items-center gap-[8px] rounded-[8px] border border-edge-mid bg-surface pl-[12px] pr-[8px] outline-none hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent"
         >
-            <SquareTerminal size={13} aria-hidden className="shrink-0 text-muted" />
-            <span className="shrink-0 text-[12.5px] font-semibold text-secondary">{terminal.name}</span>
+            <ToolGlyph name={label.icon} className="text-muted" />
+            <span data-dock-strip-name className="shrink-0 text-[12.5px] font-semibold text-secondary">
+                {label.name}
+            </span>
             {terminal.running ? (
                 <span
                     aria-label="Running a command"
