@@ -27,18 +27,16 @@ function logFailure(what: string) {
     return (e: unknown) => console.error(`attention popup: ${what} failed`, e);
 }
 
-// sizes the window to the frame and puts the card in the primary screen's corner: the placement is the
-// card's, so the frame's shadow room reaches past the work area's edges. The contract's placement is in
-// logical pixels (its margin is), the window api here in physical ones.
-async function placeWindow(frame: HTMLElement, card: HTMLElement): Promise<void> {
+// sizes the window to the drawn bubble and puts it in the primary screen's corner. The contract's
+// placement is in logical pixels (its margin is), the window api here in physical ones.
+async function placeWindow(el: HTMLElement): Promise<void> {
     const monitor = await primaryMonitor();
     if (monitor == null) {
         throw new Error("no primary monitor");
     }
     const scale = monitor.scaleFactor;
-    const frameRect = frame.getBoundingClientRect();
-    const cardRect = card.getBoundingClientRect();
-    const size = { width: Math.ceil(frameRect.width), height: Math.ceil(frameRect.height) };
+    const rect = el.getBoundingClientRect();
+    const size = { width: Math.ceil(rect.width), height: Math.ceil(rect.height) };
     const { position, size: areaSize } = monitor.workArea;
     const spot = popupPlacement(
         {
@@ -47,13 +45,11 @@ async function placeWindow(frame: HTMLElement, card: HTMLElement): Promise<void>
             width: areaSize.width / scale,
             height: areaSize.height / scale,
         },
-        { width: cardRect.width, height: cardRect.height }
+        size
     );
-    const x = spot.x - (cardRect.left - frameRect.left);
-    const y = spot.y - (cardRect.top - frameRect.top);
     const win = getCurrentWindow();
     await win.setSize(new PhysicalSize(Math.round(size.width * scale), Math.round(size.height * scale)));
-    await win.setPosition(new PhysicalPosition(Math.round(x * scale), Math.round(y * scale)));
+    await win.setPosition(new PhysicalPosition(Math.round(spot.x * scale), Math.round(spot.y * scale)));
 }
 
 function Popup() {
@@ -86,12 +82,11 @@ function Popup() {
 
     // keyed on the payload object, so a second show replaces the first and restarts the timer
     useEffect(() => {
-        const card = frame.current?.firstElementChild;
-        if (bubble == null || !(card instanceof HTMLElement)) {
+        if (bubble == null || frame.current == null) {
             return;
         }
         let replaced = false;
-        placeWindow(frame.current, card)
+        placeWindow(frame.current)
             .then(() => (replaced ? undefined : getCurrentWindow().show()))
             .catch(logFailure("show"));
         const t = setTimeout(hide, BUBBLE_MS);

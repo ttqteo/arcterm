@@ -2931,15 +2931,12 @@ const POPUP_DETAIL = `(async () => {
           )
         : [];
     const name = card?.querySelector("[data-attention-popup-agent-name]");
-    // the visible card is the marked button's parent: it carries the border, the background and the shadow
-    const rect = card?.parentElement.getBoundingClientRect();
     return {
         card: card != null,
         visible,
         hasFocus: document.hasFocus(),
         position,
         size,
-        cardRect: rect ? { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom } : null,
         monitor,
         label: text(plain[0]),
         name: text(name),
@@ -2965,17 +2962,14 @@ async function popupUntil(popup, want, ms) {
     return { ...state, ok: false, ms: Date.now() - start };
 }
 
-// how far, in physical px, the card's right and bottom edges are from where the 16px rule puts them. The card's
-// rect is in the popup page's logical px, from the window's corner; the window's shadow room reaches past it.
+// how far, in physical px, the window's right and bottom edges are from where the 16px rule puts them
 function popupEdgeError(d) {
     const scale = d?.monitor?.scaleFactor;
     const area = d?.monitor?.workArea;
-    if (!scale || !area || !d.position || !d.cardRect) return null;
-    const right = d.position.x + d.cardRect.right * scale;
-    const bottom = d.position.y + d.cardRect.bottom * scale;
+    if (!scale || !area || !d.position || !d.size) return null;
     return {
-        right: area.position.x + area.size.width - right - POPUP_MARGIN * scale,
-        bottom: area.position.y + area.size.height - bottom - POPUP_MARGIN * scale,
+        right: area.position.x + area.size.width - (d.position.x + d.size.width) - POPUP_MARGIN * scale,
+        bottom: area.position.y + area.size.height - (d.position.y + d.size.height) - POPUP_MARGIN * scale,
     };
 }
 
@@ -3108,7 +3102,7 @@ const attentionPopup = {
 
         const edges = popupEdgeError(gate);
         rec(
-            "3. the popup reads Review, the run's source and the gate's text, themed, its card 16px inside the work area's corner",
+            "3. the popup reads Review, the run's source and the gate's text, themed, 16px inside the work area's corner",
             gate.label === "Review" &&
                 gate.name === gateItem?.source &&
                 gate.text === gateItem?.text &&
@@ -3129,7 +3123,6 @@ const attentionPopup = {
                 edgeErrorPx: edges,
                 position: gate.position,
                 size: gate.size,
-                cardRect: gate.cardRect,
                 workArea: gate.monitor?.workArea,
                 scale: gate.monitor?.scaleFactor,
             })

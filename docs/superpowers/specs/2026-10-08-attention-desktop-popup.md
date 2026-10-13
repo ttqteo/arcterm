@@ -41,8 +41,8 @@ window in it are context, not something to build.
 - **Placement:** the primary screen only, 16px in from the right edge of its work area and 16px above the
   work area's bottom (the work area already excludes the taskbar). That is the visible card's edge. The window
   carries 24px of transparent room around the card for its shadow, which takes clicks while the popup shows
-  (decided 2026-10-08: card at 16px, keep the shadow), so the window reaches 8px past the work area's right
-  and bottom edges.
+  (decided 2026-10-08: card at 16px, keep the shadow). As first shipped the 16px is applied to the window's
+  edge, so the card sits 40px in; `docs/superpowers/plans/2026-10-08-attention-popup-followup.md` fixes it.
 - **The popup's text is plain.** Markdown markers in an item's text show literally: the in-app bubble's
   `InlineMarkdown` imports the cockpit's store, which the popup page must not load.
 - **The app exits when the main window is destroyed,** so the hidden popup window never keeps Arc and wavesrv

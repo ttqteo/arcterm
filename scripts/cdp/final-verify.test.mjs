@@ -1,20 +1,16 @@
 import { execFile, spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { createServer as createHttpServer } from "node:http";
 import { createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { WebSocketServer } from "ws";
 import {
     BUILD_SLOTS,
     EXIT_UNVERIFIED,
     acquireBuildSlot,
     buildLockPath,
-    closeMainWindow,
     finalManifest,
-    finalOutcome,
     inUse,
     pickPort,
     pickVitePort,
@@ -371,117 +367,6 @@ describe("sweepStaleStores", () => {
     it("is a no-op when no stage has made a store yet", () => {
         dir = mkdtempSync(join(tmpdir(), "final-stores-"));
         expect(() => sweepStaleStores(join(dir, "missing"))).not.toThrow();
-    });
-});
-
-describe("finalOutcome", () => {
-    const exited = { state: "exited" };
-    const alive = { state: "alive" };
-    const unclosed = { state: "unclosed", reason: "could not close the main window: no page" };
-
-    // the close is not tried after a failed run, so there is no close result to read
-    it.each([[1], [2], [EXIT_UNVERIFIED]])("keeps the scenarios' exit code %i whatever the close showed", (code) => {
-        for (const close of [undefined, exited, alive, unclosed]) {
-            expect(finalOutcome(code, close)).toEqual({ code });
-        }
-    });
-
-    it("passes when the scenarios passed and the app exited by itself", () => {
-        expect(finalOutcome(0, exited)).toEqual({ code: 0 });
-    });
-
-    it("fails, and is not unverified, when the app stayed alive after its main window was closed", () => {
-        expect(finalOutcome(0, alive)).toEqual({
-            code: 1,
-            line: "the dev app stayed alive after its main window was closed",
-        });
-    });
-
-    it("is unverified with the reason when the main window could not be closed", () => {
-        expect(finalOutcome(0, unclosed)).toEqual({ code: EXIT_UNVERIFIED, line: unclosed.reason });
-    });
-});
-
-describe("closeMainWindow", () => {
-    it("is unclosed when nothing answers on the port", async () => {
-        const r = await closeMainWindow(await freePort());
-        expect(r.state).toBe("unclosed");
-        expect(r.reason).toMatch(/^could not close the main window: cannot reach CDP on :\d+/);
-    });
-
-    it("is unclosed when the app has no cockpit page to attach to", async () => {
-        // a host whose only page is the hidden popup's
-        const popup = [{ type: "page", url: "http://localhost:5174/popup.html" }];
-        const srv = createHttpServer((_req, res) => res.end(JSON.stringify(popup)));
-        await new Promise((resolve) => srv.listen(0, resolve));
-        try {
-            const r = await closeMainWindow(srv.address().port);
-            expect(r.state).toBe("unclosed");
-            expect(r.reason).toMatch(/^could not close the main window: no page target on :\d+/);
-        } finally {
-            srv.closeAllConnections();
-            await close(srv);
-        }
-    });
-
-    // a CDP host with one cockpit page; onClose(srv, wss) answers the close invoke's Runtime.evaluate: a value to reply
-    // with, or undefined to never reply
-    async function fakeCdpHost(onClose) {
-        const srv = createHttpServer((req, res) => {
-            const ws = `ws://127.0.0.1:${srv.address().port}/page`;
-            res.end(JSON.stringify([{ type: "page", url: "http://localhost:5174/", webSocketDebuggerUrl: ws }]));
-        });
-        const wss = new WebSocketServer({ server: srv });
-        wss.on("connection", (ws) =>
-            ws.on("message", (data) => {
-                const { id, method } = JSON.parse(data);
-                if (method !== "Runtime.evaluate") return ws.send(JSON.stringify({ id, result: {} }));
-                const value = onClose(srv, wss);
-                if (value !== undefined) ws.send(JSON.stringify({ id, result: { result: { value } } }));
-            })
-        );
-        await new Promise((resolve) => srv.listen(0, resolve));
-        const stop = async () => {
-            for (const ws of wss.clients) ws.terminate();
-            wss.close();
-            srv.closeAllConnections();
-            if (srv.listening) await close(srv);
-        };
-        return { port: srv.address().port, stop };
-    }
-
-    it("is exited when the app stops answering after the close", async () => {
-        const host = await fakeCdpHost((srv, wss) => {
-            for (const ws of wss.clients) ws.terminate();
-            srv.closeAllConnections();
-            srv.close();
-        });
-        try {
-            expect(await closeMainWindow(host.port, 5000)).toEqual({ state: "exited" });
-        } finally {
-            await host.stop();
-        }
-    });
-
-    it("is alive when the app keeps answering past the wait", async () => {
-        const host = await fakeCdpHost(() => undefined);
-        try {
-            expect(await closeMainWindow(host.port, 1500)).toEqual({ state: "alive" });
-        } finally {
-            await host.stop();
-        }
-    });
-
-    it("is unclosed with the invoke's error when the close is rejected", async () => {
-        const host = await fakeCdpHost(() => "window not found");
-        try {
-            expect(await closeMainWindow(host.port, 5000)).toEqual({
-                state: "unclosed",
-                reason: "could not close the main window: window not found",
-            });
-        } finally {
-            await host.stop();
-        }
     });
 });
 

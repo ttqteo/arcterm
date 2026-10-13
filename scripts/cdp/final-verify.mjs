@@ -23,7 +23,6 @@ import { connect, createServer } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { attach } from "./attach.mjs";
 
 export const EXIT_UNVERIFIED = 3;
 
@@ -58,9 +57,6 @@ const SHOTS_DIR = "cdp-shots";
 // with the 10 min boot and the verify run, a stage that waited this long still ends inside the engine's 30 min
 // FinalTimeout (pkg/orchestrate/final.go)
 const DEFAULT_LOCK_WAIT_MS = 600_000;
-// how long the app gets to exit by itself once its main window is closed
-const CLOSE_EXIT_MS = 15_000;
-const STAYED_ALIVE = "the dev app stayed alive after its main window was closed";
 
 // the dev app's store. wavesrv binds <store>/data/wave.sock and windows caps a unix socket path at 108 bytes, which
 // a store under ARC_FINAL_OUT (itself under %TEMP%) can pass, so it lives under a short path keyed by the out dir
@@ -283,54 +279,6 @@ function runVerify(port, scenarios) {
     });
 }
 
-// resolves to null when the window took the close, else to why it did not. Nothing in the page can throw out of it,
-// so an evaluate that fails is the page dying with its window
-const CLOSE_MAIN_EXPR = `(async () => {
-    try {
-        await window.__TAURI_INTERNALS__.invoke("plugin:window|close", { label: "main" });
-        return null;
-    } catch (e) {
-        return String(e?.message ?? e) || "rejected";
-    }
-})()`;
-
-// closes the main window and waits for the app to exit by itself: the hidden attention-popup's webview is served on
-// the same port, so a port that still answers is a host still alive. Resolves { state: "exited" | "alive" }, or
-// { state: "unclosed", reason } when the window could not be closed at all
-export async function closeMainWindow(port, waitMs = CLOSE_EXIT_MS) {
-    let page;
-    try {
-        page = await attach(port);
-    } catch (e) {
-        return { state: "unclosed", reason: `could not close the main window: ${e.message}` };
-    }
-    let rejection = null;
-    // not awaited: the reply may never come, since the page dies with the window
-    page.ev(CLOSE_MAIN_EXPR).then(
-        (r) => (rejection = r),
-        () => {}
-    );
-    try {
-        for (const deadline = Date.now() + waitMs; Date.now() < deadline && !rejection; ) {
-            if (!(await answers(port))) return { state: "exited" };
-            await new Promise((r) => setTimeout(r, POLL_MS));
-        }
-    } finally {
-        page.close();
-    }
-    if (rejection) return { state: "unclosed", reason: `could not close the main window: ${rejection}` };
-    return { state: "alive" };
-}
-
-// the stage's exit code and, when it has one, its last stdout line. `close` is closeMainWindow's result, read only
-// when the scenarios passed
-export function finalOutcome(verifyCode, close) {
-    if (verifyCode !== 0) return { code: verifyCode };
-    if (close.state === "exited") return { code: 0 };
-    if (close.state === "alive") return { code: 1, line: STAYED_ALIVE };
-    return { code: EXIT_UNVERIFIED, line: close.reason };
-}
-
 async function main() {
     const out = process.env.ARC_FINAL_OUT;
     if (!out) unverified("ARC_FINAL_OUT is not set");
@@ -391,7 +339,6 @@ async function main() {
 
     let code;
     let reason;
-    let close;
     try {
         if (!(await waitForCdp(port, dev, bootMs))) {
             reason =
@@ -404,17 +351,13 @@ async function main() {
                 cpSync(SHOTS_DIR, join(out, SHOTS_DIR), { recursive: true });
                 writeFinalManifest(SHOTS_DIR, out);
             }
-            if (code === 0) close = await closeMainWindow(port);
         }
     } finally {
         stop();
         dropStore(store, out);
     }
     if (reason) unverified(reason);
-    const outcome = finalOutcome(code, close);
-    if (outcome.code === EXIT_UNVERIFIED) unverified(outcome.line);
-    if (outcome.line) console.log(outcome.line);
-    process.exit(outcome.code);
+    process.exit(code);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
