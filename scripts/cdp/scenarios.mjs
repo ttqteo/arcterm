@@ -23053,7 +23053,7 @@ const paletteActions = {
     },
 };
 
-// --- autonomous-runs: the Approvals setting on each of its boards (docs/superpowers/plans/2026-10-13-autonomous-runs.md)
+// --- autonomous-runs: the Approvals setting on each of its boards (docs/orchestrator-guide.md, Autonomous runs)
 // One project with one orchestrator run held by deferstart. Its lead is a seeded tab, linked as the lead by a tab oref
 // on the running phase, whose block runs a stdin sink: the server's switch finds the lead's Spec review question
 // there deterministically, and the answer it types lands somewhere harmless. The fixture roster names that tab as the
