@@ -61,6 +61,13 @@ describe("chromeArgs", () => {
         expect(args.at(-1)).toBe("http://localhost:5180/");
         expect(chromeArgs({ cdpPort: 9300, url: "u", profile: "p", headed: true })).not.toContain("--headless=new");
     });
+
+    it("keeps Chrome from downloading its background components into the profile", () => {
+        const args = chromeArgs({ cdpPort: 9300, url: "u", profile: "p", headed: false });
+        expect(args).toContain("--disable-component-update");
+        expect(args).toContain("--disable-background-networking");
+        expect(args.find((a) => a.startsWith("--disable-features="))).toContain("OptimizationGuideModelDownloading");
+    });
 });
 
 describe("wavesrvEnv and viteEnv", () => {
