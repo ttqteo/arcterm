@@ -12,7 +12,6 @@
   "app": {
     "windows": [
       { "label": "main", "title": "Arc", "width": 1000, "height": 700, "maximized": true, "decorations": false, "dragDropEnabled": false },
-      { "label": "attention-popup", "url": "popup.html", "width": 300, "height": 140, "visible": false, "decorations": false, "transparent": true, "alwaysOnTop": true, "skipTaskbar": true, "focus": false, "focusable": false, "resizable": false, "maximizable": false, "minimizable": false, "shadow": false }
     ],
     "security": { "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost ws://localhost:* http://localhost:* ws://127.0.0.1:* http://127.0.0.1:*; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; frame-src http://127.0.0.1:*" }
   },

@@ -38,7 +38,5 @@ export default defineConfig({
         // the 500 kB default is a network-delivery budget; these chunks load from the app bundle on disk.
         // monaco alone is 3.8 MB and already lazy, so the limit sits just above it to still catch a jump.
         chunkSizeWarningLimit: 4000,
-        // the cockpit and the desktop popup's page (the attention-popup window)
-        rollupOptions: { input: [resolve(__dirname, "index.html"), resolve(__dirname, "popup.html")] },
     },
 });

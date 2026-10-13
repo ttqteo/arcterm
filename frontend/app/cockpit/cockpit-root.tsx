@@ -123,7 +123,7 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <NowTicker model={model} />
             <BackgroundAgentsPoller />
-            <AttentionPoller model={model} />
+            <AttentionPoller />
             <PulseDriver />
             <PetSources model={model} />
             <ResMonPopover model={model} />

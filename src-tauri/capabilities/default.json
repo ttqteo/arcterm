@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window: core defaults, events, its own window controls (including coming forward: show, unminimize, set-focus, is-focused), menu, dialogs and loopback http.",
+  "description": "Phase 1 bridge: core defaults + event listen for the main window.",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -14,10 +14,6 @@
     "core:window:allow-set-fullscreen",
     "core:window:allow-is-fullscreen",
     "core:window:allow-request-user-attention",
-    "core:window:allow-set-focus",
-    "core:window:allow-unminimize",
-    "core:window:allow-show",
-    "core:window:allow-is-focused",
     "core:webview:allow-set-webview-zoom",
     "core:menu:default",
     "dialog:allow-open",

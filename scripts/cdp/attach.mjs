@@ -93,28 +93,7 @@ function connect(wsUrl) {
     });
 }
 
-// the attention popup is a second page target on the app's origin (frontend/app/view/agents/attentionpopup.ts POPUP_PAGE)
-const POPUP_PAGE = "popup.html";
-
-const pageUrl = (t) => (t.url ?? "").split(/[?#]/)[0];
-
-// a window that has not navigated yet: the popup's cannot be told from the main one's until one of them has
-const isBlank = (t) => !t.url || t.url === "about:blank";
-
-// a starting app answers CDP with both windows still blank; a cold vite takes a while to serve the first page
-const BLANK_WAIT_MS = 60_000;
-const BLANK_POLL_MS = 500;
-
-// the main page: never the popup's, which matches every pattern the cockpit's does, and a loaded page before a
-// blank one, which may be the popup's
-export function pickTarget(targets) {
-    const pages = targets.filter((t) => t.type === "page" && !pageUrl(t).endsWith(POPUP_PAGE));
-    return (
-        pages.find((t) => /localhost:5174|wave|arc/i.test(t.url ?? "")) ?? pages.find((t) => !isBlank(t)) ?? pages[0]
-    );
-}
-
-async function listTargets(port) {
+async function pickTarget(port) {
     let res;
     try {
         res = await fetch(`http://localhost:${port}/json/list`, { signal: AbortSignal.timeout(5000) });
@@ -127,11 +106,21 @@ async function listTargets(port) {
                 `(task dev; the flag is dev-only in src-tauri/src/main.rs)`
         );
     }
-    return res.json();
+    const targets = await res.json();
+    return (
+        targets.find((t) => t.type === "page" && /localhost:5174|wave|arc/i.test(t.url ?? "")) ??
+        targets.find((t) => t.type === "page")
+    );
 }
 
-// one page target's session. Its shots land in the list the caller passes, so every page of a run shares one.
-async function openPage(target, shots) {
+export async function attach(port = 9222) {
+    const target = await pickTarget(port);
+    if (!target) {
+        throw new Error(
+            `no page target on :${port} — is the dev app running with the debug flag? ` +
+                `(task dev; the flag is dev-only in src-tauri/src/main.rs)`
+        );
+    }
     const client = await connect(target.webSocketDebuggerUrl);
     await client.send("Runtime.enable");
     await client.send("Page.enable");
@@ -144,53 +133,15 @@ async function openPage(target, shots) {
         return x.result?.value;
     }
 
+    const shots = [];
+
     return {
         url: target.url,
+        shots,
         ev,
         // raw CDP passthrough: Runtime.evaluate covers most driving, but Emulation (deterministic shot
         // size) and Input.dispatchKeyEvent (real key events, not synthetic DOM ones) have no wrapper.
         cdp: (method, params) => client.send(method, params),
-        async shot(outPath) {
-            const { data } = await client.send("Page.captureScreenshot", { format: "png" });
-            mkdirSync(dirname(outPath), { recursive: true });
-            writeFileSync(outPath, Buffer.from(data, "base64"));
-            const png = basename(outPath);
-            shots.push({ name: png.replace(/\.png$/, ""), png, path: outPath });
-        },
-        close: () => client.close(),
-    };
-}
-
-export async function attach(port = 9222) {
-    let target = pickTarget(await listTargets(port));
-    for (const start = Date.now(); target && isBlank(target) && Date.now() - start < BLANK_WAIT_MS; ) {
-        await sleep(BLANK_POLL_MS);
-        target = pickTarget(await listTargets(port));
-    }
-    if (!target) {
-        throw new Error(
-            `no page target on :${port} — is the dev app running with the debug flag? ` +
-                `(task dev; the flag is dev-only in src-tauri/src/main.rs)`
-        );
-    }
-    const shots = [];
-    const main = await openPage(target, shots);
-    const { ev } = main;
-
-    return {
-        ...main,
-        shots,
-        // a second page of the app by a part of its url (the attention popup is "popup.html"): the same ev, cdp,
-        // shot and close, with its shots in this run's list
-        async page(urlPart) {
-            const targets = await listTargets(port);
-            const other = targets.find((t) => t.type === "page" && (t.url ?? "").includes(urlPart));
-            if (!other) {
-                const urls = targets.filter((t) => t.type === "page").map((t) => t.url);
-                throw new Error(`no page target on :${port} with "${urlPart}" in its url (pages: ${urls.join(", ") || "none"})`);
-            }
-            return openPage(other, shots);
-        },
         rpc: (command, data, opts) =>
             ev(
                 `window.TabRpcClient.wshRpcCall(${JSON.stringify(command)}, ${JSON.stringify(data ?? null)}, ${JSON.stringify(opts ?? {})})`
@@ -219,5 +170,13 @@ export async function attach(port = 9222) {
                 // same reason as goto: the visible label is absent on a narrow rail
                 return b.getAttribute('aria-label') || (b.textContent || '').trim();
             })()`),
+        async shot(outPath) {
+            const { data } = await client.send("Page.captureScreenshot", { format: "png" });
+            mkdirSync(dirname(outPath), { recursive: true });
+            writeFileSync(outPath, Buffer.from(data, "base64"));
+            const png = basename(outPath);
+            shots.push({ name: png.replace(/\.png$/, ""), png, path: outPath });
+        },
+        close: () => client.close(),
     };
 }

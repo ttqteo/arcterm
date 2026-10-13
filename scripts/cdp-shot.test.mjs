@@ -3,7 +3,6 @@ import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
-import { pickTarget } from "./cdp/attach.mjs";
 
 const execFileAsync = promisify(execFile);
 const SCRIPT = fileURLToPath(new URL("./cdp-shot.mjs", import.meta.url));
@@ -31,29 +30,6 @@ function listen(handler) {
         server.listen(0, "127.0.0.1", () => resolve({ server, port: String(server.address().port) }));
     });
 }
-
-describe("pickTarget", () => {
-    const main = { type: "page", url: "http://localhost:5174/" };
-    const popup = { type: "page", url: "http://localhost:5174/popup.html" };
-
-    it("never picks the attention popup's page as the main page, whatever the order", () => {
-        expect(pickTarget([popup, main])).toBe(main);
-        expect(pickTarget([main, popup])).toBe(main);
-        expect(pickTarget([{ ...popup, url: `${popup.url}?x=1#y` }, main])).toBe(main);
-    });
-
-    it("picks a loaded page over a blank one, which may be the popup's window before it navigates", () => {
-        // a final-stage dev app serves vite on another port, so the url matches no cockpit pattern
-        const loaded = { type: "page", url: "http://localhost:5175/" };
-        const blank = { type: "page", url: "about:blank" };
-        expect(pickTarget([blank, loaded])).toBe(loaded);
-        expect(pickTarget([blank, popup])).toBe(blank);
-    });
-
-    it("picks nothing when the popup is the only page", () => {
-        expect(pickTarget([popup, { type: "service_worker", url: "http://localhost:5174/sw.js" }])).toBeUndefined();
-    });
-});
 
 describe("cdp-shot.mjs failure handling", () => {
     it("exits nonzero with an actionable message when the port is closed (dev app not running)", async () => {

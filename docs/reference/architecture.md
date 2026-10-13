@@ -9,8 +9,6 @@ Three layers, all part of the running app.
 
 Thin native host that replaces the Electron main process. `main.rs` mints a per-launch UUID auth key and **spawns `wavesrv` as a child process**, passing `WAVETERM_AUTH_KEY`, `WAVETERM_APP_PATH`, `WAVETERM_DATA_HOME`, `WAVETERM_CONFIG_HOME` via env. It then **parses the `WAVESRV-ESTART` line off wavesrv's stderr** (`estart.rs`) to discover the dynamically-assigned websocket/web ports. The frontend reaches native code through five Tauri commands only (`init.rs`: `get_init`, `fe_log`; `commands.rs`: `set_window_init_status`, `open_external`; `canvas.rs`: `capture_webview`). The window is borderless (`decorations: false`) — the titlebar/app-bar is drawn in React.
 
-There is a second window, `attention-popup`, declared in `tauri.conf.json`: hidden at start, borderless, transparent, always on top, off the taskbar and unfocusable. It loads `popup.html` and has its own capability (`capabilities/attention-popup.json`: events, and showing, hiding, sizing, placing and reading its own window, nothing else). Because a hidden window would otherwise keep the process alive, `main.rs` exits the app when the main window is destroyed. In a dev build the CDP port therefore serves two page targets on one origin; the verify harness never takes the popup for the main page, and a scenario reaches it with `h.page("popup.html")` (`scripts/cdp/attach.mjs`).
-
 Migration principle (from prior phases): don't re-port Electron-IPC-shaped contracts; build the Tauri-native primitive and let the old method die.
 
 ### 2. Go backend (`cmd/`, `pkg/`)
@@ -39,9 +37,7 @@ Cockpit-specific backend domains (all newer than the Electron→Tauri migration)
 
 ### 3. Frontend — React 19 + Vite + Tailwind 4 + jotai (`frontend/`)
 
-The **Tauri cockpit (`frontend/tauri/main.tsx`) is the shipping frontend** (the Electron entry was removed in the Phase 5b teardown). Path aliases: `@/app`, `@/store`, `@/util`.
-
-It is no longer the sole entry: `frontend/tauri/popup.tsx` (page `popup.html`, a second Vite input) is the `attention-popup` window's page. It opens no wavesrv connection and imports nothing of the cockpit: it draws the bubble card (`view/jarvis/bubblecard.tsx`) from what the main window's `AttentionPoller` sends over Tauri events, and sends the click back. The contract between the two is `view/agents/attentionpopup.ts`.
+The **Tauri cockpit (`frontend/tauri/main.tsx`) is the sole shipping frontend** (the Electron entry was removed in the Phase 5b teardown). Path aliases: `@/app`, `@/store`, `@/util`.
 
 **Boot flow** (`frontend/tauri/main.tsx`):
 

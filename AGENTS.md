@@ -79,7 +79,6 @@ There is no jsdom/render-test harness for the cockpit — verify rendered UI by 
 - **Enable:** `src-tauri/src/main.rs` sets `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`, gated by `#[cfg(debug_assertions)]` (compiled out of `cargo tauri build` — never ships).
 - **Capture:** `node scripts/cdp-shot.mjs [out.png] [port]` — discovers the page target (port defaults to `9222`; it ignores `CDP_PORT`) and writes a PNG (the page is the Vite app inside WebView2, `http://localhost:5174/`). The same attach pattern drives full CDP (`Runtime.evaluate` to read the DOM / jotai atoms, `Input.dispatchKeyEvent` for keys). `claude-in-chrome` MCP can't attach (needs Chrome + extension) — use raw CDP.
 - **Scenario harness:** `task verify:ui -- <name...>` (→ `scripts/cdp/verify.mjs`) runs each scenario in `scripts/cdp/scenarios.mjs` as arrange → goto → shot → assert → teardown, prints a PASS/FAIL table, writes a contact sheet to `cdp-shots/index.html`, and exits nonzero on failure. With no names it runs every scenario. Prefer this over ad-hoc `cdp-shot.mjs` when a repeatable check exists; shared attach logic is in `scripts/cdp/attach.mjs`.
-- **The CDP port serves two page targets:** the cockpit and the hidden `attention-popup` window's `popup.html`, on the same origin. `attach` and `cdp-shot.mjs` never pick the popup as the main page; a scenario reaches it with `h.page("popup.html")`, which returns `ev`, `cdp`, `shot` and `close` for that target and records its shots with the run's. The popup's card can sit in the DOM of a hidden webview, so read `plugin:window|is_visible` on the popup's target to tell whether it is showing.
 - **A scenario that needs a run with a DAG** follows `docs/reference/cdp-run-fixtures.md`: the arrange, seed and teardown helpers already exist in `scenarios.mjs`.
 - **Inject test data first** if you need a populated cockpit: `node scripts/inject-live-agents.mjs <scenario>` (see that script's header).
 - **Before committing a UI change, try it in the running dev app** (a CDP scenario or `cdp-shot.mjs`). If the live check could not run, say exactly what was not verified.
@@ -98,10 +97,7 @@ before working in an area you don't already know.
 - **Tauri shell — Rust (`src-tauri/`)** — thin native host replacing the Electron main process. Mints
   a per-launch auth key, spawns `wavesrv` as a child, parses its `WAVESRV-ESTART` stderr line for the
   dynamic ports, and runs `wsh install-agent-hooks` on every launch. Five Tauri commands only; the
-  window is borderless and the titlebar is drawn in React. There is a second window, `attention-popup`
-  (page `popup.html`, its own capability `capabilities/attention-popup.json`): the desktop bubble for a
-  waiting item, hidden at start and shown without taking focus. The app exits when the main window is
-  destroyed, so the hidden popup never keeps it alive.
+  window is borderless and the titlebar is drawn in React.
 - **Go backend (`cmd/`, `pkg/`)** — `wavesrv` (SQLite object store + HTTP + websocket RPC) and `wsh`
   (CLI helper shipped into terminals). **Agents report into and drive the cockpit through `wsh`**
   (`wsh agent-hook`, `wsh ask`; `wsh runs`, `wsh agents`, `wsh ui`, `wsh effort`). The launch-time
@@ -109,8 +105,7 @@ before working in an area you don't already know.
   `~/.claude/settings.json` and the pi/opencode extensions, all pointing at a fixed copy under
   `~/.arc/bin/` — not PATH. The managed hook list is `cmd/wsh/cmd/wshcmd-installhooks.go`.
 - **Frontend — React 19 + Vite + Tailwind 4 + jotai (`frontend/`)** — `frontend/tauri/main.tsx` is the
-  cockpit's entry; `frontend/tauri/popup.tsx` (`popup.html`) is the attention popup's, which opens no
-  wavesrv connection and draws what the main window sends. The cockpit is **one window with N surfaces, not tabs**. Surface keys are not
+  sole shipping entry. The cockpit is **one window with N surfaces, not tabs**. Surface keys are not
   their labels: `files` renders as "Diff"; the order is
   `SURFACE_ORDER` in `frontend/app/view/agents/agents.tsx`.
 

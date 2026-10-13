@@ -9,14 +9,14 @@
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { InlineMarkdown } from "@/app/view/agents/inlinemarkdown";
+import { cn } from "@/util/util";
 import { autoUpdate, offset, shift, useFloating, type Placement } from "@floating-ui/react";
 import { useEffect, useRef, useState } from "react";
-import { BUBBLE_MS, BubbleCard, BubbleLabel } from "./bubblecard";
 import { bubbleAgent } from "./petjoin";
 import type { PetCorner } from "./petstore";
 import { eventLabel, type NotifyLevel, type PetEvent } from "./petvoice";
 
-export { BUBBLE_MS };
+const BUBBLE_MS = 6_000;
 
 // speak away from the edge the creature is pinned to, aligned with it
 const PLACEMENT: Record<PetCorner, Placement> = {
@@ -47,7 +47,18 @@ export function eventTone(event: PetEvent): { dot: string | null; label: string 
 // the register as a label: the dot (when the kind earns one) and the words, one grammar for bubble and peek
 export function EventLabel({ event, className }: { event: PetEvent; className?: string }) {
     const tone = eventTone(event);
-    return <BubbleLabel label={eventLabel(event)} dot={tone.dot} tone={tone.label} className={className} />;
+    return (
+        <span
+            className={cn(
+                "inline-flex items-center gap-1.5 font-mono font-semibold uppercase tracking-[.09em]",
+                tone.label,
+                className
+            )}
+        >
+            {tone.dot != null ? <span className={cn("h-1.5 w-1.5 flex-none rounded-full", tone.dot)} /> : null}
+            {eventLabel(event)}
+        </span>
+    );
 }
 
 export function PetBubble({
@@ -74,7 +85,6 @@ export function PetBubble({
         }
     }, [event]);
     const agent = bubbleAgent(said, agents);
-    const tone = said != null ? eventTone(said) : null;
 
     // held in a ref, not in the dep list: the creature re-renders on every nowAtom tick, and a callback
     // identity in the deps would restart this timer each second so the bubble never dismissed.
@@ -106,19 +116,43 @@ export function PetBubble({
         <div ref={refs.setFloating} style={floatingStyles} className="z-[61]">
             {/* unconditional, driven by `open` — a `{open ? … : null}` caller defeats PopoverReveal's
                 AnimatePresence and the exit never plays */}
-            <PopoverReveal open={event != null} origin={ORIGIN[corner]}>
-                {said != null && tone != null ? (
-                    <BubbleCard
-                        marker="pet-bubble"
-                        label={eventLabel(said)}
-                        dot={tone.dot}
-                        tone={tone.label}
-                        name={agent?.name}
-                        project={agent?.project}
-                        // inline only, and links as plain text: the bubble is one button
-                        text={<InlineMarkdown text={said.text} plainLinks />}
+            <PopoverReveal
+                open={event != null}
+                origin={ORIGIN[corner]}
+                className="w-[268px] rounded-[12px] border border-border bg-surface-raised shadow-popover-md has-[button:hover]:border-edge-strong"
+            >
+                {said != null ? (
+                    <button
+                        type="button"
+                        data-pet-bubble
                         onClick={onOpen}
-                    />
+                        className="flex w-full cursor-pointer flex-col gap-1.5 rounded-[12px] px-3 py-[11px] text-left hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                        <EventLabel event={said} className="text-[9px]" />
+                        {agent != null ? (
+                            <span data-pet-bubble-agent className="flex min-w-0 items-baseline gap-1.5">
+                                <span
+                                    data-pet-bubble-agent-name
+                                    className="min-w-0 truncate text-[12px] font-semibold text-primary"
+                                >
+                                    {agent.name}
+                                </span>
+                                {agent.project ? (
+                                    <span
+                                        data-pet-bubble-agent-project
+                                        className="flex-none font-mono text-[10px] text-muted"
+                                    >
+                                        {agent.project}
+                                    </span>
+                                ) : null}
+                            </span>
+                        ) : null}
+                        {/* clamped: a notification title passes through verbatim and would otherwise stretch
+                            the bubble. Inline only, and links as plain text — the bubble is one button. */}
+                        <span className="line-clamp-3 text-[12px] leading-[1.45] text-secondary [overflow-wrap:anywhere]">
+                            <InlineMarkdown text={said.text} plainLinks />
+                        </span>
+                    </button>
                 ) : null}
             </PopoverReveal>
         </div>

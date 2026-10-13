@@ -268,41 +268,20 @@ fn main() {
         })
         .build(context)
         .expect("error while building tauri application")
-        .run(|app_handle, event| match event {
-            // the hidden attention-popup window outlives the main one, and tauri only exits by
-            // itself once every window is gone: without this the process and wavesrv would stay
-            // up, invisible, after the user closes arc.
-            tauri::RunEvent::WindowEvent {
-                label,
-                event: tauri::WindowEvent::Destroyed,
-                ..
-            } if exits_app_when_destroyed(&label) => app_handle.exit(0),
+        .run(|app_handle, event| {
             // Kill wavesrv when the app exits so it doesn't orphan and hold wave.lock + its exe.
-            tauri::RunEvent::Exit => {
+            if let tauri::RunEvent::Exit = event {
                 if let Some(mut child) = app_handle.state::<WavesrvChild>().0.lock().unwrap().take() {
                     let _ = child.kill();
                 }
             }
-            _ => {}
         });
-}
-
-const MAIN_WINDOW_LABEL: &str = "main";
-
-fn exits_app_when_destroyed(window_label: &str) -> bool {
-    window_label == MAIN_WINDOW_LABEL
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
-
-    #[test]
-    fn only_the_main_window_ends_the_app() {
-        assert!(exits_app_when_destroyed("main"));
-        assert!(!exits_app_when_destroyed("attention-popup"));
-    }
 
     #[test]
     fn finds_versioned_wsh_binary() {

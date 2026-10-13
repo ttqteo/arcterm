@@ -9,10 +9,7 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { newAttention } from "@/app/view/agents/attentionpopup";
 import { atom, type PrimitiveAtom } from "jotai";
-
-export { newAttention };
 
 export const attentionAtom = atom<AttentionItem[]>([]) as PrimitiveAtom<AttentionItem[]>;
 
@@ -56,7 +53,8 @@ export function taskbarSignal(
     if (focused) {
         return null;
     }
-    return newAttention(prev, next).length > 0 ? "flash" : null;
+    const known = new Set(prev.map((i) => i.key));
+    return next.some((i) => !known.has(i.key)) ? "flash" : null;
 }
 
 // A failed poll leaves the last good list in place. Blanking the badge on one dropped request would
