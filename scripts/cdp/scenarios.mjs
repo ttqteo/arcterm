@@ -29793,15 +29793,16 @@ const consumersPopover = {
             command: ${consumersCells("[data-consumer-command]")},
             arc: document.querySelector("[data-consumers-arc]")?.textContent.replace(/\s+/g, " ").trim() ?? null,
             own: document.querySelectorAll("[data-consumers-own]").length,
+            agents: !!document.querySelector("[data-consumers-agents]"),
             hoverButtons: document.querySelectorAll("[data-consumer-sonnet], [data-consumer-sleep], [data-consumer-stop]").length,
         })`);
         await h.shot("cdp-shots/consumers-compact-first.png");
         rec(
-            "20. compact (Windows), before the second sample: every CPU reads –, the header names arcterm's RAM (its CPU not yet), mine names git log --all -p, no arcterm section, actions in the ⋯ menu",
+            "20. compact (Windows), before the second sample: every CPU reads –, the header names arcterm's RAM (its CPU not yet), mine names git log --all -p, a one-line arcterm breakdown (Agents and its four own parts), actions in the ⋯ menu",
             compactUp && Object.values(first.cpu).every((c) => c === "–") && first.command["fx-consumers-mine"] === "git log --all -p" &&
                 first.command["fx-consumers-worker"] === "node vitest run frontend/app/view/agents" && /^arcterm \d/.test(first.arc ?? "") &&
                 !(first.arc ?? "").includes("CPU") &&
-                first.own === 0 && first.hoverButtons === 0,
+                first.own === 4 && first.agents && first.hoverButtons === 0,
             JSON.stringify(first)
         );
 

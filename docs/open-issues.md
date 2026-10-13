@@ -27,6 +27,12 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-13 (arcterm's RAM broken down in the compact popup)**
+
+- [ ] (arcterm) **The compact RAM popup lists what arcterm's figure is made of.** Open the RAM chip on Windows: under
+  the agent list one line reads `Agents … · Interface … · Server … · Host … · Terminals …`, and the parts add up to
+  the header's `arcterm …`. CDP `consumers-popover` step 20 checks it. (`consumerspanel.tsx` `CompactOwn`)
+
 **2026-10-13 (Sleeping and background-task rows in the sidebar)**
 
 - [ ] (arcterm) **Sleeping rows read apart from idle ones; the background mark is not a running dot.** In the Agent

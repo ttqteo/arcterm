@@ -637,6 +637,32 @@ function CompactHeader({
     );
 }
 
+// one line under the list: what the header's arcterm figure is made of, the agents and arcterm's own processes
+function CompactOwn({ view }: { view: ConsumersView | null }) {
+    if (view == null) {
+        return null;
+    }
+    const parts = [{ label: "Agents", bytes: view.agentsBytes, agents: true }, ...view.own];
+    return (
+        <div
+            title="What the arcterm figure above is made of: every agent, the webview that draws the cockpit (Interface), wavesrv (Server), the Tauri host, and the plain terminals"
+            className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-t border-border bg-surface px-3 py-1.5 text-[11.5px] text-muted"
+        >
+            {parts.map((p) => (
+                <span
+                    key={p.label}
+                    {...("agents" in p ? { "data-consumers-agents": "" } : { "data-consumers-own": p.label })}
+                >
+                    {p.label}{" "}
+                    <span className="tabular-nums text-secondary">
+                        {p.bytes === undefined ? "—" : ramLabel(p.bytes)}
+                    </span>
+                </span>
+            ))}
+        </div>
+    );
+}
+
 // measured from the opener while open, and again when the window resizes, which moves the opener
 export function usePanelPlacement(open: boolean, opener: Element | null) {
     const [, setSize] = useState(0);
@@ -762,7 +788,9 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                             </>
                         )}
                     </div>
-                    {compact ? null : (
+                    {compact ? (
+                        <CompactOwn view={view} />
+                    ) : (
                         <div className="flex flex-col gap-1.5 border-t border-border bg-surface px-3 pb-2 pt-2">
                             <div className="flex items-center gap-2">
                                 <span className={cn(SECTION_LABEL, "flex-1")}>arcterm</span>
