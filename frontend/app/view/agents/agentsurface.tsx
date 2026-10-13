@@ -83,6 +83,8 @@ import { clampDockHeight, splitDock } from "./terminaldock";
 import { DOCK_STRIP_PX, TerminalDockBar, TerminalDockStrip } from "./terminaldockbar";
 import { TerminalPaneHead } from "./terminalpaneheadview";
 import { useSessionsScan } from "./usesessionsscan";
+import { WorktreeGoneCard } from "./worktreegonecard";
+import { goneTerminalIdsAtom, useWorktreeGoneChecks } from "./worktreegonestore";
 
 export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: string }) {
     const focusId = useAtomValue(model.focusIdAtom);
@@ -200,6 +202,10 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const docked = !fullscreen || dockMax ? dockable : undefined;
     // the cells' tiled look (gaps, borders, bars) is off while the dock covers them
     const tiled = multi && !dockMax;
+    // A terminal whose folder was removed (a worktree that went when its branch landed) shows a card over its pane
+    // (worktreegonecard.tsx). The folders are read as the terminals change and as a pane is shown (worktreegonestore.ts).
+    const goneIds = useAtomValue(goneTerminalIdsAtom);
+    useWorktreeGoneChecks([...cells.map((cell) => cell.id), ...(docked != null ? [docked.id] : [])]);
     // Which panes are mounted (panemounts.ts): the app's agents and terminals the first time they show, one opened
     // later at once, and none ever unmounted while its terminal lives. Stored during render (it returns the same value
     // when nothing changed), so a pane shown in this render mounts in this commit.
@@ -681,6 +687,18 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                                 the pane staying mounted under it at its size */}
                                             {a.sleeping != null && cell != null ? (
                                                 <SleepingTranscript agent={a} barred={multi} />
+                                            ) : null}
+                                            {/* a terminal whose folder is gone: the card over its dimmed last screen, the
+                                                pane staying mounted under it; the bar above it (a grid cell's or the
+                                                panel's) stays. Not on the panel's folded strip. */}
+                                            {a.kind === "terminal" &&
+                                            goneIds.includes(a.id) &&
+                                            (cell != null || (isDock && !stripped)) ? (
+                                                <WorktreeGoneCard
+                                                    model={model}
+                                                    terminal={a}
+                                                    barred={(cell != null && multi) || isDock}
+                                                />
                                             ) : null}
                                             {/* Drop zones, only while an agent is dragged. Not before the roster is seeded
                                                 (a drop prunes against the roster as it is), and not on a cell the saved

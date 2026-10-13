@@ -131,7 +131,8 @@ export function sessionAgeLabel(lastactivets: number, now: number): string {
 // the registered projects (projects.json), as the config atom holds them: name -> { path }
 export type ProjectRegistry = Readonly<Record<string, { path?: string }>>;
 
-function normPath(p: string): string {
+// a path compared without case, separator or trailing separator
+export function normPath(p: string): string {
     return p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 }
 
@@ -510,21 +511,26 @@ export function folderCounts(agents: number, terminals: number): string {
         .join(" · ");
 }
 
-export type TerminalRowState = "installing" | "failed";
+export type TerminalRowState = "installing" | "failed" | "removed";
 
-/** Pure: how a terminal row stands when it is an install terminal. `installing` and `failed` map a tool's id to the tab
+/** Pure: how a terminal row stands when it is not simply running. `installing` and `failed` map a tool's id to the tab
  *  of its install terminal (toolsstore's installingAtom and failedAtom): "installing" while the install runs, "failed"
  *  once it exited non-zero and was kept open with its output (also when both name the tab: the exit is the later fact).
- *  Undefined for every other terminal. */
+ *  "removed" is a terminal whose folder is gone (`gone`, worktreegone.ts's goneTerminals): the row strikes its branch
+ *  through. Undefined for every other terminal. */
 export function terminalRowState(
     tabId: string,
     installing: Readonly<Record<string, string>>,
-    failed: Readonly<Record<string, string>>
+    failed: Readonly<Record<string, string>>,
+    gone: readonly string[] = []
 ): TerminalRowState | undefined {
     if (Object.values(failed).includes(tabId)) {
         return "failed";
     }
-    return Object.values(installing).includes(tabId) ? "installing" : undefined;
+    if (Object.values(installing).includes(tabId)) {
+        return "installing";
+    }
+    return gone.includes(tabId) ? "removed" : undefined;
 }
 
 export type TerminalShows = "split" | "panel";

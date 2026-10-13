@@ -868,6 +868,12 @@ describe("terminalRowState", () => {
     it("reads failed when both name the tab: the exit is the later fact", () => {
         expect(terminalRowState("t1", { glow: "t1" }, { glow: "t1" })).toBe("failed");
     });
+    it("reads removed for a terminal whose folder is gone (worktreegone.ts), an install's own state first", () => {
+        expect(terminalRowState("t1", {}, {}, ["t1"])).toBe("removed");
+        expect(terminalRowState("t2", {}, {}, ["t1"])).toBeUndefined();
+        expect(terminalRowState("t1", { glow: "t1" }, {}, ["t1"])).toBe("installing");
+        expect(terminalRowState("t1", {}, { glow: "t1" }, ["t1"])).toBe("failed");
+    });
 });
 
 describe("terminalShows", () => {

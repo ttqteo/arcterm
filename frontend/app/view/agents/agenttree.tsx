@@ -175,6 +175,8 @@ import { showTerminalMenu, ToolGlyph } from "./terminalsrail";
 import { TreeSpider } from "./themedecorview";
 import { toolIcon, toolTerminalName, type ToolIconName } from "./toolsmodel";
 import { failedAtom, installingAtom, loadTools, openToolPicker, toolsStatusAtom } from "./toolsstore";
+import { folderName } from "./worktreegone";
+import { goneTerminalIdsAtom } from "./worktreegonestore";
 
 const SUB_COLOR: Record<SubagentState, string> = {
     working: "var(--color-accent)",
@@ -1877,7 +1879,7 @@ function FolderToolButton({ model, project }: { model: AgentsViewModel; project:
 
 // The words after a terminal row's name that say it is an install terminal (Install glow): a spinner and "installing"
 // while it runs, "install failed" in the danger token once it exited non-zero and was kept with its output
-function InstallState({ state }: { state: TerminalRowState }) {
+function InstallState({ state }: { state: Exclude<TerminalRowState, "removed"> }) {
     return state === "installing" ? (
         <span className="flex flex-none items-center gap-[4px] text-[11px] text-ink-faint">
             <Loader2 size={11} aria-hidden className="animate-spin" />
@@ -1893,7 +1895,8 @@ function InstallState({ state }: { state: TerminalRowState }) {
 // root, a pulsing dot while its shell runs a command, and where it shows when that is not the centre (`split`, `panel`).
 // A click gives it the centre, as an agent's row does. It drags onto the grid and takes an Alt digit like one, and its
 // menu (showTerminalMenu) can open it in a split or move it to the panel. An install terminal reads installing, or
-// install failed once it exited non-zero.
+// install failed once it exited non-zero; one whose folder was removed (worktreegone.ts) strikes its folder through and
+// reads removed.
 function TerminalRow({
     model,
     terminal,
@@ -1916,6 +1919,9 @@ function TerminalRow({
     const selected = useSelectedRowId(model) === terminal.id;
     const renaming = useAtomValue(renamingRowAtom) === terminal.id;
     const digit = useHeldDigit(navDigit);
+    const removed = state === "removed";
+    // a removed terminal always names the folder it was in, even where no project root says which part is the worktree
+    const chip = place ?? (removed ? folderName(terminal.cwd) : undefined);
     return (
         <div
             data-agent-terminal-row={terminal.id}
@@ -1942,24 +1948,25 @@ function TerminalRow({
                     className={cn(
                         "truncate text-[13px]",
                         // the name takes the row unless a branch chip shares it
-                        place == null ? "min-w-0 flex-1" : "min-w-0 shrink-0 max-w-[60%]",
+                        chip == null ? "min-w-0 flex-1" : "min-w-0 shrink-0 max-w-[60%]",
                         selected ? "text-primary" : "text-secondary"
                     )}
                 >
                     {name}
                 </span>
             )}
-            {place != null ? (
+            {chip != null ? (
                 <span
                     data-terminal-branch
-                    title={`Runs in ${place}`}
+                    title={removed ? `${chip} was removed` : `Runs in ${chip}`}
                     className="flex min-w-0 flex-1 items-center gap-[3px] overflow-hidden text-[11px] text-muted"
                 >
                     <GitBranch size={10} aria-hidden className="flex-none" />
-                    <span className="truncate">{place}</span>
+                    <span className={cn("truncate", removed && "line-through")}>{chip}</span>
                 </span>
             ) : null}
-            {state != null ? <InstallState state={state} /> : null}
+            {state === "installing" || state === "failed" ? <InstallState state={state} /> : null}
+            {removed ? <span className="flex-none whitespace-nowrap text-[11px] text-muted">removed</span> : null}
             {/* a command still running (a dev server, a build) pulses like a working agent; at its prompt, no dot */}
             {terminal.running && state == null ? (
                 <span title="Running a command" aria-label="running a command" className="flex flex-none">
@@ -2196,6 +2203,8 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const tools = toolStatus ?? [];
     const installing = useAtomValue(installingAtom);
     const failed = useAtomValue(failedAtom);
+    // the terminals whose folder was removed (worktreegonestore.ts); the surface keeps them read
+    const gone = useAtomValue(goneTerminalIdsAtom);
     const rows = projectTree({
         tree,
         terminals,
@@ -2347,7 +2356,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                             icon={toolIcon(tools.find((t) => t.id === r.terminal.toolId))}
                                             place={r.place}
                                             shows={terminalShows(r.terminal.id, cells, dockedId)}
-                                            state={terminalRowState(r.terminal.id, installing, failed)}
+                                            state={terminalRowState(r.terminal.id, installing, failed, gone)}
                                             navDigit={digits.get(r.terminal.id)}
                                         />
                                     );
