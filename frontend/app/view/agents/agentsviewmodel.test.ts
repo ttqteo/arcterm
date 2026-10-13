@@ -1202,6 +1202,40 @@ describe("deriveTerminalVMs", () => {
         );
         expect(out.map((t) => t.running)).toEqual([true, undefined]);
     });
+
+    it("carries a terminal's cwd and tool id", () => {
+        const rows: Row[] = [
+            { tabId: "t1", label: "lazygit", termBlockOref: "block:b1", cwd: "C:\\code\\arcterm" },
+            { tabId: "t2", label: "sh", termBlockOref: "block:b2" },
+        ];
+        const out = deriveTerminalVMs(
+            rows,
+            none,
+            () => "",
+            () => undefined,
+            () => false,
+            (id) => (id === "b1" ? "lazygit" : undefined)
+        );
+        expect(out[0]).toMatchObject({ cwd: "C:\\code\\arcterm", toolId: "lazygit" });
+        // neither is set for a plain shell with no cwd: the keys stay off the VM
+        expect("cwd" in out[1]).toBe(false);
+        expect("toolId" in out[1]).toBe(false);
+    });
+
+    it("keeps session:project for a cwd outside every registered root, so a worktree stays in its project", () => {
+        const rows: Row[] = [
+            {
+                tabId: "t1",
+                label: "lazygit",
+                termBlockOref: "block:b1",
+                cwd: "D:\\elsewhere\\fix-login-agent",
+                projectLabel: "arcterm",
+            },
+        ];
+        // the registry names no project for that folder, so the launch-time label stands
+        const out = deriveTerminalVMs(rows, none, () => "");
+        expect(out[0]).toMatchObject({ project: "arcterm", cwd: "D:\\elsewhere\\fix-login-agent" });
+    });
 });
 
 describe("terminalName", () => {

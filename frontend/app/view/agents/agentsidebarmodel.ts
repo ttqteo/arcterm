@@ -1,17 +1,20 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pure model for the Agent surface's sidebar once it carries conversations as well as live agents. Three sections, each
-// collapsible. Active holds the live agents as the tree builds them (agenttreemodel.ts: one collapsible folder per
-// project). Terminals holds the plain shells, a collapsible folder per project. Conversations holds every ended
-// session, in a collapsible folder per project (the folder with the newest conversation first, newest first inside
-// it, each row reading its own age), and "Show more" pages a folder (CONVERSATION_PAGE per press). The app bar's
-// project switcher narrows all three to one project, which then needs no folder: each section is a flat list, and
-// Active counts the agents it hides so one asking elsewhere is not lost. Live and ended never mix: a live agent and its session record are one row, in Active, joined by normalized
-// transcript path (overlayLive), and the sessions an orchestrator run launched fold into one entry for the run, listed
-// once none of them is live (until then the run is in Active). Status filters live in History only. No React. It
-// imports overlayLive from sessionsarchivestore, which pulls in the RPC client and the store; nothing here calls
-// either.
+// Pure model for the Agent surface's sidebar once it carries conversations as well as live agents. Two sections, each
+// collapsible. The project tree (projectTree) is one collapsible folder per project: the live agents as the tree builds
+// them (agenttreemodel.ts), a divider, then the project's plain terminals and tools. Terminals with no project sit in a
+// Home folder at the end, and a split of two or more cells is one row of its own: inside its project's folder when every
+// cell is in it, else at the top. activeView, terminalTree and splitActive are the models of the two sections it
+// merges, kept while the sidebar still reads them. Conversations holds every ended session, in a collapsible folder per
+// project (the folder with the newest conversation first, newest first inside it, each row reading its own age), and
+// "Show more" pages a folder (CONVERSATION_PAGE per press). The app bar's project switcher narrows both to one
+// project, which then needs no folder: each section is a flat list, and activeView counts the agents it hides so one
+// asking elsewhere is not lost. Live and ended never mix: a live agent and its session record are one row, in the
+// tree, joined by normalized transcript path (overlayLive), and the sessions an orchestrator run launched fold into one
+// entry for the run, listed once none of them is live (until then the run is in the tree). Status filters live in
+// History only. No React. It imports overlayLive from sessionsarchivestore, which pulls in the RPC client and the
+// store; nothing here calls either.
 
 import { formatAgeShort, projectOf, type AgentVM } from "./agentsviewmodel";
 import { foldCollapsedProjects, UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
@@ -342,18 +345,36 @@ export interface SplitActive {
  *  the split took, its asking badge included, and one the split emptied goes. Fewer than two cells on the roster is no
  *  split. */
 export function splitActive(rows: AgentTreeRow[], cells: readonly string[], roster: AgentVM[]): SplitActive {
+    const split = resolveSplit(cells, roster);
+    if (split.length === 0) {
+        return { split, rows };
+    }
+    return { split, rows: liftFromFolders(rows, new Set(split.map((a) => a.id))) };
+}
+
+// the split's cells on the roster, in cell order: a cell that left the roster is skipped, and fewer than two left is no
+// split at all
+function resolveSplit(cells: readonly string[], roster: AgentVM[]): AgentVM[] {
     const byId = new Map(roster.map((a) => [a.id, a]));
     const split = cells.flatMap((id) => byId.get(id) ?? []);
-    if (split.length < 2) {
-        return { split: [], rows };
-    }
-    const lifted = new Set(split.map((a) => a.id));
+    return split.length < 2 ? [] : split;
+}
+
+// `rows` (buildAgentTree's whole tree) without the plain agents `lifted` names, each folder's count and asking badge
+// taking them out. A folder the lift left bare goes, unless `keep` names its project: one that still holds something the
+// tree does not carry (its terminals, the split row).
+function liftFromFolders(
+    rows: AgentTreeRow[],
+    lifted: ReadonlySet<string>,
+    keep: ReadonlySet<string> = new Set()
+): AgentTreeRow[] {
     const out: AgentTreeRow[] = [];
     // the open folder's index in `out`, and whether the split took a row from it
     let folder = -1;
     let took = false;
     const closeFolder = () => {
-        if (folder >= 0 && took && folder === out.length - 1) {
+        const g = folder >= 0 ? out[folder] : undefined;
+        if (g?.kind === "group" && took && folder === out.length - 1 && !keep.has(g.project)) {
             out.pop();
         }
     };
@@ -374,7 +395,185 @@ export function splitActive(rows: AgentTreeRow[], cells: readonly string[], rost
         }
     }
     closeFolder();
-    return { split, rows: out };
+    return out;
+}
+
+// the project name a terminal with no project is filed under: its own folder, last
+export const HOME_PROJECT = "~home";
+
+// the project a split cell is filed under: a terminal's (or Home), else the tree's own key for an agent
+function cellProject(a: AgentVM): string {
+    return a.kind === "terminal" ? projectOf(a) || HOME_PROJECT : projectOf(a) || UNGROUPED_PROJECT;
+}
+
+// the agent body rows buildAgentTree emits under a project's group row (parent, lead, run, worker, ...)
+type AgentBodyRow = Exclude<AgentTreeRow, { kind: "group" }>;
+
+export type ProjectTreeRow =
+    // a project's folder: the agents it holds (done workers aside; what the split took is out) and the terminals, and the
+    // agents among them waiting on you
+    | { kind: "group"; project: string; agents: number; terminals: number; attn: number; open: boolean }
+    // the split as one row; `project` is the one every cell is in, null across projects
+    | { kind: "split"; project: string | null; cells: AgentVM[]; crossProject: boolean }
+    // the thin line between a project's agents and its terminals
+    | { kind: "divider"; project: string }
+    // `place` names the folder it runs in when that is not the project's root (terminalPlace)
+    | { kind: "terminal"; project: string; terminal: AgentVM; place?: string }
+    | AgentBodyRow;
+
+/** Pure: the sidebar's one tree per project. `tree` is buildAgentTree's output; `terminals` are the plain shells and
+ *  tools (liveTerminalsAtom), which `roster` holds with the agents so `cells` (the grid's ids) resolve. Each project's
+ *  folder lists its agent rows, a divider when terminals follow, then its terminals in the order given. The folders are
+ *  the agents' projects in the tree's order, then the projects only terminals are in, then Home (the terminals with no
+ *  project). A collapsed project keeps its group row, which counts what it hides, and loses the rows under it.
+ *
+ *  A split of two or more cells is one row. Its cells leave their folders (and their counts), agents and terminals
+ *  alike; the row sits first in its project's folder when every cell is in that project, else at the top with
+ *  crossProject set. A fold never hides it: it stays under its folder's group row, the surface shows its cells whether
+ *  the folder is open or not.
+ *
+ *  Filtered to a project (the app bar's switcher), no folder and no fold: the split, then that project's agent rows, a
+ *  divider and its terminals together with those that name no project, as the Terminals section filtered before. */
+export function projectTree(input: {
+    tree: AgentTreeRow[];
+    terminals: AgentVM[];
+    cells: readonly string[];
+    roster: AgentVM[];
+    filter: string;
+    collapsed: readonly string[];
+    roots: ReadonlyMap<string, string>; // project name -> root path
+}): ProjectTreeRow[] {
+    const { tree, terminals, cells, roster, filter, roots } = input;
+    const collapsed = new Set(input.collapsed);
+    const split = resolveSplit(cells, roster);
+    const lifted = new Set(split.map((a) => a.id));
+    const cellProjects = new Set(split.map(cellProject));
+    const crossProject = cellProjects.size > 1;
+    const splitProject = split.length > 0 && !crossProject ? [...cellProjects][0] : null;
+    const splitRow: ProjectTreeRow | undefined =
+        split.length > 0 ? { kind: "split", project: splitProject, cells: split, crossProject } : undefined;
+
+    const termProject = (t: AgentVM) => projectOf(t) || HOME_PROJECT;
+    const remaining = terminals.filter((t) => !lifted.has(t.id));
+    const termRows = (project: string, list: AgentVM[]): ProjectTreeRow[] =>
+        list.map((terminal) => ({
+            kind: "terminal",
+            project,
+            terminal,
+            place: terminalPlace(terminal.cwd, roots.get(project)),
+        }));
+
+    if (filter !== ALL_PROJECTS) {
+        const out: ProjectTreeRow[] = splitRow ? [splitRow] : [];
+        let inProject = false;
+        for (const r of tree) {
+            if (r.kind === "group") {
+                inProject = r.project === filter;
+            } else if (inProject && !(r.kind === "parent" && lifted.has(r.agent.id))) {
+                out.push(r);
+            }
+        }
+        // a shell attributed to no project shows under every one
+        const mine = remaining.filter((t) => projectOf(t) === "" || projectOf(t) === filter);
+        if (mine.length > 0 && out.length > 0) {
+            out.push({ kind: "divider", project: filter });
+        }
+        out.push(...termRows(filter, mine));
+        return out;
+    }
+
+    const byProject = new Map<string, AgentVM[]>();
+    for (const t of remaining) {
+        const project = termProject(t);
+        byProject.set(project, [...(byProject.get(project) ?? []), t]);
+    }
+    // a folder the split took every agent from stays when it still holds a terminal or the split row itself
+    const keep = new Set(byProject.keys());
+    if (splitProject != null) {
+        keep.add(splitProject);
+    }
+    const agentRows = split.length > 0 ? liftFromFolders(tree, lifted, keep) : tree;
+    const bodies = new Map<string, { group: Extract<AgentTreeRow, { kind: "group" }>; body: AgentBodyRow[] }>();
+    for (const r of agentRows) {
+        if (r.kind === "group") {
+            bodies.set(r.project, { group: r, body: [] });
+        } else {
+            bodies.get(r.project)?.body.push(r);
+        }
+    }
+    // the agents' projects in the tree's order, then the others in the order terminals came, Home last
+    const order = [...bodies.keys()];
+    const seen = new Set(order);
+    const others = [...new Set([...terminals.map(termProject), ...(splitProject != null ? [splitProject] : [])])]
+        .filter((p) => !seen.has(p) && (byProject.has(p) || p === splitProject))
+        .sort((a, b) => Number(a === HOME_PROJECT) - Number(b === HOME_PROJECT));
+    const out: ProjectTreeRow[] = [];
+    for (const project of [...order, ...others]) {
+        const folder = bodies.get(project);
+        const list = byProject.get(project) ?? [];
+        const open = !collapsed.has(project);
+        out.push({
+            kind: "group",
+            project,
+            agents: folder?.group.count ?? 0,
+            terminals: list.length,
+            attn: folder?.group.attn ?? 0,
+            open,
+        });
+        const hostsSplit = splitRow != null && splitProject === project;
+        if (hostsSplit) {
+            out.push(splitRow);
+        }
+        if (!open) {
+            continue;
+        }
+        const body = folder?.body ?? [];
+        out.push(...body);
+        if (list.length > 0 && (hostsSplit || body.length > 0)) {
+            out.push({ kind: "divider", project });
+        }
+        out.push(...termRows(project, list));
+    }
+    if (splitRow != null && splitProject == null) {
+        out.unshift(splitRow);
+    }
+    return out;
+}
+
+/** Pure: the folder a terminal runs in, as the row names it beside the project: the last folder of its `cwd`, or
+ *  undefined when that is the project's root (the paths compared without case, separator or trailing separator), and
+ *  when there is no cwd or no root to compare it with. */
+export function terminalPlace(cwd: string | undefined, root: string | undefined): string | undefined {
+    if (!cwd || !root || normPath(cwd) === normPath(root)) {
+        return undefined;
+    }
+    return (
+        cwd
+            .replace(/[\\/]+$/, "")
+            .split(/[\\/]/)
+            .pop() || undefined
+    );
+}
+
+/** Pure: the ids the agent keys (j/k, the arrows, Alt+1..9, Ctrl+Tab) step through, agents and terminals together: the
+ *  split's cells first, then each row's agent or terminal in the order the tree reads. A folded project's rows are not
+ *  in `rows`, so they are not in it; a worker row with no session left has none; an id the split and a row both name
+ *  comes once. */
+export function treeNavIds(rows: ProjectTreeRow[]): string[] {
+    const ids: string[] = [];
+    for (const r of rows) {
+        if (r.kind === "split") {
+            ids.push(...r.cells.map((c) => c.id));
+        }
+    }
+    for (const r of rows) {
+        if (r.kind === "terminal") {
+            ids.push(r.terminal.id);
+        } else if ((r.kind === "parent" || r.kind === "lead" || r.kind === "worker" || r.kind === "stage") && r.agent) {
+            ids.push(r.agent.id);
+        }
+    }
+    return [...new Set(ids)];
 }
 
 // the Terminals section's rows: a project's folder, and the plain terminals under it

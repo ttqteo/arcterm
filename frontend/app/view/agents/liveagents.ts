@@ -111,7 +111,8 @@ export const liveTerminalsAtom: Atom<AgentVM[]> = atom((get) => {
             !!sleepingStatus(get(getAgentStatusAtom(oref)), get(WOS.getWaveObjectAtom<Block>(oref))?.meta, oref)?.state,
         (cwd) => registeredProjectFor(cwd, projects),
         (blockId) => get(getLastCommandAtom(blockId)),
-        (blockId) => get(getCommandRunningAtom(blockId))
+        (blockId) => get(getCommandRunningAtom(blockId)),
+        (blockId) => get(WOS.getWaveObjectAtom<Block>("block:" + blockId))?.meta?.["tool:id"]
     );
 });
 
