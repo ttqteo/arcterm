@@ -8,39 +8,13 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
-## Unreleased
+## 0.15.11 — 2026-10-13
 
 ### Added
 
 - **Stop the fold that follows you out of arcterm for a while**: with "Fold when you leave arcterm" on, the folded
   Sprout's hover card restores the window and holds the fold off for 1 hour, until the next 8:00, or until a time you
   type (`2h`, `30m`, `14:30`). While it holds, the card says until when, with Resume to end it.
-
-### Changed
-
-- The Spider theme's accent is now the suit's soft blue instead of a glaring red; the red stays in the spider decor and the pet.
-- The RAM popup on Windows now shows what arcterm's total is made of, on one line under the agents: Agents,
-  Interface (the webview), Server, Host and Terminals.
-- **Agent rows in the sidebar are calmer.** Background commands an agent left running no longer mark its row (Servers
-  and the rail's Background tasks list them; Close still waits for them), its canvas is a grid icon beside its name,
-  Close is a green check alone, and the Later bookmark is grey instead of yellow.
-- **Choose what an agent row shows**: Settings → Appearance → Agent sidebar turns its model, branch, tokens and age on
-  or off. All stay on unless you turn one off.
-- **A split no longer moves anything in the sidebar.** Its agents and terminals keep their rows in their own folders,
-  each marked with a split icon, so the row you click stays under the pointer (Remove from split and End split are on
-  the row's menu). Moving between a split's cells keeps the agent's header and details panel, so the panes no longer
-  jump in size when a terminal in the split takes the focus.
-- The app bar's usage meters keep to Claude's 5-hour and weekly windows: a model's own weekly window (Fable wk) is
-  only on the Usage surface now.
-- **The New dialog lists everything in three columns and keeps one height**: Agent, Project, and the pick's own list
-  (an agent's sessions, the tools, a run's model or its start and width). A long project or session list scrolls in
-  its column instead of growing the dialog; type in the Session column to filter it, as in Project, and Home is `0`.
-  It now offers up to 30 recent sessions to resume, not 5.
-
-## 0.15.11 — 2026-10-13
-
-### Added
-
 - **The New agent dialog says which Claude account a Claude Code launch runs on** ("· Claude: Max 2", or your
   /login email for Default), once you have added a token account in Settings → Agents → Claude account. With only
   /login, the footer is unchanged.
@@ -64,14 +38,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - A new waiting item flashes arcterm's taskbar button while arcterm is in the background.
 - A finished orchestrator run takes one more round for the leftovers inside its goal before it completes.
 - Spider-Man as a third Jarvis character (Settings → Appearance → Character): the Homecoming suit at work, Peter Parker at rest. He walks the footer side-on, thwips when he speaks, hangs from a strand when you drag him and rappels down when you let go, now and then crawls along under the app bar and hangs upside down until your cursor comes near, web-swings out and back when the window folds, and folded sits on a rooftop whose windows light up for each running agent, with his web and the count of agents at work beside it.
-- A Spider theme (Settings → Appearance → Theme): Claude's colours with Spider-Man's red accent and the suit's blue in
-  the terminal, a spider in place of the arcterm logo, a small spider that drops on its thread over the agent list and
+- A Spider theme (Settings → Appearance → Theme): Claude's colours with the suit's soft blue as the accent and its red
+  in the spider decor, a spider in place of the arcterm logo, a small spider that drops on its thread over the agent list and
   senses an agent asking you, another hanging over the empty Agent screen, and a web in the top-left corner behind
   the sidebar's icons. Picking Spider-Man as Jarvis asks whether to switch to it, and as Jarvis he now and then says a
   line from his films.
-- **A terminal icon and a count on an agent's sidebar row while background tasks it started still run** (a build, a
-  dev server), even after its turn has ended; hover it to see which. It is grey and still, so it does not read as the
-  agent itself working.
 - **Your design canvases are back after a restart**: the palette (search “canvas”) lists the canvases in the
   selected agent’s project, and opening one shows it on that agent.
 - **Usage → Insights answers in English or Vietnamese**: an EN / VI switch beside Analyze picks the language, and
@@ -79,6 +50,23 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- The RAM popup on Windows now shows what arcterm's total is made of, on one line under the agents: Agents,
+  Interface (the webview), Server, Host and Terminals.
+- **Agent rows in the sidebar are calmer.** Background commands an agent left running no longer mark its row (Servers
+  and the rail's Background tasks list them; Close still waits for them), its canvas is a grid icon beside its name,
+  Close is a green check alone, and the Later bookmark is grey instead of yellow.
+- **Choose what an agent row shows**: Settings → Appearance → Agent sidebar turns its model, branch, tokens and age on
+  or off. All stay on unless you turn one off.
+- **A split no longer moves anything in the sidebar.** Its agents and terminals keep their rows in their own folders,
+  each marked with a split icon, so the row you click stays under the pointer (Remove from split and End split are on
+  the row's menu). Moving between a split's cells keeps the agent's header and details panel, so the panes no longer
+  jump in size when a terminal in the split takes the focus.
+- The app bar's usage meters keep to Claude's 5-hour and weekly windows: a model's own weekly window (Fable wk) is
+  only on the Usage surface now.
+- **The New dialog lists everything in three columns and keeps one height**: Agent, Project, and the pick's own list
+  (an agent's sessions, the tools, a run's model or its start and width). A long project or session list scrolls in
+  its column instead of growing the dialog; type in the Session column to filter it, as in Project, and Home is `0`.
+  It now offers up to 30 recent sessions to resume, not 5.
 - **On Windows, Alt+Tab back to a folded arcterm opens it maximized**, in Full, whatever size it was folded from (Full,
   Float, or a smaller window); the taskbar button does the same. On macOS ⌘Tab still gives back the size it folded from.
 - **The Resource Manager is now part of the Consumers panel.** On Windows the app bar's RAM chip opens Consumers again,
