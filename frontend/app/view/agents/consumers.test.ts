@@ -17,6 +17,7 @@ import {
     pickState,
     ramBar,
     ramLabel,
+    sleepingByProject,
     staleLine,
     stopWorkerMessage,
     switchToastText,
@@ -588,5 +589,36 @@ describe("picking agents to close", () => {
         expect(closePickedConfirm([byId("work"), { ...byId("idle"), state: "working", name: "Fern" }])).toBe(
             "Lumen and Fern are working. Closing stops them mid-turn and can't be undone; their conversations stay under Conversations."
         );
+    });
+});
+
+describe("sleepingByProject", () => {
+    const sleeping = { since: 1, freedBytes: 0 };
+    const rowsOf = (vms: AgentVM[]) =>
+        buildConsumers(reading(vms.map((v) => agent(v.id))), vms, "tokens").groups.find((g) => g.key === "sleeping")!
+            .rows;
+
+    it("bunches the sleeping agents by project, each where its first agent sat, keeping their order", () => {
+        const rows = rowsOf([
+            vm("a1", { name: "a", state: "idle", sleeping, project: "arcterm" }),
+            vm("t1", { name: "b", state: "idle", sleeping, project: "thesis" }),
+            vm("a2", { name: "c", state: "idle", sleeping, project: "arcterm" }),
+            vm("h1", { name: "d", state: "idle", sleeping, project: undefined }),
+        ]);
+        expect(sleepingByProject(rows).map((p) => [p.project, ids(p.rows)])).toEqual([
+            ["arcterm", ["a1", "a2"]],
+            ["thesis", ["t1"]],
+            ["Home", ["h1"]],
+        ]);
+    });
+
+    it("ticks one project's sleeping agents at once with the group tick helpers", () => {
+        const rows = rowsOf([
+            vm("a1", { state: "idle", sleeping, project: "arcterm" }),
+            vm("t1", { state: "idle", sleeping, project: "thesis" }),
+        ]);
+        const thesis = sleepingByProject(rows).find((p) => p.project === "thesis")!;
+        expect([...togglePickAll(new Set(), thesis.rows)]).toEqual(["t1"]);
+        expect(pickState(new Set(["t1"]), thesis.rows)).toBe("all");
     });
 });

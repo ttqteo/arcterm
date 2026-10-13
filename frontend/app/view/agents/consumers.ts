@@ -217,6 +217,28 @@ export function holdOrder(view: ConsumersView, held: string[] | null): { view: C
     return { view: { ...view, groups }, order: flat(groups) };
 }
 
+// the bunch of sleeping agents opened with no project, named as the sidebar names its folder (agentsidebarmodel's Home)
+const NO_PROJECT = "Home";
+
+/** The sleeping agents of one project, which the panel ticks at once. */
+export interface SleepingProject {
+    project: string;
+    rows: ConsumerRow[];
+}
+
+/** Pure: the Sleeping group's rows bunched by project, each bunch where its first row sat and its rows in their order,
+ * so a held order keeps them put. An agent with no project is in Home. */
+export function sleepingByProject(rows: ConsumerRow[]): SleepingProject[] {
+    const bunches = new Map<string, SleepingProject>();
+    for (const r of rows) {
+        const project = r.project || NO_PROJECT;
+        const b = bunches.get(project) ?? { project, rows: [] };
+        b.rows.push(r);
+        bunches.set(project, b);
+    }
+    return [...bunches.values()];
+}
+
 /** Whether a row can be ticked to close with others: an agent no run owns. A run's lead and workers close with their run
  * (its row's Close run), which closing them one by one would leave half done. */
 export function canPick(row: Pick<ConsumerRow, "dag" | "vm">): boolean {

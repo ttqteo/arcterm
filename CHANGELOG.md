@@ -15,6 +15,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - **Close several agents at once from the Consumers panel**: hover a row and tick it, or tick Sleeping to pick every
   sleeping agent, then press Close in the bar under the list. It asks first only when a ticked agent is working; the
   closed agents' conversations stay under Conversations. A run's lead and workers still close with their run.
+- **Pick one project's sleeping agents in the Consumers panel**: when the agents asleep come from more than one
+  project, Sleeping lists them under a head per project, with a tick that picks just that project's.
 
 ### Changed
 

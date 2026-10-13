@@ -50,6 +50,7 @@ import {
     ramBar,
     ramLabel,
     SLEEPING_GROUP,
+    sleepingByProject,
     staleLine,
     STATE_DOT,
     stopWorkerMessage,
@@ -174,7 +175,17 @@ function PickSlot({ row, pick }: { row: ConsumerRow; pick: Picking }) {
     );
 }
 
-function Row({ row, model, pick }: { row: ConsumerRow; model: AgentsViewModel; pick: Picking }) {
+function Row({
+    row,
+    model,
+    pick,
+    underProject,
+}: {
+    row: ConsumerRow;
+    model: AgentsViewModel;
+    pick: Picking;
+    underProject?: boolean; // under its project's head in Sleeping, which names the project already
+}) {
     // the call in flight; a sleep or a wake takes seconds, and a second press would only be refused by the server
     const [pending, setPending] = useState<"sleep" | "wake" | null>(null);
     const run = (kind: "sleep" | "wake", call: () => Promise<void>) => {
@@ -215,7 +226,9 @@ function Row({ row, model, pick }: { row: ConsumerRow; model: AgentsViewModel; p
                 )}
             >
                 {row.name}
-                {row.project ? <span className="ml-1.5 text-[11px] text-ink-faint">{row.project}</span> : null}
+                {row.project && !underProject ? (
+                    <span className="ml-1.5 text-[11px] text-ink-faint">{row.project}</span>
+                ) : null}
             </button>
             <span
                 data-consumer-opus={row.opus ? "" : undefined}
@@ -717,6 +730,16 @@ export function usePanelPlacement(open: boolean, opener: Element | null) {
     return panelPlacement(rect, { width: window.innerWidth, height: window.innerHeight });
 }
 
+// a group's rows as the panel lays them out: Sleeping bunched under a head per project when its agents come from more
+// than one; every other group, and Sleeping of one project, as one bunch with no head
+function bunchesOf(g: { key: string; rows: ConsumerRow[] }): { project: string; head: boolean; rows: ConsumerRow[] }[] {
+    const bunches = g.key === SLEEPING_GROUP ? sleepingByProject(g.rows) : [];
+    if (bunches.length < 2) {
+        return [{ project: "", head: false, rows: g.rows }];
+    }
+    return bunches.map((b) => ({ ...b, head: true }));
+}
+
 export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
     const sort = useAtomValue(consumersOpenAtom);
     const open = sort != null;
@@ -872,19 +895,51 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                                                 {g.label}
                                             </div>
                                         ) : null}
-                                        {g.rows.map((r) =>
-                                            compact ? (
-                                                <CompactRow
-                                                    key={r.id}
-                                                    row={r}
-                                                    model={model}
-                                                    ready={!!snap?.ready}
-                                                    pick={pick}
-                                                />
-                                            ) : (
-                                                <Row key={r.id} row={r} model={model} pick={pick} />
-                                            )
-                                        )}
+                                        {bunchesOf(g).map((b) => (
+                                            <div
+                                                key={b.project}
+                                                data-consumers-sleeping-project={b.head ? b.project : undefined}
+                                            >
+                                                {b.head ? (
+                                                    // sleeping agents of more than one project: a tick for each one's
+                                                    <div className="mx-1 flex items-center gap-2.5 px-2 pb-0.5 pt-1">
+                                                        <span className={SLOT}>
+                                                            <TickBox
+                                                                state={pickState(picked, b.rows)}
+                                                                label={`Select every sleeping agent in ${b.project}`}
+                                                                title={`Select every sleeping agent in ${b.project}, to close them together`}
+                                                                onToggle={() =>
+                                                                    setPicked((p) => togglePickAll(p, b.rows))
+                                                                }
+                                                                attrs={{ "data-consumers-pick-project": b.project }}
+                                                            />
+                                                        </span>
+                                                        <span className="truncate text-[11.5px] font-medium text-secondary">
+                                                            {b.project}
+                                                        </span>
+                                                    </div>
+                                                ) : null}
+                                                {b.rows.map((r) =>
+                                                    compact ? (
+                                                        <CompactRow
+                                                            key={r.id}
+                                                            row={r}
+                                                            model={model}
+                                                            ready={!!snap?.ready}
+                                                            pick={pick}
+                                                        />
+                                                    ) : (
+                                                        <Row
+                                                            key={r.id}
+                                                            row={r}
+                                                            model={model}
+                                                            pick={pick}
+                                                            underProject={b.head}
+                                                        />
+                                                    )
+                                                )}
+                                            </div>
+                                        ))}
                                     </div>
                                 ))}
                             </>
