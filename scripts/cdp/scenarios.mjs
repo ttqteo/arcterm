@@ -29859,6 +29859,179 @@ const consumersPopover = {
     },
 };
 
+// --- consumers-close-picked: ticking agents in the Consumers panel and closing them together, most often the sleeping
+// ones. The roster is a fixture (a working agent, an idle one, a run worker, two asleep); getconsumers answers the
+// Consumers mock's reading, and WorkspaceService.CloseTab is swapped in the page for one that records its calls, so
+// nothing real closes. Teardown puts the service, the mock, the roster fixture and the page back.
+const CP_CLOSE_KEY = "__arcClosePickedMock";
+const CP_SLEEPING = { since: Date.now() - 3 * 3600_000, freedBytes: 300 * 2 ** 20 };
+const CP_FIXTURE = [
+    { id: "fx-cp-work", name: "Lumen", project: "arcterm", task: "", state: "working", agent: "claude", model: "opus", blockId: "fx-blk-cp-work" },
+    { id: "fx-cp-idle", name: "Fern", project: "arcterm", task: "", state: "idle", agent: "claude", model: "sonnet", blockId: "fx-blk-cp-idle" },
+    { id: "fx-cp-worker", name: "arcterm", project: "arcterm", task: "", state: "working", agent: "claude", model: "sonnet", blockId: "fx-blk-cp-worker", runId: "fx-cp-child" },
+    { id: "fx-cp-z1", name: "Theme Spider-Man", project: "arcterm", task: "", state: "idle", agent: "claude", model: "opus", blockId: "fx-blk-cp-z1", sleeping: CP_SLEEPING },
+    { id: "fx-cp-z2", name: "Commit và build", project: "arcterm", task: "", state: "idle", agent: "claude", model: "opus", blockId: "fx-blk-cp-z2", sleeping: CP_SLEEPING },
+];
+const CP_READING = {
+    ...CONSUMERS_READING,
+    agents: [
+        { tabid: "fx-cp-work", blockid: "fx-blk-cp-work", rambytes: 900 * 2 ** 20, tokensread: true, tokens: [consumersBucket("claude-opus-4-8", 40_000)] },
+        { tabid: "fx-cp-idle", blockid: "fx-blk-cp-idle", rambytes: 300 * 2 ** 20, tokensread: true, tokens: [] },
+        { tabid: "fx-cp-worker", blockid: "fx-blk-cp-worker", rambytes: 500 * 2 ** 20, tokensread: true, tokens: [], dag: { channelid: "fx-ch", runid: "77aa11bb-fx", taskid: "t-2" } },
+        { tabid: "fx-cp-z1", blockid: "fx-blk-cp-z1", tokensread: true, tokens: [] },
+        { tabid: "fx-cp-z2", blockid: "fx-blk-cp-z2", tokensread: true, tokens: [] },
+    ],
+};
+
+// swaps the app's own WorkspaceService.CloseTab (the instance agentactions.ts imports) for one that records the tab
+async function installClosePickedMock(h) {
+    const resolved = await ahResolveModules(h);
+    if (resolved.error) return `unresolved: ${resolved.error}`;
+    return h.ev(`(async () => {
+        if (window.${CP_CLOSE_KEY}) return "already-installed";
+        const from = new URL("../view/agents/agentactions.ts", ${JSON.stringify(resolved.urls.store)}).href;
+        const src = await (await fetch(from)).text();
+        const m = src.match(/["']([^"'\\s]*\\/store\\/services\\.ts(?:\\?[^"'\\s]*)?)["']/);
+        if (!m) return "agentactions.ts does not import services.ts";
+        const svc = (await import(new URL(m[1], from).href)).WorkspaceService;
+        if (!svc) return "no WorkspaceService";
+        const state = { svc, calls: [] };
+        svc.CloseTab = (workspaceId, tabId) => {
+            state.calls.push(tabId);
+            return Promise.resolve(null);
+        };
+        window.${CP_CLOSE_KEY} = state;
+        return "installed";
+    })()`);
+}
+
+const removeClosePickedMock = (h) =>
+    h.ev(`(() => {
+        const m = window.${CP_CLOSE_KEY};
+        if (!m) return "absent";
+        delete m.svc.CloseTab; // the prototype's own comes back
+        delete window.${CP_CLOSE_KEY};
+        return "restored";
+    })()`);
+
+const cpTick = (id) => `document.querySelector('[data-consumer-pick="${id}"]')`;
+const CP_SLEEP_TICK = `document.querySelector("[data-consumers-pick-sleeping]")`;
+const CP_BAR = `document.querySelector("[data-consumers-pickbar]")`;
+// a tick a person sees: drawn with a size (the hidden ones are display:none until a hover or a pick)
+const cpShown = (expr) => `(() => { const el = ${expr}; return !!el && el.getClientRects().length > 0; })()`;
+
+const consumersClosePicked = {
+    name: "consumers-close-picked",
+    surface: "cockpit",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify(CP_FIXTURE, null, 2));
+            ctx.wroteFixture = true;
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            ctx.mock = await installConsumersMock(h, CP_READING);
+            if (ctx.mock !== "installed") throw new Error(`mock: ${ctx.mock}`);
+            await consumersMode(h, "reading");
+            ctx.close = await installClosePickedMock(h);
+            if (ctx.close !== "installed") throw new Error(`CloseTab mock: ${ctx.close}`);
+            await h.ev(RESMON_AS_MAC);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const closed = () => h.ev(`window.${CP_CLOSE_KEY}?.calls ?? []`);
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture roster and the mocks", false, ctx.arrangeError);
+            return steps;
+        }
+
+        const chipReady = await polishWaitFor(h, `!!document.querySelector("[data-worker-capacity]")`, 10000);
+        await h.ev(`document.querySelector("[data-worker-capacity]")?.click()`);
+        const rows = await polishWaitFor(h, `document.querySelectorAll("[data-consumer-row]").length === 5`, 5000);
+        const rest = await h.ev(`({
+            ticks: [...document.querySelectorAll("[data-consumer-pick]")].map((t) => t.dataset.consumerPick),
+            shown: [...document.querySelectorAll("[data-consumer-pick]")].filter((t) => t.getClientRects().length > 0).length,
+            moons: document.querySelectorAll("[data-consumer-moon]").length,
+            sleepTick: ${cpShown(CP_SLEEP_TICK)},
+            bar: !!${CP_BAR},
+        })`);
+        await h.shot("cdp-shots/consumers-close-picked-rest.png");
+        rec(
+            "1. at rest every agent no run owns has a hidden tick (the worker none), the moons show, and Sleeping has its tick",
+            chipReady && rows && JSON.stringify(rest.ticks) === JSON.stringify(["fx-cp-work", "fx-cp-idle", "fx-cp-z2", "fx-cp-z1"]) &&
+                rest.shown === 0 && rest.moons === 2 && rest.sleepTick && !rest.bar,
+            JSON.stringify({ chipReady, rows, ...rest })
+        );
+
+        // a hover turns that row's dot into its tick
+        const at = await consumersCentre(h, '[data-consumer-row="fx-cp-idle"]');
+        if (at) await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+        const hover = await h.ev(`({ idle: ${cpShown(cpTick("fx-cp-idle"))}, work: ${cpShown(cpTick("fx-cp-work"))} })`);
+        rec("2. hovering a row shows its tick and only its", hover.idle && !hover.work, JSON.stringify({ at, ...hover }));
+
+        await h.ev(`${CP_SLEEP_TICK}?.click()`);
+        const allSleeping = await polishWaitFor(h, `${CP_BAR}?.textContent.includes("Close 2 agents")`, 2000);
+        const picked = await h.ev(`({
+            z1: ${cpTick("fx-cp-z1")}?.getAttribute("aria-checked"),
+            z2: ${cpTick("fx-cp-z2")}?.getAttribute("aria-checked"),
+            head: ${CP_SLEEP_TICK}?.getAttribute("aria-checked"),
+            shown: [...document.querySelectorAll("[data-consumer-pick]")].filter((t) => t.getClientRects().length > 0).length,
+            bar: ${CP_BAR}?.textContent ?? null,
+        })`);
+        await h.shot("cdp-shots/consumers-close-picked-sleeping.png");
+        rec(
+            "3. Sleeping's tick picks both asleep, every pickable row shows its tick, and the bar offers Close 2 agents",
+            allSleeping && picked.z1 === "true" && picked.z2 === "true" && picked.head === "true" && picked.shown === 4 &&
+                /2 selected/.test(picked.bar ?? ""),
+            JSON.stringify(picked)
+        );
+
+        await h.ev(`${cpTick("fx-cp-work")}?.click()`);
+        const withWork = await polishWaitFor(h, `${CP_BAR}?.textContent.includes("Close 3 agents · 1 working")`, 2000);
+        await h.ev(`document.querySelector("[data-consumers-close-picked]")?.click()`);
+        const asked = await polishWaitFor(h, `!!${consumersDialogExpr("Lumen is working")}`, 2000);
+        await h.shot("cdp-shots/consumers-close-picked-confirm.png");
+        await h.ev(`[...(${consumersDialogExpr("Lumen is working")})?.querySelectorAll("button") ?? []].find((b) => b.textContent.trim().startsWith("Cancel"))?.click()`);
+        // the dialog's buttons carry their key hint ("Cancel esc"), so the label is matched by its start
+        const dismissed = await polishWaitFor(h, `!${consumersDialogExpr("Lumen is working")}`, 2000);
+        const afterCancel = await closed();
+        rec(
+            "4. a working agent among the picks makes the button say so and Close ask first; Cancel closes nothing",
+            withWork && asked && dismissed && afterCancel.length === 0,
+            JSON.stringify({ withWork, asked, dismissed, afterCancel })
+        );
+
+        await h.ev(`${cpTick("fx-cp-work")}?.click()`);
+        await polishWaitFor(h, `${CP_BAR}?.textContent.includes("Close 2 agents")`, 2000);
+        await h.ev(`document.querySelector("[data-consumers-close-picked]")?.click()`);
+        const toast = await polishWaitFor(h, consumersToastExpr("Closed 2 agents"), 3000);
+        const calls = await closed();
+        const after = await h.ev(`({ bar: !!${CP_BAR}, dialog: !!${consumersDialogExpr("Closing stops")} })`);
+        rec(
+            "5. with only sleeping agents picked Close closes them at once, toasts, and clears the picks",
+            toast && JSON.stringify([...calls].sort()) === JSON.stringify(["fx-cp-z1", "fx-cp-z2"]) && !after.bar && !after.dialog,
+            JSON.stringify({ toast, calls, ...after })
+        );
+
+        await h.ev(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+        await polishWaitFor(h, `${CONSUMERS_SORT} === null`, 2000);
+        await h.ev(`window.__resmonFixture?.clear()`);
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await removeClosePickedMock(h);
+        await removeConsumersMock(h);
+        if (ctx.wroteFixture) rmSync(TREE_RAIL_FIXTURE, { force: true });
+        if (!(await ahReload(h))) console.error("consumers-close-picked teardown: the page did not come back after the reload");
+        await h.goto("cockpit");
+    },
+};
+
 // --- agent-sleep: an idle agent put to sleep (docs/superpowers/specs/2026-10-09-agent-sleep-design.md). The roster is a
 // fixture of two idle claude agents, one awake and one asleep (the fixture's `sleeping` is what the block's agent:sleeping
 // meta becomes in the app), so nothing real is slept or woken. getconsumers answers the Consumers mock's reading; a
@@ -36917,6 +37090,7 @@ export const SCENARIOS = [
     mdComments,
     workerCapacity,
     consumersPopover,
+    consumersClosePicked,
     agentSleep,
     machineServers,
     sidebarAgentGlyph,

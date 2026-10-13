@@ -21,6 +21,7 @@ import {
 } from "@/app/cockpit/resmonstore";
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import { SkeletonLine } from "@/app/element/skeleton";
+import { DialogButton } from "@/app/modals/dialogbutton";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
 import { modalsModel } from "@/app/store/modalmodel";
@@ -31,25 +32,34 @@ import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ArrowRight, CircleAlert, Ellipsis, Moon, Square, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { confirmCloseSession } from "./agentactions";
+import { closeSessions, confirmCloseSession } from "./agentactions";
 import type { AgentsViewModel } from "./agents";
 import { sleepWithConfirm, wakeAgent, wakeErrorToast } from "./agentsleep";
+import { toggleInSet } from "./cockpitsurfacemodel";
 import {
     buildConsumers,
+    canPick,
+    closePickedConfirm,
+    closePickedLabel,
     COMPACT_WIDTH,
     holdOrder,
     PANEL_WIDTH,
     panelPlacement,
+    pickedRows,
+    pickState,
     ramBar,
     ramLabel,
+    SLEEPING_GROUP,
     staleLine,
     STATE_DOT,
     stopWorkerMessage,
     switchToastText,
+    togglePickAll,
     type ConsumerRow,
     type ConsumersView,
 } from "./consumers";
 import { consumersOpenAtom, consumersOpenerAtom, consumersReadingAtom, useConsumersPoll } from "./consumersstore";
+import { TickBox } from "./tickbox";
 import { usePlanDonuts } from "./usagemeters";
 import { fmt, usd } from "./usagestats";
 import { formatGB } from "./workercapacity";
@@ -125,7 +135,46 @@ const ICON_ACTION =
 const TEXT_ACTION =
     "flex h-[22px] flex-none cursor-pointer items-center gap-0.5 whitespace-nowrap rounded border border-edge-mid px-1.5 text-[11px] text-secondary hover:border-edge-strong hover:bg-surface-selected hover:text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent disabled:cursor-default disabled:opacity-50";
 
-function Row({ row, model }: { row: ConsumerRow; model: AgentsViewModel }) {
+// the rows ticked to close together, and whether any is: once one is, every row that can be ticked shows its tick
+interface Picking {
+    picked: ReadonlySet<string>;
+    any: boolean;
+    toggle: (id: string) => void;
+}
+
+// as wide as a tick, so a row's name stays put when its state turns into one
+const SLOT = "flex h-[14px] w-[14px] flex-none items-center justify-center";
+
+// a row's head: its state, a dot or (asleep) the moon, which turns into its tick on hover. A run's lead and worker keep
+// the dot alone (canPick: they close with their run)
+function PickSlot({ row, pick }: { row: ConsumerRow; pick: Picking }) {
+    const mark = row.sleeping ? (
+        <Moon data-consumer-moon size={10} className="flex-none text-muted" aria-label="sleeping" />
+    ) : (
+        <span className={cn("h-[7px] w-[7px] flex-none rounded-full", STATE_DOT[row.state])} aria-label={row.state} />
+    );
+    if (!canPick(row)) {
+        return <span className={SLOT}>{mark}</span>;
+    }
+    return (
+        <span className={SLOT}>
+            <span className={cn(pick.any ? "hidden" : "flex group-focus-within:hidden group-hover:hidden")}>
+                {mark}
+            </span>
+            <span className={cn(pick.any ? "flex" : "hidden group-focus-within:flex group-hover:flex")}>
+                <TickBox
+                    state={pick.picked.has(row.id) ? "all" : "none"}
+                    label={`Select ${row.name}`}
+                    title="Select to close with others"
+                    onToggle={() => pick.toggle(row.id)}
+                    attrs={{ "data-consumer-pick": row.id }}
+                />
+            </span>
+        </span>
+    );
+}
+
+function Row({ row, model, pick }: { row: ConsumerRow; model: AgentsViewModel; pick: Picking }) {
     // the call in flight; a sleep or a wake takes seconds, and a second press would only be refused by the server
     const [pending, setPending] = useState<"sleep" | "wake" | null>(null);
     const run = (kind: "sleep" | "wake", call: () => Promise<void>) => {
@@ -151,15 +200,7 @@ function Row({ row, model }: { row: ConsumerRow; model: AgentsViewModel }) {
             data-consumer-row={row.id}
             className="group mx-1 flex h-[30px] items-center gap-2.5 rounded-md px-2 hover:bg-surface-hover"
         >
-            {row.sleeping ? (
-                // 10px against the dot's 7px: the margins keep the name where the dot's rows have it
-                <Moon data-consumer-moon size={10} className="-mx-[1.5px] flex-none text-muted" aria-label="sleeping" />
-            ) : (
-                <span
-                    className={cn("h-[7px] w-[7px] flex-none rounded-full", STATE_DOT[row.state])}
-                    aria-label={row.state}
-                />
-            )}
+            <PickSlot row={row} pick={pick} />
             <button
                 type="button"
                 data-consumer-open
@@ -271,7 +312,7 @@ const SECTION_LABEL = "text-[10.5px] font-semibold uppercase tracking-wide text-
 function ColumnHeads() {
     return (
         <div aria-hidden className={cn(SECTION_LABEL, "mx-1 flex items-center gap-2.5 px-2 pb-1 pt-1.5")}>
-            <span className="w-[7px] flex-none" />
+            <span className="w-[14px] flex-none" />
             <span className="min-w-0 flex-1">Agent</span>
             <span className={COL_MODEL}>Model</span>
             <span className={COL_RAM}>RAM</span>
@@ -410,7 +451,17 @@ function compactTitle(row: ConsumerRow): string {
     return parts.filter(Boolean).join(" · ");
 }
 
-function CompactRow({ row, model, ready }: { row: ConsumerRow; model: AgentsViewModel; ready: boolean }) {
+function CompactRow({
+    row,
+    model,
+    ready,
+    pick,
+}: {
+    row: ConsumerRow;
+    model: AgentsViewModel;
+    ready: boolean;
+    pick: Picking;
+}) {
     const note = useAtomValue(resmonNotesAtom)[row.id];
     const [waking, setWaking] = useState(false);
     const cmd = row.work?.command;
@@ -433,19 +484,7 @@ function CompactRow({ row, model, ready }: { row: ConsumerRow; model: AgentsView
                 title={compactTitle(row)}
                 className="group mx-1 flex h-[30px] items-center gap-2.5 rounded-md px-2 hover:bg-surface-hover"
             >
-                {row.sleeping ? (
-                    <Moon
-                        data-consumer-moon
-                        size={10}
-                        className="-mx-[1.5px] flex-none text-muted"
-                        aria-label="sleeping"
-                    />
-                ) : (
-                    <span
-                        className={cn("h-[7px] w-[7px] flex-none rounded-full", STATE_DOT[row.state])}
-                        aria-label={row.state}
-                    />
-                )}
+                <PickSlot row={row} pick={pick} />
                 <span className="flex min-w-0 flex-1 items-baseline gap-2">
                     <button
                         type="button"
@@ -532,7 +571,7 @@ function CompactRow({ row, model, ready }: { row: ConsumerRow; model: AgentsView
                     data-consumer-note
                     role={note.tone === "alert" ? "alert" : "status"}
                     className={cn(
-                        "mb-1 ml-[31px] mr-3 flex items-center gap-1.5 text-[11.5px]",
+                        "mb-1 ml-[38px] mr-3 flex items-center gap-1.5 text-[11.5px]",
                         note.tone === "alert" ? "text-error-soft" : "text-muted"
                     )}
                 >
@@ -549,7 +588,7 @@ function CompactRow({ row, model, ready }: { row: ConsumerRow; model: AgentsView
 function CompactHeads() {
     return (
         <div aria-hidden className="mx-1 flex items-center gap-2.5 px-2 pb-1 pt-1.5 text-[11px] text-ink-faint">
-            <span className="w-[7px] flex-none" />
+            <span className="w-[14px] flex-none" />
             <span className="min-w-0 flex-1">Agent</span>
             <span className={COL_CPU}>CPU</span>
             <span className={COL_RAM}>RAM</span>
@@ -716,6 +755,13 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
     if (!open) {
         heldOrder.current = null;
     }
+    // the rows ticked to close together, forgotten when the panel closes
+    const [picked, setPicked] = useState<Set<string>>(() => new Set());
+    useEffect(() => {
+        if (!open) {
+            setPicked(new Set());
+        }
+    }, [open]);
     const openUsage = () => {
         close();
         globalStore.set(model.surfaceAtom, "usage");
@@ -727,6 +773,37 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
         view = held.view;
         heldOrder.current = held.order;
     }
+    const chosen = view != null ? pickedRows(view, picked) : [];
+    const pick: Picking = {
+        picked,
+        any: chosen.length > 0,
+        toggle: (id) => setPicked((p) => toggleInSet(p, id)),
+    };
+    // the ticked agents close at once when none of them is working; their conversations stay under Conversations
+    const closePicked = () => {
+        const rows = chosen;
+        const closeNow = () => {
+            closeSessions(rows.map((r) => r.id));
+            setPicked(new Set());
+            pushToast({
+                title: rows.length === 1 ? `Closed ${rows[0].name}` : `Closed ${rows.length} agents`,
+                message: "",
+                level: "info",
+            });
+        };
+        const ask = closePickedConfirm(rows);
+        if (ask == null) {
+            closeNow();
+            return;
+        }
+        modalsModel.pushModal("ConfirmModal", {
+            title: "Close agents",
+            message: ask,
+            confirmLabel: closePickedLabel(rows),
+            destructive: true,
+            onConfirm: closeNow,
+        });
+    };
     return (
         <>
             {open ? <div data-consumers-backdrop className="fixed inset-0 z-50" onClick={close} /> : null}
@@ -771,16 +848,41 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                                 {compact ? <CompactHeads /> : <ColumnHeads />}
                                 {view.groups.map((g) => (
                                     <div key={g.key}>
-                                        {g.label ? (
+                                        {g.key === SLEEPING_GROUP ? (
+                                            // its tick, over the rows' ticks, picks every sleeping agent at once
+                                            <div
+                                                className={cn(
+                                                    SECTION_LABEL,
+                                                    "mx-1 mt-1.5 flex items-center gap-2.5 px-2 pb-0.5 pt-1"
+                                                )}
+                                            >
+                                                <span className={SLOT}>
+                                                    <TickBox
+                                                        state={pickState(picked, g.rows)}
+                                                        label="Select every sleeping agent"
+                                                        title="Select every sleeping agent, to close them together"
+                                                        onToggle={() => setPicked((p) => togglePickAll(p, g.rows))}
+                                                        attrs={{ "data-consumers-pick-sleeping": "" }}
+                                                    />
+                                                </span>
+                                                <span>{g.label}</span>
+                                            </div>
+                                        ) : g.label ? (
                                             <div className={cn(SECTION_LABEL, "mt-1.5 px-3 pb-0.5 pt-1")}>
                                                 {g.label}
                                             </div>
                                         ) : null}
                                         {g.rows.map((r) =>
                                             compact ? (
-                                                <CompactRow key={r.id} row={r} model={model} ready={!!snap?.ready} />
+                                                <CompactRow
+                                                    key={r.id}
+                                                    row={r}
+                                                    model={model}
+                                                    ready={!!snap?.ready}
+                                                    pick={pick}
+                                                />
                                             ) : (
-                                                <Row key={r.id} row={r} model={model} />
+                                                <Row key={r.id} row={r} model={model} pick={pick} />
                                             )
                                         )}
                                     </div>
@@ -788,6 +890,30 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                             </>
                         )}
                     </div>
+                    {chosen.length > 0 ? (
+                        <div
+                            data-consumers-pickbar
+                            className="flex items-center gap-2 border-t border-border px-3 py-2"
+                        >
+                            <span className="flex-1 text-[12px] text-muted">
+                                <span className="tabular-nums text-secondary">{chosen.length}</span> selected
+                            </span>
+                            <DialogButton
+                                className="px-[10px] py-[5px] text-[12px]"
+                                onClick={() => setPicked(new Set())}
+                            >
+                                Clear
+                            </DialogButton>
+                            <DialogButton
+                                variant="danger"
+                                data-consumers-close-picked
+                                className="px-[10px] py-[5px] text-[12px]"
+                                onClick={closePicked}
+                            >
+                                {closePickedLabel(chosen)}
+                            </DialogButton>
+                        </div>
+                    ) : null}
                     {compact ? (
                         <CompactOwn view={view} />
                     ) : (

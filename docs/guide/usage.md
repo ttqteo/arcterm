@@ -169,6 +169,8 @@ Mỗi hàng có:
 - **→ Sonnet** (chỉ với agent Claude đang chạy Opus): chuyển session sang Sonnet bằng `/model sonnet`. Nếu agent đang giữa một lượt, toast ghi rằng nó đổi từ lượt kế tiếp;
 - **Stop**: kết thúc session của agent, có hỏi xác nhận (hộp thoại **Close agent** như khi bạn đóng agent thường). Với worker của run, **Stop** hỏi "Stop worker": task dừng và không được thử lại, các task phía sau chờ cho đến khi bạn **Retry** hoặc **Skip** nó trong run.
 
+**Đóng nhiều agent một lần.** Rê chuột lên một hàng, chấm trạng thái (hoặc mặt trăng của agent đang ngủ) thành ô tick; tick một ô là ô tick hiện ở mọi hàng. Ô tick cạnh nhãn **Sleeping** chọn hết các agent đang ngủ, bấm lần nữa để bỏ chọn. Khi có hàng được tick, thanh dưới danh sách ghi `N selected` kèm **Clear** và **Close N agents**. Nếu trong đó có agent đang working, nút ghi thêm `· 1 working` và hỏi xác nhận trước; còn không thì đóng luôn. Conversation của các agent đã đóng vẫn nằm dưới **Conversations** để resume. Lead và worker của một run không có ô tick: chúng đóng cùng run.
+
 **Open Usage** ở chân bảng đưa bạn về surface Usage.
 
 <!-- shot: usage-consumers-tokens.png | Bảng Consumers ở view Tokens: tiêu đề kèm "5h quota", cột "tokens · $", một hàng có dấu cảnh báo "Spending fastest", nút → Sonnet ở hàng Opus | Scenario CDP `consumers-popover`; bấm `[data-usage-meters]`, bảng là `[data-consumers-panel][data-sort="tokens"]`, dấu cảnh báo `[data-consumer-burn]` -->

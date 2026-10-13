@@ -8,6 +8,7 @@
 
 import { agentWork, type AgentWork } from "@/app/cockpit/resmon";
 import type { AgentState, AgentVM } from "./agentsviewmodel";
+import type { TickState } from "./commitselection";
 import { fmtClock } from "./runcompletion";
 import { aggregateSessionUsage, type SessionUsage } from "./sessionusage";
 import { formatGB } from "./workercapacity";
@@ -214,6 +215,62 @@ export function holdOrder(view: ConsumersView, held: string[] | null): { view: C
     groups.sort((a, b) => byHeld(first(a), first(b)));
     sleepingLast(groups);
     return { view: { ...view, groups }, order: flat(groups) };
+}
+
+/** Whether a row can be ticked to close with others: an agent no run owns. A run's lead and workers close with their run
+ * (its row's Close run), which closing them one by one would leave half done. */
+export function canPick(row: Pick<ConsumerRow, "dag" | "vm">): boolean {
+    return row.dag == null && row.vm.runId == null;
+}
+
+/** A group's tick, read over the rows in it that can be ticked. */
+export function pickState(picked: ReadonlySet<string>, rows: ConsumerRow[]): TickState {
+    const ids = rows.filter(canPick).map((r) => r.id);
+    const n = ids.filter((id) => picked.has(id)).length;
+    return n === 0 ? "none" : n === ids.length ? "all" : "some";
+}
+
+/** A group's tick pressed: with every row of it ticked, none of them is; else all of them are. Other picks stay. */
+export function togglePickAll(picked: ReadonlySet<string>, rows: ConsumerRow[]): Set<string> {
+    const ids = rows.filter(canPick).map((r) => r.id);
+    const next = new Set(picked);
+    const all = ids.every((id) => picked.has(id));
+    for (const id of ids) {
+        if (all) {
+            next.delete(id);
+        } else {
+            next.add(id);
+        }
+    }
+    return next;
+}
+
+/** The ticked rows still in the view, in its order: one closed or gone since drops out. */
+export function pickedRows(view: ConsumersView, picked: ReadonlySet<string>): ConsumerRow[] {
+    return view.groups.flatMap((g) => g.rows).filter((r) => picked.has(r.id) && canPick(r));
+}
+
+const working = (rows: ConsumerRow[]) => rows.filter((r) => !r.sleeping && r.state === "working");
+
+/** The Close button under the ticked rows: how many it closes, and how many of them are working. */
+export function closePickedLabel(rows: ConsumerRow[]): string {
+    const n = rows.length;
+    const busy = working(rows).length;
+    return `Close ${n} ${n === 1 ? "agent" : "agents"}${busy > 0 ? ` · ${busy} working` : ""}`;
+}
+
+/** What Close asks first when a ticked agent is working, naming each; null when none is, which closes at once: the
+ * conversations of the rest stay under Conversations to resume. */
+export function closePickedConfirm(rows: ConsumerRow[]): string | null {
+    const names = working(rows).map((r) => r.name);
+    if (names.length === 0) {
+        return null;
+    }
+    const one = names.length === 1;
+    const who = one ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+    return one
+        ? `${who} is working. Closing stops it mid-turn and can't be undone; its conversation stays under Conversations.`
+        : `${who} are working. Closing stops them mid-turn and can't be undone; their conversations stay under Conversations.`;
 }
 
 export interface RamBar {

@@ -6,15 +6,21 @@ import type { AgentVM } from "./agentsviewmodel";
 import {
     buildConsumers,
     BURN_WARN_TOKENS,
+    canPick,
     canSleep,
+    closePickedConfirm,
+    closePickedLabel,
     holdOrder,
     PANEL_WIDTH,
     panelPlacement,
+    pickedRows,
+    pickState,
     ramBar,
     ramLabel,
     staleLine,
     stopWorkerMessage,
     switchToastText,
+    togglePickAll,
     type ConsumerRow,
 } from "./consumers";
 
@@ -516,5 +522,71 @@ describe("buildConsumers with the Resource Manager snapshot", () => {
     it("leaves work out with no snapshot", () => {
         const view = buildConsumers(reading([agent("a")]), [vm("a")], "ram");
         expect(view.groups[0].rows[0].work).toBeUndefined();
+    });
+});
+
+describe("picking agents to close", () => {
+    const sleeping = { since: 1, freedBytes: 0 };
+    const view = buildConsumers(
+        reading([
+            agent("work", { rambytes: 900 * MB }),
+            agent("idle", { rambytes: 300 * MB }),
+            agent("lead", { rambytes: 200 * MB }),
+            agent("w1", { rambytes: 500 * MB, dag: { channelid: "c", runid: "run12345678", taskid: "1" } }),
+            agent("z1"),
+            agent("z2"),
+        ]),
+        [
+            vm("work", { name: "Lumen" }),
+            vm("idle", { state: "idle" }),
+            vm("lead", { state: "idle", runId: "run12345678" }),
+            vm("w1", { runId: "child" }),
+            vm("z1", { state: "idle", sleeping }),
+            vm("z2", { state: "idle", sleeping }),
+        ],
+        "ram"
+    );
+    const rowsOf = (key: string) => view.groups.find((g) => g.key === key)!.rows;
+    const all = view.groups.flatMap((g) => g.rows);
+    const byId = (id: string) => all.find((r) => r.id === id)!;
+
+    it("picks only an agent no run owns: a run's lead and workers close with their run", () => {
+        expect(all.filter(canPick).map((r) => r.id)).toEqual(["work", "idle", "z1", "z2"]);
+    });
+
+    it("reads a group's tick over its pickable rows", () => {
+        expect(pickState(new Set(), rowsOf("sleeping"))).toBe("none");
+        expect(pickState(new Set(["z1"]), rowsOf("sleeping"))).toBe("some");
+        expect(pickState(new Set(["z1", "z2"]), rowsOf("sleeping"))).toBe("all");
+        // the lead and the worker can never be ticked, so they do not hold the agents' tick at "some"
+        expect(pickState(new Set(["work", "idle"]), [...rowsOf("agents"), ...rowsOf("run12345678")])).toBe("all");
+    });
+
+    it("ticks a whole group, and a second press clears it, leaving the other picks", () => {
+        const once = togglePickAll(new Set(["work"]), rowsOf("sleeping"));
+        expect([...once].sort()).toEqual(["work", "z1", "z2"]);
+        expect([...togglePickAll(once, rowsOf("sleeping"))]).toEqual(["work"]);
+        // part of the group ticked: the press ticks the rest
+        expect([...togglePickAll(new Set(["z1"]), rowsOf("sleeping"))].sort()).toEqual(["z1", "z2"]);
+    });
+
+    it("keeps the picks still on view, in the panel's order, and never one a run owns", () => {
+        expect(ids(pickedRows(view, new Set(["z2", "gone", "work", "w1", "lead"])))).toEqual(["work", "z2"]);
+    });
+
+    it("words the Close button with how many it closes and how many of them are working", () => {
+        expect(closePickedLabel([byId("z1")])).toBe("Close 1 agent");
+        expect(closePickedLabel([byId("z1"), byId("idle")])).toBe("Close 2 agents");
+        expect(closePickedLabel([byId("z1"), byId("work")])).toBe("Close 2 agents · 1 working");
+    });
+
+    it("asks first only when a picked agent is working, naming it", () => {
+        expect(closePickedConfirm([byId("z1"), byId("idle")])).toBeNull();
+        expect(closePickedConfirm([byId("z1"), byId("work")])).toBe(
+            "Lumen is working. Closing stops it mid-turn and can't be undone; its conversation stays under Conversations."
+        );
+        expect(closePickedConfirm([byId("work"), { ...byId("idle"), state: "working", name: "Fern" }])).toBe(
+            "Lumen and Fern are working. Closing stops them mid-turn and can't be undone; their conversations stay under Conversations."
+        );
     });
 });

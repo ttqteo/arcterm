@@ -86,6 +86,15 @@ export function confirmCloseRun(title: string, tabIds: string[]) {
     });
 }
 
+// Close several sessions at once, with no confirm of its own: the caller asked (the Consumers panel's ticked rows).
+export function closeSessions(tabIds: string[]): void {
+    const ws = globalStore.get(atoms.workspace);
+    if (ws?.oid == null || tabIds.length === 0) {
+        return;
+    }
+    closeTabs(ws.oid, tabIds);
+}
+
 // NUDGE_INPUT is what the rail's Resume types: a quiet agent picks it up as a new turn
 export const NUDGE_INPUT = "continue\r";
 
