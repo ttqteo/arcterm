@@ -365,7 +365,7 @@ Một con vật pixel nhỏ đi dọc mép trên của footer trên mọi surfac
   Jarvis**, `Esc` để thu lại), và **Restore**. Chỉ lướt chuột qua thì không hiện gì. Điều nó nói và câu trả lời đến lúc
   chat đang thu hiện thành bong bóng cạnh nó, nhường chỗ cho thẻ khi bạn rê chuột lên. Bấm icon arcterm trên taskbar
   (Dock trên macOS), hay rời sang app khác rồi Alt+Tab (`⌘Tab`) về arcterm, cũng đưa cửa sổ về, kể cả khi không thấy
-  con vật đâu.
+  con vật đâu: trên Windows nó mở Full, maximized, dù đã thu từ cỡ nào; trên macOS nó về đúng cỡ lúc thu.
   Muốn nút minimize về Dock (taskbar trên Windows) như thường: **Settings → General → Window → Minimize**.
   Muốn cửa sổ tự thu vào Sprout khi bạn chuyển sang một app che gần hết arcterm (từ 80% trở lên: maximize, fullscreen
   hay một cửa sổ to đè lên; app nằm cạnh, ở màn hình khác, chụp màn hình hay khoá máy thì không thu) và tự mở ra khi

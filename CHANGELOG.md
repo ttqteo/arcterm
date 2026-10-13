@@ -8,6 +8,13 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
+## Unreleased
+
+### Changed
+
+- **On Windows, Alt+Tab back to a folded arcterm opens it maximized**, in Full, whatever size it was folded from (Full,
+  Float, or a smaller window); the taskbar button does the same. On macOS ⌘Tab still gives back the size it folded from.
+
 ## 0.15.11 — 2026-10-13
 
 ### Added

@@ -269,21 +269,26 @@ export async function exitFloat(restoreFullscreen: boolean): Promise<void> {
     }
     busy = true;
     try {
-        const win = getCurrentWindow();
-        const restore = parseRestore(readJson(session, RESTORE_KEY));
-        writeJson(local, RECT_KEY, await frameOf(win).catch(() => null));
-        globalStore.set(floatPinnedAtom, false);
-        globalStore.set(floatModeAtom, false);
-        if (restoreFullscreen && restore != null) {
-            globalStore.set(terminalFullscreenAtom, restore.terminalFullscreen);
-        }
-        await giveFrameBack(win, restore);
-        writeJson(session, RESTORE_KEY, null);
+        await unfloatTheWindow(restoreFullscreen);
     } catch (e) {
         console.error("leaving float mode failed", e);
     } finally {
         busy = false;
     }
+}
+
+// The window part of leaving Float, back to the Full frame it kept. Inside busy.
+async function unfloatTheWindow(restoreFullscreen: boolean): Promise<void> {
+    const win = getCurrentWindow();
+    const restore = parseRestore(readJson(session, RESTORE_KEY));
+    writeJson(local, RECT_KEY, await frameOf(win).catch(() => null));
+    globalStore.set(floatPinnedAtom, false);
+    globalStore.set(floatModeAtom, false);
+    if (restoreFullscreen && restore != null) {
+        globalStore.set(terminalFullscreenAtom, restore.terminalFullscreen);
+    }
+    await giveFrameBack(win, restore);
+    writeJson(session, RESTORE_KEY, null);
 }
 
 export function toggleFloat(model: AgentsViewModel): Promise<void> {
@@ -669,6 +674,16 @@ async function showContent(win: Window, unfold: Unfold): Promise<void> {
 /** Restore from Sprout: back to the size it was folded from, at its frame, the content growing out of Sprout. With an
  *  agent (a click in the folded list), to Float on that agent, whichever size it was folded from. */
 export function restoreFromSprout(model: AgentsViewModel, agentId?: string): Promise<void> {
+    return unfoldTo(model, agentId != null ? "open-agent" : "restore", agentId);
+}
+
+/** Back in arcterm from another app on Windows (Alt+Tab, the taskbar): out of the fold into Full, maximized, whatever
+ *  size it was folded from. A fold from native fullscreen goes back to it. */
+function returnFromSprout(model: AgentsViewModel): Promise<void> {
+    return unfoldTo(model, "return");
+}
+
+function unfoldTo(model: AgentsViewModel, m: "restore" | "open-agent" | "return", agentId?: string): Promise<void> {
     return miniOps(async () => {
         const now = currentSize();
         if (now.size !== "sprout") {
@@ -687,8 +702,24 @@ export function restoreFromSprout(model: AgentsViewModel, agentId?: string): Pro
                 hidePet("walk");
                 await playTeleport("mini", "depart");
             }
-            const to = move(now, agentId != null ? "open-agent" : "restore").size;
+            const to = move(now, m).size;
             const unfold = await leaveMini(win);
+            if (m === "return" && !unfold.fullscreen) {
+                // the frame given back stays unseen behind the hidden shell; Full, maximized, is what shows
+                busy = true;
+                try {
+                    if (now.origin === "float") {
+                        await unfloatTheWindow(true);
+                    }
+                    await win.maximize();
+                } finally {
+                    busy = false;
+                }
+                const at = unfold.sprout == null ? null : await growCenter(win, unfold.sprout);
+                await showContent(win, { at, fullscreen: false });
+                landPet(motion);
+                return;
+            }
             if (to === "float" && now.origin === "full") {
                 // Full's frame is back with the shell still hidden: float from it, so the terminal only sees the float
                 busy = true;
@@ -789,7 +820,8 @@ async function recoverFold(win: Window, restore: MiniRestore): Promise<void> {
 // window:autosprout, like a picture-in-picture: Full folds into Sprout once you have been for AUTO_FOLD_DELAY_MS in
 // another app whose window hides arcterm (foreground.rs: on Windows a maximized or full-screen one; a dialog, a popup or
 // an overlay such as a screenshot, the lock screen or Alt+Tab's switcher never does). Any fold, that one or a button's,
-// grows back when you return to arcterm, whichever way (Alt+Tab, ⌘Tab, the taskbar). A focus, or on Windows the host
+// grows back when you return to arcterm, whichever way (Alt+Tab, ⌘Tab, the taskbar): on Windows into Full, maximized,
+// on macOS to the size it folded from. A focus, or on Windows the host
 // seeing the main window take the foreground, counts as a return only once another app has been seen in front of the
 // folded window, so a fold that takes the focus itself never undoes itself, and only when it came without a press on
 // Sprout (windowsize.ts autoRestoreOnReturn).
@@ -842,8 +874,8 @@ function setupAutoSprout(model: AgentsViewModel): () => void {
         const pressGapMs = lastPress == null ? null : lastPress - at;
         const chatOpened = globalStore.get(petPeekOpenAtom) && !chatAtLeave;
         if (autoRestoreOnReturn({ size: currentSize().size, pressGapMs, chatOpened })) {
-            foldLog("back in arcterm: growing back");
-            void restoreFromSprout(model);
+            foldLog(`back in arcterm: growing back${MAC ? "" : " to Full, maximized"}`);
+            void (MAC ? restoreFromSprout(model) : returnFromSprout(model));
         } else if (currentSize().size === "sprout") {
             foldLog(`back in arcterm: staying folded (press gap ${pressGapMs}, chat opened ${chatOpened})`);
         }

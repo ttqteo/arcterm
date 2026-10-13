@@ -42,6 +42,10 @@ describe("move", () => {
         expect(move(foldedFromFull, "open-agent")).toEqual(float);
         expect(move(foldedFromFloat, "open-agent")).toEqual(float);
     });
+    it("returns to Full from either origin on Alt+Tab back", () => {
+        expect(move(foldedFromFull, "return")).toEqual(full);
+        expect(move(foldedFromFloat, "return")).toEqual(full);
+    });
     // folded, the shell is hidden: Shift+F there would shrink a window with nothing in it
     it("keeps the fold, and its origin, through Shift+F and a second fold", () => {
         expect(move(foldedFromFull, "toggle-float")).toEqual(foldedFromFull);
@@ -52,6 +56,7 @@ describe("move", () => {
         for (const s of [full, float]) {
             expect(move(s, "restore")).toEqual(s);
             expect(move(s, "open-agent")).toEqual(s);
+            expect(move(s, "return")).toEqual(s);
         }
     });
 });

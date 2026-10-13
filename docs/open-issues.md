@@ -55,10 +55,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Sprout: the pill at his top right shows three pulsing green dots and the count, no web; the same in Float, and the
   dots alone while Jarvis thinks. `task verify:ui -- jarvis-pet` (steps 15b, 22) checks it.
 
-- [ ] (arcterm) **Alt+Tab grows any fold back.** Fold with the Sprout button (not Fold when you leave), click into
-  another app, Alt+Tab back to arcterm: the window grows back to the size it folded from. A click on Sprout from the
-  other app leaves it folded; a toast click that opens the chat leaves it folded too. `waveapp.log` logs
-  "back in arcterm: growing back".
+- [ ] (arcterm) **Alt+Tab grows any fold back, maximized (Windows).** Fold with the Sprout button (not Fold when you
+  leave) from a restored (not maximized) Full window, click into another app, Alt+Tab back to arcterm: the window opens
+  in Full, maximized. The same from Float: it comes back in Full, maximized, not as the float. A click on Sprout from
+  the other app leaves it folded; a toast click that opens the chat leaves it folded too. `waveapp.log` logs
+  "back in arcterm: growing back to Full, maximized".
 - [ ] (arcterm) **A long Open link ends in "…" in the folded Jarvis card.** With a run notice whose title is long (an
   installer build), open the card from Sprout: the "Open <title>" link stays inside the card, cut with "…", and its
   hover shows the whole title.

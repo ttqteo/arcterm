@@ -19,8 +19,9 @@ export interface SizeState {
 }
 
 // fold: a Sprout button, minimize, the yellow light, ⌘M. restore: a double-click on Sprout, or Restore. toggle-float:
-// Shift+F and the Float button. open-agent: a click on an agent in the folded list.
-export type Move = "fold" | "restore" | "toggle-float" | "open-agent";
+// Shift+F and the Float button. open-agent: a click on an agent in the folded list. return: back to arcterm from another
+// app (Alt+Tab, the taskbar) on Windows, which lands in Full, maximized, whatever size it folded from.
+export type Move = "fold" | "restore" | "toggle-float" | "open-agent" | "return";
 
 export function windowSize(floating: boolean, folded: boolean): WindowSize {
     return folded ? "sprout" : floating ? "float" : "full";
@@ -43,6 +44,8 @@ export function move(s: SizeState, m: Move): SizeState {
             return s.size === "sprout" ? s : { size: s.size === "full" ? "float" : "full", origin: null };
         case "open-agent":
             return s.size === "sprout" ? { size: "float", origin: null } : s;
+        case "return":
+            return s.size === "sprout" ? { size: "full", origin: null } : s;
     }
 }
 
