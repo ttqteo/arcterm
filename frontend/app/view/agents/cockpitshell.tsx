@@ -30,6 +30,7 @@ import { useUnreadTracking } from "./unreadagentsstore";
 import { RadarSurface } from "./radarsurface";
 import { SettingsSurface } from "./settingssurface";
 import { SetupSurface } from "./setupsurface";
+import { useSleeperTitles } from "./sleepertitles";
 import { StorageNudge } from "./storagenudge";
 import { ToolPicker } from "./toolpicker";
 import { UsageSurface } from "./usagesurface";
@@ -132,6 +133,8 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
     useUnreadTracking(model);
     // the server never sleeps an agent on screen, whatever surface shows
     useViewingSync(model);
+    // a sleeping agent's title, which every surface names it by
+    useSleeperTitles(model);
     useDockBadge(model);
     const surface = useAtomValue(model.surfaceAtom);
     const floating = useAtomValue(floatModeAtom);

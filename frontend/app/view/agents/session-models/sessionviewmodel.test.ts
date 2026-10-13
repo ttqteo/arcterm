@@ -273,9 +273,14 @@ describe("sessionTitle", () => {
         expect(sessionTitle(undefined, "Scanned title")).toBe("Scanned title");
         expect(sessionTitle("", "Scanned title")).toBe("Scanned title");
     });
-    it("is undefined when neither has one, so the row falls back to its project", () => {
+    it("falls back to the title read from its own transcript when the archive does not hold the session", () => {
+        // the archive holds only the newest sessions: an agent asleep behind more of them is not in it
+        expect(sessionTitle(undefined, undefined, "Transcript title")).toBe("Transcript title");
+        expect(sessionTitle(undefined, "Scanned title", "Transcript title")).toBe("Scanned title");
+    });
+    it("is undefined when none has one, so the row falls back to its project", () => {
         expect(sessionTitle(undefined, undefined)).toBeUndefined();
-        expect(sessionTitle("", "")).toBeUndefined();
+        expect(sessionTitle("", "", "")).toBeUndefined();
     });
 });
 

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { sessionsArchiveAtom } from "../sessionsarchivestore";
+import { titleKey, transcriptTitlesAtom } from "../sleepertitles";
 import { resolveAgentIdentity } from "../transcriptregistry";
 
 import { getTabBadgeAtom } from "@/app/store/badge";
@@ -54,6 +55,7 @@ export const sessionSidebarViewModelAtom = atom<SidebarViewModel>((get) => {
     const activeId = ws?.activetabid;
     const labelMap = get(sessionGroupLabelAtom);
     const archive = get(sessionsArchiveAtom);
+    const transcriptTitles = get(transcriptTitlesAtom);
 
     const sessions: SessionInput[] = tabIds.flatMap((tabId) => {
         const tab = get(WOS.getWaveObjectAtom<Tab>(WOS.makeORef("tab", tabId)));
@@ -106,7 +108,11 @@ export const sessionSidebarViewModelAtom = atom<SidebarViewModel>((get) => {
                 tab?.meta?.["session:agent"],
                 agentStatus?.transcriptpath
             );
-            title = sessionTitle(agentStatus?.title, scanned?.task);
+            title = sessionTitle(
+                agentStatus?.title,
+                scanned?.task,
+                agentStatus?.transcriptpath ? transcriptTitles[titleKey(agentStatus.transcriptpath)] : undefined
+            );
             subagentsExpanded = subagentExpanded(subagents, get(getSubagentExpandAtom(termBlockOref)));
         }
 

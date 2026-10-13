@@ -152,9 +152,15 @@ export function labelChanged(draft: string, current: string | undefined): boolea
 
 /** Pure: a session's auto title. The live status carries the ai-title its hook read; a sleeping agent has no process to
  *  report one (its exit publishes a bare idle, and a restart leaves it no status at all), and codex reports none, so the
- *  title the Conversations archive scanned from the same transcript stands in. */
-export function sessionTitle(statusTitle: string | undefined, scannedTask: string | undefined): string | undefined {
-    return statusTitle || scannedTask || undefined;
+ *  title the Conversations archive scanned from the same transcript stands in. The archive holds only the newest
+ *  sessions, so for an agent asleep behind more of them the title read from its own transcript's tail does
+ *  (sleepertitles.ts). */
+export function sessionTitle(
+    statusTitle: string | undefined,
+    scannedTask: string | undefined,
+    transcriptTitle?: string
+): string | undefined {
+    return statusTitle || scannedTask || transcriptTitle || undefined;
 }
 
 function rowLabel(s: SessionInput, includeService: boolean): string {

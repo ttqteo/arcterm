@@ -32,6 +32,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - **The Dock icon brings arcterm back over a full-screen app on a Mac**: with the window folded into Sprout above a
   full-screen app, clicking the Dock icon (or ⌘Tab, or a double-click on Sprout) now takes you to arcterm's desktop
   instead of leaving the screen on the full-screen app.
+- **A sleeping agent keeps its conversation's title** instead of reading as its project's name: when it slept long
+  enough ago that newer conversations pushed it out of Conversations, its title now comes from its own transcript.
 
 ## 0.15.11 — 2026-10-13
 
