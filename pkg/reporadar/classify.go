@@ -54,10 +54,11 @@ func prefixClass(subject string) (waveobj.RadarCommitClass, bool) {
 	return cls, ok
 }
 
-// classifyRoute is the audit route's runtime on its cheap model; pi takes no bare model id, so it runs its default.
+// classifyRoute is the audit route's runtime on its classifier model. Unset, claude runs its cheap model and pi
+// its own default: pi takes no bare model id.
 func classifyRoute(route auditRoute) auditRoute {
-	out := auditRoute{Runtime: route.Runtime}
-	if route.Runtime == AuditRuntimeClaude {
+	out := auditRoute{Runtime: route.Runtime, Model: route.ClassifyModel}
+	if out.Model == "" && route.Runtime == AuditRuntimeClaude {
 		out.Model = consult.CheapModel
 	}
 	return out

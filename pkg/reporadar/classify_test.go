@@ -102,7 +102,7 @@ func TestClassifyNoModelWhenPrefixedOrCached(t *testing.T) {
 	}
 }
 
-func TestClassifyUsesCheapModel(t *testing.T) {
+func TestClassifyModel(t *testing.T) {
 	commits := []gitCommit{gc(hexHash(1), 1, "stop flush timeout", "pkg/a.go")}
 	for _, tc := range []struct {
 		route     auditRoute
@@ -110,6 +110,8 @@ func TestClassifyUsesCheapModel(t *testing.T) {
 	}{
 		{claudeRoute, "haiku"},
 		{auditRoute{Runtime: AuditRuntimePi, Model: "some/model"}, ""},
+		{auditRoute{Runtime: AuditRuntimeClaude, Model: DefaultAuditModel, ClassifyModel: "sonnet"}, "sonnet"},
+		{auditRoute{Runtime: AuditRuntimePi, Model: "some/model", ClassifyModel: "other/model"}, "other/model"},
 	} {
 		calls := 0
 		var gotRoute auditRoute

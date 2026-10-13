@@ -26,10 +26,16 @@ const (
 	auditDiffTruncated = "[diff truncated: read the changed files in the repository for the rest]"
 )
 
-// configuredAuditRoute reads radar:auditruntime / radar:auditmodel, applying the defaults. An unknown runtime is an error.
+// configuredAuditRoute reads radar:auditruntime / radar:auditmodel / radar:classifymodel, applying the defaults.
+// An unknown runtime is an error.
 func configuredAuditRoute() (auditRoute, error) {
 	settings := wconfig.GetWatcher().GetFullConfig().Settings
-	return resolveAuditRoute(settings.RadarAuditRuntime, settings.RadarAuditModel)
+	route, err := resolveAuditRoute(settings.RadarAuditRuntime, settings.RadarAuditModel)
+	if err != nil {
+		return auditRoute{}, err
+	}
+	route.ClassifyModel = strings.TrimSpace(settings.RadarClassifyModel)
+	return route, nil
 }
 
 func resolveAuditRoute(runtime, model string) (auditRoute, error) {

@@ -50,8 +50,9 @@ type auditReply struct {
 	Hits      []auditHit `json:"hits"`
 }
 
-// auditRoute is the runtime and model an audit session runs on.
-type auditRoute struct{ Runtime, Model string }
+// auditRoute is the runtime and model an audit session runs on. ClassifyModel is the scan's commit
+// classifier model on the same runtime; empty takes classifyRoute's default.
+type auditRoute struct{ Runtime, Model, ClassifyModel string }
 
 // auditSessionResult is what one session returned: its final assistant message and what the runtime reported.
 type auditSessionResult struct {

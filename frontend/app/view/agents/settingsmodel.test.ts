@@ -11,6 +11,7 @@ import {
     OPENROUTER_SECRET_NAME,
     RADAR_AUDIT_RUNTIMES,
     radarAuditRoute,
+    radarClassifyDefault,
     resolveSectionId,
     resolveSelection,
     rowKeys,
@@ -222,6 +223,7 @@ describe("settingsSections", () => {
             "headless:openroutercheapmodel",
             "radar:auditruntime",
             "radar:auditmodel",
+            "radar:classifymodel",
             "harness:updatecheck",
         ]);
     });
@@ -233,6 +235,7 @@ describe("settingsSections", () => {
             "headless.apikey",
             "headless.cheap",
             "headless.radaraudit",
+            "headless.radarclassify",
         ]);
         expect(sectionRows(headless).find((r) => r.id === "headless.radaraudit")!.title).toBe("Radar audit");
         const prose = [headless.blurb, ...sectionRows(headless).flatMap((r) => [r.title, r.desc])]
@@ -247,6 +250,15 @@ describe("settingsSections", () => {
         expect(sectionRows(filterSections(sections(), "radar:auditmodel")[0]).map((r) => r.id)).toEqual([
             "headless.radaraudit",
         ]);
+        expect(sectionRows(filterSections(sections(), "radar:classifymodel")[0]).map((r) => r.id)).toEqual([
+            "headless.radarclassify",
+        ]);
+    });
+
+    it("defaults the classifier to haiku on claude and pi's own on pi", () => {
+        expect(radarClassifyDefault("")).toBe("haiku");
+        expect(radarClassifyDefault("claude")).toBe("haiku");
+        expect(radarClassifyDefault("pi")).toBe("pi default");
     });
 });
 
@@ -351,7 +363,7 @@ describe("settings pages", () => {
         expect(cards["storage/autoclean"]).toEqual(["storage.autoclean", "storage.nudge", "storage.canvasonship"]);
         expect(cards["headless/runtime"]).toEqual(["headless.runtime"]);
         expect(cards["headless/openrouter"]).toEqual(["headless.apikey", "headless.cheap"]);
-        expect(cards["headless/radar"]).toEqual(["headless.radaraudit"]);
+        expect(cards["headless/radar"]).toEqual(["headless.radaraudit", "headless.radarclassify"]);
         expect(cards["about/versions"]).toEqual(["about.app", "about.server", "about.buildtime", "about.platform"]);
         expect(cards["about/agents"]).toEqual(["about.harnesses", "about.updatecheck"]);
     });
@@ -361,7 +373,7 @@ describe("settings pages", () => {
             .flatMap(sectionRows)
             .map((r) => r.id);
         expect(new Set(ids).size).toBe(ids.length);
-        expect(ids).toHaveLength(53 + RUNTIME_FLAGS.claude.length);
+        expect(ids).toHaveLength(54 + RUNTIME_FLAGS.claude.length);
     });
 
     it("leaves the backend-authoritative run route off the config path", () => {

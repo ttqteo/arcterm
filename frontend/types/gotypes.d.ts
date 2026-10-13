@@ -3506,6 +3506,7 @@ declare global {
         "runs:wakeorigin"?: boolean;
         "power:*"?: boolean;
         "power:keepawake"?: boolean;
+        "radar:classifymodel"?: string;
     };
 
     // wshrpc.ShippedItem

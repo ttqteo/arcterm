@@ -17,7 +17,9 @@ import {
     RADAR_AUDIT_MODEL_KEY,
     RADAR_AUDIT_RUNTIME_KEY,
     RADAR_AUDIT_RUNTIMES,
+    RADAR_CLASSIFY_MODEL_KEY,
     radarAuditRoute,
+    radarClassifyDefault,
 } from "../settingsmodel";
 import {
     CardWarning,
@@ -73,6 +75,7 @@ export function BackgroundAIPage() {
     const cheapModel = (useAtomValue(getSettingsKeyAtom("headless:openroutercheapmodel")) as string) ?? "";
     const auditRuntime = (useAtomValue(getSettingsKeyAtom(RADAR_AUDIT_RUNTIME_KEY)) as string) ?? "";
     const auditModel = (useAtomValue(getSettingsKeyAtom(RADAR_AUDIT_MODEL_KEY)) as string) ?? "";
+    const classifyModel = (useAtomValue(getSettingsKeyAtom(RADAR_CLASSIFY_MODEL_KEY)) as string) ?? "";
 
     const [hasKey, setHasKey] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -246,6 +249,13 @@ export function BackgroundAIPage() {
                                 [RADAR_AUDIT_MODEL_KEY]: route.model ?? null,
                             })
                         }
+                    />
+                </SettingRow>
+                <SettingRow id="headless.radarclassify">
+                    <CommitText
+                        value={classifyModel}
+                        placeholder={radarClassifyDefault(auditRuntime)}
+                        onCommit={(v) => writeConfig({ [RADAR_CLASSIFY_MODEL_KEY]: v })}
                     />
                 </SettingRow>
             </SettingCard>

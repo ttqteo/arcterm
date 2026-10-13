@@ -34045,9 +34045,9 @@ const notifyToast = {
 
 // --- settings-radar-audit: the Radar audit route row in Settings > Headless AI ------------------------
 // The row's picker offers claude and pi only (an audit session needs tools) and writes radar:auditruntime
-// and radar:auditmodel. The picker panel is portalled to the body, so its options are scoped to the panel
-// and everything else to the section pane.
-const RADAR_AUDIT_KEYS = ["radar:auditruntime", "radar:auditmodel"];
+// and radar:auditmodel; its classifier field writes radar:classifymodel. The picker panel is portalled to
+// the body, so its options are scoped to the panel and everything else to the section pane.
+const RADAR_AUDIT_KEYS = ["radar:auditruntime", "radar:auditmodel", "radar:classifymodel"];
 const RADAR_AUDIT_PANE = `document.querySelector('[data-settings-section="headless"]')`;
 const RADAR_AUDIT_ROW = `${RADAR_AUDIT_PANE}?.querySelector('[data-setting-row="headless.radaraudit"]')`;
 const RADAR_AUDIT_TRIGGER = `${RADAR_AUDIT_ROW}?.querySelector('[data-testid="route-picker"]')`;
@@ -34056,7 +34056,10 @@ const RADAR_AUDIT_PANEL = `document.querySelector('[aria-label="Available routes
 // or row until ListHarnessesCommand answers; twice its client timeout (CATALOG_RPC_TIMEOUT_MS, harnessstore.ts)
 const RADAR_AUDIT_CATALOG_WAIT_MS = 60_000;
 const RADAR_AUDIT_CATALOG_UP = `${RADAR_AUDIT_PANEL}?.querySelector('[data-testid^="route-harness-"], [data-testid^="route-option-"]') != null`;
+const RADAR_CLASSIFY_INPUT = `${RADAR_AUDIT_ROW}?.querySelector('input[type="text"]')`;
 const radarAuditFace = (h) => h.ev(`(${RADAR_AUDIT_TRIGGER}?.textContent || "").trim()`);
+const radarClassifyField = (h) =>
+    h.ev(`(() => { const i = ${RADAR_CLASSIFY_INPUT}; return i ? { value: i.value, placeholder: i.placeholder } : null; })()`);
 
 const settingsRadarAudit = {
     name: "settings-radar-audit",
@@ -34084,6 +34087,12 @@ const settingsRadarAudit = {
             title === true && /claude/i.test(unsetFace) && unsetFace.includes("sonnet"),
             `row=${title} face="${unsetFace}"`
         );
+        const unsetClassify = await radarClassifyField(h);
+        rec(
+            "3. the classifier field reads haiku when radar:classifymodel is unset on claude",
+            unsetClassify?.value === "" && unsetClassify?.placeholder === "haiku",
+            JSON.stringify(unsetClassify)
+        );
         await h.ev(`${RADAR_AUDIT_ROW}?.scrollIntoView({ block: "center" })`);
         await polishNap(200);
         await h.shot("cdp-shots/settings-radar-audit-closed.png");
@@ -34106,7 +34115,7 @@ const settingsRadarAudit = {
                 .sort();
         })()`);
         rec(
-            "3. the picker offers claude and pi and no other runtime",
+            "4. the picker offers claude and pi and no other runtime",
             JSON.stringify(offered) === JSON.stringify(["claude", "pi"]),
             catalogUp
                 ? `offered=${JSON.stringify(offered)} catalog=${catalogMs}ms`
@@ -34130,13 +34139,38 @@ const settingsRadarAudit = {
         await polishWaitFor(h, `(${RADAR_AUDIT_TRIGGER}?.textContent || "").includes(${JSON.stringify(picked ?? "\u0000")})`, 5000);
         const piFace = await radarAuditFace(h);
         rec(
-            "4. picking a pi route stores radar:auditruntime as pi and the row shows it",
+            "5. picking a pi route stores radar:auditruntime as pi and the row shows it",
             picked != null &&
                 stored["radar:auditruntime"] === "pi" &&
                 stored["radar:auditmodel"] === picked &&
                 /^pi\b/i.test(piFace) &&
                 piFace.includes(picked),
             `picked=${picked} runtime=${stored["radar:auditruntime"]} model=${stored["radar:auditmodel"]} face="${piFace}"`
+        );
+
+        await polishWaitFor(h, `${RADAR_CLASSIFY_INPUT}?.placeholder === "pi default"`, 3000);
+        const piClassify = await radarClassifyField(h);
+        const typed = "opencode/deepseek-v4-flash";
+        await h.ev(`(() => {
+            const i = ${RADAR_CLASSIFY_INPUT};
+            if (!i) return;
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(i, ${JSON.stringify(typed)});
+            i.dispatchEvent(new Event("input", { bubbles: true }));
+        })()`);
+        // Enter, not blur: the WebView rarely has OS focus under CDP, so focus()/blur() fire no events
+        await h.ev(`${RADAR_CLASSIFY_INPUT}?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))`);
+        let classifyStored;
+        for (let waited = 0; waited < 5000 && classifyStored !== typed; waited += 250) {
+            await polishNap(250);
+            classifyStored = ((await h.rpc("getfullconfig", null))?.settings ?? {})["radar:classifymodel"];
+        }
+        await h.ev(`${RADAR_AUDIT_ROW}?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-radar-audit-classifier.png");
+        rec(
+            "6. on pi the classifier field reads pi default, and a typed model is stored as radar:classifymodel",
+            piClassify?.placeholder === "pi default" && classifyStored === typed,
+            `field=${JSON.stringify(piClassify)} stored=${classifyStored}`
         );
 
         const mid = await h.ev(`(() => {
@@ -34149,7 +34183,7 @@ const settingsRadarAudit = {
             };
         })()`);
         rec(
-            "5. the section has no Mid model row",
+            "7. the section has no Mid model row",
             mid != null && mid.row === false && mid.text === false && mid.rows.includes("headless.cheap"),
             JSON.stringify(mid)
         );
