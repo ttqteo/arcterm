@@ -84,7 +84,7 @@ does not, say what you saw and it becomes a bug row under Actionable.
 
 **2026-10-13 (Usage → Insights: ranked levers)**
 
-- [ ] (arcterm) Usage → Insights levers: Re-analyze once in the installed app; Claude's reply parses and the levers' sizes look plausible against the By session table.
+- [ ] (arcterm) Usage → Insights levers: Re-analyze once in the installed app; the levers' sizes look plausible against the By session table and the card draws Claude's words. (That real Claude answers the JSON prompt was checked 2026-10-13 with one live `Analyze` on a built digest, in Vietnamese: it parsed with all five levers, valid refs, and the headline citing the digest's own numbers.)
 
 **2026-10-13 (Spider-Man pet: held strand, crawl art, a grab mid-descent, idle mid-hang)**
 

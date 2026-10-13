@@ -36836,11 +36836,14 @@ const toolsDockStrip = {
         await ttClick(h, `[data-terminal-pane-head="${fx.tabId}"] [data-terminal-to-dock]`);
         const docked = await polishWaitFor(h, `(${TT_GRID}).docked === ${JSON.stringify(fx.tabId)}`, 5000);
         const rowPanel = await polishWaitFor(h, `(${TT_PLACE(fx.tabId)}) === "panel"`, 4000);
+        const barName = await h.ev(
+            `(document.querySelector("[data-terminal-dock-bar] span[title]")?.textContent || "").trim()`
+        );
         await h.shot("cdp-shots/tools-dock-strip-1-panel.png");
         rec(
-            "1. Move to the panel docks the terminal under the agent, and its row reads panel (row-panel)",
-            docked && rowPanel,
-            JSON.stringify({ grid: await h.ev(TT_GRID), place: await h.ev(TT_PLACE(fx.tabId)) })
+            "1. Move to the panel docks the terminal under the agent, its row reads panel (row-panel), and the bar names the tool (arc-fixture)",
+            docked && rowPanel && barName === "arc-fixture",
+            JSON.stringify({ grid: await h.ev(TT_GRID), place: await h.ev(TT_PLACE(fx.tabId)), barName })
         );
 
         await ttToSurface(h);
