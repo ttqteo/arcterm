@@ -5,7 +5,6 @@
 // persisted ones; a plain agent has no history anywhere, so its transitions are observed here and are lost on
 // reload (effort 9868f8d2, decided frontend-only). Pure.
 
-import { isFinishTransition } from "./agentrowmodel";
 import type { AgentState, AgentVM } from "./agentsviewmodel";
 import type { RunInfo } from "./runlineage";
 import { detailOf, eventText } from "./runtimeline";
@@ -27,62 +26,33 @@ export type RailRow = RailEvent & { more?: string };
 
 export interface AgentSnap {
     state: AgentState;
-    // idle with a shell task still running: its turn ended but its work did not
-    standingBy: boolean;
-    // turned idle from working before a shell-task read since then landed: its finish waits on that read
-    held: boolean;
 }
 
 export const RAIL_MAX = 50;
 
-/** Pure: an agent's next snapshot. A finish is held only when one is owed: the agent turned idle from
- *  working (or was already held) and its shell-task read since then is still pending. An agent first seen
- *  idle holds nothing, so a mount or reload never plays a finish when its first read lands. */
-export function nextSnap(
-    was: AgentSnap | undefined,
-    state: AgentState,
-    standingBy: boolean,
-    readPending: boolean
-): AgentSnap {
-    const held = state === "idle" && readPending && was != null && (was.state === "working" || was.held);
-    return { state, standingBy, held };
-}
-
-/** Pure: whether the step from `was` to `snap` finishes the agent, for the rail, the card and the header.
- *  Held and standing by both mean not finished yet; releasing either with nothing running finishes it. */
-export function finishes(was: AgentSnap, snap: AgentSnap): boolean {
-    return isFinishTransition(was.state, snap.state, was.standingBy || was.held, snap.standingBy || snap.held);
-}
-
 /** Pure: the rail events between the last snapshot and now, and the next snapshot. A first sighting records
- *  nothing, so a reload never floods the rail with every agent's current state. An agent standing by (ids in
- *  `standingBy`) finishes when its last shell task ends, not at the Stop that began it; one whose shell-task
- *  read since the Stop is pending (ids in `readPending`) finishes when that read lands with nothing running. */
+ *  nothing, so a reload never floods the rail with every agent's current state. */
 export function agentTransitions(
     prev: Record<string, AgentSnap>,
     agents: AgentVM[],
-    now: number,
-    standingBy: ReadonlySet<string> = new Set(),
-    readPending: ReadonlySet<string> = new Set()
+    now: number
 ): { events: RailEvent[]; next: Record<string, AgentSnap> } {
     const events: RailEvent[] = [];
     const next: Record<string, AgentSnap> = {};
     for (const a of agents) {
-        const was = prev[a.id];
-        const snap = nextSnap(was, a.state, standingBy.has(a.id), readPending.has(a.id));
-        next[a.id] = snap;
-        if (was == null || (was.state === snap.state && was.standingBy === snap.standingBy && was.held === snap.held)) {
+        next[a.id] = { state: a.state };
+        const was = prev[a.id]?.state;
+        if (was == null || was === a.state) {
             continue;
         }
         const push = (kind: RailKind, text: string, ts: number) =>
             events.push({ key: `${a.id}:${kind}:${ts}`, focusId: a.id, who: a.name, kind, text, ts });
         if (a.state === "asking") {
             push("asked", a.ask?.questions?.[0]?.question ?? "", now - (a.blockedMs ?? 0));
-        } else if (was.state === "asking") {
+        } else if (was === "asking") {
             push("answered", "", now);
-        } else if (finishes(was, snap)) {
-            // idleSince is the Stop, which for an agent that stood by is long before its last task ended
-            push("finished", a.activity || a.task, was.standingBy && !was.held ? now : (a.idleSince ?? now));
+        } else if (a.state === "idle") {
+            push("finished", a.activity || a.task, a.idleSince ?? now);
         }
     }
     return { events, next };

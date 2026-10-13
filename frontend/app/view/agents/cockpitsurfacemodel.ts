@@ -8,7 +8,6 @@
 import { isRecentlyIdle, type AgentVM } from "./agentsviewmodel";
 import type { LoadPhase } from "./loadphase";
 import { roleRunId, type Lineage } from "./runlineage";
-import { isStandingBy, type ShellTask } from "./shelltasks";
 
 // a just-finished agent's dismissal is keyed by idle episode (id:idleSince) so a later re-idle re-shows it.
 export function dismissKey(agent: Pick<AgentVM, "id" | "idleSince">): string {
@@ -25,17 +24,12 @@ export function rosterLoadPhase(seeded: boolean, agentCount: number): LoadPhase 
 }
 
 // within-grace idle agents keep their full row (recently); dismissed or aged-out ones park in the idle list.
-// an agent standing by has not finished, so it keeps its row whatever its idle age.
 export function splitRecentlyIdle(
     idle: AgentVM[],
     now: number,
-    dismissed: Set<string>,
-    shellTasks: Record<string, ShellTask[]> = {}
+    dismissed: Set<string>
 ): { recently: AgentVM[]; parked: AgentVM[] } {
-    const recently = idle.filter(
-        (a) =>
-            (isRecentlyIdle(a, now) || isStandingBy(a.state, shellTasks[a.id] ?? [])) && !dismissed.has(dismissKey(a))
-    );
+    const recently = idle.filter((a) => isRecentlyIdle(a, now) && !dismissed.has(dismissKey(a)));
     const recentIds = new Set(recently.map((a) => a.id));
     const parked = idle.filter((a) => !recentIds.has(a.id));
     return { recently, parked };

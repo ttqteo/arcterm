@@ -10,18 +10,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue, type Atom } from "jotai";
-import {
-    ArrowUpRight,
-    Check,
-    Clock,
-    Copy,
-    GitCompare,
-    Minimize2,
-    PanelRight,
-    Plus,
-    SquareTerminal,
-    X,
-} from "lucide-react";
+import { ArrowUpRight, Check, Copy, GitCompare, Minimize2, PanelRight, Plus, SquareTerminal, X } from "lucide-react";
 import { motion } from "motion/react";
 import { memo, useEffect, useRef, useState } from "react";
 import { confirmCloseSession, driveAgent, NUDGE_INPUT } from "./agentactions";
@@ -30,6 +19,7 @@ import {
     agentRowMenuItems,
     clampQuestionIndex,
     entriesToShow,
+    isFinishTransition,
     muteMode,
     subagentsLabel,
     tasksLabel,
@@ -48,14 +38,11 @@ import { AnswerBar, DocReviewSummary } from "./answerbar";
 import { AttentionBanner, BannerChip } from "./attentioncard";
 import { diffStatsByIdAtom } from "./cardgitstore";
 import type { CardShare } from "./cardgridlayout";
-import { finishes, nextSnap, type AgentSnap } from "./cockpitevents";
 import { parseDocReview } from "./docreview";
 import { entriesAtomFor, tasksAtomFor } from "./livetranscriptatoms";
 import { NarrationTimeline } from "./narrationtimeline";
 import { SubLabel } from "./sectionlabel";
 import type { SubagentState, SubagentVM } from "./session-models/sessionviewmodel";
-import { isStandingBy, shellTasksLabel, type ShellTask } from "./shelltasks";
-import { shellReadAtByIdAtom, shellReadPending, shellTasksByIdAtom } from "./shelltasksstore";
 import { ActivityLine, StatusLine } from "./statusline";
 import { JumpToLatestPill, useStickToBottom } from "./sticktobottom";
 import { subagentsByIdAtom } from "./subagentsstore";
@@ -79,15 +66,6 @@ const SUB_COLOR: Record<SubagentState, string> = {
 function FinishedAge({ agent, nowAtom }: { agent: AgentVM; nowAtom: Atom<number> }) {
     const now = useAtomValue(nowAtom);
     return <>{formatAgo(displayAgeMs(agent, now))}</>;
-}
-
-function StandingByMeta({ agent, nowAtom, running }: { agent: AgentVM; nowAtom: Atom<number>; running: number }) {
-    const now = useAtomValue(nowAtom);
-    return (
-        <>
-            {shellTasksLabel(running)} running · {formatAge(displayAgeMs(agent, now))}
-        </>
-    );
 }
 
 function TaskChip({ done, total, onClick }: { done: number; total: number; onClick: () => void }) {
@@ -210,41 +188,6 @@ function FanoutBadge({ subs, onOpen }: { subs: SubagentVM[]; onOpen: () => void 
     );
 }
 
-// A "N shell tasks" chip for the cockpit card, with a hover peek listing each running or failed task.
-// Read-only: a task's output opens from the Agent tab tree.
-function ShellTasksBadge({ tasks }: { tasks: ShellTask[] }) {
-    const [peek, setPeek] = useState(false);
-    return (
-        <div className="relative shrink-0" onMouseEnter={() => setPeek(true)} onMouseLeave={() => setPeek(false)}>
-            <span data-shell-tasks-chip className={cn(CHIP, "hover:border-edge-strong hover:text-accent-soft")}>
-                {shellTasksLabel(tasks.length)}
-            </span>
-            <PopoverReveal
-                open={peek}
-                origin="top right"
-                className="absolute right-0 top-[24px] z-30 w-[300px] rounded-[9px] border border-edge-strong bg-surface-raised p-2 shadow-popover-lg"
-            >
-                <div data-shell-tasks-list className="flex flex-col gap-1.5">
-                    {tasks.map((t) => {
-                        const color = t.state === "failed" ? "var(--color-error)" : "var(--color-accent)";
-                        return (
-                            <div key={t.id} className="flex items-center gap-2">
-                                <span className="h-[7px] w-[7px] shrink-0 rounded-full" style={{ background: color }} />
-                                <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-secondary">
-                                    {t.description}
-                                </span>
-                                <span className="font-mono text-[10.5px] font-semibold" style={{ color }}>
-                                    {t.state}
-                                </span>
-                            </div>
-                        );
-                    })}
-                </div>
-            </PopoverReveal>
-        </div>
-    );
-}
-
 // Header liveness dot and the identity/status/activity rows are shared units extracted for the
 // orchestrator overview (statusline.tsx); AgentRow composes them with its own controls.
 
@@ -312,10 +255,6 @@ export const AgentRow = memo(function AgentRow({
     const review = parseDocReview(agent.ask);
     const diff = useAtomValue(diffStatsByIdAtom)[agent.id];
     const subs = useAtomValue(subagentsByIdAtom)[agent.id] ?? [];
-    const shellTasks = useAtomValue(shellTasksByIdAtom)[agent.id] ?? [];
-    const standingBy = isStandingBy(agent.state, shellTasks);
-    const readPending = shellReadPending(agent, useAtomValue(shellReadAtByIdAtom)[agent.id]);
-    const runningShellTasks = shellTasks.filter((t) => t.state === "running").length;
     const tasks = useAtomValue(tasksAtomFor(agent.id));
     const prog = tasks && tasks.length > 0 ? taskProgress(tasks) : undefined;
     const showComposer = composerOpen;
@@ -346,20 +285,18 @@ export const AgentRow = memo(function AgentRow({
         ContextMenuModel.getInstance().showContextMenu(items, e);
     };
 
-    // one-shot "settle" when this agent finishes (working -> idle, held until its shell tasks are read, or
-    // its last shell task ends while it stays idle); cleared after it plays
-    const snapRef = useRef<AgentSnap>(undefined);
+    // one-shot "settle" when this agent finishes (working -> idle); cleared after it plays
+    const prevStateRef = useRef(agent.state);
     const [justFinished, setJustFinished] = useState(false);
     useEffect(() => {
-        const was = snapRef.current;
-        const snap = nextSnap(was, agent.state, standingBy, readPending);
-        snapRef.current = snap;
-        if (was != null && finishes(was, snap)) {
+        if (isFinishTransition(prevStateRef.current, agent.state)) {
             setJustFinished(true);
             const t = setTimeout(() => setJustFinished(false), 520); // matches @keyframes settle .5s
+            prevStateRef.current = agent.state;
             return () => clearTimeout(t);
         }
-    }, [agent.state, standingBy, readPending]);
+        prevStateRef.current = agent.state;
+    }, [agent.state]);
 
     return (
         <motion.div
@@ -388,9 +325,8 @@ export const AgentRow = memo(function AgentRow({
         >
             {/* header bar */}
             <div className="flex shrink-0 items-center gap-2 border-b border-edge-mid bg-surface px-3 py-1.5">
-                <StatusLine agent={agent} nowAtom={nowAtom} standing={standingBy} className="min-w-0 flex-1" />
+                <StatusLine agent={agent} nowAtom={nowAtom} className="min-w-0 flex-1" />
                 {subs.length > 0 ? <FanoutBadge subs={subs} onOpen={onOpen} /> : null}
-                {shellTasks.length > 0 ? <ShellTasksBadge tasks={shellTasks} /> : null}
                 {diff ? (
                     <button
                         type="button"
@@ -492,30 +428,17 @@ export const AgentRow = memo(function AgentRow({
                 </>
             ) : null}
 
-            {/* finished: the card keeps its place and says so, with the two things you do next. standing by
-                (a shell task still running) says that instead, with the same two actions */}
+            {/* finished: the card keeps its place and says so, with the two things you do next */}
             {idle ? (
                 <div
                     onClick={(e) => e.stopPropagation()}
                     className="flex shrink-0 items-center gap-2 border-b border-edge-mid bg-accent/[0.06] py-[5px] pl-3.5 pr-2"
                 >
-                    {standingBy ? (
-                        <>
-                            <Clock size={12} aria-hidden className="shrink-0 text-ink-mid" />
-                            <span className={cn(REGION_LABEL, "text-ink-mid")}>Standing by</span>
-                            <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-muted">
-                                <StandingByMeta agent={agent} nowAtom={nowAtom} running={runningShellTasks} />
-                            </span>
-                        </>
-                    ) : (
-                        <>
-                            <Check size={12} aria-hidden className="shrink-0 text-accent-soft" />
-                            <span className={cn(REGION_LABEL, "text-accent-soft")}>Finished</span>
-                            <span className="min-w-0 flex-1 font-mono text-[10.5px] text-muted">
-                                <FinishedAge agent={agent} nowAtom={nowAtom} />
-                            </span>
-                        </>
-                    )}
+                    <Check size={12} aria-hidden className="shrink-0 text-accent-soft" />
+                    <span className={cn(REGION_LABEL, "text-accent-soft")}>Finished</span>
+                    <span className="min-w-0 flex-1 font-mono text-[10.5px] text-muted">
+                        <FinishedAge agent={agent} nowAtom={nowAtom} />
+                    </span>
                     {diff ? (
                         <button
                             type="button"

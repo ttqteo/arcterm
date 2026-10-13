@@ -12,7 +12,6 @@ import {
     toggleInSet,
 } from "./cockpitsurfacemodel";
 import { NO_LINEAGE, type Lineage } from "./runlineage";
-import type { ShellTask } from "./shelltasks";
 
 function agent(over: Partial<AgentVM>): AgentVM {
     return { id: "t1", name: "claude", task: "", state: "working", ...over };
@@ -56,25 +55,6 @@ describe("splitRecentlyIdle", () => {
         const { recently, parked } = splitRecentlyIdle([fresh], now, dismissed);
         expect(recently).toEqual([]);
         expect(parked.map((a) => a.id)).toEqual(["fresh"]);
-    });
-    it("keeps an agent standing by past the grace window and parks one that is not", () => {
-        const standing = agent({ id: "standing", state: "idle", idleSince: now - 6 * 60_000 });
-        const done = agent({ id: "done", state: "idle", idleSince: now - 6 * 60_000 });
-        const shellTasks: Record<string, ShellTask[]> = {
-            standing: [{ id: "b1", description: "dev server", state: "running" }],
-            done: [{ id: "b2", description: "build", state: "failed", exitCode: 1 }],
-        };
-        const { recently, parked } = splitRecentlyIdle([standing, done], now, new Set(), shellTasks);
-        expect(recently.map((a) => a.id)).toEqual(["standing"]);
-        expect(parked.map((a) => a.id)).toEqual(["done"]);
-    });
-    it("still parks a dismissed agent that is standing by", () => {
-        const standing = agent({ id: "standing", state: "idle", idleSince: now - 6 * 60_000 });
-        const shellTasks: Record<string, ShellTask[]> = {
-            standing: [{ id: "b1", description: "dev server", state: "running" }],
-        };
-        const { recently } = splitRecentlyIdle([standing], now, new Set([dismissKey(standing)]), shellTasks);
-        expect(recently).toEqual([]);
     });
 });
 

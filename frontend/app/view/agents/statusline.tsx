@@ -15,53 +15,33 @@ import { StatusDot } from "./statusdot";
 // Liveness dot as a self-subscribing leaf: reads the 1s nowAtom + this agent's last-activity stamp
 // itself, so the tick re-renders only this dot (quiet flips at the 45s threshold) instead of the whole
 // card/row. Shared by the agent card header and the orchestrator overview's worker rows.
-export function QuietDot({
-    nowAtom,
-    agentId,
-    state,
-    standing,
-}: {
-    nowAtom: Atom<number>;
-    agentId: string;
-    state: AgentState;
-    standing?: boolean;
-}) {
+export function QuietDot({ nowAtom, agentId, state }: { nowAtom: Atom<number>; agentId: string; state: AgentState }) {
     const now = useAtomValue(nowAtom);
     const stamp = useAtomValue(activityAtomFor(agentId));
     const quiet = isQuiet(stamp, now);
-    return (
-        <StatusDot
-            state={state}
-            quiet={quiet}
-            pulse={state !== "idle" && !quiet && !standing}
-            standing={standing}
-            className="!h-2 !w-2"
-        />
-    );
+    return <StatusDot state={state} quiet={quiet} pulse={state !== "idle" && !quiet} className="!h-2 !w-2" />;
 }
 
 // StatusLine is the compact worker identity + liveness row shared by the agent card header and the
 // orchestrator overview's worker rows: state dot (with quiet aging), runtime mark, name, project chip.
 // Status is always conveyed by dot + text — never color alone. `mark` takes the dot's place (the lead card's
-// Workflow icon). `standing` draws the dot accent and still for an agent standing by.
+// Workflow icon).
 export function StatusLine({
     agent,
     nowAtom,
     mark,
-    standing,
     className,
 }: {
     agent: AgentVM;
     nowAtom: Atom<number>;
     mark?: ReactNode;
-    standing?: boolean;
     className?: string;
 }) {
     const project = projectOf(agent);
     const rt = runtimeMeta(agent.agent);
     return (
         <div className={cn("flex min-w-0 items-center gap-2", className)}>
-            {mark ?? <QuietDot nowAtom={nowAtom} agentId={agent.id} state={agent.state} standing={standing} />}
+            {mark ?? <QuietDot nowAtom={nowAtom} agentId={agent.id} state={agent.state} />}
             <span title={rt.label} className="shrink-0">
                 <RuntimeMark
                     runtime={agent.agent}

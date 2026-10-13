@@ -19,6 +19,7 @@ import {
     filterAgents,
     groupAgents,
     applyAgentOrder,
+    streamableTranscriptAgents,
     matchesProjectFilter,
     mergeOrder,
     partitionBackgrounded,
@@ -65,7 +66,6 @@ import { useCardStreams } from "./usecardstreams";
 import { ProjectSwitcher } from "./projectswitcher";
 import { mergeRateLimitWindows, savedRateLimitsAtom } from "./ratelimitstore";
 import { loadWindowTokens, windowTokensAtom } from "./windowtokenstore";
-import { shellTasksByIdAtom } from "./shelltasksstore";
 import { useSubagentTracking } from "./subagenttracking";
 import { SurfaceHeader } from "./surfacescaffold";
 import { UsageMeters } from "./usagemeters";
@@ -132,13 +132,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     // into the Idle list. Dismissals are keyed by idle episode (id:idleSince).
     const [dismissed] = useModelAtom(model.dismissedAtom);
     const [backgroundedIds, setBackgroundedIds] = useModelAtom(model.backgroundedIdsAtom);
-    const shellTasks = useAtomValue(shellTasksByIdAtom);
-    const { recently: recentlyIdle, parked: parkedIdle } = splitRecentlyIdle(
-        idle,
-        structuralNow,
-        dismissed,
-        shellTasks
-    );
+    const { recently: recentlyIdle, parked: parkedIdle } = splitRecentlyIdle(idle, structuralNow, dismissed);
     // one unified list: asks stay in place alongside active working + just-finished (grace) rows,
     // minus anything backgrounded. Asking agents are never backgrounded (the effect below un-mutes any
     // that start asking), so they always land in `active` and hold whatever slot they already had.
@@ -158,10 +152,8 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
 
     // open a live transcript stream + git tracking per rendered active agent; keep recently-idle
     // streams during the grace window so final transcript writes cannot race the stop event.
-    // recentlyIdle is already cut to the grace window, plus the agents standing by past it, whose
-    // card would go blank if its stream closed.
     useCardStreams(
-        [...asking, ...working, ...recentlyIdle]
+        streamableTranscriptAgents([...asking, ...working, ...recentlyIdle], structuralNow)
             .filter((a) => a.transcriptPath)
             .map((a) => ({ id: a.id, path: a.transcriptPath!, agent: a.agent, blockId: a.blockId })),
         { trackGit: true },

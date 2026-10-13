@@ -54,14 +54,6 @@ describe("isFinishTransition", () => {
         expect(isFinishTransition("working", "asking")).toBe(false);
         expect(isFinishTransition("idle", "idle")).toBe(false);
     });
-
-    it("waits out standing by: finishes when the last shell task ends, not at the Stop", () => {
-        expect(isFinishTransition("working", "idle", false, false)).toBe(true);
-        expect(isFinishTransition("working", "idle", false, true)).toBe(false);
-        expect(isFinishTransition("idle", "idle", true, false)).toBe(true);
-        expect(isFinishTransition("idle", "idle", false, false)).toBe(false);
-        expect(isFinishTransition("idle", "idle", true, true)).toBe(false);
-    });
 });
 
 describe("agentRowMenuItems", () => {

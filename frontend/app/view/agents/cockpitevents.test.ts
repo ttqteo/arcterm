@@ -3,15 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
-import {
-    agentTransitions,
-    finishes,
-    groupRailEvents,
-    mergeRailEvents,
-    nextSnap,
-    runRailEvents,
-    splitUnread,
-} from "./cockpitevents";
+import { agentTransitions, groupRailEvents, mergeRailEvents, runRailEvents, splitUnread } from "./cockpitevents";
 import type { RunInfo } from "./runlineage";
 
 const a = (over: Partial<AgentVM>) =>
@@ -21,124 +13,26 @@ describe("agentTransitions", () => {
     it("records nothing for an agent seen the first time", () => {
         const { events, next } = agentTransitions({}, [a({})], 100);
         expect(events).toEqual([]);
-        expect(next).toEqual({ x: { state: "working", standingBy: false, held: false } });
+        expect(next).toEqual({ x: { state: "working" } });
     });
     it("turns state changes into asked, answered and finished", () => {
         const asking = a({ state: "asking", blockedMs: 10, ask: { questions: [{ question: "retry or wait?" }] } });
-        expect(
-            agentTransitions({ x: { state: "working", standingBy: false, held: false } }, [asking], 100).events
-        ).toEqual([
+        expect(agentTransitions({ x: { state: "working" } }, [asking], 100).events).toEqual([
             { key: "x:asked:90", focusId: "x", who: "flaky-e2e", kind: "asked", text: "retry or wait?", ts: 90 },
         ]);
-        expect(
-            agentTransitions({ x: { state: "asking", standingBy: false, held: false } }, [a({})], 100).events[0]
-        ).toMatchObject({
+        expect(agentTransitions({ x: { state: "asking" } }, [a({})], 100).events[0]).toMatchObject({
             kind: "answered",
             ts: 100,
         });
         const idle = a({ state: "idle", idleSince: 95, activity: "142 strings extracted" });
-        expect(
-            agentTransitions({ x: { state: "working", standingBy: false, held: false } }, [idle], 100).events[0]
-        ).toMatchObject({
+        expect(agentTransitions({ x: { state: "working" } }, [idle], 100).events[0]).toMatchObject({
             kind: "finished",
             text: "142 strings extracted",
             ts: 95,
         });
     });
-    it("finishes an agent standing by when its last shell task ends, not at the Stop", () => {
-        const idle = a({ state: "idle", idleSince: 95, activity: "dev server up" });
-        const stop = agentTransitions(
-            { x: { state: "working", standingBy: false, held: false } },
-            [idle],
-            100,
-            new Set(["x"])
-        );
-        expect(stop.events).toEqual([]);
-        expect(stop.next).toEqual({ x: { state: "idle", standingBy: true, held: false } });
-        const still = agentTransitions(stop.next, [idle], 150, new Set(["x"]));
-        expect(still.events).toEqual([]);
-        const ended = agentTransitions(still.next, [idle], 200);
-        expect(ended.events).toEqual([
-            { key: "x:finished:200", focusId: "x", who: "flaky-e2e", kind: "finished", text: "dev server up", ts: 200 },
-        ]);
-        expect(agentTransitions(ended.next, [idle], 250).events).toEqual([]);
-    });
-    it("finishes an agent with no shell tasks once, at the Stop", () => {
-        const idle = a({ state: "idle", idleSince: 95, activity: "done" });
-        const stop = agentTransitions({ x: { state: "working", standingBy: false, held: false } }, [idle], 100);
-        expect(stop.events.map((e) => [e.kind, e.ts])).toEqual([["finished", 95]]);
-        expect(agentTransitions(stop.next, [idle], 150).events).toEqual([]);
-    });
-    it("holds the finish at a Stop while its shell-task read is pending", () => {
-        const idle = a({ state: "idle", idleSince: 95, activity: "dev server up" });
-        const stop = agentTransitions(
-            { x: { state: "working", standingBy: false, held: false } },
-            [idle],
-            100,
-            new Set(),
-            new Set(["x"])
-        );
-        expect(stop.events).toEqual([]);
-        expect(stop.next).toEqual({ x: { state: "idle", standingBy: false, held: true } });
-    });
-    it("finishes once when the held read lands with a running task and that task later ends", () => {
-        const idle = a({ state: "idle", idleSince: 95, activity: "dev server up" });
-        const stop = agentTransitions(
-            { x: { state: "working", standingBy: false, held: false } },
-            [idle],
-            100,
-            new Set(),
-            new Set(["x"])
-        );
-        const landed = agentTransitions(stop.next, [idle], 110, new Set(["x"]));
-        expect(landed.events).toEqual([]);
-        expect(landed.next).toEqual({ x: { state: "idle", standingBy: true, held: false } });
-        const ended = agentTransitions(landed.next, [idle], 300);
-        expect(ended.events.map((e) => [e.kind, e.ts])).toEqual([["finished", 300]]);
-        expect(agentTransitions(ended.next, [idle], 350).events).toEqual([]);
-    });
-    it("finishes once, stamped at the Stop, when the held read lands with nothing running", () => {
-        const idle = a({ state: "idle", idleSince: 95, activity: "done" });
-        const stop = agentTransitions(
-            { x: { state: "working", standingBy: false, held: false } },
-            [idle],
-            100,
-            new Set(),
-            new Set(["x"])
-        );
-        const still = agentTransitions(stop.next, [idle], 105, new Set(), new Set(["x"]));
-        expect(still.events).toEqual([]);
-        const landed = agentTransitions(still.next, [idle], 110);
-        expect(landed.events.map((e) => [e.kind, e.ts])).toEqual([["finished", 95]]);
-        expect(agentTransitions(landed.next, [idle], 150).events).toEqual([]);
-    });
-    it("records nothing when the first read of an agent first seen idle lands", () => {
-        const idle = a({ state: "idle", idleSince: 95 });
-        const seen = agentTransitions({}, [idle], 100, new Set(), new Set(["x"]));
-        expect(seen.next.x.held).toBe(false);
-        expect(agentTransitions(seen.next, [idle], 110).events).toEqual([]);
-    });
     it("forgets agents that left the roster", () => {
-        expect(agentTransitions({ gone: { state: "working", standingBy: false, held: false } }, [], 1).next).toEqual(
-            {}
-        );
-    });
-});
-
-describe("nextSnap / finishes", () => {
-    const working = { state: "working" as const, standingBy: false, held: false };
-    it("holds only a finish that is owed, and holds it until the read lands", () => {
-        const held = nextSnap(working, "idle", false, true);
-        expect(held.held).toBe(true);
-        expect(finishes(working, held)).toBe(false);
-        // the header advances it during render, so the same inputs must give the same snapshot
-        expect(nextSnap(held, "idle", false, true)).toEqual(held);
-        const released = nextSnap(held, "idle", false, false);
-        expect(finishes(held, released)).toBe(true);
-        expect(nextSnap(undefined, "idle", false, true).held).toBe(false);
-    });
-    it("finishes at the Stop with no read pending, as before", () => {
-        expect(finishes(working, nextSnap(working, "idle", false, false))).toBe(true);
+        expect(agentTransitions({ gone: { state: "working" } }, [], 1).next).toEqual({});
     });
 });
 

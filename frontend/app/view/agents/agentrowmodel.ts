@@ -20,18 +20,9 @@ export function muteMode(state: AgentState): "dismiss" | "background" {
     return state === "idle" ? "dismiss" : "background";
 }
 
-// one-shot settle animation fires when an agent finishes: idle and not standing by, after working or after standing
-// by (its last shell task ended while it stayed idle). The Stop that begins standing by is not a finish.
-export function isFinishTransition(
-    prev: AgentState,
-    next: AgentState,
-    prevStandingBy = false,
-    nextStandingBy = false
-): boolean {
-    if (next !== "idle" || nextStandingBy) {
-        return false;
-    }
-    return prev === "working" || (prev === "idle" && prevStandingBy);
+// one-shot settle animation fires when an agent finishes (working -> idle).
+export function isFinishTransition(prev: AgentState, next: AgentState): boolean {
+    return prev === "working" && next === "idle";
 }
 
 // a chip says what it counts

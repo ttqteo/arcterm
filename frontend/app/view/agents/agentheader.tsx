@@ -18,22 +18,19 @@ import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ChevronLeft, CircleStop, Maximize2, Minimize2, PanelRight, Workflow, X } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { confirmCloseSession, interruptAgent } from "./agentactions";
 import { contextLevel, contextTokens } from "./agentrailmodel";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom, setCanvasMode } from "./canvasstore";
-import { nextSnap, type AgentSnap } from "./cockpitevents";
 import { DOC_REVIEW_HEADERS, docReviewAtom, parseDocReview } from "./docreview";
 import { isFinalStageId } from "./finalstage";
 import { railVisibleAtom, terminalFullscreenAtom } from "./railstore";
 import { agentProject, isEndedWorkerId, leadAgentOf } from "./runlineage";
 import { RuntimeMark } from "./runtimemark";
 import { runtimeMeta } from "./runtimemeta";
-import { isStandingBy } from "./shelltasks";
-import { shellReadAtByIdAtom, shellReadPending, shellTasksByIdAtom } from "./shelltasksstore";
 import { StatusDot } from "./statusdot";
 
 const STATE_COLOR: Record<AgentVM["state"], string> = {
@@ -126,13 +123,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const stateText = ended ? (landed ? "landed" : "done") : STATE_LABEL[agent.state];
     const stateColor = ended ? "var(--color-success)" : STATE_COLOR[agent.state];
     // m4: one-shot settle on the state pill when the focused agent reaches idle
-    const standingBy = isStandingBy(agent.state, useAtomValue(shellTasksByIdAtom)[agent.id] ?? []);
-    const readPending = shellReadPending(agent, useAtomValue(shellReadAtByIdAtom)[agent.id]);
-    // held until a shell-task read since the Stop lands, so a just-launched task never settles first;
-    // nextSnap is idempotent for the same inputs, so advancing it in render is safe
-    const snapRef = useRef<AgentSnap>(undefined);
-    snapRef.current = nextSnap(snapRef.current, agent.state, standingBy, readPending);
-    const settling = useSettle(!ended && agent.state === "idle" && !standingBy && !snapRef.current.held);
+    const settling = useSettle(!ended && agent.state === "idle");
     const review = parseDocReview(agent.ask);
     const reviewOpen = useAtomValue(docReviewAtom) != null;
 
@@ -178,12 +169,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
             {stage ? null : ended ? (
                 <span className="h-[9px] w-[9px] shrink-0 rounded-full" style={{ background: stateColor }} />
             ) : (
-                <StatusDot
-                    state={agent.state}
-                    pulse={agent.state !== "idle"}
-                    standing={standingBy}
-                    className="!h-[9px] !w-[9px]"
-                />
+                <StatusDot state={agent.state} pulse={agent.state !== "idle"} className="!h-[9px] !w-[9px]" />
             )}
             <div className="min-w-0">
                 <div className="flex items-center gap-[9px]">

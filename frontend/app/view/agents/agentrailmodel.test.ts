@@ -100,12 +100,6 @@ describe("railAction", () => {
     it("offers nothing without a live terminal", () => {
         expect(railAction("working", "4m", false)).toBeNull();
     });
-
-    it("offers nothing while standing by, and is unchanged when not", () => {
-        expect(railAction("idle", "38m", true, true)).toBeNull();
-        expect(railAction("idle", "38m", true, false)).toEqual(railAction("idle", "38m", true));
-        expect(railAction("working", "4m", true, false)).toEqual(railAction("working", "4m", true));
-    });
 });
 
 describe("toolChips", () => {

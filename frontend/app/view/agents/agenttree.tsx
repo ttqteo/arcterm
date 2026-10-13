@@ -71,9 +71,6 @@ import {
     visibleSubagents,
     type SubagentState,
 } from "./session-models/sessionviewmodel";
-import { failedLabel, ShellTaskPeek } from "./shelltaskpeek";
-import { isStandingBy, shellTasksLabel, visibleShellTasks, type ShellTask } from "./shelltasks";
-import { shellTasksByIdAtom } from "./shelltasksstore";
 import { StatusDot } from "./statusdot";
 import { focusSubagentAtom, subagentsByIdAtom } from "./subagentsstore";
 import { useSubagentTracking } from "./subagenttracking";
@@ -328,71 +325,6 @@ function RunSubline({ run, open, live, leadless }: { run: RunInfo; open: boolean
     );
 }
 
-// A parent's background shell tasks under it, nested like its subagents. A row with an output file opens
-// that output in a peek beside the tree; one without has nothing to show, so it is not a click target.
-function ShellTaskRows({
-    model,
-    tasks,
-    peek,
-    onPeek,
-}: {
-    model: AgentsViewModel;
-    tasks: ShellTask[];
-    peek: { id: string; el: HTMLElement } | null;
-    onPeek: (peek: { id: string; el: HTMLElement } | null) => void;
-}) {
-    const now = useAtomValue(model.nowAtom);
-    return (
-        <>
-            {tasks.map((t) => {
-                const failed = t.state === "failed";
-                const peeking = peek?.id === t.id;
-                return (
-                    <div
-                        key={t.id}
-                        data-shell-task={t.id}
-                        onClick={(e) => {
-                            if (t.outputPath) {
-                                onPeek(peeking ? null : { id: t.id, el: e.currentTarget });
-                            }
-                        }}
-                        className={cn(
-                            "relative flex items-center gap-[9px] rounded-[9px] py-[6px] pl-[28px] pr-[11px]",
-                            t.outputPath && "cursor-pointer",
-                            peeking ? "bg-accentbg" : t.outputPath && "hover:bg-surface-hover"
-                        )}
-                    >
-                        <Guides depth={1} />
-                        <Slot>
-                            <span
-                                className={cn(
-                                    "h-[7px] w-[7px] shrink-0 rounded-full",
-                                    failed ? "bg-error" : "bg-accent"
-                                )}
-                            />
-                        </Slot>
-                        <div className="min-w-0 flex-1">
-                            <div className="truncate font-mono text-[11.5px] font-medium text-secondary">
-                                {t.description}
-                            </div>
-                            <div
-                                className={cn(
-                                    "mt-[3px] truncate font-mono text-[10.5px]",
-                                    failed ? "text-error" : "text-muted"
-                                )}
-                            >
-                                {failed
-                                    ? failedLabel(t)
-                                    : `running · ${formatAgeShort(t.startedTs != null ? Math.max(0, now - t.startedTs) : undefined)}`}
-                            </div>
-                        </div>
-                    </div>
-                );
-            })}
-        </>
-    );
-}
-
 function ParentRow({
     model,
     agent,
@@ -413,22 +345,8 @@ function ParentRow({
     const asking = agent.state === "asking";
     const review = asking ? parseDocReview(agent.ask) : null;
     const mark = lead != null ? leadMark(lead.run, agent) : null;
-    const tasks = visibleShellTasks(useAtomValue(shellTasksByIdAtom)[agent.id] ?? []);
-    const standing = isStandingBy(agent.state, tasks);
-    // undefined until the user folds: open while a task runs, as the subagent fold defaults
-    const [tasksOverride, setTasksOverride] = useState<boolean>();
-    const tasksOpen = tasks.length > 0 && (tasksOverride ?? tasks.some((t) => t.state === "running"));
-    const [peek, setPeek] = useState<{ id: string; el: HTMLElement } | null>(null);
-    const peekTask = tasksOpen && peek != null ? tasks.find((t) => t.id === peek.id) : undefined;
-    // a peek whose row went away (its task ended, or the fold closed with its last running task) must not
-    // come back anchored to a detached row when the fold reopens
-    useEffect(() => {
-        if (peek != null && peekTask == null) {
-            setPeek(null);
-        }
-    }, [peek, peekTask]);
-    // m4: one-shot settle when this agent is done (working/asking -> idle, or its last shell task ending)
-    const settling = useSettle(agent.state === "idle" && !standing);
+    // m4: one-shot settle when this agent reaches idle (working/asking -> idle)
+    const settling = useSettle(agent.state === "idle");
 
     const renaming = useAtomValue(renamingRowAtom) === agent.id;
 
@@ -466,19 +384,6 @@ function ParentRow({
                 ariaHide="Hide subagents"
             />
         ) : null;
-    const tasksChip =
-        tasks.length > 0 ? (
-            <FoldChip
-                label={shellTasksLabel(tasks.length)}
-                open={tasksOpen}
-                onToggle={() => {
-                    setTasksOverride(!tasksOpen);
-                    setPeek(null);
-                }}
-                ariaShow="Show shell tasks"
-                ariaHide="Hide shell tasks"
-            />
-        ) : null;
 
     // The animating motion.div wrapper lives in AgentTree (direct AnimatePresence child, required for
     // popLayout to pop an exiting row out of flow). This is just the row body + subagent reveal.
@@ -503,12 +408,7 @@ function ParentRow({
                             className={cn(LEAD_MARK_CLASS[mark.tone], mark.pulse && PULSE)}
                         />
                     ) : (
-                        <StatusDot
-                            state={agent.state}
-                            pulse={agent.state !== "idle"}
-                            standing={standing}
-                            className="!h-[7px] !w-[7px]"
-                        />
+                        <StatusDot state={agent.state} pulse={agent.state !== "idle"} className="!h-[7px] !w-[7px]" />
                     )}
                 </Slot>
                 <div className="min-w-0 flex-1">
@@ -521,7 +421,6 @@ function ParentRow({
                             </div>
                             {/* a lead's second line holds its workers chip and progress, which need its full width */}
                             {lead ? subsChip : null}
-                            {lead ? tasksChip : null}
                         </div>
                     )}
                     {lead ? (
@@ -529,7 +428,6 @@ function ParentRow({
                     ) : (
                         <div className="mt-[3px] flex min-w-0 items-center gap-[6px]">
                             {subsChip}
-                            {tasksChip}
                             <span className="truncate font-mono text-[10.5px] text-muted">{branch || "—"}</span>
                         </div>
                     )}
@@ -605,23 +503,6 @@ function ParentRow({
                     </motion.div>
                 ) : null}
             </AnimatePresence>
-            <AnimatePresence initial={false}>
-                {tasksOpen ? (
-                    <motion.div
-                        key="shell-tasks"
-                        variants={composerReveal}
-                        initial="initial"
-                        animate="animate"
-                        exit="exit"
-                        className="overflow-hidden"
-                    >
-                        <ShellTaskRows model={model} tasks={tasks} peek={peekTask ? peek : null} onPeek={setPeek} />
-                    </motion.div>
-                ) : null}
-            </AnimatePresence>
-            {peekTask ? (
-                <ShellTaskPeek key={peekTask.id} task={peekTask} anchor={peek.el} onClose={() => setPeek(null)} />
-            ) : null}
         </>
     );
 }

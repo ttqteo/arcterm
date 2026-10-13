@@ -1,6 +1,4 @@
-import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
-import { shellTasksByIdAtom } from "@/app/view/agents/shelltasksstore";
 import { describe, expect, it } from "vitest";
 import { AGENT_KIND, type AgentThing } from "./agent";
 import { actionsFor } from "./types";
@@ -42,14 +40,6 @@ describe("agent actions", () => {
         expect(applies("agent:nudge", thing({ state: "idle" }))).toBe(true);
         expect(applies("agent:nudge", thing({ state: "working" }))).toBe(false);
         expect(applies("agent:nudge", thing({ state: "asking" }))).toBe(false);
-    });
-    it("does not nudge an idle agent standing by on a running shell task", () => {
-        globalStore.set(shellTasksByIdAtom, { tab1: [{ id: "b1", description: "dev server", state: "running" }] });
-        try {
-            expect(applies("agent:nudge", thing({ state: "idle" }))).toBe(false);
-        } finally {
-            globalStore.set(shellTasksByIdAtom, {});
-        }
     });
     it("backgrounds a working or asking agent and dismisses an idle one", () => {
         expect(available(thing({ state: "working" }))).toContain("agent:background");

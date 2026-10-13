@@ -83,9 +83,9 @@ export function cacheRewriteTitle(pct: number | undefined, max: number | undefin
 export type RailAction = { kind: "resume" | "stop"; hint: string };
 
 // railAction is the rail footer's one control: Resume nudges an idle agent, Stop interrupts a turn. An agent with
-// no live terminal has nothing to drive, and one standing by is waiting on its shell tasks, not on a nudge.
-export function railAction(state: AgentVM["state"], age: string, live: boolean, standingBy = false): RailAction | null {
-    if (!live || standingBy) {
+// no live terminal has nothing to drive.
+export function railAction(state: AgentVM["state"], age: string, live: boolean): RailAction | null {
+    if (!live) {
         return null;
     }
     if (state === "idle") {
