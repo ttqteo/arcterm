@@ -52,6 +52,8 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
 
 ### Fixed
 
+- **arcterm's icon shows at small sizes on a Mac**: in Finder's list view, app lists and other small places it was a
+  noisy red-and-blue square instead of the t> mark.
 - **Sprout folds to where you last dragged it** instead of always the bottom-right corner, where it covered the buttons
   many pages keep there (a chat's heads, a help bubble). Drag it once and the next fold lands it in the same place.
 - **A folded project folder in the Agent sidebar stays inside the sidebar** when its agents are running: its running
