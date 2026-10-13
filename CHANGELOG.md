@@ -15,6 +15,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - **Alt+Tab back to arcterm opens the window again from Sprout**, however it was folded (the Sprout button, minimize,
   or Fold when you leave), as ⌘Tab does on macOS; a click on Sprout itself still leaves it folded.
 - **Spider-Man shows the same working dots as Sprout** in place of the small web, which read as a green smudge.
+- **RAM is read in one place.** On Windows the app bar's RAM chip opens the Resource Manager, which now names Arc's
+  total CPU and memory and the free RAM at its top; the footer's `Arc … CPU` readout is gone, and Consumers keeps
+  tokens and spend alone. On macOS the chip opens Consumers by RAM as before.
+- **The Resource Manager shows an agent and the commands it runs**, not every launcher, console and wrapping shell:
+  they fold into a `+ N helper processes` line that opens the whole tree, and an agent running nothing starts folded.
 - **A project folder in the Agent sidebar says how many of its agents are running**, open or folded; its hover keeps
   only the `+` for a new terminal, and a tool opens from New.
 

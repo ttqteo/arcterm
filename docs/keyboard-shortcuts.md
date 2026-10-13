@@ -107,7 +107,7 @@ agent's header, the `tool` button on a project folder in the tree (opens in the 
 | `Mod`+`G` `,` | Settings |
 | `Mod`+`G` `p` | Search |
 | `Mod`+`G` `w` | What's waiting — the avatar popup (Jarvis peek), on any surface |
-| `Mod`+`G` `m` | Resource Manager (the popover over the footer's `Arc … CPU` readout) |
+| `Mod`+`G` `m` | Resource Manager (the popover under the app bar's RAM chip; Windows only) |
 
 ## Search (`Mod`+`P`)
 
@@ -175,12 +175,12 @@ The answer form (a question with several parts or several picks; `Enter` or **An
 | `Enter` | Send once every question has an answer, else go to the first one still unanswered |
 | `Esc` | Fold the form, from its text field too; a second `Esc` closes the popup |
 
-## Resource Manager (the popover opened from the footer's readout or `g` `m`)
+## Resource Manager (the popover opened from the app bar's RAM chip or `g` `m`, on Windows)
 
 | Keys | Action |
 |---|---|
 | `↑` / `↓` | Move the cursor through the groups and their processes |
-| `Enter` | Confirm an open kill, else expand or collapse the cursor's group |
+| `Enter` | Confirm an open kill; on a group's `+ N helper processes` line, show or hide its launchers, consoles and wrapping shells; else expand or collapse the cursor's group |
 | `x` | Kill the process under the cursor and its children (asks first; never the agent itself) |
 | `Shift`+`X` | Kill every process the cursor's group started, keeping the agent and its console (asks first) |
 | `Esc` | Cancel an open kill, else close the popover |

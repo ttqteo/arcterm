@@ -29414,6 +29414,9 @@ const removeConsumersMock = (h) =>
 
 // the panel's sort, or null once it is closed (the exit animation keeps it a moment with an empty data-sort)
 const CONSUMERS_SORT = `(document.querySelector("[data-consumers-panel]")?.dataset.sort || null)`;
+// Where the Resource Manager runs (Windows) the RAM chip opens it and Consumers has no RAM; a pinned unsupported
+// snapshot stands the app in for macOS, where the chip opens Consumers by RAM. A reload or __resmonFixture.clear() ends it.
+const RESMON_AS_MAC = `window.__resmonFixture?.set({ supported: false, ready: false, ts: 0, cpu: 0, mem: 0, totalmem: 0, busycpu: false, busymem: false, groups: [] })`;
 const consumersRowExpr = (id) => `document.querySelector('[data-consumer-row="${id}"]')`;
 const consumersDialogExpr = (text) =>
     `[...document.querySelectorAll('[role="dialog"]')].find((d) => !d.matches("[data-consumers-panel]") && d.textContent.includes(${JSON.stringify(text)}))`;
@@ -29469,6 +29472,7 @@ const consumersPopover = {
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
             ctx.mock = await installConsumersMock(h, ctx.reading);
             if (ctx.mock !== "installed") throw new Error(`mock: ${ctx.mock}`);
+            await h.ev(RESMON_AS_MAC);
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -29741,6 +29745,35 @@ const consumersPopover = {
             JSON.stringify({ reopened3, escConfirm, escDialogGone, ...escState })
         );
         await h.ev(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+        await waitClosed();
+
+        // with the Resource Manager (Windows): the meters open Consumers with no RAM, and the RAM chip opens the manager
+        await h.ev(`window.__resmonFixture?.set(${JSON.stringify(resmonFixture())})`);
+        await settle(200);
+        await h.ev(`document.querySelector("[data-usage-meters]")?.click()`);
+        const tokensUp = await polishWaitFor(h, `${CONSUMERS_SORT} === "tokens" && !!document.querySelector("[data-consumer-row]")`, 3000);
+        await settle(400);
+        const noRam = await h.ev(`({
+            ramCols: document.querySelectorAll("[data-consumer-ram]").length,
+            own: document.querySelectorAll("[data-consumers-own]").length,
+            total: !!document.querySelector("[data-consumers-app-total]"),
+            header: document.querySelector("[data-consumers-header]")?.textContent ?? "",
+        })`);
+        await h.shot("cdp-shots/consumers-tokens-only.png");
+        await h.ev(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+        await waitClosed();
+        await h.ev(`document.querySelector("[data-worker-capacity]")?.click()`);
+        const managerUp = await polishWaitFor(h, `!!document.querySelector("[data-resmon-popover]")`, 3000);
+        const consumersStayed = (await sort()) !== null;
+        await settle(400);
+        await h.shot("cdp-shots/consumers-chip-opens-resmon.png");
+        rec(
+            "20. with the Resource Manager: Consumers from the meters has no RAM column, free RAM or arcterm section, and the RAM chip opens the Resource Manager",
+            tokensUp && noRam.ramCols === 0 && noRam.own === 0 && !noRam.total && !noRam.header.includes("free of") &&
+                managerUp && !consumersStayed,
+            JSON.stringify({ tokensUp, ...noRam, managerUp, consumersStayed })
+        );
+        await h.ev(`window.__resmonFixture?.clear()`);
         return steps;
     },
     async teardown(h, ctx) {
@@ -30071,9 +30104,10 @@ const agentSleep = {
         );
         await asMode(h, "sleep", "ok");
 
-        // 6. the Consumers panel: a Sleeping group with Wake, Sleep on the awake row
+        // 6. the Consumers panel: a Sleeping group with Wake, Sleep on the awake row (by RAM, as on macOS)
         await h.goto("cockpit");
         await polishWaitFor(h, `!!document.querySelector("[data-worker-capacity]")`, 10000);
+        await h.ev(RESMON_AS_MAC);
         await h.ev(`document.querySelector("[data-worker-capacity]")?.click()`);
         const opened = await polishWaitFor(h, `${CONSUMERS_SORT} === "ram" && document.querySelectorAll("[data-consumer-row]").length === 2`, 5000);
         const panel = await h.ev(`(() => {
@@ -30716,6 +30750,7 @@ const machineServers = {
         const backdropClosed = reopened && (await clickOutside());
         const reopened2 = await openFromChip();
         const ramChip = await polishWaitFor(h, `!!document.querySelector("[data-worker-capacity]")`, 10000);
+        await h.ev(RESMON_AS_MAC);
         await h.ev(`document.querySelector("[data-worker-capacity]")?.click()`);
         const consumersUp = await polishWaitFor(h, `${CONSUMERS_SORT} !== null`, 3000);
         const serversClosed = await waitClosed();
@@ -30958,6 +30993,7 @@ const machineServers = {
             }
         };
         await step("restore the RPC client", () => removeMachineServersMock(h));
+        await step("unpin the Resource Manager snapshot", () => h.ev(`window.__resmonFixture?.clear()`));
         // the clipboard stub is an own property over Navigator's getter; deleting it restores that
         await step("remove the page stubs", () =>
             h.ev(`(() => {
@@ -32398,7 +32434,7 @@ const motionGaps = {
     },
 };
 
-// The Resource Manager (footer readout + popover). Data comes only from window.__resmonFixture (resmonstore.ts),
+// The Resource Manager (the app bar's RAM chip + popover). Data comes only from window.__resmonFixture (resmonstore.ts),
 // modelled on the canvas (.superpowers/design/resource-manager): a pinned snapshot is never overwritten by the
 // live poll, and an armed outcome answers the next confirm without touching a process.
 const RESMON_VIEWPORT = { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false };
@@ -32407,7 +32443,9 @@ const RESMON_MIB = 1024 * 1024;
 const RESMON_TOTAL_CPU = 60.6;
 const RESMON_TOTAL_MEM = 7945689498;
 const RESMON_FOOTER = `document.querySelector('[data-hints-footer]')`;
-const RESMON_COCKPIT_HINTS = `document.querySelector('[data-cockpit-hints]')`;
+// the RAM chip, which opens the popover where the Resource Manager runs; it draws once the free RAM is read
+const RESMON_CHIP = `document.querySelector('[data-app-usage] [data-resmon-readout]')`;
+const RESMON_CHIP_WAIT_MS = 10000;
 const RESMON_POPOVER = `document.querySelector('[data-resmon-popover]')`;
 const RESMON_GROUP_ORDER = ["arc", "job:14820", "job:13060", "job:22410", "job:7716"];
 // the popover grows in with a scale reveal; measure after it settles
@@ -32505,12 +32543,7 @@ function resmonFixture(now = Date.now()) {
 const resmonSet = (h, snap) => h.ev(`window.__resmonFixture.set(${JSON.stringify(snap)})`);
 const resmonArm = (h, outcome) => h.ev(`window.__resmonFixture.killOutcome(${JSON.stringify(outcome)})`);
 const resmonClick = (expr) => `(() => { const el = ${expr}; if (!el) return false; el.click(); return true; })()`;
-const resmonReadout = (scope) => `${scope}?.querySelector('[data-resmon-readout]')`;
-// the readout's words as a reader sees them: the flex gaps between its spans carry no text
-const resmonReadoutText = (scope) => `(() => {
-    const r = ${resmonReadout(scope)};
-    return r ? [...r.children].filter((c) => c.tagName === 'SPAN').map((c) => c.textContent.trim()).join(' ') : null;
-})()`;
+const resmonTotals = `document.querySelector('[data-resmon-popover] [data-resmon-totals]')?.textContent.trim() ?? null`;
 const resmonGroupButton = (key, text) =>
     `[...document.querySelectorAll('[data-resmon-popover] [data-resmon-group="${key}"] button')].find((b) => b.textContent.trim() === ${JSON.stringify(text)})`;
 const resmonConfirmButton = (text) =>
@@ -32566,12 +32599,16 @@ const RESMON_POPOVER_STATE = `(() => {
     const p = ${RESMON_POPOVER};
     if (!p) return null;
     const r = p.getBoundingClientRect();
-    const where = (el) => el.getAttribute('data-resmon-row') ?? el.closest('[data-resmon-group]')?.getAttribute('data-resmon-group');
+    const where = (el) => {
+        const key = el.closest('[data-resmon-group]')?.getAttribute('data-resmon-group');
+        return el.getAttribute('data-resmon-row') ?? (el.hasAttribute('data-resmon-more') ? key + '/more' : key);
+    };
     const cursor = p.querySelector('[data-resmon-cursor]');
     const confirm = p.querySelector('[data-resmon-confirm]');
     return {
         width: Math.round(r.width),
         right: Math.round(window.innerWidth - r.right),
+        top: r.top,
         bottom: r.bottom,
         groups: [...p.querySelectorAll('[data-resmon-group]')].map((g) => ({
             key: g.getAttribute('data-resmon-group'),
@@ -32580,7 +32617,7 @@ const RESMON_POPOVER_STATE = `(() => {
             kills: g.querySelectorAll('[data-resmon-row] button[aria-label^="Kill"]').length,
             buttons: g.querySelectorAll('button').length,
         })),
-        order: [...p.querySelectorAll('[data-resmon-group] > div:first-child, [data-resmon-row]')].map(where),
+        order: [...p.querySelectorAll('[data-resmon-group] > div:first-child, [data-resmon-row], [data-resmon-more]')].map(where),
         cursor: cursor ? where(cursor) : null,
         confirm: confirm ? (confirm.querySelector('span')?.textContent ?? '') : null,
         status: [...p.querySelectorAll('[role="status"]')].map((n) => n.textContent.trim()),
@@ -32616,172 +32653,106 @@ async function resmonArrange(h) {
     return { ready, keyPath };
 }
 
-// The Cockpit draws its hints bar, and so its readout, only over a roster: an empty store shows the empty state
-// alone. The fixture roster is read once at boot, and the reload drops the pinned snapshot, so it is set again.
-async function resmonSeedRoster(h, ctx) {
-    if (existsSync(TREE_RAIL_FIXTURE)) return;
-    mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
-    writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify(treeRailRoster(undefined, Date.now()), null, 2));
-    ctx.wroteFixture = true;
-    await h.ev("location.reload()");
-    await polishWaitFor(h, `!!document.querySelector("nav button") && !!window.__resmonFixture`, 30000);
-    await resmonSet(h, resmonFixture());
-}
-
-async function resmonTeardown(h, ctx) {
+async function resmonTeardown(h) {
     await h.ev(`window.__resmonFixture?.clear()`).catch(() => {});
-    if (ctx?.wroteFixture) {
-        rmSync(TREE_RAIL_FIXTURE, { force: true });
-        await h.ev("location.reload()");
-        await polishWaitFor(h, `!!document.querySelector("nav button")`, 30000);
-    }
     await h.goto("cockpit");
 }
 
 const RESMON_NO_HOOK = [{ step: "the dev fixture hook is on window", ok: false, detail: "no window.__resmonFixture" }];
 
-const resmonFooter = {
-    name: "resmon-footer",
+const resmonChip = {
+    name: "resmon-chip",
     surface: "agent",
     arrange: resmonArrange,
     async assert(h, ctx) {
         if (!ctx.ready) return RESMON_NO_HOOK;
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
-        const shot = (n) => h.shot(`cdp-shots/resmon-footer-${n}.png`);
+        const shot = (n) => h.shot(`cdp-shots/resmon-chip-${n}.png`);
+        const chipState = `(() => {
+            const b = ${RESMON_CHIP};
+            const c = b?.querySelector('[data-worker-capacity]');
+            return b ? { title: c?.title ?? '', warn: !!c?.classList.contains('text-warning'), aria: b.getAttribute('aria-label') } : null;
+        })()`;
 
         await resmonBlur(h);
+        const chipUp = await polishWaitFor(h, `!!${RESMON_CHIP}`, RESMON_CHIP_WAIT_MS);
         const rest = await h.ev(`(() => ({
-            last: !!${RESMON_FOOTER}?.lastElementChild?.matches('[data-resmon-readout]'),
-            text: ${resmonReadoutText(RESMON_FOOTER)},
+            chip: ${chipState},
+            footer: !!${RESMON_FOOTER} && !${RESMON_FOOTER}.querySelector('[data-resmon-readout]'),
+            readouts: document.querySelectorAll('[data-resmon-readout]').length,
         }))()`);
         await shot("1-rest");
-        rec("1. Agent at rest: the readout ends the footer and reads Arc 61% CPU · 7.4 GB",
-            rest.last && rest.text === "Arc 61% CPU · 7.4 GB", JSON.stringify(rest));
+        rec("1. the RAM chip in the app bar is the one way in: its tooltip names Arc's 61% CPU · 7.4 GB, the footer has no readout",
+            chipUp && rest.chip?.title.includes("Arc and its agents: 61% CPU · 7.4 GB") && !rest.chip.warn &&
+                rest.footer && rest.readouts === 1,
+            JSON.stringify(rest));
 
         await resmonKey(h, ctx, "g");
         const leader = await h.ev(`(() => {
-            const f = ${RESMON_FOOTER};
-            const spans = [...(f?.querySelectorAll('span') ?? [])].map((s) => s.textContent.trim());
-            return { readout: !!${resmonReadout(RESMON_FOOTER)}, m: spans.includes('mResource Manager'), leader: spans.includes('g →') };
+            const spans = [...(${RESMON_FOOTER}?.querySelectorAll('span') ?? [])].map((s) => s.textContent.trim());
+            return { m: spans.includes('mResource Manager'), leader: spans.includes('g →') };
         })()`);
         await shot("2-leader");
-        rec("2. g: the leader posture keeps the readout and lists m Resource Manager",
-            leader.readout && leader.m && leader.leader, JSON.stringify(leader));
+        rec("2. g: the leader posture lists m Resource Manager", leader.m && leader.leader, JSON.stringify(leader));
 
         await resmonKey(h, ctx, "m");
         await resmonNap(RESMON_REVEAL_MS);
-        const opened = await h.ev(`!!${RESMON_POPOVER}`);
+        const hung = await h.ev(`(() => {
+            const p = ${RESMON_POPOVER}?.getBoundingClientRect();
+            const c = ${RESMON_CHIP}?.getBoundingClientRect();
+            return p && c ? { top: p.top, chipBottom: c.bottom, right: p.right, chipRight: c.right } : { open: !!p, chip: !!c };
+        })()`);
         await shot("3-gm-open");
-        rec("3. m: the popover opens", opened, `popover=${opened}`);
+        rec("3. m: the popover opens under the RAM chip, its right edge on the chip's",
+            hung.top >= hung.chipBottom && hung.top - hung.chipBottom <= 10 && Math.abs(hung.right - hung.chipRight) <= 1,
+            JSON.stringify(hung));
+
+        const totals = await h.ev(resmonTotals);
+        rec("4. its top carries the totals the footer used to: Arc 61% CPU · 7.4 GB and the free RAM",
+            /^Arc 61% CPU · 7\.4 GB · .+ free$/.test(totals ?? ""), totals);
 
         await resmonKey(h, ctx, "Escape");
         await resmonNap(RESMON_REVEAL_MS);
         const closed = await h.ev(`!${RESMON_POPOVER}`);
-        await shot("4-esc-closed");
-        rec("4. Esc: the popover closes", closed, `closed=${closed}`);
-
-        const dim = await h.ev(`new Promise((resolve) => {
-            const input = document.createElement('input');
-            input.setAttribute('data-resmon-probe', '');
-            document.body.appendChild(input);
-            input.focus();
-            setTimeout(() => {
-                const chips = ${RESMON_FOOTER}?.querySelector('[data-footer-chips]');
-                const readout = ${resmonReadout(RESMON_FOOTER)};
-                resolve({ chips: chips ? getComputedStyle(chips).opacity : null, readout: readout ? getComputedStyle(readout).opacity : null });
-            }, 300);
-        })`);
-        await shot("5-editable");
-        await h.ev(`document.querySelector('[data-resmon-probe]')?.remove()`);
-        rec("5. focus in a field: the chips dim to 0.6, the readout stays at 1",
-            dim.chips === "0.6" && dim.readout === "1", JSON.stringify(dim));
-
-        if (!existsSync(TREE_RAIL_FIXTURE)) {
-            await h.goto("cockpit");
-            await polishWaitFor(h, `!!${RESMON_COCKPIT_HINTS}`, 10000);
-            const bare = await h.ev(`(() => {
-                const bar = ${RESMON_COCKPIT_HINTS};
-                return {
-                    readout: !!${resmonReadout(RESMON_COCKPIT_HINTS)},
-                    help: [...(bar?.querySelectorAll('button') ?? [])].some((b) => b.textContent.trim() === '?'),
-                };
-            })()`);
-            await shot("5b-cockpit-empty");
-            rec("5b. Cockpit with no roster: the hints bar shows the readout alone, no triage hints or ?",
-                bare.readout && !bare.help, JSON.stringify(bare));
-        }
-
-        await resmonSeedRoster(h, ctx);
-        await h.goto("cockpit");
-        await polishWaitFor(h, `!!${RESMON_COCKPIT_HINTS}`, 10000);
-        const cockpit = await h.ev(`(() => {
-            const r = ${resmonReadout(RESMON_COCKPIT_HINTS)};
-            return { readout: !!r, afterHelp: r?.previousElementSibling?.textContent.trim() === '?', footer: !!${RESMON_FOOTER} };
-        })()`);
-        await shot("6-cockpit");
-        rec("6. Cockpit: the readout sits in the cockpit hints bar, after ?",
-            cockpit.readout && cockpit.afterHelp && !cockpit.footer, JSON.stringify(cockpit));
-
-        await resmonBlur(h);
-        await resmonKey(h, ctx, "g");
-        const cockpitLeader = await h.ev(`(() => ({
-            leader: [...(${RESMON_FOOTER}?.querySelectorAll('span') ?? [])].some((s) => s.textContent.trim() === 'g →'),
-            readouts: document.querySelectorAll('[data-resmon-readout]').length,
-            inBar: !!${resmonReadout(RESMON_COCKPIT_HINTS)},
-        }))()`);
-        await shot("6a-cockpit-leader");
-        rec("6a. Cockpit under the g leader: one readout, in the hints bar, and the footer's own yields",
-            cockpitLeader.leader && cockpitLeader.readouts === 1 && cockpitLeader.inBar, JSON.stringify(cockpitLeader));
-        await resmonKey(h, ctx, "Escape");
-
-        await h.ev(resmonClick(resmonReadout(RESMON_COCKPIT_HINTS)));
+        await h.ev(resmonClick(RESMON_CHIP));
         await resmonNap(RESMON_REVEAL_MS);
-        const above = await h.ev(`(() => {
-            const p = ${RESMON_POPOVER};
-            const bar = ${RESMON_COCKPIT_HINTS};
-            if (!p || !bar) return { open: !!p, bar: !!bar };
-            return { open: true, bottom: p.getBoundingClientRect().bottom, barTop: bar.getBoundingClientRect().top };
-        })()`);
-        await shot("6b-cockpit-open");
-        rec("6b. Cockpit: clicking that readout opens the popover above the hints bar",
-            above.open && above.bottom <= above.barTop, JSON.stringify(above));
-        await resmonBlur(h);
-        await resmonKey(h, ctx, "Escape");
+        const clickedOpen = await h.ev(`!!${RESMON_POPOVER}`);
+        await shot("5-chip-open");
+        await h.ev(resmonClick(RESMON_CHIP));
         await resmonNap(RESMON_REVEAL_MS);
+        const clickedShut = await h.ev(`!${RESMON_POPOVER}`);
+        rec("5. Esc closes it; a click on the chip opens it and a second click closes it",
+            closed && clickedOpen && clickedShut, JSON.stringify({ closed, clickedOpen, clickedShut }));
 
-        await h.goto("agent");
-        await resmonBlur(h);
         const busy = [
-            ["7", { busycpu: true }, "high CPU"],
-            ["8", { busymem: true }, "high memory"],
-            ["9", { busycpu: true, busymem: true }, "high CPU and memory"],
+            ["6", { busycpu: true }, "high CPU"],
+            ["7", { busymem: true }, "high memory"],
+            ["8", { busycpu: true, busymem: true }, "high CPU and memory"],
         ];
         for (const [n, flags, words] of busy) {
             await resmonSet(h, { ...resmonFixture(), ...flags });
             await resmonNap(200);
-            const text = await h.ev(resmonReadoutText(RESMON_FOOTER));
+            const chip = await h.ev(chipState);
             await shot(`${n}-busy`);
-            rec(`${n}. ${Object.keys(flags).join(" + ")}: the readout shows ${words}`,
-                text === `Arc 61% CPU · 7.4 GB ${words}`, text);
+            rec(`${n}. ${Object.keys(flags).join(" + ")}: the chip warns and its tooltip says ${words}`,
+                chip?.warn && chip.title.includes(`61% CPU · 7.4 GB, ${words}`), JSON.stringify(chip));
         }
-
-        await resmonSet(h, null);
-        await resmonNap(200);
-        const pending = await h.ev(resmonReadoutText(RESMON_FOOTER));
-        await shot("10-pending");
-        rec("10. pinned null: the readout shows Arc –", pending === "Arc –", pending);
 
         await resmonSet(h, { ...resmonFixture(), supported: false });
         await resmonNap(200);
-        const footerGone = await h.ev(`!!${RESMON_FOOTER} && !${resmonReadout(RESMON_FOOTER)}`);
-        await shot("11a-unsupported-agent");
-        await h.goto("cockpit");
-        await polishWaitFor(h, `!!${RESMON_COCKPIT_HINTS}`, 10000);
-        const barGone = await h.ev(`!!${RESMON_COCKPIT_HINTS} && !${resmonReadout(RESMON_COCKPIT_HINTS)}`);
-        await shot("11b-unsupported-cockpit");
-        rec("11. supported: false: no readout in the footer or the cockpit hints bar",
-            footerGone && barGone, `footer=${footerGone} cockpit=${barGone}`);
+        const mac = await h.ev(`(() => ({
+            chip: !!document.querySelector('[data-app-usage] [data-worker-capacity]'),
+            readouts: document.querySelectorAll('[data-resmon-readout]').length,
+        }))()`);
+        await h.ev(`document.querySelector('[data-app-usage] [data-worker-capacity]')?.click()`);
+        const consumers = await polishWaitFor(h, `document.querySelector("[data-consumers-panel]")?.dataset.sort === "ram"`, 3000);
+        const noManager = await h.ev(`!${RESMON_POPOVER}`);
+        await resmonNap(400);
+        await shot("9-unsupported");
+        await h.ev(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+        rec("9. supported: false (macOS): the chip stays, opens Consumers by RAM, and no Resource Manager",
+            mac.chip && mac.readouts === 0 && consumers && noManager, JSON.stringify({ ...mac, consumers, noManager }));
         return steps;
     },
     teardown: resmonTeardown,
@@ -32862,7 +32833,8 @@ const resmonLive = {
         rec("2. the process is alive before the kill", pidAlive(found.pid), `pid=${found.pid}`);
 
         await resmonBlur(h);
-        await h.ev(resmonClick(resmonReadout(RESMON_FOOTER)));
+        await polishWaitFor(h, `!!${RESMON_CHIP}`, RESMON_CHIP_WAIT_MS);
+        await h.ev(resmonClick(RESMON_CHIP));
         await polishWaitFor(h, `!!document.querySelector('[data-resmon-row="${found.pid}"]')`, 10000);
         await shot("1-listed");
         const clicked = await h.ev(
@@ -32911,25 +32883,43 @@ const resmonMain = {
         const shot = (n) => h.shot(`cdp-shots/resmon-main-${n}.png`);
         const arcRows = async () => (await resmonPopover(h))?.groups.find((g) => g.key === "arc")?.rows;
 
-        await h.ev(resmonClick(resmonReadout(RESMON_FOOTER)));
+        await polishWaitFor(h, `!!${RESMON_CHIP}`, RESMON_CHIP_WAIT_MS);
+        await h.ev(resmonClick(RESMON_CHIP));
         await resmonNap(RESMON_REVEAL_MS);
         const s1 = await resmonPopover(h);
-        const readoutTop = await h.ev(`${resmonReadout(RESMON_FOOTER)}?.getBoundingClientRect().top`);
+        const chip = await h.ev(`(() => { const r = ${RESMON_CHIP}?.getBoundingClientRect(); return r ? { bottom: r.bottom, right: Math.round(window.innerWidth - r.right) } : null; })()`);
         await shot("1-open");
         const by = (k) => s1?.groups.find((g) => g.key === k) ?? {};
+        // compact: claude, go, orchestrate.test, vite (bash and cmd wrappers, conhost folded); pi and vitest; verify's
+        // node, go, jarvis.test (its bash wrapper folded, so a helper-line button beside the chevron); obsidian idle
         const ok1 =
             s1 != null &&
+            chip != null &&
             s1.width === 700 &&
-            Math.abs(s1.right - 12) <= 1 &&
-            s1.bottom <= readoutTop - 5 &&
+            Math.abs(s1.right - chip.right) <= 1 &&
+            s1.top >= chip.bottom + 5 &&
             JSON.stringify(s1.groups.map((g) => g.key)) === JSON.stringify(RESMON_GROUP_ORDER) &&
             by("arc").rows === 0 &&
-            by("job:14820").tags === 2 && by("job:14820").kills === 5 &&
-            by("job:13060").tags === 3 && by("job:13060").kills === 2 &&
-            by("job:22410").rows === 4 && by("job:22410").buttons === 1 &&
-            by("job:7716").tags === 2 && by("job:7716").kills === 0;
-        rec("1. click the readout: 700px, bottom-right; Arc first and collapsed; by CPU; tags on core rows, × on the rest; Verify has no action",
-            ok1, JSON.stringify({ width: s1?.width, right: s1?.right, bottom: s1?.bottom, readoutTop, groups: s1?.groups }));
+            by("job:14820").rows === 4 && by("job:14820").tags === 1 && by("job:14820").kills === 3 &&
+            by("job:13060").rows === 2 && by("job:13060").tags === 1 && by("job:13060").kills === 1 &&
+            by("job:22410").rows === 3 && by("job:22410").buttons === 2 &&
+            by("job:7716").rows === 0;
+        rec("1. click the RAM chip: 700px, under the chip; Arc first and collapsed; by CPU; each agent with its commands, wrappers folded; idle obsidian-notes folded",
+            ok1, JSON.stringify({ width: s1?.width, right: s1?.right, top: s1?.top, chip, groups: s1?.groups }));
+
+        const more = `document.querySelector('[data-resmon-popover] [data-resmon-group="job:14820"] [data-resmon-more] button')`;
+        const moreText = await h.ev(`${more}?.textContent.trim() ?? null`);
+        await h.ev(resmonClick(more));
+        await resmonNap(200);
+        const full = (await resmonPopover(h))?.groups.find((g) => g.key === "job:14820")?.rows;
+        const fullText = await h.ev(`${more}?.textContent.trim() ?? null`);
+        await shot("1b-waveterm-full");
+        await h.ev(resmonClick(more));
+        await resmonNap(200);
+        const compact = (await resmonPopover(h))?.groups.find((g) => g.key === "job:14820")?.rows;
+        rec("1b. waveterm's + 3 helper processes line shows its whole tree, and Hide folds it again",
+            moreText === "+ 3 helper processes" && full === 7 && fullText === "Hide 3 helper processes" && compact === 4,
+            JSON.stringify({ moreText, full, fullText, compact }));
 
         await h.ev(resmonClick(resmonChevron("arc")));
         await resmonNap(200);
@@ -32983,17 +32973,17 @@ const resmonMain = {
         await shot("7-esc-close");
         rec("7. Esc closes the popover", gone7, `closed=${gone7}`);
 
-        await h.ev(resmonClick(resmonReadout(RESMON_FOOTER)));
+        await h.ev(resmonClick(RESMON_CHIP));
         await resmonNap(RESMON_REVEAL_MS);
         const reopened = await h.ev(`!!${RESMON_POPOVER}`);
-        // a real pointer press on the Agent surface, clear of the popover and the footer
+        // a real pointer press on the Agent surface, clear of the popover and the app bar
         const press = { x: 400, y: 300, button: "left", clickCount: 1 };
         await h.cdp("Input.dispatchMouseEvent", { type: "mousePressed", ...press });
         await h.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", ...press });
         await resmonNap(RESMON_REVEAL_MS);
         const gone8 = await h.ev(`!${RESMON_POPOVER}`);
         await shot("8-outside-click");
-        rec("8. a click outside the popover and the readout closes it", reopened && gone8,
+        rec("8. a click outside the popover and the chip closes it", reopened && gone8,
             `reopened=${reopened} closed=${gone8}`);
         return steps;
     },
@@ -37490,7 +37480,7 @@ export const SCENARIOS = [
     floatMini,
     jarvisModes,
     settingsStorage,
-    resmonFooter,
+    resmonChip,
     resmonMain,
     resmonStates,
     resmonLive,

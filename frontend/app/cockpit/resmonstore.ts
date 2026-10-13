@@ -7,7 +7,10 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { consumersOpenAtom } from "@/app/view/agents/consumersstore";
+import { machineServersOpenAtom } from "@/app/view/agents/machineserversstore";
 import { atom, type PrimitiveAtom } from "jotai";
+import { jobQueueOpenAtom } from "./jobqueuestore";
 import { outcomeNote, RESMON_UI_INITIAL, resmonReduce, rowLabel, type ResMonAction, type ResMonUi } from "./resmon";
 
 export const RESMON_POLL_MS = 2000;
@@ -16,6 +19,25 @@ export const RESMON_POLL_MS = 2000;
 export const resmonSnapshotAtom = atom<ResMonSnapshotData | null>(null) as PrimitiveAtom<ResMonSnapshotData | null>;
 export const resmonOpenAtom = atom(false) as PrimitiveAtom<boolean>;
 export const resmonUiAtom = atom<ResMonUi>(RESMON_UI_INITIAL) as PrimitiveAtom<ResMonUi>;
+// Windows only (pkg/resmon): where it is, the app bar's RAM chip opens it; elsewhere the chip opens Consumers by RAM
+export const resmonSupportedAtom = atom((get) => get(resmonSnapshotAtom)?.supported === true);
+
+let opener: HTMLElement | null = null;
+
+// the control that opened the popover, while it is still on screen; null for a `g m` open
+export function resmonOpener(): HTMLElement | null {
+    return opener?.isConnected ? opener : null;
+}
+
+/** The RAM chip's click: opens the popover hanging from `from`, or closes it. Like the app bar's other popovers, it
+ * closes Consumers, Servers and Jobs, so one is open at a time. */
+export function toggleResMon(from: HTMLElement | null): void {
+    globalStore.set(consumersOpenAtom, null);
+    globalStore.set(machineServersOpenAtom, false);
+    globalStore.set(jobQueueOpenAtom, false);
+    opener = from;
+    globalStore.set(resmonOpenAtom, !globalStore.get(resmonOpenAtom));
+}
 
 // DEV fixture state: a pinned snapshot is never overwritten by a poll; an armed outcome answers the next confirm
 let pinned = false;

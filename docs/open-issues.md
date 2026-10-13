@@ -82,9 +82,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) **Claude mod after the merge.** In a Claude session in arcterm, ask a question with AskUserQuestion,
   dismiss it in Claude's dialog: the cockpit card goes away and the agent reads idle. Then answer one from the card: the
   dialog closes. `claude/arc-mod/hooks/register.ts` (ask kept ours; cache-miss band added from the fork).
-- [ ] (arcterm) **Resource Manager beside our RAM chip.** The footer readout (`Arc … CPU`) opens the popover, `x` asks
-  before killing; the app bar's RAM chip still opens Consumers. Both show RAM: decide whether Consumers keeps its RAM
-  half. `frontend/app/cockpit/resmon*.tsx`, `frontend/app/view/agents/consumerspanel.tsx`.
+- [ ] (arcterm) **Resource Manager under the RAM chip (Windows).** Click the app bar's RAM chip: the popover hangs below
+  it with `Arc N% CPU · N GB · N GB free` at its top; a busy agent shows `claude.exe` and its commands (`git log`…) with
+  a `+ N helper processes` line that opens the whole tree; an idle agent starts folded; `x` asks before killing. The
+  footer has no readout, and the quota meters open Consumers with no RAM column. `frontend/app/cockpit/resmon*.tsx`,
+  `frontend/app/view/agents/usagemeters.tsx`, `consumerspanel.tsx`.
 - [ ] (arcterm) **Review marks in the Diff surface's Log tab.** Open a commit's file, press `v`: the row's check fills and
   the next unreviewed file opens; the bar reads 1/n reviewed. `frontend/app/view/agents/changedfilelist.tsx`.
 - [ ] (arcterm) **Final verification row.** Start a plan run with a Final: once the dag is finalizing, the agent list

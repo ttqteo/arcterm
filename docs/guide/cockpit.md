@@ -202,7 +202,7 @@ Thanh trên cùng cao 46 px, luôn hiện ở mọi surface. Kéo vào chỗ tr�
 | `/ <project> ▾` | **Bộ chọn project**. Xem bên dưới |
 | Ô **Search, or type a goal…** | Mở command palette (`Ctrl+P`) |
 | Pill `x.y.z / a.b.c` màu cam | Chỉ hiện khi app và backend build từ hai phiên bản khác nhau (bản dev quên `task build:backend`). Rê chuột để xem lời nhắc |
-| Chip RAM (`1.3 GB free`) | RAM còn trống. Chuyển cam kèm ⚠ khi dưới 512 MB. Rê chuột xem tổng RAM, mức RAM mỗi worker và còn chứa được ~N worker. Bấm mở panel **Consumers** ở dạng RAM |
+| Chip RAM (`1.3 GB free`) | RAM còn trống. Chuyển cam kèm ⚠ khi dưới 512 MB hoặc khi Arc dùng nhiều CPU/RAM. Rê chuột xem tổng RAM, mức RAM mỗi worker, còn chứa được ~N worker, và CPU/RAM của Arc cùng các agent. Bấm mở **Resource Manager** trên Windows, panel **Consumers** ở dạng RAM trên macOS |
 | Thanh quota | Mức dùng quota của từng provider. Bấm mở **Consumers** ở dạng Tokens |
 | **+ New** | Mở hộp thoại tạo agent / run. Xem [Agent](agent.md#khởi-chạy-agent-mới) |
 | Nút cửa sổ (Windows) | Thu nhỏ, phóng to, đóng. Trên macOS dùng đèn giao thông gốc của hệ điều hành |
@@ -230,9 +230,15 @@ Mỗi provider có dữ liệu (Claude, Codex, OpenCode, Pi, Antigravity) hiện
 
 Muốn xem biểu đồ và phân tích chi tiết: [Usage](usage.md).
 
+### Resource Manager (Windows)
+
+Bấm chip RAM (hoặc `Ctrl+G` `m`) để mở **Resource Manager** treo dưới chip: CPU và RAM của Arc và của từng agent, run worker, lệnh của run. Đầu popover ghi tổng `Arc N% CPU · N GB` và RAM trống. Mỗi nhóm chỉ hiện agent và các lệnh nó đang chạy (`git log`, `go test`…); launcher, console, `wsh agentctl` và các lớp shell chỉ bọc một lệnh được gộp vào dòng `+ N helper processes` kèm CPU/RAM của chúng, bấm để xem cả cây. Nhóm đang rảnh (agent không chạy lệnh nào) gập sẵn. `×` hoặc `x` kill một tiến trình, **Kill children** hoặc `Shift+X` kill mọi thứ agent đã khởi chạy (đều hỏi trước). Phím: [Resource Manager](../keyboard-shortcuts.md#resource-manager-the-popover-opened-from-the-app-bars-ram-chip-or-g-m-on-windows).
+
+Trên Windows, RAM chỉ đọc ở đây: panel Consumers không còn cột RAM, dòng RAM trống và phần *arcterm*. macOS không có Resource Manager, nên chip RAM mở Consumers ở dạng RAM như bên dưới.
+
 ### Panel Consumers
 
-Bấm chip RAM hoặc thanh quota để mở panel **Consumers** treo ngay dưới nút bạn bấm. Panel liệt kê mọi agent đang chạy, worker của run nằm dưới nhóm `Run <id>`. Nút chuyển **RAM** / **Tokens** ở đầu panel đổi cách xem; thứ tự dòng được xếp lúc mở và giữ nguyên khi panel còn mở.
+Bấm thanh quota (hoặc chip RAM trên macOS) để mở panel **Consumers** treo ngay dưới nút bạn bấm. Panel liệt kê mọi agent đang chạy, worker của run nằm dưới nhóm `Run <id>`. Nút chuyển **RAM** / **Tokens** ở đầu panel đổi cách xem; thứ tự dòng được xếp lúc mở và giữ nguyên khi panel còn mở.
 
 | Chế độ | Đầu panel | Mỗi dòng | Cuối panel |
 |---|---|---|---|

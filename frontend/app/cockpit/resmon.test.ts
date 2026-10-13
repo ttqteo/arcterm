@@ -8,6 +8,7 @@ import {
     fmtAge,
     fmtCpu,
     fmtMem,
+    groupView,
     isExpanded,
     killChildrenConfirmText,
     killChildrenTargets,
@@ -294,18 +295,82 @@ describe("outcomeNote", () => {
     });
 });
 
+describe("groupView", () => {
+    const pids = (v: { lines: { row: ProcessInfo; depth: number }[] }) => v.lines.map((l) => [l.row.pid, l.depth]);
+
+    it("keeps the agent and its commands, and counts the wrapping shells and consoles it leaves out", () => {
+        const v = groupView(waveterm, RESMON_UI_INITIAL);
+        expect(pids(v)).toEqual([
+            [14820, 0],
+            [18244, 1],
+            [18311, 2],
+            [9958, 1],
+        ]);
+        expect(v.hidden).toBe(3);
+        expect(v.hiddenMem).toBe(30 * MB);
+        expect(v.full).toBe(false);
+    });
+    it("leaves out a launcher, wsh agentctl and Claude's nested bash chain; an orphaned command sits under the agent", () => {
+        const g = group("job:1", "agenttab", "arcterm", [
+            proc(1, 0, "powershell.exe", { tag: "launcher" }),
+            proc(2, 1, "claude.exe", { tag: "agent" }),
+            proc(3, 2, "wsh.exe", { command: "wsh.exe agentctl" }),
+            proc(4, 3, "conhost.exe"),
+            proc(5, 2, "bash.exe"),
+            proc(6, 3, "bash.exe"),
+            proc(7, 4, "conhost.exe"),
+            proc(8, 4, "bash.exe"),
+            proc(9, 5, "git.exe", { cpu: 2.1 }),
+            proc(10, 0, "awk.exe"),
+            proc(11, 0, "wsh.exe", { command: "wsh.exe runs list" }),
+        ]);
+        const v = groupView(g, RESMON_UI_INITIAL);
+        expect(pids(v)).toEqual([
+            [2, 0],
+            [9, 1],
+            [10, 1],
+            [11, 1],
+        ]);
+        expect(v.hidden).toBe(7);
+    });
+    it("keeps a shell that wraps nothing but plumbing, and shows Arc whole", () => {
+        const g = group("job:2", "agenttab", "portal", [
+            proc(1, 0, "claude.exe", { tag: "agent" }),
+            proc(2, 1, "cmd.exe"),
+            proc(3, 2, "conhost.exe"),
+        ]);
+        expect(pids(groupView(g, RESMON_UI_INITIAL))).toEqual([
+            [1, 0],
+            [2, 1],
+        ]);
+        expect(groupView(arc, RESMON_UI_INITIAL)).toMatchObject({ hidden: 0, full: false });
+        expect(groupView(arc, RESMON_UI_INITIAL).lines).toHaveLength(2);
+    });
+    it("shows the whole tree at its own depths when the group is full", () => {
+        const v = groupView(waveterm, { ...RESMON_UI_INITIAL, full: { [waveterm.key]: true } });
+        expect(pids(v)).toEqual(waveterm.rows.map((r) => [r.pid, r.depth]));
+        expect(v).toMatchObject({ full: true, hidden: 3 });
+    });
+});
+
 describe("resmonReduce", () => {
     const groups = [arc, waveterm, verify];
     const at = (ui: ResMonUi, cursor: string): ResMonUi => ({ ...ui, cursor });
 
-    it("starts with Arc collapsed and every other group expanded", () => {
-        expect(isExpanded(RESMON_UI_INITIAL, "arc")).toBe(false);
-        expect(isExpanded(RESMON_UI_INITIAL, waveterm.key)).toBe(true);
-        expect(isExpanded(RESMON_UI_INITIAL, verify.key)).toBe(true);
+    it("starts with Arc and idle groups collapsed, a group running a command expanded", () => {
+        const idle = group("job:7716:1", "agenttab", "obsidian", [
+            proc(7716, 0, "claude.exe", { tag: "agent" }),
+            proc(7724, 1, "conhost.exe", { tag: "console" }),
+        ]);
+        expect(isExpanded(RESMON_UI_INITIAL, arc)).toBe(false);
+        expect(isExpanded(RESMON_UI_INITIAL, waveterm)).toBe(true);
+        expect(isExpanded(RESMON_UI_INITIAL, verify)).toBe(true);
+        expect(isExpanded(RESMON_UI_INITIAL, idle)).toBe(false);
         expect(cursorRows(groups, RESMON_UI_INITIAL)).toEqual([
             "arc",
             waveterm.key,
-            ...waveterm.rows.map((r) => `${waveterm.key}/${r.pid}`),
+            ...[14820, 18244, 18311, 9958].map((pid) => `${waveterm.key}/${pid}`),
+            `${waveterm.key}/more`,
             verify.key,
             ...verify.rows.map((r) => `${verify.key}/${r.pid}`),
         ]);
@@ -321,16 +386,32 @@ describe("resmonReduce", () => {
         expect(resmonReduce(RESMON_UI_INITIAL, { type: "move", delta: -1, groups }).cursor).toBe(`${verify.key}/22418`);
     });
     it("toggles the cursor's group, and a collapse pulls a row cursor up to its header", () => {
-        let ui = resmonReduce(at(RESMON_UI_INITIAL, "arc"), { type: "toggle" });
-        expect(isExpanded(ui, "arc")).toBe(true);
+        let ui = resmonReduce(at(RESMON_UI_INITIAL, "arc"), { type: "toggle", groups });
+        expect(isExpanded(ui, arc)).toBe(true);
         expect(resmonReduce(ui, { type: "move", delta: 1, groups }).cursor).toBe("arc/2476");
-        ui = resmonReduce(at(RESMON_UI_INITIAL, `${waveterm.key}/18311`), { type: "toggle" });
-        expect(isExpanded(ui, waveterm.key)).toBe(false);
+        ui = resmonReduce(at(RESMON_UI_INITIAL, `${waveterm.key}/18311`), { type: "toggle", groups });
+        expect(isExpanded(ui, waveterm)).toBe(false);
         expect(ui.cursor).toBe(waveterm.key);
-        ui = resmonReduce(ui, { type: "toggle", key: "arc" });
-        expect(isExpanded(ui, "arc")).toBe(true);
+        ui = resmonReduce(ui, { type: "toggle", groups, key: "arc" });
+        expect(isExpanded(ui, arc)).toBe(true);
         expect(ui.cursor).toBe(waveterm.key);
-        expect(resmonReduce(RESMON_UI_INITIAL, { type: "toggle" })).toBe(RESMON_UI_INITIAL);
+        expect(resmonReduce(RESMON_UI_INITIAL, { type: "toggle", groups })).toBe(RESMON_UI_INITIAL);
+    });
+    it("⏎ on a group's helper line shows its whole tree; back to compact, a hidden cursor moves to that line", () => {
+        let ui = resmonReduce(at(RESMON_UI_INITIAL, `${waveterm.key}/more`), { type: "toggle", groups });
+        expect(groupView(waveterm, ui).full).toBe(true);
+        expect(isExpanded(ui, waveterm)).toBe(true);
+        expect(cursorRows([waveterm], ui)).toEqual([
+            waveterm.key,
+            ...waveterm.rows.map((r) => `${waveterm.key}/${r.pid}`),
+            `${waveterm.key}/more`,
+        ]);
+        ui = resmonReduce(at(ui, `${waveterm.key}/18240`), { type: "toggleFull", groups, key: waveterm.key });
+        expect(groupView(waveterm, ui).full).toBe(false);
+        expect(ui.cursor).toBe(`${waveterm.key}/more`);
+        ui = resmonReduce(at(ui, `${waveterm.key}/18311`), { type: "toggleFull", groups, key: waveterm.key });
+        ui = resmonReduce(ui, { type: "toggleFull", groups, key: waveterm.key });
+        expect(ui.cursor).toBe(`${waveterm.key}/18311`);
     });
     it("asks to kill an untagged row in a killable group", () => {
         const ui = resmonReduce(at(RESMON_UI_INITIAL, `${waveterm.key}/18244`), { type: "askKill", groups });
@@ -379,10 +460,17 @@ describe("resmonReduce", () => {
         expect(resmonReduce(ui, { type: "cancel" }).confirm).toBeNull();
     });
     it("close clears the cursor, confirm and notes but keeps the expansion", () => {
-        let ui = resmonReduce(at(RESMON_UI_INITIAL, "arc"), { type: "toggle" });
+        let ui = resmonReduce(at(RESMON_UI_INITIAL, "arc"), { type: "toggle", groups });
+        ui = resmonReduce(ui, { type: "toggleFull", groups, key: waveterm.key });
         ui = resmonReduce(ui, { type: "askKill", groups, at: `${waveterm.key}/18311` });
         ui = resmonReduce(ui, { type: "note", key: verify.key, note: { text: "x", tone: "alert" } });
         ui = resmonReduce(ui, { type: "close" });
-        expect(ui).toEqual({ cursor: null, confirm: null, notes: {}, expanded: { arc: true } });
+        expect(ui).toEqual({
+            cursor: null,
+            confirm: null,
+            notes: {},
+            expanded: { arc: true },
+            full: { [waveterm.key]: true },
+        });
     });
 });

@@ -4,10 +4,12 @@
 // The Consumers panel (spec 2026-10-08-consumers-panel-design.md): every live agent with its RAM and its tokens and
 // spend of the last 10 minutes, a run's workers under their run, and Stop / → Sonnet per row; free RAM and the 5-hour
 // quota in the header, arcterm's own processes below. Opened from the RAM chip (ranked by RAM) and the plan-usage
-// meters (ranked by tokens). Rows are ranked when it opens and keep their place while it is open. consumers.ts
-// decides; this draws.
+// meters (ranked by tokens). Where the Resource Manager runs (Windows), RAM is read there and the RAM chip opens it
+// instead: this panel drops its RAM column, free RAM and arcterm section, and is tokens alone. Rows are ranked when it
+// opens and keep their place while it is open. consumers.ts decides; this draws.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
+import { resmonSupportedAtom } from "@/app/cockpit/resmonstore";
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import { SkeletonLine } from "@/app/element/skeleton";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -112,7 +114,7 @@ const ICON_ACTION =
 const TEXT_ACTION =
     "flex h-[22px] flex-none cursor-pointer items-center gap-0.5 whitespace-nowrap rounded border border-edge-mid px-1.5 text-[11px] text-secondary hover:border-edge-strong hover:bg-surface-selected hover:text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent disabled:cursor-default disabled:opacity-50";
 
-function Row({ row, model }: { row: ConsumerRow; model: AgentsViewModel }) {
+function Row({ row, model, showRam }: { row: ConsumerRow; model: AgentsViewModel; showRam: boolean }) {
     // the call in flight; a sleep or a wake takes seconds, and a second press would only be refused by the server
     const [pending, setPending] = useState<"sleep" | "wake" | null>(null);
     const run = (kind: "sleep" | "wake", call: () => Promise<void>) => {
@@ -170,9 +172,11 @@ function Row({ row, model }: { row: ConsumerRow; model: AgentsViewModel }) {
             >
                 {row.model}
             </span>
-            <span data-consumer-ram title="RAM" className={cn(COL_RAM, "text-[12px] tabular-nums text-secondary")}>
-                {row.ramBytes === undefined ? "—" : ramLabel(row.ramBytes)}
-            </span>
+            {showRam ? (
+                <span data-consumer-ram title="RAM" className={cn(COL_RAM, "text-[12px] tabular-nums text-secondary")}>
+                    {row.ramBytes === undefined ? "—" : ramLabel(row.ramBytes)}
+                </span>
+            ) : null}
             {/* one element for both numbers, split into the two columns */}
             <span data-consumer-tokens className="flex flex-none items-center gap-2.5 text-[12px] tabular-nums">
                 <span title="Tokens, last 10 minutes" className={cn(COL_TOKENS, "text-secondary")}>
@@ -255,13 +259,13 @@ function Row({ row, model }: { row: ConsumerRow; model: AgentsViewModel }) {
 
 const SECTION_LABEL = "text-[10.5px] font-semibold uppercase tracking-wide text-ink-faint";
 
-function ColumnHeads() {
+function ColumnHeads({ showRam }: { showRam: boolean }) {
     return (
         <div aria-hidden className={cn(SECTION_LABEL, "mx-1 flex items-center gap-2.5 px-2 pb-1 pt-1.5")}>
             <span className="w-[7px] flex-none" />
             <span className="min-w-0 flex-1">Agent</span>
             <span className={COL_MODEL}>Model</span>
-            <span className={COL_RAM}>RAM</span>
+            {showRam ? <span className={COL_RAM}>RAM</span> : null}
             <span className="flex flex-none gap-2.5" title="Last 10 minutes">
                 <span className={COL_TOKENS}>Tokens</span>
                 <span className={COL_SPEND}>Spend</span>
@@ -271,23 +275,28 @@ function ColumnHeads() {
     );
 }
 
-// free RAM in words, and a bar of all RAM: arcterm with its agents, everything else in use, and free
+// free RAM in words, and a bar of all RAM: arcterm with its agents, everything else in use, and free; without RAM, the
+// 5-hour quota and the way to Usage alone
 function MemoryHeader({
     view,
     fiveHour,
+    showRam,
     onOpenUsage,
 }: {
     view: ConsumersView | null;
     fiveHour?: number;
+    showRam: boolean;
     onOpenUsage: () => void;
 }) {
-    const bar = view ? ramBar(view) : null;
+    const bar = view && showRam ? ramBar(view) : null;
     return (
         <div className="flex flex-col gap-1.5 border-b border-border px-3 pb-2.5 pt-2">
             <div className="flex items-baseline gap-3">
                 <div data-consumers-header className="flex flex-1 items-baseline gap-3">
                     <span className="flex-1 text-[12px] text-muted">
-                        {view ? (
+                        {!showRam ? (
+                            <span className="text-[12.5px] font-semibold text-primary">Tokens by agent</span>
+                        ) : view ? (
                             <>
                                 <span className="text-[13px] font-semibold text-primary">
                                     {formatGB(view.freeBytes)}
@@ -314,14 +323,16 @@ function MemoryHeader({
                     <ArrowRight size={11} aria-hidden />
                 </button>
             </div>
-            <div className="flex h-[5px] overflow-hidden rounded-full bg-surface">
-                {bar ? (
-                    <>
-                        <span className="h-full bg-accent" style={{ width: `${bar.appPct}%` }} />
-                        <span className="h-full bg-ink-faint" style={{ width: `${bar.otherPct}%` }} />
-                    </>
-                ) : null}
-            </div>
+            {showRam ? (
+                <div className="flex h-[5px] overflow-hidden rounded-full bg-surface">
+                    {bar ? (
+                        <>
+                            <span className="h-full bg-accent" style={{ width: `${bar.appPct}%` }} />
+                            <span className="h-full bg-ink-faint" style={{ width: `${bar.otherPct}%` }} />
+                        </>
+                    ) : null}
+                </div>
+            ) : null}
             {bar && view ? (
                 <div className="flex items-center gap-3 text-[10.5px] text-muted">
                     <span className="flex items-center gap-1">
@@ -371,6 +382,7 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
     const agents = useAtomValue(model.agentsAtom);
     const fiveHour = usePlanDonuts(model).find((d) => d.provider === "claude")?.fivehour.pct;
     const placement = usePanelPlacement(open, useAtomValue(consumersOpenerAtom));
+    const showRam = !useAtomValue(resmonSupportedAtom);
     useConsumersPoll(open);
     useEffect(() => {
         if (!open) {
@@ -412,6 +424,7 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                     <MemoryHeader
                         view={view}
                         fiveHour={fiveHour}
+                        showRam={showRam}
                         onOpenUsage={() => {
                             close();
                             globalStore.set(model.surfaceAtom, "usage");
@@ -437,7 +450,7 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                             </div>
                         ) : (
                             <>
-                                <ColumnHeads />
+                                <ColumnHeads showRam={showRam} />
                                 {view.groups.map((g) => (
                                     <div key={g.key}>
                                         {g.label ? (
@@ -446,36 +459,38 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                                             </div>
                                         ) : null}
                                         {g.rows.map((r) => (
-                                            <Row key={r.id} row={r} model={model} />
+                                            <Row key={r.id} row={r} model={model} showRam={showRam} />
                                         ))}
                                     </div>
                                 ))}
                             </>
                         )}
                     </div>
-                    <div className="flex flex-col gap-1.5 border-t border-border bg-surface px-3 pb-2 pt-2">
-                        <div className="flex items-center gap-2">
-                            <span className={cn(SECTION_LABEL, "flex-1")}>arcterm</span>
-                            <span
-                                className="text-[11.5px] text-muted"
-                                title="Everything arcterm runs: its own processes and every agent"
-                            >
-                                Total, with agents{" "}
+                    {showRam ? (
+                        <div className="flex flex-col gap-1.5 border-t border-border bg-surface px-3 pb-2 pt-2">
+                            <div className="flex items-center gap-2">
+                                <span className={cn(SECTION_LABEL, "flex-1")}>arcterm</span>
                                 <span
-                                    data-consumers-app-total
-                                    className="text-[12px] font-semibold tabular-nums text-primary"
+                                    className="text-[11.5px] text-muted"
+                                    title="Everything arcterm runs: its own processes and every agent"
                                 >
-                                    {view?.appBytes === undefined ? "—" : ramLabel(view.appBytes)}
+                                    Total, with agents{" "}
+                                    <span
+                                        data-consumers-app-total
+                                        className="text-[12px] font-semibold tabular-nums text-primary"
+                                    >
+                                        {view?.appBytes === undefined ? "—" : ramLabel(view.appBytes)}
+                                    </span>
                                 </span>
-                            </span>
+                            </div>
+                            <div className="grid grid-cols-5 gap-2">
+                                <Stat data-consumers-agents="" label="Agents" bytes={view?.agentsBytes} />
+                                {(view?.own ?? []).map((o) => (
+                                    <Stat key={o.label} data-consumers-own={o.label} label={o.label} bytes={o.bytes} />
+                                ))}
+                            </div>
                         </div>
-                        <div className="grid grid-cols-5 gap-2">
-                            <Stat data-consumers-agents="" label="Agents" bytes={view?.agentsBytes} />
-                            {(view?.own ?? []).map((o) => (
-                                <Stat key={o.label} data-consumers-own={o.label} label={o.label} bytes={o.bytes} />
-                            ))}
-                        </div>
-                    </div>
+                    ) : null}
                 </div>
             </PopoverReveal>
         </>

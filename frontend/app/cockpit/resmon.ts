@@ -151,6 +151,112 @@ export function subtreeSize(rows: ProcessInfo[], index: number): number {
     return n;
 }
 
+const SHELL_IMAGES = new Set([
+    "cmd.exe",
+    "bash.exe",
+    "sh.exe",
+    "pwsh.exe",
+    "powershell.exe",
+    "bash",
+    "sh",
+    "zsh",
+    "pwsh",
+]);
+export const MORE_ROW = "more";
+
+// what every agent carries and nobody acts on: its launcher and consoles, and wsh's agent control channel
+function isPlumbing(row: ProcessInfo): boolean {
+    if (row.tag === "launcher" || row.tag === "console") {
+        return true;
+    }
+    if (row.tag) {
+        return false;
+    }
+    const image = (row.name ?? "").toLowerCase();
+    if (image === "conhost.exe") {
+        return true;
+    }
+    return /^wsh(-[^\\/]*)?(\.exe)?$/.test(image) && rowLabel(row).cmd.startsWith("agentctl");
+}
+
+function isShell(row: ProcessInfo): boolean {
+    return !row.tag && SHELL_IMAGES.has((row.name ?? "").toLowerCase());
+}
+
+export interface ResMonLine {
+    row: ProcessInfo;
+    index: number; // into g.rows, which subtreeSize and the kill confirm count from
+    depth: number;
+}
+
+export interface ResMonView {
+    lines: ResMonLine[];
+    full: boolean;
+    hidden: number; // rows the compact view leaves out, shown or not
+    hiddenCpu: number;
+    hiddenMem: number;
+}
+
+// The compact view keeps the agent and the commands it runs, and leaves out the plumbing and the shells that only
+// wrap a command (Claude Code's `bash -c "source …snapshot…"` chain): git log sits right under the agent instead of
+// five levels down. A kept row is indented by its kept ancestors; one whose parent has exited sits under the agent.
+// Arc's own tree has neither, so it is always shown whole.
+export function groupView(g: ResMonGroup, ui: ResMonUi): ResMonView {
+    const rows = g.rows;
+    const plumbing = rows.map(isPlumbing);
+    const hide = rows.map((r, i) => {
+        if (g.key === ARC_KEY) {
+            return false;
+        }
+        if (plumbing[i]) {
+            return true;
+        }
+        if (!isShell(r)) {
+            return false;
+        }
+        for (let j = i + 1; j < rows.length && rows[j].depth > r.depth; j++) {
+            if (!plumbing[j] && !isShell(rows[j])) {
+                return true;
+            }
+        }
+        return false;
+    });
+    let hidden = 0;
+    let hiddenCpu = 0;
+    let hiddenMem = 0;
+    rows.forEach((r, i) => {
+        if (hide[i]) {
+            hidden++;
+            hiddenCpu += Math.max(0, r.cpu);
+            hiddenMem += Math.max(0, r.mem);
+        }
+    });
+    const full = hidden > 0 && (ui.full[g.key] ?? false);
+    if (full || hidden === 0) {
+        return {
+            lines: rows.map((row, index) => ({ row, index, depth: row.depth })),
+            full,
+            hidden,
+            hiddenCpu,
+            hiddenMem,
+        };
+    }
+    const anchored = rows.some((r, i) => r.tag && !hide[i]);
+    const lines: ResMonLine[] = [];
+    const stack: { depth: number; kept: boolean }[] = [];
+    rows.forEach((row, index) => {
+        while (stack.length > 0 && stack[stack.length - 1].depth >= row.depth) {
+            stack.pop();
+        }
+        const kept = stack.filter((s) => s.kept).length;
+        if (!hide[index]) {
+            lines.push({ row, index, depth: kept + (anchored && !row.tag && kept === 0 ? 1 : 0) });
+        }
+        stack.push({ depth: row.depth, kept: !hide[index] });
+    });
+    return { lines, full, hidden, hiddenCpu, hiddenMem };
+}
+
 function processes(n: number): string {
     return `${n} process${n === 1 ? "" : "es"}`;
 }
@@ -229,6 +335,7 @@ export function outcomeNote(
 export interface ResMonUi {
     cursor: string | null; // "<groupKey>" or "<groupKey>/<pid>"
     expanded: Record<string, boolean>; // only the groups toggled from their default; see isExpanded
+    full: Record<string, boolean>; // groups showing every process instead of the compact view; see groupView
     confirm: { kind: "row"; key: string; pid: number } | { kind: "group"; key: string } | null;
     notes: Record<string, { text: string; tone: "note" | "alert" }>;
 }
@@ -236,18 +343,20 @@ export interface ResMonUi {
 // groups is the order the popover draws (orderGroups); at moves the cursor there first, for a click
 export type ResMonAction =
     | { type: "move"; delta: 1 | -1; groups: ResMonGroup[] }
-    | { type: "toggle"; key?: string } // undefined = the cursor's group
+    | { type: "toggle"; groups: ResMonGroup[]; key?: string } // undefined = the cursor's group, or its helper line
+    | { type: "toggleFull"; groups: ResMonGroup[]; key: string }
     | { type: "askKill"; groups: ResMonGroup[]; at?: string } // x: a row cursor on a killable, untagged row
     | { type: "askChildren"; groups: ResMonGroup[]; at?: string } // ⇧X: the cursor's group, when it is killable and has targets
     | { type: "cancel" }
     | { type: "note"; key: string; note: { text: string; tone: "note" | "alert" } }
-    | { type: "close" }; // clears confirm, notes and cursor; keeps expanded
+    | { type: "close" }; // clears confirm, notes and cursor; keeps expanded and full
 
-export const RESMON_UI_INITIAL: ResMonUi = { cursor: null, expanded: {}, confirm: null, notes: {} };
+export const RESMON_UI_INITIAL: ResMonUi = { cursor: null, expanded: {}, full: {}, confirm: null, notes: {} };
 
-// Arc is collapsed by default (it is always there and rarely the culprit), every other group expanded
-export function isExpanded(ui: ResMonUi, key: string): boolean {
-    return ui.expanded[key] ?? key !== ARC_KEY;
+// Arc is collapsed by default (it is always there and rarely the culprit), and so is an idle group: an agent or a
+// shell running nothing has no row worth a line. A group running a command is expanded.
+export function isExpanded(ui: ResMonUi, g: ResMonGroup): boolean {
+    return ui.expanded[g.key] ?? (g.key !== ARC_KEY && groupView(g, ui).lines.some((l) => !l.row.tag));
 }
 
 function parseCursor(cursor: string | null): { key: string; pid: number | null } | null {
@@ -265,8 +374,12 @@ export function cursorRows(groups: ResMonGroup[], ui: ResMonUi): string[] {
     const out: string[] = [];
     for (const g of groups) {
         out.push(g.key);
-        if (isExpanded(ui, g.key)) {
-            out.push(...g.rows.map((r) => `${g.key}/${r.pid}`));
+        if (isExpanded(ui, g)) {
+            const view = groupView(g, ui);
+            out.push(...view.lines.map((l) => `${g.key}/${l.row.pid}`));
+            if (view.hidden > 0) {
+                out.push(`${g.key}/${MORE_ROW}`);
+            }
         }
     }
     return out;
@@ -282,15 +395,33 @@ function move(ui: ResMonUi, delta: 1 | -1, groups: ResMonGroup[]): ResMonUi {
     return { ...ui, cursor: rows[next] };
 }
 
-function toggle(ui: ResMonUi, key: string | undefined): ResMonUi {
+function toggle(ui: ResMonUi, groups: ResMonGroup[], key: string | undefined): ResMonUi {
+    if (key == null && ui.cursor?.endsWith(`/${MORE_ROW}`)) {
+        return toggleFull(ui, groups, ui.cursor.slice(0, -MORE_ROW.length - 1));
+    }
     const k = key ?? parseCursor(ui.cursor)?.key;
-    if (k == null) {
+    const g = groups.find((x) => x.key === k);
+    if (k == null || g == null) {
         return ui;
     }
-    const open = !isExpanded(ui, k);
+    const open = !isExpanded(ui, g);
     // collapsing hides the cursor's row, so the cursor falls back to its group's header
     const cursor = !open && parseCursor(ui.cursor)?.key === k ? k : ui.cursor;
     return { ...ui, cursor, expanded: { ...ui.expanded, [k]: open } };
+}
+
+// back to the compact view, a cursor on a row it leaves out moves to the helper line that brings it back
+function toggleFull(ui: ResMonUi, groups: ResMonGroup[], key: string): ResMonUi {
+    const g = groups.find((x) => x.key === key);
+    if (g == null) {
+        return ui;
+    }
+    const next = { ...ui, full: { ...ui.full, [key]: !groupView(g, ui).full } };
+    const c = parseCursor(ui.cursor);
+    if (c?.key === key && c.pid != null && !cursorRows([g], next).includes(ui.cursor)) {
+        return { ...next, cursor: `${key}/${MORE_ROW}` };
+    }
+    return next;
 }
 
 function withoutNote(notes: ResMonUi["notes"], key: string): ResMonUi["notes"] {
@@ -323,7 +454,9 @@ export function resmonReduce(ui: ResMonUi, a: ResMonAction): ResMonUi {
         case "move":
             return move(ui, a.delta, a.groups);
         case "toggle":
-            return toggle(ui, a.key);
+            return toggle(ui, a.groups, a.key);
+        case "toggleFull":
+            return toggleFull(ui, a.groups, a.key);
         case "askKill":
             return askKill(ui, a.groups, a.at);
         case "askChildren":
@@ -333,6 +466,6 @@ export function resmonReduce(ui: ResMonUi, a: ResMonAction): ResMonUi {
         case "note":
             return { ...ui, notes: { ...ui.notes, [a.key]: a.note } };
         case "close":
-            return { ...RESMON_UI_INITIAL, expanded: ui.expanded };
+            return { ...RESMON_UI_INITIAL, expanded: ui.expanded, full: ui.full };
     }
 }

@@ -1937,11 +1937,11 @@ export function buildResMonBindings(model: AgentsViewModel): Binding[] {
     return [
         bind("prev", "ArrowUp", "Move up", () => dispatchResMon({ type: "move", delta: -1, groups: groups() })),
         bind("next", "ArrowDown", "Move down", () => dispatchResMon({ type: "move", delta: 1, groups: groups() })),
-        bind("enter", "Enter", "Confirm, else expand or collapse the group", () => {
+        bind("enter", "Enter", "Confirm, else expand or collapse the group, or show its helper processes", () => {
             if (globalStore.get(resmonUiAtom).confirm != null) {
                 void confirmResMon();
             } else {
-                dispatchResMon({ type: "toggle" });
+                dispatchResMon({ type: "toggle", groups: groups() });
             }
         }),
         bind("kill", "x", "Kill the process and its children", () =>

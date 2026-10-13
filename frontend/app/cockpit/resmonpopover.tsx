@@ -10,33 +10,49 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { buildResMonBindings } from "@/app/store/keybindings/bindings";
 import { useKeybindings } from "@/app/store/keybindings/store";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { capacityChipLabel } from "@/app/view/agents/workercapacity";
+import { useWorkerCapacity } from "@/app/view/agents/workercapacitystore";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ChevronRight, CircleAlert, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
+    busyWords,
     fmtAge,
     fmtCpu,
     fmtMem,
+    groupView,
     isExpanded,
     killChildrenConfirmText,
     killChildrenTargets,
     killConfirmText,
+    MORE_ROW,
     orderGroups,
     ownerKindWords,
     rowLabel,
     subtreeSize,
+    type ResMonLine,
     type ResMonUi,
+    type ResMonView,
 } from "./resmon";
-import { resmonOpener } from "./resmonreadout";
-import { confirmResMon, dispatchResMon, resmonOpenAtom, resmonSnapshotAtom, resmonUiAtom } from "./resmonstore";
+import {
+    confirmResMon,
+    dispatchResMon,
+    resmonOpenAtom,
+    resmonOpener,
+    resmonSnapshotAtom,
+    resmonUiAtom,
+} from "./resmonstore";
 
-const GRID = "grid grid-cols-[minmax(0,1fr)_60px_64px_64px_76px_84px] items-center px-3.5";
+// no PID column: a row's pid is in its tooltip and in every kill confirm
+const GRID = "grid grid-cols-[minmax(0,1fr)_64px_64px_76px_84px] items-center px-3.5";
 const INDENT_PX = 14;
-// the popover's bottom edge sits this far above the readout that opened it
+const WIDTH_PX = 700;
+// the popover's top edge sits this far below the RAM chip that opened it
 const ANCHOR_GAP_PX = 6;
 const MAX_HEIGHT_PX = 760;
-const TOP_MARGIN_PX = 12;
+// the nearest it comes to the window's edges
+const EDGE_PX = 8;
 const HINTS: [string, string][] = [
     ["↑↓", "move"],
     ["⏎", "expand"],
@@ -67,27 +83,23 @@ function swatchClass(g: ResMonGroup): string {
     return "bg-ink-mid";
 }
 
-// the readout the popover hangs from: the one clicked, else whichever is on screen (a `g m` open)
-function anchorReadout(): HTMLElement | null {
+// the RAM chip the popover hangs from: the one clicked, else the app bar's (a `g m` open)
+function anchorChip(): HTMLElement | null {
     const clicked = resmonOpener();
     if (clicked != null && clicked.getBoundingClientRect().height > 0) {
         return clicked;
     }
-    const all = [...document.querySelectorAll<HTMLElement>("[data-resmon-readout]")];
-    return all.reverse().find((el) => el.getBoundingClientRect().height > 0) ?? null;
+    const chip = document.querySelector<HTMLElement>("[data-resmon-readout]");
+    return chip != null && chip.getBoundingClientRect().height > 0 ? chip : null;
 }
 
-// 6px above the readout, and never over the bar it sits in: the Cockpit's hints bar is taller than the footer
-function measureAnchor(): { bottom: number; maxHeight: number } {
-    const readout = anchorReadout();
-    const top = readout
-        ? Math.min(
-              readout.getBoundingClientRect().top - ANCHOR_GAP_PX,
-              readout.parentElement?.getBoundingClientRect().top ?? Infinity
-          )
-        : window.innerHeight;
-    const bottom = window.innerHeight - top;
-    return { bottom, maxHeight: Math.min(MAX_HEIGHT_PX, window.innerHeight - bottom - TOP_MARGIN_PX) };
+// below the chip, its right edge on the chip's, kept inside the window
+function measureAnchor(): { top: number; right: number; maxHeight: number } {
+    const chip = anchorChip()?.getBoundingClientRect();
+    const top = chip ? chip.bottom + ANCHOR_GAP_PX : 44;
+    const widest = Math.max(EDGE_PX, window.innerWidth - WIDTH_PX - EDGE_PX);
+    const right = chip ? Math.min(Math.max(window.innerWidth - chip.right, EDGE_PX), widest) : 12;
+    return { top, right, maxHeight: Math.min(MAX_HEIGHT_PX, window.innerHeight - top - EDGE_PX) };
 }
 
 function ConfirmRow({ text, verb, className }: { text: string; verb: string; className?: string }) {
@@ -137,19 +149,8 @@ function Note({ note }: { note: ResMonUi["notes"][string] }) {
     );
 }
 
-function ProcessRow({
-    g,
-    row,
-    index,
-    ui,
-    now,
-}: {
-    g: ResMonGroup;
-    row: ProcessInfo;
-    index: number;
-    ui: ResMonUi;
-    now: number;
-}) {
+function ProcessRow({ g, line, ui, now }: { g: ResMonGroup; line: ResMonLine; ui: ResMonUi; now: number }) {
+    const { row, index, depth } = line;
     const c = ui.confirm;
     if (c?.kind === "row" && c.key === g.key && c.pid === row.pid) {
         return (
@@ -167,14 +168,14 @@ function ProcessRow({
         <div
             data-resmon-row={row.pid}
             data-resmon-cursor={cursor ? "" : undefined}
+            title={`pid ${row.pid}`}
             className={cn(GRID, "h-7", cursor && "bg-surface-selected")}
         >
-            <span className="flex min-w-0 items-baseline gap-2" style={{ paddingLeft: row.depth * INDENT_PX }}>
-                <span className="w-2.5 shrink-0 font-mono text-[11px] text-ink-faint">{row.depth > 0 ? "└" : ""}</span>
+            <span className="flex min-w-0 items-baseline gap-2" style={{ paddingLeft: depth * INDENT_PX }}>
+                <span className="w-2.5 shrink-0 font-mono text-[11px] text-ink-faint">{depth > 0 ? "└" : ""}</span>
                 <span className="whitespace-nowrap font-mono text-[12px] text-secondary">{label.name}</span>
                 <span className="truncate font-mono text-[11px] text-muted">{label.cmd}</span>
             </span>
-            <span className="text-right font-mono text-[11px] text-muted">{row.pid}</span>
             <span className="text-right font-mono text-[11px] text-ink-mid">{fmtAge(row.createts ?? 0, now)}</span>
             <span className="text-right font-mono text-[12px] text-primary">{fmtCpu(row.cpu)}</span>
             <span className="text-right font-mono text-[12px] text-secondary">{fmtMem(row.mem)}</span>
@@ -198,12 +199,45 @@ function ProcessRow({
     );
 }
 
+// the line under a group's rows that swaps its compact view for the whole tree and back
+function MoreRow({ g, view, ui }: { g: ResMonGroup; view: ResMonView; ui: ResMonUi }) {
+    const cursor = ui.cursor === `${g.key}/${MORE_ROW}`;
+    const what = `${view.hidden} helper ${view.hidden === 1 ? "process" : "processes"}`;
+    return (
+        <div
+            data-resmon-more=""
+            data-resmon-cursor={cursor ? "" : undefined}
+            className={cn(GRID, "h-7", cursor && "bg-surface-selected")}
+        >
+            <button
+                type="button"
+                title="Launchers, consoles, wsh, and the shells that only wrap a command"
+                onClick={() => dispatchResMon({ type: "toggleFull", groups: orderGroups(currentGroups()), key: g.key })}
+                className="flex min-w-0 cursor-pointer items-baseline gap-2 text-left text-[11.5px] text-muted hover:text-secondary"
+                style={{ paddingLeft: INDENT_PX }}
+            >
+                <span className="w-2.5 shrink-0" />
+                {view.full ? `Hide ${what}` : `+ ${what}`}
+            </button>
+            <span />
+            <span className="text-right font-mono text-[11px] text-muted">
+                {view.full ? "" : fmtCpu(view.hiddenCpu)}
+            </span>
+            <span className="text-right font-mono text-[11px] text-muted">
+                {view.full ? "" : fmtMem(view.hiddenMem)}
+            </span>
+            <span />
+        </div>
+    );
+}
+
 function currentGroups(): ResMonGroup[] {
     return globalStore.get(resmonSnapshotAtom)?.groups ?? [];
 }
 
 function GroupBlock({ g, ui, now }: { g: ResMonGroup; ui: ResMonUi; now: number }) {
-    const expanded = isExpanded(ui, g.key);
+    const expanded = isExpanded(ui, g);
+    const view = groupView(g, ui);
     const targets = killChildrenTargets(g);
     const groupConfirm = ui.confirm?.kind === "group" && ui.confirm.key === g.key;
     const note = ui.notes[g.key];
@@ -217,7 +251,7 @@ function GroupBlock({ g, ui, now }: { g: ResMonGroup; ui: ResMonUi; now: number 
                 <button
                     type="button"
                     aria-expanded={expanded}
-                    onClick={() => dispatchResMon({ type: "toggle", key: g.key })}
+                    onClick={() => dispatchResMon({ type: "toggle", groups: orderGroups(currentGroups()), key: g.key })}
                     className="flex min-w-0 cursor-pointer items-center gap-2 text-left"
                 >
                     <ChevronRight
@@ -235,7 +269,6 @@ function GroupBlock({ g, ui, now }: { g: ResMonGroup; ui: ResMonUi; now: number 
                         {ownerKindWords(g.ownerkind)} · {count(g.rows.length, "process")}
                     </span>
                 </button>
-                <span />
                 <span />
                 <span className="text-right font-mono text-[12px] font-medium text-primary">{fmtCpu(g.cpu)}</span>
                 <span className="text-right font-mono text-[12px] text-secondary">{fmtMem(g.mem)}</span>
@@ -263,9 +296,10 @@ function GroupBlock({ g, ui, now }: { g: ResMonGroup; ui: ResMonUi; now: number 
             {note && <Note note={note} />}
             {expanded && (
                 <div className="pb-1.5">
-                    {g.rows.map((row, i) => (
-                        <ProcessRow key={row.pid} g={g} row={row} index={i} ui={ui} now={now} />
+                    {view.lines.map((line) => (
+                        <ProcessRow key={line.row.pid} g={g} line={line} ui={ui} now={now} />
                     ))}
+                    {view.hidden > 0 && <MoreRow g={g} view={view} ui={ui} />}
                 </div>
             )}
         </div>
@@ -276,11 +310,12 @@ export function ResMonPopover({ model }: { model: AgentsViewModel }) {
     const open = useAtomValue(resmonOpenAtom);
     const snap = useAtomValue(resmonSnapshotAtom);
     const ui = useAtomValue(resmonUiAtom);
+    const cap = useWorkerCapacity();
     const bindings = useMemo(() => buildResMonBindings(model), [model]);
     useKeybindings(bindings);
     const visible = open && (snap == null || snap.supported);
     const panelRef = useRef<HTMLDivElement>(null);
-    const [anchor, setAnchor] = useState({ bottom: 34, maxHeight: MAX_HEIGHT_PX });
+    const [anchor, setAnchor] = useState({ top: 44, right: 12, maxHeight: MAX_HEIGHT_PX });
 
     useEffect(() => {
         if (!open) {
@@ -334,11 +369,12 @@ export function ResMonPopover({ model }: { model: AgentsViewModel }) {
     const empty = groups.every((g) => g.ownerkind === "arc");
     const procs = groups.reduce((n, g) => n + g.rows.length, 0);
     const now = snap?.ts || Date.now();
+    const busy = loading ? null : busyWords(snap);
 
     // above the avatar (z-60), which sits in the same corner; below the modals (z-70)
     return (
-        <div className="pointer-events-none fixed right-3 z-[65]" style={{ bottom: anchor.bottom }}>
-            <PopoverReveal open={visible} origin="bottom right" className="pointer-events-auto">
+        <div className="pointer-events-none fixed z-[65]" style={{ top: anchor.top, right: anchor.right }}>
+            <PopoverReveal open={visible} origin="top right" className="pointer-events-auto">
                 <div
                     ref={panelRef}
                     tabIndex={-1}
@@ -355,7 +391,21 @@ export function ResMonPopover({ model }: { model: AgentsViewModel }) {
                                 {owners(groups.length)} · {count(procs, "process")}
                             </span>
                         )}
-                        <span className="ml-auto text-[11.5px] text-muted">updated every 2s</span>
+                        {/* the totals the footer readout used to carry, and the free RAM the chip shows */}
+                        {!loading && (
+                            <span
+                                data-resmon-totals=""
+                                className={cn("ml-auto text-[11.5px]", busy ? "text-warning-soft" : "text-muted")}
+                            >
+                                Arc{" "}
+                                <span className={cn("font-mono", !busy && "text-primary")}>{fmtCpu(snap.cpu, 0)}</span>{" "}
+                                CPU ·{" "}
+                                <span className={cn("font-mono", !busy && "text-primary")}>{fmtMem(snap.mem)}</span>
+                                {busy ? <span className="font-semibold text-warning"> · {busy}</span> : null}
+                                {cap != null ? ` · ${capacityChipLabel(cap)}` : null}
+                            </span>
+                        )}
+                        <span className={cn("text-[11.5px] text-muted", loading && "ml-auto")}>every 2s</span>
                     </div>
                     {loading ? (
                         <div
@@ -368,7 +418,6 @@ export function ResMonPopover({ model }: { model: AgentsViewModel }) {
                         <>
                             <div className={cn(GRID, "h-6 border-y border-border text-[10.5px] text-muted")}>
                                 <span>Process</span>
-                                <span className="text-right">PID</span>
                                 <span className="text-right">Running</span>
                                 <span className="text-right">CPU</span>
                                 <span className="text-right">Memory</span>

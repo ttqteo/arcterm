@@ -5,10 +5,13 @@
 // its 5-hour and weekly windows as two small bars, and after them any model's own weekly window (a Team seat's Fable
 // share) under that model's name (planWindows), each with a tick at how much of its window has passed and coloured by
 // how much is used (usageLevel, not by pace: a fast start read red at 27%), and the 5-hour window's countdown. Tokens
-// and the time each window resets are on hover. RAM and tokens open the one Consumers panel (consumerspanel.tsx), so
-// they are one button: a click on the RAM half ranks it by RAM, anywhere else by tokens. Float has no app bar: its
+// and the time each window resets are on hover. The two halves are two buttons in one frame: the meters open the
+// Consumers panel (consumerspanel.tsx) ranked by tokens; the RAM chip opens the Resource Manager where there is one
+// (Windows), and elsewhere Consumers ranked by RAM, so RAM is read in one place on either. Float has no app bar: its
 // ledge shows FloatUsage, each provider's first window alone (the 5-hour one), the rest in its tooltip.
 
+import { readout } from "@/app/cockpit/resmon";
+import { resmonOpenAtom, resmonSnapshotAtom, resmonSupportedAtom, toggleResMon } from "@/app/cockpit/resmonstore";
 import { Meter } from "@/app/element/meter";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
@@ -87,30 +90,50 @@ function useMeterItems(model: AgentsViewModel): MeterItem[] {
     return meterItems(donuts, windowTokens, now);
 }
 
+const HALF = "flex h-full cursor-pointer items-center px-2.5 hover:bg-surface-raised";
+
 export function HeaderUsage({ model }: { model: AgentsViewModel }) {
     const items = useMeterItems(model);
     const cap = useWorkerCapacity();
+    const resmon = useAtomValue(resmonSupportedAtom);
+    const resmonOpen = useAtomValue(resmonOpenAtom);
+    const arc = readout(useAtomValue(resmonSnapshotAtom));
     // nothing until there is a reading of either
     if (cap == null && items.length === 0) {
         return null;
     }
+    const busy = resmon && arc.ready ? arc.busy : null;
     return (
-        <button
-            type="button"
+        <span
             data-app-usage
-            aria-haspopup="dialog"
-            onClick={(e) =>
-                toggleConsumers(
-                    (e.target as Element).closest("[data-worker-capacity]") != null ? "ram" : "tokens",
-                    e.currentTarget
-                )
-            }
-            className="flex h-[26px] shrink-0 cursor-pointer items-center gap-2.5 rounded border border-edge-mid bg-transparent px-2.5 hover:border-edge-strong hover:bg-surface-raised"
+            className="flex h-[26px] shrink-0 items-center overflow-hidden rounded border border-edge-mid hover:border-edge-strong"
         >
-            {cap != null ? <WorkerCapacityChip cap={cap} /> : null}
-            {cap != null && items.length > 0 ? <span className="h-3.5 w-px bg-edge-mid" /> : null}
-            <UsageMeters items={items} />
-        </button>
+            {cap != null ? (
+                <button
+                    type="button"
+                    aria-haspopup="dialog"
+                    // the popover hangs from this chip and a press on it is not an outside click
+                    data-resmon-readout={resmon ? "" : undefined}
+                    aria-expanded={resmon ? resmonOpen : undefined}
+                    aria-label={resmon ? arc.aria : undefined}
+                    onClick={(e) => (resmon ? toggleResMon(e.currentTarget) : toggleConsumers("ram", e.currentTarget))}
+                    className={cn(HALF, resmonOpen && "bg-accentbg")}
+                >
+                    <WorkerCapacityChip cap={cap} busy={busy} arc={resmon && arc.ready ? arc : null} />
+                </button>
+            ) : null}
+            {cap != null && items.length > 0 ? <span className="h-3.5 w-px flex-none bg-edge-mid" /> : null}
+            {items.length > 0 ? (
+                <button
+                    type="button"
+                    aria-haspopup="dialog"
+                    onClick={(e) => toggleConsumers("tokens", e.currentTarget)}
+                    className={HALF}
+                >
+                    <UsageMeters items={items} />
+                </button>
+            ) : null}
+        </span>
     );
 }
 

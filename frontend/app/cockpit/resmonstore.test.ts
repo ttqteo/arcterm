@@ -18,15 +18,21 @@ vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
+import { consumersOpenAtom } from "@/app/view/agents/consumersstore";
+import { machineServersOpenAtom } from "@/app/view/agents/machineserversstore";
+import { jobQueueOpenAtom } from "./jobqueuestore";
 import { RESMON_UI_INITIAL } from "./resmon";
 import {
     confirmResMon,
     dispatchResMon,
     RESMON_POLL_MS,
     resmonOpenAtom,
+    resmonOpener,
     resmonSnapshotAtom,
+    resmonSupportedAtom,
     resmonUiAtom,
     startResMonPolling,
+    toggleResMon,
 } from "./resmonstore";
 
 const proc = (pid: number, depth: number, name: string, tag?: string): ProcessInfo => ({
@@ -188,5 +194,31 @@ describe("confirmResMon", () => {
         await confirmResMon();
         expect(RpcApi.ResMonKillCommand).not.toHaveBeenCalled();
         expect(RpcApi.ResMonKillChildrenCommand).not.toHaveBeenCalled();
+    });
+});
+
+describe("toggleResMon", () => {
+    it("opens and closes the popover, and closes the app bar's other popovers", () => {
+        const chip = { isConnected: true } as HTMLElement;
+        globalStore.set(resmonOpenAtom, false);
+        globalStore.set(consumersOpenAtom, "tokens");
+        globalStore.set(machineServersOpenAtom, true);
+        globalStore.set(jobQueueOpenAtom, true);
+        toggleResMon(chip);
+        expect(globalStore.get(resmonOpenAtom)).toBe(true);
+        expect(resmonOpener()).toBe(chip);
+        expect(globalStore.get(consumersOpenAtom)).toBeNull();
+        expect(globalStore.get(machineServersOpenAtom)).toBe(false);
+        expect(globalStore.get(jobQueueOpenAtom)).toBe(false);
+        toggleResMon(chip);
+        expect(globalStore.get(resmonOpenAtom)).toBe(false);
+    });
+    it("reads as supported only once a snapshot says so", () => {
+        globalStore.set(resmonSnapshotAtom, null);
+        expect(globalStore.get(resmonSupportedAtom)).toBe(false);
+        globalStore.set(resmonSnapshotAtom, { ...snap(1), supported: false });
+        expect(globalStore.get(resmonSupportedAtom)).toBe(false);
+        globalStore.set(resmonSnapshotAtom, snap(1));
+        expect(globalStore.get(resmonSupportedAtom)).toBe(true);
     });
 });
