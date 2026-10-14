@@ -4,6 +4,7 @@ import {
     decisionAfter,
     endsTurnSay,
     joinGroup,
+    LATER_DENY_REASON,
     spawnCount,
     tokengateArgs,
     tokengateLine,
@@ -265,11 +266,12 @@ describe("createSpawnGate", () => {
         expect(asked).toHaveLength(2);
     });
 
-    it("refuses the rest of the turn after Don't spawn, with its reason, until the next prompt", async () => {
+    it("refuses the rest of the turn after Don't spawn, saying so, until the next prompt", async () => {
         const gate = createSpawnGate(now);
         const { asked, ask } = asker(DENY);
-        expect(await gate.check("Agent", {}, ask)).toBe("Not run: no");
-        expect(await gate.check("Agent", {}, ask)).toBe("Not run: no");
+        expect(await gate.check("Workflow", {}, ask)).toBe("Not run: no");
+        // the card's reason names the spawn it asked about; a later one is told of the turn's Don't spawn instead
+        expect(await gate.check("Agent", {}, ask)).toBe(LATER_DENY_REASON);
         expect(asked).toHaveLength(1);
         gate.promptSubmitted();
         await gate.check("Agent", {}, ask);

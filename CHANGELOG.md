@@ -74,6 +74,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   while the gate is still deciding on the ones before it is counted too, instead of slipping through with them.
 - **Allow this turn lasts the whole turn**: a background subagent reporting back no longer ends it, or a Don't
   spawn, so the Token burn card no longer comes back before your next prompt.
+- **A spawn after Don't spawn says why it was refused**: a subagent the agent tries later in the turn is told you
+  chose Don't spawn earlier, not refused in the words of the card it never had (such as "run a workflow").
 
 ## 0.15.12 — 2026-10-14
 
