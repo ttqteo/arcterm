@@ -334,7 +334,7 @@ func Tick(sessionId string) (nudge string, err error) {
 	}
 	gap := s.Prompts - s.LastIdeaPrompt
 	if gap >= nudgeAfter && s.Prompts-s.NudgedAt >= nudgeAfter && hasLiveIdea(&s) {
-		nudge = fmt.Sprintf("%d turns since the last idea was recorded; record new ideas, decisions or open questions with wsh idea add.", gap)
+		nudge = fmt.Sprintf("%d turns since the last idea was recorded. If a decision, idea or open question came up that the list does not hold yet, record it with wsh idea add; otherwise record nothing.", gap)
 		s.NudgedAt = s.Prompts
 	}
 	if err := save(&s); err != nil {

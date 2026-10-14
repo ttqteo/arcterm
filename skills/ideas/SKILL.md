@@ -26,9 +26,11 @@ Rules:
   in the spec or plan, move it to `decision`. Merge two lines that say the same thing (`--merge`).
 - Record only decisions, ideas and questions. A status is not one: a commit, a file written, an estimate, or what
   already exists in arcterm goes in your reply, not the list.
-- Write what you decided or floated, not a transcript of the discussion. A line stands alone and stays short.
+- Write what you decided or floated, not a transcript of the discussion. A line stands alone and holds the gist in
+  about 15 words: "The office shows its cost in the RAM panel", not the six figures the panel lists. The details
+  belong in the spec or plan; once one is written, the line points at the choice and the document holds the rest.
 - A row that starts `arc:` and says turns have passed since the last idea was recorded is the reminder to catch up:
-  list, then add what is missing.
+  list, then add only what came up and is missing. When nothing new did, record nothing.
 
 The commands:
 

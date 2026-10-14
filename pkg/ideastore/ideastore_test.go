@@ -319,9 +319,9 @@ func TestTickNudgesEveryThreeTurnsOnceASessionHasAnIdea(t *testing.T) {
 	got := tickN(t, 7)
 	want := []string{
 		"", "",
-		"3 turns since the last idea was recorded; record new ideas, decisions or open questions with wsh idea add.",
+		"3 turns since the last idea was recorded. If a decision, idea or open question came up that the list does not hold yet, record it with wsh idea add; otherwise record nothing.",
 		"", "",
-		"6 turns since the last idea was recorded; record new ideas, decisions or open questions with wsh idea add.",
+		"6 turns since the last idea was recorded. If a decision, idea or open question came up that the list does not hold yet, record it with wsh idea add; otherwise record nothing.",
 		"",
 	}
 	for i := range want {
