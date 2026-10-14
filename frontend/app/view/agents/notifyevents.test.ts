@@ -429,3 +429,24 @@ describe("diffEvents: a chunk that came due", () => {
         expect(diffEvents(snap([], [due]), snap([], [due]))).toEqual([]);
     });
 });
+
+describe("diffEvents: a queued start that did not start", () => {
+    it("is told once as a Decision, with the reason as the title and the plan as the body", () => {
+        const blocked = {
+            ...item("run-queue-blocked:q-1a2b", "run-queue-blocked"),
+            text: "Did not start: Rail was held: dirty",
+            source: "Learned additions",
+            why: "Start now starts it anyway; Remove drops it from the queue.",
+        };
+        const [e, ...rest] = diffEvents(snap([], []), snap([], [blocked]));
+        expect(rest).toEqual([]);
+        expect(e).toMatchObject({
+            kind: "attention",
+            label: "Decision",
+            title: "Did not start: Rail was held: dirty",
+            body: "Learned additions",
+            loud: true,
+        });
+        expect(diffEvents(snap([], [blocked]), snap([], [blocked]))).toEqual([]);
+    });
+});

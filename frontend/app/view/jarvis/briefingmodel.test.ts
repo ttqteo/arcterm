@@ -839,6 +839,29 @@ describe("design queue wording", () => {
             { channelId: "c5", runId: "r5" },
         ]);
     });
+    it("a blocked queue entry starts now in place, from the queue id its item carries", () => {
+        const [row] = buildAttentionQueue({
+            attention: [
+                attentionItem({
+                    kind: "run-queue-blocked",
+                    key: "run-queue-blocked:q-1a2b",
+                    channelid: "",
+                    channelname: "",
+                    runid: "",
+                    queueid: "q-1a2b",
+                    source: "Learned additions",
+                    text: "Did not start: Rail was held: dirty",
+                    action: "Start",
+                }),
+            ],
+            efforts: [],
+        });
+        expect(row.kind).toBe("not started");
+        expect(row.queueId).toBe("q-1a2b");
+        expect(row.nav).toBeNull();
+        expect(queueAction(row)).toEqual({ label: "Start now", kind: "start-queued" });
+        expect(queueAction({ ...row, queueId: undefined })).toEqual({ label: "Open", kind: "open" });
+    });
     it("a record blocker joins the queue as blocked and opens its record", () => {
         const rows = buildAttentionQueue({
             attention: [],

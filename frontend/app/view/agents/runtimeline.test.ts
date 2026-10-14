@@ -57,6 +57,12 @@ describe("buildRunTimeline", () => {
         expect(groups.find((g) => g.id === "run")?.events.map((e) => e.kind)).toEqual(["task-suspect"]);
     });
 
+    it("lists a start from the queue under RUN when it carries no phase", () => {
+        const { groups } = buildRunTimeline(fakeRun, [ev("queued-start", 1)]);
+        expect(groups.map((g) => g.id)).toEqual(["run"]);
+        expect(groups[0].events.map((e) => e.kind)).toEqual(["queued-start"]);
+    });
+
     it("returns empty groups when there are no events", () => {
         const { groups, preview } = buildRunTimeline(fakeRun, []);
         expect(groups).toEqual([]);
@@ -133,9 +139,13 @@ describe("eventKindTitle", () => {
     });
 
     it("titles every kind the engine writes, never the raw kind", () => {
-        for (const kind of ["land-held", "landed", "stage-session-started", "plan-reviewed"]) {
+        for (const kind of ["land-held", "landed", "stage-session-started", "plan-reviewed", "queued-start"]) {
             expect(eventKindTitle(kind)).not.toBe(kind);
         }
+    });
+
+    it("says a run started from the queue as a sentence", () => {
+        expect(eventKindTitle("queued-start")).toBe("Started from the queue");
     });
 });
 
@@ -158,6 +168,14 @@ describe("eventText", () => {
         expect(
             eventText(eventWith("6", 1, "task-told", { taskid: "t-3", text: "keep closed-session\nlinks clickable" }))
         ).toBe("you told t-3 · keep closed-session links clickable");
+    });
+
+    it("names the queue entry a run started from, or just the title when the detail has none", () => {
+        expect(eventText(eventWith("7", 1, "queued-start", { entryid: "q-ab12" }))).toBe(
+            "Started from the queue · q-ab12"
+        );
+        expect(eventText(eventWith("8", 1, "queued-start"))).toBe("Started from the queue");
+        expect(eventText(eventWith("9", 1, "queued-start", {}))).toBe("Started from the queue");
     });
 });
 

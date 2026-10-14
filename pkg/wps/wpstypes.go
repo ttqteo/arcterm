@@ -40,6 +40,8 @@ const (
 	DagEventTaskStalled = "dag:task-stalled" // type: string (task id)
 	DagEventTaskRetried = "dag:task-retried" // type: string (task id)
 	Event_RunEvent      = "run:event"        // type: wshrpc.RunEventData
+	// the run queue (pkg/runqueue): the whole list, after every change the server makes to it
+	Event_RunQueueChanged = "runqueue:changed" // type: wshrpc.RunQueueChangedData
 )
 
 var AllEvents []string = []string{
@@ -67,6 +69,7 @@ var AllEvents []string = []string{
 	DagEventTaskStalled,
 	DagEventTaskRetried,
 	Event_RunEvent,
+	Event_RunQueueChanged,
 }
 
 type WaveEvent struct {

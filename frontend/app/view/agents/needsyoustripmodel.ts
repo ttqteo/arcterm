@@ -6,7 +6,7 @@
 // to acknowledge or land, an escalation. Each row carries what Jarvis's Waiting row does (attentionact.ts picks
 // the one button), so the same item reads the same on both surfaces. Pure; needsyoustrip.tsx draws it.
 
-import { attentionAct, type AttentionAct } from "@/app/view/jarvis/attentionact";
+import { attentionAct, attentionSecondAct, type AttentionAct } from "@/app/view/jarvis/attentionact";
 import type { AttentionRunRow } from "@/app/view/jarvis/attentionrun";
 import { formatAge, type AgentVM } from "./agentsviewmodel";
 import { normProjectPath } from "./channelderive";
@@ -17,6 +17,7 @@ const KIND_LABEL: Record<string, string> = {
     "dag-blocked": "Blocked task",
     "run-unverified": "Run to confirm",
     "run-land-held": "Run to land",
+    "run-queue-blocked": "Run to start",
     escalation: "Escalation",
     "chunk-due": "Due",
     "learn-proposal": "Learned rule",
@@ -39,6 +40,8 @@ export interface StripRow {
     why: string;
     waitingSince: number | null;
     act: AttentionAct;
+    // the second button beside act, for the one kind that has a way out besides it: Remove on a blocked queue entry
+    secondAct: AttentionAct | null;
     run: AttentionRunRow;
     open: StripOpen | null;
     // a proposed learned rule: the id Accept, Edit and Dismiss decide (LearnDecide); null on every other kind
@@ -127,6 +130,7 @@ export function buildNeedsYouRows(input: {
             runId: a.runid || null,
             taskId: a.taskid ?? "",
             retry: a.retry === true,
+            queueId: a.queueid,
             source: a.source,
             title: a.text,
         };
@@ -141,6 +145,7 @@ export function buildNeedsYouRows(input: {
             why: a.why ?? "",
             waitingSince: a.waitingsince > 0 ? a.waitingsince : null,
             act: attentionAct(run),
+            secondAct: attentionSecondAct(run),
             run,
             open:
                 agent != null

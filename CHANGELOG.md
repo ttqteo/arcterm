@@ -40,6 +40,12 @@ new draws it as one of its release's cards and folds every other line under a co
 - **Claude checks its memory at session start**: on every machine with arcterm, a new Claude session looks over the
   project's Claude memory and, when something has gone stale (a broken link, a file or `task` that no longer exists, a
   memory untouched for 30 days), shows a toast and lists it in its first reply, offering to fix it.
+- **Queue a plan instead of starting it**: `wsh runs start --plan <file> --queue` (or `--after` another run, which
+  implies `--queue`) leaves the plan waiting on the Agent tree, and arcterm starts it by itself when fewer than
+  `runs:maxactive` runs are going. A queued plan is a row in its project's folder with Start now, Run next and Remove.
+- **A session and the runs it started point at each other**: a session that started a run shows where the run is under
+  its name (`→ Setup · 3/5`, `→ Queued #2`, `→ merged`, `→ held`, or `→ 2 runs`), and the run's row says
+  `from <session>`. A click on either goes to the other.
 
 ### Changed
 

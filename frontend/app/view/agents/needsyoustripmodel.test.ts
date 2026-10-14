@@ -295,6 +295,49 @@ describe("buildNeedsYouRows: a chunk that came due", () => {
     });
 });
 
+describe("buildNeedsYouRows: a blocked queue entry", () => {
+    const blocked = item({
+        kind: "run-queue-blocked",
+        key: "run-queue-blocked:q-1a2b",
+        channelid: "",
+        runid: "",
+        taskid: "",
+        queueid: "q-1a2b",
+        source: "Learned additions",
+        text: "Did not start: Rail chắt lọc was held: dirty",
+        action: "Start",
+    });
+
+    it("reads Run to start and offers Start now with Remove beside it", () => {
+        const [row] = buildNeedsYouRows({ ...base, attention: [blocked] });
+        expect(row.kindLabel).toBe("Run to start");
+        expect(row.tone).toBe("asking");
+        expect(row.text).toBe("Did not start: Rail chắt lọc was held: dirty");
+        expect(row.act).toEqual({ label: "Start now", kind: "start-queued" });
+        expect(row.secondAct).toEqual({ label: "Remove", kind: "remove-queued" });
+        expect(row.open).toBeNull();
+    });
+
+    it("hands the runner the queue id", () => {
+        const [row] = buildNeedsYouRows({ ...base, attention: [blocked] });
+        expect(row.run).toMatchObject({ wireKind: "run-queue-blocked", queueId: "q-1a2b", runId: null });
+    });
+
+    it("gives every other kind no second act", () => {
+        const rows = buildNeedsYouRows({
+            ...base,
+            attention: [
+                item({ key: "g", kind: "dag-gate" }),
+                item({ key: "b", kind: "dag-blocked", retry: true }),
+                item({ key: "e", kind: "escalation" }),
+                item({ key: "u", kind: "run-unverified" }),
+                item({ key: "l", kind: "run-land-held" }),
+            ],
+        });
+        expect(rows.map((r) => r.secondAct)).toEqual([null, null, null, null, null]);
+    });
+});
+
 describe("buildNeedsYouRows: a learned rule", () => {
     const learn = item({
         kind: "learn-proposal",

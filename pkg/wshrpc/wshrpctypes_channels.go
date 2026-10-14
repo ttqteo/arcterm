@@ -119,6 +119,9 @@ type AttentionItem struct {
 	// would be a second source for one fact. Empty when the run is not attributed to an initiative.
 	EffortOID  string `json:"effortoid,omitempty"`
 	ChunkLabel string `json:"chunklabel,omitempty"`
+
+	// QueueId is the queue entry (pkg/runqueue) a blocked-entry item is about; empty for every other item.
+	QueueId string `json:"queueid,omitempty"`
 	// Why is the one sentence of context Text cannot carry: what else is done, what stays stopped. It is
 	// composed from counts the server already holds, never model-generated prose — a queue row that
 	// summarised its own item with a language model would be an unverifiable claim on the one surface

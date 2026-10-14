@@ -35,6 +35,7 @@ import {
     ChevronDown,
     ChevronRight,
     ChevronUp,
+    Clock,
     Columns2,
     Copy,
     CopyPlus,
@@ -77,6 +78,17 @@ import { dockedTerminalAtom } from "./railstore";
 import { renamingRowAtom } from "./rowrenameatom";
 import { cancellingRunIdsAtom } from "./runactions";
 import { runEventsAtom } from "./runeventstore";
+import { originLinks } from "./runorigin";
+import { openOriginLink, openOriginSession, useOriginName, useOriginRuns } from "./runoriginstore";
+import { isBlockedEntry, queuedMeta, queuedTooltip, type QueuedRow } from "./runqueuemodel";
+import {
+    confirmRemoveQueued,
+    queuedRowsAtom,
+    runQueueAtom,
+    runQueuedNext,
+    startQueuedNow,
+    useRunQueueFeed,
+} from "./runqueuestore";
 import { runMenuEntries } from "./runrowmenu";
 import { centerModeAtom, showHistory, showSession, showTerminal } from "./agentcenter";
 import {
@@ -613,15 +625,43 @@ const PROGRESS_TEXT: Record<StageTone, string> = {
     done: "text-muted",
 };
 
+// `from <session>` on a run's second line: the session that started it with `wsh runs start`. A click focuses that
+// session (the row's own click is for the row). Rendered only while the session's tab is in the roster. It shrinks
+// before the status or progress it follows, which are the line's own words.
+function OriginFrom({ model, run }: { model: AgentsViewModel; run: Pick<RunInfo, "originId"> }) {
+    const name = useOriginName(model, run.originId);
+    if (name == null || !run.originId) {
+        return null;
+    }
+    const tabId = run.originId;
+    return (
+        <button
+            type="button"
+            data-origin-from={tabId}
+            title={`Started from ${name}`}
+            onClick={(e) => {
+                e.stopPropagation();
+                openOriginSession(model, tabId);
+            }}
+            className="min-w-0 shrink-[4] cursor-pointer truncate text-left text-ink-faint hover:text-primary"
+        >
+            from {name}
+        </button>
+    );
+}
+
 // RunSubline is a run row's second line: a chip folding its workers away, and how far the plan is.
-// a lead's second line: its workers chip and progress, then `trailing` (the lead's own badges) at its right end
+// a lead's second line: its workers chip and progress, then `from <session>` when a session started the run, then
+// `trailing` (the lead's own badges) at its right end
 function RunSubline({
+    model,
     run,
     open,
     live,
     leadless,
     trailing,
 }: {
+    model: AgentsViewModel;
     run: RunInfo;
     open: boolean;
     live: number;
@@ -645,6 +685,7 @@ function RunSubline({
                         {runStatusView(run.status ?? "planning", run.land).label}
                     </span>
                 )}
+                <OriginFrom model={model} run={run} />
                 {trailing != null ? <span className="flex-1" /> : null}
                 {trailing}
             </div>
@@ -674,6 +715,7 @@ function RunSubline({
                         {progress.text}
                     </span>
                 )}
+                <OriginFrom model={model} run={run} />
                 {trailing != null ? <span className="flex-1" /> : null}
                 {trailing}
             </div>
@@ -726,10 +768,16 @@ function ParentRow({
     // its last turn committed, you have read it and no run it started is still going: the row offers to close it
     // (donesuggest.ts). A sleeping agent offers no Close even when its last turn committed: it is parked, not finished
     const lineageRuns = useAtomValue(model.lineageAtom).runs;
+    // the plans it queued with `wsh runs start --queue` hold Close back while they wait to start; wavesrv's queue is
+    // also where the `→ Queued #2` line reads them
+    const queue = useAtomValue(runQueueAtom);
     // the shell commands it left running in the background (a build, a dev server): the row draws no mark for them
     // (Servers and the rail's Background tasks list them), but Close waits for them, since closing the agent would end them
     const background = runningBackgroundTasks(useAtomValue(backgroundTasksByIdAtom)[agent.id]);
-    const done = !agent.sleeping && doneSuggestion(agent, unreadCount, lineageRuns, background.length);
+    const done = !agent.sleeping && doneSuggestion(agent, unreadCount, lineageRuns, background.length, queue);
+    // where the runs and queued plans it started stand: one `→` line under its name, which never moves the row
+    const originRuns = useOriginRuns(agent, lineageRuns);
+    const originLink = originLinks(agent.id, originRuns, queue);
     // a sleeping row steps back to the faintest ink, so it reads apart from an idle one at a glance; being chosen or
     // holding unread turns brings its name back
     const dim = agent.sleeping != null && !selected;
@@ -944,8 +992,26 @@ function ParentRow({
                         {lead ? subsChip : null}
                     </div>
                 )}
+                {/* the runs and queued plans this session started: one line, not dimmed with a sleeping row, since
+                    the person may still be talking to it. A click goes to the run (or its queued row) */}
+                {originLink != null && !renaming ? (
+                    <button
+                        type="button"
+                        data-origin-link
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            openOriginLink(model, originLink.target);
+                        }}
+                        className={cn(
+                            "mt-[2px] block min-w-0 max-w-full cursor-pointer truncate text-left text-[11px] text-muted hover:text-primary",
+                            UNDER_GLYPH
+                        )}
+                    >
+                        {originLink.text}
+                    </button>
+                ) : null}
                 {lead ? (
-                    <RunSubline run={lead.run} open={lead.open} live={lead.live} trailing={badges} />
+                    <RunSubline model={model} run={lead.run} open={lead.open} live={lead.live} trailing={badges} />
                 ) : (
                     // under the name: its model, a branch other than the default, its subagents chip and its badges
                     // @container: the subagents chip drops its word when this line is narrow, and the model truncates
@@ -1085,7 +1151,7 @@ function RunRow({ model, run, open, live }: { model: AgentsViewModel; run: RunIn
                 />
                 <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">{run.title}</span>
             </div>
-            <RunSubline run={run} open={open} live={live} leadless />
+            <RunSubline model={model} run={run} open={open} live={live} leadless />
         </div>
     );
 }
@@ -1964,6 +2030,82 @@ function TerminalRow({
     );
 }
 
+// A plan queued to start (the run queue, runqueuestore.ts). It has no session or run yet, so a click selects nothing and
+// shows nothing in the centre; the tooltip carries the plan, its route and its age instead. Hover offers Start now and
+// Remove, and the menu adds Run next (not on the head of the queue, which has nowhere to go). A blocked entry reads in the
+// warning token, as a held land does.
+function QueuedEntryRow({ model, row }: { model: AgentsViewModel; row: QueuedRow }) {
+    const { entry } = row;
+    const now = useAtomValue(model.nowAtom);
+    const blocked = isBlockedEntry(entry);
+    const meta = queuedMeta(row);
+    const start = () => fireAndForget(() => startQueuedNow(entry));
+    const onContextMenu = (e: React.MouseEvent) => {
+        const items: ContextMenuItem[] = [
+            { label: "Start now", icon: <Play size={15} />, click: start },
+            ...(row.place === 1
+                ? []
+                : [
+                      {
+                          label: "Run next",
+                          icon: <ChevronUp size={15} />,
+                          click: () => fireAndForget(() => runQueuedNext(entry)),
+                      },
+                  ]),
+            { type: "separator" },
+            { label: "Remove", icon: <X size={15} />, danger: true, click: () => confirmRemoveQueued(entry) },
+        ];
+        ContextMenuModel.getInstance().showContextMenu(items, e);
+    };
+    const act =
+        "flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-[4px] text-muted hover:text-primary";
+    return (
+        <div
+            data-run-queue-row={entry.id}
+            title={queuedTooltip(entry, now)}
+            onContextMenu={onContextMenu}
+            className="group relative flex items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms] hover:bg-surface-hover"
+        >
+            <Slot>
+                <Clock size={13} aria-hidden className={blocked ? LEAD_MARK_CLASS.warning : "text-muted"} />
+            </Slot>
+            <div className="min-w-0 flex-1">
+                <div className="truncate text-[13px] font-medium text-secondary">{entry.title}</div>
+                {/* a blocked reason can outrun the row: its own tooltip says all of it */}
+                <div
+                    data-run-queue-meta
+                    title={blocked ? meta : undefined}
+                    className={cn("truncate text-[11px]", blocked ? "text-warning" : "text-muted")}
+                >
+                    {meta}
+                </div>
+            </div>
+            <span className="flex flex-none items-center gap-[2px] opacity-0 transition-opacity duration-100 focus-within:opacity-100 group-hover:opacity-100">
+                <button
+                    type="button"
+                    data-queue-act="start"
+                    title="Start now"
+                    aria-label={`Start ${entry.title} now`}
+                    onClick={start}
+                    className={act}
+                >
+                    <Play size={12} aria-hidden />
+                </button>
+                <button
+                    type="button"
+                    data-queue-act="remove"
+                    title="Remove from queue"
+                    aria-label={`Remove ${entry.title} from the queue`}
+                    onClick={() => confirmRemoveQueued(entry)}
+                    className={cn(act, "hover:text-error")}
+                >
+                    <X size={12} aria-hidden />
+                </button>
+            </span>
+        </div>
+    );
+}
+
 // The sidebar's second section: every ended conversation and orchestrator run, in a folder per project (the one with the
 // newest conversation first), or the chosen project's alone when the app bar narrows the sidebar
 // (the switcher names it). A plain list, not the Active section's animated one: it can run
@@ -2199,12 +2341,16 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const failed = useAtomValue(failedAtom);
     // the terminals whose folder was removed (worktreegonestore.ts); the surface keeps them read
     const gone = useAtomValue(goneTerminalIdsAtom);
+    // the plans queued to start (the run queue), each a row in its project's folder under the agents
+    useRunQueueFeed();
+    const queue = useAtomValue(queuedRowsAtom);
     const rows = projectTree({
         tree,
         terminals,
         filter,
         collapsed: collapsedList,
         roots,
+        queue,
     });
     // numbered as Alt+1..9 reach them: focusAgentAt walks activeNavOrder, which builds this list from the same inputs
     const digits = agentDigits(treeNavIds(rows));
@@ -2310,6 +2456,11 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                             aria-hidden
                                             className="mx-[10px] my-[4px] h-px bg-border"
                                         />
+                                    );
+                                case "queuedentry":
+                                    return plain(
+                                        `queued-entry-${r.entry.id}`,
+                                        <QueuedEntryRow model={model} row={r} />
                                     );
                                 case "terminal":
                                     return plain(

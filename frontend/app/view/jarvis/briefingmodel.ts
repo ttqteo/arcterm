@@ -169,6 +169,8 @@ export interface QueueRow {
     runId: string | null;
     taskId: string;
     retry: boolean;
+    // the queue entry a run-queue-blocked item is about, for its Start now (attentionact.ts)
+    queueId?: string;
 }
 
 // dag-gate/dag-blocked are absent from the rail's map and fell through to the raw wire kind, which
@@ -199,6 +201,7 @@ const QUEUE_KIND_LABEL: Record<string, string> = {
     "dag-gate": "dag gate",
     "dag-blocked": "dag blocked",
     "run-land-held": "land held",
+    "run-queue-blocked": "not started",
     "run-unverified": "unverified",
     "radar-triage": "triage",
     "chunk-due": "due",
@@ -256,6 +259,7 @@ export function buildAttentionQueue(input: {
             runId: a.runid || null,
             taskId: a.taskid ?? "",
             retry: a.retry === true,
+            queueId: a.queueid,
         };
     });
     // a blocked chunk is attention the server's attention leg never sees; it has no waiting-since to

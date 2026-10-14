@@ -95,5 +95,8 @@ const (
 	ConfigKey_JobsSlots                      = "jobs:slots"
 	ConfigKey_JobsMode                       = "jobs:mode"
 	ConfigKey_JobsPauseUntil                 = "jobs:pauseuntil"
+
+	ConfigKey_RunsMaxActive                  = "runs:maxactive"
+	ConfigKey_RunsWakeOrigin                 = "runs:wakeorigin"
 )
 

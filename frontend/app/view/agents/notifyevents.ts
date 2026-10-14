@@ -64,6 +64,7 @@ export const DECISION_KINDS: ReadonlySet<string> = new Set([
     "dag-gate",
     "dag-blocked",
     "run-land-held",
+    "run-queue-blocked",
     "run-unverified",
     "chunk-due",
 ]);
@@ -136,15 +137,17 @@ export function diffEvents(prev: NotifySnapshot | null, next: NotifySnapshot): N
     if (prev.attentionLoaded) {
         for (const [key, i] of next.attention) {
             if (!prev.attention.has(key)) {
-                // a due chunk's text is the chunk; the initiative it belongs to says more than its date
+                // a due chunk's text is the chunk; the initiative it belongs to says more than its date. A queued
+                // start that did not start has the plan's title for its source, which its text (the reason) leaves out
                 const due = i.kind === "chunk-due";
+                const named = due || i.kind === "run-queue-blocked";
                 out.push({
                     kind: "attention",
                     target: { kind: "attention", key },
                     label: due ? "Due" : "Decision",
                     tone: "asking",
                     title: i.text,
-                    body: due ? i.source : (i.why ?? i.source),
+                    body: named ? i.source : (i.why ?? i.source),
                     meta: i.channelname ? `#${i.channelname}` : undefined,
                     loud: true,
                 });

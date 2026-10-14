@@ -45,6 +45,7 @@ type WshRpcInterface interface {
 	StorageCommands
 	ChannelCommands
 	RunCommands
+	RunQueueCommands
 	DagCommands
 	JobQueueCommands
 	RadarCommands

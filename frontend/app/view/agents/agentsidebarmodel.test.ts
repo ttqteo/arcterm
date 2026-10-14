@@ -40,6 +40,7 @@ import {
 } from "./agentsidebarmodel";
 import type { AgentVM } from "./agentsviewmodel";
 import { buildAgentTree, UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
+import { queuedRows } from "./runqueuemodel";
 
 const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
@@ -627,7 +628,7 @@ describe("projectTree", () => {
         ...(cwd != null ? { cwd } : {}),
     });
     // a row as a short string: "group:<project>:<agents>a:<terminals>t[:closed]", "divider:<project>", "t:<id>",
-    // "a:<id>" for a plain agent row
+    // "a:<id>" for a plain agent row, "q:<entry id>:<place>" for a queued entry (place "-" when blocked)
     const shape = (rows: ProjectTreeRow[]) =>
         rows.map((r) => {
             switch (r.kind) {
@@ -639,6 +640,8 @@ describe("projectTree", () => {
                     return `t:${r.terminal.id}`;
                 case "parent":
                     return `a:${r.agent.id}`;
+                case "queuedentry":
+                    return `q:${r.entry.id}:${r.place ?? "-"}`;
                 default:
                     return r.kind;
             }
@@ -755,6 +758,91 @@ describe("projectTree", () => {
             "t:h",
         ]);
     });
+    describe("queued entries", () => {
+        const qe = (id: string, projectpath = "/code/waveterm", over: Partial<RunQueueEntry> = {}): RunQueueEntry => ({
+            id,
+            title: `Plan ${id}`,
+            projectpath,
+            queuedts: NOW,
+            state: "waiting",
+            data: { channelid: "ch", workspaceid: "ws", goal: "g", runtime: "claude" },
+            ...over,
+        });
+        const queued = (...entries: RunQueueEntry[]) => queuedRows(entries, {});
+
+        it("puts a project's queued rows after its agent rows and before its divider and terminals", () => {
+            const rows = build([agent("a"), agent("b", undefined, "loom")], [term("t1")], {
+                queue: queued(qe("q-1"), qe("q-2", "/code/loom"), qe("q-3")),
+            });
+            expect(shape(rows)).toEqual([
+                "group:waveterm:1a:1t",
+                "a:a",
+                "q:q-1:1",
+                "q:q-3:3",
+                "divider:waveterm",
+                "t:t1",
+                "group:loom:1a:0t",
+                "a:b",
+                "q:q-2:2",
+            ]);
+        });
+
+        it("gives a project with only queued entries a folder, after the agents' projects and before Home", () => {
+            const rows = build([agent("a")], [term("h", null)], { queue: queued(qe("q-1", "/code/ops")) });
+            expect(shape(rows)).toEqual([
+                "group:waveterm:1a:0t",
+                "a:a",
+                "group:ops:0a:0t",
+                "q:q-1:1",
+                `group:${HOME_PROJECT}:0a:1t`,
+                "t:h",
+            ]);
+        });
+
+        it("does not count the queued entries as the folder's agents", () => {
+            const rows = build([agent("a")], [], { queue: queued(qe("q-1"), qe("q-2")) });
+            expect(rows[0]).toMatchObject({ kind: "group", project: "waveterm", agents: 1, terminals: 0 });
+        });
+
+        it("hides a collapsed project's queued rows with the rest of its rows", () => {
+            const rows = build([agent("a")], [term("t1")], { queue: queued(qe("q-1")), collapsed: ["waveterm"] });
+            expect(shape(rows)).toEqual(["group:waveterm:1a:1t:closed"]);
+            // a folder holding only queued entries folds too, to its group row
+            expect(shape(build([], [], { queue: queued(qe("q-1", "/code/ops")), collapsed: ["ops"] }))).toEqual([
+                "group:ops:0a:0t:closed",
+            ]);
+        });
+
+        it("separates a project's terminals from its queued rows with the divider, as it does from its agents", () => {
+            const rows = build([], [term("t1")], { queue: queued(qe("q-1")) });
+            expect(shape(rows)).toEqual(["group:waveterm:0a:1t", "q:q-1:1", "divider:waveterm", "t:t1"]);
+        });
+
+        it("shows a blocked entry with no place, in queue order", () => {
+            const rows = build([agent("a")], [], {
+                queue: queued(qe("q-1", "/code/waveterm", { state: "blocked", reason: "x" }), qe("q-2")),
+            });
+            expect(shape(rows)).toEqual(["group:waveterm:1a:0t", "a:a", "q:q-1:-", "q:q-2:1"]);
+        });
+
+        it("narrows to the filtered project's queued rows, after its agent rows and before its terminals", () => {
+            const queue = queued(qe("q-1"), qe("q-2", "/code/loom"));
+            const agents = [agent("a"), agent("b", undefined, "loom")];
+            expect(shape(build(agents, [term("t1")], { filter: "waveterm", queue }))).toEqual([
+                "a:a",
+                "q:q-1:1",
+                "divider:waveterm",
+                "t:t1",
+            ]);
+            expect(shape(build(agents, [], { filter: "zeta", queue }))).toEqual([]);
+        });
+
+        it("leaves the tree as it was with no queue given", () => {
+            expect(shape(build([agent("a")], [term("t1")]))).toEqual(
+                shape(build([agent("a")], [term("t1")], { queue: [] }))
+            );
+        });
+    });
 });
 
 describe("projectLabel", () => {
@@ -868,6 +956,31 @@ describe("treeNavIds", () => {
             roots: new Map(),
         });
         expect(treeNavIds(folded)).toEqual(["c", "t2"]);
+    });
+    it("skips a queued entry: it selects nothing, so j/k and Alt+digit never land on it", () => {
+        const queue = queuedRows(
+            [
+                {
+                    id: "q-1",
+                    title: "Plan",
+                    projectpath: "/code/waveterm",
+                    queuedts: NOW,
+                    state: "waiting",
+                    data: { channelid: "ch", workspaceid: "ws", goal: "g", runtime: "claude" },
+                },
+            ],
+            {}
+        );
+        const rows = projectTree({
+            tree: treeOf(agents),
+            terminals,
+            filter: ALL_PROJECTS,
+            collapsed: [],
+            roots: new Map(),
+            queue,
+        });
+        expect(rows.some((r) => r.kind === "queuedentry")).toBe(true);
+        expect(treeNavIds(rows)).toEqual(["a", "b", "t1", "c", "t2"]);
     });
     it("skips a worker row whose session is gone, and rows that are not a session", () => {
         const gone = { kind: "worker", project: "p", run: {}, task: {} } as unknown as ProjectTreeRow;

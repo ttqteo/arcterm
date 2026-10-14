@@ -79,12 +79,15 @@ added, moved or removed, and when `runs:maxactive` changes. One evaluation walks
   `Land.State == landed`, or `done` with no branch land. A target that is a queue entry is not landed by definition.
 - An entry waiting on `After` does not hold up the entries behind it.
 
-An entry becomes `blocked`, and stays so until Start now or Remove, when:
+An entry becomes `blocked`, and stays so until Start now, Run next (which sets it waiting again; if the cause still
+holds, the next evaluation blocks it again) or Remove, when:
 
 - its `After` run is cancelled, or its land is held for a reason other than `Dirty` (a dirty hold lands by itself
   once the checkout is clean, so the entry keeps waiting);
 - its plan file no longer exists at start;
-- `CreateRun` fails (the error is the reason).
+- `CreateRun` fails (the error is the reason);
+- its `After` is a queue entry that was removed (reason `<title> was removed`). When an `After` entry starts
+  instead, every entry waiting on it is pointed at the new run and keeps waiting for that run to land.
 
 Start now starts the entry past the cap and past `After`. Run next moves it to the head of the queue, where it still
 waits for room (and for its `After`): the way to let one plan go before the others without exceeding the cap. Remove
@@ -108,7 +111,8 @@ Setting: `runs:maxactive`, default 3.
 ### 5. A session and its runs point at each other without moving
 
 - The origin agent's row gets one small meta line: `→ Setup → Project tab · 3/5`, `→ Queued #2` before it starts,
-  `→ merged` or `→ held` after it lands; `→ 2 runs` when there are several. A click focuses the run's row
+  `→ merged` or `→ held` after it lands (`→ done` or `→ cancelled` when there was nothing to land); `→ 2 runs` when there
+  are several. A click focuses the run's row
   (`openTarget`).
 - A run's row gets `from Rail chắt lọc…`; a click focuses the origin agent. Left out when the origin tab is gone.
 - The origin row is not dimmed: the person may still be talking to it.
@@ -123,8 +127,10 @@ logic sits beside `agenttreemodel.ts` / `runlineage.ts` with tests.
 **When.** Once, when the run has a final outcome: `Land.State == landed`; `held` with `Dirty == false`; or `done`
 with no branch land. Not on cancel (the person usually did it) and not on a mid-run `blocked` (Needs you covers it).
 
-**How.** Server side, through the same path as `AgentsSendCommand`, with `FromORef` the run, so the transcript reads
-"sent by run X" and a sleeping session is woken first. If the origin agent is working, the message waits until it
+**How.** Server side, through the delivery half of `AgentsSendCommand`: `wakeAgent` for a sleeping session (woken
+first), `deliverAgentMessage` otherwise. Its sender half takes only an agent's block, so the message is not an agent
+envelope but plain text whose first line names the run (`[arc] Run 4f2a …`): the transcript reads as sent by the run,
+and no reply channel is offered that a run could not answer. If the origin agent is working, the message waits until it
 reports idle or waiting, so it never lands in the middle of a turn the person is having. If the origin tab is gone,
 nothing is sent. `Run.OriginNotifiedTs` (a JSON field, no migration) records the send; at wavesrv startup a run with
 an outcome and no `OriginNotifiedTs` is sent then, and a run with one is never sent twice.
