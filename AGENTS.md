@@ -13,7 +13,7 @@ arcterm — an agent cockpit for driving and supervising coding agents. It began
 Consequences that matter while working here:
 
 - The upstream Electron-era docs are **gone** (2026-07-31 cleanup): `BUILD.md`, `CONTRIBUTING.md`, `RELEASES.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, the whole Docusaurus site under `docs/`, and `aiprompts/` were deleted; `README.md` was rewritten for arcterm. Trust the Taskfile and this file for run/build flow. `docs/README.md` maps what remains.
-- Tauri packaging targets **Windows** (`cargo tauri build` → NSIS; bundles `wavesrv.x64.exe` + `wsh-*-windows.x64.exe`) and **macOS on Apple silicon** (`src-tauri/tauri.macos.conf.json`, merged over `tauri.conf.json` on a Mac → `.app` + `.dmg`, ad-hoc signed, not notarized; bundles `wavesrv.arm64` + `wsh-*-darwin.arm64`, macOS 13+). On an 8 GB Mac the Vite build and `task check:ts` exhaust Node's default heap: prefix them with `NODE_OPTIONS=--max-old-space-size=4096`.
+- Tauri packaging targets **Windows** (`cargo tauri build` → NSIS; bundles `wavesrv.x64.exe` + `wsh-*-windows.x64.exe`) and **macOS on Apple silicon** (`src-tauri/tauri.macos.conf.json`, merged over `tauri.conf.json` on a Mac → `.app` + `.dmg`, signed with the self-signed certificate `arcterm_local_mac` in the login keychain, not notarized: a fixed identity keeps the permissions macOS grants arcterm (Screen Recording…) across installs, which an ad-hoc signature, a new cdhash each build, loses; `APPLE_SIGNING_IDENTITY=-` signs ad-hoc on a Mac without it; bundles `wavesrv.arm64` + `wsh-*-darwin.arm64`, macOS 13+). On an 8 GB Mac the Vite build and `task check:ts` exhaust Node's default heap: prefix them with `NODE_OPTIONS=--max-old-space-size=4096`.
 
 ## Build & dev commands
 

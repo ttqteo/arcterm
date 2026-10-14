@@ -91,7 +91,7 @@ task tauri:build   # sync the version, build the backend, cargo tauri build
 task install       # install that build over arcterm and reopen it
 ```
 
-On Windows this produces an NSIS installer; on a Mac an ad-hoc signed `.app` and `.dmg` (not notarized). `task install` closes the running arcterm and every agent in it.
+On Windows this produces an NSIS installer; on a Mac a `.app` and `.dmg` signed with the local self-signed certificate `arcterm_local_mac` (not notarized; on a Mac without it, build with `APPLE_SIGNING_IDENTITY=-` to sign ad-hoc). `task install` closes the running arcterm and every agent in it.
 
 Build and test commands, data locations and gotchas are in [AGENTS.md](AGENTS.md). Setup in more detail: [getting started](docs/guide/getting-started.md).
 

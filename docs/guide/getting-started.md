@@ -65,7 +65,7 @@ Lệnh này đồng bộ số phiên bản, build backend cho một đích (Wind
 | Nền tảng | Kết quả | Vị trí |
 |---|---|---|
 | Windows | Trình cài NSIS `arcterm_<version>_x64-setup.exe` | `src-tauri\target\release\bundle\nsis\` |
-| macOS | `arcterm.app` và `.dmg`, ký ad-hoc, chưa notarize | `src-tauri/target/release/bundle/macos/` và `.../dmg/` |
+| macOS | `arcterm.app` và `.dmg`, ký bằng chứng chỉ tự ký `arcterm_local_mac`, chưa notarize (máy không có chứng chỉ đó thì build với `APPLE_SIGNING_IDENTITY=-` để ký ad-hoc) | `src-tauri/target/release/bundle/macos/` và `.../dmg/` |
 
 `npm run build` chạy cùng tác vụ đó. Mặc định không đổi số phiên bản; khi phát hành thì truyền `BUMP=patch`, `minor` hoặc `major`.
 

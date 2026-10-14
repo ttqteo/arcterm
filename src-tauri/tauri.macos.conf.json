@@ -29,6 +29,6 @@
       "../dist/bin/wavesrv.arm64": "bin/wavesrv.arm64",
       "../dist/bin/wsh-*-darwin.arm64": "bin/"
     },
-    "macOS": { "signingIdentity": "-", "minimumSystemVersion": "13.0" }
+    "macOS": { "signingIdentity": "arcterm_local_mac", "minimumSystemVersion": "13.0" }
   }
 }
