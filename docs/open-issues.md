@@ -27,11 +27,8 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
-**2026-10-14 (learned additions; run ffadbfbf's Final could not build the dev app, so none of this rendered)**
+**2026-10-14 (learned additions; the three CDP scenarios pass 14/14 on `main`, these need live agents)**
 
-- [ ] Run `task verify:ui -- needs-you-learn-card setup-skill-additions setup-learned` on a dev app: all three pass
-  (they write a fixture skill into the real vault and `~/.claude/skills`, and clean up). Commits `e2499a0f4`,
-  `f2e7616e0`, `4c0567014`.
 - [ ] Note the same rule twice from two agents (`wsh learn note "<rule>" --key <k> --skill <name>`): a "Learned rule"
   row appears in Needs you; Why unfolds the quotes; Edit, then Enter, saves the edited text; Accept adds the line
   under "Your additions" in the skill's rail with a `+N` chip on its row, and in Setup → Learned (fourth tab).
