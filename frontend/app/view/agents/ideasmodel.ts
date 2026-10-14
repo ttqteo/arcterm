@@ -75,6 +75,59 @@ export function groupIdeas(s: SessionIdeas | null | undefined): IdeaGroups {
     return out;
 }
 
+// a section of the live list as the section draws it: `key` is its kind, "topic" or "other"
+export interface IdeaSection {
+    key: string;
+    label: string;
+    items: Idea[];
+    topical: boolean; // the list is laid out by topic: a row in Open names its topic
+}
+
+// the section of the decisions and ideas with no topic, once some have one
+export const OTHER_LABEL = "Other";
+
+// a topic's key: "RAM" and "ram" are one topic, shown as the first idea to use it spelled it
+function topicKey(idea: Idea): string {
+    return (idea.topic ?? "").trim().toLocaleLowerCase();
+}
+
+function oldestFirst(a: Idea, b: Idea): number {
+    return newestFirst(b, a);
+}
+
+// ideaSections lays out the live groups. While no live idea has a topic it is the three kind groups, as they always were.
+// Once one has: Open first (every topic's questions, since they wait on the user), then a section per topic in the order
+// the topic first came up, its decisions before its ideas, then Other for the decisions and ideas with no topic. An empty
+// section is left out; rows stay newest first.
+export function ideaSections(groups: IdeaGroups): IdeaSection[] {
+    const byKind: Record<IdeaKind, Idea[]> = { decision: groups.decided, idea: groups.ideas, question: groups.open };
+    const live = [...groups.decided, ...groups.ideas, ...groups.open];
+    if (!live.some((i) => topicKey(i) !== "")) {
+        return IDEA_GROUPS.map((g) => ({ key: g.kind, label: g.label, items: byKind[g.kind], topical: false })).filter(
+            (s) => s.items.length > 0
+        );
+    }
+    const labels = new Map<string, string>();
+    for (const idea of [...live].sort(oldestFirst)) {
+        const key = topicKey(idea);
+        if (key !== "" && !labels.has(key)) {
+            labels.set(key, (idea.topic ?? "").trim());
+        }
+    }
+    const settled = [...groups.decided, ...groups.ideas];
+    const sections: IdeaSection[] = [
+        { key: "question", label: ideaKindLabel("question"), items: groups.open, topical: true },
+        ...[...labels].map(([key, label]) => ({
+            key: "topic",
+            label,
+            items: settled.filter((i) => topicKey(i) === key),
+            topical: true,
+        })),
+        { key: "other", label: OTHER_LABEL, items: settled.filter((i) => topicKey(i) === ""), topical: true },
+    ];
+    return sections.filter((s) => s.items.length > 0);
+}
+
 // an idea is new while it is live and was added after the user last marked the list read
 export function isFresh(idea: Idea, seenAt: number): boolean {
     return !idea.dropped && idea.ts > seenAt;
@@ -96,9 +149,12 @@ export function ideaCounts(s: SessionIdeas | null | undefined): { live: number; 
     return { live, fresh };
 }
 
-// a row's meta line: "turn 4 · agent", or "you"; a turn of 0 is "not known" and leaves its part out
-export function ideaMeta(idea: Idea): string {
-    return idea.turn ? `turn ${idea.turn} · ${idea.by}` : idea.by;
+// a row's meta line: "turn 4 · agent", or "you"; a turn of 0 is "not known" and leaves its part out. `withTopic` leads
+// with the idea's topic, for a row shown outside its topic's section (an open question)
+export function ideaMeta(idea: Idea, withTopic = false): string {
+    const meta = idea.turn ? `turn ${idea.turn} · ${idea.by}` : idea.by;
+    const topic = withTopic ? idea.topic?.trim() : "";
+    return topic ? `${topic} · ${meta}` : meta;
 }
 
 // the rows' check boxes: toggling one, and forgetting the ones the list no longer holds live (dropped, merged away)

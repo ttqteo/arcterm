@@ -19,7 +19,7 @@ func TestIdeaSubcommandsRegistered(t *testing.T) {
 	if ideaCmd.PersistentFlags().Lookup("session") == nil {
 		t.Fatal("missing --session flag")
 	}
-	for _, name := range []string{"kind", "by", "json"} {
+	for _, name := range []string{"kind", "by", "topic", "json"} {
 		if ideaAddCmd.Flags().Lookup(name) == nil {
 			t.Fatalf("`idea add` is missing --%s", name)
 		}
@@ -27,7 +27,7 @@ func TestIdeaSubcommandsRegistered(t *testing.T) {
 	if ideaListCmd.Flags().Lookup("json") == nil {
 		t.Fatal("`idea list` is missing --json")
 	}
-	for _, name := range []string{"kind", "text", "drop", "restore", "merge"} {
+	for _, name := range []string{"kind", "text", "topic", "drop", "restore", "merge"} {
 		if ideaUpdateCmd.Flags().Lookup(name) == nil {
 			t.Fatalf("`idea update` is missing --%s", name)
 		}
@@ -57,6 +57,7 @@ func TestIdeaUpdateWantsExactlyOneAction(t *testing.T) {
 		{"--kind", "decision", "--drop"},
 		{"--text", "x", "--kind", "idea"},
 		{"--text", "x", "--merge"},
+		{"--topic", "RAM", "--kind", "idea"},
 	} {
 		if _, err := buildIdeaUpdate(updateCmd(t, args...), ids); err == nil || !strings.Contains(err.Error(), "exactly one") {
 			t.Fatalf("%v: err = %v, want an exactly-one error", args, err)
@@ -71,20 +72,23 @@ func TestIdeaUpdateBuildsTheOp(t *testing.T) {
 		op      string
 		text    string
 		newKind string
+		topic   string
 	}{
-		{[]string{"--drop"}, []string{"i1", "i2"}, "drop", "", ""},
-		{[]string{"--restore"}, []string{"i1"}, "restore", "", ""},
-		{[]string{"--merge"}, []string{"i1", "i2", "i3"}, "merge", "", ""},
-		{[]string{"--kind", "decision"}, []string{"i1", "i2"}, "kind", "", "decision"},
-		{[]string{"--text", "new words"}, []string{"i1"}, "edit", "new words", ""},
+		{[]string{"--drop"}, []string{"i1", "i2"}, "drop", "", "", ""},
+		{[]string{"--restore"}, []string{"i1"}, "restore", "", "", ""},
+		{[]string{"--merge"}, []string{"i1", "i2", "i3"}, "merge", "", "", ""},
+		{[]string{"--kind", "decision"}, []string{"i1", "i2"}, "kind", "", "decision", ""},
+		{[]string{"--text", "new words"}, []string{"i1"}, "edit", "new words", "", ""},
+		{[]string{"--topic", "Part 2"}, []string{"i1", "i2"}, "topic", "", "", "Part 2"},
+		{[]string{"--topic", ""}, []string{"i1"}, "topic", "", "", ""},
 	}
 	for _, c := range cases {
 		got, err := buildIdeaUpdate(updateCmd(t, c.args...), c.ids)
 		if err != nil {
 			t.Fatalf("%v: %v", c.args, err)
 		}
-		if got.Op != c.op || got.Text != c.text || got.NewKind != c.newKind || strings.Join(got.Ids, ",") != strings.Join(c.ids, ",") {
-			t.Fatalf("%v: got %+v, want op %s text %q newkind %q ids %v", c.args, got, c.op, c.text, c.newKind, c.ids)
+		if got.Op != c.op || got.Text != c.text || got.NewKind != c.newKind || got.Topic != c.topic || strings.Join(got.Ids, ",") != strings.Join(c.ids, ",") {
+			t.Fatalf("%v: got %+v, want op %s text %q newkind %q topic %q ids %v", c.args, got, c.op, c.text, c.newKind, c.topic, c.ids)
 		}
 	}
 }
@@ -146,7 +150,10 @@ func TestIdeaTargetPrefersSession(t *testing.T) {
 }
 
 func TestIdeaLine(t *testing.T) {
-	if got := ideaLine("i3", "question", "who owns\nthe\ttick?"); got != "i3\tquestion\twho owns the tick?" {
-		t.Fatalf("ideaLine = %q, want one tab-separated line", got)
+	if got := ideaLine("i3", "question", "", "who owns\nthe\ttick?"); got != "i3\tquestion\t-\twho owns the tick?" {
+		t.Fatalf("ideaLine = %q, want one tab-separated line with - for no topic", got)
+	}
+	if got := ideaLine("i4", "decision", "Part 2", "coins"); got != "i4\tdecision\tPart 2\tcoins" {
+		t.Fatalf("ideaLine = %q, want the topic in its own column", got)
 	}
 }

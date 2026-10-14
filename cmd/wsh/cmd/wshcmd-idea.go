@@ -50,14 +50,18 @@ func validateIdeaBy(by string) error {
 	return fmt.Errorf("invalid author %q (want %s or %s)", by, ideastore.ByAgent, ideastore.ByYou)
 }
 
-// ideaLine is one idea as a line: a text of several lines folds into one, so a line stays an idea.
-func ideaLine(id, kind, text string) string {
-	return id + "\t" + kind + "\t" + strings.Join(strings.Fields(text), " ")
+// ideaLine is one idea as a line: id, kind, topic ("-" for none) and text; a text of several lines folds into one,
+// so a line stays an idea.
+func ideaLine(id, kind, topic, text string) string {
+	if topic == "" {
+		topic = "-"
+	}
+	return id + "\t" + kind + "\t" + topic + "\t" + strings.Join(strings.Fields(text), " ")
 }
 
 var ideaAddCmd = &cobra.Command{
 	Use:     "add <text>",
-	Short:   "record an idea, a decision or an open question, one line (--kind idea|decision|question)",
+	Short:   "record an idea, a decision or an open question, one line (--kind idea|decision|question, --topic <words>)",
 	Args:    cobra.ExactArgs(1),
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -72,7 +76,7 @@ var ideaAddCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		idea, err := wshclient.IdeaAddCommand(RpcClient, wshrpc.CommandIdeaAddData{CommandIdeaTargetData: target, Text: args[0], Kind: kind, By: by}, nil)
+		idea, err := wshclient.IdeaAddCommand(RpcClient, wshrpc.CommandIdeaAddData{CommandIdeaTargetData: target, Text: args[0], Kind: kind, By: by, Topic: mustFlagString(cmd, "topic")}, nil)
 		if err != nil {
 			return err
 		}
@@ -86,7 +90,7 @@ var ideaAddCmd = &cobra.Command{
 
 var ideaListCmd = &cobra.Command{
 	Use:     "list",
-	Short:   "list the session's ideas not dropped: id, kind and text",
+	Short:   "list the session's ideas not dropped: id, kind, topic (- for none) and text",
 	Args:    cobra.NoArgs,
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -103,7 +107,7 @@ var ideaListCmd = &cobra.Command{
 		}
 		for _, idea := range session.Ideas {
 			if !idea.Dropped {
-				fmt.Println(ideaLine(idea.ID, idea.Kind, idea.Text))
+				fmt.Println(ideaLine(idea.ID, idea.Kind, idea.Topic, idea.Text))
 			}
 		}
 		return nil
@@ -113,6 +117,7 @@ var ideaListCmd = &cobra.Command{
 func addIdeaUpdateFlags(cmd *cobra.Command) {
 	cmd.Flags().String("kind", "", "move the ideas to a kind: idea, decision or question")
 	cmd.Flags().String("text", "", "replace the text of one idea")
+	cmd.Flags().String("topic", "", "set the ideas' topic, a few words (\"\" clears it)")
 	cmd.Flags().Bool("drop", false, "drop the ideas")
 	cmd.Flags().Bool("restore", false, "restore dropped ideas")
 	cmd.Flags().Bool("merge", false, "merge two or more ideas into the oldest")
@@ -125,13 +130,13 @@ func buildIdeaUpdate(cmd *cobra.Command, ids []string) (wshrpc.CommandIdeaUpdate
 	restore, _ := f.GetBool("restore")
 	merge, _ := f.GetBool("merge")
 	actions := 0
-	for _, set := range []bool{f.Changed("kind"), f.Changed("text"), drop, restore, merge} {
+	for _, set := range []bool{f.Changed("kind"), f.Changed("text"), f.Changed("topic"), drop, restore, merge} {
 		if set {
 			actions++
 		}
 	}
 	if actions != 1 {
-		return wshrpc.CommandIdeaUpdateData{}, errors.New("give exactly one of --kind, --text, --drop, --restore, --merge")
+		return wshrpc.CommandIdeaUpdateData{}, errors.New("give exactly one of --kind, --text, --topic, --drop, --restore, --merge")
 	}
 	if len(ids) == 0 {
 		return wshrpc.CommandIdeaUpdateData{}, errors.New("name the ideas to update by id (see `wsh idea list`)")
@@ -148,6 +153,8 @@ func buildIdeaUpdate(cmd *cobra.Command, ids []string) (wshrpc.CommandIdeaUpdate
 		if len(ids) != 1 || data.Text == "" {
 			return wshrpc.CommandIdeaUpdateData{}, errors.New("--text takes one idea id and its new text")
 		}
+	case f.Changed("topic"):
+		data.Op, data.Topic = ideastore.OpTopic, mustFlagString(cmd, "topic")
 	case drop:
 		data.Op = ideastore.OpDrop
 	case restore:
@@ -163,7 +170,7 @@ func buildIdeaUpdate(cmd *cobra.Command, ids []string) (wshrpc.CommandIdeaUpdate
 
 var ideaUpdateCmd = &cobra.Command{
 	Use:     "update <id...>",
-	Short:   "change ideas by id: --kind <kind>, --text <text>, --drop, --restore or --merge (exactly one)",
+	Short:   "change ideas by id: --kind <kind>, --text <text>, --topic <words>, --drop, --restore or --merge (exactly one)",
 	Args:    cobra.MinimumNArgs(1),
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -208,6 +215,7 @@ func init() {
 	ideaCmd.PersistentFlags().String("session", "", "the agent session's id; defaults to the session in this terminal")
 	ideaAddCmd.Flags().String("kind", ideastore.KindIdea, "idea, decision or question")
 	ideaAddCmd.Flags().String("by", ideastore.ByAgent, "who had it: agent or you")
+	ideaAddCmd.Flags().String("topic", "", "a few words that group it on the rail, e.g. Layout or Part 2")
 	ideaAddCmd.Flags().Bool("json", false, "JSON output")
 	ideaListCmd.Flags().Bool("json", false, "JSON output (every idea, dropped ones too)")
 	addIdeaUpdateFlags(ideaUpdateCmd)

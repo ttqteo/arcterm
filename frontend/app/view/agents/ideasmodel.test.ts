@@ -8,6 +8,7 @@ import {
     ideaKindLabel,
     ideaKindOf,
     ideaMeta,
+    ideaSections,
     isFresh,
     planEdit,
     pruneChecked,
@@ -142,6 +143,72 @@ describe("ideaMeta", () => {
     it("leaves the turn out when it is not known", () => {
         expect(ideaMeta(idea("i1", "idea", 1, { turn: 0, by: "you" }))).toBe("you");
         expect(ideaMeta(idea("i1", "idea", 1, { turn: undefined }))).toBe("agent");
+    });
+    it("leads with the topic only when asked, and only when there is one", () => {
+        const topical = idea("i1", "question", 1, { turn: 4, topic: "RAM" });
+        expect(ideaMeta(topical)).toBe("turn 4 · agent");
+        expect(ideaMeta(topical, true)).toBe("RAM · turn 4 · agent");
+        expect(ideaMeta(idea("i2", "question", 1, { turn: 4 }), true)).toBe("turn 4 · agent");
+        expect(ideaMeta(idea("i3", "question", 1, { turn: 0, by: "you", topic: " Layout " }), true)).toBe(
+            "Layout · you"
+        );
+    });
+});
+
+describe("ideaSections", () => {
+    const shape = (s: SessionIdeas) =>
+        ideaSections(groupIdeas(s)).map((x) => [x.key, x.label, x.items.map((i) => i.id).join(","), x.topical]);
+
+    it("is the three kind groups, in their order and without empty ones, while no live idea has a topic", () => {
+        const s = session([
+            idea("i1", "decision", 100),
+            idea("i2", "question", 200),
+            idea("i3", "decision", 300),
+            idea("i4", "idea", 400, { topic: "RAM", dropped: true }),
+        ]);
+        expect(shape(s)).toEqual([
+            ["decision", "Decided", "i3,i1", false],
+            ["question", "Open", "i2", false],
+        ]);
+    });
+
+    it("once one has a topic: Open, then each topic in the order it came up, decisions before ideas, then Other", () => {
+        const s = session([
+            idea("i1", "idea", 100, { topic: "Layout" }),
+            idea("i2", "decision", 200, { topic: "RAM" }),
+            idea("i3", "decision", 300, { topic: "Layout" }),
+            idea("i4", "question", 400, { topic: "RAM" }),
+            idea("i5", "idea", 500),
+            idea("i6", "decision", 600, { topic: "Layout" }),
+            idea("i7", "question", 700),
+        ]);
+        expect(shape(s)).toEqual([
+            ["question", "Open", "i7,i4", true],
+            ["topic", "Layout", "i6,i3,i1", true],
+            ["topic", "RAM", "i2", true],
+            ["other", "Other", "i5", true],
+        ]);
+    });
+
+    it("takes a topic's spelling from its oldest idea and folds case and spaces", () => {
+        const s = session([idea("i1", "decision", 100, { topic: "RAM" }), idea("i2", "idea", 200, { topic: " ram " })]);
+        expect(shape(s)).toEqual([["topic", "RAM", "i1,i2", true]]);
+    });
+
+    it("leaves out a topic held only by questions, which sit in Open, and an empty Other", () => {
+        const s = session([
+            idea("i1", "question", 100, { topic: "Part 2" }),
+            idea("i2", "decision", 200, { topic: "RAM" }),
+        ]);
+        expect(shape(s)).toEqual([
+            ["question", "Open", "i1", true],
+            ["topic", "RAM", "i2", true],
+        ]);
+    });
+
+    it("ignores a dropped idea's topic", () => {
+        const s = session([idea("i1", "decision", 100), idea("i2", "idea", 200, { topic: "RAM", dropped: true })]);
+        expect(shape(s)).toEqual([["decision", "Decided", "i1", false]]);
     });
 });
 

@@ -1481,6 +1481,7 @@ declare global {
         text: string;
         kind: string;
         by: string;
+        topic?: string;
     };
 
     // wshrpc.CommandIdeaTargetData
@@ -1502,6 +1503,7 @@ declare global {
         ids?: string[];
         text?: string;
         newkind?: string;
+        topic?: string;
     };
 
     // wshrpc.CommandJarvisCtxData
@@ -2599,6 +2601,7 @@ declare global {
         text: string;
         kind: string;
         by: string;
+        topic?: string;
         turn?: number;
         ts: number;
         dropped?: boolean;

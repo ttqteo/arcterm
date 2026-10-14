@@ -36,7 +36,7 @@ func useTempRoot(t *testing.T) string {
 
 func mustAdd(t *testing.T, text, kind, by string) Idea {
 	t.Helper()
-	idea, err := Add(sid, text, kind, by)
+	idea, err := Add(sid, text, kind, by, "")
 	if err != nil {
 		t.Fatalf("Add(%q): %v", text, err)
 	}
@@ -124,7 +124,7 @@ func TestAddRejectsBadInput(t *testing.T) {
 		{"long session", strings.Repeat("a", 129), "x", KindIdea, ByAgent},
 	}
 	for _, tc := range cases {
-		if _, err := Add(tc.session, tc.text, tc.kind, tc.by); err == nil {
+		if _, err := Add(tc.session, tc.text, tc.kind, tc.by, ""); err == nil {
 			t.Errorf("%s: Add succeeded", tc.name)
 		}
 	}
@@ -177,12 +177,47 @@ func TestEditKindDropRestore(t *testing.T) {
 	}
 }
 
+func TestTopicOnAddAndByUpdate(t *testing.T) {
+	useTempRoot(t)
+	if _, err := Add(sid, "first", KindIdea, ByAgent, "  Layout \n and   RAM "); err != nil {
+		t.Fatal(err)
+	}
+	mustAdd(t, "second", KindIdea, ByAgent)
+	if got := findIdea(t, mustList(t), "i1").Topic; got != "Layout and RAM" {
+		t.Fatalf("topic on add = %q", got)
+	}
+
+	if err := Update(sid, Op{Kind: OpTopic, Ids: []string{"i1", "i2"}, Topic: "Phần 2"}); err != nil {
+		t.Fatal(err)
+	}
+	s := mustList(t)
+	if findIdea(t, s, "i1").Topic != "Phần 2" || findIdea(t, s, "i2").Topic != "Phần 2" {
+		t.Fatalf("topic: %+v", s.Ideas)
+	}
+	if err := Update(sid, Op{Kind: OpTopic, Ids: []string{"i2"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := findIdea(t, mustList(t), "i2").Topic; got != "" {
+		t.Fatalf("an empty topic clears it, got %q", got)
+	}
+
+	// 40 runes is the most, counted in runes not bytes
+	if _, err := Add(sid, "x", KindIdea, ByAgent, strings.Repeat("ầ", 40)); err != nil {
+		t.Fatalf("a 40-rune topic: %v", err)
+	}
+	if _, err := Add(sid, "x", KindIdea, ByAgent, strings.Repeat("a", 41)); err == nil {
+		t.Fatal("a 41-rune topic was accepted")
+	}
+}
+
 func TestUpdateRejectsBadOps(t *testing.T) {
 	useTempRoot(t)
 	mustAdd(t, "first", KindIdea, ByAgent)
 	mustAdd(t, "second", KindIdea, ByAgent)
 	bad := []Op{
 		{Kind: "rename", Ids: []string{"i1"}},
+		{Kind: OpTopic, Topic: "x"},
+		{Kind: OpTopic, Ids: []string{"i1"}, Topic: strings.Repeat("a", 41)},
 		{Kind: OpEdit, Ids: []string{"i1"}, Text: "  "},
 		{Kind: OpEdit, Ids: []string{"i1", "i2"}, Text: "x"},
 		{Kind: OpEdit, Text: "x"},
@@ -221,6 +256,30 @@ func TestMergeKeepsTheOldestAndJoinsTextsOldestFirst(t *testing.T) {
 	}
 	if !findIdea(t, s, "i2").Dropped || !findIdea(t, s, "i3").Dropped {
 		t.Fatalf("merged ideas not dropped: %+v", s.Ideas)
+	}
+}
+
+func TestMergeKeepsTheOldestTopicElseTheFirstAmongTheRest(t *testing.T) {
+	useTempRoot(t)
+	for _, topic := range []string{"", "", "RAM", "Layout"} {
+		if _, err := Add(sid, "x", KindIdea, ByAgent, topic); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := Update(sid, Op{Kind: OpMerge, Ids: []string{"i1", "i2", "i3", "i4"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := findIdea(t, mustList(t), "i1").Topic; got != "RAM" {
+		t.Fatalf("an untopiced oldest takes the first topic among the rest, got %q", got)
+	}
+	if err := Update(sid, Op{Kind: OpRestore, Ids: []string{"i4"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Update(sid, Op{Kind: OpMerge, Ids: []string{"i1", "i4"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := findIdea(t, mustList(t), "i1").Topic; got != "RAM" {
+		t.Fatalf("the oldest keeps its own topic, got %q", got)
 	}
 }
 
@@ -404,7 +463,7 @@ func TestSessionsAreIndependent(t *testing.T) {
 	useTempRoot(t)
 	mustAdd(t, "mine", KindIdea, ByAgent)
 	other := "other-session_1"
-	if _, err := Add(other, "theirs", KindDecision, ByYou); err != nil {
+	if _, err := Add(other, "theirs", KindDecision, ByYou, ""); err != nil {
 		t.Fatal(err)
 	}
 	got, err := List(other)
@@ -423,7 +482,7 @@ func TestConcurrentAddsKeepEveryIdea(t *testing.T) {
 	errs := make(chan error, n)
 	for range n {
 		wg.Go(func() {
-			if _, err := Add(sid, "idea", KindIdea, ByAgent); err != nil {
+			if _, err := Add(sid, "idea", KindIdea, ByAgent, ""); err != nil {
 				errs <- err
 			}
 		})

@@ -39859,6 +39859,39 @@ droppedRows.length === droppedBefore8 + 1 &&
                     !strayInOther,
                 { typedFirst, counted1, count: v.stat?.count, rowIn, input: v.addValue, ideas: (emptyAfter?.ideas ?? []).length, by: firstIdea?.by, kind: firstIdea?.kind, strayInOther }
             );
+
+            // --- 22. by topic --------------------------------------------------------------------------------------------
+            // on the second agent's list, whatever steps 19 to 21 left in it: one more idea with no topic, and four with
+            // one, "bố cục" folding into "Bố cục"
+            const addTo = (text, kind, topic) => h.rpc("ideaadd", { sessionid: IDEAS_EMPTY, text, kind, by: "agent", topic });
+            const untopiced = "Một ý chưa có chủ đề";
+            await addTo(untopiced, "idea", "");
+            await addTo("Office nằm trong Cockpit, không thêm surface", "decision", "Bố cục");
+            await addTo("Chỉ mount khi đang ở chế độ Office", "decision", "RAM");
+            await addTo("Có cần bench riêng cho Office?", "question", "RAM");
+            await addTo("Phím o bật/tắt Office", "idea", "bố cục");
+            // the section opens from the strip's count when an earlier step left it closed
+            if (!(await h.ev(`${IDEAS_SECTION} != null`))) {
+                await polishWaitFor(h, `${IDEAS_STAT} != null`, 8000);
+                await h.ev(`${IDEAS_STAT}?.click()`);
+            }
+            const topical = await polishWaitFor(h, `${IDEAS_SECTION}?.querySelectorAll('[data-ideas-group="topic"]').length === 2`, 8000);
+            await polishNap(300);
+            v = await ideasView(h);
+            const others = ideasLive(await ideasList(h, IDEAS_EMPTY)).filter((i) => !i.topic).map((i) => i.text);
+            const question = v.rows.find((r) => r.text === "Có cần bench riêng cho Office?");
+            await shot("topics");
+            rec(
+                "22. by topic: once ideas carry a topic the section reads Open, then each topic in the order it came up (its decisions before its ideas, `bố cục` folded into `Bố cục`), then Other for the ideas with none, and the open question's meta names its topic",
+                topical &&
+                    JSON.stringify(liveGroups(v)) === JSON.stringify(["question:1", "topic:2", "topic:1", `other:${others.length}`]) &&
+                    JSON.stringify(liveLabels(v)) === JSON.stringify(["Open 1", "Bố cục 2", "RAM 1", `Other ${others.length}`]) &&
+                    v.rows.filter((r) => r.group === "topic")[0]?.text === "Office nằm trong Cockpit, không thêm surface" &&
+                    v.rows.filter((r) => r.group === "other").some((r) => r.text === untopiced) &&
+                    question?.group === "question" &&
+                    question.meta.startsWith("RAM · "),
+                { topical, groups: liveGroups(v), labels: liveLabels(v), others, questionMeta: question?.meta, rows: v.rows.map((r) => `${r.group}:${r.text}`) }
+            );
         } catch (e) {
             rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));
         }

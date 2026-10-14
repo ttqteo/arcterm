@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/wavetermdev/waveterm/pkg/util/fileutil"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
@@ -38,6 +39,7 @@ const (
 
 	OpEdit    = "edit"
 	OpKind    = "kind"
+	OpTopic   = "topic"
 	OpDrop    = "drop"
 	OpRestore = "restore"
 	OpMerge   = "merge"
@@ -45,7 +47,8 @@ const (
 
 	idPrefix   = "i"
 	mergeJoin  = "; "
-	nudgeAfter = 3 // prompts without a new idea, and between two nudges
+	nudgeAfter = 3  // prompts without a new idea, and between two nudges
+	topicMax   = 40 // runes: a topic is a few words, a heading on the rail
 )
 
 var (
@@ -66,10 +69,11 @@ var (
 type Idea struct {
 	ID      string `json:"id"` // "i1", "i2"… unique within the session
 	Text    string `json:"text"`
-	Kind    string `json:"kind"`           // KindDecision | KindIdea | KindQuestion
-	By      string `json:"by"`             // ByAgent | ByYou
-	Turn    int    `json:"turn,omitempty"` // prompts submitted when it was added; 0 = not known
-	Ts      int64  `json:"ts"`             // epoch ms
+	Kind    string `json:"kind"`            // KindDecision | KindIdea | KindQuestion
+	By      string `json:"by"`              // ByAgent | ByYou
+	Topic   string `json:"topic,omitempty"` // a few words grouping it on the rail; "" = none
+	Turn    int    `json:"turn,omitempty"`  // prompts submitted when it was added; 0 = not known
+	Ts      int64  `json:"ts"`              // epoch ms
 	Dropped bool   `json:"dropped,omitempty"`
 }
 
@@ -83,13 +87,14 @@ type SessionIdeas struct {
 	Ideas          []Idea `json:"ideas"`
 }
 
-// Op is one change to a session's ideas. Edit takes one id and Text; Kind takes ids and NewKind; Drop and
-// Restore take ids; Merge takes two or more ids; Seen takes none.
+// Op is one change to a session's ideas. Edit takes one id and Text; Kind takes ids and NewKind; Topic takes ids
+// and Topic ("" clears it); Drop and Restore take ids; Merge takes two or more ids; Seen takes none.
 type Op struct {
 	Kind    string   `json:"kind"`
 	Ids     []string `json:"ids,omitempty"`
 	Text    string   `json:"text,omitempty"`
 	NewKind string   `json:"newkind,omitempty"`
+	Topic   string   `json:"topic,omitempty"`
 }
 
 // UseRootForTest points the store at a temp data dir and returns the restore func.
@@ -196,11 +201,24 @@ func hasLiveIdea(s *SessionIdeas) bool {
 	return slices.ContainsFunc(s.Ideas, func(i Idea) bool { return !i.Dropped })
 }
 
+// cleanTopic folds a topic's whitespace to single spaces; a topic longer than topicMax is an error, not cut.
+func cleanTopic(topic string) (string, error) {
+	topic = strings.Join(strings.Fields(topic), " ")
+	if utf8.RuneCountInString(topic) > topicMax {
+		return "", fmt.Errorf("topic %q is longer than %d characters: name it in a few words", topic, topicMax)
+	}
+	return topic, nil
+}
+
 // Add files a new idea. Its Turn is the session's prompt count, and it restarts the nudge gap.
-func Add(sessionId, text, kind, by string) (Idea, error) {
+func Add(sessionId, text, kind, by, topic string) (Idea, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return Idea{}, errors.New("idea text cannot be empty")
+	}
+	topic, err := cleanTopic(topic)
+	if err != nil {
+		return Idea{}, err
 	}
 	if !validKind(kind) {
 		return Idea{}, fmt.Errorf("invalid idea kind %q (want %s, %s or %s)", kind, KindDecision, KindIdea, KindQuestion)
@@ -214,7 +232,7 @@ func Add(sessionId, text, kind, by string) (Idea, error) {
 	if err != nil {
 		return Idea{}, err
 	}
-	idea := Idea{ID: nextID(&s), Text: text, Kind: kind, By: by, Turn: s.Prompts, Ts: now().UnixMilli()}
+	idea := Idea{ID: nextID(&s), Text: text, Kind: kind, By: by, Topic: topic, Turn: s.Prompts, Ts: now().UnixMilli()}
 	s.Ideas = append(s.Ideas, idea)
 	s.LastIdeaPrompt = s.Prompts
 	if err := save(&s); err != nil {
@@ -280,6 +298,17 @@ func Update(sessionId string, op Op) error {
 		for _, t := range targets {
 			t.Kind = op.NewKind
 		}
+	case OpTopic:
+		if len(targets) == 0 {
+			return errors.New("topic takes idea ids")
+		}
+		topic, err := cleanTopic(op.Topic)
+		if err != nil {
+			return err
+		}
+		for _, t := range targets {
+			t.Topic = topic
+		}
 	case OpDrop, OpRestore:
 		if len(targets) == 0 {
 			return fmt.Errorf("%s takes idea ids", op.Kind)
@@ -298,7 +327,8 @@ func Update(sessionId string, op Op) error {
 	return save(&s)
 }
 
-// merge folds the ideas into the oldest: it keeps its kind, takes every text oldest first, and the rest drop.
+// merge folds the ideas into the oldest: it keeps its kind and its topic (else the first topic among the rest), takes
+// every text oldest first, and the rest drop.
 func merge(ideas []*Idea) {
 	slices.SortFunc(ideas, func(a, b *Idea) int {
 		if a.Ts != b.Ts {
@@ -313,6 +343,9 @@ func merge(ideas []*Idea) {
 	for i, idea := range ideas {
 		texts[i] = idea.Text
 		idea.Dropped = i > 0
+		if ideas[0].Topic == "" {
+			ideas[0].Topic = idea.Topic
+		}
 	}
 	ideas[0].Text = strings.Join(texts, mergeJoin)
 }

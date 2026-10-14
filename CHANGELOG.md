@@ -26,6 +26,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- **Ideas grouped by topic**: the agent names a topic for each line of a brainstorm, and the Ideas list on the agent's
+  rail groups by it — open questions first, then each topic in the order it came up, then Other. A list with no
+  topics reads Decided / Ideas / Open as before.
 - **Correct or delete a memory in Setup → Project**: a Claude memory's panel has **Correct…**, which sends Claude one
   line saying what is wrong so Claude fixes the file itself (or copies the line when no Claude agent is open in that
   project), and **Delete**, which moves the memory to `~/.arc/trash` and drops its line from `MEMORY.md`.

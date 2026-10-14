@@ -32,6 +32,7 @@ import {
     ideaCounts,
     ideaKindOf,
     ideaMeta,
+    ideaSections,
     isFresh,
     planEdit,
     pruneChecked,
@@ -96,6 +97,7 @@ function Checkbox({ checked, label, onToggle }: { checked: boolean; label: strin
 
 function IdeaRow({
     idea,
+    withTopic,
     fresh,
     checked,
     selecting,
@@ -105,6 +107,7 @@ function IdeaRow({
     onDrop,
 }: {
     idea: Idea;
+    withTopic: boolean; // the list is laid out by topic and this row sits outside its topic's section
     fresh: boolean;
     checked: boolean;
     selecting: boolean; // some row is checked: every row offers its checkbox in place of its icon
@@ -152,7 +155,7 @@ function IdeaRow({
                     {idea.text}
                 </div>
                 <div className="mt-px flex items-center gap-[6px] text-[10.5px] tabular-nums text-muted">
-                    <span data-ideas-meta>{ideaMeta(idea)}</span>
+                    <span data-ideas-meta>{ideaMeta(idea, withTopic)}</span>
                     {fresh ? (
                         <span
                             data-ideas-newpill
@@ -455,8 +458,7 @@ export function IdeasSection({ sessionId, quiet }: { sessionId: string; quiet?: 
             clear();
         }
     };
-    const byKind: Record<IdeaKind, Idea[]> = { decision: groups.decided, idea: groups.ideas, question: groups.open };
-    const row = (idea: Idea) =>
+    const row = (idea: Idea, withTopic: boolean) =>
         editing === idea.id ? (
             <IdeaEditor
                 key={idea.id}
@@ -483,6 +485,7 @@ export function IdeasSection({ sessionId, quiet }: { sessionId: string; quiet?: 
             <IdeaRow
                 key={idea.id}
                 idea={idea}
+                withTopic={withTopic}
                 fresh={!quiet && isFresh(idea, seenAt)}
                 checked={checked.includes(idea.id)}
                 selecting={checked.length > 0}
@@ -509,22 +512,21 @@ export function IdeasSection({ sessionId, quiet }: { sessionId: string; quiet?: 
                     onClear={clear}
                 />
             ) : null}
-            {IDEA_GROUPS.map((g) => [g, byKind[g.kind]] as const).map(([g, items]) =>
-                items.length === 0 ? null : (
-                    <div
-                        key={g.kind}
-                        data-ideas-group={g.kind}
-                        data-count={items.length}
-                        className="flex flex-col gap-px"
-                    >
-                        <div className="flex items-center gap-[6px] pb-[2px] pl-[29px] pr-[8px] pt-[6px]">
-                            <span className="text-[11px] font-medium text-muted">{g.label}</span>
-                            <span className="text-[10.5px] tabular-nums text-ink-faint">{items.length}</span>
-                        </div>
-                        {items.map(row)}
+            {ideaSections(groups).map((sec) => (
+                <div
+                    key={sec.key === "topic" ? `topic:${sec.label}` : sec.key}
+                    data-ideas-group={sec.key}
+                    data-topic={sec.key === "topic" ? sec.label : undefined}
+                    data-count={sec.items.length}
+                    className="flex flex-col gap-px"
+                >
+                    <div className="flex min-w-0 items-center gap-[6px] pb-[2px] pl-[29px] pr-[8px] pt-[6px]">
+                        <span className="truncate text-[11px] font-medium text-muted">{sec.label}</span>
+                        <span className="flex-none text-[10.5px] tabular-nums text-ink-faint">{sec.items.length}</span>
                     </div>
-                )
-            )}
+                    {sec.items.map((idea) => row(idea, sec.topical && sec.key === "question"))}
+                </div>
+            ))}
             {groups.dropped.length > 0 ? (
                 <div data-ideas-group="dropped" data-count={groups.dropped.length} className="flex flex-col gap-px">
                     <button

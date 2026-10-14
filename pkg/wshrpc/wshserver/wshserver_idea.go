@@ -47,7 +47,7 @@ func (ws *WshServer) IdeaAddCommand(ctx context.Context, data wshrpc.CommandIdea
 	if err != nil {
 		return nil, err
 	}
-	idea, err := ideastore.Add(session, data.Text, data.Kind, data.By)
+	idea, err := ideastore.Add(session, data.Text, data.Kind, data.By, data.Topic)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func (ws *WshServer) IdeaUpdateCommand(ctx context.Context, data wshrpc.CommandI
 	if err != nil {
 		return err
 	}
-	op := ideastore.Op{Kind: data.Op, Ids: data.Ids, Text: data.Text, NewKind: data.NewKind}
+	op := ideastore.Op{Kind: data.Op, Ids: data.Ids, Text: data.Text, NewKind: data.NewKind, Topic: data.Topic}
 	if err := ideastore.Update(session, op); err != nil {
 		return err
 	}

@@ -27,9 +27,10 @@ type CommandIdeaTargetData struct {
 
 type CommandIdeaAddData struct {
 	CommandIdeaTargetData
-	Text string `json:"text"`
-	Kind string `json:"kind"`
-	By   string `json:"by"`
+	Text  string `json:"text"`
+	Kind  string `json:"kind"`
+	By    string `json:"by"`
+	Topic string `json:"topic,omitempty"`
 }
 
 // CommandIdeaUpdateData is one ideastore.Op on a session; Op is one of the ideastore.Op* values.
@@ -39,6 +40,7 @@ type CommandIdeaUpdateData struct {
 	Ids     []string `json:"ids,omitempty"`
 	Text    string   `json:"text,omitempty"`
 	NewKind string   `json:"newkind,omitempty"`
+	Topic   string   `json:"topic,omitempty"`
 }
 
 // CommandIdeaTickRtnData is empty unless the session is due a nudge to record its ideas.
