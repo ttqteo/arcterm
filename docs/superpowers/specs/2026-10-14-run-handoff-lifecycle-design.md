@@ -123,8 +123,10 @@ logic sits beside `agenttreemodel.ts` / `runlineage.ts` with tests.
 **When.** Once, when the run has a final outcome: `Land.State == landed`; `held` with `Dirty == false`; or `done`
 with no branch land. Not on cancel (the person usually did it) and not on a mid-run `blocked` (Needs you covers it).
 
-**How.** Server side, through the same path as `AgentsSendCommand`, with `FromORef` the run, so the transcript reads
-"sent by run X" and a sleeping session is woken first. If the origin agent is working, the message waits until it
+**How.** Server side, through the delivery half of `AgentsSendCommand`: `wakeAgent` for a sleeping session (woken
+first), `deliverAgentMessage` otherwise. Its sender half takes only an agent's block, so the message is not an agent
+envelope but plain text whose first line names the run (`[arc] Run 4f2a …`): the transcript reads as sent by the run,
+and no reply channel is offered that a run could not answer. If the origin agent is working, the message waits until it
 reports idle or waiting, so it never lands in the middle of a turn the person is having. If the origin tab is gone,
 nothing is sent. `Run.OriginNotifiedTs` (a JSON field, no migration) records the send; at wavesrv startup a run with
 an outcome and no `OriginNotifiedTs` is sent then, and a run with one is never sent twice.
