@@ -43,6 +43,8 @@ new draws it as one of its release's cards and folds every other line under a co
 
 ### Changed
 
+- A run whose lead tab is closed looks the same in the Agent sidebar as one whose lead is open: same mark, title and
+  line under it; only the token count is missing.
 - **The Cockpit badge counts only agents that need you**, matching its "need you" tab. Runs to confirm or land,
   approvals, escalations and due chunks are counted on Jarvis, where you act on them.
 - **Open a tool moved to `Ctrl+Shift+O`** (`Cmd+Shift+O` on a Mac), freeing `Ctrl+Shift+T` for reopening an agent.

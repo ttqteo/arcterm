@@ -27,6 +27,12 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-14 (leadless run row)**
+
+- [ ] With one run whose lead tab is open and one whose lead tab is closed, in the Agent sidebar: both rows have the
+  mark beside the title, the same title weight and colour, and the chip line flush under the mark; only the lead's row
+  shows tokens. `agenttree.tsx` `RunRow`.
+
 **2026-10-14 (Cockpit / Jarvis badge split)**
 
 - [ ] With one agent asking and one run waiting to be confirmed: the Cockpit nav badge says 1, the same as its "need

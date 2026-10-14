@@ -1058,6 +1058,9 @@ function RunRow({ model, run, open, live }: { model: AgentsViewModel; run: RunIn
         }
         selectAgentRow(model, agent.id);
     };
+    // drawn as a lead's row (ParentRow) is: a run reads the same whether or not its lead's tab is open, and only the
+    // tokens a lead's session carries are missing
+    const mark = leadMark(run, undefined);
     return (
         <div
             onClick={() => show(false)}
@@ -1070,15 +1073,19 @@ function RunRow({ model, run, open, live }: { model: AgentsViewModel; run: RunIn
             }}
             onContextMenu={onContextMenu}
             data-agent-run-row={run.runId}
-            className="relative flex cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms] hover:bg-surface-hover"
+            title="No lead tab open: a click opens the worker that asks or works"
+            className="relative flex min-w-0 cursor-pointer flex-col rounded-[6px] px-[10px] py-[8px] transition-colors duration-[140ms] hover:bg-surface-hover"
         >
-            <Slot>
-                <Workflow size={13} aria-hidden className={LEAD_MARK_CLASS[leadMark(run, undefined).tone]} />
-            </Slot>
-            <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] font-medium text-ink-hi">{run.title}</div>
-                <RunSubline run={run} open={open} live={live} leadless />
+            <div className="flex min-w-0 items-center gap-[6px]">
+                <Workflow
+                    size={12}
+                    strokeWidth={1.8}
+                    aria-hidden
+                    className={cn("flex-none", LEAD_MARK_CLASS[mark.tone], mark.pulse && PULSE)}
+                />
+                <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">{run.title}</span>
             </div>
+            <RunSubline run={run} open={open} live={live} leadless />
         </div>
     );
 }
