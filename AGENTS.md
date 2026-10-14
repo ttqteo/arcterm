@@ -124,6 +124,11 @@ There is no jsdom/render-test harness for the cockpit — verify rendered UI by 
 - **Before deleting a file, grep every import of it**, including `import type` and re-exports: a type-only import still makes it live.
 - **"Housekeeping" or "cleanup" means removing code and files**, not only updating docs.
 - **Monitoring an orchestrator run means observe and log only.** Do not intervene or draft interventions unless asked.
+- **Rewriting `main`'s history (`git filter-branch`) strands every other branch on the old hashes.** Clean up merged
+  worktrees and branches first (`task worktree:cleanup`), or rewrite them in the same pass (`-- --branches`). Otherwise
+  a merged branch reads as unmerged, `git branch -d` refuses it, and its worktree stays: `feat/graphite-rail` sat
+  stranded from 2026-10-06 to 2026-10-14 after the 10-10 and 10-13 rewrites. To check one, match its commit subjects
+  against `main`, not `git merge-base --is-ancestor` or `git cherry`.
 
 ## Architecture
 
