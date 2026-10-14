@@ -18,10 +18,10 @@ It is a second rendering of data the Brief already holds. It adds no wshrpc comm
 - The Runs region (`REGIONS.sessions`, `briefsurface.tsx`) gets an **Office** toggle in its `tools` slot, beside
   `RunKindToggle`. Off is the default (compact UI by default). The choice is a per-viewer atom persisted in
   `localStorage` (try/catch, falls back to off).
-- On, the region renders a floor per run row instead of the row list. The region's cap (`capRegion`), its `only`
-  mode, its `+N more` line and its empty sentence stay exactly as they are: a floor is a row, drawn differently.
-- Each floor's header is the run's row (title, stage label, tokens): it keeps every piece of information the row
-  shows today, and a click on it opens the run sheet as the row does.
+- On, every run row (`BriefRunRow`, a line with a `runOid`) gets its floor drawn right under it. The row stays as it
+  is and is the floor's header: every piece of information it shows today stays, and a click on it opens the run
+  sheet as before. The region's cap, its `only` mode, its `+N more` line and its empty sentence do not change. A
+  line with no run (a direct agent) gets no floor.
 - Off, nothing of the office is mounted. Leaving Jarvis unmounts it (every surface but Agent unmounts).
 
 ## A floor
@@ -34,8 +34,8 @@ It is a second rendering of data the Brief already holds. It adds no wshrpc comm
   worker. Status is never pose or colour alone.
 - **Tooltip** (`title`): `Task 3 · <task title> · stalled` with the click's effect.
 - **Click:** a desk with a live worker or reviewer opens that agent's terminal through `openTarget`
-  (`view/jarvis/openref.ts`); the lead desk opens the lead's; a desk with no agent (pending, done and closed)
-  opens the run sheet on that task.
+  (`view/jarvis/openref.ts`, `{ kind: "agent" }`); the lead desk opens the lead's; a desk with no agent (pending,
+  done and closed) opens the run (`{ kind: "run" }`).
 - The floor of the run selected in the Brief takes `bg-surface-selected`, as a selected row does.
 
 ## Poses
@@ -73,15 +73,16 @@ raised hand and `!` (amber), whatever the task state.
 - **Sprites as data:** `officesprite.ts` (pure) holds every pose as a grid of cell codes, 14 columns, 18 rows sitting
   and 22 standing, the way `petsprite.ts` holds the pet. Codes name roles (hair, skin, shirt, pants, shoes, paper,
   box), never colours.
-- **Rasterised once:** a pose in a palette is drawn once to a 14×22 offscreen canvas and kept as an object URL in a
-  module cache keyed by pose and palette. A desk renders `<img>` at 3× with `image-rendering: pixelated`. A frame
-  change swaps `src`; nothing is redrawn. A theme change clears the cache.
+- **Rasterised once:** a pose in an outfit is drawn once to a 14-column canvas and kept as a PNG data URL in a
+  module cache keyed by pose and outfit. A desk renders `<img>` at 3× with `image-rendering: pixelated`. A frame
+  change swaps `src`; nothing is redrawn. The people's colours are identity tokens no theme overrides, so the cache
+  never goes stale. It is bounded: 10 poses × 8 shirts (6 lanes, the lead, the reviewer) × 4 looks = 320 entries.
 - **People are not DOM pixels.** No box-shadow or one-`<rect>`-per-cell sprites: the canvas mock uses box-shadow
   only because a canvas file cannot rasterise.
-- **Colours:** shirts are the `graphlane-1..6` identity palette, picked by a hash of the task id so a person keeps
-  their shirt across reloads. Skin, hair, pants, box and paper are new identity tokens in `@theme`
-  (`--color-office-skin-1..4`, `--color-office-hair-1..4`, `--color-office-pants`, `--color-office-box`,
-  `--color-office-paper`), each with a why comment. Like the avatar palette they stay at their defaults in every
+- **Colours:** shirts are the positional `graphlane-1..6` palette by task position, so task 1 always wears lane 1.
+  A look (skin and hair, 1..4) is picked by a hash of the task id. The rest are new identity tokens in `@theme`
+  (`--color-office-skin-1..4`, `--color-office-hair-1..4`, `--color-office-pants`, `--color-office-ink`,
+  `--color-office-box`, `--color-office-paper`, `--color-office-lead`, `--color-office-visitor`), with a why comment. Like the avatar palette they stay at their defaults in every
   theme. Desks, monitors, walls and floors use the existing surface, edge and status tokens.
 - **Motion:** one timer per Office, 450 ms, flips a frame atom. Only the animated poses (typing, raised hand,
   progress bar) subscribe to it; every other desk renders once. The timer does not run while
@@ -94,18 +95,21 @@ raised hand and `!` (amber), whatever the task state.
 |---|---|
 | `view/jarvis/officemodel.ts` (+ test) | `RunInfo` + lineage + agents → `Floor[]` (lead desk, task desks, labels, click targets) |
 | `view/jarvis/officesprite.ts` (+ test) | pose grids, the palette roles, grid → `ImageData` |
-| `view/jarvis/officesprites.ts` | the rasteriser and the object-URL cache |
-| `view/jarvis/officeview.tsx` | the floors, the desks, the frame timer |
+| `view/jarvis/officesprites.ts` | the rasteriser and the data-URL cache |
+| `view/jarvis/officeview.tsx` | the toggle, the floors, the desks, the frame clock |
+| `view/jarvis/officedevhooks.ts` | DEV-only `__officeFixture` / `__officeProbe` for the CDP scenarios |
 | `view/jarvis/briefsurface.tsx` | the toggle, and the Runs region rendering floors when it is on |
 | `frontend/tailwindsetup.css` | the office identity tokens |
-| `scripts/cdp/scenarios.mjs` | `jarvis-office` (visual) and `jarvis-office-bench` (budgets) |
+| `scripts/cdp/officescenarios.mjs` | `jarvis-office` (visual) and `jarvis-office-bench` (budgets), listed in `scenarios.mjs` |
 
 ## Benchmark
 
 The office ships only if it stays inside these budgets on the dev app, measured by a CDP scenario so it can be rerun.
 
-**Fixture:** 8 orchestrator runs seeded with the run-fixture helpers (`docs/reference/cdp-run-fixtures.md`), 12 tasks
-each, every task state and every lead stage present, 6 workers typing, 1 asking: 104 desks.
+**Fixture:** 8 runs of 12 tasks, every task state and most lead stages present, 1 worker asking: 104 desks. The
+fixture is handed to the model through a DEV-only hook (`__officeFixture`), not seeded as real runs: what the bench
+measures is the drawing, and the data it reads is already in memory for the run list. Seeding 8 real dags would start
+real workers.
 
 **Scenario `jarvis-office-bench`:** goto Jarvis with the Office off, force GC (`HeapProfiler.collectGarbage`), read
 `Performance.getMetrics`; turn the Office on, wait 2 s, GC, read; hold 30 s, read; turn it off, GC, read. Then repeat
@@ -117,7 +121,7 @@ the 30 s hold under `Emulation.setEmulatedMedia` with `prefers-reduced-motion: r
 | DOM nodes added | ≤ 2,000 |
 | Main thread busy over the 30 s hold (`TaskDuration` delta / 30 s) | ≤ 2 % |
 | Same, reduced motion | ≤ 0.5 % |
-| Sprite cache entries | ≤ 80 |
+| Sprite cache entries | ≤ 320 (the bound above) |
 | Heap after turning it off (after GC), minus the closed baseline | ≤ 1 MB |
 | First open, toggle click to floors drawn | ≤ 150 ms |
 
