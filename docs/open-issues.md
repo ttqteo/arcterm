@@ -34,6 +34,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] Mark an old conversation for later (row menu): it moves to the top of its project folder, above newer ones.
   `agentsidebarmodel.ts` `conversationTree`.
 
+**2026-10-14 (overflow fixes)**
+
+- [ ] Open the RAM popover (app bar) with an agent named past the column: the name ends in "…" before CPU, its
+  command shrinks first, and hovering the row shows the full name. `consumerspanel.tsx`.
+- [ ] Agent → Conversation History, a run of 20+ tasks: its strip thins to fit and "N/M landed" stays in the card.
+  `conversationhistory.tsx`.
+
 **2026-10-14 (learned additions; the three CDP scenarios pass 14/14 on `main`, these need live agents)**
 
 - [ ] Note the same rule twice from two agents (`wsh learn note "<rule>" --key <k> --skill <name>`): a "Learned rule"

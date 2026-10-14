@@ -454,9 +454,9 @@ function rowMenu(row: ConsumerRow, model: AgentsViewModel): ContextMenuItem[] {
     return items;
 }
 
-// the model and tokens the compact row leaves out, and the command in full
+// the name in full (the row truncates it), the model and tokens the compact row leaves out, and the command in full
 function compactTitle(row: ConsumerRow): string {
-    const parts = [row.model, row.tokens === undefined ? null : `${fmt(row.tokens)} tokens in 10 min`];
+    const parts = [row.name, row.model, row.tokens === undefined ? null : `${fmt(row.tokens)} tokens in 10 min`];
     const cmd = row.work?.command;
     if (cmd != null) {
         parts.push(`running ${cmd.label} (${fmtMem(cmd.mem)})`);
@@ -507,14 +507,17 @@ function CompactRow({
                             fireAndForget(() => openTarget(model, { kind: "agent", tabId: row.id }));
                         }}
                         className={cn(
-                            "shrink-0 cursor-pointer whitespace-nowrap text-left text-[12.5px] hover:underline",
+                            "min-w-0 cursor-pointer truncate text-left text-[12.5px] hover:underline",
                             row.sleeping ? "text-muted" : "text-primary"
                         )}
                     >
                         {row.name}
                     </button>
                     {cmd != null ? (
-                        <span data-consumer-command className="min-w-0 truncate font-mono text-[11px] text-muted">
+                        <span
+                            data-consumer-command
+                            className="min-w-0 shrink-[999] truncate font-mono text-[11px] text-muted"
+                        >
                             {cmd.label}
                         </span>
                     ) : null}
