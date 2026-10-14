@@ -3003,9 +3003,6 @@ declare global {
         plantext?: string;
         spectext?: string;
         prior?: PlanReviewPrior;
-        runid?: string;
-        respawns?: number;
-        startedts?: number;
     };
 
     // waveobj.PlanReviewer

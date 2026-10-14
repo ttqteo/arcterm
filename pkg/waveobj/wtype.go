@@ -591,13 +591,6 @@ type PlanReviewStage struct {
 	PlanText  string           `json:"plantext,omitempty"`  // the plan as this round's reviewers read it
 	SpecText  string           `json:"spectext,omitempty"`  // the spec likewise (empty with no spec file)
 	Prior     *PlanReviewPrior `json:"prior,omitempty"`     // round 2: what round 1 found, read and picked
-
-	// legacy: replaced by Reviewers; removed once no reader is left
-	RunID string `json:"runid,omitempty"` // the reviewer session's child run
-	// legacy: replaced by Reviewers; removed once no reader is left
-	Respawns int `json:"respawns,omitempty"`
-	// legacy: replaced by Reviewers; removed once no reader is left
-	StartedTs int64 `json:"startedts,omitempty"`
 }
 
 // PlanReviewer is one reviewer session of a plan review round.

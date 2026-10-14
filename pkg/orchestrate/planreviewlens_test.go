@@ -5,6 +5,7 @@ package orchestrate
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -448,8 +449,7 @@ func TestPlanReviewOldShapeStartsReviewers(t *testing.T) {
 	calls := captureSpawns(t)
 	newFakeLead(t)
 	if err := wstore.UpdateDag(ctx, dag.OID, func(g *waveobj.TaskGroup) error {
-		g.PlanReview.RunID, g.PlanReview.StartedTs = "legacy-run", 1
-		return nil
+		return json.Unmarshal([]byte(`{"state":"reviewing","round":1,"runid":"legacy-run","startedts":1}`), g.PlanReview)
 	}); err != nil {
 		t.Fatal(err)
 	}

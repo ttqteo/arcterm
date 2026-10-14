@@ -284,12 +284,6 @@ describe("buildAgentTree with run lineage", () => {
                 expect(stageOutcome(r, "plan-reviewer", "rv-followup")).toBeUndefined();
             });
 
-            it("reads the reviewers, not the stage's own run id", () => {
-                const r = reviewing(1, roundOne);
-                r.dag.planreview = { ...r.dag.planreview, state: "passed", runid: "rv-old" };
-                expect(stageOutcome(r, "plan-reviewer", "rv-old")).toBeUndefined();
-            });
-
             it("names its lens on its row", () => {
                 const r = reviewing(1, roundOne);
                 const ids = ["lead", "full", "spec"];
@@ -317,7 +311,7 @@ describe("buildAgentTree with run lineage", () => {
 
         it("stays live while the dag has no verdict for it", () => {
             const r = run("run-1", [task("t-1", "pending")]);
-            r.dag.planreview = { state: "reviewing", round: 1, runid: "rv1" };
+            r.dag.planreview = { state: "reviewing", round: 1 };
             const rows = buildAgentTree(
                 [agent("lead", "idle"), stageAgent("rev1", "rv1")],
                 ["lead", "rev1"],
