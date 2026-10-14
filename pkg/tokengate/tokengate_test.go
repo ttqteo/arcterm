@@ -170,6 +170,8 @@ func TestAsks(t *testing.T) {
 		{"a big share asks", DefaultRules, one, Quota{FiveHourPct: f64(20), Share: pint(10)}, true},
 		{"a full window asks", DefaultRules, one, Quota{FiveHourPct: f64(70)}, true},
 		{"three agents ask", DefaultRules, Spawn{Tool: "Agent", Agents: 3}, Quota{}, true},
+		{"a third agent a moment after two others asks", DefaultRules, Spawn{Tool: "Agent", Agents: 1, Earlier: 2}, Quota{}, true},
+		{"a second agent a moment after another runs", DefaultRules, Spawn{Tool: "Agent", Agents: 1, Earlier: 1}, Quota{}, false},
 		{"a workflow asks", DefaultRules, Spawn{Tool: "Workflow", Agents: 1, AtLeast: true}, Quota{}, true},
 		{"a full week asks", DefaultRules, one, Quota{WeekPct: f64(80)}, true},
 		{"a week with room runs", DefaultRules, one, Quota{WeekPct: f64(79)}, false},
@@ -288,6 +290,14 @@ func TestVerdictFor(t *testing.T) {
 	}
 }
 
+func TestQuestionSaysTheAgentsJustStarted(t *testing.T) {
+	s := Spawn{Tool: "Agent", Agents: 1, Earlier: 2}
+	want := "An agent wants to start 1 subagent, about 1.5M tokens (rough). It started 2 more in the last few seconds."
+	if got := Question(s, Price(s, nil), Quota{}, time.UTC).Question; got != want {
+		t.Fatalf("question\n%q\nwant\n%q", got, want)
+	}
+}
+
 func TestLogLine(t *testing.T) {
 	line := NewLogLine(time.Unix(1_760_000_000, 0), "s1",
 		Spawn{Tool: "Agent", Agents: 2, Types: []string{"general-purpose", "Explore"}},
@@ -300,6 +310,11 @@ func TestLogLine(t *testing.T) {
 	want := `{"ts":1760000000,"session":"s1","tool":"Agent","agents":2,"types":["general-purpose","Explore"],"estimate":9800000,"low":6100000,"high":17800000,"verdict":"allow-turn"}`
 	if string(data) != want {
 		t.Fatalf("line\n%s\nwant\n%s", data, want)
+	}
+	// the agents started just before count in the log, and only when there were some
+	data, _ = json.Marshal(NewLogLine(time.Unix(0, 0), "", Spawn{Tool: "Agent", Agents: 1, Earlier: 2}, Priced{Estimate: 1}, Verdict{Run: true}, true))
+	if !strings.Contains(string(data), `"earlier":2`) {
+		t.Fatalf("burst line %s", data)
 	}
 	// a workflow's agents have no types: an empty list, not null
 	data, _ = json.Marshal(NewLogLine(time.Unix(0, 0), "", Spawn{Tool: "Workflow", Agents: 1}, Priced{Estimate: 1}, Verdict{Run: true}, false))

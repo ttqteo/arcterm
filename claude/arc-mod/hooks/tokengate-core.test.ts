@@ -46,6 +46,13 @@ describe("tokengateArgs", () => {
             "tokengate", "--tool", "Agent", "--agents", "1", "--transcript", "/h/.claude/projects/p/s1.jsonl",
         ]);
     });
+    it("passes the agents started just before, when there were some", () => {
+        const g: Group = { tool: "Agent", agents: 1, atLeast: false, types: [] };
+        expect(tokengateArgs(g, null, null, 2)).toEqual([
+            "tokengate", "--tool", "Agent", "--agents", "1", "--earlier", "2",
+        ]);
+        expect(tokengateArgs(g, null, null, 0)).toEqual(["tokengate", "--tool", "Agent", "--agents", "1"]);
+    });
 });
 
 describe("tokengateLine", () => {
@@ -132,6 +139,42 @@ describe("createSpawnGate", () => {
         wake();
         expect(await Promise.all([a, b])).toEqual([null, null]);
         expect(asked).toEqual([{ tool: "Agent", agents: 1, atLeast: false, types: ["general-purpose"] }]);
+    });
+
+    // one message's Agent calls reach the gate spread out as claude writes them (0.3 s and 0.8 s apart, seen live)
+    it("counts the agents that ran within 10 s of the last spawn as earlier, and starts over after a pause", async () => {
+        let t = 0;
+        const gate = createSpawnGate(now, () => t);
+        const earlier: number[] = [];
+        const ask = async (_g: Group, e: number) => {
+            earlier.push(e);
+            return allow(null);
+        };
+        await gate.check("Agent", {}, ask);
+        t = 300;
+        await gate.check("Agent", {}, ask);
+        t = 1_100;
+        await gate.check("Agent", {}, ask);
+        t = 12_000;
+        await gate.check("Agent", {}, ask);
+        expect(earlier).toEqual([0, 1, 2, 0]);
+    });
+
+    it("leaves a refused group out of the agents started", async () => {
+        let t = 0;
+        const gate = createSpawnGate(now, () => t);
+        const earlier: number[] = [];
+        let answer = DENY;
+        const ask = async (_g: Group, e: number) => {
+            earlier.push(e);
+            return answer;
+        };
+        await gate.check("Agent", {}, ask);
+        gate.promptSubmitted();
+        answer = allow(null);
+        t = 1_000;
+        await gate.check("Agent", {}, ask);
+        expect(earlier).toEqual([0, 0]);
     });
 
     it("asks again after a plain Allow", async () => {

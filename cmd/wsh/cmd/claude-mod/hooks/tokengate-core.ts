@@ -39,11 +39,13 @@ export function joinGroup(g: Group | null, tool: SpawnTool, c: SpawnCount): Grou
 }
 
 // the types let wsh price each agent from finished subagents of its type; the transcript lets it read what this
-// session, its subagents included, has used of each window
+// session, its subagents included, has used of each window; earlier is the agents started just before, which count
+// toward the agents rule
 export function tokengateArgs(
     g: Group,
     context: { tokens: number; window: number } | null,
-    transcript: string | null = null
+    transcript: string | null = null,
+    earlier = 0
 ): string[] {
     const args = ["tokengate", "--tool", g.tool, "--agents", String(g.agents)];
     if (g.atLeast) {
@@ -57,6 +59,9 @@ export function tokengateArgs(
     }
     if (transcript) {
         args.push("--transcript", transcript);
+    }
+    if (earlier > 0) {
+        args.push("--earlier", String(earlier));
     }
     return args;
 }
@@ -104,17 +109,25 @@ export function decisionAfter(v: SpawnVerdict): Decision {
 // parallel Agent calls in one message reach their hooks together; the gate waits this long for the siblings
 export const GATHER_MS = 400;
 
+// they do not all come together: claude starts each call as it writes the call's block, 0.3 s and then 0.8 s apart
+// for three short ones (2026-10-15), longer for long prompts. so a spawn within this long of the one before
+// continues a chain, and the agents the chain already started count toward the agents rule
+export const BURST_MS = 10_000;
+
 // the verdict that lets a spawn run: off, a cheap spawn, or a broken gate
 export const RUN_VERDICT: SpawnVerdict = { run: true, scope: null, reason: null, note: null };
 
-// one group's question to the person; register.ts passes `wsh tokengate`, which never rejects
-export type SpawnAsk = (g: Group) => Promise<SpawnVerdict>;
+// one group's question to the person, with the agents its chain already started; register.ts passes
+// `wsh tokengate`, which never rejects
+export type SpawnAsk = (g: Group, earlier: number) => Promise<SpawnVerdict>;
 
-// the gate for one session: the person's say on later spawns, and the open group, whose members share one card.
-// sleep is injected so vitest can drive the gathering
-export function createSpawnGate(sleep: (ms: number) => Promise<void>) {
+// the gate for one session: the person's say on later spawns, the open group, whose members share one card, and
+// the chain of spawns that came within BURST_MS of each other. sleep and clock are injected so vitest can drive them
+export function createSpawnGate(sleep: (ms: number) => Promise<void>, clock: () => number = Date.now) {
     let decision: { kind: Decision; reason: string | null } = { kind: null, reason: null };
     let open: { group: Group; verdict: Promise<SpawnVerdict> } | null = null;
+    // the agents the chain started (refused ones left out), and when its last spawn came
+    const chain = { started: 0, last: -Infinity };
     // claude runs every hook whose tool matches a call, and the Agent tool still answers to Task, its old name: one
     // Agent call reaches check from both hooks. a call's answer is kept by its tool_use_id until the next prompt
     const calls = new Map<string, Promise<string | null>>();
@@ -126,6 +139,11 @@ export function createSpawnGate(sleep: (ms: number) => Promise<void>) {
         if (decision.kind === "deny-turn") {
             return decision.reason;
         }
+        const at = clock();
+        if (at - chain.last > BURST_MS) {
+            chain.started = 0;
+        }
+        chain.last = at;
         const count = spawnCount(tool, input);
         let mine = open;
         if (mine) {
@@ -139,7 +157,10 @@ export function createSpawnGate(sleep: (ms: number) => Promise<void>) {
             opened.verdict = (async () => {
                 try {
                     await sleep(GATHER_MS);
-                    const v = await ask(opened.group);
+                    const v = await ask(opened.group, chain.started);
+                    if (v.run) {
+                        chain.started += opened.group.agents;
+                    }
                     const kind = decisionAfter(v);
                     if (kind) {
                         decision = { kind, reason: v.reason };

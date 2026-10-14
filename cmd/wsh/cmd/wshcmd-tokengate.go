@@ -54,6 +54,7 @@ func init() {
 	tokengateCmd.Flags().StringVar(&tokengateSpawn.Tool, "tool", "Agent", "Agent, Task or Workflow")
 	tokengateCmd.Flags().IntVar(&tokengateSpawn.Agents, "agents", 1, "agents the group starts")
 	tokengateCmd.Flags().BoolVar(&tokengateSpawn.AtLeast, "at-least", false, "the agent count is a floor")
+	tokengateCmd.Flags().IntVar(&tokengateSpawn.Earlier, "earlier", 0, "agents started in the seconds before, which count toward the agents rule")
 	tokengateCmd.Flags().Int64Var(&tokengateSpawn.ContextTokens, "context-tokens", 0, "the agent's context now")
 	tokengateCmd.Flags().Int64Var(&tokengateSpawn.ContextMax, "context-max", 0, "the agent's context window")
 	tokengateCmd.Flags().StringVar(&tokengateTranscript, "transcript", "", "the asking session's transcript")

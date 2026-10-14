@@ -55,6 +55,9 @@ type Spawn struct {
 	ContextTokens int64
 	ContextMax    int64
 	Types         []string // each agent's subagent type, in order; "" or missing is unknown (a Workflow's agents)
+	// agents the same agent started in the seconds before, which count toward the agents rule: one message's spawns
+	// reach the gate spread out as Claude writes them, so the mod chains the groups that come within seconds
+	Earlier int
 }
 
 // Cost is what finished subagents of one type cost, as wavesrv measures them on their transcripts
@@ -257,7 +260,7 @@ func Asks(r Rules, s Spawn, q Quota) bool {
 	switch {
 	case s.Tool == "Workflow":
 		return true
-	case r.Agents > 0 && s.Agents >= r.Agents:
+	case r.Agents > 0 && s.Agents+s.Earlier >= r.Agents:
 		return true
 	case r.WindowPct > 0 && q.FiveHourPct != nil && *q.FiveHourPct >= r.WindowPct:
 		return true
@@ -388,6 +391,9 @@ func ing(verb string) string {
 func Question(s Spawn, p Priced, q Quota, loc *time.Location) baseds.AgentAskQuestion {
 	var b strings.Builder
 	fmt.Fprintf(&b, "An agent wants to %s, %s.", what(s), costText(p, true))
+	if s.Earlier > 0 {
+		fmt.Fprintf(&b, " It started %d more in the last few seconds.", s.Earlier)
+	}
 	if s.ContextTokens > 0 && s.ContextMax > 0 {
 		fmt.Fprintf(&b, " Its own context is %s of %s, and each of its further calls re-reads that.",
 			FormatTokens(s.ContextTokens), FormatTokens(s.ContextMax))
@@ -478,6 +484,7 @@ type LogLine struct {
 	Tool     string   `json:"tool"`
 	Agents   int      `json:"agents"`
 	Types    []string `json:"types"`
+	Earlier  int      `json:"earlier,omitempty"`
 	Estimate int64    `json:"estimate"`
 	Low      int64    `json:"low"`
 	High     int64    `json:"high"`
@@ -511,6 +518,7 @@ func NewLogLine(now time.Time, session string, s Spawn, p Priced, v Verdict, ask
 		Tool:     s.Tool,
 		Agents:   max(s.Agents, 1),
 		Types:    types,
+		Earlier:  s.Earlier,
 		Estimate: p.Estimate,
 		Low:      p.Low,
 		High:     p.High,

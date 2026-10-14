@@ -113,7 +113,12 @@ non-zero with nothing on stdout and the mod lets the spawn run: a broken gate ne
   state machine with the sleep and the ask injected:
   - `check(tool, input, ask)`: decision `allow-session` or `allow-turn` → run; `deny-turn` → refuse with the
     stored reason. Otherwise join the open group, or open one and wait `GATHER_MS = 400` for siblings, then ask
-    once and give every member the same verdict. A spawn arriving while the card waits shares its verdict.
+    once and give every member the same verdict. A spawn arriving while the card waits shares its verdict. A
+    call already decided gets the same answer again, by its `tool_use_id`: Claude runs both the `Agent` and the
+    `Task` hook for one `Agent` call (Task is the tool's old name), one inside the other (fixed 2026-10-15).
+  - A spawn within `BURST_MS = 10000` of the one before continues a chain; the agents the chain already started
+    (refused ones left out) go to `wsh tokengate --earlier N` and count toward the agents rule, and the card says
+    "It started N more in the last few seconds." The chain is why the rule fires at all (below).
   - `promptSubmitted()` clears a turn decision, a deny included; `sessionStarted()` clears all, a session
     decision included.
 - `register.ts` only wires it: `tool.call` on `Agent`, `Task`, `Workflow` (only while `active`) calls `check`
@@ -122,9 +127,11 @@ non-zero with nothing on stdout and the mod lets the spawn run: a broken gate ne
   `sessionStarted`; `session.measure` keeps the last context reading for the args.
 - Spawns from a subagent go through the same gate.
 
-If Claude Code runs parallel `Agent` hooks one after another rather than together, the group holds one spawn;
-the agent-count rule then never sees the whole batch, but `Allow this turn` still spares the rest. The live
-check settles which; it is the person's, a chunk on the effort "Token burn guard: follow-ups" due 2026-10-14.
+Checked live 2026-10-15: Claude starts each call, and its hook, as it writes the call's block, so one message's
+spawns arrive spread out. Three short `Agent` calls came 0.3 s and then 0.8 s apart, and the gate made a group of
+2 and then a group of 1, so the agent-count rule never fired and no card came. No fixed gather is sure to hold a
+whole message (a long prompt takes seconds to write), hence the chain: the third spawn asks, with the first two
+already running. `Allow this turn` still spares the rest.
 
 ### The held card's header (`frontend/app/view/agents/heldaskdialog.tsx`)
 

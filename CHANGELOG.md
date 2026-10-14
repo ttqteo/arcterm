@@ -63,6 +63,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   "blocked".
 - **A Claude subagent asks once on the Token burn card**, not twice: the gate ran a second time for the same spawn
   under the tool's old name, Task, so a plain Allow brought the card straight back.
+- **Three subagents started at once now ask on the Token burn card**: Claude starts each one as it writes it, a
+  second or so apart, so the gate saw two and then one and never asked. Spawns within 10 seconds of each other now
+  count together, and the third asks.
 
 ## 0.15.12 — 2026-10-14
 
