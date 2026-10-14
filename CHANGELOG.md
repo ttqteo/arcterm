@@ -43,6 +43,9 @@ new draws it as one of its release's cards and folds every other line under a co
   question says so and suggests haiku for collecting or sonnet for code; answer No (or Tab) and name one to switch.
 - **What's new leads with each release's highlights**: a few cards for the features worth trying, and every other
   note, fixes too, folded under one "58 more changes · 12 fixes" line. <!-- big -->
+- **Python and pnpm projects wait their turn for RAM too**: an agent's whole `pytest` run (bare, `uv run` or
+  `python -m`), `pnpm test` / `pnpm build`, `astro build` and an `e2e.sh` script now queue in Jobs like a build,
+  so parallel workers no longer get killed for low memory; one test file or a `-k` filter still runs at once.
 
 ### Fixed
 
