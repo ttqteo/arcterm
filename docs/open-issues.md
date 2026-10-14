@@ -759,16 +759,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   state ("waits on every task") while the tree's row shows Tree running, and from B3 on the stage row has
   lost focus (no pane). That change touches neither the modal nor focus, so the cause is unproven either
   way. Repro: `ARC_FINAL_OUT=<dir> node scripts/cdp/final-verify.mjs final-stage`, a few runs.
-- **Memory hygiene: the volunteer never says a sweep's changes** (2026-10-14, found in a live check). Two
-  causes, each needing a design call:
-  1. The memory cards never reach the judge while 5 or more loose ends exist. The loose-end producer runs
-     first, sorts by ID, and `prefilter` caps the shortlist at 5; a declined candidate is not emitted, so
-     the same 5 loose ends fill every sweep. The real vault had 28 stale active dossiers.
-  2. Alone on the shortlist (an empty vault), the judge still said none to "<project>'s memory has 4
-     changes to review": the card has no snippet, and the prompt says to prefer silence.
-
-  A successful volunteer writes no log line (only "said nothing (<reason>)" is logged); read the
-  `jarvis:volunteer` event history or watch the pet to see one.
 
 Tracked in their own initiatives, not here:
 

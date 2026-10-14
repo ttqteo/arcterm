@@ -17,14 +17,25 @@ func hygieneProducer(ps []wshrpc.MemHygieneProject) *MemoryHygieneProducer {
 func changes(statuses ...string) []wshrpc.MemChange {
 	out := make([]wshrpc.MemChange, len(statuses))
 	for i, s := range statuses {
-		out[i] = wshrpc.MemChange{Status: s}
+		out[i] = wshrpc.MemChange{Kind: "delete", Status: s}
 	}
 	return out
 }
 
 func TestMemoryHygieneProducerOnePerProjectWithPendingChanges(t *testing.T) {
 	ps := []wshrpc.MemHygieneProject{
-		{Project: "waveterm", CheckedAt: 1000, Changes: changes("open", "applied", "conflict", "kept")},
+		{
+			Project:   "waveterm",
+			CheckedAt: 1000,
+			Index:     wshrpc.MemIndexStats{Exists: true, Lines: 6},
+			Changes: []wshrpc.MemChange{
+				{Kind: "move-here", Status: "open"},
+				{Kind: "delete", Status: "applied"},
+				{Kind: "copy-here", Status: "conflict"},
+				{Kind: "move-here", Status: "open"},
+				{Kind: "settings", Status: "kept"},
+			},
+		},
 		{Project: "decided", CheckedAt: 2000, Changes: changes("applied", "kept")},
 		{Project: "empty", CheckedAt: 3000, Changes: []wshrpc.MemChange{}},
 		{Project: "single", CheckedAt: 4000, Changes: changes("conflict")},
@@ -40,7 +51,8 @@ func TestMemoryHygieneProducerOnePerProjectWithPendingChanges(t *testing.T) {
 		Class:      ClassMemoryHygiene,
 		ID:         "memory-hygiene:waveterm:1000",
 		At:         1000,
-		Title:      "waveterm's memory has 2 changes to review",
+		Title:      "waveterm's memory has 3 changes to review",
+		Snippet:    "2 move here, 1 copy here · MEMORY.md at 6 of 200 lines",
 		SourceType: "memhygiene",
 		SourceRef:  "memhygiene:waveterm",
 	}
