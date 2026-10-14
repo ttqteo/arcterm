@@ -201,7 +201,7 @@ describe("railRow", () => {
         expect(r).toEqual({
             name: "waveterm",
             pct: 0,
-            meter: "Not checked yet",
+            meter: "",
             status: "Not checked yet",
             tone: "none",
         });
@@ -211,7 +211,7 @@ describe("railRow", () => {
         expect(railRow(project({ checking: true, changes: [change("1")] })).status).toBe("Checking…");
         const first = railRow(project({ checking: true, checkedat: 0 }));
         expect(first.status).toBe("Checking…");
-        expect(first.meter).toBe("Not checked yet");
+        expect(first.meter).toBe("");
     });
 
     it("flags a failed check with nothing to review, and is calm otherwise", () => {

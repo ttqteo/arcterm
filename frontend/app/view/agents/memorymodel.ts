@@ -142,7 +142,8 @@ export function railRow(p: MemHygieneProject): RailRow {
     const { text: status, tone } = railStatus(p);
     const row = { name: p.project, status, tone };
     if (!p.checkedat) {
-        return { ...row, pct: 0, meter: "Not checked yet" };
+        // the status already says "Not checked yet"; repeating it in the meter shows it twice
+        return { ...row, pct: 0, meter: "" };
     }
     if (isSplit(p) && !switched(p)) {
         return {

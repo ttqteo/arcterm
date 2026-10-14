@@ -125,7 +125,9 @@ function ProjectRail({ projects, selected }: { projects: MemHygieneProject[]; se
                         <span className="mt-0.5">
                             <Meter pct={row.pct} />
                         </span>
-                        <span className="font-mono text-[10.5px] text-ink-mid">{row.meter}</span>
+                        {row.meter ? (
+                            <span className="font-mono text-[10.5px] text-ink-mid">{row.meter}</span>
+                        ) : null}
                         <span className={cn("flex items-center gap-1.5 text-[11px]", TONE_TEXT[row.tone])}>
                             <Dot tone={row.tone} />
                             {row.status}
