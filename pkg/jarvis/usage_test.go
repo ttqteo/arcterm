@@ -133,7 +133,7 @@ func TestSealEvidenceTotalsADagOwnersUsage(t *testing.T) {
 	}
 }
 
-// a plan reviewer or a verifier works no task, so without its StageRole it would count as the lead
+// a plan reviewer, a verifier or a land resolver works no task, so without its StageRole it would count as the lead
 func TestUsageRoleOfAStageSession(t *testing.T) {
 	cases := []struct {
 		run  waveobj.Run
@@ -141,6 +141,7 @@ func TestUsageRoleOfAStageSession(t *testing.T) {
 	}{
 		{waveobj.Run{StageRole: UsageRole_PlanReviewer}, UsageRole_PlanReviewer},
 		{waveobj.Run{StageRole: UsageRole_Verifier}, UsageRole_Verifier},
+		{waveobj.Run{StageRole: UsageRole_LandResolver}, UsageRole_LandResolver},
 		{waveobj.Run{TaskId: "t-1", Review: true}, UsageRole_Reviewer},
 		{waveobj.Run{TaskId: "t-1"}, UsageRole_Worker},
 		{waveobj.Run{}, UsageRole_Lead},

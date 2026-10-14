@@ -3186,6 +3186,12 @@ declare global {
         dismissed?: boolean;
         dirty?: boolean;
         force?: boolean;
+        queuedts?: number;
+        resolver?: string;
+        resolverts?: number;
+        resolvertried?: boolean;
+        conflicts?: string[];
+        fixture?: boolean;
     };
 
     // waveobj.RunPhase
@@ -3218,6 +3224,7 @@ declare global {
         queuedts: number;
         state: string;
         reason?: string;
+        blockedon?: string;
     };
 
     // waveobj.RunRadarOrigin

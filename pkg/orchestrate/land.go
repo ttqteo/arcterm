@@ -27,9 +27,11 @@ import (
 
 // Land states (Run.Land.State).
 const (
-	LandState_Pending = "pending"
-	LandState_Landed  = "landed"
-	LandState_Held    = "held"
+	LandState_Pending   = "pending"
+	LandState_Queued    = "queued"    // waiting for its project's turn
+	LandState_Resolving = "resolving" // a resolver session is merging the base into wave/<run>
+	LandState_Landed    = "landed"
+	LandState_Held      = "held"
 )
 
 // LandTimeout bounds one land: a re-run of Check and then Verify, each under VerifyTimeout, and the merge.
