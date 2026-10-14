@@ -321,6 +321,9 @@ func TestResubmitReplacesAFailedPlanAndOpensTheNextRound(t *testing.T) {
 	if pr := g.PlanReview; pr.State != PlanReviewState_Reviewing || pr.Round != 2 || len(pr.Reviewers) != 0 || pr.Findings != "" {
 		t.Fatalf("want round 2 reviewing afresh, got %+v", pr)
 	}
+	if prior := g.PlanReview.Prior; prior == nil || !strings.HasPrefix(prior.Findings, "[Full review] no task for 4.1") {
+		t.Fatalf("round 2 carries round 1's findings, got %+v", prior)
+	}
 	if stored := loadDag(t, ctx, dag.OID); stored.Status != DagStatus_PlanReview || len(stored.Tasks) != 2 {
 		t.Fatalf("the replacement must be stored, got status %s with %d tasks", stored.Status, len(stored.Tasks))
 	}

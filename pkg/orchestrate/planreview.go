@@ -4,10 +4,15 @@
 package orchestrate
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
+	"path"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -163,7 +168,11 @@ func advancePlanReview(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owne
 	// a stage stored before reviewers existed has none either, and starts its round afresh
 	if len(pr.Reviewers) == 0 {
 		pr.PlanText, pr.SpecText = readPlanReviewDoc(g, tree, g.PlanPath), readPlanReviewDoc(g, tree, g.SpecPath)
-		for _, lens := range planRoundOneLenses {
+		lenses := planRoundOneLenses
+		if pr.Prior != nil {
+			lenses = []string{PlanReviewLens_Followup}
+		}
+		for _, lens := range lenses {
 			pr.Reviewers = append(pr.Reviewers, waveobj.PlanReviewer{Lens: lens, State: PlanReviewerState_Reviewing})
 		}
 	}
@@ -172,7 +181,7 @@ func advancePlanReview(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owne
 		if r.State != PlanReviewerState_Reviewing {
 			continue
 		}
-		session := func() (StageSession, error) { return planReviewSession(g, tree, r.Lens), nil }
+		session := func() (StageSession, error) { return planReviewSession(ctx, g, tree, r.Lens) }
 		if reason := tendStageSession(ctx, spawnCtx, g, owner, session, &r.RunID, &r.StartedTs, &r.Respawns, now, afterCommit); reason != "" {
 			r.State, r.Text = PlanReviewerState_Lost, reason
 		}
@@ -194,17 +203,26 @@ func readPlanReviewDoc(g *waveobj.TaskGroup, tree, p string) string {
 	return string(data)
 }
 
-// planReviewSession is the session of the reviewer with lens: the full reviewer on the reviewer route, a lens on
-// the Light reviewers route.
-func planReviewSession(g *waveobj.TaskGroup, tree, lens string) StageSession {
+// planReviewSession is the session of the reviewer with lens: the full reviewer on the reviewer route, a lens and
+// the follow-up on the Light reviewers route.
+func planReviewSession(ctx context.Context, g *waveobj.TaskGroup, tree, lens string) (StageSession, error) {
 	s := StageSession{Role: jarvis.UsageRole_PlanReviewer, Label: "plan review", Tree: tree, Lens: lens}
 	if lens == PlanReviewLens_Full {
 		s.Prompt = planReviewPrompt(g, tree)
-		return s
+		return s, nil
 	}
 	s.Label += ": " + PlanReviewLensTitle(lens)
-	s.Prompt, s.Route = planLensPrompt(g, tree, lens), lightReviewerRoute(g)
-	return s
+	s.Route = lightReviewerRoute(g)
+	if lens != PlanReviewLens_Followup {
+		s.Prompt = planLensPrompt(g, tree, lens)
+		return s, nil
+	}
+	prompt, err := planFollowupPrompt(ctx, g, tree)
+	if err != nil {
+		return StageSession{}, err
+	}
+	s.Prompt = prompt
+	return s, nil
 }
 
 // writePlanReviewOpening is the opening and doc lines every plan reviewer's brief starts with. It reads the docs
@@ -260,19 +278,132 @@ func planReviewPrompt(g *waveobj.TaskGroup, tree string) string {
 	writePlanReviewOpening(&b, g, tree)
 	writeChecklist(&b, g, tree, func(string) bool { return true })
 	b.WriteString(planReviewReadOnly)
-	pickFor := pickableTasks(g)
-	pickArgs := ""
-	if len(pickFor) > 0 {
-		b.WriteString("Whatever your verdict, also pick the model for each task the plan gives no Model line:\n")
-		for _, t := range pickFor {
-			fmt.Fprintf(&b, "- %s: %s\n", t.ID, flatLine(t.Label))
-			pickArgs += fmt.Sprintf(" --pick \"%s=<sonnet|lead>: <one-line reason>\"", t.ID)
-		}
-		b.WriteString("Pick `sonnet` only for a mechanical, tightly specified task (a copy of an existing pattern, a field threaded through, prose against written code); pick `lead` for anything with a design choice. Give one line on why.\n")
-		b.WriteString("A pass needs a pick for every listed task. A fail takes the ones you can judge: they hold if the human proceeds on the plan as it stands.\n")
-	}
-	writePlanReviewVerdict(&b, pickArgs)
+	writePlanReviewVerdict(&b, writePlanReviewPicks(&b, g, nil))
 	return b.String()
+}
+
+// writePlanReviewPicks writes the pick block on a Reviewer picks run and returns the verdict's --pick tail. With
+// prior, round 1's pick is listed beside each task it picked.
+func writePlanReviewPicks(b *strings.Builder, g *waveobj.TaskGroup, prior []waveobj.PlanReviewPriorPick) string {
+	pickFor := pickableTasks(g)
+	if len(pickFor) == 0 {
+		return ""
+	}
+	pickArgs := ""
+	b.WriteString("Whatever your verdict, also pick the model for each task the plan gives no Model line:\n")
+	for _, t := range pickFor {
+		fmt.Fprintf(b, "- %s: %s%s\n", t.ID, flatLine(t.Label), priorPickNote(prior, t))
+		pickArgs += fmt.Sprintf(" --pick \"%s=<sonnet|lead>: <one-line reason>\"", t.ID)
+	}
+	if prior != nil {
+		b.WriteString("Beside a task is round 1's pick for it: keep it unless the diff changed that task; a task round 1 did not pick needs a fresh pick.\n")
+	}
+	b.WriteString("Pick `sonnet` only for a mechanical, tightly specified task (a copy of an existing pattern, a field threaded through, prose against written code); pick `lead` for anything with a design choice. Give one line on why.\n")
+	b.WriteString("A pass needs a pick for every listed task. A fail takes the ones you can judge: they hold if the human proceeds on the plan as it stands.\n")
+	return pickArgs
+}
+
+// priorPickNote is round 1's pick for t's id, naming round 1's task when the lead retitled it, or "".
+func priorPickNote(prior []waveobj.PlanReviewPriorPick, t *waveobj.TaskNode) string {
+	for _, p := range prior {
+		if p.TaskId != t.ID {
+			continue
+		}
+		if flatLine(p.Title) != flatLine(t.Label) {
+			return fmt.Sprintf(" (round 1 picked %s for %q: %s)", p.Model, flatLine(p.Title), p.Reason)
+		}
+		return fmt.Sprintf(" (round 1 picked %s: %s)", p.Model, p.Reason)
+	}
+	return ""
+}
+
+// planFollowupPrompt is round 2's one reviewer's brief: confirm round 1's findings against the lead's changes,
+// and check only the changed lines against the whole checklist.
+func planFollowupPrompt(ctx context.Context, g *waveobj.TaskGroup, tree string) (string, error) {
+	pr := g.PlanReview
+	prior := pr.Prior
+	if prior == nil {
+		prior = &waveobj.PlanReviewPrior{}
+	}
+	planDiff, err := docDiff(ctx, prior.PlanText, pr.PlanText, path.Base(filepath.ToSlash(g.PlanPath)))
+	if err != nil {
+		return "", fmt.Errorf("diffing the plan: %w", err)
+	}
+	specDiff, err := docDiff(ctx, prior.SpecText, pr.SpecText, specDiffName(g))
+	if err != nil {
+		return "", fmt.Errorf("diffing the spec: %w", err)
+	}
+	var b strings.Builder
+	writePlanReviewOpening(&b, g, tree)
+	if findings := strings.TrimSpace(prior.Findings); findings != "" {
+		fmt.Fprintf(&b, "This is round %d. Round 1 failed with these findings, and the lead revised the plan to answer them:\n\n%s\n\n", pr.Round, findings)
+	} else {
+		fmt.Fprintf(&b, "This is round %d. Round 1 failed, and the lead revised the plan; round 1's findings were not kept, so there are none to confirm.\n\n", pr.Round)
+	}
+	writeDocDiff(&b, "plan", planDiff)
+	writeDocDiff(&b, "spec", specDiff)
+	b.WriteString("Do two things, and do not re-review text the diffs leave unchanged:\n")
+	b.WriteString("1. For each round-1 finding, confirm the revised plan fixes it, or explicitly and soundly declines it. A finding that is neither is a finding again.\n")
+	b.WriteString("2. Check only the changed lines against the round-1 checklist, and report any problem they introduce or still carry. ")
+	writeChecklist(&b, g, tree, func(string) bool { return true })
+	b.WriteString(planReviewReadOnly)
+	pickArgs := writePlanReviewPicks(&b, g, prior.Picks)
+	b.WriteString("Write the verdict's text as one line per round-1 finding (fixed, declined or not fixed, and why), then any new findings: each problem, where it is, and the fix.\n")
+	writePlanReviewVerdict(&b, pickArgs)
+	return b.String(), nil
+}
+
+// specDiffName names the spec in its diff; a round 2 with no spec file may still drop round 1's.
+func specDiffName(g *waveobj.TaskGroup) string {
+	if g.SpecPath == "" {
+		return "spec.md"
+	}
+	return path.Base(filepath.ToSlash(g.SpecPath))
+}
+
+// writeDocDiff writes a doc's changes since round 1 as a diff block, or that it did not change.
+func writeDocDiff(b *strings.Builder, doc, diff string) {
+	if diff == "" {
+		fmt.Fprintf(b, "The %s did not change.\n\n", doc)
+		return
+	}
+	fmt.Fprintf(b, "The lead's changes to the %s since round 1, as a diff:\n\n```diff\n%s\n```\n\n", doc, strings.TrimRight(diff, "\n"))
+}
+
+// docDiff is the unified diff from oldText to newText, as round1/<name> and round2/<name>, or "" when they match.
+// git is the engine's existing dependency, and --no-index diffs two files outside any repo.
+func docDiff(ctx context.Context, oldText, newText, name string) (string, error) {
+	if oldText == newText {
+		return "", nil
+	}
+	dir, err := os.MkdirTemp("", "arc-plandiff-")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(dir)
+	for round, text := range map[string]string{"round1": oldText, "round2": newText} {
+		if err := os.MkdirAll(filepath.Join(dir, round), 0o755); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(filepath.Join(dir, round, name), []byte(text), 0o644); err != nil {
+			return "", err
+		}
+	}
+	// relative paths keep the temp dir out of the headers
+	cmd := exec.CommandContext(ctx, "git", "diff", "--no-index", "--no-color", "--no-ext-diff", "round1/"+name, "round2/"+name)
+	cmd.Dir, cmd.WaitDelay = dir, gitWaitDelay
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err = cmd.Run()
+	var exit *exec.ExitError
+	switch {
+	case err == nil:
+		return "", nil
+	case errors.As(err, &exit) && exit.ExitCode() == 1:
+		out := strings.ReplaceAll(stdout.String(), filepath.ToSlash(dir)+"/", "")
+		return strings.ReplaceAll(out, dir+string(filepath.Separator), ""), nil
+	}
+	return "", fmt.Errorf("git diff --no-index: %w: %s", err, strings.TrimSpace(stderr.String()))
 }
 
 // pickableTasks are the tasks the plan reviewer picks a model for: none off Reviewer picks, and never one the
@@ -618,6 +749,11 @@ func ReplacePlanReviewProposal(ctx context.Context, dagID string, proposed *wave
 		if pr.Round >= MaxPlanReviewRounds {
 			return fmt.Errorf("the plan review failed %d rounds, the most it gets; put it to the human, and %s", pr.Round, proceedPastPlanReview)
 		}
+		// round 2's reviewer confirms round 1's findings against the lead's changes, and sees its picks
+		prior := &waveobj.PlanReviewPrior{Findings: pr.Findings, PlanText: pr.PlanText, SpecText: pr.SpecText}
+		for _, p := range reviewerPicks(g) {
+			prior.Picks = append(prior.Picks, waveobj.PlanReviewPriorPick{TaskId: p.TaskId, Title: taskByID(g, p.TaskId).Label, Model: p.Model, Reason: p.Reason})
+		}
 		// the group keeps its workers setting and reviewer routes: the run sheet edits them on the group only, and the
 		// proposal carries the run's launch snapshot
 		g.Title, g.Parallelism, g.Tasks = proposed.Title, proposed.Parallelism, proposed.Tasks
@@ -628,7 +764,7 @@ func ReplacePlanReviewProposal(ctx context.Context, dagID string, proposed *wave
 		g.Verify, g.Setup, g.Check, g.Preamble = proposed.Verify, proposed.Setup, proposed.Check, proposed.Preamble
 		g.FinalCmd, g.Prototype = proposed.FinalCmd, proposed.Prototype
 		g.EffortOID, g.PlanPath, g.SpecPath = proposed.EffortOID, proposed.PlanPath, proposed.SpecPath
-		g.PlanReview = &waveobj.PlanReviewStage{State: PlanReviewState_Reviewing, Round: pr.Round + 1}
+		g.PlanReview = &waveobj.PlanReviewStage{State: PlanReviewState_Reviewing, Round: pr.Round + 1, Prior: prior}
 		out = g
 		return nil
 	})
