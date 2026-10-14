@@ -309,7 +309,11 @@ export function taskStateLabel(task: TaskNode, now: number): string | undefined 
         : label;
 }
 
-const STAGE_LABELS: Record<string, string> = { "plan-reviewer": "Plan review", verifier: "Final verification" };
+const STAGE_LABELS: Record<string, string> = {
+    "plan-reviewer": "Plan review",
+    verifier: "Final verification",
+    "land-resolver": "Conflict resolver",
+};
 
 // stageLabel is what a stage session's row is titled.
 export function stageLabel(stageRole: string): string {

@@ -95,6 +95,20 @@ export type StageOutcome = "passed" | "accepted" | "failed" | "unverified";
 const PLAN_REVIEW_OUTCOMES: Record<string, StageOutcome> = { passed: "passed", accepted: "accepted", failed: "failed" };
 const FINAL_OUTCOMES: Record<string, StageOutcome> = { passed: "passed", unverified: "unverified", failed: "failed" };
 
+// a land resolver gives no verdict: its land says how it went. Only the resolving land names it (`resolver` is
+// cleared when the land moves on), so a finished one is read from where the land went: held for a human is failed,
+// anywhere else (back in line, landing, landed) is passed. A run has one resolver, so a resolving land naming another
+// session means this one was replaced.
+function landResolverOutcome(land: RunLand | undefined, agentRunId: string | undefined): StageOutcome | undefined {
+    if (land == null || agentRunId == null) {
+        return undefined;
+    }
+    if (land.state === "resolving") {
+        return land.resolver === agentRunId ? undefined : "failed";
+    }
+    return land.state === "held" && land.resolvertried ? "failed" : "passed";
+}
+
 /** Pure: a stage session's verdict, or undefined while it is still judging. The dag keeps only the current
  *  round, so a session from an earlier round reads as failed: a stage gets another round only after one fails.
  *  A session the engine replaced within a round is stopped with its tab, so it has no row to misread. */
@@ -103,6 +117,9 @@ export function stageOutcome(
     stageRole: string,
     agentRunId: string | undefined
 ): StageOutcome | undefined {
+    if (stageRole === "land-resolver") {
+        return landResolverOutcome(run.land, agentRunId);
+    }
     const stage =
         stageRole === "plan-reviewer"
             ? { cur: run.dag?.planreview, runId: run.dag?.planreview?.runid, outcomes: PLAN_REVIEW_OUTCOMES }
