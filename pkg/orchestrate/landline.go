@@ -197,8 +197,8 @@ var landLinePass struct {
 // landLineBoot makes the driver's first pass also look for lands the last server died in the middle of.
 var landLineBoot sync.Once
 
-// driveLandLine gives the turn of each project to its oldest queued land. It starts the lands and returns: the
-// watchdog calls it every tick, and a land that ends calls it again.
+// driveLandLine gives the turn of each project to its oldest queued land, and tends the lands being resolved. It
+// starts the lands and returns: the watchdog calls it every tick, and a land that ends calls it again.
 func driveLandLine(ctx context.Context) {
 	landLinePass.Lock()
 	if landLinePass.running {
@@ -227,6 +227,8 @@ func driveLandLinePass(ctx context.Context) {
 	if boot {
 		requeueOrphanedLands(ctx)
 	}
+	// before the scan of the queue, so a land whose resolver just ended is in line for this pass
+	tendResolvingLands(ctx)
 	queued, err := wstore.GetRunsByLandState(ctx, LandState_Queued)
 	if err != nil {
 		log.Printf("listing queued lands: %v", err)

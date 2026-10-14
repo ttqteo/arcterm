@@ -47,6 +47,13 @@ func landFixture(t *testing.T) (*mergeFixture, string) {
 	return f, tree
 }
 
+// markResolverTried marks the run's land as one a resolver already tried, so a conflict holds for a human instead of
+// starting another session.
+func (f *mergeFixture) markResolverTried(t *testing.T) {
+	t.Helper()
+	f.seedLand(t, f.ownerID, &waveobj.RunLand{State: LandState_Held, ResolverTried: true})
+}
+
 func (f *mergeFixture) setFinal(t *testing.T, final *waveobj.FinalStage) {
 	t.Helper()
 	if err := wstore.UpdateDag(f.ctx, f.dagID, func(cur *waveobj.TaskGroup) error {
@@ -290,6 +297,7 @@ func TestLandHoldsWhatItCannotMergeSafely(t *testing.T) {
 			writeFile(t, filepath.Join(f.project, "feature.txt"), "mine\n")
 		}, "an untracked feature.txt in the checkout differs"},
 		{"conflict", func(t *testing.T, f *mergeFixture, tree string) {
+			f.markResolverTried(t)
 			commitOnBranch(t, tree, "base.txt", "branch\n")
 			f.setFinal(t, &waveobj.FinalStage{State: FinalState_Passed, Round: 1, Commit: gitCmd(t, tree, "rev-parse", "HEAD")})
 			commitOnBranch(t, f.project, "base.txt", "main\n")
@@ -352,6 +360,7 @@ func TestLandConflictsPredictsTheLandsConflicts(t *testing.T) {
 
 func TestLandAbortsAConflictedMerge(t *testing.T) {
 	f, tree := landFixture(t)
+	f.markResolverTried(t)
 	commitOnBranch(t, tree, "base.txt", "branch\n")
 	f.setFinal(t, &waveobj.FinalStage{State: FinalState_Passed, Round: 1, Commit: gitCmd(t, tree, "rev-parse", "HEAD")})
 	commitOnBranch(t, f.project, "base.txt", "main\n")
@@ -650,6 +659,7 @@ func TestLandChecksTheRunMergedWithItsMovedBase(t *testing.T) {
 	})
 	t.Run("a conflict with the base holds, and the tree is put back", func(t *testing.T) {
 		f, tree := landFixture(t)
+		f.markResolverTried(t)
 		commitOnBase(t, f.project, "feature.txt", "the base's own feature\n")
 		f.setLandCommands(t, "", "true")
 		head := gitCmd(t, f.project, "rev-parse", "main")

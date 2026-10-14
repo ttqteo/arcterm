@@ -129,6 +129,11 @@ const (
 	// when the run joins the line, not on each pass that finds it still waiting.
 	RunEventKindLandQueued = "land-queued"
 
+	// land-resolving: the base conflicts with a finished run's branch, and a resolver session is merging it in
+	// ("files": the conflicting files, "resolver": the session's run id). Recorded once per land, since one resolver
+	// tries each.
+	RunEventKindLandResolving = "land-resolving"
+
 	// landed: a finished run's branch was merged back into its base ("commit", "title": the merge's subject).
 	// Recorded once, since a landed run is never landed again.
 	RunEventKindLanded = "landed"

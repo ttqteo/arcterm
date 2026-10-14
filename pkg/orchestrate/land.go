@@ -76,6 +76,10 @@ func landRunLocked(ctx context.Context, channelID, runID string, force, haveTurn
 	if run.Status != jarvis.RunStatus_Done {
 		return nil, fmt.Errorf("run %s is %s; only a done run lands", runID, run.Status)
 	}
+	// its resolver is mid-merge in the landing tree, and the land driver tends it: landing now would hold on that merge
+	if !haveTurn && run.Land != nil && run.Land.State == LandState_Resolving {
+		return run.Land, nil
+	}
 	if haveTurn {
 		if run.Land == nil || run.Land.State != LandState_Queued {
 			return run.Land, nil // asked again, and answered, since the driver listed it
@@ -125,6 +129,8 @@ func landRunLocked(ctx context.Context, channelID, runID string, force, haveTurn
 		if run.Land == nil || run.Land.State != LandState_Queued {
 			appendLandQueued(ctx, channelID, runID)
 		}
+	case LandState_Resolving:
+		appendRunEvent(ctx, channelID, runID, waveobj.RunEventKindLandResolving, nil, map[string]any{"files": land.Conflicts, "resolver": land.Resolver})
 	case LandState_Held:
 		appendRunEvent(ctx, channelID, runID, waveobj.RunEventKindLandHeld, nil, map[string]any{"reason": land.Reason})
 	case LandState_Landed:
@@ -235,9 +241,7 @@ func landRun(ctx context.Context, run *waveobj.Run, g *waveobj.TaskGroup, force 
 		return heldLand(reason)
 	}
 	if len(conflicts) > 0 {
-		held := heldLand(fmt.Sprintf("merging %s into wave/%s conflicts in %s; merge it there, then Land again", run.BaseBranch, run.ID, strings.Join(conflicts, ", ")))
-		held.Conflicts = conflicts
-		return held
+		return landConflictLand(ctx, run, g, force, conflicts)
 	}
 	reason, checkedBase, checkNote := reverifyHold(ctx, run, g)
 	if reason != "" {
