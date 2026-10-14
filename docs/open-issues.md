@@ -622,14 +622,20 @@ Tracked in their own initiatives, not here:
 
 ### (arcterm) RAM watch
 
-- **Run office** (2026-10-14, `jarvis-office-bench`, 104 desks, dev app): heap +4.71 MB open, +1501
-  DOM nodes, 13 % main thread over 30 s (7.2 % reduced motion), 79 sprites, +1.93
-  MB after off, 530 ms to draw. Budgets: 5 MB, 2,000, 2 %, 0.5 %, 320, 1 MB, 150 ms. Mounted only while the
-  office is on. **Misses four budgets**: busy, busy under reduced motion, heap after off, time to draw. Four runs
-  that day read busy 9.3–25.8 %, reduced 4.2–11.3 %, after off +1.74–3.09 MB, draw 167–530 ms (heap open 3.76–4.71 MB,
-  nodes and sprites the same every run). A one-off diagnostic (not committed) found the dev app idling at 9–10 % main
-  thread with the office off, so the two busy budgets read the app's own activity; the frame clock added about 6
-  points over the reduced-motion window at 104 desks.
+- **Run office** (2026-10-14, `jarvis-office-bench`, 104 desks, dev app, run alone with no other Final or dev app
+  open; the user's own WSL, Docker and arcterm kept the CPU at 33–100 %): heap +1.6 MB open, +1501 DOM nodes, busy
+  1.1 % over the office-off baseline (6.7 % raw, baseline 5.6 %) and −1.7 % under reduced motion (3.9 % raw), 79
+  sprites, +0.68 MB after off, 87 ms to draw. Budgets: 5 MB, 2,000, 2 %, 0.5 %, 320, 1 MB, 150 ms: all held.
+  Mounted only while the office is on. The first round missed four (busy, busy under reduced motion, heap after
+  off, time to draw). What moved them: the sprite canvas ran on the GPU, so `toDataURL` cost 80–95 ms of the first
+  open (a software canvas: ~5 ms); the DEV fixture floors passed a new `onOpen` each render, so every re-render
+  of the Brief (every few seconds) redrew all 104 desks; a tick re-rendered whole desks, now only each animated
+  desk's person and screen; floors below the fold are `content-visibility: auto`. What stays after off is V8
+  compiled code (~0.5 MB) and the sprite images in Blink's cache; DOM nodes and listeners return to baseline, so it
+  is not a leak. The page also grows ~1.5 MB by itself in its first 30 s, so the heap budgets read against the
+  closed state just before the open (+2.21 MB after off against the first read). The busy numbers are inside the
+  baseline's own noise (10 s windows of the same state read 2–7 %): interleaved office-off/on/reduced windows read
+  4.8 / 5.0 / 4.9 %.
 
 ---
 

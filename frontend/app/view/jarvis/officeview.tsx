@@ -6,8 +6,9 @@
 // frame clock and the DOM.
 //
 // Cost is the point of most choices here (the spec's Benchmark): a person is one <img> from a cache, furniture is a
-// few bordered boxes, only animated desks subscribe to the clock, and the clock stops while the window is hidden,
-// under reduced motion, and whenever the office is off.
+// few bordered boxes, a floor below the fold is not painted, only the moving parts of an animated desk (its person
+// and its screen) subscribe to the clock, and the clock stops while the window is hidden, under reduced motion, and
+// whenever the office is off.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import * as WOS from "@/app/store/wos";
@@ -15,9 +16,9 @@ import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { runStage } from "@/app/view/agents/runstage";
 import { cn } from "@/util/util";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
-import { atomWithStorage } from "jotai/utils";
+import { atomWithStorage, selectAtom } from "jotai/utils";
 import { memo, useEffect, useMemo, type CSSProperties } from "react";
-import { officeFloor, type Desk, type DeskScreen, type DeskTone, type Floor } from "./officemodel";
+import { officeFloor, type Desk, type DeskPose, type DeskScreen, type DeskTone, type Floor } from "./officemodel";
 import { POSES, SPRITE_W, spriteFor, type SpritePose } from "./officesprite";
 import { spriteUrl, type Outfit } from "./officesprites";
 import { openTarget } from "./openref";
@@ -129,7 +130,18 @@ function spriteBox(pose: SpritePose, left: number): CSSProperties {
     return { left, top: FLOOR_Y - h, width: SPRITE_W * SCALE, height: h };
 }
 
-function Person({ pose, outfit, left }: { pose: SpritePose; outfit: Outfit; left: number }) {
+// what changes with the frame: the typist's and the raised hand's two poses, a screen's scrolling lines and its progress
+// bar. A desk's other parts never read the clock, so a tick re-renders these leaves and not the desk around them.
+function ticksSprite(pose: DeskPose): boolean {
+    return pose === "type" || pose === "handup";
+}
+
+function ticksScreen(screen: DeskScreen): boolean {
+    return screen === "lines" || screen === "bar";
+}
+
+// a function, not a component: one fewer fiber for each of the ~100 people on a floor set
+function personImg(pose: SpritePose, outfit: Outfit, left: number) {
     return (
         <img
             alt=""
@@ -141,7 +153,13 @@ function Person({ pose, outfit, left }: { pose: SpritePose; outfit: Outfit; left
     );
 }
 
-function Screen({ screen, tone, frame, left }: { screen: DeskScreen; tone: DeskTone; frame: 0 | 1; left: number }) {
+function FramePerson({ pose, outfit, left }: { pose: DeskPose; outfit: Outfit; left: number }) {
+    const frame = useAtomValue(officeFrameAtom);
+    const sprite = spriteFor(pose, frame);
+    return sprite ? personImg(sprite, outfit, left) : null;
+}
+
+function screenView(screen: DeskScreen, tone: DeskTone, frame: 0 | 1, left: number) {
     const glyph = GLYPH[screen];
     const lines = screen === "lines" || screen === "diff" ? (frame ? [22, 14, 18] : [16, 22, 10]) : null;
     return (
@@ -175,20 +193,25 @@ function Screen({ screen, tone, frame, left }: { screen: DeskScreen; tone: DeskT
     );
 }
 
-function DeskBody({
-    desk,
-    board,
-    frame,
-    onOpen,
-}: {
-    desk: Desk;
-    board?: DeskTone[];
-    frame: 0 | 1;
-    onOpen: (d: Desk) => void;
-}) {
+function FrameScreen({ screen, tone, left }: { screen: DeskScreen; tone: DeskTone; left: number }) {
+    const frame = useAtomValue(officeFrameAtom);
+    return screenView(screen, tone, frame, left);
+}
+
+// a desk reads the clock only where it moves (ticksSprite, ticksScreen): the rest of it renders once, at frame 0
+function screenOf(desk: Desk, left: number) {
+    return desk.animated && ticksScreen(desk.screen) ? (
+        <FrameScreen screen={desk.screen} tone={desk.tone} left={left} />
+    ) : (
+        screenView(desk.screen, desk.tone, 0, left)
+    );
+}
+
+function DeskBody({ desk, board, onOpen }: { desk: Desk; board?: DeskTone[]; onOpen: (d: Desk) => void }) {
     const lead = desk.key === "lead";
-    const pose = spriteFor(desk.pose, frame);
     const standing = desk.pose === "stand" || desk.pose === "box";
+    const outfit: Outfit = { shirt: desk.shirt, look: desk.look };
+    const still = spriteFor(desk.pose, 0);
     return (
         <button
             type="button"
@@ -227,14 +250,16 @@ function DeskBody({
             ) : null}
             {/* the chair's stem, under the before: seat */}
             <span className="absolute bg-edge-strong" style={{ left: 25, top: 82, width: 4, height: 6 }} />
-            {desk.visitor ? <Person pose="clip" outfit={{ shirt: 0, look: 3, visitor: true }} left={-8} /> : null}
-            {pose ? (
-                <Person pose={pose} outfit={{ shirt: desk.shirt, look: desk.look }} left={standing ? 2 : 8} />
+            {desk.visitor ? personImg("clip", { shirt: 0, look: 3, visitor: true }, -8) : null}
+            {desk.animated && ticksSprite(desk.pose) ? (
+                <FramePerson pose={desk.pose} outfit={outfit} left={standing ? 2 : 8} />
+            ) : still ? (
+                personImg(still, outfit, standing ? 2 : 8)
             ) : null}
             {/* the keyboard, on the after: desk */}
             <span className="absolute bg-ink-faint" style={{ left: 40, top: 61, width: 12, height: 3 }} />
-            <Screen screen={desk.screen} tone={desk.tone} frame={frame} left={lead ? 56 : 52} />
-            {lead ? <Screen screen={desk.screen} tone={desk.tone} frame={frame} left={94} /> : null}
+            {screenOf(desk, lead ? 56 : 52)}
+            {lead ? screenOf(desk, 94) : null}
             {desk.bubble ? (
                 <span
                     className={cn(
@@ -260,15 +285,6 @@ function DeskBody({
     );
 }
 
-function AnimatedDesk(props: { desk: Desk; board?: DeskTone[]; onOpen: (d: Desk) => void }) {
-    const frame = useAtomValue(officeFrameAtom);
-    return <DeskBody {...props} frame={frame} />;
-}
-
-function DeskSlot(props: { desk: Desk; board?: DeskTone[]; onOpen: (d: Desk) => void }) {
-    return props.desk.animated ? <AnimatedDesk {...props} /> : <DeskBody {...props} frame={0} />;
-}
-
 /** One floor: the wall, the floor band, the lead's office and a desk per task; scrolls sideways when wider. */
 export const OfficeScene = memo(function OfficeScene({
     floor,
@@ -284,15 +300,19 @@ export const OfficeScene = memo(function OfficeScene({
             data-office-floor={floor.runId}
             className={cn(
                 "overflow-x-auto overflow-y-hidden rounded-md",
+                // a floor below the fold is neither laid out nor painted until it scrolls near: with a dozen runs
+                // open that is most of the office, and the frame clock would repaint all of it. auto remembers the
+                // size once it has been drawn, so the 116px is only the guess before that
+                "[contain-intrinsic-size:auto_116px] [content-visibility:auto]",
                 selected ? "bg-surface-selected" : "bg-surface"
             )}
         >
             <div className="relative flex h-[116px] w-max min-w-full px-2">
                 <span aria-hidden className="absolute inset-x-0 bottom-0 top-[88px] bg-surface-raised" />
                 <span aria-hidden className="absolute inset-x-0 top-[88px] h-0.5 bg-edge-strong" />
-                <DeskSlot desk={floor.lead} board={floor.board} onOpen={onOpen} />
+                <DeskBody desk={floor.lead} board={floor.board} onOpen={onOpen} />
                 {floor.desks.map((d) => (
-                    <DeskSlot key={d.key} desk={d} onOpen={onOpen} />
+                    <DeskBody key={d.key} desk={d} onOpen={onOpen} />
                 ))}
             </div>
         </div>
@@ -311,15 +331,21 @@ export function LiveOfficeFloor({
 }) {
     const floorAtom = useMemo(
         () =>
-            atom((get) => {
-                const run = get(WOS.getWaveObjectAtom<Run>(WOS.makeORef("run", runId)));
-                // dagoref holds the dag's bare id, whatever its name says
-                const dag = run?.dagoref
-                    ? get(WOS.getWaveObjectAtom<TaskGroup>(WOS.makeORef("dag", run.dagoref)))
-                    : undefined;
-                const stage = runStage({ status: run?.status, land: run?.land, dag }).key;
-                return officeFloor({ runId, stage, tasks: dag?.tasks ?? [] }, get(model.agentsAtom));
-            }),
+            // the roster changes whenever any agent does, and officeFloor builds new desks each time: a floor that
+            // reads the same keeps its object, so the memoed scene does not redraw
+            selectAtom(
+                atom((get) => {
+                    const run = get(WOS.getWaveObjectAtom<Run>(WOS.makeORef("run", runId)));
+                    // dagoref holds the dag's bare id, whatever its name says
+                    const dag = run?.dagoref
+                        ? get(WOS.getWaveObjectAtom<TaskGroup>(WOS.makeORef("dag", run.dagoref)))
+                        : undefined;
+                    const stage = runStage({ status: run?.status, land: run?.land, dag }).key;
+                    return officeFloor({ runId, stage, tasks: dag?.tasks ?? [] }, get(model.agentsAtom));
+                }),
+                (floor) => floor,
+                (a, b) => JSON.stringify(a) === JSON.stringify(b)
+            ),
         [model, runId]
     );
     const floor = useAtomValue(floorAtom);
@@ -330,6 +356,10 @@ export function LiveOfficeFloor({
     );
     return <OfficeScene floor={floor} selected={selected} onOpen={onOpen} />;
 }
+
+// one function for every fixture floor: a fresh arrow per render would defeat OfficeScene's memo, and the Brief
+// re-renders every few seconds on its own, which redrew all 104 desks each time
+const NO_OPEN = () => {};
 
 /** DEV-only: the fixture floors, drawn after the live ones. Renders nothing in a real session. */
 export function OfficeFixtureFloors() {
@@ -342,7 +372,7 @@ export function OfficeFixtureFloors() {
             {fixture.map((f) => (
                 <div key={f.floor.runId} className="flex flex-col gap-1">
                     <div className="px-1 text-[13px] font-medium text-secondary">{f.title}</div>
-                    <OfficeScene floor={f.floor} onOpen={() => {}} />
+                    <OfficeScene floor={f.floor} onOpen={NO_OPEN} />
                 </div>
             ))}
         </div>

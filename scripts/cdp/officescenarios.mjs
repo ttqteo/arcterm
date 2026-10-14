@@ -4,7 +4,8 @@
 // scenarios.mjs, docs/reference/cdp-run-fixtures.md): off by default, the run's floor under its row, a pending desk
 // opening the run sheet, the lead opening its agent. It then draws every pose from a fixture and checks each desk says
 // what it is. jarvis-office-bench holds the spec's budgets: it draws 104 desks and reads Performance.getMetrics with
-// the office off, open, held open for 30 s, held under reduced motion, and off again. The fixture floors come through
+// the office off (held for 30 s: the baseline the busy budgets subtract), open, held open for 30 s, held under reduced
+// motion, and off again. The fixture floors come through
 // the DEV-only __officeFixture hook (officedevhooks.ts), so the bench starts no run or worker.
 //
 // scenarios.mjs hands its fixture helpers in (makeOfficeScenarios) rather than this file importing them, which would
@@ -101,6 +102,9 @@ async function waitForOfficeSeams(h) {
 }
 
 async function metrics(h) {
+    // React's dev build logs every component render as a performance.measure entry that the page keeps (~50 a second
+    // here, tens of thousands in a session), so the heap would read the app's own rendering, not the office's
+    await h.ev("performance.clearMeasures()");
     await h.cdp("HeapProfiler.collectGarbage");
     const { metrics: list } = await h.cdp("Performance.getMetrics");
     const m = Object.fromEntries(list.map((x) => [x.name, x.value]));
@@ -108,6 +112,10 @@ async function metrics(h) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const HOLD_MS = 30000;
+// main thread busy as a percent of a window: a TaskDuration delta (seconds) over its length, to 0.1
+const busyPct = (from, to) => ((to.task - from.task) / (HOLD_MS / 1000)) * 100;
+const round1 = (n) => Math.round(n * 10) / 10;
 const mb = (bytes) => Math.round((bytes / (1024 * 1024)) * 100) / 100;
 
 // fx: { arrangeFixtureRun, waitForDispatch, briefReload, teardownFixtureRun, tasks, leadId } from scenarios.mjs
@@ -302,6 +310,13 @@ const jarvisOfficeBench = {
             rec("0. the bench drew 104 desks", false, missing);
             return steps;
         }
+        // a dev app whose window folded into Sprout (window:autosprout, when another app has the foreground) draws no
+        // Brief: every number below would read a page with no layout, so it fails here instead
+        const laidOut = await h.ev(`${TOGGLE}.getBoundingClientRect().width > 0`);
+        if (!laidOut) {
+            rec("0. the bench drew 104 desks", false, "the Brief has no layout: the dev app is folded into Sprout or hidden");
+            return steps;
+        }
         ctx.wasOn = (await h.ev(`${TOGGLE}?.getAttribute("aria-pressed")`)) === "true";
         await h.cdp("Performance.enable");
         await setOffice(h, false);
@@ -309,6 +324,10 @@ const jarvisOfficeBench = {
         const want = 8 * 13;
         await h.ev(`window.__officeFixture(${JSON.stringify(runs)})`);
         const closed = await metrics(h);
+        // the Jarvis page works on its own with the office off (the first Final read 7.8 % busy with the frame clock
+        // stopped), so the two busy budgets are the office's cost over this hold, not the page's whole
+        await sleep(HOLD_MS);
+        const base = await metrics(h);
 
         const openMs = await h.ev(`(async () => {
             const t0 = performance.now();
@@ -321,7 +340,7 @@ const jarvisOfficeBench = {
         })()`);
         await sleep(2000);
         const open = await metrics(h);
-        await sleep(30000);
+        await sleep(HOLD_MS);
         const held = await metrics(h);
         const probe = await h.ev(`window.__officeProbe()`);
 
@@ -329,7 +348,7 @@ const jarvisOfficeBench = {
         await sleep(500);
         const calmStart = await metrics(h);
         const calmClock = (await h.ev(`window.__officeProbe()`)).clock;
-        await sleep(30000);
+        await sleep(HOLD_MS);
         const calmEnd = await metrics(h);
         await h.cdp("Emulation.setEmulatedMedia", { features: [] });
 
@@ -338,14 +357,26 @@ const jarvisOfficeBench = {
         const after = await metrics(h);
         const offProbe = await h.ev(`window.__officeProbe()`);
 
+        const baseBusy = busyPct(closed, base);
+        const heldBusy = busyPct(open, held);
+        const calmBusy = busyPct(calmStart, calmEnd);
+        // the heap and node budgets read against the closed state just before the open, not the first read: the page
+        // is still compiling its own code for its first minute (+0.7 to +1.4 MB over the first 30 s with the office off),
+        // which is not the office's. The first read's number stays in the line as heapAfterOffFirstMB.
         const r = {
             desks: probe.desks,
-            heapOpenMB: mb(open.heap - closed.heap),
-            nodesAdded: open.nodes - closed.nodes,
-            busyPct: Math.round(((held.task - open.task) / 30) * 1000) / 10,
-            busyReducedPct: Math.round(((calmEnd.task - calmStart.task) / 30) * 1000) / 10,
+            heapOpenMB: mb(open.heap - base.heap),
+            nodesAdded: open.nodes - base.nodes,
+            // the office's own cost: the hold minus the office-off baseline (the raw values stay in the line)
+            busyPct: round1(heldBusy - baseBusy),
+            busyReducedPct: round1(calmBusy - baseBusy),
+            busyRawPct: round1(heldBusy),
+            busyReducedRawPct: round1(calmBusy),
+            baseBusyPct: round1(baseBusy),
+            baseHeapDriftMB: mb(base.heap - closed.heap),
             cache: probe.cache,
-            heapAfterOffMB: mb(after.heap - closed.heap),
+            heapAfterOffMB: mb(after.heap - base.heap),
+            heapAfterOffFirstMB: mb(after.heap - closed.heap),
             openMs: Math.round(openMs),
             clockReduced: calmClock,
             clockOff: offProbe.clock,
@@ -355,10 +386,22 @@ const jarvisOfficeBench = {
         rec("0. the bench drew 104 desks", r.desks >= want, d);
         rec("1. JS heap open minus closed <= 5 MB", r.heapOpenMB <= 5, `${r.heapOpenMB} MB`);
         rec("2. DOM nodes added <= 2,000", r.nodesAdded <= 2000, `${r.nodesAdded}`);
-        rec("3. main thread busy over 30 s <= 2 %", r.busyPct <= 2, `${r.busyPct} %`);
-        rec("4. busy under reduced motion <= 0.5 %, clock stopped", r.busyReducedPct <= 0.5 && r.clockReduced === false, `${r.busyReducedPct} %, clock ${r.clockReduced}`);
+        rec(
+            "3. main thread busy over 30 s <= 2 % over the office-off baseline",
+            r.busyPct <= 2,
+            `${r.busyPct} % (${r.busyRawPct} % raw, baseline ${r.baseBusyPct} %)`
+        );
+        rec(
+            "4. busy under reduced motion <= 0.5 % over the office-off baseline, clock stopped",
+            r.busyReducedPct <= 0.5 && r.clockReduced === false,
+            `${r.busyReducedPct} % (${r.busyReducedRawPct} % raw, baseline ${r.baseBusyPct} %), clock ${r.clockReduced}`
+        );
         rec("5. sprite cache <= 320 entries", r.cache <= 320, `${r.cache}`);
-        rec("6. heap after turning it off <= 1 MB over closed, clock stopped", r.heapAfterOffMB <= 1 && r.clockOff === false, `${r.heapAfterOffMB} MB, clock ${r.clockOff}`);
+        rec(
+            "6. heap after turning it off <= 1 MB over closed, clock stopped",
+            r.heapAfterOffMB <= 1 && r.clockOff === false,
+            `${r.heapAfterOffMB} MB (${r.heapAfterOffFirstMB} MB over the first read), clock ${r.clockOff}`
+        );
         rec("7. toggle to floors drawn <= 150 ms", r.openMs <= 150, `${r.openMs} ms`);
         console.log(`[jarvis-office-bench] ${d}`);
         return steps;

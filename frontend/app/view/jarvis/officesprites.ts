@@ -81,7 +81,9 @@ export function spriteUrl(pose: SpritePose, o: Outfit): string {
     const canvas = document.createElement("canvas");
     canvas.width = SPRITE_W;
     canvas.height = grid.length;
-    const ctx = canvas.getContext("2d");
+    // willReadFrequently keeps the canvas in software: a GPU-backed one made toDataURL ~1.2 ms a sprite (79 sprites
+    // were 80-95 ms of the first open), a software one ~0.07 ms
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     let url = "";
     if (ctx != null) {
         // createImageData rather than new ImageData(pixels, ...): the constructor's typing rejects a shared-buffer array
