@@ -46,9 +46,9 @@ import {
     Hash,
     History as HistoryIcon,
     Loader2,
-    LayoutGrid,
     Moon,
     Pencil,
+    PenTool,
     Play,
     RotateCcw,
     Square,
@@ -478,7 +478,7 @@ function CanvasTag({ model, id }: { model: AgentsViewModel; id: string }) {
                 showing ? "bg-accentbg text-accent" : "text-accent-soft hover:bg-surface-hover"
             )}
         >
-            <LayoutGrid size={11} strokeWidth={2} aria-hidden />
+            <PenTool size={11} strokeWidth={2} aria-hidden />
             {unseen ? (
                 <span
                     aria-label="updated since you last looked"
@@ -2394,12 +2394,19 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                     key = `done-${r.run.runId}`;
                                     body = (
                                         <FoldRow
-                                            glyph={<Check size={11} aria-hidden className="text-success" />}
+                                            glyph={
+                                                r.failed > 0 ? (
+                                                    <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-error" />
+                                                ) : (
+                                                    <Check size={11} aria-hidden className="text-success" />
+                                                )
+                                            }
                                             label={[
                                                 r.count > 0 ? `${r.count} done` : "",
                                                 r.stages > 0
                                                     ? `${r.stages} ${r.stages === 1 ? "review" : "reviews"}`
                                                     : "",
+                                                r.failed > 0 ? `${r.failed} failed` : "",
                                             ]
                                                 .filter(Boolean)
                                                 .join(" · ")}

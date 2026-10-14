@@ -27,6 +27,12 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-14 (Agent sidebar: a failed plan review's fold)**
+
+- [ ] With an engine run whose plan review just failed (lead revising), look under the run in the Agent sidebar: the
+  finished fold reads `1 review · 1 failed` with a red dot, not a green check. Once the lead resubmits and round 2
+  starts, the fold goes back to a check. Tried only in unit tests (`agenttreemodel.test.ts`).
+
 **2026-10-14 (Claude mod on a Team account: ask dialog, Token burn gate)**
 
 - [ ] After the next build and `task install`, in a Claude agent: have it ask a choice question; answer once in Claude's

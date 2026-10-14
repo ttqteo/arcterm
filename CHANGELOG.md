@@ -34,6 +34,8 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
 
 ### Fixed
 
+- A run whose plan review failed no longer shows a green check on its finished fold in the Agent sidebar: the fold
+  shows a red dot and "1 failed" until the lead's next round replaces that review.
 - **A pick in Claude's own question dialog no longer comes back as dismissed** on a Team or Enterprise Claude account,
   and the arcterm card stays the one waiting for your answer instead of being swapped for another.
 - **The Token burn card asks again on each prompt** on a Team or Enterprise Claude account: one allow or deny held for
