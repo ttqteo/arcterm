@@ -97,26 +97,35 @@ func TestPlanPressure(t *testing.T) {
 	}
 	wait := func(id string, bytes uint64) Job { return Job{Id: id, Request: Request{Name: id, Bytes: bytes}} }
 	old := t0.Add(-2 * RampUp)
+	// macOS's free count reads low on a machine that runs fine: the pressure decides
+	low := uint64(512 << 20)
 	cases := []struct {
-		name     string
-		jobs     []Job
-		mode     string
-		pressure Pressure
-		start    []string
-		reason   string
+		name      string
+		jobs      []Job
+		mode      string
+		pressure  Pressure
+		available uint64
+		start     []string
+		reason    string
 	}{
-		{"normal starts every job whatever the free count", []Job{wait("a", 3*gb), wait("b", 3*gb)}, ModeAuto, PressureNormal, []string{"a", "b"}, ""},
-		{"warn starts one at a time", []Job{wait("a", 3*gb), wait("b", 3*gb)}, ModeAuto, PressureWarn, []string{"a"}, ReasonPressureHigh},
-		{"warn waits while a job ramps up", []Job{run("r", gb, t0), wait("a", gb)}, ModeAuto, PressureWarn, nil, ReasonPressureHigh},
-		{"warn starts once the last start has ramped", []Job{run("r", gb, old), wait("a", gb)}, ModeAuto, PressureWarn, []string{"a"}, ""},
-		{"critical starts nothing", []Job{wait("a", gb)}, ModeAuto, PressureCritical, nil, ReasonPressureCritical},
-		{"the slot count still caps", []Job{run("r", gb, old), wait("a", gb)}, ModeSlots, PressureNormal, nil, "slot busy"},
-		{"off starts past critical", []Job{wait("a", gb)}, ModeOff, PressureCritical, []string{"a"}, ""},
-		{"forced starts past critical", []Job{{Id: "f", Request: Request{Name: "f", Bytes: gb}, Forced: true}}, ModeAuto, PressureCritical, []string{"f"}, ""},
+		{"normal starts the head whatever the free count", []Job{wait("a", 3*gb)}, ModeAuto, PressureNormal, low, []string{"a"}, ""},
+		{"normal starts no second job beside one ramping up when the RAM is short", []Job{wait("a", 3*gb), wait("b", 3*gb)}, ModeAuto, PressureNormal, low, []string{"a"}, "needs 3 GB, 0 GB free"},
+		{"normal waits while a job ramps up and the RAM is short", []Job{run("r", 3*gb, t0), wait("a", 3*gb)}, ModeAuto, PressureNormal, low, nil, "needs 3 GB, 0 GB free"},
+		{"normal starts beside a job ramping up when the RAM fits both", []Job{run("r", 3*gb, t0), wait("a", 3*gb)}, ModeAuto, PressureNormal, 8 * gb, []string{"a"}, ""},
+		{"normal starts once the last start has ramped", []Job{run("r", 3*gb, old), wait("a", 3*gb)}, ModeAuto, PressureNormal, low, []string{"a"}, ""},
+		{"warn starts one at a time", []Job{wait("a", 3*gb), wait("b", 3*gb)}, ModeAuto, PressureWarn, low, []string{"a"}, ReasonPressureHigh},
+		{"warn waits while a job ramps up", []Job{run("r", gb, t0), wait("a", gb)}, ModeAuto, PressureWarn, low, nil, ReasonPressureHigh},
+		// 2026-10-15: on an 8 GB Mac a third typecheck started a minute after the second, under warn, and the
+		// three paged for 15 minutes
+		{"warn waits while a job runs past its ramp-up", []Job{run("r", gb, old), wait("a", gb)}, ModeAuto, PressureWarn, 8 * gb, nil, ReasonPressureHigh},
+		{"critical starts nothing", []Job{wait("a", gb)}, ModeAuto, PressureCritical, low, nil, ReasonPressureCritical},
+		{"the slot count still caps", []Job{run("r", gb, old), wait("a", gb)}, ModeSlots, PressureNormal, low, nil, "slot busy"},
+		{"off starts past critical", []Job{wait("a", gb)}, ModeOff, PressureCritical, low, []string{"a"}, ""},
+		{"forced starts past critical", []Job{{Id: "f", Request: Request{Name: "f", Bytes: gb}, Forced: true}}, ModeAuto, PressureCritical, low, []string{"f"}, ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			start, reason := plan(c.jobs, 1, c.mode, 512<<20, c.pressure, t0)
+			start, reason := plan(c.jobs, 1, c.mode, c.available, c.pressure, t0)
 			if !slices.Equal(start, c.start) {
 				t.Fatalf("start = %v, want %v", start, c.start)
 			}

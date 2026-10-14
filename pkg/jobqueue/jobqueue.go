@@ -59,8 +59,8 @@ type Pressure int
 
 const (
 	PressureUnknown  Pressure = iota // no reading: the free-RAM rule decides
-	PressureNormal                   // every job may start
-	PressureWarn                     // one at a time: a job starts once the last one has ramped up
+	PressureNormal                   // a job starts, beside one still ramping up only when the free RAM fits both
+	PressureWarn                     // one at a time: a job starts once none runs
 	PressureCritical                 // nothing starts: the machine is about to stall
 )
 
@@ -244,9 +244,10 @@ func clampSlots(n int) int {
 
 // plan picks the queued jobs that start now, in queue order: a forced job always, and every job in ModeOff;
 // otherwise the head while fewer than slots run (in ModeSlots) and the RAM allows it. With a pressure reading
-// that is the pressure: normal starts it, warn only once no job is still ramping up, critical never. With none it
-// is the free RAM less the peaks of jobs still ramping up, which must fit its peak. It stops at the first job that
-// cannot start, and returns why the rest wait.
+// that is the pressure: normal starts it, beside a job still ramping up only when the free RAM fits both (the
+// pressure has not seen that job's peak yet); warn only once no job runs; critical never. With none it is the free
+// RAM less the peaks of jobs still ramping up, which must fit its peak. It stops at the first job that cannot
+// start, and returns why the rest wait.
 func plan(jobs []Job, slots int, mode string, available uint64, pressure Pressure, now time.Time) ([]string, string) {
 	running, rampingJobs := 0, 0
 	var ramping uint64
@@ -281,9 +282,10 @@ func plan(jobs []Job, slots int, mode string, available uint64, pressure Pressur
 			reason = "slot busy"
 		case pressure == PressureCritical:
 			reason = ReasonPressureCritical
-		case pressure == PressureWarn && rampingJobs > 0:
+		case pressure == PressureWarn && running > 0:
 			reason = ReasonPressureHigh
-		case pressure == PressureUnknown && !memgate.Fits(memgate.Job{Name: j.Name, Bytes: j.Bytes}, free):
+		case (pressure == PressureUnknown || pressure == PressureNormal && rampingJobs > 0) &&
+			!memgate.Fits(memgate.Job{Name: j.Name, Bytes: j.Bytes}, free):
 			reason = fmt.Sprintf("needs %s, %s free", memgate.FormatGB(j.Bytes), memgate.FormatGB(free))
 		default:
 			start = append(start, j.Id)

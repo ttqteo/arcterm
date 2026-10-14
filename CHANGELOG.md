@@ -31,6 +31,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - **What's new** is livelier: a release's highlights show a picture of the feature, every note leads with a colored
   icon for what it is about, and your Jarvis pet tells the news in the corner.
 
+### Fixed
+
+- **Heavy jobs no longer pile up on a Mac short of memory**: under yellow memory pressure the Jobs queue runs one
+  heavy command at a time, where it used to let in another every minute (three typechecks on an 8 GB Mac swapped
+  for a quarter of an hour), and while one is still starting up the next joins it only when the free RAM fits both.
+
 ## 0.15.12 — 2026-10-14
 
 ### Added
