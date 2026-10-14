@@ -66,7 +66,7 @@ raised hand and `!` (amber), whatever the task state.
 | `final-check`, `landing` | standing with a box, progress bar |
 | `wrapping-up` | typing |
 | `land-held` | head in hands, `!` red |
-| `landed`, `complete`, `cancelled` | empty chair, floor dimmed |
+| `landed`, `complete`, `cancelled` | empty chair, the lead's desk dimmed (the task desks keep their own states) |
 
 ## Drawing
 
@@ -141,5 +141,5 @@ by raising the budget.
 - vitest: `officemodel.test.ts` (each task state and run stage maps to its pose, label and click target; asking
   overrides; a run with no dag has only a lead), `officesprite.test.ts` (every grid is its declared size and uses
   only known codes; a pose's two frames are the same size).
-- CDP: `jarvis-office` shows every pose of the `States` canvas board on the bench fixture; `jarvis-office-bench` holds
+- CDP: `jarvis-office` shows every pose of the `States` canvas board on its own small fixture (floors of at most six desks, so one shot holds every pose), and drives a real run's floor; `jarvis-office-bench` holds
   the budgets.
