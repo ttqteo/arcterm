@@ -37326,11 +37326,16 @@ const whatsNew = {
 // command, the idea ones included, goes through to the real client) and is opened from Conversations. Steps 14-18 are
 // capturing a terminal selection (Capture-Selection.dc.html): the shell prints a line, a real mouse drag selects it, and the
 // chip, the shortcut (Ctrl+Shift+I, dispatched over CDP), the toast's Undo and the shortcut with nothing selected are driven
-// as a person would. Teardown closes the terminal, deletes the project and the two idea files (<data dir>/ideas/), puts
-// back the fixture roster and the keys.
+// as a person would. Steps 19-21 are the same shortcut on a second agent, `fx-ideas-empty`, whose session `ideas-empty`
+// has no ideas file yet (its own roster entry, block and real shell): the strip has no Ideas count, the shortcut opens the
+// section with no count and the Add an idea input focused, and one line typed there brings the count `1`. Teardown closes
+// both terminals, deletes the project and the three idea files (<data dir>/ideas/), puts back the fixture roster and the
+// keys.
 const IDEAS_AGENT = "fx-ideas-rail";
+const IDEAS_EMPTY_AGENT = "fx-ideas-empty";
 const IDEAS_PROJECT = "verify-ideas-rail";
 const IDEAS_SESSION = "ideas-fixture";
+const IDEAS_EMPTY = "ideas-empty";
 const IDEAS_ENDED = "ideas-ended";
 const IDEAS_KEYS = [
     RAIL_VISIBLE_KEY,
@@ -37588,14 +37593,16 @@ const ideasRail = {
                 ctx.prevKeys[k] = await h.ev(`localStorage.getItem(${JSON.stringify(k)})`);
             }
             ctx.dataDir = (await h.rpc("waveinfo", null)).datadir;
-            // the two lists start empty, whatever an earlier run left
-            for (const id of [IDEAS_SESSION, IDEAS_ENDED]) {
+            // the three lists start empty, whatever an earlier run left
+            for (const id of [IDEAS_SESSION, IDEAS_EMPTY, IDEAS_ENDED]) {
                 rmSync(join(ctx.dataDir, "ideas", `${id}.json`), { force: true });
             }
             ctx.repo = join(base, "repo");
             mkdirSync(ctx.repo);
             ctx.transcript = join(base, `${IDEAS_SESSION}.jsonl`);
             writeFileSync(ctx.transcript, ideasTranscript(ctx.repo, "brainstorm the ideas rail"));
+            ctx.emptyTranscript = join(base, `${IDEAS_EMPTY}.jsonl`);
+            writeFileSync(ctx.emptyTranscript, ideasTranscript(ctx.repo, "an agent that has noted nothing yet"));
             ctx.endedTranscript = join(base, `${IDEAS_ENDED}.jsonl`);
             writeFileSync(ctx.endedTranscript, ideasTranscript(ctx.repo, "an ended brainstorm"));
             await h.rpc("createproject", { name: IDEAS_PROJECT, path: ctx.repo });
@@ -37611,6 +37618,11 @@ const ideasRail = {
             // the tab is an agent's, as launchAgent marks one, and the block carries the session the agent reported
             await h.rpc("setmeta", { oref: `tab:${term.tabId}`, meta: { "session:agent": "claude" } });
             await h.rpc("setmeta", { oref: `block:${term.blockId}`, meta: { "agent:transcriptpath": ctx.transcript } });
+            // the second agent, whose session has no ideas file: its own tab, block and transcript, marked the same way
+            await openRailTerminal(h, ctx, IDEAS_PROJECT);
+            const emptyTerm = ctx.terminals[1];
+            await h.rpc("setmeta", { oref: `tab:${emptyTerm.tabId}`, meta: { "session:agent": "claude" } });
+            await h.rpc("setmeta", { oref: `block:${emptyTerm.blockId}`, meta: { "agent:transcriptpath": ctx.emptyTranscript } });
             mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
             writeFileSync(
                 TREE_RAIL_FIXTURE,
@@ -37627,6 +37639,18 @@ const ideasRail = {
                             idleSince: Date.now() - 60_000,
                             blockId: term.blockId,
                             transcriptPath: ctx.transcript,
+                        },
+                        {
+                            id: IDEAS_EMPTY_AGENT,
+                            name: "empty ideas agent",
+                            project: IDEAS_PROJECT,
+                            task: "an agent that has noted nothing yet",
+                            state: "idle",
+                            agent: "claude",
+                            model: "opus",
+                            idleSince: Date.now() - 120_000,
+                            blockId: emptyTerm.blockId,
+                            transcriptPath: ctx.emptyTranscript,
                         },
                     ],
                     null,
@@ -37673,7 +37697,13 @@ const ideasRail = {
             await h.goto("agent");
             ctx.inRoster = await polishWaitFor(h, `!!document.querySelector('[data-agent-terminal="${IDEAS_AGENT}"]')`, 15000);
             if (!ctx.inRoster) return ctx;
-            // a pane starts its shell when it is first shown (a hidden one has no size to start it at)
+            // a pane starts its shell when it is first shown (a hidden one has no size to start it at): the second agent's
+            // first, so the first one is what stays in focus for step 0
+            ctx.emptyInRoster = await polishWaitFor(h, `!!document.querySelector('[data-agent-terminal="${IDEAS_EMPTY_AGENT}"]')`, 15000);
+            if (ctx.emptyInRoster) {
+                await h.rpc("uireveal", { address: `agent:${IDEAS_EMPTY_AGENT}` }, UI_ROUTE);
+                ctx.emptyShellUp = await uploadsShellUp(h, emptyTerm.blockId);
+            }
             await h.rpc("uireveal", { address: `agent:${IDEAS_AGENT}` }, UI_ROUTE);
             ctx.shellUp = await uploadsShellUp(h, term.blockId);
         } catch (e) {
@@ -37794,6 +37824,10 @@ const ideasRail = {
             const typed = await ideasType(h, "[data-ideas-editbox]", edited, true);
             await ideasClick(h, `[data-ideas-editor="${i2.id}"] [data-ideas-kind="question"]`);
             await polishNap(200);
+            // the kind choice words its options as Ideas-EditMerge.dc.html does (Idea is singular, unlike its group heading)
+            const kindLabels = await h.ev(
+                `[...document.querySelectorAll('[data-ideas-editor="${i2.id}"] [role="radiogroup"] [role="radio"]')].map((b) => b.textContent.trim())`
+            );
             await shot("inline-edit");
             await railTabsKey(h, "Enter", "Enter", 13, 2); // Ctrl+Enter saves
             const movedToOpen = await polishWaitFor(
@@ -37813,9 +37847,10 @@ const ideasRail = {
             const kept = (await ideasList(h)).ideas.find((i) => i.id === i3.id);
             const keptRow = (await ideasView(h)).rows.find((r) => r.id === i3.id);
             rec(
-                "5. inline edit: the edited idea is in Open with its new text (idealist agrees); another edit cancelled with Esc is unchanged",
+                "5. inline edit: the kind choice reads Decided / Idea / Open; the edited idea is in Open with its new text (idealist agrees); another edit cancelled with Esc is unchanged",
                 boxUp &&
                     typed &&
+                    JSON.stringify(kindLabels) === JSON.stringify(["Decided", "Idea", "Open"]) &&
                     movedToOpen &&
                     editedRow?.text === edited &&
                     editedRow.kind === "question" &&
@@ -37823,7 +37858,7 @@ const ideasRail = {
                     closed &&
                     kept?.text === T.i3 &&
                     keptRow?.text === T.i3,
-                { movedToOpen, text: editedRow?.text, kind: editedRow?.kind, closed, keptText: kept?.text, keptRow: keptRow?.text }
+                { kindLabels, movedToOpen, text: editedRow?.text, kind: editedRow?.kind, closed, keptText: kept?.text, keptRow: keptRow?.text }
             );
 
             // --- 6. mark as decided -----------------------------------------------------------------------------------
@@ -38067,10 +38102,15 @@ droppedRows.length === droppedBefore8 + 1 &&
             );
             const endedRows = await h.ev(`[...document.querySelectorAll("[data-agent-session] [data-ideas-ended] [data-ideas-text]")].map((t) => t.textContent)`);
             const pills = await h.ev(`document.querySelectorAll("[data-agent-session] [data-ideas-newpill]").length`);
+            // the opened list fits its box: nothing of it reaches past the sides, so there is no sideways scrollbar
+            const endedBox = await h.ev(`(() => {
+                const body = document.querySelector("[data-agent-session] [data-ideas-ended-body]");
+                return body ? { client: body.clientWidth, scroll: body.scrollWidth } : null;
+            })()`);
             await shot("ended-open");
             const endedList = await ideasList(h, IDEAS_ENDED);
             rec(
-                "13. ended session: opened from Conversations, the session view holds the folded `Ideas · 2`; expanded, both rows show, with no New pills, and looking does not mark the list read",
+                "13. ended session: opened from Conversations, the session view holds the folded `Ideas · 2`; expanded, both rows show, with no New pills and no sideways scroll, and looking does not mark the list read",
                 listed &&
                     sessionShown &&
                     folded &&
@@ -38081,8 +38121,10 @@ droppedRows.length === droppedBefore8 + 1 &&
                     endedRows.includes("Ý một của phiên đã kết thúc") &&
                     endedRows.includes("Ý hai của phiên đã kết thúc") &&
                     pills === 0 &&
+                    endedBox != null &&
+                    endedBox.scroll <= endedBox.client &&
                     endedList.seenat === 0,
-                { listed, sessionShown, foldedView, expanded, endedRows, pills, seenat: endedList.seenat }
+                { listed, sessionShown, foldedView, expanded, endedRows, pills, endedBox, seenat: endedList.seenat }
             );
 
             // --- 14. the "Add as idea" chip beside a selection (Capture-Selection.dc.html) ----------------------------
@@ -38223,6 +38265,104 @@ droppedRows.length === droppedBefore8 + 1 &&
                 closedFirst && focusedTerm === true && nothingSelected && inputFocused && input.shown && input.label === "Add an idea",
                 { closedFirst, focusedTerm, nothingSelected, inputFocused, input }
             );
+
+            // --- 19-21. the same shortcut on an agent whose session has no ideas yet ------------------------------------
+            // the second agent: no ideas file, so the strip has no count, and the section is not on its rail until asked for
+            const emptyTerm = ctx.terminals[1];
+            const emptySetUp = ctx.emptyInRoster === true && ctx.emptyShellUp === true && emptyTerm != null;
+            if (emptySetUp) {
+                await h.rpc("uireveal", { address: `agent:${IDEAS_EMPTY_AGENT}` }, UI_ROUTE);
+            }
+            const emptyPane = await polishWaitFor(
+                h,
+                `(document.querySelector('[data-agent-terminal="${IDEAS_EMPTY_AGENT}"] .xterm-screen')?.getClientRects().length ?? 0) > 0 && (document.querySelector('[data-agent-terminal="${IDEAS_AGENT}"] .xterm-screen')?.getClientRects().length ?? 0) === 0 && ${IDEAS_ASIDE}?.querySelector('[role="tablist"]') != null && ${IDEAS_STAT} == null`,
+                15000
+            );
+            await polishNap(400);
+            v = await ideasView(h);
+            const emptyBefore = await ideasList(h, IDEAS_EMPTY);
+            await shot("empty-no-count");
+            rec(
+                "19. an agent with no ideas yet: with its pane in focus (the other agent's has gone), the strip has no Ideas count and the rail has no Ideas section, and idealist holds nothing for its session",
+                emptySetUp &&
+                    emptyPane &&
+                    v.stat == null &&
+                    !v.open &&
+                    (emptyBefore?.ideas ?? []).length === 0,
+                { emptySetUp, emptyPane, stat: v.stat, open: v.open, ideas: (emptyBefore?.ideas ?? []).length }
+            );
+
+            // the terminal holds the focus and nothing is selected, as in step 18
+            const emptyFocused = await h.ev(`(() => {
+                const t = document.querySelector('[data-agent-terminal="${IDEAS_EMPTY_AGENT}"] .xterm-helper-textarea');
+                t?.focus();
+                return document.activeElement === t;
+            })()`);
+            const emptyNoSelection = emptySetUp && ((await ideasTermSelection(h, emptyTerm.blockId)) ?? "x") === "";
+            await ideasCaptureKey(h);
+            const emptyInputFocused = await polishWaitFor(
+                h,
+                `document.activeElement?.matches?.("[data-ideas-add]") === true && ${IDEAS_SECTION} != null`,
+                6000
+            );
+            await polishNap(300);
+            const emptyOpen = await h.ev(`(() => {
+                const aside = ${IDEAS_ASIDE};
+                const el = document.activeElement;
+                const r = el?.getBoundingClientRect();
+                return {
+                    heading: aside?.querySelector('[data-rail-section="ideas"] h3')?.textContent?.trim() ?? null,
+                    stat: aside?.querySelector('[data-rail-stat="ideas"]') != null,
+                    rows: aside?.querySelectorAll("[data-ideas-section] [data-ideas-row]").length ?? -1,
+                    newCount: aside?.querySelector("[data-ideas-newcount]") != null,
+                    placeholder: el?.getAttribute?.("placeholder") ?? null,
+                    shown: r != null && r.width > 0 && r.height > 0,
+                };
+            })()`);
+            await shot("empty-section");
+            rec(
+                "20. shortcut with no selection and no ideas: the Ideas section opens with no count (its heading is just Ideas, the strip still has none) and no rows, and the focus is on its Add an idea input",
+                emptyFocused === true &&
+                    emptyNoSelection &&
+                    emptyInputFocused &&
+                    emptyOpen.heading === "Ideas" &&
+                    emptyOpen.stat === false &&
+                    emptyOpen.rows === 0 &&
+                    emptyOpen.newCount === false &&
+                    emptyOpen.shown &&
+                    emptyOpen.placeholder === "Add an idea",
+                { emptyFocused, emptyNoSelection, emptyInputFocused, ...emptyOpen }
+            );
+
+            // one line typed into the focused input is the list's first idea, and the strip's count `1` appears
+            const first = "Ý đầu tiên của một phiên chưa có gì";
+            const typedFirst = await ideasType(h, "[data-ideas-add]", first);
+            await railTabsKey(h, "Enter", "Enter", 13);
+            const counted1 = await polishWaitFor(h, `${IDEAS_STAT}?.getAttribute("data-count") === "1"`, 8000);
+            const rowIn = await polishWaitFor(
+                h,
+                `[...(${IDEAS_SECTION}?.querySelectorAll("[data-ideas-text]") ?? [])].some((t) => t.textContent === ${JSON.stringify(first)})`,
+                6000
+            );
+            v = await ideasView(h);
+            const emptyAfter = await ideasList(h, IDEAS_EMPTY);
+            const firstIdea = ideaOf(emptyAfter, first);
+            const strayInOther = ideaOf(await ideasList(h), first) != null;
+            await shot("empty-added");
+            rec(
+                "21. the first idea: typing one line into that input and pressing Enter makes the strip's count `1` appear, the row is in the section as the user's own, the input is empty, and idealist has it for that session only",
+                emptySetUp &&
+                    typedFirst &&
+                    counted1 &&
+                    v.stat?.count === "1" &&
+                    rowIn &&
+                    v.addValue === "" &&
+                    (emptyAfter?.ideas ?? []).length === 1 &&
+                    firstIdea?.by === "you" &&
+                    firstIdea.kind === "idea" &&
+                    !strayInOther,
+                { typedFirst, counted1, count: v.stat?.count, rowIn, input: v.addValue, ideas: (emptyAfter?.ideas ?? []).length, by: firstIdea?.by, kind: firstIdea?.kind, strayInOther }
+            );
         } catch (e) {
             rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));
         }
@@ -38257,8 +38397,8 @@ droppedRows.length === droppedBefore8 + 1 &&
             );
         }
         if (ctx.dataDir) {
-            await step("delete the two idea files", () => {
-                for (const id of [IDEAS_SESSION, IDEAS_ENDED]) rmSync(join(ctx.dataDir, "ideas", `${id}.json`), { force: true });
+            await step("delete the three idea files", () => {
+                for (const id of [IDEAS_SESSION, IDEAS_EMPTY, IDEAS_ENDED]) rmSync(join(ctx.dataDir, "ideas", `${id}.json`), { force: true });
             });
         }
         await step("restore the keys", async () => {

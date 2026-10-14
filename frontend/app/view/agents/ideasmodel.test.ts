@@ -3,6 +3,7 @@ import {
     canMarkDecided,
     canMerge,
     groupIdeas,
+    IDEA_GROUPS,
     ideaCounts,
     ideaKindLabel,
     ideaKindOf,
@@ -197,5 +198,14 @@ describe("ideaKindLabel", () => {
         expect(ideaKindLabel("decision")).toBe("Decided");
         expect(ideaKindLabel("idea")).toBe("Ideas");
         expect(ideaKindLabel("question")).toBe("Open");
+    });
+});
+
+describe("IDEA_GROUPS", () => {
+    it("heads the groups Decided / Ideas / Open", () => {
+        expect(IDEA_GROUPS.map((g) => g.label)).toEqual(["Decided", "Ideas", "Open"]);
+    });
+    it("words the edit box's kind choice as Decided / Idea / Open (the middle one is singular)", () => {
+        expect(IDEA_GROUPS.map((g) => g.choiceLabel)).toEqual(["Decided", "Idea", "Open"]);
     });
 });

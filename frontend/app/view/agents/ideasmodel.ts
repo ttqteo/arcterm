@@ -6,11 +6,12 @@
 
 export type IdeaKind = "decision" | "idea" | "question";
 
-// the three groups, in the order the section lists them: what is settled, what was floated, what is still open
-export const IDEA_GROUPS: { kind: IdeaKind; label: string }[] = [
-    { kind: "decision", label: "Decided" },
-    { kind: "idea", label: "Ideas" },
-    { kind: "question", label: "Open" },
+// the three groups, in the order the section lists them: what is settled, what was floated, what is still open. `label`
+// heads the group; `choiceLabel` is the same kind as one option of the edit box's three-way choice ("Idea", not "Ideas")
+export const IDEA_GROUPS: { kind: IdeaKind; label: string; choiceLabel: string }[] = [
+    { kind: "decision", label: "Decided", choiceLabel: "Decided" },
+    { kind: "idea", label: "Ideas", choiceLabel: "Idea" },
+    { kind: "question", label: "Open", choiceLabel: "Open" },
 ];
 
 export function ideaKindLabel(kind: string): string {

@@ -283,7 +283,7 @@ function IdeaEditor({
                                     : "bg-transparent text-muted hover:text-secondary"
                             )}
                         >
-                            {g.label}
+                            {g.choiceLabel}
                         </button>
                     ))}
                 </div>
@@ -607,7 +607,9 @@ export function EndedSessionIdeas({ sessionId }: { sessionId: string }) {
                 <span className="tabular-nums">Ideas · {live}</span>
             </button>
             {open ? (
-                <div className="max-h-[40vh] max-w-[560px] overflow-y-auto pt-[4px]">
+                // the section pulls itself 8px out on each side (-mx-[8px]) to use the rail body's padding: this box has to
+                // give it that padding, or its right edge overflows and scrolls sideways
+                <div data-ideas-ended-body className="max-h-[40vh] max-w-[560px] overflow-y-auto px-[8px] pt-[4px]">
                     <IdeasSection sessionId={sessionId} quiet />
                 </div>
             ) : null}
