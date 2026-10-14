@@ -17,7 +17,7 @@ A new feature someone would open the app to try ends with `<!-- big -->` (either
 new draws it as one of its release's cards and folds every other line under a count. At most 5 per release, and
 `whatsnew.test.ts` fails a release with more; a fix, a tweak or a rename is never big.
 
-## Unreleased
+## 0.15.12 — 2026-10-14
 
 ### Added
 
@@ -65,6 +65,21 @@ new draws it as one of its release's cards and folds every other line under a co
 - **A session and the runs it started point at each other**: a session that started a run shows where the run is under
   its name (`→ Setup · 3/5`, `→ Queued #2`, `→ merged`, `→ held`, or `→ 2 runs`), and the run's row says
   `from <session>`. A click on either goes to the other.
+- **Pick the corner Sprout folds into**: right-click the Sprout button → **Fold to**, or Settings → General → Window
+  → Fold to: top left, top right, bottom left or bottom right. Folded, Sprout moves there at once; a drag still keeps
+  its own spot until you pick a corner again. <!-- big -->
+- **Close several agents at once from the Consumers panel**: hover a row and tick it, or tick Sleeping to pick every
+  sleeping agent, then press Close in the bar under the list. It asks first only when a ticked agent is working; the
+  closed agents' conversations stay under Conversations. A run's lead and workers still close with their run. <!-- big -->
+- **Pick one project's sleeping agents in the Consumers panel**: when the agents asleep come from more than one
+  project, Sleeping lists them under a head per project, with a tick that picks just that project's.
+- **What's new**: click the version at the bottom right for the latest release notes, a headline each (click one for
+  the rest); **Try it** on a note takes you to that feature. The shortcuts button beside it is now a round help icon. <!-- big -->
+- **Code browses folders that are not git repositories** (from the kaeltran16 fork): a plain folder picked in Code
+  lists and searches its files, skipping `node_modules`, build output and dot-folders; Changed and Diff are greyed
+  out with the reason. <!-- big -->
+- **A finished Check, Verify or Final step keeps its output**: click the step in the final stage pane or the run's
+  rail to read it after the next step has started.
 
 ### Changed
 
@@ -85,7 +100,7 @@ new draws it as one of its release's cards and folds every other line under a co
 - **Subagent questions name the model**: when an agent asks to start a subagent with no model set, or on Opus, the
   question says so and suggests haiku for collecting or sonnet for code; answer No (or Tab) and name one to switch.
 - **What's new leads with each release's highlights**: a few cards for the features worth trying, and every other
-  note, fixes too, folded under one "58 more changes · 12 fixes" line. <!-- big -->
+  note, fixes too, folded under one "58 more changes · 12 fixes" line.
 - **Python and pnpm projects wait their turn for RAM too**: an agent's whole `pytest` run (bare, `uv run` or
   `python -m`), `pnpm test` / `pnpm build`, `astro build` and an `e2e.sh` script now queue in Jobs like a build,
   so parallel workers no longer get killed for low memory; one test file or a `-k` filter still runs at once.
@@ -95,6 +110,27 @@ new draws it as one of its release's cards and folds every other line under a co
 - **A conflict with the base at land goes to a resolver session**: in the files your project lists in `.arc/union-merge`
   (such as `CHANGELOG.md`), lines both sides only added are all kept, the base's first; any other conflict gets one
   resolver agent in the run's landing tree, and the land is held, naming the files, only if that fails.
+- **The Jarvis graph peek is gone**: `Shift+G` on Jarvis and the record peek's **Where it sits on the map** no longer
+  open the vault graph, which drew mostly unlinked dots. A record's runs are still listed in its peek.
+- **A tidier agent header**: Open a tool, Float and Redraw moved into a new `…` button (the same menu as a right-click
+  on the header), leaving `…`, Split, Fullscreen and Close. A project folder in the sidebar no longer shows a `+` on
+  hover; open a terminal from **New**.
+- The folded Sprout's "Restore, don't fold for" is one box now: click into it and 1 hour and till 8:00 pop up over
+  the card, or type a time as before.
+- **Close the agent or terminal in focus with ⌘⇧W on a Mac**, the same shape as Ctrl+Shift+W on Windows. ⌘W on its
+  own now does nothing.
+- **One click on the folded Sprout opens its card of agents and terminals** and keeps it open, instead of the Jarvis
+  chat: pick one to float on it, or open the chat from the card. Click Sprout again, press Esc or click away to close
+  it; a double-click still restores the window.
+- **Anything at work is green, never the accent**: a working agent's dot, glyph and header, subagents, a run's lanes,
+  strip and graph, the Jobs queue and an effort's active chunk are now the status green, so in a theme with a blue
+  accent (Spider, Graphite, One Dark…) a working agent no longer reads as the selected one. In a run's strip and an
+  effort's bar the done segments are the same green dimmed.
+- **A run's land commit gets a conventional subject** (`feat(cockpit): <plan title>`), typed from the branch's own
+  commits, instead of the bare plan title.
+- **A land held only by uncommitted changes in the checkout lands by itself** once they are committed, stashed or
+  moved aside; the lead's `complete` now prints `landed <sha>` or `held: <reason>`, and its wake names every land
+  blocker, not only conflicts.
 
 ### Fixed
 
@@ -122,53 +158,6 @@ new draws it as one of its release's cards and folds every other line under a co
   the rest of the session, and its estimate now counts what the session has already used.
 - The Heavy jobs popover names a run's Check, Verify, Setup and Final steps by the run's title instead of only its short
   id ("Run 973afb").
-
-## 0.15.12 — 2026-10-14
-
-### Added
-
-- **Pick the corner Sprout folds into**: right-click the Sprout button → **Fold to**, or Settings → General → Window
-  → Fold to: top left, top right, bottom left or bottom right. Folded, Sprout moves there at once; a drag still keeps
-  its own spot until you pick a corner again. <!-- big -->
-- **Close several agents at once from the Consumers panel**: hover a row and tick it, or tick Sleeping to pick every
-  sleeping agent, then press Close in the bar under the list. It asks first only when a ticked agent is working; the
-  closed agents' conversations stay under Conversations. A run's lead and workers still close with their run. <!-- big -->
-- **Pick one project's sleeping agents in the Consumers panel**: when the agents asleep come from more than one
-  project, Sleeping lists them under a head per project, with a tick that picks just that project's.
-- **What's new**: click the version at the bottom right for the latest release notes, a headline each (click one for
-  the rest); **Try it** on a note takes you to that feature. The shortcuts button beside it is now a round help icon. <!-- big -->
-- **Code browses folders that are not git repositories** (from the kaeltran16 fork): a plain folder picked in Code
-  lists and searches its files, skipping `node_modules`, build output and dot-folders; Changed and Diff are greyed
-  out with the reason. <!-- big -->
-- **A finished Check, Verify or Final step keeps its output**: click the step in the final stage pane or the run's
-  rail to read it after the next step has started.
-
-### Changed
-
-- **The Jarvis graph peek is gone**: `Shift+G` on Jarvis and the record peek's **Where it sits on the map** no longer
-  open the vault graph, which drew mostly unlinked dots. A record's runs are still listed in its peek.
-- **A tidier agent header**: Open a tool, Float and Redraw moved into a new `…` button (the same menu as a right-click
-  on the header), leaving `…`, Split, Fullscreen and Close. A project folder in the sidebar no longer shows a `+` on
-  hover; open a terminal from **New**.
-- The folded Sprout's "Restore, don't fold for" is one box now: click into it and 1 hour and till 8:00 pop up over
-  the card, or type a time as before.
-- **Close the agent or terminal in focus with ⌘⇧W on a Mac**, the same shape as Ctrl+Shift+W on Windows. ⌘W on its
-  own now does nothing.
-- **One click on the folded Sprout opens its card of agents and terminals** and keeps it open, instead of the Jarvis
-  chat: pick one to float on it, or open the chat from the card. Click Sprout again, press Esc or click away to close
-  it; a double-click still restores the window.
-- **Anything at work is green, never the accent**: a working agent's dot, glyph and header, subagents, a run's lanes,
-  strip and graph, the Jobs queue and an effort's active chunk are now the status green, so in a theme with a blue
-  accent (Spider, Graphite, One Dark…) a working agent no longer reads as the selected one. In a run's strip and an
-  effort's bar the done segments are the same green dimmed.
-- **A run's land commit gets a conventional subject** (`feat(cockpit): <plan title>`), typed from the branch's own
-  commits, instead of the bare plan title.
-- **A land held only by uncommitted changes in the checkout lands by itself** once they are committed, stashed or
-  moved aside; the lead's `complete` now prints `landed <sha>` or `held: <reason>`, and its wake names every land
-  blocker, not only conflicts.
-
-### Fixed
-
 - **Sprout names the project** when it says an agent finished or is waiting at a permission prompt: the project
   sits beside Notice / Needs you, as it did on the toast.
 - **Sprout folds to where you last dragged it** instead of always the bottom-right corner, where it covered the buttons
