@@ -10,6 +10,7 @@ import { cacheMissNotice, transcriptEntries } from "./cache-core";
 import { controlMsg, deliver, endTurn, steerNotice, takeLines } from "./control-core";
 import type { Turn } from "./control-core";
 import { denial } from "./guard-core";
+import { promptNudge } from "./ideas-core";
 import { jobslotArgs, jobslotLine } from "./jobslot-core";
 import { claudeConfigDir, lintContext, lintMemory, memoryDir, parseMemory, referencedPaths, taskNames } from "./memlint-core";
 import type { Ran } from "./mention-core";
@@ -330,9 +331,33 @@ export const register: Register = (on) => {
         return { drop: out.notice };
     });
 
-    on("classic.UserPromptSubmit", ($, e, next) => {
+    on("classic.UserPromptSubmit", async ($, e, next) => {
         transcriptPath = e.transcript_path || null;
         spawnGate.promptSubmitted();
+        if (active) {
+            // the prompt goes on whatever the tick does. the session's id is passed because a block-targeted tick
+            // errors until the block has a transcript path
+            try {
+                await promptNudge(
+                    {
+                        run: (argv) => $.process.run(argv),
+                        append: async (text) => {
+                            const kept = await $.session.append({
+                                message: { type: "user", content: [{ type: "text", text }] },
+                            });
+                            if (kept.deny !== undefined) {
+                                throw new Error(kept.deny);
+                            }
+                        },
+                        log: (msg) => $.ui.log(msg, { to: "debug" }),
+                    },
+                    WSH,
+                    await $.session.id()
+                );
+            } catch (err) {
+                $.ui.log(`arc: the ideas nudge failed: ${String(err)}`, { to: "debug" });
+            }
+        }
         return next(e);
     });
 

@@ -7,5 +7,5 @@ package skills
 
 import "embed"
 
-//go:embed cockpit-runs cockpit-ui design-local doc-review effort-tracking notes
+//go:embed cockpit-runs cockpit-ui design-local doc-review effort-tracking ideas notes
 var FS embed.FS

@@ -1,6 +1,6 @@
 // arcterm's Claude Code mod. `wsh install-agent-hooks` writes it to ~/.arc/claude-mod with the wsh path
 // substituted and lists that folder in CLAUDE_CODE_PLUGIN_DIRS, so every claude launch loads it.
-// outside an arcterm block every hook passes straight through.
+// outside an arcterm block every hook passes straight through, but the memory lint.
 import { atom, read, update } from "claude-code";
 import type { EngineInterface, Register } from "claude-code";
 import type { AskQuestion } from "./ask-core";
@@ -10,7 +10,9 @@ import { cacheMissNotice, transcriptEntries } from "./cache-core";
 import { controlMsg, deliver, endTurn, steerNotice, takeLines } from "./control-core";
 import type { Turn } from "./control-core";
 import { denial } from "./guard-core";
+import { promptNudge } from "./ideas-core";
 import { jobslotArgs, jobslotLine } from "./jobslot-core";
+import { claudeConfigDir, lintContext, lintMemory, memoryDir, parseMemory, referencedPaths, taskNames } from "./memlint-core";
 import type { Ran } from "./mention-core";
 import { leadingMention, mentionRefusal, sendArgs, sendOutcome } from "./mention-core";
 import { idleArgs } from "./status-core";
@@ -225,11 +227,56 @@ async function askTokengate($: EngineInterface, group: Group): Promise<SpawnVerd
     return verdict;
 }
 
+// lints the project's Claude memory dir at session start, so a memory gone stale on any machine is named there;
+// the person gets a toast, the model the list as a row it reads before the first prompt. silent when the dir
+// is clean or there is none. claude's SessionStart additionalContext or a prompt.compose section would be the
+// natural door, but a managed install's security plugin bypasses both for a user-tier plugin. a reload of the
+// mod (session.start again) appends the row again
+async function lintMemoryDir($: EngineInterface, cwd: string): Promise<void> {
+    const configDir = claudeConfigDir({
+        configDir: await $.env.get("CLAUDE_CONFIG_DIR"),
+        home: (await $.env.get("USERPROFILE")) || (await $.env.get("HOME")),
+    });
+    if (!configDir) {
+        return;
+    }
+    const dir = memoryDir(configDir, cwd);
+    if (!(await $.fs.exists(`${dir}/MEMORY.md`))) {
+        return;
+    }
+    const entries = await $.fs.list(dir);
+    const files = entries.filter((f) => f.kind === "file" && f.name.endsWith(".md") && f.name !== "MEMORY.md");
+    const memories = await Promise.all(
+        files.map(async (f) => parseMemory({ name: f.name, text: await $.fs.read(`${dir}/${f.name}`), mtimeMs: f.mtimeMs }))
+    );
+    const missingPaths = new Set<string>();
+    for (const p of new Set(memories.flatMap((m) => referencedPaths(m.body)))) {
+        if (!(await $.fs.exists(p))) {
+            missingPaths.add(p);
+        }
+    }
+    const tasks = (await $.fs.exists("Taskfile.yml")) ? taskNames(await $.fs.read("Taskfile.yml")) : null;
+    const index = await $.fs.read(`${dir}/MEMORY.md`);
+    const problems = lintMemory({ index, memories, missingPaths, tasks, nowMs: await $.clock.now() });
+    if (problems.length === 0) {
+        return;
+    }
+    const kept = await $.session.append({
+        message: { type: "user", content: [{ type: "text", text: lintContext(dir, problems) }] },
+    });
+    if (kept.deny !== undefined) {
+        throw new Error(kept.deny);
+    }
+    $.ui.toast(`arc: memory lint found ${problems.length} issue(s); Claude will list them`);
+}
+
 export const register: Register = (on) => {
     on("session.start", async ($, e, next) => {
         active = Boolean((await $.env.get("WAVETERM_BLOCKID")) && (await $.env.get("WAVETERM_JWT")));
         spawnGate.sessionStarted();
         const started = await next(e);
+        // inside arcterm or not: a memory goes stale wherever claude runs
+        await lintMemoryDir($, e.cwd).catch((err) => $.ui.log(`arc: memory lint failed: ${String(err)}`, { to: "debug" }));
         if (active) {
             void listenToCockpit($);
         }
@@ -284,9 +331,33 @@ export const register: Register = (on) => {
         return { drop: out.notice };
     });
 
-    on("classic.UserPromptSubmit", ($, e, next) => {
+    on("classic.UserPromptSubmit", async ($, e, next) => {
         transcriptPath = e.transcript_path || null;
         spawnGate.promptSubmitted();
+        if (active) {
+            // the prompt goes on whatever the tick does. the session's id is passed because a block-targeted tick
+            // errors until the block has a transcript path
+            try {
+                await promptNudge(
+                    {
+                        run: (argv) => $.process.run(argv),
+                        append: async (text) => {
+                            const kept = await $.session.append({
+                                message: { type: "user", content: [{ type: "text", text }] },
+                            });
+                            if (kept.deny !== undefined) {
+                                throw new Error(kept.deny);
+                            }
+                        },
+                        log: (msg) => $.ui.log(msg, { to: "debug" }),
+                    },
+                    WSH,
+                    await $.session.id()
+                );
+            } catch (err) {
+                $.ui.log(`arc: the ideas nudge failed: ${String(err)}`, { to: "debug" });
+            }
+        }
         return next(e);
     });
 
