@@ -625,8 +625,11 @@ Tracked in their own initiatives, not here:
 - **Run office** (2026-10-14, `jarvis-office-bench`, 104 desks, dev app, run alone with no other Final or dev app
   open; the user's own WSL, Docker and arcterm kept the CPU at 33–100 %): heap +1.6 MB open, +1501 DOM nodes, busy
   1.1 % over the office-off baseline (6.7 % raw, baseline 5.6 %) and −1.7 % under reduced motion (3.9 % raw), 79
-  sprites, +0.68 MB after off, 87 ms to draw. Budgets: 5 MB, 2,000, 2 %, 0.5 %, 320, 1 MB, 150 ms: all held.
-  Mounted only while the office is on. The first round missed four (busy, busy under reduced motion, heap after
+  sprites, +0.68 MB after off, 87 ms to draw. Budgets: 5 MB, 2,000, 2 %, 0.5 %, 320, 1 MB, 150 ms: all held in
+  that run. The run's own Final (round 2, same day) missed one: busy 3.4 % over the office-off baseline (7.3 % raw,
+  baseline 3.9 %), with the rest held (heap +1.6 MB, +1480 nodes, −1 % reduced, +0.8 MB after off, 91 ms). It landed
+  on the person's call; re-measure busy on a production build, since React's dev build adds a `performance.measure`
+  per render. Mounted only while the office is on. The first round missed four (busy, busy under reduced motion, heap after
   off, time to draw). What moved them: the sprite canvas ran on the GPU, so `toDataURL` cost 80–95 ms of the first
   open (a software canvas: ~5 ms); the DEV fixture floors passed a new `onOpen` each render, so every re-render
   of the Brief (every few seconds) redrew all 104 desks; a tick re-rendered whole desks, now only each animated
