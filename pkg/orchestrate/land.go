@@ -52,15 +52,17 @@ var inProgressOps = []struct{ path, what string }{
 // LandRun merges a finished branch-landed run's wave/<runId> back into the branch the run started from, in the
 // project checkout, then removes the landing tree and the branch. Anything that makes the merge unsafe holds it
 // with a reason instead, and the checkout is left as it was. A run that landed in the checkout has nothing to
-// merge and gets nil. force lands a run whose final stage failed; it is the human's call only.
+// merge and gets nil. force lands a run whose final stage failed; it is the human's call only. Runs of one project
+// land one at a time: a run whose turn has not come gets a queued land back, and the land driver lands it later.
 func LandRun(ctx context.Context, channelID, runID string, force bool) (*waveobj.RunLand, error) {
 	landLocks.Lock(runID)
 	defer landLocks.Unlock(runID)
-	return landRunLocked(ctx, channelID, runID, force)
+	return landRunLocked(ctx, channelID, runID, force, false)
 }
 
-// landRunLocked is LandRun under the run's land lock.
-func landRunLocked(ctx context.Context, channelID, runID string, force bool) (*waveobj.RunLand, error) {
+// landRunLocked is LandRun under the run's land lock. haveTurn is the driver landing a queued land whose project's
+// turn it holds; the land then carries its own force. Otherwise the land takes the turn itself, or queues.
+func landRunLocked(ctx context.Context, channelID, runID string, force, haveTurn bool) (*waveobj.RunLand, error) {
 	run, err := wstore.GetRun(ctx, channelID, runID)
 	if err != nil {
 		return nil, fmt.Errorf("loading run: %w", err)
@@ -74,24 +76,55 @@ func landRunLocked(ctx context.Context, channelID, runID string, force bool) (*w
 	if run.Status != jarvis.RunStatus_Done {
 		return nil, fmt.Errorf("run %s is %s; only a done run lands", runID, run.Status)
 	}
+	if haveTurn {
+		if run.Land == nil || run.Land.State != LandState_Queued {
+			return run.Land, nil // asked again, and answered, since the driver listed it
+		}
+		force = run.Land.Force
+	} else {
+		if !takeLineTurn(ctx, run) {
+			land, err := queueLand(ctx, run, force, queuedTs(run))
+			// the turn may be free, with only an older land waiting for the next tick to start
+			driveLandLine(context.Background())
+			return land, err
+		}
+		defer func() {
+			releaseTurn(run.ProjectPath, run.ID)
+			driveLandLine(context.Background())
+		}()
+	}
 	var g *waveobj.TaskGroup
 	if run.DagORef != "" {
 		if g, err = wstore.GetDag(ctx, run.DagORef); err != nil {
 			return nil, fmt.Errorf("loading dag: %w", err)
 		}
 	}
-	if err := saveLand(ctx, channelID, runID, &waveobj.RunLand{State: LandState_Pending}); err != nil {
+	// a task's merge holds the checkout for its Verify, minutes: wait for it without a pending land that shows
+	// again on every pass
+	if projectClaimed(run.ProjectPath) {
+		return queueLand(ctx, run, force, queuedTs(run))
+	}
+	tried := resolverTried(run)
+	if err := saveLand(ctx, channelID, runID, &waveobj.RunLand{State: LandState_Pending, Force: force, ResolverTried: tried}); err != nil {
 		return nil, err
 	}
 	land := landRun(ctx, run, g, force)
-	if land.State == LandState_Held {
+	land.ResolverTried = land.ResolverTried || tried
+	switch land.State {
+	case LandState_Held:
 		// the engine's own retry of a dirty hold must not drop the human's force
 		land.Force = force
+	case LandState_Queued:
+		land.Force, land.QueuedTs = force, queuedTs(run)
 	}
 	if err := saveLand(ctx, channelID, runID, land); err != nil {
 		return nil, err
 	}
 	switch land.State {
+	case LandState_Queued:
+		if run.Land == nil || run.Land.State != LandState_Queued {
+			appendLandQueued(ctx, channelID, runID)
+		}
 	case LandState_Held:
 		appendRunEvent(ctx, channelID, runID, waveobj.RunEventKindLandHeld, nil, map[string]any{"reason": land.Reason})
 	case LandState_Landed:
@@ -107,10 +140,11 @@ func landRunLocked(ctx context.Context, channelID, runID string, force bool) (*w
 	return land, nil
 }
 
-// retryDirtyLands lands again each run held only by uncommitted changes in its checkout (RunLand.Dirty), once the
-// land's own checkout check passes. The changes are another session's or the human's, so the engine waits for them
-// to be committed, stashed or moved aside instead of asking anyone to retry. The watchdog calls it every tick. A
-// dismissed hold is the human's to retry, and a run whose land is already under way is skipped.
+// retryDirtyLands queues again each run held only by uncommitted changes in its checkout (RunLand.Dirty), once the
+// land's own checkout check passes; the land driver lands it in its turn. The changes are another session's or the
+// human's, so the engine waits for them to be committed, stashed or moved aside instead of asking anyone to retry.
+// The watchdog calls it every tick. A dismissed hold is the human's to retry, and a run whose land is already under
+// way is skipped.
 func retryDirtyLands(ctx context.Context) {
 	runs, err := wstore.GetRunsByLandState(ctx, LandState_Held)
 	if err != nil {
@@ -122,18 +156,30 @@ func retryDirtyLands(ctx context.Context) {
 			continue
 		}
 		goStage("land retry "+run.ID, func() {
-			defer landLocks.Unlock(run.ID)
-			if mergedCommit(ctx, run) == "" && landPrecheck(ctx, run) != nil {
-				return
-			}
-			// a merge cut off halfway would leave the checkout mid-merge
-			lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), LandTimeout)
-			defer cancel()
-			if _, err := landRunLocked(lctx, run.ChannelOID, run.ID, run.Land.Force); err != nil {
-				log.Printf("run %s: retrying its land: %v", run.ID, err)
+			if requeueCleanedLand(ctx, run) {
+				driveLandLine(ctx)
 			}
 		})
 	}
+}
+
+// requeueCleanedLand puts a dirty-held run's land in line once its checkout check passes, and says whether it did.
+// It releases the land lock retryDirtyLands took, and reads the run again under it: a human's land may have ended
+// since the listing.
+func requeueCleanedLand(ctx context.Context, listed *waveobj.Run) bool {
+	defer landLocks.Unlock(listed.ID)
+	run, err := wstore.GetRun(ctx, listed.ChannelOID, listed.ID)
+	if err != nil || run.Land == nil || run.Land.State != LandState_Held || !run.Land.Dirty || run.Land.Dismissed {
+		return false
+	}
+	if mergedCommit(ctx, run) == "" && landPrecheck(ctx, run) != nil {
+		return false
+	}
+	if _, err := queueLand(ctx, run, run.Land.Force, time.Now().UnixMilli()); err != nil {
+		log.Printf("run %s: queueing its land again: %v", run.ID, err)
+		return false
+	}
+	return true
 }
 
 func saveLand(ctx context.Context, channelID, runID string, land *waveobj.RunLand) error {
@@ -184,6 +230,10 @@ func landRun(ctx context.Context, run *waveobj.Run, g *waveobj.TaskGroup, force 
 		return heldLand(reason)
 	}
 	claim, err := claimProject(project, runDagID(run, g), "land-back")
+	if errors.Is(err, errProjectBusy) {
+		// a task's merge took the checkout since the land started: wait in line for it, not for a human
+		return &waveobj.RunLand{State: LandState_Queued}
+	}
 	if err != nil {
 		return heldLand(err.Error())
 	}

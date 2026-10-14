@@ -125,6 +125,10 @@ const (
 	// records one, so a retry that is held again shows its new reason.
 	RunEventKindLandHeld = "land-held"
 
+	// land-queued: a finished run's land is waiting for its project's turn ("ahead": the lands before it). Recorded
+	// when the run joins the line, not on each pass that finds it still waiting.
+	RunEventKindLandQueued = "land-queued"
+
 	// landed: a finished run's branch was merged back into its base ("commit", "title": the merge's subject).
 	// Recorded once, since a landed run is never landed again.
 	RunEventKindLanded = "landed"
