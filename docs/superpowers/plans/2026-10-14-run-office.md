@@ -427,6 +427,16 @@ describe("officeFloor", () => {
         expect(f.desks.map((d) => d.agentId)).toEqual(["tab-w1", "tab-rv", undefined]);
     });
 
+    it("opens the run from a pending, done or closed desk even while its worker's tab is still open", () => {
+        const states = ["pending", "done", "failed", "cancelled", "skipped"];
+        const f = officeFloor(
+            run(states.map((s, i) => task("t" + i, s, { runid: "w" + i }))),
+            states.map((_, i) => ({ id: "tab-w" + i, runId: "w" + i, state: "idle" as const }))
+        );
+        expect(f.desks.map((d) => d.agentId)).toEqual(states.map(() => undefined));
+        expect(f.desks.every((d) => d.tip.endsWith("Click to open the run."))).toBe(true);
+    });
+
     it("seats the lead by the run's stage, and an asking lead raises its hand", () => {
         const lead = (stage: OfficeRun["stage"]) => officeFloor(run([], stage), []).lead;
         expect(lead("planning")).toMatchObject({ pose: "type", label: "lead · planning" });
@@ -536,6 +546,10 @@ const TASK_LOOK: Record<string, Look> = {
 /** Every engine task state the office draws, in dag.go's order. */
 export const TASK_STATES = Object.keys(TASK_LOOK);
 
+// a worker or reviewer is at the desk only from ready through verify-failed; a pending, done or closed desk opens the
+// run (spec "Click"), even while the finished worker's tab is still in the roster
+const LIVE_STATES = new Set(TASK_STATES.slice(TASK_STATES.indexOf("ready"), TASK_STATES.indexOf("verify-failed") + 1));
+
 const LEAD_LOOK: Record<RunStageKey, Look> = {
     planning: look("planning", { pose: "type", screen: "lines" }),
     "plan-review": look("plan review", { pose: "lean", visitor: true, screen: "diff" }),
@@ -617,7 +631,7 @@ export function officeFloor(run: OfficeRun, agents: OfficeAgent[]): Floor {
             `${n} · ${l.word}`,
             `Task ${n} · ${t.label || t.id} · ${asking ? "needs you" : l.word}.`,
             (i % 6) + 1,
-            (worker ?? reviewer)?.id
+            asking || LIVE_STATES.has(t.state) ? (worker ?? reviewer)?.id : undefined
         );
     });
     const leadAgent = byRun.get(run.runId);
@@ -939,6 +953,11 @@ function DeskBody({
             onClick={() => onOpen(desk)}
             className={cn(
                 "relative h-[116px] shrink-0 cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                // the chair's back and seat (before) and the desk's top and legs (after) are pseudo-elements, which
+                // are not DOM nodes: 104 desks have to fit the bench's 2,000-node budget
+                "before:absolute before:left-[12px] before:top-[52px] before:h-[30px] before:w-[28px] before:border-b-[3px] before:border-l-4 before:border-edge-strong before:content-['']",
+                "after:absolute after:left-[38px] after:top-[64px] after:h-[24px] after:border-x-[3px] after:border-t-4 after:border-edge-strong after:content-['']",
+                lead ? "after:w-[96px]" : "after:w-[48px]",
                 desk.dim && "opacity-55"
             )}
             style={{ width: lead ? 140 : 88 }}
@@ -956,16 +975,11 @@ function DeskBody({
                     <span className="absolute bg-edge-strong opacity-80" style={{ left: 137, top: 2, width: 3, height: 86 }} />
                 </>
             ) : null}
-            {/* the chair: back and seat as one box's two borders, then its stem */}
-            <span className="absolute border-b-[3px] border-l-4 border-edge-strong" style={{ left: 12, top: 52, width: 28, height: 30 }} />
+            {/* the chair's stem, under the before: seat */}
             <span className="absolute bg-edge-strong" style={{ left: 25, top: 82, width: 4, height: 6 }} />
             {desk.visitor ? <Person pose="clip" outfit={{ shirt: 0, look: 3, visitor: true }} left={-8} /> : null}
             {pose ? <Person pose={pose} outfit={{ shirt: desk.shirt, look: desk.look }} left={standing ? 2 : 8} /> : null}
-            {/* the desk: its top and both legs as one box's borders, then the keyboard */}
-            <span
-                className="absolute border-x-[3px] border-t-4 border-edge-strong"
-                style={{ left: 38, top: 64, width: lead ? 96 : 48, height: 24 }}
-            />
+            {/* the keyboard, on the after: desk */}
             <span className="absolute bg-ink-faint" style={{ left: 40, top: 61, width: 12, height: 3 }} />
             <Screen screen={desk.screen} tone={desk.tone} frame={frame} left={lead ? 56 : 52} />
             {lead ? <Screen screen={desk.screen} tone={desk.tone} frame={frame} left={94} /> : null}
@@ -1133,8 +1147,13 @@ git commit -m "feat(jarvis): run office view — cached sprites, one frame clock
 
 **Files:** `frontend/app/view/jarvis/briefsurface.tsx`, `CHANGELOG.md`
 
-- Modify: `frontend/app/view/jarvis/briefsurface.tsx` (the dev-hook effect near line 585; the `sessions` `Region`
-  near line 1765 and its row map near line 1805)
+- Modify: `frontend/app/view/jarvis/briefsurface.tsx` (`Region` near line 301; the dev-hook effect near line 585;
+  the `sessions` `Region` near line 1765 and its row map near line 1805)
+
+**Acceptance:** Task 5's `jarvis-office` scenario steps 1–4 show this task's wiring: the office is off by default,
+turning it on draws the real run's floor directly under its row, clicking a pending desk opens the run sheet and
+marks that floor selected, and clicking the lead opens the lead's agent. Steps 5–10 show the fixture floors, which
+must draw on an empty Runs region too (Final starts a fresh store with no runs).
 - Modify: `CHANGELOG.md` (top `## Unreleased` → `### Added`)
 
 **Step 1: Import** — add to `briefsurface.tsx`'s imports:
@@ -1188,15 +1207,27 @@ tools={
 ) : null}
 ```
 
-Then, right after the closing `</MotionConfig>` of that list (before the stale-runs button):
+**Step 5b: The clock and the fixture floors, outside the empty switch** — `Region` renders `children` only when
+`empty` is false, and Final's fresh store has no runs, so the clock and the fixture floors cannot be children. Give
+`Region` one more optional prop, rendered after the empty box or the children, whichever shows:
 
 ```tsx
-{officeOn ? (
-    <>
-        <OfficeClock />
-        <OfficeFixtureFloors />
-    </>
-) : null}
+    // drawn whether or not the region is empty (the Runs region's office clock and DEV fixture floors)
+    after?: ReactNode;
+```
+
+and in its body, after the `{empty ? (…) : (children)}` expression and before `</section>`, add `{after}`. Then pass
+it on the `sessions` `Region`:
+
+```tsx
+after={
+    officeOn ? (
+        <>
+            <OfficeClock />
+            <OfficeFixtureFloors />
+        </>
+    ) : null
+}
 ```
 
 **Step 6: CHANGELOG** — under the top `## Unreleased` → `### Added`, add:
@@ -1214,10 +1245,8 @@ Expected: exit 0.
 Run: `npx vitest run frontend/app/view/jarvis/officemodel.test.ts frontend/app/view/jarvis/officesprite.test.ts`
 Expected: PASS.
 
-**Step 8: Look at it** — with the dev app running (`task dev`), go to Jarvis, click **office** on the Runs region,
-and capture: `node scripts/cdp-shot.mjs cdp-shots/office-live.png`. With a live orchestrator run, its floor shows
-under its row; with none, nothing changes but the chip. Turn it back off. Task 5's `jarvis-office` scenario is the
-repeatable check.
+**Step 8: The rendered check is Task 5's** — the `jarvis-office` scenario (steps 1–4 for this wiring) runs in Final.
+Do not stand in for it with a manual screenshot.
 
 **Step 9: Commit**
 
@@ -1234,20 +1263,31 @@ git commit -m "feat(jarvis): draw the Brief's runs as an office floor under each
 **Files:** `scripts/cdp/officescenarios.mjs`, `scripts/cdp/scenarios.mjs`, `docs/open-issues.md`
 
 - Create: `scripts/cdp/officescenarios.mjs` (4-space indent, hand-formatted; never run prettier on it)
-- Modify: `scripts/cdp/scenarios.mjs` (one import near the other local imports at the top; two entries at the end of
-  `SCENARIOS`)
-- Modify: `docs/open-issues.md` (the hand-check line, and the measured numbers under "RAM watch")
+- Modify: `scripts/cdp/scenarios.mjs` (one import near the other local imports at the top; one `makeOfficeScenarios`
+  call just above `export const SCENARIOS`; two entries at the end of `SCENARIOS`)
+- Modify: `docs/open-issues.md` (the measured numbers under "RAM watch"; no hand-check line: `jarvis-office` covers
+  the live wiring)
 
 **Step 1: Write `scripts/cdp/officescenarios.mjs`**
 
 ```js
 // The run office's CDP scenarios (docs/superpowers/specs/2026-10-14-run-office-design.md).
 //
-// jarvis-office draws every pose from a fixture and checks each desk says what it is. jarvis-office-bench holds the
-// spec's budgets: it draws 104 desks and reads Performance.getMetrics with the office off, open, held open for 30 s,
-// held under reduced motion, and off again. Both feed the model through the DEV-only __officeFixture hook
-// (officedevhooks.ts), so no real run or worker is started.
+// jarvis-office first drives the live wiring on a real deferred orchestrator run with a dag (the fixture helpers of
+// scenarios.mjs, docs/reference/cdp-run-fixtures.md): off by default, the run's floor under its row, a pending desk
+// opening the run sheet, the lead opening its agent. It then draws every pose from a fixture and checks each desk says
+// what it is. jarvis-office-bench holds the spec's budgets: it draws 104 desks and reads Performance.getMetrics with
+// the office off, open, held open for 30 s, held under reduced motion, and off again. The fixture floors come through
+// the DEV-only __officeFixture hook (officedevhooks.ts), so the bench starts no run or worker.
+//
+// scenarios.mjs hands its fixture helpers in (makeOfficeScenarios) rather than this file importing them, which would
+// make the two modules import each other.
 
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const OFFICE_KEY = "jarvis.office.on";
 const TOGGLE = `document.querySelector("[data-jarvis-office-toggle]")`;
 const TASK_STATES = [
     "pending", "ready", "running", "stalled", "reviewing", "review-failed", "blocked-merge",
@@ -1295,60 +1335,161 @@ async function metrics(h) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const mb = (bytes) => Math.round((bytes / (1024 * 1024)) * 100) / 100;
 
-export const jarvisOffice = {
-    name: "jarvis-office",
-    surface: "jarvis",
-    async arrange(h) {
-        return {};
-    },
-    async assert(h, ctx) {
-        const steps = [];
-        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
-        ctx.wasOn = (await h.ev(`${TOGGLE}?.getAttribute("aria-pressed")`)) === "true";
-        const runs = [
-            { ...fixtureRuns(1, TASK_STATES.length)[0], title: "Every task state" },
-            ...fixtureRuns(3, 3).slice(1),
-        ];
-        // floor 0's tasks in dag.go order, one per state
-        runs[0].run.tasks.forEach((t, i) => (t.state = TASK_STATES[i]));
-        await h.ev(`window.__officeFixture(${JSON.stringify(runs)})`);
-        await setOffice(h, true);
-        const seen = await h.ev(`(async () => {
-            for (let i = 0; i < 60 && !document.querySelector("[data-office-fixture] [data-office-desk]"); i++) {
-                await new Promise((r) => setTimeout(r, 100));
+// fx: { arrangeFixtureRun, waitForDispatch, briefReload, teardownFixtureRun, tasks, leadId } from scenarios.mjs
+export function makeOfficeScenarios(fx) {
+    const jarvisOffice = {
+        name: "jarvis-office",
+        surface: "jarvis",
+        async arrange(h) {
+            const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-office-")) };
+            // a throw past this point still returns ctx, so teardown removes whatever was already made
+            try {
+                // no stored choice, so the reload below shows the default
+                ctx.stored = await h.ev(`(() => {
+                    try {
+                        const v = localStorage.getItem(${JSON.stringify(OFFICE_KEY)});
+                        localStorage.removeItem(${JSON.stringify(OFFICE_KEY)});
+                        return v;
+                    } catch {
+                        return null;
+                    }
+                })()`);
+                ctx.cleared = true;
+                await fx.arrangeFixtureRun(h, ctx, "office", "office lead");
+                await h.rpc("dagsubmit", {
+                    channelid: ctx.channelId,
+                    runid: ctx.runId,
+                    title: "verify office",
+                    parallelism: 1,
+                    tasks: fx.tasks,
+                });
+                // waited for so teardown has t-1's worker block to delete
+                await fx.waitForDispatch(h, ctx, "t-1");
+                // the roster fixture is read once at boot, and the Brief reads a boot-primed snapshot
+                await fx.briefReload(h);
+            } catch (e) {
+                ctx.arrangeError = String(e?.message ?? e);
             }
-            const desks = [...document.querySelectorAll("[data-office-fixture] [data-office-desk]")];
-            return {
-                states: [...new Set(desks.filter((d) => d.dataset.officeDesk !== "lead").map((d) => d.dataset.officeState))],
-                leads: desks.filter((d) => d.dataset.officeDesk === "lead").length,
-                unlabelled: desks.filter((d) => !d.textContent.trim()).length,
-                needsYou: desks.filter((d) => d.dataset.officePose === "handup" && d.textContent.includes("Needs you")).length,
-                imgs: desks.flatMap((d) => [...d.querySelectorAll("img")]).filter((i) => !i.src.startsWith("data:image/png")).length,
-            };
-        })()`);
-        rec("0. the fixture floors drew", seen?.leads === 3, JSON.stringify(seen));
-        rec(
-            "1. every engine task state has a desk",
-            TASK_STATES.every((s) => seen?.states?.includes(s)),
-            JSON.stringify(seen?.states)
-        );
-        rec("2. every desk says what it is in words", seen?.unlabelled === 0, `unlabelled: ${seen?.unlabelled}`);
-        rec("3. the asking worker raises a hand and reads Needs you", seen?.needsYou === 1, `needsYou: ${seen?.needsYou}`);
-        rec("4. every person is a drawn sprite", seen?.imgs === 0, `undrawn: ${seen?.imgs}`);
-        await h.ev(`document.querySelector("[data-office-fixture]")?.scrollIntoView({ block: "start" })`);
-        await h.shot("cdp-shots/jarvis-office.png");
-        await setOffice(h, false);
-        const gone = await h.ev(`document.querySelectorAll("[data-office-floor]").length`);
-        rec("5. turning it off removes every floor", gone === 0, `floors left: ${gone}`);
-        return steps;
-    },
-    async teardown(h, ctx) {
-        await h.ev(`window.__officeFixture?.(null)`);
-        await setOffice(h, ctx.wasOn === true);
-    },
-};
+            return ctx;
+        },
+        async assert(h, ctx) {
+            const steps = [];
+            const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+            rec(
+                "0. a deferred run with a three-task dag and its lead are up",
+                ctx.arrangeError == null,
+                ctx.arrangeError ?? JSON.stringify({ runId: ctx.runId, dispatched: ctx.dispatched })
+            );
+            if (ctx.arrangeError != null) return steps;
+            const FLOOR = `document.querySelector('[data-office-floor="${ctx.runId}"]')`;
+            const desk = (key) => `${FLOOR}?.querySelector('[data-office-desk="${key}"]')`;
 
-export const jarvisOfficeBench = {
+            const off = await h.ev(`({
+                pressed: ${TOGGLE}?.getAttribute("aria-pressed"),
+                floors: document.querySelectorAll("[data-office-floor]").length,
+            })`);
+            rec("1. with no stored choice the office is off and draws no floor", off.pressed === "false" && off.floors === 0, JSON.stringify(off));
+
+            await setOffice(h, true);
+            const live = await h.ev(`(async () => {
+                for (let i = 0; i < 60 && !${FLOOR}; i++) await new Promise((r) => setTimeout(r, 100));
+                const floor = ${FLOOR};
+                if (!floor) return { floor: false };
+                // the floor's wrapper follows the run's row inside the row's motion.div
+                const prev = floor.parentElement?.previousElementSibling;
+                const row = prev?.matches('[data-jarvis-brief-row="session"]') || !!prev?.querySelector('[data-jarvis-brief-row="session"]');
+                const desks = [...floor.querySelectorAll("[data-office-desk]")].map((d) => d.dataset.officeDesk);
+                return { floor: true, row, desks };
+            })()`);
+            rec(
+                "2. turning it on draws the run's floor right under its row: the lead and a desk per task",
+                live.floor && live.row && ["lead", "t-1", "t-2", "t-3"].every((k) => live.desks?.includes(k)),
+                JSON.stringify(live)
+            );
+            await h.shot("cdp-shots/jarvis-office-live.png");
+
+            const sheet = await h.ev(`(async () => {
+                ${desk("t-2")}?.click();
+                for (let i = 0; i < 60 && !document.querySelector("[data-run-sheet]"); i++) await new Promise((r) => setTimeout(r, 100));
+                for (let i = 0; i < 20 && !${FLOOR}?.classList.contains("bg-surface-selected"); i++) await new Promise((r) => setTimeout(r, 100));
+                return {
+                    state: ${desk("t-2")}?.dataset.officeState,
+                    sheet: !!document.querySelector("[data-run-sheet]"),
+                    selected: !!${FLOOR}?.classList.contains("bg-surface-selected"),
+                };
+            })()`);
+            rec(
+                "3. clicking a pending desk (no agent) opens the run sheet and marks the floor selected",
+                sheet.state === "pending" && sheet.sheet && sheet.selected,
+                JSON.stringify(sheet)
+            );
+            await h.shot("cdp-shots/jarvis-office-selected.png");
+
+            const lead = await h.ev(`(async () => {
+                ${desk("lead")}?.click();
+                const row = () => document.querySelector('[data-agent-row="${fx.leadId}"]');
+                for (let i = 0; i < 60 && !row()?.classList.contains("bg-surface-selected"); i++) await new Promise((r) => setTimeout(r, 100));
+                return { row: !!row(), selected: !!row()?.classList.contains("bg-surface-selected") };
+            })()`);
+            rec("4. clicking the lead's desk opens the lead's agent", lead.selected, JSON.stringify(lead));
+            await h.goto("jarvis");
+
+            const runs = [
+                { ...fixtureRuns(1, TASK_STATES.length)[0], title: "Every task state" },
+                ...fixtureRuns(3, 3).slice(1),
+            ];
+            // floor 0's tasks in dag.go order, one per state
+            runs[0].run.tasks.forEach((t, i) => (t.state = TASK_STATES[i]));
+            await h.ev(`window.__officeFixture(${JSON.stringify(runs)})`);
+            await setOffice(h, true);
+            const seen = await h.ev(`(async () => {
+                for (let i = 0; i < 60 && !document.querySelector("[data-office-fixture] [data-office-desk]"); i++) {
+                    await new Promise((r) => setTimeout(r, 100));
+                }
+                const desks = [...document.querySelectorAll("[data-office-fixture] [data-office-desk]")];
+                return {
+                    states: [...new Set(desks.filter((d) => d.dataset.officeDesk !== "lead").map((d) => d.dataset.officeState))],
+                    leads: desks.filter((d) => d.dataset.officeDesk === "lead").length,
+                    unlabelled: desks.filter((d) => !d.textContent.trim()).length,
+                    needsYou: desks.filter((d) => d.dataset.officePose === "handup" && d.textContent.includes("Needs you")).length,
+                    imgs: desks.flatMap((d) => [...d.querySelectorAll("img")]).filter((i) => !i.src.startsWith("data:image/png")).length,
+                };
+            })()`);
+            rec("5. the fixture floors drew", seen?.leads === 3, JSON.stringify(seen));
+            rec(
+                "6. every engine task state has a desk",
+                TASK_STATES.every((s) => seen?.states?.includes(s)),
+                JSON.stringify(seen?.states)
+            );
+            rec("7. every desk says what it is in words", seen?.unlabelled === 0, `unlabelled: ${seen?.unlabelled}`);
+            rec("8. the asking worker raises a hand and reads Needs you", seen?.needsYou === 1, `needsYou: ${seen?.needsYou}`);
+            rec("9. every person is a drawn sprite", seen?.imgs === 0, `undrawn: ${seen?.imgs}`);
+            await h.ev(`document.querySelector("[data-office-fixture]")?.scrollIntoView({ block: "start" })`);
+            await h.shot("cdp-shots/jarvis-office.png");
+            await setOffice(h, false);
+            const gone = await h.ev(`document.querySelectorAll("[data-office-floor]").length`);
+            rec("10. turning it off removes every floor", gone === 0, `floors left: ${gone}`);
+            return steps;
+        },
+        async teardown(h, ctx) {
+            await h.ev(`window.__officeFixture?.(null)`);
+            // teardownFixtureRun reloads after restore, so the toggle comes back as it was from storage
+            await fx.teardownFixtureRun(h, ctx, "jarvis-office", {
+                what: "restore the office toggle",
+                fn: () =>
+                    ctx.cleared &&
+                    h.ev(`(() => {
+                        const v = ${JSON.stringify(ctx.stored ?? null)};
+                        if (v == null) localStorage.removeItem(${JSON.stringify(OFFICE_KEY)});
+                        else localStorage.setItem(${JSON.stringify(OFFICE_KEY)}, v);
+                    })()`),
+            });
+        },
+    };
+    return { jarvisOffice, jarvisOfficeBench };
+}
+
+const jarvisOfficeBench = {
     name: "jarvis-office-bench",
     surface: "jarvis",
     async arrange(h) {
@@ -1429,37 +1570,44 @@ export const jarvisOfficeBench = {
 **Step 2: Register them** — in `scripts/cdp/scenarios.mjs`, beside `import { narrationFeed } from "./narrationfeed.mjs";`:
 
 ```js
-import { jarvisOffice, jarvisOfficeBench } from "./officescenarios.mjs";
+import { makeOfficeScenarios } from "./officescenarios.mjs";
+```
+
+then, just above `export const SCENARIOS = [` (every helper it names is defined by then):
+
+```js
+// the run office's scenarios take the run-fixture helpers (docs/reference/cdp-run-fixtures.md) from here
+const { jarvisOffice, jarvisOfficeBench } = makeOfficeScenarios({
+    arrangeFixtureRun,
+    waitForDispatch,
+    briefReload,
+    teardownFixtureRun,
+    tasks: RUN_SHEET_POLISH_TASKS,
+    leadId: TREE_RAIL_LEAD_ID,
+});
 ```
 
 and add `jarvisOffice,` and `jarvisOfficeBench,` as the last two entries of the `SCENARIOS` array.
 
 **Step 3: Check the registry still loads**
 
-Run: `npx vitest run scripts/cdp/scenarios.test.mjs`
-Expected: PASS (it checks names are unique and every scenario is well-formed; if it lists required fields the two
-new scenarios lack, add them in the shape it asks for).
+Run: `node -e "import('./scripts/cdp/scenarios.mjs').then((m) => { const n = m.SCENARIOS.map((s) => s.name); console.log(n.length, n.includes('jarvis-office'), n.includes('jarvis-office-bench'), new Set(n).size === n.length) })"`
+Expected: a count, then `true true true` (both registered, names unique). An error here is an import or a helper
+name that does not match `scenarios.mjs`.
 
 **Step 4: Run them on the dev app** (needs `task dev` running; skip and say so if it is not)
 
 Run: `task verify:ui -- jarvis-office jarvis-office-bench`
 Expected: both PASS; the bench prints a `[jarvis-office-bench] {…}` line. The bench takes about 75 seconds.
 A budget the bench misses stays a FAIL: report the number, do not raise the budget, do not tune the scenario around it.
+`jarvis-office` makes a real deferred orchestrator run whose t-1 dispatches a no-op worker, as
+`brief-run-sheet-order` does; its teardown cancels the run, deletes the worker block and the channel. The node budget
+is tight (about 13 nodes a desk once the chair and desk frames are pseudo-elements): if step 2 misses, report the
+count; trimming nodes from a desk is a fix inside the budget, raising the budget is not.
 
 **Step 5: Record the numbers** — in `docs/open-issues.md`:
 
-1. Under `## 0 · Waiting on a hand check`, add a dated group with one line:
-
-```md
-**2026-10-14 (Run office in Jarvis)**
-
-- [ ] (arcterm) **Runs as an office.** With an orchestrator run going, open Jarvis and click **office** on the Runs
-  region: a floor shows under the run's row with the lead behind glass and a person per task; a worker typing moves,
-  a finished one leans back with a check, and clicking a working person opens their terminal. Turn it off: the list
-  is as before. `view/jarvis/officeview.tsx`.
-```
-
-2. If the file has no `RAM watch` heading, add `### (arcterm) RAM watch` at the end of `## 1 · Actionable`. Under it:
+If the file has no `RAM watch` heading, add `### (arcterm) RAM watch` at the end of `## 1 · Actionable`. Under it:
 
 ```md
 - **Run office** (2026-10-14, `jarvis-office-bench`, 104 desks, dev app): heap +<heapOpenMB> MB open, +<nodesAdded>
