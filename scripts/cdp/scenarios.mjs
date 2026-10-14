@@ -38438,8 +38438,13 @@ const LEARN_ROW = (id) =>
 const LEARN_LINE = (id) =>
     `[...document.querySelectorAll("[data-learned-line]")].find((l) => l.dataset.learnedLine === ${JSON.stringify(id)})`;
 const learnPart = (rootExpr, testid) => `(${rootExpr})?.querySelector('[data-testid="${testid}"]')`;
-const learnClick = (h, rootExpr, testid) =>
-    h.ev(`(() => { const b = ${learnPart(rootExpr, testid)}; if (!b) return false; b.click(); return true; })()`);
+// an Edit or Remove re-runs agentsync.Apply for every harness, which took past 6s on a loaded machine (2026-10-14); the
+// line's buttons stay disabled meanwhile, so a click then is dropped
+const LEARN_SETTLE_MS = 30_000;
+const learnClick = async (h, rootExpr, testid) => {
+    await polishWaitFor(h, `!!${learnPart(rootExpr, testid)} && !${learnPart(rootExpr, testid)}.disabled`, LEARN_SETTLE_MS);
+    return h.ev(`(() => { const b = ${learnPart(rootExpr, testid)}; if (!b) return false; b.click(); return true; })()`);
+};
 const learnEnter = (h, rootExpr, testid) =>
     h.ev(`(() => {
         const el = ${learnPart(rootExpr, testid)};
@@ -38816,7 +38821,7 @@ const setupSkillAdditions = {
 
         // 2. Edit
         const typed = await learnEditTo(h, lineOf, LINE_EDIT, SA_EDITED);
-        const shown = typed && (await polishWaitFor(h, `(${lineOf})?.textContent.includes(${JSON.stringify(SA_EDITED)})`, 6000));
+        const shown = typed && (await polishWaitFor(h, `(${lineOf})?.textContent.includes(${JSON.stringify(SA_EDITED)})`, LEARN_SETTLE_MS));
         const stored = ((await h.rpc("learnaccepted", null)).skills ?? []).find((s) => s.skill === name && s.key === SA_KEY);
         rec(
             "2. Edit: the line shows the new text, and the vault holds it",
@@ -38830,7 +38835,7 @@ const setupSkillAdditions = {
         const removed = await polishWaitFor(
             h,
             `!${block} && !(${row})?.querySelector('[data-testid="skill-additions-chip"]')`,
-            6000
+            LEARN_SETTLE_MS
         );
         const left = ((await h.rpc("learnaccepted", null)).skills ?? []).some((s) => s.skill === name && s.key === SA_KEY);
         rec("3. Remove: the block and the chip are gone, and so is the line", removed && !left, JSON.stringify({ removed, left }));
@@ -38943,7 +38948,7 @@ const setupLearned = {
         // 3. Edit the skill's line on this tab
         const typed = await learnEditTo(h, LEARN_LINE(skillId), LINE_EDIT, SL_TEXT.edited);
         const shown =
-            typed && (await polishWaitFor(h, `(${LEARN_LINE(skillId)})?.textContent.includes(${JSON.stringify(SL_TEXT.edited)})`, 6000));
+            typed && (await polishWaitFor(h, `(${LEARN_LINE(skillId)})?.textContent.includes(${JSON.stringify(SL_TEXT.edited)})`, LEARN_SETTLE_MS));
         const stored = ((await accepted()).skills ?? []).find((s) => s.skill === name && s.key === SL_KEYS.skill);
         rec(
             "3. Edit: the skill's line shows the new text, and the vault holds it",
@@ -38957,7 +38962,7 @@ const setupLearned = {
         const existed = existsSync(file);
         await h.ev(`(${LEARN_LINE(memId)})?.scrollIntoView({ block: "center" })`);
         await learnClick(h, LEARN_LINE(memId), "learned-remove");
-        const lineGone = await polishWaitFor(h, `!(${LEARN_LINE(memId)})`, 6000);
+        const lineGone = await polishWaitFor(h, `!(${LEARN_LINE(memId)})`, LEARN_SETTLE_MS);
         rec(
             "4. Remove: the memory's line is gone, and so is its file under ~/.claude/projects",
             existed && lineGone && !existsSync(file),
