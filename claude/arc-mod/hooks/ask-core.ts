@@ -84,3 +84,35 @@ export function cardAnswer<Q extends readonly AskQuestion[]>(
     }
     return { result: { questions, answers: answersFor(questions, reply) } };
 }
+
+// how long a card that came back cancelled waits for claude's dialog before it reads as dismissed. an answer in
+// the dialog runs settings hooks before the dialog's own result resolves (`wsh ask --clear`, and agent-hook's
+// working report, on which the server retires the card), and where an org manages Claude Code (Team,
+// Enterprise) the mod cannot skip them: the classic hooks that did are passed over. the card's cancel can then
+// land first, and the dialog's answer follows within this
+export const DISMISS_GRACE_MS = 1500;
+
+export type Settled<R, A> = { dialog: R } | { card: A } | null;
+
+// the race of claude's dialog and the card: the first to answer, a cancelled card waiting out the grace for
+// the dialog; null when the card gave no reply (wsh failed), which leaves the dialog to answer alone
+export async function settleAsk<R, A>(
+    dialog: Promise<R>,
+    card: Promise<A | null>,
+    isDismissal: (answer: A) => boolean,
+    sleep: (ms: number) => Promise<void>
+): Promise<Settled<R, A>> {
+    const fromDialog = dialog.then((result) => ({ dialog: result }));
+    const first = await Promise.race([fromDialog, card.then((answer) => ({ answer }))]);
+    if ("dialog" in first) {
+        return first;
+    }
+    if (first.answer === null) {
+        return null;
+    }
+    if (!isDismissal(first.answer)) {
+        return { card: first.answer };
+    }
+    const late = await Promise.race([fromDialog, sleep(DISMISS_GRACE_MS).then(() => null)]);
+    return late ?? { card: first.answer };
+}

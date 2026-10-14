@@ -16,7 +16,8 @@ arcterm ships and highlighted wherever they show.
 
 - In: skills in the vault (arcterm's shipped skills and the user's own managed skills), and Claude project memory.
 - Out: plugin skills (superpowers, anthropic-skills…), which live in a plugin cache arcterm does not own; transcript
-  scanning; automatic detection of contradicting rules.
+  scanning; automatic detection of contradicting rules (the user sees every accepted line side by side in the Learned
+  tab).
 
 ## Decisions
 
@@ -33,14 +34,15 @@ wsh learn note --key <kebab-slug> (--skill <name> | --memory) "<the rule, ≤200
 `--memory` takes the session's cwd to pick the project. Grouping is by the agent-chosen `--key`, not by embeddings:
 deterministic, cheap, testable.
 
-wavesrv is the only writer. Each note is one line in `~/.arc/learn/notes.jsonl` (key, target, text, quote, session
-id, time), so there is no new waveobj and no migration. A key becomes a **proposal** when it has notes from **two
-distinct sessions within 30 days**; two notes in one session are one correction in progress, not a repeat.
+wavesrv is the only writer. Each note is one line in `<wave data dir>/learn/notes.jsonl` (key, target, text, quote,
+session, time), so there is no new waveobj and no migration, and a dev app or a CDP run keeps its own. wsh has no
+agent session id, so a note's session is its tab and day: `WAVETERM_BLOCKID` + the local date (`cli` when there is no
+block). A key becomes a **proposal** when it has notes from **two distinct sessions within 30 days**; two notes in one
+session are one correction in progress, not a repeat.
 
 ### 2. Proposals wait in Needs you; nothing is written without a yes
 
-A proposal card shows the target, the one proposed line, and the quotes as evidence (folded by default), plus the
-skill's existing additions. Actions:
+A proposal card shows the target, the one proposed line, and the quotes as evidence (folded by default). Actions:
 
 - **Accept** writes it to the target.
 - **Edit** opens an inline input on the card (no modal), then accepts.
@@ -74,15 +76,18 @@ Accepting a memory proposal writes a `feedback` memory file to the project's Cla
 
 ### 5. The user's lines are highlighted wherever they show
 
-- **Setup → Skills rail.** `skillPreview` splits the body at `<!-- arc:user -->` (a pure function beside
-  `skillsmatrix.ts`). The shipped part renders as today, muted and read-only. The additions render in their own block
-  with a left accent border (an `@theme` token, never hex); each line shows `14/10 · 3×` with **Edit** and
-  **Remove**. A line accepted in the last 7 days also gets a faint accent background: that is the "new" highlight.
+- **Setup → Skills rail.** The rail previews the vault's SKILL.md, which never holds the additions (they are added
+  at render), so the skills RPC carries each skill's additions and the rail renders them below the preview. The
+  shipped part renders as today, read-only. The additions render in their own block with a left accent border (an
+  `@theme` token, never hex); each line shows `14/10 · 3×` with **Edit** and **Remove**. A line accepted in the last
+  7 days also gets a faint accent background: that is the "new" highlight.
 - **Skill list.** A `+N` chip beside a skill that has additions.
-- **Memory notes** (the Jarvis note peek) with `source: learned` get the same border and date, and a **Remove**
-  action that deletes the file and its `MEMORY.md` line.
+- **Setup → Learned tab.** A third Setup tab lists every accepted line in one place: skill additions grouped by
+  skill, learned memories grouped by project, each with the same date, count, "new" highlight, **Edit** and
+  **Remove**. Claude's own memory dir appears nowhere else in the cockpit (the Jarvis peek reads only the vault's
+  memory), so this tab is where learned memories are seen.
 - Removing a skill addition rewrites `additions.md`, re-runs the reconcile so every harness gets it at once, and mutes
-  the key.
+  the key. Removing a memory deletes its file and its `MEMORY.md` line, and mutes the key.
 
 ## Edge cases and errors
 
@@ -100,9 +105,9 @@ Accepting a memory proposal writes a `feedback` memory file to the project's Cla
   30-day window; mute; accept writes `additions.md`; a second accept replaces the line; the 20-line cap.
 - **Go, `pkg/agentsync`:** `renderSkill` appends additions under the marker for every runtime; `seedShippedSkills`
   keeps `additions.md`.
-- **vitest:** the split at the marker, the 7-day "new" rule, the proposal card model.
-- **CDP scenarios:** `setup-skill-additions` (the highlighted block and the `+N` chip) and `needs-you-learn-card`,
-  both from fixtures.
+- **vitest:** the 7-day "new" rule, the Learned tab grouping, the proposal row model.
+- **CDP scenarios:** `setup-skill-additions` (the highlighted block and the `+N` chip), `setup-learned` (the Learned
+  tab) and `needs-you-learn-card`, from fixtures.
 
 ## Cost
 

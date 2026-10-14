@@ -3,13 +3,15 @@
 
 // What's new reads CHANGELOG.md itself, so the notes a user sees are the lines written for them in the same commit as
 // the change, never a second copy that drifts. An entry may end with `<!-- try: <binding id> -->`: hidden on GitHub,
-// it gives the entry a button that runs that global keybinding (whatsnew.test.ts checks every id still exists).
+// it gives the entry a button that runs that global keybinding (whatsnew.test.ts checks every id still exists). An
+// entry marked `<!-- big -->` is one of its release's few highlights, drawn as a card above the folded rest.
 
 export type SectionKind = "Added" | "Changed" | "Fixed";
 
 export interface Entry {
     text: string; // the entry's markdown, the try comment removed
     tryId?: string;
+    big?: boolean;
 }
 
 export interface Section {
@@ -26,7 +28,11 @@ export interface Release {
 const RELEASE_RE = /^## (\d+\.\d+\.\d+)\s+—\s+(\d{4}-\d{2}-\d{2})\s*$/;
 const SECTION_RE = /^### (Added|Changed|Fixed)\s*$/;
 const TRY_RE = /\s*<!--\s*try:\s*([\w:.-]+)\s*-->\s*/;
+const BIG_RE = /\s*<!--\s*big\s*-->\s*/;
 const SECTION_ORDER: SectionKind[] = ["Added", "Changed", "Fixed"];
+
+// a release's cards: past this many they read as a wall again (whatsnew.test.ts holds CHANGELOG.md to it)
+export const MAX_HIGHLIGHTS = 5;
 
 // The dated releases, newest first as the file keeps them. Unreleased is left out: it is not in anyone's build yet.
 export function parseChangelog(md: string): Release[] {
@@ -89,11 +95,46 @@ function addSection(release: Release, kind: SectionKind): Section {
 }
 
 function toEntry(raw: string): Entry {
-    const m = TRY_RE.exec(raw);
-    if (m == null) {
-        return { text: raw };
+    const entry: Entry = { text: raw };
+    const m = TRY_RE.exec(entry.text);
+    if (m != null) {
+        entry.text = entry.text.replace(TRY_RE, " ").trim();
+        entry.tryId = m[1];
     }
-    return { text: raw.replace(TRY_RE, " ").trim(), tryId: m[1] };
+    if (BIG_RE.test(entry.text)) {
+        entry.text = entry.text.replace(BIG_RE, " ").trim();
+        entry.big = true;
+    }
+    return entry;
+}
+
+// A release's big entries, Added first as the sections run, and its sections without them; a section left empty goes.
+export function splitHighlights(release: Release): { highlights: Entry[]; rest: Section[] } {
+    const highlights = release.sections.flatMap((s) => s.entries.filter((e) => e.big));
+    if (highlights.length === 0) {
+        return { highlights, rest: release.sections };
+    }
+    const rest = release.sections
+        .map((s) => ({ kind: s.kind, entries: s.entries.filter((e) => !e.big) }))
+        .filter((s) => s.entries.length > 0);
+    return { highlights, rest };
+}
+
+// The fold line under the cards: "58 more changes · 12 fixes", without "more" when no card sits above it.
+export function foldLabel(rest: Section[], afterCards: boolean): string {
+    const count = (kinds: SectionKind[]) =>
+        rest.filter((s) => kinds.includes(s.kind)).reduce((n, s) => n + s.entries.length, 0);
+    const more = afterCards ? "more " : "";
+    const changes = count(["Added", "Changed"]);
+    const fixes = count(["Fixed"]);
+    const parts: string[] = [];
+    if (changes > 0) {
+        parts.push(`${changes} ${more}${changes === 1 ? "change" : "changes"}`);
+    }
+    if (fixes > 0) {
+        parts.push(`${fixes} ${parts.length === 0 ? more : ""}${fixes === 1 ? "fix" : "fixes"}`);
+    }
+    return parts.join(" · ");
 }
 
 // Numeric semver order; a missing or non-numeric part counts as 0, so "0.15" sorts with "0.15.0".
@@ -154,6 +195,16 @@ export function entryLead(text: string): string | null {
         return null;
     }
     return m[1];
+}
+
+// A card's text under its title: the entry after its bold lead, the punctuation joining them dropped. The whole entry
+// when it has no lead; empty when the lead is all of it.
+export function entryBody(text: string): string {
+    const m = /^\*\*(.+?)\*\*(.*)$/.exec(text);
+    if (m == null) {
+        return text;
+    }
+    return m[2].replace(/^[\s.,:;]+/, "");
 }
 
 // "2026-10-13" → "Oct 13", read as a date on the calendar rather than an instant, so no timezone moves it a day

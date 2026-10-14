@@ -34,6 +34,41 @@ does not, say what you saw and it becomes a bug row under Actionable.
   staging zero projects would wipe the dev app's). Then press **Copy path** in the rail and paste: the file's full
   path (the scenario checks it through a clipboard stub, never the real clipboard). Commit dcdd1cac8.
 
+**2026-10-14 (Agent sidebar: a failed plan review's fold)**
+
+- [ ] With an engine run whose plan review just failed (lead revising), look under the run in the Agent sidebar: the
+  finished fold reads `1 review · 1 failed` with a red dot, not a green check. Once the lead resubmits and round 2
+  starts, the fold goes back to a check. Tried only in unit tests (`agenttreemodel.test.ts`).
+
+**2026-10-14 (Claude mod on a Team account: ask dialog, Token burn gate)**
+
+- [ ] After the next build and `task install`, in a Claude agent: have it ask a choice question; answer once in Claude's
+  own dialog and once on the arcterm card: each answer reaches Claude (never "The user dismissed the question") and one
+  card shows, not two. Dismiss on the card with the dialog still open: about 1.5 s later Claude gets "dismissed". Ask it
+  to start 3 subagents, pick allow-this-turn on the Token burn card, then a new prompt that starts 3 again: the card
+  asks again. Tried only in unit tests, and the transcript path in a headless `claude -p`.
+
+**2026-10-14 (Heavy jobs: run steps named by the run's title)**
+
+- [ ] With an engine run whose Check, Verify or Setup step waits or runs in the heavy-job queue, open the app bar's Jobs
+  chip: that row's second line reads `<run title> · Check · base tree` (the plan's title, else the goal's first line),
+  not `Run 973afb · …`, and ↗ still opens the run. `frontend/app/cockpit/jobqueuepanel.tsx`.
+
+**2026-10-14 (What's new: highlight cards, the rest folded)**
+
+- [ ] In the dev app (`task verify:ui -- whats-new`, then by eye), open What's new from the footer's version: each
+  release shows 4–5 cards (title, two lines of text, Try it at the bottom right), then one "N more changes · M fixes"
+  line. A cut card opens to its whole note on click; one that fits shows no pointer. In the fold, a note with no bold
+  lead that fits two lines (0.15.11 "A new waiting item flashes…") has no chevron and stays aligned with the rows
+  above. Check the cards read well on the Light theme too. `frontend/app/cockpit/whatsnewsheet.tsx`.
+
+**2026-10-14 (Claude memory lint in the Claude mod)**
+
+- [ ] After the next build and `task install`, on Windows and on the Mac: add a line `- [X](x.md) — test` to the
+  project's `MEMORY.md` (`~/.claude/projects/<project>/memory/`), start a new Claude agent: a toast "arc: memory lint
+  found 1 issue(s)" shows and Claude's first reply names "MEMORY.md points at missing x.md". Remove the line and start
+  another: no toast. Tried only in a headless `claude -p` on Windows with a copy of the mod.
+
 **2026-10-14 (reopen a closed agent, Ctrl+Shift+T)**
 
 - [ ] Close a claude agent with Ctrl+Shift+W, then press Ctrl+Shift+T (also from inside another terminal): it comes
@@ -697,6 +732,7 @@ Jarvis (what survived the 2026-09-22/23 memory and recall-arm removals):
 
 - **U2 Tasks:** in-Wave `## Notes` editing; decision supersede UI (backend `SupersedeDecision` exists);
   manual dossier creation; live push.
+- **Jarvis as graph (deferred 2026-10-14):** a List | Graph view of the Brief; see `docs/deferred.md`.
 - **E Continuity:** a cheap model tier for boundary summaries; completed-task prose re-freshness; a
   per-task resume card beyond the pet's newest-narrative peek.
 - **D attribution tuning:** `timeBoxMs` 30d, `weightLayer3` 0.3 (needs a human ground-truth pass),

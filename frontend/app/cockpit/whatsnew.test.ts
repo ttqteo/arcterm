@@ -9,11 +9,15 @@ import changelog from "../../../CHANGELOG.md?raw";
 import { postCloseContext } from "./palette-commands";
 import {
     compareVersions,
+    entryBody,
     entryLead,
+    foldLabel,
     formatReleaseDate,
     inlineSpans,
+    MAX_HIGHLIGHTS,
     parseChangelog,
     releasesToShow,
+    splitHighlights,
     tryIds,
 } from "./whatsnew";
 
@@ -32,7 +36,7 @@ Intro text with a - dash.
 ### Added
 
 - **A tool library**: lists tools
-  and installs one. <!-- try: open-tool -->
+  and installs one. <!-- big --> <!-- try: open-tool -->
 
 - A plain entry with no bold lead.
 
@@ -42,7 +46,7 @@ Intro text with a - dash.
 
 ### Fixed
 
-- **A fix**.
+- <!-- try: go:usage --> **A fix**: and how. <!-- big -->
 
 ### Changed
 
@@ -76,10 +80,16 @@ describe("parseChangelog", () => {
         ]);
     });
 
-    it("joins an entry's continuation lines and lifts its try id out of the text", () => {
+    it("joins an entry's continuation lines and lifts its try id and big mark out of the text", () => {
         expect(releases[0].sections[0].entries[0]).toEqual({
             text: "**A tool library**: lists tools and installs one.",
             tryId: "open-tool",
+            big: true,
+        });
+        expect(releases[0].sections[2].entries[0]).toEqual({
+            text: "**A fix**: and how.",
+            tryId: "go:usage",
+            big: true,
         });
         expect(releases[0].sections[0].entries[1]).toEqual({ text: "A plain entry with no bold lead." });
     });
@@ -99,6 +109,61 @@ describe("parseChangelog", () => {
         for (const r of real) {
             expect(r.sections.length).toBeGreaterThan(0);
         }
+    });
+
+    // the cards are the few lines worth opening the app for; past five they are a wall again
+    it.each(parseChangelog(changelog).map((r) => [r.version, r] as const))(
+        "%s marks at most MAX_HIGHLIGHTS lines big",
+        (_v, r) => {
+            expect(splitHighlights(r).highlights.length).toBeLessThanOrEqual(MAX_HIGHLIGHTS);
+        }
+    );
+});
+
+describe("splitHighlights", () => {
+    const releases = parseChangelog(MD);
+
+    it("lifts the big entries out, in Added, Changed, Fixed order, and drops a section left empty", () => {
+        const { highlights, rest } = splitHighlights(releases[0]);
+        expect(highlights.map((e) => e.text)).toEqual([
+            "**A tool library**: lists tools and installs one.",
+            "**A fix**: and how.",
+        ]);
+        expect(rest.map((s) => [s.kind, s.entries.length])).toEqual([
+            ["Added", 1],
+            ["Changed", 2],
+        ]);
+    });
+
+    it("leaves a release with no big entries whole", () => {
+        const { highlights, rest } = splitHighlights(releases[1]);
+        expect(highlights).toEqual([]);
+        expect(rest).toEqual(releases[1].sections);
+    });
+});
+
+describe("foldLabel", () => {
+    const sec = (kind: "Added" | "Changed" | "Fixed", n: number) => ({ kind, entries: Array(n).fill({ text: "x" }) });
+
+    it("counts changes and fixes, saying more when cards sit above", () => {
+        expect(foldLabel([sec("Added", 40), sec("Changed", 18), sec("Fixed", 12)], true)).toBe(
+            "58 more changes · 12 fixes"
+        );
+        expect(foldLabel([sec("Added", 1), sec("Fixed", 1)], false)).toBe("1 change · 1 fix");
+        expect(foldLabel([sec("Fixed", 3)], true)).toBe("3 more fixes");
+        expect(foldLabel([], true)).toBe("");
+    });
+});
+
+describe("entryBody", () => {
+    it("is the note after its bold lead, its joining punctuation dropped", () => {
+        expect(entryBody("**Open a tool**: in the focused agent's folder.")).toBe("in the focused agent's folder.");
+        expect(entryBody("**Resource Manager** (from a fork): the footer")).toBe("(from a fork): the footer");
+    });
+
+    it("is the whole note with no lead, and empty when the lead is all of it", () => {
+        expect(entryBody("A plain entry.")).toBe("A plain entry.");
+        expect(entryBody("**A fix**.")).toBe("");
     });
 });
 

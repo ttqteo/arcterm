@@ -37222,8 +37222,8 @@ const toolsWorktreeGone = {
 };
 
 // --- What's new (frontend/app/cockpit/whatsnewsheet.tsx) -------------------------------------------------------------
-// The footer's version opens the release notes read from CHANGELOG.md: the latest releases, a headline per note until it
-// is clicked open, and Try it on a note lands on its feature.
+// The footer's version opens the release notes read from CHANGELOG.md: the latest releases, each led by its highlights as
+// cards with every other note under one fold line, and Try it on a note lands on its feature.
 const whatsNew = {
     name: "whats-new",
     surface: "cockpit",
@@ -37267,28 +37267,48 @@ const whatsNew = {
         );
         await h.shot("cdp-shots/whats-new-2-sheet.png");
 
-        // headlines first: an entry is its bold lead until it is clicked open
-        const ENTRY = `document.querySelector('[data-whats-new] li button[aria-expanded]')`;
-        const before = await h.ev(`(() => { const b = ${ENTRY}; return b ? { open: b.getAttribute("aria-expanded"), len: b.textContent.length } : null })()`);
-        await h.ev(`${ENTRY}.click()`);
-        await briefNap(200);
-        const after = await h.ev(`(() => { const b = ${ENTRY}; return { open: b.getAttribute("aria-expanded"), len: b.textContent.length } })()`);
+        // highlights first: a release's big notes are cards (5 at most), every other note folds under one count line
+        const layout = await h.ev(`[...document.querySelectorAll("[data-whats-new] [data-release]")].map((r) => ({
+            v: r.dataset.release,
+            cards: r.querySelectorAll("[data-whats-new-card]").length,
+            more: r.querySelector("[data-whats-new-more]")?.textContent.trim() ?? null,
+            rows: r.querySelectorAll("li:not([data-whats-new-card])").length,
+        }))`);
         rec(
-            "4. an entry shows only its headline until clicked, then the whole note",
-            before?.open === "false" && after.open === "true" && after.len > before.len,
+            "4. each release leads with at most 5 cards, the rest folded under one count line",
+            layout.some((r) => r.cards > 0) && layout.every((r) => r.cards <= 5 && r.rows === 0 && (r.more == null || /\d+ (more )?(change|fix)/.test(r.more))),
+            JSON.stringify(layout)
+        );
+
+        // the fold opens the rest, where a note is its bold lead until it is clicked open
+        await h.ev(`document.querySelector("[data-whats-new] [data-whats-new-more]").click()`);
+        await briefNap(200);
+        const ENTRY = `document.querySelector('[data-whats-new] li:not([data-whats-new-card]) button[aria-expanded]')`;
+        const before = await h.ev(`(() => { const b = ${ENTRY}; return b ? { open: b.getAttribute("aria-expanded"), len: b.textContent.length } : null })()`);
+        if (before != null) {
+            await h.ev(`${ENTRY}.click()`);
+            await briefNap(200);
+        }
+        const after = before == null ? null : await h.ev(`(() => { const b = ${ENTRY}; return { open: b.getAttribute("aria-expanded"), len: b.textContent.length } })()`);
+        rec(
+            "5. the fold opens the rest; a note there shows its headline until clicked, then the whole note",
+            before?.open === "false" && after?.open === "true" && after.len > before.len,
             JSON.stringify({ before, after })
         );
         await h.shot("cdp-shots/whats-new-3-opened.png");
 
+        // a Try it may sit inside a fold: open them all
+        await h.ev(`document.querySelectorAll('[data-whats-new] [data-whats-new-more][aria-expanded="false"]').forEach((b) => b.click())`);
+        await briefNap(200);
         const hasUsage = await h.ev(`!!document.querySelector('[data-whats-new-try="go:usage"]')`);
         if (!hasUsage) {
-            rec("5. Try it on a Usage note goes to Usage and closes the notes", false, "no go:usage note in the releases shown");
+            rec("6. Try it on a Usage note goes to Usage and closes the notes", false, "no go:usage note in the releases shown");
             return steps;
         }
         await h.ev(`document.querySelector('[data-whats-new-try="go:usage"]').click()`);
         await polishWaitFor(h, `!document.querySelector("[data-whats-new]")`, 4000);
         const landed = { surface: await h.activeSurfaceLabel(), open: await h.ev(`!!document.querySelector("[data-whats-new]")`) };
-        rec("5. Try it on a Usage note goes to Usage and closes the notes", landed.surface === SURFACE_LABEL.usage && !landed.open, JSON.stringify(landed));
+        rec("6. Try it on a Usage note goes to Usage and closes the notes", landed.surface === SURFACE_LABEL.usage && !landed.open, JSON.stringify(landed));
         await h.shot("cdp-shots/whats-new-4-tried.png");
         return steps;
     },

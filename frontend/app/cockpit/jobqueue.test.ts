@@ -87,6 +87,10 @@ describe("jobqueue", () => {
             "Run 700db4 · Verify · Task 3"
         );
         expect(sourceLabel(job({ runid: "700db4a1-xx" }), [])).toBe("Run 700db4");
+        expect(sourceLabel(job({ runid: "700db4a1-xx", label: "Check · base tree" }), [], "Heavy job queue")).toBe(
+            "Heavy job queue · Check · base tree"
+        );
+        expect(sourceLabel(job({ runid: "700db4a1-xx" }), [], "  ")).toBe("Run 700db4");
         expect(sourceLabel(job({ blockid: "b1" }), [{ id: "t1", blockId: "b1", name: "fix-footer" }])).toBe(
             "fix-footer"
         );
