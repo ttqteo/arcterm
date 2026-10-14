@@ -15,8 +15,15 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
 
 ## Unreleased
 
+### Added
+
+- **Reopen an agent you just closed**: `Ctrl+Shift+T` (`Cmd+Shift+T` on a Mac) brings back the agent closed last, as a
+  browser reopens a closed tab. Its conversation returns asleep, so it costs nothing until you wake it or send it a
+  message. The last 5 closed agents are kept. <!-- try: reopen-agent -->
+
 ### Changed
 
+- **Open a tool moved to `Ctrl+Shift+O`** (`Cmd+Shift+O` on a Mac), freeing `Ctrl+Shift+T` for reopening an agent.
 - **Folded, Sprout tells you first**: while Sprout is folded and another app is in front, an agent that needs you
   shows only Sprout's bubble; the system notification follows 30 seconds later, and only if it still waits on you.
 - **Subagent questions name the model**: when an agent asks to start a subagent with no model set, or on Opus, the

@@ -31,6 +31,7 @@ import { dockedTerminalAtom, terminalDockFoldedAtom, terminalFullscreenAtom } fr
 import { NO_LINEAGE } from "@/app/view/agents/runlineage";
 import { closeSwitcher, tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
 import { activeReviewAtom } from "@/app/view/agents/reviewmarks";
+import { reopenClosedAgent } from "@/app/cockpit/cockpit-actions";
 import { openToolPicker } from "@/app/view/agents/toolsstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
@@ -78,6 +79,12 @@ vi.mock("@/app/view/agents/floatstore", async (orig) => ({
 vi.mock("@/app/view/agents/toolsstore", async (orig) => ({
     ...(await orig<typeof import("@/app/view/agents/toolsstore")>()),
     openToolPicker: vi.fn(),
+}));
+
+// a reopen rescans the sessions archive and launches over the wire; the chord is only asked to start it
+vi.mock("@/app/cockpit/cockpit-actions", async (orig) => ({
+    ...(await orig<typeof import("@/app/cockpit/cockpit-actions")>()),
+    reopenClosedAgent: vi.fn(async () => {}),
 }));
 
 vi.mock("@/app/view/agents/agentactions", async (orig) => ({
@@ -815,14 +822,28 @@ describe("new run chord", () => {
     });
 });
 
+describe("reopen agent chord", () => {
+    // Ctrl+Shift+T, as a browser reopens a closed tab: from a field and the terminal, never over another modal
+    it("is Mod+Shift+T and reopens the agent closed last from anywhere but a modal", () => {
+        const model = { surfaceAtom: atom<SurfaceKey>("agent") } as any;
+        const b = buildGlobalBindings(model).find((x) => x.id === "reopen-agent")!;
+        expect(b.keys).toBe("Mod:Shift:t");
+        expect(b.when?.({ ...ctx("agent"), editable: true })).toBe(true);
+        expect(b.when?.({ ...ctx(), modalOpen: true })).toBe(false);
+        vi.mocked(reopenClosedAgent).mockClear();
+        b.run(ctx("agent"));
+        expect(reopenClosedAgent).toHaveBeenCalledWith(model);
+    });
+});
+
 describe("open a tool chord", () => {
     const find = (model: any) => buildGlobalBindings(model).find((x) => x.id === "open-tool")!;
 
-    // Ctrl+Shift+T on Windows: from a field and the terminal as New run's Mod+Shift+R is, and never over another modal
-    it("is Mod+Shift+T and opens the tool picker for the focused agent from anywhere but a modal", () => {
+    // Ctrl+Shift+O on Windows: from a field and the terminal as New run's Mod+Shift+R is, and never over another modal
+    it("is Mod+Shift+O and opens the tool picker for the focused agent from anywhere but a modal", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("agent") } as any;
         const b = find(model);
-        expect(b.keys).toBe("Mod:Shift:t");
+        expect(b.keys).toBe("Mod:Shift:o");
         expect(b.when?.({ ...ctx("agent"), editable: true })).toBe(true);
         expect(b.when?.({ ...ctx(), modalOpen: true })).toBe(false);
         vi.mocked(openToolPicker).mockClear();

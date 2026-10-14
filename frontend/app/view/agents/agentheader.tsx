@@ -347,7 +347,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 label: "Open a tool…",
                 sublabel: "lazygit, yazi, btop… in this agent's folder",
                 icon: <Wrench size={15} />,
-                accel: "Mod:Shift:t",
+                accel: "Mod:Shift:o",
                 click: () => openToolPicker(model),
             });
         }

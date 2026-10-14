@@ -9,10 +9,18 @@ import * as WOS from "@/app/store/wos";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { showTerminal } from "@/app/view/agents/agentcenter";
 import { AgentsViewModel } from "@/app/view/agents/agents";
-import { asleepLaunchMeta, wakeAgent, wakeErrorToast, type AsleepLaunch } from "@/app/view/agents/agentsleep";
+import {
+    asleepLaunchMeta,
+    SLEEPABLE_AGENTS,
+    wakeAgent,
+    wakeErrorToast,
+    type AsleepLaunch,
+} from "@/app/view/agents/agentsleep";
 import type { AgentVM, PendingLaunch } from "@/app/view/agents/agentsviewmodel";
 import { buildLaunchMeta, runtimeCreatesAgentPanel, type Runtime } from "@/app/view/agents/launch";
-import { sessionHolder } from "@/app/view/agents/sessionsarchivestore";
+import { archivedSession, nextToReopen, recentlyClosedAtom } from "@/app/view/agents/recentlyclosed";
+import { loadSessionsArchive, sessionHolder, sessionsArchiveAtom } from "@/app/view/agents/sessionsarchivestore";
+import { resumeLaunchOpts } from "@/app/view/agents/sessionsruns";
 import { stringToBase64 } from "@/util/util";
 
 export interface LaunchAgentOpts {
@@ -204,4 +212,41 @@ export async function attachBackgroundAgent(
         projectPath: bg.cwd,
         projectName: bg.project || "background",
     });
+}
+
+// Reopen the agent closed last (Mod+Shift+T, as a browser reopens a closed tab): its conversation in a new tab, asleep
+// when its harness can sleep, so it costs nothing until a Wake or a message; a harness that cannot (codex) resumes awake.
+// The resume command comes from the sessions archive, rescanned first so a conversation that just ended is on it.
+export async function reopenClosedAgent(model: AgentsViewModel): Promise<void> {
+    const { entry, rest } = nextToReopen(globalStore.get(recentlyClosedAtom), globalStore.get(model.agentsAtom));
+    globalStore.set(recentlyClosedAtom, rest);
+    if (entry == null) {
+        pushToast({ title: "No closed agent to reopen", message: "", level: "info" });
+        return;
+    }
+    await loadSessionsArchive();
+    const session = archivedSession(globalStore.get(sessionsArchiveAtom), entry.transcriptPath);
+    if (!session?.resumecommand) {
+        pushToast({
+            title: `Couldn't reopen ${entry.name}`,
+            message: "Its conversation is no longer in Conversation History.",
+            level: "error",
+        });
+        return;
+    }
+    try {
+        await launchAgent(model, {
+            ...resumeLaunchOpts(session),
+            resumeOf: session.transcriptpath,
+            ...(SLEEPABLE_AGENTS.has(session.runtime)
+                ? { asleep: { since: session.lastactivets, transcriptPath: session.transcriptpath } }
+                : {}),
+        });
+    } catch (e) {
+        pushToast({
+            title: `Couldn't reopen ${entry.name}`,
+            message: e instanceof Error ? e.message : String(e),
+            level: "error",
+        });
+    }
 }

@@ -11,6 +11,7 @@ import { fireAndForget, stringToBase64 } from "@/util/util";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { dismissKey, toggleInSet } from "./cockpitsurfacemodel";
+import { noteClosed } from "./recentlyclosed";
 import { leadRunTabIds } from "./runlineage";
 
 // The close-agent chord (bindings.ts), as a terminal app closes its tab: Windows Terminal's Ctrl+Shift+W on Windows,
@@ -18,6 +19,9 @@ import { leadRunTabIds } from "./runlineage";
 export function closeAgentChord(): string {
     return "Mod:Shift:w";
 }
+
+// a tab being closed: its transcript, when it has one, is what the reopen stack keeps
+type ClosingVM = Pick<AgentVM, "id" | "name" | "kind"> & Partial<Pick<AgentVM, "transcriptPath">>;
 
 function closeTabs(workspaceId: string, tabIds: string[]): void {
     fireAndForget(async () => {
@@ -30,13 +34,11 @@ function closeTabs(workspaceId: string, tabIds: string[]): void {
 // Close a whole session (its id is the tabId). Shows the same confirm modal as the header Close
 // button, then CloseTab -> wcore.DeleteTab tears down the block and reassigns the active tab.
 // Takes the VM rather than loose id/name strings so the prompt can never name one session while
-// closing another — and so a plain terminal, which has no agent to stop, gets its own wording.
+// closing another — and so a plain terminal, which has no agent to stop, gets its own wording. A closed agent with a
+// conversation goes on the reopen stack (recentlyclosed.ts, Mod+Shift+T); a closed run puts back only its lead.
 // Given the model, a lead whose run still holds other tabs is offered its whole run: closing the lead
 // alone leaves those tabs under a lead-less run row, which read as a close that did nothing.
-export function confirmCloseSession(
-    vm: Pick<AgentVM, "id" | "name" | "kind">,
-    model?: Pick<AgentsViewModel, "lineageAtom" | "agentsAtom">
-) {
+export function confirmCloseSession(vm: ClosingVM, model?: Pick<AgentsViewModel, "lineageAtom" | "agentsAtom">) {
     const ws = globalStore.get(atoms.workspace);
     if (ws?.oid == null) {
         return;
@@ -51,8 +53,14 @@ export function confirmCloseSession(
             confirmLabel: "Close run",
             altLabel: "Close lead only",
             destructive: true,
-            onConfirm: () => closeTabs(ws.oid, runTabIds),
-            onAlt: () => closeTabs(ws.oid, [vm.id]),
+            onConfirm: () => {
+                noteClosed([vm]);
+                closeTabs(ws.oid, runTabIds);
+            },
+            onAlt: () => {
+                noteClosed([vm]);
+                closeTabs(ws.oid, [vm.id]);
+            },
         });
         return;
     }
@@ -65,7 +73,10 @@ export function confirmCloseSession(
             : `End the session for "${vm.name}"? This stops the agent and can't be undone.`,
         confirmLabel: label,
         destructive: true,
-        onConfirm: () => fireAndForget(() => WorkspaceService.CloseTab(ws.oid, vm.id)),
+        onConfirm: () => {
+            noteClosed([vm]);
+            fireAndForget(() => WorkspaceService.CloseTab(ws.oid, vm.id));
+        },
     });
 }
 
@@ -87,12 +98,17 @@ export function confirmCloseRun(title: string, tabIds: string[]) {
 }
 
 // Close several sessions at once, with no confirm of its own: the caller asked (the Consumers panel's ticked rows).
-export function closeSessions(tabIds: string[]): void {
+// They go on the reopen stack too, the first given on top.
+export function closeSessions(vms: ClosingVM[]): void {
     const ws = globalStore.get(atoms.workspace);
-    if (ws?.oid == null || tabIds.length === 0) {
+    if (ws?.oid == null || vms.length === 0) {
         return;
     }
-    closeTabs(ws.oid, tabIds);
+    noteClosed(vms);
+    closeTabs(
+        ws.oid,
+        vms.map((vm) => vm.id)
+    );
 }
 
 // NUDGE_INPUT is what the rail's Resume types: a quiet agent picks it up as a new turn

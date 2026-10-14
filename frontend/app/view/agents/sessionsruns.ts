@@ -383,7 +383,7 @@ export function sessionPrimary(s: Pick<LiveSession, "live" | "resumecommand">): 
 }
 
 // resumeLaunchOpts launches an ended session again under its own name; an empty task replays no prompt
-export function resumeLaunchOpts(s: LiveSession): LaunchAgentOpts {
+export function resumeLaunchOpts(s: SessionActivity): LaunchAgentOpts {
     const piResume =
         s.runtime === "pi" && s.resumeargs?.length ? { startupArgs: s.resumeargs, resumePath: s.transcriptpath } : {};
     return {

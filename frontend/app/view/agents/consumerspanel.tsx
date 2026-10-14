@@ -806,7 +806,7 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
     const closePicked = () => {
         const rows = chosen;
         const closeNow = () => {
-            closeSessions(rows.map((r) => r.id));
+            closeSessions(rows.map((r) => r.vm));
             setPicked(new Set());
             pushToast({
                 title: rows.length === 1 ? `Closed ${rows[0].name}` : `Closed ${rows.length} agents`,

@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { reopenClosedAgent } from "@/app/cockpit/cockpit-actions";
 import { peekClickLabel } from "@/app/cockpit/ctrlheld";
 import { cheatsheetOpenAtom } from "@/app/cockpit/shortcuts-cheatsheet";
 import { anyModalOpen } from "@/app/modals/modalstack";
@@ -375,14 +376,26 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
         },
         {
             // Open a tool (lazygit, yazi, btop…) in the focused agent's folder, from a focused terminal too. Not bare
-            // Mod+T: on Windows that is Ctrl+T, which a TUI (fzf, the shell's transpose) may take.
+            // Mod+O: on Windows that is Ctrl+O, which a TUI (nano's write-out, the shell's operate-and-get-next) may take.
             id: "open-tool",
-            keys: "Mod:Shift:t",
+            keys: "Mod:Shift:o",
             group: "Global",
             label: "Open a tool",
             paletteHidden: true, // the palette's own "Open a tool…" row (palette-commands.ts) is the same action
             when: (ctx) => !ctx.modalOpen,
             run: () => openToolPicker(model),
+        },
+        {
+            // Reopen the agent closed last, as a browser reopens a closed tab: asleep, its conversation back on the roster
+            // (recentlyclosed.ts). A chord, so it works from inside a terminal.
+            id: "reopen-agent",
+            keys: "Mod:Shift:t",
+            group: "Global",
+            label: "Reopen the agent closed last",
+            when: (ctx) => !ctx.modalOpen,
+            run: () => {
+                void reopenClosedAgent(model);
+            },
         },
         {
             // ⌘, / Ctrl+, as in VS Code and every Mac app. A comma is no terminal key, so it is the same chord in a terminal.

@@ -136,7 +136,7 @@ Header của nó là một hàng gọn, thay cho header của agent:
 - biểu tượng (của tool, hoặc biểu tượng terminal), **tên** (tên tool khi nó chạy một tool; không thì lệnh gần nhất, hoặc "Terminal 2" nếu chưa chạy lệnh nào), chip thư mục khi terminal không chạy ở gốc project (thường là worktree của một agent), rồi `project`.
 - bên phải: gợi ý `Ctrl Tab back to <agent>` khi tab xem trước đó là một agent; nút **Open beside `<agent>`** (thành một ô cạnh agent đó, ẩn khi agent đã có ô hoặc lưới đầy); nút **Move to the panel** (xuống [panel dưới agent](#panel-terminal), mờ khi không có agent nào đang chạy); nút `×` đóng, có hỏi xác nhận.
 
-`Esc`, mũi tên và các phím `Ctrl` đi thẳng vào tool; các chord của app (`Ctrl+P`, `Ctrl+Tab`, `Ctrl+Shift+T`…) vẫn dùng được từ bên trong như ở mọi terminal. `Shift+Esc` trả focus về sidebar.
+`Esc`, mũi tên và các phím `Ctrl` đi thẳng vào tool; các chord của app (`Ctrl+P`, `Ctrl+Tab`, `Ctrl+Shift+O`…) vẫn dùng được từ bên trong như ở mọi terminal. `Shift+Esc` trả focus về sidebar.
 
 Khi một agent land nhánh và worktree của nó bị xóa, terminal nào đang chạy trong worktree đó hiện một thẻ phủ lên màn hình cuối của nó: **This terminal's folder was removed**, nút chính **Reopen in `<project>`** (mở lại terminal ở gốc project) và **Close terminal**. Hàng của nó trong cây ghi `removed` và gạch ngang chip thư mục.
 
@@ -256,7 +256,7 @@ Tab thứ ba của [Setup](setup.md), sau Instructions và Skills (`Ctrl+G` rồ
 
 Hộp thoại kiểu palette để mở tool ngay, trong thư mục của agent đang focus. Mở bằng:
 
-- `Ctrl+Shift+T` (`Cmd+Shift+T` trên macOS), từ bất kỳ đâu, kể cả khi đang gõ trong terminal.
+- `Ctrl+Shift+O` (`Cmd+Shift+O` trên macOS), từ bất kỳ đâu, kể cả khi đang gõ trong terminal.
 - **Open a tool…** trong menu `…` trên header của agent (chỉ agent đang có terminal).
 - `Ctrl+P` → **Open a tool…**.
 
@@ -382,7 +382,7 @@ Với phiên Claude đã kết thúc: chuột phải hàng → **Delete session*
 
 ## Đóng và khôi phục agent
 
-- **Đóng:** nút `×` ở header, **Close agent** trong menu chuột phải, `Cmd+Shift+W` trên macOS hoặc `Ctrl+Shift+W` trên Windows (như đóng một tab; dùng được cả khi đang gõ trong terminal), nút **✓ Close** (ở dòng sidebar và ở header, kèm số token) khi agent đã commit xong, hoặc **Stop** trong panel **Consumers**. Luôn có hộp xác nhận; thao tác kết thúc phiên và không hoàn tác được. Terminal thường dùng **Close terminal**, và cũng đóng được bằng phím đó. `Ctrl+C` luôn đi thẳng vào terminal.
+- **Đóng:** nút `×` ở header, **Close agent** trong menu chuột phải, `Cmd+Shift+W` trên macOS hoặc `Ctrl+Shift+W` trên Windows (như đóng một tab; dùng được cả khi đang gõ trong terminal), nút **✓ Close** (ở dòng sidebar và ở header, kèm số token) khi agent đã commit xong, hoặc **Stop** trong panel **Consumers**. Luôn có hộp xác nhận; thao tác kết thúc phiên. Lỡ tay đóng thì `Ctrl+Shift+T` (`Cmd+Shift+T` trên macOS) mở lại agent vừa đóng, như mở lại tab trong trình duyệt: hội thoại quay về sidebar ở trạng thái ngủ (codex thì resume luôn), bấm Wake hoặc gửi tin nhắn để chạy tiếp. Chỉ nhớ 5 agent đóng gần nhất, và quên hết khi khởi động lại arcterm; cũ hơn thì mở từ Conversation History. Terminal thường dùng **Close terminal**, và cũng đóng được bằng phím đó. `Ctrl+C` luôn đi thẳng vào terminal.
 - **Đóng lead của run có worker:** hộp thoại hỏi **Close run** (đóng tất cả) hay **Close lead only** (worker vẫn chạy).
 - **Đánh thức agent đang rảnh:** nút **Resume** ở chân rail gõ `continue` vào terminal.
 - **Sau khi tắt hoặc cập nhật app:** các agent claude, codex, opencode, pi và agy đang chạy lúc đó tự mở lại, mỗi cái vào phiên của nó, mà không phải mở từng cái từ lịch sử. Agent chưa báo phiên của nó lên cockpit (ví dụ Codex khi hook chưa được trust) không tự mở lại; hãy mở từ **Conversations**. Lượt đang dở của một agent bị cắt lúc app tắt, nên nó thường ngồi ở trạng thái rảnh sau khi mở lại; dùng **Resume** ở chân rail để bảo nó tiếp tục. Worker của run được khôi phục theo run, xem [Orchestrator](orchestrator.md).
@@ -396,7 +396,7 @@ Phím đơn (`j`, `k`, `d`, `f`, `r`, `c`, `Esc`…) chỉ có tác dụng khi b
 | `j` / `k` (hoặc `↓` / `↑`, `→` / `←`) | Hàng kế tiếp / trước trong cây project: agent và terminal, theo thứ tự cây |
 | `Alt+1`–`9` | Hàng thứ n của cây (agent và terminal), từ trên xuống; giữ `Alt` một lúc để thấy số trên từng hàng |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Thanh chuyển tab: giữ `Ctrl`, `Tab` / `Shift+Tab` chọn, thả `Ctrl` để mở (dùng được cả trong terminal). Bấm nhanh để quay về tab vừa xem |
-| `Ctrl+Shift+T` | Open a tool: mở lazygit, yazi, btop… trong thư mục của agent đang focus (dùng được cả trong terminal) |
+| `Ctrl+Shift+O` | Open a tool: mở lazygit, yazi, btop… trong thư mục của agent đang focus (dùng được cả trong terminal) |
 | `` Ctrl+` `` | Gấp panel terminal thành dải / mở lại (chỉ khi có terminal trong panel) |
 | `d` | Bật/tắt rail chi tiết |
 | `f` / `F11` | Toàn màn hình terminal (`F11` dùng được trong terminal) |
@@ -406,6 +406,7 @@ Phím đơn (`j`, `k`, `d`, `f`, `r`, `c`, `Esc`…) chỉ có tác dụng khi b
 | `Esc` | Về Cockpit; thoát toàn màn hình trước; từ History hoặc transcript thì về terminal; trong subagent thì về agent cha |
 | `Shift+Esc` | Từ trong terminal trả focus về sidebar |
 | `Cmd+Shift+W` (macOS) / `Ctrl+Shift+W` (Windows) | Đóng agent hoặc terminal đang focus, có hỏi xác nhận (dùng được cả trong terminal; trên Windows `Ctrl+W` vẫn là xóa một từ trong terminal) |
+| `Cmd+Shift+T` (macOS) / `Ctrl+Shift+T` (Windows) | Mở lại agent vừa đóng, ở trạng thái ngủ (tối đa 5 agent gần nhất; dùng được cả trong terminal) |
 | `Ctrl+N` / `Ctrl+Shift+R` | Hộp thoại New agent / New run |
 | `Ctrl+G` `s` | Mở Conversation History |
 

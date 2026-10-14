@@ -45,7 +45,8 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 | `Mod`+`P` | Search — opens on the Files scope on Code (see below) |
 | `Mod`+`N` | New agent: opens the New dialog on an agent row |
 | `Mod`+`Shift`+`R` | New run: opens the New dialog on a run row |
-| `Mod`+`Shift`+`T` | Open a tool: the picker for lazygit, yazi, btop and your own tools (see below), opening in the focused agent's folder, else the project root. From inside a terminal too. Not bare `Mod`+`T`: on Windows that is `Ctrl`+`T`, which a TUI or the shell may take |
+| `Mod`+`Shift`+`T` | Reopen the agent closed last, as a browser reopens a closed tab: its conversation comes back asleep (codex, which cannot sleep, resumes awake), and starts on Wake or a message. Keeps the last 5 closed agents, until arcterm restarts; older ones open from Conversation History. From inside a terminal too |
+| `Mod`+`Shift`+`O` | Open a tool: the picker for lazygit, yazi, btop and your own tools (see below), opening in the focused agent's folder, else the project root. From inside a terminal too. Not bare `Mod`+`O`: on Windows that is `Ctrl`+`O`, which a TUI or the shell may take |
 | `Mod`+`G` | Go to…: opens the go-to leader (see below) |
 | `Mod`+`J` | What's waiting: the avatar popup (Jarvis peek), on any surface, from inside a terminal too (on Windows it takes `Ctrl`+`J` there; Shift+Enter is the newline). Hold `Mod` on its own and the creature shows a `J` |
 | `Mod`+`,` | Settings, as in VS Code and every Mac app |
@@ -79,7 +80,7 @@ in Start, so the other rows keep their digits.
 | `Mod`+`Enter` | Launch, from anywhere in the dialog |
 | `Esc` | Close the open menu or a column's filter first, then the dialog. What you typed is kept for the next open |
 
-## Open a tool (`Mod`+`Shift`+`T`)
+## Open a tool (`Mod`+`Shift`+`O`)
 
 A palette-style picker for the tool library (Setup → Tools). Its first line says where the tool will open: the focused
 agent's folder (its worktree when it has one), else the project root, else Home. Other ways in: Open a tool… in an

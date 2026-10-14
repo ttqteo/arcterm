@@ -27,6 +27,12 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-14 (reopen a closed agent, Ctrl+Shift+T)**
+
+- [ ] Close a claude agent with Ctrl+Shift+W, then press Ctrl+Shift+T (also from inside another terminal): it comes
+  back in a new tab, asleep, with its conversation; a message wakes it on the same session. Close 6 and press
+  Ctrl+Shift+T 6 times: 5 come back, the 6th toasts "No closed agent to reopen". Ctrl+Shift+O opens Open a tool.
+
 **2026-10-14 (folded Sprout holds the OS toast)**
 
 - [ ] Fold Sprout, put another app in front, and let an agent ask: only Sprout's "NEEDS YOU" bubble shows, no Windows
