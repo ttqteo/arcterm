@@ -723,6 +723,12 @@ Tracked in their own initiatives, not here:
   closed state just before the open (+2.21 MB after off against the first read). The busy numbers are inside the
   baseline's own noise (10 s windows of the same state read 2–7 %): interleaved office-off/on/reduced windows read
   4.8 / 5.0 / 4.9 %.
+- **Run office with Jarvis's floor** (2026-10-14, `jarvis-office-bench` on the Mac in headless Chrome, `dev:browser`
+  on its own ports, an 8 GB machine with other agents running; the page's own busy read 30 % with the office off):
+  108 desks, heap +2.43 MB, +1648 DOM nodes, busy −2.8 % over the baseline (−16.9 % reduced), 85 sprites, +0.23 MB
+  after off. One budget missed: 1228 ms to draw on the first open (budget 150 ms). Not Jarvis's floor: reloaded
+  first opens read 235–506 ms with it and 327–652 ms with it taken out (warm opens 107–140 against 85–158 ms), so it is
+  this machine and the dev build. Re-measure the open on a production build or a quiet machine.
 
 ---
 

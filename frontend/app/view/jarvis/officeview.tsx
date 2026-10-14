@@ -13,15 +13,37 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import * as WOS from "@/app/store/wos";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { openLauncher } from "@/app/view/agents/launcherstore";
 import { runStage } from "@/app/view/agents/runstage";
 import { cn } from "@/util/util";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { atomWithStorage, selectAtom } from "jotai/utils";
-import { memo, useEffect, useMemo, type CSSProperties } from "react";
-import { officeFloor, type Desk, type DeskPose, type DeskScreen, type DeskTone, type Floor } from "./officemodel";
+import { useReducedMotion } from "motion/react";
+import { memo, useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import {
+    directAgents,
+    jarvisFloor,
+    officeFloor,
+    type Desk,
+    type DeskPose,
+    type DeskScreen,
+    type DeskTone,
+    type DirectAgent,
+    type Floor,
+    type JarvisActivity,
+    type JarvisSeat,
+} from "./officemodel";
 import { POSES, SPRITE_W, spriteFor, type SpritePose } from "./officesprite";
 import { spriteUrl, type Outfit } from "./officesprites";
 import { openTarget } from "./openref";
+import { closePeek } from "./peekstore";
+import { petCharacter } from "./petcharacter";
+import { expressionFor, postureFor, wearsTired, type PetPosture } from "./petcondition";
+import { petOutfit, petOutfitChoice } from "./petoutfit";
+import { PET_CELL_PX, PET_PX, spriteFor as petSpriteFor, type PetCell, type PetMark, type PetPose } from "./petsprite";
+import { petCharacterAtom, petOfficeSeatAtom, petOutfitChoiceAtom, petPeekOpenAtom, petUnreadAtom } from "./petstore";
+import { openPetBubble, usePetSignals } from "./petview";
+import { PASTIMES, POSTURE_MARK } from "./petwalk";
 
 // Off by default: the Brief stays a list until the person asks for the office (compact by default)
 export const officeOnAtom = atomWithStorage<boolean>("jarvis.office.on", false);
@@ -30,6 +52,11 @@ export const officeFrameAtom = atom<0 | 1>(0);
 export const officeFixtureAtom = atom<{ title: string; floor: Floor }[] | null>(null) as PrimitiveAtom<
     { title: string; floor: Floor }[] | null
 >;
+
+// DEV-only: what Jarvis's floor reads in place of the roster, the creature's signals and the clock (officedevhooks.ts
+// __officeJarvis); always null in a real session
+export type JarvisFixture = { agents: DirectAgent[]; posture?: PetPosture; tired?: boolean; now: number };
+export const jarvisFixtureAtom = atom<JarvisFixture | null>(null) as PrimitiveAtom<JarvisFixture | null>;
 
 const FRAME_MS = 450;
 const SCALE = 3;
@@ -375,6 +402,251 @@ export function OfficeFixtureFloors() {
                     <OfficeScene floor={f.floor} onOpen={NO_OPEN} />
                 </div>
             ))}
+        </div>
+    );
+}
+
+// Jarvis's floor (run office spec, "Jarvis's floor"): the creature at its own desk, the agents no run spawned at theirs.
+// While it is drawn the creature sits here and not on the footer (petview.tsx reads petOfficeSeatAtom): one Jarvis.
+
+const MINUTE_MS = 60_000;
+
+// what each activity draws, from the creature's own grids; a pastime's two frames at the creature's own pace
+function pastime(p: "work" | "read" | "music" | "ball"): { frames: readonly PetPose[]; frameMs: number | null } {
+    return PASTIMES[p] ?? { frames: ["stand"], frameMs: null };
+}
+const JARVIS_POSE: Record<JarvisActivity, { frames: readonly PetPose[]; frameMs: number | null }> = {
+    watch: { frames: ["stand"], frameMs: null },
+    tired: { frames: ["tired"], frameMs: null },
+    sleep: { frames: ["sleep"], frameMs: null },
+    work: pastime("work"),
+    read: pastime("read"),
+    music: pastime("music"),
+    ball: pastime("ball"),
+};
+const JARVIS_SCREEN: Record<JarvisActivity, DeskScreen> = {
+    watch: "wait",
+    tired: "bar",
+    work: "lines",
+    sleep: "off",
+    read: "prompt",
+    music: "prompt",
+    ball: "prompt",
+};
+
+// the minute, for the night and the pastime: a timer of its own, since the frame clock stops under reduced motion
+function useMinute(): Date {
+    const [now, setNow] = useState(() => Date.now());
+    useEffect(() => {
+        const t = window.setInterval(() => setNow(Date.now()), MINUTE_MS);
+        return () => window.clearInterval(t);
+    }, []);
+    return useMemo(() => new Date(now), [now]);
+}
+
+// a pastime's frame, at the creature's pace rather than the office's; still while hidden or under reduced motion
+function usePetFrame(ms: number | null): number {
+    const reduce = useReducedMotion() === true;
+    const [n, setN] = useState(0);
+    useEffect(() => {
+        if (ms == null || reduce) {
+            return;
+        }
+        let timer: number | undefined;
+        const sync = () => {
+            if (document.hidden && timer != null) {
+                window.clearInterval(timer);
+                timer = undefined;
+            } else if (!document.hidden && timer == null) {
+                timer = window.setInterval(() => setN((x) => x + 1), ms);
+            }
+        };
+        sync();
+        document.addEventListener("visibilitychange", sync);
+        return () => {
+            document.removeEventListener("visibilitychange", sync);
+            if (timer != null) {
+                window.clearInterval(timer);
+            }
+        };
+    }, [ms, reduce]);
+    return ms == null || reduce ? 0 : n;
+}
+
+function petRect(c: PetCell, i: number) {
+    return (
+        <rect
+            key={i}
+            x={c.x * PET_CELL_PX}
+            y={c.y * PET_CELL_PX}
+            width={PET_CELL_PX}
+            height={PET_CELL_PX}
+            fill={`var(${c.token})`}
+        />
+    );
+}
+
+// apart from the seat, so a pastime's frame re-renders only the svg
+function JarvisSprite({ activity, marks }: { activity: JarvisActivity; marks: PetMark[] }) {
+    const character = petCharacter(useAtomValue(petCharacterAtom));
+    const outfit = petOutfit(petOutfitChoice(useAtomValue(petOutfitChoiceAtom)), new Date());
+    const { frames, frameMs } = JARVIS_POSE[activity];
+    const frame = usePetFrame(frames.length > 1 ? frameMs : null);
+    const sprite = petSpriteFor(frames[frame % frames.length], marks, outfit, character);
+    return (
+        <svg
+            data-office-jarvis-sprite={character}
+            width={PET_PX}
+            height={PET_PX}
+            viewBox={`0 0 ${PET_PX} ${PET_PX}`}
+            shapeRendering="crispEdges"
+            aria-hidden="true"
+            // the flag in hand rises above the sprite's box, as on the footer
+            overflow="visible"
+            className="pointer-events-none absolute"
+            style={{ left: 10, top: FLOOR_Y - PET_PX }}
+        >
+            {sprite.back.map(petRect)}
+            {sprite.body.map(petRect)}
+            {sprite.overlay.map(petRect)}
+        </svg>
+    );
+}
+
+// module scope, so the seat's ref is one function: a new one each render would clear and set the seat every time
+function setSeat(el: HTMLButtonElement | null) {
+    globalStore.set(petOfficeSeatAtom, el);
+}
+
+function JarvisSeatView({ seat, marks, onOpen }: { seat: JarvisSeat; marks: PetMark[]; onOpen: () => void }) {
+    const screen = JARVIS_SCREEN[seat.activity];
+    return (
+        <button
+            ref={setSeat}
+            type="button"
+            data-office-desk="jarvis"
+            data-office-pose={seat.activity}
+            data-office-state={seat.activity}
+            title={seat.tip}
+            aria-label={seat.tip}
+            onClick={onOpen}
+            className="relative h-[116px] w-[140px] shrink-0 cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+            {/* the window behind the creature: the sun by day, the moon by night */}
+            <span
+                data-office-jarvis-window={seat.night ? "night" : "day"}
+                className="absolute border-2 border-edge-strong bg-surface-code"
+                style={{ left: 8, top: 4, width: 44, height: 26 }}
+            >
+                <span
+                    className={cn("absolute size-2", seat.night ? "bg-ink-faint" : "bg-warning")}
+                    style={{ left: seat.night ? 28 : 6, top: 4 }}
+                />
+            </span>
+            {/* the desk, its top and legs, and the monitor on it */}
+            <span
+                className="absolute border-x-[3px] border-t-4 border-edge-strong"
+                style={{ left: 62, top: 64, width: 70, height: 24 }}
+            />
+            {ticksScreen(screen) ? (
+                <FrameScreen screen={screen} tone={seat.tone} left={84} />
+            ) : (
+                screenView(screen, seat.tone, 0, 84)
+            )}
+            {/* the glass partition, as the lead's */}
+            <span className="absolute bg-edge-strong opacity-80" style={{ left: 137, top: 2, width: 3, height: 86 }} />
+            <JarvisSprite activity={seat.activity} marks={marks} />
+            <span
+                className={cn(
+                    "absolute inset-x-0 truncate text-center text-[10px] leading-[14px]",
+                    seat.tone === "asking" ? "text-asking" : "text-muted"
+                )}
+                style={{ top: 94 }}
+            >
+                {seat.label}
+            </span>
+        </button>
+    );
+}
+
+/** Jarvis's floor, drawn whenever the office is on: the creature at its desk and a desk per agent no run spawned. */
+export function JarvisOfficeFloor({ model }: { model: AgentsViewModel }) {
+    // the roster changes whenever any agent does; a list that reads the same keeps its object, so the floor does not
+    // rebuild
+    const mineAtom = useMemo(
+        () =>
+            selectAtom(
+                model.agentsAtom,
+                (agents) =>
+                    directAgents(agents).map((a) => ({ id: a.id, name: a.name, state: a.state, sleeping: a.sleeping })),
+                (a, b) => JSON.stringify(a) === JSON.stringify(b)
+            ),
+        [model]
+    );
+    const mine = useAtomValue(mineAtom);
+    const signals = usePetSignals(model);
+    const fixture = useAtomValue(jarvisFixtureAtom);
+    const posture = fixture != null ? (fixture.posture ?? "none") : postureFor(signals);
+    const tired = fixture != null ? fixture.tired === true : wearsTired(expressionFor(signals).kind);
+    const unread = useAtomValue(petUnreadAtom);
+    const minute = useMinute();
+    const now = fixture != null ? fixture.now : minute.getTime();
+    const floor = useMemo(
+        () => jarvisFloor({ agents: fixture?.agents ?? mine, watch: posture !== "none", tired, now: new Date(now) }),
+        [fixture, mine, posture, tired, now]
+    );
+    // the marks the footer creature wears: what waits, the sweat drop, the z, and something said and not yet read
+    const marks = useMemo(() => {
+        const out: PetMark[] = [];
+        const postureMark = POSTURE_MARK[posture];
+        if (postureMark != null) {
+            out.push(postureMark);
+        }
+        if (floor.jarvis.activity === "tired") {
+            out.push("drop");
+        }
+        if (floor.jarvis.activity === "sleep") {
+            out.push("z");
+        }
+        if (unread) {
+            out.push("unread");
+        }
+        return out;
+    }, [posture, floor.jarvis.activity, unread]);
+    const openJarvis = useCallback(() => {
+        if (globalStore.get(petPeekOpenAtom)) {
+            closePeek();
+            return;
+        }
+        openPetBubble(model);
+    }, [model]);
+    const onOpen = useCallback(
+        (d: Desk) => {
+            if (d.agentId != null) {
+                void openTarget(model, { kind: "agent", tabId: d.agentId });
+                return;
+            }
+            openLauncher(model, "agent");
+        },
+        [model]
+    );
+    // the seat goes with the floor, so the creature walks the footer again the moment the office closes
+    useEffect(() => () => globalStore.set(petOfficeSeatAtom, null), []);
+    return (
+        <div
+            data-office-floor="jarvis"
+            role="group"
+            aria-label="Jarvis's office"
+            className="overflow-x-auto overflow-y-hidden rounded-md bg-surface"
+        >
+            <div className="relative flex h-[116px] w-max min-w-full px-2">
+                <span aria-hidden className="absolute inset-x-0 bottom-0 top-[88px] bg-surface-raised" />
+                <span aria-hidden className="absolute inset-x-0 top-[88px] h-0.5 bg-edge-strong" />
+                <JarvisSeatView seat={floor.jarvis} marks={marks} onOpen={openJarvis} />
+                {floor.desks.map((d) => (
+                    <DeskBody key={d.key} desk={d} onOpen={onOpen} />
+                ))}
+            </div>
         </div>
     );
 }

@@ -101,6 +101,11 @@ const ORIGIN: Record<PeekCorner, string> = {
 // the corner a panel grows from: its edge on the anchor's side, at the aligned end
 function originOf(placement: Placement): string {
     const [side, align] = placement.split("-");
+    if (side === "left" || side === "right") {
+        // beside the anchor (Jarvis's seat on the office floor, officeview.tsx): the aligned end is vertical
+        const v = align === "end" ? "bottom" : align === "start" ? "top" : "center";
+        return `${v} ${side === "right" ? "left" : "right"}`;
+    }
     const v = side === "top" ? "bottom" : side === "bottom" ? "top" : "center";
     const h = align === "end" ? "right" : align === "start" ? "left" : "center";
     return `${v} ${h}`;

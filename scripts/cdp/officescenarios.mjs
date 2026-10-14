@@ -6,7 +6,8 @@
 // what it is. jarvis-office-bench holds the spec's budgets: it draws 104 desks and reads Performance.getMetrics with
 // the office off (held for 30 s: the baseline the busy budgets subtract), open, held open for 30 s, held under reduced
 // motion, and off again. The fixture floors come through
-// the DEV-only __officeFixture hook (officedevhooks.ts), so the bench starts no run or worker.
+// the DEV-only __officeFixture hook (officedevhooks.ts), so the bench starts no run or worker. jarvis-office-floor draws
+// Jarvis's floor from the __officeJarvis hook and checks there is one Jarvis: the footer's leaves while the floor shows.
 //
 // scenarios.mjs hands its fixture helpers in (makeOfficeScenarios) rather than this file importing them, which would
 // make the two modules import each other.
@@ -293,8 +294,165 @@ export function makeOfficeScenarios(fx) {
             });
         },
     };
-    return { jarvisOffice, jarvisOfficeBench };
+    return { jarvisOffice, jarvisOfficeBench, jarvisOfficeFloor };
 }
+
+// Jarvis's floor (run office spec, "Jarvis's floor"), from the DEV-only __officeJarvis fixture: a roster, a posture and a
+// clock, so every state draws whatever the dev app is running. One Jarvis: the footer creature leaves while the floor is
+// drawn, and the peek opens off the seat.
+const JARVIS_SEAT = `document.querySelector('[data-office-floor="jarvis"] [data-office-desk="jarvis"]')`;
+const PET_SPRITE = `document.querySelector("[data-pet-sprite]")`;
+// local time in this process and in the page alike, both on this machine
+const at = (hour) => new Date(2026, 9, 14, hour, 0).getTime();
+const JARVIS_FIXTURES = {
+    empty: { agents: [], now: at(14) },
+    crew: {
+        agents: [
+            { id: "fx-idle", name: "notes", state: "idle" },
+            { id: "fx-work", name: "loom", state: "working" },
+            { id: "fx-ask", name: "game", state: "asking" },
+            { id: "fx-sleep", name: "docs", state: "idle", sleeping: { since: 1, freedBytes: 1 } },
+        ],
+        now: at(2),
+    },
+    late: { agents: [{ id: "fx-work", name: "loom", state: "working" }], now: at(2) },
+    night: { agents: [], now: at(2) },
+};
+
+async function readJarvis(h) {
+    return h.ev(`(async () => {
+        for (let i = 0; i < 40 && !${JARVIS_SEAT}; i++) await new Promise((r) => setTimeout(r, 50));
+        // a frame for the fixture's render to land
+        await new Promise((r) => requestAnimationFrame(() => r()));
+        const seat = ${JARVIS_SEAT};
+        const floor = document.querySelector('[data-office-floor="jarvis"]');
+        const desks = [...(floor?.querySelectorAll('[data-office-desk]:not([data-office-desk="jarvis"])') ?? [])];
+        return {
+            seat: !!seat,
+            activity: seat?.dataset.officePose,
+            // the label is a desk's last child: its text alone, not the monitor's glyph or the bubble
+            label: seat?.lastElementChild?.textContent.trim(),
+            window: seat?.querySelector("[data-office-jarvis-window]")?.dataset.officeJarvisWindow,
+            sprite: !!seat?.querySelector("[data-office-jarvis-sprite] rect"),
+            desks: desks.map((d) => ({ key: d.dataset.officeDesk, pose: d.dataset.officePose, label: d.lastElementChild?.textContent.trim() })),
+            footerPet: !!${PET_SPRITE},
+        };
+    })()`);
+}
+
+const jarvisOfficeFloor = {
+    name: "jarvis-office-floor",
+    surface: "jarvis",
+    async arrange(h) {
+        return {};
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const missing =
+            (await waitForOfficeSeams(h)) ??
+            (await h.ev(`typeof window.__officeJarvis === "function" ? null : "the page has no __officeJarvis"`));
+        if (missing != null) {
+            rec("0. the office seams are up", false, missing);
+            return steps;
+        }
+        ctx.wasOn = (await h.ev(`${TOGGLE}?.getAttribute("aria-pressed")`)) === "true";
+        ctx.armed = true;
+
+        await setOffice(h, false);
+        const off = await h.ev(`(async () => {
+            for (let i = 0; i < 40 && !${PET_SPRITE}; i++) await new Promise((r) => setTimeout(r, 100));
+            return { floor: !!document.querySelector('[data-office-floor="jarvis"]'), footerPet: !!${PET_SPRITE} };
+        })()`);
+        rec("1. with the office off there is no Jarvis floor and Jarvis walks the footer", !off.floor && off.footerPet, JSON.stringify(off));
+
+        await h.ev(`window.__officeJarvis(${JSON.stringify(JARVIS_FIXTURES.empty)})`);
+        await setOffice(h, true);
+        const empty = await readJarvis(h);
+        rec(
+            "2. on, with no agent: Jarvis at a pastime by day, three free desks, the footer empty",
+            empty.seat &&
+                ["read", "music", "ball"].includes(empty.activity) &&
+                empty.window === "day" &&
+                empty.sprite &&
+                empty.desks.length === 3 &&
+                empty.desks.every((d) => d.pose === "empty" && d.label === "free desk") &&
+                !empty.footerPet,
+            JSON.stringify(empty)
+        );
+        await h.ev(`document.querySelector('[data-office-floor="jarvis"]')?.scrollIntoView({ block: "center" })`);
+        await h.shot("cdp-shots/jarvis-office-floor-empty.png");
+
+        await h.ev(`window.__officeJarvis(${JSON.stringify(JARVIS_FIXTURES.crew)})`);
+        const crew = await readJarvis(h);
+        const byKey = Object.fromEntries((crew.desks ?? []).map((d) => [d.key, d]));
+        rec(
+            "3. an agent at a prompt puts Jarvis on watch and raises its hand; the desks run asking, working, idle",
+            crew.activity === "watch" &&
+                crew.label === "jarvis · on watch" &&
+                crew.desks.map((d) => d.key).join() === "fx-ask,fx-work,fx-idle,fx-sleep" &&
+                byKey["fx-ask"]?.pose === "handup" &&
+                byKey["fx-ask"]?.label === "Needs you" &&
+                byKey["fx-work"]?.pose === "type" &&
+                byKey["fx-idle"]?.pose === "lean" &&
+                byKey["fx-sleep"]?.pose === "empty" &&
+                byKey["fx-sleep"]?.label === "docs · asleep",
+            JSON.stringify(crew)
+        );
+        await h.shot("cdp-shots/jarvis-office-floor-crew.png");
+
+        await h.ev(`window.__officeJarvis(${JSON.stringify(JARVIS_FIXTURES.late)})`);
+        const late = await readJarvis(h);
+        rec(
+            "4. Jarvis works while an agent works, at night too",
+            late.activity === "work" && late.window === "night",
+            JSON.stringify({ activity: late.activity, window: late.window })
+        );
+
+        await h.ev(`window.__officeJarvis(${JSON.stringify(JARVIS_FIXTURES.night)})`);
+        const night = await readJarvis(h);
+        rec(
+            "5. with nothing going on at night Jarvis sleeps",
+            night.activity === "sleep" && night.label === "jarvis · asleep" && night.window === "night",
+            JSON.stringify({ activity: night.activity, label: night.label, window: night.window })
+        );
+        await h.shot("cdp-shots/jarvis-office-floor-night.png");
+
+        const peek = await h.ev(`(async () => {
+            ${JARVIS_SEAT}?.click();
+            const panel = () => document.querySelector("[data-pet-peek]");
+            for (let i = 0; i < 40 && !panel(); i++) await new Promise((r) => setTimeout(r, 50));
+            // floating-ui places it a frame after it mounts
+            await new Promise((r) => setTimeout(r, 300));
+            const s = ${JARVIS_SEAT}?.getBoundingClientRect();
+            const p = panel()?.getBoundingClientRect();
+            // beside the seat, to its right, and clear of Jarvis
+            const near = s != null && p != null && p.left >= s.right - 1 && p.left - s.right < 40 && p.top < s.bottom && p.bottom > s.top;
+            const box = (r) => r && [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)];
+            return { open: !!panel(), near, seat: box(s), peek: box(p) };
+        })()`);
+        rec("6. clicking Jarvis opens the peek beside the seat, not over it", peek.open && peek.near, JSON.stringify(peek));
+        await h.shot("cdp-shots/jarvis-office-floor-peek.png");
+        const closed = await h.ev(`(async () => {
+            ${JARVIS_SEAT}?.click();
+            for (let i = 0; i < 40 && document.querySelector("[data-pet-peek]"); i++) await new Promise((r) => setTimeout(r, 50));
+            return !document.querySelector("[data-pet-peek]");
+        })()`);
+        rec("7. clicking it again closes the peek", closed, `closed: ${closed}`);
+
+        await setOffice(h, false);
+        const back = await h.ev(`(async () => {
+            for (let i = 0; i < 40 && !${PET_SPRITE}; i++) await new Promise((r) => setTimeout(r, 100));
+            return { floor: !!document.querySelector('[data-office-floor="jarvis"]'), footerPet: !!${PET_SPRITE} };
+        })()`);
+        rec("8. turning the office off sends Jarvis back to the footer", !back.floor && back.footerPet, JSON.stringify(back));
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await h.ev(`window.__officeJarvis?.(null)`);
+        if (ctx.armed) await setOffice(h, ctx.wasOn);
+    },
+};
 
 const jarvisOfficeBench = {
     name: "jarvis-office-bench",

@@ -24,6 +24,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- **Jarvis has an office too**: with the Runs list's **office** chip on, Jarvis leaves the footer for a desk of its own
+  under the runs, beside a desk for every agent you started yourself. It keeps watch when something waits on you, works
+  while your agents work, reads, listens to music or plays ball when all is quiet, and sleeps at night; with no agent
+  around, a free desk opens a new one. Click Jarvis to open its panel, as on the footer.
+  <!-- try: go:jarvis --> <!-- big -->
+
 ### Changed
 
 - **Canvases is now the Canvas gallery**: the sidebar row, the gallery's title and the `Ctrl+G` `v` command use the new

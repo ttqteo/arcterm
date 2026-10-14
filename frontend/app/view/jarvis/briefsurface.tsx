@@ -211,7 +211,14 @@ import { clearSubject, persistedSubjectAtom, setComposingRun, stageRunAtom } fro
 import { JarvisTour, TourButton, TourOffer } from "./jarvistourview";
 import { NewInitiativeControl } from "./newinitiativecontrol";
 import { radarDraftLanding } from "./newrun";
-import { LiveOfficeFloor, OfficeClock, OfficeFixtureFloors, officeOnAtom, OfficeToggle } from "./officeview";
+import {
+    JarvisOfficeFloor,
+    LiveOfficeFloor,
+    OfficeClock,
+    OfficeFixtureFloors,
+    officeOnAtom,
+    OfficeToggle,
+} from "./officeview";
 import { openChannelSheet, openOrPeek, openOrPeekAddress } from "./openref";
 import { planReviewORef } from "./planreviewtarget";
 import { forgetOrigin } from "./returnsurface";
@@ -378,7 +385,7 @@ function Region({
     tools?: ReactNode;
     // the control that starts what the empty box says is missing
     act?: ReactNode;
-    // drawn whether or not the region is empty (the Runs region's office clock and DEV fixture floors)
+    // drawn whether or not the region is empty (the Runs region's office clock, Jarvis's floor and DEV fixture floors)
     after?: ReactNode;
     children: ReactNode;
 }) {
@@ -2193,6 +2200,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                 officeOn ? (
                                                     <>
                                                         <OfficeClock />
+                                                        <JarvisOfficeFloor model={model} />
                                                         <OfficeFixtureFloors />
                                                     </>
                                                 ) : null

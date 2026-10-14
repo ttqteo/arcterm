@@ -38,6 +38,37 @@ It is a second rendering of data the Brief already holds. It adds no wshrpc comm
   done and closed) opens the run (`{ kind: "run" }`).
 - The floor of the run selected in the Brief takes `bg-surface-selected`, as a selected row does.
 
+## Jarvis's floor
+
+Added the same day, after the person asked for an office when no run is going ("1 jarvis thôi": one Jarvis, not two).
+
+- **When:** whenever the Office is on, below the Runs list (the region's `after` slot, so it is drawn when the list is
+  empty too). It is the office's home floor: a run's floor stays under its row.
+- **Jarvis's corner** (140 px, a glass partition like the lead's): a window with the sun by day and the moon from 23:00
+  to 07:00, a desk with a monitor, and the creature itself, in the character and outfit picked in Settings, drawn from
+  `petsprite.ts`'s grids. What it does is `jarvisActivity` in `officemodel.ts`, first match wins:
+
+  | When | Activity | Pose | Monitor |
+  |---|---|---|---|
+  | the creature's posture is not `none` (gate, escalation, a run worker at a prompt), or an agent of the floor asks | on watch | standing, the posture's mark | `…` |
+  | the creature is tired (a plan window nearly used) | tired | tired, sweat drop | progress bar |
+  | an agent of the floor is working | working | `work1`/`work2` | lines |
+  | 23:00 to 07:00 | asleep | sleeping, `z` | off |
+  | otherwise | reading, music or playing ball, a new one every 3 min | the pastime's two frames | prompt |
+
+- **Desks:** one per agent no run spawned (no `runId`, not a terminal or a background agent), asking first, then
+  working, then idle. Asking raises the hand (`Needs you`), working types, idle leans back, an asleep agent's chair is
+  empty and dimmed. A click opens the agent's terminal. With no such agent, three free desks, dimmed; a click opens the
+  New dialog on an agent.
+- **One Jarvis:** while the floor is mounted its seat is `petOfficeSeatAtom` (`petstore.ts`); `PetView` then draws no
+  footer creature, and hangs the bubble and the peek off the seat. A click on Jarvis toggles the peek, as on the footer.
+  The floor clears the seat on unmount, so the creature walks the footer again the moment the Office closes or Jarvis
+  is left. Folded, the seat is ignored (the folded Sprout is its own).
+- **Drawing:** the creature is one `<svg>` of `<rect>` cells, as on the footer, not a cached PNG: its colours are theme
+  tokens (`--color-accent` and the rest), which a cached image would not follow. It replaces the footer's svg while it
+  shows, so the page holds the same number of nodes. Its pastime frames run on a timer of their own at the footer's
+  pace, stopped while hidden and under reduced motion; the monitor reads the office's frame clock.
+
 ## Poses
 
 Pure mapping in `officemodel.ts`. A worker or lead agent whose state is `asking` overrides its desk's pose with the
@@ -97,10 +128,11 @@ raised hand and `!` (amber), whatever the task state.
 | `view/jarvis/officesprite.ts` (+ test) | pose grids, the palette roles, grid → `ImageData` |
 | `view/jarvis/officesprites.ts` | the rasteriser and the data-URL cache |
 | `view/jarvis/officeview.tsx` | the toggle, the floors, the desks, the frame clock |
-| `view/jarvis/officedevhooks.ts` | DEV-only `__officeFixture` / `__officeProbe` for the CDP scenarios |
+| `view/jarvis/officedevhooks.ts` | DEV-only `__officeFixture` / `__officeJarvis` / `__officeProbe` for the CDP scenarios |
 | `view/jarvis/briefsurface.tsx` | the toggle, and the Runs region rendering floors when it is on |
 | `frontend/tailwindsetup.css` | the office identity tokens |
-| `scripts/cdp/officescenarios.mjs` | `jarvis-office` (visual) and `jarvis-office-bench` (budgets), listed in `scenarios.mjs` |
+| `view/jarvis/petstore.ts`, `petview.tsx` | Jarvis's seat, and the footer creature giving way to it |
+| `scripts/cdp/officescenarios.mjs` | `jarvis-office` (visual), `jarvis-office-bench` (budgets) and `jarvis-office-floor` (Jarvis's floor), listed in `scenarios.mjs` |
 
 ## Benchmark
 
@@ -135,14 +167,18 @@ by raising the budget.
 ## Out of scope
 
 - People walking between desks, a meeting room, an elevator between floors.
-- Quick runs and plain agents (no dag, no floor). An initiative's runs show as their own floors.
-- Any office outside Jarvis (the Agent tree, the pet).
+- Desks for a quick run (no dag: its floor is the lead alone). Plain agents sit on Jarvis's floor. An initiative's runs
+  show as their own floors.
+- Any office outside Jarvis (the Agent tree).
 - Sound.
 
 ## Verify
 
 - vitest: `officemodel.test.ts` (each task state and run stage maps to its pose, label and click target; asking
-  overrides; a run with no dag has only a lead), `officesprite.test.ts` (every grid is its declared size and uses
+  overrides; a run with no dag has only a lead; Jarvis's floor seats only direct agents, orders them, and ranks
+  watch, tired, work, night, pastime), `officesprite.test.ts` (every grid is its declared size and uses
   only known codes; a pose's two frames are the same size).
 - CDP: `jarvis-office` shows every pose of the `States` canvas board on its own small fixture (floors of at most six desks, so one shot holds every pose), and drives a real run's floor; `jarvis-office-bench` holds
-  the budgets.
+  the budgets; `jarvis-office-floor` draws Jarvis's floor from the `__officeJarvis` fixture (free desks by day, a crew
+  with one asking, working at night, asleep at night), checks the footer creature leaves and comes back, and that the
+  peek opens off the seat.

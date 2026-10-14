@@ -2,7 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { officeFloor, TASK_STATES, type OfficeRun } from "./officemodel";
+import {
+    FREE_DESKS,
+    JARVIS_PASTIMES,
+    jarvisActivity,
+    jarvisFloor,
+    officeFloor,
+    PASTIME_MS,
+    TASK_STATES,
+    type DirectAgent,
+    type OfficeRun,
+} from "./officemodel";
 
 const run = (tasks: OfficeRun["tasks"], stage: OfficeRun["stage"] = "working"): OfficeRun => ({
     runId: "r1",
@@ -112,5 +122,104 @@ describe("officeFloor", () => {
         expect(f.desks).toEqual([]);
         expect(f.board).toEqual([]);
         expect(f.lead.key).toBe("lead");
+    });
+});
+
+describe("jarvisFloor", () => {
+    // local time, so getHours reads the hour given whatever the machine's zone
+    const at = (hour: number, minute = 0) => new Date(2026, 9, 14, hour, minute);
+    const agent = (id: string, state: DirectAgent["state"], extra: Partial<DirectAgent> = {}): DirectAgent => ({
+        id,
+        name: "agent " + id,
+        state,
+        ...extra,
+    });
+    const floor = (agents: DirectAgent[], extra: { watch?: boolean; tired?: boolean; now?: Date } = {}) =>
+        jarvisFloor({ agents, watch: extra.watch ?? false, tired: extra.tired ?? false, now: extra.now ?? at(14) });
+
+    it("seats only the agents no run spawned, never a terminal or a background agent", () => {
+        const f = floor([
+            agent("a", "idle"),
+            agent("worker", "working", { runId: "r1" }),
+            agent("t", "idle", { kind: "terminal" }),
+            agent("bg", "working", { kind: "background" }),
+            agent("b", "working", { kind: "agent" }),
+        ]);
+        expect(f.desks.map((d) => d.key)).toEqual(["b", "a"]);
+    });
+
+    it("orders the desks asking, working, idle, and keeps the roster's order within each", () => {
+        const f = floor([agent("i1", "idle"), agent("w1", "working"), agent("q", "asking"), agent("w2", "working")]);
+        expect(f.desks.map((d) => d.key)).toEqual(["q", "w1", "w2", "i1"]);
+    });
+
+    it("draws each agent's state in words, and the asking one raises its hand", () => {
+        const f = floor([
+            agent("q", "asking"),
+            agent("w", "working"),
+            agent("i", "idle"),
+            agent("z", "idle", { sleeping: { since: 1, freedBytes: 1 } }),
+        ]);
+        const byKey = Object.fromEntries(f.desks.map((d) => [d.key, d]));
+        expect(byKey.q).toMatchObject({ pose: "handup", label: "Needs you", tone: "asking", agentId: "q" });
+        expect(byKey.w).toMatchObject({ pose: "type", label: "agent w · typing", tone: "working", animated: true });
+        expect(byKey.i).toMatchObject({ pose: "lean", label: "agent i · idle", dim: false });
+        expect(byKey.z).toMatchObject({ pose: "empty", label: "agent z · asleep", dim: true, agentId: "z" });
+        expect(f.desks.every((d) => d.tip.endsWith("Click to open its terminal."))).toBe(true);
+    });
+
+    it("lays out free desks when no agent is around", () => {
+        const f = floor([agent("worker", "working", { runId: "r1" })]);
+        expect(f.desks).toHaveLength(FREE_DESKS);
+        expect(f.desks.every((d) => d.pose === "empty" && d.dim && d.agentId == null)).toBe(true);
+        expect(f.desks[0]).toMatchObject({ label: "free desk", tip: "A free desk. Click to start an agent." });
+    });
+
+    it("puts Jarvis on watch while something waits, also when only an agent of its floor asks", () => {
+        expect(floor([], { watch: true }).jarvis).toMatchObject({ activity: "watch", tone: "asking" });
+        expect(floor([agent("q", "asking")]).jarvis).toMatchObject({ activity: "watch", label: "jarvis · on watch" });
+        // a run's worker asking is the creature's posture, which the caller passes as watch
+        expect(floor([agent("q", "asking", { runId: "r1" })]).jarvis.activity).not.toBe("watch");
+    });
+
+    it("ranks watch, then tired, then work, then the night, then a pastime", () => {
+        const act = (watch: boolean, tired: boolean, working: boolean, hour: number) =>
+            jarvisActivity({ watch, tired, working, now: at(hour) });
+        expect(act(true, true, true, 2)).toBe("watch");
+        expect(act(false, true, true, 2)).toBe("tired");
+        expect(act(false, false, true, 2)).toBe("work");
+        expect(act(false, false, false, 2)).toBe("sleep");
+        expect(act(false, false, false, 23)).toBe("sleep");
+        expect(act(false, false, false, 7)).not.toBe("sleep");
+        expect(JARVIS_PASTIMES).toContain(act(false, false, false, 14));
+    });
+
+    it("works while its agents work, at any hour", () => {
+        expect(floor([agent("w", "working")], { now: at(3) }).jarvis).toMatchObject({
+            activity: "work",
+            tone: "working",
+            night: true,
+        });
+    });
+
+    it("changes pastime every PASTIME_MS and keeps it between", () => {
+        const base = Math.ceil(at(14).getTime() / (PASTIME_MS * 3)) * PASTIME_MS * 3;
+        const seen = [0, 1, 2].map((n) =>
+            jarvisActivity({ watch: false, tired: false, working: false, now: new Date(base + n * PASTIME_MS) })
+        );
+        expect(seen).toEqual([...JARVIS_PASTIMES]);
+        const within = jarvisActivity({
+            watch: false,
+            tired: false,
+            working: false,
+            now: new Date(base + PASTIME_MS - 1),
+        });
+        expect(within).toBe(seen[0]);
+    });
+
+    it("says what Jarvis is doing in words", () => {
+        const f = floor([], { now: at(2) });
+        expect(f.jarvis).toMatchObject({ activity: "sleep", label: "jarvis · asleep", night: true });
+        expect(f.jarvis.tip).toBe("Jarvis · asleep. Click to open Jarvis.");
     });
 });

@@ -38062,7 +38062,7 @@ const whatsNew = {
 };
 
 // the run office's scenarios take the run-fixture helpers (docs/reference/cdp-run-fixtures.md) from here
-const { jarvisOffice, jarvisOfficeBench } = makeOfficeScenarios({
+const { jarvisOffice, jarvisOfficeBench, jarvisOfficeFloor } = makeOfficeScenarios({
     arrangeFixtureRun,
     waitForDispatch,
     briefReload,
@@ -42081,6 +42081,7 @@ export const SCENARIOS = [
     whatsNew,
     jarvisOffice,
     jarvisOfficeBench,
+    jarvisOfficeFloor,
     runQueueScenario,
     runOriginScenario,
     ideasRail,
