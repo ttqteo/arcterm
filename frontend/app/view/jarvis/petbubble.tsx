@@ -157,10 +157,7 @@ export function PetBubble({
                                     {agent.name}
                                 </span>
                                 {agent.project ? (
-                                    <span
-                                        data-pet-bubble-agent-project
-                                        className="flex-none font-mono text-[10px] text-muted"
-                                    >
+                                    <span data-pet-bubble-agent-project className="flex-none text-[10px] text-muted">
                                         {agent.project}
                                     </span>
                                 ) : null}

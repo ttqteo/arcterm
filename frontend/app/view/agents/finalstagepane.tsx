@@ -46,7 +46,7 @@ export function FinalStagePane({ model, run }: { model: AgentsViewModel; run: Ru
                     )}
                 />
                 <span className="flex-none text-[13px] font-semibold text-foreground">{stageLabel("verifier")}</span>
-                <span className="min-w-0 truncate font-mono text-[10.5px] text-ink-mid">{view.headline}</span>
+                <span className="min-w-0 truncate text-[10.5px] tabular-nums text-ink-mid">{view.headline}</span>
                 <span className="flex-1" />
                 <EndFinalStage group={run.dag} channelId={run.channelId} runId={run.runId} />
             </div>
@@ -66,7 +66,7 @@ export function FinalStagePane({ model, run }: { model: AgentsViewModel; run: Ru
                         <div ref={outputRef} className="sc min-h-0 flex-1 overflow-y-auto">
                             <FinalOutput output={view.output} />
                         </div>
-                        <span className="flex-none font-mono text-[10.5px] text-muted">
+                        <span className="flex-none text-[10.5px] text-muted">
                             output tail · the engine publishes it every 10s
                         </span>
                     </>
@@ -76,7 +76,7 @@ export function FinalStagePane({ model, run }: { model: AgentsViewModel; run: Ru
                         <div className="sc min-h-0 flex-1 overflow-auto">
                             <FinalKeptOutput key={shown.key} kept={shown.kept} />
                         </div>
-                        <span className="flex-none font-mono text-[10.5px] text-muted">
+                        <span className="flex-none text-[10.5px] tabular-nums text-muted">
                             {shown.label} {shown.text} · click it again to close
                         </span>
                     </>

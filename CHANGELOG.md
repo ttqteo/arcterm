@@ -21,6 +21,13 @@ new draws it as one of its release's cards and folds every other line under a co
 
 ### Added
 
+- **Ideas on the agent's rail**: while you brainstorm, the agent lists what was decided, floated and left open, and you
+  can add, edit, merge or drop ideas, or run the idea command in Claude to keep the idea just discussed. An Ideas count
+  on the rail opens the list and shows a dot while some are new; an ended session in Conversation History shows its list
+  too.
+- **Keep a selection as an idea**: select text in an agent's terminal and press `Ctrl+Shift+I` (`Cmd+Shift+I` on a Mac),
+  or click **Add as idea** beside the selection, to keep it in the agent's Ideas; the toast has Undo. With nothing
+  selected, the same keys open the Ideas box. <!-- try: idea-capture -->
 - **Setup → Project**: one place to see what shapes Claude in a project: its CLAUDE.md or AGENTS.md, its memory
   grouped by type, its settings and hooks, its skills, agents and commands, and `.arc/setup`. Pick a file to read it
   beside the list. <!-- try: go:setup -->
@@ -42,6 +49,8 @@ new draws it as one of its release's cards and folds every other line under a co
 
 ### Changed
 
+- A run whose lead tab is closed looks the same in the Agent sidebar as one whose lead is open: same mark, title and
+  line under it; only the token count is missing.
 - **The Cockpit badge counts only agents that need you**, matching its "need you" tab. Runs to confirm or land,
   approvals, escalations and due chunks are counted on Jarvis, where you act on them.
 - **Open a tool moved to `Ctrl+Shift+O`** (`Cmd+Shift+O` on a Mac), freeing `Ctrl+Shift+T` for reopening an agent.
@@ -54,6 +63,9 @@ new draws it as one of its release's cards and folds every other line under a co
 - **Python and pnpm projects wait their turn for RAM too**: an agent's whole `pytest` run (bare, `uv run` or
   `python -m`), `pnpm test` / `pnpm build`, `astro build` and an `e2e.sh` script now queue in Jobs like a build,
   so parallel workers no longer get killed for low memory; one test file or a `-k` filter still runs at once.
+- **Jobs on Windows watches the commit charge**: once the memory handed out passes the RAM (the machine is paging),
+  heavy commands start one at a time, and past 130% with little RAM free none start until it eases, instead of
+  piling on while a few GB still read as free.
 
 ### Fixed
 

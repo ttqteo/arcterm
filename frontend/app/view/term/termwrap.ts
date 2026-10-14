@@ -7,6 +7,7 @@ import { getFileSubject } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { FileRef } from "@/app/view/agents/agentrailtabs";
+import { watchIdeaSelection } from "@/app/view/agents/ideasstore";
 import { openPathFromTerminal, touchedPathForBlock } from "@/app/view/agents/pathlinkroute";
 import { isAgentSleeping, relaunchBlockedBy } from "@/app/view/agents/session-models/agentresumestore";
 import { lastOutputLine } from "@/app/view/agents/terminaldock";
@@ -527,6 +528,9 @@ export class TermWrap {
                 })
             )
         );
+        // the "Add as idea" chip beside a selection (an agent's terminal only; the chip checks); copy-on-select above is
+        // unchanged
+        this.toDispose.push({ dispose: watchIdeaSelection(this.blockId, this.terminal, this.connectElem) });
         if (this.onSearchResultsDidChange != null) {
             this.toDispose.push(this.searchAddon.onDidChangeResults(this.onSearchResultsDidChange.bind(this)));
         }

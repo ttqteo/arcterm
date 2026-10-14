@@ -267,7 +267,7 @@ export function NotesSection(p: {
                 onClick={() => p.onCollapse(!p.collapsed)}
                 className="flex w-full cursor-pointer items-center gap-2 px-5 pb-[9px] pt-[11px] text-left text-muted"
             >
-                <span className="flex-1 font-mono text-[10.5px] font-bold uppercase tracking-[0.1em]">
+                <span className="flex-1 text-[10.5px] font-bold uppercase tracking-[0.1em]">
                     Your notes · {p.notes.length}
                 </span>
                 <ChevronDown size={13} aria-hidden className={cn(p.collapsed && "-rotate-90")} />

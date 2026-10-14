@@ -33,6 +33,7 @@ import { closeSwitcher, tabSwitcherAtom } from "@/app/view/agents/tabswitchersto
 import { activeReviewAtom } from "@/app/view/agents/reviewmarks";
 import { reopenClosedAgent } from "@/app/cockpit/cockpit-actions";
 import { openToolPicker } from "@/app/view/agents/toolsstore";
+import { runIdeaCapture } from "@/app/view/agents/ideasstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
@@ -79,6 +80,12 @@ vi.mock("@/app/view/agents/floatstore", async (orig) => ({
 vi.mock("@/app/view/agents/toolsstore", async (orig) => ({
     ...(await orig<typeof import("@/app/view/agents/toolsstore")>()),
     openToolPicker: vi.fn(),
+}));
+
+// the capture reads the terminal's selection and writes over the wire; the chord is only asked to start it
+vi.mock("@/app/view/agents/ideasstore", async (orig) => ({
+    ...(await orig<typeof import("@/app/view/agents/ideasstore")>()),
+    runIdeaCapture: vi.fn(async () => {}),
 }));
 
 // a reopen rescans the sessions archive and launches over the wire; the chord is only asked to start it
@@ -853,6 +860,58 @@ describe("open a tool chord", () => {
 
     it("leaves the palette its own Open a tool row, so the action is not listed twice", () => {
         expect(find({ surfaceAtom: atom<SurfaceKey>("agent") } as any).paletteHidden).toBe(true);
+    });
+});
+
+describe("idea capture chord", () => {
+    const find = (model: any) => buildGlobalBindings(model).find((x) => x.id === "idea-capture")!;
+    const modelFor = (focus: string | undefined, agents: { id: string; transcriptPath?: string }[]) =>
+        ({
+            surfaceAtom: atom<SurfaceKey>("cockpit"),
+            focusIdAtom: atom<string | undefined>(focus),
+            agentsAtom: atom(agents),
+        }) as any;
+
+    // Ctrl+Shift+I on Windows: from a field and the terminal, on any surface (What's new's Try it runs it from the
+    // Cockpit), never over a modal
+    it("is Mod+Shift+I, live from a field and the terminal and on any surface, and not over a modal", () => {
+        const b = find(modelFor("a1", []));
+        expect(b.keys).toBe("Mod:Shift:i");
+        expect(b.when?.({ ...ctx("agent"), editable: true })).toBe(true);
+        expect(b.when?.(ctx("cockpit"))).toBe(true);
+        expect(b.when?.({ ...ctx("agent"), modalOpen: true })).toBe(false);
+    });
+
+    it("brings the Agent surface up when pressed from another one, and writes nothing when pressed on it", () => {
+        const model = modelFor("a1", []);
+        find(model).run(ctx("cockpit"));
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+        globalStore.set(model.surfaceAtom, "code"); // the key's own context says where it was pressed, not this atom
+        find(model).run(ctx("agent"));
+        expect(globalStore.get(model.surfaceAtom)).toBe("code");
+    });
+
+    it("captures for the session of the focused agent, taken from its transcript's name", () => {
+        const model = modelFor("a2", [
+            { id: "a1", transcriptPath: "C:\\t\\s-one.jsonl" },
+            { id: "a2", transcriptPath: "/home/u/.claude/projects/p/s-two.jsonl" },
+        ]);
+        vi.mocked(runIdeaCapture).mockClear();
+        find(model).run(ctx("agent"));
+        expect(runIdeaCapture).toHaveBeenCalledWith("s-two");
+    });
+
+    it("captures for no session while a terminal, or an agent with no transcript yet, is in focus", () => {
+        vi.mocked(runIdeaCapture).mockClear();
+        find(modelFor("t1", [{ id: "a1", transcriptPath: "/t/s.jsonl" }])).run(ctx("agent"));
+        find(modelFor("a1", [{ id: "a1" }])).run(ctx("agent"));
+        expect(vi.mocked(runIdeaCapture).mock.calls).toEqual([[null], [null]]);
+    });
+
+    it("consumes the key and keeps the palette from listing a row that has no selection to add", () => {
+        const b = find(modelFor("a1", []));
+        expect(b.run(ctx("agent"))).not.toBe(false);
+        expect(b.paletteHidden).toBe(true);
     });
 });
 

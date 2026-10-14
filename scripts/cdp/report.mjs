@@ -7,6 +7,26 @@
 // reader to skim past the table the suite exists to make readable.
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
+// The exit code verify.mjs gives when the page never finished loading, so no scenario could run. It is the Final
+// contract's "could not verify" (pkg/jarvis/plan.go PlanFormat), not a failure: nothing of the app was tried.
+export const EXIT_UNVERIFIED = 3;
+// A freshly started app answers CDP before its first render, and a cold vite holds the entry's module graph while it
+// pre-bundles: past 2.5 min on 2026-10-14, beyond the old 120s deadline, with readyState already "complete". So the
+// render deadline starts once the app's own code has started (frontend/tauri/bootmark.ts). An app that started and
+// never renders, or a boot error, is a real failure; an app whose code never started is unverified.
+export const RENDER_WAIT_MS = 120_000;
+export const LOAD_WAIT_MS = 600_000;
+
+// What the wait for the first render decides: "wait", "rendered", "boot-error" or "not-rendered" (both fail), or
+// "not-loaded" (unverified). startedAt is when main.tsx's boot was first seen running, null while the page is
+// (re)loading; error is a boot error or vite's error overlay.
+export function renderWait({ now, start, startedAt, rendered, error }) {
+    if (rendered) return "rendered";
+    if (error) return "boot-error";
+    if (startedAt == null) return now - start >= LOAD_WAIT_MS ? "not-loaded" : "wait";
+    return now - startedAt >= RENDER_WAIT_MS ? "not-rendered" : "wait";
+}
+
 export function exitCode(scenarioResults) {
     const allPass = scenarioResults.every((s) => !s.error && s.steps.every((st) => st.ok || st.skip));
     return allPass ? 0 : 1;

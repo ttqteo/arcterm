@@ -211,7 +211,7 @@ export function DagFinalNode({ data }: NodeProps) {
                 <span className={`truncate leading-[14px] ${META_TEXT}`}>{view.nodeMeta}</span>
                 <FinalStepStrip view={view} />
             </div>
-            <span className="absolute left-0 top-full mt-[7px] whitespace-nowrap font-mono text-[10.5px] text-muted">
+            <span className="absolute left-0 top-full mt-[7px] whitespace-nowrap text-[10.5px] text-muted">
                 on the merged result
             </span>
         </div>

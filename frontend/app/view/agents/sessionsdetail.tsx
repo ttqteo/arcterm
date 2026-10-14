@@ -18,6 +18,8 @@ import { openDiff, projectDiffScope } from "./agentdiffnav";
 import type { AgentsViewModel } from "./agents";
 import { formatAgeShort, formatTokens } from "./agentsviewmodel";
 import { CompactTranscript } from "./compacttranscript";
+import { sessionIdFromTranscript, validSessionId } from "./ideasmodel";
+import { EndedSessionIdeas } from "./ideassection";
 import { runtimeMeta } from "./runtimemeta";
 import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "./sessiondelete";
 import type { LiveSession } from "./sessionsarchivestore";
@@ -417,6 +419,7 @@ export function SoloDetail({
             : { key: "running", text: "running" }
         : { key: "done", text: "done" };
     const resumable = sessionPrimary(session) === "resume";
+    const ideasSession = sessionIdFromTranscript(session.transcriptpath);
     return (
         <div className="flex h-full min-h-0 flex-col">
             <div className="mb-1 flex flex-none items-center gap-2.5 border-b border-edge-faint pb-2">
@@ -455,6 +458,7 @@ export function SoloDetail({
                 {/* a resumable session resumes from its composer, below */}
                 {resumable ? null : <PrimaryButton model={model} session={session} strong />}
             </div>
+            {validSessionId(ideasSession) ? <EndedSessionIdeas key={ideasSession} sessionId={ideasSession} /> : null}
             <SessionBody model={model} session={session} empty="" className="pb-2" />
             {resumable ? <ResumeComposer key={session.id} model={model} session={session} /> : null}
         </div>

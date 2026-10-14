@@ -185,7 +185,8 @@ Mỗi hàng có:
 "RAM đủ" tùy hệ điều hành:
 
 - **macOS**: theo **memory pressure** của chính macOS (biểu đồ xanh/vàng/đỏ trong Activity Monitor), vì nó đã tính bộ nhớ nén và swap. Con số "RAM trống" trên Mac thì bỏ sót cả hai nên luôn thấp, kể cả khi máy còn chạy mượt. Xanh: lệnh chạy ngay. Vàng: vẫn chạy nhưng từng cái một, lệnh sau chờ lệnh trước chạy được 60 giây (lý do `memory pressure high, one at a time`). Đỏ: lệnh mới chờ (`memory pressure critical`).
-- **Windows** (và khi không đọc được pressure): RAM trống đủ cho đỉnh RAM của lệnh cộng 512 MB chừa cho phần còn lại của máy (lý do `needs 3 GB, 1.2 GB free`).
+- **Windows**: so **commit charge** (tổng bộ nhớ đã cấp, cột Committed trong Task Manager → Performance → Memory) với RAM thật. Dưới RAM: RAM trống phải đủ cho đỉnh RAM của lệnh cộng 512 MB chừa cho phần còn lại của máy (lý do `needs 3 GB, 1.2 GB free`). Vượt RAM, tức máy đã bắt đầu đẩy ra pagefile: lệnh chạy từng cái một (`memory pressure high, one at a time`). Từ 130% RAM trở lên mà RAM trống dưới 1/5: lệnh mới chờ (`memory pressure critical`), vì lúc đó cả máy, kể cả Docker, bò theo ổ đĩa.
+- **Linux** (và khi không đọc được): theo luật RAM trống ở trên.
 
 Đến trước chạy trước. Lệnh thiếu RAM chờ ở đầu hàng và tự chạy khi RAM trống lại; bạn cũng có thể duyệt cho nó chạy ngay (**Run now**) hoặc bỏ nó (**Skip**) trong popover. Một lệnh chờ bao lâu cũng được; không có hạn.
 

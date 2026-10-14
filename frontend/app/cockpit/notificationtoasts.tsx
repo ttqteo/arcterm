@@ -7,6 +7,7 @@ import { useAtomValue } from "jotai";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import {
     Bell,
+    Check,
     CircleCheck,
     GitPullRequestArrow,
     Layers,
@@ -18,6 +19,7 @@ import {
     dismissToast,
     holdToast,
     releaseToast,
+    runToastAction,
     toastsAtom,
     type ToastEyebrow,
     type ToastIcon,
@@ -114,11 +116,31 @@ export function NotificationToasts(): React.JSX.Element {
                                     <AgentToastBody t={t} eyebrow={t.eyebrow} />
                                 ) : (
                                     <>
-                                        <div className="text-sm font-medium">{t.title}</div>
+                                        <div className="flex items-center gap-2 text-sm font-medium">
+                                            {t.check ? (
+                                                <Check
+                                                    size={13}
+                                                    strokeWidth={2}
+                                                    aria-hidden
+                                                    className="shrink-0 text-success"
+                                                />
+                                            ) : null}
+                                            {t.title}
+                                        </div>
                                         {t.message ? <div className="text-xs text-secondary">{t.message}</div> : null}
                                     </>
                                 )}
                             </button>
+                            {t.action ? (
+                                <button
+                                    type="button"
+                                    data-notification-action
+                                    onClick={() => runToastAction(t.id)}
+                                    className="my-1.5 mr-0.5 shrink-0 cursor-pointer self-center rounded px-2 py-1 text-xs font-medium text-secondary hover:bg-surface-hover hover:text-primary"
+                                >
+                                    {t.action.label}
+                                </button>
+                            ) : null}
                             {/* a sibling, not inside the body: closing must not open what the toast is about */}
                             <button
                                 type="button"

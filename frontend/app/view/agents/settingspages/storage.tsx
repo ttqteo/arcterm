@@ -130,7 +130,7 @@ function EntryRow({ e }: { e: Entry }) {
             data-storage-row={e.id}
             className="flex min-w-0 items-center gap-3 border-t border-edge-mid px-4 py-2 text-[12px]"
         >
-            <span title={e.title ?? e.label} className="min-w-0 flex-1 truncate font-mono text-primary">
+            <span title={e.title ?? e.label} className="min-w-0 flex-1 truncate text-primary">
                 {e.label}
             </span>
             {e.detail ? (

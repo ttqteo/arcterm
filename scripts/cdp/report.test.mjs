@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { join, resolve } from "node:path";
-import { contactSheetHtml, exitCode, formatResults, shotsManifest, shotsUnder } from "./report.mjs";
+import {
+    LOAD_WAIT_MS,
+    RENDER_WAIT_MS,
+    contactSheetHtml,
+    exitCode,
+    formatResults,
+    renderWait,
+    shotsManifest,
+    shotsUnder,
+} from "./report.mjs";
 
 const pass = { name: "s1", steps: [{ step: "a", ok: true, detail: "d" }] };
 const fail = { name: "s2", steps: [{ step: "b", ok: false, detail: "boom" }] };
@@ -131,5 +140,31 @@ describe("shotsUnder", () => {
             { path: resolve("elsewhere", "y.png") },
         ];
         expect(shotsUnder(shots, "cdp-shots")).toEqual(["kept.png"]);
+    });
+});
+
+describe("renderWait", () => {
+    const start = 1_000_000;
+    it("is rendered as soon as the nav is up", () => {
+        expect(renderWait({ now: start + 5, start, startedAt: null, rendered: true, error: null })).toBe("rendered");
+    });
+    it("keeps waiting while the app's code has not started, past the render deadline", () => {
+        expect(renderWait({ now: start + RENDER_WAIT_MS + 30_000, start, startedAt: null, rendered: false, error: null })).toBe("wait");
+    });
+    it("gives up as not loaded when the app's code has not started by the load deadline", () => {
+        expect(renderWait({ now: start + LOAD_WAIT_MS, start, startedAt: null, rendered: false, error: null })).toBe("not-loaded");
+    });
+    it("starts the render deadline when the app's code starts", () => {
+        const startedAt = start + 150_000;
+        expect(renderWait({ now: startedAt + RENDER_WAIT_MS - 1, start, startedAt, rendered: false, error: null })).toBe("wait");
+        expect(renderWait({ now: startedAt + RENDER_WAIT_MS, start, startedAt, rendered: false, error: null })).toBe("not-rendered");
+    });
+    it("an app that started but never renders fails even past the load deadline", () => {
+        const startedAt = start + LOAD_WAIT_MS - 10_000;
+        expect(renderWait({ now: start + LOAD_WAIT_MS + RENDER_WAIT_MS, start, startedAt, rendered: false, error: null })).toBe("not-rendered");
+    });
+    it("a boot error fails at once, started or not", () => {
+        expect(renderWait({ now: start + 1, start, startedAt: null, rendered: false, error: "SyntaxError: x" })).toBe("boot-error");
+        expect(renderWait({ now: start + 1, start, startedAt: start, rendered: false, error: "BOOT ERROR" })).toBe("boot-error");
     });
 });

@@ -83,6 +83,20 @@ func PressureFromLevel(level uint32) Pressure {
 	return PressureUnknown
 }
 
+// PressureFromCommit is Windows's reading: the commit charge against the physical RAM. Under the RAM there is no
+// reading and the free-RAM rule decides, as before; past it the machine pages, so jobs start one at a time; past 130%
+// with under a fifth of the RAM free it stalls (2026-10-14: 46 GB on 32 GB paged to a hard disk until Postgres hung),
+// so none start. Commit alone is not enough for critical: Windows commits memory that nothing has touched yet.
+func PressureFromCommit(commit, phys, availPhys uint64) Pressure {
+	switch {
+	case phys == 0 || commit < phys:
+		return PressureUnknown
+	case commit*10 >= phys*13 && availPhys*5 < phys:
+		return PressureCritical
+	}
+	return PressureWarn
+}
+
 // ErrSkipped is Acquire's error when the person skipped the job from the cockpit.
 var ErrSkipped = errors.New("skipped from the job queue")
 
