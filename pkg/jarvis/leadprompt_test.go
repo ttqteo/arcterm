@@ -205,6 +205,25 @@ func TestOrchestrationRulesCompleteOnTheirOwn(t *testing.T) {
 	}
 }
 
+// runs of a project land in a line, so complete can come back with the land queued or being resolved: the lead reads
+// that as the land under way, and knows its tab closes with the dag done but stays through a forced land in line
+func TestOrchestrationRulesNameAQueuedLand(t *testing.T) {
+	r := OrchestrationRules("r1", "", "", "")
+	for _, want := range []string{
+		"`land queued`",
+		"`land resolving`",
+		"neither is a failure or a hold",
+		"you do not land it again",
+		"with the dag done, this tab closes whatever the land is doing",
+		"a land forced past it that is still queued keeps this tab open until it lands",
+		"a forced land can come back `land queued` or `land resolving`",
+	} {
+		if !strings.Contains(strings.ToLower(r), want) {
+			t.Fatalf("rules missing %q:\n%s", want, r)
+		}
+	}
+}
+
 // the launch prompt cuts the ceremony run b2d7fab1 went through (findings 4 to 7): the path is stated, not
 // asked; the design goes into the spec file with one approval; the engine commits the files and reviews the plan.
 func TestEngineLaunchPromptCutsTheCeremony(t *testing.T) {
