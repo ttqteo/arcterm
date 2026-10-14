@@ -24,7 +24,7 @@ Backend, small:
 - Reviewing uses the ops that exist: Accept is `setChunkStatus proposed → pending`, Rename is `renameChunk`, Drop is
   `removeChunk`. No new op.
 - `pkg/jarvis/attention.go` builds a new attention kind `plan-review` beside `chunk-due`: one item per initiative
-  with proposed chunks ("Jarvis as graph · 4 proposed by graph layout"), keyed so it disappears when none is left.
+  with proposed chunks ("Jarvis as graph · 4 proposed"), keyed so it disappears when none is left.
   It reaches every reader of the attention queue: Sprout, the nav rail badge, Jarvis's Waiting on you, the Cockpit's
   Needs you. Label "Plan to review".
 
