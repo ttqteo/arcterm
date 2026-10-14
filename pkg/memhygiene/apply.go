@@ -42,11 +42,23 @@ type applyManifestFile struct {
 	Pre    string `json:"pre"`    // sha256 before the apply; "" = it didn't exist
 	Post   string `json:"post"`   // sha256 after the apply; "" = the apply deleted it
 	Backup string `json:"backup"` // the original's copy, relative to the backup dir; "" when Pre is ""
+	// an index's edit, so undo can reverse it line by line once a sibling change has rewritten the index
+	Index *applyIndexUndo `json:"index,omitempty"`
+}
+
+// applyIndexUndo is one index's exact-line edit: it deleted Removed (in file order), the first of them
+// at line At just under After, and inserted Added.
+type applyIndexUndo struct {
+	Removed []string `json:"removed,omitempty"`
+	At      int      `json:"at"`
+	After   string   `json:"after,omitempty"`
+	Added   string   `json:"added,omitempty"`
 }
 
 type applyWrite struct {
 	data   []byte
 	remove bool
+	index  *applyIndexUndo
 }
 
 // applyPlan is every file an apply writes, in order, built before anything is written so a bad op
@@ -102,6 +114,7 @@ func Apply(change wshrpc.MemChange, backupRoot string, now time.Time) (applyID s
 		if err != nil {
 			return "", "", err
 		}
+		entry.Index = plan.writes[path].index
 		manifest.Files = append(manifest.Files, entry)
 	}
 	for _, path := range plan.order {
@@ -124,8 +137,9 @@ func Apply(change wshrpc.MemChange, backupRoot string, now time.Time) (applyID s
 	return applyID, "", nil
 }
 
-// Undo restores an apply's backup. When a file no longer has the hash the apply left it returns that
-// path as the conflict and writes nothing.
+// Undo restores an apply's backup. A file that no longer has the hash the apply left is the conflict,
+// and nothing is written, except an index: a sibling change may have rewritten it since, so its edit is
+// reversed line by line, and only a line that makes that impossible is a conflict.
 func Undo(backupRoot, applyID string) (conflict string, err error) {
 	if applyID == "" || applyID != filepath.Base(applyID) || applyID == "." || applyID == ".." {
 		return "", fmt.Errorf("undo: invalid apply id %q", applyID)
@@ -135,16 +149,34 @@ func Undo(backupRoot, applyID string) (conflict string, err error) {
 	if err != nil {
 		return "", err
 	}
+	reversed := map[string]applyWrite{}
 	for _, f := range manifest.Files {
 		hash, err := HashFile(f.Path)
 		if err != nil {
 			return "", err
 		}
-		if hash != f.Post {
+		if hash == f.Post {
+			continue
+		}
+		if f.Index == nil {
 			return f.Path, nil
 		}
+		w, err := applyIndexReverse(f.Path, *f.Index, f.Pre == "")
+		if c := (applyConflict{}); errors.As(err, &c) {
+			return c.path, nil
+		}
+		if err != nil {
+			return "", fmt.Errorf("undoing %s: %w", applyID, err)
+		}
+		reversed[f.Path] = w
 	}
 	for _, f := range manifest.Files {
+		if w, ok := reversed[f.Path]; ok {
+			if err := applyExecute(f.Path, w); err != nil {
+				return "", fmt.Errorf("undoing %s: %w", applyID, err)
+			}
+			continue
+		}
 		if f.Pre == "" {
 			if err := applyExecute(f.Path, applyWrite{remove: true}); err != nil && !errors.Is(err, fs.ErrNotExist) {
 				return "", fmt.Errorf("undoing %s: %w", applyID, err)
@@ -463,6 +495,7 @@ func applyIndexEdit(p *applyPlan, op wshrpc.MemOp) error {
 		if err != nil {
 			return err
 		}
+		orig := slices.Clone(tf.Lines)
 		at := -1
 		for _, line := range op.IndexRemove {
 			i := slices.Index(tf.Lines, line)
@@ -474,14 +507,20 @@ func applyIndexEdit(p *applyPlan, op wshrpc.MemOp) error {
 				at = i
 			}
 		}
+		removed := slices.Clone(op.IndexRemove)
+		slices.SortStableFunc(removed, func(a, b string) int { return slices.Index(orig, a) - slices.Index(orig, b) })
+		undo := &applyIndexUndo{Removed: removed, At: at}
+		if at > 0 {
+			undo.After = orig[at-1]
+		}
 		if add != "" && filepath.Clean(addFolder) == filepath.Clean(op.Folder) {
 			if slices.Contains(tf.Lines, add) {
 				return applyConflict{path}
 			}
 			tf.Lines = slices.Insert(tf.Lines, at, add)
-			add = ""
+			undo.Added, add = add, ""
 		}
-		p.put(path, tf.Bytes())
+		p.set(path, applyWrite{data: tf.Bytes(), index: undo})
 	}
 	if add == "" {
 		return nil
@@ -499,8 +538,42 @@ func applyIndexEdit(p *applyPlan, op wshrpc.MemOp) error {
 		at--
 	}
 	tf.Lines = slices.Insert(tf.Lines, at, add)
-	p.put(path, tf.Bytes())
+	p.set(path, applyWrite{data: tf.Bytes(), index: &applyIndexUndo{Added: add}})
 	return nil
+}
+
+// applyIndexReverse undoes one index edit on the index as it is now, which sibling changes may have
+// shifted: the removed lines go back where Added is, or else under After, or else at At clamped to the
+// file. Added gone, or a removed line already back, is an applyConflict. An index the apply created is
+// deleted when nothing is left in it.
+func applyIndexReverse(path string, undo applyIndexUndo, created bool) (applyWrite, error) {
+	tf, err := ReadText(path)
+	if err != nil {
+		return applyWrite{}, err
+	}
+	at := min(undo.At, len(tf.Lines))
+	if undo.Added != "" {
+		i := slices.Index(tf.Lines, undo.Added)
+		if i < 0 {
+			return applyWrite{}, applyConflict{path}
+		}
+		tf.Lines = slices.Delete(tf.Lines, i, i+1)
+		at = i
+	} else if strings.TrimSpace(undo.After) != "" {
+		if i := slices.Index(tf.Lines, undo.After); i >= 0 {
+			at = i + 1
+		}
+	}
+	for _, line := range undo.Removed {
+		if slices.Contains(tf.Lines, line) {
+			return applyWrite{}, applyConflict{path}
+		}
+	}
+	tf.Lines = slices.Insert(tf.Lines, at, undo.Removed...)
+	if created && len(tf.Lines) == 0 {
+		return applyWrite{remove: true}, nil
+	}
+	return applyWrite{data: tf.Bytes()}, nil
 }
 
 // applyNormalize drops \r so model text, which has LF endings, matches a CRLF file's lines.

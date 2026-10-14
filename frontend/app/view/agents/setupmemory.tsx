@@ -401,40 +401,35 @@ function Verdict({ p, change }: { p: MemHygieneProject; change: MemChange }) {
             </div>
         );
     }
-    const gate = switchGate(p, change);
-    const blocked = gate.blocked || change.status === "conflict";
+    const blocked = switchGate(p, change).blocked || change.status === "conflict";
     return (
-        <>
-            {gate.blocked ? (
-                <p role="status" data-memory-gate className="m-0 text-[12px] leading-[1.5] text-warning-soft">
-                    {gate.text}
-                </p>
-            ) : null}
-            <div className="flex justify-end gap-2">
-                <button
-                    type="button"
-                    data-memory-keep
-                    disabled={busy}
-                    onClick={() => decide("keep")}
-                    className={BTN_SECONDARY}
-                >
-                    Keep as is
-                </button>
-                <button
-                    type="button"
-                    data-memory-apply
-                    disabled={busy || blocked}
-                    onClick={() => decide("apply")}
-                    className={BTN_PRIMARY}
-                >
-                    {change.applylabel || kindLabel(p, change)}
-                </button>
-            </div>
-        </>
+        <div className="flex justify-end gap-2">
+            <button
+                type="button"
+                data-memory-keep
+                disabled={busy}
+                onClick={() => decide("keep")}
+                className={BTN_SECONDARY}
+            >
+                Keep as is
+            </button>
+            <button
+                type="button"
+                data-memory-apply
+                disabled={busy || blocked}
+                onClick={() => decide("apply")}
+                className={BTN_PRIMARY}
+            >
+                {change.applylabel || kindLabel(p, change)}
+            </button>
+        </div>
     );
 }
 
 function ChangeDetail({ p, change }: { p: MemHygieneProject; change: MemChange }) {
+    // up by the title with the conflict alert, not above the buttons: the avatar's bottom-right corner
+    // sits over the rail's foot
+    const gate = switchGate(p, change);
     return (
         <aside
             aria-label="Change detail"
@@ -449,6 +444,11 @@ function ChangeDetail({ p, change }: { p: MemHygieneProject; change: MemChange }
                 <div className="break-all font-mono text-[10.5px] text-muted">{fileLabel(change)}</div>
             </div>
             {change.status === "conflict" ? <ConflictAlert p={p} change={change} /> : null}
+            {isPending(change) && gate.blocked ? (
+                <p role="status" data-memory-gate className="m-0 text-[12px] leading-[1.5] text-warning-soft">
+                    {gate.text}
+                </p>
+            ) : null}
             {change.evidence?.length ? (
                 <div className="flex flex-col gap-2">
                     <div className={SECTION_HEAD}>Why</div>

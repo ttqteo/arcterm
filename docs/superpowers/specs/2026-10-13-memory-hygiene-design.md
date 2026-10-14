@@ -159,7 +159,9 @@ A failed judge run keeps the last good result and shows "Last check failed: <rea
   applies only to an open or conflicting change; **Review again** only to a kept one. Arc refuses
   either on any other status, naming it.
 - **Undo** restores the backup if every file still has the hash Arc wrote. Otherwise it reports which
-  file changed and doesn't write anything. **Review again** reopens a kept change.
+  file changed and doesn't write anything, except for a `MEMORY.md` a later change rewrote: its edit is
+  reversed line by line (the added line out, the removed lines back beside the line they sat under), and
+  only an added line that is gone or a removed line that is back is a conflict. **Review again** reopens a kept change.
 - The sweep deletes backups older than 30 days. The rail shows the expiry date ("kept a copy of the
   old files until Nov 12").
 

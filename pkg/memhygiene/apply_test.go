@@ -322,11 +322,12 @@ func TestUndoConflictWritesNothing(t *testing.T) {
 	backupRoot := t.TempDir()
 	id := applyTestRun(t, applyTestChange(t, "delete", op, a, idx), backupRoot)
 
-	writeFile(t, idx, "- [B](b.md) — b\n- [C](c.md) — written after the apply\n")
+	// the line the undo would put back is there again
+	writeFile(t, idx, "- [B](b.md) — b\n- [A](a.md) — a\n")
 	if conflict, err := Undo(backupRoot, id); err != nil || conflict != idx {
 		t.Errorf("Undo = %q, %v; want conflict %s", conflict, err, idx)
 	}
-	applyTestExpect(t, map[string]string{a: "", idx: "- [B](b.md) — b\n- [C](c.md) — written after the apply\n"})
+	applyTestExpect(t, map[string]string{a: "", idx: "- [B](b.md) — b\n- [A](a.md) — a\n"})
 
 	// a file the apply deleted must still be absent
 	writeFile(t, idx, "- [B](b.md) — b\n")
@@ -434,4 +435,76 @@ func TestApplyIndexLineAlreadyPresentIsConflict(t *testing.T) {
 	if _, err := os.Stat(backupRoot); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("a conflicting apply wrote a backup: %v", err)
 	}
+}
+
+func TestUndoEarlierJudgeChangeAfterSibling(t *testing.T) {
+	inv := judgeTestInventory(t)
+	reply := `{"changes": [
+		{"kind": "delete", "title": "Stale alpha", "files": ["alpha.md"]},
+		{"kind": "trim", "title": "Shorter beta", "files": ["beta.md"], "old": "the same thing", "new": "one thing", "index_line": "- [Beta rule](beta.md) — one thing"}
+	]}`
+	changes, err := ParseJudge(reply, inv, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	backupRoot := t.TempDir()
+	first := applyTestRun(t, changes[0], backupRoot)
+	second := applyTestRun(t, changes[1], backupRoot)
+
+	// the sibling rewrote MEMORY.md after the first apply; the first one's index edit still undoes
+	if conflict, err := Undo(backupRoot, first); err != nil || conflict != "" {
+		t.Fatalf("Undo first = %q, %v", conflict, err)
+	}
+	applyTestExpect(t, map[string]string{
+		inv.IndexPath:                         judgeTestLineA + "\n- [Beta rule](beta.md) — one thing\n",
+		filepath.Join(inv.Folder, "alpha.md"): inv.Memories[0].Body,
+	})
+	if conflict, err := Undo(backupRoot, second); err != nil || conflict != "" {
+		t.Fatalf("Undo second = %q, %v", conflict, err)
+	}
+	applyTestExpect(t, map[string]string{
+		inv.IndexPath:                        judgeTestLineA + "\n" + judgeTestLineB + "\n",
+		filepath.Join(inv.Folder, "beta.md"): "Beta says the same thing.\n",
+	})
+}
+
+func TestUndoPutsLineBackUnderItsNeighbour(t *testing.T) {
+	dir := applyTestFolder(t, map[string]string{
+		"MEMORY.md": "- [A](a.md) — a\n- [B](b.md) — b\n- [C](c.md) — c\n- [D](d.md) — d\n",
+		"a.md":      "a\n",
+		"c.md":      "c\n",
+	})
+	idx := filepath.Join(dir, "MEMORY.md")
+	del := func(name, line string) wshrpc.MemChange {
+		op := wshrpc.MemOp{Folder: dir, Memories: []string{name}, IndexRemove: []string{line}}
+		return applyTestChange(t, "delete", op, filepath.Join(dir, name))
+	}
+	backupRoot := t.TempDir()
+	c := applyTestRun(t, del("c.md", "- [C](c.md) — c"), backupRoot)
+	applyTestRun(t, del("a.md", "- [A](a.md) — a"), backupRoot)
+
+	// C's old line number is now past D; it goes back under B, the line it sat under
+	if conflict, err := Undo(backupRoot, c); err != nil || conflict != "" {
+		t.Fatalf("Undo = %q, %v", conflict, err)
+	}
+	applyTestExpect(t, map[string]string{idx: "- [B](b.md) — b\n- [C](c.md) — c\n- [D](d.md) — d\n", filepath.Join(dir, "c.md"): "c\n"})
+}
+
+func TestUndoIndexLineGoneIsConflict(t *testing.T) {
+	inv := judgeTestInventory(t)
+	reply := `{"changes": [{"kind": "trim", "title": "Shorter beta", "files": ["beta.md"], "old": "the same thing", "new": "one thing", "index_line": "- [Beta rule](beta.md) — one thing"}]}`
+	changes, err := ParseJudge(reply, inv, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	backupRoot := t.TempDir()
+	id := applyTestRun(t, changes[0], backupRoot)
+
+	// the line the apply added was edited by hand, so the undo can't find what to take back out
+	edited := judgeTestLineA + "\n- [Beta rule](beta.md) — edited\n"
+	writeFile(t, inv.IndexPath, edited)
+	if conflict, err := Undo(backupRoot, id); err != nil || conflict != inv.IndexPath {
+		t.Errorf("Undo = %q, %v; want conflict %s", conflict, err, inv.IndexPath)
+	}
+	applyTestExpect(t, map[string]string{inv.IndexPath: edited, filepath.Join(inv.Folder, "beta.md"): "Beta says one thing.\n"})
 }
