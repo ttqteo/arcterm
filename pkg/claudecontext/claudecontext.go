@@ -3,7 +3,8 @@
 
 // Package claudecontext lists the files that shape a Claude Code agent in one project: its instructions, its project
 // memory, its settings, its skills, agents and commands, its .arc/setup, and the two global files that also apply.
-// Read-only: it stats each file and peeks at frontmatter or JSON for a row's note; Setup → Project reads the files.
+// Scan is read-only: it stats each file and peeks at frontmatter or JSON for a row's note; Setup → Project reads the
+// files. DeleteMemory is the one write, a memory file moved to the trash.
 package claudecontext
 
 import (

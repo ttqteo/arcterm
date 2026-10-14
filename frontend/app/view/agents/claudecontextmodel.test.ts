@@ -2,7 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { contextFileKind, contextGroups, contextProject, contextSelection } from "./claudecontextmodel";
+import {
+    contextActions,
+    contextFileKind,
+    contextGroups,
+    contextProject,
+    contextSelection,
+    correctionLine,
+    correctTarget,
+    memoryAfterRemoval,
+} from "./claudecontextmodel";
 
 const f = (group: string, label: string, extra: Partial<ClaudeContextFile> = {}): ClaudeContextFile => ({
     group,
@@ -89,5 +98,62 @@ describe("contextFileKind", () => {
         expect(contextFileKind("C:\\p\\CLAUDE.MD")).toBe("markdown");
         expect(contextFileKind("/p/.mcp.json")).toBe("json");
         expect(contextFileKind("/p/.arc/setup")).toBe("text");
+    });
+});
+
+describe("contextActions", () => {
+    const row = (group: string, label: string, exists = true) =>
+        ({ group, label, path: `/m/${label}`, exists }) as ClaudeContextFile;
+
+    it("offers Correct and Delete on a memory file", () => {
+        expect(contextActions(row("memory", "feedback_x.md"))).toEqual({ correct: true, remove: true });
+    });
+    it("offers Correct but not Delete on the index", () => {
+        expect(contextActions(row("memory", "MEMORY.md"))).toEqual({ correct: true, remove: false });
+    });
+    it("offers nothing outside memory, or on a file that is gone", () => {
+        expect(contextActions(row("instructions", "CLAUDE.md"))).toEqual({ correct: false, remove: false });
+        expect(contextActions(row("global", "~/.claude/CLAUDE.md"))).toEqual({ correct: false, remove: false });
+        expect(contextActions(row("memory", "gone.md", false))).toEqual({ correct: false, remove: false });
+    });
+});
+
+describe("correctionLine", () => {
+    it("names the file by its full path and keeps the note on one line", () => {
+        expect(correctionLine("/h/.claude/projects/p/memory/a.md", "  the date is wrong,\n it was 10-14  ")).toBe(
+            "fix your memory /h/.claude/projects/p/memory/a.md — the date is wrong, it was 10-14"
+        );
+    });
+    it("is blank when nothing is typed", () => {
+        expect(correctionLine("/m/a.md", " \n ")).toBe("");
+    });
+});
+
+describe("correctTarget", () => {
+    const claude = (name: string) => ({ name, agent: "claude" });
+    it("sends straight to the project's one Claude agent", () => {
+        expect(correctTarget([claude("loom"), { name: "kite", agent: "pi" }])).toEqual({
+            kind: "agent",
+            agent: claude("loom"),
+        });
+    });
+    it("offers a menu when there are several, and the clipboard when there are none", () => {
+        expect(correctTarget([claude("a"), claude("b")])).toEqual({ kind: "menu", agents: [claude("a"), claude("b")] });
+        expect(correctTarget([{ name: "kite", agent: "pi" }])).toEqual({ kind: "copy" });
+        expect(correctTarget([])).toEqual({ kind: "copy" });
+    });
+});
+
+describe("memoryAfterRemoval", () => {
+    const mem = (label: string, note: string) =>
+        ({ group: "memory", label, path: `/m/${label}`, exists: true, note }) as ClaudeContextFile;
+    const groups = contextGroups([mem("MEMORY.md", "index"), mem("a.md", "feedback"), mem("b.md", "feedback")]);
+
+    it("moves on to the next memory, else the one before", () => {
+        expect(memoryAfterRemoval(groups, "/m/a.md")).toBe("/m/b.md");
+        expect(memoryAfterRemoval(groups, "/m/b.md")).toBe("/m/a.md");
+    });
+    it("is null for a path the group does not list", () => {
+        expect(memoryAfterRemoval(groups, "/m/zzz.md")).toBeNull();
     });
 });

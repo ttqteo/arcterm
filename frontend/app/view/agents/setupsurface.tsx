@@ -73,7 +73,7 @@ import {
     typeSkill,
     type SetupTab,
 } from "./setupstore";
-import { BTN_SECONDARY, FADE_IN, SECTION_HEAD } from "./setupstyles";
+import { BTN_PRIMARY, BTN_SECONDARY, FADE_IN, INPUT, SECTION_HEAD } from "./setupstyles";
 import {
     additionsChip,
     adoptCount,
@@ -97,16 +97,10 @@ import {
 import { ToolsHeader, ToolsLibrary } from "./toolslibrary";
 import { fileTextOf, useFileText } from "./usefiletext";
 
-const BTN_PRIMARY =
-    "h-8 cursor-pointer rounded border-0 bg-accent px-[14px] text-[13px] font-bold text-background shadow-inset-highlight hover:bg-accenthover disabled:cursor-default disabled:opacity-40 disabled:hover:bg-accent";
-
 // The skill rail grows with the window so a SKILL.md reads at a comfortable measure, and wider again while editing; the
 // matrix keeps the rest (its harness columns are fixed, so the floor of either width still leaves the names room).
-const RAIL_WIDTH = "w-[clamp(440px,38%,680px)]";
-const RAIL_EDIT_WIDTH = "w-[clamp(560px,50%,860px)]";
-
-const INPUT =
-    "h-[30px] min-w-0 rounded-[7px] border border-edge-mid bg-background px-2.5 text-[13px] text-primary outline-none placeholder:text-muted focus:border-accent";
+const RAIL_WIDTH = "w-[clamp(480px,45%,820px)]";
+const RAIL_EDIT_WIDTH = "w-[clamp(600px,55%,1000px)]";
 
 const TONE_DOT: Record<Tone, string> = { ok: "bg-success", warn: "bg-warning", none: "bg-ink-faint" };
 const TONE_TEXT: Record<Tone, string> = { ok: "text-ink-mid", warn: "text-warning-soft", none: "text-muted" };

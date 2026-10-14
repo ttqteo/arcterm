@@ -243,6 +243,12 @@ func ClaudeContextCommand(w *wshutil.WshRpc, data wshrpc.CommandClaudeContextDat
 	return resp, err
 }
 
+// command "claudememorydelete", wshserver.ClaudeMemoryDeleteCommand
+func ClaudeMemoryDeleteCommand(w *wshutil.WshRpc, data wshrpc.CommandClaudeMemoryDeleteData, opts *wshrpc.RpcOpts) (*wshrpc.CommandClaudeMemoryDeleteRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandClaudeMemoryDeleteRtnData](w, "claudememorydelete", data, opts)
+	return resp, err
+}
+
 // command "cleanstorage", wshserver.CleanStorageCommand
 func CleanStorageCommand(w *wshutil.WshRpc, data wshrpc.CommandCleanStorageData, opts *wshrpc.RpcOpts) (*storage.StorageCleanResult, error) {
 	resp, err := sendRpcRequestCallHelper[*storage.StorageCleanResult](w, "cleanstorage", data, opts)

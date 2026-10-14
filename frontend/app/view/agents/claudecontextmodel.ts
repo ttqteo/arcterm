@@ -94,3 +94,47 @@ export function contextFileKind(path: string): ContextFileKind {
     }
     return "text";
 }
+
+// What the rail offers a file. Memory is Claude's to keep, so the app never edits it: a fix goes to Claude as a
+// prompt (Correct), and any memory but the index can be moved to the trash (Delete). Other groups are read-only.
+export interface ContextActions {
+    correct: boolean;
+    remove: boolean;
+}
+
+export function contextActions(row: ClaudeContextFile): ContextActions {
+    const memory = row.group === "memory" && row.exists;
+    return { correct: memory, remove: memory && row.label !== MEMORY_INDEX };
+}
+
+// The prompt Correct sends: always one line, since a terminal submits at the first newline, and naming the file by its
+// full path so the agent edits that one. Blank when nothing is typed.
+export function correctionLine(path: string, note: string): string {
+    const what = note.replace(/\s+/g, " ").trim();
+    return what === "" ? "" : `fix your memory ${path} — ${what}`;
+}
+
+// Who a correction goes to: the project's one live Claude agent, a menu of them when there are several, or the
+// clipboard when there is none. Memory is Claude's, so another harness's agent is never offered.
+export type CorrectTarget<A> = { kind: "agent"; agent: A } | { kind: "menu"; agents: A[] } | { kind: "copy" };
+
+export function correctTarget<A extends { agent?: string }>(live: readonly A[]): CorrectTarget<A> {
+    const claude = live.filter((a) => a.agent === "claude");
+    if (claude.length === 1) {
+        return { kind: "agent", agent: claude[0] };
+    }
+    return claude.length > 1 ? { kind: "menu", agents: claude } : { kind: "copy" };
+}
+
+// The memory the rail moves to once path goes to the trash: the next one in the group, else the one before, else
+// none (the tab's first file).
+export function memoryAfterRemoval(groups: ContextGroup[], path: string): string | null {
+    const rows = (groups.find((g) => g.key === "memory")?.sections ?? [])
+        .flatMap((s) => s.rows)
+        .filter((r) => r.exists);
+    const i = rows.findIndex((r) => r.path === path);
+    if (i < 0) {
+        return null;
+    }
+    return rows[i + 1]?.path ?? rows[i - 1]?.path ?? null;
+}

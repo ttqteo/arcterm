@@ -363,6 +363,21 @@ export function selectContextFile(path: string): void {
     globalStore.set(setupContextSelectedAtom, path);
 }
 
+// Moves a memory file to the trash (ClaudeMemoryDeleteCommand drops its MEMORY.md line too), then reads the project
+// again with the rail on next (the neighbouring memory; null falls back to the tab's first file). Returns the error,
+// or null when it went. The list is read again either way: a failure part way can still have moved the file.
+export async function deleteContextMemory(path: string, next: string | null): Promise<string | null> {
+    let err: string | null = null;
+    try {
+        await RpcApi.ClaudeMemoryDeleteCommand(TabRpcClient, { path });
+        globalStore.set(setupContextSelectedAtom, next);
+    } catch (e) {
+        err = errText(e);
+    }
+    await reloadClaudeContext();
+    return err;
+}
+
 // ---- tools ----
 
 // the tool the library's detail shows (null: the first in the list), and what is typed in its search

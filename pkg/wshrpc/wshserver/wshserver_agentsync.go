@@ -7,9 +7,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/agentsync"
 	"github.com/wavetermdev/waveterm/pkg/claudecontext"
+	"github.com/wavetermdev/waveterm/pkg/sessiontrash"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
@@ -128,6 +130,14 @@ func (ws *WshServer) ClaudeContextCommand(ctx context.Context, data wshrpc.Comma
 		}
 	}
 	return &wshrpc.CommandClaudeContextRtnData{Files: out}, nil
+}
+
+func (ws *WshServer) ClaudeMemoryDeleteCommand(ctx context.Context, data wshrpc.CommandClaudeMemoryDeleteData) (*wshrpc.CommandClaudeMemoryDeleteRtnData, error) {
+	entry, err := claudecontext.DeleteMemory(data.Path, wavebase.GetHomeDir(), sessiontrash.TrashDir(), time.Now())
+	if err != nil {
+		return nil, err
+	}
+	return &wshrpc.CommandClaudeMemoryDeleteRtnData{TrashPath: entry}, nil
 }
 
 func skillDocRtn(doc agentsync.SkillDoc) *wshrpc.CommandAgentSyncSkillDocRtnData {

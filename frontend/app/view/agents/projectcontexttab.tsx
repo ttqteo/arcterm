@@ -2,11 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Setup → Project: every file that shapes a Claude Code agent in one registered project (ClaudeContextCommand),
-// grouped, with the selected one read in the rail. Read-only: nothing here writes a file. The model is
-// claudecontextmodel.ts, the state setupstore.ts.
+// grouped, with the selected one read in the rail. Nothing here edits a file: memory is Claude's to keep, so a memory's
+// rail offers Correct (a one-line prompt to a live Claude agent of the project, or the clipboard) and Delete (to the
+// trash, ClaudeMemoryDeleteCommand). The model is claudecontextmodel.ts, the state setupstore.ts.
 
+import { pushToast } from "@/app/cockpit/notificationstore";
 import { Markdown } from "@/app/element/markdown";
 import { splitFrontmatter } from "@/app/view/code/codefrontmatter";
+import { liveAgentsForProject } from "@/app/view/code/codehandoff";
 import { FrontmatterCard } from "@/app/view/code/frontmattercard";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
@@ -14,16 +17,22 @@ import { RotateCw } from "lucide-react";
 import { motion } from "motion/react";
 import { Fragment, useEffect, useState } from "react";
 import type { AgentsViewModel } from "./agents";
-import { formatAgo } from "./agentsviewmodel";
+import { formatAgo, type AgentVM } from "./agentsviewmodel";
 import {
+    contextActions,
     contextFileKind,
     contextGroups,
     contextProject,
     contextSelection,
+    correctionLine,
+    correctTarget,
+    memoryAfterRemoval,
     type ContextGroup,
 } from "./claudecontextmodel";
+import { sendLineComments } from "./linereviewsend";
 import { projectListAtom } from "./projectsstore";
 import {
+    deleteContextMemory,
     loadClaudeContext,
     reloadClaudeContext,
     selectContextFile,
@@ -32,8 +41,16 @@ import {
     setupContextProjectAtom,
     setupContextSelectedAtom,
 } from "./setupstore";
-import { BTN_SECONDARY, FADE_IN, SECTION_HEAD } from "./setupstyles";
+import { BTN_PRIMARY, BTN_SECONDARY, FADE_IN, INPUT, SECTION_HEAD } from "./setupstyles";
 import { useFileText } from "./usefiletext";
+
+// The rail is where a file is read, so it takes over half the window, more on a wide one; the list beside it holds
+// only short labels. Its width is a share of the tab, so nothing in it may be wider than it: a long unbroken line would
+// widen the tab and push the rail off screen. TRASH_DAYS is sessiontrash.Retention.
+const RAIL_WIDTH = "w-[clamp(520px,55%,1000px)]";
+const TRASH_DAYS = 7;
+const BTN_DANGER =
+    "h-[30px] cursor-pointer rounded border border-error/40 bg-error/10 px-3 text-[12.5px] font-semibold text-error-soft hover:bg-error/20 disabled:cursor-default disabled:opacity-50";
 
 export function ProjectContextHeader() {
     const data = useAtomValue(setupContextAtom);
@@ -153,7 +170,223 @@ function ContextGroupView({ group, selected }: { group: ContextGroup; selected: 
     );
 }
 
-function ContextRail({ row }: { row: ClaudeContextFile }) {
+type ActionStatus = { tone: "success" | "error" | "muted"; text: string } | null;
+
+// A memory's actions, under its rail: Correct asks Claude to fix the file (one line, typed into a live Claude agent of
+// the project, or copied when there is none), Delete moves it to the trash after a second click. Keyed by the file, so
+// a half-typed correction or an open confirm never carries over to another one.
+function MemoryActions({ row, live, next }: { row: ClaudeContextFile; live: AgentVM[]; next: string | null }) {
+    const [mode, setMode] = useState<"idle" | "correct" | "delete">("idle");
+    const [note, setNote] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [status, setStatus] = useState<ActionStatus>(null);
+    const acts = contextActions(row);
+    if (!acts.correct && !acts.remove) {
+        return null;
+    }
+    const target = correctTarget(live);
+    const line = correctionLine(row.path, note);
+
+    const run = (work: () => Promise<ActionStatus>) => {
+        setBusy(true);
+        fireAndForget(async () => {
+            try {
+                const s = await work();
+                setStatus(s);
+                if (s?.tone === "success") {
+                    setMode("idle");
+                    setNote("");
+                }
+            } finally {
+                setBusy(false);
+            }
+        });
+    };
+    const sendTo = (agent: AgentVM) =>
+        run(async () => {
+            if (agent.state === "asking") {
+                return { tone: "muted", text: `${agent.name} is waiting on a question — answer it first` };
+            }
+            const r = await sendLineComments(agent, line);
+            if (r.ok === false) {
+                return { tone: "error", text: `Couldn't reach ${agent.name}: ${r.error}` };
+            }
+            return { tone: "success", text: `Sent to ${agent.name}` };
+        });
+    const copy = () =>
+        run(async () => {
+            try {
+                await navigator.clipboard.writeText(line);
+                return { tone: "success", text: "Copied — paste it to a Claude agent in this project" };
+            } catch (e) {
+                return { tone: "error", text: `Couldn't copy: ${String((e as Error)?.message ?? e)}` };
+            }
+        });
+    const submit = () => {
+        if (line === "" || busy) {
+            return;
+        }
+        if (target.kind === "agent") {
+            sendTo(target.agent);
+        } else if (target.kind === "copy") {
+            copy();
+        }
+    };
+    const remove = () =>
+        run(async () => {
+            const err = await deleteContextMemory(row.path, next);
+            if (err != null) {
+                return { tone: "error", text: err };
+            }
+            pushToast({
+                title: "Moved to the trash",
+                message: `${row.label} and its line in MEMORY.md. It stays in ~/.arc/trash for ${TRASH_DAYS} days.`,
+                level: "info",
+                check: true,
+            });
+            return null;
+        });
+
+    const statusLine =
+        status == null ? null : (
+            <span
+                data-memory-status
+                className={cn(
+                    "min-w-0 truncate text-[12px]",
+                    status.tone === "success" ? "text-success" : status.tone === "error" ? "text-error" : "text-muted"
+                )}
+                title={status.text}
+            >
+                {status.text}
+            </span>
+        );
+
+    if (mode === "delete") {
+        return (
+            <div className="flex flex-none flex-col gap-2.5 border-t border-border px-4 py-3">
+                <div className="text-[12.5px] text-secondary">
+                    Move <span className="font-semibold text-primary">{row.label}</span> to the trash? Its line in
+                    MEMORY.md goes too. It stays in ~/.arc/trash for {TRASH_DAYS} days.
+                </div>
+                <div className="flex items-center gap-2">
+                    <button type="button" disabled={busy} onClick={() => setMode("idle")} className={BTN_SECONDARY}>
+                        Cancel
+                    </button>
+                    <span className="min-w-0 flex-1">{statusLine}</span>
+                    <button type="button" data-memory-confirm disabled={busy} onClick={remove} className={BTN_DANGER}>
+                        {busy ? "Moving…" : "Move to trash"}
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    if (mode === "correct") {
+        return (
+            <div className="flex flex-none flex-col gap-2.5 border-t border-border px-4 py-3">
+                <input
+                    data-memory-note
+                    autoFocus
+                    value={note}
+                    disabled={busy}
+                    placeholder="What's wrong with it? Claude fixes the file."
+                    onChange={(e) => setNote(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                            e.preventDefault();
+                            submit();
+                        }
+                    }}
+                    className={cn(INPUT, "w-full")}
+                />
+                {line !== "" ? (
+                    <div
+                        data-memory-line
+                        className="line-clamp-2 break-all font-mono text-[11px] text-muted"
+                        title={line}
+                    >
+                        {line}
+                    </div>
+                ) : null}
+                <div className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                            setMode("idle");
+                            setNote("");
+                        }}
+                        className={BTN_SECONDARY}
+                    >
+                        Cancel
+                    </button>
+                    <span className="min-w-0 flex-1">{statusLine}</span>
+                    {target.kind === "menu" ? (
+                        <>
+                            <span className="flex-none text-[12px] text-muted">Send to</span>
+                            {target.agents.map((a) => (
+                                <button
+                                    key={a.id}
+                                    type="button"
+                                    data-memory-send={a.name}
+                                    disabled={line === "" || busy}
+                                    onClick={() => sendTo(a)}
+                                    className={BTN_SECONDARY}
+                                >
+                                    {a.name}
+                                </button>
+                            ))}
+                        </>
+                    ) : (
+                        <button
+                            type="button"
+                            data-memory-send={target.kind === "agent" ? target.agent.name : "copy"}
+                            disabled={line === "" || busy}
+                            onClick={submit}
+                            className={BTN_PRIMARY}
+                        >
+                            {target.kind === "agent" ? `Send to ${target.agent.name}` : "Copy prompt"}
+                        </button>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="flex flex-none items-center gap-2 border-t border-border px-4 py-3">
+            {acts.correct ? (
+                <button
+                    type="button"
+                    data-memory-correct
+                    onClick={() => {
+                        setStatus(null);
+                        setMode("correct");
+                    }}
+                    className={BTN_SECONDARY}
+                >
+                    Correct…
+                </button>
+            ) : null}
+            <span className="min-w-0 flex-1">{statusLine}</span>
+            {acts.remove ? (
+                <button
+                    type="button"
+                    data-memory-delete
+                    onClick={() => {
+                        setStatus(null);
+                        setMode("delete");
+                    }}
+                    className={BTN_SECONDARY}
+                >
+                    Delete
+                </button>
+            ) : null}
+        </div>
+    );
+}
+
+function ContextRail({ row, live, next }: { row: ClaudeContextFile; live: AgentVM[]; next: string | null }) {
     const [file] = useFileText(row.path);
     const doc = file.status === "ok" && contextFileKind(row.path) === "markdown" ? splitFrontmatter(file.text) : null;
     return (
@@ -162,7 +395,10 @@ function ContextRail({ row }: { row: ClaudeContextFile }) {
             {...FADE_IN}
             aria-label="File"
             data-context-rail={row.path}
-            className="flex w-[440px] flex-none flex-col border-l border-border bg-surface"
+            className={cn(
+                "flex min-w-0 flex-none flex-col overflow-hidden border-l border-border bg-surface",
+                RAIL_WIDTH
+            )}
         >
             <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto p-4">
                 <div className="flex flex-col gap-1.5">
@@ -202,6 +438,7 @@ function ContextRail({ row }: { row: ClaudeContextFile }) {
                     </pre>
                 )}
             </div>
+            <MemoryActions key={row.path} row={row} live={live} next={next} />
         </motion.aside>
     );
 }
@@ -212,6 +449,7 @@ export function ProjectContextTab({ model }: { model: AgentsViewModel }) {
     const chosen = useAtomValue(setupContextProjectAtom);
     const data = useAtomValue(setupContextAtom);
     const selectedPath = useAtomValue(setupContextSelectedAtom);
+    const agents = useAtomValue(model.agentsAtom);
     const name = contextProject(projects, chosen, filter);
     const project = projects.find((p) => p.name === name) ?? null;
     // re-read on every visit and project change: an agent may have written memory or settings since
@@ -248,7 +486,13 @@ export function ProjectContextTab({ model }: { model: AgentsViewModel }) {
                     groups!.map((g) => <ContextGroupView key={g.key} group={g} selected={selected} />)
                 )}
             </div>
-            {row != null ? <ContextRail row={row} /> : null}
+            {row != null ? (
+                <ContextRail
+                    row={row}
+                    live={liveAgentsForProject(agents, name)}
+                    next={memoryAfterRemoval(groups!, row.path)}
+                />
+            ) : null}
         </div>
     );
 }

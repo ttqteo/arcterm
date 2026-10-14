@@ -26,6 +26,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- **Correct or delete a memory in Setup → Project**: a Claude memory's panel has **Correct…**, which sends Claude one
+  line saying what is wrong so Claude fixes the file itself (or copies the line when no Claude agent is open in that
+  project), and **Delete**, which moves the memory to `~/.arc/trash` and drops its line from `MEMORY.md`.
+  <!-- try: go:setup -->
 - **Jarvis has an office too**: with the Runs list's **office** chip on, Jarvis leaves the footer for a desk of its own
   under the runs, beside a desk for every agent you started yourself. It keeps watch when something waits on you, works
   while your agents work, reads, listens to music or plays ball when all is quiet, and sleeps at night; with no agent
@@ -34,6 +38,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- **Wider side panels in Setup**: the file panel on Setup → Project takes about half the window, and the skill panel on
+  Setup → Skills grows too, so a file reads at a comfortable width.
 - **Canvases is now the Canvas gallery**: the sidebar row, the gallery's title and the `Ctrl+G` `v` command use the new
   name. <!-- try: go:canvases -->
 - **What's new** is livelier: a release's highlights show a picture of the feature, every note leads with a colored

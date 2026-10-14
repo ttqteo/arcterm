@@ -37215,9 +37215,9 @@ const setupSkillEdit = {
                 !first.yours.includes("design-local") &&
                 first.shipped.includes("design-local") &&
                 first.shipped.includes("cockpit-ui") &&
-                first.railWidth >= 440 &&
-                first.railWidth <= 680 &&
-                Math.abs(first.railWidth - Math.min(680, Math.max(440, first.tabWidth * 0.38))) <= 2 &&
+                first.railWidth >= 480 &&
+                first.railWidth <= 820 &&
+                Math.abs(first.railWidth - Math.min(820, Math.max(480, first.tabWidth * 0.45))) <= 2 &&
                 first.manage,
             JSON.stringify({ yours: first.yours, shipped: first.shipped, railWidth: first.railWidth, tabWidth: first.tabWidth, manage: first.manage })
         );
@@ -37687,8 +37687,8 @@ const toolsLauncher = {
 // --- setup-project: Setup → Project lists a project's Claude files in six groups and reads the selected one in the
 // rail. The fixture is a temp project with a CLAUDE.md, a settings.json holding one hook, a settings.local.json that
 // does not parse and an empty .arc/setup, and a memory folder under ~/.claude/projects/<slug> holding an index and
-// one feedback memory; teardown removes the project, its folder and the memory folder. The last step deletes the
-// project's folder to show the path-gone banner, so it runs last.
+// one feedback memory; teardown removes the project, its folder, the memory folder and the trash entry step 11 makes.
+// The last step deletes the project's folder to show the path-gone banner, so it runs last.
 const SP_PROJECT = "verify-setup-project";
 const spSlug = (p) => p.replace(/[^A-Za-z0-9]/g, "-");
 const setupProject = {
@@ -37826,6 +37826,93 @@ const setupProject = {
         );
         rec("8. Reload re-reads the project: a memory file written since shows under Memory", added, "");
 
+        // memory is Claude's: its rail offers Correct (a prompt) and Delete (the trash), and no file offers Edit
+        const memActs = `({
+            correct: !!document.querySelector("[data-context-rail] [data-memory-correct]"),
+            remove: !!document.querySelector("[data-context-rail] [data-memory-delete]"),
+            edit: [...document.querySelectorAll("[data-context-tab] button")].some((b) => b.textContent.trim() === "Edit"),
+        })`;
+        const indexClicked = await clickRow("MEMORY.md");
+        const indexRead = indexClicked && (await railHas("Fixture rule"));
+        const indexActs = await h.ev(memActs);
+        rec(
+            "9. MEMORY.md's rail offers Correct but not Delete, and nothing in the tab offers Edit",
+            indexRead && indexActs.correct && !indexActs.remove && !indexActs.edit,
+            JSON.stringify({ indexClicked, indexRead, ...indexActs })
+        );
+
+        const fixPath = join(ctx.memProject, "memory", "feedback_fixture.md");
+        const fixBefore = readFileSync(fixPath, "utf8");
+        await clickRow("feedback_fixture.md");
+        await railHas("Fixture rule body.");
+        const fixActs = await h.ev(memActs);
+        await h.ev(`document.querySelector("[data-context-rail] [data-memory-correct]")?.click()`);
+        const noteOpen = await polishWaitFor(h, `!!document.querySelector("[data-memory-note]")`, 3000);
+        await h.ev(setInputExpr(`document.querySelector("[data-memory-note]")`, "  the rule changed,   it is two rules now "));
+        const sendLabel = await h.ev(`document.querySelector("[data-memory-send]")?.textContent ?? null`);
+        await polishNap(300);
+        // the typed line is long and unbroken: it must wrap inside the rail, not widen the tab past the window
+        const inView = await h.ev(`(() => {
+            const r = (sel) => document.querySelector(sel)?.getBoundingClientRect() ?? null;
+            const rail = r("[data-context-rail]"), send = r("[data-memory-send]");
+            return !!rail && !!send && rail.right <= window.innerWidth + 1 && send.right <= window.innerWidth + 1;
+        })()`);
+        await h.shot("cdp-shots/setup-project-4-correct.png");
+        await h.ev(notesClipStub(false));
+        await h.ev(`document.querySelector("[data-memory-send]")?.click()`);
+        const fixCopied = await polishWaitFor(h, `(window.__notesClip ?? []).length === 1`, 2000);
+        const fixClip = await h.ev(`window.__notesClip ?? []`);
+        await h.ev(NOTES_CLIP_RESTORE);
+        const fixStatus = await h.ev(`document.querySelector("[data-memory-status]")?.textContent ?? null`);
+        rec(
+            "10. Correct… on a memory, with no Claude agent in the project, offers Copy prompt in view and copies one line naming the file's full path and the note; the file is untouched",
+            fixActs.correct &&
+                fixActs.remove &&
+                noteOpen &&
+                sendLabel === "Copy prompt" &&
+                inView &&
+                fixCopied &&
+                fixClip[0] === `fix your memory ${fixPath} — the rule changed, it is two rules now` &&
+                /Copied/.test(fixStatus ?? "") &&
+                readFileSync(fixPath, "utf8") === fixBefore,
+            JSON.stringify({ fixActs, noteOpen, sendLabel, inView, fixClip, fixStatus })
+        );
+
+        await h.ev(`document.querySelector("[data-context-rail] [data-memory-delete]")?.click()`);
+        const asks = await polishWaitFor(h, `!!document.querySelector("[data-memory-confirm]")`, 3000);
+        const keptWhileAsking = existsSync(fixPath);
+        await polishNap(300);
+        await h.shot("cdp-shots/setup-project-5-delete-confirm.png");
+        await h.ev(`document.querySelector("[data-memory-confirm]")?.click()`);
+        const rowGone = await polishWaitFor(
+            h,
+            `![...document.querySelectorAll('[data-context-group="memory"] [data-context-file]')].some((b) => b.textContent.includes("feedback_fixture.md"))`,
+            5000
+        );
+        const movedOn = await railHas("Added body.");
+        const indexAfter = readFileSync(join(ctx.memProject, "memory", "MEMORY.md"), "utf8");
+        const trashDir = join(homedir(), ".arc", "trash");
+        ctx.trashEntries = existsSync(trashDir)
+            ? readdirSync(trashDir)
+                  .filter((n) => n.endsWith("-memory-feedback_fixture"))
+                  .map((n) => join(trashDir, n))
+                  .filter((d) => existsSync(join(d, "meta.json")) && readFileSync(join(d, "meta.json"), "utf8").includes(spSlug(ctx.root)))
+            : [];
+        await polishNap(300);
+        await h.shot("cdp-shots/setup-project-6-deleted.png");
+        rec(
+            "11. Delete asks in the rail first; Move to trash puts the file in ~/.arc/trash, drops its MEMORY.md line, and the rail moves on to the next memory",
+            asks &&
+                keptWhileAsking &&
+                rowGone &&
+                movedOn &&
+                !existsSync(fixPath) &&
+                !indexAfter.includes("feedback_fixture.md") &&
+                ctx.trashEntries.length === 1 &&
+                existsSync(join(ctx.trashEntries[0], "feedback_fixture.md")),
+            JSON.stringify({ asks, keptWhileAsking, rowGone, movedOn, indexAfter, trashEntries: ctx.trashEntries })
+        );
+
         let rmError = null;
         try {
             rmSync(ctx.root, { recursive: true, force: true });
@@ -37841,7 +37928,7 @@ const setupProject = {
         await polishNap(300);
         await h.shot("cdp-shots/setup-project-3-path-gone.png");
         const alert = await h.ev(`document.querySelector('[data-context-tab] [role="alert"]')?.textContent ?? null`);
-        rec("9. with the project's folder gone, Reload shows the alert banner and no list", rmError == null && gone, JSON.stringify({ rmError, alert }));
+        rec("12. with the project's folder gone, Reload shows the alert banner and no list", rmError == null && gone, JSON.stringify({ rmError, alert }));
         return steps;
     },
     async teardown(h, ctx) {
@@ -37865,6 +37952,9 @@ const setupProject = {
         }
         if (ctx.memProject) await step("remove the memory folder", () => rmSync(ctx.memProject, { recursive: true, force: true }));
         if (ctx.root) await step("remove the project folder", () => rmSync(ctx.root, { recursive: true, force: true }));
+        for (const entry of ctx.trashEntries ?? []) {
+            await step("remove the trashed memory", () => rmSync(entry, { recursive: true, force: true }));
+        }
     },
 };
 

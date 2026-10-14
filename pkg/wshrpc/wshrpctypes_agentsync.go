@@ -13,6 +13,7 @@ type AgentSyncCommands interface {
 	AgentSyncAdoptCommand(ctx context.Context, data CommandAgentSyncAdoptData) (*CommandAgentSyncAdoptRtnData, error)
 	AgentSyncSkillsCommand(ctx context.Context) (*CommandAgentSyncSkillsRtnData, error)
 	ClaudeContextCommand(ctx context.Context, data CommandClaudeContextData) (*CommandClaudeContextRtnData, error)
+	ClaudeMemoryDeleteCommand(ctx context.Context, data CommandClaudeMemoryDeleteData) (*CommandClaudeMemoryDeleteRtnData, error)
 	AgentSyncSkillReadCommand(ctx context.Context, data CommandAgentSyncSkillReadData) (*CommandAgentSyncSkillDocRtnData, error)
 	AgentSyncSkillWriteCommand(ctx context.Context, data CommandAgentSyncSkillWriteData) (*CommandAgentSyncSteeringWriteRtnData, error)
 	AgentSyncSkillCreateCommand(ctx context.Context, data CommandAgentSyncSkillCreateData) (*CommandAgentSyncSkillDocRtnData, error)
@@ -139,6 +140,15 @@ type ClaudeContextFile struct {
 
 type CommandClaudeContextRtnData struct {
 	Files []ClaudeContextFile `json:"files"`
+}
+
+// CommandClaudeMemoryDeleteData names one project memory file to move to the trash (pkg/claudecontext.DeleteMemory).
+type CommandClaudeMemoryDeleteData struct {
+	Path string `json:"path"`
+}
+
+type CommandClaudeMemoryDeleteRtnData struct {
+	TrashPath string `json:"trashpath"` // the trash entry holding the file
 }
 
 type CommandAgentSyncSkillReadData struct {

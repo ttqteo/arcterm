@@ -665,6 +665,16 @@ declare global {
         files: ClaudeContextFile[];
     };
 
+    // wshrpc.CommandClaudeMemoryDeleteData
+    type CommandClaudeMemoryDeleteData = {
+        path: string;
+    };
+
+    // wshrpc.CommandClaudeMemoryDeleteRtnData
+    type CommandClaudeMemoryDeleteRtnData = {
+        trashpath: string;
+    };
+
     // wshrpc.CommandCleanStorageData
     type CommandCleanStorageData = {
         category: string;

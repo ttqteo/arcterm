@@ -227,9 +227,21 @@ func oldWhySection(body string) string {
 	return ""
 }
 
+// RemoveIndexLine drops the MEMORY.md line in dir that links file (a memory file's name, such as feedback_x.md),
+// leaving every other line. It holds the lock the learned writes hold; Claude writes MEMORY.md too, which it cannot.
+func RemoveIndexLine(dir, file string) error {
+	memMu.Lock()
+	defer memMu.Unlock()
+	return setIndexLineFor(dir, file, "")
+}
+
 // setIndexLine replaces the MEMORY.md line linking learned_<key>.md with line, or appends it; an empty line removes
 // it. Every other line stays as it was, and a file with nothing to change is not rewritten.
 func setIndexLine(dir, key, line string) error {
+	return setIndexLineFor(dir, memoryFileName(key), line)
+}
+
+func setIndexLineFor(dir, file, line string) error {
 	path := filepath.Join(dir, memoryIndexFile)
 	data, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -240,7 +252,7 @@ func setIndexLine(dir, key, line string) error {
 	if old != "" {
 		lines = strings.Split(strings.TrimSuffix(old, "\n"), "\n")
 	}
-	link := "(" + memoryFileName(key) + ")"
+	link := "(" + file + ")"
 	out := make([]string, 0, len(lines)+1)
 	placed := line == ""
 	for _, l := range lines {

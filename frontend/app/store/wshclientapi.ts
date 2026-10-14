@@ -246,6 +246,12 @@ export class RpcApiType {
         return client.wshRpcCall("claudecontext", data, opts);
     }
 
+    // command "claudememorydelete" [call]
+    ClaudeMemoryDeleteCommand(client: WshClient, data: CommandClaudeMemoryDeleteData, opts?: RpcOpts): Promise<CommandClaudeMemoryDeleteRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "claudememorydelete", data, opts);
+        return client.wshRpcCall("claudememorydelete", data, opts);
+    }
+
     // command "cleanstorage" [call]
     CleanStorageCommand(client: WshClient, data: CommandCleanStorageData, opts?: RpcOpts): Promise<StorageCleanResult> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "cleanstorage", data, opts);
