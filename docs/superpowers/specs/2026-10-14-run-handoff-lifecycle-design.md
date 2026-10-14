@@ -79,7 +79,8 @@ added, moved or removed, and when `runs:maxactive` changes. One evaluation walks
   `Land.State == landed`, or `done` with no branch land. A target that is a queue entry is not landed by definition.
 - An entry waiting on `After` does not hold up the entries behind it.
 
-An entry becomes `blocked`, and stays so until Start now or Remove, when:
+An entry becomes `blocked`, and stays so until Start now, Run next (which sets it waiting again; if the cause still
+holds, the next evaluation blocks it again) or Remove, when:
 
 - its `After` run is cancelled, or its land is held for a reason other than `Dirty` (a dirty hold lands by itself
   once the checkout is clean, so the entry keeps waiting);
@@ -110,7 +111,8 @@ Setting: `runs:maxactive`, default 3.
 ### 5. A session and its runs point at each other without moving
 
 - The origin agent's row gets one small meta line: `→ Setup → Project tab · 3/5`, `→ Queued #2` before it starts,
-  `→ merged` or `→ held` after it lands; `→ 2 runs` when there are several. A click focuses the run's row
+  `→ merged` or `→ held` after it lands (`→ done` or `→ cancelled` when there was nothing to land); `→ 2 runs` when there
+  are several. A click focuses the run's row
   (`openTarget`).
 - A run's row gets `from Rail chắt lọc…`; a click focuses the origin agent. Left out when the origin tab is gone.
 - The origin row is not dimmed: the person may still be talking to it.
