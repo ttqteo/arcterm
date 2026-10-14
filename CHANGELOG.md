@@ -26,6 +26,9 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
 - **Queue a plan instead of starting it**: `wsh runs start --plan <file> --queue` (or `--after` another run, which
   implies `--queue`) leaves the plan waiting on the Agent tree, and arcterm starts it by itself when fewer than
   `runs:maxactive` runs are going. A queued plan is a row in its project's folder with Start now, Run next and Remove.
+- **A session and the runs it started point at each other**: a session that started a run shows where the run is under
+  its name (`→ Setup · 3/5`, `→ Queued #2`, `→ merged`, `→ held`, or `→ 2 runs`), and the run's row says
+  `from <session>`. A click on either goes to the other.
 
 ### Changed
 

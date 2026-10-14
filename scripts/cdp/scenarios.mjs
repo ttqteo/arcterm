@@ -37277,6 +37277,63 @@ const runQueueScenario = {
             JSON.stringify(rows1)
         );
 
+        // 1b. the blocked D is also a Needs you item on the Cockpit, with Start now and Remove. Remove asks first, and
+        // takes D's entry and the item with it. Start now is left to the unit tests: D's plan file is gone, so a start
+        // would only block it again.
+        await h.goto("cockpit");
+        const stripKey = `run-queue-blocked:${d}`;
+        const stripRow = `document.querySelector('[data-cockpit-needs-you] [data-needs-you-row="${stripKey}"]')`;
+        // attention is computed by wavesrv and reloaded by the strip, so the item can trail the entry by a poll
+        const stripShown = await polishWaitFor(h, `${stripRow} != null`, 45000);
+        const strip = await h.ev(`(() => {
+            const row = ${stripRow};
+            const ours = [...document.querySelectorAll('[data-cockpit-needs-you] [data-needs-you-row]')].filter(
+                (r) => r.dataset.needsYouRow === ${JSON.stringify(stripKey)}
+            );
+            return {
+                ours: ours.length,
+                kind: row?.children[0]?.textContent.trim() ?? null,
+                text: row?.children[2]?.textContent.trim() ?? null,
+                start: row?.querySelector('[data-strip-act="start-queued"]')?.textContent.trim() ?? null,
+                remove: row?.querySelector('[data-strip-act="remove-queued"]')?.textContent.trim() ?? null,
+            };
+        })()`);
+        await h.shot("cdp-shots/run-queue-1b-needs-you.png");
+        rec(
+            "1b. D is one Needs you row, kind Run to start, reading Did not start:, with Start now and Remove",
+            stripShown &&
+                strip.ours === 1 &&
+                strip.kind === "Run to start" &&
+                (strip.text ?? "").startsWith("Did not start:") &&
+                strip.start === "Start now" &&
+                strip.remove === "Remove",
+            JSON.stringify(strip)
+        );
+        const stripRemove = await h.ev(`(() => {
+            const b = ${stripRow}?.querySelector('[data-strip-act="remove-queued"]');
+            b?.click();
+            return b != null;
+        })()`);
+        const stripAsked = await polishWaitFor(h, `document.querySelector('[role="dialog"]') != null`, 3000);
+        const stripListedBefore = (await rqList(h)).map((e) => e.id);
+        await h.ev(
+            `[...document.querySelectorAll('[role="dialog"] button')].find((b) => b.textContent.includes("Remove"))?.click()`
+        );
+        const stripGone = await polishWaitFor(h, `${stripRow} == null`, 15000);
+        const stripListedAfter = (await rqList(h)).map((e) => e.id);
+        await h.goto("agent");
+        const rowGone = await polishWaitFor(h, `${rqRow(d)} == null`, 8000);
+        rec(
+            "1c. Remove on that row asks first; confirming drops the Needs you row, D's tree row and D's entry",
+            stripRemove === true &&
+                stripAsked &&
+                stripListedBefore.includes(d) &&
+                stripGone &&
+                rowGone &&
+                !stripListedAfter.includes(d),
+            JSON.stringify({ stripRemove, stripAsked, stripGone, rowGone, stripListedBefore, stripListedAfter })
+        );
+
         // 2. hover shows the two buttons; the tooltip carries the plan, the route and the age
         await rqMove(h, rqSel(a));
         const hover = await h.ev(`(() => {
@@ -37405,6 +37462,233 @@ const runQueueScenario = {
         }
         if ("prevMax" in ctx) await attempt("restore runs:maxactive", () => h.rpc("setconfig", { "runs:maxactive": ctx.prevMax }));
         await attempt("remove the temp dir", () => rmSync(ctx.cwd, { recursive: true, force: true }));
+        if (failures.length > 0) throw new Error(failures.join("; "));
+    },
+};
+
+// --- run-origin: a session and the runs it started point at each other on the Agent tree ------------------------------
+// (docs/superpowers/specs/2026-10-14-run-handoff-lifecycle-design.md, decision 5.) A real queue and a real run in wavesrv;
+// the only fakes are two agents, each a shell terminal in a tab of its own that reports as a Claude agent (agent-uploads
+// stages one the same way), so no agent launches: the ORIGIN, the session that started a run and queued a plan, and the
+// LEAD, which stands in for the run's own session so the tree draws the run's row (a run with no agent in the roster has
+// none). The run is an orchestrator run held in planning by deferstart (it spawns nothing), made on the origin's tab
+// id, and its lead reports idle: no agent is at work for the run, so a click on the `→` line has none to focus and opens
+// the run's sheet. `runs:maxactive` is 1, so the plan queued behind the run waits.
+const RO_ORIGIN = "verify-origin-session";
+const RO_LEAD = "verify-origin-lead";
+const RO_PROJECT = "verify-run-origin";
+const RO_RPC = { timeout: 30000 };
+// parenthesised: they are spliced into `=== ...` comparisons, and `a ?? null === x` reads as `a ?? (null === x)`
+const roLink = (tabId) => `(document.querySelector('[data-agent-row="${tabId}"] [data-origin-link]')?.textContent.trim() ?? null)`;
+const roFrom = (tabId) => `(document.querySelector('[data-agent-row="${tabId}"] [data-origin-from]')?.textContent.trim() ?? null)`;
+// the row the selection fills (the row's `selected` is focusIdAtom's value, which no scenario can read directly)
+const roSelected = (tabId) => `(document.querySelector('[data-agent-row="${tabId}"]')?.className.includes("bg-surface-selected") ?? false)`;
+
+// a plain terminal in a tab of its own that reports as a Claude agent in `state`; the tab id is the agent id
+async function roStageAgent(h, ctx, name, state) {
+    if (ctx.workspaceId == null) {
+        const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+        const wslist = await h.rpc("workspacelist", null);
+        ctx.workspaceId = (wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0]).workspacedata.oid;
+    }
+    // tracked as soon as it exists, so a failure in the calls below still lets teardown close the tab
+    const tabId = await waveService(h, "workspace", "CreateTab", [ctx.workspaceId, name, false]);
+    ctx.tabIds.push(tabId);
+    const tab = await waveService(h, "object", "GetObject", [`tab:${tabId}`]);
+    const blockId = tab?.blockids?.[0];
+    if (!blockId) throw new Error(`the tab for ${name} has no block`);
+    // the shell starts in ~: nothing in the app tree should hold a temp dir
+    await h.rpc("setmeta", { oref: `block:${blockId}`, meta: { view: "term", controller: "shell", "cmd:cwd": "~" } });
+    await h.rpc("setmeta", { oref: `tab:${tabId}`, meta: { "session:project": RO_PROJECT } });
+    await h.rpc("eventpublish", {
+        event: "agent:status",
+        scopes: [`block:${blockId}`],
+        persist: 1,
+        data: { oref: `block:${blockId}`, state, agent: "claude", title: name, ts: Date.now() },
+    });
+    return tabId;
+}
+
+const runOriginScenario = {
+    name: "run-origin",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            cwd: mkdtempSync(join(tmpdir(), "verify-run-origin-")),
+            stamp: `runorigin${Date.now() % 100000}`,
+            tabIds: [],
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+        };
+        if (existsSync(TREE_RAIL_FIXTURE)) {
+            ctx.skip =
+                "a cockpit fixture roster is active, so the agents this scenario makes never reach the tree: run `npm run cockpit:fixtures -- --clear` and reload";
+            return ctx;
+        }
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            ctx.prevMax = (await h.rpc("getfullconfig", null))?.settings?.["runs:maxactive"] ?? null;
+            await h.rpc("setconfig", { "runs:maxactive": 1 });
+            ctx.tabId = await roStageAgent(h, ctx, RO_ORIGIN, "working");
+            const ch = await h.rpc("createchannel", { name: "verify-run-origin", projectpath: ctx.cwd });
+            ctx.channelId = ch.oid;
+            ctx.goal = `verify ${ctx.stamp}: the run the origin session started`;
+            const created = await h.rpc(
+                "createrun",
+                {
+                    channelid: ctx.channelId,
+                    workspaceid: ctx.workspaceId,
+                    goal: ctx.goal,
+                    runtime: "claude",
+                    mode: "orchestrator",
+                    deferstart: true,
+                    origintabid: ctx.tabId,
+                },
+                RO_RPC
+            );
+            ctx.runId = created.run.id;
+            // the run's session, idle: it gives the run its row on the tree, and leaves no agent at work for a click to focus
+            ctx.leadTabId = await roStageAgent(h, ctx, RO_LEAD, "idle");
+            await h.rpc("setmeta", { oref: `tab:${ctx.leadTabId}`, meta: { "jarvis:runoref": `run:${ctx.runId}` } });
+            const planPath = join(ctx.cwd, "queued.md");
+            writeFileSync(planPath, "# Origin queued plan\n\n### Task 1: Do nothing\n\nMake no change.\n");
+            const entry = await h.rpc(
+                "runqueueadd",
+                {
+                    data: {
+                        channelid: ctx.channelId,
+                        workspaceid: ctx.workspaceId,
+                        runtime: "claude",
+                        mode: "orchestrator",
+                        deferstart: true,
+                        planpath: planPath,
+                        origintabid: ctx.tabId,
+                    },
+                },
+                RO_RPC
+            );
+            ctx.entryId = entry.id;
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.skip) return [skipStep("run-origin", ctx.skip)];
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        rec(
+            "0. an origin session, a run it started (with its own session) and a plan it queued were made",
+            ctx.arrangeError == null,
+            ctx.arrangeError ?? { tabId: ctx.tabId, leadTabId: ctx.leadTabId, runId: ctx.runId, entryId: ctx.entryId }
+        );
+        if (ctx.arrangeError != null) return steps;
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
+        try {
+            // 1. the origin's row says where its two links stand, and the run's row says where it came from
+            await h.goto("agent");
+            const up = await polishWaitFor(
+                h,
+                `${roLink(ctx.tabId)} === "→ 2 runs" && ${roFrom(ctx.leadTabId)} === ${JSON.stringify(`from ${RO_ORIGIN}`)}`,
+                20000
+            );
+            await h.shot("cdp-shots/run-origin-1-two-links.png");
+            rec(
+                "1. the origin's row reads → 2 runs (the run and the queued plan), and the run's row reads from <the origin's name>",
+                up,
+                { link: await h.ev(roLink(ctx.tabId)), from: await h.ev(roFrom(ctx.leadTabId)) }
+            );
+
+            // 2. the plan leaves the queue, so one link is left, and it names the run
+            await h.rpc("runqueueremove", { id: ctx.entryId });
+            const want = `→ ${ctx.goal}`;
+            const one = await polishWaitFor(h, `${roLink(ctx.tabId)} === ${JSON.stringify(want)}`, 8000);
+            await h.shot("cdp-shots/run-origin-2-one-link.png");
+            rec("2. with the plan removed, the origin's line reads → and the run's title", one, {
+                link: await h.ev(roLink(ctx.tabId)),
+                want,
+            });
+
+            // 3. the run has no agent at work, so the router opens its sheet on Jarvis
+            await h.ev(`document.querySelector('[data-agent-row="${ctx.tabId}"] [data-origin-link]')?.click()`);
+            const sheet = await polishWaitFor(h, `document.querySelector('[data-run-sheet]') != null`, 15000);
+            const surface = await h.activeSurfaceLabel();
+            const sheetText = await h.ev(`document.querySelector('[data-run-sheet]')?.textContent ?? ""`);
+            await h.shot("cdp-shots/run-origin-3-sheet.png");
+            rec(
+                "3. a click on the → line opens the run's sheet: the surface is Jarvis and the sheet shows that run",
+                sheet && surface === SURFACE_LABEL.jarvis && sheetText.includes(ctx.stamp),
+                { sheet, surface, hasRun: sheetText.includes(ctx.stamp) }
+            );
+
+            // 4. a click on the run's from <name> focuses the origin. The run's own row is selected first, so the
+            // origin's selection is the click's and not what was there already
+            await h.goto("agent");
+            await polishWaitFor(h, `${roFrom(ctx.leadTabId)} != null`, 15000);
+            await h.ev(`document.querySelector('[data-agent-row="${ctx.leadTabId}"]')?.click()`);
+            await polishWaitFor(h, roSelected(ctx.leadTabId), 5000);
+            const before = await h.ev(roSelected(ctx.tabId));
+            await h.ev(`document.querySelector('[data-agent-row="${ctx.leadTabId}"] [data-origin-from]')?.click()`);
+            const focused = await polishWaitFor(h, roSelected(ctx.tabId), 8000);
+            await h.shot("cdp-shots/run-origin-4-focused.png");
+            rec(
+                "4. a click on the run's from <name> selects the origin session (it was not selected before)",
+                before === false && focused && (await h.ev(roSelected(ctx.leadTabId))) === false,
+                { before, focused }
+            );
+        } catch (e) {
+            rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    // best-effort, so one failed step does not strand the rest
+    async teardown(h, ctx) {
+        const failures = [];
+        const attempt = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                failures.push(`${what}: ${String(e?.message ?? e)}`);
+            }
+        };
+        if (ctx.skip) return;
+        // the entry goes first, so restoring the cap below cannot start it (a plan entry would spawn a plan reviewer)
+        await attempt("remove the entry", async () => {
+            for (const e of await rqList(h)) {
+                if (e.id === ctx.entryId) await h.rpc("runqueueremove", { id: e.id });
+            }
+        });
+        if (ctx.channelId) {
+            await attempt("cancel the run", async () => {
+                for (const run of await rqChannelRuns(h, ctx.channelId)) {
+                    if (run.status !== "cancelled") await h.rpc("cancelrun", { channelid: ctx.channelId, runid: run.id });
+                }
+            });
+        }
+        for (const tabId of ctx.tabIds ?? []) {
+            // cancelling the run may have closed its lead's tab already
+            await attempt("close a tab", () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, tabId, false]));
+        }
+        // the surface prunes a closed agent out of the saved grid as the roster catches up; the user's grid goes back only
+        // after that has been written, or the prune would write over it
+        await attempt("wait for the surface to prune the agents from the saved grid", () =>
+            polishWaitFor(
+                h,
+                `(() => {
+                    try {
+                        const ids = JSON.parse(localStorage.getItem(${JSON.stringify(GRID_KEY)}) ?? "null")?.ids ?? [];
+                        return !${JSON.stringify(ctx.tabIds ?? [])}.some((id) => ids.includes(id));
+                    } catch {
+                        return true;
+                    }
+                })()`,
+                8000
+            )
+        );
+        await attempt("restore the saved grid", () => h.ev(restoreStorageKey(GRID_KEY, ctx.prevGrid)));
+        if (ctx.channelId) await attempt("delete the channel", () => h.rpc("deletechannel", { channelid: ctx.channelId }));
+        if ("prevMax" in ctx) await attempt("restore runs:maxactive", () => h.rpc("setconfig", { "runs:maxactive": ctx.prevMax }));
+        await attempt("remove the temp dir", () => rmSync(ctx.cwd, { recursive: true, force: true }));
+        await attempt("go home", () => h.goto("cockpit"));
         if (failures.length > 0) throw new Error(failures.join("; "));
     },
 };
@@ -37540,4 +37824,5 @@ export const SCENARIOS = [
     toolsWorktreeGone,
     whatsNew,
     runQueueScenario,
+    runOriginScenario,
 ];

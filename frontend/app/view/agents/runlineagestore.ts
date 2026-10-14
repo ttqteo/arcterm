@@ -123,6 +123,7 @@ export function lineageAtomFor(agentsAtom: Atom<AgentVM[]>): Atom<Lineage> {
                 project: lastPathSegment(leadRun?.projectpath),
                 leadStarted: (leadRun?.phases ?? []).some((p) => (p.workerorefs ?? []).length > 0),
                 originId: leadRun?.origintabid || undefined,
+                createdTs: leadRun?.createdts,
                 status: leadRun?.status,
                 landPath: leadRun?.landpath,
                 land: leadRun?.land,

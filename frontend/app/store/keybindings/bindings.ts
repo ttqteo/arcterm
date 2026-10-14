@@ -46,6 +46,7 @@ import {
 import { toggleOpenFile } from "@/app/view/agents/reviewmarks";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { resolveActiveRunId } from "@/app/view/agents/runmodel";
+import { runQueueAtom } from "@/app/view/agents/runqueuestore";
 import { backgroundTasksByIdAtom, focusSubagentAtom } from "@/app/view/agents/subagentsstore";
 import { closeSwitcher, switcherKey, tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
 import { openToolPicker } from "@/app/view/agents/toolsstore";
@@ -940,7 +941,14 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         const unread = agent != null ? (globalStore.get(unreadAgentsAtom).get(agent.id) ?? 0) : 0;
         const bgRunning =
             agent != null ? runningBackgroundTasks(globalStore.get(backgroundTasksByIdAtom)[agent.id]).length : 0;
-        return agent != null && doneSuggestion(agent, unread, globalStore.get(model.lineageAtom).runs, bgRunning)
+        return agent != null &&
+            doneSuggestion(
+                agent,
+                unread,
+                globalStore.get(model.lineageAtom).runs,
+                bgRunning,
+                globalStore.get(runQueueAtom)
+            )
             ? agent
             : undefined;
     };
