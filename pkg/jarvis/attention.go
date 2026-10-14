@@ -21,6 +21,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
 	"github.com/wavetermdev/waveterm/pkg/effortstore"
+	"github.com/wavetermdev/waveterm/pkg/learn"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
@@ -46,6 +47,9 @@ const (
 	// a chunk whose due date has come, still open: it names no channel either, so it addresses the
 	// initiative through ORef and the chunk through ChunkLabel.
 	AttentionChunkDue = "chunk-due"
+	// a correction the user made in two sessions, proposed as a line for a skill or a Claude memory: it names
+	// the proposal through LearnID, which the card's Accept, Edit and Dismiss decide.
+	AttentionLearnProposal = "learn-proposal"
 )
 
 // mirrors orchestrate.TaskState_* and the two RadarReport/RadarFinding vocabularies, spelled here
@@ -90,6 +94,8 @@ type AttentionInput struct {
 	// against (DueLayout). Passed in, not read off the clock, so the builder stays pure.
 	Efforts []*waveobj.Effort
 	Today   string
+	// Learn are the pending learned-addition proposals, oldest first as learn.Store.Pending returns them.
+	Learn []learn.Proposal
 }
 
 // runForWorker finds the run whose phases claim this worker tab oref.
@@ -401,7 +407,8 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 	// breaks ties inside a kind. Key is the final tiebreak so map iteration cannot reorder equal items.
 	triage := radarTriageItems(in.Radar)
 	due := chunkDueItems(in.Efforts, in.Today)
-	for _, group := range [][]wshrpc.AttentionItem{gates, escalations, asks, triage, unverified, due} {
+	learned := learnItems(in.Learn)
+	for _, group := range [][]wshrpc.AttentionItem{gates, escalations, asks, triage, unverified, due, learned} {
 		g := group
 		sort.SliceStable(g, func(i, j int) bool {
 			if g[i].WaitingSince != g[j].WaitingSince {
@@ -411,7 +418,7 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 		})
 	}
 
-	out := make([]wshrpc.AttentionItem, 0, len(gates)+len(escalations)+len(asks)+len(triage)+len(unverified)+len(due))
+	out := make([]wshrpc.AttentionItem, 0, len(gates)+len(escalations)+len(asks)+len(triage)+len(unverified)+len(due)+len(learned))
 	out = append(out, gates...)
 	out = append(out, escalations...)
 	out = append(out, asks...)
@@ -422,7 +429,45 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 	out = append(out, unverified...)
 	// a due chunk is a date you set yourself, about work nothing is running yet
 	out = append(out, due...)
+	// a proposal is a suggestion: nothing is stopped or late if it waits
+	out = append(out, learned...)
 	return out
+}
+
+// learnItems are the pending proposals, one card each. The card's Why is the user's own words, so the evidence
+// is on the row and nothing is summarised.
+func learnItems(proposals []learn.Proposal) []wshrpc.AttentionItem {
+	var out []wshrpc.AttentionItem
+	for _, p := range proposals {
+		quotes := make([]string, 0, len(p.Quotes))
+		for _, q := range p.Quotes {
+			quotes = append(quotes, "“"+q.Quote+"”")
+		}
+		out = append(out, wshrpc.AttentionItem{
+			Kind:         AttentionLearnProposal,
+			Key:          "learn:" + p.ID,
+			LearnID:      p.ID,
+			Source:       learnSource(p.Target),
+			Text:         p.Text,
+			Action:       "Accept",
+			WaitingSince: p.Since,
+			Why:          strings.Join(quotes, " · "),
+		})
+	}
+	return out
+}
+
+// learnSource names a proposal's target for the card: the skill, or the project a memory belongs to.
+func learnSource(target string) string {
+	if name, ok := strings.CutPrefix(target, "skill:"); ok {
+		return "Skill · " + name
+	}
+	cwd := strings.TrimPrefix(target, "memory:")
+	cwd = strings.TrimRight(cwd, `/\`)
+	if i := strings.LastIndexAny(cwd, `/\`); i >= 0 {
+		cwd = cwd[i+1:]
+	}
+	return "Memory · " + cwd
 }
 
 // chunkDueItems are the open chunks whose due date has come, in initiatives still in play. A chunk leaves
@@ -851,6 +896,12 @@ func GatherAttentionFromLedger(ctx context.Context, chans []*waveobj.Channel, ru
 		log.Printf("jarvis attention: efforts unreadable, due rows omitted: %v", eerr)
 	} else {
 		in.Efforts = efforts
+	}
+	// and for proposals: a bad notes log must never empty Needs you
+	if proposals, lerr := learn.Default().Pending(); lerr != nil {
+		log.Printf("jarvis attention: learn proposals unreadable, learn rows omitted: %v", lerr)
+	} else {
+		in.Learn = proposals
 	}
 	in.Today = time.Now().Format(DueLayout)
 	return BuildAttention(in), nil

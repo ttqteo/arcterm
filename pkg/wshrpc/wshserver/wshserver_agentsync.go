@@ -91,6 +91,9 @@ func (ws *WshServer) AgentSyncSkillsCommand(ctx context.Context) (*wshrpc.Comman
 	out := make([]wshrpc.AgentSyncSkill, len(rows))
 	for i, r := range rows {
 		out[i] = wshrpc.AgentSyncSkill{Name: r.Name, Description: r.Description, States: r.States, Deltas: r.Deltas}
+		for _, a := range r.Additions {
+			out[i].Additions = append(out[i].Additions, learnAddition(a.Key, a.Text, a.Learned, a.Count))
+		}
 	}
 	cols := make([]wshrpc.AgentSyncSkillColumn, 0)
 	for _, c := range agentsync.SkillColumns(p) {

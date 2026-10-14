@@ -39,6 +39,7 @@ type WshRpcInterface interface {
 	DevServerCommands
 	AgentCommands
 	AgentSyncCommands
+	LearnCommands
 	ToolsCommands
 	SessionCommands
 	StorageCommands

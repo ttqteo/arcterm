@@ -93,6 +93,8 @@ type AgentSyncSkill struct {
 	States map[string]string `json:"states"`
 	// Deltas maps runtime -> the frontmatter keys and sidecar files it overrides.
 	Deltas map[string][]string `json:"deltas,omitempty"`
+	// Additions are the lines the user accepted into this skill; the vault's SKILL.md never holds them.
+	Additions []LearnAddition `json:"additions,omitempty"`
 }
 
 // AgentSyncSkillColumn is one column of the skills matrix: a harness with a fixed skills directory.
