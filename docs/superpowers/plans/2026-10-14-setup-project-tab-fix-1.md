@@ -18,7 +18,9 @@ no `Co-Authored-By` trailer; never `git push`. Never run prettier on `scripts/*.
 
 **Depends on:** none
 
-**Files:** Modify `scripts/cdp/scenarios.mjs` (`arrangeFixtureRun` and `teardownFixtureRun`, near line 13520).
+**Files:** `scripts/cdp/scenarios.mjs`
+
+Both helpers sit near line 13520.
 
 **Step 1: give `arrangeFixtureRun`'s `createrun` a 30 s deadline**
 
