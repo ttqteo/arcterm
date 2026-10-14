@@ -13,6 +13,7 @@ import (
 
 	"github.com/wavetermdev/waveterm/pkg/agentmsg"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
+	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wps"
@@ -471,5 +472,50 @@ func TestPublishEventDropsAnOvertakenStatus(t *testing.T) {
 	// far older than any hook can lag is a clock that stepped back, and status must not freeze on it
 	if got := publish(baseds.AgentState_Working, now-staleStatusWindowMs-1); got != baseds.AgentState_Working {
 		t.Fatalf("a report after a clock step was dropped: retained = %q", got)
+	}
+}
+
+// run dca34385: a tool hook that started after the lead's Stop reported working, and the engine held the
+// run-finished wake for 15 minutes, until the human's next turn ended
+func TestPublishEventDropsAToolReportAfterItsTurnEnded(t *testing.T) {
+	ctx := context.Background()
+	const block = "b0000000-0000-4000-8000-00000000057b"
+	oref := blockORef(block)
+	now := time.Now().UnixMilli()
+	publish := func(state, hook string, ts int64) string {
+		publishEvent(ctx, wps.WaveEvent{
+			Event:   wps.Event_AgentStatus,
+			Scopes:  []string{oref},
+			Persist: 1,
+			Data:    baseds.AgentStatusData{ORef: oref, State: state, Hook: hook, Agent: "claude", Ts: ts},
+		})
+		// what the wake adapter reads for the lead
+		return orchestrate.LatestAgentStatus(block, "").State
+	}
+	publish(baseds.AgentState_Idle, baseds.AgentHook_Stop, now)
+	if got := publish(baseds.AgentState_Working, baseds.AgentHook_PostToolUse, now+2500); got != baseds.AgentState_Idle {
+		t.Fatalf("a tool report after the turn's Stop reopened it: state = %q, want idle", got)
+	}
+	if got := publish(baseds.AgentState_Working, baseds.AgentHook_PreToolUse, now+2600); got != baseds.AgentState_Idle {
+		t.Fatalf("a tool report after the turn's Stop reopened it: state = %q, want idle", got)
+	}
+	// a prompt opens the next turn, and its tools report working again
+	if got := publish(baseds.AgentState_Working, baseds.AgentHook_UserPromptSubmit, now+3000); got != baseds.AgentState_Working {
+		t.Fatalf("state = %q after a prompt, want working", got)
+	}
+	// an auto-compaction mid-turn reads idle, and the turn's next tool takes it back to working
+	publish(baseds.AgentState_Idle, baseds.AgentHook_SessionStart, now+4000)
+	if got := publish(baseds.AgentState_Working, baseds.AgentHook_PostToolUse, now+5000); got != baseds.AgentState_Working {
+		t.Fatalf("a tool after a mid-turn compaction: state = %q, want working", got)
+	}
+	// a permission prompt is not the turn's end: the tool runs once it is granted
+	publish(baseds.AgentState_Waiting, baseds.AgentHook_Notification, now+6000)
+	if got := publish(baseds.AgentState_Working, baseds.AgentHook_PostToolUse, now+7000); got != baseds.AgentState_Working {
+		t.Fatalf("a tool after a permission prompt: state = %q, want working", got)
+	}
+	// an idle from a reporter that names no hook (the mod's turn end, a process exit) ends the turn too
+	publish(baseds.AgentState_Idle, "", now+8000)
+	if got := publish(baseds.AgentState_Working, baseds.AgentHook_PreToolUse, now+9000); got != baseds.AgentState_Idle {
+		t.Fatalf("a tool report after an unnamed idle: state = %q, want idle", got)
 	}
 }

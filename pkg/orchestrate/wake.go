@@ -55,6 +55,8 @@ type leadState struct {
 	TabId   string
 	Alive   bool
 	State   string
+	// Hook is the Claude Code hook behind State, for the held-wake log line
+	Hook string
 	// NoLead is a dag-holding run that has never had a lead worker, as opposed to one whose lead exited.
 	NoLead bool
 	// Starting is a lead whose process has not run yet: its controller is absent or still initializing.
@@ -132,6 +134,8 @@ type runWake struct {
 	// autoRelaunches counts the engine's own relaunches of an autonomous run's lead; autoRelaunching is one in flight.
 	autoRelaunches  int
 	autoRelaunching bool
+	// held is why a wake is held for a lead not at its prompt, as last logged; "" once the lead can take one.
+	held string
 }
 
 type waker struct {
@@ -366,9 +370,12 @@ func (w *waker) flushLocked(ctx context.Context, runId string, rw *runWake) {
 		w.leadDiedLocked(ctx, runId, rw, leadNotRunningNote)
 		return
 	}
-	if !atPrompt(st.State) || leadAsking(st.BlockId) {
+	asking := leadAsking(st.BlockId)
+	if !atPrompt(st.State) || asking {
+		rw.logHeld(runId, st, asking)
 		return
 	}
+	rw.held = ""
 	if rw.handoff {
 		// alone and first: a wake joined to it would be summarized away before the lead read it, so held
 		// lines wait for the idle report that ends the compaction
@@ -388,6 +395,21 @@ func (w *waker) flushLocked(ctx context.Context, runId string, rw *runWake) {
 		rw.told[askTold(p)] = true
 	}
 	appendRunEvent(ctx, rw.channelId, runId, waveobj.RunEventKindLeadWoken, nil, map[string]any{"text": text})
+}
+
+// logHeld says once what holds runId's wakes, again only when that changes: the state is in-memory only,
+// so this line is all waveapp.log keeps of why a wake waited.
+func (rw *runWake) logHeld(runId string, st leadState, asking bool) {
+	hook := st.Hook
+	if hook == "" {
+		hook = "no hook"
+	}
+	why := fmt.Sprintf("state %q from %s, asking %v", st.State, hook, asking)
+	if why == rw.held {
+		return
+	}
+	rw.held = why
+	log.Printf("wake: run %s holds its lead's wake: %s", runId, why)
 }
 
 // reviveLocked takes back a lead given up on: what it missed is its next wake, and the row tells the
@@ -710,7 +732,8 @@ func readLeadState(ctx context.Context, channelId, runId string) leadState {
 	rs := blockcontroller.GetBlockControllerRuntimeStatus(st.BlockId)
 	st.Starting = rs == nil || rs.ShellProcStatus == blockcontroller.Status_Init
 	st.Alive = blockRunning(st.BlockId)
-	st.State = latestAgentState(st.BlockId, tabId)
+	latest := LatestAgentStatus(st.BlockId, tabId)
+	st.State, st.Hook = latest.State, latest.Hook
 	return st
 }
 

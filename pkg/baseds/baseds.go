@@ -38,6 +38,16 @@ const (
 	AgentState_Idle   = "idle"
 )
 
+// Claude Code hook events, as AgentStatusData.Hook names the one behind a report.
+const (
+	AgentHook_UserPromptSubmit = "UserPromptSubmit"
+	AgentHook_PreToolUse       = "PreToolUse"
+	AgentHook_PostToolUse      = "PostToolUse"
+	AgentHook_Stop             = "Stop"
+	AgentHook_Notification     = "Notification"
+	AgentHook_SessionStart     = "SessionStart"
+)
+
 // AgentUsage is an optional usage snapshot carried on AgentStatusData, sourced from the Claude
 // Code statusLine JSON. Like the usage delta it rides a stateless (State-empty) Persist:0 event.
 // The rate-limit fields are pointers because they are populated only for Claude.ai Pro/Max sessions
@@ -71,6 +81,8 @@ type AgentStatusData struct {
 	TranscriptPath string      `json:"transcriptpath,omitempty"`
 	Ts             int64       `json:"ts"`
 	Usage          *AgentUsage `json:"usage,omitempty"`
+	// Hook is the Claude Code hook event behind a report (AgentHook_*), empty from any other reporter
+	Hook string `json:"hook,omitempty"`
 }
 
 // VolunteerData is the payload of Event_JarvisVolunteer: one thing Jarvis chose to say unprompted.

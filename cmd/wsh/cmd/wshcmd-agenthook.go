@@ -47,6 +47,7 @@ type ccHookEvent struct {
 	Source           string          `json:"source"`
 	NotificationType string          `json:"notification_type"`
 	PermissionMode   string          `json:"permission_mode"`
+	Trigger          string          `json:"trigger"`
 }
 
 // agentEmission describes what to publish for one hook event. State=="" means no
@@ -87,7 +88,12 @@ func planEmission(ev ccHookEvent) agentEmission {
 			return agentEmission{State: baseds.AgentState_Working, Detail: detailForTool(ev.ToolName, ev.ToolInput), AttachModelTitle: true}
 		}
 	case "PreCompact":
-		// a compaction is work the session cannot take typed input during, and it confirms a typed /compact
+		// a compaction is work the session cannot take typed input during, and it confirms a typed /compact.
+		// an auto one is inside a turn that already reads working, or a background precompute after the turn
+		// ended, which no Stop would close
+		if ev.Trigger == "auto" {
+			return agentEmission{}
+		}
 		return agentEmission{State: baseds.AgentState_Working}
 	case "SessionStart":
 		// the session is back at its prompt once the summary lands. an auto-compaction inside a turn reads
@@ -519,7 +525,9 @@ func xmlTagContent(s, tag string) string {
 }
 
 // unwrapSlashCommand turns Claude Code's transcript encoding of a slash-command turn
-//   <command-name>/foo</command-name> … <command-args>bar baz</command-args>
+//
+//	<command-name>/foo</command-name> … <command-args>bar baz</command-args>
+//
 // into the clean "/foo bar baz" a human would recognize. Returns "" when the prompt isn't a
 // slash-command blob, so callers fall through to plain head-text.
 func unwrapSlashCommand(prompt string) string {
@@ -701,6 +709,7 @@ func agentHookRun(cmd *cobra.Command, args []string) error {
 		Cwd:            ev.Cwd,
 		TranscriptPath: transcriptPath,
 		Ts:             startedTs,
+		Hook:           ev.HookEventName,
 	}
 	if em.AttachModelTitle && transcriptPath != "" {
 		if agentHookShadow != "" {

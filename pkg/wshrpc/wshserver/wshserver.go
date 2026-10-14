@@ -157,9 +157,36 @@ func staleAgentStatus(ev *wps.WaveEvent) bool {
 	return false
 }
 
+// outOfTurnStatus reports a tool hook's working that lands after its session's turn ended with no prompt
+// since: one that started after the Stop, which staleAgentStatus cannot order before it. Only a prompt opens
+// the next turn, and a working nothing will close again would hold every wake to that lead (run dca34385).
+// An idle from a mid-turn compaction's SessionStart does not end the turn: its next tool is still in it.
+func outOfTurnStatus(ev *wps.WaveEvent) bool {
+	var data baseds.AgentStatusData
+	if utilfn.ReUnmarshal(&data, ev.Data) != nil || data.State != baseds.AgentState_Working {
+		return false
+	}
+	if data.Hook != baseds.AgentHook_PreToolUse && data.Hook != baseds.AgentHook_PostToolUse {
+		return false
+	}
+	for _, scope := range ev.Scopes {
+		for _, prev := range wps.Broker.ReadEventHistory(wps.Event_AgentStatus, scope, 1) {
+			var last baseds.AgentStatusData
+			if utilfn.ReUnmarshal(&last, prev.Data) != nil {
+				continue
+			}
+			if last.State == baseds.AgentState_Idle && last.Hook != baseds.AgentHook_SessionStart {
+				log.Printf("agent status: dropped %s's working for %s, reported after its turn ended\n", data.Hook, data.ORef)
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // publishEvent is EventPublishCommand past its caller check, which a test cannot satisfy.
 func publishEvent(ctx context.Context, data wps.WaveEvent) {
-	if data.Event == wps.Event_AgentStatus && staleAgentStatus(&data) {
+	if data.Event == wps.Event_AgentStatus && (staleAgentStatus(&data) || outOfTurnStatus(&data)) {
 		return
 	}
 	if data.Event == wps.Event_AgentStatus {

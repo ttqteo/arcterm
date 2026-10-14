@@ -4,8 +4,11 @@
 package orchestrate
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -128,6 +131,40 @@ func TestWakeTreatsWaitingAsAtPrompt(t *testing.T) {
 	PostWake(context.Background(), wakeChannel, wakeRun, finishedLine)
 	if len(f.sends) != 1 {
 		t.Fatalf("a Claude lead idle past a minute reports waiting and must still be woken, got %q", f.sends)
+	}
+}
+
+// run dca34385: a lead read working after its turn ended held the run-finished wake for 15 minutes, and
+// waveapp.log said nothing of what the engine saw
+func TestHeldWakeLogsWhatHoldsItOnce(t *testing.T) {
+	f := newFakeLead(t)
+	ctx := context.Background()
+	var logged bytes.Buffer
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	f.state.State, f.state.Hook = baseds.AgentState_Working, baseds.AgentHook_PostToolUse
+	PostWake(ctx, wakeChannel, wakeRun, finishedLine)
+	tickWakes(ctx)
+	tickWakes(ctx)
+	if len(f.sends) != 0 {
+		t.Fatalf("a lead reading working is not at its prompt, got %q", f.sends)
+	}
+	if n := strings.Count(logged.String(), "holds its lead's wake"); n != 1 {
+		t.Fatalf("held-wake lines = %d, want 1:\n%s", n, logged.String())
+	}
+	if !strings.Contains(logged.String(), `state "working" from PostToolUse, asking false`) {
+		t.Fatalf("the line must name the state, the hook that reported it and the ask, got:\n%s", logged.String())
+	}
+	NoteLeadStatus(ctx, f.status(baseds.AgentState_Idle))
+	if len(f.sends) != 1 || f.sends[0] != finishedLine {
+		t.Fatalf("the held wake goes out at the idle, got %q", f.sends)
+	}
+	// a later hold is a new case, and is logged again
+	f.state.State, f.state.Hook = baseds.AgentState_Working, baseds.AgentHook_PreToolUse
+	NoteLeadStatus(ctx, f.status(baseds.AgentState_Working))
+	PostWake(ctx, wakeChannel, wakeRun, failedLine)
+	if n := strings.Count(logged.String(), "holds its lead's wake"); n != 2 {
+		t.Fatalf("held-wake lines = %d after a second hold, want 2:\n%s", n, logged.String())
 	}
 }
 
