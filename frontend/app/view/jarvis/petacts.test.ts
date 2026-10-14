@@ -191,6 +191,8 @@ describe("actsForAttention: a chunk that came due", () => {
             },
             { id: `${item.key}:open`, verb: "open", label: "Open", target: { kind: "oref", ref: "effort:e1" } },
         ]);
+        const onE1 = { id: "t7", name: "loom", task: "", state: "idle", effortId: "e1" } as AgentVM;
+        expect(actsForAttention(item, [onE1])[0].label).toBe("Go to agent");
     });
 });
 

@@ -433,7 +433,7 @@ const briefSurface = {
             detail: JSON.stringify(regions),
         });
 
-        // Waiting draws its first three rows under the summary line, and Show all N folds the rest in. The
+        // Waiting draws its first three rows, and Show all N folds the rest in. The
         // fold is module state, so it is normalized closed first, and N is read off the toggle rather than
         // hard-coded: the attention fixture is what makes it overflow.
         await h.ev(`document.querySelector('[data-briefing-fixture="attention"]')?.click()`);
@@ -457,7 +457,7 @@ const briefSurface = {
         })()`);
         const waitingN = seeded.n;
         steps.push({
-            step: "3. Waiting shows its first three rows under the summary while the other seeded regions stay visible",
+            step: "3. Waiting shows its first three rows while the other seeded regions stay visible",
             ok:
                 waitingN > 3 &&
                 seeded.toggle === true &&
@@ -635,7 +635,7 @@ const briefSurface = {
             };
         })()`);
         steps.push({
-            step: "9. a queue row names its initiative and why it is waiting, on one line",
+            step: "9. a queue row names its initiative and why it is waiting",
             ok:
                 named.rows >= 3 &&
                 named.oneAction === named.rows &&
@@ -644,6 +644,23 @@ const briefSurface = {
                 (named.first ?? "").includes("Scenario gate clearance \u00b7 Phase 3") &&
                 /2 of 4 tasks done/.test(named.first ?? ""),
             detail: JSON.stringify(named),
+        });
+
+        // a due chunk's Work on starts an agent linked to its initiative; while that agent is open the row's button
+        // says Go to agent. The attention fixture holds one due chunk on an initiative an agent is open on, one not.
+        await h.ev(`document.querySelector('[data-jarvis-brief-attention-summary][aria-expanded="false"]')?.click()`);
+        await h.ev("new Promise((r) => setTimeout(r, 300))");
+        const due = await h.ev(`(() => {
+            const act = (title) => {
+                const row = [...document.querySelectorAll('[data-jarvis-brief-row="queue"]')].find((r) => r.innerText.includes(title));
+                return row ? (row.querySelector('[data-jarvis-queue-act]')?.textContent ?? '').trim() : null;
+            };
+            return { linked: act("slice 2"), unlinked: act("Phase 7") };
+        })()`);
+        steps.push({
+            step: "10. a due chunk reads Go to agent while an agent is open on its initiative, else Work on",
+            ok: due.linked === "Go to agent" && due.unlinked === "Work on",
+            detail: JSON.stringify(due),
         });
         await h.shot("cdp-shots/brief-queue-context.png");
 

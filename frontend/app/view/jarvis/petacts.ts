@@ -12,6 +12,7 @@
 // attentionact.ts and planreviewtarget.ts are pure too, and petvoice.ts is type-only, so the purity above holds
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { attentionAct } from "./attentionact";
+import { openAgentFor } from "./initiativework";
 import type { PetEventSource } from "./petvoice";
 import { planReviewORef } from "./planreviewtarget";
 
@@ -66,7 +67,14 @@ export function actsForAttention(item: AttentionItem, agents: ReadonlyArray<Agen
             {
                 id: `${item.key}:work`,
                 verb: "work-on",
-                label: "Work on",
+                label: attentionAct({
+                    wireKind: item.kind,
+                    channelId: "",
+                    runId: null,
+                    taskId: "",
+                    retry: false,
+                    agentOpen: openAgentFor(item.oref.replace(/^effort:/, ""), agents) != null,
+                }).label,
                 effortORef: item.oref,
                 chunk: item.chunklabel ?? item.text,
             },

@@ -249,11 +249,54 @@ const attentionItems: AttentionItem[] = [
         waitingsince: NOW - 3 * 60 * 60 * 1000,
         why: "Not verified: brief-layout needs CDP. Once read, accept it with `wsh runs ack r-briefing-3`.",
     },
+    // two chunks that came due: one on an initiative an agent is open on (attentionAgents), whose Work on reads
+    // Go to agent, and one on an initiative nobody is on
+    {
+        kind: "chunk-due",
+        key: "chunk-due:reflux:slice 2:2026-10-13",
+        source: "Reflux state-layer migration",
+        text: "slice 2",
+        action: "Open",
+        phaseidx: 0,
+        waitingsince: NOW - DAY,
+        oref: "effort:reflux",
+        effortoid: "reflux",
+        chunklabel: "slice 2",
+        why: "Due 2026-10-13.",
+    },
+    {
+        kind: "chunk-due",
+        key: "chunk-due:scenario-gate:Phase 7:2026-10-13",
+        source: "Scenario gate clearance",
+        text: "Phase 7",
+        action: "Open",
+        phaseidx: 0,
+        waitingsince: NOW - DAY,
+        oref: "effort:scenario-gate",
+        effortoid: "scenario-gate",
+        chunklabel: "Phase 7",
+        why: "Due 2026-10-13.",
+    },
+];
+
+// the attention fixture's roster adds the agent Work on started on the reflux initiative
+const attentionAgents: AgentVM[] = [
+    ...agents,
+    {
+        id: "tab-reflux",
+        name: "Reflux state-layer migration",
+        task: "slice 2",
+        state: "idle",
+        agent: "claude",
+        project: "waveterm",
+        effortId: "reflux",
+        idleSince: NOW - 20 * 60_000,
+    },
 ];
 
 export const BRIEFING_FIXTURES: Record<BriefingFixtureName, BriefingFixture> = {
     normal: { load: loaded(normalState), agents, attention: [] },
-    attention: { load: loaded(attentionState), agents, attention: attentionItems },
+    attention: { load: loaded(attentionState), agents: attentionAgents, attention: attentionItems },
     // no roster agent either: the Runs region draws its empty box only when nothing is running
     empty: { load: loaded(emptyState), agents: [], attention: [] },
     partial: { load: loaded(partialState), agents, attention: [] },

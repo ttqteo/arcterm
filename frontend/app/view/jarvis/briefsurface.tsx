@@ -77,14 +77,13 @@ import {
     EFFORT_CAP,
     groupDelta,
     IDEA_CAP,
+    oldestWaitingTs,
     projectBriefing,
     queueAction,
     SEVEN_DAYS_MS,
     SHIPPED_CAP,
-    summarizeAttentionQueue,
     WAITING_CAP,
     type QueueRow,
-    type QueueSummary,
 } from "./briefingmodel";
 import {
     ackBriefingVisit,
@@ -442,20 +441,6 @@ function MoreControl({ n, expanded, onToggle }: { n: number; expanded: boolean; 
     );
 }
 
-// The first line of the Waiting box: what is waiting, in one sentence. It is a label, not a control; the rows
-// under it carry the actions, and Show all N folds the rest in.
-function QueueSummaryView({ summary, error }: { summary: QueueSummary; error: boolean }) {
-    return (
-        <div className="mb-0.5 flex w-full items-center gap-3 border-b border-border px-2.5 pb-2 pt-[7px]">
-            <span className={cn("w-[3px] flex-none self-stretch rounded-[2px]", error ? "bg-error" : "bg-asking")} />
-            <span className="min-w-0">
-                <span className="block truncate text-[13px] font-semibold text-ink-hi">{summary.title}</span>
-                <span className="mt-0.5 block truncate text-[10.5px] tabular-nums text-ink-mid">{summary.detail}</span>
-            </span>
-        </div>
-    );
-}
-
 // the key the fresh and entrance sets are built with: a line's id minus its region prefix
 const keyOf = (line: BriefLine) => line.id.slice(line.id.indexOf(":") + 1);
 
@@ -783,10 +768,16 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     // A plan to review opens the agent that proposed it while one is open (planreviewtarget.ts), so the queue reads
     // the roster. The roster ticks far more often than the queue changes, so the memo is keyed on where each plan
     // opens, not on the roster: a tick that moves no plan's target recomputes nothing and the j/k controller below
-    // is not registered again.
-    const planTargets = attention
-        .filter((a) => a.kind === "plan-review")
-        .map((a) => planReviewORef(a, agents))
+    // is not registered again. A due chunk's button reads Go to agent while an agent is open on its initiative, so
+    // that joins the key too.
+    const rosterKey = attention
+        .map((a) =>
+            a.kind === "plan-review"
+                ? planReviewORef(a, agents)
+                : a.kind === "chunk-due" && a.effortoid && openAgentFor(a.effortoid, agents) != null
+                  ? "go"
+                  : ""
+        )
         .join("|");
     const queue = useMemo(
         () =>
@@ -798,7 +789,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                       roster: agents,
                   })
                 : [],
-        [model_, attention, planTargets]
+        [model_, attention, rosterKey]
     );
     // the full projection, not the window: a blocked chunk on the seventh initiative is still waiting on
     // you, so the queue reads every effort even when the Initiatives region is only showing six.
@@ -816,7 +807,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     const ideasOpen = expanded.ideas === true;
     const sessionsOpen = expanded.sessions === true;
     const behindOpen = expanded.behind === true;
-    const queueSummary = useMemo(() => summarizeAttentionQueue(queue, Date.now()), [queue]);
+    const oldestTs = useMemo(() => oldestWaitingTs(queue), [queue]);
 
     const effortGroups = useMemo(() => splitIdeas(efforts), [efforts]);
     // ordered before the cap, so the eight shown are the ones that need the next hour; nested after the order, so a
@@ -2101,8 +2092,8 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                             empty={queue.length === 0}
                                             gap="gap-[9px]"
                                             meta={
-                                                queueSummary?.oldestTs != null
-                                                    ? `gates first · oldest ${formatAge(Date.now() - queueSummary.oldestTs)}`
+                                                oldestTs != null
+                                                    ? `gates first · oldest ${formatAge(Date.now() - oldestTs)}`
                                                     : "gates first"
                                             }
                                             only={only === "waiting"}
@@ -2120,16 +2111,13 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                 ) : undefined
                                             }
                                         >
-                                            {queueSummary != null ? (
-                                                // the summary line, then the first three rows, in one box
+                                            {queue.length > 0 ? (
+                                                // the first three rows in one box; the region's head already says how
+                                                // many wait and for how long, so the box repeats neither
                                                 <div
                                                     id="jarvis-attention-details"
                                                     className="flex flex-col rounded-[10px] border border-edge-mid bg-surface p-1"
                                                 >
-                                                    <QueueSummaryView
-                                                        summary={queueSummary}
-                                                        error={queue.some((q) => q.tone === "error")}
-                                                    />
                                                     {lines.waiting.length === 0 ? <NoMatch /> : null}
                                                     <MotionConfig reducedMotion="user">
                                                         <AnimatePresence initial={false}>

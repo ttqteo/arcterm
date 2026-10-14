@@ -71,6 +71,29 @@ describe("queueLine", () => {
         const line = queueLine({ ...q, nav: null, ts: null, tone: "error" }, NOW);
         expect([line.target, line.age, line.kindTone]).toEqual([null, "", "error"]);
     });
+
+    // amber only where an agent or a run waits on your answer, so the column sorts the rows at a glance
+    it("tones the kind by who is held up: amber for an answer, red for stuck, grey for a reminder", () => {
+        const tone = (wireKind: string, over: Partial<QueueRow> = {}) =>
+            queueLine({ ...q, wireKind, ...over }, NOW).kindTone;
+        expect(["dag-gate", "ask", "escalation", "plan-review"].map((k) => tone(k))).toEqual([
+            "asking",
+            "asking",
+            "asking",
+            "asking",
+        ]);
+        expect(["chunk-due", "radar-triage", "run-unverified"].map((k) => tone(k))).toEqual([
+            "muted",
+            "muted",
+            "muted",
+        ]);
+        expect([
+            tone("dag-blocked", { tone: "error" }),
+            tone("chunk-blocked"),
+            tone("blocker"),
+            tone("run-land-held"),
+        ]).toEqual(["error", "error", "error", "error"]);
+    });
 });
 
 describe("initiativeLine", () => {

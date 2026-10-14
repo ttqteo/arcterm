@@ -47,7 +47,7 @@ const STATE_RANK: Record<AgentVM["state"], number> = { asking: 0, working: 1, id
 
 // A run's agents answer to their run, and a terminal is not an agent session: neither is "the session on
 // this initiative". Among the rest, the one that needs you, then the busy one, then the most recently idle.
-export function openAgentFor(effortOid: string, agents: AgentVM[]): AgentVM | undefined {
+export function openAgentFor(effortOid: string, agents: ReadonlyArray<AgentVM>): AgentVM | undefined {
     return agents
         .filter((a) => a.effortId === effortOid && a.runId == null && a.kind !== "terminal")
         .sort((a, b) => STATE_RANK[a.state] - STATE_RANK[b.state] || (b.idleSince ?? 0) - (a.idleSince ?? 0))[0];

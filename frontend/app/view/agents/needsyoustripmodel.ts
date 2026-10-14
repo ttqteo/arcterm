@@ -8,6 +8,7 @@
 
 import { attentionAct, attentionSecondAct, type AttentionAct } from "@/app/view/jarvis/attentionact";
 import type { AttentionRunRow } from "@/app/view/jarvis/attentionrun";
+import { openAgentFor } from "@/app/view/jarvis/initiativework";
 import { planReviewAgent } from "@/app/view/jarvis/planreviewtarget";
 import { formatAge, type AgentVM } from "./agentsviewmodel";
 import { normProjectPath } from "./channelderive";
@@ -126,6 +127,7 @@ export function buildNeedsYouRows(input: {
         if (learnId == null && input.filter !== "all" && input.channelProject.get(channelId) !== input.filter) {
             continue;
         }
+        const effortId = a.kind === "chunk-due" || a.kind === "plan-review" ? idOf(a.oref, "effort") : "";
         const run: AttentionRunRow = {
             wireKind: a.kind,
             channelId,
@@ -133,13 +135,16 @@ export function buildNeedsYouRows(input: {
             taskId: a.taskid ?? "",
             retry: a.retry === true,
             queueId: a.queueid,
+            // a due chunk's Work on goes to the agent already open on its initiative, and says so
+            agentOpen:
+                (a.kind === "chunk-due" && effortId !== "" && openAgentFor(effortId, input.roster) != null) ||
+                undefined,
             source: a.source,
             title: a.text,
         };
         // a plan to review opens the agent that proposed it while one is open, else its initiative
         const agent =
             escalationAgent(a, input.channelMessages[channelId], input.roster) ?? planReviewAgent(a, input.roster);
-        const effortId = a.kind === "chunk-due" || a.kind === "plan-review" ? idOf(a.oref, "effort") : "";
         rows.push({
             key: a.key,
             kindLabel: KIND_LABEL[a.kind],

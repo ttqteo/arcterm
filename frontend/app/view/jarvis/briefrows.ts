@@ -105,8 +105,20 @@ const age = (ts: number, now: number) => formatAge(now - ts);
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const joined = (parts: (string | undefined)[]) => parts.filter((p) => p != null && p !== "").join(" · ");
 
+// The kind chip's colour says who is held up: amber where an agent or a run waits on your answer, grey for a
+// reminder or a pile to sort, red for anything stuck. One amber for every row made the column say nothing.
+const ANSWER_KINDS = new Set(["dag-gate", "ask", "escalation", "plan-review"]);
+const REMINDER_KINDS = new Set(["chunk-due", "radar-triage", "run-unverified", "learn-proposal"]);
+
+function queueTone(q: QueueRow): LineTone {
+    if (q.tone === "error") {
+        return "error";
+    }
+    return ANSWER_KINDS.has(q.wireKind) ? "asking" : REMINDER_KINDS.has(q.wireKind) ? "muted" : "error";
+}
+
 export function queueLine(q: QueueRow, now: number): BriefLine {
-    const tone: LineTone = q.tone === "error" ? "error" : "asking";
+    const tone = queueTone(q);
     const target = queueOpenTarget(q.nav);
     return {
         id: "waiting:" + q.key,

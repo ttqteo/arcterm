@@ -292,6 +292,15 @@ describe("buildNeedsYouRows: a chunk that came due", () => {
         expect(row.kindLabel).toBe("Due");
         expect(row.open).toEqual({ kind: "effort", effortId: "e1" });
         expect(row.act).toEqual({ label: "Work on", kind: "work-on" });
+        // the agent Work on started is linked to the initiative: the same button now goes to it
+        const [open] = buildNeedsYouRows({
+            attention: [due],
+            filter: "all",
+            channelProject: new Map(),
+            channelMessages: {},
+            roster: [agent({ effortId: "e1", state: "idle" })],
+        });
+        expect(open.act).toEqual({ label: "Go to agent", kind: "work-on" });
     });
 });
 

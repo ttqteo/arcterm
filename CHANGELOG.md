@@ -38,12 +38,18 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   name. <!-- try: go:canvases -->
 - **What's new** is livelier: a release's highlights show a picture of the feature, every note leads with a colored
   icon for what it is about, and your Jarvis pet tells the news in the corner.
+- **Waiting on you is easier to read**: each row in Jarvis puts the title over a second line saying why it waits, where
+  it is from and how long; the kind chip is amber only where an agent or a run waits on your answer (red when stuck,
+  grey for a reminder); and the box no longer repeats the count its heading shows. <!-- try: go:jarvis -->
 
 ### Fixed
 
 - **Heavy jobs no longer pile up on a Mac short of memory**: under yellow memory pressure the Jobs queue runs one
   heavy command at a time, where it used to let in another every minute (three typechecks on an 8 GB Mac swapped
   for a quarter of an hour), and while one is still starting up the next joins it only when the free RAM fits both.
+- **Work on a due chunk turns into Go to agent** once the agent it started is open, on the Brief, the Needs you strip
+  and Sprout's peek, so the row takes you back to that agent. An unverified run in Waiting on you no longer reads
+  "blocked".
 
 ## 0.15.12 — 2026-10-14
 

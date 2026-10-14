@@ -20,6 +20,14 @@ const PULSE = "pulse-dot-slow";
 // a sub-initiative's row is indented this many px per level under the one it is part of
 const NEST_INDENT = 20;
 
+// the kind chip's fill for the tone queueLine gives it (briefrows.ts queueTone)
+const KIND_CHIP: Partial<Record<BriefLine["kindTone"], string>> = {
+    asking: "bg-askingbg text-asking",
+    error: "bg-error/12 text-error",
+};
+
+// Two lines: the title, which may wrap once, over why it waits, where from and how long. The one-line row cut the
+// title short and threw its source and age to the far edge of a wide Brief.
 export function WaitingRow({
     line,
     focused,
@@ -33,6 +41,8 @@ export function WaitingRow({
     onOpen?: (e: React.MouseEvent) => void;
     onAct: () => void;
 }) {
+    const sub = [line.why.replace(/\.$/, ""), line.meta].filter((p) => p !== "").join(" · ");
+    const go = act.label === "Go to agent";
     return (
         <div
             data-jarvis-brief-row="queue"
@@ -40,7 +50,7 @@ export function WaitingRow({
             {...cursorAttrs(focused)}
             onClick={onOpen}
             className={cn(
-                "flex items-center gap-[13px] py-1.5 hover:bg-surface-hover",
+                "flex items-center gap-3 py-2 hover:bg-surface-hover",
                 ROW_BORDER,
                 onOpen != null && "cursor-pointer",
                 focused && CURSOR_RING
@@ -48,40 +58,39 @@ export function WaitingRow({
         >
             <span
                 className={cn(
-                    "w-[92px] flex-none truncate text-[10.5px] font-semibold tracking-[.02em]",
-                    TONE_TEXT[line.kindTone]
+                    "mt-px w-[68px] flex-none self-start truncate rounded-[5px] px-1.5 py-px text-center text-[10px] font-semibold tracking-[.02em]",
+                    KIND_CHIP[line.kindTone] ?? "bg-pill text-ink-mid"
                 )}
             >
                 {line.kind}
             </span>
-            <span
-                title={line.why ? `${line.title} — ${line.why}` : line.title}
-                className="min-w-0 flex-1 truncate text-[13px] text-ink-hi"
-            >
-                {line.title}
-                {line.why ? <span className="text-ink-mid"> — {line.why}</span> : null}
-            </span>
-            <span className="w-[200px] flex-none truncate text-right text-[11px] tabular-nums text-ink-mid">
-                {line.meta}
-            </span>
-            <span
-                className={cn(
-                    "w-10 flex-none text-right text-[11px] font-semibold tabular-nums",
-                    TONE_TEXT[line.kindTone]
-                )}
-            >
-                {line.age}
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span title={line.title} className="line-clamp-2 break-words text-[13px] font-medium text-ink-hi">
+                    {line.title}
+                </span>
+                <span className="flex min-w-0 gap-1 text-[11px] tabular-nums text-ink-mid">
+                    <span title={sub} className="min-w-0 truncate">
+                        {sub}
+                    </span>
+                    {line.age !== "" ? (
+                        <span className="flex-none whitespace-nowrap">
+                            {sub !== "" ? "· " : ""}
+                            {line.age}
+                        </span>
+                    ) : null}
+                </span>
             </span>
             <button
                 type="button"
                 data-jarvis-queue-act={act.kind}
+                title={go ? "Go to the agent open on this initiative" : undefined}
                 onClick={(e) => {
                     e.stopPropagation();
                     onAct();
                 }}
                 className={cn(
-                    "w-[66px] flex-none cursor-pointer rounded-[6px] border py-[3px] text-[10.5px] font-semibold hover:border-edge-strong hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                    act.label === "Approve"
+                    "min-w-[66px] flex-none cursor-pointer whitespace-nowrap rounded-[6px] border px-2.5 py-[3px] text-[10.5px] font-semibold hover:border-edge-strong hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                    act.label === "Approve" || go
                         ? "border-success/35 bg-success/12 text-success"
                         : "border-edge-mid text-secondary"
                 )}

@@ -56,6 +56,20 @@ describe("attentionAct: a chunk that came due", () => {
             kind: "work-on",
         });
     });
+
+    // Work on links the agent it starts to the initiative, so the row says where the button now goes
+    it("says Go to agent once an agent is open on its initiative", () => {
+        expect(
+            attentionAct({
+                wireKind: "chunk-due",
+                channelId: "",
+                runId: null,
+                taskId: "",
+                retry: false,
+                agentOpen: true,
+            })
+        ).toEqual({ label: "Go to agent", kind: "work-on" });
+    });
 });
 
 describe("attentionAct: a plan to review", () => {

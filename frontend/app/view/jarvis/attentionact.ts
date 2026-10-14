@@ -12,10 +12,11 @@ export interface AttentionActInput {
     taskId: string;
     retry: boolean; // the blocked dag's task failed and a retry can rerun it (attention.go blockedTask)
     queueId?: string; // the queue entry a run-queue-blocked item is about (AttentionItem.queueid)
+    agentOpen?: boolean; // an agent is open on a due chunk's initiative (initiativework.ts openAgentFor)
 }
 
 export type AttentionAct = {
-    label: "Approve" | "Retry" | "Accept" | "Land again" | "Work on" | "Start now" | "Remove" | "Open";
+    label: "Approve" | "Retry" | "Accept" | "Land again" | "Work on" | "Go to agent" | "Start now" | "Remove" | "Open";
     kind: "approve-dag" | "retry-dag" | "ack-run" | "land-run" | "work-on" | "start-queued" | "remove-queued" | "open";
 };
 
@@ -37,9 +38,10 @@ export function attentionAct(x: AttentionActInput): AttentionAct {
         return { label: "Land again", kind: "land-run" };
     }
     // a chunk that came due: the row itself opens the initiative, so the button starts the work the chunk's
-    // notes describe (initiativeworkaction.ts workOnDueChunk); it needs the cockpit, so callers run it
+    // notes describe (initiativeworkaction.ts workOnDueChunk); it needs the cockpit, so callers run it. Once an
+    // agent is open on the initiative the same act goes to it, so the label says so
     if (x.wireKind === "chunk-due") {
-        return { label: "Work on", kind: "work-on" };
+        return { label: x.agentOpen ? "Go to agent" : "Work on", kind: "work-on" };
     }
     // a plan to review (plan-review) is decided on the agent's rail or the initiative's card, not by a wire act:
     // it opens, where planreviewtarget.ts says

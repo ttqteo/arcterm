@@ -5,9 +5,10 @@
 // ordering, exact worker suppression, window filtering, wording and navigation normalization happens
 // here; React components do not reinterpret wire kinds inline.
 
-import { formatAge, type AgentVM } from "@/app/view/agents/agentsviewmodel";
+import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { attentionAct, type AttentionAct } from "./attentionact";
 import { buildEffortCard, type EffortCardModel } from "./effortmodel";
+import { openAgentFor } from "./initiativework";
 import { planReviewORef } from "./planreviewtarget";
 
 export const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -174,6 +175,8 @@ export interface QueueRow {
     retry: boolean;
     // the queue entry a run-queue-blocked item is about, for its Start now (attentionact.ts)
     queueId?: string;
+    // an agent is open on a due chunk's initiative, so its Work on reads Go to agent (attentionact.ts)
+    agentOpen?: boolean;
 }
 
 // dag-gate/dag-blocked are absent from the rail's map and fell through to the raw wire kind, which
@@ -276,6 +279,8 @@ export function buildAttentionQueue(input: {
             taskId: a.taskid ?? "",
             retry: a.retry === true,
             queueId: a.queueid,
+            // Work on links the agent it starts to the initiative; while that agent is open the button goes to it
+            agentOpen: dueORef != null && !!a.effortoid && openAgentFor(a.effortoid, input.roster ?? []) != null,
         };
     });
     // a blocked chunk is attention the server's attention leg never sees; it has no waiting-since to
@@ -340,14 +345,11 @@ export function buildAttentionQueue(input: {
     return rows;
 }
 
-export interface QueueSummary {
-    title: string;
-    detail: string;
-    oldestTs: number | null;
-}
-
-// the design's four kind words (design L1010-1013); every wire kind reads as one of them
-export function queueKindLabel(row: QueueRow): "gate" | "ask" | "failed" | "blocked" | "triage" | "due" | "plan" {
+// the kind chip's word: the design's four (design L1010-1013), then one for each wire kind that was falling through
+// to "blocked"
+export function queueKindLabel(
+    row: QueueRow
+): "gate" | "ask" | "failed" | "blocked" | "triage" | "due" | "plan" | "unverified" | "held" | "not started" | "rule" {
     switch (row.wireKind) {
         case "dag-gate":
             return "gate";
@@ -362,6 +364,14 @@ export function queueKindLabel(row: QueueRow): "gate" | "ask" | "failed" | "bloc
             return "due";
         case "plan-review":
             return "plan";
+        case "run-unverified":
+            return "unverified";
+        case "run-land-held":
+            return "held";
+        case "run-queue-blocked":
+            return "not started";
+        case "learn-proposal":
+            return "rule";
         default:
             return "blocked";
     }
@@ -381,21 +391,9 @@ export function ackableRuns(rows: QueueRow[]): { channelId: string; runId: strin
         .map((r) => ({ channelId: r.channelId, runId: r.runId! }));
 }
 
-export function summarizeAttentionQueue(rows: QueueRow[], now: number): QueueSummary | null {
-    if (rows.length === 0) {
-        return null;
-    }
-    const oldestTs = rows.reduce<number | null>(
-        (o, r) => (r.ts == null ? o : o == null ? r.ts : Math.min(o, r.ts)),
-        null
-    );
-    const n = rows.length;
-    const kinds = rows.map(queueKindLabel).join(" · ");
-    return {
-        title: `${n} ${n === 1 ? "thing is" : "things are"} waiting on you`,
-        detail: oldestTs != null ? `${kinds} · oldest ${formatAge(now - oldestTs)}` : kinds,
-        oldestTs,
-    };
+// the Waiting head's "oldest 23h": the longest anything has waited, or null when no row knows its wait
+export function oldestWaitingTs(rows: QueueRow[]): number | null {
+    return rows.reduce<number | null>((o, r) => (r.ts == null ? o : o == null ? r.ts : Math.min(o, r.ts)), null);
 }
 
 // needing-eyes first (blocked run / blocker / asking agent), recency within tier, identity last.

@@ -13,12 +13,12 @@ import {
     EFFORT_CAP,
     groupDelta,
     mergeActiveWork,
+    oldestWaitingTs,
     projectBriefing,
     queueAction,
     queueKindLabel,
     queueOpenTarget,
     SHIPPED_CAP,
-    summarizeAttentionQueue,
     WAITING_CAP,
     type AgentRow,
     type BlockerRow,
@@ -671,41 +671,19 @@ describe("buildAttentionQueue", () => {
     });
 });
 
-describe("summarizeAttentionQueue", () => {
-    it("summarises multiple rows by kind word and the oldest wait", () => {
-        const queue = buildAttentionQueue({
-            attention: [
-                attentionItem({ kind: "radar-triage", key: "radar:one", waitingsince: T0 - HOUR }),
-                attentionItem({ kind: "radar-triage", key: "radar:two", waitingsince: T0 - DAY }),
-            ],
-            efforts: [],
-        });
-        expect(summarizeAttentionQueue(queue, T0)).toEqual({
-            title: "2 things are waiting on you",
-            detail: "triage · triage · oldest 1d",
-            oldestTs: T0 - DAY,
-        });
-    });
-
-    it("ignores rows without an age, and drops the oldest when none has one", () => {
+describe("oldestWaitingTs", () => {
+    it("is the longest wait, ignoring rows that do not know theirs", () => {
         const queue = buildAttentionQueue({
             attention: [
                 attentionItem({ kind: "dag-gate", key: "g1", waitingsince: 0 }),
                 attentionItem({ kind: "ask", key: "a1", waitingsince: T0 - HOUR }),
-                attentionItem({ kind: "ask", key: "a2", waitingsince: T0 - 2 * HOUR }),
+                attentionItem({ kind: "radar-triage", key: "radar:two", waitingsince: T0 - DAY }),
             ],
             efforts: [],
         });
-        expect(summarizeAttentionQueue(queue, T0)).toEqual({
-            title: "3 things are waiting on you",
-            detail: "gate · ask · ask · oldest 2h",
-            oldestTs: T0 - 2 * HOUR,
-        });
-        expect(summarizeAttentionQueue(queue.slice(0, 1), T0)?.detail).toBe("gate");
-    });
-
-    it("returns null for an empty queue", () => {
-        expect(summarizeAttentionQueue([], T0)).toBeNull();
+        expect(oldestWaitingTs(queue)).toBe(T0 - DAY);
+        expect(oldestWaitingTs(queue.slice(0, 1))).toBeNull();
+        expect(oldestWaitingTs([])).toBeNull();
     });
 });
 
@@ -790,21 +768,13 @@ describe("design queue wording", () => {
             retry: false,
             ...over,
         }) as QueueRow;
-    it("summarises as the design does", () => {
-        const now = 10 * 3_600_000;
-        const s = summarizeAttentionQueue(
-            [
-                q({ wireKind: "dag-gate" }),
-                q({ wireKind: "ask", ts: now - 2 * 3_600_000 }),
-                q({ wireKind: "dag-blocked", retry: true }),
-            ],
-            now
-        )!;
-        expect(s.title).toBe("3 things are waiting on you");
-        expect(s.detail).toBe("gate · ask · failed · oldest 2h");
-    });
-    it("one item is singular", () => {
-        expect(summarizeAttentionQueue([q({})], 0)!.title).toBe("1 thing is waiting on you");
+    // a kind with no word of its own used to read "blocked", so an unverified run sat beside a stuck task as its twin
+    it("gives every wire kind its own word", () => {
+        expect(
+            ["run-unverified", "run-land-held", "run-queue-blocked", "learn-proposal"].map((wireKind) =>
+                queueKindLabel(q({ wireKind }))
+            )
+        ).toEqual(["unverified", "held", "not started", "rule"]);
     });
     it("maps each wire kind to its in-place action", () => {
         expect(queueAction(q({ wireKind: "dag-gate", taskId: "t-3" }))).toEqual({
@@ -897,6 +867,20 @@ describe("buildAttentionQueue: a chunk that came due", () => {
         expect(queueKindLabel(row)).toBe("due");
         expect(queueAction(row)).toEqual({ label: "Work on", kind: "work-on" });
         expect(queueOpenTarget(row.nav)).toEqual({ kind: "oref", oref: "effort:e1" });
+    });
+    it("says Go to agent while an agent is open on its initiative, and only that initiative", () => {
+        const on = buildAttentionQueue({
+            attention: [due],
+            efforts: [],
+            roster: [agent({ id: "t7", effortId: "e1" })],
+        });
+        expect(queueAction(on[0])).toEqual({ label: "Go to agent", kind: "work-on" });
+        const off = buildAttentionQueue({
+            attention: [due],
+            efforts: [],
+            roster: [agent({ id: "t7", effortId: "e2" })],
+        });
+        expect(queueAction(off[0])).toEqual({ label: "Work on", kind: "work-on" });
     });
     it("stands for the chunk when it is also blocked", () => {
         const efforts = [
