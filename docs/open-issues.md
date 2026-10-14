@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-14 (run handoff: the session that started a run is told how it landed)**
+
+- [ ] (arcterm) Run handoff: a run started with `wsh runs start` from a Claude session messages that session once it
+  lands, and waits while you are mid-turn with it. No scenario can bring a deferred run to a messaged outcome, so this is
+  tried only in unit tests with a scripted roster; neither has the `--queue` path (CLI → `RunQueueAdd` → the loop →
+  `CreateRun`) been tried in the running app.
+
 **2026-10-14 (Claude mod on a Team account: ask dialog, Token burn gate)**
 
 - [ ] After the next build and `task install`, in a Claude agent: have it ask a choice question; answer once in Claude's

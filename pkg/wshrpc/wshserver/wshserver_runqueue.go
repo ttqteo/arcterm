@@ -116,10 +116,18 @@ func safeEvaluateRunQueue(ctx context.Context) {
 	evaluateRunQueue(ctx)
 }
 
-// evaluateRunQueue starts the entries the rules name, one after another, until none is ready. It returns at once
+// evaluateRunQueue is one pass of the loop: it starts the queued entries that are ready, then tells the origin
+// sessions of the runs that ended. The second part runs whether or not the queue holds anything or a start is in
+// flight: it is the one place every run write, a session going idle and wavesrv starting up reach.
+func evaluateRunQueue(ctx context.Context) {
+	startReadyEntries(ctx)
+	notifyOrigins(ctx)
+}
+
+// startReadyEntries starts the entries the rules name, one after another, until none is ready. It returns at once
 // while another start holds the flag: that start's own evaluation, or the poke Start now sends when it ends, covers
 // whatever changed meanwhile.
-func evaluateRunQueue(ctx context.Context) {
+func startReadyEntries(ctx context.Context) {
 	if !runQueueStarting.CompareAndSwap(false, true) {
 		return
 	}

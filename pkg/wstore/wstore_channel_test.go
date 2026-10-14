@@ -204,6 +204,37 @@ func TestGetRunsByStatus(t *testing.T) {
 	}
 }
 
+func TestGetRunsAwaitingOriginNotice(t *testing.T) {
+	ctx := context.Background()
+	ch, err := CreateChannel(ctx, "origin-notice", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []waveobj.Run{
+		{ID: uuid.NewString(), Goal: "newer", OriginNotify: true, CreatedTs: 2},
+		{ID: uuid.NewString(), Goal: "older", OriginNotify: true, CreatedTs: 1},
+		{ID: uuid.NewString(), Goal: "told", OriginNotify: true, OriginNotifiedTs: 5, CreatedTs: 3},
+		{ID: uuid.NewString(), Goal: "not asked", CreatedTs: 4},
+	} {
+		if err := AppendRun(ctx, ch.OID, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := GetRunsAwaitingOriginNotice(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var goals []string
+	for _, r := range got {
+		if r.ChannelOID == ch.OID {
+			goals = append(goals, r.Goal)
+		}
+	}
+	if len(goals) != 2 || goals[0] != "older" || goals[1] != "newer" {
+		t.Fatalf("want the two untold runs oldest first, got %v", goals)
+	}
+}
+
 func TestEnsureChannelAtPathCreatesOnceAndRefusesNoPath(t *testing.T) {
 	ctx := context.Background()
 	first, err := EnsureChannelAtPath(ctx, "ensure", "/repo/ensure")

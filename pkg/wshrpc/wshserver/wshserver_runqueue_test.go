@@ -55,6 +55,8 @@ func useQueueWorld(t *testing.T) *queueWorld {
 	clearRunQueue(t)
 	w := &queueWorld{prefix: "run-" + uuid.NewString()[:8] + "-", runs: map[string]*waveobj.Run{}, maxActive: 3}
 	oldLoad, oldCreate, oldMax, oldPublish := runQueueLoadRuns, runQueueCreateRun, runQueueMaxActive, runQueuePublish
+	// an evaluation also tells origin sessions: none here, whatever other tests left in the shared db
+	swap(t, &originNoticeRuns, func(context.Context) ([]*waveobj.Run, error) { return nil, nil })
 	runQueueLoadRuns = func(ctx context.Context, afterIds []string) (map[string]*waveobj.Run, error) {
 		w.mu.Lock()
 		defer w.mu.Unlock()
