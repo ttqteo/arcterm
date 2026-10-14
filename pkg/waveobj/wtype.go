@@ -265,6 +265,11 @@ type Run struct {
 	// OriginTranscript is that session's transcript path when the run started, so the run still lists beside
 	// the session once both have ended and the tab is gone.
 	OriginTranscript string `json:"origintranscript,omitempty"`
+	// OriginNotify is set at create when the origin session is to be told how this run ended; a run from before the
+	// message existed never has it, so none is sent for one.
+	OriginNotify bool `json:"originnotify,omitempty"`
+	// OriginNotifiedTs is when that message was sent (Unix ms): a run with it is never messaged twice.
+	OriginNotifiedTs int64 `json:"originnotifiedts,omitempty"`
 	// EffortRef links a run to the effort chunk it executes (set by the composer's effort picker or
 	// `wsh effort chunk attach --run`). Advisory: the run never ticks the chunk automatically.
 	EffortRef *RunEffortRef `json:"effortref,omitempty"`
@@ -738,7 +743,7 @@ func (*Effort) GetOType() string { return OType_Effort }
 
 type EffortChunk struct {
 	Label  string `json:"label"`  // unique within the effort; reference key
-	Status string `json:"status"` // pending | active | done | deferred | blocked | skipped
+	Status string `json:"status"` // pending | active | done | deferred | blocked | skipped | proposed
 	// Stage is a grouping label, not a container: consecutive chunks sharing one stage render under
 	// a single header. Every chunk keeps its own status and its own right to block, so nothing about
 	// counts, ordering or the attention queue changes when a stage is set.

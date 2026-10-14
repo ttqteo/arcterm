@@ -192,6 +192,9 @@ func landRun(ctx context.Context, run *waveobj.Run, g *waveobj.TaskGroup, force 
 	if reason := clearUntrackedCopies(ctx, project, branch); reason != "" {
 		return heldLand(reason)
 	}
+	if reason, dirty := clearEditedCopies(ctx, project, branch); reason != "" {
+		return &waveobj.RunLand{State: LandState_Held, Reason: reason, Dirty: dirty}
+	}
 	pre, err := ProjectHeadCommit(ctx, project)
 	if err != nil {
 		return heldLand("reading the checkout's head: " + err.Error())
@@ -327,7 +330,7 @@ func checkoutHold(ctx context.Context, run *waveobj.Run) (reason string, dirty b
 	if clean, _ := IndexClean(ctx, project); !clean {
 		return "the checkout has staged changes", true
 	}
-	overlap, err := unstagedOverlap(ctx, project, branch)
+	overlap, _, err := unstagedOverlap(ctx, project, branch)
 	if err != nil {
 		return err.Error(), false
 	}
@@ -345,31 +348,71 @@ func checkoutHold(ctx context.Context, run *waveobj.Run) (reason string, dirty b
 }
 
 // unstagedOverlap names the checkout's unstaged edits to files the run's branch changes, which git merge refuses
-// to overwrite only after the re-run of Check and Verify. Edits to other files stay: git merges past them.
-func unstagedOverlap(ctx context.Context, project, branch string) ([]string, error) {
+// to overwrite only after the re-run of Check and Verify. Edits to other files stay: git merges past them. An edit
+// that is already the branch's version is a copy, not an overlap: a generated file every build rewrites (the
+// embedded claude-mod), synced from a source the run committed, held run ee18a780 with nobody's work at stake.
+func unstagedOverlap(ctx context.Context, project, branch string) (overlap, copies []string, err error) {
 	edited, err := git(ctx, project, "diff", "--name-only", "--no-renames", "-z")
 	if err != nil {
-		return nil, fmt.Errorf("listing the checkout's unstaged edits: %w", err)
+		return nil, nil, fmt.Errorf("listing the checkout's unstaged edits: %w", err)
 	}
 	if edited == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
 	base, err := git(ctx, project, "merge-base", "HEAD", branch)
 	if err != nil {
-		return nil, fmt.Errorf("finding where the run's branch forked: %w", err)
+		return nil, nil, fmt.Errorf("finding where the run's branch forked: %w", err)
 	}
 	changed, err := git(ctx, project, "diff", "--name-only", "--no-renames", "-z", base, branch)
 	if err != nil {
-		return nil, fmt.Errorf("listing what the run changes: %w", err)
+		return nil, nil, fmt.Errorf("listing what the run changes: %w", err)
 	}
 	theirs := strings.Split(changed, "\x00")
-	var overlap []string
 	for _, p := range strings.Split(edited, "\x00") {
-		if p != "" && slices.Contains(theirs, p) {
+		if p == "" || !slices.Contains(theirs, p) {
+			continue
+		}
+		if sameAsBranch(ctx, project, branch, p) {
+			copies = append(copies, p)
+		} else {
 			overlap = append(overlap, p)
 		}
 	}
-	return overlap, nil
+	return overlap, copies, nil
+}
+
+// sameAsBranch says whether the checkout's file p holds the branch's version of it, a missing file matching one the
+// branch deletes. hash-object applies the checkout's filters, so a CRLF copy of an LF file reads as the same.
+func sameAsBranch(ctx context.Context, project, branch, p string) bool {
+	theirs, theirErr := git(ctx, project, "rev-parse", branch+":"+p)
+	if _, err := os.Lstat(filepath.Join(project, filepath.FromSlash(p))); os.IsNotExist(err) {
+		return theirErr != nil
+	}
+	if theirErr != nil {
+		return false
+	}
+	mine, err := git(ctx, project, "hash-object", "--", p)
+	return err == nil && mine == theirs
+}
+
+// clearEditedCopies puts back the checkout's unstaged copies of the branch's version, which git merge would refuse
+// to overwrite. Nothing is lost: the branch holds the same content, and the merge takes it in. It reads them again
+// under the checkout claim, so an edit made since the precheck holds the land instead, as a dirty hold.
+func clearEditedCopies(ctx context.Context, project, branch string) (reason string, dirty bool) {
+	overlap, copies, err := unstagedOverlap(ctx, project, branch)
+	if err != nil {
+		return err.Error(), false
+	}
+	if len(overlap) > 0 {
+		return "the checkout has unstaged edits to files the run changes: " + strings.Join(overlap, ", "), true
+	}
+	if len(copies) == 0 {
+		return "", false
+	}
+	if _, err := git(ctx, project, append([]string{"checkout", "--"}, copies...)...); err != nil {
+		return "putting back the checkout's copies of what the run changes: " + err.Error(), false
+	}
+	return "", false
 }
 
 // reverifyHold checks what the final stage never saw before the run lands: the lead's wrap-up commits after it,

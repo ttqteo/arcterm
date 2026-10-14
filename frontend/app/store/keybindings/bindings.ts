@@ -34,6 +34,9 @@ import {
     refreshHistory,
 } from "@/app/view/agents/githistorystore";
 import { anyFilterActive } from "@/app/view/agents/historyquery";
+import { sessionIdFromTranscript } from "@/app/view/agents/ideasmodel";
+import { runIdeaCapture } from "@/app/view/agents/ideasstore";
+import { initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
 import { openLauncher, type LauncherModel } from "@/app/view/agents/launcherstore";
 import { activeReviewKeyAtom, canSendKey, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
 import { canRequest } from "@/app/view/agents/proseanchor";
@@ -46,6 +49,7 @@ import {
 import { toggleOpenFile } from "@/app/view/agents/reviewmarks";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { resolveActiveRunId } from "@/app/view/agents/runmodel";
+import { runQueueAtom } from "@/app/view/agents/runqueuestore";
 import { backgroundTasksByIdAtom, focusSubagentAtom } from "@/app/view/agents/subagentsstore";
 import { closeSwitcher, switcherKey, tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
 import { openToolPicker } from "@/app/view/agents/toolsstore";
@@ -87,6 +91,14 @@ import { peekTarget } from "@/app/view/jarvis/openref";
 import { openPetPeek, peekChordActive } from "@/app/view/jarvis/peekstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { backToOrigin } from "@/app/view/jarvis/returnsurface";
+import {
+    enterReview,
+    exitReview,
+    markReviewedAndAdvance,
+    moveReview,
+    reviewModeAtom,
+    reviewQueueAtom,
+} from "@/app/view/jarvis/reviewstore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import { isMacOS } from "@/util/platformutil";
 import type { MutableRefObject } from "react";
@@ -222,6 +234,13 @@ function backOrHome(model: AgentsViewModel): void {
     if (!backToOrigin()) {
         globalStore.set(model.surfaceAtom, "cockpit");
     }
+}
+
+// the agent session in focus (its transcript's name): the Ideas the capture chord opens when nothing is selected; null for
+// a terminal, or an agent that has not reported in
+function focusedSession(model: AgentsViewModel): string | null {
+    const id = globalStore.get(model.focusIdAtom);
+    return sessionIdFromTranscript(globalStore.get(model.agentsAtom).find((a) => a.id === id)?.transcriptPath);
 }
 
 export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
@@ -386,6 +405,26 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             run: () => openToolPicker(model),
         },
         {
+            // Keep what is selected in an agent's terminal as an idea in its Ideas (the "Add as idea" chip beside the
+            // selection is the same action); with nothing selected, open the focused agent's Ideas and focus its input.
+            // A chord, so it works from a focused terminal, where the chip never takes focus. Consumed even where there is
+            // nothing to add (a plain terminal): left to the terminal it would type a Tab. Live on every surface, as a
+            // What's new "Try it" must be (whatsnew.test.ts): from another surface it brings the Agent surface up first, where
+            // the terminals and the Ideas box are.
+            id: "idea-capture",
+            keys: "Mod:Shift:i",
+            group: "Global",
+            label: "Add the selection as an idea",
+            paletteHidden: true, // a palette row has no selection to add; the key and the chip are the way
+            when: (ctx) => !ctx.modalOpen,
+            run: (ctx) => {
+                if (ctx.surface !== "agent") {
+                    globalStore.set(model.surfaceAtom, "agent");
+                }
+                void runIdeaCapture(focusedSession(model));
+            },
+        },
+        {
             // Reopen the agent closed last, as a browser reopens a closed tab: asleep, its conversation back on the roster
             // (recentlyclosed.ts). A chord, so it works from inside a terminal.
             id: "reopen-agent",
@@ -484,7 +523,9 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
                 // note", and going home too would do both at once
                 globalStore.get(noteChunkAtom) == null &&
                 // and the plan-editing menu above it, the innermost rung of all
-                globalStore.get(trackerMenuAtom) == null,
+                globalStore.get(trackerMenuAtom) == null &&
+                // and a review pass on the Brief: Escape leaves the pass, and going home too would do both
+                !(ctx.surface === "jarvis" && globalStore.get(reviewModeAtom) != null),
             run: () => backOrHome(model),
         },
     ];
@@ -495,6 +536,11 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
 export function buildListNavBindings(model: AgentsViewModel): Binding[] {
     const active = (ctx: KeyContext): boolean => {
         if (ctx.editable || ctx.modalOpen) {
+            return false;
+        }
+        // a review pass on the Brief takes j, k and Enter (buildJarvisBindings) until it ends; on any other
+        // surface the pass, left open behind it, owns nothing
+        if (ctx.surface === "jarvis" && globalStore.get(reviewModeAtom) != null) {
             return false;
         }
         const c = globalStore.get(listNavAtom);
@@ -676,6 +722,34 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
         },
     };
 
+    const reviewing = (ctx: KeyContext) => onJarvis(ctx) && globalStore.get(reviewModeAtom) != null;
+    const reviewKey = (id: string, keys: string, label: string, run: () => void, when = reviewing): Binding => ({
+        id,
+        keys,
+        group: "Jarvis",
+        label,
+        when,
+        paletteHidden: true,
+        run,
+    });
+    const reviewKeys: Binding[] = [
+        reviewKey("jarvis:review-mark", "Enter", "Mark reviewed, then the next", () =>
+            markReviewedAndAdvance(Date.now())
+        ),
+        reviewKey("jarvis:review-next-j", "j", "Next initiative in the review", () => moveReview(1)),
+        reviewKey("jarvis:review-prev-k", "k", "Previous initiative in the review", () => moveReview(-1)),
+        reviewKey("jarvis:review-next", "ArrowRight", "Next initiative in the review", () => moveReview(1)),
+        reviewKey("jarvis:review-prev", "ArrowLeft", "Previous initiative in the review", () => moveReview(-1)),
+        reviewKey(
+            "jarvis:review-exit",
+            "Escape",
+            "Leave the review",
+            exitReview,
+            (ctx) =>
+                reviewing(ctx) && globalStore.get(noteChunkAtom) == null && globalStore.get(trackerMenuAtom) == null
+        ),
+    ];
+
     // an open status or stage menu sits above the sidebar: Escape closes the menu and nothing else
     const trackerMenuEscape: Binding = {
         id: "jarvis:close-tracker-menu",
@@ -776,6 +850,18 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
             when: (ctx) => onJarvis(ctx) && globalStore.get(chunkMoveAtom) != null,
             run: () => globalStore.get(chunkMoveAtom)?.("down"),
         },
+        {
+            id: "jarvis:review",
+            keys: "v",
+            group: "Jarvis",
+            label: "Review what changed and what sat idle",
+            when: (ctx) => onJarvis(ctx) && globalStore.get(reviewModeAtom) == null,
+            // the Brief publishes the queue it draws; nothing to review lets the key pass
+            run: () => (enterReview(globalStore.get(reviewQueueAtom), Date.now()) ? undefined : false),
+        },
+        // while a pass is on, it owns j, k, Enter, the horizontal arrows and Escape (list nav and esc-home stand
+        // down), and Escape leaves the pass only once the Chunk sidebar and the plan menu above it are closed
+        ...reviewKeys,
         {
             id: "jarvis:focus-composer",
             keys: "i",
@@ -902,8 +988,13 @@ export function buildUsageBindings(handlers: {
 // History and a session's transcript cover the terminal, so the keys that act on the focused agent (j/k, the arrows, d, f,
 // r, c) stand down there: History publishes its own list cursor on this surface, and j/k must belong to it alone
 const centerAtRest = () => globalStore.get(centerModeAtom) === "terminal";
-const agentNav = (ctx: KeyContext) => navigate(ctx) && ctx.surface === "agent" && centerAtRest();
-const agentNavStrict = (ctx: KeyContext) => navigateStrict(ctx) && ctx.surface === "agent" && centerAtRest();
+// The initiative popover on the agent header owns its keys (m, n, the arrows, Enter, Escape) while it is open, so every
+// single-key Agent binding stands down: this dispatcher runs on window capture, ahead of the popover's own handler.
+const initiativePopoverClosed = () => globalStore.get(initiativePopoverAtom) == null;
+const agentNav = (ctx: KeyContext) =>
+    navigate(ctx) && ctx.surface === "agent" && centerAtRest() && initiativePopoverClosed();
+const agentNavStrict = (ctx: KeyContext) =>
+    navigateStrict(ctx) && ctx.surface === "agent" && centerAtRest() && initiativePopoverClosed();
 
 // Agent (Focus) surface bindings. Moved out of agentsurface.tsx so the registry has one home
 // and the array is stable: run() reads live atoms instead of closing over per-render focus/order.
@@ -940,7 +1031,14 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         const unread = agent != null ? (globalStore.get(unreadAgentsAtom).get(agent.id) ?? 0) : 0;
         const bgRunning =
             agent != null ? runningBackgroundTasks(globalStore.get(backgroundTasksByIdAtom)[agent.id]).length : 0;
-        return agent != null && doneSuggestion(agent, unread, globalStore.get(model.lineageAtom).runs, bgRunning)
+        return agent != null &&
+            doneSuggestion(
+                agent,
+                unread,
+                globalStore.get(model.lineageAtom).runs,
+                bgRunning,
+                globalStore.get(runQueueAtom)
+            )
             ? agent
             : undefined;
     };
@@ -1055,6 +1153,27 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             label: "Toggle agent rail",
             when: nav,
             run: () => globalStore.set(railVisibleAtom, !globalStore.get(railVisibleAtom)),
+        },
+        {
+            id: "agent:initiative",
+            keys: "i",
+            group: "Agent",
+            label: "The agent's initiative",
+            // Opens the popover on the focused agent's initiative, or the Link to initiative picker when it has none.
+            // The focused agent is in the model's atoms, which a when() cannot read (whenstate.ts), so run() looks
+            // it up and lets the key pass when there is nothing to open. Open, the popover's own keys take over
+            // (agentNav yields), and `i` there closes it.
+            when: nav,
+            run: () => {
+                const agent = globalStore.get(model.agentsAtom).find((a) => a.id === focusId());
+                if (agent == null) {
+                    return false;
+                }
+                if (agent.effortId == null) {
+                    return clickThrough("[data-initiative-link]");
+                }
+                globalStore.set(initiativePopoverAtom, agent.id);
+            },
         },
         {
             id: "agent:fullscreen",

@@ -46,6 +46,9 @@ import {
     type MouseEvent,
     type ReactNode,
 } from "react";
+import { briefingStateAtom } from "./briefingstore";
+import { splitIdeas } from "./briefrows";
+import { buildEffortCard } from "./effortmodel";
 import { peekAddress } from "./openref";
 import { formKey, questionAfterPick, type FormKey } from "./peekanswer";
 import { PeekItemView, runItemCommand, type ItemChrome } from "./peekitem";
@@ -74,6 +77,8 @@ import {
 import { petActStateAtom, petPeekDestAtom, petPeekOpenAtom, petSaidAtom } from "./petstore";
 import { eventLabel, type PetEvent } from "./petvoice";
 import { ageLabel } from "./recallderive";
+import { reviewCards, reviewQueue, reviewSummary, reviewSummaryLine } from "./reviewmodel";
+import { enterReview, reviewedAtom } from "./reviewstore";
 
 // Where the peek opens from: the walking creature's corner, the float bar's top right (petfloatmark.tsx), where it
 // drops down, or Sprout folded out of the float (cockpit/sprout-mini.tsx), whose placement prop says which way.
@@ -123,6 +128,7 @@ const ROW_DOT: Record<string, string> = {
     "dag-blocked": "bg-error",
     ask: "bg-accent",
     "run-land-held": "bg-warning",
+    "run-queue-blocked": "bg-warning",
 };
 
 const FOCUS_RING = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
@@ -641,6 +647,33 @@ export function PetPeek({
     const said = useAtomValue(petSaidAtom);
     const items = useAtomValue(attentionAtom);
     const agents = useAtomValue(model.agentsAtom);
+    // The initiatives to review, read off the briefing the Brief last loaded (nothing to say until it has): the same
+    // queue the Brief's Review · N holds, so "Review in Jarvis" lands on the pass the line counts. It never adds to the
+    // badge: review is not urgent.
+    const briefing = useAtomValue(briefingStateAtom);
+    const reviewed = useAtomValue(reviewedAtom);
+    const review = useMemo(() => {
+        const snapshot = briefing.snapshot;
+        if (snapshot == null) {
+            return null;
+        }
+        const efforts = snapshot.state.efforts ?? [];
+        const trackers = splitIdeas(
+            efforts
+                .filter((e) => e.status !== "archived")
+                .sort((a, b) => b.updatedts - a.updatedts)
+                .map(buildEffortCard)
+        ).trackers;
+        const queue = reviewQueue(
+            reviewCards(trackers, efforts, items, agents),
+            reviewed,
+            snapshot.actualCursor,
+            Date.now()
+        );
+        return queue.length > 0
+            ? { orefs: queue.map((q) => q.oref), line: reviewSummaryLine(reviewSummary(queue)) }
+            : null;
+    }, [briefing, reviewed, items, agents]);
     // an escalation finds the agent it waits in through its card (petpeekmodel.ts)
     const channelMessages = useAtomValue(channelMessagesAtom);
     // one channel per project in the shared list: the reply goes to a project, never a leftover channel
@@ -790,6 +823,20 @@ export function PetPeek({
         leavePeek();
         globalStore.set(model.surfaceAtom, "jarvis");
         closePeek();
+    };
+    // Jarvis, with the review pass already begun over the initiatives the line counts
+    const reviewInJarvis = () => {
+        if (review != null) {
+            enterReview(review.orefs, Date.now());
+        }
+        if (onRestore != null) {
+            // folded into Sprout there is no Jarvis view to open: the window comes back on it
+            leavePeek();
+            globalStore.set(model.surfaceAtom, "jarvis");
+            onRestore();
+            return;
+        }
+        openJarvis();
     };
 
     const runKeyboardAct = (act: PetAct | null | undefined) => {
@@ -1218,6 +1265,26 @@ export function PetPeek({
                                                         </AnimatePresence>
                                                     )}
                                                 </div>
+
+                                                {review != null ? (
+                                                    <div
+                                                        data-pet-review-line
+                                                        className="flex flex-none flex-wrap items-center gap-x-2 gap-y-1 border-t border-border px-3.5 py-[9px] text-[11px] text-ink-mid"
+                                                    >
+                                                        <span className="min-w-0 flex-1">{review.line}</span>
+                                                        <button
+                                                            type="button"
+                                                            data-pet-review-link
+                                                            onClick={reviewInJarvis}
+                                                            className={cn(
+                                                                "flex-none cursor-pointer whitespace-nowrap rounded-[6px] border border-border px-2 py-[3px] text-[10.5px] font-medium text-accent-soft hover:border-edge-strong hover:text-primary",
+                                                                FOCUS_RING
+                                                            )}
+                                                        >
+                                                            Review in Jarvis
+                                                        </button>
+                                                    </div>
+                                                ) : null}
 
                                                 {drawerUpdates.length > 0 ? (
                                                     <UpdatesDrawer

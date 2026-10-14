@@ -13,13 +13,17 @@ export const DONE_TITLE = "Committed in its last turn: close this agent";
  *  not stopped on a part waiting for your reply, no run owns it (the engine closes a run's sessions itself), no run
  *  it started with `wsh runs start` is still going (a turn that commits a plan and hands it to the engine has not
  *  finished the work, the run nested under it is doing it), and none of its background tasks still runs: they are
- *  children of its process, so closing it would end a build it left running. `runs` is the lineage's, by lead run id;
- *  `backgroundRunning` is how many of its background tasks still run (runningBackgroundTasks). */
+ *  children of its process, so closing it would end a build it left running. It holds back too while a plan it queued
+ *  (`wsh runs start --queue`) still waits, or is blocked, in wavesrv's queue: no run holds the Close back yet, and
+ *  closing the session would leave nobody to tell when that run lands. `runs` is the lineage's, by lead run id;
+ *  `backgroundRunning` is how many of its background tasks still run (runningBackgroundTasks); `queued` is the run
+ *  queue's entries (runQueueAtom). */
 export function doneSuggestion(
     agent: Pick<AgentVM, "id" | "state" | "committed" | "step" | "runId">,
     unreadCount: number,
     runs: Record<string, Pick<RunInfo, "originId" | "dag" | "status" | "land">>,
-    backgroundRunning: number
+    backgroundRunning: number,
+    queued: readonly Pick<RunQueueEntry, "data">[]
 ): boolean {
     return (
         agent.state === "idle" &&
@@ -28,6 +32,7 @@ export function doneSuggestion(
         unreadCount === 0 &&
         !agent.step &&
         agent.runId == null &&
-        !Object.values(runs).some((r) => r.originId === agent.id && !runFinished(r))
+        !Object.values(runs).some((r) => r.originId === agent.id && !runFinished(r)) &&
+        !queued.some((e) => e.data.origintabid === agent.id)
     );
 }

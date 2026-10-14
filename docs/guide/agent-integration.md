@@ -69,7 +69,7 @@ Agent chạy trong terminal của arcterm có `wsh` và dùng nó để nói chu
 | `wsh runs …` | `start`, `list`, `show`, `answer`, `cancel`, `land`, `ack`, `attention` |
 | `wsh agents …` | `list` các tab agent, `send` tin cho một tab, `read` câu trả lời |
 | `wsh ui …` | `reveal <address>` mở một run, terminal agent, record hay surface; `state` đọc người dùng đang nhìn gì; `actions` / `do` chạy một hành động của cockpit |
-| `wsh effort …` | Tạo và cập nhật initiative và chunk |
+| `wsh effort …` | Tạo và cập nhật initiative và chunk; `wsh effort chunk add … --proposed` đề xuất một chunk để bạn chấp nhận hoặc bỏ ([bên dưới](#đề-xuất-chunk)) |
 | `wsh jarvis dag …`, `wsh jarvis complete` | Trong terminal của lead hoặc worker: điều khiển DAG của run, kết thúc run hay task |
 
 Lệnh run và DAG đầy đủ: [Orchestrator → CLI](orchestrator.md#cli). `wsh <lệnh> --help` in cú pháp của từng lệnh.
@@ -92,6 +92,16 @@ wsh agents read <tab>                                    # đọc câu trả l�
 
 Một run mà phiên agent bắt đầu bằng `wsh runs start` ghi lại phiên đó: header của run trên surface Agent có link `↰ <phiên>` và run sheet có dòng **started from**, cả khi chạy lẫn khi đã xong; header của phiên có link `↳` ngược về các run nó đã bắt đầu. `wsh runs start` không hỏi lại route: nó lấy route từ profile ([Jarvis → Profile](jarvis.md#profile-mặc-định-của-run-và-nguyên-tắc)) trừ khi bạn truyền cờ, nên xem `wsh runs route` trước khi chạy run tốn kém.
 
+### Đề xuất chunk
+
+Chunk agent tự thêm (phạm vi nó tìm ra, một cách chia việc nó gợi ý, cả một plan cho một ý tưởng) thì thêm bằng `--proposed`, không thêm thẳng:
+
+```sh
+wsh effort chunk add <initiative> "Cache the parsed feed" --stage "Cache layer" --proposed
+```
+
+Chunk `proposed` **không tính** vào `done/total` (kể cả dòng đầu của `wsh effort show`), và `wsh effort advance` không bao giờ bắt đầu nó. Nó hiện trên rail của agent ở mục **Plan to review**, ở hàng initiative trong Jarvis (`N proposed`) và thành một mục **plan** trong **Waiting on you**; bạn chấp nhận (thành `pending`), đổi tên hoặc bỏ từng chunk ([Agent → Plan to review](agent.md#plan-to-review-trên-rail)). Skill `effort-tracking` dạy agent quy tắc này: đề xuất những gì không ai yêu cầu, rồi dừng và nói rằng đã đề xuất. **Accept all and continue** gõ `Plan accepted, start with <chunk đầu>` vào terminal của agent để nó tiếp tục.
+
 ## Skills đi kèm
 
 arcterm mang theo vài skill dạy agent dùng `wsh` và quy ước của cockpit. Mỗi lần launch agent, chúng được chép vào thư mục skills dùng chung rồi chiếu vào thư mục skills của từng harness ([Setup](setup.md)); sửa bản trong `skills/` của repo, không sửa bản đã chép.
@@ -100,7 +110,7 @@ arcterm mang theo vài skill dạy agent dùng `wsh` và quy ước của cockpi
 |---|---|
 | `cockpit-runs` | Bắt đầu, theo dõi, hủy run; xem việc đang chờ người dùng; nhắn cho một agent khác |
 | `cockpit-ui` | Cho người dùng xem một run, terminal, record hay surface; đọc họ đang nhìn gì |
-| `effort-tracking` | Theo dõi việc lớn bằng initiative và chunk (`wsh effort`) |
+| `effort-tracking` | Theo dõi việc lớn bằng initiative và chunk (`wsh effort`), và đề xuất chunk mới bằng `--proposed` thay vì thêm thẳng |
 | `doc-review` | Xin người dùng review một bản sửa tài liệu (`.tex`, `.md`) rồi dừng |
 | `design-local` | Làm mockup `.dc.html` nhiều artboard trong thư mục nháp bị gitignore |
 

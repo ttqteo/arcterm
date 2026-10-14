@@ -136,3 +136,43 @@ describe("palette-needs: a chunk that came due", () => {
         expect(needsTarget(needsRows([due], [])[0])).toEqual({ kind: "effort", effortId: "e1" });
     });
 });
+
+describe("palette-needs: a plan to review", () => {
+    const plan = {
+        ...item("plan-review", "plan-review:e1"),
+        oref: "effort:e1",
+        effortoid: "e1",
+        text: "2 proposed",
+    } as AttentionItem;
+    it("groups as Plan to review, after the asks and reviews and before Blocked and Due", () => {
+        const g = needsGroups(
+            needsRows([item("chunk-due"), item("dag-blocked"), plan, item("dag-gate"), item("ask", "ask:block:b1")], [])
+        );
+        expect(g.map((x) => x.group)).toEqual(["asks", "reviews", "plan", "blocked", "due"]);
+    });
+    it("lands on its initiative when no agent is open on it", () => {
+        expect(needsTarget(needsRows([plan], [])[0])).toEqual({ kind: "effort", effortId: "e1" });
+        expect(needsTarget(needsRows([plan], [agent({ id: "t9", effortId: "e2" })])[0])).toEqual({
+            kind: "effort",
+            effortId: "e1",
+        });
+    });
+    it("lands on the agent open on its initiative", () => {
+        const rows = needsRows([plan], [agent({ id: "t9", effortId: "e1", state: "idle" })]);
+        expect(needsTarget(rows[0])).toEqual({ kind: "agent", agentId: "t9" });
+        // it is not that agent's ask, so no inline answer is offered
+        expect(rows[0].agent).toBeUndefined();
+        expect(rows[0].options).toEqual([]);
+    });
+});
+
+describe("palette-needs: a learned rule", () => {
+    const learn = {
+        ...item("learn-proposal", "learn:skill:notes#short"),
+        learnid: "skill:notes#short",
+    } as AttentionItem;
+    it("is a review, not a blocked item", () => {
+        const g = needsGroups(needsRows([learn], []));
+        expect(g.map((x) => [x.group, x.rows.length])).toEqual([["reviews", 1]]);
+    });
+});

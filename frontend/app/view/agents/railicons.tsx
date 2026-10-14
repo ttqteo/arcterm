@@ -13,6 +13,7 @@ import {
     GitBranch,
     Info,
     LayoutTemplate,
+    Lightbulb,
     Paperclip,
     Server,
     Settings,
@@ -40,4 +41,5 @@ export const RAIL_ICON: Record<string, ReactNode> = {
     artifacts: <LayoutTemplate {...iconProps} />,
     attach: <Paperclip {...iconProps} />,
     server: <Server {...iconProps} />,
+    ideas: <Lightbulb {...iconProps} />,
 };

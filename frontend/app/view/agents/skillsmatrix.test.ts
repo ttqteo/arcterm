@@ -4,6 +4,7 @@
 import { setPlatform } from "@/util/platformutil";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+    additionsChip,
     adoptCount,
     adoptKeep,
     copyDelta,
@@ -140,6 +141,35 @@ describe("skillRows cells", () => {
 
     it("shows which copy a keep chooses and which it replaces", () => {
         expect(cells("translate", { translate: "codex" })).toEqual(["Replaced", "Kept", "—", "—"]);
+    });
+});
+
+describe("skill additions", () => {
+    const learned: LearnAddition[] = [
+        { key: "no-emoji", text: "No emoji.", learned: "2026-10-12", count: 2 },
+        { key: "short", text: "Keep it short.", learned: "2026-10-13", count: 3 },
+    ];
+
+    function withAdditions(): CommandAgentSyncSkillsRtnData {
+        const d = sample();
+        d.skills = [{ ...d.skills![0], additions: learned }];
+        return d;
+    }
+
+    it("carries a managed skill's additions onto its row, and none for the rest", () => {
+        const rows = skillRows(withAdditions(), {});
+        expect(rows.find((r) => r.name === "vaulted")!.additions).toEqual(learned);
+        expect(rows.find((r) => r.name === "lint")!.additions).toEqual([]);
+    });
+
+    it("defaults a managed skill with no additions to none", () => {
+        expect(skillRows(sample(), {}).find((r) => r.name === "vaulted")!.additions).toEqual([]);
+    });
+
+    it("chips the count of additions, and nothing for none", () => {
+        const rows = skillRows(withAdditions(), {});
+        expect(additionsChip(rows.find((r) => r.name === "vaulted")!)).toBe("+2");
+        expect(additionsChip(rows.find((r) => r.name === "lint")!)).toBeNull();
     });
 });
 

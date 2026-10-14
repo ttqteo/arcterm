@@ -38,7 +38,7 @@ export function CodeBlock({ code, lang, path }: { code: string; lang?: string; p
                 {lang ? (
                     <span className="text-[9px] font-semibold uppercase tracking-[0.08em] text-accent">{lang}</span>
                 ) : null}
-                {path ? <span className="font-mono text-[10.5px] text-muted">{path}</span> : null}
+                {path ? <span className="text-[10.5px] text-muted">{path}</span> : null}
                 <div className="flex-1" />
                 <button
                     type="button"

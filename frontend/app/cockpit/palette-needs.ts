@@ -6,24 +6,29 @@
 
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { parseDocReview } from "@/app/view/agents/docreview";
+import { planReviewAgent } from "@/app/view/jarvis/planreviewtarget";
 
-export type NeedsGroup = "asks" | "reviews" | "blocked" | "due";
+export type NeedsGroup = "asks" | "reviews" | "plan" | "blocked" | "due";
 
 export const NEEDS_GROUP_LABELS: Record<NeedsGroup, string> = {
     asks: "Asks",
     reviews: "Reviews",
+    plan: "Plan to review",
     blocked: "Blocked",
     due: "Due",
 };
 
-// a chunk that came due blocks nothing, so it reads last
-const GROUP_ORDER: NeedsGroup[] = ["asks", "reviews", "blocked", "due"];
+// a plan to review waits on you before any work starts, so it reads after the asks and reviews that hold a
+// running agent; a chunk that came due blocks nothing, so it reads last
+const GROUP_ORDER: NeedsGroup[] = ["asks", "reviews", "plan", "blocked", "due"];
 
 // anything not named here lands in Blocked, so nothing the badge counts is missing from the scope
 const KIND_GROUP: Record<string, NeedsGroup> = {
     ask: "asks",
     escalation: "asks",
     "dag-gate": "reviews",
+    "plan-review": "plan",
+    "learn-proposal": "reviews",
     "chunk-due": "due",
 };
 
@@ -37,6 +42,7 @@ export interface NeedsRow {
     item: AttentionItem;
     group: NeedsGroup;
     agent?: AgentVM; // an ask resolved to its roster agent
+    planAgent?: AgentVM; // a plan to review resolved to the open agent on its initiative (planreviewtarget.ts)
     review: boolean; // the agent's ask is a doc review (parseDocReview)
     options: string[]; // inline answer labels; [] = no inline answer, Enter opens the agent at its question
 }
@@ -71,7 +77,15 @@ export function needsRows(items: AttentionItem[], agents: AgentVM[]): NeedsRow[]
             const agent = askAgent(item, agents);
             const review = agent != null && parseDocReview(agent.ask) != null;
             const group = review ? "reviews" : (KIND_GROUP[item.kind] ?? "blocked");
-            return { item, group, agent, review, options: inlineAnswerOptions(agent) };
+            const planAgent = planReviewAgent(item, agents);
+            return {
+                item,
+                group,
+                agent,
+                ...(planAgent != null ? { planAgent } : {}),
+                review,
+                options: inlineAnswerOptions(agent),
+            };
         });
 }
 
@@ -87,7 +101,7 @@ export type NeedsTarget =
     | { kind: "dag"; channelId: string; runId: string; dagId: string; taskId?: string }
     | { kind: "run"; channelId: string; runId: string }
     | { kind: "channel"; channelId: string }
-    | { kind: "effort"; effortId: string }; // a due chunk's initiative
+    | { kind: "effort"; effortId: string }; // a due chunk's initiative, or a plan to review whose agent is gone
 
 // Where Enter on a Needs you row lands. A dag item's key names its dag ("dag-gate:<dag>[:<task>]",
 // "dag-blocked:<dag>", pkg/jarvis/attention.go); an ask whose agent left the roster falls back to its
@@ -96,8 +110,12 @@ export function needsTarget(row: NeedsRow): NeedsTarget | null {
     if (row.agent != null) {
         return { kind: row.review ? "review" : "agent", agentId: row.agent.id };
     }
+    // a plan to review opens the agent that proposed it while one is open, else its initiative like a due chunk
+    if (row.planAgent != null) {
+        return { kind: "agent", agentId: row.planAgent.id };
+    }
     const { kind, key, channelid, runid, taskid, oref } = row.item;
-    if (kind === "chunk-due" && oref?.startsWith("effort:")) {
+    if ((kind === "chunk-due" || kind === "plan-review") && oref?.startsWith("effort:")) {
         return { kind: "effort", effortId: oref.slice("effort:".length) };
     }
     if (!channelid) {

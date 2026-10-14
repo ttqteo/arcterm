@@ -129,6 +129,9 @@ type SettingsType struct {
 	JobsMode  string `json:"jobs:mode,omitempty"`  // how the queue starts them: "auto" (unset; as RAM allows), "slots" (jobs:slots at once), "off" (at once)
 	// JobsPauseUntil turns the queue off until then (Unix ms): the Jobs popover's Pause 1h / 4h; 0 or past is no pause
 	JobsPauseUntil *int64 `json:"jobs:pauseuntil,omitempty"`
+
+	RunsMaxActive  *int  `json:"runs:maxactive,omitempty"`  // active runs before a queued start waits (pkg/runqueue); unset is 3, 0 is no cap
+	RunsWakeOrigin *bool `json:"runs:wakeorigin,omitempty"` // message the session that started a run when it lands; unset is true
 }
 
 type ConfigError struct {

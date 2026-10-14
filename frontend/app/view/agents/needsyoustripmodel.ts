@@ -6,8 +6,9 @@
 // to acknowledge or land, an escalation. Each row carries what Jarvis's Waiting row does (attentionact.ts picks
 // the one button), so the same item reads the same on both surfaces. Pure; needsyoustrip.tsx draws it.
 
-import { attentionAct, type AttentionAct } from "@/app/view/jarvis/attentionact";
+import { attentionAct, attentionSecondAct, type AttentionAct } from "@/app/view/jarvis/attentionact";
 import type { AttentionRunRow } from "@/app/view/jarvis/attentionrun";
+import { planReviewAgent } from "@/app/view/jarvis/planreviewtarget";
 import { formatAge, type AgentVM } from "./agentsviewmodel";
 import { normProjectPath } from "./channelderive";
 import { parseCardData } from "./jarviscards";
@@ -17,8 +18,11 @@ const KIND_LABEL: Record<string, string> = {
     "dag-blocked": "Blocked task",
     "run-unverified": "Run to confirm",
     "run-land-held": "Run to land",
+    "run-queue-blocked": "Run to start",
     escalation: "Escalation",
     "chunk-due": "Due",
+    "plan-review": "Plan to review",
+    "learn-proposal": "Learned rule",
 };
 
 export type StripOpen =
@@ -26,7 +30,7 @@ export type StripOpen =
     | { kind: "agent"; agentId: string }
     // the run's sheet, or the channel's newest when the item names no run (what Jarvis's Open does)
     | { kind: "channel"; channelId: string; runId: string | null }
-    // a chunk that came due: its initiative, which names no channel
+    // a chunk that came due, or a plan to review whose agent is gone: its initiative, which names no channel
     | { kind: "effort"; effortId: string };
 
 export interface StripRow {
@@ -38,8 +42,12 @@ export interface StripRow {
     why: string;
     waitingSince: number | null;
     act: AttentionAct;
+    // the second button beside act, for the one kind that has a way out besides it: Remove on a blocked queue entry
+    secondAct: AttentionAct | null;
     run: AttentionRunRow;
     open: StripOpen | null;
+    // a proposed learned rule: the id Accept, Edit and Dismiss decide (LearnDecide); null on every other kind
+    learnId: string | null;
 }
 
 const ESCALATION_PREFIX = "esc:";
@@ -113,7 +121,9 @@ export function buildNeedsYouRows(input: {
             continue;
         }
         const channelId = a.channelid ?? "";
-        if (input.filter !== "all" && input.channelProject.get(channelId) !== input.filter) {
+        const learnId = a.kind === "learn-proposal" && a.learnid ? a.learnid : null;
+        // a learned rule is tied to a skill or a project folder, never a channel, so the project filter keeps it
+        if (learnId == null && input.filter !== "all" && input.channelProject.get(channelId) !== input.filter) {
             continue;
         }
         const run: AttentionRunRow = {
@@ -122,11 +132,14 @@ export function buildNeedsYouRows(input: {
             runId: a.runid || null,
             taskId: a.taskid ?? "",
             retry: a.retry === true,
+            queueId: a.queueid,
             source: a.source,
             title: a.text,
         };
-        const agent = escalationAgent(a, input.channelMessages[channelId], input.roster);
-        const effortId = a.kind === "chunk-due" ? idOf(a.oref, "effort") : "";
+        // a plan to review opens the agent that proposed it while one is open, else its initiative
+        const agent =
+            escalationAgent(a, input.channelMessages[channelId], input.roster) ?? planReviewAgent(a, input.roster);
+        const effortId = a.kind === "chunk-due" || a.kind === "plan-review" ? idOf(a.oref, "effort") : "";
         rows.push({
             key: a.key,
             kindLabel: KIND_LABEL[a.kind],
@@ -136,6 +149,7 @@ export function buildNeedsYouRows(input: {
             why: a.why ?? "",
             waitingSince: a.waitingsince > 0 ? a.waitingsince : null,
             act: attentionAct(run),
+            secondAct: attentionSecondAct(run),
             run,
             open:
                 agent != null
@@ -145,6 +159,7 @@ export function buildNeedsYouRows(input: {
                       : channelId !== ""
                         ? { kind: "channel", channelId, runId: run.runId }
                         : null,
+            learnId,
         });
     }
     return rows;

@@ -82,7 +82,7 @@ export function DagFinalRail({ group, owner, view }: { group: TaskGroup; owner: 
                         {view.stageMs != null ? ` · ${fmtDuration(view.stageMs)}` : ""}
                     </div>
                     <div className="truncate text-[13px] font-semibold text-ink-hi">Final verification</div>
-                    <div className="truncate font-mono text-[10.5px] text-secondary">
+                    <div className="truncate text-[10.5px] text-secondary">
                         <span className="text-ink-mid">verifier</span> · {custom ? "reviewers route" : "same as lead"} ·{" "}
                         {route.runtime} / {route.model || "default"}
                         {when ? ` · ${when}` : ""}

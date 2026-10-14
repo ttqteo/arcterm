@@ -108,7 +108,7 @@ Chân hộp thoại có một dòng cho biết điều sẽ xảy ra (`Starts in
 
 Header phía trên terminal là một hàng gọn:
 
-- chấm trạng thái, **tên**, logo harness, **trạng thái** (`working`, `idle`, `asking`), **model**, **context** đã dùng (số token, đổi màu khi đầy), rồi `· <project>`. Agent gắn với initiative thì có thêm liên kết tới initiative trong [Jarvis](jarvis.md); lead của run ghi `orchestrator run <id>`; worker ghi `↑ <tên lead>` (bấm để tới lead).
+- chấm trạng thái, **tên**, logo harness, **trạng thái** (`working`, `idle`, `asking`), **model**, **context** đã dùng (số token, đổi màu khi đầy), rồi `· <project>`. Agent gắn với initiative thì có thêm liên kết `◇ <initiative>` (bấm hoặc `i` để mở [popover của initiative](#popover-của-initiative); `Ctrl`+bấm để peek nó); chip **N to review** khi agent đã đề xuất chunk chờ bạn quyết ([Plan to review](#plan-to-review-trên-rail)); agent chưa gắn initiative có nút **+ Link to initiative** ([Link to initiative](#link-to-initiative)). Lead của run ghi `orchestrator run <id>`; worker ghi `↑ <tên lead>` (bấm để tới lead).
 - bên phải: nút màu cam **Spec review** / **Plan review** khi agent đang xin duyệt (xem [bên dưới](#duyệt-tài-liệu-do-agent-yêu-cầu)); nút chuyển **Terminal | Canvas | Review** khi agent có canvas hoặc Doc review; nút `…`; nút **Split**; nút **✓ Close · N tok** khi agent trông như đã xong; nút toàn màn hình; nút `×` đóng.
 
 Nút `…` (hoặc chuột phải vào header) mở menu còn lại: **Open a tool…**, **Float window**, **Redraw terminal**, **Interrupt turn**, **Fullscreen terminal** / **Exit fullscreen**, **Show details** / **Hide details**, **Close agent**.
@@ -292,6 +292,7 @@ Nhấn `d` (hoặc bấm mũi tên ở rail) để thu rail thành một dải 4
 
 | Mục | Nội dung |
 |---|---|
+| **Plan to review** | Chỉ khi initiative của agent có chunk do agent đề xuất: đứng đầu rail, mỗi chunk một hàng với **Accept**, **Rename**, **Drop**; xem [Plan to review trên rail](#plan-to-review-trên-rail) |
 | **Status** | Khối đầu rail: vòng context (% và số token đang nằm trong context) cùng chi phí ước tính của phiên; tổng token và thanh chia theo loại token; dòng `project · nhánh · model`; worktree nếu có; các công cụ agent dùng nhiều (`Bash ×12`…). Nút **Breakdown** ở cuối khối mở ra nhận xét về nơi token đi vào, phần chia theo loại (token và ≈ chi phí) và, nếu phiên dùng nhiều model, phần chia theo model. Khi context đã lớn, một agent Claude đang rảnh còn có **Compact** (tóm tắt rồi tiếp tục) và **Clear** (hội thoại mới; `/resume` đưa cái cũ về) |
 | **Needs you** | Chỉ trên rail của lead: các câu hỏi của run đang chờ bạn |
 | **Subagents** | Từng subagent với model và trạng thái; bấm để xem bên trong |
@@ -327,6 +328,43 @@ Mở khi bạn bấm một file trong **Files changed**, một output trong **Ba
 - **Live** (output của task nền: bám theo đuôi khi nó dài ra), và các nút icon: **Outline** (mục lục của file markdown), **Wrap** (bật/tắt xuống dòng), **Pin** (ghim file vào mục **Pinned** của tab Files và của Code; chỉ có khi file nằm trong thư mục của agent; ghim rồi thì icon tô đặc màu accent), **Open in Code**.
 
 Tab File rộng hơn Overview; kéo mép của rail (**Resize panel**) để đổi độ rộng. `Esc` đóng file (hoặc hủy comment đang viết). Phím `←`/`→`/`Home`/`End` chuyển tab khi thanh tab đang focus.
+
+## Initiative của agent
+
+Một phiên làm việc trên một initiative (xem [Jarvis → Initiatives](jarvis.md#initiatives)) thì header và rail cho bạn xem và quyết định mọi thứ về initiative đó ngay tại agent, không phải sang Jarvis.
+
+### Plan to review trên rail
+
+Khi agent đề xuất chunk cho initiative của nó (`wsh effort chunk add --proposed`, xem [Tích hợp agent](agent-integration.md#skills-đi-kèm)), rail mở ở mục **Plan to review**, đứng đầu tab Overview. Chunk đề xuất **chưa tính vào tiến độ** (`done/total`) cho tới khi bạn chấp nhận.
+
+- Mỗi hàng có nhãn chunk, stage và ba nút: ✓ **Accept** (chunk thành `pending` và bắt đầu được tính), ✎ **Rename** (sửa tại chỗ; `Enter` lưu, `Esc` hủy; nhãn trùng một chunk đã có bị từ chối và lý do hiện dưới các nút) và ✕ **Drop** (xóa chunk).
+- Hàng vừa quyết định ở lại, đọc `accepted · now pending` hoặc `dropped`, kèm **Undo**, cho tới khi rail đọc lại initiative (khi agent đổi trạng thái, hoặc khi rail mở lại). **Undo** đưa chunk về `proposed`; một chunk đã bị xóa quay lại đúng chỗ cũ, cùng stage.
+- Dưới các hàng: **Accept all and continue** chấp nhận hết rồi gõ `Plan accepted, start with <chunk đầu>` vào terminal của agent; **Accept all** chấp nhận mà không gửi gì; **Drop all** xóa hết các chunk đang chờ. Hết chunk chờ thì mục rời rail.
+
+Cùng những chunk đó hiện ở Jarvis: hàng của initiative ghi `N proposed`, mở ra có nhóm **Proposed** với cùng ba nút ([Jarvis → Initiatives](jarvis.md#initiatives)), và **Waiting on you** có một mục `plan` cho mỗi initiative còn chunk chờ. Trên Brief, mục đó mở agent đã đề xuất khi agent còn mở, không thì mở initiative.
+
+Chip **N to review** trên header (màu hổ phách) báo có chunk chờ ngay cả khi rail đang ở tab khác hoặc gập lại; bấm nó đưa rail về **Plan to review**.
+
+### Popover của initiative
+
+Bấm liên kết `◇ <initiative>` trên header, hoặc `i`, mở popover ngay dưới nó (`i` hoặc `Esc` đóng và trả focus về chỗ cũ):
+
+- **Đầu**: project, trạng thái (`agent open`, `at work`, `blocked`, `paused`, `done`), tên, `↳ Part of …` nếu là initiative con, thanh chunk và `done/total`.
+- **This agent is on**: chunk gắn với agent này, hoặc chunk `active` khi agent chưa được gắn chunk nào, kèm ghi chú mới nhất. **Mark done** (`m`) đánh dấu xong và chunk kế tiếp thành `active`.
+- **Next**: hai chunk `pending` kế tiếp. Bấm một chunk (hoặc `↑` / `↓` rồi `Enter`) mở menu nhỏ: đổi trạng thái sang `pending`, `active`, `blocked`, `deferred` hay `skipped`, hoặc **Rename**.
+- `N proposed · Review on the rail` khi còn chunk chờ: bấm để đóng popover và đưa rail về **Plan to review**.
+- Chân popover: **Add note** (`n`; gõ ghi chú rồi `Enter`) thêm ghi chú vào chunk đang làm, và **Open in Jarvis** mở initiative trong tấm chi tiết của Jarvis.
+
+Khi popover mở, các phím đơn của Agent nhường cho nó. `Ctrl`+bấm liên kết không mở popover mà peek initiative trong popup của Sprout.
+
+### Link to initiative
+
+Agent chưa gắn initiative có nút **+ Link to initiative** trên header (hoặc `i`). Picker liệt kê initiative cùng project, các project khác sau một dòng đếm; gõ vào ô **Find an initiative** để lọc, `↑` / `↓` chọn, `Enter` gắn, `Esc` đóng.
+
+- Chọn một initiative thì phiên được gắn vào nó, và agent được gắn vào chunk `active` của nó (chưa có thì chunk `pending` đầu tiên) để chunk đó đọc là việc của agent.
+- **+ New initiative from this session** tạo một ý tưởng đặt tên theo agent và gắn phiên vào đó; ý tưởng chưa có chunk nên chưa gắn chunk nào.
+
+Worker của run không có nút này vì nó đã có task của nó, và terminal thường cũng không (nó không phải một phiên).
 
 ## Trả lời câu hỏi của agent
 
@@ -399,6 +437,7 @@ Phím đơn (`j`, `k`, `d`, `f`, `r`, `c`, `Esc`…) chỉ có tác dụng khi b
 | `Ctrl+Shift+O` | Open a tool: mở lazygit, yazi, btop… trong thư mục của agent đang focus (dùng được cả trong terminal) |
 | `` Ctrl+` `` | Gấp panel terminal thành dải / mở lại (chỉ khi có terminal trong panel) |
 | `d` | Bật/tắt rail chi tiết |
+| `i` | Popover initiative của agent (hoặc picker **Link to initiative** khi agent chưa có); trong popover: `m` **Mark done**, `n` **Add note**, `↑` / `↓` chọn chunk, `Enter` mở menu chunk, `Esc` hoặc `i` đóng |
 | `f` / `F11` | Toàn màn hình terminal (`F11` dùng được trong terminal) |
 | `Shift+F` | Bật/tắt Float |
 | `r` | Mở review của agent (Spec/Plan review hoặc Doc review) / về lại terminal |

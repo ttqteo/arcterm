@@ -7,15 +7,18 @@
 // Behind you is two lines under a wording column.
 
 import { cn } from "@/util/util";
-import { CornerDownRight, Ellipsis, Lightbulb } from "lucide-react";
+import { ArrowLeft, ArrowRight, CornerDownRight, Ellipsis, Lightbulb } from "lucide-react";
 import type { ReactNode } from "react";
 import type { QueueAct } from "./briefingmodel";
-import type { BriefLine, RunRowFace } from "./briefrows";
-import { CURSOR_RING, cursorAttrs, FAINT_TEXT, ROW_BORDER, SMALL_BTN, TONE_TEXT } from "./briefstyle";
-import type { ChunkTone } from "./effortmodel";
+import { initiativeLine, type BriefLine, type RunRowFace } from "./briefrows";
+import { CURSOR_RING, cursorAttrs, FAINT_TEXT, REGION_LABEL, ROW_BORDER, SMALL_BTN, TONE_TEXT } from "./briefstyle";
+import type { ChunkTone, EffortCardModel } from "./effortmodel";
 import type { InitiativeResume } from "./initiativework";
+import type { EventTone } from "./reviewmodel";
 
 const PULSE = "pulse-dot-slow";
+// a sub-initiative's row is indented this many px per level under the one it is part of
+const NEST_INDENT = 20;
 
 export function WaitingRow({
     line,
@@ -177,7 +180,7 @@ function MenuButton({
         <button
             type="button"
             data-jarvis-initiative-menu
-            title="Rename, edit, pause, archive or delete"
+            title="Rename, edit, pause, archive, link or delete"
             aria-label={`Actions for ${title}`}
             onClick={(e) => {
                 e.stopPropagation();
@@ -193,6 +196,22 @@ function MenuButton({
     );
 }
 
+// "4 proposed": the chunks an agent put forward that wait for a decision, in the asking tone. Drawn right-aligned in
+// the column before a row's actions; the opened row decides them (inlinetrackerview's ProposedGroup).
+function ProposedCount({ text, className }: { text?: string; className?: string }) {
+    if (text == null) {
+        return null;
+    }
+    return (
+        <span
+            data-jarvis-proposed-count
+            className={cn("whitespace-nowrap text-right text-[10.5px] tabular-nums text-asking", className)}
+        >
+            {text}
+        </span>
+    );
+}
+
 // A tracker: an initiative with a plan, one dense row in the Initiatives box. Opened, it expands where it is:
 // the chunk editor renders under the row inside the same raised box, so nothing jumps and no hole is left.
 export function InitiativeRow({
@@ -202,6 +221,9 @@ export function InitiativeRow({
     expanded,
     titleSlot,
     resume,
+    changed,
+    idle,
+    trailing,
     onOpen,
     onWork,
     onContextMenu,
@@ -215,7 +237,14 @@ export function InitiativeRow({
     titleSlot?: ReactNode;
     // where the initiative was left and what Work on does; absent on an archived initiative
     resume?: InitiativeResume;
-    onOpen: () => void;
+    // updated since the person last reviewed it: a dot before the title
+    changed?: boolean;
+    // "idle 3w": still for two weeks or more with nobody on it; the status cell says it when nothing else does
+    idle?: string;
+    // replaces the Work on and menu buttons at the row's end (a review row's reason)
+    trailing?: ReactNode;
+    // absent, the row is not a button: the review's open initiative has nothing to open
+    onOpen?: () => void;
     onWork?: () => void;
     onContextMenu?: (e: React.MouseEvent) => void;
     // the opened row's detail
@@ -224,7 +253,8 @@ export function InitiativeRow({
     const p = line.progress ?? { done: 0, total: 0, pct: 0 };
     // a paused or archived initiative is not where the next hour goes
     const resting = line.state === "paused" || line.state === "archived";
-    // what the cell at the row's end says: stuck, an agent on it, its state (paused, archived), else when it last moved
+    // what the cell at the row's end says: stuck, an agent on it, its state (paused, archived), how long it has sat
+    // idle, else when it last moved
     const status =
         line.noteLabel === "Blocked on"
             ? { text: "● blocked", tone: "text-asking" }
@@ -232,39 +262,75 @@ export function InitiativeRow({
               ? { text: "● agent open", tone: "text-success" }
               : line.state !== ""
                 ? { text: line.state, tone: TONE_TEXT[line.stateTone] }
-                : { text: resume?.kind === "work" ? resume.when : "", tone: "text-ink-mid" };
+                : idle != null
+                  ? { text: idle, tone: "text-ink-faint" }
+                  : { text: resume?.kind === "work" ? resume.when : "", tone: "text-ink-mid" };
+    // a sub-initiative sits under the one it is part of: indented, with an elbow reaching up to it
+    const depth = line.depth ?? 0;
+    const subCount = line.subCount ?? 0;
     return (
         <div
             data-jarvis-brief-row="initiative"
             data-jarvis-initiative-card={expanded ? "open" : "closed"}
+            data-jarvis-initiative-depth={depth}
             {...cursorAttrs(focused)}
             onContextMenu={onContextMenu}
+            style={depth > 0 ? { marginLeft: depth * NEST_INDENT } : undefined}
             className={cn(
                 "group flex min-w-0 flex-col rounded-[8px] border",
+                depth > 0 && "relative",
                 expanded ? "border-edge-strong bg-surface-raised" : "border-transparent",
                 focused && CURSOR_RING,
                 fresh && "fresh-mark"
             )}
         >
+            {depth > 0 ? (
+                <span
+                    aria-hidden
+                    data-jarvis-initiative-elbow
+                    className="pointer-events-none absolute -left-3 -top-1.5 h-6 w-2.5 rounded-bl-[6px] border-b-[1.5px] border-l-[1.5px] border-edge-strong"
+                />
+            ) : null}
             <div
-                role="button"
-                tabIndex={-1}
-                aria-expanded={expanded}
-                aria-label={expanded ? `Collapse ${line.title}` : `Open ${line.title}`}
+                role={onOpen != null ? "button" : undefined}
+                tabIndex={onOpen != null ? -1 : undefined}
+                aria-expanded={onOpen != null ? expanded : undefined}
+                aria-label={onOpen != null ? (expanded ? `Collapse ${line.title}` : `Open ${line.title}`) : undefined}
                 onClick={onOpen}
                 className={cn(
-                    "grid cursor-pointer grid-cols-[minmax(0,1.1fr)_150px_minmax(0,1.4fr)_74px_auto] items-center gap-3.5 rounded-[7px] px-2.5 py-[7px]",
-                    !expanded && "hover:bg-surface-hover",
+                    "grid grid-cols-[minmax(0,1.1fr)_150px_minmax(0,1.4fr)_74px_auto] items-center gap-3.5 rounded-[7px] px-2.5 py-[7px]",
+                    onOpen != null && "cursor-pointer",
+                    !expanded && onOpen != null && "hover:bg-surface-hover",
                     resting && "opacity-60"
                 )}
             >
                 <div className="flex min-w-0 flex-col gap-px">
                     {titleSlot ?? (
-                        <span title={line.title} className="truncate text-[13px] font-semibold text-ink-hi">
-                            {line.title}
+                        <span className="flex min-w-0 items-center gap-1.5">
+                            {changed ? (
+                                <span
+                                    aria-hidden
+                                    data-jarvis-changed-dot
+                                    title="Changed since you last reviewed it"
+                                    className="h-1.5 w-1.5 flex-none rounded-full bg-accent"
+                                />
+                            ) : null}
+                            <span title={line.title} className="truncate text-[13px] font-semibold text-ink-hi">
+                                {line.title}
+                            </span>
+                            {subCount > 0 ? (
+                                <span
+                                    data-jarvis-initiative-sub
+                                    className="ml-0.5 flex-none text-[10.5px] font-medium text-ink-mid"
+                                >
+                                    +{subCount} sub
+                                </span>
+                            ) : null}
                         </span>
                     )}
-                    <span className="truncate text-[10.5px] text-muted">{line.meta}</span>
+                    <span data-jarvis-initiative-meta className="truncate text-[10.5px] text-muted">
+                        {line.meta}
+                    </span>
                 </div>
                 <div className="flex items-center gap-2">
                     <SegmentBar segments={line.segments ?? []} className="flex-1" />
@@ -284,17 +350,29 @@ export function InitiativeRow({
                 ) : (
                     <span />
                 )}
-                <span
-                    data-jarvis-initiative-status
-                    className={cn("truncate whitespace-nowrap text-right text-[10.5px] tabular-nums", status.tone)}
-                >
-                    {status.text}
-                </span>
+                {/* the column before the actions: what the row's state says, and under it the plan waiting for
+                    a decision. The state's span is empty (no height) on a row with nothing to say. */}
+                <div className="flex min-w-0 flex-col items-end">
+                    <span
+                        data-jarvis-initiative-status
+                        className={cn(
+                            "max-w-full truncate whitespace-nowrap text-right text-[10.5px] tabular-nums",
+                            status.tone
+                        )}
+                    >
+                        {status.text}
+                    </span>
+                    <ProposedCount text={line.proposed} className="max-w-full truncate" />
+                </div>
                 <div className="flex min-w-[122px] items-center justify-end gap-1">
-                    {resume != null && onWork != null ? (
-                        <WorkOnButton resume={resume} focused={focused} onWork={onWork} always />
-                    ) : null}
-                    {onContextMenu != null ? <MenuButton title={line.title} onMenu={onContextMenu} /> : null}
+                    {trailing ?? (
+                        <>
+                            {resume != null && onWork != null ? (
+                                <WorkOnButton resume={resume} focused={focused} onWork={onWork} always />
+                            ) : null}
+                            {onContextMenu != null ? <MenuButton title={line.title} onMenu={onContextMenu} /> : null}
+                        </>
+                    )}
                 </div>
             </div>
             {expanded && children != null ? (
@@ -368,9 +446,279 @@ export function IdeaRow({
                         {line.state !== "" ? ` · ${line.state}` : ""}
                     </span>
                 </div>
+                {/* the leading keeps it on the first line of the title beside it */}
+                <ProposedCount text={line.proposed} className="mt-px flex-none leading-[17px]" />
                 {onContextMenu != null ? <MenuButton title={line.title} onMenu={onContextMenu} /> : null}
             </div>
             {expanded && children != null ? <div onClick={(e) => e.stopPropagation()}>{children}</div> : null}
+        </div>
+    );
+}
+
+const LINKED_ROW =
+    "flex h-7 w-full cursor-pointer items-center gap-2.5 rounded-[6px] px-2 text-left hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+
+// What is linked under an opened initiative: its sub-initiatives (title, done/total, status), then the ideas linked to it
+// (title, and how many chunks wait for a decision). A row opens that initiative's own row on the List; the idea stays in
+// the Ideas column as well. Each row reads its card through initiativeLine, so it says what the card's own row says.
+export function LinkedInitiatives({
+    subs,
+    ideas,
+    onOpen,
+}: {
+    subs: EffortCardModel[];
+    ideas: EffortCardModel[];
+    onOpen: (card: EffortCardModel) => void;
+}) {
+    if (subs.length === 0 && ideas.length === 0) {
+        return null;
+    }
+    return (
+        <div data-jarvis-linked className="flex flex-col gap-2.5 border-t border-edge-mid px-3 py-2.5">
+            {subs.length > 0 ? (
+                <section data-jarvis-linked-subs className="flex flex-col gap-0.5">
+                    <h4 className={cn(REGION_LABEL, "px-2 pb-0.5 text-ink-mid")}>
+                        Sub-initiatives <span className="font-normal tabular-nums">{subs.length}</span>
+                    </h4>
+                    {subs.map((card) => {
+                        const line = initiativeLine(card);
+                        const p = line.progress ?? { done: 0, total: 0 };
+                        const status =
+                            line.state !== ""
+                                ? { text: line.state, tone: TONE_TEXT[line.stateTone] }
+                                : { text: "active", tone: "text-ink-mid" };
+                        return (
+                            <button
+                                key={card.oref}
+                                type="button"
+                                data-jarvis-linked-sub={card.oref}
+                                onClick={() => onOpen(card)}
+                                className={LINKED_ROW}
+                            >
+                                <span title={card.title} className="min-w-0 flex-1 truncate text-[12.5px] text-ink-hi">
+                                    {card.title}
+                                </span>
+                                <span className="flex-none text-[11px] font-semibold tabular-nums text-secondary">
+                                    {p.done}/{p.total}
+                                </span>
+                                <span
+                                    className={cn("w-[72px] flex-none truncate text-right text-[10.5px]", status.tone)}
+                                >
+                                    {status.text}
+                                </span>
+                            </button>
+                        );
+                    })}
+                </section>
+            ) : null}
+            {ideas.length > 0 ? (
+                <section data-jarvis-linked-ideas className="flex flex-col gap-0.5">
+                    <h4 className={cn(REGION_LABEL, "px-2 pb-0.5 text-ink-mid")}>
+                        Ideas <span className="font-normal tabular-nums">{ideas.length}</span>
+                    </h4>
+                    {ideas.map((card) => {
+                        const proposed = initiativeLine(card).proposed;
+                        return (
+                            <button
+                                key={card.oref}
+                                type="button"
+                                data-jarvis-linked-idea={card.oref}
+                                onClick={() => onOpen(card)}
+                                className={LINKED_ROW}
+                            >
+                                <Lightbulb size={12} aria-hidden className="flex-none text-muted" />
+                                <span title={card.title} className="min-w-0 flex-1 truncate text-[12.5px] text-primary">
+                                    {card.title}
+                                </span>
+                                {proposed != null ? (
+                                    <span
+                                        data-jarvis-linked-proposed
+                                        className="flex-none whitespace-nowrap text-[10.5px] tabular-nums text-asking"
+                                    >
+                                        {proposed}
+                                    </span>
+                                ) : null}
+                            </button>
+                        );
+                    })}
+                </section>
+            ) : null}
+        </div>
+    );
+}
+
+// --- Review mode ---------------------------------------------------------------------------------------------
+// The Initiatives region in a review pass: one initiative open at a time, the rest as rows with the reason each is
+// there. The model is reviewmodel.ts; the state is reviewstore.ts; briefsurface.tsx wires them to the rows.
+
+const REVIEW_BTN =
+    "inline-flex h-[26px] cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[7px] border bg-surface-raised px-2.5 text-[11.5px] font-semibold hover:border-edge-strong hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+const REVIEW_STEP =
+    "flex h-6 w-6 flex-none cursor-pointer items-center justify-center rounded-[6px] border border-border text-ink-mid hover:border-edge-strong hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+const EVENT_TEXT: Record<EventTone, string> = { ok: "text-success", accent: "text-accent-soft", muted: "text-ink-mid" };
+
+// What sits in the Initiatives heading: Review · N while there is something to review, and during a pass where it
+// is, with the way to step and to leave.
+export function ReviewTools({
+    count,
+    pass,
+    onEnter,
+    onStep,
+    onExit,
+}: {
+    // the queue's length
+    count: number;
+    // the pass, when one is on: where it is and how long it is
+    pass: { at: number; total: number } | null;
+    onEnter: () => void;
+    onStep: (delta: number) => void;
+    onExit: () => void;
+}) {
+    if (pass == null) {
+        return count > 0 ? (
+            <button
+                type="button"
+                data-jarvis-review-enter
+                title="Review what changed and what sat idle (v)"
+                onClick={onEnter}
+                className={cn(SMALL_BTN, "flex-none whitespace-nowrap")}
+            >
+                Review · {count}
+            </button>
+        ) : null;
+    }
+    return (
+        <div data-jarvis-review-tools className="flex min-w-0 flex-none items-center gap-2.5">
+            <span
+                data-jarvis-review-pos
+                className="flex h-[22px] flex-none items-center whitespace-nowrap rounded-[6px] border border-edge-strong bg-surface-selected px-[9px] text-[11px] font-semibold tabular-nums text-ink-hi"
+            >
+                Reviewing {pass.at} of {pass.total}
+            </span>
+            <button
+                type="button"
+                data-jarvis-review-step="prev"
+                aria-label="Previous initiative"
+                title="Previous (←, k)"
+                onClick={() => onStep(-1)}
+                className={REVIEW_STEP}
+            >
+                <ArrowLeft size={12} aria-hidden />
+            </button>
+            <button
+                type="button"
+                data-jarvis-review-step="next"
+                aria-label="Next initiative"
+                title="Next (→, j)"
+                onClick={() => onStep(1)}
+                className={REVIEW_STEP}
+            >
+                <ArrowRight size={12} aria-hidden />
+            </button>
+            <span className="truncate text-[10.5px] text-ink-mid">changed since you reviewed, then idle</span>
+            <button
+                type="button"
+                data-jarvis-review-exit
+                onClick={onExit}
+                className={cn(REVIEW_BTN, "flex-none border-edge-mid text-secondary")}
+            >
+                Exit review
+                <kbd className="font-mono text-[10px] font-normal text-ink-mid">Esc</kbd>
+            </button>
+        </div>
+    );
+}
+
+export type ReviewEventRow = { glyph: string; text: string; when: string; tone: EventTone };
+export type ReviewActionBtn = { id: string; label: string; onClick: () => void };
+
+// The open initiative's body in a pass: what happened since the mark, then what to do about it. The first action is
+// the one the initiative most likely needs (Pause and Archive lead for an idle one).
+export function ReviewBody({
+    since,
+    events,
+    quiet,
+    actions,
+    onMark,
+}: {
+    since: string;
+    events: ReviewEventRow[];
+    // said in place of the events when there are none
+    quiet: string;
+    actions: ReviewActionBtn[];
+    onMark: () => void;
+}) {
+    return (
+        <>
+            <div
+                data-jarvis-review-since
+                className="mx-2.5 mb-2.5 mt-0.5 flex flex-col gap-[7px] rounded-[7px] bg-surface px-3 py-2.5"
+            >
+                <div className="flex items-center gap-2">
+                    <span className={cn(REGION_LABEL, "text-ink-mid")}>Since you reviewed</span>
+                    <span className="text-[10.5px] text-ink-mid">{since}</span>
+                </div>
+                {events.length === 0 ? (
+                    <div data-jarvis-review-quiet className="text-[12px] text-ink-faint">
+                        {quiet}
+                    </div>
+                ) : (
+                    events.map((ev, i) => (
+                        <div key={i} data-jarvis-review-event className="flex items-baseline gap-[9px] text-[12px]">
+                            <span
+                                aria-hidden
+                                className={cn("w-3 flex-none text-center font-bold", EVENT_TEXT[ev.tone])}
+                            >
+                                {ev.glyph}
+                            </span>
+                            <span className="min-w-0 flex-1 text-secondary">{ev.text}</span>
+                            <span className="flex-none text-[10.5px] tabular-nums text-ink-mid">{ev.when}</span>
+                        </div>
+                    ))
+                )}
+            </div>
+            <div className="flex items-center gap-1.5 px-2.5 pb-2.5">
+                {actions.map((a, k) => (
+                    <button
+                        key={a.id}
+                        type="button"
+                        data-jarvis-review-action={a.id}
+                        onClick={a.onClick}
+                        className={cn(REVIEW_BTN, "text-secondary", k === 0 ? "border-edge-strong" : "border-edge-mid")}
+                    >
+                        {a.label}
+                    </button>
+                ))}
+                <span className="flex-1" />
+                <button
+                    type="button"
+                    data-jarvis-review-action="mark"
+                    onClick={onMark}
+                    className={cn(REVIEW_BTN, "border-edge-strong bg-surface-selected text-primary")}
+                >
+                    Mark reviewed
+                    <kbd className="font-mono text-[10px] font-normal text-ink-mid">↵</kbd>
+                </button>
+            </div>
+        </>
+    );
+}
+
+// The pass's end: every initiative in it marked
+export function ReviewDone({ onBack }: { onBack: () => void }) {
+    return (
+        <div
+            data-jarvis-review-done
+            className="flex items-center gap-2.5 rounded-[8px] border border-dashed border-edge-mid p-[18px] text-[12.5px] text-secondary"
+        >
+            <span aria-hidden className="text-success">
+                ✓
+            </span>
+            All reviewed. Next review lights up when an initiative changes.
+            <span className="flex-1" />
+            <button type="button" onClick={onBack} className={cn(REVIEW_BTN, "border-edge-mid text-secondary")}>
+                Back to the list
+            </button>
         </div>
     );
 }

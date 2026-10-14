@@ -382,6 +382,47 @@ func TestLandKeepsUncommittedEdits(t *testing.T) {
 			t.Fatalf("base.txt = %q, want the edit byte-identical", got)
 		}
 	})
+	// run ee18a780 held on cmd/wsh/cmd/claude-mod copies that every dev build rewrites, already the branch's bytes
+	t.Run("an edit that is already the branch's version lands", func(t *testing.T) {
+		f, tree := landFixture(t)
+		commitOnBranch(t, tree, "base.txt", "branch\n")
+		f.setLandCommands(t, "", "true")
+		writeFile(t, filepath.Join(f.project, "base.txt"), "branch\n")
+
+		run, err := wstore.GetRun(f.ctx, f.channel, f.ownerID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if hold := landPrecheck(f.ctx, run); hold != nil {
+			t.Fatalf("landPrecheck = %+v, want no hold for a copy of the branch's version", hold)
+		}
+		if land := f.landRun(t, false); land.State != LandState_Landed {
+			t.Fatalf("land = %+v, want landed", land)
+		}
+		if got := strings.ReplaceAll(readFile(t, filepath.Join(f.project, "base.txt")), "\r\n", "\n"); got != "branch\n" {
+			t.Fatalf("base.txt = %q, want the branch's version", got)
+		}
+		if status := gitCmd(t, f.project, "status", "--porcelain"); status != "" {
+			t.Fatalf("checkout left dirty after the land:\n%s", status)
+		}
+	})
+	t.Run("a copy of the branch's version beside a real edit still holds", func(t *testing.T) {
+		f, tree := landFixture(t)
+		commitOnBase(t, f.project, "other.txt", "base other\n")
+		gitCmd(t, tree, "merge", "--no-edit", "main")
+		commitOnBranch(t, tree, "base.txt", "branch\n")
+		commitOnBranch(t, tree, "other.txt", "branch other\n")
+		f.setLandCommands(t, "", "true")
+		writeFile(t, filepath.Join(f.project, "base.txt"), "branch\n")
+		writeFile(t, filepath.Join(f.project, "other.txt"), "the human's edit\n")
+		head := gitCmd(t, f.project, "rev-parse", "main")
+
+		land := f.landRun(t, false)
+		f.assertHeld(t, land, head, "unstaged edits to files the run changes: other.txt")
+		if got := readFile(t, filepath.Join(f.project, "other.txt")); got != "the human's edit\n" {
+			t.Fatalf("other.txt = %q, want the edit intact", got)
+		}
+	})
 	t.Run("an edit to an unrelated file lands around it", func(t *testing.T) {
 		f, tree := landFixture(t)
 		commitOnBranch(t, tree, "wrapup.txt", "wrap-up\n")

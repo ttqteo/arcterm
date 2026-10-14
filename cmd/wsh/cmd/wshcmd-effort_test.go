@@ -73,6 +73,28 @@ func TestEffortChunkAddStageFlag(t *testing.T) {
 	}
 }
 
+func TestEffortChunkAddProposedFlag(t *testing.T) {
+	if effortChunkAddCmd.Flags().Lookup("proposed") == nil {
+		t.Fatal("`effort chunk add` has no --proposed")
+	}
+}
+
+func TestFormatEffortShowLeavesProposedOutOfProgress(t *testing.T) {
+	e := &waveobj.Effort{Title: "T", Status: "active", Chunks: []waveobj.EffortChunk{
+		{Label: "A", Status: "done"},
+		{Label: "B", Status: "pending"},
+		{Label: "P", Status: "proposed"},
+	}}
+	got := formatEffortShow(e)
+	want := "# T (active) — 1/2\n" + // a proposed chunk is a suggestion: not in the total
+		"  1. [done] A\n" +
+		"  2. [pending] B\n" +
+		"  3. [proposed] P\n" // but it still prints, so the plan can be read
+	if got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
 func TestFormatEffortShowGroupsConsecutiveStages(t *testing.T) {
 	e := &waveobj.Effort{Title: "T", Status: "active", Chunks: []waveobj.EffortChunk{
 		{Label: "a", Status: "done", Stage: "Evidence"},

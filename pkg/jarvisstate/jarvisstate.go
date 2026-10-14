@@ -245,8 +245,11 @@ func EffortSummaryOf(e *waveobj.Effort) wshrpc.EffortSummary {
 		if c.Status == "done" {
 			s.Done++
 		}
+		// a proposed chunk is the agent's suggestion until accepted: not part of the work yet
+		if c.Status != "proposed" {
+			s.Total++
+		}
 	}
-	s.Total = len(e.Chunks)
 	for _, c := range e.Chunks {
 		if c.Status == "active" {
 			s.ActiveChunk = c.Label
@@ -255,7 +258,7 @@ func EffortSummaryOf(e *waveobj.Effort) wshrpc.EffortSummary {
 	}
 	if s.ActiveChunk == "" {
 		for _, c := range e.Chunks {
-			if c.Status != "done" && c.Status != "skipped" {
+			if c.Status != "done" && c.Status != "skipped" && c.Status != "proposed" {
 				s.ActiveChunk = c.Label
 				break
 			}

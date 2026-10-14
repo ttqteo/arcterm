@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { describe, expect, it } from "vitest";
 import { actsForAttention, actsForEvent } from "./petacts";
 
@@ -142,6 +143,29 @@ describe("actsForEvent", () => {
     });
 });
 
+describe("actsForAttention: a queued start that did not start", () => {
+    const blocked = {
+        kind: "run-queue-blocked",
+        key: "run-queue-blocked:q-1a2b",
+        source: "Learned additions",
+        text: "Did not start: Rail was held: dirty",
+        action: "Start",
+        phaseidx: 0,
+        waitingsince: 1000,
+        queueid: "q-1a2b",
+    } as AttentionItem;
+
+    it("is Start now on its queue entry alone: it has no run to open, and Remove is the strip's", () => {
+        expect(actsForAttention(blocked)).toEqual([
+            { id: "run-queue-blocked:q-1a2b:start", verb: "start-queued", label: "Start now", queueId: "q-1a2b" },
+        ]);
+    });
+
+    it("offers nothing when the item names no queue entry", () => {
+        expect(actsForAttention({ ...blocked, queueid: undefined })).toEqual([]);
+    });
+});
+
 describe("actsForAttention: a chunk that came due", () => {
     it("is Work on its initiative, then Open, with no run to address", () => {
         const item = {
@@ -166,6 +190,35 @@ describe("actsForAttention: a chunk that came due", () => {
                 chunk: "re-measure",
             },
             { id: `${item.key}:open`, verb: "open", label: "Open", target: { kind: "oref", ref: "effort:e1" } },
+        ]);
+    });
+});
+
+describe("actsForAttention: a plan to review", () => {
+    const plan = {
+        kind: "plan-review",
+        key: "plan-review:e1",
+        source: "Nav rail",
+        text: "2 proposed",
+        action: "Review",
+        phaseidx: 0,
+        waitingsince: 1000,
+        oref: "effort:e1",
+        effortoid: "e1",
+    } as AttentionItem;
+    const onE1 = { id: "t7", name: "loom", task: "", state: "idle", effortId: "e1" } as AgentVM;
+    const onE2 = { id: "t8", name: "juno", task: "", state: "idle", effortId: "e2" } as AgentVM;
+
+    it("is one Review that opens the initiative, with no run to address", () => {
+        expect(actsForAttention(plan)).toEqual([
+            { id: `${plan.key}:open`, verb: "open", label: "Review", target: { kind: "oref", ref: "effort:e1" } },
+        ]);
+        expect(actsForAttention(plan, [onE2])[0]).toMatchObject({ target: { ref: "effort:e1" } });
+    });
+
+    it("opens the agent that works the initiative while one is open", () => {
+        expect(actsForAttention(plan, [onE2, onE1])).toEqual([
+            { id: `${plan.key}:open`, verb: "open", label: "Review", target: { kind: "oref", ref: "agent:t7" } },
         ]);
     });
 });

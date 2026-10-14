@@ -38,8 +38,16 @@ export interface PeekRow {
 // does not already say: an escalation's and an ask's question (askText), a blocked dag's reason, and why a land
 // was held, which is what the human has to clear before Land again can merge (or that says to dismiss it).
 // A dag-gate's "Approve <task> before the DAG proceeds." says what its verb already does, so it is dropped and
-// the width goes to the source — the part that differs.
-const DETAIL_KINDS = new Set(["escalation", "dag-blocked", "ask", "run-land-held", "chunk-due"]);
+// the width goes to the source — the part that differs. A plan to review's "2 proposed" is its detail: how much waits.
+const DETAIL_KINDS = new Set([
+    "escalation",
+    "dag-blocked",
+    "ask",
+    "run-land-held",
+    "run-queue-blocked",
+    "chunk-due",
+    "plan-review",
+]);
 
 // A row names its kind in a word beside its dot, so the kind never rides on colour alone.
 const ROW_KIND_LABEL: Record<string, string> = {
@@ -48,7 +56,9 @@ const ROW_KIND_LABEL: Record<string, string> = {
     "dag-blocked": "Blocked",
     ask: "Question",
     "run-land-held": "Land held",
+    "run-queue-blocked": "Run to start",
     "chunk-due": "Due",
+    "plan-review": "Plan to review",
 };
 
 export function rowKindLabel(kind: string): string {
@@ -125,8 +135,9 @@ export function queueRows(
         .filter((item) => item.kind !== PEEK_EXCLUDED_KIND)
         .map((item) => {
             // actsForAttention returns [] with no runid, [in-place act, escort] for a dag gate, a retryable failed
-            // task or an unverified run, [land, dismiss, escort] for a held land, [escort] otherwise
-            const [first, ...links] = actsForAttention(item);
+            // task or an unverified run, [land, dismiss, escort] for a held land, [escort] otherwise (a plan to
+            // review's escort opens its agent: that is why the agents go in)
+            const [first, ...links] = actsForAttention(item, agents);
             const asker = askingAgent(item, agents, messages);
             const answers = answersFor(item, asker);
             const form = formFor(asker);
@@ -228,6 +239,8 @@ export function enterHintLabel(act: PetAct | null): string {
             return "approve";
         case "retry-task":
             return "retry";
+        case "start-queued":
+            return "start now";
         default:
             return "open";
     }

@@ -39,6 +39,7 @@ const (
 	runsReadTimeoutMs   = 10_000
 	runsListDefault     = 20
 	runsGoalWidth       = 70
+	runsReasonWidth     = 60
 	runsShowGoalWidth   = 240 // a task run's goal is its whole worker prompt; --json carries it in full
 	effortORefPrefix    = "effort:"
 )
@@ -61,10 +62,41 @@ defaults to the plan's name). The project is the git repository holding the curr
 project's saved route, else the harness preference in settings.
 
 A launch can take minutes. If it reports no reply, the run may still have started: check
-'wsh runs list' before starting it again.`,
+'wsh runs list' before starting it again.
+
+--queue hands the start to arcterm instead: it checks the plan now, then starts the run when fewer than
+the runs:maxactive setting (default 3) top-level runs are active. The plan is read and the base commit
+taken when the run starts, not when it is queued; the route is fixed now. --after <run-id or q-id> also
+waits for that run to land (a unique prefix of either id works) and implies --queue.`,
 	Args:    cobra.MaximumNArgs(1),
 	PreRunE: preRunSetupRpcClient,
 	RunE:    runsStartRun,
+}
+
+var runsStartNowCmd = &cobra.Command{
+	Use:     "start-now <queue-id>",
+	Short:   "start a queued run now, past the cap and past its --after",
+	Args:    cobra.ExactArgs(1),
+	PreRunE: preRunSetupRpcClient,
+	RunE:    runsStartNowRun,
+}
+
+var runsRunNextCmd = &cobra.Command{
+	Use:   "run-next <queue-id>",
+	Short: "move a queued run to the head of the queue",
+	Long: `Move a queued run to the head of the queue, ahead of every other entry. It still waits for room and
+for its --after: this lets one plan go before the others without exceeding the cap. A blocked entry waits again.`,
+	Args:    cobra.ExactArgs(1),
+	PreRunE: preRunSetupRpcClient,
+	RunE:    runsRunNextRun,
+}
+
+var runsDequeueCmd = &cobra.Command{
+	Use:     "dequeue <queue-id>",
+	Short:   "remove a queued run from the queue without starting it",
+	Args:    cobra.ExactArgs(1),
+	PreRunE: preRunSetupRpcClient,
+	RunE:    runsDequeueRun,
 }
 
 var runsListCmd = &cobra.Command{
@@ -159,6 +191,8 @@ func init() {
 	f.String("prototype", "", "design canvas the final verifier compares against (orchestrator only)")
 	f.String("effort", "", "initiative to attach the run to (id from 'wsh effort list')")
 	f.String("chunk", "", "the initiative's chunk: its label or 1-based number")
+	f.Bool("queue", false, "queue the start: arcterm starts it when fewer than runs:maxactive runs are active")
+	f.String("after", "", "run id or queue entry id (a unique prefix of either) to wait for: starts once that run has landed; implies --queue")
 	f.Bool("json", false, "JSON output")
 	for _, c := range []*cobra.Command{runsStartCmd, runsListCmd, runsShowCmd, runsAnswerCmd, runsCancelCmd, runsEndFinalCmd, runsLandCmd, runsAckCmd} {
 		c.Flags().String("project", "", "project directory (default: the current directory)")
@@ -173,7 +207,7 @@ func init() {
 	runsLandCmd.Flags().Bool("force", false, "land even though the final stage failed")
 	runsAckCmd.Flags().Bool("land", false, "dismiss the run's held land instead, as the cockpit's Dismiss does: the branch stays")
 	runsAttentionCmd.Flags().Bool("json", false, "JSON output")
-	runsCmd.AddCommand(runsStartCmd, runsListCmd, runsShowCmd, runsAnswerCmd, runsCancelCmd, runsEndFinalCmd, runsLandCmd, runsAckCmd, runsAttentionCmd)
+	runsCmd.AddCommand(runsStartCmd, runsStartNowCmd, runsRunNextCmd, runsDequeueCmd, runsListCmd, runsShowCmd, runsAnswerCmd, runsCancelCmd, runsEndFinalCmd, runsLandCmd, runsAckCmd, runsAttentionCmd)
 	rootCmd.AddCommand(runsCmd)
 }
 
@@ -220,6 +254,10 @@ func runsStartRun(cmd *cobra.Command, args []string) error {
 	}
 	data.ChannelId = ch.OID
 	data.OriginTabId = getTabIdFromEnv()
+	queue, _ := cmd.Flags().GetBool("queue")
+	if after := flag("after"); runsWantsQueue(queue, after) {
+		return runsQueueStart(cmd, data, after)
+	}
 	rtn, err := wshclient.CreateRunCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: runsStartTimeoutMs})
 	if err != nil {
 		return runsStartErr(err)
@@ -315,6 +353,185 @@ func runsStartErr(err error) error {
 			time.Duration(runsStartTimeoutMs)*time.Millisecond, err)
 	}
 	return err
+}
+
+// runsWantsQueue is whether a start is handed to the run queue: --queue, or --after, which only a queue can honour.
+func runsWantsQueue(queue bool, after string) bool {
+	return queue || after != ""
+}
+
+// runsQueueStart queues the start the flags built: the same data a start would have sent, so the route and the
+// origin session are fixed now, and the server checks the plan before it accepts the entry.
+func runsQueueStart(cmd *cobra.Command, data wshrpc.CommandCreateRunData, after string) error {
+	entry, err := wshclient.RunQueueAddCommand(RpcClient, wshrpc.CommandRunQueueAddData{Data: data, After: after}, &wshrpc.RpcOpts{Timeout: runsReadTimeoutMs})
+	if err != nil {
+		return err
+	}
+	if isJSON(cmd) {
+		return jsonOut(entry)
+	}
+	list, err := wshclient.RunQueueListCommand(RpcClient, &wshrpc.RpcOpts{Timeout: runsReadTimeoutMs})
+	if err != nil {
+		// the entry is queued either way; only its place and the cap are unknown
+		fmt.Printf("queued %s\n", entry.Id)
+		return nil
+	}
+	fmt.Println(runsQueuedReport(*entry, *list, runsQueueAfterTitle(cmd, *entry, list.Entries)))
+	return nil
+}
+
+// runsQueueAfterTitle names what an entry waits for, for the queued line: a queued entry's title, or a run's first
+// goal line. Empty when it cannot be found; the line then names the id.
+func runsQueueAfterTitle(cmd *cobra.Command, e wshrpc.RunQueueEntry, entries []wshrpc.RunQueueEntry) string {
+	if e.After == "" {
+		return ""
+	}
+	for _, other := range entries {
+		if other.Id == e.After {
+			return other.Title
+		}
+	}
+	if _, run, err := runsFind(cmd, e.After); err == nil {
+		title, _, _ := strings.Cut(run.Goal, "\n")
+		return runsClip(title, runsGoalWidth)
+	}
+	return ""
+}
+
+// runsQueuedReport is what `start --queue` prints once the entry is in. The loop starts an entry the moment there is
+// room, and may have done so before this asked, and an entry can be blocked at once (its After run already held).
+func runsQueuedReport(entry wshrpc.RunQueueEntry, list wshrpc.CommandRunQueueListRtnData, afterTitle string) string {
+	for _, e := range list.Entries {
+		if e.Id != entry.Id {
+			continue
+		}
+		if e.State == wshrpc.RunQueueState_Blocked {
+			return fmt.Sprintf("queued %s — blocked: %s", e.Id, e.Reason)
+		}
+		return runsQueuedLine(e, runsQueuePlace(list.Entries, e.Id), list.MaxActive, afterTitle)
+	}
+	return fmt.Sprintf("queued %s — and started already: there was room. Follow it with: wsh runs list", entry.Id)
+}
+
+// runsQueuedLine is the line a queued start prints: where it stands and what it waits for. A cap of 0 is no cap.
+func runsQueuedLine(e wshrpc.RunQueueEntry, place, maxActive int, afterTitle string) string {
+	head := fmt.Sprintf("queued %s (#%d in line) — ", e.Id, place)
+	switch {
+	case e.After != "":
+		name := afterTitle
+		if name == "" {
+			name = e.After
+		}
+		return head + "starts after " + name + " lands"
+	case maxActive <= 0:
+		return head + "starts at once: runs:maxactive is 0, no cap"
+	case maxActive == 1:
+		return head + "starts when no run is active"
+	}
+	return head + fmt.Sprintf("starts when fewer than %d runs are active", maxActive)
+}
+
+// runsQueuePlace is the entry's 1-based place among the waiting entries of the whole queue, or 0 when it is not one.
+func runsQueuePlace(queue []wshrpc.RunQueueEntry, id string) int {
+	place := 0
+	for _, e := range queue {
+		if e.State == wshrpc.RunQueueState_Blocked {
+			continue
+		}
+		place++
+		if e.Id == id {
+			return place
+		}
+	}
+	return 0
+}
+
+// runsQueueFor is the queued entries of the project at projectPath.
+func runsQueueFor(queue []wshrpc.RunQueueEntry, projectPath string) []wshrpc.RunQueueEntry {
+	var out []wshrpc.RunQueueEntry
+	for _, e := range queue {
+		if runsNormPath(e.ProjectPath) == runsNormPath(projectPath) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// runsQueueLines are the queued entries as `list` prints them, ahead of the runs: each marked by where it stands,
+// `queued #n`, `after <id>` or `blocked: <reason>`. The place counts the whole queue, so listing one project's
+// entries does not renumber them.
+func runsQueueLines(shown, queue []wshrpc.RunQueueEntry, withProject bool, now int64) []string {
+	if len(shown) == 0 {
+		return nil
+	}
+	var buf strings.Builder
+	w := tabwriter.NewWriter(&buf, 0, 4, 2, ' ', 0)
+	for _, e := range shown {
+		var mark string
+		switch {
+		case e.State == wshrpc.RunQueueState_Blocked:
+			mark = "blocked: " + runsClip(e.Reason, runsReasonWidth)
+		case e.After != "":
+			mark = "after " + e.After
+		default:
+			mark = fmt.Sprintf("queued #%d", runsQueuePlace(queue, e.Id))
+		}
+		cols := []string{e.Id, mark, runsAgo(e.QueuedTs, now)}
+		if withProject {
+			cols = append(cols, filepath.Base(e.ProjectPath))
+		}
+		cols = append(cols, runsClip(e.Title, runsGoalWidth))
+		fmt.Fprintln(w, strings.Join(cols, "\t"))
+	}
+	w.Flush()
+	return strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+}
+
+// runsListJSON is `list --json`: the run rows exactly as before, with the queued entries beside them. Empty is [],
+// never null.
+func runsListJSON(rows []runsRow, queued []wshrpc.RunQueueEntry) map[string]any {
+	if rows == nil {
+		rows = []runsRow{}
+	}
+	if queued == nil {
+		queued = []wshrpc.RunQueueEntry{}
+	}
+	return map[string]any{"queued": queued, "runs": rows}
+}
+
+// runsQueueEntries reads the queue, or nothing when it cannot: list is still useful without it.
+func runsQueueEntries() []wshrpc.RunQueueEntry {
+	rtn, err := wshclient.RunQueueListCommand(RpcClient, &wshrpc.RpcOpts{Timeout: runsReadTimeoutMs})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "queued starts unavailable: %v\n", err)
+		return nil
+	}
+	return rtn.Entries
+}
+
+func runsStartNowRun(cmd *cobra.Command, args []string) error {
+	// a launch, so it gets a launch's budget; the server finishes it whatever this waits for
+	if err := wshclient.RunQueueStartNowCommand(RpcClient, wshrpc.CommandRunQueueIdData{Id: args[0]}, &wshrpc.RpcOpts{Timeout: runsStartTimeoutMs}); err != nil {
+		return runsStartErr(err)
+	}
+	fmt.Printf("started queued %s now; follow its run with: wsh runs list\n", args[0])
+	return nil
+}
+
+func runsRunNextRun(cmd *cobra.Command, args []string) error {
+	if err := wshclient.RunQueueRunNextCommand(RpcClient, wshrpc.CommandRunQueueIdData{Id: args[0]}, &wshrpc.RpcOpts{Timeout: runsReadTimeoutMs}); err != nil {
+		return err
+	}
+	fmt.Printf("%s is first in line\n", args[0])
+	return nil
+}
+
+func runsDequeueRun(cmd *cobra.Command, args []string) error {
+	if err := wshclient.RunQueueRemoveCommand(RpcClient, wshrpc.CommandRunQueueIdData{Id: args[0]}, &wshrpc.RpcOpts{Timeout: runsReadTimeoutMs}); err != nil {
+		return err
+	}
+	fmt.Printf("removed %s from the queue\n", args[0])
+	return nil
 }
 
 func runsLeadRoute(channelId, runtime, model string) (waveobj.RoutePin, error) {
@@ -566,6 +783,7 @@ func runsListRun(cmd *cobra.Command, args []string) error {
 	tasks, _ := cmd.Flags().GetBool("tasks")
 	limit, _ := cmd.Flags().GetInt("limit")
 	var chans []*waveobj.Channel
+	var project string // the project a plain list is of, which picks the queued entries to show
 	if all {
 		var err error
 		if chans, err = runsChannels(); err != nil {
@@ -575,7 +793,7 @@ func runsListRun(cmd *cobra.Command, args []string) error {
 		ch, err := runsChannel(cmd, false)
 		if errors.Is(err, errRunsNoChannel) {
 			if isJSON(cmd) {
-				return jsonOut([]runsRow{})
+				return jsonOut(runsListJSON(nil, nil))
 			}
 			fmt.Println(err)
 			return nil
@@ -584,6 +802,7 @@ func runsListRun(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		chans = []*waveobj.Channel{ch}
+		project = ch.ProjectPath
 	}
 	var rows []runsRow
 	for _, ch := range chans {
@@ -598,10 +817,20 @@ func runsListRun(cmd *cobra.Command, args []string) error {
 		}
 	}
 	rows = runsNewest(rows, limit)
-	if isJSON(cmd) {
-		return jsonOut(rows)
+	queue := runsQueueEntries()
+	shown := queue
+	if !all {
+		shown = runsQueueFor(queue, project)
 	}
-	for _, line := range runsListLines(rows, all, time.Now().UnixMilli()) {
+	if isJSON(cmd) {
+		return jsonOut(runsListJSON(rows, shown))
+	}
+	now := time.Now().UnixMilli()
+	lines := runsQueueLines(shown, queue, all, now)
+	if len(rows) > 0 || len(lines) == 0 {
+		lines = append(lines, runsListLines(rows, all, now)...)
+	}
+	for _, line := range lines {
 		fmt.Println(line)
 	}
 	return nil

@@ -21,6 +21,8 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
 	"github.com/wavetermdev/waveterm/pkg/effortstore"
+	"github.com/wavetermdev/waveterm/pkg/learn"
+	"github.com/wavetermdev/waveterm/pkg/runqueue"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
@@ -40,12 +42,19 @@ const (
 	// was not fully verified, which the human acknowledges once read.
 	AttentionRunLandHeld   = "run-land-held"
 	AttentionRunUnverified = "run-unverified"
+	// a queued start (pkg/runqueue) the engine could not make: it names no channel or run, only the queue entry
+	AttentionRunQueueBlocked = "run-queue-blocked"
 	// radar triage is the only kind that names no channel: a scan belongs to a project, not a
 	// conversation, so its row addresses the report through ORef instead.
 	AttentionRadarTriage = "radar-triage"
 	// a chunk whose due date has come, still open: it names no channel either, so it addresses the
 	// initiative through ORef and the chunk through ChunkLabel.
 	AttentionChunkDue = "chunk-due"
+	// a plan an agent proposed: one item per initiative in play with proposed chunks, waiting since the oldest
+	AttentionPlanReview = "plan-review"
+	// a correction the user made in two sessions, proposed as a line for a skill or a Claude memory: it names
+	// the proposal through LearnID, which the card's Accept, Edit and Dismiss decide.
+	AttentionLearnProposal = "learn-proposal"
 )
 
 // mirrors orchestrate.TaskState_* and the two RadarReport/RadarFinding vocabularies, spelled here
@@ -90,6 +99,10 @@ type AttentionInput struct {
 	// against (DueLayout). Passed in, not read off the clock, so the builder stays pure.
 	Efforts []*waveobj.Effort
 	Today   string
+	// Queue is the run queue's entries, in queue order; only the blocked ones make an item.
+	Queue []wshrpc.RunQueueEntry
+	// Learn are the pending learned-addition proposals, oldest first as learn.Store.Pending returns them.
+	Learn []learn.Proposal
 }
 
 // runForWorker finds the run whose phases claim this worker tab oref.
@@ -401,7 +414,10 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 	// breaks ties inside a kind. Key is the final tiebreak so map iteration cannot reorder equal items.
 	triage := radarTriageItems(in.Radar)
 	due := chunkDueItems(in.Efforts, in.Today)
-	for _, group := range [][]wshrpc.AttentionItem{gates, escalations, asks, triage, unverified, due} {
+	plans := planReviewItems(in.Efforts)
+	queued := queueBlockedItems(in.Queue)
+	learned := learnItems(in.Learn)
+	for _, group := range [][]wshrpc.AttentionItem{gates, escalations, asks, queued, plans, triage, unverified, due, learned} {
 		g := group
 		sort.SliceStable(g, func(i, j int) bool {
 			if g[i].WaitingSince != g[j].WaitingSince {
@@ -411,10 +427,15 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 		})
 	}
 
-	out := make([]wshrpc.AttentionItem, 0, len(gates)+len(escalations)+len(asks)+len(triage)+len(unverified)+len(due))
+	out := make([]wshrpc.AttentionItem, 0, len(gates)+len(escalations)+len(asks)+len(queued)+len(plans)+len(triage)+len(unverified)+len(due)+len(learned))
 	out = append(out, gates...)
 	out = append(out, escalations...)
 	out = append(out, asks...)
+	// a blocked queued start holds no worker, but the person handed it over to run without them: it outranks
+	// a finding nobody asked about, and it stays until they start it or drop it
+	out = append(out, queued...)
+	// a proposed plan waits on the person, but nothing runs while it does
+	out = append(out, plans...)
 	// triage is last because it is the weakest claim in the list: an untriaged finding blocks nothing
 	// that is running, where every kind above it is holding a worker or a pipeline in place.
 	out = append(out, triage...)
@@ -422,7 +443,67 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 	out = append(out, unverified...)
 	// a due chunk is a date you set yourself, about work nothing is running yet
 	out = append(out, due...)
+	// a proposal is a suggestion: nothing is stopped or late if it waits
+	out = append(out, learned...)
 	return out
+}
+
+// queueBlockedItems are the queued starts the engine gave up on, one each. A waiting entry makes none: it is
+// only waiting its turn, and the tree shows it.
+func queueBlockedItems(queue []wshrpc.RunQueueEntry) []wshrpc.AttentionItem {
+	var out []wshrpc.AttentionItem
+	for _, e := range queue {
+		if e.State != wshrpc.RunQueueState_Blocked {
+			continue
+		}
+		out = append(out, wshrpc.AttentionItem{
+			Kind:         AttentionRunQueueBlocked,
+			Key:          "run-queue-blocked:" + e.Id,
+			QueueId:      e.Id,
+			Source:       e.Title,
+			Text:         "Did not start: " + e.Reason,
+			Action:       "Start",
+			WaitingSince: e.QueuedTs,
+			Why:          "Start now starts it anyway; Remove drops it from the queue.",
+		})
+	}
+	return out
+}
+
+// learnItems are the pending proposals, one card each. The card's Why is the user's own words, so the evidence
+// is on the row and nothing is summarised.
+func learnItems(proposals []learn.Proposal) []wshrpc.AttentionItem {
+	var out []wshrpc.AttentionItem
+	for _, p := range proposals {
+		quotes := make([]string, 0, len(p.Quotes))
+		for _, q := range p.Quotes {
+			quotes = append(quotes, "“"+q.Quote+"”")
+		}
+		out = append(out, wshrpc.AttentionItem{
+			Kind:         AttentionLearnProposal,
+			Key:          "learn:" + p.ID,
+			LearnID:      p.ID,
+			Source:       learnSource(p.Target),
+			Text:         p.Text,
+			Action:       "Accept",
+			WaitingSince: p.Since,
+			Why:          strings.Join(quotes, " · "),
+		})
+	}
+	return out
+}
+
+// learnSource names a proposal's target for the card: the skill, or the project a memory belongs to.
+func learnSource(target string) string {
+	if name, ok := strings.CutPrefix(target, "skill:"); ok {
+		return "Skill · " + name
+	}
+	cwd := strings.TrimPrefix(target, "memory:")
+	cwd = strings.TrimRight(cwd, `/\`)
+	if i := strings.LastIndexAny(cwd, `/\`); i >= 0 {
+		cwd = cwd[i+1:]
+	}
+	return "Memory · " + cwd
 }
 
 // chunkDueItems are the open chunks whose due date has come, in initiatives still in play. A chunk leaves
@@ -461,6 +542,42 @@ func chunkDueItems(efforts []*waveobj.Effort, today string) []wshrpc.AttentionIt
 				Why:          "Due " + c.Due + ".",
 			})
 		}
+	}
+	return out
+}
+
+// planReviewItems are the initiatives whose plan waits on the person: proposed chunks, not yet accepted or dropped.
+// The key names only the initiative, so accepting some of the chunks keeps the one item and its count moves.
+func planReviewItems(efforts []*waveobj.Effort) []wshrpc.AttentionItem {
+	var out []wshrpc.AttentionItem
+	for _, e := range efforts {
+		if e == nil || (e.Status != "active" && e.Status != "paused") {
+			continue
+		}
+		n, since := 0, int64(0)
+		for _, c := range e.Chunks {
+			if c.Status != "proposed" {
+				continue
+			}
+			n++
+			if since == 0 || (c.UpdatedTs != 0 && c.UpdatedTs < since) {
+				since = c.UpdatedTs
+			}
+		}
+		if n == 0 {
+			continue
+		}
+		out = append(out, wshrpc.AttentionItem{
+			Kind:         AttentionPlanReview,
+			Key:          "plan-review:" + e.OID,
+			Source:       e.Title,
+			Text:         fmt.Sprintf("%d proposed", n),
+			Action:       "Review",
+			ORef:         waveobj.MakeORef(waveobj.OType_Effort, e.OID).String(),
+			EffortOID:    e.OID,
+			WaitingSince: since,
+			Why:          "An agent proposed these chunks. They count once you accept them.",
+		})
 	}
 	return out
 }
@@ -852,6 +969,17 @@ func GatherAttentionFromLedger(ctx context.Context, chans []*waveobj.Channel, ru
 	} else {
 		in.Efforts = efforts
 	}
+	// and for proposals: a bad notes log must never empty Needs you
+	if proposals, lerr := learn.Default().Pending(); lerr != nil {
+		log.Printf("jarvis attention: learn proposals unreadable, learn rows omitted: %v", lerr)
+	} else {
+		in.Learn = proposals
+	}
+	queue, qerr := runqueue.List()
+	if qerr != nil {
+		return nil, fmt.Errorf("reading the run queue: %w", qerr)
+	}
+	in.Queue = queue
 	in.Today = time.Now().Format(DueLayout)
 	return BuildAttention(in), nil
 }

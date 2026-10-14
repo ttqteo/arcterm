@@ -12,6 +12,8 @@ import {
 const base: AgentRailInput = {
     inSubagent: false,
     needsYou: 0,
+    ideas: 0,
+    ideasFresh: 0,
     subagents: 0,
     files: 3,
     artifacts: 0,
@@ -19,6 +21,7 @@ const base: AgentRailInput = {
     servers: 0,
     bgTasks: 1,
     hasRun: false,
+    proposed: 0,
 };
 const ids = (i: AgentRailInput) => planAgentRail(i).map((s) => s.id);
 const header = (i: AgentRailInput, id: AgentRailSectionId) => planAgentRail(i).find((s) => s.id === id)?.header;
@@ -54,11 +57,85 @@ describe("planAgentRail", () => {
         expect(header({ ...base, files: null }, "files")).toEqual({});
         expect(ids({ ...base, files: 0 })).not.toContain("files");
     });
+    it("a plan to review comes first, before the session block, uncounted", () => {
+        expect(ids({ ...base, proposed: 4 })).toEqual(["plan", "status", "files", "bgtasks"]);
+        expect(planAgentRail({ ...base, proposed: 4 })[0].header).toBeUndefined();
+        // and ahead of needs-you too
+        expect(ids({ ...base, proposed: 1, needsYou: 2 }).slice(0, 3)).toEqual(["plan", "status", "needs"]);
+    });
+    it("has no plan to review when nothing is proposed, nor inside a subagent", () => {
+        expect(ids({ ...base, proposed: 0 })).not.toContain("plan");
+        expect(ids({ ...base, proposed: 4, inSubagent: true })).toEqual(["subagent", "status"]);
+    });
     it("a subagent interior shows its head and the session block only", () => {
         expect(ids({ ...base, inSubagent: true, needsYou: 1, hasRun: true, artifacts: 2, uploads: 1 })).toEqual([
             "subagent",
             "status",
         ]);
+    });
+});
+
+describe("the Ideas count and section", () => {
+    it("the count is the first in the strip, and absent at 0", () => {
+        expect(planRailStats({ ...base, ideas: 9 })[0]).toEqual({ id: "ideas", count: 9, fresh: false, newCount: 0 });
+        expect(planRailStats(base).map((s) => s.id)).not.toContain("ideas");
+    });
+    it("passes the unread through: a dot while any idea is new, and how many", () => {
+        expect(planRailStats({ ...base, ideas: 9, ideasFresh: 4 })[0]).toEqual({
+            id: "ideas",
+            count: 9,
+            fresh: true,
+            newCount: 4,
+        });
+        expect(planRailStats({ ...base, ideas: 9, ideasFresh: 0 })[0].fresh).toBe(false);
+    });
+    it("the section follows needs-you, before the other counted sections, with its count", () => {
+        expect(ids({ ...base, ideas: 9 })).toEqual(["status", "ideas", "files", "bgtasks"]);
+        expect(ids({ ...base, ideas: 9, needsYou: 2, subagents: 1 })).toEqual([
+            "status",
+            "needs",
+            "ideas",
+            "subagents",
+            "files",
+            "bgtasks",
+        ]);
+        expect(header({ ...base, ideas: 9 }, "ideas")).toEqual({ count: 9, defaultOpen: false });
+    });
+    it("opens only when asked: the count and its dot say something is there, the click opens it", () => {
+        expect(header({ ...base, ideas: 2 }, "ideas")?.defaultOpen).toBe(false);
+        expect(header({ ...base, subagents: 2 }, "subagents")?.defaultOpen).toBeUndefined();
+    });
+    it("is not listed at 0, and the strip and the body agree", () => {
+        expect(ids(base)).not.toContain("ideas");
+        const i: AgentRailInput = { ...base, ideas: 2, ideasFresh: 1 };
+        const listed = new Set(ids(i));
+        for (const s of planRailStats(i)) {
+            expect(railStatAction(s) === "open").toBe(listed.has(s.id));
+        }
+    });
+    it("a subagent interior has neither the count nor the section: they are its parent's", () => {
+        expect(planRailStats({ ...base, ideas: 3, inSubagent: true })).toEqual([]);
+        expect(ids({ ...base, ideas: 3, inSubagent: true })).toEqual(["subagent", "status"]);
+    });
+    it("an empty Ideas count is inert, like any other empty list", () => {
+        expect(railStatAction({ id: "ideas", count: 0 })).toBeNull();
+        expect(railStatAction({ id: "ideas", count: 3 })).toBe("open");
+    });
+    // the shortcut with nothing selected on a session with no ideas yet: the Add an idea box is in the section
+    it("is listed at 0 once its input was asked for, open, with no count, and the strip still shows none", () => {
+        const asked: AgentRailInput = { ...base, ideasRequested: true };
+        expect(ids(asked)).toEqual(["status", "ideas", "files", "bgtasks"]);
+        expect(header(asked, "ideas")).toEqual({ defaultOpen: true });
+        expect(planRailStats(asked).map((s) => s.id)).not.toContain("ideas");
+        expect(ids({ ...asked, needsYou: 1 }).slice(0, 3)).toEqual(["status", "needs", "ideas"]);
+    });
+    it("is the ordinary counted section once it holds something, asked for or not", () => {
+        expect(planAgentRail({ ...base, ideas: 2, ideasRequested: true }).filter((s) => s.id === "ideas")).toEqual([
+            { id: "ideas", header: { count: 2, defaultOpen: false } },
+        ]);
+    });
+    it("is never asked for inside a subagent's interior", () => {
+        expect(ids({ ...base, inSubagent: true, ideasRequested: true })).toEqual(["subagent", "status"]);
     });
 });
 

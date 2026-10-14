@@ -608,3 +608,159 @@ func TestRunsEndFinalAction(t *testing.T) {
 		t.Fatalf("passed is not an outcome a human ends a stage with, got %v", err)
 	}
 }
+
+func TestRunsWantsQueue(t *testing.T) {
+	cases := []struct {
+		name  string
+		queue bool
+		after string
+		want  bool
+	}{
+		{"neither starts now", false, "", false},
+		{"--queue", true, "", true},
+		{"--after implies --queue", false, "q-3f2a", true},
+		{"both", true, "4f2a", true},
+	}
+	for _, c := range cases {
+		if got := runsWantsQueue(c.queue, c.after); got != c.want {
+			t.Errorf("%s: runsWantsQueue(%v, %q) = %v, want %v", c.name, c.queue, c.after, got, c.want)
+		}
+	}
+}
+
+func TestRunsQueuedLine(t *testing.T) {
+	cases := []struct {
+		name       string
+		entry      wshrpc.RunQueueEntry
+		place      int
+		maxActive  int
+		afterTitle string
+		want       string
+	}{
+		{"waits for room", wshrpc.RunQueueEntry{Id: "q-3f2a"}, 2, 3, "",
+			"queued q-3f2a (#2 in line) — starts when fewer than 3 runs are active"},
+		{"a cap of one", wshrpc.RunQueueEntry{Id: "q-3f2a"}, 1, 1, "",
+			"queued q-3f2a (#1 in line) — starts when no run is active"},
+		{"no cap", wshrpc.RunQueueEntry{Id: "q-3f2a"}, 1, 0, "",
+			"queued q-3f2a (#1 in line) — starts at once: runs:maxactive is 0, no cap"},
+		{"after a run", wshrpc.RunQueueEntry{Id: "q-3f2a", After: "4f2a-long-id"}, 1, 3, "Learned additions",
+			"queued q-3f2a (#1 in line) — starts after Learned additions lands"},
+		{"after a run with no known title", wshrpc.RunQueueEntry{Id: "q-3f2a", After: "4f2a-long-id"}, 1, 3, "",
+			"queued q-3f2a (#1 in line) — starts after 4f2a-long-id lands"},
+	}
+	for _, c := range cases {
+		if got := runsQueuedLine(c.entry, c.place, c.maxActive, c.afterTitle); got != c.want {
+			t.Errorf("%s:\n got %q\nwant %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestRunsQueuePlaceCountsWaitingEntriesOnly(t *testing.T) {
+	queue := []wshrpc.RunQueueEntry{
+		{Id: "q-0001", State: wshrpc.RunQueueState_Blocked},
+		{Id: "q-0002", State: wshrpc.RunQueueState_Waiting},
+		{Id: "q-0003", State: wshrpc.RunQueueState_Waiting, After: "r1"},
+		{Id: "q-0004", State: wshrpc.RunQueueState_Waiting},
+	}
+	for id, want := range map[string]int{"q-0002": 1, "q-0003": 2, "q-0004": 3, "q-0001": 0, "q-9999": 0} {
+		if got := runsQueuePlace(queue, id); got != want {
+			t.Errorf("place of %s = %d, want %d", id, got, want)
+		}
+	}
+}
+
+func TestRunsQueueLinesMarkEachEntry(t *testing.T) {
+	queue := []wshrpc.RunQueueEntry{
+		{Id: "q-0001", State: wshrpc.RunQueueState_Blocked, Reason: "Learned additions was held: conflict", Title: "Brainstorm", ProjectPath: "/work/arc", QueuedTs: 1_000},
+		{Id: "q-0002", State: wshrpc.RunQueueState_Waiting, Title: "Rail", ProjectPath: "/work/arc", QueuedTs: 2_000},
+		{Id: "q-0003", State: wshrpc.RunQueueState_Waiting, After: "4f2a", Title: "Docs", ProjectPath: "/work/arc", QueuedTs: 3_000},
+		{Id: "q-0004", State: wshrpc.RunQueueState_Waiting, Title: "Late", ProjectPath: "/work/arc", QueuedTs: 4_000},
+	}
+	lines := runsQueueLines(queue, queue, false, 5_000)
+	if len(lines) != 4 {
+		t.Fatalf("lines = %q", lines)
+	}
+	for _, want := range []string{"q-0001", "blocked: Learned additions was held: conflict", "Brainstorm"} {
+		if !strings.Contains(lines[0], want) {
+			t.Errorf("blocked line missing %q: %q", want, lines[0])
+		}
+	}
+	if !strings.HasPrefix(lines[1], "q-0002") || !strings.Contains(lines[1], "queued #1") || !strings.Contains(lines[1], "Rail") {
+		t.Errorf("waiting line = %q, want it marked queued #1", lines[1])
+	}
+	if !strings.Contains(lines[2], "after 4f2a") || strings.Contains(lines[2], "queued #") {
+		t.Errorf("an entry after a run is marked by it, not by its place: %q", lines[2])
+	}
+	if !strings.Contains(lines[3], "queued #3") {
+		t.Errorf("the place counts every waiting entry before it, an After one too: %q", lines[3])
+	}
+
+	// the place is the queue's, not the listing's: showing only the last entry still says #3
+	if only := runsQueueLines(queue[3:], queue, false, 5_000); len(only) != 1 || !strings.Contains(only[0], "queued #3") {
+		t.Errorf("place over the whole queue: %q", only)
+	}
+	if all := runsQueueLines(queue[:1], queue, true, 5_000); !strings.Contains(all[0], "arc") {
+		t.Errorf("--all names the project: %q", all[0])
+	}
+	if got := runsQueueLines(nil, nil, false, 0); len(got) != 0 {
+		t.Errorf("an empty queue prints no lines, got %q", got)
+	}
+}
+
+func TestRunsQueueFor(t *testing.T) {
+	queue := []wshrpc.RunQueueEntry{
+		{Id: "q-0001", ProjectPath: `D:\work\arc`},
+		{Id: "q-0002", ProjectPath: "/work/other"},
+		{Id: "q-0003", ProjectPath: "D:/work/arc/"},
+	}
+	got := runsQueueFor(queue, "D:/work/arc")
+	if len(got) != 2 || got[0].Id != "q-0001" || got[1].Id != "q-0003" {
+		t.Fatalf("this project's entries = %v, want the two spelled differently but for the same path", got)
+	}
+}
+
+func TestRunsListJSONAddsQueuedWithoutChangingTheRunRows(t *testing.T) {
+	rows := []runsRow{{Channel: "a", Run: &waveobj.Run{ID: "r1", Status: "executing"}}}
+	raw, err := json.Marshal(runsListJSON(rows, []wshrpc.RunQueueEntry{{Id: "q-0001", State: wshrpc.RunQueueState_Waiting}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		Queued []map[string]any `json:"queued"`
+		Runs   []map[string]any `json:"runs"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Queued) != 1 || out.Queued[0]["id"] != "q-0001" {
+		t.Fatalf("queued = %v", out.Queued)
+	}
+	if len(out.Runs) != 1 || out.Runs[0]["channel"] != "a" || out.Runs[0]["run"] == nil {
+		t.Fatalf("a run row is still {channel, run}: %v", out.Runs)
+	}
+	empty, _ := json.Marshal(runsListJSON(nil, nil))
+	if string(empty) != `{"queued":[],"runs":[]}` {
+		t.Fatalf("empty = %s, want empty arrays and never null", empty)
+	}
+}
+
+func TestRunsQueuedReportSaysWhatBecameOfTheEntry(t *testing.T) {
+	entry := wshrpc.RunQueueEntry{Id: "q-3f2a"}
+	waiting := wshrpc.RunQueueEntry{Id: "q-3f2a", State: wshrpc.RunQueueState_Waiting}
+	blocked := wshrpc.RunQueueEntry{Id: "q-3f2a", State: wshrpc.RunQueueState_Blocked, Reason: "Learned additions was held"}
+	other := wshrpc.RunQueueEntry{Id: "q-0001", State: wshrpc.RunQueueState_Waiting}
+
+	got := runsQueuedReport(entry, wshrpc.CommandRunQueueListRtnData{Entries: []wshrpc.RunQueueEntry{other, waiting}, MaxActive: 3}, "")
+	if got != "queued q-3f2a (#2 in line) — starts when fewer than 3 runs are active" {
+		t.Errorf("waiting: %q", got)
+	}
+	got = runsQueuedReport(entry, wshrpc.CommandRunQueueListRtnData{Entries: []wshrpc.RunQueueEntry{blocked}, MaxActive: 3}, "")
+	if got != "queued q-3f2a — blocked: Learned additions was held" {
+		t.Errorf("blocked at once: %q", got)
+	}
+	// there was room, so the loop started it before this asked: the entry is no longer listed
+	got = runsQueuedReport(entry, wshrpc.CommandRunQueueListRtnData{MaxActive: 3}, "")
+	if !strings.Contains(got, "q-3f2a") || !strings.Contains(got, "started already") || !strings.Contains(got, "wsh runs list") {
+		t.Errorf("started already: %q", got)
+	}
+}

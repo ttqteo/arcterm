@@ -47,6 +47,7 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 | `Mod`+`Shift`+`R` | New run: opens the New dialog on a run row |
 | `Mod`+`Shift`+`T` | Reopen the agent closed last, as a browser reopens a closed tab: its conversation comes back asleep (codex, which cannot sleep, resumes awake), and starts on Wake or a message. Keeps the last 5 closed agents, until arcterm restarts; older ones open from Conversation History. From inside a terminal too |
 | `Mod`+`Shift`+`O` | Open a tool: the picker for lazygit, yazi, btop and your own tools (see below), opening in the focused agent's folder, else the project root. From inside a terminal too. Not bare `Mod`+`O`: on Windows that is `Ctrl`+`O`, which a TUI or the shell may take |
+| `Mod`+`Shift`+`I` | Add as idea: keeps the text selected in an agent's terminal in that agent's Ideas (one line, at most 500 characters), then offers Undo; with nothing selected, opens the focused agent's Ideas and focuses its Add an idea box. The **Add as idea** chip that shows beside a selection does the same on a click, and goes when a key is typed or the terminal scrolls. From inside a terminal too. In the dev build WebView2's DevTools may take this chord first; a release build has none |
 | `Mod`+`G` | Go to…: opens the go-to leader (see below) |
 | `Mod`+`J` | What's waiting: the avatar popup (Jarvis peek), on any surface, from inside a terminal too (on Windows it takes `Ctrl`+`J` there; Shift+Enter is the newline). Hold `Mod` on its own and the creature shows a `J` |
 | `Mod`+`,` | Settings, as in VS Code and every Mac app |
@@ -218,6 +219,7 @@ A link inside an item view does a full open, even with `Mod` held.
 | `j` / `k` (or `↓` / `↑`, `→` / `←`) | Next / previous row of the project tree: agents and terminals, in the tree's order. A terminal row takes the centre as an agent does |
 | `Mod`+`` ` `` | Fold the terminal panel under the agent to a 32 px strip showing the terminal's name and latest output line, or open it again. Works from inside the terminal; active only while a terminal is in the panel, else the key is the terminal's own. By key position, so the same on every layout |
 | `d` | Toggle the agent rail |
+| `i` | The focused agent's initiative: opens a popover on the header (its progress, the chunk this agent is on, what is next, a note). An agent with no initiative opens Link to initiative instead. Inside the popover: `m` Mark done (the next chunk starts), `n` Add note, `↑` / `↓` move over the chunks, `Enter` opens a chunk's status menu, `Esc` or `i` closes it |
 | `f` | Toggle terminal fullscreen |
 | `Mod`+`Shift`+`Enter` (or `F11`) | Toggle terminal fullscreen from inside the terminal too. A Mac keyboard has no `F11` of its own, so `Cmd`+`Shift`+`Enter` is the one to use there |
 | `Shift`+`F` | Toggle float: the window shrinks to the focused terminal, and its pin keeps it on top of other apps |
@@ -308,6 +310,7 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `/` | Filter the Brief's rows (`Esc` clears) |
 | `Enter` | Open the row under the cursor |
 | `w` | Work on the initiative under the cursor in a new agent, or go to the agent already open on it |
+| `v` | Review: walk the initiatives that changed since you last reviewed them, then the ones idle for two weeks. While a pass is on: `Enter` Mark reviewed and open the next, `j` / `k` (or `←` / `→`) move through the pass, `Esc` leaves it |
 | `Alt`+`↑` / `Alt`+`↓` | Move the chunk under the cursor up / down within its stage |
 | `e` | Expand / collapse the record band |
 | `Shift`+`J` / `Shift`+`K` | Next / previous run in this channel |

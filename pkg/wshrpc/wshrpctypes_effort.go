@@ -83,7 +83,7 @@ type EffortOp struct {
 	Title     string `json:"title,omitempty"`     // rename
 	Project   string `json:"project,omitempty"`   // setProject ("" clears)
 	Ticket    string `json:"ticket,omitempty"`    // setTicket ("" clears)
-	Status    string `json:"status,omitempty"`    // setStatus (effort) | setChunkStatus (chunk)
+	Status    string `json:"status,omitempty"`    // setStatus (effort) | setChunkStatus (chunk) | addChunk ("proposed" only)
 	ParentOID string `json:"parentoid,omitempty"` // link ("" = unlink)
 	Chunk     string `json:"chunk,omitempty"`     // chunk ref: exact label or 1-based index string
 	Label     string `json:"label,omitempty"`     // addChunk label / renameChunk new label

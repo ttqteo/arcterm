@@ -47,7 +47,7 @@ function Chip({
             ) : (
                 <FileIcon size={13} className="shrink-0 text-muted" />
             )}
-            <span className="max-w-[120px] truncate font-mono">{att.name}</span>
+            <span className="max-w-[120px] truncate">{att.name}</span>
             {att.kind !== "image" && att.size != null ? <span className="text-muted">{fmtSize(att.size)}</span> : null}
             {isUploading ? (
                 <Loader2 size={12} className="shrink-0 animate-spin motion-reduce:animate-none text-muted" />

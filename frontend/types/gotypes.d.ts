@@ -114,6 +114,7 @@ declare global {
         description?: string;
         states: {[key: string]: string};
         deltas?: {[key: string]: string[]};
+        additions?: LearnAddition[];
     };
 
     // wshrpc.AgentSyncSkillColumn
@@ -196,8 +197,10 @@ declare global {
         taskid?: string;
         retry?: boolean;
         oref?: string;
+        learnid?: string;
         effortoid?: string;
         chunklabel?: string;
+        queueid?: string;
         why?: string;
         cites?: string[];
     };
@@ -1434,6 +1437,36 @@ declare global {
         failure?: GitFailure;
     };
 
+    // wshrpc.CommandIdeaAddData
+    type CommandIdeaAddData = {
+        blockid?: string;
+        sessionid?: string;
+        text: string;
+        kind: string;
+        by: string;
+    };
+
+    // wshrpc.CommandIdeaTargetData
+    type CommandIdeaTargetData = {
+        blockid?: string;
+        sessionid?: string;
+    };
+
+    // wshrpc.CommandIdeaTickRtnData
+    type CommandIdeaTickRtnData = {
+        nudge?: string;
+    };
+
+    // wshrpc.CommandIdeaUpdateData
+    type CommandIdeaUpdateData = {
+        blockid?: string;
+        sessionid?: string;
+        op: string;
+        ids?: string[];
+        text?: string;
+        newkind?: string;
+    };
+
     // wshrpc.CommandJarvisCtxData
     type CommandJarvisCtxData = {
         blockoref?: string;
@@ -1494,6 +1527,51 @@ declare global {
         channelid: string;
         runid: string;
         force?: boolean;
+    };
+
+    // wshrpc.CommandLearnAcceptedRtnData
+    type CommandLearnAcceptedRtnData = {
+        skills: LearnedSkillLine[];
+        memories: LearnedMemoryLine[];
+    };
+
+    // wshrpc.CommandLearnAmendData
+    type CommandLearnAmendData = {
+        skill?: string;
+        dir?: string;
+        cwd?: string;
+        key: string;
+        text?: string;
+        remove: boolean;
+    };
+
+    // wshrpc.CommandLearnDecideData
+    type CommandLearnDecideData = {
+        id: string;
+        accept: boolean;
+        text?: string;
+    };
+
+    // wshrpc.CommandLearnKeysData
+    type CommandLearnKeysData = {
+        skill?: string;
+        cwd?: string;
+    };
+
+    // wshrpc.CommandLearnNoteData
+    type CommandLearnNoteData = {
+        key: string;
+        skill?: string;
+        cwd?: string;
+        text: string;
+        quote?: string;
+        session: string;
+    };
+
+    // wshrpc.CommandLearnNoteRtnData
+    type CommandLearnNoteRtnData = {
+        proposed: boolean;
+        muted: boolean;
     };
 
     // wshrpc.CommandListBranchesData
@@ -1718,6 +1796,24 @@ declare global {
     type CommandRunAskData = {
         channelid: string;
         runid: string;
+    };
+
+    // wshrpc.CommandRunQueueAddData
+    type CommandRunQueueAddData = {
+        data: CommandCreateRunData;
+        after?: string;
+    };
+
+    // wshrpc.CommandRunQueueIdData
+    type CommandRunQueueIdData = {
+        id: string;
+    };
+
+    // wshrpc.CommandRunQueueListRtnData
+    type CommandRunQueueListRtnData = {
+        entries: RunQueueEntry[];
+        maxactive: number;
+        active: number;
     };
 
     // wshrpc.CommandRunTranscriptPathData
@@ -2460,6 +2556,22 @@ declare global {
         refs?: string[];
     };
 
+    // ideastore.Idea
+    type Idea = {
+        id: string;
+        text: string;
+        kind: string;
+        by: string;
+        turn?: number;
+        ts: number;
+        dropped?: boolean;
+    };
+
+    // wshrpc.IdeasChangedData
+    type IdeasChangedData = {
+        sessionid: string;
+    };
+
     // arctools.Install
     type Install = {
         windows?: string;
@@ -2510,6 +2622,40 @@ declare global {
         for?: string;
         run?: boolean;
         reason?: string;
+    };
+
+    // wshrpc.LearnAddition
+    type LearnAddition = {
+        key: string;
+        text: string;
+        learned: string;
+        count: number;
+    };
+
+    // wshrpc.LearnKey
+    type LearnKey = {
+        key: string;
+        text: string;
+        notes: number;
+    };
+
+    // wshrpc.LearnedMemoryLine
+    type LearnedMemoryLine = {
+        cwd: string;
+        dir: string;
+        key: string;
+        text: string;
+        learned: string;
+        count: number;
+    };
+
+    // wshrpc.LearnedSkillLine
+    type LearnedSkillLine = {
+        skill: string;
+        key: string;
+        text: string;
+        learned: string;
+        count: number;
     };
 
     // waveobj.MetaTSType
@@ -2968,6 +3114,8 @@ declare global {
         parentleadoref?: string;
         origintabid?: string;
         origintranscript?: string;
+        originnotify?: boolean;
+        originnotifiedts?: number;
         effortref?: RunEffortRef;
         dagoref?: string;
         sessionid?: string;
@@ -3055,6 +3203,23 @@ declare global {
         donets?: number;
     };
 
+    // wshrpc.RunQueueChangedData
+    type RunQueueChangedData = {
+        entries: RunQueueEntry[];
+    };
+
+    // wshrpc.RunQueueEntry
+    type RunQueueEntry = {
+        id: string;
+        data: CommandCreateRunData;
+        title: string;
+        projectpath: string;
+        after?: string;
+        queuedts: number;
+        state: string;
+        reason?: string;
+    };
+
     // waveobj.RunRadarOrigin
     type RunRadarOrigin = {
         reportid: string;
@@ -3134,6 +3299,17 @@ declare global {
         type: string;
         ts: number;
         text: string;
+    };
+
+    // ideastore.SessionIdeas
+    type SessionIdeas = {
+        sessionid: string;
+        seenat: number;
+        prompts: number;
+        lastideaprompt: number;
+        nudgedat: number;
+        nextid: number;
+        ideas: Idea[];
     };
 
     // wshrpc.SessionInfo
@@ -3226,6 +3402,8 @@ declare global {
         "jobs:slots"?: number;
         "jobs:mode"?: string;
         "jobs:pauseuntil"?: number;
+        "runs:maxactive"?: number;
+        "runs:wakeorigin"?: boolean;
     };
 
     // wshrpc.ShippedItem

@@ -33,8 +33,10 @@ import { closeSwitcher, tabSwitcherAtom } from "@/app/view/agents/tabswitchersto
 import { activeReviewAtom } from "@/app/view/agents/reviewmarks";
 import { reopenClosedAgent } from "@/app/cockpit/cockpit-actions";
 import { openToolPicker } from "@/app/view/agents/toolsstore";
+import { runIdeaCapture } from "@/app/view/agents/ideasstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
+import { initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
 import { briefPeekRecordAtom } from "@/app/view/jarvis/jarvisstore";
 import { activeRunIdAtom, activeSubjectAtom } from "@/app/view/jarvis/jarvissubjectstore";
@@ -43,6 +45,8 @@ import { peekTarget } from "@/app/view/jarvis/openref";
 import { itemKeyCommand } from "@/app/view/jarvis/peekitemmodel";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { peekKeyCommand } from "@/app/view/jarvis/petpeekmodel";
+import { noteChunkAtom } from "@/app/view/jarvis/jarvisstore";
+import { enterReview, exitReview, reviewModeAtom, reviewedAtom, reviewQueueAtom } from "@/app/view/jarvis/reviewstore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import { codeTreeFocusedAtom } from "@/app/view/code/codestore";
 import { codeSearchModeAtom } from "@/app/view/code/codesearchstore";
@@ -79,6 +83,12 @@ vi.mock("@/app/view/agents/floatstore", async (orig) => ({
 vi.mock("@/app/view/agents/toolsstore", async (orig) => ({
     ...(await orig<typeof import("@/app/view/agents/toolsstore")>()),
     openToolPicker: vi.fn(),
+}));
+
+// the capture reads the terminal's selection and writes over the wire; the chord is only asked to start it
+vi.mock("@/app/view/agents/ideasstore", async (orig) => ({
+    ...(await orig<typeof import("@/app/view/agents/ideasstore")>()),
+    runIdeaCapture: vi.fn(async () => {}),
 }));
 
 // a reopen rescans the sessions archive and launches over the wire; the chord is only asked to start it
@@ -853,6 +863,58 @@ describe("open a tool chord", () => {
 
     it("leaves the palette its own Open a tool row, so the action is not listed twice", () => {
         expect(find({ surfaceAtom: atom<SurfaceKey>("agent") } as any).paletteHidden).toBe(true);
+    });
+});
+
+describe("idea capture chord", () => {
+    const find = (model: any) => buildGlobalBindings(model).find((x) => x.id === "idea-capture")!;
+    const modelFor = (focus: string | undefined, agents: { id: string; transcriptPath?: string }[]) =>
+        ({
+            surfaceAtom: atom<SurfaceKey>("cockpit"),
+            focusIdAtom: atom<string | undefined>(focus),
+            agentsAtom: atom(agents),
+        }) as any;
+
+    // Ctrl+Shift+I on Windows: from a field and the terminal, on any surface (What's new's Try it runs it from the
+    // Cockpit), never over a modal
+    it("is Mod+Shift+I, live from a field and the terminal and on any surface, and not over a modal", () => {
+        const b = find(modelFor("a1", []));
+        expect(b.keys).toBe("Mod:Shift:i");
+        expect(b.when?.({ ...ctx("agent"), editable: true })).toBe(true);
+        expect(b.when?.(ctx("cockpit"))).toBe(true);
+        expect(b.when?.({ ...ctx("agent"), modalOpen: true })).toBe(false);
+    });
+
+    it("brings the Agent surface up when pressed from another one, and writes nothing when pressed on it", () => {
+        const model = modelFor("a1", []);
+        find(model).run(ctx("cockpit"));
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+        globalStore.set(model.surfaceAtom, "code"); // the key's own context says where it was pressed, not this atom
+        find(model).run(ctx("agent"));
+        expect(globalStore.get(model.surfaceAtom)).toBe("code");
+    });
+
+    it("captures for the session of the focused agent, taken from its transcript's name", () => {
+        const model = modelFor("a2", [
+            { id: "a1", transcriptPath: "C:\\t\\s-one.jsonl" },
+            { id: "a2", transcriptPath: "/home/u/.claude/projects/p/s-two.jsonl" },
+        ]);
+        vi.mocked(runIdeaCapture).mockClear();
+        find(model).run(ctx("agent"));
+        expect(runIdeaCapture).toHaveBeenCalledWith("s-two");
+    });
+
+    it("captures for no session while a terminal, or an agent with no transcript yet, is in focus", () => {
+        vi.mocked(runIdeaCapture).mockClear();
+        find(modelFor("t1", [{ id: "a1", transcriptPath: "/t/s.jsonl" }])).run(ctx("agent"));
+        find(modelFor("a1", [{ id: "a1" }])).run(ctx("agent"));
+        expect(vi.mocked(runIdeaCapture).mock.calls).toEqual([[null], [null]]);
+    });
+
+    it("consumes the key and keeps the palette from listing a row that has no selection to add", () => {
+        const b = find(modelFor("a1", []));
+        expect(b.run(ctx("agent"))).not.toBe(false);
+        expect(b.paletteHidden).toBe(true);
     });
 });
 
@@ -1818,5 +1880,186 @@ describe("the open avatar popup keeps its keys on every surface", () => {
             }
         }
         expect(claimed).toEqual([]);
+    });
+});
+
+describe("agent:initiative", () => {
+    const nav: KeyContext = { surface: "agent", editable: false, modalOpen: false, leader: null };
+    const key = (k: string) =>
+        ({ key: k, code: "", control: false, shift: false, cmd: false, option: false, meta: false, alt: false }) as any;
+    const agent = (id: string, effortId?: string) => ({ id, kind: "agent", state: "idle", effortId });
+    const modelWith = (focus: string, agents: any[]) =>
+        ({
+            focusIdAtom: atom<string | undefined>(focus),
+            surfaceAtom: atom<SurfaceKey>("agent"),
+            agentsAtom: atom(agents),
+        }) as any;
+    const bindings = (model: any) => [...buildGlobalBindings(model), ...buildAgentBindings(model)];
+    const find = (model: any, id: string) => bindings(model).find((b) => b.id === id)!;
+
+    beforeEach(() => vi.stubGlobal("document", { activeElement: null, querySelector: () => null }));
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        globalStore.set(initiativePopoverAtom, null);
+    });
+
+    it("is i on the Agent surface, in navigate posture", () => {
+        const b = find(modelWith("a1", [agent("a1", "e1")]), "agent:initiative");
+        expect(b.keys).toBe("i");
+        expect(b.when!(nav)).toBe(true);
+        expect(b.when!({ ...nav, editable: true })).toBe(false); // typing in the terminal or a field
+        expect(b.when!({ ...nav, modalOpen: true })).toBe(false);
+        expect(b.when!({ ...nav, surface: "cockpit" })).toBe(false);
+    });
+
+    it("opens the popover for the focused agent that has an initiative", () => {
+        const model = modelWith("a2", [agent("a1", "e1"), agent("a2", "e2")]);
+        expect(find(model, "agent:initiative").run(nav)).not.toBe(false);
+        expect(globalStore.get(initiativePopoverAtom)).toBe("a2");
+    });
+
+    it("opens the Link to initiative picker for an agent with none, else lets the key pass", () => {
+        const model = modelWith("a1", [agent("a1")]);
+        expect(find(model, "agent:initiative").run(nav)).toBe(false); // no button on screen
+        const click = vi.fn();
+        vi.stubGlobal("document", { activeElement: null, querySelector: () => ({ click }) });
+        expect(find(model, "agent:initiative").run(nav)).not.toBe(false);
+        expect(click).toHaveBeenCalledTimes(1);
+        expect(globalStore.get(initiativePopoverAtom)).toBeNull();
+    });
+
+    it("lets the key pass when the focus is on no agent (a plain terminal)", () => {
+        expect(find(modelWith("t1", [agent("a1", "e1")]), "agent:initiative").run(nav)).toBe(false);
+        expect(globalStore.get(initiativePopoverAtom)).toBeNull();
+    });
+
+    it("yields while the popover is open, and so does every other single-key Agent binding", () => {
+        const model = modelWith("a1", [agent("a1", "e1")]);
+        const ids = [
+            "agent:initiative",
+            "agent:prev-up",
+            "agent:next-down",
+            "agent:prev-k",
+            "agent:next-j",
+            "agent:toggle-rail",
+            "agent:fullscreen",
+            "agent:back",
+        ];
+        for (const id of ids) {
+            expect(find(model, id).when!(nav), `${id} before`).toBe(true);
+        }
+        globalStore.set(initiativePopoverAtom, "a1");
+        for (const id of ids) {
+            expect(find(model, id).when!(nav), `${id} while open`).toBe(false);
+        }
+    });
+
+    it("leaves the popover's keys unclaimed while it is open: m, n, i, the arrows, Enter, Escape", () => {
+        const model = modelWith("a1", [agent("a1", "e1")]);
+        globalStore.set(initiativePopoverAtom, "a1");
+        const claimed: string[] = [];
+        for (const k of ["m", "n", "i", "ArrowUp", "ArrowDown", "Enter", "Escape"]) {
+            const result = matchBinding(key(k), nav, bindings(model));
+            if (result.kind === "run") {
+                claimed.push(`${k}: ${result.binding.id}`);
+            }
+        }
+        expect(claimed).toEqual([]);
+    });
+});
+
+describe("review mode on the Jarvis surface", () => {
+    const nav: KeyContext = { surface: "jarvis", editable: false, modalOpen: false, leader: null };
+    const key = (k: string) =>
+        ({ key: k, code: "", control: false, shift: false, cmd: false, option: false, meta: false, alt: false }) as any;
+    const model = stubModel("a1");
+    const all = () => [...buildGlobalBindings(model), ...buildListNavBindings(model), ...buildJarvisBindings(model)];
+    const claim = (k: string, on: KeyContext = nav) => {
+        const r = matchBinding(key(k), on, all());
+        return r.kind === "run" ? r.binding.id : null;
+    };
+    const controller = (surface: SurfaceKey) =>
+        globalStore.set(listNavAtom, { surface, navigableIds: ["a", "b"], cursorId: "a", setCursor() {} });
+
+    beforeEach(() => {
+        controller("jarvis");
+        // the Diff surface's compare posture, which an earlier suite can leave on, also holds Escape back
+        globalStore.set(diffScopeAtom, null);
+        globalStore.set(reviewedAtom, {});
+        globalStore.set(reviewQueueAtom, []);
+    });
+    afterEach(() => {
+        exitReview();
+        globalStore.set(listNavAtom, null);
+        globalStore.set(noteChunkAtom, null);
+    });
+
+    it("hands j, k and Enter to the list while no review is on", () => {
+        expect(claim("j")).toBe("list:next-j");
+        expect(claim("k")).toBe("list:prev-k");
+        expect(claim("Enter")).toBe("list:activate");
+        expect(claim("ArrowRight")).toBeNull();
+        expect(claim("Escape")).toBe("surface:back-home");
+    });
+
+    it("hands them to the review while one is on, and Escape leaves it before it goes home", () => {
+        enterReview(["a", "b"], 100);
+        expect(claim("j")).toBe("jarvis:review-next-j");
+        expect(claim("k")).toBe("jarvis:review-prev-k");
+        expect(claim("Enter")).toBe("jarvis:review-mark");
+        expect(claim("ArrowRight")).toBe("jarvis:review-next");
+        expect(claim("ArrowLeft")).toBe("jarvis:review-prev");
+        expect(claim("Escape")).toBe("jarvis:review-exit");
+        // the list's own arrows and Space are not the review's to hold: only j, k and Enter change hands
+        expect(claim("ArrowDown")).toBeNull();
+    });
+
+    it("leaves the review's keys alone on every other surface and in a field", () => {
+        enterReview(["a", "b"], 100);
+        controller("usage");
+        expect(claim("j", { ...nav, surface: "usage" })).toBe("list:next-j");
+        expect(claim("Enter", { ...nav, surface: "usage" })).toBe("list:activate");
+        expect(claim("Escape", { ...nav, surface: "usage" })).toBe("surface:back-home");
+        expect(claim("j", { ...nav, editable: true })).toBeNull();
+        expect(claim("Enter", { ...nav, editable: true })).toBeNull();
+    });
+
+    it("lets the Chunk sidebar have Escape first, then the review", () => {
+        enterReview(["a", "b"], 100);
+        globalStore.set(noteChunkAtom, "initiatives:effort:e1/chunk:x");
+        expect(claim("Escape")).toBe("jarvis:close-notes");
+        globalStore.set(noteChunkAtom, null);
+        expect(claim("Escape")).toBe("jarvis:review-exit");
+    });
+
+    it("steps with the arrows and j/k around the pass, and Enter marks the one it is on and moves on", () => {
+        enterReview(["a", "b", "c"], 100);
+        const run = (id: string) => buildJarvisBindings(model).find((b) => b.id === id)!.run(nav);
+        const cursor = () => globalStore.get(reviewModeAtom)?.cursor;
+        run("jarvis:review-next");
+        expect(cursor()).toBe("b");
+        run("jarvis:review-prev-k");
+        run("jarvis:review-prev");
+        expect(cursor()).toBe("c");
+        run("jarvis:review-next-j");
+        expect(cursor()).toBe("a");
+        vi.spyOn(Date, "now").mockReturnValue(150);
+        run("jarvis:review-mark");
+        expect(globalStore.get(reviewedAtom)).toEqual({ a: 150 });
+        expect(cursor()).toBe("b");
+        vi.restoreAllMocks();
+    });
+
+    it("v begins a pass over the queue the Brief published, and passes when there is none", () => {
+        const v = () => buildJarvisBindings(model).find((b) => b.id === "jarvis:review")!;
+        expect(v().keys).toBe("v");
+        expect(v().when!(nav)).toBe(true);
+        expect(v().run(nav)).toBe(false);
+        expect(globalStore.get(reviewModeAtom)).toBeNull();
+        globalStore.set(reviewQueueAtom, ["x", "y"]);
+        expect(v().run(nav)).not.toBe(false);
+        expect(globalStore.get(reviewModeAtom)).toMatchObject({ cursor: "x", orefs: ["x", "y"] });
+        // under a pass it is not the key to begin another
+        expect(v().when!(nav)).toBe(false);
     });
 });

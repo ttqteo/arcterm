@@ -24,18 +24,48 @@ new draws it as one of its release's cards and folds every other line under a co
 - **Runs as an office**: in Jarvis, the Runs list's **office** chip draws each run as a pixel office floor under its
   row: the lead in a glass corner office and one person per task, typing, stuck, in review, carrying the merge, or
   raising a hand when they need you. Click a person to open their terminal.
+- **Ideas on the agent's rail**: while you brainstorm, the agent lists what was decided, floated and left open, and you
+  can add, edit, merge or drop ideas, or run the idea command in Claude to keep the idea just discussed. An Ideas count
+  on the rail opens the list and shows a dot while some are new; an ended session in Conversation History shows its list
+  too.
+- **Keep a selection as an idea**: select text in an agent's terminal and press `Ctrl+Shift+I` (`Cmd+Shift+I` on a Mac),
+  or click **Add as idea** beside the selection, to keep it in the agent's Ideas; the toast has Undo. With nothing
+  selected, the same keys open the Ideas box. <!-- try: idea-capture -->
 - **Setup → Project**: one place to see what shapes Claude in a project: its CLAUDE.md or AGENTS.md, its memory
   grouped by type, its settings and hooks, its skills, agents and commands, and `.arc/setup`. Pick a file to read it
   beside the list. <!-- try: go:setup -->
 - **Reopen an agent you just closed**: `Ctrl+Shift+T` (`Cmd+Shift+T` on a Mac) brings back the agent closed last, as a
   browser reopens a closed tab. Its conversation returns asleep, so it costs nothing until you wake it or send it a
   message. The last 5 closed agents are kept. <!-- try: reopen-agent -->
+- **Agents learn your corrections**: agents now note how you correct them. When the same correction comes up in two
+  sessions, Needs you asks whether to keep it as a rule, and the lines you accept appear, highlighted, under
+  Setup → Learned and in each skill.
 - **Claude checks its memory at session start**: on every machine with arcterm, a new Claude session looks over the
   project's Claude memory and, when something has gone stale (a broken link, a file or `task` that no longer exists, a
   memory untouched for 30 days), shows a toast and lists it in its first reply, offering to fix it.
+- **Review an agent's proposed plan on its rail**: when an agent proposes chunks for its initiative, its details rail
+  opens on Plan to review; accept, rename or drop each, or Accept all and continue. Proposed chunks don't count toward
+  progress until accepted. <!-- try: go:agent -->
+- **The agent's initiative from its header**: click the initiative link (or press `i`) for its progress, the chunk
+  this agent is on with Mark done, what's next and a note; an agent with no initiative can Link to one.
+  <!-- try: go:agent -->
+- **Review initiatives**: Jarvis → Initiatives → Review (`v`) walks what changed since you last reviewed, then the
+  ones idle for two weeks, with Pause, Archive and Mark reviewed. <!-- try: go:jarvis -->
+- **Sub-initiatives on the List**: link an initiative under another from its ⋯ menu; children sit under their parent.
+  <!-- try: go:jarvis -->
+- **Queue a plan instead of starting it**: `wsh runs start --plan <file> --queue` (or `--after` another run, which
+  implies `--queue`) leaves the plan waiting on the Agent tree, and arcterm starts it by itself when fewer than
+  `runs:maxactive` runs are going. A queued plan is a row in its project's folder with Start now, Run next and Remove.
+- **A session and the runs it started point at each other**: a session that started a run shows where the run is under
+  its name (`→ Setup · 3/5`, `→ Queued #2`, `→ merged`, `→ held`, or `→ 2 runs`), and the run's row says
+  `from <session>`. A click on either goes to the other.
 
 ### Changed
 
+- A run whose lead tab is closed looks the same in the Agent sidebar as one whose lead is open: same mark, title and
+  line under it; only the token count is missing.
+- **The Cockpit badge counts only agents that need you**, matching its "need you" tab. Runs to confirm or land,
+  approvals, escalations and due chunks are counted on Jarvis, where you act on them.
 - **Open a tool moved to `Ctrl+Shift+O`** (`Cmd+Shift+O` on a Mac), freeing `Ctrl+Shift+T` for reopening an agent.
 - **Folded, Sprout tells you first**: while Sprout is folded and another app is in front, an agent that needs you
   shows only Sprout's bubble; the system notification follows 30 seconds later, and only if it still waits on you.
@@ -43,9 +73,22 @@ new draws it as one of its release's cards and folds every other line under a co
   question says so and suggests haiku for collecting or sonnet for code; answer No (or Tab) and name one to switch.
 - **What's new leads with each release's highlights**: a few cards for the features worth trying, and every other
   note, fixes too, folded under one "58 more changes · 12 fixes" line. <!-- big -->
+- **Python and pnpm projects wait their turn for RAM too**: an agent's whole `pytest` run (bare, `uv run` or
+  `python -m`), `pnpm test` / `pnpm build`, `astro build` and an `e2e.sh` script now queue in Jobs like a build,
+  so parallel workers no longer get killed for low memory; one test file or a `-k` filter still runs at once.
+- **Jobs on Windows watches the commit charge**: once the memory handed out passes the RAM (the machine is paging),
+  heavy commands start one at a time, and past 130% with little RAM free none start until it eases, instead of
+  piling on while a few GB still read as free.
 
 ### Fixed
 
+- **A finished run no longer waits to land on a file in your checkout that already matches the run's version**,
+  such as a generated copy a dev build rewrites. A real edit of yours to a file the run changes still holds it.
+- **An ended session shows in Conversations right away** when its tab stays open: after `/clear`, after quitting
+  claude and starting it again in the same terminal, or after resuming another session there. A session marked for
+  later now stays at the top of its project instead of sinking under "Show more".
+- Long names no longer run into the CPU and RAM columns of the RAM popover; they end in "…", with the full name on
+  hover. A run with many tasks no longer spills its task strip out of its card in Conversation History.
 - A run whose plan review failed no longer shows a green check on its finished fold in the Agent sidebar: the fold
   shows a red dot and "1 failed" until the lead's next round replaces that review.
 - What's new shows the open arrow only on notes that have more to read; a short note that already shows in full no

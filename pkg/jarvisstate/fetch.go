@@ -210,6 +210,9 @@ func FetchCaptureStatus(ctx context.Context) (wshrpc.CaptureStatus, error) {
 			}
 			st.Efforts.Active++
 			for _, c := range e.Chunks {
+				if c.Status == "proposed" {
+					continue // a suggestion until accepted: not part of the work yet
+				}
 				st.Efforts.ChunksTotal++
 				if c.Status == "done" {
 					st.Efforts.ChunksDone++

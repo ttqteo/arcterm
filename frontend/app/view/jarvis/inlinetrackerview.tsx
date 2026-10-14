@@ -22,15 +22,18 @@ import {
     Ellipsis,
     Minus,
     Pause,
+    Pencil,
     Play,
     Plus,
     Sparkles,
+    X,
     type LucideIcon,
 } from "lucide-react";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { chunkTone, type ChunkTone } from "./effortmodel";
 import { chunkDueChip, localDay, type DetailRow } from "./inlinetracker";
 import { trackerMenuAtom } from "./jarvisstore";
+import type { ProposedRow } from "./proposedmodel";
 
 const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
@@ -87,6 +90,9 @@ export type TrackerEdits = {
     stages: string[]; // stageOptions(chunks), for "Move to stage"
     onSetStatus: (label: string, status: string) => void;
     onRenameChunk: (label: string, next: string) => void;
+    // the proposed group's decisions: Accept makes the chunks pending, Drop removes them
+    onAcceptProposed: (labels: string[]) => void;
+    onDropProposed: (labels: string[]) => void;
     onMoveChunk: (label: string, dir: "up" | "down") => void;
     canMove: (label: string, dir: "up" | "down") => boolean;
     onMoveToStage: (label: string, stage: string) => void;
@@ -220,6 +226,9 @@ export function InitiativeDetail({
                 // facts row only feeds the footer's count
                 if (row.kind === "facts") {
                     return null;
+                }
+                if (row.kind === "proposed") {
+                    return <ProposedGroup key={row.id} rows={row.rows} edits={edits} />;
                 }
                 if (row.kind === "stage") {
                     const menuId = row.id + "#menu";
@@ -507,13 +516,18 @@ export function InitiativeDetail({
 // An opened idea. It has no plan, so none of the plan's parts (stages, chunk rows, pause, the activity
 // trail) apply: it offers the two ways to give it one. Plan it asks an agent for the chunks; the first chunk
 // written here makes it an initiative, and it moves over to the cards.
+//
+// An idea whose agent already proposed chunks shows them to decide in Plan it's place: the first one accepted
+// makes it an initiative, and Drop all leaves it the idea it was.
 export function IdeaDetail({
     jotted,
     edits,
+    proposed,
     onPlan,
 }: {
     jotted: string; // noteStamp of the effort's creation
     edits: TrackerEdits;
+    proposed?: ProposedRow[];
     onPlan: () => void;
 }) {
     const [confirming, setConfirming] = useState(false);
@@ -528,26 +542,35 @@ export function IdeaDetail({
             {label}
         </button>
     );
+    const proposing = proposed != null && proposed.length > 0;
     return (
         <div data-jarvis-idea-detail="true" className="flex flex-col gap-1.5 px-2.5 pb-2.5 pt-0.5">
-            <div className="flex items-center gap-2 pl-[22px]">
-                <button
-                    type="button"
-                    data-jarvis-idea-action="plan"
-                    title="Start an agent that breaks this idea into chunks"
-                    onClick={onPlan}
-                    className={cn(
-                        "flex flex-none cursor-pointer items-center gap-1.5 rounded-[6px] border border-accent/45 bg-accentbg px-2.5 py-[3px] text-[10.5px] font-semibold text-accent-soft hover:text-accent-50",
-                        FOCUS
-                    )}
-                >
-                    <Sparkles size={11} aria-hidden />
-                    Plan it
-                </button>
-                <span className="min-w-0 truncate text-[10.5px] text-ink-mid">an agent writes the chunks</span>
-            </div>
+            {proposing ? (
+                <ProposedGroup rows={proposed} edits={edits} />
+            ) : (
+                <div className="flex items-center gap-2 pl-[22px]">
+                    <button
+                        type="button"
+                        data-jarvis-idea-action="plan"
+                        title="Start an agent that breaks this idea into chunks"
+                        onClick={onPlan}
+                        className={cn(
+                            "flex flex-none cursor-pointer items-center gap-1.5 rounded-[6px] border border-accent/45 bg-accentbg px-2.5 py-[3px] text-[10.5px] font-semibold text-accent-soft hover:text-accent-50",
+                            FOCUS
+                        )}
+                    >
+                        <Sparkles size={11} aria-hidden />
+                        Plan it
+                    </button>
+                    <span className="min-w-0 truncate text-[10.5px] text-ink-mid">an agent writes the chunks</span>
+                </div>
+            )}
             <div className="pl-[15px]">
-                <AddChunkRow stage="" text="Add first chunk" onAdd={(label) => edits.onAddChunk(label, "", null)} />
+                <AddChunkRow
+                    stage=""
+                    text={proposing ? "Add chunk" : "Add first chunk"}
+                    onAdd={(label) => edits.onAddChunk(label, "", null)}
+                />
             </div>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-edge-faint pl-[22px] pt-2 text-[10.5px] tabular-nums text-ink-mid">
                 {confirming ? (
@@ -590,6 +613,116 @@ export function IdeaDetail({
                     </>
                 )}
             </div>
+        </div>
+    );
+}
+
+const ICON_BUTTON =
+    "flex h-6 w-6 flex-none cursor-pointer items-center justify-center rounded-[6px] border border-transparent text-ink-mid hover:border-edge-mid hover:text-ink-hi";
+
+// The plan an agent proposed, above the plan it belongs to. Each chunk is decided in place with the buttons the
+// details rail's Plan to review has: Accept makes it pending (and so counted), Rename edits its label, Drop removes
+// it. This is how a plan-review item is decided when its agent is gone.
+function ProposedGroup({ rows, edits }: { rows: ProposedRow[]; edits: TrackerEdits }) {
+    const [renaming, setRenaming] = useState<{ label: string; draft: string } | null>(null);
+    // Enter and the blur it causes both commit; the second must find nothing left to save
+    const settled = useRef(false);
+    const labels = rows.map((r) => r.label);
+    const startRename = (label: string) => {
+        settled.current = false;
+        setRenaming({ label, draft: label });
+    };
+    const commitRename = () => {
+        if (renaming == null || settled.current) {
+            return;
+        }
+        settled.current = true;
+        const next = renaming.draft.trim();
+        setRenaming(null);
+        if (next !== "" && next !== renaming.label) {
+            edits.onRenameChunk(renaming.label, next);
+        }
+    };
+    const iconButton = (name: string, title: string, run: () => void, icon: React.ReactNode, className?: string) => (
+        <button
+            type="button"
+            title={title}
+            aria-label={title}
+            data-jarvis-proposed-action={name}
+            onClick={run}
+            className={cn(ICON_BUTTON, className, FOCUS)}
+        >
+            {icon}
+        </button>
+    );
+    const allButton = (name: string, label: string, run: () => void) => (
+        <button type="button" data-jarvis-proposed-action={name} onClick={run} className={cn(SMALL_BUTTON, FOCUS)}>
+            {label}
+        </button>
+    );
+    return (
+        <div data-jarvis-proposed-group={rows.length} className="mb-1 flex flex-col">
+            <div className="flex items-center gap-2 px-1.5 pb-1 pt-0.5">
+                <span className="text-[10.5px] font-bold uppercase tracking-[.1em] text-asking">
+                    {`Proposed · ${rows.length}`}
+                </span>
+                <span className="ml-auto flex items-center gap-1.5">
+                    {allButton("accept-all", "Accept all", () => edits.onAcceptProposed(labels))}
+                    {allButton("drop-all", "Drop all", () => edits.onDropProposed(labels))}
+                </span>
+            </div>
+            {rows.map((r) => (
+                <div
+                    key={r.label}
+                    data-jarvis-proposed-chunk={r.label}
+                    className="flex min-h-[38px] items-center gap-[9px] border-t border-edge-faint py-[5px] pl-[7px] pr-1.5"
+                >
+                    <span
+                        aria-hidden
+                        className="box-border h-[9px] w-[9px] flex-none rounded-full border-[1.5px] border-dashed border-asking"
+                    />
+                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        {renaming?.label === r.label ? (
+                            <input
+                                autoFocus
+                                data-jarvis-rename-input
+                                aria-label="Chunk label"
+                                value={renaming.draft}
+                                onChange={(e) => setRenaming({ label: r.label, draft: e.target.value })}
+                                onBlur={commitRename}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                        commitRename();
+                                    } else if (e.key === "Escape") {
+                                        e.stopPropagation();
+                                        settled.current = true;
+                                        setRenaming(null);
+                                    }
+                                }}
+                                className="min-w-0 rounded-[5px] border border-accent/60 bg-background px-1.5 py-px text-[12.5px] text-primary outline-none"
+                            />
+                        ) : (
+                            <span title={r.label} className="truncate text-[12.5px] font-medium text-primary">
+                                {r.label}
+                            </span>
+                        )}
+                        {r.meta !== "" ? (
+                            <span title={r.meta} className="truncate text-[10.5px] text-ink-mid">
+                                {r.meta}
+                            </span>
+                        ) : null}
+                    </div>
+                    {iconButton(
+                        "accept",
+                        "Accept",
+                        () => edits.onAcceptProposed([r.label]),
+                        <Check size={12} strokeWidth={2.4} aria-hidden />,
+                        "text-success"
+                    )}
+                    {iconButton("rename", "Rename", () => startRename(r.label), <Pencil size={12} aria-hidden />)}
+                    {iconButton("drop", "Drop", () => edits.onDropProposed([r.label]), <X size={12} aria-hidden />)}
+                </div>
+            ))}
         </div>
     );
 }

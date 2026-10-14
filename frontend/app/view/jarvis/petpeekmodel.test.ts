@@ -256,6 +256,32 @@ describe("queueRows — a held land lands again or dismisses in place", () => {
     });
 });
 
+describe("queueRows — a queued start that did not start", () => {
+    const BLOCKED = item({
+        kind: "run-queue-blocked",
+        key: "run-queue-blocked:q-1a2b",
+        channelid: "",
+        runid: "",
+        queueid: "q-1a2b",
+        action: "Start",
+        source: "Learned additions",
+        text: "Did not start: Rail was held: dirty",
+    });
+
+    it("starts now on the button, with nothing beside it, and shows the reason", () => {
+        const row = queueRows([BLOCKED])[0];
+        expect(row.primary).toMatchObject({ verb: "start-queued", label: "Start now", queueId: "q-1a2b" });
+        expect(row.links).toEqual([]);
+        expect(row.detail).toBe("Did not start: Rail was held: dirty");
+        expect(enterHintLabel(row.primary)).toBe("start now");
+        expect(rowPeekTarget(row)).toBeNull();
+    });
+
+    it("names the kind in words, never the wire kind", () => {
+        expect(rowKindLabel("run-queue-blocked")).toBe("Run to start");
+    });
+});
+
 describe("enterHintLabel", () => {
     it("names what Enter does to the focused row", () => {
         expect(enterHintLabel(queueRows([item({ kind: "run-unverified", key: "u" })])[0].primary)).toBe("acknowledge");
@@ -479,5 +505,39 @@ describe("bubbleRowKey — the row a spoken update lands the peek on", () => {
         expect(bubbleRowKey(spoken({}))).toBeUndefined();
         expect(bubbleRowKey(spoken({ kind: "notify", ref: "block:b1" }))).toBeUndefined();
         expect(bubbleRowKey(null)).toBeUndefined();
+    });
+});
+
+describe("queueRows — a plan to review", () => {
+    const PLAN = item({
+        kind: "plan-review",
+        key: "plan-review:e1",
+        source: "Nav rail",
+        text: "2 proposed",
+        action: "Review",
+        channelid: "",
+        runid: "",
+        oref: "effort:e1",
+        effortoid: "e1",
+    } as Partial<AttentionItem> & Pick<AttentionItem, "kind" | "key">);
+    const onE1 = { id: "t7", name: "loom", task: "", state: "idle", effortId: "e1" } as AgentVM;
+
+    it("is a row with no run: its count is the detail and its button reviews the initiative", () => {
+        const [row] = queueRows([PLAN]);
+        expect(row.detail).toBe("2 proposed");
+        expect(row.primary).toMatchObject({ verb: "open", label: "Review", target: { ref: "effort:e1" } });
+        expect(row.links).toEqual([]);
+        expect(row.answers).toEqual([]);
+        expect(row.form).toBeNull();
+    });
+
+    it("reviews on the agent open on the initiative", () => {
+        const [row] = queueRows([PLAN], [onE1]);
+        expect(row.primary).toMatchObject({ verb: "open", label: "Review", target: { ref: "agent:t7" } });
+        expect(rowPeekTarget(row)).toEqual({ kind: "oref", ref: "agent:t7" });
+    });
+
+    it("is named Plan to review", () => {
+        expect(rowKindLabel("plan-review")).toBe("Plan to review");
     });
 });

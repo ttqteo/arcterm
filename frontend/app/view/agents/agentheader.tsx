@@ -5,9 +5,11 @@
 // Extracted from the former AgentTranscript header (now removed): the real Claude Code TUI has no
 // chrome of its own, so this keeps name/status/model/context% + the details-rail toggle visible.
 
+import { isPeekGesture, peekClickLabel } from "@/app/cockpit/ctrlheld";
 import { queuedJobFor } from "@/app/cockpit/jobqueue";
 import { QueuedJobTag } from "@/app/cockpit/jobqueuechip";
 import { jobQueueAtom } from "@/app/cockpit/jobqueuestore";
+import { pushToast } from "@/app/cockpit/notificationstore";
 import { KeyCap } from "@/app/element/keycap";
 import { useSettle } from "@/app/element/motionhooks";
 import { MOTION } from "@/app/element/motiontokens";
@@ -15,15 +17,20 @@ import { Segmented } from "@/app/element/segmented";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
 import * as WOS from "@/app/store/wos";
-import { effortDetailAtom, loadEffortDetail } from "@/app/view/jarvis/effortstore";
+import { RpcApi } from "@/app/store/wshclientapi";
+import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { attachAgent, createIdea, effortDetailAtom, loadEffortDetail } from "@/app/view/jarvis/effortstore";
 import { initiativeLinkText } from "@/app/view/jarvis/initiativework";
+import { InitiativePicker } from "@/app/view/jarvis/initiativepicker";
 import { openOrPeek, openTarget } from "@/app/view/jarvis/openref";
+import { chunkRef } from "@/app/view/jarvis/trackeredit";
 import { redrawTerminal } from "@/app/view/term/termwrap";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import {
     Check,
+    ChevronDown,
     ChevronLeft,
     CircleStop,
     Columns2,
@@ -39,7 +46,7 @@ import {
     X,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { closeAgentChord, confirmCloseSession, interruptAgent } from "./agentactions";
 import { contextLevel, contextTokens } from "./agentrailmodel";
 import type { AgentsViewModel } from "./agents";
@@ -52,13 +59,18 @@ import { docReviewStateAtom, openReview } from "./docreviewstore";
 import { DONE_TITLE, doneSuggestion } from "./donesuggest";
 import { floatModeAtom, toggleFloat } from "./floatstore";
 import { agentGridAtom, currentGrid, eligibleIds, openInSplit, removeFromGrid } from "./gridstore";
+import { InitiativePopover, initiativePopoverAtom } from "./initiativepopover";
 import { liveTokensAtom } from "./livetokensstore";
 import { rosterSeededAtom } from "./liveagents";
 import { isFinalStageId } from "./finalstage";
+import { planEditChunks } from "./planreviewmodel";
+import { useInitiativeReread, usePlanReview } from "./planreviewstore";
+import { openRailSection } from "./railsection";
 import { railVisibleAtom, terminalFullscreenAtom } from "./railstore";
 import { agentProject, isEndedWorkerId, leadAgentOf } from "./runlineage";
 import { startedRunsText } from "./runorigin";
 import { openRunOrigin, useRunOrigin, useRunsStartedBy } from "./runoriginstore";
+import { runQueueAtom } from "./runqueuestore";
 import { RuntimeMark } from "./runtimemark";
 import { runtimeMeta } from "./runtimemeta";
 import { splitMenuState } from "./splitmenu";
@@ -116,10 +128,13 @@ function useRunLineage(model: AgentsViewModel, agent: AgentVM) {
     };
 }
 
-// The initiative this session works on, linking back to it on the Brief.
+// The initiative this session works on. A click opens its popover in place (initiativepopover.tsx); the peek click keeps
+// the way to it on the Brief.
 function InitiativeLink({ model, agent }: { model: AgentsViewModel; agent: AgentVM }) {
     const oref = "effort:" + agent.effortId;
     const effort = useAtomValue(effortDetailAtom).get(oref);
+    const open = useAtomValue(initiativePopoverAtom) === agent.id;
+    const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
     useEffect(() => {
         // the title is decoration: a failed load leaves the plain link, which still opens the initiative
         loadEffortDetail(oref).catch(() => {});
@@ -128,17 +143,119 @@ function InitiativeLink({ model, agent }: { model: AgentsViewModel; agent: Agent
         <>
             {" · "}
             <button
+                ref={setAnchor}
                 type="button"
                 data-peek
-                onClick={(e) =>
-                    fireAndForget(() => openOrPeek(model, { kind: "effort", effortId: agent.effortId! }, e))
-                }
-                title={`Open ${effort?.title ?? "this initiative"} in Jarvis`}
-                className="cursor-pointer text-accent-soft hover:underline"
+                data-initiative-link-open
+                aria-haspopup="dialog"
+                aria-expanded={open}
+                onClick={(e) => {
+                    if (isPeekGesture(e)) {
+                        fireAndForget(() => openOrPeek(model, { kind: "effort", effortId: agent.effortId! }, e));
+                        return;
+                    }
+                    globalStore.set(initiativePopoverAtom, open ? null : agent.id);
+                }}
+                title={`${effort?.title ?? "This initiative"}: details here (i), ${peekClickLabel()} to open it in Jarvis`}
+                className={cn(
+                    "cursor-pointer rounded-[5px] px-[5px] py-[1px] text-accent-soft hover:underline",
+                    open && "bg-surface-selected"
+                )}
             >
                 {initiativeLinkText(agent.name, effort)}
+                <ChevronDown size={11} aria-hidden className="ml-[3px] inline-block align-[-1px]" />
             </button>
+            <KeyCap chord="i" variant="inline" className="ml-[6px] !px-[5px] !py-0 text-[10.5px] leading-[16px]" />
+            <InitiativePopover model={model} agent={agent} anchor={anchor} />
         </>
+    );
+}
+
+// An agent with no initiative: "+ Link to initiative" opens the picker. A pick writes the tab's session:effort, and
+// attaches the agent to the initiative's active chunk (else its first pending one) so the chunk reads as its work; a new
+// initiative made from the session is an idea with no chunk, so nothing is attached.
+function LinkToInitiative({ agent, project }: { agent: AgentVM; project: string }) {
+    const [open, setOpen] = useState(false);
+    const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
+    const link = (pick: string) => {
+        setOpen(false);
+        fireAndForget(async () => {
+            try {
+                const oref = pick === "new" ? await createIdea(agent.name) : pick;
+                await RpcApi.SetMetaCommand(TabRpcClient, {
+                    oref: WOS.makeORef("tab", agent.id),
+                    meta: { "session:effort": oref },
+                });
+                if (pick === "new") {
+                    return;
+                }
+                await loadEffortDetail(oref, Number.MAX_SAFE_INTEGER);
+                const chunks = globalStore.get(effortDetailAtom).get(oref)?.chunks ?? [];
+                const chunk = chunks.find((c) => c.status === "active") ?? chunks.find((c) => c.status === "pending");
+                if (chunk != null) {
+                    await attachAgent(oref, chunkRef(planEditChunks(chunks), chunk.label), agent.id);
+                }
+            } catch (e) {
+                pushToast({
+                    title: `Couldn't link ${agent.name} to an initiative`,
+                    message: e instanceof Error ? e.message : String(e),
+                    level: "error",
+                });
+            }
+        });
+    };
+    return (
+        <>
+            {" · "}
+            <button
+                ref={setAnchor}
+                type="button"
+                data-initiative-link
+                aria-haspopup="dialog"
+                aria-expanded={open}
+                onClick={() => setOpen((v) => !v)}
+                title="Link this agent to an initiative (i)"
+                className={cn(
+                    "inline-flex h-[20px] cursor-pointer items-center rounded-[5px] border border-dashed border-edge-strong px-[7px] align-middle text-[11px] text-ink-mid hover:text-primary",
+                    open && "bg-surface-selected"
+                )}
+            >
+                + Link to initiative
+            </button>
+            <InitiativePicker
+                open={open}
+                anchor={anchor}
+                project={project}
+                onPick={link}
+                onClose={() => {
+                    setOpen(false);
+                    anchor?.focus({ preventScroll: true });
+                }}
+            />
+        </>
+    );
+}
+
+// "N TO REVIEW": the initiative holds chunks that wait for a decision, and this opens the details rail on them. It is
+// its own flex item, after the truncating text, so a long project or initiative name never clips it away.
+function PlanReviewChip({ agent }: { agent: AgentVM }) {
+    // the header is what is on screen when the agent stops with a plan, so it reads the initiative again too (the
+    // rail's own read is the same one in flight, see planreviewstore.ts)
+    useInitiativeReread(agent.effortId, agent.state, false);
+    const { proposed } = usePlanReview(agent.effortId);
+    if (proposed === 0) {
+        return null;
+    }
+    return (
+        <button
+            type="button"
+            data-plan-review-chip
+            onClick={() => openRailSection(agent.id, "plan")}
+            title="Review the proposed plan on the details rail"
+            className="inline-flex h-[18px] flex-none cursor-pointer items-center self-center rounded-[5px] border border-asking/30 bg-askingbg px-[7px] text-[10px] font-bold uppercase tracking-[.04em] text-asking hover:border-asking/60"
+        >
+            {proposed} to review
+        </button>
     );
 }
 
@@ -228,6 +345,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     // the final stage's own id is no session: it has no runtime, and its pane says its state
     const stage = isFinalStageId(agent.id);
     const landed = lineage?.kind === "worker" && lineage.task?.merged;
+    // a plain session can be linked to an initiative from here; a run's worker has its task, a terminal no session
+    const canLink =
+        agent.blockId != null && agent.kind !== "terminal" && !ended && !stage && lineage?.kind !== "worker";
     const liveText = agent.state === "asking" ? askingLabel(agent) : STATE_LABEL[agent.state];
     const stateText = ended ? (landed ? "landed" : "done") : liveText;
     const stateColor = ended ? "var(--color-success)" : STATE_COLOR[agent.state];
@@ -324,7 +444,8 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
         agent,
         useAtomValue(unreadAgentsAtom).get(agent.id) ?? 0,
         useAtomValue(model.lineageAtom).runs,
-        runningBackgroundTasks(useAtomValue(backgroundTasksByIdAtom)[agent.id]).length
+        runningBackgroundTasks(useAtomValue(backgroundTasksByIdAtom)[agent.id]).length,
+        useAtomValue(runQueueAtom)
     );
     const sessionTokens = useAtomValue(liveTokensAtom).get(agent.id);
     const closeLabel = agent.kind === "terminal" ? "Close terminal" : "Close agent";
@@ -447,7 +568,11 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         ·{" "}
                     </span>
                     {project || "—"}
-                    {agent.effortId != null ? <InitiativeLink model={model} agent={agent} /> : null}
+                    {agent.effortId != null ? (
+                        <InitiativeLink model={model} agent={agent} />
+                    ) : canLink ? (
+                        <LinkToInitiative agent={agent} project={project} />
+                    ) : null}
                     {lineage?.kind === "lead" ? (
                         <>
                             {" "}
@@ -477,6 +602,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                     ) : null}
                     <StartedRunsLink model={model} agent={agent} />
                 </span>
+                {agent.effortId != null ? <PlanReviewChip agent={agent} /> : null}
             </div>
             <div className="flex-1" />
             <div className="flex items-center gap-[7px]">

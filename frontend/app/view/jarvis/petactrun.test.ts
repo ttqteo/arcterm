@@ -13,6 +13,7 @@ const ackRun = vi.fn();
 const landRun = vi.fn();
 const getAttention = vi.fn();
 const answerAgent = vi.fn();
+const startNow = vi.fn();
 
 vi.mock("./openref", async (orig) => ({
     ...(await orig<typeof import("./openref")>()),
@@ -27,6 +28,7 @@ vi.mock("@/app/store/wshclientapi", () => ({
         LandRunCommand: (...a: any[]) => landRun(...a),
         GetAttentionCommand: (...a: any[]) => getAttention(...a),
         AnswerAgentCommand: (...a: any[]) => answerAgent(...a),
+        RunQueueStartNowCommand: (...a: any[]) => startNow(...a),
     },
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
@@ -157,6 +159,45 @@ describe("runAct — ack", () => {
             text: "acknowledging run: not found",
         });
         expect(globalStore.get(attentionAtom)).toEqual([row]);
+    });
+});
+
+describe("runAct — Start now on a blocked queue entry", () => {
+    const row = { key: "run-queue-blocked:q-1a2b" } as AttentionItem;
+    const act: PetAct = {
+        id: "run-queue-blocked:q-1a2b:start",
+        verb: "start-queued",
+        label: "Start now",
+        queueId: "q-1a2b",
+    };
+
+    afterEach(() => globalStore.set(attentionAtom, []));
+
+    it("starts the entry with the time a start takes, drops its row at once, and leaves the peek open", async () => {
+        globalStore.set(petPeekOpenAtom, true);
+        globalStore.set(attentionAtom, [row]);
+        startNow.mockResolvedValue(undefined);
+        getAttention.mockResolvedValue({ items: [] });
+        await runAct(model, act);
+        expect(startNow).toHaveBeenCalledWith(expect.anything(), { id: "q-1a2b" }, { timeout: 180_000 });
+        expect(globalStore.get(attentionAtom)).toEqual([]);
+        expect(globalStore.get(petPeekOpenAtom)).toBe(true);
+        expect(globalStore.get(petActStateAtom)[act.id]).toEqual({ status: "done" });
+    });
+
+    it("reports the server's refusal on the act and keeps the row", async () => {
+        globalStore.set(attentionAtom, [row]);
+        startNow.mockRejectedValue(new Error("another queued run is starting; try again in a moment"));
+        await runAct(model, act);
+        expect(globalStore.get(petActStateAtom)[act.id]).toEqual({
+            status: "error",
+            text: "another queued run is starting; try again in a moment",
+        });
+        expect(globalStore.get(attentionAtom)).toEqual([row]);
+    });
+
+    it("does not navigate, so the peek keeps focus", () => {
+        expect(actNavigates(act)).toBe(false);
     });
 });
 

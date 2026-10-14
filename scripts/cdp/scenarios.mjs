@@ -20010,7 +20010,7 @@ const FST_AGENT = `(() => {
         rows: [...(tree?.querySelectorAll("[data-final-row]") ?? [])].map((r) => ({
             tone: r.getAttribute("data-final-tone"),
             title: flat(r.querySelector(".truncate")),
-            sub: flat(r.querySelector(".font-mono")),
+            sub: flat(r.querySelector("[data-final-sub]")),
             selected: r.classList.contains("bg-accentbg"),
         })),
         slot: slot?.getAttribute("data-final-slot") ?? null,
@@ -37328,6 +37328,3643 @@ const { jarvisOffice, jarvisOfficeBench } = makeOfficeScenarios({
     leadId: TREE_RAIL_LEAD_ID,
 });
 
+// --- run-queue: plans queued to start are rows on the Agent tree, with Start now, Run next and Remove ---------------------
+// (docs/superpowers/specs/2026-10-14-run-handoff-lifecycle-design.md, decision 4.) A real queue in wavesrv and real rows,
+// nothing mocked. `runs:maxactive` is 1 and a run held by deferstart (it spawns nothing) is active, so no entry has room
+// and the loop starts none by itself. A start that carries a plan submits it, and that spawns a plan reviewer (a real
+// session) whether or not deferstart holds the run: so the one entry the scenario starts, C, has a goal and no plan
+// (run quick, held by deferstart, so it spawns nothing). A and B hold plans but are only ever removed, and D's plan is
+// deleted before its start, which fails at reading it.
+const RQ_TITLES = { a: "Queue plan A", b: "Queue plan B", c: "Queue plan C", d: "Queue plan D" };
+const RQ_RPC = { timeout: 30000 };
+const rqSel = (id) => `[data-run-queue-row="${id}"]`;
+const rqRow = (id) => `document.querySelector(${JSON.stringify(rqSel(id))})`;
+const rqList = async (h) => (await h.rpc("runqueuelist", null))?.entries ?? [];
+const rqChannelRuns = async (h, channelId) => (await h.rpc("getchannelruns", { channelid: channelId }))?.runs ?? [];
+
+// every queue row on the tree in the order it is drawn, with its title and its second line
+const rqRows = (h) =>
+    h.ev(`[...document.querySelectorAll("[data-run-queue-row]")].map((r) => ({
+        id: r.dataset.runQueueRow,
+        title: r.querySelector(".truncate")?.textContent ?? "",
+        meta: r.querySelector("[data-run-queue-meta]")?.textContent ?? "",
+    }))`);
+
+// the centre of an element, scrolled into the tree's view first (the sidebar scrolls)
+const rqPoint = (h, sel) =>
+    h.ev(`(() => {
+        const el = document.querySelector(${JSON.stringify(sel)});
+        if (!el) return null;
+        el.scrollIntoView({ block: "nearest" });
+        const r = el.getBoundingClientRect();
+        return r.width > 0 ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null;
+    })()`);
+async function rqMove(h, sel) {
+    const at = await rqPoint(h, sel);
+    if (at == null) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+    await polishNap(350);
+    return true;
+}
+async function rqClick(h, sel) {
+    const at = await rqPoint(h, sel);
+    if (at == null) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+    for (const type of ["mousePressed", "mouseReleased"]) {
+        await h.cdp("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: 1 });
+    }
+    await polishNap(250);
+    return true;
+}
+const rqContext = (h, id) =>
+    h.ev(`(() => {
+        const el = ${rqRow(id)};
+        if (!el) return false;
+        el.scrollIntoView({ block: "nearest" });
+        const r = el.getBoundingClientRect();
+        el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 24, clientY: r.top + r.height / 2, button: 2 }));
+        return true;
+    })()`);
+// Escape closes the menu, and the Agent surface's own "esc back" binding takes the same key to Cockpit, which hides the
+// tree the next step clicks in: so the surface is opened again
+async function rqCloseMenu(h) {
+    for (const type of ["keyDown", "keyUp"]) {
+        await h.cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    }
+    await polishWaitFor(h, `!${CA_MENU_PANEL}`, 2000);
+    await h.goto("agent");
+}
+const rqMenuItems = async (h) => ({
+    start: await h.ev(caMenuHas("Start now")),
+    next: await h.ev(caMenuHas("Run next")),
+    remove: await h.ev(caMenuHas("Remove")),
+});
+
+const runQueueScenario = {
+    name: "run-queue",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-run-queue-")), ids: {} };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            ctx.prevMax = (await h.rpc("getfullconfig", null))?.settings?.["runs:maxactive"] ?? null;
+            await h.rpc("setconfig", { "runs:maxactive": 1 });
+            const wslist = await h.rpc("workspacelist", null);
+            ctx.workspaceId = wslist[0].workspacedata.oid;
+            const ch = await h.rpc("createchannel", { name: "verify-run-queue", projectpath: ctx.cwd });
+            ctx.channelId = ch.oid;
+            // active, so the cap of 1 is full; held by deferstart, so it spawns nothing
+            // a fresh store's first run pays for the harness probes, which can outlast the default call budget
+            await h.rpc(
+                "createrun",
+                {
+                    channelid: ctx.channelId,
+                    workspaceid: ctx.workspaceId,
+                    goal: "verify run-queue: the run that fills the cap",
+                    runtime: "claude",
+                    mode: "quick",
+                    deferstart: true,
+                },
+                RQ_RPC
+            );
+            const plan = (key, title) => {
+                const path = join(ctx.cwd, `${key}.md`);
+                writeFileSync(path, `# ${title}\n\n### Task 1: Do nothing\n\nMake no change.\n`);
+                return path;
+            };
+            const forPlan = { channelid: ctx.channelId, workspaceid: ctx.workspaceId, runtime: "claude", mode: "orchestrator", deferstart: true };
+            const add = (data, after) => h.rpc("runqueueadd", { data, ...(after ? { after } : {}) }, RQ_RPC);
+            const a = await add({
+                ...forPlan,
+                planpath: plan("a", RQ_TITLES.a),
+                workerroute: { runtime: "codex", model: "gpt-5" },
+            });
+            ctx.ids.a = a.id;
+            const b = await add({ ...forPlan, planpath: plan("b", RQ_TITLES.b) }, a.id);
+            ctx.ids.b = b.id;
+            const c = await add({
+                channelid: ctx.channelId,
+                workspaceid: ctx.workspaceId,
+                goal: RQ_TITLES.c,
+                runtime: "claude",
+                mode: "quick",
+                deferstart: true,
+            });
+            ctx.ids.c = c.id;
+            const planD = plan("d", RQ_TITLES.d);
+            const d = await add({ ...forPlan, planpath: planD });
+            ctx.ids.d = d.id;
+            // its plan gone, D's start fails reading it, which blocks the entry. The loop may be mid-evaluation, and a
+            // Start now then answers "another queued run is starting" and blocks nothing: try again until D is blocked
+            rmSync(planD);
+            for (let i = 0; i < 8 && !ctx.dBlocked; i++) {
+                try {
+                    await h.rpc("runqueuestartnow", { id: d.id }, RQ_RPC);
+                } catch (e) {
+                    ctx.dStartError = String(e?.message ?? e);
+                }
+                ctx.dBlocked = (await rqList(h)).find((e) => e.id === d.id)?.state === "blocked";
+                if (!ctx.dBlocked) await polishNap(500);
+            }
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+        const arranged = ctx.arrangeError == null && ctx.dBlocked === true;
+        rec(
+            "0. the queue holds A, B and C waiting and D blocked, under a cap of 1",
+            arranged,
+            ctx.arrangeError ?? JSON.stringify({ ids: ctx.ids, dStartError: ctx.dStartError ?? null })
+        );
+        if (!arranged) return steps;
+        const { a, b, c, d } = ctx.ids;
+        const mine = [a, b, c, d];
+        const ours = async () => (await rqRows(h)).filter((r) => mine.includes(r.id));
+        const order = (rows) => rows.map((r) => r.id);
+        const metaOf = (rows, id) => rows.find((r) => r.id === id)?.meta ?? "";
+
+        // 1. every entry is a row, in queue order, with its place or what it waits on
+        await polishWaitFor(h, `${rqRow(d)} != null`, 8000);
+        await rqPoint(h, rqSel(a));
+        const rows1 = await ours();
+        await h.shot("cdp-shots/run-queue-1-rows.png");
+        rec(
+            "1. A, B, C and D are rows in queue order: A Queued #1, B After A's title, C Queued #3 (B holds place 2), D Blocked ·",
+            JSON.stringify(order(rows1)) === JSON.stringify(mine) &&
+                metaOf(rows1, a) === "Queued #1" &&
+                metaOf(rows1, b) === `After ${RQ_TITLES.a}` &&
+                metaOf(rows1, c) === "Queued #3" &&
+                metaOf(rows1, d).startsWith("Blocked ·"),
+            JSON.stringify(rows1)
+        );
+
+        // 1b. the blocked D is also a Needs you item on the Cockpit, with Start now and Remove. Remove asks first, and
+        // takes D's entry and the item with it. Start now is left to the unit tests: D's plan file is gone, so a start
+        // would only block it again.
+        await h.goto("cockpit");
+        const stripKey = `run-queue-blocked:${d}`;
+        const stripRow = `document.querySelector('[data-cockpit-needs-you] [data-needs-you-row="${stripKey}"]')`;
+        // attention is computed by wavesrv and reloaded by the strip, so the item can trail the entry by a poll
+        const stripShown = await polishWaitFor(h, `${stripRow} != null`, 45000);
+        const strip = await h.ev(`(() => {
+            const row = ${stripRow};
+            const ours = [...document.querySelectorAll('[data-cockpit-needs-you] [data-needs-you-row]')].filter(
+                (r) => r.dataset.needsYouRow === ${JSON.stringify(stripKey)}
+            );
+            return {
+                ours: ours.length,
+                kind: row?.children[0]?.textContent.trim() ?? null,
+                text: row?.children[2]?.textContent.trim() ?? null,
+                start: row?.querySelector('[data-strip-act="start-queued"]')?.textContent.trim() ?? null,
+                remove: row?.querySelector('[data-strip-act="remove-queued"]')?.textContent.trim() ?? null,
+            };
+        })()`);
+        await h.shot("cdp-shots/run-queue-1b-needs-you.png");
+        rec(
+            "1b. D is one Needs you row, kind Run to start, reading Did not start:, with Start now and Remove",
+            stripShown &&
+                strip.ours === 1 &&
+                strip.kind === "Run to start" &&
+                (strip.text ?? "").startsWith("Did not start:") &&
+                strip.start === "Start now" &&
+                strip.remove === "Remove",
+            JSON.stringify(strip)
+        );
+        const stripRemove = await h.ev(`(() => {
+            const b = ${stripRow}?.querySelector('[data-strip-act="remove-queued"]');
+            b?.click();
+            return b != null;
+        })()`);
+        const stripAsked = await polishWaitFor(h, `document.querySelector('[role="dialog"]') != null`, 3000);
+        const stripListedBefore = (await rqList(h)).map((e) => e.id);
+        await h.ev(
+            `[...document.querySelectorAll('[role="dialog"] button')].find((b) => b.textContent.includes("Remove"))?.click()`
+        );
+        const stripGone = await polishWaitFor(h, `${stripRow} == null`, 15000);
+        const stripListedAfter = (await rqList(h)).map((e) => e.id);
+        await h.goto("agent");
+        const rowGone = await polishWaitFor(h, `${rqRow(d)} == null`, 8000);
+        rec(
+            "1c. Remove on that row asks first; confirming drops the Needs you row, D's tree row and D's entry",
+            stripRemove === true &&
+                stripAsked &&
+                stripListedBefore.includes(d) &&
+                stripGone &&
+                rowGone &&
+                !stripListedAfter.includes(d),
+            JSON.stringify({ stripRemove, stripAsked, stripGone, rowGone, stripListedBefore, stripListedAfter })
+        );
+
+        // 2. hover shows the two buttons; the tooltip carries the plan, the route and the age
+        await rqMove(h, rqSel(a));
+        const hover = await h.ev(`(() => {
+            // the buttons sit in one wrapper that fades in on hover
+            const shown = (id, act) => {
+                const b = document.querySelector('[data-run-queue-row="' + id + '"] [data-queue-act="' + act + '"]');
+                return b ? Number(getComputedStyle(b.parentElement).opacity) : null;
+            };
+            return {
+                start: shown(${JSON.stringify(a)}, "start"),
+                remove: shown(${JSON.stringify(a)}, "remove"),
+                // the row the pointer is not on keeps them hidden
+                otherStart: shown(${JSON.stringify(c)}, "start"),
+                // the tooltip host lifts a hovered element's title into data-arc-title (element/titletiphost.tsx)
+                title: ${rqRow(a)}?.getAttribute("title") ?? ${rqRow(a)}?.getAttribute("data-arc-title") ?? "",
+            };
+        })()`);
+        await h.shot("cdp-shots/run-queue-2-hover.png");
+        rec(
+            "2. hovering A shows its Start now and Remove buttons (C's stay hidden); its tooltip names the plan, Lead claude and Workers codex",
+            hover.start === 1 &&
+                hover.remove === 1 &&
+                hover.otherStart === 0 &&
+                hover.title.includes("a.md") &&
+                hover.title.includes("Lead claude") &&
+                hover.title.includes("Workers codex"),
+            JSON.stringify(hover)
+        );
+
+        // 3. the menu: Start now, Run next and Remove, but no Run next on the head
+        await rqContext(h, c);
+        await polishWaitFor(h, caMenuHas("Run next"), 3000);
+        const menuC = await rqMenuItems(h);
+        await h.shot("cdp-shots/run-queue-3-menu.png");
+        await rqCloseMenu(h);
+        await rqContext(h, a);
+        await polishWaitFor(h, caMenuHas("Start now"), 3000);
+        const menuA = await rqMenuItems(h);
+        await rqCloseMenu(h);
+        await rqContext(h, c);
+        await polishWaitFor(h, caMenuHas("Run next"), 3000);
+        await h.ev(caMenuClick("Run next"));
+        await polishWaitFor(h, `(() => {
+            const ids = [...document.querySelectorAll("[data-run-queue-row]")].map((r) => r.dataset.runQueueRow).filter((id) => ${JSON.stringify(mine)}.includes(id));
+            return ids[0] === ${JSON.stringify(c)};
+        })()`, 4000);
+        const rows3 = await ours();
+        await h.shot("cdp-shots/run-queue-3-run-next.png");
+        rec(
+            "3. C's menu lists Start now, Run next and Remove, A's (the head) has no Run next; Run next on C puts C first (Queued #1) and A second (Queued #2)",
+            menuC.start && menuC.next && menuC.remove &&
+                menuA.start && !menuA.next && menuA.remove &&
+                order(rows3)[0] === c &&
+                metaOf(rows3, c) === "Queued #1" &&
+                metaOf(rows3, a) === "Queued #2",
+            JSON.stringify({ menuC, menuA, rows3 })
+        );
+
+        // 4. Remove asks first, and removing A takes its row and its queue entry; B, which waited on A, blocks
+        await rqMove(h, rqSel(a));
+        const clickedRemove = await rqClick(h, `${rqSel(a)} [data-queue-act="remove"]`);
+        const asked = await polishWaitFor(h, `document.querySelector('[role="dialog"]') != null`, 3000);
+        const dialogText = asked ? await h.ev(`document.querySelector('[role="dialog"]').textContent`) : "";
+        await h.shot("cdp-shots/run-queue-4-confirm.png");
+        const listedBefore = (await rqList(h)).map((e) => e.id);
+        await h.ev(
+            `[...document.querySelectorAll('[role="dialog"] button')].find((b) => b.textContent.includes("Remove"))?.click()`
+        );
+        const gone = await polishWaitFor(h, `${rqRow(a)} == null`, 4000);
+        await polishWaitFor(h, `(${rqRow(b)}?.textContent ?? "").includes("Blocked")`, 4000);
+        const listedAfter = (await rqList(h)).map((e) => e.id);
+        const rows4 = await ours();
+        await h.shot("cdp-shots/run-queue-4-removed.png");
+        rec(
+            "4. Remove on A asks first (and removes nothing yet); confirming drops A's row and its entry, and B, which waited on A, reads Blocked ·",
+            clickedRemove &&
+                asked &&
+                dialogText.includes(RQ_TITLES.a) &&
+                listedBefore.includes(a) &&
+                gone &&
+                !listedAfter.includes(a) &&
+                listedAfter.includes(c) &&
+                metaOf(rows4, b).startsWith("Blocked ·"),
+            JSON.stringify({ clickedRemove, asked, dialogText, listedBefore, listedAfter, rows4 })
+        );
+
+        // 5. Start now on C starts it past the cap: its row and entry go, and the channel has a new run
+        const runsBefore = await rqChannelRuns(h, ctx.channelId);
+        await rqMove(h, rqSel(c));
+        const clickedStart = await rqClick(h, `${rqSel(c)} [data-queue-act="start"]`);
+        const started = await polishWaitFor(h, `${rqRow(c)} == null`, 20000);
+        const listed5 = (await rqList(h)).map((e) => e.id);
+        const runsAfter = await rqChannelRuns(h, ctx.channelId);
+        const newRuns = runsAfter.filter((r) => !runsBefore.some((x) => x.id === r.id));
+        await h.shot("cdp-shots/run-queue-5-started.png");
+        rec(
+            "5. Start now on C drops its row and its entry and makes one new run in the channel (held, spawning no agent)",
+            clickedStart && started && !listed5.includes(c) && newRuns.length === 1,
+            JSON.stringify({ clickedStart, started, listed5, newRuns: newRuns.map((r) => ({ id: r.id, goal: r.goal, status: r.status })) })
+        );
+
+        // 6. the new run's sheet lists the start from the queue on its timeline, as a sentence under the RUN group. The
+        // run is held by deferstart, so opening its sheet spawns nothing
+        if (newRuns.length === 1) {
+            try {
+                await h.goto("jarvis");
+                const opened = await h.ev(`(async () => {
+                    for (let i = 0; i < 20 && typeof window.__openAddress !== "function"; i++) {
+                        await new Promise((r) => setTimeout(r, 250));
+                    }
+                    if (typeof window.__openAddress !== "function") return { ok: false, why: "no __openAddress hook" };
+                    return window.__openAddress(${JSON.stringify(`run:${newRuns[0].id}`)});
+                })()`);
+                const sheetUp = await polishWaitFor(h, `document.querySelector('[data-run-sheet]') != null`, 15000);
+                // the toggle shows once the run's events are in; the sheet opens the timeline closed
+                const toggled = await polishWaitFor(
+                    h,
+                    `[...document.querySelectorAll("[data-run-sheet] [data-run-sheet-timeline-toggle]")].length > 0`,
+                    15000
+                );
+                await h.ev(`(() => {
+                    const t = document.querySelector("[data-run-sheet] [data-run-sheet-timeline-toggle]");
+                    if (t && t.getAttribute("aria-expanded") !== "true") t.click();
+                })()`);
+                const rowShown = await polishWaitFor(
+                    h,
+                    `[...document.querySelectorAll("[data-run-sheet-timeline] span")].some((s) => s.children.length === 0 && s.textContent.trim() === "Started from the queue")`,
+                    5000
+                );
+                const timeline = await h.ev(`(() => ({
+                    goal: document.querySelector("[data-run-sheet]")?.textContent.includes(${JSON.stringify(RQ_TITLES.c)}) ?? false,
+                    rows: [...document.querySelectorAll("[data-run-sheet-timeline] span.truncate")].map((s) => s.textContent.trim()),
+                }))()`);
+                await h.shot("cdp-shots/run-queue-6-timeline.png");
+                rec(
+                    "6. the new run's sheet timeline shows a row reading Started from the queue (the sheet is C's run)",
+                    opened?.ok === true && sheetUp && toggled && rowShown && timeline.goal,
+                    JSON.stringify({ runId: newRuns[0].id, opened, sheetUp, toggled, rowShown, ...timeline })
+                );
+            } catch (e) {
+                rec("6. the new run's sheet timeline shows a row reading Started from the queue", false, String(e?.message ?? e));
+            }
+        } else {
+            rec("6. the new run's sheet timeline shows a row reading Started from the queue", false, "step 5 made no single new run to open");
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const failures = [];
+        const attempt = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                failures.push(`${what}: ${String(e?.message ?? e)}`);
+            }
+        };
+        // the entries go first, so restoring the cap below cannot start one (a plan entry would spawn a plan reviewer)
+        const mine = Object.values(ctx.ids ?? {});
+        await attempt("remove the entries", async () => {
+            for (const e of await rqList(h)) {
+                if (mine.includes(e.id)) await h.rpc("runqueueremove", { id: e.id });
+            }
+        });
+        if (ctx.channelId) {
+            await attempt("cancel the runs", async () => {
+                for (const run of await rqChannelRuns(h, ctx.channelId)) {
+                    if (run.status !== "cancelled") await h.rpc("cancelrun", { channelid: ctx.channelId, runid: run.id });
+                }
+            });
+            await attempt("delete the channel", () => h.rpc("deletechannel", { channelid: ctx.channelId }));
+        }
+        if ("prevMax" in ctx) await attempt("restore runs:maxactive", () => h.rpc("setconfig", { "runs:maxactive": ctx.prevMax }));
+        await attempt("remove the temp dir", () => rmSync(ctx.cwd, { recursive: true, force: true }));
+        if (failures.length > 0) throw new Error(failures.join("; "));
+    },
+};
+
+// --- run-origin: a session and the runs it started point at each other on the Agent tree ------------------------------
+// (docs/superpowers/specs/2026-10-14-run-handoff-lifecycle-design.md, decision 5.) A real queue and a real run in wavesrv;
+// the only fakes are two agents, each a shell terminal in a tab of its own that reports as a Claude agent (agent-uploads
+// stages one the same way), so no agent launches: the ORIGIN, the session that started a run and queued a plan, and the
+// LEAD, which stands in for the run's own session so the tree draws the run's row (a run with no agent in the roster has
+// none). The run is an orchestrator run held in planning by deferstart (it spawns nothing), made on the origin's tab
+// id, and its lead reports idle: no agent is at work for the run, so a click on the `→` line has none to focus and opens
+// the run's sheet. `runs:maxactive` is 1, so the plan queued behind the run waits.
+const RO_ORIGIN = "verify-origin-session";
+const RO_LEAD = "verify-origin-lead";
+const RO_PROJECT = "verify-run-origin";
+const RO_RPC = { timeout: 30000 };
+// parenthesised: they are spliced into `=== ...` comparisons, and `a ?? null === x` reads as `a ?? (null === x)`
+const roLink = (tabId) => `(document.querySelector('[data-agent-row="${tabId}"] [data-origin-link]')?.textContent.trim() ?? null)`;
+const roFrom = (tabId) => `(document.querySelector('[data-agent-row="${tabId}"] [data-origin-from]')?.textContent.trim() ?? null)`;
+// the row the selection fills (the row's `selected` is focusIdAtom's value, which no scenario can read directly)
+const roSelected = (tabId) => `(document.querySelector('[data-agent-row="${tabId}"]')?.className.includes("bg-surface-selected") ?? false)`;
+
+// a plain terminal in a tab of its own that reports as a Claude agent in `state`; the tab id is the agent id
+async function roStageAgent(h, ctx, name, state) {
+    if (ctx.workspaceId == null) {
+        const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+        const wslist = await h.rpc("workspacelist", null);
+        ctx.workspaceId = (wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0]).workspacedata.oid;
+    }
+    // tracked as soon as it exists, so a failure in the calls below still lets teardown close the tab
+    const tabId = await waveService(h, "workspace", "CreateTab", [ctx.workspaceId, name, false]);
+    ctx.tabIds.push(tabId);
+    const tab = await waveService(h, "object", "GetObject", [`tab:${tabId}`]);
+    const blockId = tab?.blockids?.[0];
+    if (!blockId) throw new Error(`the tab for ${name} has no block`);
+    // the shell starts in ~: nothing in the app tree should hold a temp dir
+    await h.rpc("setmeta", { oref: `block:${blockId}`, meta: { view: "term", controller: "shell", "cmd:cwd": "~" } });
+    await h.rpc("setmeta", { oref: `tab:${tabId}`, meta: { "session:project": RO_PROJECT } });
+    await h.rpc("eventpublish", {
+        event: "agent:status",
+        scopes: [`block:${blockId}`],
+        persist: 1,
+        data: { oref: `block:${blockId}`, state, agent: "claude", title: name, ts: Date.now() },
+    });
+    return tabId;
+}
+
+const runOriginScenario = {
+    name: "run-origin",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            cwd: mkdtempSync(join(tmpdir(), "verify-run-origin-")),
+            stamp: `runorigin${Date.now() % 100000}`,
+            tabIds: [],
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+        };
+        if (existsSync(TREE_RAIL_FIXTURE)) {
+            ctx.skip =
+                "a cockpit fixture roster is active, so the agents this scenario makes never reach the tree: run `npm run cockpit:fixtures -- --clear` and reload";
+            return ctx;
+        }
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            ctx.prevMax = (await h.rpc("getfullconfig", null))?.settings?.["runs:maxactive"] ?? null;
+            await h.rpc("setconfig", { "runs:maxactive": 1 });
+            ctx.tabId = await roStageAgent(h, ctx, RO_ORIGIN, "working");
+            const ch = await h.rpc("createchannel", { name: "verify-run-origin", projectpath: ctx.cwd });
+            ctx.channelId = ch.oid;
+            ctx.goal = `verify ${ctx.stamp}: the run the origin session started`;
+            const created = await h.rpc(
+                "createrun",
+                {
+                    channelid: ctx.channelId,
+                    workspaceid: ctx.workspaceId,
+                    goal: ctx.goal,
+                    runtime: "claude",
+                    mode: "orchestrator",
+                    deferstart: true,
+                    origintabid: ctx.tabId,
+                },
+                RO_RPC
+            );
+            ctx.runId = created.run.id;
+            // the run's session, idle: it gives the run its row on the tree, and leaves no agent at work for a click to focus
+            ctx.leadTabId = await roStageAgent(h, ctx, RO_LEAD, "idle");
+            await h.rpc("setmeta", { oref: `tab:${ctx.leadTabId}`, meta: { "jarvis:runoref": `run:${ctx.runId}` } });
+            const planPath = join(ctx.cwd, "queued.md");
+            writeFileSync(planPath, "# Origin queued plan\n\n### Task 1: Do nothing\n\nMake no change.\n");
+            const entry = await h.rpc(
+                "runqueueadd",
+                {
+                    data: {
+                        channelid: ctx.channelId,
+                        workspaceid: ctx.workspaceId,
+                        runtime: "claude",
+                        mode: "orchestrator",
+                        deferstart: true,
+                        planpath: planPath,
+                        origintabid: ctx.tabId,
+                    },
+                },
+                RO_RPC
+            );
+            ctx.entryId = entry.id;
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.skip) return [skipStep("run-origin", ctx.skip)];
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        rec(
+            "0. an origin session, a run it started (with its own session) and a plan it queued were made",
+            ctx.arrangeError == null,
+            ctx.arrangeError ?? { tabId: ctx.tabId, leadTabId: ctx.leadTabId, runId: ctx.runId, entryId: ctx.entryId }
+        );
+        if (ctx.arrangeError != null) return steps;
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
+        try {
+            // 1. the origin's row says where its two links stand, and the run's row says where it came from
+            await h.goto("agent");
+            const up = await polishWaitFor(
+                h,
+                `${roLink(ctx.tabId)} === "→ 2 runs" && ${roFrom(ctx.leadTabId)} === ${JSON.stringify(`from ${RO_ORIGIN}`)}`,
+                20000
+            );
+            await h.shot("cdp-shots/run-origin-1-two-links.png");
+            rec(
+                "1. the origin's row reads → 2 runs (the run and the queued plan), and the run's row reads from <the origin's name>",
+                up,
+                { link: await h.ev(roLink(ctx.tabId)), from: await h.ev(roFrom(ctx.leadTabId)) }
+            );
+
+            // 2. the plan leaves the queue, so one link is left, and it names the run
+            await h.rpc("runqueueremove", { id: ctx.entryId });
+            const want = `→ ${ctx.goal}`;
+            const one = await polishWaitFor(h, `${roLink(ctx.tabId)} === ${JSON.stringify(want)}`, 8000);
+            await h.shot("cdp-shots/run-origin-2-one-link.png");
+            rec("2. with the plan removed, the origin's line reads → and the run's title", one, {
+                link: await h.ev(roLink(ctx.tabId)),
+                want,
+            });
+
+            // 3. the run has no agent at work, so the router opens its sheet on Jarvis
+            await h.ev(`document.querySelector('[data-agent-row="${ctx.tabId}"] [data-origin-link]')?.click()`);
+            const sheet = await polishWaitFor(h, `document.querySelector('[data-run-sheet]') != null`, 15000);
+            const surface = await h.activeSurfaceLabel();
+            const sheetText = await h.ev(`document.querySelector('[data-run-sheet]')?.textContent ?? ""`);
+            await h.shot("cdp-shots/run-origin-3-sheet.png");
+            rec(
+                "3. a click on the → line opens the run's sheet: the surface is Jarvis and the sheet shows that run",
+                sheet && surface === SURFACE_LABEL.jarvis && sheetText.includes(ctx.stamp),
+                { sheet, surface, hasRun: sheetText.includes(ctx.stamp) }
+            );
+
+            // 4. a click on the run's from <name> focuses the origin. The run's own row is selected first, so the
+            // origin's selection is the click's and not what was there already
+            await h.goto("agent");
+            await polishWaitFor(h, `${roFrom(ctx.leadTabId)} != null`, 15000);
+            await h.ev(`document.querySelector('[data-agent-row="${ctx.leadTabId}"]')?.click()`);
+            await polishWaitFor(h, roSelected(ctx.leadTabId), 5000);
+            const before = await h.ev(roSelected(ctx.tabId));
+            await h.ev(`document.querySelector('[data-agent-row="${ctx.leadTabId}"] [data-origin-from]')?.click()`);
+            const focused = await polishWaitFor(h, roSelected(ctx.tabId), 8000);
+            await h.shot("cdp-shots/run-origin-4-focused.png");
+            rec(
+                "4. a click on the run's from <name> selects the origin session (it was not selected before)",
+                before === false && focused && (await h.ev(roSelected(ctx.leadTabId))) === false,
+                { before, focused }
+            );
+        } catch (e) {
+            rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    // best-effort, so one failed step does not strand the rest
+    async teardown(h, ctx) {
+        const failures = [];
+        const attempt = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                failures.push(`${what}: ${String(e?.message ?? e)}`);
+            }
+        };
+        if (ctx.skip) return;
+        // the entry goes first, so restoring the cap below cannot start it (a plan entry would spawn a plan reviewer)
+        await attempt("remove the entry", async () => {
+            for (const e of await rqList(h)) {
+                if (e.id === ctx.entryId) await h.rpc("runqueueremove", { id: e.id });
+            }
+        });
+        if (ctx.channelId) {
+            await attempt("cancel the run", async () => {
+                for (const run of await rqChannelRuns(h, ctx.channelId)) {
+                    if (run.status !== "cancelled") await h.rpc("cancelrun", { channelid: ctx.channelId, runid: run.id });
+                }
+            });
+        }
+        for (const tabId of ctx.tabIds ?? []) {
+            // cancelling the run may have closed its lead's tab already
+            await attempt("close a tab", () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, tabId, false]));
+        }
+        // the surface prunes a closed agent out of the saved grid as the roster catches up; the user's grid goes back only
+        // after that has been written, or the prune would write over it
+        await attempt("wait for the surface to prune the agents from the saved grid", () =>
+            polishWaitFor(
+                h,
+                `(() => {
+                    try {
+                        const ids = JSON.parse(localStorage.getItem(${JSON.stringify(GRID_KEY)}) ?? "null")?.ids ?? [];
+                        return !${JSON.stringify(ctx.tabIds ?? [])}.some((id) => ids.includes(id));
+                    } catch {
+                        return true;
+                    }
+                })()`,
+                8000
+            )
+        );
+        await attempt("restore the saved grid", () => h.ev(restoreStorageKey(GRID_KEY, ctx.prevGrid)));
+        if (ctx.channelId) await attempt("delete the channel", () => h.rpc("deletechannel", { channelid: ctx.channelId }));
+        if ("prevMax" in ctx) await attempt("restore runs:maxactive", () => h.rpc("setconfig", { "runs:maxactive": ctx.prevMax }));
+        await attempt("remove the temp dir", () => rmSync(ctx.cwd, { recursive: true, force: true }));
+        await attempt("go home", () => h.goto("cockpit"));
+        if (failures.length > 0) throw new Error(failures.join("; "));
+    },
+};
+
+// ideas-rail (docs/superpowers/specs/2026-10-14-brainstorm-ideas-design.md): the Ideas count and section on an agent's
+// details rail. The agent is a real shell (its block is the roster fixture's blockId) whose transcript is
+// <base>/ideas-fixture.jsonl, so its session is `ideas-fixture` and the rail reads the ideas wavesrv keeps for it. The
+// ideas are seeded through wshrpc, the way `wsh idea` writes them (the texts are Main.dc.html's), and each step then
+// drives the section as a person would: the strip's count, a click, the pointer over a row, the box's keys, the rows'
+// checkboxes. An ended session, `ideas-ended`, comes from a getsessionsactivity mock like agent-history's (every other
+// command, the idea ones included, goes through to the real client) and is opened from Conversations. Steps 14-18 are
+// capturing a terminal selection (Capture-Selection.dc.html): the shell prints a line, a real mouse drag selects it, and the
+// chip, the shortcut (Ctrl+Shift+I, dispatched over CDP), the toast's Undo and the shortcut with nothing selected are driven
+// as a person would. Steps 19-21 are the same shortcut on a second agent, `fx-ideas-empty`, whose session `ideas-empty`
+// has no ideas file yet (its own roster entry, block and real shell): the strip has no Ideas count, the shortcut opens the
+// section with no count and the Add an idea input focused, and one line typed there brings the count `1`. Teardown closes
+// both terminals, deletes the project and the three idea files (<data dir>/ideas/), puts back the fixture roster and the
+// keys.
+const IDEAS_AGENT = "fx-ideas-rail";
+const IDEAS_EMPTY_AGENT = "fx-ideas-empty";
+const IDEAS_PROJECT = "verify-ideas-rail";
+const IDEAS_SESSION = "ideas-fixture";
+const IDEAS_EMPTY = "ideas-empty";
+const IDEAS_ENDED = "ideas-ended";
+const IDEAS_KEYS = [
+    RAIL_VISIBLE_KEY,
+    RAIL_SECTIONS_KEY,
+    "agent.rail.tab",
+    "agent.rail.wideWidth",
+    GRID_KEY,
+    TREE_COLLAPSED_KEY,
+    ...AH_FOLDS_KEYS,
+];
+const IDEAS_MOCK_KEY = "__arcIdeasRailMock";
+const IDEAS_ASIDE = `document.querySelector('aside[aria-label="Agent details"]')`;
+const IDEAS_STAT = `${IDEAS_ASIDE}?.querySelector('[data-rail-stat="ideas"]')`;
+const IDEAS_SECTION = `${IDEAS_ASIDE}?.querySelector("[data-ideas-section]")`;
+// Main.dc.html's nine ideas, and the meta line each reads after the seeding below
+const IDEAS_TEXT = {
+    d1: "Agent tự ghi ý qua wsh idea add; không chạy model phụ",
+    d2: "Danh sách gắn theo session; resume vẫn còn",
+    d3: "Thêm tay: bôi đen + phím tắt, ô nhập, /idea, sửa/gộp/bỏ",
+    i1: "Ideas là một ô đếm như Files changed, không phải tab",
+    i2: "Nhóm theo Decided / Ideas / Open để catchup nhanh",
+    i3: "Bấm một ý thì nhảy về đúng lượt trong transcript",
+    i4: "Đẩy một ý sang note hoặc effort chunk khi đáng giữ lâu",
+    o1: "Phím tắt bôi đen: Ctrl+Shift+I có trùng DevTools ở bản dev?",
+    o2: "Agent quên ghi thì Stop hook nhắc, hay im lặng?",
+    dropped: "Model phụ (haiku) quét transcript mỗi lượt",
+};
+const IDEAS_META = {
+    d1: "turn 2 · agent",
+    d3: "turn 3 · agent",
+    i2: "turn 3 · agent",
+    i3: "turn 3 · you",
+    o1: "turn 3 · agent",
+    d2: "turn 4 · agent",
+    i4: "turn 4 · agent",
+    o2: "turn 4 · agent",
+    i1: "turn 5 · agent",
+};
+
+const ideasList = (h, session = IDEAS_SESSION) => h.rpc("idealist", { sessionid: session });
+const ideaOf = (list, text) => (list?.ideas ?? []).find((i) => i.text === text);
+const ideasLive = (list) => (list?.ideas ?? []).filter((i) => !i.dropped);
+const ideasRow = (id) => `[data-ideas-section] [data-ideas-row="${id}"]`;
+const ideasClick = (h, selector) =>
+    h.ev(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.click(); return true; })()`);
+
+// The seeding of the plan: three prompts and the first decision; a second decision, two ideas (one the user's), a question
+// and an idea that is dropped; the list marked read; then, a moment later (so they are after seenat), a decision, an
+// idea and a question; one more prompt and one more idea. That is 9 live (3 decided, 4 ideas, 2 open), 4 of them after
+// seenat, and 1 dropped
+async function ideasSeed(h) {
+    const tick = () => h.rpc("ideatick", { sessionid: IDEAS_SESSION });
+    const add = (text, kind, by = "agent") => h.rpc("ideaadd", { sessionid: IDEAS_SESSION, text, kind, by });
+    await tick();
+    await tick();
+    await add(IDEAS_TEXT.d1, "decision");
+    await tick();
+    await add(IDEAS_TEXT.d3, "decision");
+    await add(IDEAS_TEXT.i2, "idea");
+    await add(IDEAS_TEXT.i3, "idea", "you");
+    await add(IDEAS_TEXT.o1, "question");
+    const gone = await add(IDEAS_TEXT.dropped, "idea");
+    await h.rpc("ideaupdate", { sessionid: IDEAS_SESSION, op: "drop", ids: [gone.id] });
+    await h.rpc("ideaupdate", { sessionid: IDEAS_SESSION, op: "seen" });
+    await polishNap(5);
+    await tick();
+    await add(IDEAS_TEXT.d2, "decision");
+    await add(IDEAS_TEXT.i4, "idea");
+    await add(IDEAS_TEXT.o2, "question");
+    await tick();
+    await add(IDEAS_TEXT.i1, "idea");
+}
+
+// the strip's Ideas count and the section, as the page draws them
+const ideasView = (h) =>
+    h.ev(`(() => {
+        const aside = ${IDEAS_ASIDE};
+        const stat = aside?.querySelector('[data-rail-stat="ideas"]');
+        const section = aside?.querySelector("[data-ideas-section]");
+        const rows = [...(section?.querySelectorAll("[data-ideas-row]") ?? [])].map((r) => ({
+            id: r.dataset.ideasRow,
+            group: r.closest("[data-ideas-group]")?.dataset.ideasGroup ?? null,
+            text: r.querySelector("[data-ideas-text]")?.textContent ?? "",
+            meta: r.querySelector("[data-ideas-meta]")?.textContent ?? "",
+            fresh: r.dataset.fresh === "true",
+            pill: r.querySelector("[data-ideas-newpill]") != null,
+            dropped: r.dataset.dropped === "true",
+            checked: r.querySelector("[data-ideas-check]")?.getAttribute("aria-checked") === "true",
+            restore: r.querySelector('[data-ideas-action="restore"]') != null,
+        }));
+        return {
+            stat: stat
+                ? { count: stat.getAttribute("data-count"), title: stat.getAttribute("title"), dot: stat.querySelector("[data-rail-stat-dot]") != null }
+                : null,
+            open: section != null,
+            newCount: aside?.querySelector("[data-ideas-newcount]")?.textContent?.trim() ?? null,
+            markRead: aside?.querySelector("[data-ideas-markread]") != null,
+            groups: [...(section?.querySelectorAll("[data-ideas-group]") ?? [])].map((g) => g.dataset.ideasGroup + ":" + g.dataset.count),
+            groupLabels: [...(section?.querySelectorAll("[data-ideas-group]") ?? [])].map(
+                (g) => [...g.querySelectorAll("span")].slice(0, 2).map((s) => s.textContent).join(" ")
+            ),
+            rows,
+            pills: rows.filter((r) => r.pill).length,
+            selbar: section?.querySelector("[data-ideas-selbar]")?.textContent ?? null,
+            mergeDisabled: section?.querySelector("[data-ideas-merge]")?.disabled ?? null,
+            editor: section?.querySelector("[data-ideas-editbox]") != null,
+            droppedOpen: section?.querySelector("[data-ideas-dropped]")?.getAttribute("aria-expanded") === "true",
+            addValue: section?.querySelector("[data-ideas-add]")?.value ?? null,
+        };
+    })()`);
+
+// the three live groups' marks, the Dropped fold's left out
+const liveGroups = (v) => v.groups.filter((g) => !g.startsWith("dropped:"));
+const liveLabels = (v) => v.groupLabels.filter((l) => !l.startsWith("Dropped"));
+const foldCount = (v) => Number(v.groups.find((g) => g.startsWith("dropped:"))?.split(":")[1] ?? 0);
+const ideaNum = (id) => Number(id.slice(1));
+
+const ideasRowOf = (v, list, text) => {
+    const id = ideaOf(list, text)?.id;
+    return v.rows.find((r) => r.id === id);
+};
+
+// the pointer over the middle of an element, after it is scrolled into view: a real hover, which the CSS reveals read
+async function ideasHover(h, selector) {
+    const box = await h.ev(`(() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) return null;
+        el.scrollIntoView({ block: "nearest" });
+        const r = el.getBoundingClientRect();
+        return r.width > 0 ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null;
+    })()`);
+    if (!box) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y });
+    await polishNap(250);
+    return true;
+}
+
+// text typed into a field as a keyboard does (Input.insertText, so a controlled input sees an input event); `replace`
+// selects what is there first
+async function ideasType(h, selector, text, replace = false) {
+    const focused = await h.ev(`(() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) return false;
+        el.focus();
+        ${replace ? "el.select();" : ""}
+        return document.activeElement === el;
+    })()`);
+    if (!focused) return false;
+    await h.cdp("Input.insertText", { text });
+    await polishNap(150);
+    return true;
+}
+
+// A real mouse drag over the terminal line that reads exactly `text`: pressed at its first letter, moved along it,
+// released just past its last (the dev probe __arcIdeaCapture, ideasstore.ts, says where the line is on screen: the
+// WebGL renderer leaves no DOM text to find). False when the line is not on screen.
+async function ideasSelectLine(h, blockId, text) {
+    const spot = await h.ev(`window.__arcIdeaCapture?.locate(${JSON.stringify(blockId)}, ${JSON.stringify(text)}) ?? null`);
+    if (!spot) return false;
+    const at = (type, x, extra) => h.cdp("Input.dispatchMouseEvent", { type, x: Math.round(x), y: Math.round(spot.y), ...extra });
+    await at("mouseMoved", spot.x0, { button: "none", buttons: 0 });
+    await at("mousePressed", spot.x0, { button: "left", buttons: 1, clickCount: 1 });
+    for (const f of [0.25, 0.5, 0.75, 1]) {
+        await at("mouseMoved", spot.x0 + (spot.x1 - spot.x0) * f, { button: "left", buttons: 1 });
+    }
+    await at("mouseReleased", spot.x1, { button: "left", buttons: 0, clickCount: 1 });
+    await polishNap(300);
+    return true;
+}
+
+// the "Add as idea" chip as the page draws it, and whether the terminal still holds the keyboard focus; null while absent
+const ideasChipFacts = (h) =>
+    h.ev(`(() => {
+        const chip = document.querySelector("[data-ideas-capture-chip]");
+        if (!chip) return null;
+        const r = chip.getBoundingClientRect();
+        const pane = chip.closest(".view-term")?.getBoundingClientRect();
+        return {
+            visible: getComputedStyle(chip).visibility === "visible" && r.width > 0 && r.height > 0,
+            text: chip.textContent.trim(),
+            keycap: chip.querySelector("span")?.textContent?.trim() ?? null,
+            top: Math.round(r.top),
+            left: Math.round(r.left),
+            inPane: pane != null && r.left >= pane.left - 1 && r.right <= pane.right + 1 && r.top >= pane.top - 1 && r.bottom <= pane.bottom + 1,
+            termFocused: document.activeElement?.classList?.contains("xterm-helper-textarea") === true,
+        };
+    })()`);
+
+// a toast as the page draws it: its text and its action button's label
+const ideasToastFacts = (h) =>
+    h.ev(`(() => {
+        const t = [...document.querySelectorAll("[data-notification-toast]")].find((b) => b.textContent.includes("Added to Ideas"));
+        return t ? { text: t.textContent.trim(), action: t.parentElement?.querySelector("[data-notification-action]")?.textContent?.trim() ?? null } : null;
+    })()`);
+
+// the terminal's selection, from the dev probe; "" while nothing is selected
+const ideasTermSelection = (h, blockId) => h.ev(`window.__arcIdeaCapture?.selection(${JSON.stringify(blockId)}) ?? null`);
+
+// Ctrl+Shift+I (the key's own modifiers: Ctrl 2, Shift 8), dispatched as a person's keystroke
+const ideasCaptureKey = (h) => railTabsKey(h, "I", "KeyI", 73, 10);
+
+// the Ended session's transcript is one prompt; the live one also names the project's folder as its cwd
+const ideasTranscript =(cwd, prompt) =>
+    JSON.stringify({ cwd, type: "user", message: { role: "user", content: [{ type: "text", text: prompt }] } }) + "\n";
+
+// answers getsessionsactivity with the ended session and passes every other command on to what was there
+async function installIdeasMock(h, sessions, apiUrl) {
+    return h.ev(`(async () => {
+        const mod = await import(${JSON.stringify(apiUrl)});
+        const api = mod.RpcApi;
+        if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
+        if (window.${IDEAS_MOCK_KEY}) return "already-installed";
+        const prev = api.mockClient ?? null;
+        const sessions = ${JSON.stringify(sessions)};
+        const mock = {
+            mockWshRpcCall(client, command, data, opts) {
+                if (command === "getsessionsactivity") return Promise.resolve({ sessions });
+                return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
+            },
+            mockWshRpcStream(client, command, data, opts) {
+                return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
+            },
+        };
+        window.${IDEAS_MOCK_KEY} = { api, prev };
+        api.setMockRpcClient(mock);
+        const probe = await api.GetSessionsActivityCommand(window.TabRpcClient, { windowdays: 30, limit: 100 });
+        const listed = await api.IdeaListCommand(window.TabRpcClient, { sessionid: ${JSON.stringify(IDEAS_SESSION)} });
+        return (probe.sessions ?? []).some((s) => s.id === ${JSON.stringify(IDEAS_ENDED)}) && listed != null ? "ok" : "not-intercepted";
+    })()`);
+}
+
+const removeIdeasMock = (h) =>
+    h.ev(`(() => {
+        const f = window.${IDEAS_MOCK_KEY};
+        if (!f) return "absent";
+        f.api.setMockRpcClient(f.prev);
+        delete window.${IDEAS_MOCK_KEY};
+        return "restored";
+    })()`);
+
+const ideasRail = {
+    name: "ideas-rail",
+    surface: "agent",
+    async arrange(h) {
+        const base = mkdtempSync(join(tmpdir(), "verify-ideas-rail-"));
+        const ctx = {
+            base,
+            terminals: [],
+            prevFixture: existsSync(TREE_RAIL_FIXTURE) ? readFileSync(TREE_RAIL_FIXTURE, "utf8") : null,
+            prevKeys: {},
+        };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            for (const k of IDEAS_KEYS) {
+                ctx.prevKeys[k] = await h.ev(`localStorage.getItem(${JSON.stringify(k)})`);
+            }
+            ctx.dataDir = (await h.rpc("waveinfo", null)).datadir;
+            // the three lists start empty, whatever an earlier run left
+            for (const id of [IDEAS_SESSION, IDEAS_EMPTY, IDEAS_ENDED]) {
+                rmSync(join(ctx.dataDir, "ideas", `${id}.json`), { force: true });
+            }
+            ctx.repo = join(base, "repo");
+            mkdirSync(ctx.repo);
+            ctx.transcript = join(base, `${IDEAS_SESSION}.jsonl`);
+            writeFileSync(ctx.transcript, ideasTranscript(ctx.repo, "brainstorm the ideas rail"));
+            ctx.emptyTranscript = join(base, `${IDEAS_EMPTY}.jsonl`);
+            writeFileSync(ctx.emptyTranscript, ideasTranscript(ctx.repo, "an agent that has noted nothing yet"));
+            ctx.endedTranscript = join(base, `${IDEAS_ENDED}.jsonl`);
+            writeFileSync(ctx.endedTranscript, ideasTranscript(ctx.repo, "an ended brainstorm"));
+            await h.rpc("createproject", { name: IDEAS_PROJECT, path: ctx.repo });
+            ctx.project = IDEAS_PROJECT;
+            // the reload below must boot a frontend whose project list already has it (Conversations lists registered ones)
+            await waitForProjectInConfig(h, IDEAS_PROJECT);
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            await openRailTerminal(h, ctx, IDEAS_PROJECT);
+            const term = ctx.terminals[0];
+            // the tab is an agent's, as launchAgent marks one, and the block carries the session the agent reported
+            await h.rpc("setmeta", { oref: `tab:${term.tabId}`, meta: { "session:agent": "claude" } });
+            await h.rpc("setmeta", { oref: `block:${term.blockId}`, meta: { "agent:transcriptpath": ctx.transcript } });
+            // the second agent, whose session has no ideas file: its own tab, block and transcript, marked the same way
+            await openRailTerminal(h, ctx, IDEAS_PROJECT);
+            const emptyTerm = ctx.terminals[1];
+            await h.rpc("setmeta", { oref: `tab:${emptyTerm.tabId}`, meta: { "session:agent": "claude" } });
+            await h.rpc("setmeta", { oref: `block:${emptyTerm.blockId}`, meta: { "agent:transcriptpath": ctx.emptyTranscript } });
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(
+                TREE_RAIL_FIXTURE,
+                JSON.stringify(
+                    [
+                        {
+                            id: IDEAS_AGENT,
+                            name: "ideas agent",
+                            project: IDEAS_PROJECT,
+                            task: "brainstorm the ideas rail",
+                            state: "idle",
+                            agent: "claude",
+                            model: "opus",
+                            idleSince: Date.now() - 60_000,
+                            blockId: term.blockId,
+                            transcriptPath: ctx.transcript,
+                        },
+                        {
+                            id: IDEAS_EMPTY_AGENT,
+                            name: "empty ideas agent",
+                            project: IDEAS_PROJECT,
+                            task: "an agent that has noted nothing yet",
+                            state: "idle",
+                            agent: "claude",
+                            model: "opus",
+                            idleSince: Date.now() - 120_000,
+                            blockId: emptyTerm.blockId,
+                            transcriptPath: ctx.emptyTranscript,
+                        },
+                    ],
+                    null,
+                    2
+                )
+            );
+            ctx.wroteFixture = true;
+            // a known rail: open, every section at its default (Ideas is closed), Overview, the default width, an empty
+            // grid, and the tree and Conversations unfolded
+            await h.ev(`(() => {
+                localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true");
+                for (const k of ${JSON.stringify(IDEAS_KEYS.filter((k) => k !== RAIL_VISIBLE_KEY && k !== GRID_KEY))}) localStorage.removeItem(k);
+                localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify({ ids: [], focused: null }))});
+            })()`);
+            // the roster is read once at boot
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            ctx.modules = await ahResolveModules(h);
+            const now = Date.now();
+            ctx.mock = ctx.modules.urls
+                ? await installIdeasMock(
+                      h,
+                      [
+                          {
+                              id: IDEAS_ENDED,
+                              runtime: "claude",
+                              projectpath: ctx.repo,
+                              projectname: IDEAS_PROJECT,
+                              branch: "main",
+                              model: "opus",
+                              tokenstotal: 1200,
+                              status: "done",
+                              startedts: now - 3_600_000,
+                              durationms: 60_000,
+                              events: [],
+                              task: "an ended brainstorm",
+                              lastactivets: now - 600_000,
+                              resumecommand: `claude --resume ${IDEAS_ENDED}`,
+                              transcriptpath: ctx.endedTranscript,
+                          },
+                      ],
+                      ctx.modules.urls.api
+                  )
+                : `no-module-url (${ctx.modules.error})`;
+            await h.goto("agent");
+            ctx.inRoster = await polishWaitFor(h, `!!document.querySelector('[data-agent-terminal="${IDEAS_AGENT}"]')`, 15000);
+            if (!ctx.inRoster) return ctx;
+            // a pane starts its shell when it is first shown (a hidden one has no size to start it at): the second agent's
+            // first, so the first one is what stays in focus for step 0
+            ctx.emptyInRoster = await polishWaitFor(h, `!!document.querySelector('[data-agent-terminal="${IDEAS_EMPTY_AGENT}"]')`, 15000);
+            if (ctx.emptyInRoster) {
+                await h.rpc("uireveal", { address: `agent:${IDEAS_EMPTY_AGENT}` }, UI_ROUTE);
+                ctx.emptyShellUp = await uploadsShellUp(h, emptyTerm.blockId);
+            }
+            await h.rpc("uireveal", { address: `agent:${IDEAS_AGENT}` }, UI_ROUTE);
+            ctx.shellUp = await uploadsShellUp(h, term.blockId);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) =>
+            steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        const ready = ctx.arrangeError == null && ctx.inRoster === true && ctx.shellUp === true && ctx.mock === "ok";
+        rec(
+            "0. the fixture agent is focused with its rail, over a real shell, and the sessions mock is in place",
+            ready,
+            ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster, shellUp: ctx.shellUp, mock: ctx.mock })
+        );
+        if (!ready) return steps;
+        const shot = (name) => h.shot(`cdp-shots/ideas-rail-${name}.png`);
+        const T = IDEAS_TEXT;
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
+        try {
+            // --- 1. absent at 0 --------------------------------------------------------------------------------------
+            const railUp = await polishWaitFor(h, `${IDEAS_ASIDE}?.querySelector('[role="tablist"]') != null`, 10000);
+            let v = await ideasView(h);
+            let list = await ideasList(h);
+            rec(
+                "1. absent at 0: no Lightbulb count in the strip and no Ideas section (Tab-Unread, the no-ideas state)",
+                railUp && v.stat == null && !v.open && (list?.ideas ?? []).length === 0,
+                { railUp, stat: v.stat, open: v.open, ideas: (list?.ideas ?? []).length }
+            );
+            await shot("absent");
+
+            // --- 2. the count with its dot ---------------------------------------------------------------------------
+            await ideasSeed(h);
+            const counted = await polishWaitFor(h, `${IDEAS_STAT}?.getAttribute("data-count") === "9"`, 8000);
+            v = await ideasView(h);
+            list = await ideasList(h);
+            const fresh = ideasLive(list).filter((i) => i.ts > list.seenat);
+            rec(
+                "2. count with unread dot: the strip's Lightbulb reads 9 with its dot, titled `Ideas: 9, 4 new`",
+                counted &&
+                    v.stat?.count === "9" &&
+                    v.stat.dot === true &&
+                    v.stat.title === "Ideas: 9, 4 new" &&
+                    ideasLive(list).length === 9 &&
+                    fresh.length === 4 &&
+                    (list.ideas ?? []).filter((i) => i.dropped).length === 1,
+                { stat: v.stat, live: ideasLive(list).length, fresh: fresh.length, open: v.open }
+            );
+            await shot("count-dot");
+
+            // --- 3. the section opens from the count ------------------------------------------------------------------
+            const closedBefore = v.open === false;
+            await h.ev(`${IDEAS_STAT}?.click()`);
+            const opened = await polishWaitFor(h, `${IDEAS_SECTION} != null`, 5000);
+            await polishNap(400);
+            v = await ideasView(h);
+            const metasOk = Object.entries(IDEAS_META).every(([k, meta]) => ideasRowOf(v, list, T[k])?.meta === meta);
+            rec(
+                "3. ideas section open: Decided 3 / Ideas 4 / Open 2, `4 new`, four New pills, and each row's `turn N · agent|you`",
+                closedBefore &&
+                    opened &&
+                    JSON.stringify(liveGroups(v)) === JSON.stringify(["decision:3", "idea:4", "question:2"]) &&
+                    JSON.stringify(liveLabels(v)) === JSON.stringify(["Decided 3", "Ideas 4", "Open 2"]) &&
+                    v.newCount === "4 new" &&
+                    v.markRead &&
+                    v.pills === 4 &&
+                    metasOk,
+                { closedBefore, groups: liveGroups(v), labels: liveLabels(v), newCount: v.newCount, pills: v.pills, metasOk }
+            );
+            await shot("section-open");
+
+            // --- 4. hover actions -------------------------------------------------------------------------------------
+            const i1 = ideaOf(list, T.i1);
+            const d1 = ideaOf(list, T.d1);
+            const hovered = await ideasHover(h, ideasRow(i1.id));
+            const hov = await h.ev(`(() => {
+                const look = (row) => {
+                    const edit = row?.querySelector('[data-ideas-action="edit"]');
+                    const check = row?.querySelector("[data-ideas-check]");
+                    return {
+                        hover: row?.matches(":hover") ?? false,
+                        actions: edit ? getComputedStyle(edit.parentElement).opacity : null,
+                        check: check ? getComputedStyle(check.parentElement).opacity : null,
+                        edit: edit != null,
+                        decide: row?.querySelector('[data-ideas-action="decide"]') != null,
+                        drop: row?.querySelector('[data-ideas-action="drop"]') != null,
+                    };
+                };
+                return {
+                    over: look(document.querySelector(${JSON.stringify(ideasRow(i1.id))})),
+                    decided: look(document.querySelector(${JSON.stringify(ideasRow(d1.id))})),
+                };
+            })()`);
+            rec(
+                "4. hover actions: the row under the pointer shows Edit, Mark as decided, Drop and its checkbox; a row not hovered shows none, and a Decided row offers no Mark as decided",
+                hovered &&
+                    hov.over.hover &&
+                    hov.over.actions === "1" &&
+                    hov.over.check === "1" &&
+                    hov.over.edit &&
+                    hov.over.decide &&
+                    hov.over.drop &&
+                    hov.decided.hover === false &&
+                    hov.decided.actions === "0" &&
+                    hov.decided.decide === false,
+                hov
+            );
+            await shot("hover");
+
+            // --- 5. inline edit ---------------------------------------------------------------------------------------
+            const i2 = ideaOf(list, T.i2);
+            const i3 = ideaOf(list, T.i3);
+            const edited = "Một ý đã sửa: nhóm theo ba loại để đọc nhanh";
+            await ideasClick(h, `${ideasRow(i2.id)} [data-ideas-action="edit"]`);
+            const boxUp = await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-editbox]") != null`, 4000);
+            const typed = await ideasType(h, "[data-ideas-editbox]", edited, true);
+            await ideasClick(h, `[data-ideas-editor="${i2.id}"] [data-ideas-kind="question"]`);
+            await polishNap(200);
+            // the kind choice words its options as Ideas-EditMerge.dc.html does (Idea is singular, unlike its group heading)
+            const kindLabels = await h.ev(
+                `[...document.querySelectorAll('[data-ideas-editor="${i2.id}"] [role="radiogroup"] [role="radio"]')].map((b) => b.textContent.trim())`
+            );
+            await shot("inline-edit");
+            await railTabsKey(h, "Enter", "Enter", 13, 2); // Ctrl+Enter saves
+            const movedToOpen = await polishWaitFor(
+                h,
+                `${IDEAS_SECTION}?.querySelector('[data-ideas-group="question"] [data-ideas-row="${i2.id}"]') != null`,
+                6000
+            );
+            let after = await ideasList(h);
+            v = await ideasView(h);
+            const editedRow = after.ideas.find((i) => i.id === i2.id);
+            // another row: edit, type, Esc: nothing changes
+            await ideasClick(h, `${ideasRow(i3.id)} [data-ideas-action="edit"]`);
+            await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-editbox]") != null`, 4000);
+            await ideasType(h, "[data-ideas-editbox]", " (not kept)");
+            await railTabsKey(h, "Escape", "Escape", 27);
+            const closed = await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-editbox]") == null`, 4000);
+            const kept = (await ideasList(h)).ideas.find((i) => i.id === i3.id);
+            const keptRow = (await ideasView(h)).rows.find((r) => r.id === i3.id);
+            rec(
+                "5. inline edit: the kind choice reads Decided / Idea / Open; the edited idea is in Open with its new text (idealist agrees); another edit cancelled with Esc is unchanged",
+                boxUp &&
+                    typed &&
+                    JSON.stringify(kindLabels) === JSON.stringify(["Decided", "Idea", "Open"]) &&
+                    movedToOpen &&
+                    editedRow?.text === edited &&
+                    editedRow.kind === "question" &&
+                    v.rows.find((r) => r.id === i2.id)?.text === edited &&
+                    closed &&
+                    kept?.text === T.i3 &&
+                    keptRow?.text === T.i3,
+                { kindLabels, movedToOpen, text: editedRow?.text, kind: editedRow?.kind, closed, keptText: kept?.text, keptRow: keptRow?.text }
+            );
+
+            // --- 6. mark as decided -----------------------------------------------------------------------------------
+            const o2 = ideaOf(list, T.o2);
+            await ideasClick(h, `${ideasRow(o2.id)} [data-ideas-action="decide"]`);
+            const decided = await polishWaitFor(
+                h,
+                `${IDEAS_SECTION}?.querySelector('[data-ideas-group="decision"] [data-ideas-row="${o2.id}"]') != null`,
+                6000
+            );
+            v = await ideasView(h);
+            const o2Now = (await ideasList(h)).ideas.find((i) => i.id === o2.id);
+            rec(
+                "6. mark as decided: an Open row moves to Decided and the group counts follow (Decided 4 / Ideas 3 / Open 2)",
+                decided && o2Now?.kind === "decision" && JSON.stringify(liveGroups(v)) === JSON.stringify(["decision:4", "idea:3", "question:2"]),
+                { decided, kind: o2Now?.kind, groups: liveGroups(v) }
+            );
+            await shot("decided");
+
+            // --- 7. select and merge ----------------------------------------------------------------------------------
+            list = await ideasList(h);
+            const a = ideaOf(list, T.i1);
+            const b = ideaOf(list, T.i4);
+            const third = ideaOf(list, T.i3);
+            const droppedBefore = (list.ideas ?? []).filter((i) => i.dropped).length;
+            await ideasClick(h, `${ideasRow(a.id)} [data-ideas-check]`);
+            await ideasClick(h, `${ideasRow(b.id)} [data-ideas-check]`);
+            const barUp = await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-selbar]") != null`, 4000);
+            await ideasClick(h, `${ideasRow(third.id)} [data-ideas-action="edit"]`);
+            await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-editbox]") != null`, 4000);
+            v = await ideasView(h);
+            const bar = await h.ev(`(() => {
+                const bar = ${IDEAS_SECTION}?.querySelector("[data-ideas-selbar]");
+                return {
+                    text: bar?.textContent ?? null,
+                    merge: bar?.querySelector("[data-ideas-merge]")?.textContent ?? null,
+                    drop: bar?.querySelector("[data-ideas-selection-drop]")?.textContent ?? null,
+                    clear: bar?.querySelector("[data-ideas-clear]") != null,
+                };
+            })()`);
+            rec(
+                "7a. select: two checked rows give the bar `2 selected · Merge · Drop`, with a third row's edit open (Ideas-EditMerge)",
+                barUp &&
+                    bar.text?.startsWith("2 selected") &&
+                    bar.merge === "Merge" &&
+                    bar.drop === "Drop" &&
+                    bar.clear &&
+                    v.mergeDisabled === false &&
+                    v.editor &&
+                    v.rows.filter((r) => r.checked).length === 2,
+                { bar, mergeDisabled: v.mergeDisabled, editor: v.editor, checked: v.rows.filter((r) => r.checked).map((r) => r.id) }
+            );
+            await shot("select-edit");
+            await railTabsKey(h, "Escape", "Escape", 27); // closes the edit box, not the selection
+            await ideasClick(h, "[data-ideas-merge]");
+            // the oldest of the two keeps the row (and its kind); the other is dropped
+            const keepId = a.ts < b.ts || (a.ts === b.ts && ideaNum(a.id) < ideaNum(b.id)) ? a.id : b.id;
+            const goneId = keepId === a.id ? b.id : a.id;
+            const joined = (keepId === a.id ? [a.text, b.text] : [b.text, a.text]).join("; ");
+            const merged = await polishWaitFor(
+                h,
+                `[...(${IDEAS_SECTION}?.querySelectorAll('[data-ideas-row="${keepId}"] [data-ideas-text]') ?? [])].some((t) => t.textContent === ${JSON.stringify(joined)})`,
+                6000
+            );
+            list = await ideasList(h);
+            v = await ideasView(h);
+            const keepNow = list.ideas.find((i) => i.id === keepId);
+            const goneNow = list.ideas.find((i) => i.id === goneId);
+            rec(
+                "7b. merge: one row holds both texts oldest first joined by `; `, the other is in Dropped, the count is one less (9 to 8)",
+                merged &&
+                    keepNow?.text === joined &&
+                    keepNow.dropped !== true &&
+                    goneNow?.dropped === true &&
+                    ideasLive(list).length === 8 &&
+                    v.stat?.count === "8" &&
+                    v.selbar == null &&
+                    (list.ideas ?? []).filter((i) => i.dropped).length === droppedBefore + 1,
+                { merged, live: ideasLive(list).length, stat: v.stat?.count, selbar: v.selbar, dropped: (list.ideas ?? []).filter((i) => i.dropped).length }
+            );
+            // a checked row clears with Esc: the focus is on the checkbox, as a click leaves it
+            await h.ev(`(() => { const c = document.querySelector(${JSON.stringify(`${ideasRow(third.id)} [data-ideas-check]`)}); c?.focus(); c?.click(); })()`);
+            const oneUp = await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-selbar]")?.textContent?.startsWith("1 selected")`, 4000);
+            const oneBar = await ideasView(h);
+            await railTabsKey(h, "Escape", "Escape", 27);
+            await polishNap(300);
+            v = await ideasView(h);
+            rec(
+                "7c. one checked row: `1 selected` with Merge off; Esc clears the selection",
+                oneUp && oneBar.mergeDisabled === true && v.selbar == null && v.rows.every((r) => !r.checked),
+                { oneUp, mergeDisabled: oneBar.mergeDisabled, selbar: v.selbar }
+            );
+
+            // --- 8. drop ----------------------------------------------------------------------------------------------
+            list = await ideasList(h);
+            const o1 = ideaOf(list, T.o1);
+            const liveBefore = ideasLive(list).length;
+            const droppedBefore8 = (list.ideas ?? []).filter((i) => i.dropped).length;
+            await ideasHover(h, ideasRow(o1.id));
+            await shot("drop-hover");
+            await ideasClick(h, `${ideasRow(o1.id)} [data-ideas-action="drop"]`);
+            const dropped = await polishWaitFor(h, `${IDEAS_STAT}?.getAttribute("data-count") === "${liveBefore - 1}"`, 6000);
+            v = await ideasView(h);
+            rec(
+                "8. drop: the count is one less and the Dropped fold's count one more",
+                dropped && v.stat?.count === String(liveBefore - 1) && foldCount(v) === droppedBefore8 + 1,
+                { count: v.stat?.count, fold: foldCount(v), expectedFold: droppedBefore8 + 1 }
+            );
+
+            // --- 9. Dropped open, Restore -----------------------------------------------------------------------------
+            await ideasClick(h, "[data-ideas-dropped]");
+            await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-dropped]")?.getAttribute("aria-expanded") === "true"`, 4000);
+            await polishNap(300);
+            v = await ideasView(h);
+            const droppedRows = v.rows.filter((r) => r.dropped);
+            await h.ev(`${IDEAS_SECTION}?.querySelector("[data-ideas-dropped]")?.scrollIntoView({ block: "center" })`);
+            await shot("dropped-open");
+            await ideasClick(h, `[data-ideas-section] [data-ideas-row="${o1.id}"] [data-ideas-action="restore"]`);
+            const restored = await polishWaitFor(
+                h,
+                `${IDEAS_SECTION}?.querySelector('[data-ideas-group="question"] [data-ideas-row="${o1.id}"]') != null`,
+                6000
+            );
+            v = await ideasView(h);
+            rec(
+                "9. dropped open: every dropped row has Restore; Restore puts one back in its group and the count is one more",
+droppedRows.length === droppedBefore8 + 1 &&
+                    droppedRows.every((r) => r.restore) &&
+                    restored &&
+                    v.stat?.count === String(liveBefore) &&
+                    foldCount(v) === droppedBefore8,
+                { droppedRows: droppedRows.length, restoreEach: droppedRows.every((r) => r.restore), restored, count: v.stat?.count, fold: foldCount(v) }
+            );
+
+            // --- 10. add an idea --------------------------------------------------------------------------------------
+            const mine = "Ý tôi tự thêm vào bằng ô nhập";
+            await h.ev(`${IDEAS_SECTION}?.querySelector("[data-ideas-add]")?.scrollIntoView({ block: "center" })`);
+            const typedAdd = await ideasType(h, "[data-ideas-add]", mine);
+            await railTabsKey(h, "Enter", "Enter", 13);
+            const added = await polishWaitFor(
+                h,
+                `[...(${IDEAS_SECTION}?.querySelectorAll('[data-ideas-group="idea"] [data-ideas-text]') ?? [])].some((t) => t.textContent === ${JSON.stringify(mine)})`,
+                6000
+            );
+            v = await ideasView(h);
+            list = await ideasList(h);
+            const addedIdea = ideaOf(list, mine);
+            const addedRow = v.rows.find((r) => r.id === addedIdea?.id);
+            rec(
+                "10. add an idea: a new row in Ideas read as the user's own (`you`), the count one more, the input empty",
+                typedAdd &&
+                    added &&
+                    addedIdea?.by === "you" &&
+                    addedIdea.kind === "idea" &&
+                    /(^|· )you$/.test(addedRow?.meta ?? "") &&
+                    addedRow?.group === "idea" &&
+                    v.stat?.count === String(liveBefore + 1) &&
+                    v.addValue === "",
+                { added, by: addedIdea?.by, meta: addedRow?.meta, count: v.stat?.count, input: v.addValue }
+            );
+            await shot("added");
+
+            // --- 11. Mark read ----------------------------------------------------------------------------------------
+            v = await ideasView(h);
+            const beforeRead = { dot: v.stat?.dot, newCount: v.newCount, pills: v.pills };
+            await ideasClick(h, "[data-ideas-markread]");
+            const read = await polishWaitFor(h, `${IDEAS_STAT}?.querySelector("[data-rail-stat-dot]") == null`, 6000);
+            await polishNap(300);
+            v = await ideasView(h);
+            list = await ideasList(h);
+            const newest = Math.max(...(list.ideas ?? []).map((i) => i.ts));
+            rec(
+                "11. mark read clears dot: the dot, `N new` and the pills are gone, and seenat is past every idea",
+                beforeRead.dot === true &&
+                    beforeRead.newCount != null &&
+                    beforeRead.pills > 0 &&
+                    read &&
+                    v.stat?.dot === false &&
+                    v.newCount == null &&
+                    v.markRead === false &&
+                    v.pills === 0 &&
+                    list.seenat >= newest,
+                { beforeRead, dot: v.stat?.dot, newCount: v.newCount, pills: v.pills, seenat: list.seenat, newest }
+            );
+            await shot("read");
+
+            // --- 12. leaving marks read -------------------------------------------------------------------------------
+            const late = await h.rpc("ideaadd", { sessionid: IDEAS_SESSION, text: "Một ý mới từ agent khi đang xem", kind: "idea", by: "agent" });
+            const dotBack = await polishWaitFor(
+                h,
+                `${IDEAS_STAT}?.querySelector("[data-rail-stat-dot]") != null && ${IDEAS_ASIDE}?.querySelector("[data-ideas-newcount]")?.textContent?.trim() === "1 new"`,
+                6000
+            );
+            // the Files tab needs the agent's working directory, which the rail reads from its transcript
+            const filesTab = await polishWaitFor(h, `${IDEAS_ASIDE}?.querySelector('[data-rail-tab="tree"]') != null`, 20000);
+            await h.ev(`${IDEAS_ASIDE}?.querySelector('[data-rail-tab="tree"]')?.click()`);
+            const left = await polishWaitFor(h, `${IDEAS_SECTION} == null`, 5000);
+            let seen = false;
+            for (let waited = 0; waited < 6000 && !seen; waited += 250) {
+                seen = ((await ideasList(h)).seenat ?? 0) >= late.ts;
+                if (!seen) await polishNap(250);
+            }
+            const dotGone = await polishWaitFor(h, `${IDEAS_STAT}?.querySelector("[data-rail-stat-dot]") == null`, 6000);
+            await shot("left");
+            await h.ev(`${IDEAS_ASIDE}?.querySelector('[data-rail-tab="overview"]')?.click()`);
+            rec(
+                "12. leaving marks read: a new idea brings the dot back; switching the rail to its other tab sends seen, so seenat is past that idea and the dot is gone",
+                dotBack && filesTab && left && seen && dotGone,
+                { dotBack, filesTab, left, seen, dotGone }
+            );
+
+            // --- 13. an ended session, opened from Conversations ------------------------------------------------------
+            await h.rpc("ideaadd", { sessionid: IDEAS_ENDED, text: "Ý một của phiên đã kết thúc", kind: "decision", by: "agent" });
+            await h.rpc("ideaadd", { sessionid: IDEAS_ENDED, text: "Ý hai của phiên đã kết thúc", kind: "idea", by: "agent" });
+            const rowSel = `[data-agent-session-row="claude:${IDEAS_ENDED}"]`;
+            let listed = await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(rowSel)})`, 8000);
+            if (!listed) {
+                // the sidebar rescans on re-entry, at most every 5s
+                await h.goto("cockpit");
+                await polishNap(AH_SCAN_GAP_MS);
+                await h.goto("agent");
+                listed = await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(rowSel)})`, 8000);
+            }
+            await h.ev(`document.querySelector(${JSON.stringify(rowSel)})?.click()`);
+            const sessionShown = await polishWaitFor(h, `!!document.querySelector("[data-agent-session]")`, 8000);
+            const folded = await polishWaitFor(h, `!!document.querySelector("[data-agent-session] [data-ideas-ended]")`, 8000);
+            const foldedView = await h.ev(`(() => {
+                const ended = document.querySelector("[data-agent-session] [data-ideas-ended]");
+                return {
+                    toggle: ended?.querySelector("[data-ideas-ended-toggle]")?.textContent?.trim() ?? null,
+                    rows: ended?.querySelectorAll("[data-ideas-row]").length ?? -1,
+                    expanded: ended?.querySelector("[data-ideas-ended-toggle]")?.getAttribute("aria-expanded") ?? null,
+                };
+            })()`);
+            await shot("ended-folded");
+            await h.ev(`document.querySelector("[data-agent-session] [data-ideas-ended-toggle]")?.click()`);
+            const expanded = await polishWaitFor(
+                h,
+                `document.querySelectorAll("[data-agent-session] [data-ideas-ended] [data-ideas-row]").length === 2`,
+                6000
+            );
+            const endedRows = await h.ev(`[...document.querySelectorAll("[data-agent-session] [data-ideas-ended] [data-ideas-text]")].map((t) => t.textContent)`);
+            const pills = await h.ev(`document.querySelectorAll("[data-agent-session] [data-ideas-newpill]").length`);
+            // the opened list fits its box: nothing of it reaches past the sides, so there is no sideways scrollbar
+            const endedBox = await h.ev(`(() => {
+                const body = document.querySelector("[data-agent-session] [data-ideas-ended-body]");
+                return body ? { client: body.clientWidth, scroll: body.scrollWidth } : null;
+            })()`);
+            await shot("ended-open");
+            const endedList = await ideasList(h, IDEAS_ENDED);
+            rec(
+                "13. ended session: opened from Conversations, the session view holds the folded `Ideas · 2`; expanded, both rows show, with no New pills and no sideways scroll, and looking does not mark the list read",
+                listed &&
+                    sessionShown &&
+                    folded &&
+                    foldedView.toggle === "Ideas · 2" &&
+                    foldedView.rows === 0 &&
+                    foldedView.expanded === "false" &&
+                    expanded &&
+                    endedRows.includes("Ý một của phiên đã kết thúc") &&
+                    endedRows.includes("Ý hai của phiên đã kết thúc") &&
+                    pills === 0 &&
+                    endedBox != null &&
+                    endedBox.scroll <= endedBox.client &&
+                    endedList.seenat === 0,
+                { listed, sessionShown, foldedView, expanded, endedRows, pills, endedBox, seenat: endedList.seenat }
+            );
+
+            // --- 14. the "Add as idea" chip beside a selection (Capture-Selection.dc.html) ----------------------------
+            // back on the agent's own terminal: the shell prints a line, which a mouse drag then selects
+            const term = ctx.terminals[0];
+            await h.rpc("uireveal", { address: `agent:${IDEAS_AGENT}` }, UI_ROUTE);
+            const paneBack = await polishWaitFor(
+                h,
+                `(document.querySelector('[data-agent-terminal="${IDEAS_AGENT}"] .xterm-screen')?.getClientRects().length ?? 0) > 0 && ${IDEAS_STAT} != null`,
+                15000
+            );
+            const nBefore = ideasLive(await ideasList(h)).length;
+            const marker = `ideas-capture-line-${Date.now().toString(36)}`;
+            const printed = await termLogPrint(h, term.blockId, marker);
+            const dragged = await ideasSelectLine(h, term.blockId, marker);
+            const chipShown = await polishWaitFor(h, `getComputedStyle(document.querySelector("[data-ideas-capture-chip]") ?? document.body).visibility === "visible" && !!document.querySelector("[data-ideas-capture-chip]")`, 5000);
+            const spot = await h.ev(`window.__arcIdeaCapture?.locate(${JSON.stringify(term.blockId)}, ${JSON.stringify(marker)}) ?? null`);
+            const chip = await ideasChipFacts(h);
+            const selected = ((await ideasTermSelection(h, term.blockId)) ?? "").trim();
+            await shot("selection-chip");
+            // a key typed (and rubbed out) takes the chip away; the next selection brings it back
+            await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "x", code: "KeyX", text: "x", windowsVirtualKeyCode: 88 });
+            await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "x", code: "KeyX", windowsVirtualKeyCode: 88 });
+            const chipGone = await polishWaitFor(h, `!document.querySelector("[data-ideas-capture-chip]")`, 3000);
+            await railTabsKey(h, "Backspace", "Backspace", 8);
+            const draggedAgain = await ideasSelectLine(h, term.blockId, marker);
+            const chipBack = await polishWaitFor(h, `!!document.querySelector("[data-ideas-capture-chip]")`, 5000);
+            rec(
+                "14. selection chip: dragging over a terminal line shows `Add as idea` with its keycap just under the line's end, inside the pane and without taking the terminal's focus; a typed key takes it away and the next selection brings it back",
+                paneBack &&
+                    printed &&
+                    dragged &&
+                    chipShown &&
+                    selected === marker &&
+                    chip?.visible === true &&
+                    chip.text.startsWith("Add as idea") &&
+                    chip.keycap != null &&
+                    chip.keycap !== "" &&
+                    chip.inPane === true &&
+                    spot != null &&
+                    chip.top > spot.y &&
+                    chip.termFocused === true &&
+                    chipGone &&
+                    draggedAgain &&
+                    chipBack,
+                { paneBack, printed, dragged, chipShown, selected, chip, lineY: spot?.y, chipGone, draggedAgain, chipBack }
+            );
+
+            // --- 15. the shortcut adds the selection -------------------------------------------------------------------
+            await ideasCaptureKey(h);
+            const toastUp = await polishWaitFor(h, `[...document.querySelectorAll("[data-notification-toast]")].some((b) => b.textContent.includes("Added to Ideas"))`, 6000);
+            const toast = await ideasToastFacts(h);
+            const counted15 = await polishWaitFor(h, `${IDEAS_STAT}?.getAttribute("data-count") === "${nBefore + 1}"`, 6000);
+            const cleared = ((await ideasTermSelection(h, term.blockId)) ?? "x") === "";
+            const chipAfter = await ideasChipFacts(h);
+            list = await ideasList(h);
+            const mineIdeas = (list.ideas ?? []).filter((i) => i.text === marker && !i.dropped);
+            const captured = mineIdeas[0];
+            await shot("shortcut-adds");
+            rec(
+                "15. shortcut adds: the toast `Added to Ideas` with Undo shows, the selection is cleared and the chip gone, the count is one more, and idealist has the line as an idea by you",
+                toastUp &&
+                    toast?.action === "Undo" &&
+                    counted15 &&
+                    cleared &&
+                    chipAfter == null &&
+                    mineIdeas.length === 1 &&
+                    captured.by === "you" &&
+                    captured.kind === "idea",
+                { toast, counted15, cleared, chipAfter, found: mineIdeas.length, by: captured?.by, kind: captured?.kind }
+            );
+
+            // --- 16. Undo ----------------------------------------------------------------------------------------------
+            await h.ev(`[...document.querySelectorAll("[data-notification-action]")].find((b) => b.textContent.trim() === "Undo")?.click()`);
+            const undone = await polishWaitFor(h, `${IDEAS_STAT}?.getAttribute("data-count") === "${nBefore}"`, 6000);
+            const toastGone = await polishWaitFor(h, `![...document.querySelectorAll("[data-notification-toast]")].some((b) => b.textContent.includes("Added to Ideas"))`, 4000);
+            list = await ideasList(h);
+            const undoneIdea = (list.ideas ?? []).find((i) => i.id === captured?.id);
+            rec(
+                "16. undo: Undo puts the count back and the idea is dropped in idealist",
+                undone && toastGone && undoneIdea?.dropped === true && ideasLive(list).length === nBefore,
+                { undone, toastGone, dropped: undoneIdea?.dropped, live: ideasLive(list).length, expected: nBefore }
+            );
+
+            // --- 17. a click on the chip adds ---------------------------------------------------------------------------
+            const draggedThird = await ideasSelectLine(h, term.blockId, marker);
+            const chipThird = await polishWaitFor(h, `getComputedStyle(document.querySelector("[data-ideas-capture-chip]") ?? document.body).visibility === "visible" && !!document.querySelector("[data-ideas-capture-chip]")`, 5000);
+            const button = await h.ev(`(() => {
+                const r = document.querySelector("[data-ideas-capture-add]")?.getBoundingClientRect();
+                return r && r.width > 0 ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null;
+            })()`);
+            if (button) {
+                await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: button.x, y: button.y, button: "none", buttons: 0 });
+                await h.cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: button.x, y: button.y, button: "left", buttons: 1, clickCount: 1 });
+                await h.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: button.x, y: button.y, button: "left", buttons: 0, clickCount: 1 });
+            }
+            const counted17 = await polishWaitFor(h, `${IDEAS_STAT}?.getAttribute("data-count") === "${nBefore + 1}"`, 6000);
+            const clearedThird = ((await ideasTermSelection(h, term.blockId)) ?? "x") === "";
+            const focusKept = await h.ev(`document.activeElement?.classList?.contains("xterm-helper-textarea") === true`);
+            list = await ideasList(h);
+            const again = (list.ideas ?? []).filter((i) => i.text === marker && !i.dropped);
+            await shot("chip-click-adds");
+            rec(
+                "17. chip click adds: selecting again and pressing the chip adds the line (the count is one more, the selection cleared), and the terminal keeps the focus",
+                draggedThird &&
+                    chipThird &&
+                    button != null &&
+                    counted17 &&
+                    clearedThird &&
+                    focusKept === true &&
+                    again.length === 1 &&
+                    again[0].id !== captured?.id &&
+                    again[0].by === "you",
+                { draggedThird, chipThird, button, counted17, clearedThird, focusKept, found: again.length }
+            );
+            await h.ev(`document.querySelectorAll("[data-notification-close]").forEach((b) => b.click())`);
+
+            // --- 18. the shortcut with nothing selected opens the Ideas input -------------------------------------------
+            // the section is closed first, so it is the shortcut that opens it, and the terminal holds the focus
+            await h.ev(`${IDEAS_ASIDE}?.querySelector('[data-rail-section="ideas"] h3 button')?.click()`);
+            const closedFirst = await polishWaitFor(h, `${IDEAS_SECTION} == null`, 4000);
+            const focusedTerm = await h.ev(`(() => {
+                const t = document.querySelector('[data-agent-terminal="${IDEAS_AGENT}"] .xterm-helper-textarea');
+                t?.focus();
+                return document.activeElement === t;
+            })()`);
+            const nothingSelected = ((await ideasTermSelection(h, term.blockId)) ?? "x") === "";
+            await ideasCaptureKey(h);
+            const inputFocused = await polishWaitFor(h, `document.activeElement?.matches?.("[data-ideas-add]") === true && ${IDEAS_SECTION} != null`, 6000);
+            const input = await h.ev(`(() => {
+                const el = document.activeElement;
+                const r = el?.getBoundingClientRect();
+                return { tag: el?.tagName ?? null, label: el?.getAttribute?.("placeholder") ?? null, shown: r != null && r.width > 0 && r.height > 0 };
+            })()`);
+            await shot("shortcut-no-selection");
+            rec(
+                "18. shortcut with no selection: with the Ideas section closed and nothing selected, the shortcut opens it and the focus is on its Add an idea input",
+                closedFirst && focusedTerm === true && nothingSelected && inputFocused && input.shown && input.label === "Add an idea",
+                { closedFirst, focusedTerm, nothingSelected, inputFocused, input }
+            );
+
+            // --- 19-21. the same shortcut on an agent whose session has no ideas yet ------------------------------------
+            // the second agent: no ideas file, so the strip has no count, and the section is not on its rail until asked for
+            const emptyTerm = ctx.terminals[1];
+            const emptySetUp = ctx.emptyInRoster === true && ctx.emptyShellUp === true && emptyTerm != null;
+            if (emptySetUp) {
+                await h.rpc("uireveal", { address: `agent:${IDEAS_EMPTY_AGENT}` }, UI_ROUTE);
+            }
+            const emptyPane = await polishWaitFor(
+                h,
+                `(document.querySelector('[data-agent-terminal="${IDEAS_EMPTY_AGENT}"] .xterm-screen')?.getClientRects().length ?? 0) > 0 && (document.querySelector('[data-agent-terminal="${IDEAS_AGENT}"] .xterm-screen')?.getClientRects().length ?? 0) === 0 && ${IDEAS_ASIDE}?.querySelector('[role="tablist"]') != null && ${IDEAS_STAT} == null`,
+                15000
+            );
+            await polishNap(400);
+            v = await ideasView(h);
+            const emptyBefore = await ideasList(h, IDEAS_EMPTY);
+            await shot("empty-no-count");
+            rec(
+                "19. an agent with no ideas yet: with its pane in focus (the other agent's has gone), the strip has no Ideas count and the rail has no Ideas section, and idealist holds nothing for its session",
+                emptySetUp &&
+                    emptyPane &&
+                    v.stat == null &&
+                    !v.open &&
+                    (emptyBefore?.ideas ?? []).length === 0,
+                { emptySetUp, emptyPane, stat: v.stat, open: v.open, ideas: (emptyBefore?.ideas ?? []).length }
+            );
+
+            // the terminal holds the focus and nothing is selected, as in step 18
+            const emptyFocused = await h.ev(`(() => {
+                const t = document.querySelector('[data-agent-terminal="${IDEAS_EMPTY_AGENT}"] .xterm-helper-textarea');
+                t?.focus();
+                return document.activeElement === t;
+            })()`);
+            const emptyNoSelection = emptySetUp && ((await ideasTermSelection(h, emptyTerm.blockId)) ?? "x") === "";
+            await ideasCaptureKey(h);
+            const emptyInputFocused = await polishWaitFor(
+                h,
+                `document.activeElement?.matches?.("[data-ideas-add]") === true && ${IDEAS_SECTION} != null`,
+                6000
+            );
+            await polishNap(300);
+            const emptyOpen = await h.ev(`(() => {
+                const aside = ${IDEAS_ASIDE};
+                const el = document.activeElement;
+                const r = el?.getBoundingClientRect();
+                return {
+                    heading: aside?.querySelector('[data-rail-section="ideas"] h3')?.textContent?.trim() ?? null,
+                    stat: aside?.querySelector('[data-rail-stat="ideas"]') != null,
+                    rows: aside?.querySelectorAll("[data-ideas-section] [data-ideas-row]").length ?? -1,
+                    newCount: aside?.querySelector("[data-ideas-newcount]") != null,
+                    placeholder: el?.getAttribute?.("placeholder") ?? null,
+                    shown: r != null && r.width > 0 && r.height > 0,
+                };
+            })()`);
+            await shot("empty-section");
+            rec(
+                "20. shortcut with no selection and no ideas: the Ideas section opens with no count (its heading is just Ideas, the strip still has none) and no rows, and the focus is on its Add an idea input",
+                emptyFocused === true &&
+                    emptyNoSelection &&
+                    emptyInputFocused &&
+                    emptyOpen.heading === "Ideas" &&
+                    emptyOpen.stat === false &&
+                    emptyOpen.rows === 0 &&
+                    emptyOpen.newCount === false &&
+                    emptyOpen.shown &&
+                    emptyOpen.placeholder === "Add an idea",
+                { emptyFocused, emptyNoSelection, emptyInputFocused, ...emptyOpen }
+            );
+
+            // one line typed into the focused input is the list's first idea, and the strip's count `1` appears
+            const first = "Ý đầu tiên của một phiên chưa có gì";
+            const typedFirst = await ideasType(h, "[data-ideas-add]", first);
+            await railTabsKey(h, "Enter", "Enter", 13);
+            const counted1 = await polishWaitFor(h, `${IDEAS_STAT}?.getAttribute("data-count") === "1"`, 8000);
+            const rowIn = await polishWaitFor(
+                h,
+                `[...(${IDEAS_SECTION}?.querySelectorAll("[data-ideas-text]") ?? [])].some((t) => t.textContent === ${JSON.stringify(first)})`,
+                6000
+            );
+            v = await ideasView(h);
+            const emptyAfter = await ideasList(h, IDEAS_EMPTY);
+            const firstIdea = ideaOf(emptyAfter, first);
+            const strayInOther = ideaOf(await ideasList(h), first) != null;
+            await shot("empty-added");
+            rec(
+                "21. the first idea: typing one line into that input and pressing Enter makes the strip's count `1` appear, the row is in the section as the user's own, the input is empty, and idealist has it for that session only",
+                emptySetUp &&
+                    typedFirst &&
+                    counted1 &&
+                    v.stat?.count === "1" &&
+                    rowIn &&
+                    v.addValue === "" &&
+                    (emptyAfter?.ideas ?? []).length === 1 &&
+                    firstIdea?.by === "you" &&
+                    firstIdea.kind === "idea" &&
+                    !strayInOther,
+                { typedFirst, counted1, count: v.stat?.count, rowIn, input: v.addValue, ideas: (emptyAfter?.ideas ?? []).length, by: firstIdea?.by, kind: firstIdea?.kind, strayInOther }
+            );
+        } catch (e) {
+            rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`ideas-rail teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("remove the sessions mock", () => removeIdeasMock(h));
+        for (const t of ctx.terminals ?? []) {
+            await step("close the terminal", () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false]));
+        }
+        if (ctx.project) {
+            // deleteproject leaves the channel createproject made, so that goes too
+            await step("remove the project", async () => {
+                await h.rpc("deleteproject", { name: ctx.project });
+                const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+                for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.repo))) {
+                    await h.rpc("deletechannel", { channelid: c.oid });
+                }
+            });
+        }
+        if (ctx.wroteFixture) {
+            await step("restore the fixture roster", () =>
+                ctx.prevFixture != null ? writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture) : rmSync(TREE_RAIL_FIXTURE, { force: true })
+            );
+        }
+        if (ctx.dataDir) {
+            await step("delete the three idea files", () => {
+                for (const id of [IDEAS_SESSION, IDEAS_EMPTY, IDEAS_ENDED]) rmSync(join(ctx.dataDir, "ideas", `${id}.json`), { force: true });
+            });
+        }
+        await step("restore the keys", async () => {
+            for (const [k, v] of Object.entries(ctx.prevKeys ?? {})) {
+                await h.ev(v == null ? `localStorage.removeItem(${JSON.stringify(k)})` : `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)})`);
+            }
+        });
+        await step("reload onto the restored roster", () => ahReload(h));
+        await step("remove the temp dir", () => rmSync(ctx.base, { recursive: true, force: true }));
+    },
+};
+
+// --- learned additions: needs-you-learn-card, setup-skill-additions, setup-learned ------------------------------------
+// docs/superpowers/specs/2026-10-14-learned-additions-design.md. A final-verify app has a data dir of its own, so the notes,
+// the mute list and the proposals these scenarios make are throwaway. It has no vault or home of its own: the vault is
+// vaultRoot(h), and an accept writes into the real ~/.claude/projects and, through agentsync.Apply, into every harness's
+// skills dir. So a fixture is named for one run, is never made in a vault that has a remote, and is removed in teardown
+// (the harness copies with it). The app is not pointed at a temp vault: Apply removes from each harness the managed
+// skills the vault lacks. verify.mjs runs no teardown for an arrange that threw, so an arrange cleans up for itself.
+const LEARN_RPC = { timeout: 30000 };
+
+// the local YYYY-MM-DD the backend stamps on a note's session and an accepted line
+const learnToday = () => {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+// "dd/mm", the day lineMeta shows
+const learnDayMonth = (today) => `${today.slice(8, 10)}/${today.slice(5, 7)}`;
+// mirrors agentobserve.SlugifyCwd: every character that is not an ASCII letter or digit becomes "-"
+const learnSlug = (cwd) => cwd.replace(/[^A-Za-z0-9]/gu, "-");
+const learnQuote = (key, session) => `cdp quote ${session} for ${key}`;
+
+// the strip's card and Setup's line for an id; both ids carry a path or a "#", so they are matched by value
+const LEARN_ROW = (id) =>
+    `[...document.querySelectorAll("[data-learn-id]")].find((r) => r.dataset.learnId === ${JSON.stringify(id)})`;
+const LEARN_LINE = (id) =>
+    `[...document.querySelectorAll("[data-learned-line]")].find((l) => l.dataset.learnedLine === ${JSON.stringify(id)})`;
+const learnPart = (rootExpr, testid) => `(${rootExpr})?.querySelector('[data-testid="${testid}"]')`;
+// an Edit or Remove re-runs agentsync.Apply for every harness, which took past 6s on a loaded machine (2026-10-14); the
+// line's buttons stay disabled meanwhile, so a click then is dropped
+const LEARN_SETTLE_MS = 30_000;
+const learnClick = async (h, rootExpr, testid) => {
+    await polishWaitFor(h, `!!${learnPart(rootExpr, testid)} && !${learnPart(rootExpr, testid)}.disabled`, LEARN_SETTLE_MS);
+    return h.ev(`(() => { const b = ${learnPart(rootExpr, testid)}; if (!b) return false; b.click(); return true; })()`);
+};
+const learnEnter = (h, rootExpr, testid) =>
+    h.ev(`(() => {
+        const el = ${learnPart(rootExpr, testid)};
+        if (!el) return false;
+        el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+        return true;
+    })()`);
+
+// Edit on a card or a line: the input opens, takes `text`, and Enter saves it. False when the input never opened.
+async function learnEditTo(h, rootExpr, { edit, input }, text) {
+    if (!(await learnClick(h, rootExpr, edit))) return false;
+    if (!(await polishWaitFor(h, `!!${learnPart(rootExpr, input)}`, 3000))) return false;
+    await h.ev(setInputExpr(learnPart(rootExpr, input), text));
+    // React renders the typed text before the key handler reads it
+    await polishNap(150);
+    return learnEnter(h, rootExpr, input);
+}
+
+// two notes in two sessions raise a proposal; `target` is { skill } or { cwd }
+async function learnPropose(h, target, key, text) {
+    const today = learnToday();
+    let last;
+    for (const session of ["a", "b"]) {
+        last = await h.rpc("learnnote", {
+            key,
+            ...target,
+            text,
+            quote: learnQuote(key, session),
+            session: `cdp-${session}:${today}`,
+        });
+    }
+    if (last?.proposed !== true) throw new Error(`two notes for ${key} raised no proposal: ${JSON.stringify(last)}`);
+}
+
+// runs every cleanup step, even after one threw, and fails with all the reasons
+async function learnTeardown(steps) {
+    const failed = [];
+    for (const step of steps) {
+        try {
+            await step();
+        } catch (e) {
+            failed.push(String(e?.message ?? e));
+        }
+    }
+    if (failed.length > 0) throw new Error(failed.join("; "));
+}
+
+// rethrows e once the cleanup has run; a cleanup that fails too adds its reason
+async function learnFailAfter(e, cleanup) {
+    let more = "";
+    try {
+        await cleanup();
+    } catch (ce) {
+        more = `; cleaning up also failed: ${ce?.message ?? ce}`;
+    }
+    throw new Error(`${e?.message ?? e}${more}`);
+}
+
+// a vault skill of this run's own, projected into each harness
+async function arrangeLearnSkill(h) {
+    const root = await vaultRoot(h);
+    const remote = vaultRemote(root);
+    if (remote) throw new Error(`the vault ${root} has a git remote (${remote}): not writing a fixture skill into it`);
+    const name = `cdp-learn-${Date.now()}`;
+    const dir = join(root, "skills", name);
+    if (existsSync(dir)) throw new Error(`${dir} already exists`);
+    const skill = { root, name, dir };
+    try {
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(
+            join(dir, "SKILL.md"),
+            `---\nname: ${name}\ndescription: CDP fixture for the learned-additions scenarios\n---\n\nA fixture skill.\n`
+        );
+        await h.rpc("agentsyncapply", { dryrun: false }, LEARN_RPC);
+    } catch (e) {
+        await learnFailAfter(e, () => teardownLearnSkill(h, skill));
+    }
+    return skill;
+}
+
+// removing the vault copy and syncing again removes the copies arcterm projected into each harness
+async function teardownLearnSkill(h, skill) {
+    rmSync(skill.dir, { recursive: true, force: true, maxRetries: 3 });
+    await h.rpc("agentsyncapply", { dryrun: false }, LEARN_RPC);
+    const left = join(homedir(), ".claude", "skills", skill.name);
+    if (existsSync(left)) throw new Error(`${left} is still there after the sync`);
+}
+
+// a project folder of this run's own; an accepted memory for it lands in project/memory
+function arrangeLearnMemory() {
+    const cwd = mkdtempSync(join(tmpdir(), "cdp-learn-"));
+    return { cwd, project: join(homedir(), ".claude", "projects", learnSlug(cwd)) };
+}
+
+function teardownLearnMemory(mem) {
+    try {
+        rmSync(mem.project, { recursive: true, force: true, maxRetries: 3 });
+    } finally {
+        rmSync(mem.cwd, { recursive: true, force: true, maxRetries: 3 });
+    }
+}
+
+// a proposal still in Needs you would outlive its fixture, so teardown dismisses what the scenario left pending
+async function learnDismissPending(h, ids) {
+    const items = (await h.rpc("getattention", null))?.items ?? [];
+    for (const id of ids) {
+        if (items.some((i) => i.learnid === id)) await h.rpc("learndecide", { id, accept: false }, LEARN_RPC);
+    }
+}
+
+// --- needs-you-learn-card: Accept, Edit and Dismiss on a learned rule in the Cockpit's Needs you strip ------------------
+const LC_KEYS = { accept: "cdp-accept", edit: "cdp-edit", dismiss: "cdp-dismiss", full: "cdp-full" };
+const LC_TEXT = {
+    accept: "Say cdp accept in every reply",
+    edit: "Say cdp edit in every reply",
+    edited: "Say cdp edited in every reply",
+    dismiss: "Say cdp dismiss in every reply",
+    full: "Say cdp full in every reply",
+};
+
+async function teardownLearnCard(h, ctx) {
+    await learnTeardown([
+        () => learnDismissPending(h, Object.values(ctx.ids ?? {})),
+        () => ctx.skill && teardownLearnSkill(h, ctx.skill),
+        () => ctx.mem && teardownLearnMemory(ctx.mem),
+    ]);
+}
+
+const needsYouLearnCard = {
+    name: "needs-you-learn-card",
+    surface: "cockpit",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            ctx.skill = await arrangeLearnSkill(h);
+            ctx.mem = arrangeLearnMemory();
+            const memId = (key) => `memory:${ctx.mem.cwd}#${key}`;
+            ctx.ids = {
+                accept: memId(LC_KEYS.accept),
+                edit: memId(LC_KEYS.edit),
+                dismiss: memId(LC_KEYS.dismiss),
+                full: `skill:${ctx.skill.name}#${LC_KEYS.full}`,
+            };
+            // the skill is at its cap: twenty lines, written as Accept would write them
+            const today = learnToday();
+            ctx.additions = join(ctx.skill.dir, ".arc", "additions.md");
+            mkdirSync(dirname(ctx.additions), { recursive: true });
+            writeFileSync(
+                ctx.additions,
+                Array.from({ length: 20 }, (_, i) => `- t${i} <!-- arc:learn key=k${i} learned=${today} count=1 -->\n`).join("")
+            );
+            for (const k of ["accept", "edit", "dismiss"]) {
+                await learnPropose(h, { cwd: ctx.mem.cwd }, LC_KEYS[k], LC_TEXT[k]);
+            }
+            await learnPropose(h, { skill: ctx.skill.name }, LC_KEYS.full, LC_TEXT.full);
+            // the strip reads the list the frontend polled; a reload reads it now
+            await polishReload(h);
+        } catch (e) {
+            await learnFailAfter(e, () => teardownLearnCard(h, ctx));
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+        const { ids } = ctx;
+        const today = learnToday();
+        const row = (k) => LEARN_ROW(ids[k]);
+        const gone = (k) => polishWaitFor(h, `!(${row(k)})`, 8000);
+        const memLine = async (key) =>
+            ((await h.rpc("learnaccepted", null)).memories ?? []).find((m) => m.cwd === ctx.mem.cwd && m.key === key) ?? null;
+        const scrollTo = (k) => h.ev(`(${row(k)})?.scrollIntoView({ block: "center" })`);
+        const shot = async (name) => {
+            await polishNap(200);
+            await h.shot(`cdp-shots/needs-you-learn-card-${name}.png`);
+        };
+
+        const all = await polishWaitFor(
+            h,
+            `${JSON.stringify(Object.values(ids))}.every((id) => [...document.querySelectorAll("[data-learn-id]")].some((r) => r.dataset.learnId === id))`,
+            15000
+        );
+        if (!all) {
+            rec("0. the four proposals are in Needs you", false, "a card never appeared");
+            return steps;
+        }
+
+        // 1. the card, then its evidence
+        await scrollTo("accept");
+        const first = await h.ev(`(() => {
+            const r = ${row("accept")};
+            const part = (t) => r.querySelector('[data-testid="' + t + '"]')?.textContent?.trim() ?? null;
+            return {
+                text: r.textContent.includes(${JSON.stringify(LC_TEXT.accept)}),
+                source: r.textContent.includes(${JSON.stringify(`Memory · ${basename(ctx.mem.cwd)}`)}),
+                accept: part("learn-accept"),
+                edit: part("learn-edit"),
+                dismiss: part("learn-dismiss"),
+            };
+        })()`);
+        rec(
+            "1a. the cdp-accept row shows its text, where it goes, and Accept, Edit and Dismiss",
+            first.text && first.source && first.accept === "Accept" && first.edit === "Edit" && first.dismiss === "Dismiss",
+            JSON.stringify(first)
+        );
+        await shot("1-row");
+
+        await learnClick(h, row("accept"), "learn-why");
+        const opened = await polishWaitFor(h, `!!${learnPart(row("accept"), "learn-why-quotes")}`, 3000);
+        const quotes = opened ? await h.ev(`${learnPart(row("accept"), "learn-why-quotes")}.textContent`) : null;
+        const [qa, qb] = ["a", "b"].map((s) => learnQuote(LC_KEYS.accept, s));
+        rec(
+            "1b. Why unfolds both quotes the rule was learned from",
+            quotes != null && quotes.includes(qa) && quotes.includes(qb),
+            JSON.stringify(quotes)
+        );
+        await shot("1-why");
+
+        // 2. Accept
+        await learnClick(h, row("accept"), "learn-accept");
+        const acceptGone = await gone("accept");
+        const accepted = acceptGone ? await memLine(LC_KEYS.accept) : null;
+        rec(
+            "2. Accept: the row leaves, and learnaccepted lists the cdp-accept memory",
+            acceptGone && accepted?.text === LC_TEXT.accept,
+            JSON.stringify({ acceptGone, accepted })
+        );
+
+        // 3. Edit
+        await scrollTo("edit");
+        await learnClick(h, row("edit"), "learn-edit");
+        const inputUp = await polishWaitFor(h, `!!${learnPart(row("edit"), "learn-edit-input")}`, 3000);
+        const held = inputUp ? await h.ev(`${learnPart(row("edit"), "learn-edit-input")}.value`) : null;
+        rec("3a. Edit opens an input holding the rule's text", held === LC_TEXT.edit, JSON.stringify(held));
+        await shot("3-edit");
+
+        await h.ev(setInputExpr(learnPart(row("edit"), "learn-edit-input"), LC_TEXT.edited));
+        // React renders the typed text before the key handler reads it
+        await polishNap(150);
+        await learnEnter(h, row("edit"), "learn-edit-input");
+        const editGone = await gone("edit");
+        const edited = editGone ? await memLine(LC_KEYS.edit) : null;
+        rec(
+            "3b. Enter accepts the edited line: the row leaves, and learnaccepted lists cdp-edit with the new text",
+            editGone && edited?.text === LC_TEXT.edited,
+            JSON.stringify({ editGone, edited })
+        );
+
+        // 4. a skill at its cap refuses, and the card stays to retry or dismiss
+        await scrollTo("full");
+        await learnClick(h, row("full"), "learn-accept");
+        const toast = await h.ev(`(async () => {
+            for (let i = 0; i < 40; i++) {
+                const t = [...document.querySelectorAll("[data-notification-toast]")].find((el) => el.textContent.includes("remove one first"));
+                if (t) return { text: t.textContent.trim(), error: /border-error/.test(t.parentElement?.className ?? "") };
+                await new Promise((r) => setTimeout(r, 100));
+            }
+            return null;
+        })()`);
+        await shot("4-cap");
+        // a late list reload would show a card that went anyway
+        await polishNap(500);
+        const stays = await h.ev(`!!(${row("full")})`);
+        const kept = readFileSync(ctx.additions, "utf8").split("\n").filter((l) => l.startsWith("- ")).length;
+        const added = ((await h.rpc("learnaccepted", null)).skills ?? []).some(
+            (s) => s.skill === ctx.skill.name && s.key === LC_KEYS.full
+        );
+        rec(
+            "4. Accept at the 20-line cap: an error toast says to remove one first, and the row stays",
+            toast?.error === true && stays && !added && kept === 20,
+            JSON.stringify({ toast, stays, added, lines: kept })
+        );
+
+        // 5. Dismiss mutes the rule
+        await scrollTo("dismiss");
+        await learnClick(h, row("dismiss"), "learn-dismiss");
+        const dismissGone = await gone("dismiss");
+        const third = await h.rpc("learnnote", {
+            key: LC_KEYS.dismiss,
+            cwd: ctx.mem.cwd,
+            text: LC_TEXT.dismiss,
+            quote: learnQuote(LC_KEYS.dismiss, "c"),
+            session: `cdp-c:${today}`,
+        });
+        rec(
+            "5. Dismiss: the row leaves, and a third note for it comes back muted",
+            dismissGone && third?.muted === true,
+            JSON.stringify({ dismissGone, third })
+        );
+        await shot("5-dismissed");
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownLearnCard(h, ctx);
+    },
+};
+
+// --- setup-skill-additions: Setup → Skills' "+N" chip and "Your additions" block for a skill the user taught ---------
+const SA_KEY = "cdp-rail";
+const SA_TEXT = "Say cdp rail in every reply";
+const SA_EDITED = "Say cdp rail edited in every reply";
+const LINE_EDIT = { edit: "learned-edit", input: "learned-edit-input" };
+
+async function teardownLearnRail(h, ctx) {
+    await learnTeardown([
+        // a no-op once the scenario removed the line
+        () => ctx.skill && h.rpc("learnamend", { skill: ctx.skill.name, key: SA_KEY, remove: true }, LEARN_RPC),
+        () => ctx.skill && teardownLearnSkill(h, ctx.skill),
+    ]);
+}
+
+const setupSkillAdditions = {
+    name: "setup-skill-additions",
+    surface: "setup",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            ctx.skill = await arrangeLearnSkill(h);
+            await learnPropose(h, { skill: ctx.skill.name }, SA_KEY, SA_TEXT);
+            await h.rpc("learndecide", { id: `skill:${ctx.skill.name}#${SA_KEY}`, accept: true }, LEARN_RPC);
+        } catch (e) {
+            await learnFailAfter(e, () => teardownLearnRail(h, ctx));
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+        const { name } = ctx.skill;
+        const id = `${name}#${SA_KEY}`;
+        const row = `[...document.querySelectorAll('[role="table"][aria-label="Skills by harness"] [role="row"]')].find((r) => r.querySelector('[role="cell"] > span.truncate')?.textContent === ${JSON.stringify(name)})`;
+        const block = `document.querySelector('[data-testid="learned-additions"]')`;
+        const line = `(${block})?.querySelector('[data-learned-line]')`;
+        const lineOf = LEARN_LINE(id);
+        const shot = async (step) => {
+            await polishNap(200);
+            await h.shot(`cdp-shots/setup-skill-additions-${step}.png`);
+        };
+
+        await h.goto("setup");
+        await ttClick(h, '[data-setup-tab="skills"]');
+        const listed = await polishWaitFor(h, `!!(${row})`, 10000);
+        if (!listed) {
+            rec("0. the fixture skill is in Setup → Skills", false, `${name} never appeared in the skills list`);
+            return steps;
+        }
+        await h.ev(`(${row}).scrollIntoView({ block: "center" })`);
+        await h.ev(`(${row}).click()`);
+        const railUp = await polishWaitFor(h, `!!${block}`, 6000);
+
+        // 1. the chip, the block, the line's date and count, the "new" background
+        const meta = `${learnDayMonth(learnToday())} · 2×`;
+        const seen = await h.ev(`(() => {
+            const r = ${row};
+            const l = ${line};
+            return {
+                chip: r?.querySelector('[data-testid="skill-additions-chip"]')?.textContent?.trim() ?? null,
+                line: l ? { text: l.textContent, accentbg: l.classList.contains("bg-accentbg"), bg: getComputedStyle(l).backgroundColor } : null,
+            };
+        })()`);
+        const painted = seen.line != null && seen.line.bg !== "rgba(0, 0, 0, 0)" && seen.line.bg !== "transparent";
+        rec(
+            "1. the row shows a +1 chip, and the rail a block with the line, its date and 2×, on the new background",
+            railUp &&
+                seen.chip === "+1" &&
+                seen.line?.text.includes(SA_TEXT) &&
+                seen.line.text.includes(meta) &&
+                seen.line.accentbg &&
+                painted,
+            JSON.stringify({ ...seen, meta })
+        );
+        await h.ev(`${block}?.scrollIntoView({ block: "center" })`);
+        await shot("1-block");
+
+        // 2. Edit
+        const typed = await learnEditTo(h, lineOf, LINE_EDIT, SA_EDITED);
+        const shown = typed && (await polishWaitFor(h, `(${lineOf})?.textContent.includes(${JSON.stringify(SA_EDITED)})`, LEARN_SETTLE_MS));
+        const stored = ((await h.rpc("learnaccepted", null)).skills ?? []).find((s) => s.skill === name && s.key === SA_KEY);
+        rec(
+            "2. Edit: the line shows the new text, and the vault holds it",
+            shown && stored?.text === SA_EDITED,
+            JSON.stringify({ typed, shown, stored })
+        );
+        await shot("2-edited");
+
+        // 3. Remove takes the block and the chip with it
+        await learnClick(h, lineOf, "learned-remove");
+        const removed = await polishWaitFor(
+            h,
+            `!${block} && !(${row})?.querySelector('[data-testid="skill-additions-chip"]')`,
+            LEARN_SETTLE_MS
+        );
+        const left = ((await h.rpc("learnaccepted", null)).skills ?? []).some((s) => s.skill === name && s.key === SA_KEY);
+        rec("3. Remove: the block and the chip are gone, and so is the line", removed && !left, JSON.stringify({ removed, left }));
+        await shot("3-removed");
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownLearnRail(h, ctx);
+    },
+};
+
+// --- setup-learned: Setup → Learned, every accepted line grouped by skill and by project -----------------------------
+const SL_KEYS = { skill: "cdp-learned-skill", memory: "cdp-learned-memory" };
+const SL_TEXT = {
+    skill: "Say cdp learned skill in every reply",
+    edited: "Say cdp learned skill edited in every reply",
+    memory: "Say cdp learned memory in every reply",
+};
+
+async function teardownLearned(h, ctx) {
+    await learnTeardown([
+        // a no-op when the scenario never made the line, or removed it
+        () => ctx.skill && h.rpc("learnamend", { skill: ctx.skill.name, key: SL_KEYS.skill, remove: true }, LEARN_RPC),
+        () => ctx.skill && teardownLearnSkill(h, ctx.skill),
+        () => ctx.mem && teardownLearnMemory(ctx.mem),
+    ]);
+}
+
+const setupLearned = {
+    name: "setup-learned",
+    surface: "setup",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            ctx.skill = await arrangeLearnSkill(h);
+            ctx.mem = arrangeLearnMemory();
+        } catch (e) {
+            await learnFailAfter(e, () => teardownLearned(h, ctx));
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+        const { name } = ctx.skill;
+        const { cwd } = ctx.mem;
+        const skillId = `${name}#${SL_KEYS.skill}`;
+        const memId = `${cwd}#${SL_KEYS.memory}`;
+        const accepted = async () => await h.rpc("learnaccepted", null);
+        const shot = async (step) => {
+            await polishNap(200);
+            await h.shot(`cdp-shots/setup-learned-${step}.png`);
+        };
+        const openLearned = async () => {
+            await h.goto("setup");
+            await ttClick(h, '[data-setup-tab="learned"]');
+        };
+
+        // 1. before any line of this run: the empty state, when the machine has no learned line of its own
+        await openLearned();
+        const before = await accepted();
+        const existing = (before.skills?.length ?? 0) + (before.memories?.length ?? 0);
+        if (existing > 0) {
+            rec("1. with nothing learned, the Learned tab says so", true, `skipped: ${existing} learned lines already exist`);
+        } else {
+            const empty = await polishWaitFor(h, `!!document.querySelector('[data-testid="learned-empty"]')`, 6000);
+            const text = empty ? await h.ev(`document.querySelector('[data-testid="learned-empty"]').textContent.trim()`) : null;
+            rec("1. with nothing learned, the Learned tab says so", text?.startsWith("Nothing learned yet"), JSON.stringify(text));
+            await shot("1-empty");
+        }
+
+        // 2. one accepted line for the skill and one for the project, read on a fresh tab
+        await learnPropose(h, { skill: name }, SL_KEYS.skill, SL_TEXT.skill);
+        await h.rpc("learndecide", { id: `skill:${skillId}`, accept: true }, LEARN_RPC);
+        await learnPropose(h, { cwd }, SL_KEYS.memory, SL_TEXT.memory);
+        await h.rpc("learndecide", { id: `memory:${memId}`, accept: true }, LEARN_RPC);
+        await polishReload(h);
+        await openLearned();
+        const listed = await polishWaitFor(h, `!!(${LEARN_LINE(skillId)}) && !!(${LEARN_LINE(memId)})`, 10000);
+        const seen = await h.ev(`(() => {
+            const s = ${LEARN_LINE(skillId)};
+            const m = ${LEARN_LINE(memId)};
+            return {
+                skill: s ? { group: s.closest("section")?.getAttribute("aria-label"), text: s.textContent } : null,
+                memory: m
+                    ? {
+                          group: m.closest("section")?.getAttribute("aria-label"),
+                          path: m.closest("section")?.querySelector("span[title]")?.getAttribute("title"),
+                          text: m.textContent,
+                      }
+                    : null,
+            };
+        })()`);
+        const meta = `${learnDayMonth(learnToday())} · 2×`;
+        rec(
+            "2. the skill's line sits under the skill and the memory's under its project folder, each with its date and 2×",
+            listed &&
+                seen.skill?.group === name &&
+                seen.skill.text.includes(SL_TEXT.skill) &&
+                seen.skill.text.includes(meta) &&
+                seen.memory?.group === basename(cwd) &&
+                seen.memory.path === cwd &&
+                seen.memory.text.includes(SL_TEXT.memory) &&
+                seen.memory.text.includes(meta),
+            JSON.stringify({ ...seen, meta })
+        );
+        await h.ev(`(${LEARN_LINE(skillId)})?.scrollIntoView({ block: "center" })`);
+        await shot("2-groups");
+
+        // 3. Edit the skill's line on this tab
+        const typed = await learnEditTo(h, LEARN_LINE(skillId), LINE_EDIT, SL_TEXT.edited);
+        const shown =
+            typed && (await polishWaitFor(h, `(${LEARN_LINE(skillId)})?.textContent.includes(${JSON.stringify(SL_TEXT.edited)})`, LEARN_SETTLE_MS));
+        const stored = ((await accepted()).skills ?? []).find((s) => s.skill === name && s.key === SL_KEYS.skill);
+        rec(
+            "3. Edit: the skill's line shows the new text, and the vault holds it",
+            shown && stored?.text === SL_TEXT.edited,
+            JSON.stringify({ typed, shown, stored })
+        );
+        await shot("3-edited");
+
+        // 4. Remove the memory's line, which deletes its file
+        const file = join(ctx.mem.project, "memory", `learned_${SL_KEYS.memory}.md`);
+        const existed = existsSync(file);
+        await h.ev(`(${LEARN_LINE(memId)})?.scrollIntoView({ block: "center" })`);
+        await learnClick(h, LEARN_LINE(memId), "learned-remove");
+        const lineGone = await polishWaitFor(h, `!(${LEARN_LINE(memId)})`, LEARN_SETTLE_MS);
+        rec(
+            "4. Remove: the memory's line is gone, and so is its file under ~/.claude/projects",
+            existed && lineGone && !existsSync(file),
+            JSON.stringify({ file, existed, lineGone, fileLeft: existsSync(file) })
+        );
+        await shot("4-removed");
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownLearned(h, ctx);
+    },
+};
+
+// --- initiatives on the Agent surface ----------------------------------------------------------------------------
+// docs/superpowers/specs/2026-10-14-initiatives-on-agent-design.md. Five scenarios share the helpers below: the plan an
+// agent proposes, reviewed on its details rail (initiative-plan-review); the initiative popover on its header
+// (initiative-popover); Link to initiative (initiative-link); a review pass over the Jarvis List (initiative-review); and
+// parent and child initiatives on it (initiative-parents).
+//
+// An agent here is a terminal tab that publishes a Claude agent:status, as agent-uploads makes one, with the tab's
+// session:effort naming its initiative. No scenario launches a real agent (AGENTS.md: a real agent costs tokens).
+//
+// Keys and clicks are real CDP input events: the single-key bindings are read off window capture and ignore a synthetic
+// event aimed at the wrong element, and a JS .click() does not focus the button it clicks.
+const INIT_VK = { Enter: 13, Escape: 27, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40 };
+const INIT_WAIT_MS = 15000;
+const INIT_RAIL = `document.querySelector('aside[aria-label="Agent details"]')`;
+// the Brief's regions and rows hold no oref of their own, so a row is found by its title: each title below is unique
+// to its scenario and none holds another
+const INIT_ROW = (title) =>
+    `[...document.querySelectorAll('[data-jarvis-brief-row="initiative"]')].find((r) => r.innerText.includes(${JSON.stringify(title)}))`;
+// the Date.now offset the review scenario stubs in, and where the page keeps the real one
+const INIT_DAY_MS = 24 * 3600 * 1000;
+
+// A key as a person types it. A letter goes as keyDown with its text; the rest as rawKeyDown, Enter with its char too.
+async function initPress(h, key, mods = 0) {
+    const vk = INIT_VK[key];
+    if (vk == null) {
+        const code = `Key${key.toUpperCase()}`;
+        const windowsVirtualKeyCode = key.toUpperCase().charCodeAt(0);
+        await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", key, code, text: key, windowsVirtualKeyCode, modifiers: mods });
+        await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode, modifiers: mods });
+    } else {
+        await h.cdp("Input.dispatchKeyEvent", { type: "rawKeyDown", key, code: key, windowsVirtualKeyCode: vk, modifiers: mods });
+        if (key === "Enter") {
+            await h.cdp("Input.dispatchKeyEvent", { type: "char", key, code: key, text: "\r", windowsVirtualKeyCode: vk });
+        }
+        await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key, code: key, windowsVirtualKeyCode: vk, modifiers: mods });
+    }
+    await polishNap(300);
+}
+
+async function initType(h, text) {
+    await h.cdp("Input.insertText", { text });
+    await polishNap(200);
+}
+
+// A mouse click at the middle of the element `expr` evaluates to; false when none is drawn.
+async function initClick(h, expr, { mods = 0 } = {}) {
+    const measure = () =>
+        h.ev(`(() => {
+            const el = ${expr};
+            if (!el) return null;
+            el.scrollIntoView({ block: "center", behavior: "instant" });
+            const r = el.getBoundingClientRect();
+            return r.width > 0 && r.height > 0 ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null;
+        })()`);
+    // a row the List is still moving into place (its layout animation) is clicked where it settles, not where it was
+    let box = await measure();
+    for (let i = 0; i < 8 && box != null; i++) {
+        await polishNap(120);
+        const again = await measure();
+        const steady = again != null && again.x === box.x && again.y === box.y;
+        box = again;
+        if (steady) break;
+    }
+    if (box == null) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y });
+    for (const type of ["mousePressed", "mouseReleased"]) {
+        await h.cdp("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button: "left", clickCount: 1, modifiers: mods });
+    }
+    await polishNap(300);
+    return true;
+}
+
+// Replaces what an input holds: its text is selected, then typed over.
+async function initFill(h, inputExpr, text) {
+    await h.ev(`(() => { const el = ${inputExpr}; el?.focus(); el?.select?.(); })()`);
+    await initType(h, text);
+}
+
+const initCtx = () => ({ oids: [], agents: [], prevStorage: {} });
+
+// Polls a Node-side check (an RPC read) until it holds.
+async function initUntil(check, ms = INIT_WAIT_MS) {
+    for (let waited = 0; waited < ms; waited += 250) {
+        if (await check()) return true;
+        await polishNap(250);
+    }
+    return false;
+}
+
+async function initCreate(h, ctx, { title, project, chunks = [], parentoid }) {
+    const made = await h.rpc("effortcreate", {
+        title,
+        ...(project ? { project } : {}),
+        ...(parentoid ? { parentoid } : {}),
+        chunks: chunks.map((label) => ({ label })),
+    });
+    ctx.oids.push(made.effortoid);
+    return made.effortoid;
+}
+const initOps = (h, oid, ops) => h.rpc("effortmutate", { effortoid: oid, author: "you", ops });
+const initEffort = async (h, oid) => (await h.rpc("effortget", { effortoid: oid }))?.effort;
+const initChunks = async (h, oid) => (await initEffort(h, oid))?.chunks ?? [];
+const initChunk = async (h, oid, label) => (await initChunks(h, oid)).find((c) => c.label === label);
+const initLabels = async (h, oid) => (await initChunks(h, oid)).map((c) => c.label);
+
+// the page's own tab's workspace, so the tab made below lands in the window under test
+async function initWorkspace(h, ctx) {
+    if (ctx.workspaceId != null) return;
+    const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+    const wslist = await h.rpc("workspacelist", null);
+    const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+    ctx.workspaceId = ws.workspacedata.oid;
+}
+
+const initStatus = (h, agent, state) =>
+    h.rpc("eventpublish", {
+        event: "agent:status",
+        scopes: [`block:${agent.blockId}`],
+        persist: 1,
+        data: { oref: `block:${agent.blockId}`, state, agent: "claude", title: agent.name, ts: Date.now() },
+    });
+
+// A plain terminal in a tab of its own that reports as a Claude agent; the tab id is the agent id. `effort` is the
+// initiative's oref for session:effort, left off for an agent with none.
+async function initOpenAgent(h, ctx, { name, project, effort }) {
+    await initWorkspace(h, ctx);
+    const agent = { name, project };
+    // tracked as soon as it exists, so a failure below still lets teardown close the tab
+    agent.tabId = await waveService(h, "workspace", "CreateTab", [ctx.workspaceId, name, false]);
+    ctx.agents.push(agent);
+    const tab = await waveService(h, "object", "GetObject", [`tab:${agent.tabId}`]);
+    agent.blockId = tab?.blockids?.[0];
+    if (!agent.blockId) throw new Error("the new tab has no block");
+    // the shell starts in ~: nothing in the app tree should hold a temp dir
+    await h.rpc("setmeta", { oref: `block:${agent.blockId}`, meta: { view: "term", controller: "shell", "cmd:cwd": "~" } });
+    await h.rpc("setmeta", {
+        oref: `tab:${agent.tabId}`,
+        meta: { "session:project": project, ...(effort ? { "session:effort": effort } : {}) },
+    });
+    await initStatus(h, agent, "idle");
+    return agent;
+}
+
+// Makes the agent's pane the one shown (an empty grid keeps it alone), clicking its tree row until then so a click that
+// lands before the roster has settled is not lost. True once its header and rail are up.
+async function initFocusAgent(h, agent) {
+    await h.goto("agent");
+    return polishWaitFor(
+        h,
+        `(() => {
+            const pane = document.querySelector('[data-agent-terminal="${agent.tabId}"]');
+            if (pane != null && !pane.classList.contains("hidden") && document.querySelector("[data-agent-header]") != null && ${INIT_RAIL} != null) return true;
+            document.querySelector('[data-agent-row="${agent.tabId}"]')?.click();
+            return false;
+        })()`,
+        INIT_WAIT_MS
+    );
+}
+
+// The agent surface's saved state, each key put back by initRestore: the rail shown, each of its sections at its default,
+// and an empty grid so the agent made next is shown alone. All of them are read once per page load, hence the reload.
+async function initPrepare(h, ctx, extra = {}) {
+    const keys = [RAIL_VISIBLE_KEY, RAIL_SECTIONS_KEY, GRID_KEY, ...Object.keys(extra)];
+    for (const key of keys) {
+        ctx.prevStorage[key] = await h.ev(`localStorage.getItem(${JSON.stringify(key)})`);
+    }
+    await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true")`);
+    await h.ev(`localStorage.removeItem(${JSON.stringify(RAIL_SECTIONS_KEY)})`);
+    await h.ev(
+        `localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify({ ids: [], focused: null }))})`
+    );
+    for (const [key, value] of Object.entries(extra)) {
+        await h.ev(
+            value == null
+                ? `localStorage.removeItem(${JSON.stringify(key)})`
+                : `localStorage.setItem(${JSON.stringify(key)}, ${JSON.stringify(value)})`
+        );
+    }
+    if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+}
+
+// A fixture roster makes the agents this makes invisible to the tree.
+const initFixtureSkip = () =>
+    existsSync(TREE_RAIL_FIXTURE)
+        ? "a cockpit fixture roster is active, so the agents this scenario makes never reach the tree: run `npm run cockpit:fixtures -- --clear` and reload"
+        : null;
+
+// Puts back what a scenario changed: closes its tabs, deletes its initiatives, restores the storage keys, and reloads onto
+// the live roster. Each step is tried on its own, so a failure in one does not leave the rest behind.
+async function initTeardown(h, ctx, name, { reload = true } = {}) {
+    const step = async (what, fn) => {
+        try {
+            await fn();
+        } catch (e) {
+            console.error(`${name} teardown: ${what} failed: ${e?.message ?? e}`);
+        }
+    };
+    if (ctx.skip) return;
+    await step("restore Date.now", () => h.ev(`(() => { if (window.__initRealNow) { Date.now = window.__initRealNow; delete window.__initRealNow; } })()`));
+    // a picker or popover a failed step left open
+    await step("close an open picker or popover", async () => {
+        if (await h.ev(`!!document.querySelector("[data-initiative-picker], [data-initiative-popover]")`)) await initPress(h, "Escape");
+    });
+    await step("close the Jarvis panel", () =>
+        h.ev(`document.querySelector('[data-pet-peek] button[aria-label="Close Jarvis panel"]')?.click()`)
+    );
+    await step("leave a review pass", () => h.ev(`document.querySelector("[data-jarvis-review-exit]")?.click()`));
+    await step("close the detail sheet", () =>
+        h.ev(`document.querySelector('[data-jarvis-brief-sheet] button[aria-label="Close detail sheet"]')?.click()`)
+    );
+    for (const agent of ctx.agents) {
+        await step(`close ${agent.tabId}`, () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, agent.tabId, false]));
+    }
+    for (const oid of ctx.oids) {
+        await step(`delete ${oid}`, () => h.rpc("effortdelete", { effortoid: oid }).catch(() => {}));
+    }
+    for (const [key, prev] of Object.entries(ctx.prevStorage)) {
+        await step(`restore ${key}`, () => h.ev(restoreStorageKey(key, prev)));
+    }
+    if (reload) {
+        await step("reload onto the live roster", async () => {
+            if (!(await ahReload(h))) console.error(`${name} teardown: the page did not come back after the reload`);
+        });
+    }
+    await step("leave the app on the Cockpit", () => h.goto("cockpit"));
+}
+
+// What a step records, and the rec/steps pair every assert builds. `ok` is a strict true, so a missing value never passes.
+function initRecorder() {
+    const steps = [];
+    const rec = (step, ok, detail) =>
+        steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+    return { steps, rec };
+}
+
+// --- initiative-plan-review: a plan an agent proposes, decided on its rail --------------------------------------------
+const PR_PROJECT = "verify-init-plan";
+const PR_MAIN = "Plan review: ship the feed";
+const PR_DONE = "Spec the feed";
+const PR_P1 = "Parse the feed";
+const PR_P2 = "Cache the parsed feed";
+const PR_P3 = "Render the feed rows";
+const PR_P4 = "Wire the feed keys";
+const PR_P4_NEW = "Wire the feed chords";
+const PR_P2_STAGE = "Cache layer";
+const PR_IDEA = "Plan review idea: sort out the feed";
+const PR_IDEA_A = "Idea chunk alpha";
+const PR_IDEA_B = "Idea chunk beta";
+const PR_ALL = "Plan review accept-all: tune the feed";
+const PR_ALL_DONE = "Tuned the feed";
+const PR_ALL_A = "Tune the feed cache";
+const PR_ALL_B = "Tune the feed index";
+const PR_DROP = "Plan review drop-all: prune the feed";
+const PR_DROP_DONE = "Pruned the feed";
+const PR_DROP_A = "Prune the feed cache";
+const PR_DROP_B = "Prune the feed index";
+
+// the rail's Plan to review rows: state, label (an open rename input holds it instead) and the row's whole text
+// (a row's label is its first span: the app moves a title attribute to data-arc-title once the pointer has been over it, so
+// no selector reads the label through [title])
+const PR_LABEL = `((r) => r.querySelector("input")?.value ?? r.querySelector(":scope > div > span")?.textContent ?? "")`;
+const prRows = (h) =>
+    h.ev(`[...(${INIT_RAIL}?.querySelectorAll("[data-plan-row]") ?? [])].map((r) => ({
+        state: r.dataset.planRow,
+        label: ${PR_LABEL}(r),
+        text: r.innerText.replace(/\\s+/g, " ").trim(),
+    }))`);
+const prRow = (label) =>
+    `[...(${INIT_RAIL}?.querySelectorAll("[data-plan-row]") ?? [])].find((r) => ${PR_LABEL}(r) === ${JSON.stringify(label)})`;
+const prButton = (label, name) => `(${prRow(label)})?.querySelector('button[aria-label="${name}"]')`;
+// the section's footer buttons are found by their text
+const prFoot = (text) =>
+    `[...(${INIT_RAIL}?.querySelectorAll('[data-rail-section="plan"] button') ?? [])].find((b) => b.innerText.trim() === ${JSON.stringify(text)})`;
+const prSection = `${INIT_RAIL}?.querySelector('[data-rail-section="plan"]')`;
+
+const initiativePlanReview = {
+    name: "initiative-plan-review",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = initCtx();
+        ctx.skip = initFixtureSkip();
+        if (ctx.skip) return ctx;
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            await initPrepare(h, ctx);
+            // the initiative whose plan is reviewed: one done chunk, then four proposed ones
+            ctx.main = await initCreate(h, ctx, { title: PR_MAIN, project: PR_PROJECT, chunks: [PR_DONE] });
+            await initOps(h, ctx.main, [
+                { op: "setChunkStatus", chunk: PR_DONE, status: "done" },
+                { op: "addChunk", label: PR_P1, stage: "Build", status: "proposed" },
+                { op: "addChunk", label: PR_P2, stage: PR_P2_STAGE, status: "proposed" },
+                { op: "addChunk", label: PR_P3, stage: "Build", status: "proposed" },
+                { op: "addChunk", label: PR_P4, stage: "Build", status: "proposed" },
+            ]);
+            // an idea with two proposed chunks and nothing else
+            ctx.idea = await initCreate(h, ctx, { title: PR_IDEA, project: PR_PROJECT });
+            await initOps(h, ctx.idea, [
+                { op: "addChunk", label: PR_IDEA_A, status: "proposed" },
+                { op: "addChunk", label: PR_IDEA_B, status: "proposed" },
+            ]);
+            // two more agents: one has its plan accepted with Accept all, one dropped with Drop all
+            ctx.all = await initCreate(h, ctx, { title: PR_ALL, project: PR_PROJECT, chunks: [PR_ALL_DONE] });
+            await initOps(h, ctx.all, [
+                { op: "setChunkStatus", chunk: PR_ALL_DONE, status: "done" },
+                { op: "addChunk", label: PR_ALL_A, status: "proposed" },
+                { op: "addChunk", label: PR_ALL_B, status: "proposed" },
+            ]);
+            ctx.drop = await initCreate(h, ctx, { title: PR_DROP, project: PR_PROJECT, chunks: [PR_DROP_DONE] });
+            await initOps(h, ctx.drop, [
+                { op: "setChunkStatus", chunk: PR_DROP_DONE, status: "done" },
+                { op: "addChunk", label: PR_DROP_A, status: "proposed" },
+                { op: "addChunk", label: PR_DROP_B, status: "proposed" },
+            ]);
+            ctx.agentAll = await initOpenAgent(h, ctx, { name: "verify-plan-all", project: PR_PROJECT, effort: `effort:${ctx.all}` });
+            ctx.agentDrop = await initOpenAgent(h, ctx, { name: "verify-plan-drop", project: PR_PROJECT, effort: `effort:${ctx.drop}` });
+            ctx.agent = await initOpenAgent(h, ctx, { name: "verify-plan-main", project: PR_PROJECT, effort: `effort:${ctx.main}` });
+            ctx.focus = await initFocusAgent(h, ctx.agent);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.skip) return [skipStep("initiative plan review", ctx.skip)];
+        if (ctx.arrangeError != null) return [{ step: "0. the initiatives and agents were made", ok: false, detail: ctx.arrangeError }];
+        if (ctx.focus !== true) {
+            return [{ step: "0. the agent's pane is shown with its header and details rail", ok: false, detail: "it never reached the Agent surface" }];
+        }
+        const { steps, rec } = initRecorder();
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
+        try {
+            const waitRows = (n, state = "proposed") =>
+                polishWaitFor(h, `${INIT_RAIL}?.querySelectorAll('[data-plan-row="${state}"]').length === ${n}`, INIT_WAIT_MS);
+            const stateOf = (label) => initChunk(h, ctx.main, label).then((c) => c?.status ?? "gone");
+
+            // --- 1. the rail opens on Plan to review, its four rows first ---------------------------------------------
+            const four = await waitRows(4);
+            const rail1 = await h.ev(`(() => {
+                const rail = ${INIT_RAIL};
+                const sections = [...(rail?.querySelectorAll("[data-rail-section]") ?? [])];
+                const plan = rail?.querySelector('[data-rail-section="plan"]');
+                return { first: sections[0]?.dataset.railSection ?? null, heading: plan?.textContent.includes("Plan to review") ?? false,
+                    rows: plan?.querySelectorAll('[data-plan-row="proposed"]').length ?? 0, count: plan?.innerText.includes("4 proposed") ?? false };
+            })()`);
+            await polishNap(500);
+            await h.shot("cdp-shots/initiative-plan-review-1-rail.png");
+            rec(
+                '1. the rail shows "Plan to review" first, with the four proposed rows',
+                four === true && rail1.first === "plan" && rail1.heading && rail1.rows === 4 && rail1.count,
+                rail1
+            );
+
+            // --- 2. the header chip, and the rail brought back to the plan -----------------------------------------------
+            const chip = await h.ev(`document.querySelector("[data-agent-header] [data-plan-review-chip]")?.textContent.trim() ?? null`);
+            // the rail on another section: its Files tab when the agent has a worktree, else scrolled away from the top
+            const moved = await h.ev(`(() => {
+                const tab = ${INIT_RAIL}?.querySelector('[data-rail-tab="tree"]');
+                if (tab) { tab.click(); return "files tab"; }
+                const scroller = ${INIT_RAIL}?.querySelector("[data-rail-scroll]");
+                if (scroller) { scroller.scrollTop = scroller.scrollHeight; return "scrolled"; }
+                return "nothing to move";
+            })()`);
+            await polishNap(400);
+            const planGone = await h.ev(`(() => {
+                const plan = ${prSection};
+                const view = ${INIT_RAIL}?.querySelector("[data-rail-scroll]")?.getBoundingClientRect();
+                if (!plan || !view) return true;
+                const r = plan.getBoundingClientRect();
+                return r.width === 0 || r.bottom <= view.top || r.top >= view.bottom;
+            })()`);
+            const clicked = await initClick(h, `document.querySelector("[data-agent-header] [data-plan-review-chip]")`);
+            const back = await polishWaitFor(
+                h,
+                `(() => {
+                    const plan = ${prSection};
+                    const view = ${INIT_RAIL}?.querySelector("[data-rail-scroll]")?.getBoundingClientRect();
+                    if (!plan || !view) return false;
+                    const r = plan.getBoundingClientRect();
+                    return r.width > 0 && r.top >= view.top - 2 && r.top < view.bottom;
+                })()`,
+                4000
+            );
+            rec(
+                '2. the header chip reads "4 to review", and a click on it brings the rail back to Plan to review',
+                chip === "4 to review" && clicked && back === true,
+                { chip, moved, planGone, clicked, back }
+            );
+
+            // --- 3. Sprout's popup and the Brief's Waiting on you list it ------------------------------------------------
+            await h.ev(`document.querySelector('[aria-label="Jarvis condition"]')?.click()`);
+            const sprout = await polishWaitFor(
+                h,
+                `[...document.querySelectorAll("[data-pet-row]")].some((r) => r.innerText.includes(${JSON.stringify(PR_MAIN)}) && r.innerText.includes("Plan to review"))`,
+                INIT_WAIT_MS
+            );
+            await h.ev(`document.querySelector('[data-pet-peek] button[aria-label="Close Jarvis panel"]')?.click()`);
+            await polishWaitFor(h, `!document.querySelector("[data-pet-peek]")`, 3000);
+            await h.goto("jarvis");
+            const brief = await polishWaitFor(
+                h,
+                `[...document.querySelectorAll('[data-jarvis-brief-row="queue"]')].some((r) => r.innerText.includes(${JSON.stringify(PR_MAIN)}) && /plan/i.test(r.innerText) && r.innerText.includes("proposed"))`,
+                INIT_WAIT_MS
+            );
+            rec(
+                '3. Sprout\'s popup lists "Plan to review" for the initiative, and so does the Brief\'s Waiting on you',
+                sprout === true && brief === true,
+                { sprout, brief }
+            );
+            await h.goto("agent");
+
+            // --- 4. Rename: the row and the initiative's chunk carry the new label ---------------------------------------
+            await initClick(h, prButton(PR_P4, "Rename"));
+            const input = `${INIT_RAIL}?.querySelector('input[aria-label="Rename ${PR_P4}"]')`;
+            const inputUp = await polishWaitFor(h, `!!${input}`, 3000);
+            await initFill(h, input, PR_P4_NEW);
+            await initPress(h, "Enter");
+            const renamed = await polishWaitFor(h, `!!(${prRow(PR_P4_NEW)})`, INIT_WAIT_MS);
+            const labels4 = await initLabels(h, ctx.main);
+            rec(
+                "4. Rename on a row, typed over and entered: the row and the initiative's chunk carry the new label",
+                inputUp === true && renamed === true && labels4.includes(PR_P4_NEW) && !labels4.includes(PR_P4),
+                { inputUp, renamed, labels: labels4 }
+            );
+
+            // a rename to a label the plan already holds is refused, with the error under the buttons in the error colour
+            await initClick(h, prButton(PR_P3, "Rename"));
+            await initFill(h, `${INIT_RAIL}?.querySelector('input[aria-label="Rename ${PR_P3}"]')`, PR_DONE);
+            await initPress(h, "Enter");
+            const dup = await polishWaitFor(h, `!!${INIT_RAIL}?.querySelector('[data-rail-section="plan"] [role="alert"]')`, 5000);
+            const dupInfo = await h.ev(`(() => {
+                const a = ${INIT_RAIL}?.querySelector('[data-rail-section="plan"] [role="alert"]');
+                const buttons = ${INIT_RAIL}?.querySelector('[data-rail-section="plan"]')?.querySelectorAll("button");
+                const last = buttons ? buttons[buttons.length - 1] : null;
+                return a ? { text: a.innerText, error: a.className.includes("text-error"),
+                    underButtons: last ? !!(last.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING) : false } : null;
+            })()`);
+            await initPress(h, "Escape");
+            rec(
+                "4b. renaming a row to the label of an existing chunk shows the refusal under the buttons, in the error colour",
+                dup === true && dupInfo?.error === true && dupInfo.underButtons === true && /EC-DUPLICATE-LABEL|already exists/.test(dupInfo.text),
+                dupInfo
+            );
+            const stillP3 = await stateOf(PR_P3);
+
+            // --- 5. Accept, Undo, Accept again ---------------------------------------------------------------------------
+            await initClick(h, prButton(PR_P1, "Accept"));
+            const accepted = await polishWaitFor(h, `${INIT_RAIL}?.querySelector('[data-plan-row="accepted"]')?.innerText.includes("accepted · now pending") === true`, INIT_WAIT_MS);
+            const afterAccept = await stateOf(PR_P1);
+            // the row shows the decision as soon as it is held, while the call is still going and its buttons are disabled
+            await polishWaitFor(h, `!!(${prRow(PR_P1)})?.querySelector("button:not([disabled])")`, 5000);
+            await initClick(h, `(${prRow(PR_P1)})?.querySelector("button")`);
+            const undone = await polishWaitFor(h, `!!(${prRow(PR_P1)}) && ${prRow(PR_P1)}.dataset.planRow === "proposed"`, INIT_WAIT_MS);
+            const afterUndo = await stateOf(PR_P1);
+            await initClick(h, prButton(PR_P1, "Accept"));
+            await waitRows(2, "proposed");
+            const afterAgain = await stateOf(PR_P1);
+            rec(
+                '5. Accept reads "accepted · now pending" and the chunk is pending; Undo puts it back to proposed; Accept again',
+                accepted === true && afterAccept === "pending" && undone === true && afterUndo === "proposed" && afterAgain === "pending" && stillP3 === "proposed",
+                { accepted, afterAccept, undone, afterUndo, afterAgain }
+            );
+
+            // --- 6. Drop, and Undo brings it back where it was, with its stage ----------------------------------------------
+            await initClick(h, prButton(PR_P2, "Drop"));
+            const dropped = await polishWaitFor(h, `${INIT_RAIL}?.querySelector('[data-plan-row="dropped"]')?.innerText.includes("dropped") === true`, INIT_WAIT_MS);
+            const afterDrop = await stateOf(PR_P2);
+            rec('6. Drop reads "dropped" and the chunk is gone from the initiative', dropped === true && afterDrop === "gone", { dropped, afterDrop });
+            await polishWaitFor(h, `!!(${prRow(PR_P2)})?.querySelector("button:not([disabled])")`, 5000);
+            await initClick(h, `(${prRow(PR_P2)})?.querySelector("button")`);
+            const restored = await polishWaitFor(h, `${prRow(PR_P2)}?.dataset.planRow === "proposed"`, INIT_WAIT_MS);
+            const back2 = await initChunk(h, ctx.main, PR_P2);
+            const order = await initLabels(h, ctx.main);
+            rec(
+                "6b. Undo on a dropped row brings the chunk back as proposed at its old place, with its stage",
+                restored === true && back2?.status === "proposed" && back2.stage === PR_P2_STAGE && order.indexOf(PR_P2) === order.indexOf(PR_P1) + 1,
+                { restored, status: back2?.status, stage: back2?.stage, order }
+            );
+            await initClick(h, prButton(PR_P2, "Drop"));
+            await polishWaitFor(h, `${INIT_RAIL}?.querySelector('[data-plan-row="dropped"]')?.innerText.includes("dropped") === true`, INIT_WAIT_MS);
+            rec("6c. dropping it again removes it", (await stateOf(PR_P2)) === "gone", { status: await stateOf(PR_P2) });
+
+            // --- 7. the Jarvis List counts what waits ---------------------------------------------------------------------
+            await h.goto("jarvis");
+            const mainRow = `(${INIT_ROW(PR_MAIN)})`;
+            const ideaRow = `(${INIT_ROW(PR_IDEA)})`;
+            const counts = await polishWaitFor(
+                h,
+                `${mainRow}?.querySelector("[data-jarvis-proposed-count]")?.innerText.trim() === "2 proposed" && ${ideaRow}?.querySelector("[data-jarvis-proposed-count]")?.innerText.trim() === "2 proposed"`,
+                INIT_WAIT_MS
+            );
+            await polishNap(400);
+            await h.shot("cdp-shots/initiative-plan-review-7-list.png");
+            rec(
+                '7. on the Jarvis List the initiative\'s row and the idea\'s row (in the Ideas column) each read "2 proposed"',
+                counts === true,
+                await h.ev(`({ main: ${mainRow}?.querySelector("[data-jarvis-proposed-count]")?.innerText ?? null, idea: ${ideaRow}?.querySelector("[data-jarvis-proposed-count]")?.innerText ?? null })`)
+            );
+
+            // --- 8. opened, the initiative lists its proposed chunks; Accept there makes one pending ----------------------
+            await initClick(h, `${mainRow}?.querySelector(':scope > [role="button"]')`);
+            const group = await polishWaitFor(h, `${mainRow}?.parentElement?.querySelector("[data-jarvis-initiative-detail] [data-jarvis-proposed-group]") != null`, INIT_WAIT_MS);
+            const groupText = await h.ev(`${mainRow}?.parentElement?.querySelector("[data-jarvis-proposed-group]")?.innerText.replace(/\\s+/g, " ").trim() ?? null`);
+            await initClick(h, `${mainRow}?.parentElement?.querySelector('[data-jarvis-proposed-chunk="${PR_P3}"] [data-jarvis-proposed-action="accept"]')`);
+            const p3Pending = await initUntil(async () => (await stateOf(PR_P3)) === "pending", 5000);
+            rec(
+                '8. opened, the initiative shows "Proposed · 2"; Accept on one there makes the chunk pending',
+                group === true && /^proposed · 2/i.test(groupText ?? "") && p3Pending === true,
+                { group, groupText, p3Pending }
+            );
+            await initClick(h, `${mainRow}?.querySelector(':scope > [role="button"]')`);
+
+            // --- 9. the idea: Drop all removes both chunks, and it is still an idea ----------------------------------------
+            await initClick(h, `${ideaRow}?.querySelector(':scope > [role="button"]')`);
+            const ideaOpen = await polishWaitFor(h, `${ideaRow}?.parentElement?.querySelector("[data-jarvis-idea-detail] [data-jarvis-proposed-group]") != null`, INIT_WAIT_MS);
+            await initClick(h, `${ideaRow}?.parentElement?.querySelector('[data-jarvis-idea-detail] [data-jarvis-proposed-action="drop-all"]')`);
+            // a drop on the List is deferred by the undo window (briefundo.ts UNDO_WINDOW_MS), so the chunks are read after it
+            await polishNap(5800);
+            let ideaChunks = await initLabels(h, ctx.idea);
+            for (let i = 0; i < 10 && ideaChunks.length > 0; i++) {
+                await polishNap(500);
+                ideaChunks = await initLabels(h, ctx.idea);
+            }
+            const stillIdea = await polishWaitFor(h, `!!(${INIT_ROW(PR_IDEA)})`, 5000);
+            rec(
+                "9. on the opened idea, Drop all removes both chunks and it is still an idea",
+                ideaOpen === true && ideaChunks.length === 0 && stillIdea === true,
+                { ideaOpen, ideaChunks, stillIdea }
+            );
+            await h.goto("agent");
+
+            // --- 10. Accept all and continue ----------------------------------------------------------------------------
+            const waiting = await waitRows(1);
+            const label10 = (await prRows(h)).find((r) => r.state === "proposed")?.label ?? "";
+            await uploadsShellUp(h, ctx.agent.blockId);
+            await initClick(h, prFoot("Accept all and continue"));
+            const p4 = await initUntil(async () => (await stateOf(PR_P4_NEW)) === "pending", 5000);
+            // the agent's terminal as plain text, from the block's "term" file (uploadsTermHas): the shell echoes what was sent
+            const echoed = (await uploadsTermHas(h, ctx.agent.blockId, `Plan accepted, start with ${PR_P4_NEW}`)).seen;
+            const chipGone = await polishWaitFor(h, `!document.querySelector("[data-agent-header] [data-plan-review-chip]")`, 5000);
+            // the agent starts on the chunk, so its state changes; the rail reads the initiative again and ends the decided
+            // rows it held for Undo
+            await initStatus(h, ctx.agent, "working");
+            const sectionGone = await polishWaitFor(h, `!${prSection}`, INIT_WAIT_MS);
+            await h.goto("jarvis");
+            const queueGone = await polishWaitFor(
+                h,
+                `![...document.querySelectorAll('[data-jarvis-brief-row="queue"]')].some((r) => r.innerText.includes(${JSON.stringify(PR_MAIN)}))`,
+                INIT_WAIT_MS
+            );
+            rec(
+                '10. Accept all and continue accepts the renamed chunk and sends "Plan accepted, start with <it>" to the agent; the chip, the section and the Waiting on you row go',
+                waiting === true && label10 === PR_P4_NEW && p4 === true && echoed === true && chipGone === true && sectionGone === true && queueGone === true,
+                { waiting, first: label10, p4, echoed, chipGone, sectionGone, queueGone }
+            );
+            await h.goto("agent");
+
+            // --- 11. Accept all on another agent sends nothing; Drop all on a third empties its section --------------------
+            await initFocusAgent(h, ctx.agentAll);
+            await polishWaitFor(h, `${INIT_RAIL}?.querySelectorAll('[data-plan-row="proposed"]').length === 2`, INIT_WAIT_MS);
+            await uploadsShellUp(h, ctx.agentAll.blockId);
+            await initClick(h, prFoot("Accept all"));
+            const allPending = await initUntil(
+                async () => (await initChunks(h, ctx.all)).filter((c) => c.status === "pending").length === 2,
+                5000
+            );
+            await polishNap(1500);
+            // a terminal with nothing readable would pass a "nothing sent" check for nothing, so it must have a prompt
+            const leaked = await uploadsTermHas(h, ctx.agentAll.blockId, "Plan accepted");
+            rec(
+                "11. Accept all (without continue) makes both chunks pending and sends nothing to the agent's terminal",
+                allPending === true && leaked.readable === true && leaked.seen === false,
+                { allPending, leaked }
+            );
+
+            await initFocusAgent(h, ctx.agentDrop);
+            await polishWaitFor(h, `${INIT_RAIL}?.querySelectorAll('[data-plan-row="proposed"]').length === 2`, INIT_WAIT_MS);
+            await initClick(h, prFoot("Drop all"));
+            const bothDropped = await initUntil(async () => (await initLabels(h, ctx.drop)).join("|") === PR_DROP_DONE, 5000);
+            await initStatus(h, ctx.agentDrop, "working");
+            const dropSectionGone = await polishWaitFor(h, `!${prSection}`, INIT_WAIT_MS);
+            rec(
+                "12. Drop all removes both chunks, and the section leaves the rail",
+                bothDropped === true && dropSectionGone === true,
+                { bothDropped, dropSectionGone }
+            );
+        } catch (e) {
+            rec("the scenario ran to its end", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await initTeardown(h, ctx, "initiative-plan-review");
+    },
+};
+
+// --- initiative-popover: the initiative on the agent's header, opened in place -----------------------------------------
+const POP_PROJECT = "verify-init-popover";
+const POP_TITLE = "Popover: draft the initiative popover";
+const POP_C1 = "Shape the popover API";
+const POP_C2 = "Draft the popover rows";
+const POP_C3 = "Wire the popover keys";
+const POP_C3_NEW = "Wire the popover chords";
+const POP_C4 = "Write the popover docs";
+const POP_P1 = "Tune the popover spacing";
+const POP_NOTE_SEED = "Drafted the rows, the menu is next.";
+const POP_NOTE = "Chords wired, spacing is next.";
+const POP = `document.querySelector("[data-initiative-popover]")`;
+const popRows = (h, kind) =>
+    h.ev(`[...document.querySelectorAll('[data-initiative-popover] [data-popover-row="${kind}"]')].map((r) => r.dataset.chunkLabel)`);
+const popRow = (label) =>
+    `[...document.querySelectorAll("[data-initiative-popover] [data-popover-row]")].find((r) => r.dataset.chunkLabel === ${JSON.stringify(label)})`;
+// the popover's own keys need focus on its root (it holds it when it opens), and `i` focus on the surface
+const popOpen = async (h) => {
+    await h.ev(`document.querySelector("[data-cockpit-surface-wrap]")?.focus()`);
+    await initPress(h, "i");
+    const up = await polishWaitFor(h, `!!${POP}`, 4000);
+    await polishNap(500);
+    return up;
+};
+
+const initiativePopover = {
+    name: "initiative-popover",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = initCtx();
+        ctx.skip = initFixtureSkip();
+        if (ctx.skip) return ctx;
+        try {
+            await initPrepare(h, ctx);
+            ctx.oid = await initCreate(h, ctx, { title: POP_TITLE, project: POP_PROJECT, chunks: [POP_C1, POP_C2, POP_C3, POP_C4] });
+            ctx.agent = await initOpenAgent(h, ctx, { name: "verify-popover", project: POP_PROJECT, effort: `effort:${ctx.oid}` });
+            await initOps(h, ctx.oid, [
+                { op: "setChunkStatus", chunk: POP_C1, status: "done" },
+                { op: "setChunkStatus", chunk: POP_C2, status: "active" },
+                { op: "attachWork", chunk: POP_C2, kind: "agent", oref: `agent:${ctx.agent.tabId}` },
+                // one chunk the agent proposed and nobody decided on
+                { op: "addChunk", label: POP_P1, status: "proposed" },
+                // last, so it is the chunk's newest note
+                { op: "appendNote", chunk: POP_C2, note: POP_NOTE_SEED },
+            ]);
+            ctx.focus = await initFocusAgent(h, ctx.agent);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.skip) return [skipStep("initiative popover", ctx.skip)];
+        if (ctx.arrangeError != null) return [{ step: "0. the initiative and the agent were made", ok: false, detail: ctx.arrangeError }];
+        if (ctx.focus !== true) {
+            return [{ step: "0. the agent's pane is shown with its header and details rail", ok: false, detail: "it never reached the Agent surface" }];
+        }
+        const { steps, rec } = initRecorder();
+        try {
+            const status = async (label) => (await initChunk(h, ctx.oid, label))?.status ?? "gone";
+
+            // --- 1. `i` opens it on the chunk this agent is on, with that chunk's note ----------------------------------------
+            const linkUp = await polishWaitFor(h, `document.querySelector("[data-agent-header] [data-initiative-link-open]")?.innerText.includes(${JSON.stringify(POP_TITLE)}) === true`, INIT_WAIT_MS);
+            const up = await popOpen(h);
+            const first = await h.ev(`(() => {
+                const pop = ${POP};
+                const cur = pop?.querySelector('[data-popover-row="current"]');
+                return pop ? { heading: pop.textContent.includes("This agent is on"), current: cur?.dataset.chunkLabel ?? null,
+                    note: pop.textContent.includes(${JSON.stringify(POP_NOTE_SEED)}), title: pop.textContent.includes(${JSON.stringify(POP_TITLE)}),
+                    progress: pop.textContent.includes("1/4") } : null;
+            })()`);
+            await h.shot("cdp-shots/initiative-popover-1-open.png");
+            rec(
+                '1. `i` opens the popover on "This agent is on" with the active chunk and its latest note',
+                linkUp === true && up === true && first?.heading === true && first.current === POP_C2 && first.note === true && first.title === true && first.progress === true,
+                { linkUp, up, first }
+            );
+
+            // --- 2. Next lists the two pending chunks; the chunk menu renames one and defers it -----------------------------------
+            const next = await popRows(h, "next");
+            await initClick(h, popRow(POP_C3));
+            const menuUp = await polishWaitFor(h, `!!document.querySelector("[data-initiative-popover] [data-popover-menu]")`, 3000);
+            const items = await h.ev(`[...document.querySelectorAll("[data-initiative-popover] [data-menu-item]")].map((i) => i.dataset.menuItem)`);
+            await initClick(h, `document.querySelector('[data-initiative-popover] [data-menu-item="rename"]')`);
+            const renameInput = `document.querySelector('[data-initiative-popover] input[aria-label="Rename ${POP_C3}"]')`;
+            const inputUp = await polishWaitFor(h, `!!${renameInput}`, 3000);
+            await initFill(h, renameInput, POP_C3_NEW);
+            await initPress(h, "Enter");
+            const renamed = await initUntil(async () => (await initLabels(h, ctx.oid)).includes(POP_C3_NEW), 5000);
+            await polishWaitFor(h, `!!(${popRow(POP_C3_NEW)})`, 5000);
+            await initClick(h, popRow(POP_C3_NEW));
+            await polishWaitFor(h, `!!document.querySelector("[data-initiative-popover] [data-popover-menu]")`, 3000);
+            await initClick(h, `document.querySelector('[data-initiative-popover] [data-menu-item="deferred"]')`);
+            const deferred = await initUntil(async () => (await status(POP_C3_NEW)) === "deferred", 5000);
+            await polishWaitFor(h, `!(${popRow(POP_C3_NEW)})`, 3000);
+            const nextAfter = await popRows(h, "next");
+            rec(
+                "2. Next lists the two pending chunks; a click opens a chunk's menu: Rename renames it, and deferred sets its status",
+                JSON.stringify(next) === JSON.stringify([POP_C3, POP_C4]) && menuUp === true && items.join() === "pending,active,blocked,deferred,skipped,rename" &&
+                    inputUp === true && renamed === true && deferred === true && JSON.stringify(nextAfter) === JSON.stringify([POP_C4]),
+                { next, menuUp, items, inputUp, renamed, deferred, nextAfter }
+            );
+
+            // --- 3. `m` marks the agent's chunk done, and the next one (a deferred one too) becomes active --------------------
+            await initPress(h, "m");
+            const marked = await initUntil(async () => (await status(POP_C2)) === "done" && (await status(POP_C3_NEW)) === "active", 5000);
+            await polishWaitFor(h, `${POP}?.querySelector('[data-popover-row="current"]')?.dataset.chunkLabel === ${JSON.stringify(POP_C3_NEW)}`, 5000);
+            const cur3 = await h.ev(`${POP}?.querySelector('[data-popover-row="current"]')?.dataset.chunkLabel ?? null`);
+            rec(
+                "3. `m` marks the agent's chunk done; advance makes the following chunk (here a deferred one) active, and the popover follows it",
+                marked === true && cur3 === POP_C3_NEW,
+                { marked, current: cur3, statuses: [await status(POP_C2), await status(POP_C3_NEW), await status(POP_C4)] }
+            );
+
+            // --- 4. `n` adds a note -------------------------------------------------------------------------------------------
+            await initPress(h, "n");
+            const noteInput = `document.querySelector('[data-initiative-popover] input[aria-label^="Add a note to"]')`;
+            const noteUp = await polishWaitFor(h, `!!${noteInput}`, 3000);
+            await initType(h, POP_NOTE);
+            await initPress(h, "Enter");
+            const noted = await initUntil(async () => ((await initChunk(h, ctx.oid, POP_C3_NEW))?.notes ?? []).some((n) => n.text === POP_NOTE), 5000);
+            const shown = await polishWaitFor(h, `${POP}?.textContent.includes(${JSON.stringify(POP_NOTE)}) === true`, 5000);
+            rec("4. `n`, a typed note and Enter append it to the chunk, and the popover shows it", noteUp === true && noted === true && shown === true, { noteUp, noted, shown });
+
+            // --- 5. Esc closes it and focus goes back -------------------------------------------------------------------------
+            await initPress(h, "Escape");
+            const closed = await polishWaitFor(h, `!${POP}`, 3000);
+            await polishNap(300);
+            const focus5 = await h.ev(`(() => {
+                const a = document.activeElement;
+                return { tag: a?.tagName ?? null, wrap: a?.hasAttribute("data-cockpit-surface-wrap") ?? false, link: a?.hasAttribute("data-initiative-link-open") ?? false };
+            })()`);
+            rec("5. Esc closes the popover and focus returns to where it was", closed === true && (focus5.wrap || focus5.link), { closed, focus5 });
+
+            // --- 6. the peek gesture on the link opens no popover: it peeks the initiative -------------------------------------
+            await initClick(h, `document.querySelector("[data-agent-header] [data-initiative-link-open]")`, { mods: PEEK_BIT });
+            const peeked = await polishWaitFor(h, `!!document.querySelector('[data-pet-peek-item="effort"]')`, INIT_WAIT_MS);
+            const peekText = await h.ev(`document.querySelector('[data-pet-peek-item="effort"]')?.innerText.includes(${JSON.stringify(POP_TITLE)}) ?? false`);
+            const popoverUp = await h.ev(`!!${POP}`);
+            rec(
+                `6. ${PEEK_GLYPH.split(" · ")[1]} on the header's initiative link opens no popover: Sprout's popup peeks the initiative`,
+                peeked === true && peekText === true && popoverUp === false,
+                { peeked, peekText, popoverUp }
+            );
+            await h.ev(`document.querySelector('[data-pet-peek] button[aria-label="Close Jarvis panel"]')?.click()`);
+            await polishWaitFor(h, `!document.querySelector("[data-pet-peek]")`, 3000);
+
+            // --- 7. the proposed chunk: "1 proposed · Review on the rail" brings the rail to Plan to review ------------------------
+            await polishWaitFor(h, `!!document.querySelector("[data-agent-header] [data-plan-review-chip]")`, INIT_WAIT_MS);
+            // the rail on another section, so the click has somewhere to bring it back from
+            await h.ev(`${INIT_RAIL}?.querySelector('[data-rail-tab="tree"]')?.click()`);
+            await polishNap(300);
+            const up7 = await popOpen(h);
+            const review = await h.ev(`document.querySelector("[data-initiative-popover] [data-popover-review]")?.innerText.trim() ?? null`);
+            await initClick(h, `document.querySelector("[data-initiative-popover] [data-popover-review]")`);
+            const closed7 = await polishWaitFor(h, `!${POP}`, 3000);
+            const railPlan = await polishWaitFor(h, `(() => {
+                const plan = ${INIT_RAIL}?.querySelector('[data-rail-section="plan"]');
+                const view = ${INIT_RAIL}?.querySelector("[data-rail-scroll]")?.getBoundingClientRect();
+                if (!plan || !view) return false;
+                const r = plan.getBoundingClientRect();
+                return r.width > 0 && r.top >= view.top - 2 && r.top < view.bottom;
+            })()`, 5000);
+            await h.shot("cdp-shots/initiative-popover-7-review.png");
+            rec(
+                '7. a proposed chunk reads "1 proposed · Review on the rail"; clicking it closes the popover and brings the rail to Plan to review',
+                up7 === true && /1 proposed/.test(review ?? "") && closed7 === true && railPlan === true,
+                { up7, review, closed7, railPlan }
+            );
+
+            // --- 8. Open in Jarvis lands on Jarvis with the initiative selected ---------------------------------------------------
+            await h.goto("agent");
+            const up8 = await popOpen(h);
+            await initClick(h, `document.querySelector("[data-initiative-popover] [data-popover-open-jarvis]")`);
+            // the destination's selection is the Brief's detail sheet on the initiative
+            const onJarvis = await polishWaitFor(
+                h,
+                `document.querySelector('[data-jarvis-brief-sheet="effort"]')?.innerText.includes(${JSON.stringify(POP_TITLE)}) === true`,
+                INIT_WAIT_MS
+            );
+            const surface = await h.activeSurfaceLabel();
+            await polishNap(500);
+            await h.shot("cdp-shots/initiative-popover-8-jarvis.png");
+            rec(
+                "8. Open in Jarvis lands on the Jarvis surface with the initiative selected: its detail sheet is open",
+                up8 === true && onJarvis === true && surface === SURFACE_LABEL.jarvis,
+                { up8, onJarvis, surface }
+            );
+        } catch (e) {
+            rec("the scenario ran to its end", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await initTeardown(h, ctx, "initiative-popover");
+    },
+};
+
+// --- initiative-link: an agent with no initiative links one from its header ---------------------------------------------
+const LINK_PROJECT = "verify-init-link";
+const LINK_TITLE = "Link: the initiative to pick";
+const LINK_C1 = "First link chunk";
+const LINK_C2 = "Second link chunk";
+const tabEffort = async (h, tabId) =>
+    (await waveService(h, "object", "GetObject", [`tab:${tabId}`]))?.meta?.["session:effort"] ?? null;
+const LINK_BTN = `document.querySelector("[data-agent-header] [data-initiative-link]")`;
+const LINK_PICKER = `document.querySelector("[data-initiative-picker]")`;
+
+const initiativeLink = {
+    name: "initiative-link",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = initCtx();
+        ctx.skip = initFixtureSkip();
+        if (ctx.skip) return ctx;
+        try {
+            await initPrepare(h, ctx);
+            ctx.oid = await initCreate(h, ctx, { title: LINK_TITLE, project: LINK_PROJECT, chunks: [LINK_C1, LINK_C2] });
+            ctx.agentA = await initOpenAgent(h, ctx, { name: "verify-link-a", project: LINK_PROJECT });
+            ctx.agentB = await initOpenAgent(h, ctx, { name: "verify-link-b", project: LINK_PROJECT });
+            ctx.focus = await initFocusAgent(h, ctx.agentA);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.skip) return [skipStep("initiative link", ctx.skip)];
+        if (ctx.arrangeError != null) return [{ step: "0. the initiative and the agents were made", ok: false, detail: ctx.arrangeError }];
+        if (ctx.focus !== true) {
+            return [{ step: "0. the agent's pane is shown with its header and details rail", ok: false, detail: "it never reached the Agent surface" }];
+        }
+        const { steps, rec } = initRecorder();
+        try {
+            // --- 1. an agent with no initiative offers to link one --------------------------------------------------------------
+            const offered = await polishWaitFor(h, `${LINK_BTN}?.innerText.trim() === "+ Link to initiative"`, INIT_WAIT_MS);
+            const noLink = await h.ev(`!document.querySelector("[data-agent-header] [data-initiative-link-open]")`);
+            rec('1. the header of an agent with no initiative shows "+ Link to initiative"', offered === true && noLink === true, { offered, noLink });
+
+            // --- 2. a click opens the picker, listing the initiative ------------------------------------------------------------------
+            await initClick(h, LINK_BTN);
+            const pickerUp = await polishWaitFor(h, `!!${LINK_PICKER}`, 4000);
+            const row = `document.querySelector('[data-initiative-picker] [data-picker-row="effort:${ctx.oid}"]')`;
+            // an initiative of another project sits behind "others"; this one is the agent's own project's
+            const listed = await polishWaitFor(h, `!!${row}`, INIT_WAIT_MS);
+            const picker = await h.ev(`(() => {
+                const p = ${LINK_PICKER};
+                return p ? { rows: p.querySelectorAll("[data-picker-row]").length, filter: !!p.querySelector('input[aria-label="Find an initiative"]'),
+                    newRow: !!p.querySelector("[data-picker-new]"), text: p.innerText.replace(/\\s+/g, " ").slice(0, 160) } : null;
+            })()`);
+            await polishNap(400);
+            await h.shot("cdp-shots/initiative-link-2-picker.png");
+            rec(
+                "2. clicking it opens the picker, which lists the initiative and offers a new one",
+                pickerUp === true && listed === true && picker?.filter === true && picker.newRow === true,
+                { pickerUp, listed, picker }
+            );
+
+            // --- 3. picking it sets the tab's session:effort and the header links it -----------------------------------------------
+            await initClick(h, row);
+            const set = await initUntil(async () => (await tabEffort(h, ctx.agentA.tabId)) === `effort:${ctx.oid}`, 8000);
+            const linked = await polishWaitFor(
+                h,
+                `document.querySelector("[data-agent-header] [data-initiative-link-open]")?.innerText.includes(${JSON.stringify(LINK_TITLE)}) === true`,
+                INIT_WAIT_MS
+            );
+            const gone = await polishWaitFor(h, `!${LINK_PICKER} && !${LINK_BTN}`, 3000);
+            // it also puts the agent on the initiative's first pending chunk, so that chunk reads as its work
+            const attached = await initUntil(
+                async () => ((await initChunk(h, ctx.oid, LINK_C1))?.workrefs ?? []).some((w) => w.oref === `agent:${ctx.agentA.tabId}`),
+                5000
+            );
+            rec(
+                "3. picking the initiative sets the tab's session:effort, the header shows the initiative link, and the agent is attached to its first pending chunk",
+                set === true && linked === true && gone === true && attached === true,
+                { set, linked, gone, attached }
+            );
+
+            // --- 4. the second agent: `i` opens the picker, and a new initiative is made from the session -------------------------------
+            await initFocusAgent(h, ctx.agentB);
+            const offeredB = await polishWaitFor(h, `${LINK_BTN}?.innerText.trim() === "+ Link to initiative"`, INIT_WAIT_MS);
+            const nameB = await h.ev(`document.querySelector("[data-agent-header] .font-semibold")?.textContent.trim() ?? ""`);
+            await h.ev(`document.querySelector("[data-cockpit-surface-wrap]")?.focus()`);
+            await initPress(h, "i");
+            const pickerB = await polishWaitFor(h, `!!document.querySelector("[data-initiative-picker] [data-picker-new]")`, 4000);
+            await initClick(h, `document.querySelector("[data-initiative-picker] [data-picker-new]")`);
+            const newOref = await (async () => {
+                let got = null;
+                await initUntil(async () => {
+                    got = await tabEffort(h, ctx.agentB.tabId);
+                    return got != null;
+                }, 8000);
+                return got;
+            })();
+            // tracked now, so teardown deletes the idea it made
+            if (newOref != null) ctx.oids.push(newOref.replace(/^effort:/, ""));
+            const idea = newOref != null ? await initEffort(h, newOref.replace(/^effort:/, "")) : null;
+            // a session named after its initiative reads just "initiative" (initiativeLinkText), not the title twice
+            const linkedB = await polishWaitFor(
+                h,
+                `document.querySelector("[data-agent-header] [data-initiative-link-open]")?.innerText.trim() === "◇ initiative"`,
+                INIT_WAIT_MS
+            );
+            rec(
+                '4. on the second agent `i` opens the picker; "+ New initiative from this session" makes an idea titled with the agent\'s name, sets session:effort to it, and the header links it',
+                offeredB === true && pickerB === true && nameB !== "" && idea?.title === nameB && (idea.chunks ?? []).length === 0 && linkedB === true,
+                { offeredB, pickerB, nameB, newOref, title: idea?.title, chunks: (idea?.chunks ?? []).length, linkedB }
+            );
+        } catch (e) {
+            rec("the scenario ran to its end", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await initTeardown(h, ctx, "initiative-link");
+    },
+};
+
+// --- initiative-review: a review pass over what changed and what sat idle ------------------------------------------------
+// Three initiatives made at real time T, each marked reviewed in localStorage so none reads from the "Since you looked"
+// cursor: the blocked and the changed one at T - 1h (their updatedts is after it, so they changed), the idle one at
+// T + 1 min (after its last change, so it did not). updatedts cannot be forged over RPC, so Date.now is stubbed in the
+// page to T + 20 days before Jarvis opens (and put back in teardown): the idle one's last change and its mark are then
+// 20 days old, which reads "idle 2w". The stub makes every other active initiative in the store idle too, so no step
+// asserts a total: each reads the three seeded orefs, the order they are walked in relative to each other, and their marks.
+const REV_KEY = "jarvis.review.reviewed";
+const REV_BLOCKED = "Review blocked: stuck on the feed";
+const REV_CHANGED = "Review changed: moved the feed";
+const REV_IDLE = "Review idle: parked feed work";
+const REV_AGENT = "verify-review-agent";
+const REV_CURRENT = `document.querySelector("[data-jarvis-review-current]")?.dataset.jarvisReviewCurrent ?? null`;
+// every initiative of the pass in order, the open one included, with whether it is marked in this pass
+const REV_PASS = `[...document.querySelectorAll("[data-jarvis-review-current], [data-jarvis-review-row]")].map((e) => ({
+    oref: e.dataset.jarvisReviewCurrent ?? e.dataset.jarvisReviewRow,
+    open: e.hasAttribute("data-jarvis-review-current"),
+    marked: e.classList.contains("opacity-45"),
+}))`;
+const REV_COUNT = `(() => {
+    const m = /^Review · (\\d+)$/.exec(document.querySelector("[data-jarvis-review-enter]")?.innerText.trim() ?? "");
+    return m ? Number(m[1]) : 0;
+})()`;
+const REV_ACTIONS = `[...(document.querySelector("[data-jarvis-review-current]")?.querySelectorAll("[data-jarvis-review-action]") ?? [])].map((b) => b.dataset.jarvisReviewAction)`;
+const reviewMarks = (h) => h.ev(`JSON.parse(localStorage.getItem(${JSON.stringify(REV_KEY)}) ?? "{}")`);
+
+// `j` until the pass is on `oref` (the pass wraps, so no more presses than it holds)
+async function reviewGoTo(h, oref) {
+    const total = (await h.ev(REV_PASS)).length;
+    for (let i = 0; i <= total; i++) {
+        if ((await h.ev(REV_CURRENT)) === oref) return true;
+        await initPress(h, "j");
+    }
+    return (await h.ev(REV_CURRENT)) === oref;
+}
+
+const reviewRowShown = async (h, title) => {
+    if (await h.ev(`!!(${INIT_ROW(title)})`)) return true;
+    // the Initiatives region draws a few rows, and the rest sit behind its "+N more"
+    await h.ev(`document.querySelector('[data-jarvis-brief-region="initiatives"] [data-jarvis-brief-more="more"]')?.click()`);
+    return polishWaitFor(h, `!!(${INIT_ROW(title)})`, 5000);
+};
+
+const initiativeReview = {
+    name: "initiative-review",
+    surface: "jarvis",
+    async arrange(h) {
+        const ctx = initCtx();
+        ctx.skip = initFixtureSkip();
+        if (ctx.skip) return ctx;
+        try {
+            await initPrepare(h, ctx);
+            const make = async (title) => initCreate(h, ctx, { title, project: "verify-init-review", chunks: ["First feed chunk", "Second feed chunk"] });
+            ctx.blocked = await make(REV_BLOCKED);
+            ctx.changed = await make(REV_CHANGED);
+            ctx.idle = await make(REV_IDLE);
+            await initOps(h, ctx.blocked, [{ op: "setChunkStatus", chunk: "First feed chunk", status: "blocked", note: "waiting on the feed owner" }]);
+            await initOps(h, ctx.changed, [{ op: "setChunkStatus", chunk: "First feed chunk", status: "done" }]);
+            const t = Date.now();
+            ctx.t = t;
+            ctx.prevStorage[REV_KEY] = await h.ev(`localStorage.getItem(${JSON.stringify(REV_KEY)})`);
+            const marks = {
+                ...(JSON.parse(ctx.prevStorage[REV_KEY] ?? "{}") ?? {}),
+                [`effort:${ctx.blocked}`]: t - 3600_000,
+                [`effort:${ctx.changed}`]: t - 3600_000,
+                [`effort:${ctx.idle}`]: t + 60_000,
+            };
+            await h.ev(`localStorage.setItem(${JSON.stringify(REV_KEY)}, ${JSON.stringify(JSON.stringify(marks))})`);
+            // the marks are read once, when the page starts
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            // the blocked initiative has an agent open on it, so its review offers Go to agent
+            ctx.agent = await initOpenAgent(h, ctx, { name: REV_AGENT, project: "verify-init-review", effort: `effort:${ctx.blocked}` });
+            await h.ev(`(() => {
+                if (window.__initRealNow) return;
+                const real = Date.now.bind(Date);
+                window.__initRealNow = real;
+                Date.now = () => real() + ${20 * INIT_DAY_MS};
+            })()`);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.skip) return [skipStep("initiative review", ctx.skip)];
+        if (ctx.arrangeError != null) return [{ step: "0. the initiatives, their marks and the agent were made", ok: false, detail: ctx.arrangeError }];
+        const { steps, rec } = initRecorder();
+        try {
+            const oref = { blocked: `effort:${ctx.blocked}`, changed: `effort:${ctx.changed}`, idle: `effort:${ctx.idle}` };
+            const seeded = [oref.blocked, oref.changed, oref.idle];
+            const only = (list) => list.filter((o) => seeded.includes(o));
+            const passOrder = async () => only((await h.ev(REV_PASS)).map((p) => p.oref));
+            await h.goto("jarvis");
+            await h.ev("document.activeElement?.blur?.()");
+
+            // --- 1. before the pass: the List marks the changed and the idle ones, and the heading counts them --------------------
+            const rows = await Promise.all([REV_BLOCKED, REV_CHANGED, REV_IDLE].map((t) => reviewRowShown(h, t)));
+            const listed = await polishWaitFor(
+                h,
+                `(${INIT_ROW(REV_IDLE)})?.querySelector("[data-jarvis-initiative-status]")?.innerText.trim() === "idle 2w"`,
+                INIT_WAIT_MS
+            );
+            const marks1 = await h.ev(`({
+                changedDot: !!(${INIT_ROW(REV_CHANGED)})?.querySelector("[data-jarvis-changed-dot]"),
+                blockedDot: !!(${INIT_ROW(REV_BLOCKED)})?.querySelector("[data-jarvis-changed-dot]"),
+                idleDot: !!(${INIT_ROW(REV_IDLE)})?.querySelector("[data-jarvis-changed-dot]"),
+                idle: (${INIT_ROW(REV_IDLE)})?.querySelector("[data-jarvis-initiative-status]")?.innerText.trim() ?? null,
+                blocked: (${INIT_ROW(REV_BLOCKED)})?.querySelector("[data-jarvis-initiative-status]")?.innerText.trim() ?? null,
+            })`);
+            const count0 = await h.ev(REV_COUNT);
+            await h.shot("cdp-shots/initiative-review-1-list.png");
+            rec(
+                '1. before the pass the List reads "idle 2w" on the idle initiative and puts the changed dot on the changed one, and the heading counts the review queue',
+                rows.every(Boolean) && listed === true && marks1.changedDot === true && marks1.blockedDot === true && marks1.idleDot === false && count0 >= 3,
+                { rows, listed, marks1, count0 }
+            );
+            const cursor0 = await h.ev(`document.querySelector('[data-jarvis-brief-cursor="true"]')?.innerText.slice(0, 60) ?? null`);
+
+            // --- 2. Sprout's popup says what changed, and its link begins the pass -----------------------------------------------------
+            await h.ev(`document.querySelector('[aria-label="Jarvis condition"]')?.click()`);
+            const sprout = await polishWaitFor(h, `!!document.querySelector("[data-pet-review-line]")`, INIT_WAIT_MS);
+            const sproutLine = await h.ev(`document.querySelector("[data-pet-review-line]")?.innerText.replace(/\\s+/g, " ").trim() ?? null`);
+            await h.shot("cdp-shots/initiative-review-2-sprout.png");
+            await initClick(h, `document.querySelector("[data-pet-review-link]")`);
+            const sproutPass = await polishWaitFor(h, `!!document.querySelector("[data-jarvis-review-pos]")`, INIT_WAIT_MS);
+            const orderSprout = await passOrder();
+            rec(
+                '2. Sprout\'s popup lists "initiatives changed", and "Review in Jarvis" lands on Jarvis already in the review pass, over the three',
+                sprout === true && /initiatives? changed/.test(sproutLine ?? "") && sproutPass === true && JSON.stringify(orderSprout) === JSON.stringify(seeded),
+                { sprout, sproutLine, sproutPass, orderSprout }
+            );
+            await initPress(h, "Escape");
+            const leftSprout = await polishWaitFor(h, `!document.querySelector("[data-jarvis-review-pos]")`, 3000);
+
+            // --- 3. `v` begins the pass; the blocked one is walked before the changed one, and the changed before the idle one -------------
+            await h.ev("document.activeElement?.blur?.()");
+            await initPress(h, "v");
+            const entered = await polishWaitFor(h, `!!document.querySelector("[data-jarvis-review-pos]")`, 5000);
+            const order = await passOrder();
+            const onBlocked = await reviewGoTo(h, oref.blocked);
+            await polishWaitFor(h, `document.querySelectorAll("[data-jarvis-review-current] [data-jarvis-review-event]").length > 0`, INIT_WAIT_MS);
+            const since = await h.ev(`(() => {
+                const cur = document.querySelector("[data-jarvis-review-current]");
+                const s = cur?.querySelector("[data-jarvis-review-since]");
+                return { heading: s?.textContent.includes("Since you reviewed") ?? false,
+                    events: [...(cur?.querySelectorAll("[data-jarvis-review-event]") ?? [])].map((e) => e.innerText.replace(/\\s+/g, " ").trim()),
+                    status: cur?.querySelector("[data-jarvis-initiative-status]")?.innerText.trim() ?? null,
+                    actions: ${REV_ACTIONS} };
+            })()`);
+            await polishNap(400);
+            await h.shot("cdp-shots/initiative-review-3-blocked.png");
+            rec(
+                "3. `v` begins the pass over the queue: the blocked, changed and idle initiatives are walked in that order, and the blocked one opens on what happened since the mark",
+                leftSprout === true && entered === true && JSON.stringify(order) === JSON.stringify(seeded) && onBlocked === true &&
+                    since.heading === true && since.events.some((e) => e.includes("First feed chunk")),
+                { leftSprout, entered, order, onBlocked, since }
+            );
+
+            // --- 4. Go to agent leaves for the agent open on the initiative; the pass is where it was on coming back ----------------------
+            const goLabel = await h.ev(`document.querySelector('[data-jarvis-review-current] [data-jarvis-review-action="work"]')?.innerText.trim() ?? null`);
+            await initClick(h, `document.querySelector('[data-jarvis-review-current] [data-jarvis-review-action="work"]')`);
+            const onAgent = await polishWaitFor(
+                h,
+                `(() => { const p = document.querySelector('[data-agent-terminal="${ctx.agent.tabId}"]'); return p != null && !p.classList.contains("hidden"); })()`,
+                INIT_WAIT_MS
+            );
+            const surfaceAgent = await h.activeSurfaceLabel();
+            await h.goto("jarvis");
+            const stillOnBlocked = await polishWaitFor(h, `${REV_CURRENT} === ${JSON.stringify(oref.blocked)}`, 5000);
+            rec(
+                "4. on the blocked initiative with an agent open, its first action after Keep going is Go to agent: it lands on that agent, and the pass is still on the blocked one on coming back",
+                goLabel === "Go to agent" && onAgent === true && surfaceAgent === SURFACE_LABEL.agent && stillOnBlocked === true,
+                { goLabel, onAgent, surfaceAgent, stillOnBlocked }
+            );
+
+            // --- 5. Enter marks it and opens the next unmarked one, in pass order ---------------------------------------------------------
+            await h.ev("document.activeElement?.blur?.()");
+            const before5 = await h.ev(REV_PASS);
+            const at = before5.findIndex((p) => p.open);
+            const expectNext = [...before5.slice(at + 1), ...before5.slice(0, at)].find((p) => !p.marked)?.oref ?? null;
+            await initPress(h, "Enter");
+            await polishWaitFor(h, `${REV_CURRENT} !== ${JSON.stringify(oref.blocked)}`, 5000);
+            const after5 = await h.ev(REV_PASS);
+            const marks5 = await reviewMarks(h);
+            rec(
+                "5. Enter marks the open initiative reviewed (faded and stamped) and opens the next one not yet marked",
+                after5.find((p) => p.oref === oref.blocked)?.marked === true && (await h.ev(REV_CURRENT)) === expectNext && marks5[oref.blocked] > ctx.t + INIT_DAY_MS,
+                { expectNext, current: await h.ev(REV_CURRENT), marked: after5.find((p) => p.oref === oref.blocked)?.marked, mark: marks5[oref.blocked] }
+            );
+
+            // --- 6. the changed one: k and j move back and forward without moving the List's cursor; Work on shows; Keep going marks it -------
+            await reviewGoTo(h, oref.changed);
+            const workLabel = await h.ev(`document.querySelector('[data-jarvis-review-current] [data-jarvis-review-action="work"]')?.innerText.trim() ?? null`);
+            const actions6 = await h.ev(REV_ACTIONS);
+            const here = await h.ev(REV_CURRENT);
+            await initPress(h, "k");
+            const afterK = await h.ev(REV_CURRENT);
+            await initPress(h, "j");
+            const afterJ = await h.ev(REV_CURRENT);
+            const cursor6 = await h.ev(`document.querySelector('[data-jarvis-brief-cursor="true"]')?.innerText.slice(0, 60) ?? null`);
+            await initClick(h, `document.querySelector('[data-jarvis-review-current] [data-jarvis-review-action="keep"]')`);
+            await polishWaitFor(h, `${REV_CURRENT} !== ${JSON.stringify(oref.changed)}`, 5000);
+            const after6 = await h.ev(REV_PASS);
+            rec(
+                "6. on the changed initiative (no agent): Work on is offered but not pressed, k then j go back and forward and leave the List's cursor where it was, and Keep going marks it",
+                workLabel === "Work on" && actions6[0] === "keep" && here === oref.changed && afterK !== here && afterJ === here && cursor6 === cursor0 &&
+                    after6.find((p) => p.oref === oref.changed)?.marked === true,
+                { workLabel, actions6, here, afterK, afterJ, cursor0, cursor6, marked: after6.find((p) => p.oref === oref.changed)?.marked }
+            );
+
+            // --- 7. the idle one: "idle 2w", Pause and Archive first; Pause parks it, and Archive closes it ---------------------------------
+            await reviewGoTo(h, oref.idle);
+            await polishWaitFor(h, `document.querySelectorAll("[data-jarvis-review-current] [data-jarvis-review-quiet]").length > 0`, INIT_WAIT_MS);
+            const idleInfo = await h.ev(`(() => {
+                const cur = document.querySelector("[data-jarvis-review-current]");
+                return { status: cur?.querySelector("[data-jarvis-initiative-status]")?.innerText.trim() ?? null,
+                    quiet: cur?.querySelector("[data-jarvis-review-quiet]")?.innerText.trim() ?? null, actions: ${REV_ACTIONS} };
+            })()`);
+            await polishNap(300);
+            await h.shot("cdp-shots/initiative-review-7-idle.png");
+            await initClick(h, `document.querySelector('[data-jarvis-review-current] [data-jarvis-review-action="pause"]')`);
+            const paused = await initUntil(async () => (await initEffort(h, ctx.idle))?.status === "paused", 8000);
+            const markedIdle = await initUntil(async () => ((await reviewMarks(h))[oref.idle] ?? 0) > ctx.t + INIT_DAY_MS, 8000);
+            rec(
+                '7. the idle initiative reads "idle 2w" and nothing moved, with Pause and Archive first; Pause parks it and marks it reviewed',
+                idleInfo.status === "idle 2w" && idleInfo.actions.slice(0, 2).join() === "pause,archive" && /nothing moved in 2 weeks/.test(idleInfo.quiet ?? "") && paused === true && markedIdle === true,
+                { idleInfo, paused, markedIdle }
+            );
+            // open again (the pass keeps a marked one listed) and archive it
+            await reviewGoTo(h, oref.idle);
+            const resume = await h.ev(`document.querySelector('[data-jarvis-review-current] [data-jarvis-review-action="pause"]')?.innerText.trim() ?? null`);
+            await initClick(h, `document.querySelector('[data-jarvis-review-current] [data-jarvis-review-action="archive"]')`);
+            const archived = await initUntil(async () => (await initEffort(h, ctx.idle))?.status === "archived", 8000);
+            rec("7b. a paused initiative offers Resume, and Archive closes it", resume === "Resume" && archived === true, { resume, archived });
+
+            // --- 8. the rest of the pass is marked through (Enter), the end reads "All reviewed", and Esc leaves it ----------------------------
+            let presses = 0;
+            for (; presses < 120 && !(await h.ev(`!!document.querySelector("[data-jarvis-review-done]")`)); presses++) {
+                await h.ev("document.activeElement?.blur?.()");
+                await initPress(h, "Enter");
+            }
+            const done = await h.ev(`!!document.querySelector("[data-jarvis-review-done]")`);
+            await h.shot("cdp-shots/initiative-review-8-done.png");
+            await initPress(h, "Escape");
+            const left = await polishWaitFor(h, `!document.querySelector("[data-jarvis-review-pos]")`, 3000);
+            const marksEnd = await reviewMarks(h);
+            const seededMarked = [oref.blocked, oref.changed, oref.idle].every((o) => (marksEnd[o] ?? 0) > ctx.t + INIT_DAY_MS);
+            // none of the three is queued any more. The count itself is not asserted: another initiative made in the store
+            // meanwhile would join the queue, so a fresh pass is begun (if there is anything to review at all) and read
+            const countEnd = await h.ev(REV_COUNT);
+            await h.ev("document.activeElement?.blur?.()");
+            await initPress(h, "v");
+            const again = await passOrder();
+            if (await h.ev(`!!document.querySelector("[data-jarvis-review-pos]")`)) await initPress(h, "Escape");
+            rec(
+                '8. the pass ends on "All reviewed" with every initiative marked, Esc leaves it, and none of the three is queued for review any more',
+                done === true && left === true && seededMarked === true && again.length === 0,
+                { presses, done, left, seededMarked, countStart: count0, countEnd, queuedAgain: again }
+            );
+        } catch (e) {
+            rec("the scenario ran to its end", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await initTeardown(h, ctx, "initiative-review");
+    },
+};
+
+// --- initiative-parents: sub-initiatives sit under their parent on the Jarvis List ----------------------------------------
+const PAR_PROJECT = "verify-init-parents";
+const PAR_PARENT = "Parents: the feed platform";
+const PAR_CHILD_A = "Parents child: feed ingest";
+const PAR_CHILD_B = "Parents child: feed render";
+const PAR_IDEA = "Parents idea: feed alerts";
+const PAR_OTHER = "Parents unrelated: feed archive";
+const PAR_ORPHAN = "Parents orphan: feed leftovers";
+const PAR_GONE = "Parents gone: a parent that goes";
+// a row's depth, elbow, parent line and sub count, by title
+const parRow = (h, title) =>
+    h.ev(`(() => {
+        const row = ${INIT_ROW(title)};
+        return row ? { depth: Number(row.dataset.jarvisInitiativeDepth ?? "0"), elbow: !!row.querySelector("[data-jarvis-initiative-elbow]"),
+            meta: row.querySelector("[data-jarvis-initiative-meta]")?.innerText.trim() ?? null,
+            sub: row.querySelector("[data-jarvis-initiative-sub]")?.innerText.trim() ?? null } : null;
+    })()`);
+const parToast = (h) => h.ev(`document.body.innerText`);
+// the row's ⋯ menu: a real click on it opens the menu at the pointer; the item is found by its label
+async function parMenu(h, title, item) {
+    await reviewRowShown(h, title);
+    const opened = await initClick(h, `(${INIT_ROW(title)})?.querySelector('[aria-label="Actions for ${title}"]')`);
+    const up = await polishWaitFor(h, `!!document.querySelector("[data-menu-item]")`, 3000);
+    const picked = up ? await initClick(h, `document.querySelector('[data-menu-item="${item}"]')`) : false;
+    return { opened, up, picked };
+}
+
+const initiativeParents = {
+    name: "initiative-parents",
+    surface: "jarvis",
+    async arrange(h) {
+        const ctx = initCtx();
+        try {
+            const make = (title, extra = {}) => initCreate(h, ctx, { title, project: PAR_PROJECT, chunks: ["Feed chunk one", "Feed chunk two"], ...extra });
+            ctx.parent = await make(PAR_PARENT);
+            ctx.childA = await make(PAR_CHILD_A, { parentoid: ctx.parent });
+            ctx.childB = await make(PAR_CHILD_B, { parentoid: ctx.parent });
+            // an idea (no chunks), linked under the parent with the link op
+            ctx.idea = await make(PAR_IDEA, { chunks: [] });
+            await initOps(h, ctx.idea, [{ op: "link", parentoid: ctx.parent }]);
+            ctx.other = await make(PAR_OTHER);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.arrangeError != null) return [{ step: "0. the initiatives were made", ok: false, detail: ctx.arrangeError }];
+        const { steps, rec } = initRecorder();
+        try {
+            await h.goto("jarvis");
+            const oref = (oid) => `effort:${oid}`;
+            const shown = await Promise.all([PAR_PARENT, PAR_CHILD_A, PAR_CHILD_B, PAR_OTHER].map((t) => reviewRowShown(h, t)));
+
+            // --- 1. the children sit under the parent, indented, with "↳ Part of" ------------------------------------------------------------
+            await polishWaitFor(h, `${INIT_ROW(PAR_CHILD_A)}?.dataset.jarvisInitiativeDepth === "1"`, INIT_WAIT_MS);
+            const parent = await parRow(h, PAR_PARENT);
+            const a = await parRow(h, PAR_CHILD_A);
+            const b = await parRow(h, PAR_CHILD_B);
+            // the rows' own titles in List order (a child's meta line holds its parent's title, so the whole text would match twice)
+            const titles = await h.ev(`[...document.querySelectorAll('[data-jarvis-brief-row="initiative"]')].map((r) => r.querySelector(".truncate.font-semibold")?.textContent.trim())`);
+            const at = titles.indexOf(PAR_PARENT);
+            // the children follow the parent at once, in the order their own recency gives them
+            const order = titles.slice(at + 1, at + 3).sort();
+            await polishNap(400);
+            await h.shot("cdp-shots/initiative-parents-1-list.png");
+            rec(
+                '1. the two children sit right under the parent, indented with an elbow and "↳ Part of" its title',
+                shown.every(Boolean) && parent?.depth === 0 && a?.depth === 1 && a.elbow && b?.depth === 1 && b.elbow &&
+                    (a.meta ?? "").startsWith(`↳ Part of ${PAR_PARENT}`) && (b.meta ?? "").startsWith(`↳ Part of ${PAR_PARENT}`) && at >= 0 && order.join() === [PAR_CHILD_A, PAR_CHILD_B].sort().join(),
+                { shown, parent, a, b, at, order }
+            );
+            rec('2. the parent reads "+2 sub"', parent?.sub === "+2 sub", { sub: parent?.sub });
+
+            // --- 3. opened, the parent lists its sub-initiatives and its linked ideas ---------------------------------------------------------
+            await initClick(h, `(${INIT_ROW(PAR_PARENT)})?.querySelector(':scope > [role="button"]')`);
+            const linked = await polishWaitFor(h, `!!(${INIT_ROW(PAR_PARENT)})?.querySelector("[data-jarvis-linked]")`, INIT_WAIT_MS);
+            const lists = await h.ev(`(() => {
+                const l = (${INIT_ROW(PAR_PARENT)})?.querySelector("[data-jarvis-linked]");
+                return { subs: [...(l?.querySelectorAll("[data-jarvis-linked-sub]") ?? [])].map((e) => e.dataset.jarvisLinkedSub),
+                    ideas: [...(l?.querySelectorAll("[data-jarvis-linked-idea]") ?? [])].map((e) => e.dataset.jarvisLinkedIdea) };
+            })()`);
+            await polishNap(400);
+            await h.shot("cdp-shots/initiative-parents-3-open.png");
+            rec(
+                "3. opening the parent lists both children under Sub-initiatives and the idea under its linked Ideas",
+                linked === true && [oref(ctx.childA), oref(ctx.childB)].every((o) => lists.subs.includes(o)) && lists.subs.length === 2 && lists.ideas.join() === oref(ctx.idea),
+                lists
+            );
+            await initClick(h, `(${INIT_ROW(PAR_PARENT)})?.querySelector(':scope > [role="button"]')`);
+
+            // --- 4. the unrelated row's ⋯ → Link to… moves it under the parent -------------------------------------------------------------------
+            const menu = await parMenu(h, PAR_OTHER, "Link to…");
+            const pickerUp = await polishWaitFor(h, `!!document.querySelector("[data-initiative-picker]")`, 4000);
+            await initClick(h, `document.querySelector('[data-initiative-picker] [data-picker-row="${oref(ctx.parent)}"]')`);
+            const moved = await polishWaitFor(h, `${INIT_ROW(PAR_OTHER)}?.dataset.jarvisInitiativeDepth === "1"`, INIT_WAIT_MS);
+            const other = await parRow(h, PAR_OTHER);
+            const server4 = (await initEffort(h, ctx.other))?.parentoid;
+            const toast4 = (await parToast(h)).includes(`Linked under “${PAR_PARENT}”`);
+            rec(
+                "4. the unrelated initiative's ⋯ → Link to… and a pick of the parent moves it under it, and says so",
+                menu.picked === true && pickerUp === true && moved === true && other?.depth === 1 && (other.meta ?? "").startsWith(`↳ Part of ${PAR_PARENT}`) && server4 === ctx.parent && toast4 === true,
+                { menu, pickerUp, moved, other, server4, toast4 }
+            );
+
+            // --- 5. a link that would make a cycle is refused ------------------------------------------------------------------------------------
+            // the picker never offers the initiative's own descendants...
+            await parMenu(h, PAR_PARENT, "Link to…");
+            await polishWaitFor(h, `!!document.querySelector("[data-initiative-picker]")`, 4000);
+            const offers = await h.ev(`[...document.querySelectorAll("[data-initiative-picker] [data-picker-row]")].map((r) => r.dataset.pickerRow)`);
+            await initPress(h, "Escape");
+            await polishWaitFor(h, `!document.querySelector("[data-initiative-picker]")`, 3000);
+            // ...and the server refuses one made by hand
+            const refused = await initOps(h, ctx.parent, [{ op: "link", parentoid: ctx.childA }]).then(
+                () => null,
+                (e) => String(e?.message ?? e)
+            );
+            const stillTop = (await initEffort(h, ctx.parent))?.parentoid ?? "";
+            rec(
+                "5. Link to… on the parent offers none of its descendants, and linking it under its own child is refused with the cycle message",
+                [ctx.childA, ctx.childB, ctx.other, ctx.parent].every((oid) => !offers.includes(oref(oid))) && /under itself/.test(refused ?? "") && stillTop === "",
+                { offers: offers.length, refused, stillTop }
+            );
+
+            // --- 6. Unlink returns it to the top level -------------------------------------------------------------------------------------------------
+            const unlink = await parMenu(h, PAR_OTHER, `Unlink from ${PAR_PARENT}`);
+            const top = await polishWaitFor(h, `${INIT_ROW(PAR_OTHER)}?.dataset.jarvisInitiativeDepth === "0"`, INIT_WAIT_MS);
+            const back = await parRow(h, PAR_OTHER);
+            const server6 = (await initEffort(h, ctx.other))?.parentoid ?? "";
+            rec(
+                "6. ⋯ → Unlink returns the initiative to the top level, with no parent line",
+                unlink.picked === true && top === true && back?.depth === 0 && back.elbow === false && !(back.meta ?? "").includes("Part of") && server6 === "",
+                { unlink, top, back, server6 }
+            );
+
+            // --- 7. a parent deleted under its child leaves the child a row at the top, not a lost one ------------------------------------------------
+            // (an initiative deleted under its child leaves the child holding a dangling parentoid)
+            ctx.gone = await initCreate(h, ctx, { title: PAR_GONE, project: PAR_PROJECT, chunks: ["Feed chunk one"] });
+            ctx.orphan = await initCreate(h, ctx, { title: PAR_ORPHAN, project: PAR_PROJECT, chunks: ["Feed chunk one"], parentoid: ctx.gone });
+            await h.rpc("effortdelete", { effortoid: ctx.gone });
+            ctx.oids = ctx.oids.filter((o) => o !== ctx.gone);
+            // the Brief reads the store again when it is shown, so it is left and come back to
+            await h.goto("cockpit");
+            await h.goto("jarvis");
+            const kept = await polishWaitFor(h, `!!(${INIT_ROW(PAR_ORPHAN)}) && !(${INIT_ROW(PAR_GONE)})`, INIT_WAIT_MS);
+            const orphan = await parRow(h, PAR_ORPHAN);
+            rec(
+                "7. an initiative whose parent was deleted stays on the List as a top-level row",
+                kept === true && orphan?.depth === 0 && orphan.elbow === false,
+                { kept, orphan }
+            );
+        } catch (e) {
+            rec("the scenario ran to its end", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await initTeardown(h, ctx, "initiative-parents", { reload: false });
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -37461,4 +41098,15 @@ export const SCENARIOS = [
     whatsNew,
     jarvisOffice,
     jarvisOfficeBench,
+    runQueueScenario,
+    runOriginScenario,
+    ideasRail,
+    needsYouLearnCard,
+    setupSkillAdditions,
+    setupLearned,
+    initiativePlanReview,
+    initiativePopover,
+    initiativeLink,
+    initiativeReview,
+    initiativeParents,
 ];

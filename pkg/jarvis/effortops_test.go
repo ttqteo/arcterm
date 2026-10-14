@@ -63,6 +63,61 @@ func TestApplyOpsRemoveLastChunkGuard(t *testing.T) {
 	expectErrCode(t, err, "EC-LAST-CHUNK")
 }
 
+func TestApplyOpsAddChunkProposed(t *testing.T) {
+	e := mkEffort()
+	err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "addChunk", Label: "Idea A", Status: "proposed"}}, "", effortNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := e.Chunks[3]; got.Label != "Idea A" || got.Status != "proposed" {
+		t.Fatalf("chunk: %+v", got)
+	}
+}
+
+func TestApplyOpsAddChunkRefusesOtherStatus(t *testing.T) {
+	e := mkEffort()
+	err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "addChunk", Label: "X", Status: "done"}}, "", effortNow)
+	expectErrCode(t, err, "EC-INVALID-STATUS")
+}
+
+func TestApplyOpsAcceptProposed(t *testing.T) {
+	e := mkEffort()
+	e.Chunks = append(e.Chunks, waveobj.EffortChunk{Label: "P", Status: "proposed"})
+	err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "setChunkStatus", Chunk: "P", Status: "pending"}}, "", effortNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.Chunks[3].Status != "pending" {
+		t.Fatalf("status: %q", e.Chunks[3].Status)
+	}
+}
+
+func TestAdvanceSkipsProposed(t *testing.T) {
+	e := mkEffort()
+	e.Chunks = []waveobj.EffortChunk{
+		{Label: "A", Status: "active"},
+		{Label: "P", Status: "proposed"},
+		{Label: "B", Status: "pending"},
+	}
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "advance"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if e.Chunks[1].Status != "proposed" || e.Chunks[2].Status != "active" {
+		t.Fatalf("chunks: %+v", e.Chunks)
+	}
+}
+
+func TestApplyOpsRemoveLastProposedChunk(t *testing.T) {
+	e := mkEffort()
+	e.Chunks = []waveobj.EffortChunk{{Label: "only", Status: "proposed"}}
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "removeChunk", Chunk: "only"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.Chunks) != 0 {
+		t.Fatalf("chunks: %+v", e.Chunks)
+	}
+}
+
 func TestApplyOpsResolveChunkRefs(t *testing.T) {
 	e := mkEffort()
 	// label ref

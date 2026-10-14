@@ -25,7 +25,16 @@ window.addEventListener("error", (e) => {
 });
 window.addEventListener("unhandledrejection", (e) => hlog("UNHANDLED REJECTION: " + (e.reason?.stack ?? String(e.reason))));
 
+// the boot's phase for a CDP check (bootmark.ts)
+const markBoot = (phase: "started" | "rendered" | "failed", error?: string) => {
+    if (window.__arcBoot) {
+        window.__arcBoot.phase = phase;
+        if (error) window.__arcBoot.error = error;
+    }
+};
+
 async function boot() {
+    markBoot("started");
     try {
         const init = await invoke<InitData>("get_init");
         installTauriApi(init);
@@ -62,8 +71,10 @@ async function boot() {
         installVaultSyncTriggers();
         createRoot(document.getElementById("main")).render(<CockpitRoot />);
         hlog("cockpit rendered");
+        markBoot("rendered");
     } catch (e: any) {
         hlog("BOOT ERROR: " + (e?.stack ?? e?.message ?? String(e)));
+        markBoot("failed", String(e?.message ?? e));
         const el = document.getElementById("main") ?? document.body;
         el.innerHTML = "<pre style='color:#f88;padding:20px'>BOOT ERROR: " + String(e) + "</pre>";
     }

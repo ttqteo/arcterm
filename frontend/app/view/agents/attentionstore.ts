@@ -24,24 +24,27 @@ export const attentionLoadedAtom = atom(false) as PrimitiveAtom<boolean>;
 let latestAttentionLoad = 0;
 
 // splitAttention keeps the nav-rail badges disjoint by construction rather than by derivations agreeing.
-// Everything that needs you but a radar finding is the Cockpit's: its asks are cards there and its other
-// items (gates, blocked tasks, runs to acknowledge or land, escalations) are the Needs-you strip's, so
-// Jarvis's nav entry carries no attention badge. Radar triage is routed by kind: the Cockpit has nothing
-// that can clear it, and Radar does.
+// Each item goes to the surface that clears it: an ask to the Cockpit, where the asking agent is a card;
+// radar triage to Radar; everything else (gates, blocked tasks, runs to acknowledge or land, escalations,
+// due chunks, learn proposals) to Jarvis, whose Brief lists it under "waiting on you" and whose sheets hold
+// its actions. The Cockpit's Needs-you strip still shows those, but its badge no longer counts them, so it
+// agrees with the "need you" tab above them.
 export function splitAttention(items: AttentionItem[]): {
     cockpit: AttentionItem[];
+    jarvis: AttentionItem[];
     radar: AttentionItem[];
 } {
     const cockpit: AttentionItem[] = [];
+    const jarvis: AttentionItem[] = [];
     const radar: AttentionItem[] = [];
     for (const i of items ?? []) {
-        (i.kind === "radar-triage" ? radar : cockpit).push(i);
+        (i.kind === "ask" ? cockpit : i.kind === "radar-triage" ? radar : jarvis).push(i);
     }
-    return { cockpit, radar };
+    return { cockpit, jarvis, radar };
 }
 
 // cockpitWaitingCount is what the Cockpit's nav badge counts: every agent that needs you, as the Cockpit's
-// "need you" tab counts them, plus the Cockpit's share of the server list. That list knows only the asks
+// "need you" tab counts them, plus the server list's asks (the Cockpit's share). That list knows only the asks
 // raised through `wsh ask`; a permission prompt or a question that fell back to the terminal is in the
 // roster alone, so a badge read off the list said 0 under a tab that said 3. An ask both know counts once.
 export function cockpitWaitingCount(cockpit: AttentionItem[], agents: AgentVM[], answered: Set<string>): number {

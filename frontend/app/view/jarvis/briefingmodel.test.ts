@@ -839,6 +839,29 @@ describe("design queue wording", () => {
             { channelId: "c5", runId: "r5" },
         ]);
     });
+    it("a blocked queue entry starts now in place, from the queue id its item carries", () => {
+        const [row] = buildAttentionQueue({
+            attention: [
+                attentionItem({
+                    kind: "run-queue-blocked",
+                    key: "run-queue-blocked:q-1a2b",
+                    channelid: "",
+                    channelname: "",
+                    runid: "",
+                    queueid: "q-1a2b",
+                    source: "Learned additions",
+                    text: "Did not start: Rail was held: dirty",
+                    action: "Start",
+                }),
+            ],
+            efforts: [],
+        });
+        expect(row.kind).toBe("not started");
+        expect(row.queueId).toBe("q-1a2b");
+        expect(row.nav).toBeNull();
+        expect(queueAction(row)).toEqual({ label: "Start now", kind: "start-queued" });
+        expect(queueAction({ ...row, queueId: undefined })).toEqual({ label: "Open", kind: "open" });
+    });
     it("a record blocker joins the queue as blocked and opens its record", () => {
         const rows = buildAttentionQueue({
             attention: [],
@@ -884,5 +907,46 @@ describe("buildAttentionQueue: a chunk that came due", () => {
             ["chunk-due", "re-measure"],
             ["chunk-blocked", "other"],
         ]);
+    });
+});
+
+describe("buildAttentionQueue: a plan to review", () => {
+    const plan = {
+        kind: "plan-review",
+        key: "plan-review:e1",
+        source: "Nav rail",
+        text: "2 proposed",
+        action: "Review",
+        phaseidx: 0,
+        waitingsince: 1000,
+        oref: "effort:e1",
+        effortoid: "e1",
+        why: "An agent proposed these chunks. They count once you accept them.",
+    } as AttentionItem;
+    const efforts = [{ oref: "effort:e1", title: "Nav rail", blockedChunks: [] } as unknown as EffortCardModel];
+
+    it("opens its initiative when no agent is open on it, and reads as a plan", () => {
+        const [row] = buildAttentionQueue({ attention: [plan], efforts });
+        expect(row.kind).toBe("plan");
+        expect(row.nav).toEqual({ kind: "effort", oref: "effort:e1" });
+        expect(row.action).toBe("Review");
+        expect(row.attrib).toBe("");
+        expect(row.detail).toBe("Nav rail");
+        expect(queueKindLabel(row)).toBe("plan");
+        expect(queueAction(row)).toEqual({ label: "Open", kind: "open" });
+        expect(queueOpenTarget(row.nav)).toEqual({ kind: "oref", oref: "effort:e1" });
+    });
+
+    it("opens the agent open on its initiative", () => {
+        const roster = [agent({ id: "t7", effortId: "e1", state: "idle" })];
+        const [row] = buildAttentionQueue({ attention: [plan], efforts, roster });
+        expect(row.nav).toEqual({ kind: "agent", oref: "agent:t7" });
+        expect(queueOpenTarget(row.nav)).toEqual({ kind: "oref", oref: "agent:t7" });
+    });
+
+    it("ignores an agent on another initiative", () => {
+        const roster = [agent({ id: "t7", effortId: "e2", state: "idle" })];
+        const [row] = buildAttentionQueue({ attention: [plan], efforts, roster });
+        expect(row.nav).toEqual({ kind: "effort", oref: "effort:e1" });
     });
 });

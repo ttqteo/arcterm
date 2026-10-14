@@ -24,6 +24,10 @@ export interface ToastNotification {
     level: "info" | "warn" | "error";
     eyebrow?: ToastEyebrow;
     onOpen?: () => void;
+    // a button on the toast ("Undo"): runs, and the toast closes
+    action?: { label: string; run: () => void };
+    // a green check before the title of a plain toast: something was done ("Added to Ideas")
+    check?: boolean;
     // how long it stays, TOAST_TTL_MS when unset: something waiting on you is given longer to be read
     ttlMs?: number;
 }
@@ -59,6 +63,13 @@ export function dismissToast(id: number): void {
     }
     clocks.delete(id);
     globalStore.set(toastsAtom, (prev) => prev.filter((t) => t.id !== id));
+}
+
+/** Runs a toast's action button and closes the toast; a toast with no action, or one that is gone, just closes. */
+export function runToastAction(id: number): void {
+    const action = globalStore.get(toastsAtom).find((t) => t.id === id)?.action;
+    dismissToast(id);
+    action?.run();
 }
 
 /** Stops a toast's clock while you read it (the pointer is on it). */

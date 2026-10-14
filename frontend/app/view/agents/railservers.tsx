@@ -126,7 +126,7 @@ function DevServerItem({
                             data-dev-server-port={port}
                             title={`Open ${serverUrl(port)}`}
                             onClick={() => getApi().openExternal(serverUrl(port))}
-                            className="shrink-0 cursor-pointer rounded-[4px] font-mono text-[11.5px] font-semibold text-accent-soft hover:bg-surface-hover hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            className="shrink-0 cursor-pointer rounded-[4px] text-[11.5px] tabular-nums font-semibold text-accent-soft hover:bg-surface-hover hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         >
                             {portsLabel([port])}
                         </button>
@@ -139,7 +139,7 @@ function DevServerItem({
                     </span>
                 </div>
                 <div className="flex min-w-0 items-center gap-[6px]">
-                    <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-muted">
+                    <span className="min-w-0 flex-1 truncate text-[10.5px] tabular-nums text-muted">
                         PID {row.pid} · {ownerLabel(row, logTask)}
                     </span>
                     <span

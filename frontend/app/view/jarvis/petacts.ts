@@ -9,9 +9,11 @@
 // resolves it. A row with genuinely nothing to do returns [] and stays a readout — the rate-limit countdown
 // is that row, and it is honest rather than an omission.
 
-// attentionact.ts is pure too, and petvoice.ts is type-only, so the purity above holds
+// attentionact.ts and planreviewtarget.ts are pure too, and petvoice.ts is type-only, so the purity above holds
+import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { attentionAct } from "./attentionact";
 import type { PetEventSource } from "./petvoice";
+import { planReviewORef } from "./planreviewtarget";
 
 // Where an escort lands; every landing is an address that goes through openAddress.
 export type PetTarget = { kind: "oref"; ref: string; anchor?: string };
@@ -24,6 +26,8 @@ export type PetAct =
     | { id: string; verb: "land"; label: string; channelId: string; runId: string }
     | { id: string; verb: "approve-task"; label: string; channelId: string; runId: string; taskId: string }
     | { id: string; verb: "retry-task"; label: string; channelId: string; runId: string; taskId: string }
+    // a blocked queue entry (pkg/runqueue), started past the cap and its After; it names no run, so it has no escort
+    | { id: string; verb: "start-queued"; label: string; queueId: string }
     // one option of a one-question ask, sent to the agent that asked (askanswer.ts, the Cockpit's own send)
     | { id: string; verb: "answer"; label: string; agentId: string; option: number }
     // a chunk that came due: an agent on its initiative, asked to do what the chunk's notes say
@@ -44,7 +48,18 @@ export interface PetActState {
 // A held land gets Land again (a branch merged by hand lands at once) and Dismiss beside it, the way out
 // for a branch that will never land. Everything else needs a written answer, a picked option or a judgment, so
 // the escort covers it here; a question one key can answer also gets its options in the peek (petpeekmodel.ts).
-export function actsForAttention(item: AttentionItem): PetAct[] {
+export function actsForAttention(item: AttentionItem, agents: ReadonlyArray<AgentVM> = []): PetAct[] {
+    // a plan to review has no run either: Review opens the agent that proposed it while one is open, else its initiative
+    if (item?.kind === "plan-review" && item.oref) {
+        return [
+            {
+                id: `${item.key}:open`,
+                verb: "open",
+                label: item.action,
+                target: { kind: "oref", ref: planReviewORef(item, agents) },
+            },
+        ];
+    }
     // a due chunk has no run: it is addressed by its initiative, Work on first, then Open to read it
     if (item?.kind === "chunk-due" && item.oref) {
         return [
@@ -58,6 +73,22 @@ export function actsForAttention(item: AttentionItem): PetAct[] {
             { id: `${item.key}:open`, verb: "open", label: "Open", target: { kind: "oref", ref: item.oref } },
         ];
     }
+    // a queued start that did not start has no run to open, only the entry: the peek offers Start now alone, and
+    // Remove stays the Needs you strip's (attentionact.ts)
+    const queueId = item?.queueid ?? "";
+    if (item?.kind === "run-queue-blocked" && queueId !== "") {
+        const start = attentionAct({
+            wireKind: item.kind,
+            channelId: "",
+            runId: null,
+            taskId: "",
+            retry: false,
+            queueId,
+        });
+        return start.kind === "start-queued"
+            ? [{ id: `${item.key}:start`, verb: "start-queued", label: start.label, queueId }]
+            : [];
+    }
     if (!item?.runid) {
         return []; // nothing addressable: an item with no run cannot be opened or resolved
     }
@@ -70,7 +101,7 @@ export function actsForAttention(item: AttentionItem): PetAct[] {
     const channelId = item.channelid ?? "";
     const runId = item.runid;
     const taskId = item.taskid ?? "";
-    const act = attentionAct({ wireKind: item.kind, channelId, runId, taskId, retry: item.retry === true });
+    const act = attentionAct({ wireKind: item.kind, channelId, runId, taskId, retry: item.retry === true, queueId });
     switch (act.kind) {
         case "approve-dag":
             return [
