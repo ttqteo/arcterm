@@ -27,6 +27,7 @@ import { fileURLToPath } from "node:url";
 import { SURFACE_LABEL } from "./attach.mjs";
 import { narrationFeed } from "./narrationfeed.mjs";
 import { notesWsh, vaultRemote, vaultRoot } from "./notes-wsh.mjs";
+import { makeOfficeScenarios } from "./officescenarios.mjs";
 
 // Mod is Command on a Mac and Control elsewhere (keyutil.ts parseKeyDescription), and the app reads the platform off the
 // machine it runs on, which is this one: a scenario that presses a Mod binding sends what a person there would. A
@@ -37317,6 +37318,16 @@ const whatsNew = {
     },
 };
 
+// the run office's scenarios take the run-fixture helpers (docs/reference/cdp-run-fixtures.md) from here
+const { jarvisOffice, jarvisOfficeBench } = makeOfficeScenarios({
+    arrangeFixtureRun,
+    waitForDispatch,
+    briefReload,
+    teardownFixtureRun,
+    tasks: RUN_SHEET_POLISH_TASKS,
+    leadId: TREE_RAIL_LEAD_ID,
+});
+
 // --- run-queue: plans queued to start are rows on the Agent tree, with Start now, Run next and Remove ---------------------
 // (docs/superpowers/specs/2026-10-14-run-handoff-lifecycle-design.md, decision 4.) A real queue in wavesrv and real rows,
 // nothing mocked. `runs:maxactive` is 1 and a run held by deferstart (it spawns nothing) is active, so no entry has room
@@ -41085,6 +41096,8 @@ export const SCENARIOS = [
     toolsWorktreeGone,
     setupProject,
     whatsNew,
+    jarvisOffice,
+    jarvisOfficeBench,
     runQueueScenario,
     runOriginScenario,
     ideasRail,

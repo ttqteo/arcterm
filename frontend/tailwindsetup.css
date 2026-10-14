@@ -129,6 +129,24 @@
     --color-teleport: #4fa8ff;
     --color-teleport-soft: #d6ecff;
 
+    /* The run office's people (view/jarvis/officesprite.ts, officesprites.ts): skin and hair by look 1-4, and their
+       clothes. Identity like the teleport's, never theme-derived, so a person looks the same on every theme. Shirts
+       reuse --color-graphlane-1..6 by task position. */
+    --color-office-skin-1: #f1c9a5;
+    --color-office-skin-2: #e8b894;
+    --color-office-skin-3: #c68e64;
+    --color-office-skin-4: #8d5a3b;
+    --color-office-hair-1: #2b2420;
+    --color-office-hair-2: #5a3a24;
+    --color-office-hair-3: #1c1c1c;
+    --color-office-hair-4: #a0522d;
+    --color-office-pants: #3a3f4b;
+    --color-office-ink: #141413; /* eyes and shoes */
+    --color-office-paper: #e3e3e3; /* the reviewer's clipboard */
+    --color-office-box: #a0764a; /* the box a worker carries to the merge */
+    --color-office-lead: #c2c0b6; /* the lead's shirt */
+    --color-office-visitor: #7b7972; /* a reviewer's shirt */
+
     /* Connection status icon palette (legacy block/connectionbutton; identity, never theme-derived) */
     --color-conn-1: #53b4ea;
     --color-conn-2: #aa67ff;

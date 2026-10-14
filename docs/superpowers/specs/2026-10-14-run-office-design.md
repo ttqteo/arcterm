@@ -66,7 +66,7 @@ raised hand and `!` (amber), whatever the task state.
 | `final-check`, `landing` | standing with a box, progress bar |
 | `wrapping-up` | typing |
 | `land-held` | head in hands, `!` red |
-| `landed`, `complete`, `cancelled` | empty chair, floor dimmed |
+| `landed`, `complete`, `cancelled` | empty chair, the lead's desk dimmed (the task desks keep their own states) |
 
 ## Drawing
 
@@ -112,14 +112,17 @@ measures is the drawing, and the data it reads is already in memory for the run 
 real workers.
 
 **Scenario `jarvis-office-bench`:** goto Jarvis with the Office off, force GC (`HeapProfiler.collectGarbage`), read
-`Performance.getMetrics`; turn the Office on, wait 2 s, GC, read; hold 30 s, read; turn it off, GC, read. Then repeat
-the 30 s hold under `Emulation.setEmulatedMedia` with `prefers-reduced-motion: reduce`.
+`Performance.getMetrics`; hold 30 s with the Office off, read (the page's own busy, the baseline); turn the Office on,
+wait 2 s, GC, read; hold 30 s, read; turn it off, GC, read. Then repeat the 30 s hold under
+`Emulation.setEmulatedMedia` with `prefers-reduced-motion: reduce`. The busy budgets are the office's cost: the hold's
+busy minus the baseline's, since the Jarvis page does its own work whether the office is on or not (the first Final
+measured 7.8 % busy with the frame clock stopped).
 
 | Measure | Budget |
 |---|---|
 | JS heap, open minus closed (after GC) | ≤ 5 MB |
 | DOM nodes added | ≤ 2,000 |
-| Main thread busy over the 30 s hold (`TaskDuration` delta / 30 s) | ≤ 2 % |
+| Main thread busy over the 30 s hold (`TaskDuration` delta / 30 s), minus the office-off baseline | ≤ 2 % |
 | Same, reduced motion | ≤ 0.5 % |
 | Sprite cache entries | ≤ 320 (the bound above) |
 | Heap after turning it off (after GC), minus the closed baseline | ≤ 1 MB |
@@ -141,5 +144,5 @@ by raising the budget.
 - vitest: `officemodel.test.ts` (each task state and run stage maps to its pose, label and click target; asking
   overrides; a run with no dag has only a lead), `officesprite.test.ts` (every grid is its declared size and uses
   only known codes; a pose's two frames are the same size).
-- CDP: `jarvis-office` shows every pose of the `States` canvas board on the bench fixture; `jarvis-office-bench` holds
+- CDP: `jarvis-office` shows every pose of the `States` canvas board on its own small fixture (floors of at most six desks, so one shot holds every pose), and drives a real run's floor; `jarvis-office-bench` holds
   the budgets.

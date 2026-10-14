@@ -21,6 +21,9 @@ new draws it as one of its release's cards and folds every other line under a co
 
 ### Added
 
+- **Runs as an office**: in Jarvis, the Runs list's **office** chip draws each run as a pixel office floor under its
+  row: the lead in a glass corner office and one person per task, typing, stuck, in review, carrying the merge, or
+  raising a hand when they need you. Click a person to open their terminal.
 - **Ideas on the agent's rail**: while you brainstorm, the agent lists what was decided, floated and left open, and you
   can add, edit, merge or drop ideas, or run the idea command in Claude to keep the idea just discussed. An Ideas count
   on the rail opens the list and shows a dot while some are new; an ended session in Conversation History shows its list

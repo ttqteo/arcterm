@@ -685,6 +685,26 @@ Tracked in their own initiatives, not here:
 - **arcterm Claude mod live verify** (usage strip, card answer, Esc, dag child ask, settings hooks; `CLAUDE_CODE_PLUGIN_DIRS` loading with no enable prompt; a card answered after more than ten minutes still answers the call) — effort `99832658`, chunk 9. Each needs an interactive Claude session in the dev app; the headless half is `node scripts/claude-mod-load-check.mjs`. Spec `docs/superpowers/specs/2026-10-02-claude-mod-design.md`.
 - **Orchestrator wall-clock** — effort `b1fe5d7e`: live-verify the unit-tested fixes, the round-2 final tree lock, the Timing section live check.
 
+### (arcterm) RAM watch
+
+- **Run office** (2026-10-14, `jarvis-office-bench`, 104 desks, dev app, run alone with no other Final or dev app
+  open; the user's own WSL, Docker and arcterm kept the CPU at 33–100 %): heap +1.6 MB open, +1501 DOM nodes, busy
+  1.1 % over the office-off baseline (6.7 % raw, baseline 5.6 %) and −1.7 % under reduced motion (3.9 % raw), 79
+  sprites, +0.68 MB after off, 87 ms to draw. Budgets: 5 MB, 2,000, 2 %, 0.5 %, 320, 1 MB, 150 ms: all held in
+  that run. The run's own Final (round 2, same day) missed one: busy 3.4 % over the office-off baseline (7.3 % raw,
+  baseline 3.9 %), with the rest held (heap +1.6 MB, +1480 nodes, −1 % reduced, +0.8 MB after off, 91 ms). It landed
+  on the person's call; re-measure busy on a production build, since React's dev build adds a `performance.measure`
+  per render. Mounted only while the office is on. The first round missed four (busy, busy under reduced motion, heap after
+  off, time to draw). What moved them: the sprite canvas ran on the GPU, so `toDataURL` cost 80–95 ms of the first
+  open (a software canvas: ~5 ms); the DEV fixture floors passed a new `onOpen` each render, so every re-render
+  of the Brief (every few seconds) redrew all 104 desks; a tick re-rendered whole desks, now only each animated
+  desk's person and screen; floors below the fold are `content-visibility: auto`. What stays after off is V8
+  compiled code (~0.5 MB) and the sprite images in Blink's cache; DOM nodes and listeners return to baseline, so it
+  is not a leak. The page also grows ~1.5 MB by itself in its first 30 s, so the heap budgets read against the
+  closed state just before the open (+2.21 MB after off against the first read). The busy numbers are inside the
+  baseline's own noise (10 s windows of the same state read 2–7 %): interleaved office-off/on/reduced windows read
+  4.8 / 5.0 / 4.9 %.
+
 ---
 
 ## 2 · Blocked
