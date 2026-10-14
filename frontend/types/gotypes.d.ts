@@ -1412,6 +1412,36 @@ declare global {
         failure?: GitFailure;
     };
 
+    // wshrpc.CommandIdeaAddData
+    type CommandIdeaAddData = {
+        blockid?: string;
+        sessionid?: string;
+        text: string;
+        kind: string;
+        by: string;
+    };
+
+    // wshrpc.CommandIdeaTargetData
+    type CommandIdeaTargetData = {
+        blockid?: string;
+        sessionid?: string;
+    };
+
+    // wshrpc.CommandIdeaTickRtnData
+    type CommandIdeaTickRtnData = {
+        nudge?: string;
+    };
+
+    // wshrpc.CommandIdeaUpdateData
+    type CommandIdeaUpdateData = {
+        blockid?: string;
+        sessionid?: string;
+        op: string;
+        ids?: string[];
+        text?: string;
+        newkind?: string;
+    };
+
     // wshrpc.CommandJarvisCtxData
     type CommandJarvisCtxData = {
         blockoref?: string;
@@ -2438,6 +2468,22 @@ declare global {
         refs?: string[];
     };
 
+    // ideastore.Idea
+    type Idea = {
+        id: string;
+        text: string;
+        kind: string;
+        by: string;
+        turn?: number;
+        ts: number;
+        dropped?: boolean;
+    };
+
+    // wshrpc.IdeasChangedData
+    type IdeasChangedData = {
+        sessionid: string;
+    };
+
     // arctools.Install
     type Install = {
         windows?: string;
@@ -3112,6 +3158,17 @@ declare global {
         type: string;
         ts: number;
         text: string;
+    };
+
+    // ideastore.SessionIdeas
+    type SessionIdeas = {
+        sessionid: string;
+        seenat: number;
+        prompts: number;
+        lastideaprompt: number;
+        nudgedat: number;
+        nextid: number;
+        ideas: Idea[];
     };
 
     // wshrpc.SessionInfo
