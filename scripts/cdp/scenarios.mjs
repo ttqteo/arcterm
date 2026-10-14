@@ -40954,6 +40954,243 @@ const initiativeParents = {
     },
 };
 
+// --- land-queue: a land in line, a land being resolved and a land held on a conflict ----------------------------------
+// (docs/superpowers/plans/2026-10-14-land-queue.md, Task 8.) The land driver would move these states on, so each land
+// is written with `fixture: true`, which the driver never tends (the seam of Task 1): they stay as written, on four
+// real orchestrator runs held by deferstart in one channel, each with a one-task dag seeded done (RunSubline draws a
+// run's dagProgressLabel only when it has a dag; a dag-less row reads the lowercase runStatusView word). The roster
+// holds a lead per run, so every run has a row on the tree. The project has no git repo, so the runs have no tree.
+const LQ_TASKS = [
+    { id: "t-1", label: "noop", description: "do nothing, stop immediately", deps: [], gate: false, state: "" },
+];
+const LQ_RPC = { timeout: 30000 };
+// the lands, in the order the runs are made: the one in its turn, the one behind it, the one with a resolver, the held
+const LQ_LANDS = [
+    { key: "pending", land: () => ({ state: "pending" }) },
+    { key: "queued", land: () => ({ state: "queued", queuedts: 20 }) },
+    { key: "resolving", land: () => ({ state: "resolving", conflicts: ["CHANGELOG.md"], resolvertried: true }) },
+    {
+        key: "held",
+        land: (id) => ({
+            state: "held",
+            conflicts: ["docs/open-issues.md"],
+            reason: `merging main into wave/${id} conflicts in docs/open-issues.md; merge it there, then Land again`,
+        }),
+    },
+];
+const lqLead = (key) => `fx-lq-${key}`;
+// a row's progress line: the run row's second line, the one span.truncate that starts like a landing stage
+const LQ_TREE_READ = `(() => {
+    const out = {};
+    for (const key of ${JSON.stringify(LQ_LANDS.map((l) => l.key))}) {
+        const row = document.querySelector('[data-agent-row="fx-lq-' + key + '"]');
+        out[key] = row
+            ? ([...row.querySelectorAll("span.truncate")].map((s) => s.textContent.trim()).find((t) => /^Land(ing| held)/.test(t)) ?? null)
+            : null;
+    }
+    return out;
+})()`;
+// the sheet's reading, its status strip (the verb and what follows it) and the dock's land lines
+const LQ_SHEET_READ = `(() => {
+    const flat = (el) => (el?.innerText ?? "").replace(/\\s+/g, " ").trim();
+    const sheet = document.querySelector("[data-run-sheet]");
+    if (!sheet) return null;
+    const verb = sheet.querySelector("[data-run-sheet-verb]");
+    const line = sheet.querySelector("[data-run-sheet-land-line]");
+    return {
+        verb: flat(verb),
+        sub: flat(verb?.nextElementSibling),
+        line: line ? flat(line) : null,
+        lineKind: line?.getAttribute("data-run-sheet-land-line") ?? null,
+        held: flat(sheet.querySelector("[data-run-sheet-land-held]")) || null,
+        conflicts: flat(sheet.querySelector("[data-run-sheet-land-conflicts]")) || null,
+        landAgain: sheet.querySelector("[data-run-sheet-land-again]") != null,
+    };
+})()`;
+
+// opens a run's sheet on the Brief through the router, once the page has the hook
+function lqOpenSheet(h, runId) {
+    return h.ev(`(async () => {
+        for (let i = 0; i < 20 && typeof window.__openAddress !== "function"; i++) {
+            await new Promise((r) => setTimeout(r, 250));
+        }
+        if (typeof window.__openAddress !== "function") return { ok: false, why: "no __openAddress hook" };
+        return window.__openAddress(${JSON.stringify(`run:${runId}`)});
+    })()`);
+}
+
+// one of the four runs: a deferred orchestrator run with its dag done, then done itself with a fixture land
+async function lqMakeRun(h, ctx, spec, workspaceId) {
+    const created = await h.rpc(
+        "createrun",
+        {
+            channelid: ctx.channelId,
+            workspaceid: workspaceId,
+            goal: `verify land-queue ${spec.key}: do nothing`,
+            runtime: "claude",
+            mode: "orchestrator",
+            deferstart: true,
+        },
+        LQ_RPC
+    );
+    const run = { key: spec.key, id: created.run.id, landPath: created.run.landpath, dagCtx: {} };
+    // recorded as soon as it exists, so a failure below still lets teardown cancel it
+    ctx.runs.push(run);
+    await h.rpc(
+        "dagsubmit",
+        { channelid: ctx.channelId, runid: run.id, title: `land-queue ${spec.key}`, parallelism: 1, tasks: LQ_TASKS },
+        LQ_RPC
+    );
+    const group = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: run.id })).group;
+    run.dagCtx.dagId = group?.oid;
+    // the submit dispatched t-1: its worker's run is unlinked by the seed below, so teardown cancels it by its own id
+    for (const task of group?.tasks ?? []) {
+        if (task.runid) ctx.childRuns.push(task.runid);
+    }
+    await seedDag(
+        h,
+        run.dagCtx,
+        (dag) => ({
+            ...dag,
+            tasks: dag.tasks.map(({ runid: _run, reviewrunid: _review, ...t }) => ({ ...t, state: "done", merged: true })),
+        }),
+        (dag) => JSON.stringify((dag?.tasks ?? []).map((t) => [t.state, t.merged === true, t.runid ?? ""]))
+    );
+    await fstWriteRun(h, run.id, (r) => ({
+        ...r,
+        status: "done",
+        completedts: Date.now(),
+        land: { ...spec.land(run.id), fixture: true },
+    }));
+    return run;
+}
+
+const landQueueScenario = {
+    name: "land-queue",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-land-queue-")), runs: [], childRuns: [] };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            const wslist = await h.rpc("workspacelist", null);
+            const ch = await h.rpc("createchannel", { name: "verify-land-queue", projectpath: ctx.cwd });
+            ctx.channelId = ch.oid;
+            for (const spec of LQ_LANDS) {
+                await lqMakeRun(h, ctx, spec, wslist[0].workspacedata.oid);
+            }
+            // a lead per run, in the tree's one project folder; the roster is read once at boot
+            const now = Date.now();
+            const roster = ctx.runs.map((r) => ({
+                ...treeRailRoster(r.id, now, `land-queue ${r.key}`)[0],
+                id: lqLead(r.key),
+                blockId: `fx-blk-lq-${r.key}`,
+            }));
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify(roster, null, 2));
+            ctx.wroteFixture = true;
+            await polishReload(h);
+            await h.goto("agent");
+            // the rows nest once each run and its dag have loaded
+            ctx.treeUp = await polishWaitFor(
+                h,
+                `Object.values(${LQ_TREE_READ}).every((t) => t != null)`,
+                20000
+            );
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        rec(
+            "0. four runs, each with a done dag and a fixture land, and a lead per run on the tree",
+            ctx.arrangeError == null && ctx.treeUp === true,
+            ctx.arrangeError ?? { runs: ctx.runs.map((r) => `${r.key}:${r.id}`), treeUp: ctx.treeUp }
+        );
+        if (ctx.arrangeError != null) return steps;
+        const byKey = Object.fromEntries(ctx.runs.map((r) => [r.key, r]));
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
+        try {
+            // 1. the tree says where each land stands
+            const tree = await h.ev(LQ_TREE_READ);
+            await h.shot("cdp-shots/land-queue-1-tree.png");
+            rec(
+                "1. the tree's rows read Landing, Landing · #2 in line, Landing · resolving conflicts and Land held",
+                tree.pending === "Landing" &&
+                    tree.queued === "Landing · #2 in line" &&
+                    tree.resolving === "Landing · resolving conflicts" &&
+                    (tree.held ?? "").startsWith("Land held"),
+                tree
+            );
+
+            // 2. the queued run's sheet says it is in line, behind the land in its turn
+            ctx.queuedOpened = await lqOpenSheet(h, byKey.queued.id);
+            await polishWaitFor(h, `!!document.querySelector('[data-run-sheet-land-line="queued"]')`, 15000);
+            const queued = await h.ev(LQ_SHEET_READ);
+            await h.shot("cdp-shots/land-queue-2-queued-sheet.png");
+            rec(
+                "2. the queued run's sheet reads In line to land: #2, and its strip says Landing, in line",
+                ctx.queuedOpened?.ok === true &&
+                    (queued?.line ?? "").startsWith("In line to land: #2") &&
+                    queued?.verb === "Landing" &&
+                    (queued?.sub ?? "").includes(`#2 in line to merge wave/${byKey.queued.id}`),
+                { opened: ctx.queuedOpened, ...queued }
+            );
+
+            // 3. the resolving run's sheet names the resolver and the file
+            ctx.resolvingOpened = await lqOpenSheet(h, byKey.resolving.id);
+            await polishWaitFor(h, `!!document.querySelector('[data-run-sheet-land-line="resolving"]')`, 15000);
+            const resolving = await h.ev(LQ_SHEET_READ);
+            await h.shot("cdp-shots/land-queue-3-resolving-sheet.png");
+            rec(
+                "3. the resolving run's sheet reads A resolver is merging … CHANGELOG.md, and its strip says Landing",
+                ctx.resolvingOpened?.ok === true &&
+                    (resolving?.line ?? "").includes("A resolver is merging") &&
+                    (resolving?.line ?? "").includes("CHANGELOG.md") &&
+                    resolving?.verb === "Landing" &&
+                    (resolving?.sub ?? "").includes(`wave/${byKey.resolving.id}`),
+                { opened: ctx.resolvingOpened, ...resolving }
+            );
+
+            // 4. the held run's sheet lists the conflicting file under its reason, and offers Land again
+            ctx.heldOpened = await lqOpenSheet(h, byKey.held.id);
+            await polishWaitFor(h, `!!document.querySelector("[data-run-sheet-land-conflicts]")`, 15000);
+            const held = await h.ev(LQ_SHEET_READ);
+            await h.shot("cdp-shots/land-queue-4-held-sheet.png");
+            rec(
+                "4. the held run's sheet lists docs/open-issues.md as its conflicts, under the reason, with Land again",
+                ctx.heldOpened?.ok === true &&
+                    (held?.conflicts ?? "").includes("docs/open-issues.md") &&
+                    (held?.held ?? "").includes("Not merged back") &&
+                    held?.landAgain === true,
+                { opened: ctx.heldOpened, ...held }
+            );
+        } catch (e) {
+            rec("the scenario ran to its end", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        // the four runs are done, which cancelrun refuses, so teardownFixtureRun gets no run to cancel: it removes the
+        // roster, the channel (with its runs and the workers' blocks) and the temp dir. What is left to stop is the
+        // workers t-1 dispatched before the seed unlinked them, and a landing tree if a run made one.
+        await teardownFixtureRun(h, { cwd: ctx.cwd, channelId: ctx.channelId, wroteFixture: ctx.wroteFixture }, "land-queue", {
+            what: "cancel the workers the plans dispatched and remove the runs' landing trees",
+            fn: async () => {
+                // best effort: a worker that already ended refuses the cancel
+                for (const runid of ctx.childRuns) {
+                    await h.rpc("cancelrun", { channelid: ctx.channelId, runid }).catch(() => {});
+                }
+                for (const run of ctx.runs) {
+                    if (run.landPath) rmSync(run.landPath, { recursive: true, force: true });
+                }
+            },
+        });
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -41096,4 +41333,5 @@ export const SCENARIOS = [
     initiativeLink,
     initiativeReview,
     initiativeParents,
+    landQueueScenario,
 ];

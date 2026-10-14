@@ -53,7 +53,8 @@ export function attentionDoneText(
     }
 }
 
-async function call(act: AttentionAct, row: AttentionRunRow): Promise<void> {
+// returns the confirmation to say instead of attentionDoneText, for an act that went through but did not finish
+async function call(act: AttentionAct, row: AttentionRunRow): Promise<string | void> {
     switch (act.kind) {
         case "approve-dag":
         case "retry-dag":
@@ -73,7 +74,8 @@ async function call(act: AttentionAct, row: AttentionRunRow): Promise<void> {
             if (outcome.failed) {
                 throw new Error(outcome.text);
             }
-            return;
+            // in line, or with a resolver: it goes through but has not landed, so the feedback must not say it did
+            return outcome.pending ? outcome.text : undefined;
         }
         case "start-queued":
             // a refusal (another queued run is starting, or this start failed) is thrown to the feedback as the
@@ -119,8 +121,9 @@ export async function runAttentionAct(
 }
 
 async function settleAct(act: AttentionAct, row: AttentionRunRow, feedback: AttentionFeedback): Promise<boolean> {
+    let said: string | void;
     try {
-        await call(act, row);
+        said = await call(act, row);
     } catch (e) {
         feedback.fail(e instanceof Error ? e.message : String(e));
         return false;
@@ -129,6 +132,6 @@ async function settleAct(act: AttentionAct, row: AttentionRunRow, feedback: Atte
     if (act.kind !== "land-run") {
         await loadAttention();
     }
-    feedback.done(attentionDoneText(act.kind, row));
+    feedback.done(said || attentionDoneText(act.kind, row));
     return true;
 }
