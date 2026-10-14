@@ -24,6 +24,7 @@ const KIND_GROUP: Record<string, NeedsGroup> = {
     ask: "asks",
     escalation: "asks",
     "dag-gate": "reviews",
+    "learn-proposal": "reviews",
     "chunk-due": "due",
 };
 

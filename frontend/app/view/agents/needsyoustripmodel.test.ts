@@ -294,3 +294,43 @@ describe("buildNeedsYouRows: a chunk that came due", () => {
         expect(row.act).toEqual({ label: "Work on", kind: "work-on" });
     });
 });
+
+describe("buildNeedsYouRows: a learned rule", () => {
+    const learn = item({
+        kind: "learn-proposal",
+        key: "learn:skill:notes#short",
+        learnid: "skill:notes#short",
+        channelid: "",
+        runid: "",
+        taskid: "",
+        source: "Skill · notes",
+        text: "keep notes short",
+        action: "Accept",
+        why: "“too long” · “shorter please”",
+    });
+
+    it("carries the learn id, the rule text, its source and its quotes, and opens nothing", () => {
+        const [row] = buildNeedsYouRows({ ...base, attention: [learn] });
+        expect(row.kindLabel).toBe("Learned rule");
+        expect(row.learnId).toBe("skill:notes#short");
+        expect(row.text).toBe("keep notes short");
+        expect(row.source).toBe("Skill · notes");
+        expect(row.why).toBe("“too long” · “shorter please”");
+        expect(row.open).toBeNull();
+    });
+
+    it("leaves learnId null on every other kind", () => {
+        const [row] = buildNeedsYouRows({ ...base, attention: [item({ kind: "dag-gate" })] });
+        expect(row.learnId).toBeNull();
+    });
+
+    it("is not hidden by a project filter, since a learning is tied to no channel", () => {
+        const rows = buildNeedsYouRows({
+            ...base,
+            channelProject: new Map([["c1", "alpha"]]),
+            attention: [learn, item({ key: "g", channelid: "c-other" })],
+            filter: "alpha",
+        });
+        expect(rows.map((r) => r.key)).toEqual(["learn:skill:notes#short"]);
+    });
+});
