@@ -6,11 +6,15 @@ package cmd
 import (
 	"context"
 	"errors"
+	"fmt"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/baseds"
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/tokengate"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
@@ -92,5 +96,29 @@ func TestTokengateReviewText(t *testing.T) {
 	empty := tokengateReviewText(&wshrpc.CommandReviewTokenEstimatesRtnData{Days: 7})
 	if empty != "Token burn estimates, last 7 days: 0 logged, 0 ran, 0 matched to the subagents that ran.\nSubagent costs now (finished, last 30 days):\n  none yet\n" {
 		t.Fatalf("empty review %q", empty)
+	}
+}
+
+// a session that has dispatched every subagent the cap allows is refused before any card: agent-hook would refuse
+// the spawn after the person said yes to it (seen live 2026-10-15)
+func TestTokengateCappedRefusesBeforeTheCard(t *testing.T) {
+	dir := t.TempDir()
+	transcript := filepath.Join("projects", "p", "s1.jsonl")
+	for i := 0; i < jarvis.MaxSubagents-1; i++ {
+		subagentCallAllowed(dir, "s1", fmt.Sprintf("t%d", i), jarvis.MaxSubagents)
+	}
+	if _, capped := tokengateCapped(dir, transcript, "Agent"); capped {
+		t.Fatal("one subagent is left under the cap")
+	}
+	subagentCallAllowed(dir, "s1", "last", jarvis.MaxSubagents)
+	v, capped := tokengateCapped(dir, transcript, "Agent")
+	if !capped || v.Run || !strings.Contains(v.Reason, fmt.Sprintf("%d subagents", jarvis.MaxSubagents)) {
+		t.Fatalf("capped %v verdict %+v", capped, v)
+	}
+	if _, capped := tokengateCapped(dir, transcript, "Workflow"); capped {
+		t.Fatal("the cap counts Agent calls; a workflow is not refused by it")
+	}
+	if _, capped := tokengateCapped(dir, "", "Agent"); capped {
+		t.Fatal("no transcript, no session to count")
 	}
 }

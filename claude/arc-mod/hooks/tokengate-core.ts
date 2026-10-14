@@ -117,15 +117,18 @@ export const BURST_MS = 10_000;
 // the verdict that lets a spawn run: off, a cheap spawn, or a broken gate
 export const RUN_VERDICT: SpawnVerdict = { run: true, scope: null, reason: null, note: null };
 
-// one group's question to the person, with the agents its chain already started; register.ts passes
-// `wsh tokengate`, which never rejects
-export type SpawnAsk = (g: Group, earlier: number) => Promise<SpawnVerdict>;
+// one group's question to the person, with the agents its chain already started; held is called when the card goes
+// up (wsh's hold line). register.ts passes `wsh tokengate`, which never rejects
+export type SpawnAsk = (g: Group, earlier: number, held: () => void) => Promise<SpawnVerdict>;
+
+// an open group: gathering its siblings, then wsh deciding, then (when a rule fires) its card up
+type OpenGroup = { group: Group; phase: "gathering" | "deciding" | "card"; verdict: Promise<SpawnVerdict> };
 
 // the gate for one session: the person's say on later spawns, the open group, whose members share one card, and
 // the chain of spawns that came within BURST_MS of each other. sleep and clock are injected so vitest can drive them
 export function createSpawnGate(sleep: (ms: number) => Promise<void>, clock: () => number = Date.now) {
     let decision: { kind: Decision; reason: string | null } = { kind: null, reason: null };
-    let open: { group: Group; verdict: Promise<SpawnVerdict> } | null = null;
+    let open: OpenGroup | null = null;
     // the agents the chain started (refused ones left out), and when its last spawn came
     const chain = { started: 0, last: -Infinity };
     // claude runs every hook whose tool matches a call, and the Agent tool still answers to Task, its old name: one
@@ -145,19 +148,28 @@ export function createSpawnGate(sleep: (ms: number) => Promise<void>, clock: () 
         }
         chain.last = at;
         const count = spawnCount(tool, input);
+        if (open?.phase === "deciding") {
+            // wsh is weighing a group it was asked about without this spawn: wait for that, then decide this one on
+            // its own, its chain counting the group if it ran
+            const busy = open;
+            await busy.verdict;
+            return decide(tool, input, ask);
+        }
         let mine = open;
         if (mine) {
             // gathering, or the card is already up: this spawn shares the group's verdict
             mine.group = joinGroup(mine.group, tool, count);
         } else {
-            const opened: { group: Group; verdict: Promise<SpawnVerdict> } = {
+            const opened: OpenGroup = {
                 group: joinGroup(null, tool, count),
+                phase: "gathering",
                 verdict: Promise.resolve(RUN_VERDICT),
             };
             opened.verdict = (async () => {
                 try {
                     await sleep(GATHER_MS);
-                    const v = await ask(opened.group, chain.started);
+                    opened.phase = "deciding";
+                    const v = await ask(opened.group, chain.started, () => (opened.phase = "card"));
                     if (v.run) {
                         chain.started += opened.group.agents;
                     }

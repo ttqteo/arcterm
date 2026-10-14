@@ -188,8 +188,30 @@ func preToolUseDecision(decision, reason string) []byte {
 
 // subagentCapDenial is the PreToolUse decision that refuses an Agent call past jarvis.MaxSubagents.
 func subagentCapDenial() []byte {
-	reason := fmt.Sprintf("arcterm caps a session at %d subagents, and this one has dispatched them all. Do the rest of this work yourself, in this session. A plan too big for that is an engine run (`wsh runs start --plan <file>`), not a subagent per task.", jarvis.MaxSubagents)
-	return preToolUseDecision("deny", reason)
+	return preToolUseDecision("deny", subagentCapReason())
+}
+
+// subagentCapReason is what claude is told when the session cap refuses a subagent; wsh tokengate says the same
+func subagentCapReason() string {
+	return fmt.Sprintf("arcterm caps a session at %d subagents, and this one has dispatched them all. Do the rest of this work yourself, in this session. A plan too big for that is an engine run (`wsh runs start --plan <file>`), not a subagent per task.", jarvis.MaxSubagents)
+}
+
+// subagentsDispatched is how many Agent calls the session's ledger holds, each counted once; 0 when it has none
+func subagentsDispatched(dir, sessionID string) int {
+	if sessionID == "" || filepath.Base(sessionID) != sessionID {
+		return 0
+	}
+	data, err := os.ReadFile(filepath.Join(dir, sessionID+".log"))
+	if err != nil {
+		return 0
+	}
+	seen := map[string]bool{}
+	for _, line := range strings.Split(string(data), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			seen[line] = true
+		}
+	}
+	return len(seen)
 }
 
 // subagentNeedsApproval reports whether an Agent call waits on the person. A subagent rereads its whole

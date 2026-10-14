@@ -69,6 +69,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - **Three subagents started at once now ask on the Token burn card**: Claude starts each one as it writes it, a
   second or so apart, so the gate saw two and then one and never asked. Spawns within 10 seconds of each other now
   count together, and the third asks.
+- **The Token burn card no longer asks about a subagent arcterm will refuse anyway**: once a session has started
+  its 10 subagents, the spawn is refused with that reason at once, not after you allowed it. A subagent that arrives
+  while the gate is still deciding on the ones before it is counted too, instead of slipping through with them.
 
 ## 0.15.12 — 2026-10-14
 

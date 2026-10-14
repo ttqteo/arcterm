@@ -106,8 +106,9 @@ describe("createSpawnGate", () => {
     it("gives a spawn that arrives while the card waits the same verdict", async () => {
         let answer: (v: SpawnVerdict) => void = () => {};
         const asked: Group[] = [];
-        const ask = (g: Group) => {
+        const ask = (g: Group, _earlier: number, held: () => void) => {
             asked.push(g);
+            held(); // wsh's hold line: the card is up
             return new Promise<SpawnVerdict>((resolve) => (answer = resolve));
         };
         const gate = createSpawnGate(now);
@@ -175,6 +176,30 @@ describe("createSpawnGate", () => {
         t = 1_000;
         await gate.check("Agent", {}, ask);
         expect(earlier).toEqual([0, 0]);
+    });
+
+    // seen live 2026-10-15: a third call that came while wsh decided on the first two rode their "run" uncounted
+    it("decides a spawn that arrives while wsh is still deciding on its own, once that group is decided", async () => {
+        let answer: (v: SpawnVerdict) => void = () => {};
+        const asked: { agents: number; earlier: number }[] = [];
+        const ask = (g: Group, earlier: number) => {
+            asked.push({ agents: g.agents, earlier });
+            return asked.length === 1
+                ? new Promise<SpawnVerdict>((resolve) => (answer = resolve))
+                : Promise.resolve(allow(null));
+        };
+        const gate = createSpawnGate(now);
+        const a = gate.check("Agent", {}, ask);
+        await new Promise((resolve) => setTimeout(resolve, 0)); // wsh is deciding, no card
+        const b = gate.check("Agent", {}, ask);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(asked).toEqual([{ agents: 1, earlier: 0 }]);
+        answer(allow(null));
+        expect(await Promise.all([a, b])).toEqual([null, null]);
+        expect(asked).toEqual([
+            { agents: 1, earlier: 0 },
+            { agents: 1, earlier: 1 },
+        ]);
     });
 
     it("asks again after a plain Allow", async () => {

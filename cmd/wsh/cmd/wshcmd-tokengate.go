@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/tokengate"
 	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -141,6 +142,9 @@ func tokengateDecide(ctx context.Context, s tokengate.Spawn, transcript string, 
 	if set.TokenGateEnabled != nil && !*set.TokenGateEnabled {
 		return tokengate.Verdict{Run: true}, nil
 	}
+	if v, capped := tokengateCapped(subagentLedgerDir(), transcript, s.Tool); capped {
+		return v, nil
+	}
 	reading, costs, session := tokengateRead(ctx, transcript)
 	priced := tokengate.Price(s, costs)
 	quota := tokengate.QuotaFrom(reading, priced.Estimate)
@@ -255,4 +259,18 @@ func tokengateReviewText(r *wshrpc.CommandReviewTokenEstimatesRtnData) string {
 			c.Type, c.Samples, tokengate.FormatTokens(c.Mean), tokengate.FormatTokens(c.P25), tokengate.FormatTokens(c.P90))
 	}
 	return b.String()
+}
+
+// tokengateCapped is agent-hook's session cap, read before any card: once the session has dispatched every subagent
+// the cap allows, agent-hook refuses the next Agent call whatever the person said on the card, so the gate refuses it
+// first, with the cap's own reason. The session is the transcript's; a Workflow is no Agent call and the cap leaves it
+func tokengateCapped(dir, transcript, tool string) (tokengate.Verdict, bool) {
+	if transcript == "" || tool == "Workflow" {
+		return tokengate.Verdict{}, false
+	}
+	session := strings.TrimSuffix(filepath.Base(transcript), ".jsonl")
+	if subagentsDispatched(dir, session) < jarvis.MaxSubagents {
+		return tokengate.Verdict{}, false
+	}
+	return tokengate.Verdict{Reason: subagentCapReason()}, true
 }

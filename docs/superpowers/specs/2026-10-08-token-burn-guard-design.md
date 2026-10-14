@@ -113,7 +113,9 @@ non-zero with nothing on stdout and the mod lets the spawn run: a broken gate ne
   state machine with the sleep and the ask injected:
   - `check(tool, input, ask)`: decision `allow-session` or `allow-turn` → run; `deny-turn` → refuse with the
     stored reason. Otherwise join the open group, or open one and wait `GATHER_MS = 400` for siblings, then ask
-    once and give every member the same verdict. A spawn arriving while the card waits shares its verdict. A
+    once and give every member the same verdict. A spawn arriving while the card waits shares its verdict; one
+    arriving while wsh is still deciding (no hold line yet) waits for that verdict and is then decided on its own,
+    the chain counting the group if it ran (fixed 2026-10-15: such a call joined and rode an uncounted "run"). A
     call already decided gets the same answer again, by its `tool_use_id`: Claude runs both the `Agent` and the
     `Task` hook for one `Agent` call (Task is the tool's old name), one inside the other (fixed 2026-10-15).
   - A spawn within `BURST_MS = 10000` of the one before continues a chain; the agents the chain already started
@@ -132,6 +134,11 @@ spawns arrive spread out. Three short `Agent` calls came 0.3 s and then 0.8 s ap
 2 and then a group of 1, so the agent-count rule never fired and no card came. No fixed gather is sure to hold a
 whole message (a long prompt takes seconds to write), hence the chain: the third spawn asks, with the first two
 already running. `Allow this turn` still spares the rest.
+
+The same check showed a card asked about a spawn that agent-hook's session cap (`jarvis.MaxSubagents`, 10 `Agent`
+calls a session, counted in `$TMPDIR/arc-subagents/<session>.log`) then refused, after the person had said yes.
+`wsh tokengate` now reads that ledger first: a session at the cap gets the cap's own refusal, with no card and no
+log line. A group that would only cross the cap part-way still asks; agent-hook refuses its calls past the cap.
 
 ### The held card's header (`frontend/app/view/agents/heldaskdialog.tsx`)
 

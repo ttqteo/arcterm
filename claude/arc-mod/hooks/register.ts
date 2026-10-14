@@ -200,7 +200,12 @@ const spawnGate = createSpawnGate((ms) => new Promise((resolve) => setTimeout(re
 
 // `wsh tokengate` for one group. never rejects: a failure of wsh's lets the spawn run, so only a verdict line
 // changes the default, not wsh's exit or an empty stdout
-async function askTokengate($: EngineInterface, group: Group, earlier: number): Promise<SpawnVerdict> {
+async function askTokengate(
+    $: EngineInterface,
+    group: Group,
+    earlier: number,
+    held: () => void
+): Promise<SpawnVerdict> {
     let verdict = RUN_VERDICT;
     let buffered = "";
     try {
@@ -215,6 +220,7 @@ async function askTokengate($: EngineInterface, group: Group, earlier: number): 
             for (const line of taken.lines) {
                 const read = tokengateLine(line);
                 if (read && "hold" in read) {
+                    held();
                     $.ui.log(`arc: ${read.hold}`);
                 } else if (read) {
                     verdict = read.verdict;
@@ -448,8 +454,8 @@ export const register: Register = (on) => {
     for (const tool of ["Agent", "Task", "Workflow"] as const) {
         on("tool.call", { tool }, async ($, e, next) => {
             const why = active
-                ? await spawnGate.check(tool, e as unknown as Record<string, unknown>, (g, earlier) =>
-                      askTokengate($, g, earlier)
+                ? await spawnGate.check(tool, e as unknown as Record<string, unknown>, (g, earlier, held) =>
+                      askTokengate($, g, earlier, held)
                   )
                 : null;
             return why === null ? next(e) : { deny: why };
