@@ -14,6 +14,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { agentAnswer, markAskSent } from "@/app/view/agents/askanswer";
 import { loadAttention } from "@/app/view/agents/attentionstore";
+import { START_NOW_TIMEOUT_MS } from "./attentionrun";
 import { workOnDueChunk } from "./initiativeworkaction";
 import { landAgain } from "./landrun";
 import { isPeekableAddress, openAddress, openOrPeekAddress, type OpenGesture } from "./openref";
@@ -74,6 +75,12 @@ function settleInPlace(act: PetAct): Promise<void> | null {
             // land: a held land's Dismiss, which drops the item and leaves the branch
             return settle(act, () =>
                 RpcApi.AckRunCommand(TabRpcClient, { channelid: act.channelId, runid: act.runId, land: act.land })
+            );
+        case "start-queued":
+            // the error lands on the button: a refusal while another queued run is starting reads as such, and the
+            // entry stays as it was. The call answers once the run has started, which takes a worktree and Setup.
+            return settle(act, () =>
+                RpcApi.RunQueueStartNowCommand(TabRpcClient, { id: act.queueId }, { timeout: START_NOW_TIMEOUT_MS })
             );
         case "approve-task":
         case "retry-task":

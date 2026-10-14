@@ -7,6 +7,7 @@
 // attentionrun.ts). Hidden when nothing waits.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
+import type { AttentionAct } from "@/app/view/jarvis/attentionact";
 import { runAttentionAct } from "@/app/view/jarvis/attentionrun";
 import { REGION_LABEL, ROW_BORDER, SMALL_BTN, TONE_TEXT } from "@/app/view/jarvis/briefstyle";
 import { workOnDueChunk } from "@/app/view/jarvis/initiativeworkaction";
@@ -24,6 +25,9 @@ const feedback = {
     done: (title: string) => pushToast({ title, message: "", level: "info" }),
     fail: (title: string) => pushToast({ title, message: "", level: "error" }),
 };
+
+const ACT_BTN =
+    "min-w-[66px] flex-none cursor-pointer rounded-[6px] border px-2 py-[3px] text-[10.5px] font-semibold hover:border-edge-strong hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50";
 
 const openTitle = (row: StripRow) =>
     row.open?.kind === "agent"
@@ -75,12 +79,12 @@ export function NeedsYouStrip({
             openOrPeek(model, { kind: "channel", channelId: to.channelId, runId: to.runId ?? undefined }, e)
         );
     };
-    const act = (row: StripRow, e: React.MouseEvent) => {
-        if (row.act.kind === "open") {
+    const act = (row: StripRow, which: AttentionAct, e: React.MouseEvent) => {
+        if (which.kind === "open") {
             open(row, e);
             return;
         }
-        if (row.act.kind === "work-on") {
+        if (which.kind === "work-on") {
             if (row.open?.kind === "effort") {
                 const effortId = row.open.effortId;
                 fireAndForget(() => workOnDueChunk(model, "effort:" + effortId, row.text));
@@ -90,7 +94,7 @@ export function NeedsYouStrip({
         setBusy((cur) => new Set(cur).add(row.key));
         fireAndForget(async () => {
             try {
-                await runAttentionAct(row.act, row.run, feedback);
+                await runAttentionAct(which, row.run, feedback);
             } finally {
                 setBusy((cur) => {
                     const next = new Set(cur);
@@ -150,11 +154,12 @@ export function NeedsYouStrip({
                                 <button
                                     type="button"
                                     data-needs-you-act={row.act.kind}
+                                    data-strip-act={row.act.kind}
                                     title={row.act.kind === "open" ? openTitle(row) : undefined}
                                     disabled={busy.has(row.key)}
-                                    onClick={(e) => act(row, e)}
+                                    onClick={(e) => act(row, row.act, e)}
                                     className={cn(
-                                        "min-w-[66px] flex-none cursor-pointer rounded-[6px] border px-2 py-[3px] text-[10.5px] font-semibold hover:border-edge-strong hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50",
+                                        ACT_BTN,
                                         row.act.label === "Approve"
                                             ? "border-success/35 bg-success/12 text-success"
                                             : "border-edge-mid text-secondary"
@@ -163,6 +168,17 @@ export function NeedsYouStrip({
                                     {row.act.label}
                                 </button>
                             )}
+                            {row.secondAct != null ? (
+                                <button
+                                    type="button"
+                                    data-strip-act={row.secondAct.kind}
+                                    disabled={busy.has(row.key)}
+                                    onClick={(e) => act(row, row.secondAct!, e)}
+                                    className={cn(ACT_BTN, "border-edge-mid text-secondary")}
+                                >
+                                    {row.secondAct.label}
+                                </button>
+                            ) : null}
                             {row.act.kind !== "open" && row.open != null ? (
                                 <button
                                     type="button"

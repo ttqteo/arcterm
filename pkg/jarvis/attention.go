@@ -21,6 +21,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
 	"github.com/wavetermdev/waveterm/pkg/effortstore"
+	"github.com/wavetermdev/waveterm/pkg/runqueue"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
@@ -40,6 +41,8 @@ const (
 	// was not fully verified, which the human acknowledges once read.
 	AttentionRunLandHeld   = "run-land-held"
 	AttentionRunUnverified = "run-unverified"
+	// a queued start (pkg/runqueue) the engine could not make: it names no channel or run, only the queue entry
+	AttentionRunQueueBlocked = "run-queue-blocked"
 	// radar triage is the only kind that names no channel: a scan belongs to a project, not a
 	// conversation, so its row addresses the report through ORef instead.
 	AttentionRadarTriage = "radar-triage"
@@ -90,6 +93,8 @@ type AttentionInput struct {
 	// against (DueLayout). Passed in, not read off the clock, so the builder stays pure.
 	Efforts []*waveobj.Effort
 	Today   string
+	// Queue is the run queue's entries, in queue order; only the blocked ones make an item.
+	Queue []wshrpc.RunQueueEntry
 }
 
 // runForWorker finds the run whose phases claim this worker tab oref.
@@ -401,7 +406,8 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 	// breaks ties inside a kind. Key is the final tiebreak so map iteration cannot reorder equal items.
 	triage := radarTriageItems(in.Radar)
 	due := chunkDueItems(in.Efforts, in.Today)
-	for _, group := range [][]wshrpc.AttentionItem{gates, escalations, asks, triage, unverified, due} {
+	queued := queueBlockedItems(in.Queue)
+	for _, group := range [][]wshrpc.AttentionItem{gates, escalations, asks, queued, triage, unverified, due} {
 		g := group
 		sort.SliceStable(g, func(i, j int) bool {
 			if g[i].WaitingSince != g[j].WaitingSince {
@@ -411,10 +417,13 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 		})
 	}
 
-	out := make([]wshrpc.AttentionItem, 0, len(gates)+len(escalations)+len(asks)+len(triage)+len(unverified)+len(due))
+	out := make([]wshrpc.AttentionItem, 0, len(gates)+len(escalations)+len(asks)+len(queued)+len(triage)+len(unverified)+len(due))
 	out = append(out, gates...)
 	out = append(out, escalations...)
 	out = append(out, asks...)
+	// a blocked queued start holds no worker, but the person handed it over to run without them: it outranks
+	// a finding nobody asked about, and it stays until they start it or drop it
+	out = append(out, queued...)
 	// triage is last because it is the weakest claim in the list: an untriaged finding blocks nothing
 	// that is running, where every kind above it is holding a worker or a pipeline in place.
 	out = append(out, triage...)
@@ -422,6 +431,28 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 	out = append(out, unverified...)
 	// a due chunk is a date you set yourself, about work nothing is running yet
 	out = append(out, due...)
+	return out
+}
+
+// queueBlockedItems are the queued starts the engine gave up on, one each. A waiting entry makes none: it is
+// only waiting its turn, and the tree shows it.
+func queueBlockedItems(queue []wshrpc.RunQueueEntry) []wshrpc.AttentionItem {
+	var out []wshrpc.AttentionItem
+	for _, e := range queue {
+		if e.State != wshrpc.RunQueueState_Blocked {
+			continue
+		}
+		out = append(out, wshrpc.AttentionItem{
+			Kind:         AttentionRunQueueBlocked,
+			Key:          "run-queue-blocked:" + e.Id,
+			QueueId:      e.Id,
+			Source:       e.Title,
+			Text:         "Did not start: " + e.Reason,
+			Action:       "Start",
+			WaitingSince: e.QueuedTs,
+			Why:          "Start now starts it anyway; Remove drops it from the queue.",
+		})
+	}
 	return out
 }
 
@@ -852,6 +883,11 @@ func GatherAttentionFromLedger(ctx context.Context, chans []*waveobj.Channel, ru
 	} else {
 		in.Efforts = efforts
 	}
+	queue, qerr := runqueue.List()
+	if qerr != nil {
+		return nil, fmt.Errorf("reading the run queue: %w", qerr)
+	}
+	in.Queue = queue
 	in.Today = time.Now().Format(DueLayout)
 	return BuildAttention(in), nil
 }
