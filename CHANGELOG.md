@@ -119,7 +119,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   project, Sleeping lists them under a head per project, with a tick that picks just that project's.
 - **What's new**: click the version at the bottom right for the latest release notes, a headline each (click one for
   the rest); **Try it** on a note takes you to that feature. The shortcuts button beside it is now a round help icon. <!-- big -->
-  <!-- shot: 0.15.12-whats-new.webp -->
 - **Code browses folders that are not git repositories** (from the kaeltran16 fork): a plain folder picked in Code
   lists and searches its files, skipping `node_modules`, build output and dot-folders; Changed and Diff are greyed
   out with the reason. <!-- big -->

@@ -280,14 +280,11 @@ function SectionLabel({ kind }: { kind: SectionKind }) {
     );
 }
 
-// A highlight: an icon picked by its headline, then its bold lead as the title and the rest of the note under it, cut
-// at two lines (a note with no lead, its text cut at three). A click opens the whole note, only when it was cut.
+// A highlight: its picture when it has one, an icon picked by its headline, then its bold lead as the title and the
+// whole note under it. Never cut: a release has at most five, and a note of three lines folded to two hid one line.
 function HighlightCard({ entry, index, model }: { entry: Entry; index: number; model: AgentsViewModel }) {
-    const [open, setOpen] = useState(false);
-    const textRef = useRef<HTMLDivElement>(null);
     const lead = entryLead(entry.text);
     const body = lead != null ? entryBody(entry.text) : entry.text;
-    const expandable = useClamped(textRef, !open) || open;
     const tryIt = useTryBinding(entry, model);
     const { icon, tone } = noteIcon(entry.text, index);
     return (
@@ -308,28 +305,19 @@ function HighlightCard({ entry, index, model }: { entry: Entry; index: number; m
             <div className="flex gap-3">
                 <NoteTile icon={icon} tone={tone} size="card" />
                 <div className="flex min-w-0 flex-1 flex-col gap-2">
-                    <button
-                        type="button"
-                        aria-expanded={expandable ? open : undefined}
-                        disabled={!expandable}
-                        onClick={() => setOpen((v) => !v)}
-                        className={cn("group flex min-w-0 flex-col gap-1 text-left", expandable && "cursor-pointer")}
-                    >
+                    <div className="flex min-w-0 flex-col gap-1">
                         {lead != null ? (
                             <span className="text-[13.5px] leading-[1.45] font-semibold text-primary">{lead}</span>
                         ) : null}
                         <div
-                            ref={textRef}
                             className={cn(
                                 "text-[12.5px] leading-[1.55]",
-                                lead != null ? "text-secondary" : "text-primary",
-                                expandable && "group-hover:text-primary",
-                                !open && (lead != null ? "line-clamp-2" : "line-clamp-3")
+                                lead != null ? "text-secondary" : "text-primary"
                             )}
                         >
                             <NoteText text={body} />
                         </div>
-                    </button>
+                    </div>
                     {tryIt != null ? (
                         <div className="flex justify-end">
                             <TryButton tryId={entry.tryId!} {...tryIt} />
