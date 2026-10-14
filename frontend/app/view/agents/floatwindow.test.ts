@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    cornerSpot,
     FLOAT_DEFAULT_SIZE,
     FLOAT_MIN_SIZE,
     floatRect,
@@ -20,7 +21,9 @@ import {
     parseSpot,
     screenFor,
     spaceScale,
+    spotCorner,
     spotRect,
+    SPROUT_CORNERS,
     sproutFromWindow,
     sproutSpot,
     toSpace,
@@ -175,6 +178,20 @@ describe("sproutSpot and spotRect", () => {
             width: 64,
             height: 64,
         });
+    });
+    it("puts a picked corner's Sprout that corner's margin in, as a first fold puts it in the bottom right", () => {
+        expect(spotRect(cornerSpot("bottom-right"), laptop, 2)).toEqual(miniSproutRect(null, laptop, 2));
+        expect(spotRect(cornerSpot("top-left"), laptop, 2)).toEqual({
+            x: laptop.x + 48,
+            y: laptop.y + 48,
+            width: 128,
+            height: 128,
+        });
+        expect(SPROUT_CORNERS.map((c) => spotCorner(cornerSpot(c)))).toEqual(SPROUT_CORNERS);
+    });
+    it("reads no spot as the bottom-right corner and a dragged one as no corner", () => {
+        expect(spotCorner(null)).toBe("bottom-right");
+        expect(spotCorner({ h: "right", v: "bottom", dx: 24, dy: 200 })).toBeNull();
     });
     it("parses a stored spot and drops a broken one", () => {
         expect(parseSpot({ h: "right", v: "top", dx: 10, dy: 300 })).toEqual({ h: "right", v: "top", dx: 10, dy: 300 });

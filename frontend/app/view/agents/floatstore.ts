@@ -34,6 +34,7 @@ import { atom, type PrimitiveAtom } from "jotai";
 import { animate } from "motion/react";
 import type { AgentsViewModel } from "./agents";
 import {
+    cornerSpot,
     FLOAT_MIN_SIZE,
     floatRect,
     framesMatch,
@@ -58,6 +59,8 @@ import {
     type MiniRestore,
     type MiniSides,
     type Screen,
+    type SproutCorner,
+    type SproutSpot,
     type WinRect,
 } from "./floatwindow";
 import { foldPaused } from "./foldpause";
@@ -141,6 +144,16 @@ function writeJson(storage: () => Storage, key: string, value: unknown): void {
 
 const local = () => window.localStorage;
 const session = () => window.sessionStorage;
+
+// the spot the next fold lands at: where the last drag left Sprout, or a corner picked for it (setSproutCorner)
+export const sproutSpotAtom = atom<SproutSpot | null>(
+    parseSpot(readJson(local, SPROUT_SPOT_KEY))
+) as PrimitiveAtom<SproutSpot | null>;
+
+function keepSpot(spot: SproutSpot): void {
+    globalStore.set(sproutSpotAtom, spot);
+    writeJson(local, SPROUT_SPOT_KEY, spot);
+}
 
 // the window's size now (windowsize.ts), from the atoms
 export function currentSize(): SizeState {
@@ -518,7 +531,7 @@ export function foldToSprout(): Promise<void> {
             };
             writeJson(session, MINI_RESTORE_KEY, restore);
             const screen = await screenOfRect(frame);
-            const kept = parseSpot(readJson(local, SPROUT_SPOT_KEY));
+            const kept = globalStore.get(sproutSpotAtom);
             const spot = miniSproutRect(
                 kept == null ? null : spotRect(kept, screen.area, screen.scale),
                 screen.area,
@@ -801,7 +814,7 @@ function settleMove(): Promise<void> {
         const moved = await sproutNow(win);
         const screen = await screenOfRect(moved);
         sprout = miniSproutRect(moved, screen.area, screen.scale);
-        writeJson(local, SPROUT_SPOT_KEY, sproutSpot(sprout, screen.area, screen.scale));
+        keepSpot(sproutSpot(sprout, screen.area, screen.scale));
         const sides = globalStore.get(miniSidesAtom);
         const next = miniSides(sprout, screen.area);
         const pulled = sprout.x !== moved.x || sprout.y !== moved.y;
@@ -809,6 +822,21 @@ function settleMove(): Promise<void> {
             globalStore.set(miniSidesAtom, next);
             await placeMini(win, globalStore.get(petPeekOpenAtom));
         }
+    });
+}
+
+/** Pick the corner every fold lands Sprout in, until a drag leaves it elsewhere. Folded, Sprout moves there now. */
+export function setSproutCorner(corner: SproutCorner): Promise<void> {
+    return miniOps(async () => {
+        keepSpot(cornerSpot(corner));
+        if (!globalStore.get(floatMiniAtom) || sprout == null) {
+            return;
+        }
+        const win = getCurrentWindow();
+        const screen = await screenOfRect(await sproutNow(win));
+        sprout = miniSproutRect(spotRect(cornerSpot(corner), screen.area, screen.scale), screen.area, screen.scale);
+        globalStore.set(miniSidesAtom, miniSides(sprout, screen.area));
+        await placeMini(win, globalStore.get(petPeekOpenAtom));
     });
 }
 

@@ -302,7 +302,7 @@ describe("settings pages", () => {
             "notifications.toast",
             "notifications.reply",
         ]);
-        expect(cards["general/window"]).toEqual(["window.minimize", "window.autosprout"]);
+        expect(cards["general/window"]).toEqual(["window.minimize", "window.sproutcorner", "window.autosprout"]);
         expect(cards["general/vault"]).toEqual(["memory.vaultpath", "memory.remote"]);
         expect(cards["appearance/theme"]).toEqual(["appearance.theme"]);
         expect(cards["appearance/colors"]).toEqual([
@@ -351,7 +351,7 @@ describe("settings pages", () => {
             .flatMap(sectionRows)
             .map((r) => r.id);
         expect(new Set(ids).size).toBe(ids.length);
-        expect(ids).toHaveLength(47 + RUNTIME_FLAGS.claude.length);
+        expect(ids).toHaveLength(48 + RUNTIME_FLAGS.claude.length);
     });
 
     it("leaves the backend-authoritative run route off the config path", () => {

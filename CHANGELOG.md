@@ -17,6 +17,9 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
 
 ### Added
 
+- **Pick the corner Sprout folds into**: right-click the Sprout button → **Fold to**, or Settings → General → Window
+  → Fold to: top left, top right, bottom left or bottom right. Folded, Sprout moves there at once; a drag still keeps
+  its own spot until you pick a corner again.
 - **Close several agents at once from the Consumers panel**: hover a row and tick it, or tick Sleeping to pick every
   sleeping agent, then press Close in the bar under the list. It asks first only when a ticked agent is working; the
   closed agents' conversations stay under Conversations. A run's lead and workers still close with their run.

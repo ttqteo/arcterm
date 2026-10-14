@@ -7,7 +7,8 @@ import { atoms, getSettingsKeyAtom, isDev } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { useBindingKeys } from "@/app/store/keybindings/store";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
-import { foldToSprout, minimizeRequested } from "@/app/view/agents/floatstore";
+import { foldToSprout, minimizeRequested, setSproutCorner, sproutSpotAtom } from "@/app/view/agents/floatstore";
+import { spotCorner, SPROUT_CORNER_LABEL, SPROUT_CORNERS } from "@/app/view/agents/floatwindow";
 import { reopenLauncher } from "@/app/view/agents/launcherstore";
 import { ProjectSwitcher } from "@/app/view/agents/projectswitcher";
 import { writeConfig } from "@/app/view/agents/settingsui";
@@ -54,9 +55,11 @@ export function useFoldTitle(): string {
     return isMacOS() && choice === "sprout" ? `${title} (⌘M)` : title;
 }
 
-// a right-click on a fold button switches window:autosprout, the fold that follows you out of the app (floatstore.ts)
+// a right-click on a fold button switches window:autosprout, the fold that follows you out of the app, and picks the
+// corner the fold lands in (floatstore.ts)
 export function showFoldMenu(e: React.MouseEvent): void {
     const on = autoSproutOn(globalStore.get(getSettingsKeyAtom("window:autosprout")));
+    const corner = spotCorner(globalStore.get(sproutSpotAtom));
     ContextMenuModel.getInstance().showContextMenu(
         [
             {
@@ -65,6 +68,17 @@ export function showFoldMenu(e: React.MouseEvent): void {
                 checked: on,
                 sublabel: "Coming back focuses Sprout",
                 click: () => writeConfig({ "window:autosprout": !on }),
+            },
+            { type: "separator" },
+            {
+                label: "Fold to",
+                type: "submenu",
+                submenu: SPROUT_CORNERS.map((c) => ({
+                    label: SPROUT_CORNER_LABEL[c],
+                    type: "radio" as const,
+                    checked: corner === c,
+                    click: () => fireAndForget(() => setSproutCorner(c)),
+                })),
             },
         ],
         e

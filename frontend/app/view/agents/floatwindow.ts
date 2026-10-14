@@ -186,6 +186,32 @@ export function spotRect(spot: SproutSpot, work: WinRect, scale: number): WinRec
     };
 }
 
+// A corner picked for the fold (Settings → Window, the fold button's right-click): Sprout that corner's margin in, as a
+// first fold puts it in the bottom-right one
+export type SproutCorner = `${SproutSpot["v"]}-${SproutSpot["h"]}`;
+
+export const SPROUT_CORNERS: SproutCorner[] = ["top-left", "top-right", "bottom-left", "bottom-right"];
+
+export const SPROUT_CORNER_LABEL: Record<SproutCorner, string> = {
+    "top-left": "Top left",
+    "top-right": "Top right",
+    "bottom-left": "Bottom left",
+    "bottom-right": "Bottom right",
+};
+
+export function cornerSpot(corner: SproutCorner): SproutSpot {
+    const [v, h] = corner.split("-") as [SproutSpot["v"], SproutSpot["h"]];
+    return { h, v, dx: MINI_MARGIN, dy: MINI_MARGIN };
+}
+
+// the corner a kept spot sits in, or null when a drag left it elsewhere; no spot is a first fold's bottom right
+export function spotCorner(spot: SproutSpot | null): SproutCorner | null {
+    if (spot == null) {
+        return "bottom-right";
+    }
+    return spot.dx === MINI_MARGIN && spot.dy === MINI_MARGIN ? `${spot.v}-${spot.h}` : null;
+}
+
 export function parseSpot(raw: unknown): SproutSpot | null {
     const s = raw as Partial<SproutSpot> | null;
     if (s == null || typeof s !== "object" || !isNum(s.dx) || !isNum(s.dy)) {

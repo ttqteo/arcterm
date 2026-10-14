@@ -169,6 +169,13 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                             config: true,
                         },
                         {
+                            id: "window.sproutcorner",
+                            title: "Fold to",
+                            desc: "The corner of the screen Sprout folds into. Dragging Sprout elsewhere keeps that spot for the next fold until you pick a corner again. Also on the Sprout button's right-click.",
+                            key: "arc.float.sproutSpot",
+                            scope: "local",
+                        },
+                        {
                             id: "window.autosprout",
                             title: "Fold when you leave",
                             // foreground.rs decides "covered" differently on each OS, so each reads its own rule

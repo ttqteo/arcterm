@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-14 (fold corner)**
+
+- [ ] Right-click the Sprout button → Fold to → Top left, then fold: Sprout lands in the top-left corner, 24px in, and
+  its card opens down and right. Folded, Settings can't be reached, so restore, pick Bottom left in Settings → General
+  → Window → Fold to, fold again: bottom left. Drag Sprout mid-screen, restore: the Fold to row reads "Where you
+  dragged it" and the menu has no corner ticked.
+
 **2026-10-13 (kaeltran16 sync: cherry-picked fixes and features)**
 
 - [ ] Code → project picker, type a folder that is not a git repo (one with a `node_modules`): the tree lists its

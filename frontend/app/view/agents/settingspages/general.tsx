@@ -12,6 +12,8 @@ import { useAtom, useAtomValue } from "jotai";
 import { Folder, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { startupMenuEntries, startupSurfaceAtom, vaultPathError } from "../cockpitprefsstore";
+import { setSproutCorner, sproutSpotAtom } from "../floatstore";
+import { spotCorner, SPROUT_CORNER_LABEL, SPROUT_CORNERS } from "../floatwindow";
 import { railVisibleAtom } from "../railstore";
 import { vaultStatusLine, vaultSyncButton, vaultSyncFailureNote } from "../settingsmodel";
 import {
@@ -100,6 +102,13 @@ function NotificationRows() {
 function WindowRows() {
     const choice = minimizeChoice(useAtomValue(getSettingsKeyAtom("window:minimize")));
     const autoSprout = autoSproutOn(useAtomValue(getSettingsKeyAtom("window:autosprout")));
+    const corner = spotCorner(useAtomValue(sproutSpotAtom));
+    const cornerItems: ContextMenuItem[] = SPROUT_CORNERS.map((c) => ({
+        label: SPROUT_CORNER_LABEL[c],
+        type: "radio",
+        checked: corner === c,
+        click: () => fireAndForget(() => setSproutCorner(c)),
+    }));
     const dock = isMacOS() ? "Dock" : "Taskbar";
     const items: ContextMenuItem[] = [
         {
@@ -121,6 +130,14 @@ function WindowRows() {
         <>
             <SettingRow id="window.minimize">
                 <Select value={choice} label={choice === "dock" ? dock : "Sprout"} items={items} ariaLabel="Minimize" />
+            </SettingRow>
+            <SettingRow id="window.sproutcorner">
+                <Select
+                    value={corner ?? "dragged"}
+                    label={corner == null ? "Where you dragged it" : SPROUT_CORNER_LABEL[corner]}
+                    items={cornerItems}
+                    ariaLabel="Fold to"
+                />
             </SettingRow>
             <SettingRow id="window.autosprout">
                 <Toggle
