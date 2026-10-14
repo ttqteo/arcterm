@@ -213,6 +213,99 @@ func TestAskCommandClearCancelsWaiter(t *testing.T) {
 	}
 }
 
+// the arc mod's card waits on a Claude AskUserQuestion; the settings hook's projection of the same call
+// must not replace it (an org-managed Claude skips the mod hook that would have stopped the projection)
+func TestAskCommandProjectionKeepsAWaitedAsk(t *testing.T) {
+	ws := &WshServer{}
+	oref := waveobj.MakeORef("block", uuid.NewString()).String()
+	agentask.GlobalRegistry = agentask.MakeRegistry()
+	rtnCh := make(chan wshrpc.AskRtnData, 1)
+	go func() {
+		rtn, _ := ws.AskCommand(context.Background(), askData(oref, true))
+		rtnCh <- rtn
+	}()
+	deadline := time.Now().Add(2 * time.Second)
+	var waited agentask.PendingAsk
+	for {
+		if p, ok := agentask.GlobalRegistry.Get(oref); ok {
+			waited = p
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("pending ask never registered")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	rtn, err := ws.AskCommand(context.Background(), askData(oref, false))
+	if err != nil {
+		t.Fatalf("projection: %v", err)
+	}
+	if rtn.AskId != waited.AskId {
+		t.Fatalf("projection must answer the waited ask's id %q, got %q", waited.AskId, rtn.AskId)
+	}
+	if p, _ := agentask.GlobalRegistry.Get(oref); p.AskId != waited.AskId {
+		t.Fatalf("projection replaced the waited ask: %q", p.AskId)
+	}
+	if err := ws.AgentAskClearCommand(context.Background(), oref); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	select {
+	case got := <-rtnCh:
+		if !got.Cancelled {
+			t.Fatalf("the waiter must still be the one a clear resolves: %#v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the waiter was orphaned")
+	}
+}
+
+// a projection of other questions, or one with no waiter beneath, still replaces as before
+func TestAskCommandProjectionReplacesOtherwise(t *testing.T) {
+	ws := &WshServer{}
+	oref := waveobj.MakeORef("block", uuid.NewString()).String()
+	agentask.GlobalRegistry = agentask.MakeRegistry()
+	first, err := ws.AskCommand(context.Background(), askData(oref, false))
+	if err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	second, err := ws.AskCommand(context.Background(), askData(oref, false))
+	if err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	if second.AskId == first.AskId {
+		t.Fatal("with no waiter beneath, a projection replaces the pending ask")
+	}
+	waitCtx, stopWait := context.WithCancel(context.Background())
+	waitDone := make(chan struct{})
+	go func() {
+		_, _ = ws.AskCommand(waitCtx, askData(oref, true))
+		close(waitDone)
+	}()
+	t.Cleanup(func() {
+		stopWait()
+		<-waitDone
+	})
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if p, ok := agentask.GlobalRegistry.Get(oref); ok && agentask.GlobalRegistry.HasWaiter(p.AskId) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("waited ask never registered")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	other := askData(oref, false)
+	other.Questions[0].Question = "C or D?"
+	third, err := ws.AskCommand(context.Background(), other)
+	if err != nil {
+		t.Fatalf("third: %v", err)
+	}
+	if p, _ := agentask.GlobalRegistry.Get(oref); p.AskId != third.AskId {
+		t.Fatal("a projection of other questions replaces the waited ask")
+	}
+}
+
 func TestAskCommandThreadsProse(t *testing.T) {
 	ws := &WshServer{}
 	oref := waveobj.MakeORef("block", uuid.NewString()).String()

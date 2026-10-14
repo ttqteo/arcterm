@@ -155,10 +155,11 @@ export function ordered(jobs: JobQueueJob[]): JobQueueJob[] {
 }
 
 /** Who the job is for: an engine step with its run, or the agent whose shell asked. wavesrv does not know an agent's
- * display name, so it comes from the roster by block id. */
-export function sourceLabel(job: JobQueueJob, agents: readonly JobAgent[]): string {
+ * display name, so it comes from the roster by block id; nor a run's title, which the caller passes once the run has
+ * loaded (the short id stands in until then). */
+export function sourceLabel(job: JobQueueJob, agents: readonly JobAgent[], runTitle?: string): string {
     if (job.runid) {
-        const run = `Run ${job.runid.slice(0, 6)}`;
+        const run = runTitle?.trim() || `Run ${job.runid.slice(0, 6)}`;
         return job.label ? `${run} · ${job.label}` : run;
     }
     return agents.find((a) => job.blockid && a.blockId === job.blockid)?.name ?? "an agent";

@@ -218,6 +218,12 @@ func ClaudeAccountSetEmailCommand(w *wshutil.WshRpc, data wshrpc.CommandClaudeAc
 	return err
 }
 
+// command "claudecontext", wshserver.ClaudeContextCommand
+func ClaudeContextCommand(w *wshutil.WshRpc, data wshrpc.CommandClaudeContextData, opts *wshrpc.RpcOpts) (*wshrpc.CommandClaudeContextRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandClaudeContextRtnData](w, "claudecontext", data, opts)
+	return resp, err
+}
+
 // command "cleanstorage", wshserver.CleanStorageCommand
 func CleanStorageCommand(w *wshutil.WshRpc, data wshrpc.CommandCleanStorageData, opts *wshrpc.RpcOpts) (*storage.StorageCleanResult, error) {
 	resp, err := sendRpcRequestCallHelper[*storage.StorageCleanResult](w, "cleanstorage", data, opts)

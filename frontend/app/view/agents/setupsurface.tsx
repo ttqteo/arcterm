@@ -5,12 +5,13 @@
 // shared doc, which every save writes into each harness's file, and lists each harness file's state.
 // The Skills tab views every harness's skills and moves them into the vault; it never creates or edits
 // one. The Tools tab is the library of terminal tools (toolslibrary.tsx). The Learned tab lists the lines the user
-// accepted from what agents learned (learnedtab.tsx); a skill's own lines also show in its rail. Logic lives in
-// setupmodel.ts, skillsmatrix.ts and learnedmodel.ts, the RPCs and the atoms in setupstore.ts.
+// accepted from what agents learned (learnedtab.tsx); a skill's own lines also show in its rail. The Project tab
+// lists the Claude files of one project (projectcontexttab.tsx). Logic lives in setupmodel.ts, skillsmatrix.ts and
+// learnedmodel.ts, the RPCs and the atoms in setupstore.ts.
 
 import { openFileInCode } from "@/app/cockpit/openfilestore";
 import { Markdown } from "@/app/element/markdown";
-import { composerReveal, MOTION } from "@/app/element/motiontokens";
+import { composerReveal } from "@/app/element/motiontokens";
 import { PaneReveal } from "@/app/element/panereveal";
 import { globalStore } from "@/app/store/jotaiStore";
 import { FrontmatterCard } from "@/app/view/code/frontmattercard";
@@ -24,6 +25,7 @@ import type { AgentsViewModel } from "./agents";
 import { formatAgo } from "./agentsviewmodel";
 import { skillLines } from "./learnedmodel";
 import { LearnedLine, LearnedTab } from "./learnedtab";
+import { ProjectContextHeader, ProjectContextTab } from "./projectcontexttab";
 import { RuntimeMark } from "./runtimemark";
 import { runtimeMeta } from "./runtimemeta";
 import {
@@ -60,6 +62,7 @@ import {
     typeShared,
     type SetupTab,
 } from "./setupstore";
+import { BTN_SECONDARY, FADE_IN, SECTION_HEAD } from "./setupstyles";
 import {
     additionsChip,
     adoptCount,
@@ -80,28 +83,18 @@ import {
 import { ToolsHeader, ToolsLibrary } from "./toolslibrary";
 import { useFileText } from "./usefiletext";
 
-const SECTION_HEAD = cn(REGION_LABEL, "text-muted");
-const BTN_SECONDARY =
-    "h-[30px] cursor-pointer rounded border border-edge-mid bg-surface-raised px-3 text-[12.5px] font-semibold text-ink-mid hover:border-edge-strong hover:bg-surface-hover hover:text-primary disabled:cursor-default disabled:text-ink-faint disabled:hover:border-edge-mid disabled:hover:bg-surface-raised";
 const BTN_PRIMARY =
     "h-8 cursor-pointer rounded border-0 bg-accent px-[14px] text-[13px] font-bold text-background shadow-inset-highlight hover:bg-accenthover disabled:cursor-default disabled:opacity-40 disabled:hover:bg-accent";
 
 const TONE_DOT: Record<Tone, string> = { ok: "bg-success", warn: "bg-warning", none: "bg-ink-faint" };
 const TONE_TEXT: Record<Tone, string> = { ok: "text-ink-mid", warn: "text-warning-soft", none: "text-muted" };
 
-// a swapped tab or skill fades in rather than cutting; the outgoing one leaves at once, so a quick run of
-// arrow keys through the skill list never queues exits
-const FADE_IN = {
-    initial: { opacity: 0 },
-    animate: { opacity: 1 },
-    transition: { duration: MOTION.durMicro, ease: MOTION.easeFluid },
-};
-
 const TABS: { key: SetupTab; label: string }[] = [
     { key: "instructions", label: "Instructions" },
     { key: "skills", label: "Skills" },
     { key: "tools", label: "Tools" },
     { key: "learned", label: "Learned" },
+    { key: "project", label: "Project" },
 ];
 
 function useRows(): AgentSyncHarness[] {
@@ -867,7 +860,9 @@ export function SetupSurface({ model }: { model: AgentsViewModel }) {
                         <SkillsHeader />
                     ) : tab === "tools" ? (
                         <ToolsHeader />
-                    ) : null}
+                    ) : tab === "learned" ? null : (
+                        <ProjectContextHeader />
+                    )}
                 </div>
                 <motion.div
                     key={tab}
@@ -883,8 +878,10 @@ export function SetupSurface({ model }: { model: AgentsViewModel }) {
                         <SkillsTab model={model} />
                     ) : tab === "tools" ? (
                         <ToolsLibrary model={model} />
-                    ) : (
+                    ) : tab === "learned" ? (
                         <LearnedPane />
+                    ) : (
+                        <ProjectContextTab model={model} />
                     )}
                 </motion.div>
             </div>

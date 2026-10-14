@@ -13,16 +13,26 @@ with `<!-- try: <id> -->`, the id of a global keybinding (`buildGlobalBindings` 
 `frontend/app/store/keybindings/bindings.ts`, such as `go:usage` or `open-tool`): its note gets a Try it button that
 runs it. `whatsnew.test.ts` fails on an id that is gone.
 
+A new feature someone would open the app to try ends with `<!-- big -->` (either order beside a try comment): What's
+new draws it as one of its release's cards and folds every other line under a count. At most 5 per release, and
+`whatsnew.test.ts` fails a release with more; a fix, a tweak or a rename is never big.
+
 ## Unreleased
 
 ### Added
 
+- **Setup → Project**: one place to see what shapes Claude in a project: its CLAUDE.md or AGENTS.md, its memory
+  grouped by type, its settings and hooks, its skills, agents and commands, and `.arc/setup`. Pick a file to read it
+  beside the list. <!-- try: go:setup -->
 - **Reopen an agent you just closed**: `Ctrl+Shift+T` (`Cmd+Shift+T` on a Mac) brings back the agent closed last, as a
   browser reopens a closed tab. Its conversation returns asleep, so it costs nothing until you wake it or send it a
   message. The last 5 closed agents are kept. <!-- try: reopen-agent -->
 - **Agents learn your corrections**: agents now note how you correct them. When the same correction comes up in two
   sessions, Needs you asks whether to keep it as a rule, and the lines you accept appear, highlighted, under
   Setup → Learned and in each skill.
+- **Claude checks its memory at session start**: on every machine with arcterm, a new Claude session looks over the
+  project's Claude memory and, when something has gone stale (a broken link, a file or `task` that no longer exists, a
+  memory untouched for 30 days), shows a toast and lists it in its first reply, offering to fix it.
 
 ### Changed
 
@@ -31,6 +41,21 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
   shows only Sprout's bubble; the system notification follows 30 seconds later, and only if it still waits on you.
 - **Subagent questions name the model**: when an agent asks to start a subagent with no model set, or on Opus, the
   question says so and suggests haiku for collecting or sonnet for code; answer No (or Tab) and name one to switch.
+- **What's new leads with each release's highlights**: a few cards for the features worth trying, and every other
+  note, fixes too, folded under one "58 more changes · 12 fixes" line. <!-- big -->
+
+### Fixed
+
+- A run whose plan review failed no longer shows a green check on its finished fold in the Agent sidebar: the fold
+  shows a red dot and "1 failed" until the lead's next round replaces that review.
+- What's new shows the open arrow only on notes that have more to read; a short note that already shows in full no
+  longer has one that does nothing.
+- **A pick in Claude's own question dialog no longer comes back as dismissed** on a Team or Enterprise Claude account,
+  and the arcterm card stays the one waiting for your answer instead of being swapped for another.
+- **The Token burn card asks again on each prompt** on a Team or Enterprise Claude account: one allow or deny held for
+  the rest of the session, and its estimate now counts what the session has already used.
+- The Heavy jobs popover names a run's Check, Verify, Setup and Final steps by the run's title instead of only its short
+  id ("Run 973afb").
 
 ## 0.15.12 — 2026-10-14
 
@@ -38,17 +63,17 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
 
 - **Pick the corner Sprout folds into**: right-click the Sprout button → **Fold to**, or Settings → General → Window
   → Fold to: top left, top right, bottom left or bottom right. Folded, Sprout moves there at once; a drag still keeps
-  its own spot until you pick a corner again.
+  its own spot until you pick a corner again. <!-- big -->
 - **Close several agents at once from the Consumers panel**: hover a row and tick it, or tick Sleeping to pick every
   sleeping agent, then press Close in the bar under the list. It asks first only when a ticked agent is working; the
-  closed agents' conversations stay under Conversations. A run's lead and workers still close with their run.
+  closed agents' conversations stay under Conversations. A run's lead and workers still close with their run. <!-- big -->
 - **Pick one project's sleeping agents in the Consumers panel**: when the agents asleep come from more than one
   project, Sleeping lists them under a head per project, with a tick that picks just that project's.
 - **What's new**: click the version at the bottom right for the latest release notes, a headline each (click one for
-  the rest); **Try it** on a note takes you to that feature. The shortcuts button beside it is now a round help icon.
+  the rest); **Try it** on a note takes you to that feature. The shortcuts button beside it is now a round help icon. <!-- big -->
 - **Code browses folders that are not git repositories** (from the kaeltran16 fork): a plain folder picked in Code
   lists and searches its files, skipping `node_modules`, build output and dot-folders; Changed and Diff are greyed
-  out with the reason.
+  out with the reason. <!-- big -->
 - **A finished Check, Verify or Final step keeps its output**: click the step in the final stage pane or the run's
   rail to read it after the next step has started.
 
@@ -112,18 +137,18 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
   type (`2h`, `30m`, `14:30`). While it holds, the card says until when, with Resume to end it.
 - **The New agent dialog says which Claude account a Claude Code launch runs on** ("· Claude: Max 2", or your
   /login email for Default), once you have added a token account in Settings → Agents → Claude account. With only
-  /login, the footer is unchanged. <!-- try: new-agent -->
+  /login, the footer is unchanged. <!-- try: new-agent --> <!-- big -->
 
 - **A library of terminal tools (lazygit, yazi, btop and more) that opens in the right folder**: Setup → Tools lists
   nine built-in tools and any of your own, shows which are installed, and installs one with winget or brew in a
   terminal you can watch. **Open a tool** (`Ctrl+Shift+T`, the agent header's Tool button, the tool button on a
   project folder, or Search) opens one in the focused agent's folder, and the New dialog's Tool row opens one in a
-  project's root. <!-- try: open-tool -->
+  project's root. <!-- try: open-tool --> <!-- big -->
 - **Resource Manager** (from the kaeltran16 fork): the footer shows arcterm's CPU and RAM; click it, or `Mod`+`G` `m`,
   for a popover of every process arcterm and its agents started, grouped by agent, with `x` to kill a runaway process
-  and its children (asks first, never the agent itself).
+  and its children (asks first, never the agent itself). <!-- big -->
 - **Mark files reviewed in the Diff surface's log**: a check at each file's right end, `v` or **Mark reviewed** in the
-  diff header to mark the open file and step to the next unreviewed one, and an *n/m reviewed* bar over the list. <!-- try: go:files -->
+  diff header to mark the open file and step to the next unreviewed one, and an *n/m reviewed* bar over the list. <!-- try: go:files --> <!-- big -->
 - **Notes in the palette**: the palette's Notes scope lists, previews, copies, edits and deletes your notes, and
   `wsh note add` lets an agent write one. <!-- try: go:palette -->
 - **A run's final stage has its own row**: a Final verification row under the run in the agent list, with the step
@@ -132,7 +157,7 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
   how much, and arcterm shows it as a notice.
 - A new waiting item flashes arcterm's taskbar button while arcterm is in the background.
 - A finished orchestrator run takes one more round for the leftovers inside its goal before it completes.
-- Spider-Man as a third Jarvis character (Settings → Appearance → Character): the Homecoming suit at work, Peter Parker at rest. He walks the footer side-on, thwips when he speaks, hangs from a strand when you drag him and rappels down when you let go, now and then crawls along under the app bar and hangs upside down until your cursor comes near, web-swings out and back when the window folds, and folded sits on a rooftop whose windows light up for each running agent, with his web and the count of agents at work beside it. <!-- try: go:settings -->
+- Spider-Man as a third Jarvis character (Settings → Appearance → Character): the Homecoming suit at work, Peter Parker at rest. He walks the footer side-on, thwips when he speaks, hangs from a strand when you drag him and rappels down when you let go, now and then crawls along under the app bar and hangs upside down until your cursor comes near, web-swings out and back when the window folds, and folded sits on a rooftop whose windows light up for each running agent, with his web and the count of agents at work beside it. <!-- try: go:settings --> <!-- big -->
 - A Spider theme (Settings → Appearance → Theme): Claude's colours with the suit's soft blue as the accent and its red
   in the spider decor, a spider in place of the arcterm logo, a small spider that drops on its thread over the agent list and
   senses an agent asking you, another hanging over the empty Agent screen, and a web in the top-left corner behind
@@ -314,7 +339,7 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
   the command palette.
 - **Read a past session without resuming it**: in the New dialog's Resume list, **Transcript** on a session (or
   Shift+Enter, which the picked session's button shows) opens its transcript on the Agent surface instead of starting
-  the agent again. <!-- try: new-agent -->
+  the agent again. <!-- try: new-agent --> <!-- big -->
 - **A `?` button on the bottom bar** opens the keyboard shortcuts on every surface, also while you type in a
   terminal, where the `?` key itself is text. <!-- try: help -->
 - **⌘⇧Enter toggles terminal fullscreen** (Ctrl+Shift+Enter on Windows), from inside the terminal too: the same
@@ -323,12 +348,12 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
   and the full window folds into Sprout after a moment; an app beside it, or on another screen, leaves it be. Coming
   back to arcterm (Alt+Tab, the taskbar) focuses Sprout, and a double-click or Restore grows it back. Off by default;
   right-click the Sprout button in the app bar to switch it, or Settings → General → Window. Your own dialogs (a file
-  picker) leave it be.
+  picker) leave it be. <!-- big -->
 - **⌘J opens Jarvis's What's waiting popup** in one chord, from any surface and from inside a terminal (Ctrl+J on
   Windows, where Shift+Enter is the terminal's newline). Hold ⌘ on its own and the creature shows a J. <!-- try: go:waiting -->
 - **@mention another agent** without looking up its id: right-click an agent in the sidebar (or a segment of the split
   row) → **Copy @mention**, its `@` token shown beside the label. Or drag an agent onto a Claude agent's pane holding
-  ⌥ (Alt on Windows) to type its token at that prompt; a drag without the key still places it in the split.
+  ⌥ (Alt on Windows) to type its token at that prompt; a drag without the key still places it in the split. <!-- big -->
 - **Home** in the New agent dialog: the last row of the Project column starts Claude Code or a terminal in your home
   folder, outside any project. Claude Code there is ask-only: it cannot edit files, every shell command asks first
   (even one you once allowed for good), keys and `.env` files stay unreadable, and bypass and auto mode are off.
@@ -340,11 +365,11 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
   Ctrl and press Tab to move through your agents and terminals, most recent first, then let go to open the one picked.
   A quick Ctrl+Tab flips back to the tab you were on before, and passing over an agent leaves its unread turns unread.
   It works the same in a float and in fullscreen, and Option+Tab works too on a Mac. Ctrl+Shift+Tab now steps back
-  through the switcher; it no longer jumps to the next agent that is asking.
+  through the switcher; it no longer jumps to the next agent that is asking. <!-- big -->
 - **Code** can pin files: right-click a file → **Pin**, or **Pin** in the bar above the editor. Pinned files list at
   the top of the Files tab, per project; clicking one opens it and shows where it lives in the tree, and the
   file search (Ctrl+P, ⌘P on a Mac) lists them first. The agent panel's **Files** tab shows the same pins above its
-  tree for the agent's folder, and right-clicking a file there pins or unpins it on both sides. <!-- try: go:code -->
+  tree for the agent's folder, and right-clicking a file there pins or unpins it on both sides. <!-- try: go:code --> <!-- big -->
 - An **HTML file** opens as the page itself in **Code** and the agent panel's file tab, with **Source** one toggle
   away: images, styles and scripts beside it load, so an exported slide deck shows and pages through as it would in a
   browser. It shows the saved file, and a page too big to open as text still previews.
@@ -494,7 +519,7 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
 
 - **Settings → Storage** shows what arcterm and its agents leave on disk (finished runs' worktrees, old Claude
   sessions, logs, cache and trash, your projects' build output) and cleans each with a button; the safe parts clean
-  themselves daily, and a toast says when more than 2 GB can go.
+  themselves daily, and a toast says when more than 2 GB can go. <!-- big -->
 
 - Jarvis has a tour: the **?** button in its header walks you through the Brief, Initiatives, the run sheet and the
   Profile one control at a time, in Vietnamese or English, and Jarvis offers it once the first time you open it.
@@ -526,11 +551,11 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
 - An agent idle for 30 minutes goes to sleep: its process ends and its RAM is freed, but its row and conversation
   stay; **Wake**, or a message to it, picks it up where it was. When RAM runs low the longest-idle one sleeps early.
   Settings → Agents → **Sleep idle agents** sets the time or turns it off; **Sleep** is also in the RAM panel and the
-  row's menu.
+  row's menu. <!-- big -->
 - Codex can work a task in an orchestrator run: pick it as the run's Workers (it is listed once
   `~/.codex/config.toml` names a `model`), or write `**Model:** codex:gpt-5.5` (or `codex`, or `agy:<model>`) on a
   plan task and start the run on **Reviewer picks**. A Codex worker runs with its approval, sandbox and hook-trust
-  checks off, since no one is there to answer them, and its heavy commands skip the job queue.
+  checks off, since no one is there to answer them, and its heavy commands skip the job queue. <!-- big -->
 - The Jarvis pet's popup answers every agent question in place, not only one-pick ones: a question with several
   parts or several picks opens its answer form under the row (**Answer**, or `Enter`), where `1`–`9` pick, `←` / `→`
   change question and `Enter` sends. Clicking a "Needs you" bubble lands on that question with its form open.
@@ -556,7 +581,7 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
   it shows even while another app is in front, and what needs you also reaches the system notifications.
 - Builds, typechecks and whole test suites from every agent and run now go through one queue that starts each as soon
   as the free RAM allows, so several runs no longer push the machine into swap; the new Jobs chip in the app bar shows
-  what runs and what waits, with Run now and Skip.
+  what runs and what waits, with Run now and Skip. <!-- big -->
 - An agent whose build or test waits in the job queue says so on its row and in its header, as `queued #2` instead of
   working, with why it waits (RAM or a busy slot) in the tooltip; a click opens the Jobs popover.
 - The Jobs popover's Slots picker sets how the queue runs: **Auto** (the default) as many at once as the free RAM
@@ -568,7 +593,7 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
   what another session staged stays staged. **Amend** loads the last commit's message and turns off once that commit is
   pushed. Beside the source picker, **Fetch**, **Pull** and **Push** work on the branch against its upstream and show
   how many commits it is ahead and behind: Pull only fast-forwards and asks first when an agent is working in that
-  folder, Push never forces, and a refusal from git is shown instead of changing anything.
+  folder, Push never forces, and a refusal from git is shown instead of changing anything. <!-- big -->
 - A run an agent started with `wsh runs start` links back to that session: `↰ <session>` in the run's header on
   Agent and **started from** on its run sheet, which open the session's terminal, or its transcript once it has ended.
   The other way round, the session's header links its runs with `↳`: one opens its run sheet, several
@@ -640,15 +665,15 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
   tooltip names the key.
 - **Mark for later** in a session's menu, in the Agents tree or under Conversations, flags it with a bookmark until you
   pick **Done**; the mark stays when you close the agent, puts the conversation first in its project's list, and is back
-  on the row when you resume it.
-- New agent: paste or drop images into the task, and resume a recent session of the picked agent and project.
+  on the row when you resume it. <!-- big -->
+- New agent: paste or drop images into the task, and resume a recent session of the picked agent and project. <!-- big -->
 - A Low RAM card now pops up over whatever surface you are on, so a command held for memory no longer waits unseen
   behind Jarvis or the Cockpit; press its number to answer, **Open agent** to go to it, or **Later** (`Esc`) to leave
   it on the agent's own card.
 - The Agent rail shows the project's instructions file under the project and branch, `CLAUDE.md` for a Claude agent
   (or `AGENTS.md` when there is none) and `AGENTS.md` for pi and the others; click it to read it in the rail.
 - An **Outline** button lists a document's headings and jumps to the one you pick, with the section you are reading
-  marked: in the Spec and Plan review, and over the Code surface's Markdown and LaTeX previews.
+  marked: in the Spec and Plan review, and over the Code surface's Markdown and LaTeX previews. <!-- big -->
 - In a Spec or Plan review, resting the pointer on a finding scrolls the document to the task it names and dims
   the rest, so you read only the part it changes; click the finding to keep it shown while you read.
 - Jarvis's pet keeps busy between walks: when it stops to rest it may read a book, listen to music on headphones,
@@ -668,7 +693,7 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
   Settings → Appearance → **Jarvis quotes** turns it off.
 - The Agent panel's Files changed can list the whole branch: on a branch off the default one, a Session / Branch vs
   main switch shows everything the branch carries against where it left main, committed or not, and View diff opens
-  that comparison.
+  that comparison. <!-- big -->
 - The agent header has a **Redraw** button (also in its right-click menu) for a terminal whose text came out garbled
   or overlapping: it repaints the pane and has the agent draw its whole screen again at the pane's size, without
   restarting the session.

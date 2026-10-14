@@ -13524,15 +13524,21 @@ async function arrangeFixtureRun(h, ctx, label, leadName, leadExtra, runExtra) {
     const wslist = await h.rpc("workspacelist", null);
     const ch = await h.rpc("createchannel", { name: `verify-${label}`, projectpath: ctx.cwd });
     ctx.channelId = ch.oid;
-    const created = await h.rpc("createrun", {
-        channelid: ctx.channelId,
-        workspaceid: wslist[0].workspacedata.oid,
-        goal: `verify ${label}: do nothing`,
-        runtime: "claude",
-        mode: "orchestrator",
-        deferstart: true,
-        ...runExtra,
-    });
+    // createrun probes the lead's harness before it loads the channel; on a cold Final boot that outlasted the
+    // 5s default and the channel load failed with "context deadline exceeded"
+    const created = await h.rpc(
+        "createrun",
+        {
+            channelid: ctx.channelId,
+            workspaceid: wslist[0].workspacedata.oid,
+            goal: `verify ${label}: do nothing`,
+            runtime: "claude",
+            mode: "orchestrator",
+            deferstart: true,
+            ...runExtra,
+        },
+        { timeout: 30000 }
+    );
     ctx.runId = created.run.id;
     ctx.landPath = created.run.landpath;
     mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
@@ -13619,7 +13625,11 @@ async function teardownFixtureRun(h, ctx, name, restore) {
     }
     await step("reload onto the live roster", async () => {
         await h.ev("location.reload()");
-        await new Promise((r) => setTimeout(r, 2500));
+        // a fixed wait left the next scenario on a page still booting: a cold Final boot took 35s to render
+        await new Promise((r) => setTimeout(r, 500));
+        if (!(await polishWaitFor(h, `!!document.querySelector("nav button")`, 30000))) {
+            throw new Error("the app did not come back within 30s of the reload");
+        }
     });
     // engine trees live under the arc-wt root, not the temp dir, and a cancel leaves the landing tree: only a land
     // removes it. A worker just stopped holds its lane's tree for a moment, hence the retries.
@@ -36935,6 +36945,190 @@ const toolsLauncher = {
     },
 };
 
+// --- setup-project: Setup → Project lists a project's Claude files in six groups and reads the selected one in the
+// rail. The fixture is a temp project with a CLAUDE.md, a settings.json holding one hook, a settings.local.json that
+// does not parse and an empty .arc/setup, and a memory folder under ~/.claude/projects/<slug> holding an index and
+// one feedback memory; teardown removes the project, its folder and the memory folder. The last step deletes the
+// project's folder to show the path-gone banner, so it runs last.
+const SP_PROJECT = "verify-setup-project";
+const spSlug = (p) => p.replace(/[^A-Za-z0-9]/g, "-");
+const setupProject = {
+    name: "setup-project",
+    surface: "setup",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            ctx.root = mkdtempSync(join(tmpdir(), "verify-sp-"));
+            writeFileSync(join(ctx.root, "CLAUDE.md"), "# Fixture project\n\nRead me first.\n");
+            mkdirSync(join(ctx.root, ".claude"), { recursive: true });
+            writeFileSync(
+                join(ctx.root, ".claude", "settings.json"),
+                JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "echo hi" }] }] } })
+            );
+            writeFileSync(join(ctx.root, ".claude", "settings.local.json"), '{ "hooks": not json');
+            mkdirSync(join(ctx.root, ".arc"), { recursive: true });
+            writeFileSync(join(ctx.root, ".arc", "setup"), "");
+            ctx.memProject = join(homedir(), ".claude", "projects", spSlug(ctx.root));
+            const mem = join(ctx.memProject, "memory");
+            mkdirSync(mem, { recursive: true });
+            writeFileSync(join(mem, "MEMORY.md"), "- [Fixture rule](feedback_fixture.md) — the fixture's one rule\n");
+            writeFileSync(
+                join(mem, "feedback_fixture.md"),
+                "---\nname: fixture-rule\ndescription: The fixture's one rule\nmetadata:\n  type: feedback\n---\n\nFixture rule body.\n"
+            );
+            await h.rpc("createproject", { name: SP_PROJECT, path: ctx.root });
+            ctx.projectMade = true;
+            await waitForProjectInConfig(h, SP_PROJECT);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        rec("0. the fixture project, its files and its memory are arranged", ctx.arrangeError == null, ctx.arrangeError ?? "");
+        if (ctx.arrangeError != null) return steps;
+
+        await h.goto("setup");
+        await ttClick(h, '[data-setup-tab="project"]');
+        const listed = await polishWaitFor(h, `!!document.querySelector('[data-context-project="${SP_PROJECT}"]')`, 8000);
+        await ttClick(h, `[data-context-project="${SP_PROJECT}"]`);
+        const loaded = await polishWaitFor(h, `!!document.querySelector('[data-context-group="memory"] [data-context-file]')`, 8000);
+        const list = await h.ev(`(() => {
+            const note = (label) => {
+                const b = [...document.querySelectorAll("[data-context-file]")].find((x) => x.textContent.includes(label));
+                return b?.querySelector("[data-context-note]")?.textContent ?? null;
+            };
+            return {
+                groups: [...document.querySelectorAll("[data-context-group]")].map((g) => g.getAttribute("data-context-group")),
+                claudeMd: note("CLAUDE.md"),
+                settings: note(".claude/settings.json"),
+                missing: !!document.querySelector('[data-context-missing="AGENTS.md"]'),
+            };
+        })()`);
+        rec(
+            "1. Setup → Project lists the fixture project's six groups; CLAUDE.md is the one Claude reads, settings.json notes its hook, AGENTS.md shows as missing",
+            listed &&
+                loaded &&
+                JSON.stringify(list.groups) === JSON.stringify(["instructions", "memory", "settings", "skills", "setup", "global"]) &&
+                list.claudeMd === "Claude reads this" &&
+                list.settings === "1 hook" &&
+                list.missing,
+            JSON.stringify({ listed, loaded, ...list })
+        );
+
+        await h.ev(`[...document.querySelectorAll("[data-context-file]")].find((b) => b.textContent.includes("feedback_fixture.md"))?.click()`);
+        const read = await polishWaitFor(
+            h,
+            `(document.querySelector("[data-context-rail]")?.textContent ?? "").includes("Fixture rule body.")`,
+            5000
+        );
+        await polishNap(300);
+        await h.shot("cdp-shots/setup-project-1-memory.png");
+        const rail = await h.ev(`document.querySelector("[data-context-rail]")?.textContent?.slice(0, 200) ?? null`);
+        rec("2. selecting the feedback memory reads it in the rail with its description", read && rail.includes("The fixture's one rule"), rail);
+
+        // a row by its label, clicked; the rail's text once it holds `want`
+        const clickRow = (label) =>
+            h.ev(`(() => { const b = [...document.querySelectorAll("[data-context-file]")].find((x) => x.textContent.includes(${JSON.stringify(label)})); b?.click(); return !!b; })()`);
+        const railHas = (want) =>
+            polishWaitFor(h, `(document.querySelector("[data-context-rail]")?.textContent ?? "").includes(${JSON.stringify(want)})`, 5000);
+
+        const skills = await h.ev(`(() => {
+            const g = document.querySelector('[data-context-group="skills"]');
+            return { empty: g?.querySelector("[data-context-empty]")?.textContent?.trim() ?? null, files: g?.querySelectorAll("[data-context-file]").length ?? -1 };
+        })()`);
+        rec('3. Skills & agents, empty in the fixture, shows one "—" row', skills.empty === "—" && skills.files === 0, JSON.stringify(skills));
+
+        const globalRows = `[...document.querySelectorAll('[data-context-group="global"] [data-context-file], [data-context-group="global"] [data-context-missing]')].map((r) => r.textContent)`;
+        const folded = await h.ev(`${globalRows}.length`);
+        await h.ev(`document.querySelector('[data-context-group="global"] button[aria-expanded]')?.click()`);
+        const opened = await polishWaitFor(h, `${globalRows}.length === 2`, 3000);
+        const global = await h.ev(globalRows);
+        rec(
+            "4. Global starts folded; a click on its heading shows ~/.claude/CLAUDE.md and ~/.claude/settings.json",
+            folded === 0 && opened && global.some((t) => t.includes("~/.claude/CLAUDE.md")) && global.some((t) => t.includes("~/.claude/settings.json")),
+            JSON.stringify({ folded, global })
+        );
+
+        const badNote = await h.ev(`[...document.querySelectorAll("[data-context-file]")].find((b) => b.textContent.includes("settings.local.json"))?.querySelector("[data-context-note]")?.textContent ?? null`);
+        const badClicked = await clickRow("settings.local.json");
+        const badRaw = badClicked && (await railHas('{ "hooks": not json'));
+        await polishNap(300);
+        await h.shot("cdp-shots/setup-project-2-invalid-json.png");
+        rec('5. settings.local.json that does not parse notes "invalid JSON" and the rail shows its raw text', badNote === "invalid JSON" && badRaw, JSON.stringify({ badNote, badClicked, badRaw }));
+
+        const setupClicked = await clickRow(".arc/setup");
+        const empty = setupClicked && (await railHas("Empty, or could not be read."));
+        rec('6. the empty .arc/setup reads "Empty, or could not be read." in the rail', empty, JSON.stringify({ setupClicked, empty }));
+
+        // a stub over Clipboard.prototype's writeText: the real one rejects without OS focus and would overwrite the user's clipboard
+        await h.ev(notesClipStub(false));
+        await h.ev(`document.querySelector("[data-context-rail] [data-context-copy]")?.click()`);
+        const copied = await polishWaitFor(h, `(window.__notesClip ?? []).length === 1`, 2000);
+        const clip = await h.ev(`window.__notesClip ?? []`);
+        await h.ev(NOTES_CLIP_RESTORE);
+        rec(
+            "7. Copy path in the rail head copies the file's full path",
+            copied && clip[0]?.replace(/\\/g, "/").endsWith("/.arc/setup") && clip[0].length > ".arc/setup".length,
+            JSON.stringify(clip)
+        );
+
+        writeFileSync(
+            join(ctx.memProject, "memory", "project_added.md"),
+            "---\nname: added\ndescription: Written after the tab opened\ntype: project\n---\n\nAdded body.\n"
+        );
+        await h.ev(`document.querySelector('button[aria-label="Read the files again"]')?.click()`);
+        const added = await polishWaitFor(
+            h,
+            `[...document.querySelectorAll('[data-context-group="memory"] [data-context-file]')].some((b) => b.textContent.includes("project_added.md"))`,
+            5000
+        );
+        rec("8. Reload re-reads the project: a memory file written since shows under Memory", added, "");
+
+        let rmError = null;
+        try {
+            rmSync(ctx.root, { recursive: true, force: true });
+        } catch (e) {
+            rmError = String(e?.message ?? e);
+        }
+        await h.ev(`document.querySelector('button[aria-label="Read the files again"]')?.click()`);
+        const gone = await polishWaitFor(
+            h,
+            `!!document.querySelector('[data-context-tab] [role="alert"]') && !document.querySelector("[data-context-group]")`,
+            5000
+        );
+        await polishNap(300);
+        await h.shot("cdp-shots/setup-project-3-path-gone.png");
+        const alert = await h.ev(`document.querySelector('[data-context-tab] [role="alert"]')?.textContent ?? null`);
+        rec("9. with the project's folder gone, Reload shows the alert banner and no list", rmError == null && gone, JSON.stringify({ rmError, alert }));
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`setup-project teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        if (ctx.projectMade) {
+            // deleteproject leaves the channel createproject made, so that goes too
+            await step("remove the project", async () => {
+                await h.rpc("deleteproject", { name: SP_PROJECT });
+                const norm = (s) => (s || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+                for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.root))) {
+                    await h.rpc("deletechannel", { channelid: c.oid });
+                }
+            });
+        }
+        if (ctx.memProject) await step("remove the memory folder", () => rmSync(ctx.memProject, { recursive: true, force: true }));
+        if (ctx.root) await step("remove the project folder", () => rmSync(ctx.root, { recursive: true, force: true }));
+    },
+};
+
 // --- tools-worktree-gone: a terminal whose folder was removed (boards WorktreeGone and Sidebar). Its row reads
 // removed with the branch chip struck through; shown, the pane carries the card with Reopen in <project> and Close.
 const toolsWorktreeGone = {
@@ -37028,8 +37222,8 @@ const toolsWorktreeGone = {
 };
 
 // --- What's new (frontend/app/cockpit/whatsnewsheet.tsx) -------------------------------------------------------------
-// The footer's version opens the release notes read from CHANGELOG.md: the latest releases, a headline per note until it
-// is clicked open, and Try it on a note lands on its feature.
+// The footer's version opens the release notes read from CHANGELOG.md: the latest releases, each led by its highlights as
+// cards with every other note under one fold line, and Try it on a note lands on its feature.
 const whatsNew = {
     name: "whats-new",
     surface: "cockpit",
@@ -37073,28 +37267,48 @@ const whatsNew = {
         );
         await h.shot("cdp-shots/whats-new-2-sheet.png");
 
-        // headlines first: an entry is its bold lead until it is clicked open
-        const ENTRY = `document.querySelector('[data-whats-new] li button[aria-expanded]')`;
-        const before = await h.ev(`(() => { const b = ${ENTRY}; return b ? { open: b.getAttribute("aria-expanded"), len: b.textContent.length } : null })()`);
-        await h.ev(`${ENTRY}.click()`);
-        await briefNap(200);
-        const after = await h.ev(`(() => { const b = ${ENTRY}; return { open: b.getAttribute("aria-expanded"), len: b.textContent.length } })()`);
+        // highlights first: a release's big notes are cards (5 at most), every other note folds under one count line
+        const layout = await h.ev(`[...document.querySelectorAll("[data-whats-new] [data-release]")].map((r) => ({
+            v: r.dataset.release,
+            cards: r.querySelectorAll("[data-whats-new-card]").length,
+            more: r.querySelector("[data-whats-new-more]")?.textContent.trim() ?? null,
+            rows: r.querySelectorAll("li:not([data-whats-new-card])").length,
+        }))`);
         rec(
-            "4. an entry shows only its headline until clicked, then the whole note",
-            before?.open === "false" && after.open === "true" && after.len > before.len,
+            "4. each release leads with at most 5 cards, the rest folded under one count line",
+            layout.some((r) => r.cards > 0) && layout.every((r) => r.cards <= 5 && r.rows === 0 && (r.more == null || /\d+ (more )?(change|fix)/.test(r.more))),
+            JSON.stringify(layout)
+        );
+
+        // the fold opens the rest, where a note is its bold lead until it is clicked open
+        await h.ev(`document.querySelector("[data-whats-new] [data-whats-new-more]").click()`);
+        await briefNap(200);
+        const ENTRY = `document.querySelector('[data-whats-new] li:not([data-whats-new-card]) button[aria-expanded]')`;
+        const before = await h.ev(`(() => { const b = ${ENTRY}; return b ? { open: b.getAttribute("aria-expanded"), len: b.textContent.length } : null })()`);
+        if (before != null) {
+            await h.ev(`${ENTRY}.click()`);
+            await briefNap(200);
+        }
+        const after = before == null ? null : await h.ev(`(() => { const b = ${ENTRY}; return { open: b.getAttribute("aria-expanded"), len: b.textContent.length } })()`);
+        rec(
+            "5. the fold opens the rest; a note there shows its headline until clicked, then the whole note",
+            before?.open === "false" && after?.open === "true" && after.len > before.len,
             JSON.stringify({ before, after })
         );
         await h.shot("cdp-shots/whats-new-3-opened.png");
 
+        // a Try it may sit inside a fold: open them all
+        await h.ev(`document.querySelectorAll('[data-whats-new] [data-whats-new-more][aria-expanded="false"]').forEach((b) => b.click())`);
+        await briefNap(200);
         const hasUsage = await h.ev(`!!document.querySelector('[data-whats-new-try="go:usage"]')`);
         if (!hasUsage) {
-            rec("5. Try it on a Usage note goes to Usage and closes the notes", false, "no go:usage note in the releases shown");
+            rec("6. Try it on a Usage note goes to Usage and closes the notes", false, "no go:usage note in the releases shown");
             return steps;
         }
         await h.ev(`document.querySelector('[data-whats-new-try="go:usage"]').click()`);
         await polishWaitFor(h, `!document.querySelector("[data-whats-new]")`, 4000);
         const landed = { surface: await h.activeSurfaceLabel(), open: await h.ev(`!!document.querySelector("[data-whats-new]")`) };
-        rec("5. Try it on a Usage note goes to Usage and closes the notes", landed.surface === SURFACE_LABEL.usage && !landed.open, JSON.stringify(landed));
+        rec("6. Try it on a Usage note goes to Usage and closes the notes", landed.surface === SURFACE_LABEL.usage && !landed.open, JSON.stringify(landed));
         await h.shot("cdp-shots/whats-new-4-tried.png");
         return steps;
     },
@@ -37792,6 +38006,7 @@ export const SCENARIOS = [
     toolsPicker,
     toolsLauncher,
     toolsWorktreeGone,
+    setupProject,
     whatsNew,
     needsYouLearnCard,
     setupSkillAdditions,

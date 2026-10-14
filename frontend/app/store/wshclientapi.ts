@@ -222,6 +222,12 @@ export class RpcApiType {
         return client.wshRpcCall("claudeaccountsetemail", data, opts);
     }
 
+    // command "claudecontext" [call]
+    ClaudeContextCommand(client: WshClient, data: CommandClaudeContextData, opts?: RpcOpts): Promise<CommandClaudeContextRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "claudecontext", data, opts);
+        return client.wshRpcCall("claudecontext", data, opts);
+    }
+
     // command "cleanstorage" [call]
     CleanStorageCommand(client: WshClient, data: CommandCleanStorageData, opts?: RpcOpts): Promise<StorageCleanResult> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "cleanstorage", data, opts);
