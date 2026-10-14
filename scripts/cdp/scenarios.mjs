@@ -12351,6 +12351,18 @@ const PROFILE_STATE = `(() => {
     };
 })()`;
 
+// the Light reviewers route row: its label, the picker's face and the source cell
+const PROFILE_LIGHT_ROW = `(() => {
+    const row = ${PROFILE_MODAL}?.querySelector('[data-light-reviewers-row]');
+    if (!row) return null;
+    const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+    return {
+        label: flat(row.firstElementChild?.firstElementChild),
+        face: flat(row.querySelector('[data-testid="route-picker"]')),
+        aside: flat(row.lastElementChild),
+    };
+})()`;
+
 const briefProfile = {
     name: "brief-profile",
     surface: "jarvis",
@@ -12405,6 +12417,7 @@ const briefProfile = {
             JSON.stringify(project?.rows)
         );
         await h.shot("cdp-shots/brief-profile-project.png");
+        const projectLight = await h.ev(PROFILE_LIGHT_ROW);
 
         await h.ev(`${PROFILE_MODAL}?.querySelector('[data-jarvis-profile-tab="global"]')?.click()`);
         await polishWaitFor(h, `${PROFILE_MODAL}?.dataset.jarvisProfileScope === 'global' && !!${PROFILE_MODAL}?.querySelector('[data-jarvis-global-principles="editor"]')`, 5000);
@@ -12424,6 +12437,17 @@ const briefProfile = {
             JSON.stringify(global)
         );
         await h.shot("cdp-shots/brief-profile.png");
+
+        const globalLight = await h.ev(PROFILE_LIGHT_ROW);
+        rec(
+            "4. profile shows the Light reviewers route row on both scopes, unset on Global",
+            projectLight?.label === "Light reviewers route" &&
+                projectLight.aside === "Global" &&
+                ["Sonnet (default)", "Same as global"].includes(projectLight.face) &&
+                globalLight?.label === "Light reviewers route" &&
+                globalLight.face !== "",
+            JSON.stringify({ project: projectLight, global: globalLight })
+        );
         return steps;
     },
     async teardown(h, ctx) {
@@ -21445,6 +21469,8 @@ const flatText = (elExpr) => `(${elExpr}?.textContent ?? '').replace(/\\s+/g, ' 
 const NEW_RUN = `document.querySelector('[data-launcher]')`;
 const NEW_RUN_WORKERS = `${NEW_RUN}?.querySelector('[data-testid="route-picker"][aria-label="Workers model"]')`;
 const NEW_RUN_PROJECT = "verify-new-run-window";
+const NEW_RUN_LIGHT_GOAL =
+    "verify new-run-window: a UI check drives this run; do nothing, make no file changes, submit no plan, and wait idle";
 const RECENT_PROJECTS_KEY = "agent.launch.recentprojects";
 
 // a row's first cell is its task id; the needs cell can also read t-N, so only a first child counts
@@ -21480,6 +21506,137 @@ async function channelRunCount(h, channelId) {
     return (await channelRuns(h, channelId)).length;
 }
 
+// Opens a route picker on its claude rows and picks model: its catalog row, or the custom model id when the catalog
+// has none (the claude catalog lists no haiku). Returns the model, or null when the picker never offered claude.
+// The rows are portaled out of their dialog, but only one picker is open at a time.
+async function pickClaudeRoute(h, pickerExpr, model) {
+    const anyClaude = `document.querySelector('[data-testid^="route-option-claude-"]')`;
+    const row = `document.querySelector('[data-testid="route-option-claude-${model}"]')`;
+    // a section is the header, its rows and its custom id entry
+    const section = `${anyClaude}?.parentElement`;
+    await h.ev(`${pickerExpr}?.click()`);
+    await polishWaitFor(h, `!!document.querySelector('[data-testid="route-picker-scroll"]')`, 3000);
+    // the picker opens scoped to the route it holds, which can be another harness
+    await h.ev(`document.querySelector('[data-testid="route-harness-all"]')?.click()`);
+    if (!(await polishWaitFor(h, `!!${anyClaude}`, 5000))) {
+        await h.ev(`${pickerExpr}?.click()`);
+        return null;
+    }
+    if (await h.ev(`!!${row}`)) {
+        await h.ev(`${row}.click()`);
+    } else {
+        await h.ev(clickByText(section, "button", "custom model id…"));
+        await polishWaitFor(h, `!!${section}?.querySelector('input[aria-label^="Custom model id for"]')`, 2000);
+        await h.ev(setInputExpr(`${section}?.querySelector('input[aria-label^="Custom model id for"]')`, model));
+        await polishNap(100);
+        await h.ev(`${section}?.querySelector('button[aria-label="Use custom model"]')?.click()`);
+    }
+    await polishNap(300);
+    return model;
+}
+
+const openAddressExpr = (address) => `(async () => {
+    for (let i = 0; i < 20 && typeof window.__openAddress !== "function"; i++) {
+        await new Promise((r) => setTimeout(r, 250));
+    }
+    if (typeof window.__openAddress !== "function") return { ok: false, why: "no __openAddress hook" };
+    return window.__openAddress(${JSON.stringify(address)});
+})()`;
+
+// Starts an orchestrator run from a goal in the window, lead and Light reviewers on a haiku route. The goal keeps
+// the lead idle, so the run has no dag when the run sheet step edits it.
+async function newRunWithLightReviewers(h, ctx) {
+    const out = { row: null, picked: null, lead: null, run: null };
+    await h.ev(`document.querySelector('[data-new-run]')?.click()`);
+    if (!(await polishWaitFor(h, `!!${NEW_RUN}`, 5000))) return { ...out, why: "the window did not open" };
+    await h.ev(`${NEW_RUN_FIELD}?.click()`);
+    await polishWaitFor(h, `!!${NEW_RUN_LIST}`, 3000);
+    await h.ev(setInputExpr(`${NEW_RUN}?.querySelector('input[aria-label="Search projects"]')`, NEW_RUN_PROJECT));
+    await polishNap(300);
+    await h.ev(`${NEW_RUN_LIST}?.querySelector('[data-project-option="${NEW_RUN_PROJECT}"]')?.click()`);
+    await polishNap(300);
+    await h.ev(
+        `[...(${NEW_RUN}?.querySelectorAll('button[aria-pressed]') ?? [])].find((b) => b.firstElementChild?.textContent.trim() === 'orchestrator')?.click()`
+    );
+    await polishNap(200);
+    await h.ev(clickByText(`${NEW_RUN}?.querySelector('[role="group"][aria-label="Start from"]')`, "button", "Goal"));
+    await h.ev(`(() => {
+        const el = ${NEW_RUN_GOAL};
+        if (!el) return false;
+        Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(el, ${JSON.stringify(NEW_RUN_LIGHT_GOAL)});
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
+    })()`);
+    out.lead = await pickClaudeRoute(h, `${NEW_RUN}?.querySelector('[data-testid="route-picker"][aria-label="Lead model"]')`, "haiku");
+    out.picked = await pickClaudeRoute(h, `${NEW_RUN}?.querySelector('[data-light-reviewers-row] [data-testid="route-picker"]')`, "haiku");
+    out.row = await h.ev(`(() => {
+        const row = ${NEW_RUN}?.querySelector('[data-light-reviewers-row]');
+        return row ? { label: ${flatText("row.firstElementChild")}, face: ${flatText(`row.querySelector('[data-testid="route-picker"]')`)} } : null;
+    })()`);
+    await h.shot("cdp-shots/new-run-window-3-light-reviewers.png");
+    const before = new Set((await channelRuns(h, ctx.channelId)).map((r) => r.id));
+    await h.ev(`${NEW_RUN_START}?.click()`);
+    for (let waited = 0; waited < 20000 && out.run == null; waited += 500) {
+        out.run = (await channelRuns(h, ctx.channelId)).find((r) => !before.has(r.id)) ?? null;
+        if (out.run == null) await polishNap(500);
+    }
+    if (out.run == null) {
+        out.why = await h.ev(flatText(NEW_RUN));
+        await h.ev(clickByText(NEW_RUN, "button", "Cancel"));
+    }
+    ctx.createdRunId = out.run?.id;
+    ctx.createdLandPath = out.run?.landpath;
+    return out;
+}
+
+// On the window's run, before it has a dag: reads the run sheet's config line, opens adjust, moves Light reviewers
+// to a sonnet route and saves.
+async function editSheetLightReviewers(h, ctx) {
+    const config = `${RUN_SHEET}?.querySelector('[data-jarvis-brief-sheet-config="editable"]')`;
+    const row = `${RUN_SHEET}?.querySelector('[data-light-reviewers-row]')`;
+    const runNow = async () => (await channelRuns(h, ctx.channelId)).find((r) => r.id === ctx.createdRunId) ?? null;
+    const out = { dag: (await runNow())?.dagoref ?? "", summary: "", row: false, picked: null, saved: false, after: null };
+    await h.goto("jarvis");
+    await h.ev(openAddressExpr(`run:${ctx.createdRunId}`));
+    if (!(await polishWaitFor(h, `!!${config}`, 10000))) return { ...out, why: "no editable config line on the run sheet" };
+    out.summary = await h.ev(flatText(config));
+    await h.ev(clickByText(config, "button", "adjust"));
+    out.row = await polishWaitFor(h, `!!${row}`, 3000);
+    out.picked = await pickClaudeRoute(h, `${row}?.querySelector('[data-testid="route-picker"]')`, "sonnet");
+    await h.shot("cdp-shots/new-run-window-4-run-sheet.png");
+    await h.ev(clickByText(RUN_SHEET, "button", "Save settings"));
+    out.saved = await polishWaitFor(h, `!!${RUN_SHEET}?.querySelector('[data-jarvis-brief-sheet-state="saved"]')`, 8000);
+    for (let waited = 0; waited < 5000; waited += 250) {
+        out.after = (await runNow())?.lightreviewerroute ?? null;
+        if (out.after?.model === out.picked) break;
+        await polishNap(250);
+    }
+    await h.ev(PEEKS_ESC);
+    return out;
+}
+
+// A channel with no run: its brief sheet is the launcher, whose orchestrator shape shows the routing pickers.
+async function launcherLightReviewers(h, ctx) {
+    const sheet = `document.querySelector('[data-jarvis-brief-sheet]')`;
+    const row = `${sheet}?.querySelector('[data-light-reviewers-row]')`;
+    await h.ev(openAddressExpr(`channel:${ctx.launcherChannelId}`));
+    const out = { sheet: await polishWaitFor(h, `!!${sheet}?.querySelector('button[aria-pressed]')`, 8000) };
+    await h.ev(
+        `[...(${sheet}?.querySelectorAll('button[aria-pressed]') ?? [])].find((b) => b.firstElementChild?.textContent.trim() === 'orchestrator')?.click()`
+    );
+    out.row = await polishWaitFor(h, `!!${row}`, 3000);
+    Object.assign(
+        out,
+        await h.ev(`({
+            besideReviewers: !!${row}?.previousElementSibling?.querySelector('[data-testid="route-picker"][aria-label="Reviewers model"]'),
+            face: ${flatText(`${row}?.querySelector('[data-testid="route-picker"][aria-label="Light reviewers model"]')`)},
+        })`)
+    );
+    await h.shot("cdp-shots/new-run-window-5-launcher.png");
+    await h.ev(PEEKS_ESC);
+    return out;
+}
+
 const newRunWindow = {
     name: "new-run-window",
     surface: "jarvis",
@@ -21504,6 +21661,11 @@ const newRunWindow = {
                 deferstart: true,
             });
             ctx.runId = created.run.id;
+            // a channel with no run, on a project of its own so the window's run cannot land in it: its brief sheet
+            // is the launcher
+            ctx.launcherCwd = mkdtempSync(join(tmpdir(), "verify-new-run-launcher-"));
+            const launcher = await h.rpc("createchannel", { name: "verify-new-run-launcher", projectpath: ctx.launcherCwd });
+            ctx.launcherChannelId = launcher.oid;
             // recent is the shared recent-projects list (projectsstore's recentProjectsAtom), which a launch
             // writes; seed it rather than launch, and put the developer's own list back in teardown
             ctx.prevRecent = await h.ev(`localStorage.getItem(${JSON.stringify(RECENT_PROJECTS_KEY)})`);
@@ -21617,10 +21779,64 @@ const newRunWindow = {
             closed && runsAfter === runsBefore,
             JSON.stringify({ closed, runsBefore, runsAfter })
         );
+
+        const created = await newRunWithLightReviewers(h, ctx);
+        rec(
+            "8. Light reviewers row picks a route the created run carries",
+            created.row?.label === "Light reviewers" &&
+                created.picked != null &&
+                created.row.face.includes(created.picked) &&
+                created.run?.lightreviewerroute?.runtime === "claude" &&
+                created.run.lightreviewerroute.model === created.picked,
+            JSON.stringify({ ...created, run: created.run && { id: created.run.id, lightreviewerroute: created.run.lightreviewerroute } })
+        );
+        if (created.run == null) return steps;
+
+        const edited = await editSheetLightReviewers(h, ctx);
+        rec(
+            "9. the run sheet shows and edits the Light reviewers row",
+            edited.dag === "" &&
+                edited.summary.includes("light reviewers on claude") &&
+                edited.row === true &&
+                edited.picked != null &&
+                edited.saved === true &&
+                edited.after?.runtime === "claude" &&
+                edited.after.model === edited.picked &&
+                edited.after.model !== created.picked,
+            JSON.stringify(edited)
+        );
+
+        const launcher = await launcherLightReviewers(h, ctx);
+        rec(
+            "10. the brief sheet's launcher shows the Light reviewers row beside Reviewers",
+            launcher.sheet === true && launcher.row === true && launcher.besideReviewers === true && launcher.face !== "",
+            JSON.stringify(launcher)
+        );
         return steps;
     },
     async teardown(h, ctx) {
         await h.ev(PEEKS_ESC).catch(() => {});
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`new-run-window teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        if (ctx.createdRunId) {
+            await step("cancel the window's run", () => h.rpc("cancelrun", { channelid: ctx.channelId, runid: ctx.createdRunId }));
+        }
+        if (ctx.launcherChannelId) {
+            await step("delete the launcher channel", () => h.rpc("deletechannel", { channelid: ctx.launcherChannelId }));
+        }
+        if (ctx.launcherCwd) {
+            await step("remove the launcher dir", () => rmSync(ctx.launcherCwd, { recursive: true, force: true }));
+        }
+        if (ctx.createdLandPath) {
+            await step("remove the window run's tree", () =>
+                rmSync(ctx.createdLandPath, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 })
+            );
+        }
         if (ctx.prevRecent !== undefined) {
             const key = JSON.stringify(RECENT_PROJECTS_KEY);
             await h.ev(
@@ -24187,6 +24403,90 @@ async function waitDagTask(h, ctx, id, ok) {
 const taskFacts = (t) =>
     t && { state: t.state, modelsource: t.modelsource ?? "", runtime: t.runspec?.runtime ?? "", model: t.runspec?.model ?? "" };
 
+// the plan review's reviewers are real sessions; haiku keeps the five of a round cheap
+const HAIKU_ROUTE = { runtime: "claude", model: "haiku" };
+const ROUND_ONE_LENSES = ["full", "spec", "order", "tests", "final"];
+const LENS_TITLE = {
+    full: "Full review",
+    spec: "Spec coverage",
+    order: "Task order and files",
+    tests: "Tests and commands",
+    final: "Final coverage",
+    followup: "Round-2 follow-up",
+};
+const PLAN_REVIEWER_WAIT_MS = 90000;
+
+const planReviewOf = async (h, ctx) =>
+    (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group?.planreview ?? null;
+
+// Waits for the round's reviewers to start, then records each one's verdict in its own name before it can send
+// one, the reviewer that picks models last, so the round settles on it. verdicts maps a lens to
+// { verdict, notes, picks? }, in the order they are sent.
+async function recordPlanReviewRound(h, ctx, round, verdicts) {
+    const lenses = Object.keys(verdicts);
+    let pr = null;
+    const started = () =>
+        pr?.round === round &&
+        (pr.reviewers ?? []).length === lenses.length &&
+        pr.reviewers.every((r) => r.runid && lenses.includes(r.lens));
+    for (let waited = 0; waited < PLAN_REVIEWER_WAIT_MS && !started(); waited += 1000) {
+        pr = await planReviewOf(h, ctx);
+        if (!started()) await polishNap(1000);
+    }
+    if (!started()) {
+        throw new Error(`round ${round}: want reviewers ${lenses.join(", ")} with run ids, got ${JSON.stringify(pr?.reviewers ?? null)}`);
+    }
+    for (const lens of lenses) {
+        const r = pr.reviewers.find((x) => x.lens === lens);
+        if (r.state !== "reviewing") {
+            throw new Error(`round ${round}: the ${lens} reviewer sent its own verdict (${r.state}) before the scenario could`);
+        }
+        const v = verdicts[lens];
+        await h.rpc(
+            "dagaction",
+            {
+                channelid: ctx.channelId,
+                runid: r.runid,
+                taskid: "",
+                action: `planreview-${v.verdict}`,
+                notes: v.notes,
+                ...(v.picks ? { picks: v.picks } : {}),
+            },
+            MODELS_RPC
+        );
+    }
+}
+
+const PLAN_REVIEWER_CHIPS = `[...document.querySelectorAll('[data-dag-modal-kind] [data-plan-reviewer]')].map((c) => ({
+    lens: c.getAttribute('data-plan-reviewer'),
+    state: c.getAttribute('data-plan-reviewer-state'),
+    line: (c.parentElement?.textContent ?? '').replace(/\\s+/g, ' ').trim(),
+}))`;
+const DAG_RAIL = `document.querySelector('[data-dag-modal-kind] [data-timeline-rail]')`;
+
+// Opens the timeline rail's group whose title starts with prefix, and reads the titles of its events and the
+// plan reviewer sub-rows under them. One group is open at a time, so opening it closes any other.
+const railGroupExpr = (prefix) => `(async () => {
+    const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+    const rows = () => [...(${DAG_RAIL}?.querySelectorAll('[data-timeline-row]') ?? [])];
+    const row = () => rows().find((b) => flat(b.querySelector('span > span')).startsWith(${JSON.stringify(prefix)}));
+    for (let i = 0; i < 40 && !row(); i++) await new Promise((r) => setTimeout(r, 250));
+    if (!row()) return { found: false, rows: rows().map((b) => flat(b.querySelector('span > span'))) };
+    if (row().getAttribute('aria-expanded') !== 'true') row().click();
+    for (let i = 0; i < 20 && !row().nextElementSibling; i++) await new Promise((r) => setTimeout(r, 100));
+    const detail = row().nextElementSibling;
+    return {
+        found: true,
+        titles: [...(detail?.querySelectorAll(':scope > div > div:first-child > span:nth-child(2)') ?? [])].map(flat),
+        reviewers: [...(detail?.querySelectorAll('[data-plan-review-reviewer]') ?? [])].map((r) => ({
+            lens: r.getAttribute('data-plan-review-reviewer'),
+            text: flat(r),
+        })),
+    };
+})()`;
+
+const sameSet = (a, b) => a.length === b.length && [...a].sort().join() === [...b].sort().join();
+
 const modelPicks = {
     name: "model-picks",
     surface: "jarvis",
@@ -24206,6 +24506,8 @@ const modelPicks = {
                 mode: "orchestrator",
                 deferstart: true,
                 reviewerpicks: true,
+                reviewerroute: HAIKU_ROUTE,
+                lightreviewerroute: HAIKU_ROUTE,
                 parallelism: 1,
             });
             ctx.runId = created.run.id;
@@ -24214,27 +24516,16 @@ const modelPicks = {
                 { channelid: ctx.channelId, runid: ctx.runId, parallelism: 1, planpath: MODELS_PLAN },
                 MODELS_RPC
             );
-            // the plan reviewer is a real session, spawned after the submit returns; its verdict is recorded
-            // here, in its name, before it can send one
-            let reviewer = null;
-            for (let waited = 0; waited < 90000 && reviewer == null; waited += 1000) {
-                const pr = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group?.planreview;
-                reviewer = pr?.state === "reviewing" && pr.runid ? pr.runid : null;
-                if (reviewer == null) await polishNap(1000);
-            }
-            if (reviewer == null) throw new Error("the plan reviewer never started");
-            await h.rpc(
-                "dagaction",
-                {
-                    channelid: ctx.channelId,
-                    runid: reviewer,
-                    taskid: "",
-                    action: "planreview-pass",
-                    notes: "verify model-picks: three noops",
-                    picks: MODEL_PICKS,
-                },
-                MODELS_RPC
-            );
+            // the five reviewers are real sessions, spawned after the submit returns: a pass from each lens, then
+            // the full reviewer's with the picks
+            const pass = { verdict: "pass", notes: "verify model-picks: three noops" };
+            await recordPlanReviewRound(h, ctx, 1, {
+                spec: pass,
+                order: pass,
+                tests: pass,
+                final: pass,
+                full: { ...pass, picks: MODEL_PICKS },
+            });
             // the Brief reads a boot-primed snapshot, so the RPC-created channel needs a reload
             await polishReload(h);
             ctx.opened = await h.ev(`(async () => {
@@ -24338,6 +24629,30 @@ const modelPicks = {
                 yours.rail.route === "owner:claude:sonnet" &&
                 yours.rail.text.includes("worker · your pick"),
             JSON.stringify({ task: taskFacts(onSonnet), ...yours })
+        );
+
+        const chips = await h.ev(PLAN_REVIEWER_CHIPS);
+        await h.shot("cdp-shots/model-picks-3-reviewers.png");
+        rec(
+            "6. the graph's stage line shows five plan reviewers, each passed",
+            sameSet(
+                chips.map((c) => c.lens),
+                ROUND_ONE_LENSES
+            ) && chips.every((c) => c.state === "passed"),
+            JSON.stringify(chips)
+        );
+
+        const reviewed = await h.ev(railGroupExpr("Plan reviewed"));
+        await h.shot("cdp-shots/model-picks-4-plan-reviewed.png");
+        rec(
+            "7. the timeline's Plan reviewed row lists five reviewers",
+            reviewed.found &&
+                sameSet(
+                    reviewed.reviewers.map((r) => r.lens),
+                    ROUND_ONE_LENSES
+                ) &&
+                reviewed.reviewers.every((r) => r.text === `${LENS_TITLE[r.lens]} · passed`),
+            JSON.stringify(reviewed)
         );
         return steps;
     },
@@ -24623,6 +24938,219 @@ const codexWorkerRoute = {
         } catch (e) {
             console.error(`codex-worker-route teardown: remove the temp dir failed: ${e?.message ?? e}`);
         }
+    },
+};
+
+// --- plan-review-rounds: round 1's five reviewers, one failing, then round 2's follow-up on a resubmit
+// (docs/superpowers/specs/2026-10-14-wider-plan-review-design.md). The failed round launches a real lead: its run
+// is on haiku, and the finding it is woken with tells it to leave the plan alone, so the scenario's resubmit is the
+// only one.
+const ROUNDS_FINDING =
+    "verify plan-review-rounds: a UI check drives this review; leave the plan as it is, do not resubmit it, and stop";
+const ROUNDS_GOAL =
+    "verify plan-review-rounds: a UI check drives this run; do nothing, make no file changes, submit no plan, and stop";
+const PLAN_REVIEW_TITLE = "Plan review · ";
+
+// the agent tree's plan-reviewer rows, with the run's finished reviews unfolded first: a stage with a verdict
+// folds under "N reviews"
+const PLAN_REVIEW_TREE_ROWS = `(async () => {
+    const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+    const tree = () => document.querySelector('[data-agent-tree]');
+    const folds = () => [...(tree()?.querySelectorAll('div.cursor-pointer') ?? [])].filter(
+        (d) => /\\d+ reviews?$/.test(flat(d)) && d.querySelector('.lucide-chevron-right')
+    );
+    const titles = () => [...(tree()?.querySelectorAll('div') ?? [])].filter(
+        (d) => d.children.length === 0 && flat(d).startsWith(${JSON.stringify(PLAN_REVIEW_TITLE)})
+    );
+    for (let i = 0; i < 40 && folds().length === 0 && titles().length < 5; i++) {
+        await new Promise((r) => setTimeout(r, 250));
+    }
+    folds().forEach((f) => f.click());
+    for (let i = 0; i < 20 && titles().length < 5; i++) await new Promise((r) => setTimeout(r, 250));
+    return {
+        tree: tree() != null,
+        rows: titles().map((t) => ({ title: flat(t), sub: flat(t.nextElementSibling) })),
+    };
+})()`;
+
+async function openRunGraph(h, ctx) {
+    await polishReload(h);
+    await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
+    const opened = await h.ev(`(async () => {
+        for (let i = 0; i < 20 && typeof window.__openAddress !== "function"; i++) {
+            await new Promise((r) => setTimeout(r, 250));
+        }
+        if (typeof window.__openAddress !== "function") return { ok: false, why: "no __openAddress hook" };
+        return window.__openAddress(${JSON.stringify(`run:${ctx.runId}`)});
+    })()`);
+    const openDag = `[...(document.querySelector('[data-jarvis-brief-sheet]')?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim() === 'Open DAG')`;
+    const sheet = await polishWaitFor(h, `!!${openDag}`, 15000);
+    if (sheet) await h.ev(`${openDag}.click()`);
+    const graph = await polishWaitFor(
+        h,
+        `!!document.querySelector('[data-dag-modal-kind="live"]') && document.querySelectorAll('[data-dag-modal-kind] [data-dag-node]:not([data-dag-node="final"])').length === 3`,
+        10000
+    );
+    return { ok: opened?.ok === true && sheet && graph, opened, sheet, graph };
+}
+
+const planReviewRounds = {
+    name: "plan-review-rounds",
+    surface: "jarvis",
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-plan-review-rounds-"));
+        const ctx = { cwd };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            // the lead the failed round launches works in cwd, so it reads this copy rather than the repo's fixture
+            ctx.planPath = join(cwd, "plan.md");
+            writeFileSync(ctx.planPath, readFileSync(MODELS_PLAN));
+            const wslist = await h.rpc("workspacelist", null);
+            const ch = await h.rpc("createchannel", { name: "verify-plan-review-rounds", projectpath: cwd });
+            ctx.channelId = ch.oid;
+            const created = await h.rpc("createrun", {
+                channelid: ctx.channelId,
+                workspaceid: wslist[0].workspacedata.oid,
+                goal: ROUNDS_GOAL,
+                runtime: "claude",
+                model: "haiku",
+                mode: "orchestrator",
+                deferstart: true,
+                // owned here, so the profile cannot make the full reviewer's pass need picks
+                reviewerpicks: false,
+                reviewerroute: HAIKU_ROUTE,
+                lightreviewerroute: HAIKU_ROUTE,
+                parallelism: 1,
+            });
+            ctx.runId = created.run.id;
+            ctx.landPath = created.run.landpath;
+            await h.rpc(
+                "dagsubmit",
+                { channelid: ctx.channelId, runid: ctx.runId, parallelism: 1, planpath: ctx.planPath },
+                MODELS_RPC
+            );
+            const pass = { verdict: "pass", notes: "verify plan-review-rounds: three noops" };
+            await recordPlanReviewRound(h, ctx, 1, {
+                spec: pass,
+                order: pass,
+                final: pass,
+                tests: { verdict: "fail", notes: ROUNDS_FINDING },
+                full: pass,
+            });
+            ctx.graph = await openRunGraph(h, ctx);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. round 1's five reviewers recorded their verdicts, tests failing", false, ctx.arrangeError);
+            return steps;
+        }
+        rec("0. the run's graph opened with its 3 tasks", ctx.graph.ok, JSON.stringify({ runId: ctx.runId, ...ctx.graph }));
+        if (!ctx.graph.ok) return steps;
+
+        await polishWaitFor(h, `${PLAN_REVIEWER_CHIPS}.filter((c) => c.state !== 'reviewing').length === 5`, 5000);
+        const chips = await h.ev(PLAN_REVIEWER_CHIPS);
+        await h.shot("cdp-shots/plan-review-rounds-1-chips.png");
+        rec(
+            "1. round 1: five chips, four passed and tests failed",
+            sameSet(
+                chips.map((c) => c.lens),
+                ROUND_ONE_LENSES
+            ) && chips.every((c) => c.state === (c.lens === "tests" ? "failed" : "passed")),
+            JSON.stringify(chips)
+        );
+
+        const reviewed = await h.ev(railGroupExpr("Plan reviewed"));
+        const findings = (await planReviewOf(h, ctx))?.findings ?? "";
+        await h.shot("cdp-shots/plan-review-rounds-2-plan-reviewed.png");
+        rec(
+            "2. the Plan reviewed row lists five reviewers, and the findings begin with [Tests and commands]",
+            reviewed.found &&
+                sameSet(
+                    reviewed.reviewers.map((r) => r.lens),
+                    ROUND_ONE_LENSES
+                ) &&
+                reviewed.reviewers.every((r) => r.text === `${LENS_TITLE[r.lens]} · ${r.lens === "tests" ? "failed" : "passed"}`) &&
+                findings.startsWith("[Tests and commands]"),
+            JSON.stringify({ ...reviewed, findings: findings.slice(0, 200) })
+        );
+
+        const started = await h.ev(railGroupExpr("Plan reviewer started"));
+        const want = ROUND_ONE_LENSES.map((l) => `Plan reviewer started · ${LENS_TITLE[l]}`);
+        await h.shot("cdp-shots/plan-review-rounds-3-started.png");
+        rec(
+            "3. the timeline names each reviewer's lens in its started row",
+            started.found && sameSet(started.titles, want),
+            JSON.stringify(started)
+        );
+
+        await h.goto("agent");
+        const tree = await h.ev(PLAN_REVIEW_TREE_ROWS);
+        await h.shot("cdp-shots/plan-review-rounds-4-tree.png");
+        const wantRows = ROUND_ONE_LENSES.map((l) => ({
+            title: `${PLAN_REVIEW_TITLE}${LENS_TITLE[l]}`,
+            verdict: l === "tests" ? "failed" : "passed",
+        }));
+        rec(
+            "4. the agent tree's plan-reviewer rows name their lens and verdict",
+            tree.rows.length === 5 &&
+                wantRows.every((w) => tree.rows.some((r) => r.title === w.title && r.sub.split(" · ")[0] === w.verdict)),
+            tree.rows.length === 0
+                ? `no plan-reviewer rows in the tree: the run's reviewer tabs were reaped or never joined the roster (${JSON.stringify(tree)})`
+                : JSON.stringify(tree)
+        );
+
+        // the same plan again: the review failed and nothing dispatched, so it replaces the proposal and opens round 2
+        await h.rpc(
+            "dagsubmit",
+            { channelid: ctx.channelId, runid: ctx.runId, parallelism: 1, planpath: ctx.planPath },
+            MODELS_RPC
+        );
+        let round2 = null;
+        for (let waited = 0; waited < PLAN_REVIEWER_WAIT_MS; waited += 1000) {
+            round2 = await planReviewOf(h, ctx);
+            if (round2?.round === 2 && round2.reviewers?.length === 1 && round2.reviewers[0].runid) break;
+            await polishNap(1000);
+        }
+        const graph2 = await openRunGraph(h, ctx);
+        await polishWaitFor(h, `${PLAN_REVIEWER_CHIPS}.length === 1`, 5000);
+        const reviewing = await h.ev(PLAN_REVIEWER_CHIPS);
+        await h.shot("cdp-shots/plan-review-rounds-5-round-2.png");
+        rec(
+            "5. round 2 shows one follow-up chip",
+            graph2.ok &&
+                reviewing.length === 1 &&
+                reviewing[0].lens === "followup" &&
+                reviewing[0].state === "reviewing" &&
+                reviewing[0].line.includes("round 2"),
+            JSON.stringify({ graph: graph2, chips: reviewing, reviewers: round2?.reviewers ?? null })
+        );
+        if (reviewing.length !== 1) return steps;
+
+        let recorded = "ok";
+        try {
+            await recordPlanReviewRound(h, ctx, 2, { followup: { verdict: "pass", notes: "verify plan-review-rounds: the plan is unchanged" } });
+        } catch (e) {
+            recorded = String(e?.message ?? e);
+        }
+        await polishWaitFor(h, `${PLAN_REVIEWER_CHIPS}[0]?.state === 'passed'`, 5000);
+        const passed = await h.ev(PLAN_REVIEWER_CHIPS);
+        await h.shot("cdp-shots/plan-review-rounds-6-round-2-passed.png");
+        rec(
+            "6. the follow-up chip reads passed",
+            recorded === "ok" && passed.length === 1 && passed[0].lens === "followup" && passed[0].state === "passed",
+            JSON.stringify({ recorded, chips: passed })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await h.ev(PEEKS_ESC).catch(() => {});
+        await teardownFixtureRun(h, ctx, "plan-review-rounds");
     },
 };
 
@@ -43864,6 +44392,7 @@ export const SCENARIOS = [
     paletteGoal,
     paletteNotes,
     modelPicks,
+    planReviewRounds,
     codexWorkerRoute,
     canvasSwap,
     canvasTabsScenario,
