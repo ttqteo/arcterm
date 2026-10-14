@@ -48,6 +48,9 @@ new draws it as one of its release's cards and folds every other line under a co
 - **Python and pnpm projects wait their turn for RAM too**: an agent's whole `pytest` run (bare, `uv run` or
   `python -m`), `pnpm test` / `pnpm build`, `astro build` and an `e2e.sh` script now queue in Jobs like a build,
   so parallel workers no longer get killed for low memory; one test file or a `-k` filter still runs at once.
+- **Jobs on Windows watches the commit charge**: once the memory handed out passes the RAM (the machine is paging),
+  heavy commands start one at a time, and past 130% with little RAM free none start until it eases, instead of
+  piling on while a few GB still read as free.
 
 ### Fixed
 

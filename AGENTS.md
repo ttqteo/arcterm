@@ -67,7 +67,7 @@ Other useful commands:
   runs, the Claude mod and the pi tools extension call `wsh jobslot`; a heavy one (a build, the typecheck, a whole test
   suite, `npm install`; dev servers excluded) waits in wavesrv's queue (`pkg/jobqueue`) until its RAM fits (by default,
   `jobs:mode` `auto`; `slots` also caps them at `jobs:slots` at once, `off` never waits, and `jobs:pauseuntil` is off
-  for a while; on macOS "fits" reads the OS memory pressure), and holds its slot while it runs. The engine's Verify,
+  for a while; on macOS "fits" reads the OS memory pressure, on Windows the commit charge against the RAM), and holds its slot while it runs. The engine's Verify,
   Final and heavy Setup queue too. A command the person skipped from the Jobs popover comes back "Not run: …": don't
   retry it — carry on and report it skipped. The commands and their RAM estimates are one table in
   `pkg/memgate/memgate.go`; a single test file or `-run` filter is light and never queues.
