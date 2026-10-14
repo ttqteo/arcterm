@@ -27,6 +27,9 @@ new draws it as one of its release's cards and folds every other line under a co
 - **Reopen an agent you just closed**: `Ctrl+Shift+T` (`Cmd+Shift+T` on a Mac) brings back the agent closed last, as a
   browser reopens a closed tab. Its conversation returns asleep, so it costs nothing until you wake it or send it a
   message. The last 5 closed agents are kept. <!-- try: reopen-agent -->
+- **Agents learn your corrections**: agents now note how you correct them. When the same correction comes up in two
+  sessions, Needs you asks whether to keep it as a rule, and the lines you accept appear, highlighted, under
+  Setup → Learned and in each skill.
 - **Claude checks its memory at session start**: on every machine with arcterm, a new Claude session looks over the
   project's Claude memory and, when something has gone stale (a broken link, a file or `task` that no longer exists, a
   memory untouched for 30 days), shows a toast and lists it in its first reply, offering to fix it.

@@ -846,6 +846,36 @@ export class RpcApiType {
         return client.wshRpcCall("landrun", data, opts);
     }
 
+    // command "learnaccepted" [call]
+    LearnAcceptedCommand(client: WshClient, opts?: RpcOpts): Promise<CommandLearnAcceptedRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "learnaccepted", null, opts);
+        return client.wshRpcCall("learnaccepted", null, opts);
+    }
+
+    // command "learnamend" [call]
+    LearnAmendCommand(client: WshClient, data: CommandLearnAmendData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "learnamend", data, opts);
+        return client.wshRpcCall("learnamend", data, opts);
+    }
+
+    // command "learndecide" [call]
+    LearnDecideCommand(client: WshClient, data: CommandLearnDecideData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "learndecide", data, opts);
+        return client.wshRpcCall("learndecide", data, opts);
+    }
+
+    // command "learnkeys" [call]
+    LearnKeysCommand(client: WshClient, data: CommandLearnKeysData, opts?: RpcOpts): Promise<LearnKey[]> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "learnkeys", data, opts);
+        return client.wshRpcCall("learnkeys", data, opts);
+    }
+
+    // command "learnnote" [call]
+    LearnNoteCommand(client: WshClient, data: CommandLearnNoteData, opts?: RpcOpts): Promise<CommandLearnNoteRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "learnnote", data, opts);
+        return client.wshRpcCall("learnnote", data, opts);
+    }
+
     // command "listalldevservers" [call]
     ListAllDevServersCommand(client: WshClient, opts?: RpcOpts): Promise<CommandListDevServersRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "listalldevservers", null, opts);

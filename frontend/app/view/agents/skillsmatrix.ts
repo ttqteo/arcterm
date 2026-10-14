@@ -39,6 +39,7 @@ export interface SkillRow {
     needsKeep: boolean;
     copies: SkillCopy[]; // unmanaged copies in column order; empty for a managed skill
     deltas: Record<string, string[]>; // managed only: what each harness overrides
+    additions: LearnAddition[]; // managed only: the lines the user accepted, rendered after the shipped text
     cells: SkillCell[];
 }
 
@@ -165,6 +166,7 @@ export function skillRows(data: SkillsData, keep: SkillKeep): SkillRow[] {
         needsKeep: false,
         copies: [],
         deltas: s.deltas ?? {},
+        additions: s.additions ?? [],
         cells: columns.map((col) => managedCell(s, col)),
     }));
     for (const [name, copies] of unmanagedByName(data)) {
@@ -181,10 +183,16 @@ export function skillRows(data: SkillsData, keep: SkillKeep): SkillRow[] {
             needsKeep,
             copies,
             deltas: {},
+            additions: [],
             cells: columns.map((col) => unmanagedCell(copies, kept, col.runtime)),
         });
     }
     return rows;
+}
+
+// "+2" beside a skill that has lines the user taught it
+export function additionsChip(row: SkillRow): string | null {
+    return row.additions.length > 0 ? `+${row.additions.length}` : null;
 }
 
 const KIND_ORDER: SkillGroupKind[] = ["decide", "differs", "same", "only", "managed"];

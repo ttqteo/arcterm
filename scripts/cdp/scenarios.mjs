@@ -37317,6 +37317,566 @@ const whatsNew = {
     },
 };
 
+// --- learned additions: needs-you-learn-card, setup-skill-additions, setup-learned ------------------------------------
+// docs/superpowers/specs/2026-10-14-learned-additions-design.md. A final-verify app has a data dir of its own, so the notes,
+// the mute list and the proposals these scenarios make are throwaway. It has no vault or home of its own: the vault is
+// vaultRoot(h), and an accept writes into the real ~/.claude/projects and, through agentsync.Apply, into every harness's
+// skills dir. So a fixture is named for one run, is never made in a vault that has a remote, and is removed in teardown
+// (the harness copies with it). The app is not pointed at a temp vault: Apply removes from each harness the managed
+// skills the vault lacks. verify.mjs runs no teardown for an arrange that threw, so an arrange cleans up for itself.
+const LEARN_RPC = { timeout: 30000 };
+
+// the local YYYY-MM-DD the backend stamps on a note's session and an accepted line
+const learnToday = () => {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+// "dd/mm", the day lineMeta shows
+const learnDayMonth = (today) => `${today.slice(8, 10)}/${today.slice(5, 7)}`;
+// mirrors agentobserve.SlugifyCwd: every character that is not an ASCII letter or digit becomes "-"
+const learnSlug = (cwd) => cwd.replace(/[^A-Za-z0-9]/gu, "-");
+const learnQuote = (key, session) => `cdp quote ${session} for ${key}`;
+
+// the strip's card and Setup's line for an id; both ids carry a path or a "#", so they are matched by value
+const LEARN_ROW = (id) =>
+    `[...document.querySelectorAll("[data-learn-id]")].find((r) => r.dataset.learnId === ${JSON.stringify(id)})`;
+const LEARN_LINE = (id) =>
+    `[...document.querySelectorAll("[data-learned-line]")].find((l) => l.dataset.learnedLine === ${JSON.stringify(id)})`;
+const learnPart = (rootExpr, testid) => `(${rootExpr})?.querySelector('[data-testid="${testid}"]')`;
+const learnClick = (h, rootExpr, testid) =>
+    h.ev(`(() => { const b = ${learnPart(rootExpr, testid)}; if (!b) return false; b.click(); return true; })()`);
+const learnEnter = (h, rootExpr, testid) =>
+    h.ev(`(() => {
+        const el = ${learnPart(rootExpr, testid)};
+        if (!el) return false;
+        el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+        return true;
+    })()`);
+
+// Edit on a card or a line: the input opens, takes `text`, and Enter saves it. False when the input never opened.
+async function learnEditTo(h, rootExpr, { edit, input }, text) {
+    if (!(await learnClick(h, rootExpr, edit))) return false;
+    if (!(await polishWaitFor(h, `!!${learnPart(rootExpr, input)}`, 3000))) return false;
+    await h.ev(setInputExpr(learnPart(rootExpr, input), text));
+    // React renders the typed text before the key handler reads it
+    await polishNap(150);
+    return learnEnter(h, rootExpr, input);
+}
+
+// two notes in two sessions raise a proposal; `target` is { skill } or { cwd }
+async function learnPropose(h, target, key, text) {
+    const today = learnToday();
+    let last;
+    for (const session of ["a", "b"]) {
+        last = await h.rpc("learnnote", {
+            key,
+            ...target,
+            text,
+            quote: learnQuote(key, session),
+            session: `cdp-${session}:${today}`,
+        });
+    }
+    if (last?.proposed !== true) throw new Error(`two notes for ${key} raised no proposal: ${JSON.stringify(last)}`);
+}
+
+// runs every cleanup step, even after one threw, and fails with all the reasons
+async function learnTeardown(steps) {
+    const failed = [];
+    for (const step of steps) {
+        try {
+            await step();
+        } catch (e) {
+            failed.push(String(e?.message ?? e));
+        }
+    }
+    if (failed.length > 0) throw new Error(failed.join("; "));
+}
+
+// rethrows e once the cleanup has run; a cleanup that fails too adds its reason
+async function learnFailAfter(e, cleanup) {
+    let more = "";
+    try {
+        await cleanup();
+    } catch (ce) {
+        more = `; cleaning up also failed: ${ce?.message ?? ce}`;
+    }
+    throw new Error(`${e?.message ?? e}${more}`);
+}
+
+// a vault skill of this run's own, projected into each harness
+async function arrangeLearnSkill(h) {
+    const root = await vaultRoot(h);
+    const remote = vaultRemote(root);
+    if (remote) throw new Error(`the vault ${root} has a git remote (${remote}): not writing a fixture skill into it`);
+    const name = `cdp-learn-${Date.now()}`;
+    const dir = join(root, "skills", name);
+    if (existsSync(dir)) throw new Error(`${dir} already exists`);
+    const skill = { root, name, dir };
+    try {
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(
+            join(dir, "SKILL.md"),
+            `---\nname: ${name}\ndescription: CDP fixture for the learned-additions scenarios\n---\n\nA fixture skill.\n`
+        );
+        await h.rpc("agentsyncapply", { dryrun: false }, LEARN_RPC);
+    } catch (e) {
+        await learnFailAfter(e, () => teardownLearnSkill(h, skill));
+    }
+    return skill;
+}
+
+// removing the vault copy and syncing again removes the copies arcterm projected into each harness
+async function teardownLearnSkill(h, skill) {
+    rmSync(skill.dir, { recursive: true, force: true, maxRetries: 3 });
+    await h.rpc("agentsyncapply", { dryrun: false }, LEARN_RPC);
+    const left = join(homedir(), ".claude", "skills", skill.name);
+    if (existsSync(left)) throw new Error(`${left} is still there after the sync`);
+}
+
+// a project folder of this run's own; an accepted memory for it lands in project/memory
+function arrangeLearnMemory() {
+    const cwd = mkdtempSync(join(tmpdir(), "cdp-learn-"));
+    return { cwd, project: join(homedir(), ".claude", "projects", learnSlug(cwd)) };
+}
+
+function teardownLearnMemory(mem) {
+    try {
+        rmSync(mem.project, { recursive: true, force: true, maxRetries: 3 });
+    } finally {
+        rmSync(mem.cwd, { recursive: true, force: true, maxRetries: 3 });
+    }
+}
+
+// a proposal still in Needs you would outlive its fixture, so teardown dismisses what the scenario left pending
+async function learnDismissPending(h, ids) {
+    const items = (await h.rpc("getattention", null))?.items ?? [];
+    for (const id of ids) {
+        if (items.some((i) => i.learnid === id)) await h.rpc("learndecide", { id, accept: false }, LEARN_RPC);
+    }
+}
+
+// --- needs-you-learn-card: Accept, Edit and Dismiss on a learned rule in the Cockpit's Needs you strip ------------------
+const LC_KEYS = { accept: "cdp-accept", edit: "cdp-edit", dismiss: "cdp-dismiss", full: "cdp-full" };
+const LC_TEXT = {
+    accept: "Say cdp accept in every reply",
+    edit: "Say cdp edit in every reply",
+    edited: "Say cdp edited in every reply",
+    dismiss: "Say cdp dismiss in every reply",
+    full: "Say cdp full in every reply",
+};
+
+async function teardownLearnCard(h, ctx) {
+    await learnTeardown([
+        () => learnDismissPending(h, Object.values(ctx.ids ?? {})),
+        () => ctx.skill && teardownLearnSkill(h, ctx.skill),
+        () => ctx.mem && teardownLearnMemory(ctx.mem),
+    ]);
+}
+
+const needsYouLearnCard = {
+    name: "needs-you-learn-card",
+    surface: "cockpit",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            ctx.skill = await arrangeLearnSkill(h);
+            ctx.mem = arrangeLearnMemory();
+            const memId = (key) => `memory:${ctx.mem.cwd}#${key}`;
+            ctx.ids = {
+                accept: memId(LC_KEYS.accept),
+                edit: memId(LC_KEYS.edit),
+                dismiss: memId(LC_KEYS.dismiss),
+                full: `skill:${ctx.skill.name}#${LC_KEYS.full}`,
+            };
+            // the skill is at its cap: twenty lines, written as Accept would write them
+            const today = learnToday();
+            ctx.additions = join(ctx.skill.dir, ".arc", "additions.md");
+            mkdirSync(dirname(ctx.additions), { recursive: true });
+            writeFileSync(
+                ctx.additions,
+                Array.from({ length: 20 }, (_, i) => `- t${i} <!-- arc:learn key=k${i} learned=${today} count=1 -->\n`).join("")
+            );
+            for (const k of ["accept", "edit", "dismiss"]) {
+                await learnPropose(h, { cwd: ctx.mem.cwd }, LC_KEYS[k], LC_TEXT[k]);
+            }
+            await learnPropose(h, { skill: ctx.skill.name }, LC_KEYS.full, LC_TEXT.full);
+            // the strip reads the list the frontend polled; a reload reads it now
+            await polishReload(h);
+        } catch (e) {
+            await learnFailAfter(e, () => teardownLearnCard(h, ctx));
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+        const { ids } = ctx;
+        const today = learnToday();
+        const row = (k) => LEARN_ROW(ids[k]);
+        const gone = (k) => polishWaitFor(h, `!(${row(k)})`, 8000);
+        const memLine = async (key) =>
+            ((await h.rpc("learnaccepted", null)).memories ?? []).find((m) => m.cwd === ctx.mem.cwd && m.key === key) ?? null;
+        const scrollTo = (k) => h.ev(`(${row(k)})?.scrollIntoView({ block: "center" })`);
+        const shot = async (name) => {
+            await polishNap(200);
+            await h.shot(`cdp-shots/needs-you-learn-card-${name}.png`);
+        };
+
+        const all = await polishWaitFor(
+            h,
+            `${JSON.stringify(Object.values(ids))}.every((id) => [...document.querySelectorAll("[data-learn-id]")].some((r) => r.dataset.learnId === id))`,
+            15000
+        );
+        if (!all) {
+            rec("0. the four proposals are in Needs you", false, "a card never appeared");
+            return steps;
+        }
+
+        // 1. the card, then its evidence
+        await scrollTo("accept");
+        const first = await h.ev(`(() => {
+            const r = ${row("accept")};
+            const part = (t) => r.querySelector('[data-testid="' + t + '"]')?.textContent?.trim() ?? null;
+            return {
+                text: r.textContent.includes(${JSON.stringify(LC_TEXT.accept)}),
+                source: r.textContent.includes(${JSON.stringify(`Memory · ${basename(ctx.mem.cwd)}`)}),
+                accept: part("learn-accept"),
+                edit: part("learn-edit"),
+                dismiss: part("learn-dismiss"),
+            };
+        })()`);
+        rec(
+            "1a. the cdp-accept row shows its text, where it goes, and Accept, Edit and Dismiss",
+            first.text && first.source && first.accept === "Accept" && first.edit === "Edit" && first.dismiss === "Dismiss",
+            JSON.stringify(first)
+        );
+        await shot("1-row");
+
+        await learnClick(h, row("accept"), "learn-why");
+        const opened = await polishWaitFor(h, `!!${learnPart(row("accept"), "learn-why-quotes")}`, 3000);
+        const quotes = opened ? await h.ev(`${learnPart(row("accept"), "learn-why-quotes")}.textContent`) : null;
+        const [qa, qb] = ["a", "b"].map((s) => learnQuote(LC_KEYS.accept, s));
+        rec(
+            "1b. Why unfolds both quotes the rule was learned from",
+            quotes != null && quotes.includes(qa) && quotes.includes(qb),
+            JSON.stringify(quotes)
+        );
+        await shot("1-why");
+
+        // 2. Accept
+        await learnClick(h, row("accept"), "learn-accept");
+        const acceptGone = await gone("accept");
+        const accepted = acceptGone ? await memLine(LC_KEYS.accept) : null;
+        rec(
+            "2. Accept: the row leaves, and learnaccepted lists the cdp-accept memory",
+            acceptGone && accepted?.text === LC_TEXT.accept,
+            JSON.stringify({ acceptGone, accepted })
+        );
+
+        // 3. Edit
+        await scrollTo("edit");
+        await learnClick(h, row("edit"), "learn-edit");
+        const inputUp = await polishWaitFor(h, `!!${learnPart(row("edit"), "learn-edit-input")}`, 3000);
+        const held = inputUp ? await h.ev(`${learnPart(row("edit"), "learn-edit-input")}.value`) : null;
+        rec("3a. Edit opens an input holding the rule's text", held === LC_TEXT.edit, JSON.stringify(held));
+        await shot("3-edit");
+
+        await h.ev(setInputExpr(learnPart(row("edit"), "learn-edit-input"), LC_TEXT.edited));
+        // React renders the typed text before the key handler reads it
+        await polishNap(150);
+        await learnEnter(h, row("edit"), "learn-edit-input");
+        const editGone = await gone("edit");
+        const edited = editGone ? await memLine(LC_KEYS.edit) : null;
+        rec(
+            "3b. Enter accepts the edited line: the row leaves, and learnaccepted lists cdp-edit with the new text",
+            editGone && edited?.text === LC_TEXT.edited,
+            JSON.stringify({ editGone, edited })
+        );
+
+        // 4. a skill at its cap refuses, and the card stays to retry or dismiss
+        await scrollTo("full");
+        await learnClick(h, row("full"), "learn-accept");
+        const toast = await h.ev(`(async () => {
+            for (let i = 0; i < 40; i++) {
+                const t = [...document.querySelectorAll("[data-notification-toast]")].find((el) => el.textContent.includes("remove one first"));
+                if (t) return { text: t.textContent.trim(), error: /border-error/.test(t.parentElement?.className ?? "") };
+                await new Promise((r) => setTimeout(r, 100));
+            }
+            return null;
+        })()`);
+        await shot("4-cap");
+        // a late list reload would show a card that went anyway
+        await polishNap(500);
+        const stays = await h.ev(`!!(${row("full")})`);
+        const kept = readFileSync(ctx.additions, "utf8").split("\n").filter((l) => l.startsWith("- ")).length;
+        const added = ((await h.rpc("learnaccepted", null)).skills ?? []).some(
+            (s) => s.skill === ctx.skill.name && s.key === LC_KEYS.full
+        );
+        rec(
+            "4. Accept at the 20-line cap: an error toast says to remove one first, and the row stays",
+            toast?.error === true && stays && !added && kept === 20,
+            JSON.stringify({ toast, stays, added, lines: kept })
+        );
+
+        // 5. Dismiss mutes the rule
+        await scrollTo("dismiss");
+        await learnClick(h, row("dismiss"), "learn-dismiss");
+        const dismissGone = await gone("dismiss");
+        const third = await h.rpc("learnnote", {
+            key: LC_KEYS.dismiss,
+            cwd: ctx.mem.cwd,
+            text: LC_TEXT.dismiss,
+            quote: learnQuote(LC_KEYS.dismiss, "c"),
+            session: `cdp-c:${today}`,
+        });
+        rec(
+            "5. Dismiss: the row leaves, and a third note for it comes back muted",
+            dismissGone && third?.muted === true,
+            JSON.stringify({ dismissGone, third })
+        );
+        await shot("5-dismissed");
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownLearnCard(h, ctx);
+    },
+};
+
+// --- setup-skill-additions: Setup → Skills' "+N" chip and "Your additions" block for a skill the user taught ---------
+const SA_KEY = "cdp-rail";
+const SA_TEXT = "Say cdp rail in every reply";
+const SA_EDITED = "Say cdp rail edited in every reply";
+const LINE_EDIT = { edit: "learned-edit", input: "learned-edit-input" };
+
+async function teardownLearnRail(h, ctx) {
+    await learnTeardown([
+        // a no-op once the scenario removed the line
+        () => ctx.skill && h.rpc("learnamend", { skill: ctx.skill.name, key: SA_KEY, remove: true }, LEARN_RPC),
+        () => ctx.skill && teardownLearnSkill(h, ctx.skill),
+    ]);
+}
+
+const setupSkillAdditions = {
+    name: "setup-skill-additions",
+    surface: "setup",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            ctx.skill = await arrangeLearnSkill(h);
+            await learnPropose(h, { skill: ctx.skill.name }, SA_KEY, SA_TEXT);
+            await h.rpc("learndecide", { id: `skill:${ctx.skill.name}#${SA_KEY}`, accept: true }, LEARN_RPC);
+        } catch (e) {
+            await learnFailAfter(e, () => teardownLearnRail(h, ctx));
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+        const { name } = ctx.skill;
+        const id = `${name}#${SA_KEY}`;
+        const row = `[...document.querySelectorAll('[role="table"][aria-label="Skills by harness"] [role="row"]')].find((r) => r.querySelector('[role="cell"] > span.truncate')?.textContent === ${JSON.stringify(name)})`;
+        const block = `document.querySelector('[data-testid="learned-additions"]')`;
+        const line = `(${block})?.querySelector('[data-learned-line]')`;
+        const lineOf = LEARN_LINE(id);
+        const shot = async (step) => {
+            await polishNap(200);
+            await h.shot(`cdp-shots/setup-skill-additions-${step}.png`);
+        };
+
+        await h.goto("setup");
+        await ttClick(h, '[data-setup-tab="skills"]');
+        const listed = await polishWaitFor(h, `!!(${row})`, 10000);
+        if (!listed) {
+            rec("0. the fixture skill is in Setup → Skills", false, `${name} never appeared in the skills list`);
+            return steps;
+        }
+        await h.ev(`(${row}).scrollIntoView({ block: "center" })`);
+        await h.ev(`(${row}).click()`);
+        const railUp = await polishWaitFor(h, `!!${block}`, 6000);
+
+        // 1. the chip, the block, the line's date and count, the "new" background
+        const meta = `${learnDayMonth(learnToday())} · 2×`;
+        const seen = await h.ev(`(() => {
+            const r = ${row};
+            const l = ${line};
+            return {
+                chip: r?.querySelector('[data-testid="skill-additions-chip"]')?.textContent?.trim() ?? null,
+                line: l ? { text: l.textContent, accentbg: l.classList.contains("bg-accentbg"), bg: getComputedStyle(l).backgroundColor } : null,
+            };
+        })()`);
+        const painted = seen.line != null && seen.line.bg !== "rgba(0, 0, 0, 0)" && seen.line.bg !== "transparent";
+        rec(
+            "1. the row shows a +1 chip, and the rail a block with the line, its date and 2×, on the new background",
+            railUp &&
+                seen.chip === "+1" &&
+                seen.line?.text.includes(SA_TEXT) &&
+                seen.line.text.includes(meta) &&
+                seen.line.accentbg &&
+                painted,
+            JSON.stringify({ ...seen, meta })
+        );
+        await h.ev(`${block}?.scrollIntoView({ block: "center" })`);
+        await shot("1-block");
+
+        // 2. Edit
+        const typed = await learnEditTo(h, lineOf, LINE_EDIT, SA_EDITED);
+        const shown = typed && (await polishWaitFor(h, `(${lineOf})?.textContent.includes(${JSON.stringify(SA_EDITED)})`, 6000));
+        const stored = ((await h.rpc("learnaccepted", null)).skills ?? []).find((s) => s.skill === name && s.key === SA_KEY);
+        rec(
+            "2. Edit: the line shows the new text, and the vault holds it",
+            shown && stored?.text === SA_EDITED,
+            JSON.stringify({ typed, shown, stored })
+        );
+        await shot("2-edited");
+
+        // 3. Remove takes the block and the chip with it
+        await learnClick(h, lineOf, "learned-remove");
+        const removed = await polishWaitFor(
+            h,
+            `!${block} && !(${row})?.querySelector('[data-testid="skill-additions-chip"]')`,
+            6000
+        );
+        const left = ((await h.rpc("learnaccepted", null)).skills ?? []).some((s) => s.skill === name && s.key === SA_KEY);
+        rec("3. Remove: the block and the chip are gone, and so is the line", removed && !left, JSON.stringify({ removed, left }));
+        await shot("3-removed");
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownLearnRail(h, ctx);
+    },
+};
+
+// --- setup-learned: Setup → Learned, every accepted line grouped by skill and by project -----------------------------
+const SL_KEYS = { skill: "cdp-learned-skill", memory: "cdp-learned-memory" };
+const SL_TEXT = {
+    skill: "Say cdp learned skill in every reply",
+    edited: "Say cdp learned skill edited in every reply",
+    memory: "Say cdp learned memory in every reply",
+};
+
+async function teardownLearned(h, ctx) {
+    await learnTeardown([
+        // a no-op when the scenario never made the line, or removed it
+        () => ctx.skill && h.rpc("learnamend", { skill: ctx.skill.name, key: SL_KEYS.skill, remove: true }, LEARN_RPC),
+        () => ctx.skill && teardownLearnSkill(h, ctx.skill),
+        () => ctx.mem && teardownLearnMemory(ctx.mem),
+    ]);
+}
+
+const setupLearned = {
+    name: "setup-learned",
+    surface: "setup",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            ctx.skill = await arrangeLearnSkill(h);
+            ctx.mem = arrangeLearnMemory();
+        } catch (e) {
+            await learnFailAfter(e, () => teardownLearned(h, ctx));
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+        const { name } = ctx.skill;
+        const { cwd } = ctx.mem;
+        const skillId = `${name}#${SL_KEYS.skill}`;
+        const memId = `${cwd}#${SL_KEYS.memory}`;
+        const accepted = async () => await h.rpc("learnaccepted", null);
+        const shot = async (step) => {
+            await polishNap(200);
+            await h.shot(`cdp-shots/setup-learned-${step}.png`);
+        };
+        const openLearned = async () => {
+            await h.goto("setup");
+            await ttClick(h, '[data-setup-tab="learned"]');
+        };
+
+        // 1. before any line of this run: the empty state, when the machine has no learned line of its own
+        await openLearned();
+        const before = await accepted();
+        const existing = (before.skills?.length ?? 0) + (before.memories?.length ?? 0);
+        if (existing > 0) {
+            rec("1. with nothing learned, the Learned tab says so", true, `skipped: ${existing} learned lines already exist`);
+        } else {
+            const empty = await polishWaitFor(h, `!!document.querySelector('[data-testid="learned-empty"]')`, 6000);
+            const text = empty ? await h.ev(`document.querySelector('[data-testid="learned-empty"]').textContent.trim()`) : null;
+            rec("1. with nothing learned, the Learned tab says so", text?.startsWith("Nothing learned yet"), JSON.stringify(text));
+            await shot("1-empty");
+        }
+
+        // 2. one accepted line for the skill and one for the project, read on a fresh tab
+        await learnPropose(h, { skill: name }, SL_KEYS.skill, SL_TEXT.skill);
+        await h.rpc("learndecide", { id: `skill:${skillId}`, accept: true }, LEARN_RPC);
+        await learnPropose(h, { cwd }, SL_KEYS.memory, SL_TEXT.memory);
+        await h.rpc("learndecide", { id: `memory:${memId}`, accept: true }, LEARN_RPC);
+        await polishReload(h);
+        await openLearned();
+        const listed = await polishWaitFor(h, `!!(${LEARN_LINE(skillId)}) && !!(${LEARN_LINE(memId)})`, 10000);
+        const seen = await h.ev(`(() => {
+            const s = ${LEARN_LINE(skillId)};
+            const m = ${LEARN_LINE(memId)};
+            return {
+                skill: s ? { group: s.closest("section")?.getAttribute("aria-label"), text: s.textContent } : null,
+                memory: m
+                    ? {
+                          group: m.closest("section")?.getAttribute("aria-label"),
+                          path: m.closest("section")?.querySelector("span[title]")?.getAttribute("title"),
+                          text: m.textContent,
+                      }
+                    : null,
+            };
+        })()`);
+        const meta = `${learnDayMonth(learnToday())} · 2×`;
+        rec(
+            "2. the skill's line sits under the skill and the memory's under its project folder, each with its date and 2×",
+            listed &&
+                seen.skill?.group === name &&
+                seen.skill.text.includes(SL_TEXT.skill) &&
+                seen.skill.text.includes(meta) &&
+                seen.memory?.group === basename(cwd) &&
+                seen.memory.path === cwd &&
+                seen.memory.text.includes(SL_TEXT.memory) &&
+                seen.memory.text.includes(meta),
+            JSON.stringify({ ...seen, meta })
+        );
+        await h.ev(`(${LEARN_LINE(skillId)})?.scrollIntoView({ block: "center" })`);
+        await shot("2-groups");
+
+        // 3. Edit the skill's line on this tab
+        const typed = await learnEditTo(h, LEARN_LINE(skillId), LINE_EDIT, SL_TEXT.edited);
+        const shown =
+            typed && (await polishWaitFor(h, `(${LEARN_LINE(skillId)})?.textContent.includes(${JSON.stringify(SL_TEXT.edited)})`, 6000));
+        const stored = ((await accepted()).skills ?? []).find((s) => s.skill === name && s.key === SL_KEYS.skill);
+        rec(
+            "3. Edit: the skill's line shows the new text, and the vault holds it",
+            shown && stored?.text === SL_TEXT.edited,
+            JSON.stringify({ typed, shown, stored })
+        );
+        await shot("3-edited");
+
+        // 4. Remove the memory's line, which deletes its file
+        const file = join(ctx.mem.project, "memory", `learned_${SL_KEYS.memory}.md`);
+        const existed = existsSync(file);
+        await h.ev(`(${LEARN_LINE(memId)})?.scrollIntoView({ block: "center" })`);
+        await learnClick(h, LEARN_LINE(memId), "learned-remove");
+        const lineGone = await polishWaitFor(h, `!(${LEARN_LINE(memId)})`, 6000);
+        rec(
+            "4. Remove: the memory's line is gone, and so is its file under ~/.claude/projects",
+            existed && lineGone && !existsSync(file),
+            JSON.stringify({ file, existed, lineGone, fileLeft: existsSync(file) })
+        );
+        await shot("4-removed");
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownLearned(h, ctx);
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -37448,4 +38008,7 @@ export const SCENARIOS = [
     toolsWorktreeGone,
     setupProject,
     whatsNew,
+    needsYouLearnCard,
+    setupSkillAdditions,
+    setupLearned,
 ];

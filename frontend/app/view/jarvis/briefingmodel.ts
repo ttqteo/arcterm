@@ -202,6 +202,7 @@ const QUEUE_KIND_LABEL: Record<string, string> = {
     "run-unverified": "unverified",
     "radar-triage": "triage",
     "chunk-due": "due",
+    "learn-proposal": "Learned rule",
 };
 
 export function buildAttentionQueue(input: {

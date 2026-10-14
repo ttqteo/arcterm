@@ -840,6 +840,36 @@ func LandRunCommand(w *wshutil.WshRpc, data wshrpc.CommandLandRunData, opts *wsh
 	return resp, err
 }
 
+// command "learnaccepted", wshserver.LearnAcceptedCommand
+func LearnAcceptedCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandLearnAcceptedRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandLearnAcceptedRtnData](w, "learnaccepted", nil, opts)
+	return resp, err
+}
+
+// command "learnamend", wshserver.LearnAmendCommand
+func LearnAmendCommand(w *wshutil.WshRpc, data wshrpc.CommandLearnAmendData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "learnamend", data, opts)
+	return err
+}
+
+// command "learndecide", wshserver.LearnDecideCommand
+func LearnDecideCommand(w *wshutil.WshRpc, data wshrpc.CommandLearnDecideData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "learndecide", data, opts)
+	return err
+}
+
+// command "learnkeys", wshserver.LearnKeysCommand
+func LearnKeysCommand(w *wshutil.WshRpc, data wshrpc.CommandLearnKeysData, opts *wshrpc.RpcOpts) ([]wshrpc.LearnKey, error) {
+	resp, err := sendRpcRequestCallHelper[[]wshrpc.LearnKey](w, "learnkeys", data, opts)
+	return resp, err
+}
+
+// command "learnnote", wshserver.LearnNoteCommand
+func LearnNoteCommand(w *wshutil.WshRpc, data wshrpc.CommandLearnNoteData, opts *wshrpc.RpcOpts) (*wshrpc.CommandLearnNoteRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandLearnNoteRtnData](w, "learnnote", data, opts)
+	return resp, err
+}
+
 // command "listalldevservers", wshserver.ListAllDevServersCommand
 func ListAllDevServersCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandListDevServersRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandListDevServersRtnData](w, "listalldevservers", nil, opts)

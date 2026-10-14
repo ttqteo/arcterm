@@ -208,7 +208,15 @@ func renderSkill(skillsRoot, name, runtime string) (map[string][]byte, error) {
 		return nil, err
 	}
 	if md, ok := files[skillFile]; ok {
-		files[skillFile] = []byte(applyOverrides(string(md), overrides))
+		doc := applyOverrides(string(md), overrides)
+		additions, err := ReadAdditions(skillsRoot, name)
+		if err != nil {
+			return nil, err
+		}
+		if len(additions) > 0 {
+			doc = strings.TrimRight(doc, "\n") + "\n" + renderAdditions(additions)
+		}
+		files[skillFile] = []byte(doc)
 	}
 	sidecars, err := collectTree(filepath.Join(skillDir, deltaDirName, runtime), nil)
 	if err != nil {
@@ -483,6 +491,9 @@ type SkillRow struct {
 	States map[string]string `json:"states"`
 	// Deltas maps runtime -> what that harness overrides: frontmatter keys and sidecar paths.
 	Deltas map[string][]string `json:"deltas,omitempty"`
+	// Additions are the lines the user accepted into this skill. The vault's SKILL.md never holds them;
+	// each harness's copy gets them at render.
+	Additions []Addition `json:"additions,omitempty"`
 }
 
 // skillFrontmatter is the SKILL.md header. Only the description is read; name comes from the
@@ -576,11 +587,16 @@ func SkillRows(p Paths) ([]SkillRow, error) {
 	}
 	rows := make([]SkillRow, 0, len(canonical))
 	for _, name := range canonical {
+		additions, err := ReadAdditions(p.SkillsRoot, name)
+		if err != nil {
+			return nil, err
+		}
 		rows = append(rows, SkillRow{
 			Name:        name,
 			Description: skillDescription(p.SkillsRoot, name),
 			States:      map[string]string{},
 			Deltas:      skillDeltas(p.SkillsRoot, name),
+			Additions:   additions,
 		})
 	}
 	for _, spec := range harness.List() {
