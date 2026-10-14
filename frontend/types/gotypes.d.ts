@@ -754,6 +754,7 @@ declare global {
         workerroute?: RoutePin;
         reviewerpicks?: boolean;
         reviewerroute?: RoutePin;
+        lightreviewerroute?: RoutePin;
         orchestration?: string;
         parallelism?: number;
         playbookid?: string;
@@ -1964,6 +1965,7 @@ declare global {
         workerroute?: RoutePin;
         reviewerpicks?: boolean;
         reviewerroute?: RoutePin;
+        lightreviewerroute?: RoutePin;
         autonomous?: boolean;
     };
 
@@ -2662,6 +2664,7 @@ declare global {
         workerroute?: RoutePin;
         reviewerpicks?: boolean;
         reviewerroute?: RoutePin;
+        lightreviewerroute?: RoutePin;
         landing?: string;
         autonomous?: boolean;
     };
@@ -2974,14 +2977,44 @@ declare global {
         note?: string;
     };
 
+    // waveobj.PlanReviewPrior
+    type PlanReviewPrior = {
+        findings: string;
+        plantext?: string;
+        spectext?: string;
+        picks?: PlanReviewPriorPick[];
+    };
+
+    // waveobj.PlanReviewPriorPick
+    type PlanReviewPriorPick = {
+        taskid: string;
+        title: string;
+        model: string;
+        reason: string;
+    };
+
     // waveobj.PlanReviewStage
     type PlanReviewStage = {
         state: string;
         round: number;
-        runid?: string;
         findings?: string;
+        reviewers?: PlanReviewer[];
+        plantext?: string;
+        spectext?: string;
+        prior?: PlanReviewPrior;
+        runid?: string;
         respawns?: number;
         startedts?: number;
+    };
+
+    // waveobj.PlanReviewer
+    type PlanReviewer = {
+        lens: string;
+        state: string;
+        text?: string;
+        runid?: string;
+        startedts?: number;
+        respawns?: number;
     };
 
     // waveobj.Point
@@ -3037,6 +3070,7 @@ declare global {
         workerroute?: RoutePin;
         reviewerpicks?: boolean;
         reviewerroute?: RoutePin;
+        lightreviewerroute?: RoutePin;
         landing?: string;
         autonomous?: boolean;
     };
@@ -3334,6 +3368,7 @@ declare global {
         workerroute?: RoutePin;
         reviewerpicks?: boolean;
         reviewerroute?: RoutePin;
+        lightreviewerroute?: RoutePin;
         autonomous?: boolean;
         orchestration?: string;
         parallelism?: number;
@@ -3813,6 +3848,7 @@ declare global {
         workerroute?: RoutePin;
         reviewerpicks?: boolean;
         reviewerroute?: RoutePin;
+        lightreviewerroute?: RoutePin;
         autonomous?: boolean;
         mergerequired?: boolean;
         createdts: number;
