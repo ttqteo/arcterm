@@ -17,7 +17,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { atom, useAtom, useAtomValue } from "jotai";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFinalStageView } from "../agents/finalstageviews";
 import {
     edgeStyle,
@@ -55,7 +55,7 @@ import {
 } from "./dagnodes";
 import { buildViewData, hoveredTaskAtom, mergeReadyIds, selectedTaskIdAtom, useDagGroup } from "./dagstore";
 import { enterOpensTask } from "./taskcorrelate";
-import { stageEntries, type StageEntry } from "./taskroute";
+import { stageEntries, stageTone, type StageEntry } from "./taskroute";
 
 // fitView's padding, as a fraction of the pane
 const FIT_PADDING = 0.1;
@@ -384,10 +384,25 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
                     Run route · {owner.runtime || "unavailable"} / {owner.model || "default"}
                 </span>
                 {stageEntries(group, owner).map((s) => (
-                    <span key={s.key} className="flex items-center gap-1.5">
-                        <span className={`h-[7px] w-[7px] rounded-full border ${STAGE_DOT[s.tone]}`} />
-                        {s.text}
-                    </span>
+                    <Fragment key={s.key}>
+                        <span className="flex items-center gap-1.5">
+                            <span className={`h-[7px] w-[7px] rounded-full border ${STAGE_DOT[s.tone]}`} />
+                            {s.text}
+                        </span>
+                        {s.reviewers.map((r) => (
+                            <span
+                                key={r.lens}
+                                data-plan-reviewer={r.lens}
+                                data-plan-reviewer-state={r.state}
+                                className="flex items-center gap-1.5"
+                            >
+                                <span
+                                    className={`h-[7px] w-[7px] rounded-full border ${STAGE_DOT[stageTone(r.state)]}`}
+                                />
+                                {`${r.title} · ${r.state} · ${r.model}`}
+                            </span>
+                        ))}
+                    </Fragment>
                 ))}
             </div>
             <div ref={paneRef} className="relative min-h-0 flex-1">

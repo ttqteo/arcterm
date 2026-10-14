@@ -3542,6 +3542,7 @@ declare global {
         channelid?: string;
         taskid?: string;
         role?: string;
+        stagerunid?: string;
     };
 
     // wshrpc.SessionEvent

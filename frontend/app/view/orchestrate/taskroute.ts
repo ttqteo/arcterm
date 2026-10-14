@@ -6,6 +6,7 @@
 // sources the engine does not send, so it derives them by the same rule.
 
 import { shortModel } from "../agents/modelname";
+import { planReviewLensTitle } from "../agents/runtimeline";
 
 // the engine's default runtime for a route that names only a model (runroute.DefaultRuntime)
 const DEFAULT_RUNTIME = "claude";
@@ -116,25 +117,54 @@ export function reviewersChip(group: TaskGroup, owner: Run): string {
     return custom ? `reviewers · ${routeFace(r)}` : "reviewers · same as lead";
 }
 
+export type StageReviewer = { lens: string; title: string; state: string; model: string };
+
 export type StageEntry = {
     key: "planreview";
     text: string;
     tone: "done" | "failed" | "open";
+    reviewers: StageReviewer[];
 };
 
-const STAGE_TONE: Record<string, StageEntry["tone"]> = { passed: "done", accepted: "done", failed: "failed" };
+// a stage's state or one of its reviewers' (a lost reviewer finished without a verdict)
+const STAGE_TONE: Record<string, StageEntry["tone"]> = {
+    passed: "done",
+    accepted: "done",
+    failed: "failed",
+    lost: "failed",
+};
 
-// stageEntries is the graph's stage line: the plan review's state and the model it ran on, once one ran. The
-// final stage is not here: it is the graph's last node.
+export function stageTone(state: string): StageEntry["tone"] {
+    return STAGE_TONE[state] ?? "open";
+}
+
+// the plan reviewer that runs on the reviewer route; every other lens runs on the Light reviewers route
+const FULL_LENS = "full";
+
+// lightReviewerRouteOf mirrors the engine's lightReviewerRoute: the group's Light reviewers route, else a Light pick.
+function lightReviewerRouteOf(group: TaskGroup): RoutePin {
+    const r = group.lightreviewerroute;
+    return names(r) ? route(r.runtime, r.model) : LIGHT_PICK;
+}
+
+// stageEntries is the graph's stage line: the plan review's state and round, then each reviewer's state and the model
+// it ran on, once one ran. The final stage is not here: it is the graph's last node.
 export function stageEntries(group: TaskGroup, owner: Run): StageEntry[] {
     const review = group.planreview;
     if (review == null) return [];
-    const model = shortModel(reviewerRouteOf(group, owner).route.model);
+    const full = shortModel(reviewerRouteOf(group, owner).route.model);
+    const light = shortModel(lightReviewerRouteOf(group).model);
     return [
         {
             key: "planreview",
-            text: `plan review · ${review.state} · ${model}`,
-            tone: STAGE_TONE[review.state] ?? "open",
+            text: `plan review · ${review.state} · round ${review.round}`,
+            tone: stageTone(review.state),
+            reviewers: (review.reviewers ?? []).map((r) => ({
+                lens: r.lens,
+                title: planReviewLensTitle(r.lens),
+                state: r.state,
+                model: r.lens === FULL_LENS ? full : light,
+            })),
         },
     ];
 }

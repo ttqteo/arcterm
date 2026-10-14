@@ -15,7 +15,9 @@ import {
     clickTargetFor,
     eventText,
     joinWorkspacePath,
+    planReviewLensTitle,
     planReviewPicks,
+    planReviewReviewers,
     toneFor,
     tsLabel,
     type RunTimelineGroup,
@@ -83,6 +85,7 @@ function EventRow({
     const onClick = interactive ? clickTarget(event, channel, run) : undefined;
     const artifacts = artifactsOf(event);
     const picks = event.kind === "plan-reviewed" ? planReviewPicks(event.detail) : [];
+    const reviewers = event.kind === "plan-reviewed" ? planReviewReviewers(event.detail) : [];
     return (
         <>
             <div
@@ -106,6 +109,15 @@ function EventRow({
                     </span>
                 )}
             </div>
+            {reviewers.map((r) => (
+                <div
+                    key={r.lens}
+                    data-plan-review-reviewer={r.lens}
+                    className="truncate pl-[52px] font-mono text-[10.5px] text-ink-mid"
+                >
+                    {`${planReviewLensTitle(r.lens)} · ${r.state}`}
+                </div>
+            ))}
             {picks.map((p) => (
                 <div
                     key={p.taskid}
