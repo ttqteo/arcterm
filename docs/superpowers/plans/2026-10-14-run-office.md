@@ -35,7 +35,8 @@ run prettier on `scripts/*.mjs` (4-space, hand-formatted); comments say why, low
 
 **Depends on:** none
 
-**Files:**
+**Files:** `frontend/app/view/jarvis/officesprite.ts`, `frontend/app/view/jarvis/officesprite.test.ts`, `frontend/tailwindsetup.css`
+
 - Create: `frontend/app/view/jarvis/officesprite.ts`
 - Create: `frontend/app/view/jarvis/officesprite.test.ts`
 - Modify: `frontend/tailwindsetup.css` (inside `@theme`, right after the `--color-teleport-*` block)
@@ -344,7 +345,8 @@ git commit -m "feat(jarvis): run office sprite data and its identity tokens" -- 
 
 **Depends on:** Task 1
 
-**Files:**
+**Files:** `frontend/app/view/jarvis/officemodel.ts`, `frontend/app/view/jarvis/officemodel.test.ts`
+
 - Create: `frontend/app/view/jarvis/officemodel.ts`
 - Create: `frontend/app/view/jarvis/officemodel.test.ts`
 
@@ -653,7 +655,8 @@ git commit -m "feat(jarvis): run office model — a desk per task, posed by its 
 
 **Depends on:** Task 1, Task 2
 
-**Files:**
+**Files:** `frontend/app/view/jarvis/officesprites.ts`, `frontend/app/view/jarvis/officeview.tsx`, `frontend/app/view/jarvis/officedevhooks.ts`
+
 - Create: `frontend/app/view/jarvis/officesprites.ts`
 - Create: `frontend/app/view/jarvis/officeview.tsx`
 - Create: `frontend/app/view/jarvis/officedevhooks.ts`
@@ -1128,7 +1131,8 @@ git commit -m "feat(jarvis): run office view — cached sprites, one frame clock
 
 **Depends on:** Task 3
 
-**Files:**
+**Files:** `frontend/app/view/jarvis/briefsurface.tsx`, `CHANGELOG.md`
+
 - Modify: `frontend/app/view/jarvis/briefsurface.tsx` (the dev-hook effect near line 585; the `sessions` `Region`
   near line 1765 and its row map near line 1805)
 - Modify: `CHANGELOG.md` (top `## Unreleased` → `### Added`)
@@ -1227,7 +1231,8 @@ git commit -m "feat(jarvis): draw the Brief's runs as an office floor under each
 
 **Depends on:** Task 4
 
-**Files:**
+**Files:** `scripts/cdp/officescenarios.mjs`, `scripts/cdp/scenarios.mjs`, `docs/open-issues.md`
+
 - Create: `scripts/cdp/officescenarios.mjs` (4-space indent, hand-formatted; never run prettier on it)
 - Modify: `scripts/cdp/scenarios.mjs` (one import near the other local imports at the top; two entries at the end of
   `SCENARIOS`)
