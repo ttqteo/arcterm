@@ -55,8 +55,8 @@ proposed chunks carry the same buttons inside the opened row.
 
 ### 3. The initiative popover on the agent header
 
-The header's initiative link (`InitiativeLink`, `agentheader.tsx`) opens a popover in place; Ctrl/Cmd-click keeps
-today's open-in-Jarvis (the app's peek gesture). Key `i` on the Agent surface (free there; `jarvis:focus-composer`
+The header's initiative link (`InitiativeLink`, `agentheader.tsx`) opens a popover in place; Ctrl/Cmd-click, the
+app's peek gesture, peeks the initiative in Sprout's popup instead, and the popover's Open in Jarvis goes there. Key `i` on the Agent surface (free there; `jarvis:focus-composer`
 is Jarvis-only) toggles it. Contents, 340px:
 
 - "Initiative · <project>", the title, "↳ Part of <parent>" when linked, the segment bar with done/total, the

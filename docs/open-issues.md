@@ -27,6 +27,18 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-14 (initiatives on the Agent surface, run 961cdb3d)**
+
+- [ ] (arcterm) Plan to review: on a real Claude agent that proposed chunks (`wsh effort chunk add --proposed`),
+  **Accept all and continue** on its rail types "Plan accepted, start with <first chunk>" into its terminal and the
+  agent starts on it. The `initiative-plan-review` scenario's agent is a fake tab with no TUI, so only the text and the
+  block it was sent to were checked (383e1d466).
+- [ ] (arcterm) Review: with Sprout folded into its mini window, its "Review in Jarvis" line restores the window and
+  lands on Jarvis's Review pass. Only the unfolded path was exercised (547e071eb).
+- [ ] (arcterm) Review: Pause or Archive inside a pass, then start a new pass with `v`: that initiative is not back as
+  "changed". The mark lands after the server's write; the scenario's clock was stubbed, so the order was never
+  measured against real time (547e071eb).
+
 **2026-10-14 (run handoff: the session that started a run is told how it landed)**
 
 - [ ] (arcterm) Run handoff: a run started with `wsh runs start` from a Claude session messages that session once it
