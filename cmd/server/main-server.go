@@ -27,6 +27,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/jarvisvolunteer"
 	"github.com/wavetermdev/waveterm/pkg/jobqueue"
+	"github.com/wavetermdev/waveterm/pkg/memhygiene"
 	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 	"github.com/wavetermdev/waveterm/pkg/remote/fileshare/wshfs"
@@ -430,6 +431,7 @@ func main() {
 	// the tray icon's red dot when memory pressure turns critical (spec 2026-10-15-tray-popover-design.md)
 	wshserver.StartMachineWatch(context.Background())
 	jarvisvolunteer.StartLooseEndSweep(context.Background())
+	memhygiene.StartSweep(context.Background())
 	err = wcore.InitBadgeStore()
 	if err != nil {
 		log.Printf("error initializing badge store: %v\n", err)

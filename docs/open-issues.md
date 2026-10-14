@@ -759,6 +759,18 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   state ("waits on every task") while the tree's row shows Tree running, and from B3 on the stage row has
   lost focus (no pane). That change touches neither the modal nor focus, so the cause is unproven either
   way. Repro: `ARC_FINAL_OUT=<dir> node scripts/cdp/final-verify.mjs final-stage`, a few runs.
+- **Memory hygiene: a switched subproject loads and writes its own memory** (2026-10-14, by hand once after
+  shipping; no run can do it). The `autoMemoryDirectory` probe covered `claude -p` loading only.
+  1. In Setup → Memory, pick a sharing subproject, review every change from the shared memory, and apply
+     its **Switch memory** change.
+  2. Start an interactive `claude` in that subproject's folder and ask what its memory index holds: it
+     should name the own folder's `MEMORY.md` entries, not the shared ones.
+  3. Ask it to remember something new, then confirm the new file and its index line land in the own folder
+     (the `autoMemoryDirectory` value in `<subproject>/.claude/settings.local.json`).
+- **Memory hygiene: the volunteer judge says a sweep's changes at least once** (2026-10-14, by hand once
+  after shipping). Leave a project with open changes in Setup → Memory, let the hourly sweep run (or
+  restart Arc, which sweeps at startup), and confirm it is said at least once: a `jarvisvolunteer` line in
+  `waveapp.log` naming the `memory-hygiene:<project>:<checkedAt>` candidate, or the pet's card.
 
 Tracked in their own initiatives, not here:
 
@@ -920,6 +932,11 @@ Radar:
   and a fresh probe; `docs/deferred.md` keeps the probe's prompt.
 - **Missing test coverage audits** (held 2026-10-13) — revive if Radar is to report test gaps as their own
   finding type; `docs/deferred.md` keeps the probe's prompt.
+
+Memory hygiene:
+
+- **Pi and Codex memory, merges across batches, a retention score / LRU ordering** (2026-10-14) — each
+  with its own revive condition in `docs/deferred.md`.
 
 Jarvis (what survived the 2026-09-22/23 memory and recall-arm removals):
 

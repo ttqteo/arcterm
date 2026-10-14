@@ -10,6 +10,31 @@ where it would plug in, and how to pick it back up. Append new entries at the to
 > Pruned 2026-10-05: 27 entries whose work shipped, was retired with its subsystem, or was superseded were
 > removed. Recover any of them with `git show c99f2041:docs/deferred.md`.
 
+## Memory hygiene: what the first version leaves out (deferred 2026-10-14)
+
+Memory hygiene (`docs/superpowers/specs/2026-10-13-memory-hygiene-design.md`, `pkg/memhygiene`) checks
+Claude Code's auto memory only. Three pieces of the spec's design were left out:
+
+- **Pi and Codex memory** (`~/.pi/agent/memory`, `~/.codex/memories`).
+  - **Why:** the same model would apply, but each harness has its own folders and its own loader, and Claude
+    Code's index is the one whose size notice keeps firing.
+  - **Revive when** a Pi or Codex memory index nears its harness's load limit, or a session is seen pruning
+    one. Discovery, the index limits and the apply targets are the parts that change; the judge, the merge
+    and the store carry over.
+- **Merges across batches.** The judge sees the whole index, but a merge can name only memories in its own
+  batch of up to 60 KB of bodies.
+  - **Why:** related entries sit next to each other in index order, so they mostly share a batch. Merging
+    across batches would need a second pass over every batch's bodies.
+  - **Revive when** a check's proposals leave two memories that say one thing in different batches, seen
+    on a real project.
+- **A numeric retention score, and least-recently-read ordering when an index is over budget** (LRU, LFU,
+  TTL as eviction rules).
+  - **Why:** read counts miss most use, because the index line loads in every session. Recency alone would
+    evict rules whose index line does the work.
+  - **Revive if** a few weekly checks show the judge's proposals don't keep the indexes under budget.
+
+Nothing was built for these, so there is nothing to recover from git.
+
 ## Radar security review audits (deferred 2026-10-13)
 
 - **Deferred:** an audit kind that reviews a window commit for security vulnerabilities it introduced. Radar ships
@@ -975,6 +1000,9 @@ present in `settings.json` rather than only the ones arcterm currently manages (
 `~/.pi/agent/extensions/waveterm-memory.ts`.
 
 Revive only on evidence that note bodies — not index lines — are what changes an agent's behaviour.
+
+Memory hygiene (2026-10-14, `pkg/memhygiene`) doesn't revive recall or harvesting. It keeps Claude Code's
+`MEMORY.md` index small and current, and the index is what this measurement found drives behaviour.
 
 Recovery: `git show f5e2179a:pkg/memvault/memvault.go` (and any other path) has the full pre-removal
 tree; `git show f5e2179a:frontend/app/view/agents/vaultsurface.tsx` for the surface.
