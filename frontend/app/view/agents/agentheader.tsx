@@ -26,6 +26,7 @@ import { openOrPeek, openTarget } from "@/app/view/jarvis/openref";
 import { chunkRef } from "@/app/view/jarvis/trackeredit";
 import { redrawTerminal } from "@/app/view/term/termwrap";
 import { formatChordString } from "@/util/keysym";
+import { isMacOS } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import {
@@ -479,7 +480,13 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 accel: "Shift:f",
                 click: () => fireAndForget(() => toggleFloat(model)),
             });
-            items.push({ label: "Redraw terminal", icon: <RotateCw size={15} />, click: redraw });
+            items.push({
+                label: "Redraw terminal",
+                icon: <RotateCw size={15} />,
+                // ⌘R is a Mac key only: on Windows Ctrl+R stays the shell's reverse search (bindings.ts agent:redraw)
+                accel: isMacOS() ? "Mod:r" : undefined,
+                click: redraw,
+            });
             items.push({ label: "Interrupt turn", icon: <CircleStop size={15} />, click: interrupt });
             items.push({
                 label: fullscreen ? "Exit fullscreen" : "Fullscreen terminal",
