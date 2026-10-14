@@ -21,6 +21,11 @@ Rules:
 - When the user settles an open question, move it: `wsh idea update <id> --kind decision`, adding
   `--text "<the answer>"` in its own call if the answer changes what the line says. `update` takes exactly one
   action per call.
+- The list is the brainstorm's current state, not its log. When a decision replaces or contradicts an earlier line,
+  drop that line (`--drop`) or rewrite it (`--text`) in the same turn, so no two lines disagree. When an idea ends up
+  in the spec or plan, move it to `decision`. Merge two lines that say the same thing (`--merge`).
+- Record only decisions, ideas and questions. A status is not one: a commit, a file written, an estimate, or what
+  already exists in arcterm goes in your reply, not the list.
 - Write what you decided or floated, not a transcript of the discussion. A line stands alone and stays short.
 - A row that starts `arc:` and says turns have passed since the last idea was recorded is the reminder to catch up:
   list, then add what is missing.
