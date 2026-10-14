@@ -20,6 +20,9 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
 - **Reopen an agent you just closed**: `Ctrl+Shift+T` (`Cmd+Shift+T` on a Mac) brings back the agent closed last, as a
   browser reopens a closed tab. Its conversation returns asleep, so it costs nothing until you wake it or send it a
   message. The last 5 closed agents are kept. <!-- try: reopen-agent -->
+- **Claude checks its memory at session start**: on every machine with arcterm, a new Claude session looks over the
+  project's Claude memory and, when something has gone stale (a broken link, a file or `task` that no longer exists, a
+  memory untouched for 30 days), shows a toast and lists it in its first reply, offering to fix it.
 
 ### Changed
 

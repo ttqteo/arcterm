@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-14 (Claude memory lint in the Claude mod)**
+
+- [ ] After the next build and `task install`, on Windows and on the Mac: add a line `- [X](x.md) — test` to the
+  project's `MEMORY.md` (`~/.claude/projects/<project>/memory/`), start a new Claude agent: a toast "arc: memory lint
+  found 1 issue(s)" shows and Claude's first reply names "MEMORY.md points at missing x.md". Remove the line and start
+  another: no toast. Tried only in a headless `claude -p` on Windows with a copy of the mod.
+
 **2026-10-14 (reopen a closed agent, Ctrl+Shift+T)**
 
 - [ ] Close a claude agent with Ctrl+Shift+W, then press Ctrl+Shift+T (also from inside another terminal): it comes
