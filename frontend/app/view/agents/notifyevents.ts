@@ -231,6 +231,7 @@ export function petEventOf(e: NotifyEvent, nowMs: number, size: WindowSize): Pet
             kind: "notify",
             text: `${e.title} finished`,
             detail: e.body || undefined,
+            project: e.meta,
             sources: [{ ref: `agent:${e.target.agentId}`, title: e.title, sourceType: "" }],
         };
     }
@@ -241,6 +242,7 @@ export function petEventOf(e: NotifyEvent, nowMs: number, size: WindowSize): Pet
             at: nowMs,
             kind: "ask",
             text: e.body,
+            project: e.meta,
             sources: [{ ref: `agent:${e.target.agentId}`, title: e.title, sourceType: "" }],
         };
     }

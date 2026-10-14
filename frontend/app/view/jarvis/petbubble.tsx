@@ -56,6 +56,9 @@ export function EventLabel({ event, className }: { event: PetEvent; className?: 
         >
             {tone.dot != null ? <span className={cn("h-1.5 w-1.5 flex-none rounded-full", tone.dot)} /> : null}
             {eventLabel(event)}
+            {event.project ? (
+                <span className="font-normal normal-case tracking-normal text-muted">· {event.project}</span>
+            ) : null}
         </span>
     );
 }

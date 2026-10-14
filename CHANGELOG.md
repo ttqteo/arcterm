@@ -57,6 +57,8 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
 
 ### Fixed
 
+- **Sprout names the project** when it says an agent finished or is waiting at a permission prompt: the project
+  sits beside Notice / Needs you, as it did on the toast.
 - **Sprout folds to where you last dragged it** instead of always the bottom-right corner, where it covered the buttons
   many pages keep there (a chat's heads, a help bubble). Drag it once and the next fold lands it in the same place.
 - **A folded project folder in the Agent sidebar stays inside the sidebar** when its agents are running: its running

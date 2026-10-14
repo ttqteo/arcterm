@@ -273,14 +273,15 @@ describe("petEventOf", () => {
         expect(petEventOf(prompt, 1000, "full")).toBeNull();
     });
 
-    it("says a finished turn, which opens its agent", () => {
-        const done: NotifyEvent = { ...ev("reply", "t1"), title: "loom", body: "Fix the race" };
+    it("says a finished turn and its project, which opens its agent", () => {
+        const done: NotifyEvent = { ...ev("reply", "t1"), title: "loom", body: "Fix the race", meta: "arcterm" };
         expect(petEventOf(done, 1000, "float")).toEqual({
             id: "reply:t1:1000",
             at: 1000,
             kind: "notify",
             text: "loom finished",
             detail: "Fix the race",
+            project: "arcterm",
             sources: [{ ref: "agent:t1", title: "loom", sourceType: "" }],
         });
     });

@@ -42,6 +42,8 @@ export interface PetEvent {
     text: string;
     // message body / question body — the bubble shows only `text`; the peek renders this dimmed
     detail?: string;
+    // the project of the agent that raised it, shown beside the register as the toast it stands in for did
+    project?: string;
     // a notification's level, which is the only register that names one
     level?: NotifyLevel;
     // address of the thing that raised this event (an ask's or a notice's block oref) — carried for the

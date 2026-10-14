@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-14 (Sprout names the project)**
+
+- [ ] In Float or folded, let an agent finish a turn: Sprout's bubble reads "NOTICE · <project>" above "<agent>
+  finished"; an agent stopped at a permission prompt reads "NEEDS YOU · <project>". Commit "fix(pet): Sprout names the project".
+
 **2026-10-14 (fold pause box)**
 
 - [ ] With "Fold when you leave arcterm" on, fold into Sprout and hover it: "Restore, don't fold for" shows only the
