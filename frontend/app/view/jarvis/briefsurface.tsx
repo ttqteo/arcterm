@@ -50,6 +50,7 @@ import {
     ArchiveRestore,
     ArrowUpRight,
     Copy,
+    Link2,
     Maximize2,
     Minimize2,
     Pause,
@@ -59,6 +60,7 @@ import {
     Search,
     SlidersHorizontal,
     Trash2,
+    Unlink,
     X,
 } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig, type Variants } from "motion/react";
@@ -103,8 +105,11 @@ import {
     behindGroups,
     filterLines,
     initiativeLine,
+    isIdea,
     keepsRunKind,
     lineOpenTarget,
+    linkedUnder,
+    nestInitiatives,
     projectName,
     queueLine,
     RUN_KIND_FILTERS,
@@ -112,6 +117,7 @@ import {
     runRowFace,
     sessionLine,
     sessionWindow,
+    settleNesting,
     SHIPPED_EMPTY,
     SHIPPED_LABEL,
     sinceEmptyLine,
@@ -121,7 +127,19 @@ import {
     type LineTarget,
     type RunKindFilter,
 } from "./briefrows";
-import { DeltaRowView, IdeaRow, InitiativeRow, RunRowView, ShippedRowView, WaitingRow } from "./briefrowviews";
+import {
+    DeltaRowView,
+    IdeaRow,
+    InitiativeRow,
+    LinkedInitiatives,
+    ReviewBody,
+    ReviewDone,
+    ReviewTools,
+    RunRowView,
+    ShippedRowView,
+    WaitingRow,
+    type ReviewActionBtn,
+} from "./briefrowviews";
 import { BriefSheet } from "./briefsheet";
 import { FAINT_TEXT, LINK_BTN, REGION_LABEL, SMALL_BTN } from "./briefstyle";
 import { BriefToastView } from "./brieftoast";
@@ -129,7 +147,7 @@ import { briefUndo, chunkKey, effortKey, noteKey, pendingDeleteKeysAtom } from "
 import { ChunkSidebar } from "./chunksidebar";
 import { EffortCreateForm } from "./effortcreateform";
 import { effortFeed, feedNoteCounts } from "./effortfeed";
-import { buildEffortCard, groupChunksByStage, stageOptions } from "./effortmodel";
+import { buildEffortCard, groupChunksByStage, stageOptions, type EffortCardModel } from "./effortmodel";
 import {
     acceptProposed,
     addChunkAt,
@@ -141,6 +159,7 @@ import {
     editNote,
     effortChunkRows,
     effortDetailAtom,
+    linkEffort,
     loadArchivedEfforts,
     loadEffortDetail,
     moveChunk,
@@ -156,7 +175,16 @@ import {
     unarchiveEffort,
 } from "./effortstore";
 import { freshKeys } from "./freshrows";
-import { initiativeResume, noteStamp, openAgentFor, orderInitiatives, type InitiativeResume } from "./initiativework";
+import { InitiativePicker } from "./initiativepicker";
+import { descendantOrefs } from "./initiativepickermodel";
+import {
+    initiativeResume,
+    noteStamp,
+    openAgentFor,
+    orderInitiatives,
+    shortDate,
+    type InitiativeResume,
+} from "./initiativework";
 import { workOnDueChunk, workOnInitiative } from "./initiativeworkaction";
 import {
     chunkRowId,
@@ -184,7 +212,36 @@ import { JarvisTour, TourButton, TourOffer } from "./jarvistourview";
 import { NewInitiativeControl } from "./newinitiativecontrol";
 import { radarDraftLanding } from "./newrun";
 import { openChannelSheet, openOrPeek, openOrPeekAddress } from "./openref";
+import { planReviewORef } from "./planreviewtarget";
 import { forgetOrigin } from "./returnsurface";
+import {
+    eventAge,
+    eventLine,
+    eventParts,
+    eventsSince,
+    eventTone,
+    idleLabel,
+    isChanged,
+    isIdle,
+    quietLine,
+    reviewCards,
+    reviewDone,
+    reviewedInSession,
+    reviewQueue,
+    sinceHeading,
+} from "./reviewmodel";
+import {
+    advanceReview,
+    enterReview,
+    exitReview,
+    markReviewed,
+    markReviewedAndAdvance,
+    moveReview,
+    reviewedAtom,
+    reviewModeAtom,
+    reviewQueueAtom,
+    setReviewCursor,
+} from "./reviewstore";
 import { loadTaskList, taskListAtom } from "./tasksstore";
 import { canRemove, chunkRef, moveTarget, stageMoveTarget, stageRunLabels, stepChunk } from "./trackeredit";
 
@@ -410,6 +467,10 @@ type InitiativeManage = {
     archive: () => void;
     unarchive: () => void;
     remove: () => void;
+    // Link to…: the picker opens under `anchor` (the row's ⋯ button, or the row)
+    link: (anchor: HTMLElement) => void;
+    // present on a sub-initiative: Unlink from its parent, named by the title
+    unlink?: { parentTitle: string; run: () => void };
 };
 
 function showInitiativeMenu(
@@ -420,6 +481,8 @@ function showInitiativeMenu(
 ): void {
     const target = line.target;
     const oid = target != null && "oref" in target ? target.oref.replace(/^effort:/, "") : "";
+    // read now: a React event's currentTarget is gone once the handler returns
+    const anchor = ev.currentTarget as HTMLElement;
     const items: ContextMenuItem[] = [];
     if (manage != null) {
         const archived = isArchivedStatus(manage.status);
@@ -438,6 +501,18 @@ function showInitiativeMenu(
             );
         }
         items.push({ type: "separator" });
+        if (!archived) {
+            // a parent for this initiative, or none; an archived one is finished and stays where it was
+            items.push({ label: "Link to…", icon: <Link2 size={15} />, click: () => manage.link(anchor) });
+            if (manage.unlink != null) {
+                items.push({
+                    label: `Unlink from ${manage.unlink.parentTitle}`,
+                    icon: <Unlink size={15} />,
+                    click: manage.unlink.run,
+                });
+            }
+            items.push({ type: "separator" });
+        }
     }
     if (oid !== "") {
         items.push({
@@ -686,12 +761,25 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     // memoized because the j/k controller below is registered per identity: recomputing these every
     // render would re-register it every render. They are pure functions of the snapshot projection, so
     // pinning them to it also stops groupDelta's "now" drifting between renders of the same snapshot.
+    // A plan to review opens the agent that proposed it while one is open (planreviewtarget.ts), so the queue reads
+    // the roster. The roster ticks far more often than the queue changes, so the memo is keyed on where each plan
+    // opens, not on the roster: a tick that moves no plan's target recomputes nothing and the j/k controller below
+    // is not registered again.
+    const planTargets = attention
+        .filter((a) => a.kind === "plan-review")
+        .map((a) => planReviewORef(a, agents))
+        .join("|");
     const queue = useMemo(
         () =>
             model_ != null
-                ? buildAttentionQueue({ attention, efforts: model_.efforts, blockers: model_.blockers })
+                ? buildAttentionQueue({
+                      attention,
+                      efforts: model_.efforts,
+                      blockers: model_.blockers,
+                      roster: agents,
+                  })
                 : [],
-        [model_, attention]
+        [model_, attention, planTargets]
     );
     // the full projection, not the window: a blocked chunk on the seventh initiative is still waiting on
     // you, so the queue reads every effort even when the Initiatives region is only showing six.
@@ -712,9 +800,10 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     const queueSummary = useMemo(() => summarizeAttentionQueue(queue, Date.now()), [queue]);
 
     const effortGroups = useMemo(() => splitIdeas(efforts), [efforts]);
-    // ordered before the cap, so the eight shown are the ones that need the next hour
+    // ordered before the cap, so the eight shown are the ones that need the next hour; nested after the order, so a
+    // sub-initiative follows the initiative it is part of and the cap counts the rows as they are drawn
     const effortWindow = useMemo(
-        () => capRegion(orderInitiatives(effortGroups.trackers, agents), EFFORT_CAP, initiativesOpen),
+        () => capRegion(nestInitiatives(orderInitiatives(effortGroups.trackers, agents)), EFFORT_CAP, initiativesOpen),
         [effortGroups, agents, initiativesOpen]
     );
     const ideaWindow = useMemo(() => capRegion(effortGroups.ideas, IDEA_CAP, ideasOpen), [effortGroups, ideasOpen]);
@@ -738,6 +827,75 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
             ),
         [effortWindow, ideaWindow, cursorTs]
     );
+
+    // --- review (reviewmodel.ts): what changed since the person last reviewed an initiative, and what sat idle. It
+    // reads every tracker, not the window the region draws, and never reaches the attention queue or the badge.
+    const reviewed = useAtomValue(reviewedAtom);
+    const review = useAtomValue(reviewModeAtom);
+    const reviewCardList = useMemo(
+        () => reviewCards(effortGroups.trackers, snapshot?.state.efforts ?? [], attention, agents),
+        [effortGroups, snapshot, attention, agents]
+    );
+    const reviewItems = useMemo(
+        () => reviewQueue(reviewCardList, reviewed, cursorTs, Date.now()),
+        [reviewCardList, reviewed, cursorTs]
+    );
+    // the row marks: a dot on a changed initiative, "idle 3w" in an idle one's status cell
+    const reviewMarks = useMemo(() => {
+        const now = Date.now();
+        const changed = new Set<string>();
+        const idle = new Map<string, string>();
+        for (const c of reviewCardList) {
+            if (isChanged(c, reviewed[c.oref], cursorTs)) {
+                changed.add(c.oref);
+            }
+            if (isIdle(c, reviewed[c.oref], now)) {
+                idle.set(c.oref, idleLabel(c.updatedts, now));
+            }
+        }
+        return { changed, idle };
+    }, [reviewCardList, reviewed, cursorTs]);
+    // `v` and Review · N begin a pass over this list; the bindings read it from the store
+    const reviewOrefs = useMemo(() => reviewItems.map((q) => q.oref), [reviewItems]);
+    const reviewOrefsKey = reviewOrefs.join(",");
+    useEffect(() => {
+        globalStore.set(reviewQueueAtom, reviewOrefs);
+    }, [reviewOrefsKey]);
+    // The pass: the initiatives it began with that still exist, the one it is on (a vanished cursor falls to the
+    // first one not yet marked), and how far along it is.
+    const pass = useMemo(() => {
+        if (review == null) {
+            return null;
+        }
+        const cards = new Map(reviewCardList.map((c) => [c.oref, c]));
+        const orefs = review.orefs.filter((o) => cards.has(o));
+        const done = reviewDone(orefs, reviewed, review.startedAt);
+        const current = done
+            ? null
+            : orefs.includes(review.cursor)
+              ? review.cursor
+              : (orefs.find((o) => !reviewedInSession(reviewed, o, review.startedAt)) ?? null);
+        return {
+            cards,
+            orefs,
+            done,
+            current,
+            at: done ? orefs.length : orefs.indexOf(current ?? "") + 1,
+        };
+    }, [review, reviewCardList, reviewed]);
+    const reviewCurrentORef = pass?.current ?? null;
+    const reviewCurrentTs = reviewCurrentORef != null ? pass?.cards.get(reviewCurrentORef)?.updatedts : undefined;
+    useEffect(() => {
+        if (review != null && reviewCurrentORef != null && reviewCurrentORef !== review.cursor) {
+            setReviewCursor(reviewCurrentORef);
+        }
+    }, [review?.cursor, reviewCurrentORef]);
+    // the open initiative's events come off its detail, loaded as the pass lands on it
+    useEffect(() => {
+        if (reviewCurrentORef != null) {
+            fireAndForget(() => loadEffortDetail(reviewCurrentORef, reviewCurrentTs));
+        }
+    }, [reviewCurrentORef, reviewCurrentTs]);
 
     // moment 2: only ids that arrive while the snapshot's identity is unchanged animate in. A refresh
     // reseeds silently, which is what stops a whole-snapshot swap from firing N entrances at once; the
@@ -812,7 +970,8 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 queue.map((q) => queueLine(q, now)),
                 query
             ),
-            trackers: initiatives.filter((l) => !l.idea),
+            // a filter or a delete waiting out its undo can take a parent out of the rows: its children stand at the top
+            trackers: settleNesting(initiatives.filter((l) => !l.idea)),
             ideas: initiatives.filter((l) => l.idea),
             sessions: filterLines(
                 sessions.rows.map((r) => sessionLine(r, now)),
@@ -942,6 +1101,14 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         setNoteChunk(null);
         setReadingNote(new Set());
     }, [setNoteChunk, setReadingNote]);
+    // a pass takes the region over: the opened initiative and the Chunk sidebar beside it fold away as it begins
+    const reviewing = review != null;
+    useEffect(() => {
+        if (reviewing) {
+            setOpenInitiative(null);
+            closeNotes();
+        }
+    }, [reviewing]);
 
     // Every write goes through here so a failure is SHOWN rather than swallowed: the mutate helpers
     // write through and refresh the briefing's summary leg, and a rejected op would otherwise leave the
@@ -959,6 +1126,8 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     const planOnly = useMemo(() => planChunks.filter((c) => c.status !== "proposed"), [planChunks]);
     const [renamingTitle, setRenamingTitle] = useState<string | null>(null);
     const [detailsOpen, setDetailsOpen] = useState(false);
+    // the row menu's Link to…: the initiative being linked, and the element the picker opens under
+    const [linking, setLinking] = useState<{ oref: string; anchor: HTMLElement } | null>(null);
     const edits = useMemo<TrackerEdits | null>(() => {
         const oref = openEffortORef;
         if (oref == null || openEffort == null) {
@@ -1272,12 +1441,23 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         () => new Map([...efforts, ...archivedCards].map((e) => [e.oref, e])),
         [efforts, archivedCards]
     );
+    // A link the server refuses (it would make a cycle) is told in the toast, with the server's own words. A link that
+    // lands says so and offers the way back: the parent the initiative had, or none.
+    const toastError = (e: unknown) => briefUndo.error(e instanceof Error ? e.message : String(e));
+    const relink = (oref: string, parent: string, said: string, back: string) =>
+        linkEffort(oref, parent).then(
+            () => briefUndo.notify(said, () => void linkEffort(oref, back).catch(toastError)),
+            toastError
+        );
     const manageOf = (l: BriefLine): InitiativeManage | undefined => {
         const c = l.target != null && "oref" in l.target ? allCards.get(l.target.oref) : undefined;
         if (c == null) {
             return undefined;
         }
         const { oref, title, status } = c;
+        const parentOref = c.parentoid != null && c.parentoid !== "" ? "effort:" + c.parentoid : "";
+        // a parent the lists do not hold (deleted) leaves a link worth clearing, named by what it is
+        const parentTitle = allCards.get(parentOref)?.title ?? "its parent";
         // rename and details live on the expanded row (the title input, the form fed by the effort detail)
         const expand = () => {
             setCursor(l.id);
@@ -1313,8 +1493,188 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 }
                 briefUndo.schedule([effortKey(oref)], `Deleted “${title}”`, () => deleteEffort(oref));
             },
+            link: (anchor) => setLinking({ oref, anchor }),
+            unlink:
+                parentOref !== ""
+                    ? { parentTitle, run: () => void relink(oref, "", `Unlinked from “${parentTitle}”`, parentOref) }
+                    : undefined,
         };
     };
+    // what the picker's pick does: link the initiative under it
+    const pickParent = (pick: string) => {
+        const child = linking != null ? allCards.get(linking.oref) : undefined;
+        setLinking(null);
+        if (child == null) {
+            return;
+        }
+        const back = child.parentoid != null && child.parentoid !== "" ? "effort:" + child.parentoid : "";
+        void relink(child.oref, pick, `Linked under “${allCards.get(pick)?.title ?? "its parent"}”`, back);
+    };
+    // The opened initiative's own children. A row in the list opens that initiative's row on the List, past a
+    // region's "Show more" or the filter if it sits behind one; an idea lives in the side column, so a region read
+    // alone gives the page back first.
+    const revealInitiative = (card: EffortCardModel) => {
+        const idea = isIdea(card);
+        const lineId = "initiatives:" + card.oref;
+        setExpanded((prev) => ({ ...prev, [idea ? "ideas" : "initiatives"]: true }));
+        setQuery("");
+        if (idea) {
+            setOnly(null);
+        }
+        setCursor(lineId);
+        setOpenInitiative(lineId);
+        setNoteChunk(null);
+        setReadingNote(new Set());
+    };
+    const linkedOf = (l: BriefLine): ReactNode => {
+        const oref = l.target != null && "oref" in l.target ? l.target.oref : null;
+        if (oref == null) {
+            return null;
+        }
+        const { subs, ideas } = linkedUnder(
+            oref,
+            efforts.filter((c) => !pendingDeletes.has(effortKey(c.oref)))
+        );
+        return <LinkedInitiatives subs={subs} ideas={ideas} onOpen={revealInitiative} />;
+    };
+    // --- the review pass's rows: the open initiative with what happened since the mark and what to do about it, and
+    // the rest of the pass as one-line rows with the reason each is there
+    const reviewNow = Date.now();
+    const reviewBodyOf = (card: EffortCardModel): ReactNode => {
+        const detail = effortCache.get(card.oref);
+        const marked = review != null && reviewedInSession(reviewed, card.oref, review.startedAt);
+        const mark = reviewed[card.oref];
+        const events = eventsSince(detail?.events, mark ?? cursorTs).map((ev) => ({
+            ...eventParts(eventLine(ev, detail?.chunks)),
+            when: eventAge(ev.ts, reviewNow),
+            tone: eventTone(ev.kind),
+        }));
+        // idle by the reason the queue gave it: an initiative that changed and has sat since is read as changed
+        const idle = reviewItems.find((q) => q.oref === card.oref)?.reason === "idle";
+        const oid = card.oref.replace(/^effort:/, "");
+        const paused = card.status === "paused";
+        // Pause and Archive step on at once and mark the initiative once the server has written, so the write's own
+        // stamp is not read as a change since the review
+        const settle = (write: () => Promise<unknown>) => {
+            advanceReview(card.oref);
+            runMutation(async () => {
+                await write();
+                markReviewed(card.oref, Date.now());
+            });
+        };
+        const keep: ReviewActionBtn = {
+            id: "keep",
+            label: "Keep going",
+            onClick: () => markReviewedAndAdvance(Date.now()),
+        };
+        const work: ReviewActionBtn = {
+            id: "work",
+            label: openAgentFor(oid, agents) != null ? "Go to agent" : "Work on",
+            onClick: () => void workOnInitiative(model, card),
+        };
+        const pause: ReviewActionBtn = {
+            id: "pause",
+            label: paused ? "Resume" : "Pause",
+            onClick: () => {
+                const next = paused ? "active" : "paused";
+                settle(() => setEffortStatus(card.oref, next));
+                briefUndo.notify(next === "paused" ? "Paused" : "Resumed", () =>
+                    runMutation(() => setEffortStatus(card.oref, card.status))
+                );
+            },
+        };
+        const archive: ReviewActionBtn = {
+            id: "archive",
+            label: "Archive",
+            onClick: () => {
+                settle(() => setEffortStatus(card.oref, "archived"));
+                briefUndo.notify(`Archived “${card.title}”`, () => runMutation(() => unarchiveEffort(card.oref)));
+            },
+        };
+        return (
+            <ReviewBody
+                since={
+                    events.length === 0 && idle ? `no change since ${shortDate(card.updatedts)}` : sinceHeading(mark)
+                }
+                events={events}
+                quiet={
+                    marked
+                        ? "Marked reviewed in this pass."
+                        : idle
+                          ? quietLine(card.updatedts, reviewNow)
+                          : "Changed since, with nothing in the feed to list: renames and moves leave no event."
+                }
+                // an idle one most likely wants parking or closing, so those lead
+                actions={idle ? [pause, archive, work, keep] : [keep, work, pause, archive]}
+                onMark={() => markReviewedAndAdvance(Date.now())}
+            />
+        );
+    };
+    const reviewRows =
+        pass != null && !pass.done ? (
+            <div
+                data-jarvis-review="open"
+                className="flex flex-col rounded-[10px] border border-edge-mid bg-surface p-1"
+            >
+                {pass.orefs.map((oref) => {
+                    const card = pass.cards.get(oref)!;
+                    const line = initiativeLine(card);
+                    const marked = review != null && reviewedInSession(reviewed, oref, review.startedAt);
+                    const resume = resumeOf(line);
+                    if (oref === pass.current) {
+                        return (
+                            <div key={oref} data-jarvis-review-current={oref} className="relative">
+                                <InitiativeRow
+                                    line={line}
+                                    focused={false}
+                                    fresh={false}
+                                    expanded
+                                    resume={resume}
+                                    idle={reviewMarks.idle.get(oref)}
+                                >
+                                    {reviewBodyOf(card)}
+                                </InitiativeRow>
+                                {/* the open one, in the cursor's accent ring: painted over the box, never in the way of it */}
+                                <span
+                                    aria-hidden
+                                    className="pointer-events-none absolute inset-0 rounded-[8px] ring-1 ring-inset ring-accent/45"
+                                />
+                            </div>
+                        );
+                    }
+                    return (
+                        <div key={oref} data-jarvis-review-row={oref} className={cn("min-w-0", marked && "opacity-45")}>
+                            <InitiativeRow
+                                line={line}
+                                focused={false}
+                                fresh={false}
+                                expanded={false}
+                                resume={resume}
+                                idle={reviewMarks.idle.get(oref)}
+                                titleSlot={
+                                    marked ? (
+                                        <span
+                                            title={line.title}
+                                            className="truncate text-[13px] font-semibold text-ink-hi"
+                                        >
+                                            <span className="text-success">✓ </span>
+                                            {line.title}
+                                        </span>
+                                    ) : undefined
+                                }
+                                trailing={
+                                    <span className="whitespace-nowrap text-right text-[10.5px] text-ink-mid">
+                                        {marked ? "reviewed" : (reviewItems.find((q) => q.oref === oref)?.reason ?? "")}
+                                    </span>
+                                }
+                                onOpen={() => setReviewCursor(oref)}
+                            />
+                        </div>
+                    );
+                })}
+            </div>
+        ) : null;
+
     useEffect(() => {
         globalStore.set(
             briefRunListAtom,
@@ -1450,6 +1810,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                             {tracker.detail[0]?.kind === "pending" ? tracker.detail[0].message : ""}
                         </p>
                     )}
+                    {linkedOf(l)}
                     {mutateError != null && selectedChunk == null ? (
                         <p className="px-3 pb-2 text-[11px] text-error">{mutateError}</p>
                     ) : null}
@@ -1484,6 +1845,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                             Loading…
                         </p>
                     )}
+                    {linkedOf(l)}
                     {mutateError != null ? <p className="px-3 pb-2 text-[11px] text-error">{mutateError}</p> : null}
                 </motion.div>
             ) : null}
@@ -1887,6 +2249,17 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                             meta={paused > 0 ? `${paused} paused` : "all moving"}
                                             only={only === "initiatives"}
                                             onOnly={() => toggleOnly("initiatives")}
+                                            tools={
+                                                <ReviewTools
+                                                    count={reviewItems.length}
+                                                    pass={
+                                                        pass != null ? { at: pass.at, total: pass.orefs.length } : null
+                                                    }
+                                                    onEnter={() => enterReview(reviewOrefs, Date.now())}
+                                                    onStep={moveReview}
+                                                    onExit={exitReview}
+                                                />
+                                            }
                                             act={
                                                 <button
                                                     type="button"
@@ -1901,104 +2274,119 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                 </button>
                                             }
                                         >
-                                            <div className="flex min-w-0 flex-col gap-2">
-                                                {trackerLines.length === 0 ? (
-                                                    filtering ? (
-                                                        <NoMatch />
-                                                    ) : (
-                                                        <span className="px-[11px] py-[7px] text-[12.5px] text-ink-mid">
-                                                            {REGIONS.initiatives.absent}
-                                                        </span>
-                                                    )
-                                                ) : null}
-                                                {trackerLines.length > 0 ||
-                                                effortWindow.more > 0 ||
-                                                initiativesOpen ||
-                                                archivedCards.length > 0 ? (
-                                                    <div className="flex flex-col rounded-[10px] border border-edge-mid bg-surface p-1">
-                                                        <MotionConfig reducedMotion="user">
-                                                            <AnimatePresence initial={false}>
-                                                                {trackerLines.map((l) => (
-                                                                    <motion.div
-                                                                        key={l.id}
-                                                                        // position, not full layout: the opened row detail owns
-                                                                        // its own height animation, and a size-animating parent
-                                                                        // would re-project that growth as a scale
-                                                                        layout="position"
-                                                                        variants={cardVariants}
-                                                                        initial={
-                                                                            entering.has(keyOf(l)) ? "initial" : false
-                                                                        }
-                                                                        animate="animate"
-                                                                        exit="exit"
-                                                                        transition={{
-                                                                            duration: MOTION.durMacro,
-                                                                            ease: MOTION.easeFluid,
-                                                                        }}
-                                                                        // the opened row expands where it is; lifted so a plan menu
-                                                                        // hanging past it paints over the rows after it
-                                                                        className={cn(
-                                                                            "min-w-0",
-                                                                            l.id === openInitiative && "relative z-10"
-                                                                        )}
-                                                                    >
-                                                                        <InitiativeRow
-                                                                            line={l}
-                                                                            focused={cursor === l.id}
-                                                                            fresh={freshInitiatives.has(keyOf(l))}
-                                                                            expanded={l.id === openInitiative}
-                                                                            resume={resumeOf(l)}
-                                                                            onWork={() => {
-                                                                                const c = cardOf(l);
-                                                                                if (c != null) {
-                                                                                    void workOnInitiative(model, c);
-                                                                                }
-                                                                            }}
-                                                                            onContextMenu={(ev) =>
-                                                                                showInitiativeMenu(
-                                                                                    l,
-                                                                                    ev,
-                                                                                    (oref) => openLine({ oref }),
-                                                                                    manageOf(l)
-                                                                                )
+                                            {pass != null ? (
+                                                <div className="flex min-w-0 flex-col gap-2">
+                                                    {pass.done ? <ReviewDone onBack={exitReview} /> : reviewRows}
+                                                </div>
+                                            ) : (
+                                                <div className="flex min-w-0 flex-col gap-2">
+                                                    {trackerLines.length === 0 ? (
+                                                        filtering ? (
+                                                            <NoMatch />
+                                                        ) : (
+                                                            <span className="px-[11px] py-[7px] text-[12.5px] text-ink-mid">
+                                                                {REGIONS.initiatives.absent}
+                                                            </span>
+                                                        )
+                                                    ) : null}
+                                                    {trackerLines.length > 0 ||
+                                                    effortWindow.more > 0 ||
+                                                    initiativesOpen ||
+                                                    archivedCards.length > 0 ? (
+                                                        <div className="flex flex-col rounded-[10px] border border-edge-mid bg-surface p-1">
+                                                            <MotionConfig reducedMotion="user">
+                                                                <AnimatePresence initial={false}>
+                                                                    {trackerLines.map((l) => (
+                                                                        <motion.div
+                                                                            key={l.id}
+                                                                            // position, not full layout: the opened row detail owns
+                                                                            // its own height animation, and a size-animating parent
+                                                                            // would re-project that growth as a scale
+                                                                            layout="position"
+                                                                            variants={cardVariants}
+                                                                            initial={
+                                                                                entering.has(keyOf(l))
+                                                                                    ? "initial"
+                                                                                    : false
                                                                             }
-                                                                            onOpen={() => {
-                                                                                setCursor(l.id);
-                                                                                toggleInitiative(l.id);
+                                                                            animate="animate"
+                                                                            exit="exit"
+                                                                            transition={{
+                                                                                duration: MOTION.durMacro,
+                                                                                ease: MOTION.easeFluid,
                                                                             }}
-                                                                            titleSlot={titleSlotOf(l)}
+                                                                            // the opened row expands where it is; lifted so a plan menu
+                                                                            // hanging past it paints over the rows after it
+                                                                            className={cn(
+                                                                                "min-w-0",
+                                                                                l.id === openInitiative &&
+                                                                                    "relative z-10"
+                                                                            )}
                                                                         >
-                                                                            {detailOf(l)}
-                                                                        </InitiativeRow>
-                                                                    </motion.div>
-                                                                ))}
-                                                            </AnimatePresence>
-                                                        </MotionConfig>
-                                                        {/* what the cap hid, and the archived ones, close the box */}
-                                                        <div className="flex flex-wrap items-center gap-2 px-1.5 pb-1 pt-0.5 empty:hidden">
-                                                            <MoreControl
-                                                                n={effortWindow.more}
-                                                                expanded={initiativesOpen}
-                                                                onToggle={() => toggleRegion("initiatives")}
-                                                            />
-                                                            {archivedCards.length > 0 ? (
-                                                                <button
-                                                                    type="button"
-                                                                    data-jarvis-brief-archived={
-                                                                        showArchived ? "hide" : "show"
-                                                                    }
-                                                                    onClick={() => setShowArchived(!showArchived)}
-                                                                    className={LINK_BTN}
-                                                                >
-                                                                    {showArchived
-                                                                        ? "Hide archived"
-                                                                        : `Show ${archivedCards.length} archived`}
-                                                                </button>
-                                                            ) : null}
+                                                                            <InitiativeRow
+                                                                                line={l}
+                                                                                focused={cursor === l.id}
+                                                                                fresh={freshInitiatives.has(keyOf(l))}
+                                                                                expanded={l.id === openInitiative}
+                                                                                resume={resumeOf(l)}
+                                                                                changed={reviewMarks.changed.has(
+                                                                                    cardOf(l)?.oref ?? ""
+                                                                                )}
+                                                                                idle={reviewMarks.idle.get(
+                                                                                    cardOf(l)?.oref ?? ""
+                                                                                )}
+                                                                                onWork={() => {
+                                                                                    const c = cardOf(l);
+                                                                                    if (c != null) {
+                                                                                        void workOnInitiative(model, c);
+                                                                                    }
+                                                                                }}
+                                                                                onContextMenu={(ev) =>
+                                                                                    showInitiativeMenu(
+                                                                                        l,
+                                                                                        ev,
+                                                                                        (oref) => openLine({ oref }),
+                                                                                        manageOf(l)
+                                                                                    )
+                                                                                }
+                                                                                onOpen={() => {
+                                                                                    setCursor(l.id);
+                                                                                    toggleInitiative(l.id);
+                                                                                }}
+                                                                                titleSlot={titleSlotOf(l)}
+                                                                            >
+                                                                                {detailOf(l)}
+                                                                            </InitiativeRow>
+                                                                        </motion.div>
+                                                                    ))}
+                                                                </AnimatePresence>
+                                                            </MotionConfig>
+                                                            {/* what the cap hid, and the archived ones, close the box */}
+                                                            <div className="flex flex-wrap items-center gap-2 px-1.5 pb-1 pt-0.5 empty:hidden">
+                                                                <MoreControl
+                                                                    n={effortWindow.more}
+                                                                    expanded={initiativesOpen}
+                                                                    onToggle={() => toggleRegion("initiatives")}
+                                                                />
+                                                                {archivedCards.length > 0 ? (
+                                                                    <button
+                                                                        type="button"
+                                                                        data-jarvis-brief-archived={
+                                                                            showArchived ? "hide" : "show"
+                                                                        }
+                                                                        onClick={() => setShowArchived(!showArchived)}
+                                                                        className={LINK_BTN}
+                                                                    >
+                                                                        {showArchived
+                                                                            ? "Hide archived"
+                                                                            : `Show ${archivedCards.length} archived`}
+                                                                    </button>
+                                                                ) : null}
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                ) : null}
-                                            </div>
+                                                    ) : null}
+                                                </div>
+                                            )}
                                         </Region>
                                     ) : null}
                                 </div>
@@ -2326,6 +2714,21 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                     }}
                 />
             ) : null}
+            {/* the row menu's Link to…: the initiatives it can go under, which leave out itself and everything
+                beneath it (that would be a cycle; the server refuses one too) */}
+            <InitiativePicker
+                open={linking != null}
+                anchor={linking?.anchor ?? null}
+                project={(linking != null ? allCards.get(linking.oref)?.project : undefined) ?? ""}
+                excluding={linking != null ? descendantOrefs([...efforts, ...archivedCards], linking.oref) : undefined}
+                newLabel={null}
+                pickVerb="link"
+                onPick={pickParent}
+                onClose={() => {
+                    linking?.anchor.focus({ preventScroll: true });
+                    setLinking(null);
+                }}
+            />
             {/* the plan-gate modal, mounted here because the Stage was the surface that hosted it */}
             <DagModal />
             <TourOffer />

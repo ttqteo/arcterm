@@ -88,6 +88,14 @@ import { peekTarget } from "@/app/view/jarvis/openref";
 import { openPetPeek, peekChordActive } from "@/app/view/jarvis/peekstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { backToOrigin } from "@/app/view/jarvis/returnsurface";
+import {
+    enterReview,
+    exitReview,
+    markReviewedAndAdvance,
+    moveReview,
+    reviewModeAtom,
+    reviewQueueAtom,
+} from "@/app/view/jarvis/reviewstore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import { isMacOS } from "@/util/platformutil";
 import type { MutableRefObject } from "react";
@@ -485,7 +493,9 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
                 // note", and going home too would do both at once
                 globalStore.get(noteChunkAtom) == null &&
                 // and the plan-editing menu above it, the innermost rung of all
-                globalStore.get(trackerMenuAtom) == null,
+                globalStore.get(trackerMenuAtom) == null &&
+                // and a review pass on the Brief: Escape leaves the pass, and going home too would do both
+                !(ctx.surface === "jarvis" && globalStore.get(reviewModeAtom) != null),
             run: () => backOrHome(model),
         },
     ];
@@ -496,6 +506,11 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
 export function buildListNavBindings(model: AgentsViewModel): Binding[] {
     const active = (ctx: KeyContext): boolean => {
         if (ctx.editable || ctx.modalOpen) {
+            return false;
+        }
+        // a review pass on the Brief takes j, k and Enter (buildJarvisBindings) until it ends; on any other
+        // surface the pass, left open behind it, owns nothing
+        if (ctx.surface === "jarvis" && globalStore.get(reviewModeAtom) != null) {
             return false;
         }
         const c = globalStore.get(listNavAtom);
@@ -677,6 +692,34 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
         },
     };
 
+    const reviewing = (ctx: KeyContext) => onJarvis(ctx) && globalStore.get(reviewModeAtom) != null;
+    const reviewKey = (id: string, keys: string, label: string, run: () => void, when = reviewing): Binding => ({
+        id,
+        keys,
+        group: "Jarvis",
+        label,
+        when,
+        paletteHidden: true,
+        run,
+    });
+    const reviewKeys: Binding[] = [
+        reviewKey("jarvis:review-mark", "Enter", "Mark reviewed, then the next", () =>
+            markReviewedAndAdvance(Date.now())
+        ),
+        reviewKey("jarvis:review-next-j", "j", "Next initiative in the review", () => moveReview(1)),
+        reviewKey("jarvis:review-prev-k", "k", "Previous initiative in the review", () => moveReview(-1)),
+        reviewKey("jarvis:review-next", "ArrowRight", "Next initiative in the review", () => moveReview(1)),
+        reviewKey("jarvis:review-prev", "ArrowLeft", "Previous initiative in the review", () => moveReview(-1)),
+        reviewKey(
+            "jarvis:review-exit",
+            "Escape",
+            "Leave the review",
+            exitReview,
+            (ctx) =>
+                reviewing(ctx) && globalStore.get(noteChunkAtom) == null && globalStore.get(trackerMenuAtom) == null
+        ),
+    ];
+
     // an open status or stage menu sits above the sidebar: Escape closes the menu and nothing else
     const trackerMenuEscape: Binding = {
         id: "jarvis:close-tracker-menu",
@@ -777,6 +820,18 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
             when: (ctx) => onJarvis(ctx) && globalStore.get(chunkMoveAtom) != null,
             run: () => globalStore.get(chunkMoveAtom)?.("down"),
         },
+        {
+            id: "jarvis:review",
+            keys: "v",
+            group: "Jarvis",
+            label: "Review what changed and what sat idle",
+            when: (ctx) => onJarvis(ctx) && globalStore.get(reviewModeAtom) == null,
+            // the Brief publishes the queue it draws; nothing to review lets the key pass
+            run: () => (enterReview(globalStore.get(reviewQueueAtom), Date.now()) ? undefined : false),
+        },
+        // while a pass is on, it owns j, k, Enter, the horizontal arrows and Escape (list nav and esc-home stand
+        // down), and Escape leaves the pass only once the Chunk sidebar and the plan menu above it are closed
+        ...reviewKeys,
         {
             id: "jarvis:focus-composer",
             keys: "i",

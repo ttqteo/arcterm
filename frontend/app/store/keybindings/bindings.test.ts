@@ -44,6 +44,8 @@ import { peekTarget } from "@/app/view/jarvis/openref";
 import { itemKeyCommand } from "@/app/view/jarvis/peekitemmodel";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { peekKeyCommand } from "@/app/view/jarvis/petpeekmodel";
+import { noteChunkAtom } from "@/app/view/jarvis/jarvisstore";
+import { enterReview, exitReview, reviewModeAtom, reviewedAtom, reviewQueueAtom } from "@/app/view/jarvis/reviewstore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import { codeTreeFocusedAtom } from "@/app/view/code/codestore";
 import { codeSearchModeAtom } from "@/app/view/code/codesearchstore";
@@ -1904,5 +1906,101 @@ describe("agent:initiative", () => {
             }
         }
         expect(claimed).toEqual([]);
+    });
+});
+
+describe("review mode on the Jarvis surface", () => {
+    const nav: KeyContext = { surface: "jarvis", editable: false, modalOpen: false, leader: null };
+    const key = (k: string) =>
+        ({ key: k, code: "", control: false, shift: false, cmd: false, option: false, meta: false, alt: false }) as any;
+    const model = stubModel("a1");
+    const all = () => [...buildGlobalBindings(model), ...buildListNavBindings(model), ...buildJarvisBindings(model)];
+    const claim = (k: string, on: KeyContext = nav) => {
+        const r = matchBinding(key(k), on, all());
+        return r.kind === "run" ? r.binding.id : null;
+    };
+    const controller = (surface: SurfaceKey) =>
+        globalStore.set(listNavAtom, { surface, navigableIds: ["a", "b"], cursorId: "a", setCursor() {} });
+
+    beforeEach(() => {
+        controller("jarvis");
+        // the Diff surface's compare posture, which an earlier suite can leave on, also holds Escape back
+        globalStore.set(diffScopeAtom, null);
+        globalStore.set(reviewedAtom, {});
+        globalStore.set(reviewQueueAtom, []);
+    });
+    afterEach(() => {
+        exitReview();
+        globalStore.set(listNavAtom, null);
+        globalStore.set(noteChunkAtom, null);
+    });
+
+    it("hands j, k and Enter to the list while no review is on", () => {
+        expect(claim("j")).toBe("list:next-j");
+        expect(claim("k")).toBe("list:prev-k");
+        expect(claim("Enter")).toBe("list:activate");
+        expect(claim("ArrowRight")).toBeNull();
+        expect(claim("Escape")).toBe("surface:back-home");
+    });
+
+    it("hands them to the review while one is on, and Escape leaves it before it goes home", () => {
+        enterReview(["a", "b"], 100);
+        expect(claim("j")).toBe("jarvis:review-next-j");
+        expect(claim("k")).toBe("jarvis:review-prev-k");
+        expect(claim("Enter")).toBe("jarvis:review-mark");
+        expect(claim("ArrowRight")).toBe("jarvis:review-next");
+        expect(claim("ArrowLeft")).toBe("jarvis:review-prev");
+        expect(claim("Escape")).toBe("jarvis:review-exit");
+        // the list's own arrows and Space are not the review's to hold: only j, k and Enter change hands
+        expect(claim("ArrowDown")).toBeNull();
+    });
+
+    it("leaves the review's keys alone on every other surface and in a field", () => {
+        enterReview(["a", "b"], 100);
+        controller("usage");
+        expect(claim("j", { ...nav, surface: "usage" })).toBe("list:next-j");
+        expect(claim("Enter", { ...nav, surface: "usage" })).toBe("list:activate");
+        expect(claim("Escape", { ...nav, surface: "usage" })).toBe("surface:back-home");
+        expect(claim("j", { ...nav, editable: true })).toBeNull();
+        expect(claim("Enter", { ...nav, editable: true })).toBeNull();
+    });
+
+    it("lets the Chunk sidebar have Escape first, then the review", () => {
+        enterReview(["a", "b"], 100);
+        globalStore.set(noteChunkAtom, "initiatives:effort:e1/chunk:x");
+        expect(claim("Escape")).toBe("jarvis:close-notes");
+        globalStore.set(noteChunkAtom, null);
+        expect(claim("Escape")).toBe("jarvis:review-exit");
+    });
+
+    it("steps with the arrows and j/k around the pass, and Enter marks the one it is on and moves on", () => {
+        enterReview(["a", "b", "c"], 100);
+        const run = (id: string) => buildJarvisBindings(model).find((b) => b.id === id)!.run(nav);
+        const cursor = () => globalStore.get(reviewModeAtom)?.cursor;
+        run("jarvis:review-next");
+        expect(cursor()).toBe("b");
+        run("jarvis:review-prev-k");
+        run("jarvis:review-prev");
+        expect(cursor()).toBe("c");
+        run("jarvis:review-next-j");
+        expect(cursor()).toBe("a");
+        vi.spyOn(Date, "now").mockReturnValue(150);
+        run("jarvis:review-mark");
+        expect(globalStore.get(reviewedAtom)).toEqual({ a: 150 });
+        expect(cursor()).toBe("b");
+        vi.restoreAllMocks();
+    });
+
+    it("v begins a pass over the queue the Brief published, and passes when there is none", () => {
+        const v = () => buildJarvisBindings(model).find((b) => b.id === "jarvis:review")!;
+        expect(v().keys).toBe("v");
+        expect(v().when!(nav)).toBe(true);
+        expect(v().run(nav)).toBe(false);
+        expect(globalStore.get(reviewModeAtom)).toBeNull();
+        globalStore.set(reviewQueueAtom, ["x", "y"]);
+        expect(v().run(nav)).not.toBe(false);
+        expect(globalStore.get(reviewModeAtom)).toMatchObject({ cursor: "x", orefs: ["x", "y"] });
+        // under a pass it is not the key to begin another
+        expect(v().when!(nav)).toBe(false);
     });
 });

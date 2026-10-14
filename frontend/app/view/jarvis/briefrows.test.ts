@@ -9,12 +9,15 @@ import {
     initiativeLine,
     keepsRunKind,
     lineOpenTarget,
+    linkedUnder,
+    nestInitiatives,
     projectName,
     queueLine,
     runKindLegs,
     runRowFace,
     sessionLine,
     sessionWindow,
+    settleNesting,
     SHIPPED_EMPTY,
     SHIPPED_LABEL,
     sinceEmptyLine,
@@ -201,6 +204,169 @@ describe("splitIdeas", () => {
         const out = splitIdeas([card("i1", 0, 0), card("t1", 1, 2), card("i2", 0, 0), card("t2", 0, 3)]);
         expect(out.trackers.map((c) => c.oref)).toEqual(["t1", "t2"]);
         expect(out.ideas.map((c) => c.oref)).toEqual(["i1", "i2"]);
+    });
+});
+
+describe("parent and child initiatives", () => {
+    // oref "effort:<oid>"; a child names its parent by the bare oid, as the wire's parentoid does
+    const card = (oid: string, over: Partial<EffortCardModel> = {}) =>
+        ({
+            oref: "effort:" + oid,
+            title: oid.toUpperCase(),
+            status: "active",
+            done: 1,
+            remaining: 2,
+            skipped: 0,
+            ...over,
+        }) as EffortCardModel;
+    const shape = (rows: { oref: string; depth: number }[]) => rows.map((r) => `${r.oref.slice(7)}:${r.depth}`);
+
+    describe("nestInitiatives", () => {
+        it("puts each child right after its parent, a grandchild one level deeper, parents keeping their order", () => {
+            const out = nestInitiatives([
+                card("c1", { parentoid: "p1" }),
+                card("p2"),
+                card("g1", { parentoid: "c1" }),
+                card("p1"),
+                card("c2", { parentoid: "p1" }),
+                card("p3"),
+            ]);
+            // the parents are p2, p1, p3 as given; c1 and c2 (and c1's g1) move under p1 in their own order
+            expect(shape(out)).toEqual(["p2:0", "p1:0", "c1:1", "g1:2", "c2:1", "p3:0"]);
+        });
+
+        it("counts a parent's direct children as subCount, and names the parent a child sits under", () => {
+            const out = nestInitiatives([
+                card("p1", { title: "Jarvis 2.0" }),
+                card("c1", { parentoid: "p1" }),
+                card("g1", { parentoid: "c1" }),
+                card("c2", { parentoid: "p1" }),
+            ]);
+            const by = Object.fromEntries(out.map((r) => [r.oref.slice(7), r]));
+            expect([by.p1.subCount, by.c1.subCount, by.g1.subCount, by.c2.subCount]).toEqual([2, 1, 0, 0]);
+            expect(by.c1).toMatchObject({ parentOref: "effort:p1", parentTitle: "Jarvis 2.0" });
+            expect(by.p1.parentOref).toBeUndefined();
+        });
+
+        it("treats a child whose parent is not in the list as top level", () => {
+            // the parent is archived or filtered out of the list, or the oid no longer names an initiative at all
+            const out = nestInitiatives([card("a"), card("c1", { parentoid: "gone" }), card("b")]);
+            expect(shape(out)).toEqual(["a:0", "c1:0", "b:0"]);
+            expect(out[1].subCount).toBe(0);
+            expect(out[1].parentOref).toBeUndefined();
+            expect(out[1].parentTitle).toBeUndefined();
+        });
+
+        it("keeps every row when the data holds a cycle or a self-link", () => {
+            const out = nestInitiatives([
+                card("a", { parentoid: "b" }),
+                card("b", { parentoid: "a" }),
+                card("s", { parentoid: "s" }),
+                card("z"),
+            ]);
+            expect(out.map((r) => r.oref.slice(7)).sort()).toEqual(["a", "b", "s", "z"]);
+            expect(out.filter((r) => r.depth === 0).length).toBeGreaterThan(0);
+        });
+
+        it("leaves the cards' own fields alone and an empty list empty", () => {
+            expect(nestInitiatives([])).toEqual([]);
+            const p = card("p1", { title: "P" });
+            expect(nestInitiatives([p])[0]).toMatchObject({ oref: "effort:p1", title: "P", done: 1, depth: 0 });
+        });
+    });
+
+    describe("linkedUnder", () => {
+        it("splits the live cards under a parent into sub-initiatives and ideas, each in the given order", () => {
+            const out = linkedUnder("effort:p1", [
+                card("i1", { parentoid: "p1", done: 0, remaining: 0 }),
+                card("c1", { parentoid: "p1" }),
+                card("other", { parentoid: "p2" }),
+                card("i2", { parentoid: "p1", done: 0, remaining: 0 }),
+                card("c2", { parentoid: "p1" }),
+                card("p1"),
+            ]);
+            expect(out.subs.map((c) => c.oref)).toEqual(["effort:c1", "effort:c2"]);
+            expect(out.ideas.map((c) => c.oref)).toEqual(["effort:i1", "effort:i2"]);
+        });
+
+        it("leaves an archived child out", () => {
+            const out = linkedUnder("effort:p1", [
+                card("c1", { parentoid: "p1", status: "archived" }),
+                card("c2", { parentoid: "p1", status: "archived", done: 0, remaining: 0 }),
+            ]);
+            expect(out).toEqual({ subs: [], ideas: [] });
+        });
+
+        it("finds nothing under an initiative nobody links to", () => {
+            expect(linkedUnder("effort:p1", [card("c1", { parentoid: "p2" }), card("p1")])).toEqual({
+                subs: [],
+                ideas: [],
+            });
+        });
+    });
+
+    describe("settleNesting", () => {
+        const line = (oref: string, depth: number, parentOref?: string) =>
+            ({ id: "initiatives:" + oref, oref, depth, parentOref, target: { oref } }) as unknown as BriefLine;
+        const depths = (lines: BriefLine[]) => lines.map((l) => l.depth ?? 0);
+
+        it("keeps the depths of rows whose parent is still drawn", () => {
+            const rows = [line("effort:p", 0), line("effort:c", 1, "effort:p"), line("effort:g", 2, "effort:c")];
+            expect(depths(settleNesting(rows))).toEqual([0, 1, 2]);
+        });
+
+        it("lifts a child to top level when its parent left the list (a filter, a delete waiting out its undo)", () => {
+            const rows = [line("effort:c", 1, "effort:p"), line("effort:g", 2, "effort:c")];
+            // the child is now a root, so its own child sits one level under it
+            expect(depths(settleNesting(rows))).toEqual([0, 1]);
+        });
+
+        it("returns the same rows when nothing is nested", () => {
+            const rows = [line("effort:a", 0), line("effort:b", 0)];
+            expect(settleNesting(rows)).toBe(rows);
+        });
+    });
+
+    describe("initiativeLine on a nested card", () => {
+        const base = buildEffortCard({
+            oref: "effort:c1",
+            title: "Brief redesign",
+            status: "active",
+            done: 1,
+            total: 3,
+            activechunk: "B",
+            updatedts: NOW,
+            project: "arcterm",
+            chunks: [
+                { label: "A", status: "done" },
+                { label: "B", status: "pending" },
+                { label: "C", status: "pending" },
+            ],
+        } as EffortSummary);
+
+        it("reads '↳ Part of <parent>' on a child and carries its depth", () => {
+            const line = initiativeLine({
+                ...base,
+                depth: 1,
+                subCount: 0,
+                parentOref: "effort:p1",
+                parentTitle: "Jarvis 2.0",
+            });
+            expect(line).toMatchObject({ meta: "↳ Part of Jarvis 2.0", depth: 1, parentOref: "effort:p1" });
+        });
+
+        it("counts the sub-initiatives on a parent's meta line and carries subCount for the title's +N sub", () => {
+            const line = initiativeLine({ ...base, depth: 0, subCount: 2 });
+            expect(line).toMatchObject({ meta: "arcterm · 2 sub-initiatives", subCount: 2 });
+            expect(initiativeLine({ ...base, depth: 0, subCount: 1 }).meta).toBe("arcterm · 1 sub-initiative");
+        });
+
+        it("says nothing extra on a card that is not nested", () => {
+            const line = initiativeLine(base);
+            expect(line.meta).toBe("arcterm");
+            expect(line.depth).toBeUndefined();
+            expect(line.subCount).toBeUndefined();
+        });
     });
 });
 

@@ -41,6 +41,7 @@ import { codeTreeFocusedAtom } from "@/app/view/code/codestore";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import { briefPeekRecordAtom, chunkMoveAtom, noteChunkAtom, trackerMenuAtom } from "@/app/view/jarvis/jarvisstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
+import { reviewModeAtom } from "@/app/view/jarvis/reviewstore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import { atom, type Atom, type PrimitiveAtom } from "jotai";
 import { listNavAtom } from "./listnav";
@@ -71,6 +72,7 @@ export const PREDICATE_ATOMS: Atom<unknown>[] = [
     tabSwitcherAtom, // buildGlobalBindings: switcher:cancel, and switcher:next / prev under the open switcher
     dockedTerminalAtom, // buildAgentBindings: agent:terminal-panel
     initiativePopoverAtom, // buildAgentBindings: agentNav / agentNavStrict (every single-key Agent binding yields to the popover)
+    reviewModeAtom, // buildJarvisBindings: jarvis:review and the review keys; buildListNavBindings: active; surface:back-home
 ];
 
 function bumpWhenVersion() {
