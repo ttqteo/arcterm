@@ -20,6 +20,9 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
 - **Reopen an agent you just closed**: `Ctrl+Shift+T` (`Cmd+Shift+T` on a Mac) brings back the agent closed last, as a
   browser reopens a closed tab. Its conversation returns asleep, so it costs nothing until you wake it or send it a
   message. The last 5 closed agents are kept. <!-- try: reopen-agent -->
+- **Agents learn your corrections**: agents now note how you correct them. When the same correction comes up in two
+  sessions, Needs you asks whether to keep it as a rule, and the lines you accept appear, highlighted, under
+  Setup → Learned and in each skill.
 
 ### Changed
 
