@@ -489,7 +489,7 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                         {
                             id: "storage.autoclean",
                             title: "Clean the safe parts daily",
-                            desc: "Finished run worktrees with no uncommitted changes, and rolled logs older than 7 days. Sessions, build output and the cache wait for you.",
+                            desc: "Finished run worktrees with no uncommitted changes, and rolled logs older than 7 days. Sessions, build output, canvases and the cache wait for you.",
                             key: "storage:autoclean",
                             scope: "synced",
                             config: true,
@@ -499,6 +499,14 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                             title: "Remind me above",
                             desc: "A toast, at most once a day, when more than this can be cleaned.",
                             key: "storage:nudgegb",
+                            scope: "synced",
+                            config: true,
+                        },
+                        {
+                            id: "storage.canvasonship",
+                            title: "Agents delete a canvas when its feature ships",
+                            desc: "Off: agents keep every canvas, and list the shipped ones when you ask them to tidy up.",
+                            key: "storage:canvasonship",
                             scope: "synced",
                             config: true,
                         },

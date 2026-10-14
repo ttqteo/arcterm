@@ -63,6 +63,23 @@ const report: StorageReport = {
     ],
 };
 
+// pkg/storage reports every canvas topic as a guarded item, so no bulk clean ever takes one
+const canvas = (id: string, bytes: number): StorageItem =>
+    item(id, { kind: "canvas", label: id, detail: "arcterm · 2 boards", bytes, guarded: true });
+
+const withCanvases: StorageReport = {
+    ...report,
+    categories: [
+        ...(report.categories ?? []),
+        {
+            category: "canvases",
+            bytes: 5 * MB,
+            cleanablebytes: 0,
+            items: [canvas("/p/.superpowers/design/a", 2 * MB), canvas("/p/.superpowers/design/b", 3 * MB)],
+        },
+    ],
+};
+
 describe("storageCards", () => {
     it("orders the cards worktrees, sessions, housekeeping, build output", () => {
         expect(storageCards(report, "30", NOW, {}).map((c) => c.category)).toEqual([
@@ -94,17 +111,40 @@ describe("storageCards", () => {
     it("is empty before the first report", () => {
         expect(storageCards(null, "30", NOW, {})).toEqual([]);
     });
+    it("puts Design canvases last, as a card with a size, rows and no button of its own", () => {
+        const cards = storageCards(withCanvases, "30", NOW, {});
+        expect(cards.map((c) => c.category)).toEqual([
+            "runworktrees",
+            "sessions",
+            "housekeeping",
+            "buildoutput",
+            "canvases",
+        ]);
+        const canvases = cards[4];
+        expect(canvases.title).toBe("Design canvases");
+        expect(canvases.action).toBeNull();
+        expect(canvases.rows).toHaveLength(2);
+        expect(canvases.bytes).toBe(5 * MB);
+        expect(canvases.cleanableBytes).toBe(0);
+    });
 });
 
 describe("cleanAllIds", () => {
     it("takes only cleanable, unguarded rows", () => {
         expect(cleanAllIds(storageCards(report, "30", NOW, {})[0])).toEqual(["a"]);
     });
+    it("takes no canvas, which only the gallery's Clean up moves", () => {
+        expect(cleanAllIds(storageCards(withCanvases, "30", NOW, {})[4])).toEqual([]);
+    });
 });
 
 describe("totals", () => {
     it("counts what can be cleaned at the chosen age, build output included", () => {
         expect(cleanableTotal(report, "30", NOW)).toBe(10 * MB + 20 * MB + 3 * GB);
+    });
+    it("leaves the canvases out of what can be cleaned and counts them in what arcterm uses", () => {
+        expect(cleanableTotal(withCanvases, "30", NOW)).toBe(cleanableTotal(report, "30", NOW));
+        expect(usedTotal(withCanvases)).toBe(usedTotal(report) + 5 * MB);
     });
     it("counts everything arcterm uses, the store included", () => {
         expect(usedTotal(report)).toBe(3 * GB + 30 * MB + 30 * MB + 43 * MB);

@@ -3,8 +3,8 @@
 //
 // Settings > Storage: what arcterm and its agents leave on disk, per category, and cleaning it. storagemodel.ts
 // decides what each card holds and says; pkg/storage measures and cleans, re-checking every rule at removal. The
-// head and the four category cards read the storage report; the Auto-clean card's rows are settings.json
-// (storage:*).
+// head and the category cards read the storage report (Design canvases is a summary with no rows: they are cleaned
+// in the gallery); the Auto-clean card's rows are settings.json (storage:*).
 
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { getSettingsKeyAtom } from "@/app/store/global";
@@ -12,6 +12,8 @@ import { modalsModel } from "@/app/store/modalmodel";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { useState } from "react";
+import { showCanvases } from "../agentcenter";
+import type { AgentsViewModel } from "../agents";
 import { formatAgo } from "../agentsviewmodel";
 import { CardFooter, Segmented, SettingCard, SettingRow, Toggle, writeConfig } from "../settingsui";
 import {
@@ -40,6 +42,11 @@ type Category = (typeof CARD_ORDER)[number];
 const BUTTON =
     "flex-none cursor-pointer rounded-sm border border-edge-mid px-2.5 py-1 text-[12px] font-semibold text-ink-mid transition-colors hover:bg-surface-hover hover:text-primary disabled:cursor-default disabled:opacity-50";
 const ROWS_SHOWN = 5;
+// the cards whose head counts their rows, in the singular and the plural
+const COUNT_NOUN: Partial<Record<Category, [string, string]>> = {
+    sessions: ["session", "sessions"],
+    canvases: ["canvas", "canvases"],
+};
 
 // one line of a card: an item, or for build output a project
 type Entry = {
@@ -84,7 +91,8 @@ function runClean(card: StorageCard, rows: StorageRow[], days: SessionDays, guar
 }
 
 function entriesOf(category: Category, card: StorageCard | null, days: SessionDays): Entry[] {
-    if (card == null) {
+    // canvases are listed and cleaned in the gallery; here they are a size and a count
+    if (card == null || category === "canvases") {
         return [];
     }
     if (category === "buildoutput") {
@@ -158,14 +166,17 @@ function CategoryCard({
     card,
     days,
     onDays,
+    model,
 }: {
     category: Category;
     card: StorageCard | null;
     days: SessionDays;
     onDays: (d: SessionDays) => void;
+    model: AgentsViewModel;
 }) {
     const [open, setOpen] = useState(false);
     const copy = CARD_COPY[category];
+    const noun = COUNT_NOUN[category];
     const entries = entriesOf(category, card, days);
     const shown = open ? entries : entries.slice(0, ROWS_SHOWN);
     const ids = card != null ? cleanAllIds(card) : [];
@@ -193,12 +204,22 @@ function CategoryCard({
                     <span className="text-[13px] font-semibold tabular-nums text-primary">
                         {card == null ? "…" : formatSize(card.bytes)}
                     </span>
-                    {category === "sessions" && card != null ? (
+                    {noun != null && card != null ? (
                         <span data-storage-count={card.rows.length} className="text-[12px] text-muted">
-                            {card.rows.length === 1 ? "1 session" : `${card.rows.length} sessions`}
+                            {card.rows.length} {noun[card.rows.length === 1 ? 0 : 1]}
                         </span>
                     ) : null}
                     <span className="flex-1" />
+                    {category === "canvases" ? (
+                        <button
+                            type="button"
+                            data-storage-canvases-open
+                            className={BUTTON}
+                            onClick={() => showCanvases(model)}
+                        >
+                            Open the gallery
+                        </button>
+                    ) : null}
                     {category === "sessions" ? (
                         <Segmented<SessionDays>
                             options={SESSION_DAYS.map((d) => ({ id: d, label: `${d} days` }))}
@@ -243,12 +264,13 @@ function CategoryCard({
     );
 }
 
-export function StoragePage() {
+export function StoragePage({ model }: { model: AgentsViewModel }) {
     const report = useStorageReport(true);
     const skipped = useAtomValue(storageSkippedAtom);
     const [days, setDays] = useState<SessionDays>(DEFAULT_SESSION_DAYS);
     const auto = (useAtomValue(getSettingsKeyAtom("storage:autoclean")) as boolean | undefined) ?? true;
     const nudge = (useAtomValue(getSettingsKeyAtom("storage:nudgegb")) as number | undefined) ?? DEFAULT_NUDGE_GB;
+    const canvasOnShip = (useAtomValue(getSettingsKeyAtom("storage:canvasonship")) as boolean | undefined) ?? false;
     const now = Date.now();
     const cards = storageCards(report, days, now, skipped);
     const scanned = report != null && report.scannedts > 0;
@@ -286,6 +308,7 @@ export function StoragePage() {
                     card={cards.find((c) => c.category === cat) ?? null}
                     days={days}
                     onDays={setDays}
+                    model={model}
                 />
             ))}
             <SettingCard
@@ -315,6 +338,13 @@ export function StoragePage() {
                         options={NUDGE_GB_CHOICES.map((v) => ({ id: v, label: `${v} GB` }))}
                         value={String(nudge)}
                         onChange={(v) => writeConfig({ "storage:nudgegb": Number(v) })}
+                    />
+                </SettingRow>
+                <SettingRow id="storage.canvasonship">
+                    <Toggle
+                        on={canvasOnShip}
+                        onToggle={() => writeConfig({ "storage:canvasonship": !canvasOnShip })}
+                        label="Agents delete a canvas when its feature ships"
                     />
                 </SettingRow>
             </SettingCard>
