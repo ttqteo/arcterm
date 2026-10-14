@@ -105,6 +105,7 @@ describe("runSettingsDraft", () => {
             workerRoute: route,
             reviewerPicks: false,
             reviewerRoute: null,
+            lightReviewerRoute: null,
             autonomous: false,
         });
     });
@@ -119,6 +120,7 @@ describe("runSettingsDraft", () => {
             workerRoute: route,
             reviewerPicks: false,
             reviewerRoute: null,
+            lightReviewerRoute: null,
             autonomous: false,
         });
     });
@@ -152,6 +154,7 @@ describe("draftIsDirty", () => {
             workerRoute: null,
             reviewerPicks: false,
             reviewerRoute: null,
+            lightReviewerRoute: null,
             autonomous: false,
         };
         expect(draftIsDirty(base, { ...base })).toBe(false);
@@ -168,6 +171,7 @@ describe("settingsPayload", () => {
             workerRoute: { runtime: "pi" } as RoutePin,
             reviewerPicks: false,
             reviewerRoute: null,
+            lightReviewerRoute: null,
             autonomous: false,
         };
         expect(settingsPayload("c1", "r1", draft, { ...draft, parallelism: 2 })).toEqual({
@@ -185,6 +189,7 @@ describe("settingsPayload", () => {
             workerRoute: null,
             reviewerPicks: false,
             reviewerRoute: null,
+            lightReviewerRoute: null,
             autonomous: false,
         };
         // a stored 0 means no width yet: the server refuses 0, so an Approvals-only save must leave it out
@@ -200,6 +205,7 @@ describe("settingsPayload", () => {
             workerRoute: null,
             reviewerPicks: false,
             reviewerRoute: null,
+            lightReviewerRoute: null,
             autonomous: true,
         };
         const off = { ...draft, autonomous: false };
@@ -301,9 +307,7 @@ describe("draftSeedKey", () => {
     it("changes on a pre-dag width or worker route", () => {
         const base = draftSeedKey(engineRun(), null);
         expect(draftSeedKey(engineRun({ parallelism: 6 }), null)).not.toBe(base);
-        expect(draftSeedKey(engineRun({ workerroute: { runtime: "pi" } as RoutePin }), null)).not.toBe(
-            base
-        );
+        expect(draftSeedKey(engineRun({ workerroute: { runtime: "pi" } as RoutePin }), null)).not.toBe(base);
     });
 
     it("ignores an update that leaves the effective settings alone", () => {

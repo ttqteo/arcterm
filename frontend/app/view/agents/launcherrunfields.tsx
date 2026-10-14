@@ -28,6 +28,7 @@ import { RoutePicker } from "./routepicker";
 import { approvalsNote, START_OPTIONS, startNote, type StartFrom } from "./runconfig";
 import {
     autonomousAtom,
+    lightReviewerRouteAtom,
     parallelismAtom,
     planPathAtom,
     reviewerPicksAtom,
@@ -36,6 +37,7 @@ import {
     runRouteAtom,
     runShapeAtom,
     setAutonomous,
+    setLightReviewerRoute,
     setPlanPath,
     setReviewerPicks,
     setReviewerRoute,
@@ -245,9 +247,10 @@ function RunModels() {
     const workerRoute = useAtomValue(workerRouteAtom);
     const reviewerPicks = useAtomValue(reviewerPicksAtom);
     const reviewerRoute = useAtomValue(reviewerRouteAtom);
+    const lightReviewerRoute = useAtomValue(lightReviewerRouteAtom);
     const leadRuntimes = useAtomValue(leadRuntimesAtom);
     return (
-        <div className="grid grid-cols-3 gap-2.5">
+        <div className="grid grid-cols-2 gap-2.5">
             <ModelPick label="Lead">
                 <LeadPicker />
             </ModelPick>
@@ -277,6 +280,18 @@ function RunModels() {
                     runtimes={leadRuntimes}
                 />
             </ModelPick>
+            <span data-light-reviewers-row className="contents">
+                <ModelPick label="Light reviewers">
+                    <RoutePicker
+                        value={lightReviewerRoute}
+                        onChange={setLightReviewerRoute}
+                        placement="bottom-start"
+                        title="Light reviewers model"
+                        canInherit
+                        inheritedLabel="Sonnet (default)"
+                    />
+                </ModelPick>
+            </span>
         </div>
     );
 }

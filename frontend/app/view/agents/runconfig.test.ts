@@ -163,6 +163,7 @@ describe("profileRunDefaults", () => {
             workerRoute: route,
             reviewerPicks: false,
             reviewerRoute: null,
+            lightReviewerRoute: null,
             autonomous: false,
         });
     });
@@ -174,6 +175,7 @@ describe("profileRunDefaults", () => {
             workerRoute: null,
             reviewerPicks: false,
             reviewerRoute: null,
+            lightReviewerRoute: null,
             autonomous: false,
         });
         expect(profileRunDefaults(null)).toEqual({
@@ -182,6 +184,7 @@ describe("profileRunDefaults", () => {
             workerRoute: null,
             reviewerPicks: false,
             reviewerRoute: null,
+            lightReviewerRoute: null,
             autonomous: false,
         });
     });

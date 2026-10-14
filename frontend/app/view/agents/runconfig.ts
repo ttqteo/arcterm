@@ -55,6 +55,8 @@ export interface ProfileRunDefaults {
     // not nullable: false is the profile's own answer (Same as lead or its worker route), not silence
     reviewerPicks: boolean;
     reviewerRoute: RoutePin | null;
+    // null is the server's claude/sonnet default, not the lead's route
+    lightReviewerRoute: RoutePin | null;
     // not nullable either: false is the profile saying Ask me
     autonomous: boolean;
 }
@@ -70,6 +72,7 @@ export function profileRunDefaults(profile: JarvisProfile | null | undefined): P
         workerRoute: profile?.workerroute ?? null,
         reviewerPicks: profile?.reviewerpicks ?? false,
         reviewerRoute: profile?.reviewerroute ?? null,
+        lightReviewerRoute: profile?.lightreviewerroute ?? null,
         autonomous: profile?.autonomous ?? false,
     };
 }

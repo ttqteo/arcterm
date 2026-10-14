@@ -21,6 +21,8 @@ export type RunSettingsDraft = {
     // never true beside a worker route: the server refuses the pair
     reviewerPicks: boolean;
     reviewerRoute: RoutePin | null;
+    // null is the server's claude/sonnet default for the plan review's lens and follow-up reviewers
+    lightReviewerRoute: RoutePin | null;
     autonomous: boolean;
 };
 
@@ -95,6 +97,7 @@ export function runSettingsDraft(run: Run | null, group: TaskGroup | null): RunS
         workerRoute: from?.workerroute ?? null,
         reviewerPicks: from?.reviewerpicks ?? false,
         reviewerRoute: from?.reviewerroute ?? null,
+        lightReviewerRoute: from?.lightreviewerroute ?? null,
         autonomous: runAutonomous(run, group),
     };
 }
@@ -114,6 +117,7 @@ export function draftIsDirty(a: RunSettingsDraft, b: RunSettingsDraft): boolean 
         !sameRoute(a.workerRoute, b.workerRoute) ||
         a.reviewerPicks !== b.reviewerPicks ||
         !sameRoute(a.reviewerRoute, b.reviewerRoute) ||
+        !sameRoute(a.lightReviewerRoute, b.lightReviewerRoute) ||
         a.autonomous !== b.autonomous
     );
 }
@@ -134,6 +138,7 @@ export function draftSeedKey(run: Run, group: TaskGroup | null): string {
     const draft = runSettingsDraft(run, group);
     const route = draft.workerRoute;
     const reviewer = draft.reviewerRoute;
+    const light = draft.lightReviewerRoute;
     return [
         draft.parallelism,
         route?.runtime ?? "",
@@ -141,6 +146,8 @@ export function draftSeedKey(run: Run, group: TaskGroup | null): string {
         draft.reviewerPicks,
         reviewer?.runtime ?? "",
         reviewer?.model ?? "",
+        light?.runtime ?? "",
+        light?.model ?? "",
         draft.autonomous,
     ].join("|");
 }
@@ -187,6 +194,9 @@ function dialsPayload(channelId: string, runId: string, draft: RunSettingsDraft)
     }
     if (draft.reviewerRoute != null) {
         payload.reviewerroute = draft.reviewerRoute;
+    }
+    if (draft.lightReviewerRoute != null) {
+        payload.lightreviewerroute = draft.lightReviewerRoute;
     }
     return payload;
 }

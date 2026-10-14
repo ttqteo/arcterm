@@ -29,6 +29,7 @@ export const workerRouteAtom = atom<RoutePin | null>(null) as PrimitiveAtom<Rout
 // the Workers picker's third answer beside Same as lead and a route; never true alongside a worker route
 export const reviewerPicksAtom = atom(false) as PrimitiveAtom<boolean>;
 export const reviewerRouteAtom = atom<RoutePin | null>(null) as PrimitiveAtom<RoutePin | null>;
+export const lightReviewerRouteAtom = atom<RoutePin | null>(null) as PrimitiveAtom<RoutePin | null>;
 // the Approvals field: Autonomous when true, Ask me when false
 export const autonomousAtom = atom(false) as PrimitiveAtom<boolean>;
 export const parallelismAtom = atom<number>(DEFAULT_PARALLELISM) as PrimitiveAtom<number>;
@@ -91,6 +92,11 @@ export function setReviewerRoute(next: RoutePin | null): void {
     globalStore.set(reviewerRouteAtom, next);
 }
 
+export function setLightReviewerRoute(next: RoutePin | null): void {
+    globalStore.set(configTouchedAtom, true);
+    globalStore.set(lightReviewerRouteAtom, next);
+}
+
 export function setAutonomous(next: boolean): void {
     globalStore.set(configTouchedAtom, true);
     globalStore.set(autonomousAtom, next);
@@ -115,6 +121,7 @@ export function hydrateRunConfigFromProfile(profile: JarvisProfile | null | unde
     globalStore.set(workerRouteAtom, defaults.workerRoute ?? null);
     globalStore.set(reviewerPicksAtom, defaults.reviewerPicks);
     globalStore.set(reviewerRouteAtom, defaults.reviewerRoute);
+    globalStore.set(lightReviewerRouteAtom, defaults.lightReviewerRoute);
     globalStore.set(autonomousAtom, defaults.autonomous);
 }
 
@@ -164,6 +171,7 @@ export function resetRunConfig(): void {
     globalStore.set(workerRouteAtom, null);
     globalStore.set(reviewerPicksAtom, false);
     globalStore.set(reviewerRouteAtom, null);
+    globalStore.set(lightReviewerRouteAtom, null);
     globalStore.set(autonomousAtom, false);
     globalStore.set(parallelismAtom, DEFAULT_PARALLELISM);
     globalStore.set(startAtom, DEFAULT_START);

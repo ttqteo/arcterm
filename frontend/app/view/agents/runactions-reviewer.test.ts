@@ -39,3 +39,15 @@ describe("createRunPayload reviewer fields", () => {
         expect(payload).not.toHaveProperty("reviewerroute");
     });
 });
+
+describe("createRunPayload Light reviewers route", () => {
+    it("carries it for an orchestrator and drops it for a quick launch", () => {
+        const opts = { lightReviewerRoute: reviewers };
+        expect(
+            createRunPayload("ws-1", "ch-1", "goal", lead, { mode: "orchestrator", ...opts }).lightreviewerroute
+        ).toEqual(reviewers);
+        expect(createRunPayload("ws-1", "ch-1", "goal", lead, { mode: "quick", ...opts })).not.toHaveProperty(
+            "lightreviewerroute"
+        );
+    });
+});

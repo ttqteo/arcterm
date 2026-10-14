@@ -752,6 +752,7 @@ describe("configLine", () => {
         workerRoute: null,
         reviewerPicks: false,
         reviewerRoute: null,
+        lightReviewerRoute: null,
         autonomous: false,
         ...over,
     });
@@ -760,6 +761,14 @@ describe("configLine", () => {
         expect(configLine(run(), draft(), false)).toBe(
             "engine · orchestrator · lead pi/deepseek-v4-flash · parallelism 2 · workers inherit the lead · asks you"
         );
+    });
+
+    it("names a set Light reviewers route beside the reviewers, and nothing for the default", () => {
+        const haiku = { runtime: "claude", model: "haiku" } as RoutePin;
+        expect(configLine(run(), draft({ lightReviewerRoute: haiku }), false)).toContain(
+            "light reviewers claude · haiku"
+        );
+        expect(configLine(run(), draft(), false)).not.toContain("light reviewers");
     });
 
     it("says when a run's width is left to its submit", () => {

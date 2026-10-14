@@ -131,6 +131,7 @@ export function profileOverrideIsEmpty(o: ProfileOverride | null | undefined): b
         o.workerroute == null &&
         o.reviewerpicks == null &&
         o.reviewerroute == null &&
+        o.lightreviewerroute == null &&
         o.autonomous == null
     );
 }
@@ -220,6 +221,7 @@ const OVERRIDE_FIELDS = [
     "route",
     "workerroute",
     "reviewerroute",
+    "lightreviewerroute",
     "landing",
     "autonomous",
 ] as const;
@@ -228,6 +230,7 @@ export type GlobalDefaultKey =
     | "parallelism"
     | "workerroute"
     | "reviewerroute"
+    | "lightreviewerroute"
     | "landing"
     | "autonomous";
 // the fields both scopes share. ProfileOverride and JarvisProfile agree on all of them; `route` is the one
@@ -328,6 +331,15 @@ export function reviewerRow(draft: ProfileDefaults, base: JarvisProfile, inherit
     return {
         value: draft.reviewerroute ?? null,
         inheritedLabel: inheritable && base.reviewerroute != null ? "Same as global" : "Same as lead",
+    };
+}
+
+// The Light reviewers route row: the plan review's lens and follow-up reviewers. Unset is the server's
+// claude/sonnet default rather than the lead's route, so that is what the unset answer names.
+export function lightReviewerRow(draft: ProfileDefaults, base: JarvisProfile, inheritable: boolean): ReviewerRow {
+    return {
+        value: draft.lightreviewerroute ?? null,
+        inheritedLabel: inheritable && base.lightreviewerroute != null ? "Same as global" : "Sonnet (default)",
     };
 }
 

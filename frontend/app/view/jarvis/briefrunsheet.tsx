@@ -344,6 +344,16 @@ function LoadedConfig({
                         runtimes={leadRuntimes}
                     />
                 </div>
+                <div data-light-reviewers-row className="flex min-w-0 flex-1 flex-col gap-[5px]">
+                    <span className="text-[11.5px] font-semibold text-secondary">Light reviewers</span>
+                    <RoutePicker
+                        value={draft.lightReviewerRoute}
+                        canInherit
+                        inheritedLabel="Sonnet (default)"
+                        disabled={busy}
+                        onChange={(route) => setDraft({ ...draft, lightReviewerRoute: route })}
+                    />
+                </div>
             </div>
             <div className="flex flex-col gap-1.5">
                 <span className="text-[11.5px] font-semibold text-secondary">Approvals</span>
@@ -419,6 +429,9 @@ function LoadedConfig({
                     <span className={tone}>{workers}</span>
                     {shown.reviewerRoute != null ? (
                         <span className={tone}>reviewers on {routeLabel(shown.reviewerRoute)}</span>
+                    ) : null}
+                    {shown.lightReviewerRoute != null ? (
+                        <span className={tone}>light reviewers on {routeLabel(shown.lightReviewerRoute)}</span>
                     ) : null}
                     <span
                         data-jarvis-brief-sheet-approvals

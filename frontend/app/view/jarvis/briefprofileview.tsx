@@ -45,6 +45,7 @@ import {
     defaultReach,
     globalProfileIsDirty,
     isDirty,
+    lightReviewerRow,
     overridesRow,
     overrideSummary,
     principleNote,
@@ -103,17 +104,20 @@ function DefaultRow({
     hint,
     aside,
     alignTop = false,
+    attrs,
     children,
 }: {
     label: string;
     hint: string;
     aside: ReactNode;
     alignTop?: boolean;
+    attrs?: Record<`data-${string}`, string>;
     children: ReactNode;
 }) {
     return (
         <div
             data-jarvis-profile-row={label}
+            {...attrs}
             className={cn(
                 "grid grid-cols-[156px_minmax(0,1fr)_140px] gap-x-3.5 px-3.5 py-[11px]",
                 alignTop ? "items-start" : "items-center"
@@ -219,6 +223,7 @@ function DefaultsFields({
     const landing = draft.landing || base.landing || "branch";
     const workers = workersRow(draft, base, inheritable);
     const reviewers = reviewerRow(draft, base, inheritable);
+    const lightReviewers = lightReviewerRow(draft, base, inheritable);
     const { autonomous } = approvalsRow(draft, base, inheritable);
     return (
         <div className={PROFILE_PANEL}>
@@ -303,6 +308,22 @@ function DefaultsFields({
                     disabled={saving}
                     runtimes={leadRuntimes}
                     onChange={(route) => (route == null ? drop("reviewerroute") : set({ reviewerroute: route }))}
+                />
+            </DefaultRow>
+            <DefaultRow
+                label="Light reviewers route"
+                hint="Plan review lenses and follow-up"
+                aside={aside("lightreviewerroute", "Light reviewers route")}
+                attrs={{ "data-light-reviewers-row": "" }}
+            >
+                <RoutePicker
+                    value={lightReviewers.value}
+                    canInherit
+                    inheritedLabel={lightReviewers.inheritedLabel}
+                    disabled={saving}
+                    onChange={(route) =>
+                        route == null ? drop("lightreviewerroute") : set({ lightreviewerroute: route })
+                    }
                 />
             </DefaultRow>
             <DefaultRow

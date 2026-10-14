@@ -65,6 +65,7 @@ export interface CreateRunOpts {
     planPath?: string;
     reviewerPicks?: boolean;
     reviewerRoute?: RoutePin | null;
+    lightReviewerRoute?: RoutePin | null;
     prototype?: string;
     autonomous?: boolean;
 }
@@ -90,6 +91,7 @@ export function createRunPayload(
         // false is sent too: unset means "the profile's", which is not what a launcher showing false chose
         ...(orchestrator && opts.reviewerPicks != null ? { reviewerpicks: opts.reviewerPicks } : {}),
         ...(orchestrator && opts.reviewerRoute ? { reviewerroute: opts.reviewerRoute } : {}),
+        ...(orchestrator && opts.lightReviewerRoute ? { lightreviewerroute: opts.lightReviewerRoute } : {}),
         ...(orchestrator && opts.prototype ? { prototype: opts.prototype } : {}),
         // false is sent too, as reviewerpicks is; the server refuses an explicit autonomous on a quick run
         ...(orchestrator && opts.autonomous != null ? { autonomous: opts.autonomous } : {}),

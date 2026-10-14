@@ -54,6 +54,7 @@ export interface RunConfig {
     planPath: string;
     reviewerPicks: boolean;
     reviewerRoute: RoutePin | null;
+    lightReviewerRoute: RoutePin | null;
     autonomous: boolean;
     // a canvas's board, from Build this…; absolute, since a run's worktree has no copy of the design folder
     prototype?: string;
@@ -66,6 +67,7 @@ export interface LaunchOpts {
     planPath?: string;
     reviewerPicks?: boolean;
     reviewerRoute?: RoutePin;
+    lightReviewerRoute?: RoutePin;
     prototype?: string;
     autonomous?: boolean;
 }
@@ -76,8 +78,18 @@ export interface LaunchOpts {
 // profile's, and the launcher has already shown the user the profile's answer and let them change it. autonomous
 // goes out the same way, and never on quick, which the server refuses it on.
 export function launchOptsFromConfig(config: RunConfig): LaunchOpts {
-    const { shape, parallelism, workerRoute, start, planPath, reviewerPicks, reviewerRoute, prototype, autonomous } =
-        config;
+    const {
+        shape,
+        parallelism,
+        workerRoute,
+        start,
+        planPath,
+        reviewerPicks,
+        reviewerRoute,
+        lightReviewerRoute,
+        prototype,
+        autonomous,
+    } = config;
     if (shape !== "orchestrator") {
         return { mode: shape };
     }
@@ -88,6 +100,7 @@ export function launchOptsFromConfig(config: RunConfig): LaunchOpts {
         ...(start === "plan" ? { planPath: planPath.trim() } : {}),
         reviewerPicks,
         ...(reviewerRoute != null ? { reviewerRoute } : {}),
+        ...(lightReviewerRoute != null ? { lightReviewerRoute } : {}),
         ...(prototype ? { prototype } : {}),
         autonomous,
     };

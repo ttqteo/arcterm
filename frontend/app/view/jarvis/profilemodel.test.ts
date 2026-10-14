@@ -6,6 +6,7 @@ import {
     DIAGNOSTIC_MISSING_DISABLED,
     DIAGNOSTIC_MISSING_REPLACEMENT,
     isDirty,
+    lightReviewerRow,
     overrideSummary,
     principleNote,
     principleRows,
@@ -360,5 +361,34 @@ describe("principleNote", () => {
             P("zinc", { principles: { disabled: ["a"] } }),
         ];
         expect(principleNote(projects, "a", true)).toEqual({ text: "This edit won't reach 3 projects", warn: true });
+    });
+});
+
+describe("lightReviewerRow", () => {
+    const ROUTE: RoutePin = { runtime: "claude", model: "haiku" };
+    const OTHER: RoutePin = { runtime: "pi", model: "gpt" };
+
+    it("names the Sonnet default when nothing is set, globally or with no global route", () => {
+        expect(lightReviewerRow({}, {} as JarvisProfile, false)).toEqual({
+            value: null,
+            inheritedLabel: "Sonnet (default)",
+        });
+        expect(lightReviewerRow({}, {} as JarvisProfile, true)).toEqual({
+            value: null,
+            inheritedLabel: "Sonnet (default)",
+        });
+    });
+
+    it("names the global route a project inherits, and shows a project's own", () => {
+        const base = { lightreviewerroute: ROUTE } as JarvisProfile;
+        expect(lightReviewerRow({}, base, true)).toEqual({ value: null, inheritedLabel: "Same as global" });
+        expect(lightReviewerRow({ lightreviewerroute: OTHER }, base, true).value).toEqual(OTHER);
+        expect(lightReviewerRow({ lightreviewerroute: ROUTE }, {} as JarvisProfile, false).value).toEqual(ROUTE);
+    });
+
+    it("counts as a project's own row", () => {
+        expect(profileOverrideIsEmpty({ lightreviewerroute: ROUTE })).toBe(false);
+        expect(overrideSummary({ lightreviewerroute: ROUTE })).toBe("1 set for this project");
+        expect(resetRow({ lightreviewerroute: ROUTE }, "lightreviewerroute")).toEqual({});
     });
 });

@@ -120,6 +120,7 @@ import { launchBlocker, type RunShape } from "./runconfig";
 import {
     autonomousAtom,
     hydrateRunConfigFromProfile,
+    lightReviewerRouteAtom,
     parallelismAtom,
     planPathAtom,
     planPreviewAtom,
@@ -208,6 +209,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const workerRoute = useAtomValue(workerRouteAtom);
     const reviewerPicks = useAtomValue(reviewerPicksAtom);
     const autonomous = useAtomValue(autonomousAtom);
+    const lightReviewerRoute = useAtomValue(lightReviewerRouteAtom);
     const reviewerRoute = useAtomValue(reviewerRouteAtom);
     const runRoute = useAtomValue(runRouteAtom);
     const routeTouched = useAtomValue(routeTouchedAtom);
@@ -299,6 +301,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         planPath,
         reviewerPicks,
         reviewerRoute,
+        lightReviewerRoute,
         prototype,
         autonomous,
     };

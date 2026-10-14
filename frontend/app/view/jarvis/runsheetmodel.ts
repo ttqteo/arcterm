@@ -816,6 +816,7 @@ export function configLine(run: Run, draft: RunSettingsDraft, notSaved: boolean)
         `workers ${workersLabel(draft)}`,
         // only when set, so a run that never chose one prints the line it always did
         ...(draft.reviewerRoute != null ? [`reviewers ${routeLabel(draft.reviewerRoute)}`] : []),
+        ...(draft.lightReviewerRoute != null ? [`light reviewers ${routeLabel(draft.lightReviewerRoute)}`] : []),
         ...(run.mode === "orchestrator" ? [approvalsWord(draft.autonomous)] : []),
     ].join(" · ");
 }
