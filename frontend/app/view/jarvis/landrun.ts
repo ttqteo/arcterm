@@ -15,17 +15,31 @@ export const LAND_RPC_TIMEOUT_MS = 45 * 60_000 + 10_000;
 
 export interface LandOutcome {
     failed: boolean;
+    // the retry went through but nothing landed yet: the land is in line, or a resolver is merging the base in
+    pending?: boolean;
     text: string;
 }
 
 /** Pure: what one land retry reports. A held land is not an rpc error — the server answers with the reason —
- *  so it is read here as a failure, or the button would report success on a branch that is still not merged. */
+ *  so it is read here as a failure, or the button would report success on a branch that is still not merged. A land
+ *  put in line or handed to a resolver did not fail either, and it is not landed, so it says what happens next. */
 export function landOutcome(land: RunLand | null | undefined): LandOutcome {
     if (land?.state === "landed") {
         return { failed: false, text: land.commit ? `Landed as ${land.commit.slice(0, 8)}.` : "Landed." };
     }
     if (land?.state === "held") {
         return { failed: true, text: `Still held: ${land.reason || "the engine gave no reason"}` };
+    }
+    if (land?.state === "queued") {
+        return { failed: false, pending: true, text: "In line to land. It lands by itself when its turn comes." };
+    }
+    if (land?.state === "resolving") {
+        const files = (land.conflicts ?? []).join(", ");
+        return {
+            failed: false,
+            pending: true,
+            text: `A resolver is merging the base in${files ? ` (${files})` : ""}. It lands by itself once that is done.`,
+        };
     }
     return { failed: true, text: `The land ended ${land?.state || "without a state"}.` };
 }

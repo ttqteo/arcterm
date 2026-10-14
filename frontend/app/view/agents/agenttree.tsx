@@ -669,6 +669,8 @@ function RunSubline({
     leadless?: boolean;
     trailing?: React.ReactNode;
 }) {
+    // the runs the tree knows, which a land in line is placed among (landPlace keeps to the run's own project)
+    const lineageRuns = useAtomValue(model.lineageAtom).runs;
     if (run.dag == null) {
         // no dag means the lead judged the goal bounded and never submitted a plan, not that a plan is
         // still on its way — so the run's own status is the only truth here. Hardcoding "planning" left
@@ -695,7 +697,11 @@ function RunSubline({
     const { done, total } = runProgress(run.dag);
     // not "N done": the done fold under the run says that, and this chip folds the whole run
     const workers = live > 0 || done === 0;
-    const progress = dagProgressLabel(run, leadless ?? false);
+    const progress = dagProgressLabel(
+        run,
+        leadless ?? false,
+        run.land?.state === "queued" ? Object.values(lineageRuns) : undefined
+    );
     return (
         <>
             {/* @container: a narrow line keeps the chip's count and drops its word, so the progress is not cut */}

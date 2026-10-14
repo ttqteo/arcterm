@@ -8,6 +8,7 @@ import {
     clickTargetFor,
     eventKindTitle,
     eventText,
+    eventTitle,
     joinWorkspacePath,
     toneFor,
 } from "./runtimeline";
@@ -187,6 +188,33 @@ describe("verify rows", () => {
         expect(toneFor("task-verify-started")).toBe("text-muted");
         expect(toneFor("task-verify-passed")).toBe("text-success");
         expect(toneFor("task-verify-failed")).toBe("text-warning");
+    });
+});
+
+describe("land line rows", () => {
+    it("titles the two rows a land in line writes, never by the raw kind", () => {
+        expect(eventKindTitle("land-queued")).toBe("Land in line");
+        expect(eventKindTitle("land-resolving")).toBe("Resolving conflicts with the base");
+    });
+
+    it("tones them inside the existing utilities: neither is a failure", () => {
+        expect(toneFor("land-queued")).toBe("text-muted");
+        expect(toneFor("land-resolving")).toBe("text-asking");
+    });
+
+    it("names a stage session by its role, a land resolver included", () => {
+        const started = (role?: string) =>
+            ({
+                id: "1",
+                ts: 1,
+                kind: "stage-session-started",
+                detail: role ? JSON.stringify({ role }) : undefined,
+            }) as RunEvent;
+        expect(eventTitle(started("land-resolver"))).toBe("Conflict resolver started");
+        expect(eventText(started("land-resolver"))).toBe("Conflict resolver started");
+        expect(eventTitle(started("plan-reviewer"))).toBe("Plan reviewer started");
+        expect(eventTitle(started("verifier"))).toBe("Final verifier started");
+        expect(eventTitle(started())).toBe("Judging session started");
     });
 });
 

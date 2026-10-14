@@ -109,6 +109,17 @@ describe("runAttentionAct", () => {
         expect(fb.done).toHaveBeenCalledWith("Landed · ship the thing");
     });
 
+    // the server queues a land behind another of its project: the retry went through, but nothing landed yet
+    it("says a land put in line is in line, never Landed", async () => {
+        const text = "In line to land. It lands by itself when its turn comes.";
+        landAgain.mockResolvedValue({ failed: false, pending: true, text });
+        const fb = feedback();
+        const r = row({ wireKind: "run-land-held", taskId: "" });
+        await expect(runAttentionAct(attentionAct(r), r, fb)).resolves.toBe(true);
+        expect(fb.done).toHaveBeenCalledWith(text);
+        expect(fb.fail).not.toHaveBeenCalled();
+    });
+
     // a held answer is not an rpc error, so it is read as one here: the feedback must carry the reason, never "Landed"
     it("reports a land that stays held as a failure carrying the reason", async () => {
         landAgain.mockResolvedValue({ failed: true, text: "Still held: verify failed" });

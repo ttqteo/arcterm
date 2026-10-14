@@ -375,6 +375,11 @@ describe("stage sessions", () => {
         expect(stageLabel("plan-reviewer")).toBe("Plan review");
         expect(stageLabel("verifier")).toBe("Final verification");
     });
+
+    it("titles a land resolver's row Conflict resolver, and a role it does not know by the role", () => {
+        expect(stageLabel("land-resolver")).toBe("Conflict resolver");
+        expect(stageLabel("auditor")).toBe("auditor");
+    });
 });
 
 describe("a task past its worker", () => {

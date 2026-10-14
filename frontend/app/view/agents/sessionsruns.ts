@@ -14,8 +14,8 @@ import type { LiveSession } from "./sessionsarchivestore";
 
 export const LEAD_MEMBER = "lead";
 
-// the sessions that judge the whole dag, in the order they run; each is its own member, keyed by its role
-const STAGE_ROLES = ["plan-reviewer", "verifier"];
+// the sessions the engine starts for the whole dag, in the order they run; each is its own member, keyed by its role
+const STAGE_ROLES = ["plan-reviewer", "verifier", "land-resolver"];
 
 export interface RunSessions {
     runId: string;
@@ -225,8 +225,29 @@ const STAGE_VERDICTS: Record<string, Status> = {
     unverified: { key: "muted", text: "unverified" },
 };
 
+// resolverStatus reads a land resolver from the run's land, as the tree's stageOutcome does: the dag holds no verdict
+// for it. A session belongs to the owner run, not to the resolver's own run, so it cannot be matched to land.resolver.
+// With no land loaded, the member has only the dag, and reads like a stage with no verdict there: done.
+function resolverStatus(session: LiveSession | undefined, land: RunLand | undefined): Status {
+    if (session?.live || land?.state === "resolving") {
+        return { key: "review", text: "resolving" };
+    }
+    if (land == null) {
+        return { key: "done", text: "done" };
+    }
+    return land.state === "held" && land.resolvertried ? STAGE_VERDICTS.failed : STAGE_VERDICTS.passed;
+}
+
 // stageStatus reads the dag's current round of a stage: the round its newest session judged
-function stageStatus(role: string, session: LiveSession | undefined, dag: TaskGroup | undefined): Status {
+function stageStatus(
+    role: string,
+    session: LiveSession | undefined,
+    dag: TaskGroup | undefined,
+    land: RunLand | undefined
+): Status {
+    if (role === "land-resolver") {
+        return resolverStatus(session, land);
+    }
     if (session?.live) {
         return { key: "review", text: role === "verifier" ? "verifying" : "reviewing" };
     }
@@ -308,7 +329,7 @@ export function runView(input: RunViewInput): RunView {
             key: role,
             num: "",
             label: stageLabel(role),
-            status: stageStatus(role, session, dag),
+            status: stageStatus(role, session, dag, run?.land),
             session,
             tokens: sum(sessions, (s) => s.tokenstotal),
             durationMs: sum(sessions, (s) => s.durationms),

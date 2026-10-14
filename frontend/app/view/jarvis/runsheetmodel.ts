@@ -12,6 +12,7 @@
 
 import type { AgentVM } from "../agents/agentsviewmodel";
 import { finalStageActivity } from "../agents/finalstage";
+import { landPlace, landSlotOfRun } from "../agents/landline";
 import { canResume, currentPhaseIndex, isTerminal, leadWorker } from "../agents/runmodel";
 import {
     cleanupOnly,
@@ -76,9 +77,14 @@ export type SheetDagRead = {
     groupRead: LinkedGroupRead;
 };
 
+// where a land in line stands among its project's, and the title of the land just ahead of it
+export type LandPlaceRead = { place: number; aheadTitle?: string };
+
 export type SheetRead = {
     run: Run;
     nowMs: number;
+    // set for a queued land, when the project's runs are known
+    landPlace?: LandPlaceRead;
     // null when the run links no task graph
     dag: SheetDagRead | null;
     // the dag children's questions that are the human's to answer (userOwnedAsks); a question the lead
@@ -151,6 +157,25 @@ function doneStatus(read: SheetRead): SheetStatus {
             retry: false,
         };
     }
+    // in line behind another land of the project, or with a resolver merging the base in: the run is not in its base
+    // yet either, and the engine carries it on, so the sheet does not ask for anything
+    if (run.land?.state === "queued" || run.land?.state === "resolving") {
+        const base = run.basebranch || "its base";
+        const queued = run.land.state === "queued";
+        const place = read.landPlace?.place ?? 0;
+        return {
+            verb: "Landing",
+            sub: queued
+                ? `${place > 0 ? `#${place} ` : ""}in line to merge wave/${run.id} into ${base}`
+                : `a resolver is merging ${base} into wave/${run.id}`,
+            tone: "success",
+            pulse: true,
+            meter: read.dag?.group != null ? STRIP : null,
+            meta: [],
+            next: queued ? "lands by itself when its turn comes" : "lands by itself once the resolver has merged",
+            retry: false,
+        };
+    }
     if (run.land?.state === "held" && run.land.dismissed !== true) {
         return {
             verb: "Waiting on you",
@@ -193,6 +218,47 @@ function doneStatus(read: SheetRead): SheetStatus {
         next: null,
         retry: false,
     };
+}
+
+/** Pure: a queued run's place among the runs of its project, and the title of the land just ahead of it. Undefined for
+ *  any other run, and for one whose place cannot be told (landPlace gives 0). */
+export function sheetLandPlace(run: Run, projectRuns: Run[]): LandPlaceRead | undefined {
+    const { place, ahead } = landPlace(landSlotOfRun(run), projectRuns.map(landSlotOfRun));
+    return place > 0 ? { place, aheadTitle: ahead?.title } : undefined;
+}
+
+export type LandDock =
+    | { kind: "queued" | "resolving"; text: string }
+    | { kind: "held"; reason: string; conflicts: string | null };
+
+/** Pure: what the dock says about a land that is not landed and not plain pending: where it stands in line, who is
+ *  merging the base in, or why it is held and in which files. Null when the dock has no land line. */
+export function landDock(run: Pick<Run, "id" | "land" | "basebranch">, place?: LandPlaceRead): LandDock | null {
+    const land = run.land;
+    switch (land?.state) {
+        case "queued": {
+            const behind = place?.aheadTitle ? `, behind ${place.aheadTitle}` : "";
+            return {
+                kind: "queued",
+                text:
+                    place != null && place.place > 0 ? `In line to land: #${place.place}${behind}` : "In line to land",
+            };
+        }
+        case "resolving": {
+            const files = (land.conflicts ?? []).join(", ");
+            return {
+                kind: "resolving",
+                text: `A resolver is merging ${run.basebranch || "its base"} into wave/${run.id}${files ? `: ${files}` : ""}`,
+            };
+        }
+        case "held":
+            return {
+                kind: "held",
+                reason: land.reason || "the engine gave no reason",
+                conflicts: (land.conflicts ?? []).length > 0 ? (land.conflicts ?? []).join(", ") : null,
+            };
+    }
+    return null;
 }
 
 function cancelledStatus(read: SheetRead): SheetStatus {

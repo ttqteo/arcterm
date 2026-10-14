@@ -24,6 +24,9 @@ new draws it as one of its release's cards and folds every other line under a co
 - **Canvases**: every mockup an agent drew lives on in Agent → Canvases, with a preview of each; open one to page
   through its boards, or Clean up to move the old ones to the trash. Agents no longer delete a canvas when its feature
   ships unless you turn that on in Settings → Storage. <!-- try: go:canvases --> <!-- big -->
+- **Runs as an office**: in Jarvis, the Runs list's **office** chip draws each run as a pixel office floor under its
+  row: the lead in a glass corner office and one person per task, typing, stuck, in review, carrying the merge, or
+  raising a hand when they need you. Click a person to open their terminal.
 - **Ideas on the agent's rail**: while you brainstorm, the agent lists what was decided, floated and left open, and you
   can add, edit, merge or drop ideas, or run the idea command in Claude to keep the idea just discussed. An Ideas count
   on the rail opens the list and shows a dot while some are new; an ended session in Conversation History shows its list
@@ -79,9 +82,17 @@ new draws it as one of its release's cards and folds every other line under a co
 - **Jobs on Windows watches the commit charge**: once the memory handed out passes the RAM (the machine is paging),
   heavy commands start one at a time, and past 130% with little RAM free none start until it eases, instead of
   piling on while a few GB still read as free.
+- **A conflict with the base at land goes to a resolver session**: in the files your project lists in `.arc/union-merge`
+  (such as `CHANGELOG.md`), lines both sides only added are all kept, the base's first; any other conflict gets one
+  resolver agent in the run's landing tree, and the land is held, naming the files, only if that fails.
 
 ### Fixed
 
+- **Runs that finish together land one after another** instead of each after the first being held. A land waits its
+  turn in its project (`Landing · #2 in line` in the Agent tree), merges the base into the run's branch itself and
+  re-runs Check and Verify on the result, so you no longer merge `main` into a branch by hand before Land again.
+- **A queued run waiting on a held run starts once you land that run anyway**, with Land again or
+  `wsh runs land --force`, instead of staying blocked until you press Start now.
 - **A finished run no longer waits to land on a file in your checkout that already matches the run's version**,
   such as a generated copy a dev build rewrites. A real edit of yours to a file the run changes still holds it.
 - **An ended session shows in Conversations right away** when its tab stays open: after `/clear`, after quitting

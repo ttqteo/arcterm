@@ -27,9 +27,11 @@ import (
 
 // Land states (Run.Land.State).
 const (
-	LandState_Pending = "pending"
-	LandState_Landed  = "landed"
-	LandState_Held    = "held"
+	LandState_Pending   = "pending"
+	LandState_Queued    = "queued"    // waiting for its project's turn
+	LandState_Resolving = "resolving" // a resolver session is merging the base into wave/<run>
+	LandState_Landed    = "landed"
+	LandState_Held      = "held"
 )
 
 // LandTimeout bounds one land: a re-run of Check and then Verify, each under VerifyTimeout, and the merge.
@@ -50,15 +52,17 @@ var inProgressOps = []struct{ path, what string }{
 // LandRun merges a finished branch-landed run's wave/<runId> back into the branch the run started from, in the
 // project checkout, then removes the landing tree and the branch. Anything that makes the merge unsafe holds it
 // with a reason instead, and the checkout is left as it was. A run that landed in the checkout has nothing to
-// merge and gets nil. force lands a run whose final stage failed; it is the human's call only.
+// merge and gets nil. force lands a run whose final stage failed; it is the human's call only. Runs of one project
+// land one at a time: a run whose turn has not come gets a queued land back, and the land driver lands it later.
 func LandRun(ctx context.Context, channelID, runID string, force bool) (*waveobj.RunLand, error) {
 	landLocks.Lock(runID)
 	defer landLocks.Unlock(runID)
-	return landRunLocked(ctx, channelID, runID, force)
+	return landRunLocked(ctx, channelID, runID, force, false)
 }
 
-// landRunLocked is LandRun under the run's land lock.
-func landRunLocked(ctx context.Context, channelID, runID string, force bool) (*waveobj.RunLand, error) {
+// landRunLocked is LandRun under the run's land lock. haveTurn is the driver landing a queued land whose project's
+// turn it holds; the land then carries its own force. Otherwise the land takes the turn itself, or queues.
+func landRunLocked(ctx context.Context, channelID, runID string, force, haveTurn bool) (*waveobj.RunLand, error) {
 	run, err := wstore.GetRun(ctx, channelID, runID)
 	if err != nil {
 		return nil, fmt.Errorf("loading run: %w", err)
@@ -72,24 +76,61 @@ func landRunLocked(ctx context.Context, channelID, runID string, force bool) (*w
 	if run.Status != jarvis.RunStatus_Done {
 		return nil, fmt.Errorf("run %s is %s; only a done run lands", runID, run.Status)
 	}
+	// its resolver is mid-merge in the landing tree, and the land driver tends it: landing now would hold on that merge
+	if !haveTurn && run.Land != nil && run.Land.State == LandState_Resolving {
+		return run.Land, nil
+	}
+	if haveTurn {
+		if run.Land == nil || run.Land.State != LandState_Queued {
+			return run.Land, nil // asked again, and answered, since the driver listed it
+		}
+		force = run.Land.Force
+	} else {
+		if !takeLineTurn(ctx, run) {
+			land, err := queueLand(ctx, run, force, queuedTs(run))
+			// the turn may be free, with only an older land waiting for the next tick to start
+			driveLandLine(context.Background())
+			return land, err
+		}
+		defer func() {
+			releaseTurn(run.ProjectPath, run.ID)
+			driveLandLine(context.Background())
+		}()
+	}
 	var g *waveobj.TaskGroup
 	if run.DagORef != "" {
 		if g, err = wstore.GetDag(ctx, run.DagORef); err != nil {
 			return nil, fmt.Errorf("loading dag: %w", err)
 		}
 	}
-	if err := saveLand(ctx, channelID, runID, &waveobj.RunLand{State: LandState_Pending}); err != nil {
+	// a task's merge holds the checkout for its Verify, minutes: wait for it without a pending land that shows
+	// again on every pass
+	if projectClaimed(run.ProjectPath) {
+		return queueLand(ctx, run, force, queuedTs(run))
+	}
+	tried := resolverTried(run)
+	if err := saveLand(ctx, channelID, runID, &waveobj.RunLand{State: LandState_Pending, Force: force, ResolverTried: tried}); err != nil {
 		return nil, err
 	}
 	land := landRun(ctx, run, g, force)
-	if land.State == LandState_Held {
+	land.ResolverTried = land.ResolverTried || tried
+	switch land.State {
+	case LandState_Held:
 		// the engine's own retry of a dirty hold must not drop the human's force
 		land.Force = force
+	case LandState_Queued:
+		land.Force, land.QueuedTs = force, queuedTs(run)
 	}
 	if err := saveLand(ctx, channelID, runID, land); err != nil {
 		return nil, err
 	}
 	switch land.State {
+	case LandState_Queued:
+		if run.Land == nil || run.Land.State != LandState_Queued {
+			appendLandQueued(ctx, channelID, runID)
+		}
+	case LandState_Resolving:
+		appendRunEvent(ctx, channelID, runID, waveobj.RunEventKindLandResolving, nil, map[string]any{"files": land.Conflicts, "resolver": land.Resolver})
 	case LandState_Held:
 		appendRunEvent(ctx, channelID, runID, waveobj.RunEventKindLandHeld, nil, map[string]any{"reason": land.Reason})
 	case LandState_Landed:
@@ -105,10 +146,11 @@ func landRunLocked(ctx context.Context, channelID, runID string, force bool) (*w
 	return land, nil
 }
 
-// retryDirtyLands lands again each run held only by uncommitted changes in its checkout (RunLand.Dirty), once the
-// land's own checkout check passes. The changes are another session's or the human's, so the engine waits for them
-// to be committed, stashed or moved aside instead of asking anyone to retry. The watchdog calls it every tick. A
-// dismissed hold is the human's to retry, and a run whose land is already under way is skipped.
+// retryDirtyLands queues again each run held only by uncommitted changes in its checkout (RunLand.Dirty), once the
+// land's own checkout check passes; the land driver lands it in its turn. The changes are another session's or the
+// human's, so the engine waits for them to be committed, stashed or moved aside instead of asking anyone to retry.
+// The watchdog calls it every tick. A dismissed hold is the human's to retry, and a run whose land is already under
+// way is skipped.
 func retryDirtyLands(ctx context.Context) {
 	runs, err := wstore.GetRunsByLandState(ctx, LandState_Held)
 	if err != nil {
@@ -120,18 +162,30 @@ func retryDirtyLands(ctx context.Context) {
 			continue
 		}
 		goStage("land retry "+run.ID, func() {
-			defer landLocks.Unlock(run.ID)
-			if mergedCommit(ctx, run) == "" && landPrecheck(ctx, run) != nil {
-				return
-			}
-			// a merge cut off halfway would leave the checkout mid-merge
-			lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), LandTimeout)
-			defer cancel()
-			if _, err := landRunLocked(lctx, run.ChannelOID, run.ID, run.Land.Force); err != nil {
-				log.Printf("run %s: retrying its land: %v", run.ID, err)
+			if requeueCleanedLand(ctx, run) {
+				driveLandLine(ctx)
 			}
 		})
 	}
+}
+
+// requeueCleanedLand puts a dirty-held run's land in line once its checkout check passes, and says whether it did.
+// It releases the land lock retryDirtyLands took, and reads the run again under it: a human's land may have ended
+// since the listing.
+func requeueCleanedLand(ctx context.Context, listed *waveobj.Run) bool {
+	defer landLocks.Unlock(listed.ID)
+	run, err := wstore.GetRun(ctx, listed.ChannelOID, listed.ID)
+	if err != nil || run.Land == nil || run.Land.State != LandState_Held || !run.Land.Dirty || run.Land.Dismissed {
+		return false
+	}
+	if mergedCommit(ctx, run) == "" && landPrecheck(ctx, run) != nil {
+		return false
+	}
+	if _, err := queueLand(ctx, run, run.Land.Force, time.Now().UnixMilli()); err != nil {
+		log.Printf("run %s: queueing its land again: %v", run.ID, err)
+		return false
+	}
+	return true
 }
 
 func saveLand(ctx context.Context, channelID, runID string, land *waveobj.RunLand) error {
@@ -177,11 +231,27 @@ func landRun(ctx context.Context, run *waveobj.Run, g *waveobj.TaskGroup, force 
 		return hold
 	}
 	project, branch := run.ProjectPath, "wave/"+run.ID
+	// the base's commits the sync merges in are not the run's own: the land notes the ones no check covered
+	ownTip, err := WorktreeHeadCommit(ctx, project, run.ID)
+	if err != nil {
+		ownTip = branch
+	}
+	conflicts, reason := syncBase(ctx, run)
+	if reason != "" {
+		return heldLand(reason)
+	}
+	if len(conflicts) > 0 {
+		return landConflictLand(ctx, run, g, force, conflicts)
+	}
 	reason, checkedBase, checkNote := reverifyHold(ctx, run, g)
 	if reason != "" {
 		return heldLand(reason)
 	}
 	claim, err := claimProject(project, runDagID(run, g), "land-back")
+	if errors.Is(err, errProjectBusy) {
+		// a task's merge took the checkout since the land started: wait in line for it, not for a human
+		return &waveobj.RunLand{State: LandState_Queued}
+	}
 	if err != nil {
 		return heldLand(err.Error())
 	}
@@ -210,7 +280,7 @@ func landRun(ctx context.Context, run *waveobj.Run, g *waveobj.TaskGroup, force 
 	if checkNote != "" {
 		land.Notes = append(land.Notes, checkNote)
 	}
-	if note := movedBaseNote(ctx, run, pre, checkedBase); note != "" {
+	if note := movedBaseNote(ctx, run, pre, checkedBase, ownTip); note != "" {
 		land.Notes = append(land.Notes, note)
 	}
 	removeLandedTree(ctx, project, run.ID)
@@ -415,10 +485,97 @@ func clearEditedCopies(ctx context.Context, project, branch string) (reason stri
 	return "", false
 }
 
+// syncBase merges the base branch into wave/<run> in the landing tree before the land, so Check and Verify run on,
+// and the land merges, the run as it will stand on the base. A base already in the branch needs nothing. A conflict
+// in a file the project lists in .arc/union-merge where both sides only added lines is resolved here; any other is
+// aborted, leaving the tree as it was, and conflicts names every file the merge conflicted in. reason is why the
+// merge could not be tried or finished at all.
+func syncBase(ctx context.Context, run *waveobj.Run) (conflicts []string, reason string) {
+	base, err := git(ctx, run.ProjectPath, "rev-parse", run.BaseBranch)
+	if err != nil {
+		return nil, "reading " + run.BaseBranch + ": " + err.Error()
+	}
+	head, err := WorktreeHeadCommit(ctx, run.ProjectPath, run.ID)
+	if err != nil {
+		return nil, "reading the run's branch: " + err.Error()
+	}
+	if _, err := git(ctx, run.ProjectPath, "merge-base", "--is-ancestor", base, head); err == nil {
+		return nil, ""
+	}
+	if err := checkLandingTree(ctx, run); err != nil {
+		return nil, fmt.Sprintf("%s has moved on, and it cannot be merged into the run: %v", run.BaseBranch, err)
+	}
+	if open := midMergeHold(ctx, run); open != "" {
+		return nil, open
+	}
+	branch := "wave/" + run.ID
+	// the merge is of the commit read above, so the ancestry test and the merge speak of the same base
+	_, mergeErr := git(ctx, run.LandPath, "merge", "--no-ff", "-m", "Merge "+run.BaseBranch+" into "+branch+" before landing", "-m", "Arc-Run: "+run.ID, base)
+	if mergeErr == nil {
+		return nil, ""
+	}
+	unmerged, err := git(ctx, run.LandPath, "diff", "--name-only", "--diff-filter=U", "-z")
+	if err != nil {
+		abortLandTreeMerge(run)
+		return nil, fmt.Sprintf("merging %s into %s in its landing tree: %v", run.BaseBranch, branch, mergeErr)
+	}
+	for _, p := range strings.Split(unmerged, "\x00") {
+		if p != "" {
+			conflicts = append(conflicts, p)
+		}
+	}
+	if len(conflicts) == 0 {
+		// git refused before it began, or a hook stopped it after: either way no file of the tree's own is touched
+		if midMergeHold(ctx, run) != "" {
+			abortLandTreeMerge(run)
+		}
+		return nil, fmt.Sprintf("git refused to merge %s into %s in its landing tree: %v", run.BaseBranch, branch, mergeErr)
+	}
+	listed := unionMergePaths(ctx, run.ProjectPath, run.BaseBranch)
+	for _, p := range conflicts {
+		if !slices.Contains(listed, p) {
+			abortLandTreeMerge(run)
+			return conflicts, ""
+		}
+		resolved, err := resolveAddOnlyFile(ctx, run.LandPath, p)
+		if err != nil {
+			abortLandTreeMerge(run)
+			return nil, fmt.Sprintf("resolving the added lines of %s in the merge of %s into %s: %v", p, run.BaseBranch, branch, err)
+		}
+		if !resolved {
+			abortLandTreeMerge(run)
+			return conflicts, ""
+		}
+	}
+	// strip: the merge message git left carries a commented list of the conflicted files
+	if _, err := git(ctx, run.LandPath, "commit", "--no-edit", "--cleanup=strip"); err != nil {
+		abortLandTreeMerge(run)
+		return nil, fmt.Sprintf("committing the merge of %s into %s in its landing tree: %v", run.BaseBranch, branch, err)
+	}
+	return nil, ""
+}
+
+// abortLandTreeMerge puts the landing tree back after a merge that stopped half-way. It does not take the land's
+// context: a land timed out mid-merge must still leave the tree usable.
+func abortLandTreeMerge(run *waveobj.Run) {
+	if _, err := git(context.Background(), run.LandPath, "merge", "--abort"); err != nil {
+		log.Printf("run %s: putting the landing tree back after the base merge: %v", run.ID, err)
+	}
+}
+
+// midMergeHold is why the landing tree cannot take a merge or be checked: someone left a merge open in it, and a
+// check would speak for the run plus that merge.
+func midMergeHold(ctx context.Context, run *waveobj.Run) string {
+	if _, err := git(ctx, run.LandPath, "rev-parse", "-q", "--verify", "MERGE_HEAD"); err == nil {
+		return "the landing tree " + run.LandPath + " is stopped mid-merge; finish or abort that merge there, then land again"
+	}
+	return ""
+}
+
 // reverifyHold checks what the final stage never saw before the run lands: the lead's wrap-up commits after it,
-// and the base's commits since the run forked. It merges the base into the landing tree without committing, runs
-// Check, then Verify scoped to what differs from the verified commit, and puts the tree back. A docs-only wrap-up
-// on an unmoved base skips Check, which cannot scope itself and would re-run whole for Markdown; Verify still runs.
+// and the base's commits since the run forked, which syncBase has merged into the branch by now. It runs Check,
+// then Verify scoped to what differs from the verified commit, in the landing tree. A docs-only change since the
+// verified commit skips Check, which cannot scope itself and would re-run whole for Markdown; Verify still runs.
 // checkedBase is the base commit the run was checked against, so the land notes only base commits that arrived
 // after it.
 func reverifyHold(ctx context.Context, run *waveobj.Run, g *waveobj.TaskGroup) (reason, checkedBase, note string) {
@@ -429,7 +586,8 @@ func reverifyHold(ctx context.Context, run *waveobj.Run, g *waveobj.TaskGroup) (
 	if err != nil {
 		return "reading the run's branch: " + err.Error(), "", ""
 	}
-	base, err := git(ctx, run.ProjectPath, "rev-parse", run.BaseBranch)
+	// the newest base commit in the branch: the base itself unless it moved again since syncBase
+	checkedBase, err = git(ctx, run.ProjectPath, "merge-base", head, run.BaseBranch)
 	if err != nil {
 		return "reading " + run.BaseBranch + ": " + err.Error(), "", ""
 	}
@@ -437,30 +595,17 @@ func reverifyHold(ctx context.Context, run *waveobj.Run, g *waveobj.TaskGroup) (
 	if g.Final != nil {
 		verified = g.Final.Commit
 	}
-	_, ancestorErr := git(ctx, run.ProjectPath, "merge-base", "--is-ancestor", base, head)
-	baseMoved := ancestorErr != nil
-	if head == verified && !baseMoved {
-		return "", base, ""
+	if head == verified {
+		return "", checkedBase, ""
 	}
 	if err := checkLandingTree(ctx, run); err != nil {
 		return "the run changed after the final stage verified it, and it cannot be checked again: " + err.Error(), "", ""
 	}
-	// a merge someone left open would be checked as if it were the run's
-	if _, err := git(ctx, run.LandPath, "rev-parse", "-q", "--verify", "MERGE_HEAD"); err == nil {
-		return "the landing tree " + run.LandPath + " is stopped mid-merge; finish or abort that merge there, then land again", "", ""
-	}
-	if baseMoved {
-		if _, err := git(ctx, run.LandPath, "merge", "--no-commit", "--no-ff", base); err != nil {
-			return "checking the run merged with " + run.BaseBranch + " in its landing tree: " + mergeRefusal(ctx, run.LandPath, run.BaseBranch, err), "", ""
-		}
-		defer func() {
-			if _, err := git(context.Background(), run.LandPath, "merge", "--abort"); err != nil {
-				log.Printf("run %s: putting the landing tree back after the land's check: %v", run.ID, err)
-			}
-		}()
+	if open := midMergeHold(ctx, run); open != "" {
+		return open, "", ""
 	}
 	env := changedFilesEnv(ctx, run.LandPath, verified, "", run.ID+"-land")
-	skipCheck := !baseMoved && verified != "" && onlyMarkdown(ctx, run.ProjectPath, verified, head)
+	skipCheck := verified != "" && onlyMarkdown(ctx, run.ProjectPath, verified, head)
 	for _, c := range []struct {
 		name, cmd string
 		env       []string
@@ -481,7 +626,7 @@ func reverifyHold(ctx context.Context, run *waveobj.Run, g *waveobj.TaskGroup) (
 			return fmt.Sprintf("the run changed after the final stage verified it, and %s `%s` failed on the run merged with %s (%s)", c.name, c.cmd, run.BaseBranch, failureDetail(err)), "", ""
 		}
 	}
-	return "", base, note
+	return "", checkedBase, note
 }
 
 // onlyMarkdown reports whether every path that differs between from and to is a Markdown file. A listing that
@@ -783,8 +928,9 @@ func landSubject(s string, limit int) string {
 
 // movedBaseNote is set when the base branch took commits the land's check did not see: all of them when nothing
 // was checked, else those after the base commit the check merged. The run's own commits are excluded, should any
-// reach the base.
-func movedBaseNote(ctx context.Context, run *waveobj.Run, pre, checkedBase string) string {
+// reach the base: own is the run's tip before the land merged the base into it, since the base's commits in that
+// merge are the ones the note is about.
+func movedBaseNote(ctx context.Context, run *waveobj.Run, pre, checkedBase, own string) string {
 	from := run.BaseCommit
 	if checkedBase != "" {
 		from = checkedBase
@@ -792,7 +938,7 @@ func movedBaseNote(ctx context.Context, run *waveobj.Run, pre, checkedBase strin
 	if from == "" {
 		return ""
 	}
-	out, err := git(ctx, run.ProjectPath, "rev-list", "--count", pre, "^"+from, "^wave/"+run.ID)
+	out, err := git(ctx, run.ProjectPath, "rev-list", "--count", pre, "^"+from, "^"+own)
 	if err != nil {
 		log.Printf("run %s: counting the base's new commits: %v", run.ID, err)
 		return ""

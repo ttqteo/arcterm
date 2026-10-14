@@ -10,6 +10,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -357,13 +358,114 @@ func TestRunQueueBlocksAnEntryAfterAHeldRunButNotADirtyOne(t *testing.T) {
 	}
 }
 
+// a hold is not the end of the line: the person lands the run later (Land again, wsh runs land --force), and the
+// entries blocked on it carry on
+func TestRunQueueEntryBlockedOnAHeldRunStartsOnceItLandsLater(t *testing.T) {
+	w := useQueueWorld(t)
+	w.setRun(&waveobj.Run{ID: "held", Goal: "Learned additions", Status: jarvis.RunStatus_Done, Land: &waveobj.RunLand{State: "held", Reason: "the final stage failed"}})
+	queueEntry(t, "Alpha", "held")
+	queueEntry(t, "Beta", "")
+	w.maxActive = 0
+	evaluateRunQueue(context.Background())
+
+	// Beta is not behind a run and starts; Alpha is blocked on the held run and says which run unblocks it
+	alpha := entryByTitle(t, queueEntries(t), "Alpha")
+	if alpha.State != wshrpc.RunQueueState_Blocked || alpha.BlockedOn != "held" {
+		t.Fatalf("an entry after a held run is blocked on that run: %q BlockedOn %q", alpha.State, alpha.BlockedOn)
+	}
+	if got := w.createdGoals(); !sameStrings(got, "Beta") {
+		t.Fatalf("created %v, want only Beta", got)
+	}
+
+	// Land again puts the land back in line, then it resolves, then it lands: only the last carries Alpha on
+	for _, state := range []string{"queued", "resolving"} {
+		w.setRun(&waveobj.Run{ID: "held", Goal: "Learned additions", Status: jarvis.RunStatus_Done, Land: &waveobj.RunLand{State: state}})
+		evaluateRunQueue(context.Background())
+		if alpha := entryByTitle(t, queueEntries(t), "Alpha"); alpha.State != wshrpc.RunQueueState_Blocked {
+			t.Fatalf("a land that is %s has not landed, so Alpha stays blocked, got %q", state, alpha.State)
+		}
+	}
+	if got := w.createdGoals(); len(got) != 1 {
+		t.Fatalf("created %v before the run landed", got)
+	}
+
+	w.setRun(&waveobj.Run{ID: "held", Goal: "Learned additions", Status: jarvis.RunStatus_Done, Land: &waveobj.RunLand{State: "landed"}})
+	published := w.publishCount()
+	evaluateRunQueue(context.Background())
+	if got := w.createdGoals(); !sameStrings(got, "Beta", "Alpha") {
+		t.Fatalf("created %v, want Alpha started in the same pass that unblocked it", got)
+	}
+	if left := queueEntries(t); len(left) != 0 {
+		t.Fatalf("a started entry leaves the queue, got %v", entryTitles(left))
+	}
+	if w.publishCount() == published {
+		t.Fatal("the unblock is published")
+	}
+}
+
+func TestRunQueueUnblockedEntryStillWaitsForRoom(t *testing.T) {
+	w := useQueueWorld(t)
+	w.maxActive = 1
+	w.setRun(&waveobj.Run{ID: "live", Status: jarvis.RunStatus_Executing})
+	w.setRun(&waveobj.Run{ID: "held", Status: jarvis.RunStatus_Done, Land: &waveobj.RunLand{State: "held", Reason: "conflict"}})
+	queueEntry(t, "Alpha", "held")
+	evaluateRunQueue(context.Background())
+	w.setRun(&waveobj.Run{ID: "held", Status: jarvis.RunStatus_Done, Land: &waveobj.RunLand{State: "landed"}})
+	evaluateRunQueue(context.Background())
+
+	alpha := entryByTitle(t, queueEntries(t), "Alpha")
+	if alpha.State != wshrpc.RunQueueState_Waiting || alpha.Reason != "" || alpha.BlockedOn != "" {
+		t.Fatalf("a landed run puts the entry back to waiting, with no block left on it: %+v", alpha)
+	}
+	if got := w.createdGoals(); len(got) != 0 {
+		t.Fatalf("started %v past a full cap", got)
+	}
+}
+
+// an entry whose own start failed is blocked for that, not for a run: its After having landed must not start it again
+func TestRunQueueFailedStartIsNotUnblockedByTheAfterRun(t *testing.T) {
+	w := useQueueWorld(t)
+	w.createErr = errors.New("plan is gone")
+	w.setRun(&waveobj.Run{ID: "r1", Status: jarvis.RunStatus_Done, Land: &waveobj.RunLand{State: "landed"}})
+	queueEntry(t, "Alpha", "r1")
+	for range 3 {
+		evaluateRunQueue(context.Background())
+	}
+	if got := w.createdGoals(); !sameStrings(got, "Alpha") {
+		t.Fatalf("create calls %v, want one: a failed start is not retried by the loop", got)
+	}
+	alpha := queueEntries(t)[0]
+	if alpha.State != wshrpc.RunQueueState_Blocked || alpha.Reason != "plan is gone" || alpha.BlockedOn != "" {
+		t.Fatalf("a failed start blocks the entry for its error, with no run to wait on: %+v", alpha)
+	}
+}
+
+// the real source only reads runs that are not done, plus the ids it is asked for, and a landed run is done: the run an
+// entry is blocked on must be asked for too, or it would never be seen to land
+func TestRunQueueReadsTheRunAnEntryIsBlockedOn(t *testing.T) {
+	w := useQueueWorld(t)
+	w.setRun(&waveobj.Run{ID: "held", Status: jarvis.RunStatus_Done, Land: &waveobj.RunLand{State: "held", Reason: "conflict"}})
+	queueEntry(t, "Alpha", "held")
+	evaluateRunQueue(context.Background())
+
+	var asked []string
+	runQueueLoadRuns = func(ctx context.Context, afterIds []string) (map[string]*waveobj.Run, error) {
+		asked = append(asked, afterIds...)
+		return map[string]*waveobj.Run{}, nil
+	}
+	evaluateRunQueue(context.Background())
+	if !slices.Contains(asked, "held") {
+		t.Fatalf("asked for runs %v, want the run Alpha is blocked on", asked)
+	}
+}
+
 func TestRunQueueStartNowStartsPastAFullCapAndAnUnlandedAfter(t *testing.T) {
 	w := useQueueWorld(t)
 	w.maxActive = 1
 	w.setRun(&waveobj.Run{ID: "live", Status: jarvis.RunStatus_Executing})
 	w.setRun(&waveobj.Run{ID: "r1", Status: jarvis.RunStatus_Executing})
 	e := queueEntry(t, "Alpha", "r1")
-	if err := runqueue.SetBlocked(e.Id, "something earlier"); err != nil {
+	if err := runqueue.SetBlocked(e.Id, "something earlier", ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -409,7 +511,7 @@ func TestRunQueueRunNextMovesAnEntryFirstAndMakesItWaiting(t *testing.T) {
 	queueEntry(t, "Alpha", "")
 	queueEntry(t, "Beta", "")
 	gamma := queueEntry(t, "Gamma", "")
-	if err := runqueue.SetBlocked(gamma.Id, "its create failed"); err != nil {
+	if err := runqueue.SetBlocked(gamma.Id, "its create failed", ""); err != nil {
 		t.Fatal(err)
 	}
 	drainRunQueuePoke()
@@ -451,6 +553,9 @@ func TestRunQueueRemoveDropsTheEntryAndBlocksWhatWaitedOnIt(t *testing.T) {
 	beta := entryByTitle(t, entries, "Beta")
 	if beta.State != wshrpc.RunQueueState_Blocked || beta.Reason != "Alpha was removed" {
 		t.Fatalf("an entry that waited on the removed one is blocked: %q %q", beta.State, beta.Reason)
+	}
+	if beta.BlockedOn != "" {
+		t.Fatalf("a removed entry is not a run that can land later, got BlockedOn %q", beta.BlockedOn)
 	}
 	if gamma := entryByTitle(t, entries, "Gamma"); gamma.State != wshrpc.RunQueueState_Waiting {
 		t.Fatalf("an unrelated entry is untouched, got %q", gamma.State)

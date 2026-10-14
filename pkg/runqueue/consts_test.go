@@ -32,6 +32,8 @@ func TestOutcomeLiteralsMatchTheirSources(t *testing.T) {
 		{"held", landedRun(jarvis.RunStatus_Done, orchestrate.LandState_Held, false), true, false, "why"},
 		{"dirty hold", landedRun(jarvis.RunStatus_Done, orchestrate.LandState_Held, true), false, false, ""},
 		{"land pending", landedRun(jarvis.RunStatus_Done, orchestrate.LandState_Pending, false), false, false, ""},
+		{"land queued", landedRun(jarvis.RunStatus_Done, orchestrate.LandState_Queued, false), false, false, ""},
+		{"land resolving", landedRun(jarvis.RunStatus_Done, orchestrate.LandState_Resolving, false), false, false, ""},
 		{"done in the checkout", &waveobj.Run{Status: jarvis.RunStatus_Done}, true, true, ""},
 		{"done on a branch not yet landed", &waveobj.Run{Status: jarvis.RunStatus_Done, LandPath: "/wt"}, false, false, ""},
 		{"cancelled", &waveobj.Run{Status: jarvis.RunStatus_Cancelled}, true, false, "cancelled"},

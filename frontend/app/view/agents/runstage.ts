@@ -159,5 +159,17 @@ export function runStage(run: Pick<RunInfo, "status" | "land" | "dag">, asking =
             { name: "Land", state: landPip },
         ];
     }
-    return { key, label: LABEL[key], tone, needsYou, outcome, complete, tail };
+    return { key, label: stageLabel(key, run.land?.state), tone, needsYou, outcome, complete, tail };
+}
+
+// a land in line or being resolved stays the landing stage (run office reads the key union), with its own words
+function stageLabel(key: RunStageKey, landState: string | undefined): string {
+    if (key === "landing") {
+        return landState === "queued"
+            ? "Landing · in line"
+            : landState === "resolving"
+              ? "Landing · resolving conflicts"
+              : LABEL.landing;
+    }
+    return LABEL[key];
 }

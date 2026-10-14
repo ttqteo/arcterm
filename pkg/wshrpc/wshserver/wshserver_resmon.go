@@ -100,7 +100,7 @@ func resMonWorkerLabel(ctx context.Context, run *waveobj.Run) string {
 	case link.Role == sessionRole_Review:
 		return title + resMonLabelSep + "reviewer"
 	case link.Role != sessionRole_Worker:
-		return title + resMonLabelSep + link.Role // a stage session: plan-reviewer or verifier
+		return title + resMonLabelSep + link.Role // a stage session: plan-reviewer, verifier or land-resolver
 	case link.TaskId != "":
 		return title + resMonLabelSep + "Task " + link.TaskId
 	}

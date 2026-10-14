@@ -47,6 +47,13 @@ func landFixture(t *testing.T) (*mergeFixture, string) {
 	return f, tree
 }
 
+// markResolverTried marks the run's land as one a resolver already tried, so a conflict holds for a human instead of
+// starting another session.
+func (f *mergeFixture) markResolverTried(t *testing.T) {
+	t.Helper()
+	f.seedLand(t, f.ownerID, &waveobj.RunLand{State: LandState_Held, ResolverTried: true})
+}
+
 func (f *mergeFixture) setFinal(t *testing.T, final *waveobj.FinalStage) {
 	t.Helper()
 	if err := wstore.UpdateDag(f.ctx, f.dagID, func(cur *waveobj.TaskGroup) error {
@@ -68,6 +75,16 @@ func commitOnBranch(t *testing.T, tree, file, content string) {
 func (f *mergeFixture) landRun(t *testing.T, force bool) *waveobj.RunLand {
 	t.Helper()
 	land, err := LandRun(f.ctx, f.channel, f.ownerID, force)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return land
+}
+
+// landRunByID lands another run of the fixture's project, as a human's `wsh runs land` would.
+func (f *mergeFixture) landRunByID(t *testing.T, id string) *waveobj.RunLand {
+	t.Helper()
+	land, err := LandRun(f.ctx, f.channel, id, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,6 +297,7 @@ func TestLandHoldsWhatItCannotMergeSafely(t *testing.T) {
 			writeFile(t, filepath.Join(f.project, "feature.txt"), "mine\n")
 		}, "an untracked feature.txt in the checkout differs"},
 		{"conflict", func(t *testing.T, f *mergeFixture, tree string) {
+			f.markResolverTried(t)
 			commitOnBranch(t, tree, "base.txt", "branch\n")
 			f.setFinal(t, &waveobj.FinalStage{State: FinalState_Passed, Round: 1, Commit: gitCmd(t, tree, "rev-parse", "HEAD")})
 			commitOnBranch(t, f.project, "base.txt", "main\n")
@@ -342,6 +360,7 @@ func TestLandConflictsPredictsTheLandsConflicts(t *testing.T) {
 
 func TestLandAbortsAConflictedMerge(t *testing.T) {
 	f, tree := landFixture(t)
+	f.markResolverTried(t)
 	commitOnBranch(t, tree, "base.txt", "branch\n")
 	f.setFinal(t, &waveobj.FinalStage{State: FinalState_Passed, Round: 1, Commit: gitCmd(t, tree, "rev-parse", "HEAD")})
 	commitOnBranch(t, f.project, "base.txt", "main\n")
@@ -621,28 +640,34 @@ func TestLandChecksTheRunMergedWithItsMovedBase(t *testing.T) {
 			t.Fatalf("land = %+v, want landed with no unverified-combination note", land)
 		}
 	})
-	t.Run("a Verify that fails on the combination holds, and the tree is put back", func(t *testing.T) {
+	t.Run("a Verify that fails on the combination holds, with the base merged into the branch", func(t *testing.T) {
 		f, tree := landFixture(t)
 		commitOnBase(t, f.project, "upstream.txt", "base\n")
 		f.setLandCommands(t, "", "test ! -f upstream.txt")
 		head := gitCmd(t, f.project, "rev-parse", "main")
-		branchHead := gitCmd(t, tree, "rev-parse", "HEAD")
 		f.assertHeld(t, f.landRun(t, false), head, "Verify `test ! -f upstream.txt` failed")
-		if mergeInProgress(tree) || gitCmd(t, tree, "rev-parse", "HEAD") != branchHead {
-			t.Fatal("the landing tree is left mid-merge or moved")
+		if mergeInProgress(tree) {
+			t.Fatal("the landing tree is left mid-merge")
 		}
-		if _, err := os.Stat(filepath.Join(tree, "upstream.txt")); !os.IsNotExist(err) {
-			t.Fatalf("the base's file is left in the landing tree, stat err %v", err)
+		// the merge is a commit of the run's branch, so the next land finds the base in it
+		if err := exec.Command("git", "-C", tree, "merge-base", "--is-ancestor", head, "HEAD").Run(); err != nil {
+			t.Fatalf("the base is not merged into the run's branch: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(tree, "upstream.txt")); err != nil {
+			t.Fatalf("the base's file is not in the landing tree: %v", err)
 		}
 	})
 	t.Run("a conflict with the base holds, and the tree is put back", func(t *testing.T) {
 		f, tree := landFixture(t)
+		f.markResolverTried(t)
 		commitOnBase(t, f.project, "feature.txt", "the base's own feature\n")
 		f.setLandCommands(t, "", "true")
 		head := gitCmd(t, f.project, "rev-parse", "main")
-		f.assertHeld(t, f.landRun(t, false), head, "feature.txt")
-		if mergeInProgress(tree) {
-			t.Fatal("the landing tree is left mid-merge")
+		branchHead := gitCmd(t, tree, "rev-parse", "HEAD")
+		land := f.landRun(t, false)
+		f.assertHeld(t, land, head, "feature.txt")
+		if mergeInProgress(tree) || gitCmd(t, tree, "rev-parse", "HEAD") != branchHead {
+			t.Fatal("the landing tree is left mid-merge or moved")
 		}
 	})
 	t.Run("Verify is scoped to what changed since the verified commit", func(t *testing.T) {
@@ -669,6 +694,96 @@ func TestLandChecksTheRunMergedWithItsMovedBase(t *testing.T) {
 			t.Fatalf("land = %+v, want landed noting only the late commit", land)
 		}
 	})
+}
+
+// commitProjectFiles commits files, given as path to content, on the project's branch.
+func commitProjectFiles(t *testing.T, project string, files map[string]string) {
+	t.Helper()
+	var paths []string
+	for p, content := range files {
+		writeFile(t, filepath.Join(project, filepath.FromSlash(p)), content)
+		paths = append(paths, p)
+	}
+	gitCmd(t, project, append([]string{"add", "--"}, paths...)...)
+	gitCmd(t, project, "commit", "-m", "add "+strings.Join(paths, ", "))
+}
+
+// two runs that appended to the changelog conflict where the second lands; the project lists the file, so the
+// land merges the base into the run's branch itself, the landed run's line first
+func TestLandMergesMovedBase(t *testing.T) {
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+	commitProjectFiles(t, f.project, map[string]string{
+		".arc/union-merge": "CHANGELOG.md\n",
+		"CHANGELOG.md":     "# Changelog\n\n## Unreleased\n\n- first\n",
+	})
+	a := f.addLandRunWriting(t, "CHANGELOG.md", "# Changelog\n\n## Unreleased\n\n- first\n- from a\n")
+	b := f.addLandRunWriting(t, "CHANGELOG.md", "# Changelog\n\n## Unreleased\n\n- first\n- from b\n")
+
+	for _, id := range []string{a, b} {
+		if land, err := LandRun(f.ctx, f.channel, id, false); err != nil || land == nil || land.State != LandState_Landed {
+			t.Fatalf("run %s: land = %+v, err %v, want landed", id, land, err)
+		}
+	}
+	if got := landedOrder(t, f.project); !slices.Equal(got, []string{a, b}) {
+		t.Fatalf("first-parent merges = %v, want %v", got, []string{a, b})
+	}
+	// core.autocrlf may check it out with CRLF
+	if got, want := strings.ReplaceAll(readFile(t, filepath.Join(f.project, "CHANGELOG.md")), "\r\n", "\n"), "# Changelog\n\n## Unreleased\n\n- first\n- from a\n- from b\n"; got != want {
+		t.Fatalf("CHANGELOG.md = %q, want %q", got, want)
+	}
+	if subjects := gitCmd(t, f.project, "log", "--format=%s", "main"); !strings.Contains(subjects, "Merge main into wave/"+b+" before landing") {
+		t.Fatalf("no merge of main into wave/%s in the history:\n%s", b, subjects)
+	}
+	if subjects := gitCmd(t, f.project, "log", "--format=%s", "main"); strings.Contains(subjects, "Merge main into wave/"+a) {
+		t.Fatalf("run %s landed on an unmoved base and needed no merge:\n%s", a, subjects)
+	}
+	if mergeMsg := gitCmd(t, f.project, "log", "-1", "--format=%B", "--grep", "before landing", "main"); !strings.Contains(mergeMsg, "Arc-Run: "+b) {
+		t.Fatalf("the base merge carries no Arc-Run line: %q", mergeMsg)
+	}
+}
+
+// a file the project does not list is a real conflict: the land holds with the files named, and neither the landing
+// tree nor the checkout is left mid-merge
+func TestLandRealConflictHolds(t *testing.T) {
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+	commitProjectFiles(t, f.project, map[string]string{"notes.md": "one\ntwo\nthree\n"})
+	a := f.addLandRunWriting(t, "notes.md", "one\na two\nthree\n")
+	b := f.addLandRunWriting(t, "notes.md", "one\nb two\nthree\n")
+	if land := f.landRunByID(t, a); land.State != LandState_Landed {
+		t.Fatalf("run %s: land = %+v, want landed", a, land)
+	}
+	head := gitCmd(t, f.project, "rev-parse", "main")
+
+	land := f.landRunByID(t, b)
+	if land.State != LandState_Held || !slices.Equal(land.Conflicts, []string{"notes.md"}) || !strings.Contains(land.Reason, "notes.md") {
+		t.Fatalf("land = %+v, want held with notes.md as the conflict", land)
+	}
+	tree := worktreeDir(f.project, b)
+	if mergeInProgress(tree) {
+		t.Fatal("the landing tree is left mid-merge")
+	}
+	if got := gitCmd(t, f.project, "rev-parse", "main"); got != head {
+		t.Fatalf("main moved from %s to %s", head, got)
+	}
+	if mergeInProgress(f.project) || gitCmd(t, f.project, "status", "--porcelain", "--untracked-files=no") != "" {
+		t.Fatal("the checkout was touched")
+	}
+	if !branchExists(f.project, "wave/"+b) {
+		t.Fatal("a held land deleted the run's branch")
+	}
+}
+
+// the re-run of Check and Verify sees the base's commits that the final stage never did
+func TestLandMovedBaseRechecks(t *testing.T) {
+	f, tree := landFixture(t)
+	commitProjectFiles(t, f.project, map[string]string{"marker.txt": "from the base\n"})
+	f.setLandCommands(t, "", "test ! -f marker.txt")
+
+	head := gitCmd(t, f.project, "rev-parse", "main")
+	f.assertHeld(t, f.landRun(t, false), head, "Verify `test ! -f marker.txt` failed")
+	if subject := gitCmd(t, tree, "log", "-1", "--format=%s"); subject != "Merge main into wave/"+f.ownerID+" before landing" {
+		t.Fatalf("the check ran on %q, want the base merged into the branch", subject)
+	}
 }
 
 // a Check the base already failed at submit fails on the merged base too; holding on it would leave no way to land

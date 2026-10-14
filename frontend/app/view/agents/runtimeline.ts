@@ -158,6 +158,8 @@ const KIND_TITLE: Record<string, string> = {
     "task-amended": "Lead amended a task",
     "task-lead-told": "Lead told a worker",
     "land-held": "Land held",
+    "land-queued": "Land in line",
+    "land-resolving": "Resolving conflicts with the base",
     landed: "Run landed",
     "stage-session-started": "Judging session started",
     "plan-reviewed": "Plan reviewed",
@@ -226,6 +228,8 @@ const KIND_TONE: Record<string, string> = {
     "task-told": "text-muted",
     "task-verify-started": "text-muted",
     "land-held": "text-warning",
+    "land-queued": "text-muted",
+    "land-resolving": "text-asking",
     landed: "text-success",
     "stage-session-started": "text-muted",
     "plan-reviewed": "text-muted",
@@ -235,10 +239,11 @@ export function eventKindTitle(kind: string): string {
     return KIND_TITLE[kind] ?? kind;
 }
 
-// a stage session is the plan reviewer or the final verifier, and only its detail says which
+// a stage session is the plan reviewer, the final verifier or a land resolver, and only its detail says which
 const STAGE_ROLE_TITLE: Record<string, string> = {
     "plan-reviewer": "Plan reviewer started",
     verifier: "Final verifier started",
+    "land-resolver": "Conflict resolver started",
 };
 
 export function eventTitle(event: RunEvent): string {

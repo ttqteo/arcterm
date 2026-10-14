@@ -7,6 +7,7 @@
 
 import type { AgentVM } from "./agentsviewmodel";
 import { finalStageActivity } from "./finalstage";
+import { landPlace, type LandSlot } from "./landline";
 import { runProgress, type Lineage, type RunInfo } from "./runlineage";
 import { runStage } from "./runstage";
 
@@ -17,6 +18,11 @@ function landView(land: RunLand): { label: string; tone: RunStatusTone } | undef
     switch (land.state) {
         case "pending":
             return { label: "landing", tone: "running" };
+        // in line behind another land of the project, or a resolver merging the base in: on its way, nobody to act
+        case "queued":
+            return { label: "land queued", tone: "running" };
+        case "resolving":
+            return { label: "resolving", tone: "running" };
         case "held":
             return { label: "land held", tone: "blocked" };
         case "landed":
@@ -35,14 +41,22 @@ export function finishedRunLabel(run: Pick<RunInfo, "dag" | "status" | "land">):
 /** Pure: a dag run's line in the Agents tree, the stage first so a cut line keeps it, and its tooltip. Every task
  *  done is not the run done: the final stage, the lead's wrap-up and the land still follow. */
 export function dagProgressLabel(
-    run: Pick<RunInfo, "dag" | "status" | "land" | "leadStarted">,
-    leadless: boolean
+    run: Pick<RunInfo, "runId" | "title" | "projectPath" | "dag" | "status" | "land" | "leadStarted">,
+    leadless: boolean,
+    // the runs of the run's project, which a land in line is placed among
+    projectRuns?: LandSlot[]
 ): { text: string; title: string } {
     const same = (text: string) => ({ text, title: text });
     const { done, total } = runProgress(run.dag);
     const s = runStage(run);
     if (s.key === "final-check") {
         return same(`Final check · ${finalStageActivity(run.dag?.final) ?? "verifying the merged result"}`);
+    }
+    if (s.key === "landing" && run.land?.state === "queued" && projectRuns != null) {
+        const { place } = landPlace(run, projectRuns);
+        if (place > 0) {
+            return same(`Landing · #${place} in line`);
+        }
     }
     if (s.key === "cancelled") {
         // a cancelled run says how far it got

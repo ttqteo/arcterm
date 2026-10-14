@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
@@ -28,13 +29,18 @@ type leadCompleteFixture struct {
 	seal       func()
 }
 
-func (f *leadCompleteFixture) git(t *testing.T, args ...string) string {
+func gitIn(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	out, err := exec.Command("git", append([]string{"-C", f.projectDir}, args...)...).CombinedOutput()
+	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
 	return strings.TrimSpace(string(out))
+}
+
+func (f *leadCompleteFixture) git(t *testing.T, args ...string) string {
+	t.Helper()
+	return gitIn(t, f.projectDir, args...)
 }
 
 func (f *leadCompleteFixture) write(t *testing.T, rel, content string) {
@@ -46,6 +52,34 @@ func (f *leadCompleteFixture) write(t *testing.T, rel, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// landingTree gives the owner run its landing tree, with a commit on wave/<run> that changes base.txt. A conflict
+// changes base.txt on main too, so merging main into the branch stops.
+func (f *leadCompleteFixture) landingTree(t *testing.T, conflict bool) string {
+	t.Helper()
+	ctx := context.Background()
+	tree, err := orchestrate.CreateRunWorktree(ctx, f.projectDir, f.owner.ID, f.git(t, "rev-parse", "HEAD"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wstore.UpdateRun(ctx, f.channelId, f.owner.ID, func(r *waveobj.Run) error {
+		r.LandPath, r.BaseBranch = tree, "main"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tree, "base.txt"), []byte("branch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("git", "-C", tree, "commit", "-am", "branch").CombinedOutput(); err != nil {
+		t.Fatalf("committing on the branch: %v\n%s", err, out)
+	}
+	if conflict {
+		f.write(t, "base.txt", "main\n")
+		f.git(t, "commit", "-m", "main", "--", "base.txt")
+	}
+	return tree
 }
 
 // a plan-driven run whose task landed through the engine's merge, with the untracked recovery patch a
@@ -152,27 +186,7 @@ func TestLeadCompleteRefusesALandThatWouldConflict(t *testing.T) {
 	setup := func(t *testing.T, conflict bool) *leadCompleteFixture {
 		t.Helper()
 		f := newLeadCompleteFixture(t)
-		ctx := context.Background()
-		tree, err := orchestrate.CreateRunWorktree(ctx, f.projectDir, f.owner.ID, f.git(t, "rev-parse", "HEAD"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := wstore.UpdateRun(ctx, f.channelId, f.owner.ID, func(r *waveobj.Run) error {
-			r.LandPath, r.BaseBranch = tree, "main"
-			return nil
-		}); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(tree, "base.txt"), []byte("branch\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		if out, err := exec.Command("git", "-C", tree, "commit", "-am", "branch").CombinedOutput(); err != nil {
-			t.Fatalf("committing on the branch: %v\n%s", err, out)
-		}
-		if conflict {
-			f.write(t, "base.txt", "main\n")
-			f.git(t, "commit", "-m", "main", "--", "base.txt")
-		}
+		f.landingTree(t, conflict)
 		return f
 	}
 	advance := func(f *leadCompleteFixture, holdLand bool) error {
@@ -349,5 +363,146 @@ func TestAManualLandGetsAConventionalSubject(t *testing.T) {
 	}
 	if got := f.git(t, "log", "-1", "--format=%s"); got != "feat(cockpit): Shared Surface Toolbar" {
 		t.Fatalf("merge subject %q, want the conventional feat(cockpit): Shared Surface Toolbar", got)
+	}
+}
+
+// landResolverFixture is a done plan run whose land is resolving: main moved on with a change that conflicts with the
+// run's own, and the resolver's stage run is seeded as the engine's spawn leaves it (the dag, a stage role, the landing
+// tree as its directory, the branch head it started from, no task and no lead). The resolver has merged main into
+// wave/<run> as its prompt tells it to, and has yet to complete.
+type landResolverFixture struct {
+	*leadCompleteFixture
+	tree, tab string
+	resolver  waveobj.Run
+	land      *waveobj.RunLand
+}
+
+func newLandResolverFixture(t *testing.T) *landResolverFixture {
+	t.Helper()
+	ctx := context.Background()
+	f := &landResolverFixture{leadCompleteFixture: newLeadCompleteFixture(t)}
+	f.tree = f.landingTree(t, true)
+	f.tab = waveobj.MakeORef(waveobj.OType_Tab, uuid.NewString()).String()
+	f.resolver = jarvis.NewRun("resolve main into wave/"+f.owner.ID, "ws-1", f.tree, nil, jarvis.RunMode_Quick, jarvis.QuickPlaybook(), 1)
+	f.resolver.Runtime, f.resolver.SessionId = "claude", jarvis.WorkerSessionId("claude")
+	f.resolver.DagORef, f.resolver.StageRole = f.owner.DagORef, jarvis.UsageRole_LandResolver
+	f.resolver.BaseCommit = gitIn(t, f.tree, "rev-parse", "HEAD")
+	f.resolver.Phases[0].WorkerOrefs = []string{f.tab}
+	if err := wstore.AppendRun(ctx, f.channelId, f.resolver); err != nil {
+		t.Fatal(err)
+	}
+	f.land = &waveobj.RunLand{State: orchestrate.LandState_Resolving, Resolver: f.resolver.ID, ResolverTs: time.Now().UnixMilli(), ResolverTried: true, Conflicts: []string{"base.txt"}, QueuedTs: 10, Force: true}
+	if err := wstore.UpdateRun(ctx, f.channelId, f.owner.ID, func(r *waveobj.Run) error {
+		r.Status, r.Land = jarvis.RunStatus_Done, f.land
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// the store outlives the test, and the land driver tends and lands every resolving or queued land it finds
+	t.Cleanup(func() {
+		_ = wstore.UpdateRun(ctx, f.channelId, f.owner.ID, func(r *waveobj.Run) error {
+			r.Land = &waveobj.RunLand{State: orchestrate.LandState_Held, Reason: "the test is over"}
+			return nil
+		})
+	})
+	return f
+}
+
+// mergeMain does what the resolver's prompt tells it to: merge main into the branch, settle the conflict, commit.
+func (f *landResolverFixture) mergeMain(t *testing.T) {
+	t.Helper()
+	// the merge stops on the conflict, which is its exit status
+	_ = exec.Command("git", "-C", f.tree, "merge", "--no-commit", "--no-ff", "main").Run()
+	if err := os.WriteFile(filepath.Join(f.tree, "base.txt"), []byte("branch\nmain\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, f.tree, "add", "--", "base.txt")
+	gitIn(t, f.tree, "commit", "-m", "Merge branch 'main' into wave/"+f.owner.ID, "-m", "Arc-Run: "+f.owner.ID)
+}
+
+func (f *landResolverFixture) run(t *testing.T, id string) *waveobj.Run {
+	t.Helper()
+	run, err := wstore.GetRun(context.Background(), f.channelId, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return run
+}
+
+// a resolver ends with `wsh jarvis complete --report`: the complete of a stage run of a done plan run's dag, which has
+// no task and no lead and works in that run's landing tree. It must neither be refused as the owner's complete would
+// (a conflict with main), nor be given the owner's head commit, nor seal or land as the owner; the owner's land stays
+// resolving until the land driver tends it, and then goes back in line with the place and the force it asked with.
+func TestAResolverCompletingMovesItsLandOn(t *testing.T) {
+	report := "base.txt: kept the branch's line and main's\n"
+	// advanceRun is what both entry points reach: the RPC a script sends, and the report a session's tab sends
+	entries := []struct {
+		name     string
+		complete func(t *testing.T, f *landResolverFixture)
+	}{
+		{"advanceRun", func(t *testing.T, f *landResolverFixture) {
+			sealDue, err := advanceRun(context.Background(), wshrpc.CommandAdvanceRunData{
+				ChannelId: f.channelId, RunId: f.resolver.ID, PhaseIdx: 0, Action: jarvis.RunAction_Complete, Report: report,
+			})
+			if err != nil {
+				t.Fatalf("advanceRun: %v", err)
+			}
+			if !sealDue {
+				t.Fatal("the resolver's complete owes no seal")
+			}
+			// what AdvanceRunCommand dispatches off the call
+			if land, err := sealThenLand(f.channelId, f.resolver.ID, false); land != nil || err != nil {
+				t.Fatalf("the resolver's seal and land returned %+v, %v, want neither: a stage run has no branch to land", land, err)
+			}
+		}},
+		{"the session's own complete", func(t *testing.T, f *landResolverFixture) {
+			rtn, err := (&WshServer{}).ReportRunPhaseCommand(context.Background(), wshrpc.CommandReportRunPhaseData{ORef: f.tab, Action: jarvis.RunAction_Complete, Report: report})
+			if err != nil || rtn != nil {
+				t.Fatalf("ReportRunPhaseCommand = %+v, %v, want a plain complete: a stage run's land is not waited on", rtn, err)
+			}
+			if f.seal == nil {
+				t.Fatal("the resolver's seal was not dispatched")
+			}
+			f.seal()
+		}},
+	}
+	for _, e := range entries {
+		t.Run(e.name, func(t *testing.T) {
+			ctx := context.Background()
+			f := newLandResolverFixture(t)
+
+			f.mergeMain(t)
+			orchestrate.TendResolvingLandsForTest(ctx)
+			if got := f.run(t, f.owner.ID).Land; !reflect.DeepEqual(got, f.land) {
+				t.Fatalf("a tend pass moved the land to %+v while its resolver still worked", got)
+			}
+
+			e.complete(t, f)
+
+			resolver := f.run(t, f.resolver.ID)
+			if resolver.Status != jarvis.RunStatus_Done || resolver.Report != report {
+				t.Fatalf("resolver run = %s with report %q, want done with its report", resolver.Status, resolver.Report)
+			}
+			if resolver.Land != nil || resolver.EndCommit != "" {
+				t.Fatalf("resolver run has land %+v and end commit %q: it was taken for the plan run", resolver.Land, resolver.EndCommit)
+			}
+			if ev := resolver.Evidence; ev == nil || ev.Dag != nil || ev.Verification != nil {
+				t.Fatalf("resolver evidence = %+v, want sealed without the plan run's record or verification", ev)
+			}
+			owner := f.run(t, f.owner.ID)
+			if !reflect.DeepEqual(owner.Land, f.land) || owner.Status != jarvis.RunStatus_Done || owner.Evidence != nil || owner.EndCommit != "" {
+				t.Fatalf("plan run = %s, land %+v, evidence %v, end commit %q after the resolver's complete, want it untouched", owner.Status, owner.Land, owner.Evidence, owner.EndCommit)
+			}
+			landKinds := []string{waveobj.RunEventKindLandQueued, waveobj.RunEventKindLandHeld, waveobj.RunEventKindLanded}
+			if events, err := wstore.QueryRunEventsByKind(ctx, f.channelId, f.owner.ID, landKinds, 0); err != nil || len(events) != 0 {
+				t.Fatalf("the plan run logged %d land events (%v) from the resolver's complete, want none", len(events), err)
+			}
+
+			orchestrate.TendResolvingLandsForTest(ctx)
+			land := f.run(t, f.owner.ID).Land
+			if land == nil || land.State != orchestrate.LandState_Queued || land.QueuedTs != f.land.QueuedTs || land.Force != f.land.Force || !land.ResolverTried {
+				t.Fatalf("land = %+v after a tend pass, want queued at place %d with its force and its resolver's try kept", land, f.land.QueuedTs)
+			}
+		})
 	}
 }

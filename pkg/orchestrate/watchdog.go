@@ -73,6 +73,7 @@ var (
 		}
 		reapFinishedSessions(ctx, time.Now().UnixMilli())
 		retryDirtyLands(ctx)
+		driveLandLine(ctx)
 		for _, l := range overdueVerifies() {
 			what := fmt.Sprintf("the Verify after merging task %s has held the project checkout for %s, past its %s timeout",
 				l.taskID, time.Since(l.since).Round(time.Second), shortDuration(VerifyTimeout))

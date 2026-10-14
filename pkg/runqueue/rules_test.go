@@ -43,6 +43,13 @@ func blockedEntry(id, after, reason string) wshrpc.RunQueueEntry {
 	return e
 }
 
+// blockedOnRun is an entry blocked by the outcome of the run it waits After.
+func blockedOnRun(id, after, reason string) wshrpc.RunQueueEntry {
+	e := blockedEntry(id, after, reason)
+	e.BlockedOn = after
+	return e
+}
+
 func TestTopLevel(t *testing.T) {
 	cases := []struct {
 		name string
@@ -98,6 +105,8 @@ func TestOutcome(t *testing.T) {
 		{"held", mkRun("r", "done", withLand("held", "the final stage failed", false)), true, false, "the final stage failed", true},
 		{"dirty hold lands by itself", mkRun("r", "done", withLand("held", "dirty checkout", true)), false, false, "", false},
 		{"land pending", mkRun("r", "done", withLand("pending", "", false)), false, false, "", false},
+		{"land queued behind another", mkRun("r", "done", withLand("queued", "", false)), false, false, "", false},
+		{"land resolving a conflict", mkRun("r", "done", withLand("resolving", "", false)), false, false, "", false},
 		{"done in the checkout", mkRun("r", "done"), true, true, "", true},
 		{"done on a branch not yet landed", mkRun("r", "done", func(r *waveobj.Run) { r.LandPath = "/wt/wave-r" }), false, false, "", false},
 		{"cancelled", mkRun("r", "cancelled"), true, false, "cancelled", true},
@@ -155,7 +164,9 @@ func TestNext(t *testing.T) {
 		runs      []*waveobj.Run
 		maxActive int
 		start     string
-		block     map[string]string
+		block     map[string]string // entry id → reason
+		blockOn   map[string]string // entry id → BlockedOn; an id left out must have none
+		unblock   []string
 	}{
 		{
 			name:      "under the cap starts the head",
@@ -227,6 +238,7 @@ func TestNext(t *testing.T) {
 			maxActive: 3,
 			start:     "q-b",
 			block:     map[string]string{"q-a": "Learned additions was held: the final stage failed"},
+			blockOn:   map[string]string{"q-a": "held"},
 		},
 		{
 			name:      "after a dirty hold keeps waiting",
@@ -242,6 +254,7 @@ func TestNext(t *testing.T) {
 			maxActive: 3,
 			start:     "",
 			block:     map[string]string{"q-a": "Dropped plan was cancelled"},
+			blockOn:   map[string]string{"q-a": "cancelled"},
 		},
 		{
 			name:      "after a queue entry is never ready",
@@ -271,11 +284,65 @@ func TestNext(t *testing.T) {
 			start:     "q-b",
 		},
 		{
+			name:      "an entry blocked on a run that has landed since is unblocked",
+			entries:   []wshrpc.RunQueueEntry{blockedOnRun("q-a", "landed", "Landed plan was held"), mkEntry("q-b", "")},
+			runs:      []*waveobj.Run{landed},
+			maxActive: 3,
+			start:     "q-b", // q-a waits again; the caller evaluates once more to start it
+			unblock:   []string{"q-a"},
+		},
+		{
+			name:      "an entry blocked on a run done in the checkout is unblocked",
+			entries:   []wshrpc.RunQueueEntry{blockedOnRun("q-a", "checkout", "kept")},
+			runs:      []*waveobj.Run{checkout},
+			maxActive: 3,
+			unblock:   []string{"q-a"},
+		},
+		{
+			name:      "an entry blocked on a run that is still held stays blocked",
+			entries:   []wshrpc.RunQueueEntry{blockedOnRun("q-a", "held", "kept")},
+			runs:      []*waveobj.Run{held},
+			maxActive: 3,
+		},
+		{
+			name:      "an entry blocked on a run whose land is queued or resolving stays blocked",
+			entries:   []wshrpc.RunQueueEntry{blockedOnRun("q-a", "queued", "kept"), blockedOnRun("q-b", "resolving", "kept")},
+			runs:      []*waveobj.Run{mkRun("queued", "done", withLand("queued", "", false)), mkRun("resolving", "done", withLand("resolving", "", false))},
+			maxActive: 3,
+		},
+		{
+			name:      "an entry blocked on a run that was cancelled stays blocked",
+			entries:   []wshrpc.RunQueueEntry{blockedOnRun("q-a", "cancelled", "kept")},
+			runs:      []*waveobj.Run{cancelled},
+			maxActive: 3,
+		},
+		{
+			name:      "an entry blocked on a run that cannot be read stays blocked",
+			entries:   []wshrpc.RunQueueEntry{blockedOnRun("q-a", "gone", "kept")},
+			maxActive: 3,
+		},
+		{
+			// a start that failed, a plan that is gone or an entry that was removed has no BlockedOn: unblocking it
+			// would start it, fail it and block it again on every pass
+			name:      "an entry blocked for another reason is not unblocked when its After run landed",
+			entries:   []wshrpc.RunQueueEntry{blockedEntry("q-a", "landed", "route unavailable")},
+			runs:      []*waveobj.Run{landed},
+			maxActive: 3,
+		},
+		{
+			name:      "an unblocked entry is not also blocked again",
+			entries:   []wshrpc.RunQueueEntry{blockedOnRun("q-a", "landed", "kept")},
+			runs:      []*waveobj.Run{landed},
+			maxActive: 3,
+			unblock:   []string{"q-a"},
+		},
+		{
 			name:      "a run's title falls back to its id",
 			entries:   []wshrpc.RunQueueEntry{mkEntry("q-a", "bare")},
 			runs:      []*waveobj.Run{mkRun("bare", "cancelled", withGoal(""))},
 			maxActive: 3,
 			block:     map[string]string{"q-a": "bare was cancelled"},
+			blockOn:   map[string]string{"q-a": "bare"},
 		},
 		{
 			name:      "a run's title is its goal's first line",
@@ -283,6 +350,7 @@ func TestNext(t *testing.T) {
 			runs:      []*waveobj.Run{mkRun("multi", "cancelled", withGoal("  First line  \nsecond line"))},
 			maxActive: 3,
 			block:     map[string]string{"q-a": "First line was cancelled"},
+			blockOn:   map[string]string{"q-a": "multi"},
 		},
 		{
 			name:      "a hold with no reason is named plainly",
@@ -290,6 +358,7 @@ func TestNext(t *testing.T) {
 			runs:      []*waveobj.Run{mkRun("bare", "done", withLand("held", "", false), withGoal("Bare"))},
 			maxActive: 3,
 			block:     map[string]string{"q-a": "Bare was held"},
+			blockOn:   map[string]string{"q-a": "bare"},
 		},
 		{
 			name:      "an empty queue starts nothing",
@@ -298,17 +367,30 @@ func TestNext(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		start, block := Next(c.entries, runMap(c.runs...), c.maxActive)
+		start, block, unblock := Next(c.entries, runMap(c.runs...), c.maxActive)
 		if start != c.start {
 			t.Errorf("%s: start = %q, want %q", c.name, start, c.start)
+		}
+		if len(unblock) != len(c.unblock) {
+			t.Errorf("%s: unblock = %v, want %v", c.name, unblock, c.unblock)
+		} else {
+			for i, id := range c.unblock {
+				if unblock[i] != id {
+					t.Errorf("%s: unblock = %v, want %v", c.name, unblock, c.unblock)
+					break
+				}
+			}
 		}
 		if len(block) != len(c.block) {
 			t.Errorf("%s: block = %v, want %v", c.name, block, c.block)
 			continue
 		}
 		for id, reason := range c.block {
-			if block[id] != reason {
-				t.Errorf("%s: block[%s] = %q, want %q", c.name, id, block[id], reason)
+			if block[id].Reason != reason {
+				t.Errorf("%s: block[%s].Reason = %q, want %q", c.name, id, block[id].Reason, reason)
+			}
+			if block[id].On != c.blockOn[id] {
+				t.Errorf("%s: block[%s].On = %q, want %q", c.name, id, block[id].On, c.blockOn[id])
 			}
 		}
 	}

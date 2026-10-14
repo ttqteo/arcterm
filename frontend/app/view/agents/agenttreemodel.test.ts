@@ -3,6 +3,7 @@ import type { AgentVM } from "./agentsviewmodel";
 import {
     buildAgentTree,
     foldCollapsedProjects,
+    stageOutcome,
     stageSubline,
     UNGROUPED_PROJECT,
     type AgentTreeRow,
@@ -257,6 +258,103 @@ describe("buildAgentTree with run lineage", () => {
                 "stage:plan-reviewer:rev1",
                 "queued:1:false",
             ]);
+        });
+    });
+
+    // a land resolver gives no verdict on the dag: its run's land says how it went
+    describe("a land resolver session", () => {
+        const roles: Lineage["roles"] = {
+            lead: { kind: "lead", runId: "run-1" },
+            res: { kind: "stage", leadRunId: "run-1", stageRole: "land-resolver" },
+        };
+        const resolver = (state: AgentVM["state"]) => ({ ...agent("res", state, ""), runId: "rs1" });
+        const landing = (land: RunLand | undefined) => {
+            const r = run("run-1", [task("t-1", "done")]);
+            r.land = land;
+            return r;
+        };
+        const doneOpen = {
+            collapsed: new Set<string>(),
+            doneOpen: new Map([["run-1", 1]]),
+            queuedOpen: new Set<string>(),
+            extrasOpen: new Set<string>(),
+        };
+
+        it("is at work while its land is resolving it, and counts toward the run's live", () => {
+            const r = landing({ state: "resolving", resolver: "rs1", resolvertried: true });
+            const rows = buildAgentTree(
+                [agent("lead", "idle"), resolver("working")],
+                ["lead", "res"],
+                lineage([r], roles)
+            );
+            expect(shape(rows)).toEqual([
+                "group:waveterm:2:0",
+                "lead:run-1:1",
+                "done:1:false",
+                "stage:land-resolver:res",
+            ]);
+        });
+
+        it("is a failed stage in the done fold once its land is held for a human", () => {
+            const r = landing({ state: "held", resolvertried: true, conflicts: ["CHANGELOG.md"] });
+            const rows = buildAgentTree(
+                [agent("lead", "idle"), resolver("idle")],
+                ["lead", "res"],
+                lineage([r], roles),
+                doneOpen
+            );
+            expect(shape(rows)).toEqual([
+                "group:waveterm:1:0",
+                "lead:run-1:0",
+                "done:1+1:true",
+                "worker:t-1:-",
+                "stage:land-resolver:res:failed",
+            ]);
+        });
+
+        it.each(["queued", "pending", "landed"])("is a passed stage once its land is %s", (state) => {
+            const r = landing({ state, resolvertried: true });
+            const rows = buildAgentTree(
+                [agent("lead", "idle"), resolver("idle")],
+                ["lead", "res"],
+                lineage([r], roles),
+                doneOpen
+            );
+            expect(shape(rows)).toEqual([
+                "group:waveterm:1:0",
+                "lead:run-1:0",
+                "done:1+1:true",
+                "worker:t-1:-",
+                "stage:land-resolver:res:passed",
+            ]);
+        });
+
+        it("reads its outcome from the land, whatever round the final stage is on", () => {
+            const outcome = (land: RunLand | undefined, runId: string | undefined = "rs1") => {
+                const r = landing(land);
+                r.dag.final = { state: "final", round: 2, verifierrunid: "ver2" };
+                return stageOutcome(r, "land-resolver", runId);
+            };
+            expect(outcome({ state: "resolving", resolver: "rs1", resolvertried: true })).toBeUndefined();
+            expect(outcome({ state: "held", resolvertried: true })).toBe("failed");
+            expect(outcome({ state: "queued", resolvertried: true })).toBe("passed");
+            expect(outcome({ state: "pending", resolvertried: true })).toBe("passed");
+            expect(outcome({ state: "landed", resolvertried: true })).toBe("passed");
+        });
+
+        it("reads a resolver the land no longer names as failed, and one it cannot read as at work", () => {
+            const r = landing({ state: "resolving", resolver: "rs2", resolvertried: true });
+            expect(stageOutcome(r, "land-resolver", "rs1")).toBe("failed");
+            expect(stageOutcome(landing(undefined), "land-resolver", "rs1")).toBeUndefined();
+            expect(stageOutcome(landing({ state: "landed" }), "land-resolver", undefined)).toBeUndefined();
+        });
+
+        it("leaves a plan reviewer and a verifier reading the dag, whatever the land says", () => {
+            const r = landing({ state: "queued", resolvertried: true });
+            r.dag.planreview = { state: "failed", round: 1, runid: "rv1" };
+            r.dag.final = { state: "passed", round: 1, verifierrunid: "ver" };
+            expect(stageOutcome(r, "plan-reviewer", "rv1")).toBe("failed");
+            expect(stageOutcome(r, "verifier", "ver")).toBe("passed");
         });
     });
 
