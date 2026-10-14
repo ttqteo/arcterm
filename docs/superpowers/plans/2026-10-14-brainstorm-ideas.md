@@ -38,8 +38,9 @@ shipped skill tells it when to write.
 ### Task 1: `pkg/ideastore`
 
 **Depends on:** none
+**Files:** `pkg/ideastore/ideastore.go`, `pkg/ideastore/ideastore_test.go`
 
-**Files:**
+**Where:**
 - Create: `pkg/ideastore/ideastore.go`, `pkg/ideastore/ideastore_test.go`
 
 The store follows `pkg/notestore/notestore.go`: a package `mu sync.Mutex`, a `rootOverride string` for tests, writes
@@ -101,8 +102,9 @@ Functions (each takes `mu`, reads `<root>/<sessionid>.json`, a missing file read
 ### Task 2: RPC, event and `wsh idea`
 
 **Depends on:** Task 1
+**Files:** `pkg/wshrpc/wshrpctypes_idea.go`, `pkg/wshrpc/wshserver/wshserver_idea.go`, `pkg/wshrpc/wshserver/wshserver_idea_test.go`, `cmd/wsh/cmd/wshcmd-idea.go`, `cmd/wsh/cmd/wshcmd-idea_test.go`, `pkg/wshrpc/wshrpctypes.go`, `pkg/wps/wpstypes.go`, `pkg/tsgen/tsgenevent.go`, `pkg/wshrpc/wshclient/wshclient.go`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`, `frontend/types/waveevent.d.ts`
 
-**Files:**
+**Where:**
 - Create: `pkg/wshrpc/wshrpctypes_idea.go`, `pkg/wshrpc/wshserver/wshserver_idea.go`,
   `pkg/wshrpc/wshserver/wshserver_idea_test.go`, `cmd/wsh/cmd/wshcmd-idea.go`, `cmd/wsh/cmd/wshcmd-idea_test.go`
 - Modify: `pkg/wshrpc/wshrpctypes.go:52` (embed `IdeaCommands` beside `NoteCommands`), `pkg/wps/wpstypes.go:17-44`
@@ -173,8 +175,9 @@ given):
 ### Task 3: The agent writes ideas: skill, nudge, `/idea`
 
 **Depends on:** Task 2
+**Files:** `skills/ideas/SKILL.md`, `skills/skills.go`, `skills/skills_test.go`, `claude/arc-mod/hooks/ideas-core.ts`, `claude/arc-mod/hooks/ideas-core.test.ts`, `claude/arc-mod/hooks/register.ts`, `claude/arc-mod/commands/idea.md`, `docs/open-issues.md`
 
-**Files:**
+**Where:**
 - Create: `skills/ideas/SKILL.md`, `claude/arc-mod/hooks/ideas-core.ts`, `claude/arc-mod/hooks/ideas-core.test.ts`,
   `claude/arc-mod/commands/idea.md`
 - Modify: `skills/skills.go:10` (add `ideas` to the `//go:embed` list), `skills/skills_test.go` if it lists skills,
@@ -213,8 +216,9 @@ folder, and that `task sync:claudemod` copies it (it copies the folder minus tes
 ### Task 4: The Ideas count and section on the details rail
 
 **Depends on:** Task 2
+**Files:** `frontend/app/view/agents/ideasmodel.ts`, `frontend/app/view/agents/ideasmodel.test.ts`, `frontend/app/view/agents/ideasstore.ts`, `frontend/app/view/agents/ideassection.tsx`, `frontend/app/view/agents/agentrailsections.ts`, `frontend/app/view/agents/agentrailsections.test.ts`, `frontend/app/view/agents/agentrailpanel.tsx`, `frontend/app/view/agents/agentdetailsrail.tsx`, `frontend/app/view/agents/railicons.tsx`, `scripts/cdp/scenarios.mjs`, `scripts/cockpit-fixtures/scenarios.mjs`, `CHANGELOG.md`
 
-**Files:**
+**Where:**
 - Create: `frontend/app/view/agents/ideasmodel.ts`, `frontend/app/view/agents/ideasmodel.test.ts`,
   `frontend/app/view/agents/ideasstore.ts`, `frontend/app/view/agents/ideassection.tsx`
 - Modify: `frontend/app/view/agents/agentrailsections.ts:16-60` (`ideas` stat), its test,
@@ -278,8 +282,9 @@ Fixture and scenario:
 ### Task 5: Capture a selection as an idea
 
 **Depends on:** Task 4
+**Files:** `frontend/app/view/agents/ideacapture.ts`, `frontend/app/view/agents/ideacapture.test.ts`, `frontend/app/view/agents/ideacapturechip.tsx`, `frontend/app/view/term/termwrap.ts`, `frontend/app/store/keybindings/bindings.ts`, `docs/keyboard-shortcuts.md`, `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/superpowers/specs/2026-10-14-brainstorm-ideas-design.md`
 
-**Files:**
+**Where:**
 - Create: `frontend/app/view/agents/ideacapture.ts`, `frontend/app/view/agents/ideacapture.test.ts`,
   `frontend/app/view/agents/ideacapturechip.tsx`
 - Modify: `frontend/app/view/term/termwrap.ts:504-520` (selection hook), `frontend/app/store/keybindings/bindings.ts`
