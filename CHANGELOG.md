@@ -38,6 +38,8 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
 - **A tidier agent header**: Open a tool, Float and Redraw moved into a new `…` button (the same menu as a right-click
   on the header), leaving `…`, Split, Fullscreen and Close. A project folder in the sidebar no longer shows a `+` on
   hover; open a terminal from **New**.
+- The folded Sprout's "Restore, don't fold for" is one box now: click into it and 1 hour and till 8:00 drop down
+  under it, or type a time as before.
 - **Close the agent or terminal in focus with ⌘⇧W on a Mac**, the same shape as Ctrl+Shift+W on Windows. ⌘W on its
   own now does nothing.
 - **One click on the folded Sprout opens its card of agents and terminals** and keeps it open, instead of the Jarvis
