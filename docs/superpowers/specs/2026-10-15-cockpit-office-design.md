@@ -3,7 +3,7 @@
 **Date:** 2026-10-15
 **Status:** design agreed in chat, not built. Part 1 of 4.
 **Canvas:** `.superpowers/design/cockpit-office/project/` (gitignored; `Main`, `States`, `Night`, `Tired`,
-`RamPanel`). The look follows the person's reference, Game Office (Steam): a floor plan seen from above, drawn here in
+`NextAsk`, `RamPanel`). The look follows the person's reference, Game Office (Steam): a floor plan seen from above, drawn here in
 2D pixel art.
 
 ## What it is
@@ -80,6 +80,10 @@ and the two columns share whatever width the hall leaves.
   top wall.
 - **The facade** closes the plan at the bottom: brick with windows, glass doors at the foot of the hall, and the
   **ARCTERM** sign over them. The outer walls carry small windows on their faces.
+- **Lights:** a room with no one at work (no agent working or asking, no task running) has its lights off: a dark
+  layer (`--color-office-dark`) over its floor, furniture and people, under the walls and labels, so the eye goes to
+  the rooms where something happens. The hall, the lounge and Home's booth follow the same rule; the lounge is always
+  lit.
 - **Stable places:** a state change never moves a desk, a seat or a room. Adding or removing a card or a run shifts
   only what comes after it. A plan taller than the office scrolls vertically, and follows the boss.
 - **Labels:** under each desk the agent's name. A state word shows only where it matters: **Needs you** (amber, bold)
@@ -122,7 +126,9 @@ A person away from the desk walks back when the agent is working or asking again
     move the card cursor; in Office they walk, and `j` `k` move the cursor.)
   - `j` `k` go to the next or previous desk or seat in office order (band by band: the agents' room by rows, then its
     meeting rooms' seats; Home last); `n` goes to the next Needs you. The boss walks there through the doors: out of
-    its room, along the hall, into the target room, to the spot in front of the desk.
+    its room, along the hall, into the target room, to the spot in front of the desk. On `n` the path itself shows
+    first, a dotted line in the asking colour from the boss to the desk with `next Needs you` under it, for one
+    second (frame 0 under reduced motion, then the boss is there at once).
   - `h` `l` switch question on a multi-question ask in the popup, as they do on a card.
   - Every other Cockpit key acts on the desk at the boss: `1`–`9`, `Enter`, `Space`, `r`, `t`, `b`.
 - **The desk at the boss** is the desk or seat whose spot is nearest, in the room the boss stands in. It is the
@@ -187,7 +193,7 @@ A person away from the desk walks back when the agent is working or asking again
   (`--color-office-boss`, `--color-office-shirt-claude`, `-codex`, `-pi`, `-agy`, `-other`), scenery
   (`--color-office-wall-top`, `-wall-face`, `-wood-1`, `-wood-2`, `-tile-1`, `-tile-2`, `-carpet`, `-hall`,
   `-desk-top`, `-desk-face`, `-sofa`, `-brick`, `-mortar`, `-window-day`, `-window-night`, `-plant`, `-pot`), light
-  (`--color-office-night`, `-lamp`, `-cup`), and the sign's glow as a shadow token (`--shadow-office-sign`). The sign's
+  (`--color-office-night`, `-dark`, `-lamp`, `-cup`), and the sign's glow as a shadow token (`--shadow-office-sign`). The sign's
   frame is the accent: it is the brand.
 - Bands outside the view are `content-visibility: auto`.
 
@@ -297,14 +303,14 @@ plan's layout, and walking in two dimensions through doors.
 ## Verify
 
 - vitest: `officeplanmodel.test.ts` (bands by project name; desks in rows of three by name; one meeting room per run,
-  seats alternating sides, `+N` past 11 tasks; band height and the stretched room; Home's booth; doors; places stay
-  put across state changes; each agent state and each task state maps to its pose and label; filters narrow the plan
+  seats alternating sides, `+N` past 11 tasks; band height and the stretched room; Home's booth; doors; lights off in
+  a room with no one at work and on again when someone starts; places stay put across state changes; each agent state and each task state maps to its pose and label; filters narrow the plan
   as the grid; office order), `officebehavior.test.ts` (idle thresholds, the 3-walker queue order, every energy band
   and the reset, day, evening, night and the weekend), `officeboss.test.ts` (walls stop, doors pass, `j` `k` `n`
-  targets and their paths through doors, the desk at the boss, the cursor kept in the hall), `officeclock.test.ts`
+  targets and their paths through doors, the dotted path's points, the desk at the boss, the cursor kept in the hall), `officeclock.test.ts`
   (each clock runs only when it should and stops when hidden, reduced or off), `plansprite.test.ts` (every grid is its
   declared size and uses only known codes; a pose's frames are the same size).
 - CDP `cockpit-office`: the `Main` board (day, the boss at quill with its card open, `1` answering from it), a click on
-  a meeting room opening its `LeadCard`, the boss walking by arrow keys through a door, `n` crossing to the next
-  Needs you, the `Night` and `Tired` boards, every pose of the `States` board on its own small fixture, animation off,
+  a meeting room opening its `LeadCard`, the boss walking by arrow keys through a door, `n` showing its dotted path
+  and crossing to the next Needs you (`NextAsk`), Home's booth with its lights off, the `Night` and `Tired` boards, every pose of the `States` board on its own small fixture, animation off,
   and the Office line in the RAM panel (`RamPanel`). `cockpit-office-bench` holds the budgets.
