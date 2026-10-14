@@ -331,6 +331,18 @@ declare global {
         notoken?: boolean;
     };
 
+    // wshrpc.ClaudeContextFile
+    type ClaudeContextFile = {
+        group: string;
+        path: string;
+        label: string;
+        exists: boolean;
+        size?: number;
+        modts?: number;
+        note?: string;
+        description?: string;
+    };
+
     // wshrpc.ClaudeProjectData
     type ClaudeProjectData = {
         path: string;
@@ -611,6 +623,16 @@ declare global {
     type CommandClaudeAccountSetEmailData = {
         id: string;
         email: string;
+    };
+
+    // wshrpc.CommandClaudeContextData
+    type CommandClaudeContextData = {
+        path: string;
+    };
+
+    // wshrpc.CommandClaudeContextRtnData
+    type CommandClaudeContextRtnData = {
+        files: ClaudeContextFile[];
     };
 
     // wshrpc.CommandCleanStorageData

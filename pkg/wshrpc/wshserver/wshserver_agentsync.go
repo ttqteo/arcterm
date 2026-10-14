@@ -9,6 +9,8 @@ import (
 	"os"
 
 	"github.com/wavetermdev/waveterm/pkg/agentsync"
+	"github.com/wavetermdev/waveterm/pkg/claudecontext"
+	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
@@ -108,4 +110,19 @@ func (ws *WshServer) AgentSyncSkillsCommand(ctx context.Context) (*wshrpc.Comman
 		Skills: out, Columns: cols, SkillsRoot: p.SkillsRoot,
 		Unmanaged: skillMoves(plan.Moves), Unresolved: unresolved,
 	}, nil
+}
+
+func (ws *WshServer) ClaudeContextCommand(ctx context.Context, data wshrpc.CommandClaudeContextData) (*wshrpc.CommandClaudeContextRtnData, error) {
+	files, err := claudecontext.Scan(data.Path, wavebase.GetHomeDir())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]wshrpc.ClaudeContextFile, len(files))
+	for i, f := range files {
+		out[i] = wshrpc.ClaudeContextFile{
+			Group: f.Group, Path: f.Path, Label: f.Label, Exists: f.Exists, Size: f.Size, ModTs: f.ModTs,
+			Note: f.Note, Description: f.Description,
+		}
+	}
+	return &wshrpc.CommandClaudeContextRtnData{Files: out}, nil
 }

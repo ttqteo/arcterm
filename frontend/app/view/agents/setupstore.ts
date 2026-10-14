@@ -24,7 +24,7 @@ import { adoptKeep, type SkillKeep } from "./skillsmatrix";
 import type { ToolForm } from "./toolslibrarymodel";
 import { failedAtom, installingAtom } from "./toolsstore";
 
-export type SetupTab = "instructions" | "skills" | "tools";
+export type SetupTab = "instructions" | "skills" | "tools" | "project";
 
 // local filesystem reads behind an rpc with no default timeout: a stalled backend must reject rather
 // than leave the pane on "Reading…" forever
@@ -162,6 +162,51 @@ export function adoptSkills(): Promise<void> {
 
 export function openSkillFile(model: AgentsViewModel, path: string): Promise<void> {
     return busy(() => openFileInCode(model, path));
+}
+
+// ---- project ----
+
+// the project Setup → Project shows (null: contextProject picks), what was read for it, and the file the rail reads
+export interface ClaudeContextLoad {
+    project: string;
+    path: string;
+    files: ClaudeContextFile[];
+    error: string | null;
+}
+export const setupContextProjectAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+export const setupContextAtom = atom<ClaudeContextLoad | null>(null) as PrimitiveAtom<ClaudeContextLoad | null>;
+export const setupContextSelectedAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+
+// each load takes the next number, so a slow answer for a project left behind cannot land after the newer one
+let contextLoadSeq = 0;
+
+export async function loadClaudeContext(project: string, path: string): Promise<void> {
+    const seq = ++contextLoadSeq;
+    try {
+        const r = await RpcApi.ClaudeContextCommand(TabRpcClient, { path }, { timeout: READ_TIMEOUT_MS });
+        if (seq === contextLoadSeq) {
+            globalStore.set(setupContextAtom, { project, path, files: r.files ?? [], error: null });
+        }
+    } catch (e) {
+        if (seq === contextLoadSeq) {
+            globalStore.set(setupContextAtom, { project, path, files: [], error: errText(e) });
+        }
+    }
+}
+
+// re-reads the project on screen: an agent may have written memory or settings since
+export function reloadClaudeContext(): Promise<void> {
+    const cur = globalStore.get(setupContextAtom);
+    return cur == null ? Promise.resolve() : loadClaudeContext(cur.project, cur.path);
+}
+
+export function selectContextProject(name: string): void {
+    globalStore.set(setupContextProjectAtom, name);
+    globalStore.set(setupContextSelectedAtom, null);
+}
+
+export function selectContextFile(path: string): void {
+    globalStore.set(setupContextSelectedAtom, path);
 }
 
 // ---- tools ----
