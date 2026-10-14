@@ -27,6 +27,7 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { centerModeAtom } from "@/app/view/agents/agentcenter";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { canvasGalleryAtom } from "@/app/view/agents/canvasgallerystore";
 import { canvasStateAtom } from "@/app/view/agents/canvasstore";
 import { compareOnAtom } from "@/app/view/agents/comparestore";
 import { docReviewStateAtom } from "@/app/view/agents/docreviewstore";
@@ -69,6 +70,7 @@ export const PREDICATE_ATOMS: Atom<unknown>[] = [
     renamingRowAtom, // buildAgentBindings: subagent:back
     focusSubagentAtom, // buildAgentBindings: subagent:back, agent:back, agent:leave-center
     centerModeAtom, // buildAgentBindings: agentNav / agentNavStrict (every Agent key), agent:back, agent:leave-center
+    canvasGalleryAtom, // buildAgentBindings: the canvases:* keys, agent:leave-center; buildGlobalBindings: surface:next / prev
     tabSwitcherAtom, // buildGlobalBindings: switcher:cancel, and switcher:next / prev under the open switcher
     dockedTerminalAtom, // buildAgentBindings: agent:terminal-panel
     initiativePopoverAtom, // buildAgentBindings: agentNav / agentNavStrict (every single-key Agent binding yields to the popover)

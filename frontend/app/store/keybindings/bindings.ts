@@ -8,11 +8,18 @@ import { anyModalOpen } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
 import { activeNavOrder } from "@/app/view/agents/activenav";
 import { closeAgentChord, confirmCloseSession } from "@/app/view/agents/agentactions";
-import { centerModeAtom, showHistory, showTerminal } from "@/app/view/agents/agentcenter";
+import { centerModeAtom, showCanvases, showHistory, showTerminal } from "@/app/view/agents/agentcenter";
 import { AgentsViewModel, SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
 import { AGENT_DIGITS } from "@/app/view/agents/agentsidebarmodel";
 import { answerDigitTarget, canSubmitAsk, moveCursor, type AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { nextAgentView, setAgentView } from "@/app/view/agents/agentview";
+import {
+    canvasGalleryAtom,
+    closeCanvas,
+    moveGalleryCards,
+    openCursorCanvas,
+    stepViewerBoard,
+} from "@/app/view/agents/canvasgallerystore";
 import { paneState } from "@/app/view/agents/canvasmodel";
 import { focusedCanvas, focusedCanvasMode, setMarking, stepCanvasBoard } from "@/app/view/agents/canvasstore";
 import { activeChannelRunsAtom } from "@/app/view/agents/channelsstore";
@@ -142,14 +149,21 @@ function focusCodeSearchInput(): void {
     }
 }
 
-// g-leader surface teleports (collision-free letters; see design spec). Conversation History is a mode of the Agent
-// surface, not a surface, so its target carries its own id and opens History.
-const GO_TARGETS: { letter: string; surface: SurfaceKey; label: string; id?: string; history?: boolean }[] = [
+// g-leader surface teleports (collision-free letters; see design spec). Conversation History and Canvases are modes of
+// the Agent surface, not surfaces, so each target carries its own id and the opener that shows its mode.
+const GO_TARGETS: {
+    letter: string;
+    surface: SurfaceKey;
+    label: string;
+    id?: string;
+    open?: (model: AgentsViewModel) => void;
+}[] = [
     { letter: "c", surface: "cockpit", label: "Cockpit (home)" },
     { letter: "a", surface: "agent", label: "Agent" },
     { letter: "j", surface: "jarvis", label: "Jarvis (projects, records, recall)" },
     { letter: "r", surface: "radar", label: "Radar" },
-    { letter: "s", surface: "agent", label: "Conversation History", id: "go:history", history: true },
+    { letter: "s", surface: "agent", label: "Conversation History", id: "go:history", open: showHistory },
+    { letter: "v", surface: "agent", label: "Canvases", id: "go:canvases", open: showCanvases },
     { letter: "f", surface: "files", label: "Diff" },
     { letter: "u", surface: "usage", label: "Usage" },
     { letter: "b", surface: "code", label: "Code (browse source)" },
@@ -187,9 +201,15 @@ const clickThrough = (selector: string): boolean | void => {
 const terminalSwapped = (model: AgentsViewModel) =>
     focusedCanvasMode(model) != null || focusedDocReview(model)?.mode === "review";
 
-// `[` `]` belong to the boards in canvas mode and to the tabs in review mode, so the surface switch stands down
-// while the focused agent shows either. The agent switches stay live: the tree stays on screen beside them.
-const inAgentSwap = (model: AgentsViewModel, ctx: KeyContext) => ctx.surface === "agent" && terminalSwapped(model);
+// A canvas open in Agent → Canvases pages through its boards with `[` `]` as the agent's canvas does.
+const galleryViewerOpen = () =>
+    globalStore.get(centerModeAtom) === "canvases" && globalStore.get(canvasGalleryAtom).view === "viewer";
+
+// `[` `]` belong to the boards in canvas mode (and in the gallery's viewer) and to the tabs in review mode, so the
+// surface switch stands down while the focused agent shows either. The agent switches stay live: the tree stays on
+// screen beside them.
+const inAgentSwap = (model: AgentsViewModel, ctx: KeyContext) =>
+    ctx.surface === "agent" && (terminalSwapped(model) || galleryViewerOpen());
 
 // The close-agent chord closes the tab the keys were typed in: the pane that took them (paneId), which is not the selected
 // agent when they went to the terminal docked under it (terminaldock.ts); the selected agent when the pane names none. A
@@ -282,7 +302,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
         group: "Go to",
         label: t.label,
         when: navigate,
-        run: () => (t.history ? showHistory(model) : globalStore.set(model.surfaceAtom, t.surface)),
+        run: () => (t.open ? t.open(model) : globalStore.set(model.surfaceAtom, t.surface)),
     }));
 
     return [
@@ -995,6 +1015,18 @@ const agentNav = (ctx: KeyContext) =>
     navigate(ctx) && ctx.surface === "agent" && centerAtRest() && initiativePopoverClosed();
 const agentNavStrict = (ctx: KeyContext) =>
     navigateStrict(ctx) && ctx.surface === "agent" && centerAtRest() && initiativePopoverClosed();
+// Canvases (the gallery) covers the terminal as History does, with keys of its own: the arrows, Enter and `/` on its grid,
+// the arrows, `[` `]` and Escape on an open canvas. Each takes its view from canvasGalleryAtom, so they never share a key.
+const onGallery = (ctx: KeyContext) =>
+    ctx.surface === "agent" && globalStore.get(centerModeAtom) === "canvases" && initiativePopoverClosed();
+const galleryNav = (ctx: KeyContext) => navigate(ctx) && onGallery(ctx);
+const galleryView = () => globalStore.get(canvasGalleryAtom).view;
+const inGalleryGrid = (ctx: KeyContext) => galleryNav(ctx) && galleryView() === "grid";
+const inGalleryViewer = (ctx: KeyContext) => galleryNav(ctx) && galleryView() === "viewer";
+// An open canvas and the clean-up mode go back to the grid on Escape, so the Escape that leaves the centre stands down;
+// the grid has nothing to back out of, and leaves. Escape inside the search box is the box's own.
+const galleryHoldsEscape = () =>
+    globalStore.get(centerModeAtom) === "canvases" && globalStore.get(canvasGalleryAtom).view !== "grid";
 
 // Agent (Focus) surface bindings. Moved out of agentsurface.tsx so the registry has one home
 // and the array is stable: run() reads live atoms instead of closing over per-render focus/order.
@@ -1098,7 +1130,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             id: "agent:leave-center",
             keys: "Escape",
             group: "Agent",
-            label: "Back to the terminal (from History or a session)",
+            label: "Back to the terminal (from History, a session or the canvases)",
             // exclusive with agent:back (which needs the centre at rest) and with subagent:back (which needs a focused
             // subagent), so Escape never means two things. Deliberately not gated on noCanvas(): the focused agent's
             // canvas or review can still be on while History covers the terminal, and Escape must leave History then
@@ -1107,8 +1139,102 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                 navigateStrict(ctx) &&
                 ctx.surface === "agent" &&
                 !centerAtRest() &&
-                globalStore.get(focusSubagentAtom) == null,
+                globalStore.get(focusSubagentAtom) == null &&
+                !galleryHoldsEscape(),
             run: () => showTerminal(),
+        },
+        // Agent → Canvases. Moving over cards and paging through boards are postures, not actions to search for.
+        ...(
+            [
+                ["ArrowLeft", "canvases:left", "Previous canvas"],
+                ["ArrowRight", "canvases:right", "Next canvas"],
+                ["ArrowUp", "canvases:up", "Canvas above"],
+                ["ArrowDown", "canvases:down", "Canvas below"],
+            ] as const
+        ).map(
+            ([key, id, label]): Binding => ({
+                id,
+                keys: key,
+                group: "Agent",
+                label,
+                paletteHidden: true,
+                when: inGalleryGrid,
+                run: () => moveGalleryCards(key, Date.now()),
+            })
+        ),
+        {
+            id: "canvases:open",
+            keys: "Enter",
+            group: "Agent",
+            label: "Open the canvas",
+            paletteHidden: true,
+            when: inGalleryGrid,
+            // an empty grid has no card under the cursor, so the key passes
+            run: () => openCursorCanvas(Date.now()),
+        },
+        {
+            id: "canvases:search",
+            keys: "/",
+            group: "Agent",
+            label: "Search canvases",
+            paletteHidden: true,
+            when: inGalleryGrid,
+            run: () => {
+                const el = document.querySelector<HTMLInputElement>("[data-canvas-gallery-search]");
+                if (el == null) {
+                    return false; // no canvas anywhere draws no search box
+                }
+                el.focus();
+                el.select(); // typing replaces the last query, as in every editor's search box
+            },
+        },
+        {
+            id: "canvases:prev-board",
+            keys: "ArrowLeft",
+            group: "Agent",
+            label: "Previous board",
+            paletteHidden: true,
+            when: inGalleryViewer,
+            run: () => stepViewerBoard(-1),
+        },
+        {
+            id: "canvases:next-board",
+            keys: "ArrowRight",
+            group: "Agent",
+            label: "Next board",
+            paletteHidden: true,
+            when: inGalleryViewer,
+            run: () => stepViewerBoard(1),
+        },
+        // [ and ] page through the boards as they do on an agent's canvas, but the viewer's hints name only the arrows: a
+        // Vietnamese Telex IME turns them into ơ and ư
+        {
+            id: "canvases:prev-board-bracket",
+            keys: "[",
+            group: "Agent",
+            label: "Previous board",
+            paletteHidden: true,
+            when: inGalleryViewer,
+            run: () => stepViewerBoard(-1),
+        },
+        {
+            id: "canvases:next-board-bracket",
+            keys: "]",
+            group: "Agent",
+            label: "Next board",
+            paletteHidden: true,
+            when: inGalleryViewer,
+            run: () => stepViewerBoard(1),
+        },
+        {
+            id: "canvases:back",
+            keys: "Escape",
+            group: "Agent",
+            label: "Back to the canvases",
+            paletteHidden: true,
+            // strict like every Escape here; agent:leave-center stands down while a canvas is open (galleryHoldsEscape)
+            when: (ctx) => navigateStrict(ctx) && onGallery(ctx) && galleryView() === "viewer",
+            run: () => closeCanvas(),
         },
         {
             id: "agent:prev",

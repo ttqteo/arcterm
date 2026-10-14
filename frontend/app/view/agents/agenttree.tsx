@@ -46,6 +46,7 @@ import {
     GitBranch,
     Hash,
     History as HistoryIcon,
+    LayoutGrid,
     Loader2,
     Moon,
     Pencil,
@@ -90,7 +91,7 @@ import {
     useRunQueueFeed,
 } from "./runqueuestore";
 import { runMenuEntries } from "./runrowmenu";
-import { centerModeAtom, showHistory, showSession, showTerminal } from "./agentcenter";
+import { centerModeAtom, showCanvases, showHistory, showSession, showTerminal } from "./agentcenter";
 import {
     agentDigits,
     agentsElsewhere,
@@ -2401,6 +2402,22 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                 >
                     <HistoryIcon size={14} aria-hidden />
                     Conversation History
+                </button>
+                {/* no count: the row reads nothing from disk until the gallery opens */}
+                <button
+                    type="button"
+                    data-agent-canvases-open
+                    aria-current={center === "canvases" ? "true" : undefined}
+                    onClick={() => showCanvases(model)}
+                    className={cn(
+                        "flex w-full cursor-pointer items-center gap-[8px] rounded-[8px] px-[10px] py-[7px] text-[13px]",
+                        center === "canvases"
+                            ? "bg-surface-selected text-primary"
+                            : "text-secondary hover:bg-surface-hover hover:text-primary"
+                    )}
+                >
+                    <LayoutGrid size={14} aria-hidden />
+                    Canvases
                 </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-[8px]">

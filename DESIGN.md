@@ -360,8 +360,8 @@ content is always fluid.
   window controls.
 - **Nav rail** — fixed 78px wide (56px on narrow windows via
   `navRailCollapsed(windowWidth)` in `navrailwidth.ts`).
-- **Agent surface tree** — a "Conversation History" row (New agent is the app
-  bar's, not repeated here), then three sections (Active, Terminals, Conversations), each a counted header
+- **Agent surface tree** — a "Conversation History" row and a "Canvases" row
+  under it (New agent is the app bar's, not repeated here), then three sections (Active, Terminals, Conversations), each a counted header
   that folds it, holding collapsible project folder rows of one-line rows
   (status dot or mark, name, meta). The selected row is a grey fill
   (`bg-surface-selected`). Asking is a word in the row, not a filled row: an

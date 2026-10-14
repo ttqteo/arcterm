@@ -4,7 +4,14 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom, createStore } from "jotai";
 import { beforeEach, describe, expect, it } from "vitest";
-import { centerForSelection, centerModeAtom, showHistory, showSession, showTerminal } from "./agentcenter";
+import {
+    centerForSelection,
+    centerModeAtom,
+    showCanvases,
+    showHistory,
+    showSession,
+    showTerminal,
+} from "./agentcenter";
 import type { AgentsViewModel, SurfaceKey } from "./agents";
 
 // `member` seeds sessionsMemberAtom, so a test can tell a member that was left alone from one that was set
@@ -46,6 +53,13 @@ describe("openers", () => {
         const model = stub();
         showHistory(model);
         expect(globalStore.get(centerModeAtom)).toBe("history");
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+    });
+
+    it("showCanvases opens the gallery and switches to the Agent surface", () => {
+        const model = stub();
+        showCanvases(model);
+        expect(globalStore.get(centerModeAtom)).toBe("canvases");
         expect(globalStore.get(model.surfaceAtom)).toBe("agent");
     });
 
