@@ -47,6 +47,14 @@ does not, say what you saw and it becomes a bug row under Actionable.
   chip: that row's second line reads `<run title> · Check · base tree` (the plan's title, else the goal's first line),
   not `Run 973afb · …`, and ↗ still opens the run. `frontend/app/cockpit/jobqueuepanel.tsx`.
 
+**2026-10-14 (What's new: highlight cards, the rest folded)**
+
+- [ ] In the dev app (`task verify:ui -- whats-new`, then by eye), open What's new from the footer's version: each
+  release shows 4–5 cards (title, two lines of text, Try it at the bottom right), then one "N more changes · M fixes"
+  line. A cut card opens to its whole note on click; one that fits shows no pointer. In the fold, a note with no bold
+  lead that fits two lines (0.15.11 "A new waiting item flashes…") has no chevron and stays aligned with the rows
+  above. Check the cards read well on the Light theme too. `frontend/app/cockpit/whatsnewsheet.tsx`.
+
 **2026-10-14 (Claude memory lint in the Claude mod)**
 
 - [ ] After the next build and `task install`, on Windows and on the Mac: add a line `- [X](x.md) — test` to the
