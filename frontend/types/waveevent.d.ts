@@ -20,6 +20,7 @@ declare global {
         | "jarvis:volunteer"
         | "system:slept"
         | "jobqueue"
+        | "ideas:changed"
         | "storage:scan"
         | "dag:child-done"
         | "dag:gate-open"
@@ -30,6 +31,7 @@ declare global {
         | "dag:task-stalled"
         | "dag:task-retried"
         | "run:event"
+        | "runqueue:changed"
     ;
 
     type WaveEvent = {
@@ -52,6 +54,7 @@ declare global {
         { event: "jarvis:volunteer"; data?: VolunteerData; } | 
         { event: "system:slept"; data?: SleptData; } | 
         { event: "jobqueue"; data?: JobQueueData; } | 
+        { event: "ideas:changed"; data?: IdeasChangedData; } | 
         { event: "storage:scan"; data?: StorageReport; } | 
         { event: "dag:child-done"; data?: string; } | 
         { event: "dag:gate-open"; data?: string; } | 
@@ -61,7 +64,8 @@ declare global {
         { event: "dag:child-ask"; data?: string; } | 
         { event: "dag:task-stalled"; data?: string; } | 
         { event: "dag:task-retried"; data?: string; } | 
-        { event: "run:event"; data?: RunEventData; }
+        { event: "run:event"; data?: RunEventData; } | 
+        { event: "runqueue:changed"; data?: RunQueueChangedData; }
     );
 
 }

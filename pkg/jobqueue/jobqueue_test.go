@@ -136,6 +136,27 @@ func TestPressureFromLevel(t *testing.T) {
 	}
 }
 
+func TestPressureFromCommit(t *testing.T) {
+	cases := []struct {
+		name                    string
+		commit, phys, availPhys uint64
+		want                    Pressure
+	}{
+		{"commit under the RAM: the free-RAM rule decides", 20 * gb, 32 * gb, 12 * gb, PressureUnknown},
+		{"commit at the RAM: the machine starts to page", 32 * gb, 32 * gb, 8 * gb, PressureWarn},
+		{"well past the RAM but RAM still free", 46 * gb, 32 * gb, 10 * gb, PressureWarn},
+		// 2026-10-14: 46 GB committed on 32 GB, 5.2 GB free, paging to a hard disk until Postgres stalled
+		{"well past the RAM and little left", 46 * gb, 32 * gb, 5 * gb, PressureCritical},
+		{"little RAM left but commit under 130%", 40 * gb, 32 * gb, 2 * gb, PressureWarn},
+		{"no reading", 0, 0, 0, PressureUnknown},
+	}
+	for _, tc := range cases {
+		if got := PressureFromCommit(tc.commit, tc.phys, tc.availPhys); got != tc.want {
+			t.Errorf("%s: PressureFromCommit(%d, %d, %d) = %v, want %v", tc.name, tc.commit, tc.phys, tc.availPhys, got, tc.want)
+		}
+	}
+}
+
 func TestPauseStartsEveryJobUntilItEnds(t *testing.T) {
 	var until atomic.Value
 	until.Store(time.Now().Add(time.Hour))

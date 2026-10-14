@@ -84,7 +84,7 @@ export function toggleTaskExtrasOpen(runId: string, taskId: string): void {
     globalStore.set(treeFoldsAtom, (f) => ({ ...f, extrasOpen: toggled(f.extrasOpen, taskFoldKey(runId, taskId)) }));
 }
 
-function lastPathSegment(path: string | undefined): string {
+export function lastPathSegment(path: string | undefined): string {
     return (path ?? "").split(/[\\/]/).filter(Boolean).pop() ?? "";
 }
 
@@ -123,6 +123,7 @@ export function lineageAtomFor(agentsAtom: Atom<AgentVM[]>): Atom<Lineage> {
                 project: lastPathSegment(leadRun?.projectpath),
                 leadStarted: (leadRun?.phases ?? []).some((p) => (p.workerorefs ?? []).length > 0),
                 originId: leadRun?.origintabid || undefined,
+                createdTs: leadRun?.createdts,
                 status: leadRun?.status,
                 landPath: leadRun?.landpath,
                 land: leadRun?.land,

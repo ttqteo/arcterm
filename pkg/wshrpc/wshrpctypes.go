@@ -39,17 +39,20 @@ type WshRpcInterface interface {
 	DevServerCommands
 	AgentCommands
 	AgentSyncCommands
+	LearnCommands
 	ToolsCommands
 	SessionCommands
 	StorageCommands
 	ChannelCommands
 	RunCommands
+	RunQueueCommands
 	DagCommands
 	JobQueueCommands
 	RadarCommands
 	JarvisCommands
 	EffortCommands
 	NoteCommands
+	IdeaCommands
 	SecretCommands
 	ClaudeAccountCommands
 	AskCommands

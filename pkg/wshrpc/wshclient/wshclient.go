@@ -7,6 +7,7 @@ package wshclient
 
 import (
 	"github.com/wavetermdev/waveterm/pkg/baseds"
+	"github.com/wavetermdev/waveterm/pkg/ideastore"
 	"github.com/wavetermdev/waveterm/pkg/storage"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wconfig"
@@ -216,6 +217,12 @@ func ClaudeAccountRenameCommand(w *wshutil.WshRpc, data wshrpc.CommandClaudeAcco
 func ClaudeAccountSetEmailCommand(w *wshutil.WshRpc, data wshrpc.CommandClaudeAccountSetEmailData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "claudeaccountsetemail", data, opts)
 	return err
+}
+
+// command "claudecontext", wshserver.ClaudeContextCommand
+func ClaudeContextCommand(w *wshutil.WshRpc, data wshrpc.CommandClaudeContextData, opts *wshrpc.RpcOpts) (*wshrpc.CommandClaudeContextRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandClaudeContextRtnData](w, "claudecontext", data, opts)
+	return resp, err
 }
 
 // command "cleanstorage", wshserver.CleanStorageCommand
@@ -787,6 +794,30 @@ func HtmlPreviewServeCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpt
 	return resp, err
 }
 
+// command "ideaadd", wshserver.IdeaAddCommand
+func IdeaAddCommand(w *wshutil.WshRpc, data wshrpc.CommandIdeaAddData, opts *wshrpc.RpcOpts) (*ideastore.Idea, error) {
+	resp, err := sendRpcRequestCallHelper[*ideastore.Idea](w, "ideaadd", data, opts)
+	return resp, err
+}
+
+// command "idealist", wshserver.IdeaListCommand
+func IdeaListCommand(w *wshutil.WshRpc, data wshrpc.CommandIdeaTargetData, opts *wshrpc.RpcOpts) (*ideastore.SessionIdeas, error) {
+	resp, err := sendRpcRequestCallHelper[*ideastore.SessionIdeas](w, "idealist", data, opts)
+	return resp, err
+}
+
+// command "ideatick", wshserver.IdeaTickCommand
+func IdeaTickCommand(w *wshutil.WshRpc, data wshrpc.CommandIdeaTargetData, opts *wshrpc.RpcOpts) (*wshrpc.CommandIdeaTickRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandIdeaTickRtnData](w, "ideatick", data, opts)
+	return resp, err
+}
+
+// command "ideaupdate", wshserver.IdeaUpdateCommand
+func IdeaUpdateCommand(w *wshutil.WshRpc, data wshrpc.CommandIdeaUpdateData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "ideaupdate", data, opts)
+	return err
+}
+
 // command "jarvisctx", wshserver.JarvisCtxCommand
 func JarvisCtxCommand(w *wshutil.WshRpc, data wshrpc.CommandJarvisCtxData, opts *wshrpc.RpcOpts) (*wshrpc.CommandJarvisCtxRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandJarvisCtxRtnData](w, "jarvisctx", data, opts)
@@ -831,6 +862,36 @@ func JobSlotCommand(w *wshutil.WshRpc, data wshrpc.CommandJobSlotData, opts *wsh
 // command "landrun", wshserver.LandRunCommand
 func LandRunCommand(w *wshutil.WshRpc, data wshrpc.CommandLandRunData, opts *wshrpc.RpcOpts) (*waveobj.RunLand, error) {
 	resp, err := sendRpcRequestCallHelper[*waveobj.RunLand](w, "landrun", data, opts)
+	return resp, err
+}
+
+// command "learnaccepted", wshserver.LearnAcceptedCommand
+func LearnAcceptedCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandLearnAcceptedRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandLearnAcceptedRtnData](w, "learnaccepted", nil, opts)
+	return resp, err
+}
+
+// command "learnamend", wshserver.LearnAmendCommand
+func LearnAmendCommand(w *wshutil.WshRpc, data wshrpc.CommandLearnAmendData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "learnamend", data, opts)
+	return err
+}
+
+// command "learndecide", wshserver.LearnDecideCommand
+func LearnDecideCommand(w *wshutil.WshRpc, data wshrpc.CommandLearnDecideData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "learndecide", data, opts)
+	return err
+}
+
+// command "learnkeys", wshserver.LearnKeysCommand
+func LearnKeysCommand(w *wshutil.WshRpc, data wshrpc.CommandLearnKeysData, opts *wshrpc.RpcOpts) ([]wshrpc.LearnKey, error) {
+	resp, err := sendRpcRequestCallHelper[[]wshrpc.LearnKey](w, "learnkeys", data, opts)
+	return resp, err
+}
+
+// command "learnnote", wshserver.LearnNoteCommand
+func LearnNoteCommand(w *wshutil.WshRpc, data wshrpc.CommandLearnNoteData, opts *wshrpc.RpcOpts) (*wshrpc.CommandLearnNoteRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandLearnNoteRtnData](w, "learnnote", data, opts)
 	return resp, err
 }
 
@@ -1089,6 +1150,36 @@ func RunAnswerCommand(w *wshutil.WshRpc, data wshrpc.CommandRunAnswerData, opts 
 func RunAsksCommand(w *wshutil.WshRpc, data wshrpc.CommandRunAskData, opts *wshrpc.RpcOpts) (*wshrpc.CommandDagAsksRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandDagAsksRtnData](w, "runasks", data, opts)
 	return resp, err
+}
+
+// command "runqueueadd", wshserver.RunQueueAddCommand
+func RunQueueAddCommand(w *wshutil.WshRpc, data wshrpc.CommandRunQueueAddData, opts *wshrpc.RpcOpts) (*wshrpc.RunQueueEntry, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.RunQueueEntry](w, "runqueueadd", data, opts)
+	return resp, err
+}
+
+// command "runqueuelist", wshserver.RunQueueListCommand
+func RunQueueListCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandRunQueueListRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandRunQueueListRtnData](w, "runqueuelist", nil, opts)
+	return resp, err
+}
+
+// command "runqueueremove", wshserver.RunQueueRemoveCommand
+func RunQueueRemoveCommand(w *wshutil.WshRpc, data wshrpc.CommandRunQueueIdData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "runqueueremove", data, opts)
+	return err
+}
+
+// command "runqueuerunnext", wshserver.RunQueueRunNextCommand
+func RunQueueRunNextCommand(w *wshutil.WshRpc, data wshrpc.CommandRunQueueIdData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "runqueuerunnext", data, opts)
+	return err
+}
+
+// command "runqueuestartnow", wshserver.RunQueueStartNowCommand
+func RunQueueStartNowCommand(w *wshutil.WshRpc, data wshrpc.CommandRunQueueIdData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "runqueuestartnow", data, opts)
+	return err
 }
 
 // command "runtranscriptpath", wshserver.RunTranscriptPathCommand

@@ -143,6 +143,29 @@ describe("actsForEvent", () => {
     });
 });
 
+describe("actsForAttention: a queued start that did not start", () => {
+    const blocked = {
+        kind: "run-queue-blocked",
+        key: "run-queue-blocked:q-1a2b",
+        source: "Learned additions",
+        text: "Did not start: Rail was held: dirty",
+        action: "Start",
+        phaseidx: 0,
+        waitingsince: 1000,
+        queueid: "q-1a2b",
+    } as AttentionItem;
+
+    it("is Start now on its queue entry alone: it has no run to open, and Remove is the strip's", () => {
+        expect(actsForAttention(blocked)).toEqual([
+            { id: "run-queue-blocked:q-1a2b:start", verb: "start-queued", label: "Start now", queueId: "q-1a2b" },
+        ]);
+    });
+
+    it("offers nothing when the item names no queue entry", () => {
+        expect(actsForAttention({ ...blocked, queueid: undefined })).toEqual([]);
+    });
+});
+
 describe("actsForAttention: a chunk that came due", () => {
     it("is Work on its initiative, then Open, with no run to address", () => {
         const item = {

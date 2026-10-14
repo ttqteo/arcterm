@@ -165,3 +165,14 @@ describe("palette-needs: a plan to review", () => {
         expect(rows[0].options).toEqual([]);
     });
 });
+
+describe("palette-needs: a learned rule", () => {
+    const learn = {
+        ...item("learn-proposal", "learn:skill:notes#short"),
+        learnid: "skill:notes#short",
+    } as AttentionItem;
+    it("is a review, not a blocked item", () => {
+        const g = needsGroups(needsRows([learn], []));
+        expect(g.map((x) => [x.group, x.rows.length])).toEqual([["reviews", 1]]);
+    });
+});

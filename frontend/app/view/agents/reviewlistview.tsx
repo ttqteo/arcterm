@@ -369,7 +369,7 @@ export function ReviewList({
                                 {EMPTY_REASON[section.empty]}
                                 {section.empty === "toolarge" && section.size ? ` (${fmtBytes(section.size)})` : null}
                                 {section.oldPath ? (
-                                    <span className="ml-[8px] font-mono text-ink-faint">from {section.oldPath}</span>
+                                    <span className="ml-[8px] text-ink-faint">from {section.oldPath}</span>
                                 ) : null}
                             </div>
                         ) : (
@@ -381,7 +381,7 @@ export function ReviewList({
                                                 key={row.id}
                                                 data-review-fold={row.id}
                                                 onClick={() => setExpanded((prev) => new Set(prev).add(row.id))}
-                                                className="flex h-[24px] w-full items-center bg-surface pl-[106px] text-left font-mono text-[11px] text-muted hover:bg-surface-hover hover:text-ink-hi"
+                                                className="flex h-[24px] w-full items-center bg-surface pl-[106px] text-left text-[11px] text-muted hover:bg-surface-hover hover:text-ink-hi"
                                             >
                                                 ⋯ {row.hidden} unchanged lines
                                             </button>
@@ -431,8 +431,8 @@ function FileHeader({
             ) : (
                 <ChevronDown size={14} className="flex-none text-muted" />
             )}
-            <span className="flex-none font-mono text-[12px] font-semibold text-ink-hi">{section.name}</span>
-            <span className="min-w-0 truncate font-mono text-[11px] text-muted">{section.dir}</span>
+            <span className="flex-none text-[12px] font-semibold text-ink-hi">{section.name}</span>
+            <span className="min-w-0 truncate text-[11px] text-muted">{section.dir}</span>
             <div className="flex-1" />
             <span className="flex-none text-[11px] font-bold tabular-nums text-diff-added">+{section.adds}</span>
             <span className="flex-none text-[11px] font-bold tabular-nums text-diff-removed">−{section.dels}</span>
@@ -537,7 +537,7 @@ function CommentBoxView({
                 "my-[8px] flex flex-col gap-2 rounded-[8px] border border-accent bg-surface-raised px-3 py-[10px] font-sans"
             )}
         >
-            <span className={cn(META_TEXT, "font-mono")}>{commentRef(ref0)}</span>
+            <span className={cn(META_TEXT, "tabular-nums")}>{commentRef(ref0)}</span>
             <textarea
                 ref={ref}
                 rows={3}
@@ -590,7 +590,7 @@ function CommentCard({
         >
             <div className="flex items-center gap-2">
                 <span className={CHIP}>{n}</span>
-                <span data-review-card-ref className={cn(META_TEXT, "min-w-0 truncate font-mono")}>
+                <span data-review-card-ref className={cn(META_TEXT, "min-w-0 truncate tabular-nums")}>
                     {commentRef(comment)}
                 </span>
                 <div className="flex-1" />

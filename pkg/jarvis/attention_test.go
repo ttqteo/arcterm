@@ -6,6 +6,7 @@ package jarvis
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -574,5 +575,55 @@ func TestBuildAttentionShortensEveryGoalSource(t *testing.T) {
 		if it.Source != want {
 			t.Errorf("%s source = %q, want %q", it.Kind, it.Source, want)
 		}
+	}
+}
+
+func queueEntry(id, title, state, reason string, queuedTs int64) wshrpc.RunQueueEntry {
+	return wshrpc.RunQueueEntry{Id: id, Title: title, State: state, Reason: reason, QueuedTs: queuedTs}
+}
+
+func TestBuildAttentionListsABlockedQueueEntryButNotAWaitingOne(t *testing.T) {
+	items := BuildAttention(AttentionInput{Queue: []wshrpc.RunQueueEntry{
+		queueEntry("q-aaaa", "Brainstorm ideas", wshrpc.RunQueueState_Waiting, "", 100),
+		queueEntry("q-bbbb", "Learned additions", wshrpc.RunQueueState_Blocked, "Rail chắt lọc was held: the merge conflicts with main", 200),
+	}})
+	if len(items) != 1 {
+		t.Fatalf("want one item for the blocked entry, got %+v", items)
+	}
+	want := wshrpc.AttentionItem{
+		Kind:         AttentionRunQueueBlocked,
+		Key:          "run-queue-blocked:q-bbbb",
+		QueueId:      "q-bbbb",
+		Source:       "Learned additions",
+		Text:         "Did not start: Rail chắt lọc was held: the merge conflicts with main",
+		Action:       "Start",
+		WaitingSince: 200,
+		Why:          "Start now starts it anyway; Remove drops it from the queue.",
+	}
+	if !reflect.DeepEqual(items[0], want) {
+		t.Fatalf("item = %+v, want %+v", items[0], want)
+	}
+}
+
+func TestBuildAttentionOrdersBlockedQueueEntriesOldestFirstAfterAsks(t *testing.T) {
+	oref := "block:b1"
+	items := BuildAttention(AttentionInput{
+		PendingAsks: map[string]agentask.PendingAsk{oref: {AskId: "1", Ts: 900, Questions: []baseds.AgentAskQuestion{{Question: "pick"}}}},
+		Queue: []wshrpc.RunQueueEntry{
+			queueEntry("q-late", "late", wshrpc.RunQueueState_Blocked, "x", 300),
+			queueEntry("q-early", "early", wshrpc.RunQueueState_Blocked, "x", 100),
+		},
+	})
+	var kinds, keys []string
+	for _, it := range items {
+		kinds = append(kinds, it.Kind)
+		keys = append(keys, it.Key)
+	}
+	want := []string{AttentionAsk, AttentionRunQueueBlocked, AttentionRunQueueBlocked}
+	if strings.Join(kinds, ",") != strings.Join(want, ",") {
+		t.Fatalf("kinds = %v, want %v", kinds, want)
+	}
+	if keys[1] != "run-queue-blocked:q-early" || keys[2] != "run-queue-blocked:q-late" {
+		t.Fatalf("keys = %v, want oldest first", keys)
 	}
 }

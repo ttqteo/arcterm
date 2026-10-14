@@ -128,6 +128,7 @@ const ROW_DOT: Record<string, string> = {
     "dag-blocked": "bg-error",
     ask: "bg-accent",
     "run-land-held": "bg-warning",
+    "run-queue-blocked": "bg-warning",
 };
 
 const FOCUS_RING = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";

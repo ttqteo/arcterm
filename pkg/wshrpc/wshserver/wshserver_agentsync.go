@@ -9,6 +9,8 @@ import (
 	"os"
 
 	"github.com/wavetermdev/waveterm/pkg/agentsync"
+	"github.com/wavetermdev/waveterm/pkg/claudecontext"
+	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
@@ -91,6 +93,9 @@ func (ws *WshServer) AgentSyncSkillsCommand(ctx context.Context) (*wshrpc.Comman
 	out := make([]wshrpc.AgentSyncSkill, len(rows))
 	for i, r := range rows {
 		out[i] = wshrpc.AgentSyncSkill{Name: r.Name, Description: r.Description, States: r.States, Deltas: r.Deltas}
+		for _, a := range r.Additions {
+			out[i].Additions = append(out[i].Additions, learnAddition(a.Key, a.Text, a.Learned, a.Count))
+		}
 	}
 	cols := make([]wshrpc.AgentSyncSkillColumn, 0)
 	for _, c := range agentsync.SkillColumns(p) {
@@ -108,4 +113,19 @@ func (ws *WshServer) AgentSyncSkillsCommand(ctx context.Context) (*wshrpc.Comman
 		Skills: out, Columns: cols, SkillsRoot: p.SkillsRoot,
 		Unmanaged: skillMoves(plan.Moves), Unresolved: unresolved,
 	}, nil
+}
+
+func (ws *WshServer) ClaudeContextCommand(ctx context.Context, data wshrpc.CommandClaudeContextData) (*wshrpc.CommandClaudeContextRtnData, error) {
+	files, err := claudecontext.Scan(data.Path, wavebase.GetHomeDir())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]wshrpc.ClaudeContextFile, len(files))
+	for i, f := range files {
+		out[i] = wshrpc.ClaudeContextFile{
+			Group: f.Group, Path: f.Path, Label: f.Label, Exists: f.Exists, Size: f.Size, ModTs: f.ModTs,
+			Note: f.Note, Description: f.Description,
+		}
+	}
+	return &wshrpc.CommandClaudeContextRtnData{Files: out}, nil
 }

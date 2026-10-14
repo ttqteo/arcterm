@@ -1,16 +1,19 @@
 // arcterm's Claude Code mod. `wsh install-agent-hooks` writes it to ~/.arc/claude-mod with the wsh path
 // substituted and lists that folder in CLAUDE_CODE_PLUGIN_DIRS, so every claude launch loads it.
-// outside an arcterm block every hook passes straight through.
+// outside an arcterm block every hook passes straight through, but the memory lint.
 import { atom, read, update } from "claude-code";
 import type { EngineInterface, Register } from "claude-code";
 import type { AskQuestion } from "./ask-core";
-import { askPayload, cardAnswer, cardCanAsk, parseAskReply } from "./ask-core";
+import { askPayload, cardAnswer, cardCanAsk, parseAskReply, settleAsk } from "./ask-core";
 import { drawCacheMiss } from "./cache-band";
 import { cacheMissNotice, transcriptEntries } from "./cache-core";
 import { controlMsg, deliver, endTurn, steerNotice, takeLines } from "./control-core";
 import type { Turn } from "./control-core";
 import { denial } from "./guard-core";
+import { promptNudge } from "./ideas-core";
 import { jobslotArgs, jobslotLine } from "./jobslot-core";
+import { claudeConfigDir, memoryDir, transcriptFile } from "./claudepaths-core";
+import { lintContext, lintMemory, parseMemory, referencedPaths, taskNames } from "./memlint-core";
 import type { Ran } from "./mention-core";
 import { leadingMention, mentionRefusal, sendArgs, sendOutcome } from "./mention-core";
 import { idleArgs } from "./status-core";
@@ -23,9 +26,12 @@ const WSH = "__WSH_PATH__";
 // set at session.start; a reload runs register and session.start again, so it never goes stale
 let active = false;
 
-// the session's transcript, as its latest prompt named it; a status report carries it so a cockpit
-// that replays the report still follows the file. null after a reload until the next prompt
+// the session's transcript, worked out at its latest prompt; a status report carries it so a cockpit that
+// replays the report still follows the file. null after a reload until the next prompt
 let transcriptPath: string | null = null;
+
+// the directory the session started in, which names its project folder; set at session.start
+let sessionCwd: string | null = null;
 
 // the line under claude's dialog while the card asks beside it
 const ALSO_ON_CARD = "Also answerable in arcterm's ask card";
@@ -225,11 +231,99 @@ async function askTokengate($: EngineInterface, group: Group): Promise<SpawnVerd
     return verdict;
 }
 
+async function configDirOf($: EngineInterface): Promise<string | null> {
+    return claudeConfigDir({
+        configDir: await $.env.get("CLAUDE_CONFIG_DIR"),
+        home: (await $.env.get("USERPROFILE")) || (await $.env.get("HOME")),
+    });
+}
+
+// a prompt goes in: the spawn gate forgets a turn's say, and the transcript path is worked out afresh (a /clear
+// or a resume changes the session's id). claude's UserPromptSubmit hook carried the path, but an org that
+// manages Claude Code (Team, Enterprise) passes classic hooks over for a plugin a person installs
+async function promptStarted($: EngineInterface) {
+    spawnGate.promptSubmitted();
+    try {
+        const configDir = await configDirOf($);
+        transcriptPath = configDir && sessionCwd ? transcriptFile(configDir, sessionCwd, await $.session.id()) : null;
+    } catch (err) {
+        $.ui.log(`arc: working out the transcript path failed: ${String(err)}`, { to: "debug" });
+    }
+}
+
+// the prompt goes on whatever the tick does. the session's id is passed because a block-targeted tick errors
+// until the block has a transcript path
+async function nudgeIdeas($: EngineInterface) {
+    try {
+        await promptNudge(
+            {
+                run: (argv) => $.process.run(argv),
+                append: async (text) => {
+                    const kept = await $.session.append({
+                        message: { type: "user", content: [{ type: "text", text }] },
+                    });
+                    if (kept.deny !== undefined) {
+                        throw new Error(kept.deny);
+                    }
+                },
+                log: (msg) => $.ui.log(msg, { to: "debug" }),
+            },
+            WSH,
+            await $.session.id()
+        );
+    } catch (err) {
+        $.ui.log(`arc: the ideas nudge failed: ${String(err)}`, { to: "debug" });
+    }
+}
+
+// lints the project's Claude memory dir at session start, so a memory gone stale on any machine is named there;
+// the person gets a toast, the model the list as a row it reads before the first prompt. silent when the dir
+// is clean or there is none. claude's SessionStart additionalContext or a prompt.compose section would be the
+// natural door, but a managed install's security plugin bypasses both for a user-tier plugin. a reload of the
+// mod (session.start again) appends the row again
+async function lintMemoryDir($: EngineInterface, cwd: string): Promise<void> {
+    const configDir = await configDirOf($);
+    if (!configDir) {
+        return;
+    }
+    const dir = memoryDir(configDir, cwd);
+    if (!(await $.fs.exists(`${dir}/MEMORY.md`))) {
+        return;
+    }
+    const entries = await $.fs.list(dir);
+    const files = entries.filter((f) => f.kind === "file" && f.name.endsWith(".md") && f.name !== "MEMORY.md");
+    const memories = await Promise.all(
+        files.map(async (f) => parseMemory({ name: f.name, text: await $.fs.read(`${dir}/${f.name}`), mtimeMs: f.mtimeMs }))
+    );
+    const missingPaths = new Set<string>();
+    for (const p of new Set(memories.flatMap((m) => referencedPaths(m.body)))) {
+        if (!(await $.fs.exists(p))) {
+            missingPaths.add(p);
+        }
+    }
+    const tasks = (await $.fs.exists("Taskfile.yml")) ? taskNames(await $.fs.read("Taskfile.yml")) : null;
+    const index = await $.fs.read(`${dir}/MEMORY.md`);
+    const problems = lintMemory({ index, memories, missingPaths, tasks, nowMs: await $.clock.now() });
+    if (problems.length === 0) {
+        return;
+    }
+    const kept = await $.session.append({
+        message: { type: "user", content: [{ type: "text", text: lintContext(dir, problems) }] },
+    });
+    if (kept.deny !== undefined) {
+        throw new Error(kept.deny);
+    }
+    $.ui.toast(`arc: memory lint found ${problems.length} issue(s); Claude will list them`);
+}
+
 export const register: Register = (on) => {
     on("session.start", async ($, e, next) => {
         active = Boolean((await $.env.get("WAVETERM_BLOCKID")) && (await $.env.get("WAVETERM_JWT")));
         spawnGate.sessionStarted();
+        sessionCwd = e.cwd;
         const started = await next(e);
+        // inside arcterm or not: a memory goes stale wherever claude runs
+        await lintMemoryDir($, e.cwd).catch((err) => $.ui.log(`arc: memory lint failed: ${String(err)}`, { to: "debug" }));
         if (active) {
             void listenToCockpit($);
         }
@@ -260,6 +354,10 @@ export const register: Register = (on) => {
     on("prompt.submit", async ($, e, next) => {
         const m = active && e.origin.kind === "composer" ? leadingMention(e.text) : null;
         if (m === null) {
+            await promptStarted($);
+            if (active) {
+                await nudgeIdeas($);
+            }
             return next(e);
         }
         const putBack = () =>
@@ -282,12 +380,6 @@ export const register: Register = (on) => {
             putBack();
         }
         return { drop: out.notice };
-    });
-
-    on("classic.UserPromptSubmit", ($, e, next) => {
-        transcriptPath = e.transcript_path || null;
-        spawnGate.promptSubmitted();
-        return next(e);
     });
 
     on("turn.start", async ($, e, next) => {
@@ -391,16 +483,17 @@ export const register: Register = (on) => {
         })();
         const fromDialog = next(e);
         try {
-            const first = await Promise.race([
-                fromDialog.then((result) => ({ isDialog: true as const, result })),
-                fromCard.then((reply) => ({ isDialog: false as const, reply })),
-            ]);
-            if (first.isDialog) {
-                return first.result;
+            const settled = await settleAsk(
+                fromDialog,
+                fromCard.then((reply) => cardAnswer(e.questions, reply)),
+                (answer) => "deny" in answer,
+                (ms) => $.clock.sleep(ms)
+            );
+            if (settled && "dialog" in settled) {
+                return settled.dialog;
             }
-            const answer = cardAnswer(e.questions, first.reply);
-            if (answer) {
-                return answer;
+            if (settled) {
+                return settled.card;
             }
         } finally {
             if (e.tool_use_id) {
@@ -422,6 +515,9 @@ export const register: Register = (on) => {
     // the settings hooks arcterm installs for AskUserQuestion project a keystroke-answered card of their own
     // (`wsh ask`), which would stand over the one the call above is waiting on. answering here without
     // next(e) skips every settings PreToolUse hook beneath, so the call goes on to its dialog
+    // an org that manages Claude Code (Team, Enterprise) passes this and the PostToolUse hook below over, so the
+    // server keeps a waited ask when the settings hook projects the same questions, and settleAsk lets the
+    // dialog's answer win over the cancel the settings hooks then send
     on("classic.PreToolUse", { tool: "AskUserQuestion" }, ($, e, next) => (racesCard(e.questions) ? {} : next(e)));
 
     // an answer in claude's dialog runs the PostToolUse hooks inside the tool.call's next(e), before it

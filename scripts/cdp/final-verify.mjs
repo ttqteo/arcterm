@@ -6,7 +6,7 @@
 // A dev app from the main checkout is usually running, so this one shares nothing it uses: its own CDP and Vite
 // ports, WebView2 profile, store, cargo target dir and dist/bin, and it installs no global agent hooks or skills.
 // Exit 0 passes, verify.mjs's nonzero code fails, and EXIT_UNVERIFIED with the reason as the last stdout line means
-// the UI could not be checked at all.
+// the UI could not be checked at all (verify.mjs gives it too, when the dev app's code never started).
 //
 //   ARC_FINAL_OUT=<dir> node scripts/cdp/final-verify.mjs [scenario...]
 //
@@ -26,7 +26,8 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-export const EXIT_UNVERIFIED = 3;
+import { EXIT_UNVERIFIED } from "./report.mjs";
+export { EXIT_UNVERIFIED };
 
 const DEFAULT_PORT = 9230;
 const PORT_SCAN = 100;
@@ -401,6 +402,8 @@ async function main() {
                     : `dev app exited with code ${dev.exitCode} before answering on :${port}`) + (said ? `: ${said}` : "");
         } else {
             code = await runVerify(port, scenarios);
+            // its reason line is printed already, but the store cleanup below may print after it; say it again last
+            if (code === EXIT_UNVERIFIED) reason = `the dev app's code on :${vitePort} did not start, so no scenario ran`;
             if (mode === "browser" && code === 0) {
                 const { SCENARIOS } = await import("./scenarios.mjs");
                 const hostOnly = hostOnlyScenarios(SCENARIOS, scenarios);

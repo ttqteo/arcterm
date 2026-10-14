@@ -3,7 +3,7 @@
 // and exits nonzero on any failure. Usage: node scripts/cdp/verify.mjs [name...]
 import { mkdirSync, writeFileSync } from "node:fs";
 import { attach } from "./attach.mjs";
-import { contactSheetHtml, exitCode, formatResults, shotsManifest, shotsUnder } from "./report.mjs";
+import { EXIT_UNVERIFIED, contactSheetHtml, exitCode, formatResults, renderWait, shotsManifest, shotsUnder } from "./report.mjs";
 import { SCENARIOS } from "./scenarios.mjs";
 
 const only = process.argv.slice(2).filter((a) => !a.startsWith("-"));
@@ -17,19 +17,37 @@ const cdpPort = Number(process.env.CDP_PORT) || 9222; // worktree dev app can ru
 const h = await attach(cdpPort);
 console.log(`attached to ${h.url}`);
 
-// a freshly started app answers CDP before its first render, and a cold vite pre-bundles for a while first. Past
-// the deadline the scenarios run anyway and fail on the missing nav, which is a real failure of the app.
-const RENDER_WAIT_MS = 120_000;
+// wait for the first render (renderWait in report.mjs has the deadlines). A boot error, or an app that started and
+// never renders, runs the scenarios anyway, which fail on the missing nav: a real failure of the app. An app whose
+// code never started ran nothing, so that ends here as unverified, with the reason as the last line for the engine.
 const RENDER_POLL_MS = 500;
+const BOOT_STATE = `JSON.stringify({
+    nav: !!document.querySelector("nav button"),
+    boot: window.__arcBoot ?? null,
+    overlay: document.querySelector("vite-error-overlay")?.shadowRoot?.querySelector(".message")?.textContent ?? null,
+})`;
 const waitStart = Date.now();
-let rendered = false;
-while (!rendered && Date.now() - waitStart < RENDER_WAIT_MS) {
-    // a reload mid-boot destroys the execution context, which is not an answer either way
-    rendered = await h.ev(`!!document.querySelector("nav button")`).catch(() => false);
-    if (!rendered) await new Promise((r) => setTimeout(r, RENDER_POLL_MS));
+let startedAt = null;
+let state = {};
+let verdict = "wait";
+while (verdict === "wait") {
+    // a reload mid-boot destroys the execution context, which is not an answer either way: the page is loading again
+    state = JSON.parse((await h.ev(BOOT_STATE).catch(() => null)) ?? "{}");
+    const now = Date.now();
+    const phase = state.boot?.phase;
+    startedAt = phase && phase !== "html" ? (startedAt ?? now) : null;
+    const error = state.overlay ?? state.boot?.error ?? null;
+    verdict = renderWait({ now, start: waitStart, startedAt, rendered: !!state.nav, error });
+    if (verdict === "wait") await new Promise((r) => setTimeout(r, RENDER_POLL_MS));
 }
 const waited = Math.round((Date.now() - waitStart) / 1000);
-console.log(rendered ? `nav rendered after ${waited}s` : `nav not rendered after ${waited}s`);
+if (verdict === "not-loaded") {
+    h.close();
+    console.log(`the dev app's code did not start in ${waited}s (boot phase: ${state.boot?.phase ?? "no page"}), so no scenario ran`);
+    process.exit(EXIT_UNVERIFIED);
+}
+if (verdict === "boot-error") console.log(`boot error after ${waited}s: ${state.overlay ?? state.boot?.error}`);
+else console.log(verdict === "rendered" ? `nav rendered after ${waited}s` : `nav not rendered after ${waited}s (boot phase: ${state.boot?.phase})`);
 
 // Pin the viewport so a scenario's result does not depend on how wide the developer left the dev window.
 // The Jarvis surface is width-responsive (jarvislayout.ts): below ~1290px its context rail closes and

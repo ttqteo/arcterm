@@ -60,7 +60,7 @@ const STATE_INK: Record<FinalTone, string> = {
     fail: "text-error",
     warn: "text-warning",
 };
-const LINK = "cursor-pointer font-mono text-[10.5px] font-semibold text-accent-soft hover:text-accent";
+const LINK = "cursor-pointer text-[10.5px] font-semibold text-accent-soft hover:text-accent";
 
 function StepMark({ tone }: { tone: FinalTone }) {
     return <span aria-hidden className={cn("size-[7px] flex-none rounded-full", MARK[tone])} />;
@@ -68,9 +68,7 @@ function StepMark({ tone }: { tone: FinalTone }) {
 
 function StepLabel({ step }: { step: FinalStep }) {
     return (
-        <span
-            className={cn("font-mono text-[11.5px] font-medium", step.tone === "wait" ? "text-ink-mid" : "text-ink-hi")}
-        >
+        <span className={cn("text-[11.5px] font-medium", step.tone === "wait" ? "text-ink-mid" : "text-ink-hi")}>
             {step.label}
         </span>
     );
@@ -78,7 +76,9 @@ function StepLabel({ step }: { step: FinalStep }) {
 
 function StepText({ step }: { step: FinalStep }) {
     return (
-        <span className={cn("flex-none whitespace-nowrap font-mono text-[10.5px] font-medium", STATE_INK[step.tone])}>
+        <span
+            className={cn("flex-none whitespace-nowrap text-[10.5px] tabular-nums font-medium", STATE_INK[step.tone])}
+        >
             {step.text}
         </span>
     );
@@ -131,7 +131,7 @@ const KEPT_EMPTY: Record<LocalImageStatus, string> = {
 export function FinalKeptOutput({ kept, className }: { kept: FinalStep["kept"]; className?: string }) {
     const out = useKeptOutput(kept);
     if (out.text.trim() === "") {
-        return <span className="font-mono text-[10.5px] text-muted">{KEPT_EMPTY[out.status]}</span>;
+        return <span className="text-[10.5px] text-muted">{KEPT_EMPTY[out.status]}</span>;
     }
     return <FinalOutput output={out.text} className={className} />;
 }
@@ -275,7 +275,7 @@ function PastRound({ line }: { line: FinalRoundLine }) {
     return (
         <div data-final-past-round={line.round} className="flex items-center gap-[9px] py-1">
             <StepMark tone={line.tone} />
-            <span className="font-mono text-[10.5px] text-ink-mid">{line.text}</span>
+            <span className="text-[10.5px] tabular-nums text-ink-mid">{line.text}</span>
         </div>
     );
 }

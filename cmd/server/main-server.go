@@ -331,6 +331,9 @@ func main() {
 		log.Printf("error initializing wstore: %v\n", err)
 		return
 	}
+	// before anything writes a run: every run status and land change re-reads the run queue. A poke before the queue's
+	// loop starts waits in its channel.
+	wstore.RunChangedHook = wshserver.PokeRunQueue
 	// before the first config read (the watcher inits lazily) and before the efforts, which resolve the vault from config
 	wconfig.OnVaultLayerWrite = wavevault.Poke
 	if err := wconfig.MigrateSettingsToVault(); err != nil {
@@ -388,7 +391,8 @@ func main() {
 	wconfig.ConfigHook = func(fc wconfig.FullConfigType) {
 		wshserver.SyncProjectChannels(context.Background(), fc.Projects)
 		claudeaccount.ApplyEnv(fc.Settings.ClaudeActiveAccount)
-		jobqueue.Poke() // a changed jobs:* setting is effective at once, not at the queue's next tick
+		jobqueue.Poke()          // a changed jobs:* setting is effective at once, not at the queue's next tick
+		wshserver.PokeRunQueue() // so is a changed runs:maxactive
 	}
 	err = startConfigWatcher()
 	if err != nil {
@@ -457,6 +461,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "WAVESRV-ESTART ws:%s web:%s version:%s buildtime:%s\n", wsListener.Addr(), webListener.Addr(), WaveVersion, BuildTime)
 	}()
 	go wshutil.RunWshRpcOverListener(unixListener, nil)
+	// last: its first evaluation can start a run, which spawns workers that dial back into the listeners above, and
+	// reads settings, so it waits for the config watcher, the engine and the block controller too
+	wshserver.StartRunQueue(context.Background())
 	web.RunWebServer(webListener) // blocking
 	runtime.KeepAlive(waveLock)
 }

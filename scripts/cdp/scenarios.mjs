@@ -13524,15 +13524,21 @@ async function arrangeFixtureRun(h, ctx, label, leadName, leadExtra, runExtra) {
     const wslist = await h.rpc("workspacelist", null);
     const ch = await h.rpc("createchannel", { name: `verify-${label}`, projectpath: ctx.cwd });
     ctx.channelId = ch.oid;
-    const created = await h.rpc("createrun", {
-        channelid: ctx.channelId,
-        workspaceid: wslist[0].workspacedata.oid,
-        goal: `verify ${label}: do nothing`,
-        runtime: "claude",
-        mode: "orchestrator",
-        deferstart: true,
-        ...runExtra,
-    });
+    // createrun probes the lead's harness before it loads the channel; on a cold Final boot that outlasted the
+    // 5s default and the channel load failed with "context deadline exceeded"
+    const created = await h.rpc(
+        "createrun",
+        {
+            channelid: ctx.channelId,
+            workspaceid: wslist[0].workspacedata.oid,
+            goal: `verify ${label}: do nothing`,
+            runtime: "claude",
+            mode: "orchestrator",
+            deferstart: true,
+            ...runExtra,
+        },
+        { timeout: 30000 }
+    );
     ctx.runId = created.run.id;
     ctx.landPath = created.run.landpath;
     mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
@@ -13619,7 +13625,11 @@ async function teardownFixtureRun(h, ctx, name, restore) {
     }
     await step("reload onto the live roster", async () => {
         await h.ev("location.reload()");
-        await new Promise((r) => setTimeout(r, 2500));
+        // a fixed wait left the next scenario on a page still booting: a cold Final boot took 35s to render
+        await new Promise((r) => setTimeout(r, 500));
+        if (!(await polishWaitFor(h, `!!document.querySelector("nav button")`, 30000))) {
+            throw new Error("the app did not come back within 30s of the reload");
+        }
     });
     // engine trees live under the arc-wt root, not the temp dir, and a cancel leaves the landing tree: only a land
     // removes it. A worker just stopped holds its lane's tree for a moment, hence the retries.
@@ -19999,7 +20009,7 @@ const FST_AGENT = `(() => {
         rows: [...(tree?.querySelectorAll("[data-final-row]") ?? [])].map((r) => ({
             tone: r.getAttribute("data-final-tone"),
             title: flat(r.querySelector(".truncate")),
-            sub: flat(r.querySelector(".font-mono")),
+            sub: flat(r.querySelector("[data-final-sub]")),
             selected: r.classList.contains("bg-accentbg"),
         })),
         slot: slot?.getAttribute("data-final-slot") ?? null,
@@ -36935,6 +36945,190 @@ const toolsLauncher = {
     },
 };
 
+// --- setup-project: Setup → Project lists a project's Claude files in six groups and reads the selected one in the
+// rail. The fixture is a temp project with a CLAUDE.md, a settings.json holding one hook, a settings.local.json that
+// does not parse and an empty .arc/setup, and a memory folder under ~/.claude/projects/<slug> holding an index and
+// one feedback memory; teardown removes the project, its folder and the memory folder. The last step deletes the
+// project's folder to show the path-gone banner, so it runs last.
+const SP_PROJECT = "verify-setup-project";
+const spSlug = (p) => p.replace(/[^A-Za-z0-9]/g, "-");
+const setupProject = {
+    name: "setup-project",
+    surface: "setup",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            ctx.root = mkdtempSync(join(tmpdir(), "verify-sp-"));
+            writeFileSync(join(ctx.root, "CLAUDE.md"), "# Fixture project\n\nRead me first.\n");
+            mkdirSync(join(ctx.root, ".claude"), { recursive: true });
+            writeFileSync(
+                join(ctx.root, ".claude", "settings.json"),
+                JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "echo hi" }] }] } })
+            );
+            writeFileSync(join(ctx.root, ".claude", "settings.local.json"), '{ "hooks": not json');
+            mkdirSync(join(ctx.root, ".arc"), { recursive: true });
+            writeFileSync(join(ctx.root, ".arc", "setup"), "");
+            ctx.memProject = join(homedir(), ".claude", "projects", spSlug(ctx.root));
+            const mem = join(ctx.memProject, "memory");
+            mkdirSync(mem, { recursive: true });
+            writeFileSync(join(mem, "MEMORY.md"), "- [Fixture rule](feedback_fixture.md) — the fixture's one rule\n");
+            writeFileSync(
+                join(mem, "feedback_fixture.md"),
+                "---\nname: fixture-rule\ndescription: The fixture's one rule\nmetadata:\n  type: feedback\n---\n\nFixture rule body.\n"
+            );
+            await h.rpc("createproject", { name: SP_PROJECT, path: ctx.root });
+            ctx.projectMade = true;
+            await waitForProjectInConfig(h, SP_PROJECT);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        rec("0. the fixture project, its files and its memory are arranged", ctx.arrangeError == null, ctx.arrangeError ?? "");
+        if (ctx.arrangeError != null) return steps;
+
+        await h.goto("setup");
+        await ttClick(h, '[data-setup-tab="project"]');
+        const listed = await polishWaitFor(h, `!!document.querySelector('[data-context-project="${SP_PROJECT}"]')`, 8000);
+        await ttClick(h, `[data-context-project="${SP_PROJECT}"]`);
+        const loaded = await polishWaitFor(h, `!!document.querySelector('[data-context-group="memory"] [data-context-file]')`, 8000);
+        const list = await h.ev(`(() => {
+            const note = (label) => {
+                const b = [...document.querySelectorAll("[data-context-file]")].find((x) => x.textContent.includes(label));
+                return b?.querySelector("[data-context-note]")?.textContent ?? null;
+            };
+            return {
+                groups: [...document.querySelectorAll("[data-context-group]")].map((g) => g.getAttribute("data-context-group")),
+                claudeMd: note("CLAUDE.md"),
+                settings: note(".claude/settings.json"),
+                missing: !!document.querySelector('[data-context-missing="AGENTS.md"]'),
+            };
+        })()`);
+        rec(
+            "1. Setup → Project lists the fixture project's six groups; CLAUDE.md is the one Claude reads, settings.json notes its hook, AGENTS.md shows as missing",
+            listed &&
+                loaded &&
+                JSON.stringify(list.groups) === JSON.stringify(["instructions", "memory", "settings", "skills", "setup", "global"]) &&
+                list.claudeMd === "Claude reads this" &&
+                list.settings === "1 hook" &&
+                list.missing,
+            JSON.stringify({ listed, loaded, ...list })
+        );
+
+        await h.ev(`[...document.querySelectorAll("[data-context-file]")].find((b) => b.textContent.includes("feedback_fixture.md"))?.click()`);
+        const read = await polishWaitFor(
+            h,
+            `(document.querySelector("[data-context-rail]")?.textContent ?? "").includes("Fixture rule body.")`,
+            5000
+        );
+        await polishNap(300);
+        await h.shot("cdp-shots/setup-project-1-memory.png");
+        const rail = await h.ev(`document.querySelector("[data-context-rail]")?.textContent?.slice(0, 200) ?? null`);
+        rec("2. selecting the feedback memory reads it in the rail with its description", read && rail.includes("The fixture's one rule"), rail);
+
+        // a row by its label, clicked; the rail's text once it holds `want`
+        const clickRow = (label) =>
+            h.ev(`(() => { const b = [...document.querySelectorAll("[data-context-file]")].find((x) => x.textContent.includes(${JSON.stringify(label)})); b?.click(); return !!b; })()`);
+        const railHas = (want) =>
+            polishWaitFor(h, `(document.querySelector("[data-context-rail]")?.textContent ?? "").includes(${JSON.stringify(want)})`, 5000);
+
+        const skills = await h.ev(`(() => {
+            const g = document.querySelector('[data-context-group="skills"]');
+            return { empty: g?.querySelector("[data-context-empty]")?.textContent?.trim() ?? null, files: g?.querySelectorAll("[data-context-file]").length ?? -1 };
+        })()`);
+        rec('3. Skills & agents, empty in the fixture, shows one "—" row', skills.empty === "—" && skills.files === 0, JSON.stringify(skills));
+
+        const globalRows = `[...document.querySelectorAll('[data-context-group="global"] [data-context-file], [data-context-group="global"] [data-context-missing]')].map((r) => r.textContent)`;
+        const folded = await h.ev(`${globalRows}.length`);
+        await h.ev(`document.querySelector('[data-context-group="global"] button[aria-expanded]')?.click()`);
+        const opened = await polishWaitFor(h, `${globalRows}.length === 2`, 3000);
+        const global = await h.ev(globalRows);
+        rec(
+            "4. Global starts folded; a click on its heading shows ~/.claude/CLAUDE.md and ~/.claude/settings.json",
+            folded === 0 && opened && global.some((t) => t.includes("~/.claude/CLAUDE.md")) && global.some((t) => t.includes("~/.claude/settings.json")),
+            JSON.stringify({ folded, global })
+        );
+
+        const badNote = await h.ev(`[...document.querySelectorAll("[data-context-file]")].find((b) => b.textContent.includes("settings.local.json"))?.querySelector("[data-context-note]")?.textContent ?? null`);
+        const badClicked = await clickRow("settings.local.json");
+        const badRaw = badClicked && (await railHas('{ "hooks": not json'));
+        await polishNap(300);
+        await h.shot("cdp-shots/setup-project-2-invalid-json.png");
+        rec('5. settings.local.json that does not parse notes "invalid JSON" and the rail shows its raw text', badNote === "invalid JSON" && badRaw, JSON.stringify({ badNote, badClicked, badRaw }));
+
+        const setupClicked = await clickRow(".arc/setup");
+        const empty = setupClicked && (await railHas("Empty, or could not be read."));
+        rec('6. the empty .arc/setup reads "Empty, or could not be read." in the rail', empty, JSON.stringify({ setupClicked, empty }));
+
+        // a stub over Clipboard.prototype's writeText: the real one rejects without OS focus and would overwrite the user's clipboard
+        await h.ev(notesClipStub(false));
+        await h.ev(`document.querySelector("[data-context-rail] [data-context-copy]")?.click()`);
+        const copied = await polishWaitFor(h, `(window.__notesClip ?? []).length === 1`, 2000);
+        const clip = await h.ev(`window.__notesClip ?? []`);
+        await h.ev(NOTES_CLIP_RESTORE);
+        rec(
+            "7. Copy path in the rail head copies the file's full path",
+            copied && clip[0]?.replace(/\\/g, "/").endsWith("/.arc/setup") && clip[0].length > ".arc/setup".length,
+            JSON.stringify(clip)
+        );
+
+        writeFileSync(
+            join(ctx.memProject, "memory", "project_added.md"),
+            "---\nname: added\ndescription: Written after the tab opened\ntype: project\n---\n\nAdded body.\n"
+        );
+        await h.ev(`document.querySelector('button[aria-label="Read the files again"]')?.click()`);
+        const added = await polishWaitFor(
+            h,
+            `[...document.querySelectorAll('[data-context-group="memory"] [data-context-file]')].some((b) => b.textContent.includes("project_added.md"))`,
+            5000
+        );
+        rec("8. Reload re-reads the project: a memory file written since shows under Memory", added, "");
+
+        let rmError = null;
+        try {
+            rmSync(ctx.root, { recursive: true, force: true });
+        } catch (e) {
+            rmError = String(e?.message ?? e);
+        }
+        await h.ev(`document.querySelector('button[aria-label="Read the files again"]')?.click()`);
+        const gone = await polishWaitFor(
+            h,
+            `!!document.querySelector('[data-context-tab] [role="alert"]') && !document.querySelector("[data-context-group]")`,
+            5000
+        );
+        await polishNap(300);
+        await h.shot("cdp-shots/setup-project-3-path-gone.png");
+        const alert = await h.ev(`document.querySelector('[data-context-tab] [role="alert"]')?.textContent ?? null`);
+        rec("9. with the project's folder gone, Reload shows the alert banner and no list", rmError == null && gone, JSON.stringify({ rmError, alert }));
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`setup-project teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        if (ctx.projectMade) {
+            // deleteproject leaves the channel createproject made, so that goes too
+            await step("remove the project", async () => {
+                await h.rpc("deleteproject", { name: SP_PROJECT });
+                const norm = (s) => (s || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+                for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.root))) {
+                    await h.rpc("deletechannel", { channelid: c.oid });
+                }
+            });
+        }
+        if (ctx.memProject) await step("remove the memory folder", () => rmSync(ctx.memProject, { recursive: true, force: true }));
+        if (ctx.root) await step("remove the project folder", () => rmSync(ctx.root, { recursive: true, force: true }));
+    },
+};
+
 // --- tools-worktree-gone: a terminal whose folder was removed (boards WorktreeGone and Sidebar). Its row reads
 // removed with the branch chip struck through; shown, the pane carries the card with Reopen in <project> and Close.
 const toolsWorktreeGone = {
@@ -37028,8 +37222,8 @@ const toolsWorktreeGone = {
 };
 
 // --- What's new (frontend/app/cockpit/whatsnewsheet.tsx) -------------------------------------------------------------
-// The footer's version opens the release notes read from CHANGELOG.md: the latest releases, a headline per note until it
-// is clicked open, and Try it on a note lands on its feature.
+// The footer's version opens the release notes read from CHANGELOG.md: the latest releases, each led by its highlights as
+// cards with every other note under one fold line, and Try it on a note lands on its feature.
 const whatsNew = {
     name: "whats-new",
     surface: "cockpit",
@@ -37073,33 +37267,2347 @@ const whatsNew = {
         );
         await h.shot("cdp-shots/whats-new-2-sheet.png");
 
-        // headlines first: an entry is its bold lead until it is clicked open
-        const ENTRY = `document.querySelector('[data-whats-new] li button[aria-expanded]')`;
-        const before = await h.ev(`(() => { const b = ${ENTRY}; return b ? { open: b.getAttribute("aria-expanded"), len: b.textContent.length } : null })()`);
-        await h.ev(`${ENTRY}.click()`);
-        await briefNap(200);
-        const after = await h.ev(`(() => { const b = ${ENTRY}; return { open: b.getAttribute("aria-expanded"), len: b.textContent.length } })()`);
+        // highlights first: a release's big notes are cards (5 at most), every other note folds under one count line
+        const layout = await h.ev(`[...document.querySelectorAll("[data-whats-new] [data-release]")].map((r) => ({
+            v: r.dataset.release,
+            cards: r.querySelectorAll("[data-whats-new-card]").length,
+            more: r.querySelector("[data-whats-new-more]")?.textContent.trim() ?? null,
+            rows: r.querySelectorAll("li:not([data-whats-new-card])").length,
+        }))`);
         rec(
-            "4. an entry shows only its headline until clicked, then the whole note",
-            before?.open === "false" && after.open === "true" && after.len > before.len,
+            "4. each release leads with at most 5 cards, the rest folded under one count line",
+            layout.some((r) => r.cards > 0) && layout.every((r) => r.cards <= 5 && r.rows === 0 && (r.more == null || /\d+ (more )?(change|fix)/.test(r.more))),
+            JSON.stringify(layout)
+        );
+
+        // the fold opens the rest, where a note is its bold lead until it is clicked open
+        await h.ev(`document.querySelector("[data-whats-new] [data-whats-new-more]").click()`);
+        await briefNap(200);
+        const ENTRY = `document.querySelector('[data-whats-new] li:not([data-whats-new-card]) button[aria-expanded]')`;
+        const before = await h.ev(`(() => { const b = ${ENTRY}; return b ? { open: b.getAttribute("aria-expanded"), len: b.textContent.length } : null })()`);
+        if (before != null) {
+            await h.ev(`${ENTRY}.click()`);
+            await briefNap(200);
+        }
+        const after = before == null ? null : await h.ev(`(() => { const b = ${ENTRY}; return { open: b.getAttribute("aria-expanded"), len: b.textContent.length } })()`);
+        rec(
+            "5. the fold opens the rest; a note there shows its headline until clicked, then the whole note",
+            before?.open === "false" && after?.open === "true" && after.len > before.len,
             JSON.stringify({ before, after })
         );
         await h.shot("cdp-shots/whats-new-3-opened.png");
 
+        // a Try it may sit inside a fold: open them all
+        await h.ev(`document.querySelectorAll('[data-whats-new] [data-whats-new-more][aria-expanded="false"]').forEach((b) => b.click())`);
+        await briefNap(200);
         const hasUsage = await h.ev(`!!document.querySelector('[data-whats-new-try="go:usage"]')`);
         if (!hasUsage) {
-            rec("5. Try it on a Usage note goes to Usage and closes the notes", false, "no go:usage note in the releases shown");
+            rec("6. Try it on a Usage note goes to Usage and closes the notes", false, "no go:usage note in the releases shown");
             return steps;
         }
         await h.ev(`document.querySelector('[data-whats-new-try="go:usage"]').click()`);
         await polishWaitFor(h, `!document.querySelector("[data-whats-new]")`, 4000);
         const landed = { surface: await h.activeSurfaceLabel(), open: await h.ev(`!!document.querySelector("[data-whats-new]")`) };
-        rec("5. Try it on a Usage note goes to Usage and closes the notes", landed.surface === SURFACE_LABEL.usage && !landed.open, JSON.stringify(landed));
+        rec("6. Try it on a Usage note goes to Usage and closes the notes", landed.surface === SURFACE_LABEL.usage && !landed.open, JSON.stringify(landed));
         await h.shot("cdp-shots/whats-new-4-tried.png");
         return steps;
     },
     async teardown(h) {
         await h.goto("cockpit");
+    },
+};
+
+// --- run-queue: plans queued to start are rows on the Agent tree, with Start now, Run next and Remove ---------------------
+// (docs/superpowers/specs/2026-10-14-run-handoff-lifecycle-design.md, decision 4.) A real queue in wavesrv and real rows,
+// nothing mocked. `runs:maxactive` is 1 and a run held by deferstart (it spawns nothing) is active, so no entry has room
+// and the loop starts none by itself. A start that carries a plan submits it, and that spawns a plan reviewer (a real
+// session) whether or not deferstart holds the run: so the one entry the scenario starts, C, has a goal and no plan
+// (run quick, held by deferstart, so it spawns nothing). A and B hold plans but are only ever removed, and D's plan is
+// deleted before its start, which fails at reading it.
+const RQ_TITLES = { a: "Queue plan A", b: "Queue plan B", c: "Queue plan C", d: "Queue plan D" };
+const RQ_RPC = { timeout: 30000 };
+const rqSel = (id) => `[data-run-queue-row="${id}"]`;
+const rqRow = (id) => `document.querySelector(${JSON.stringify(rqSel(id))})`;
+const rqList = async (h) => (await h.rpc("runqueuelist", null))?.entries ?? [];
+const rqChannelRuns = async (h, channelId) => (await h.rpc("getchannelruns", { channelid: channelId }))?.runs ?? [];
+
+// every queue row on the tree in the order it is drawn, with its title and its second line
+const rqRows = (h) =>
+    h.ev(`[...document.querySelectorAll("[data-run-queue-row]")].map((r) => ({
+        id: r.dataset.runQueueRow,
+        title: r.querySelector(".truncate")?.textContent ?? "",
+        meta: r.querySelector("[data-run-queue-meta]")?.textContent ?? "",
+    }))`);
+
+// the centre of an element, scrolled into the tree's view first (the sidebar scrolls)
+const rqPoint = (h, sel) =>
+    h.ev(`(() => {
+        const el = document.querySelector(${JSON.stringify(sel)});
+        if (!el) return null;
+        el.scrollIntoView({ block: "nearest" });
+        const r = el.getBoundingClientRect();
+        return r.width > 0 ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null;
+    })()`);
+async function rqMove(h, sel) {
+    const at = await rqPoint(h, sel);
+    if (at == null) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+    await polishNap(350);
+    return true;
+}
+async function rqClick(h, sel) {
+    const at = await rqPoint(h, sel);
+    if (at == null) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+    for (const type of ["mousePressed", "mouseReleased"]) {
+        await h.cdp("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: 1 });
+    }
+    await polishNap(250);
+    return true;
+}
+const rqContext = (h, id) =>
+    h.ev(`(() => {
+        const el = ${rqRow(id)};
+        if (!el) return false;
+        el.scrollIntoView({ block: "nearest" });
+        const r = el.getBoundingClientRect();
+        el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 24, clientY: r.top + r.height / 2, button: 2 }));
+        return true;
+    })()`);
+// Escape closes the menu, and the Agent surface's own "esc back" binding takes the same key to Cockpit, which hides the
+// tree the next step clicks in: so the surface is opened again
+async function rqCloseMenu(h) {
+    for (const type of ["keyDown", "keyUp"]) {
+        await h.cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    }
+    await polishWaitFor(h, `!${CA_MENU_PANEL}`, 2000);
+    await h.goto("agent");
+}
+const rqMenuItems = async (h) => ({
+    start: await h.ev(caMenuHas("Start now")),
+    next: await h.ev(caMenuHas("Run next")),
+    remove: await h.ev(caMenuHas("Remove")),
+});
+
+const runQueueScenario = {
+    name: "run-queue",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-run-queue-")), ids: {} };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            ctx.prevMax = (await h.rpc("getfullconfig", null))?.settings?.["runs:maxactive"] ?? null;
+            await h.rpc("setconfig", { "runs:maxactive": 1 });
+            const wslist = await h.rpc("workspacelist", null);
+            ctx.workspaceId = wslist[0].workspacedata.oid;
+            const ch = await h.rpc("createchannel", { name: "verify-run-queue", projectpath: ctx.cwd });
+            ctx.channelId = ch.oid;
+            // active, so the cap of 1 is full; held by deferstart, so it spawns nothing
+            // a fresh store's first run pays for the harness probes, which can outlast the default call budget
+            await h.rpc(
+                "createrun",
+                {
+                    channelid: ctx.channelId,
+                    workspaceid: ctx.workspaceId,
+                    goal: "verify run-queue: the run that fills the cap",
+                    runtime: "claude",
+                    mode: "quick",
+                    deferstart: true,
+                },
+                RQ_RPC
+            );
+            const plan = (key, title) => {
+                const path = join(ctx.cwd, `${key}.md`);
+                writeFileSync(path, `# ${title}\n\n### Task 1: Do nothing\n\nMake no change.\n`);
+                return path;
+            };
+            const forPlan = { channelid: ctx.channelId, workspaceid: ctx.workspaceId, runtime: "claude", mode: "orchestrator", deferstart: true };
+            const add = (data, after) => h.rpc("runqueueadd", { data, ...(after ? { after } : {}) }, RQ_RPC);
+            const a = await add({
+                ...forPlan,
+                planpath: plan("a", RQ_TITLES.a),
+                workerroute: { runtime: "codex", model: "gpt-5" },
+            });
+            ctx.ids.a = a.id;
+            const b = await add({ ...forPlan, planpath: plan("b", RQ_TITLES.b) }, a.id);
+            ctx.ids.b = b.id;
+            const c = await add({
+                channelid: ctx.channelId,
+                workspaceid: ctx.workspaceId,
+                goal: RQ_TITLES.c,
+                runtime: "claude",
+                mode: "quick",
+                deferstart: true,
+            });
+            ctx.ids.c = c.id;
+            const planD = plan("d", RQ_TITLES.d);
+            const d = await add({ ...forPlan, planpath: planD });
+            ctx.ids.d = d.id;
+            // its plan gone, D's start fails reading it, which blocks the entry. The loop may be mid-evaluation, and a
+            // Start now then answers "another queued run is starting" and blocks nothing: try again until D is blocked
+            rmSync(planD);
+            for (let i = 0; i < 8 && !ctx.dBlocked; i++) {
+                try {
+                    await h.rpc("runqueuestartnow", { id: d.id }, RQ_RPC);
+                } catch (e) {
+                    ctx.dStartError = String(e?.message ?? e);
+                }
+                ctx.dBlocked = (await rqList(h)).find((e) => e.id === d.id)?.state === "blocked";
+                if (!ctx.dBlocked) await polishNap(500);
+            }
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+        const arranged = ctx.arrangeError == null && ctx.dBlocked === true;
+        rec(
+            "0. the queue holds A, B and C waiting and D blocked, under a cap of 1",
+            arranged,
+            ctx.arrangeError ?? JSON.stringify({ ids: ctx.ids, dStartError: ctx.dStartError ?? null })
+        );
+        if (!arranged) return steps;
+        const { a, b, c, d } = ctx.ids;
+        const mine = [a, b, c, d];
+        const ours = async () => (await rqRows(h)).filter((r) => mine.includes(r.id));
+        const order = (rows) => rows.map((r) => r.id);
+        const metaOf = (rows, id) => rows.find((r) => r.id === id)?.meta ?? "";
+
+        // 1. every entry is a row, in queue order, with its place or what it waits on
+        await polishWaitFor(h, `${rqRow(d)} != null`, 8000);
+        await rqPoint(h, rqSel(a));
+        const rows1 = await ours();
+        await h.shot("cdp-shots/run-queue-1-rows.png");
+        rec(
+            "1. A, B, C and D are rows in queue order: A Queued #1, B After A's title, C Queued #3 (B holds place 2), D Blocked ·",
+            JSON.stringify(order(rows1)) === JSON.stringify(mine) &&
+                metaOf(rows1, a) === "Queued #1" &&
+                metaOf(rows1, b) === `After ${RQ_TITLES.a}` &&
+                metaOf(rows1, c) === "Queued #3" &&
+                metaOf(rows1, d).startsWith("Blocked ·"),
+            JSON.stringify(rows1)
+        );
+
+        // 1b. the blocked D is also a Needs you item on the Cockpit, with Start now and Remove. Remove asks first, and
+        // takes D's entry and the item with it. Start now is left to the unit tests: D's plan file is gone, so a start
+        // would only block it again.
+        await h.goto("cockpit");
+        const stripKey = `run-queue-blocked:${d}`;
+        const stripRow = `document.querySelector('[data-cockpit-needs-you] [data-needs-you-row="${stripKey}"]')`;
+        // attention is computed by wavesrv and reloaded by the strip, so the item can trail the entry by a poll
+        const stripShown = await polishWaitFor(h, `${stripRow} != null`, 45000);
+        const strip = await h.ev(`(() => {
+            const row = ${stripRow};
+            const ours = [...document.querySelectorAll('[data-cockpit-needs-you] [data-needs-you-row]')].filter(
+                (r) => r.dataset.needsYouRow === ${JSON.stringify(stripKey)}
+            );
+            return {
+                ours: ours.length,
+                kind: row?.children[0]?.textContent.trim() ?? null,
+                text: row?.children[2]?.textContent.trim() ?? null,
+                start: row?.querySelector('[data-strip-act="start-queued"]')?.textContent.trim() ?? null,
+                remove: row?.querySelector('[data-strip-act="remove-queued"]')?.textContent.trim() ?? null,
+            };
+        })()`);
+        await h.shot("cdp-shots/run-queue-1b-needs-you.png");
+        rec(
+            "1b. D is one Needs you row, kind Run to start, reading Did not start:, with Start now and Remove",
+            stripShown &&
+                strip.ours === 1 &&
+                strip.kind === "Run to start" &&
+                (strip.text ?? "").startsWith("Did not start:") &&
+                strip.start === "Start now" &&
+                strip.remove === "Remove",
+            JSON.stringify(strip)
+        );
+        const stripRemove = await h.ev(`(() => {
+            const b = ${stripRow}?.querySelector('[data-strip-act="remove-queued"]');
+            b?.click();
+            return b != null;
+        })()`);
+        const stripAsked = await polishWaitFor(h, `document.querySelector('[role="dialog"]') != null`, 3000);
+        const stripListedBefore = (await rqList(h)).map((e) => e.id);
+        await h.ev(
+            `[...document.querySelectorAll('[role="dialog"] button')].find((b) => b.textContent.includes("Remove"))?.click()`
+        );
+        const stripGone = await polishWaitFor(h, `${stripRow} == null`, 15000);
+        const stripListedAfter = (await rqList(h)).map((e) => e.id);
+        await h.goto("agent");
+        const rowGone = await polishWaitFor(h, `${rqRow(d)} == null`, 8000);
+        rec(
+            "1c. Remove on that row asks first; confirming drops the Needs you row, D's tree row and D's entry",
+            stripRemove === true &&
+                stripAsked &&
+                stripListedBefore.includes(d) &&
+                stripGone &&
+                rowGone &&
+                !stripListedAfter.includes(d),
+            JSON.stringify({ stripRemove, stripAsked, stripGone, rowGone, stripListedBefore, stripListedAfter })
+        );
+
+        // 2. hover shows the two buttons; the tooltip carries the plan, the route and the age
+        await rqMove(h, rqSel(a));
+        const hover = await h.ev(`(() => {
+            // the buttons sit in one wrapper that fades in on hover
+            const shown = (id, act) => {
+                const b = document.querySelector('[data-run-queue-row="' + id + '"] [data-queue-act="' + act + '"]');
+                return b ? Number(getComputedStyle(b.parentElement).opacity) : null;
+            };
+            return {
+                start: shown(${JSON.stringify(a)}, "start"),
+                remove: shown(${JSON.stringify(a)}, "remove"),
+                // the row the pointer is not on keeps them hidden
+                otherStart: shown(${JSON.stringify(c)}, "start"),
+                // the tooltip host lifts a hovered element's title into data-arc-title (element/titletiphost.tsx)
+                title: ${rqRow(a)}?.getAttribute("title") ?? ${rqRow(a)}?.getAttribute("data-arc-title") ?? "",
+            };
+        })()`);
+        await h.shot("cdp-shots/run-queue-2-hover.png");
+        rec(
+            "2. hovering A shows its Start now and Remove buttons (C's stay hidden); its tooltip names the plan, Lead claude and Workers codex",
+            hover.start === 1 &&
+                hover.remove === 1 &&
+                hover.otherStart === 0 &&
+                hover.title.includes("a.md") &&
+                hover.title.includes("Lead claude") &&
+                hover.title.includes("Workers codex"),
+            JSON.stringify(hover)
+        );
+
+        // 3. the menu: Start now, Run next and Remove, but no Run next on the head
+        await rqContext(h, c);
+        await polishWaitFor(h, caMenuHas("Run next"), 3000);
+        const menuC = await rqMenuItems(h);
+        await h.shot("cdp-shots/run-queue-3-menu.png");
+        await rqCloseMenu(h);
+        await rqContext(h, a);
+        await polishWaitFor(h, caMenuHas("Start now"), 3000);
+        const menuA = await rqMenuItems(h);
+        await rqCloseMenu(h);
+        await rqContext(h, c);
+        await polishWaitFor(h, caMenuHas("Run next"), 3000);
+        await h.ev(caMenuClick("Run next"));
+        await polishWaitFor(h, `(() => {
+            const ids = [...document.querySelectorAll("[data-run-queue-row]")].map((r) => r.dataset.runQueueRow).filter((id) => ${JSON.stringify(mine)}.includes(id));
+            return ids[0] === ${JSON.stringify(c)};
+        })()`, 4000);
+        const rows3 = await ours();
+        await h.shot("cdp-shots/run-queue-3-run-next.png");
+        rec(
+            "3. C's menu lists Start now, Run next and Remove, A's (the head) has no Run next; Run next on C puts C first (Queued #1) and A second (Queued #2)",
+            menuC.start && menuC.next && menuC.remove &&
+                menuA.start && !menuA.next && menuA.remove &&
+                order(rows3)[0] === c &&
+                metaOf(rows3, c) === "Queued #1" &&
+                metaOf(rows3, a) === "Queued #2",
+            JSON.stringify({ menuC, menuA, rows3 })
+        );
+
+        // 4. Remove asks first, and removing A takes its row and its queue entry; B, which waited on A, blocks
+        await rqMove(h, rqSel(a));
+        const clickedRemove = await rqClick(h, `${rqSel(a)} [data-queue-act="remove"]`);
+        const asked = await polishWaitFor(h, `document.querySelector('[role="dialog"]') != null`, 3000);
+        const dialogText = asked ? await h.ev(`document.querySelector('[role="dialog"]').textContent`) : "";
+        await h.shot("cdp-shots/run-queue-4-confirm.png");
+        const listedBefore = (await rqList(h)).map((e) => e.id);
+        await h.ev(
+            `[...document.querySelectorAll('[role="dialog"] button')].find((b) => b.textContent.includes("Remove"))?.click()`
+        );
+        const gone = await polishWaitFor(h, `${rqRow(a)} == null`, 4000);
+        await polishWaitFor(h, `(${rqRow(b)}?.textContent ?? "").includes("Blocked")`, 4000);
+        const listedAfter = (await rqList(h)).map((e) => e.id);
+        const rows4 = await ours();
+        await h.shot("cdp-shots/run-queue-4-removed.png");
+        rec(
+            "4. Remove on A asks first (and removes nothing yet); confirming drops A's row and its entry, and B, which waited on A, reads Blocked ·",
+            clickedRemove &&
+                asked &&
+                dialogText.includes(RQ_TITLES.a) &&
+                listedBefore.includes(a) &&
+                gone &&
+                !listedAfter.includes(a) &&
+                listedAfter.includes(c) &&
+                metaOf(rows4, b).startsWith("Blocked ·"),
+            JSON.stringify({ clickedRemove, asked, dialogText, listedBefore, listedAfter, rows4 })
+        );
+
+        // 5. Start now on C starts it past the cap: its row and entry go, and the channel has a new run
+        const runsBefore = await rqChannelRuns(h, ctx.channelId);
+        await rqMove(h, rqSel(c));
+        const clickedStart = await rqClick(h, `${rqSel(c)} [data-queue-act="start"]`);
+        const started = await polishWaitFor(h, `${rqRow(c)} == null`, 20000);
+        const listed5 = (await rqList(h)).map((e) => e.id);
+        const runsAfter = await rqChannelRuns(h, ctx.channelId);
+        const newRuns = runsAfter.filter((r) => !runsBefore.some((x) => x.id === r.id));
+        await h.shot("cdp-shots/run-queue-5-started.png");
+        rec(
+            "5. Start now on C drops its row and its entry and makes one new run in the channel (held, spawning no agent)",
+            clickedStart && started && !listed5.includes(c) && newRuns.length === 1,
+            JSON.stringify({ clickedStart, started, listed5, newRuns: newRuns.map((r) => ({ id: r.id, goal: r.goal, status: r.status })) })
+        );
+
+        // 6. the new run's sheet lists the start from the queue on its timeline, as a sentence under the RUN group. The
+        // run is held by deferstart, so opening its sheet spawns nothing
+        if (newRuns.length === 1) {
+            try {
+                await h.goto("jarvis");
+                const opened = await h.ev(`(async () => {
+                    for (let i = 0; i < 20 && typeof window.__openAddress !== "function"; i++) {
+                        await new Promise((r) => setTimeout(r, 250));
+                    }
+                    if (typeof window.__openAddress !== "function") return { ok: false, why: "no __openAddress hook" };
+                    return window.__openAddress(${JSON.stringify(`run:${newRuns[0].id}`)});
+                })()`);
+                const sheetUp = await polishWaitFor(h, `document.querySelector('[data-run-sheet]') != null`, 15000);
+                // the toggle shows once the run's events are in; the sheet opens the timeline closed
+                const toggled = await polishWaitFor(
+                    h,
+                    `[...document.querySelectorAll("[data-run-sheet] [data-run-sheet-timeline-toggle]")].length > 0`,
+                    15000
+                );
+                await h.ev(`(() => {
+                    const t = document.querySelector("[data-run-sheet] [data-run-sheet-timeline-toggle]");
+                    if (t && t.getAttribute("aria-expanded") !== "true") t.click();
+                })()`);
+                const rowShown = await polishWaitFor(
+                    h,
+                    `[...document.querySelectorAll("[data-run-sheet-timeline] span")].some((s) => s.children.length === 0 && s.textContent.trim() === "Started from the queue")`,
+                    5000
+                );
+                const timeline = await h.ev(`(() => ({
+                    goal: document.querySelector("[data-run-sheet]")?.textContent.includes(${JSON.stringify(RQ_TITLES.c)}) ?? false,
+                    rows: [...document.querySelectorAll("[data-run-sheet-timeline] span.truncate")].map((s) => s.textContent.trim()),
+                }))()`);
+                await h.shot("cdp-shots/run-queue-6-timeline.png");
+                rec(
+                    "6. the new run's sheet timeline shows a row reading Started from the queue (the sheet is C's run)",
+                    opened?.ok === true && sheetUp && toggled && rowShown && timeline.goal,
+                    JSON.stringify({ runId: newRuns[0].id, opened, sheetUp, toggled, rowShown, ...timeline })
+                );
+            } catch (e) {
+                rec("6. the new run's sheet timeline shows a row reading Started from the queue", false, String(e?.message ?? e));
+            }
+        } else {
+            rec("6. the new run's sheet timeline shows a row reading Started from the queue", false, "step 5 made no single new run to open");
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const failures = [];
+        const attempt = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                failures.push(`${what}: ${String(e?.message ?? e)}`);
+            }
+        };
+        // the entries go first, so restoring the cap below cannot start one (a plan entry would spawn a plan reviewer)
+        const mine = Object.values(ctx.ids ?? {});
+        await attempt("remove the entries", async () => {
+            for (const e of await rqList(h)) {
+                if (mine.includes(e.id)) await h.rpc("runqueueremove", { id: e.id });
+            }
+        });
+        if (ctx.channelId) {
+            await attempt("cancel the runs", async () => {
+                for (const run of await rqChannelRuns(h, ctx.channelId)) {
+                    if (run.status !== "cancelled") await h.rpc("cancelrun", { channelid: ctx.channelId, runid: run.id });
+                }
+            });
+            await attempt("delete the channel", () => h.rpc("deletechannel", { channelid: ctx.channelId }));
+        }
+        if ("prevMax" in ctx) await attempt("restore runs:maxactive", () => h.rpc("setconfig", { "runs:maxactive": ctx.prevMax }));
+        await attempt("remove the temp dir", () => rmSync(ctx.cwd, { recursive: true, force: true }));
+        if (failures.length > 0) throw new Error(failures.join("; "));
+    },
+};
+
+// --- run-origin: a session and the runs it started point at each other on the Agent tree ------------------------------
+// (docs/superpowers/specs/2026-10-14-run-handoff-lifecycle-design.md, decision 5.) A real queue and a real run in wavesrv;
+// the only fakes are two agents, each a shell terminal in a tab of its own that reports as a Claude agent (agent-uploads
+// stages one the same way), so no agent launches: the ORIGIN, the session that started a run and queued a plan, and the
+// LEAD, which stands in for the run's own session so the tree draws the run's row (a run with no agent in the roster has
+// none). The run is an orchestrator run held in planning by deferstart (it spawns nothing), made on the origin's tab
+// id, and its lead reports idle: no agent is at work for the run, so a click on the `→` line has none to focus and opens
+// the run's sheet. `runs:maxactive` is 1, so the plan queued behind the run waits.
+const RO_ORIGIN = "verify-origin-session";
+const RO_LEAD = "verify-origin-lead";
+const RO_PROJECT = "verify-run-origin";
+const RO_RPC = { timeout: 30000 };
+// parenthesised: they are spliced into `=== ...` comparisons, and `a ?? null === x` reads as `a ?? (null === x)`
+const roLink = (tabId) => `(document.querySelector('[data-agent-row="${tabId}"] [data-origin-link]')?.textContent.trim() ?? null)`;
+const roFrom = (tabId) => `(document.querySelector('[data-agent-row="${tabId}"] [data-origin-from]')?.textContent.trim() ?? null)`;
+// the row the selection fills (the row's `selected` is focusIdAtom's value, which no scenario can read directly)
+const roSelected = (tabId) => `(document.querySelector('[data-agent-row="${tabId}"]')?.className.includes("bg-surface-selected") ?? false)`;
+
+// a plain terminal in a tab of its own that reports as a Claude agent in `state`; the tab id is the agent id
+async function roStageAgent(h, ctx, name, state) {
+    if (ctx.workspaceId == null) {
+        const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+        const wslist = await h.rpc("workspacelist", null);
+        ctx.workspaceId = (wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0]).workspacedata.oid;
+    }
+    // tracked as soon as it exists, so a failure in the calls below still lets teardown close the tab
+    const tabId = await waveService(h, "workspace", "CreateTab", [ctx.workspaceId, name, false]);
+    ctx.tabIds.push(tabId);
+    const tab = await waveService(h, "object", "GetObject", [`tab:${tabId}`]);
+    const blockId = tab?.blockids?.[0];
+    if (!blockId) throw new Error(`the tab for ${name} has no block`);
+    // the shell starts in ~: nothing in the app tree should hold a temp dir
+    await h.rpc("setmeta", { oref: `block:${blockId}`, meta: { view: "term", controller: "shell", "cmd:cwd": "~" } });
+    await h.rpc("setmeta", { oref: `tab:${tabId}`, meta: { "session:project": RO_PROJECT } });
+    await h.rpc("eventpublish", {
+        event: "agent:status",
+        scopes: [`block:${blockId}`],
+        persist: 1,
+        data: { oref: `block:${blockId}`, state, agent: "claude", title: name, ts: Date.now() },
+    });
+    return tabId;
+}
+
+const runOriginScenario = {
+    name: "run-origin",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            cwd: mkdtempSync(join(tmpdir(), "verify-run-origin-")),
+            stamp: `runorigin${Date.now() % 100000}`,
+            tabIds: [],
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+        };
+        if (existsSync(TREE_RAIL_FIXTURE)) {
+            ctx.skip =
+                "a cockpit fixture roster is active, so the agents this scenario makes never reach the tree: run `npm run cockpit:fixtures -- --clear` and reload";
+            return ctx;
+        }
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            ctx.prevMax = (await h.rpc("getfullconfig", null))?.settings?.["runs:maxactive"] ?? null;
+            await h.rpc("setconfig", { "runs:maxactive": 1 });
+            ctx.tabId = await roStageAgent(h, ctx, RO_ORIGIN, "working");
+            const ch = await h.rpc("createchannel", { name: "verify-run-origin", projectpath: ctx.cwd });
+            ctx.channelId = ch.oid;
+            ctx.goal = `verify ${ctx.stamp}: the run the origin session started`;
+            const created = await h.rpc(
+                "createrun",
+                {
+                    channelid: ctx.channelId,
+                    workspaceid: ctx.workspaceId,
+                    goal: ctx.goal,
+                    runtime: "claude",
+                    mode: "orchestrator",
+                    deferstart: true,
+                    origintabid: ctx.tabId,
+                },
+                RO_RPC
+            );
+            ctx.runId = created.run.id;
+            // the run's session, idle: it gives the run its row on the tree, and leaves no agent at work for a click to focus
+            ctx.leadTabId = await roStageAgent(h, ctx, RO_LEAD, "idle");
+            await h.rpc("setmeta", { oref: `tab:${ctx.leadTabId}`, meta: { "jarvis:runoref": `run:${ctx.runId}` } });
+            const planPath = join(ctx.cwd, "queued.md");
+            writeFileSync(planPath, "# Origin queued plan\n\n### Task 1: Do nothing\n\nMake no change.\n");
+            const entry = await h.rpc(
+                "runqueueadd",
+                {
+                    data: {
+                        channelid: ctx.channelId,
+                        workspaceid: ctx.workspaceId,
+                        runtime: "claude",
+                        mode: "orchestrator",
+                        deferstart: true,
+                        planpath: planPath,
+                        origintabid: ctx.tabId,
+                    },
+                },
+                RO_RPC
+            );
+            ctx.entryId = entry.id;
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.skip) return [skipStep("run-origin", ctx.skip)];
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        rec(
+            "0. an origin session, a run it started (with its own session) and a plan it queued were made",
+            ctx.arrangeError == null,
+            ctx.arrangeError ?? { tabId: ctx.tabId, leadTabId: ctx.leadTabId, runId: ctx.runId, entryId: ctx.entryId }
+        );
+        if (ctx.arrangeError != null) return steps;
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
+        try {
+            // 1. the origin's row says where its two links stand, and the run's row says where it came from
+            await h.goto("agent");
+            const up = await polishWaitFor(
+                h,
+                `${roLink(ctx.tabId)} === "→ 2 runs" && ${roFrom(ctx.leadTabId)} === ${JSON.stringify(`from ${RO_ORIGIN}`)}`,
+                20000
+            );
+            await h.shot("cdp-shots/run-origin-1-two-links.png");
+            rec(
+                "1. the origin's row reads → 2 runs (the run and the queued plan), and the run's row reads from <the origin's name>",
+                up,
+                { link: await h.ev(roLink(ctx.tabId)), from: await h.ev(roFrom(ctx.leadTabId)) }
+            );
+
+            // 2. the plan leaves the queue, so one link is left, and it names the run
+            await h.rpc("runqueueremove", { id: ctx.entryId });
+            const want = `→ ${ctx.goal}`;
+            const one = await polishWaitFor(h, `${roLink(ctx.tabId)} === ${JSON.stringify(want)}`, 8000);
+            await h.shot("cdp-shots/run-origin-2-one-link.png");
+            rec("2. with the plan removed, the origin's line reads → and the run's title", one, {
+                link: await h.ev(roLink(ctx.tabId)),
+                want,
+            });
+
+            // 3. the run has no agent at work, so the router opens its sheet on Jarvis
+            await h.ev(`document.querySelector('[data-agent-row="${ctx.tabId}"] [data-origin-link]')?.click()`);
+            const sheet = await polishWaitFor(h, `document.querySelector('[data-run-sheet]') != null`, 15000);
+            const surface = await h.activeSurfaceLabel();
+            const sheetText = await h.ev(`document.querySelector('[data-run-sheet]')?.textContent ?? ""`);
+            await h.shot("cdp-shots/run-origin-3-sheet.png");
+            rec(
+                "3. a click on the → line opens the run's sheet: the surface is Jarvis and the sheet shows that run",
+                sheet && surface === SURFACE_LABEL.jarvis && sheetText.includes(ctx.stamp),
+                { sheet, surface, hasRun: sheetText.includes(ctx.stamp) }
+            );
+
+            // 4. a click on the run's from <name> focuses the origin. The run's own row is selected first, so the
+            // origin's selection is the click's and not what was there already
+            await h.goto("agent");
+            await polishWaitFor(h, `${roFrom(ctx.leadTabId)} != null`, 15000);
+            await h.ev(`document.querySelector('[data-agent-row="${ctx.leadTabId}"]')?.click()`);
+            await polishWaitFor(h, roSelected(ctx.leadTabId), 5000);
+            const before = await h.ev(roSelected(ctx.tabId));
+            await h.ev(`document.querySelector('[data-agent-row="${ctx.leadTabId}"] [data-origin-from]')?.click()`);
+            const focused = await polishWaitFor(h, roSelected(ctx.tabId), 8000);
+            await h.shot("cdp-shots/run-origin-4-focused.png");
+            rec(
+                "4. a click on the run's from <name> selects the origin session (it was not selected before)",
+                before === false && focused && (await h.ev(roSelected(ctx.leadTabId))) === false,
+                { before, focused }
+            );
+        } catch (e) {
+            rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    // best-effort, so one failed step does not strand the rest
+    async teardown(h, ctx) {
+        const failures = [];
+        const attempt = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                failures.push(`${what}: ${String(e?.message ?? e)}`);
+            }
+        };
+        if (ctx.skip) return;
+        // the entry goes first, so restoring the cap below cannot start it (a plan entry would spawn a plan reviewer)
+        await attempt("remove the entry", async () => {
+            for (const e of await rqList(h)) {
+                if (e.id === ctx.entryId) await h.rpc("runqueueremove", { id: e.id });
+            }
+        });
+        if (ctx.channelId) {
+            await attempt("cancel the run", async () => {
+                for (const run of await rqChannelRuns(h, ctx.channelId)) {
+                    if (run.status !== "cancelled") await h.rpc("cancelrun", { channelid: ctx.channelId, runid: run.id });
+                }
+            });
+        }
+        for (const tabId of ctx.tabIds ?? []) {
+            // cancelling the run may have closed its lead's tab already
+            await attempt("close a tab", () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, tabId, false]));
+        }
+        // the surface prunes a closed agent out of the saved grid as the roster catches up; the user's grid goes back only
+        // after that has been written, or the prune would write over it
+        await attempt("wait for the surface to prune the agents from the saved grid", () =>
+            polishWaitFor(
+                h,
+                `(() => {
+                    try {
+                        const ids = JSON.parse(localStorage.getItem(${JSON.stringify(GRID_KEY)}) ?? "null")?.ids ?? [];
+                        return !${JSON.stringify(ctx.tabIds ?? [])}.some((id) => ids.includes(id));
+                    } catch {
+                        return true;
+                    }
+                })()`,
+                8000
+            )
+        );
+        await attempt("restore the saved grid", () => h.ev(restoreStorageKey(GRID_KEY, ctx.prevGrid)));
+        if (ctx.channelId) await attempt("delete the channel", () => h.rpc("deletechannel", { channelid: ctx.channelId }));
+        if ("prevMax" in ctx) await attempt("restore runs:maxactive", () => h.rpc("setconfig", { "runs:maxactive": ctx.prevMax }));
+        await attempt("remove the temp dir", () => rmSync(ctx.cwd, { recursive: true, force: true }));
+        await attempt("go home", () => h.goto("cockpit"));
+        if (failures.length > 0) throw new Error(failures.join("; "));
+    },
+};
+
+// ideas-rail (docs/superpowers/specs/2026-10-14-brainstorm-ideas-design.md): the Ideas count and section on an agent's
+// details rail. The agent is a real shell (its block is the roster fixture's blockId) whose transcript is
+// <base>/ideas-fixture.jsonl, so its session is `ideas-fixture` and the rail reads the ideas wavesrv keeps for it. The
+// ideas are seeded through wshrpc, the way `wsh idea` writes them (the texts are Main.dc.html's), and each step then
+// drives the section as a person would: the strip's count, a click, the pointer over a row, the box's keys, the rows'
+// checkboxes. An ended session, `ideas-ended`, comes from a getsessionsactivity mock like agent-history's (every other
+// command, the idea ones included, goes through to the real client) and is opened from Conversations. Steps 14-18 are
+// capturing a terminal selection (Capture-Selection.dc.html): the shell prints a line, a real mouse drag selects it, and the
+// chip, the shortcut (Ctrl+Shift+I, dispatched over CDP), the toast's Undo and the shortcut with nothing selected are driven
+// as a person would. Steps 19-21 are the same shortcut on a second agent, `fx-ideas-empty`, whose session `ideas-empty`
+// has no ideas file yet (its own roster entry, block and real shell): the strip has no Ideas count, the shortcut opens the
+// section with no count and the Add an idea input focused, and one line typed there brings the count `1`. Teardown closes
+// both terminals, deletes the project and the three idea files (<data dir>/ideas/), puts back the fixture roster and the
+// keys.
+const IDEAS_AGENT = "fx-ideas-rail";
+const IDEAS_EMPTY_AGENT = "fx-ideas-empty";
+const IDEAS_PROJECT = "verify-ideas-rail";
+const IDEAS_SESSION = "ideas-fixture";
+const IDEAS_EMPTY = "ideas-empty";
+const IDEAS_ENDED = "ideas-ended";
+const IDEAS_KEYS = [
+    RAIL_VISIBLE_KEY,
+    RAIL_SECTIONS_KEY,
+    "agent.rail.tab",
+    "agent.rail.wideWidth",
+    GRID_KEY,
+    TREE_COLLAPSED_KEY,
+    ...AH_FOLDS_KEYS,
+];
+const IDEAS_MOCK_KEY = "__arcIdeasRailMock";
+const IDEAS_ASIDE = `document.querySelector('aside[aria-label="Agent details"]')`;
+const IDEAS_STAT = `${IDEAS_ASIDE}?.querySelector('[data-rail-stat="ideas"]')`;
+const IDEAS_SECTION = `${IDEAS_ASIDE}?.querySelector("[data-ideas-section]")`;
+// Main.dc.html's nine ideas, and the meta line each reads after the seeding below
+const IDEAS_TEXT = {
+    d1: "Agent tự ghi ý qua wsh idea add; không chạy model phụ",
+    d2: "Danh sách gắn theo session; resume vẫn còn",
+    d3: "Thêm tay: bôi đen + phím tắt, ô nhập, /idea, sửa/gộp/bỏ",
+    i1: "Ideas là một ô đếm như Files changed, không phải tab",
+    i2: "Nhóm theo Decided / Ideas / Open để catchup nhanh",
+    i3: "Bấm một ý thì nhảy về đúng lượt trong transcript",
+    i4: "Đẩy một ý sang note hoặc effort chunk khi đáng giữ lâu",
+    o1: "Phím tắt bôi đen: Ctrl+Shift+I có trùng DevTools ở bản dev?",
+    o2: "Agent quên ghi thì Stop hook nhắc, hay im lặng?",
+    dropped: "Model phụ (haiku) quét transcript mỗi lượt",
+};
+const IDEAS_META = {
+    d1: "turn 2 · agent",
+    d3: "turn 3 · agent",
+    i2: "turn 3 · agent",
+    i3: "turn 3 · you",
+    o1: "turn 3 · agent",
+    d2: "turn 4 · agent",
+    i4: "turn 4 · agent",
+    o2: "turn 4 · agent",
+    i1: "turn 5 · agent",
+};
+
+const ideasList = (h, session = IDEAS_SESSION) => h.rpc("idealist", { sessionid: session });
+const ideaOf = (list, text) => (list?.ideas ?? []).find((i) => i.text === text);
+const ideasLive = (list) => (list?.ideas ?? []).filter((i) => !i.dropped);
+const ideasRow = (id) => `[data-ideas-section] [data-ideas-row="${id}"]`;
+const ideasClick = (h, selector) =>
+    h.ev(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.click(); return true; })()`);
+
+// The seeding of the plan: three prompts and the first decision; a second decision, two ideas (one the user's), a question
+// and an idea that is dropped; the list marked read; then, a moment later (so they are after seenat), a decision, an
+// idea and a question; one more prompt and one more idea. That is 9 live (3 decided, 4 ideas, 2 open), 4 of them after
+// seenat, and 1 dropped
+async function ideasSeed(h) {
+    const tick = () => h.rpc("ideatick", { sessionid: IDEAS_SESSION });
+    const add = (text, kind, by = "agent") => h.rpc("ideaadd", { sessionid: IDEAS_SESSION, text, kind, by });
+    await tick();
+    await tick();
+    await add(IDEAS_TEXT.d1, "decision");
+    await tick();
+    await add(IDEAS_TEXT.d3, "decision");
+    await add(IDEAS_TEXT.i2, "idea");
+    await add(IDEAS_TEXT.i3, "idea", "you");
+    await add(IDEAS_TEXT.o1, "question");
+    const gone = await add(IDEAS_TEXT.dropped, "idea");
+    await h.rpc("ideaupdate", { sessionid: IDEAS_SESSION, op: "drop", ids: [gone.id] });
+    await h.rpc("ideaupdate", { sessionid: IDEAS_SESSION, op: "seen" });
+    await polishNap(5);
+    await tick();
+    await add(IDEAS_TEXT.d2, "decision");
+    await add(IDEAS_TEXT.i4, "idea");
+    await add(IDEAS_TEXT.o2, "question");
+    await tick();
+    await add(IDEAS_TEXT.i1, "idea");
+}
+
+// the strip's Ideas count and the section, as the page draws them
+const ideasView = (h) =>
+    h.ev(`(() => {
+        const aside = ${IDEAS_ASIDE};
+        const stat = aside?.querySelector('[data-rail-stat="ideas"]');
+        const section = aside?.querySelector("[data-ideas-section]");
+        const rows = [...(section?.querySelectorAll("[data-ideas-row]") ?? [])].map((r) => ({
+            id: r.dataset.ideasRow,
+            group: r.closest("[data-ideas-group]")?.dataset.ideasGroup ?? null,
+            text: r.querySelector("[data-ideas-text]")?.textContent ?? "",
+            meta: r.querySelector("[data-ideas-meta]")?.textContent ?? "",
+            fresh: r.dataset.fresh === "true",
+            pill: r.querySelector("[data-ideas-newpill]") != null,
+            dropped: r.dataset.dropped === "true",
+            checked: r.querySelector("[data-ideas-check]")?.getAttribute("aria-checked") === "true",
+            restore: r.querySelector('[data-ideas-action="restore"]') != null,
+        }));
+        return {
+            stat: stat
+                ? { count: stat.getAttribute("data-count"), title: stat.getAttribute("title"), dot: stat.querySelector("[data-rail-stat-dot]") != null }
+                : null,
+            open: section != null,
+            newCount: aside?.querySelector("[data-ideas-newcount]")?.textContent?.trim() ?? null,
+            markRead: aside?.querySelector("[data-ideas-markread]") != null,
+            groups: [...(section?.querySelectorAll("[data-ideas-group]") ?? [])].map((g) => g.dataset.ideasGroup + ":" + g.dataset.count),
+            groupLabels: [...(section?.querySelectorAll("[data-ideas-group]") ?? [])].map(
+                (g) => [...g.querySelectorAll("span")].slice(0, 2).map((s) => s.textContent).join(" ")
+            ),
+            rows,
+            pills: rows.filter((r) => r.pill).length,
+            selbar: section?.querySelector("[data-ideas-selbar]")?.textContent ?? null,
+            mergeDisabled: section?.querySelector("[data-ideas-merge]")?.disabled ?? null,
+            editor: section?.querySelector("[data-ideas-editbox]") != null,
+            droppedOpen: section?.querySelector("[data-ideas-dropped]")?.getAttribute("aria-expanded") === "true",
+            addValue: section?.querySelector("[data-ideas-add]")?.value ?? null,
+        };
+    })()`);
+
+// the three live groups' marks, the Dropped fold's left out
+const liveGroups = (v) => v.groups.filter((g) => !g.startsWith("dropped:"));
+const liveLabels = (v) => v.groupLabels.filter((l) => !l.startsWith("Dropped"));
+const foldCount = (v) => Number(v.groups.find((g) => g.startsWith("dropped:"))?.split(":")[1] ?? 0);
+const ideaNum = (id) => Number(id.slice(1));
+
+const ideasRowOf = (v, list, text) => {
+    const id = ideaOf(list, text)?.id;
+    return v.rows.find((r) => r.id === id);
+};
+
+// the pointer over the middle of an element, after it is scrolled into view: a real hover, which the CSS reveals read
+async function ideasHover(h, selector) {
+    const box = await h.ev(`(() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) return null;
+        el.scrollIntoView({ block: "nearest" });
+        const r = el.getBoundingClientRect();
+        return r.width > 0 ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null;
+    })()`);
+    if (!box) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y });
+    await polishNap(250);
+    return true;
+}
+
+// text typed into a field as a keyboard does (Input.insertText, so a controlled input sees an input event); `replace`
+// selects what is there first
+async function ideasType(h, selector, text, replace = false) {
+    const focused = await h.ev(`(() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) return false;
+        el.focus();
+        ${replace ? "el.select();" : ""}
+        return document.activeElement === el;
+    })()`);
+    if (!focused) return false;
+    await h.cdp("Input.insertText", { text });
+    await polishNap(150);
+    return true;
+}
+
+// A real mouse drag over the terminal line that reads exactly `text`: pressed at its first letter, moved along it,
+// released just past its last (the dev probe __arcIdeaCapture, ideasstore.ts, says where the line is on screen: the
+// WebGL renderer leaves no DOM text to find). False when the line is not on screen.
+async function ideasSelectLine(h, blockId, text) {
+    const spot = await h.ev(`window.__arcIdeaCapture?.locate(${JSON.stringify(blockId)}, ${JSON.stringify(text)}) ?? null`);
+    if (!spot) return false;
+    const at = (type, x, extra) => h.cdp("Input.dispatchMouseEvent", { type, x: Math.round(x), y: Math.round(spot.y), ...extra });
+    await at("mouseMoved", spot.x0, { button: "none", buttons: 0 });
+    await at("mousePressed", spot.x0, { button: "left", buttons: 1, clickCount: 1 });
+    for (const f of [0.25, 0.5, 0.75, 1]) {
+        await at("mouseMoved", spot.x0 + (spot.x1 - spot.x0) * f, { button: "left", buttons: 1 });
+    }
+    await at("mouseReleased", spot.x1, { button: "left", buttons: 0, clickCount: 1 });
+    await polishNap(300);
+    return true;
+}
+
+// the "Add as idea" chip as the page draws it, and whether the terminal still holds the keyboard focus; null while absent
+const ideasChipFacts = (h) =>
+    h.ev(`(() => {
+        const chip = document.querySelector("[data-ideas-capture-chip]");
+        if (!chip) return null;
+        const r = chip.getBoundingClientRect();
+        const pane = chip.closest(".view-term")?.getBoundingClientRect();
+        return {
+            visible: getComputedStyle(chip).visibility === "visible" && r.width > 0 && r.height > 0,
+            text: chip.textContent.trim(),
+            keycap: chip.querySelector("span")?.textContent?.trim() ?? null,
+            top: Math.round(r.top),
+            left: Math.round(r.left),
+            inPane: pane != null && r.left >= pane.left - 1 && r.right <= pane.right + 1 && r.top >= pane.top - 1 && r.bottom <= pane.bottom + 1,
+            termFocused: document.activeElement?.classList?.contains("xterm-helper-textarea") === true,
+        };
+    })()`);
+
+// a toast as the page draws it: its text and its action button's label
+const ideasToastFacts = (h) =>
+    h.ev(`(() => {
+        const t = [...document.querySelectorAll("[data-notification-toast]")].find((b) => b.textContent.includes("Added to Ideas"));
+        return t ? { text: t.textContent.trim(), action: t.parentElement?.querySelector("[data-notification-action]")?.textContent?.trim() ?? null } : null;
+    })()`);
+
+// the terminal's selection, from the dev probe; "" while nothing is selected
+const ideasTermSelection = (h, blockId) => h.ev(`window.__arcIdeaCapture?.selection(${JSON.stringify(blockId)}) ?? null`);
+
+// Ctrl+Shift+I (the key's own modifiers: Ctrl 2, Shift 8), dispatched as a person's keystroke
+const ideasCaptureKey = (h) => railTabsKey(h, "I", "KeyI", 73, 10);
+
+// the Ended session's transcript is one prompt; the live one also names the project's folder as its cwd
+const ideasTranscript =(cwd, prompt) =>
+    JSON.stringify({ cwd, type: "user", message: { role: "user", content: [{ type: "text", text: prompt }] } }) + "\n";
+
+// answers getsessionsactivity with the ended session and passes every other command on to what was there
+async function installIdeasMock(h, sessions, apiUrl) {
+    return h.ev(`(async () => {
+        const mod = await import(${JSON.stringify(apiUrl)});
+        const api = mod.RpcApi;
+        if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
+        if (window.${IDEAS_MOCK_KEY}) return "already-installed";
+        const prev = api.mockClient ?? null;
+        const sessions = ${JSON.stringify(sessions)};
+        const mock = {
+            mockWshRpcCall(client, command, data, opts) {
+                if (command === "getsessionsactivity") return Promise.resolve({ sessions });
+                return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
+            },
+            mockWshRpcStream(client, command, data, opts) {
+                return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
+            },
+        };
+        window.${IDEAS_MOCK_KEY} = { api, prev };
+        api.setMockRpcClient(mock);
+        const probe = await api.GetSessionsActivityCommand(window.TabRpcClient, { windowdays: 30, limit: 100 });
+        const listed = await api.IdeaListCommand(window.TabRpcClient, { sessionid: ${JSON.stringify(IDEAS_SESSION)} });
+        return (probe.sessions ?? []).some((s) => s.id === ${JSON.stringify(IDEAS_ENDED)}) && listed != null ? "ok" : "not-intercepted";
+    })()`);
+}
+
+const removeIdeasMock = (h) =>
+    h.ev(`(() => {
+        const f = window.${IDEAS_MOCK_KEY};
+        if (!f) return "absent";
+        f.api.setMockRpcClient(f.prev);
+        delete window.${IDEAS_MOCK_KEY};
+        return "restored";
+    })()`);
+
+const ideasRail = {
+    name: "ideas-rail",
+    surface: "agent",
+    async arrange(h) {
+        const base = mkdtempSync(join(tmpdir(), "verify-ideas-rail-"));
+        const ctx = {
+            base,
+            terminals: [],
+            prevFixture: existsSync(TREE_RAIL_FIXTURE) ? readFileSync(TREE_RAIL_FIXTURE, "utf8") : null,
+            prevKeys: {},
+        };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            for (const k of IDEAS_KEYS) {
+                ctx.prevKeys[k] = await h.ev(`localStorage.getItem(${JSON.stringify(k)})`);
+            }
+            ctx.dataDir = (await h.rpc("waveinfo", null)).datadir;
+            // the three lists start empty, whatever an earlier run left
+            for (const id of [IDEAS_SESSION, IDEAS_EMPTY, IDEAS_ENDED]) {
+                rmSync(join(ctx.dataDir, "ideas", `${id}.json`), { force: true });
+            }
+            ctx.repo = join(base, "repo");
+            mkdirSync(ctx.repo);
+            ctx.transcript = join(base, `${IDEAS_SESSION}.jsonl`);
+            writeFileSync(ctx.transcript, ideasTranscript(ctx.repo, "brainstorm the ideas rail"));
+            ctx.emptyTranscript = join(base, `${IDEAS_EMPTY}.jsonl`);
+            writeFileSync(ctx.emptyTranscript, ideasTranscript(ctx.repo, "an agent that has noted nothing yet"));
+            ctx.endedTranscript = join(base, `${IDEAS_ENDED}.jsonl`);
+            writeFileSync(ctx.endedTranscript, ideasTranscript(ctx.repo, "an ended brainstorm"));
+            await h.rpc("createproject", { name: IDEAS_PROJECT, path: ctx.repo });
+            ctx.project = IDEAS_PROJECT;
+            // the reload below must boot a frontend whose project list already has it (Conversations lists registered ones)
+            await waitForProjectInConfig(h, IDEAS_PROJECT);
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            await openRailTerminal(h, ctx, IDEAS_PROJECT);
+            const term = ctx.terminals[0];
+            // the tab is an agent's, as launchAgent marks one, and the block carries the session the agent reported
+            await h.rpc("setmeta", { oref: `tab:${term.tabId}`, meta: { "session:agent": "claude" } });
+            await h.rpc("setmeta", { oref: `block:${term.blockId}`, meta: { "agent:transcriptpath": ctx.transcript } });
+            // the second agent, whose session has no ideas file: its own tab, block and transcript, marked the same way
+            await openRailTerminal(h, ctx, IDEAS_PROJECT);
+            const emptyTerm = ctx.terminals[1];
+            await h.rpc("setmeta", { oref: `tab:${emptyTerm.tabId}`, meta: { "session:agent": "claude" } });
+            await h.rpc("setmeta", { oref: `block:${emptyTerm.blockId}`, meta: { "agent:transcriptpath": ctx.emptyTranscript } });
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(
+                TREE_RAIL_FIXTURE,
+                JSON.stringify(
+                    [
+                        {
+                            id: IDEAS_AGENT,
+                            name: "ideas agent",
+                            project: IDEAS_PROJECT,
+                            task: "brainstorm the ideas rail",
+                            state: "idle",
+                            agent: "claude",
+                            model: "opus",
+                            idleSince: Date.now() - 60_000,
+                            blockId: term.blockId,
+                            transcriptPath: ctx.transcript,
+                        },
+                        {
+                            id: IDEAS_EMPTY_AGENT,
+                            name: "empty ideas agent",
+                            project: IDEAS_PROJECT,
+                            task: "an agent that has noted nothing yet",
+                            state: "idle",
+                            agent: "claude",
+                            model: "opus",
+                            idleSince: Date.now() - 120_000,
+                            blockId: emptyTerm.blockId,
+                            transcriptPath: ctx.emptyTranscript,
+                        },
+                    ],
+                    null,
+                    2
+                )
+            );
+            ctx.wroteFixture = true;
+            // a known rail: open, every section at its default (Ideas is closed), Overview, the default width, an empty
+            // grid, and the tree and Conversations unfolded
+            await h.ev(`(() => {
+                localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true");
+                for (const k of ${JSON.stringify(IDEAS_KEYS.filter((k) => k !== RAIL_VISIBLE_KEY && k !== GRID_KEY))}) localStorage.removeItem(k);
+                localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify({ ids: [], focused: null }))});
+            })()`);
+            // the roster is read once at boot
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            ctx.modules = await ahResolveModules(h);
+            const now = Date.now();
+            ctx.mock = ctx.modules.urls
+                ? await installIdeasMock(
+                      h,
+                      [
+                          {
+                              id: IDEAS_ENDED,
+                              runtime: "claude",
+                              projectpath: ctx.repo,
+                              projectname: IDEAS_PROJECT,
+                              branch: "main",
+                              model: "opus",
+                              tokenstotal: 1200,
+                              status: "done",
+                              startedts: now - 3_600_000,
+                              durationms: 60_000,
+                              events: [],
+                              task: "an ended brainstorm",
+                              lastactivets: now - 600_000,
+                              resumecommand: `claude --resume ${IDEAS_ENDED}`,
+                              transcriptpath: ctx.endedTranscript,
+                          },
+                      ],
+                      ctx.modules.urls.api
+                  )
+                : `no-module-url (${ctx.modules.error})`;
+            await h.goto("agent");
+            ctx.inRoster = await polishWaitFor(h, `!!document.querySelector('[data-agent-terminal="${IDEAS_AGENT}"]')`, 15000);
+            if (!ctx.inRoster) return ctx;
+            // a pane starts its shell when it is first shown (a hidden one has no size to start it at): the second agent's
+            // first, so the first one is what stays in focus for step 0
+            ctx.emptyInRoster = await polishWaitFor(h, `!!document.querySelector('[data-agent-terminal="${IDEAS_EMPTY_AGENT}"]')`, 15000);
+            if (ctx.emptyInRoster) {
+                await h.rpc("uireveal", { address: `agent:${IDEAS_EMPTY_AGENT}` }, UI_ROUTE);
+                ctx.emptyShellUp = await uploadsShellUp(h, emptyTerm.blockId);
+            }
+            await h.rpc("uireveal", { address: `agent:${IDEAS_AGENT}` }, UI_ROUTE);
+            ctx.shellUp = await uploadsShellUp(h, term.blockId);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) =>
+            steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        const ready = ctx.arrangeError == null && ctx.inRoster === true && ctx.shellUp === true && ctx.mock === "ok";
+        rec(
+            "0. the fixture agent is focused with its rail, over a real shell, and the sessions mock is in place",
+            ready,
+            ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster, shellUp: ctx.shellUp, mock: ctx.mock })
+        );
+        if (!ready) return steps;
+        const shot = (name) => h.shot(`cdp-shots/ideas-rail-${name}.png`);
+        const T = IDEAS_TEXT;
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
+        try {
+            // --- 1. absent at 0 --------------------------------------------------------------------------------------
+            const railUp = await polishWaitFor(h, `${IDEAS_ASIDE}?.querySelector('[role="tablist"]') != null`, 10000);
+            let v = await ideasView(h);
+            let list = await ideasList(h);
+            rec(
+                "1. absent at 0: no Lightbulb count in the strip and no Ideas section (Tab-Unread, the no-ideas state)",
+                railUp && v.stat == null && !v.open && (list?.ideas ?? []).length === 0,
+                { railUp, stat: v.stat, open: v.open, ideas: (list?.ideas ?? []).length }
+            );
+            await shot("absent");
+
+            // --- 2. the count with its dot ---------------------------------------------------------------------------
+            await ideasSeed(h);
+            const counted = await polishWaitFor(h, `${IDEAS_STAT}?.getAttribute("data-count") === "9"`, 8000);
+            v = await ideasView(h);
+            list = await ideasList(h);
+            const fresh = ideasLive(list).filter((i) => i.ts > list.seenat);
+            rec(
+                "2. count with unread dot: the strip's Lightbulb reads 9 with its dot, titled `Ideas: 9, 4 new`",
+                counted &&
+                    v.stat?.count === "9" &&
+                    v.stat.dot === true &&
+                    v.stat.title === "Ideas: 9, 4 new" &&
+                    ideasLive(list).length === 9 &&
+                    fresh.length === 4 &&
+                    (list.ideas ?? []).filter((i) => i.dropped).length === 1,
+                { stat: v.stat, live: ideasLive(list).length, fresh: fresh.length, open: v.open }
+            );
+            await shot("count-dot");
+
+            // --- 3. the section opens from the count ------------------------------------------------------------------
+            const closedBefore = v.open === false;
+            await h.ev(`${IDEAS_STAT}?.click()`);
+            const opened = await polishWaitFor(h, `${IDEAS_SECTION} != null`, 5000);
+            await polishNap(400);
+            v = await ideasView(h);
+            const metasOk = Object.entries(IDEAS_META).every(([k, meta]) => ideasRowOf(v, list, T[k])?.meta === meta);
+            rec(
+                "3. ideas section open: Decided 3 / Ideas 4 / Open 2, `4 new`, four New pills, and each row's `turn N · agent|you`",
+                closedBefore &&
+                    opened &&
+                    JSON.stringify(liveGroups(v)) === JSON.stringify(["decision:3", "idea:4", "question:2"]) &&
+                    JSON.stringify(liveLabels(v)) === JSON.stringify(["Decided 3", "Ideas 4", "Open 2"]) &&
+                    v.newCount === "4 new" &&
+                    v.markRead &&
+                    v.pills === 4 &&
+                    metasOk,
+                { closedBefore, groups: liveGroups(v), labels: liveLabels(v), newCount: v.newCount, pills: v.pills, metasOk }
+            );
+            await shot("section-open");
+
+            // --- 4. hover actions -------------------------------------------------------------------------------------
+            const i1 = ideaOf(list, T.i1);
+            const d1 = ideaOf(list, T.d1);
+            const hovered = await ideasHover(h, ideasRow(i1.id));
+            const hov = await h.ev(`(() => {
+                const look = (row) => {
+                    const edit = row?.querySelector('[data-ideas-action="edit"]');
+                    const check = row?.querySelector("[data-ideas-check]");
+                    return {
+                        hover: row?.matches(":hover") ?? false,
+                        actions: edit ? getComputedStyle(edit.parentElement).opacity : null,
+                        check: check ? getComputedStyle(check.parentElement).opacity : null,
+                        edit: edit != null,
+                        decide: row?.querySelector('[data-ideas-action="decide"]') != null,
+                        drop: row?.querySelector('[data-ideas-action="drop"]') != null,
+                    };
+                };
+                return {
+                    over: look(document.querySelector(${JSON.stringify(ideasRow(i1.id))})),
+                    decided: look(document.querySelector(${JSON.stringify(ideasRow(d1.id))})),
+                };
+            })()`);
+            rec(
+                "4. hover actions: the row under the pointer shows Edit, Mark as decided, Drop and its checkbox; a row not hovered shows none, and a Decided row offers no Mark as decided",
+                hovered &&
+                    hov.over.hover &&
+                    hov.over.actions === "1" &&
+                    hov.over.check === "1" &&
+                    hov.over.edit &&
+                    hov.over.decide &&
+                    hov.over.drop &&
+                    hov.decided.hover === false &&
+                    hov.decided.actions === "0" &&
+                    hov.decided.decide === false,
+                hov
+            );
+            await shot("hover");
+
+            // --- 5. inline edit ---------------------------------------------------------------------------------------
+            const i2 = ideaOf(list, T.i2);
+            const i3 = ideaOf(list, T.i3);
+            const edited = "Một ý đã sửa: nhóm theo ba loại để đọc nhanh";
+            await ideasClick(h, `${ideasRow(i2.id)} [data-ideas-action="edit"]`);
+            const boxUp = await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-editbox]") != null`, 4000);
+            const typed = await ideasType(h, "[data-ideas-editbox]", edited, true);
+            await ideasClick(h, `[data-ideas-editor="${i2.id}"] [data-ideas-kind="question"]`);
+            await polishNap(200);
+            // the kind choice words its options as Ideas-EditMerge.dc.html does (Idea is singular, unlike its group heading)
+            const kindLabels = await h.ev(
+                `[...document.querySelectorAll('[data-ideas-editor="${i2.id}"] [role="radiogroup"] [role="radio"]')].map((b) => b.textContent.trim())`
+            );
+            await shot("inline-edit");
+            await railTabsKey(h, "Enter", "Enter", 13, 2); // Ctrl+Enter saves
+            const movedToOpen = await polishWaitFor(
+                h,
+                `${IDEAS_SECTION}?.querySelector('[data-ideas-group="question"] [data-ideas-row="${i2.id}"]') != null`,
+                6000
+            );
+            let after = await ideasList(h);
+            v = await ideasView(h);
+            const editedRow = after.ideas.find((i) => i.id === i2.id);
+            // another row: edit, type, Esc: nothing changes
+            await ideasClick(h, `${ideasRow(i3.id)} [data-ideas-action="edit"]`);
+            await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-editbox]") != null`, 4000);
+            await ideasType(h, "[data-ideas-editbox]", " (not kept)");
+            await railTabsKey(h, "Escape", "Escape", 27);
+            const closed = await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-editbox]") == null`, 4000);
+            const kept = (await ideasList(h)).ideas.find((i) => i.id === i3.id);
+            const keptRow = (await ideasView(h)).rows.find((r) => r.id === i3.id);
+            rec(
+                "5. inline edit: the kind choice reads Decided / Idea / Open; the edited idea is in Open with its new text (idealist agrees); another edit cancelled with Esc is unchanged",
+                boxUp &&
+                    typed &&
+                    JSON.stringify(kindLabels) === JSON.stringify(["Decided", "Idea", "Open"]) &&
+                    movedToOpen &&
+                    editedRow?.text === edited &&
+                    editedRow.kind === "question" &&
+                    v.rows.find((r) => r.id === i2.id)?.text === edited &&
+                    closed &&
+                    kept?.text === T.i3 &&
+                    keptRow?.text === T.i3,
+                { kindLabels, movedToOpen, text: editedRow?.text, kind: editedRow?.kind, closed, keptText: kept?.text, keptRow: keptRow?.text }
+            );
+
+            // --- 6. mark as decided -----------------------------------------------------------------------------------
+            const o2 = ideaOf(list, T.o2);
+            await ideasClick(h, `${ideasRow(o2.id)} [data-ideas-action="decide"]`);
+            const decided = await polishWaitFor(
+                h,
+                `${IDEAS_SECTION}?.querySelector('[data-ideas-group="decision"] [data-ideas-row="${o2.id}"]') != null`,
+                6000
+            );
+            v = await ideasView(h);
+            const o2Now = (await ideasList(h)).ideas.find((i) => i.id === o2.id);
+            rec(
+                "6. mark as decided: an Open row moves to Decided and the group counts follow (Decided 4 / Ideas 3 / Open 2)",
+                decided && o2Now?.kind === "decision" && JSON.stringify(liveGroups(v)) === JSON.stringify(["decision:4", "idea:3", "question:2"]),
+                { decided, kind: o2Now?.kind, groups: liveGroups(v) }
+            );
+            await shot("decided");
+
+            // --- 7. select and merge ----------------------------------------------------------------------------------
+            list = await ideasList(h);
+            const a = ideaOf(list, T.i1);
+            const b = ideaOf(list, T.i4);
+            const third = ideaOf(list, T.i3);
+            const droppedBefore = (list.ideas ?? []).filter((i) => i.dropped).length;
+            await ideasClick(h, `${ideasRow(a.id)} [data-ideas-check]`);
+            await ideasClick(h, `${ideasRow(b.id)} [data-ideas-check]`);
+            const barUp = await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-selbar]") != null`, 4000);
+            await ideasClick(h, `${ideasRow(third.id)} [data-ideas-action="edit"]`);
+            await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-editbox]") != null`, 4000);
+            v = await ideasView(h);
+            const bar = await h.ev(`(() => {
+                const bar = ${IDEAS_SECTION}?.querySelector("[data-ideas-selbar]");
+                return {
+                    text: bar?.textContent ?? null,
+                    merge: bar?.querySelector("[data-ideas-merge]")?.textContent ?? null,
+                    drop: bar?.querySelector("[data-ideas-selection-drop]")?.textContent ?? null,
+                    clear: bar?.querySelector("[data-ideas-clear]") != null,
+                };
+            })()`);
+            rec(
+                "7a. select: two checked rows give the bar `2 selected · Merge · Drop`, with a third row's edit open (Ideas-EditMerge)",
+                barUp &&
+                    bar.text?.startsWith("2 selected") &&
+                    bar.merge === "Merge" &&
+                    bar.drop === "Drop" &&
+                    bar.clear &&
+                    v.mergeDisabled === false &&
+                    v.editor &&
+                    v.rows.filter((r) => r.checked).length === 2,
+                { bar, mergeDisabled: v.mergeDisabled, editor: v.editor, checked: v.rows.filter((r) => r.checked).map((r) => r.id) }
+            );
+            await shot("select-edit");
+            await railTabsKey(h, "Escape", "Escape", 27); // closes the edit box, not the selection
+            await ideasClick(h, "[data-ideas-merge]");
+            // the oldest of the two keeps the row (and its kind); the other is dropped
+            const keepId = a.ts < b.ts || (a.ts === b.ts && ideaNum(a.id) < ideaNum(b.id)) ? a.id : b.id;
+            const goneId = keepId === a.id ? b.id : a.id;
+            const joined = (keepId === a.id ? [a.text, b.text] : [b.text, a.text]).join("; ");
+            const merged = await polishWaitFor(
+                h,
+                `[...(${IDEAS_SECTION}?.querySelectorAll('[data-ideas-row="${keepId}"] [data-ideas-text]') ?? [])].some((t) => t.textContent === ${JSON.stringify(joined)})`,
+                6000
+            );
+            list = await ideasList(h);
+            v = await ideasView(h);
+            const keepNow = list.ideas.find((i) => i.id === keepId);
+            const goneNow = list.ideas.find((i) => i.id === goneId);
+            rec(
+                "7b. merge: one row holds both texts oldest first joined by `; `, the other is in Dropped, the count is one less (9 to 8)",
+                merged &&
+                    keepNow?.text === joined &&
+                    keepNow.dropped !== true &&
+                    goneNow?.dropped === true &&
+                    ideasLive(list).length === 8 &&
+                    v.stat?.count === "8" &&
+                    v.selbar == null &&
+                    (list.ideas ?? []).filter((i) => i.dropped).length === droppedBefore + 1,
+                { merged, live: ideasLive(list).length, stat: v.stat?.count, selbar: v.selbar, dropped: (list.ideas ?? []).filter((i) => i.dropped).length }
+            );
+            // a checked row clears with Esc: the focus is on the checkbox, as a click leaves it
+            await h.ev(`(() => { const c = document.querySelector(${JSON.stringify(`${ideasRow(third.id)} [data-ideas-check]`)}); c?.focus(); c?.click(); })()`);
+            const oneUp = await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-selbar]")?.textContent?.startsWith("1 selected")`, 4000);
+            const oneBar = await ideasView(h);
+            await railTabsKey(h, "Escape", "Escape", 27);
+            await polishNap(300);
+            v = await ideasView(h);
+            rec(
+                "7c. one checked row: `1 selected` with Merge off; Esc clears the selection",
+                oneUp && oneBar.mergeDisabled === true && v.selbar == null && v.rows.every((r) => !r.checked),
+                { oneUp, mergeDisabled: oneBar.mergeDisabled, selbar: v.selbar }
+            );
+
+            // --- 8. drop ----------------------------------------------------------------------------------------------
+            list = await ideasList(h);
+            const o1 = ideaOf(list, T.o1);
+            const liveBefore = ideasLive(list).length;
+            const droppedBefore8 = (list.ideas ?? []).filter((i) => i.dropped).length;
+            await ideasHover(h, ideasRow(o1.id));
+            await shot("drop-hover");
+            await ideasClick(h, `${ideasRow(o1.id)} [data-ideas-action="drop"]`);
+            const dropped = await polishWaitFor(h, `${IDEAS_STAT}?.getAttribute("data-count") === "${liveBefore - 1}"`, 6000);
+            v = await ideasView(h);
+            rec(
+                "8. drop: the count is one less and the Dropped fold's count one more",
+                dropped && v.stat?.count === String(liveBefore - 1) && foldCount(v) === droppedBefore8 + 1,
+                { count: v.stat?.count, fold: foldCount(v), expectedFold: droppedBefore8 + 1 }
+            );
+
+            // --- 9. Dropped open, Restore -----------------------------------------------------------------------------
+            await ideasClick(h, "[data-ideas-dropped]");
+            await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-dropped]")?.getAttribute("aria-expanded") === "true"`, 4000);
+            await polishNap(300);
+            v = await ideasView(h);
+            const droppedRows = v.rows.filter((r) => r.dropped);
+            await h.ev(`${IDEAS_SECTION}?.querySelector("[data-ideas-dropped]")?.scrollIntoView({ block: "center" })`);
+            await shot("dropped-open");
+            await ideasClick(h, `[data-ideas-section] [data-ideas-row="${o1.id}"] [data-ideas-action="restore"]`);
+            const restored = await polishWaitFor(
+                h,
+                `${IDEAS_SECTION}?.querySelector('[data-ideas-group="question"] [data-ideas-row="${o1.id}"]') != null`,
+                6000
+            );
+            v = await ideasView(h);
+            rec(
+                "9. dropped open: every dropped row has Restore; Restore puts one back in its group and the count is one more",
+droppedRows.length === droppedBefore8 + 1 &&
+                    droppedRows.every((r) => r.restore) &&
+                    restored &&
+                    v.stat?.count === String(liveBefore) &&
+                    foldCount(v) === droppedBefore8,
+                { droppedRows: droppedRows.length, restoreEach: droppedRows.every((r) => r.restore), restored, count: v.stat?.count, fold: foldCount(v) }
+            );
+
+            // --- 10. add an idea --------------------------------------------------------------------------------------
+            const mine = "Ý tôi tự thêm vào bằng ô nhập";
+            await h.ev(`${IDEAS_SECTION}?.querySelector("[data-ideas-add]")?.scrollIntoView({ block: "center" })`);
+            const typedAdd = await ideasType(h, "[data-ideas-add]", mine);
+            await railTabsKey(h, "Enter", "Enter", 13);
+            const added = await polishWaitFor(
+                h,
+                `[...(${IDEAS_SECTION}?.querySelectorAll('[data-ideas-group="idea"] [data-ideas-text]') ?? [])].some((t) => t.textContent === ${JSON.stringify(mine)})`,
+                6000
+            );
+            v = await ideasView(h);
+            list = await ideasList(h);
+            const addedIdea = ideaOf(list, mine);
+            const addedRow = v.rows.find((r) => r.id === addedIdea?.id);
+            rec(
+                "10. add an idea: a new row in Ideas read as the user's own (`you`), the count one more, the input empty",
+                typedAdd &&
+                    added &&
+                    addedIdea?.by === "you" &&
+                    addedIdea.kind === "idea" &&
+                    /(^|· )you$/.test(addedRow?.meta ?? "") &&
+                    addedRow?.group === "idea" &&
+                    v.stat?.count === String(liveBefore + 1) &&
+                    v.addValue === "",
+                { added, by: addedIdea?.by, meta: addedRow?.meta, count: v.stat?.count, input: v.addValue }
+            );
+            await shot("added");
+
+            // --- 11. Mark read ----------------------------------------------------------------------------------------
+            v = await ideasView(h);
+            const beforeRead = { dot: v.stat?.dot, newCount: v.newCount, pills: v.pills };
+            await ideasClick(h, "[data-ideas-markread]");
+            const read = await polishWaitFor(h, `${IDEAS_STAT}?.querySelector("[data-rail-stat-dot]") == null`, 6000);
+            await polishNap(300);
+            v = await ideasView(h);
+            list = await ideasList(h);
+            const newest = Math.max(...(list.ideas ?? []).map((i) => i.ts));
+            rec(
+                "11. mark read clears dot: the dot, `N new` and the pills are gone, and seenat is past every idea",
+                beforeRead.dot === true &&
+                    beforeRead.newCount != null &&
+                    beforeRead.pills > 0 &&
+                    read &&
+                    v.stat?.dot === false &&
+                    v.newCount == null &&
+                    v.markRead === false &&
+                    v.pills === 0 &&
+                    list.seenat >= newest,
+                { beforeRead, dot: v.stat?.dot, newCount: v.newCount, pills: v.pills, seenat: list.seenat, newest }
+            );
+            await shot("read");
+
+            // --- 12. leaving marks read -------------------------------------------------------------------------------
+            const late = await h.rpc("ideaadd", { sessionid: IDEAS_SESSION, text: "Một ý mới từ agent khi đang xem", kind: "idea", by: "agent" });
+            const dotBack = await polishWaitFor(
+                h,
+                `${IDEAS_STAT}?.querySelector("[data-rail-stat-dot]") != null && ${IDEAS_ASIDE}?.querySelector("[data-ideas-newcount]")?.textContent?.trim() === "1 new"`,
+                6000
+            );
+            // the Files tab needs the agent's working directory, which the rail reads from its transcript
+            const filesTab = await polishWaitFor(h, `${IDEAS_ASIDE}?.querySelector('[data-rail-tab="tree"]') != null`, 20000);
+            await h.ev(`${IDEAS_ASIDE}?.querySelector('[data-rail-tab="tree"]')?.click()`);
+            const left = await polishWaitFor(h, `${IDEAS_SECTION} == null`, 5000);
+            let seen = false;
+            for (let waited = 0; waited < 6000 && !seen; waited += 250) {
+                seen = ((await ideasList(h)).seenat ?? 0) >= late.ts;
+                if (!seen) await polishNap(250);
+            }
+            const dotGone = await polishWaitFor(h, `${IDEAS_STAT}?.querySelector("[data-rail-stat-dot]") == null`, 6000);
+            await shot("left");
+            await h.ev(`${IDEAS_ASIDE}?.querySelector('[data-rail-tab="overview"]')?.click()`);
+            rec(
+                "12. leaving marks read: a new idea brings the dot back; switching the rail to its other tab sends seen, so seenat is past that idea and the dot is gone",
+                dotBack && filesTab && left && seen && dotGone,
+                { dotBack, filesTab, left, seen, dotGone }
+            );
+
+            // --- 13. an ended session, opened from Conversations ------------------------------------------------------
+            await h.rpc("ideaadd", { sessionid: IDEAS_ENDED, text: "Ý một của phiên đã kết thúc", kind: "decision", by: "agent" });
+            await h.rpc("ideaadd", { sessionid: IDEAS_ENDED, text: "Ý hai của phiên đã kết thúc", kind: "idea", by: "agent" });
+            const rowSel = `[data-agent-session-row="claude:${IDEAS_ENDED}"]`;
+            let listed = await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(rowSel)})`, 8000);
+            if (!listed) {
+                // the sidebar rescans on re-entry, at most every 5s
+                await h.goto("cockpit");
+                await polishNap(AH_SCAN_GAP_MS);
+                await h.goto("agent");
+                listed = await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(rowSel)})`, 8000);
+            }
+            await h.ev(`document.querySelector(${JSON.stringify(rowSel)})?.click()`);
+            const sessionShown = await polishWaitFor(h, `!!document.querySelector("[data-agent-session]")`, 8000);
+            const folded = await polishWaitFor(h, `!!document.querySelector("[data-agent-session] [data-ideas-ended]")`, 8000);
+            const foldedView = await h.ev(`(() => {
+                const ended = document.querySelector("[data-agent-session] [data-ideas-ended]");
+                return {
+                    toggle: ended?.querySelector("[data-ideas-ended-toggle]")?.textContent?.trim() ?? null,
+                    rows: ended?.querySelectorAll("[data-ideas-row]").length ?? -1,
+                    expanded: ended?.querySelector("[data-ideas-ended-toggle]")?.getAttribute("aria-expanded") ?? null,
+                };
+            })()`);
+            await shot("ended-folded");
+            await h.ev(`document.querySelector("[data-agent-session] [data-ideas-ended-toggle]")?.click()`);
+            const expanded = await polishWaitFor(
+                h,
+                `document.querySelectorAll("[data-agent-session] [data-ideas-ended] [data-ideas-row]").length === 2`,
+                6000
+            );
+            const endedRows = await h.ev(`[...document.querySelectorAll("[data-agent-session] [data-ideas-ended] [data-ideas-text]")].map((t) => t.textContent)`);
+            const pills = await h.ev(`document.querySelectorAll("[data-agent-session] [data-ideas-newpill]").length`);
+            // the opened list fits its box: nothing of it reaches past the sides, so there is no sideways scrollbar
+            const endedBox = await h.ev(`(() => {
+                const body = document.querySelector("[data-agent-session] [data-ideas-ended-body]");
+                return body ? { client: body.clientWidth, scroll: body.scrollWidth } : null;
+            })()`);
+            await shot("ended-open");
+            const endedList = await ideasList(h, IDEAS_ENDED);
+            rec(
+                "13. ended session: opened from Conversations, the session view holds the folded `Ideas · 2`; expanded, both rows show, with no New pills and no sideways scroll, and looking does not mark the list read",
+                listed &&
+                    sessionShown &&
+                    folded &&
+                    foldedView.toggle === "Ideas · 2" &&
+                    foldedView.rows === 0 &&
+                    foldedView.expanded === "false" &&
+                    expanded &&
+                    endedRows.includes("Ý một của phiên đã kết thúc") &&
+                    endedRows.includes("Ý hai của phiên đã kết thúc") &&
+                    pills === 0 &&
+                    endedBox != null &&
+                    endedBox.scroll <= endedBox.client &&
+                    endedList.seenat === 0,
+                { listed, sessionShown, foldedView, expanded, endedRows, pills, endedBox, seenat: endedList.seenat }
+            );
+
+            // --- 14. the "Add as idea" chip beside a selection (Capture-Selection.dc.html) ----------------------------
+            // back on the agent's own terminal: the shell prints a line, which a mouse drag then selects
+            const term = ctx.terminals[0];
+            await h.rpc("uireveal", { address: `agent:${IDEAS_AGENT}` }, UI_ROUTE);
+            const paneBack = await polishWaitFor(
+                h,
+                `(document.querySelector('[data-agent-terminal="${IDEAS_AGENT}"] .xterm-screen')?.getClientRects().length ?? 0) > 0 && ${IDEAS_STAT} != null`,
+                15000
+            );
+            const nBefore = ideasLive(await ideasList(h)).length;
+            const marker = `ideas-capture-line-${Date.now().toString(36)}`;
+            const printed = await termLogPrint(h, term.blockId, marker);
+            const dragged = await ideasSelectLine(h, term.blockId, marker);
+            const chipShown = await polishWaitFor(h, `getComputedStyle(document.querySelector("[data-ideas-capture-chip]") ?? document.body).visibility === "visible" && !!document.querySelector("[data-ideas-capture-chip]")`, 5000);
+            const spot = await h.ev(`window.__arcIdeaCapture?.locate(${JSON.stringify(term.blockId)}, ${JSON.stringify(marker)}) ?? null`);
+            const chip = await ideasChipFacts(h);
+            const selected = ((await ideasTermSelection(h, term.blockId)) ?? "").trim();
+            await shot("selection-chip");
+            // a key typed (and rubbed out) takes the chip away; the next selection brings it back
+            await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "x", code: "KeyX", text: "x", windowsVirtualKeyCode: 88 });
+            await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "x", code: "KeyX", windowsVirtualKeyCode: 88 });
+            const chipGone = await polishWaitFor(h, `!document.querySelector("[data-ideas-capture-chip]")`, 3000);
+            await railTabsKey(h, "Backspace", "Backspace", 8);
+            const draggedAgain = await ideasSelectLine(h, term.blockId, marker);
+            const chipBack = await polishWaitFor(h, `!!document.querySelector("[data-ideas-capture-chip]")`, 5000);
+            rec(
+                "14. selection chip: dragging over a terminal line shows `Add as idea` with its keycap just under the line's end, inside the pane and without taking the terminal's focus; a typed key takes it away and the next selection brings it back",
+                paneBack &&
+                    printed &&
+                    dragged &&
+                    chipShown &&
+                    selected === marker &&
+                    chip?.visible === true &&
+                    chip.text.startsWith("Add as idea") &&
+                    chip.keycap != null &&
+                    chip.keycap !== "" &&
+                    chip.inPane === true &&
+                    spot != null &&
+                    chip.top > spot.y &&
+                    chip.termFocused === true &&
+                    chipGone &&
+                    draggedAgain &&
+                    chipBack,
+                { paneBack, printed, dragged, chipShown, selected, chip, lineY: spot?.y, chipGone, draggedAgain, chipBack }
+            );
+
+            // --- 15. the shortcut adds the selection -------------------------------------------------------------------
+            await ideasCaptureKey(h);
+            const toastUp = await polishWaitFor(h, `[...document.querySelectorAll("[data-notification-toast]")].some((b) => b.textContent.includes("Added to Ideas"))`, 6000);
+            const toast = await ideasToastFacts(h);
+            const counted15 = await polishWaitFor(h, `${IDEAS_STAT}?.getAttribute("data-count") === "${nBefore + 1}"`, 6000);
+            const cleared = ((await ideasTermSelection(h, term.blockId)) ?? "x") === "";
+            const chipAfter = await ideasChipFacts(h);
+            list = await ideasList(h);
+            const mineIdeas = (list.ideas ?? []).filter((i) => i.text === marker && !i.dropped);
+            const captured = mineIdeas[0];
+            await shot("shortcut-adds");
+            rec(
+                "15. shortcut adds: the toast `Added to Ideas` with Undo shows, the selection is cleared and the chip gone, the count is one more, and idealist has the line as an idea by you",
+                toastUp &&
+                    toast?.action === "Undo" &&
+                    counted15 &&
+                    cleared &&
+                    chipAfter == null &&
+                    mineIdeas.length === 1 &&
+                    captured.by === "you" &&
+                    captured.kind === "idea",
+                { toast, counted15, cleared, chipAfter, found: mineIdeas.length, by: captured?.by, kind: captured?.kind }
+            );
+
+            // --- 16. Undo ----------------------------------------------------------------------------------------------
+            await h.ev(`[...document.querySelectorAll("[data-notification-action]")].find((b) => b.textContent.trim() === "Undo")?.click()`);
+            const undone = await polishWaitFor(h, `${IDEAS_STAT}?.getAttribute("data-count") === "${nBefore}"`, 6000);
+            const toastGone = await polishWaitFor(h, `![...document.querySelectorAll("[data-notification-toast]")].some((b) => b.textContent.includes("Added to Ideas"))`, 4000);
+            list = await ideasList(h);
+            const undoneIdea = (list.ideas ?? []).find((i) => i.id === captured?.id);
+            rec(
+                "16. undo: Undo puts the count back and the idea is dropped in idealist",
+                undone && toastGone && undoneIdea?.dropped === true && ideasLive(list).length === nBefore,
+                { undone, toastGone, dropped: undoneIdea?.dropped, live: ideasLive(list).length, expected: nBefore }
+            );
+
+            // --- 17. a click on the chip adds ---------------------------------------------------------------------------
+            const draggedThird = await ideasSelectLine(h, term.blockId, marker);
+            const chipThird = await polishWaitFor(h, `getComputedStyle(document.querySelector("[data-ideas-capture-chip]") ?? document.body).visibility === "visible" && !!document.querySelector("[data-ideas-capture-chip]")`, 5000);
+            const button = await h.ev(`(() => {
+                const r = document.querySelector("[data-ideas-capture-add]")?.getBoundingClientRect();
+                return r && r.width > 0 ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null;
+            })()`);
+            if (button) {
+                await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: button.x, y: button.y, button: "none", buttons: 0 });
+                await h.cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: button.x, y: button.y, button: "left", buttons: 1, clickCount: 1 });
+                await h.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: button.x, y: button.y, button: "left", buttons: 0, clickCount: 1 });
+            }
+            const counted17 = await polishWaitFor(h, `${IDEAS_STAT}?.getAttribute("data-count") === "${nBefore + 1}"`, 6000);
+            const clearedThird = ((await ideasTermSelection(h, term.blockId)) ?? "x") === "";
+            const focusKept = await h.ev(`document.activeElement?.classList?.contains("xterm-helper-textarea") === true`);
+            list = await ideasList(h);
+            const again = (list.ideas ?? []).filter((i) => i.text === marker && !i.dropped);
+            await shot("chip-click-adds");
+            rec(
+                "17. chip click adds: selecting again and pressing the chip adds the line (the count is one more, the selection cleared), and the terminal keeps the focus",
+                draggedThird &&
+                    chipThird &&
+                    button != null &&
+                    counted17 &&
+                    clearedThird &&
+                    focusKept === true &&
+                    again.length === 1 &&
+                    again[0].id !== captured?.id &&
+                    again[0].by === "you",
+                { draggedThird, chipThird, button, counted17, clearedThird, focusKept, found: again.length }
+            );
+            await h.ev(`document.querySelectorAll("[data-notification-close]").forEach((b) => b.click())`);
+
+            // --- 18. the shortcut with nothing selected opens the Ideas input -------------------------------------------
+            // the section is closed first, so it is the shortcut that opens it, and the terminal holds the focus
+            await h.ev(`${IDEAS_ASIDE}?.querySelector('[data-rail-section="ideas"] h3 button')?.click()`);
+            const closedFirst = await polishWaitFor(h, `${IDEAS_SECTION} == null`, 4000);
+            const focusedTerm = await h.ev(`(() => {
+                const t = document.querySelector('[data-agent-terminal="${IDEAS_AGENT}"] .xterm-helper-textarea');
+                t?.focus();
+                return document.activeElement === t;
+            })()`);
+            const nothingSelected = ((await ideasTermSelection(h, term.blockId)) ?? "x") === "";
+            await ideasCaptureKey(h);
+            const inputFocused = await polishWaitFor(h, `document.activeElement?.matches?.("[data-ideas-add]") === true && ${IDEAS_SECTION} != null`, 6000);
+            const input = await h.ev(`(() => {
+                const el = document.activeElement;
+                const r = el?.getBoundingClientRect();
+                return { tag: el?.tagName ?? null, label: el?.getAttribute?.("placeholder") ?? null, shown: r != null && r.width > 0 && r.height > 0 };
+            })()`);
+            await shot("shortcut-no-selection");
+            rec(
+                "18. shortcut with no selection: with the Ideas section closed and nothing selected, the shortcut opens it and the focus is on its Add an idea input",
+                closedFirst && focusedTerm === true && nothingSelected && inputFocused && input.shown && input.label === "Add an idea",
+                { closedFirst, focusedTerm, nothingSelected, inputFocused, input }
+            );
+
+            // --- 19-21. the same shortcut on an agent whose session has no ideas yet ------------------------------------
+            // the second agent: no ideas file, so the strip has no count, and the section is not on its rail until asked for
+            const emptyTerm = ctx.terminals[1];
+            const emptySetUp = ctx.emptyInRoster === true && ctx.emptyShellUp === true && emptyTerm != null;
+            if (emptySetUp) {
+                await h.rpc("uireveal", { address: `agent:${IDEAS_EMPTY_AGENT}` }, UI_ROUTE);
+            }
+            const emptyPane = await polishWaitFor(
+                h,
+                `(document.querySelector('[data-agent-terminal="${IDEAS_EMPTY_AGENT}"] .xterm-screen')?.getClientRects().length ?? 0) > 0 && (document.querySelector('[data-agent-terminal="${IDEAS_AGENT}"] .xterm-screen')?.getClientRects().length ?? 0) === 0 && ${IDEAS_ASIDE}?.querySelector('[role="tablist"]') != null && ${IDEAS_STAT} == null`,
+                15000
+            );
+            await polishNap(400);
+            v = await ideasView(h);
+            const emptyBefore = await ideasList(h, IDEAS_EMPTY);
+            await shot("empty-no-count");
+            rec(
+                "19. an agent with no ideas yet: with its pane in focus (the other agent's has gone), the strip has no Ideas count and the rail has no Ideas section, and idealist holds nothing for its session",
+                emptySetUp &&
+                    emptyPane &&
+                    v.stat == null &&
+                    !v.open &&
+                    (emptyBefore?.ideas ?? []).length === 0,
+                { emptySetUp, emptyPane, stat: v.stat, open: v.open, ideas: (emptyBefore?.ideas ?? []).length }
+            );
+
+            // the terminal holds the focus and nothing is selected, as in step 18
+            const emptyFocused = await h.ev(`(() => {
+                const t = document.querySelector('[data-agent-terminal="${IDEAS_EMPTY_AGENT}"] .xterm-helper-textarea');
+                t?.focus();
+                return document.activeElement === t;
+            })()`);
+            const emptyNoSelection = emptySetUp && ((await ideasTermSelection(h, emptyTerm.blockId)) ?? "x") === "";
+            await ideasCaptureKey(h);
+            const emptyInputFocused = await polishWaitFor(
+                h,
+                `document.activeElement?.matches?.("[data-ideas-add]") === true && ${IDEAS_SECTION} != null`,
+                6000
+            );
+            await polishNap(300);
+            const emptyOpen = await h.ev(`(() => {
+                const aside = ${IDEAS_ASIDE};
+                const el = document.activeElement;
+                const r = el?.getBoundingClientRect();
+                return {
+                    heading: aside?.querySelector('[data-rail-section="ideas"] h3')?.textContent?.trim() ?? null,
+                    stat: aside?.querySelector('[data-rail-stat="ideas"]') != null,
+                    rows: aside?.querySelectorAll("[data-ideas-section] [data-ideas-row]").length ?? -1,
+                    newCount: aside?.querySelector("[data-ideas-newcount]") != null,
+                    placeholder: el?.getAttribute?.("placeholder") ?? null,
+                    shown: r != null && r.width > 0 && r.height > 0,
+                };
+            })()`);
+            await shot("empty-section");
+            rec(
+                "20. shortcut with no selection and no ideas: the Ideas section opens with no count (its heading is just Ideas, the strip still has none) and no rows, and the focus is on its Add an idea input",
+                emptyFocused === true &&
+                    emptyNoSelection &&
+                    emptyInputFocused &&
+                    emptyOpen.heading === "Ideas" &&
+                    emptyOpen.stat === false &&
+                    emptyOpen.rows === 0 &&
+                    emptyOpen.newCount === false &&
+                    emptyOpen.shown &&
+                    emptyOpen.placeholder === "Add an idea",
+                { emptyFocused, emptyNoSelection, emptyInputFocused, ...emptyOpen }
+            );
+
+            // one line typed into the focused input is the list's first idea, and the strip's count `1` appears
+            const first = "Ý đầu tiên của một phiên chưa có gì";
+            const typedFirst = await ideasType(h, "[data-ideas-add]", first);
+            await railTabsKey(h, "Enter", "Enter", 13);
+            const counted1 = await polishWaitFor(h, `${IDEAS_STAT}?.getAttribute("data-count") === "1"`, 8000);
+            const rowIn = await polishWaitFor(
+                h,
+                `[...(${IDEAS_SECTION}?.querySelectorAll("[data-ideas-text]") ?? [])].some((t) => t.textContent === ${JSON.stringify(first)})`,
+                6000
+            );
+            v = await ideasView(h);
+            const emptyAfter = await ideasList(h, IDEAS_EMPTY);
+            const firstIdea = ideaOf(emptyAfter, first);
+            const strayInOther = ideaOf(await ideasList(h), first) != null;
+            await shot("empty-added");
+            rec(
+                "21. the first idea: typing one line into that input and pressing Enter makes the strip's count `1` appear, the row is in the section as the user's own, the input is empty, and idealist has it for that session only",
+                emptySetUp &&
+                    typedFirst &&
+                    counted1 &&
+                    v.stat?.count === "1" &&
+                    rowIn &&
+                    v.addValue === "" &&
+                    (emptyAfter?.ideas ?? []).length === 1 &&
+                    firstIdea?.by === "you" &&
+                    firstIdea.kind === "idea" &&
+                    !strayInOther,
+                { typedFirst, counted1, count: v.stat?.count, rowIn, input: v.addValue, ideas: (emptyAfter?.ideas ?? []).length, by: firstIdea?.by, kind: firstIdea?.kind, strayInOther }
+            );
+        } catch (e) {
+            rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`ideas-rail teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("remove the sessions mock", () => removeIdeasMock(h));
+        for (const t of ctx.terminals ?? []) {
+            await step("close the terminal", () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false]));
+        }
+        if (ctx.project) {
+            // deleteproject leaves the channel createproject made, so that goes too
+            await step("remove the project", async () => {
+                await h.rpc("deleteproject", { name: ctx.project });
+                const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+                for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.repo))) {
+                    await h.rpc("deletechannel", { channelid: c.oid });
+                }
+            });
+        }
+        if (ctx.wroteFixture) {
+            await step("restore the fixture roster", () =>
+                ctx.prevFixture != null ? writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture) : rmSync(TREE_RAIL_FIXTURE, { force: true })
+            );
+        }
+        if (ctx.dataDir) {
+            await step("delete the three idea files", () => {
+                for (const id of [IDEAS_SESSION, IDEAS_EMPTY, IDEAS_ENDED]) rmSync(join(ctx.dataDir, "ideas", `${id}.json`), { force: true });
+            });
+        }
+        await step("restore the keys", async () => {
+            for (const [k, v] of Object.entries(ctx.prevKeys ?? {})) {
+                await h.ev(v == null ? `localStorage.removeItem(${JSON.stringify(k)})` : `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)})`);
+            }
+        });
+        await step("reload onto the restored roster", () => ahReload(h));
+        await step("remove the temp dir", () => rmSync(ctx.base, { recursive: true, force: true }));
+    },
+};
+
+// --- learned additions: needs-you-learn-card, setup-skill-additions, setup-learned ------------------------------------
+// docs/superpowers/specs/2026-10-14-learned-additions-design.md. A final-verify app has a data dir of its own, so the notes,
+// the mute list and the proposals these scenarios make are throwaway. It has no vault or home of its own: the vault is
+// vaultRoot(h), and an accept writes into the real ~/.claude/projects and, through agentsync.Apply, into every harness's
+// skills dir. So a fixture is named for one run, is never made in a vault that has a remote, and is removed in teardown
+// (the harness copies with it). The app is not pointed at a temp vault: Apply removes from each harness the managed
+// skills the vault lacks. verify.mjs runs no teardown for an arrange that threw, so an arrange cleans up for itself.
+const LEARN_RPC = { timeout: 30000 };
+
+// the local YYYY-MM-DD the backend stamps on a note's session and an accepted line
+const learnToday = () => {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+// "dd/mm", the day lineMeta shows
+const learnDayMonth = (today) => `${today.slice(8, 10)}/${today.slice(5, 7)}`;
+// mirrors agentobserve.SlugifyCwd: every character that is not an ASCII letter or digit becomes "-"
+const learnSlug = (cwd) => cwd.replace(/[^A-Za-z0-9]/gu, "-");
+const learnQuote = (key, session) => `cdp quote ${session} for ${key}`;
+
+// the strip's card and Setup's line for an id; both ids carry a path or a "#", so they are matched by value
+const LEARN_ROW = (id) =>
+    `[...document.querySelectorAll("[data-learn-id]")].find((r) => r.dataset.learnId === ${JSON.stringify(id)})`;
+const LEARN_LINE = (id) =>
+    `[...document.querySelectorAll("[data-learned-line]")].find((l) => l.dataset.learnedLine === ${JSON.stringify(id)})`;
+const learnPart = (rootExpr, testid) => `(${rootExpr})?.querySelector('[data-testid="${testid}"]')`;
+// an Edit or Remove re-runs agentsync.Apply for every harness, which took past 6s on a loaded machine (2026-10-14); the
+// line's buttons stay disabled meanwhile, so a click then is dropped
+const LEARN_SETTLE_MS = 30_000;
+const learnClick = async (h, rootExpr, testid) => {
+    await polishWaitFor(h, `!!${learnPart(rootExpr, testid)} && !${learnPart(rootExpr, testid)}.disabled`, LEARN_SETTLE_MS);
+    return h.ev(`(() => { const b = ${learnPart(rootExpr, testid)}; if (!b) return false; b.click(); return true; })()`);
+};
+const learnEnter = (h, rootExpr, testid) =>
+    h.ev(`(() => {
+        const el = ${learnPart(rootExpr, testid)};
+        if (!el) return false;
+        el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+        return true;
+    })()`);
+
+// Edit on a card or a line: the input opens, takes `text`, and Enter saves it. False when the input never opened.
+async function learnEditTo(h, rootExpr, { edit, input }, text) {
+    if (!(await learnClick(h, rootExpr, edit))) return false;
+    if (!(await polishWaitFor(h, `!!${learnPart(rootExpr, input)}`, 3000))) return false;
+    await h.ev(setInputExpr(learnPart(rootExpr, input), text));
+    // React renders the typed text before the key handler reads it
+    await polishNap(150);
+    return learnEnter(h, rootExpr, input);
+}
+
+// two notes in two sessions raise a proposal; `target` is { skill } or { cwd }
+async function learnPropose(h, target, key, text) {
+    const today = learnToday();
+    let last;
+    for (const session of ["a", "b"]) {
+        last = await h.rpc("learnnote", {
+            key,
+            ...target,
+            text,
+            quote: learnQuote(key, session),
+            session: `cdp-${session}:${today}`,
+        });
+    }
+    if (last?.proposed !== true) throw new Error(`two notes for ${key} raised no proposal: ${JSON.stringify(last)}`);
+}
+
+// runs every cleanup step, even after one threw, and fails with all the reasons
+async function learnTeardown(steps) {
+    const failed = [];
+    for (const step of steps) {
+        try {
+            await step();
+        } catch (e) {
+            failed.push(String(e?.message ?? e));
+        }
+    }
+    if (failed.length > 0) throw new Error(failed.join("; "));
+}
+
+// rethrows e once the cleanup has run; a cleanup that fails too adds its reason
+async function learnFailAfter(e, cleanup) {
+    let more = "";
+    try {
+        await cleanup();
+    } catch (ce) {
+        more = `; cleaning up also failed: ${ce?.message ?? ce}`;
+    }
+    throw new Error(`${e?.message ?? e}${more}`);
+}
+
+// a vault skill of this run's own, projected into each harness
+async function arrangeLearnSkill(h) {
+    const root = await vaultRoot(h);
+    const remote = vaultRemote(root);
+    if (remote) throw new Error(`the vault ${root} has a git remote (${remote}): not writing a fixture skill into it`);
+    const name = `cdp-learn-${Date.now()}`;
+    const dir = join(root, "skills", name);
+    if (existsSync(dir)) throw new Error(`${dir} already exists`);
+    const skill = { root, name, dir };
+    try {
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(
+            join(dir, "SKILL.md"),
+            `---\nname: ${name}\ndescription: CDP fixture for the learned-additions scenarios\n---\n\nA fixture skill.\n`
+        );
+        await h.rpc("agentsyncapply", { dryrun: false }, LEARN_RPC);
+    } catch (e) {
+        await learnFailAfter(e, () => teardownLearnSkill(h, skill));
+    }
+    return skill;
+}
+
+// removing the vault copy and syncing again removes the copies arcterm projected into each harness
+async function teardownLearnSkill(h, skill) {
+    rmSync(skill.dir, { recursive: true, force: true, maxRetries: 3 });
+    await h.rpc("agentsyncapply", { dryrun: false }, LEARN_RPC);
+    const left = join(homedir(), ".claude", "skills", skill.name);
+    if (existsSync(left)) throw new Error(`${left} is still there after the sync`);
+}
+
+// a project folder of this run's own; an accepted memory for it lands in project/memory
+function arrangeLearnMemory() {
+    const cwd = mkdtempSync(join(tmpdir(), "cdp-learn-"));
+    return { cwd, project: join(homedir(), ".claude", "projects", learnSlug(cwd)) };
+}
+
+function teardownLearnMemory(mem) {
+    try {
+        rmSync(mem.project, { recursive: true, force: true, maxRetries: 3 });
+    } finally {
+        rmSync(mem.cwd, { recursive: true, force: true, maxRetries: 3 });
+    }
+}
+
+// a proposal still in Needs you would outlive its fixture, so teardown dismisses what the scenario left pending
+async function learnDismissPending(h, ids) {
+    const items = (await h.rpc("getattention", null))?.items ?? [];
+    for (const id of ids) {
+        if (items.some((i) => i.learnid === id)) await h.rpc("learndecide", { id, accept: false }, LEARN_RPC);
+    }
+}
+
+// --- needs-you-learn-card: Accept, Edit and Dismiss on a learned rule in the Cockpit's Needs you strip ------------------
+const LC_KEYS = { accept: "cdp-accept", edit: "cdp-edit", dismiss: "cdp-dismiss", full: "cdp-full" };
+const LC_TEXT = {
+    accept: "Say cdp accept in every reply",
+    edit: "Say cdp edit in every reply",
+    edited: "Say cdp edited in every reply",
+    dismiss: "Say cdp dismiss in every reply",
+    full: "Say cdp full in every reply",
+};
+
+async function teardownLearnCard(h, ctx) {
+    await learnTeardown([
+        () => learnDismissPending(h, Object.values(ctx.ids ?? {})),
+        () => ctx.skill && teardownLearnSkill(h, ctx.skill),
+        () => ctx.mem && teardownLearnMemory(ctx.mem),
+    ]);
+}
+
+const needsYouLearnCard = {
+    name: "needs-you-learn-card",
+    surface: "cockpit",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            ctx.skill = await arrangeLearnSkill(h);
+            ctx.mem = arrangeLearnMemory();
+            const memId = (key) => `memory:${ctx.mem.cwd}#${key}`;
+            ctx.ids = {
+                accept: memId(LC_KEYS.accept),
+                edit: memId(LC_KEYS.edit),
+                dismiss: memId(LC_KEYS.dismiss),
+                full: `skill:${ctx.skill.name}#${LC_KEYS.full}`,
+            };
+            // the skill is at its cap: twenty lines, written as Accept would write them
+            const today = learnToday();
+            ctx.additions = join(ctx.skill.dir, ".arc", "additions.md");
+            mkdirSync(dirname(ctx.additions), { recursive: true });
+            writeFileSync(
+                ctx.additions,
+                Array.from({ length: 20 }, (_, i) => `- t${i} <!-- arc:learn key=k${i} learned=${today} count=1 -->\n`).join("")
+            );
+            for (const k of ["accept", "edit", "dismiss"]) {
+                await learnPropose(h, { cwd: ctx.mem.cwd }, LC_KEYS[k], LC_TEXT[k]);
+            }
+            await learnPropose(h, { skill: ctx.skill.name }, LC_KEYS.full, LC_TEXT.full);
+            // the strip reads the list the frontend polled; a reload reads it now
+            await polishReload(h);
+        } catch (e) {
+            await learnFailAfter(e, () => teardownLearnCard(h, ctx));
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+        const { ids } = ctx;
+        const today = learnToday();
+        const row = (k) => LEARN_ROW(ids[k]);
+        const gone = (k) => polishWaitFor(h, `!(${row(k)})`, 8000);
+        const memLine = async (key) =>
+            ((await h.rpc("learnaccepted", null)).memories ?? []).find((m) => m.cwd === ctx.mem.cwd && m.key === key) ?? null;
+        const scrollTo = (k) => h.ev(`(${row(k)})?.scrollIntoView({ block: "center" })`);
+        const shot = async (name) => {
+            await polishNap(200);
+            await h.shot(`cdp-shots/needs-you-learn-card-${name}.png`);
+        };
+
+        const all = await polishWaitFor(
+            h,
+            `${JSON.stringify(Object.values(ids))}.every((id) => [...document.querySelectorAll("[data-learn-id]")].some((r) => r.dataset.learnId === id))`,
+            15000
+        );
+        if (!all) {
+            rec("0. the four proposals are in Needs you", false, "a card never appeared");
+            return steps;
+        }
+
+        // 1. the card, then its evidence
+        await scrollTo("accept");
+        const first = await h.ev(`(() => {
+            const r = ${row("accept")};
+            const part = (t) => r.querySelector('[data-testid="' + t + '"]')?.textContent?.trim() ?? null;
+            return {
+                text: r.textContent.includes(${JSON.stringify(LC_TEXT.accept)}),
+                source: r.textContent.includes(${JSON.stringify(`Memory · ${basename(ctx.mem.cwd)}`)}),
+                accept: part("learn-accept"),
+                edit: part("learn-edit"),
+                dismiss: part("learn-dismiss"),
+            };
+        })()`);
+        rec(
+            "1a. the cdp-accept row shows its text, where it goes, and Accept, Edit and Dismiss",
+            first.text && first.source && first.accept === "Accept" && first.edit === "Edit" && first.dismiss === "Dismiss",
+            JSON.stringify(first)
+        );
+        await shot("1-row");
+
+        await learnClick(h, row("accept"), "learn-why");
+        const opened = await polishWaitFor(h, `!!${learnPart(row("accept"), "learn-why-quotes")}`, 3000);
+        const quotes = opened ? await h.ev(`${learnPart(row("accept"), "learn-why-quotes")}.textContent`) : null;
+        const [qa, qb] = ["a", "b"].map((s) => learnQuote(LC_KEYS.accept, s));
+        rec(
+            "1b. Why unfolds both quotes the rule was learned from",
+            quotes != null && quotes.includes(qa) && quotes.includes(qb),
+            JSON.stringify(quotes)
+        );
+        await shot("1-why");
+
+        // 2. Accept
+        await learnClick(h, row("accept"), "learn-accept");
+        const acceptGone = await gone("accept");
+        const accepted = acceptGone ? await memLine(LC_KEYS.accept) : null;
+        rec(
+            "2. Accept: the row leaves, and learnaccepted lists the cdp-accept memory",
+            acceptGone && accepted?.text === LC_TEXT.accept,
+            JSON.stringify({ acceptGone, accepted })
+        );
+
+        // 3. Edit
+        await scrollTo("edit");
+        await learnClick(h, row("edit"), "learn-edit");
+        const inputUp = await polishWaitFor(h, `!!${learnPart(row("edit"), "learn-edit-input")}`, 3000);
+        const held = inputUp ? await h.ev(`${learnPart(row("edit"), "learn-edit-input")}.value`) : null;
+        rec("3a. Edit opens an input holding the rule's text", held === LC_TEXT.edit, JSON.stringify(held));
+        await shot("3-edit");
+
+        await h.ev(setInputExpr(learnPart(row("edit"), "learn-edit-input"), LC_TEXT.edited));
+        // React renders the typed text before the key handler reads it
+        await polishNap(150);
+        await learnEnter(h, row("edit"), "learn-edit-input");
+        const editGone = await gone("edit");
+        const edited = editGone ? await memLine(LC_KEYS.edit) : null;
+        rec(
+            "3b. Enter accepts the edited line: the row leaves, and learnaccepted lists cdp-edit with the new text",
+            editGone && edited?.text === LC_TEXT.edited,
+            JSON.stringify({ editGone, edited })
+        );
+
+        // 4. a skill at its cap refuses, and the card stays to retry or dismiss
+        await scrollTo("full");
+        await learnClick(h, row("full"), "learn-accept");
+        const toast = await h.ev(`(async () => {
+            for (let i = 0; i < 40; i++) {
+                const t = [...document.querySelectorAll("[data-notification-toast]")].find((el) => el.textContent.includes("remove one first"));
+                if (t) return { text: t.textContent.trim(), error: /border-error/.test(t.parentElement?.className ?? "") };
+                await new Promise((r) => setTimeout(r, 100));
+            }
+            return null;
+        })()`);
+        await shot("4-cap");
+        // a late list reload would show a card that went anyway
+        await polishNap(500);
+        const stays = await h.ev(`!!(${row("full")})`);
+        const kept = readFileSync(ctx.additions, "utf8").split("\n").filter((l) => l.startsWith("- ")).length;
+        const added = ((await h.rpc("learnaccepted", null)).skills ?? []).some(
+            (s) => s.skill === ctx.skill.name && s.key === LC_KEYS.full
+        );
+        rec(
+            "4. Accept at the 20-line cap: an error toast says to remove one first, and the row stays",
+            toast?.error === true && stays && !added && kept === 20,
+            JSON.stringify({ toast, stays, added, lines: kept })
+        );
+
+        // 5. Dismiss mutes the rule
+        await scrollTo("dismiss");
+        await learnClick(h, row("dismiss"), "learn-dismiss");
+        const dismissGone = await gone("dismiss");
+        const third = await h.rpc("learnnote", {
+            key: LC_KEYS.dismiss,
+            cwd: ctx.mem.cwd,
+            text: LC_TEXT.dismiss,
+            quote: learnQuote(LC_KEYS.dismiss, "c"),
+            session: `cdp-c:${today}`,
+        });
+        rec(
+            "5. Dismiss: the row leaves, and a third note for it comes back muted",
+            dismissGone && third?.muted === true,
+            JSON.stringify({ dismissGone, third })
+        );
+        await shot("5-dismissed");
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownLearnCard(h, ctx);
+    },
+};
+
+// --- setup-skill-additions: Setup → Skills' "+N" chip and "Your additions" block for a skill the user taught ---------
+const SA_KEY = "cdp-rail";
+const SA_TEXT = "Say cdp rail in every reply";
+const SA_EDITED = "Say cdp rail edited in every reply";
+const LINE_EDIT = { edit: "learned-edit", input: "learned-edit-input" };
+
+async function teardownLearnRail(h, ctx) {
+    await learnTeardown([
+        // a no-op once the scenario removed the line
+        () => ctx.skill && h.rpc("learnamend", { skill: ctx.skill.name, key: SA_KEY, remove: true }, LEARN_RPC),
+        () => ctx.skill && teardownLearnSkill(h, ctx.skill),
+    ]);
+}
+
+const setupSkillAdditions = {
+    name: "setup-skill-additions",
+    surface: "setup",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            ctx.skill = await arrangeLearnSkill(h);
+            await learnPropose(h, { skill: ctx.skill.name }, SA_KEY, SA_TEXT);
+            await h.rpc("learndecide", { id: `skill:${ctx.skill.name}#${SA_KEY}`, accept: true }, LEARN_RPC);
+        } catch (e) {
+            await learnFailAfter(e, () => teardownLearnRail(h, ctx));
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+        const { name } = ctx.skill;
+        const id = `${name}#${SA_KEY}`;
+        const row = `[...document.querySelectorAll('[role="table"][aria-label="Skills by harness"] [role="row"]')].find((r) => r.querySelector('[role="cell"] > span.truncate')?.textContent === ${JSON.stringify(name)})`;
+        const block = `document.querySelector('[data-testid="learned-additions"]')`;
+        const line = `(${block})?.querySelector('[data-learned-line]')`;
+        const lineOf = LEARN_LINE(id);
+        const shot = async (step) => {
+            await polishNap(200);
+            await h.shot(`cdp-shots/setup-skill-additions-${step}.png`);
+        };
+
+        await h.goto("setup");
+        await ttClick(h, '[data-setup-tab="skills"]');
+        const listed = await polishWaitFor(h, `!!(${row})`, 10000);
+        if (!listed) {
+            rec("0. the fixture skill is in Setup → Skills", false, `${name} never appeared in the skills list`);
+            return steps;
+        }
+        await h.ev(`(${row}).scrollIntoView({ block: "center" })`);
+        await h.ev(`(${row}).click()`);
+        const railUp = await polishWaitFor(h, `!!${block}`, 6000);
+
+        // 1. the chip, the block, the line's date and count, the "new" background
+        const meta = `${learnDayMonth(learnToday())} · 2×`;
+        const seen = await h.ev(`(() => {
+            const r = ${row};
+            const l = ${line};
+            return {
+                chip: r?.querySelector('[data-testid="skill-additions-chip"]')?.textContent?.trim() ?? null,
+                line: l ? { text: l.textContent, accentbg: l.classList.contains("bg-accentbg"), bg: getComputedStyle(l).backgroundColor } : null,
+            };
+        })()`);
+        const painted = seen.line != null && seen.line.bg !== "rgba(0, 0, 0, 0)" && seen.line.bg !== "transparent";
+        rec(
+            "1. the row shows a +1 chip, and the rail a block with the line, its date and 2×, on the new background",
+            railUp &&
+                seen.chip === "+1" &&
+                seen.line?.text.includes(SA_TEXT) &&
+                seen.line.text.includes(meta) &&
+                seen.line.accentbg &&
+                painted,
+            JSON.stringify({ ...seen, meta })
+        );
+        await h.ev(`${block}?.scrollIntoView({ block: "center" })`);
+        await shot("1-block");
+
+        // 2. Edit
+        const typed = await learnEditTo(h, lineOf, LINE_EDIT, SA_EDITED);
+        const shown = typed && (await polishWaitFor(h, `(${lineOf})?.textContent.includes(${JSON.stringify(SA_EDITED)})`, LEARN_SETTLE_MS));
+        const stored = ((await h.rpc("learnaccepted", null)).skills ?? []).find((s) => s.skill === name && s.key === SA_KEY);
+        rec(
+            "2. Edit: the line shows the new text, and the vault holds it",
+            shown && stored?.text === SA_EDITED,
+            JSON.stringify({ typed, shown, stored })
+        );
+        await shot("2-edited");
+
+        // 3. Remove takes the block and the chip with it
+        await learnClick(h, lineOf, "learned-remove");
+        const removed = await polishWaitFor(
+            h,
+            `!${block} && !(${row})?.querySelector('[data-testid="skill-additions-chip"]')`,
+            LEARN_SETTLE_MS
+        );
+        const left = ((await h.rpc("learnaccepted", null)).skills ?? []).some((s) => s.skill === name && s.key === SA_KEY);
+        rec("3. Remove: the block and the chip are gone, and so is the line", removed && !left, JSON.stringify({ removed, left }));
+        await shot("3-removed");
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownLearnRail(h, ctx);
+    },
+};
+
+// --- setup-learned: Setup → Learned, every accepted line grouped by skill and by project -----------------------------
+const SL_KEYS = { skill: "cdp-learned-skill", memory: "cdp-learned-memory" };
+const SL_TEXT = {
+    skill: "Say cdp learned skill in every reply",
+    edited: "Say cdp learned skill edited in every reply",
+    memory: "Say cdp learned memory in every reply",
+};
+
+async function teardownLearned(h, ctx) {
+    await learnTeardown([
+        // a no-op when the scenario never made the line, or removed it
+        () => ctx.skill && h.rpc("learnamend", { skill: ctx.skill.name, key: SL_KEYS.skill, remove: true }, LEARN_RPC),
+        () => ctx.skill && teardownLearnSkill(h, ctx.skill),
+        () => ctx.mem && teardownLearnMemory(ctx.mem),
+    ]);
+}
+
+const setupLearned = {
+    name: "setup-learned",
+    surface: "setup",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            ctx.skill = await arrangeLearnSkill(h);
+            ctx.mem = arrangeLearnMemory();
+        } catch (e) {
+            await learnFailAfter(e, () => teardownLearned(h, ctx));
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+        const { name } = ctx.skill;
+        const { cwd } = ctx.mem;
+        const skillId = `${name}#${SL_KEYS.skill}`;
+        const memId = `${cwd}#${SL_KEYS.memory}`;
+        const accepted = async () => await h.rpc("learnaccepted", null);
+        const shot = async (step) => {
+            await polishNap(200);
+            await h.shot(`cdp-shots/setup-learned-${step}.png`);
+        };
+        const openLearned = async () => {
+            await h.goto("setup");
+            await ttClick(h, '[data-setup-tab="learned"]');
+        };
+
+        // 1. before any line of this run: the empty state, when the machine has no learned line of its own
+        await openLearned();
+        const before = await accepted();
+        const existing = (before.skills?.length ?? 0) + (before.memories?.length ?? 0);
+        if (existing > 0) {
+            rec("1. with nothing learned, the Learned tab says so", true, `skipped: ${existing} learned lines already exist`);
+        } else {
+            const empty = await polishWaitFor(h, `!!document.querySelector('[data-testid="learned-empty"]')`, 6000);
+            const text = empty ? await h.ev(`document.querySelector('[data-testid="learned-empty"]').textContent.trim()`) : null;
+            rec("1. with nothing learned, the Learned tab says so", text?.startsWith("Nothing learned yet"), JSON.stringify(text));
+            await shot("1-empty");
+        }
+
+        // 2. one accepted line for the skill and one for the project, read on a fresh tab
+        await learnPropose(h, { skill: name }, SL_KEYS.skill, SL_TEXT.skill);
+        await h.rpc("learndecide", { id: `skill:${skillId}`, accept: true }, LEARN_RPC);
+        await learnPropose(h, { cwd }, SL_KEYS.memory, SL_TEXT.memory);
+        await h.rpc("learndecide", { id: `memory:${memId}`, accept: true }, LEARN_RPC);
+        await polishReload(h);
+        await openLearned();
+        const listed = await polishWaitFor(h, `!!(${LEARN_LINE(skillId)}) && !!(${LEARN_LINE(memId)})`, 10000);
+        const seen = await h.ev(`(() => {
+            const s = ${LEARN_LINE(skillId)};
+            const m = ${LEARN_LINE(memId)};
+            return {
+                skill: s ? { group: s.closest("section")?.getAttribute("aria-label"), text: s.textContent } : null,
+                memory: m
+                    ? {
+                          group: m.closest("section")?.getAttribute("aria-label"),
+                          path: m.closest("section")?.querySelector("span[title]")?.getAttribute("title"),
+                          text: m.textContent,
+                      }
+                    : null,
+            };
+        })()`);
+        const meta = `${learnDayMonth(learnToday())} · 2×`;
+        rec(
+            "2. the skill's line sits under the skill and the memory's under its project folder, each with its date and 2×",
+            listed &&
+                seen.skill?.group === name &&
+                seen.skill.text.includes(SL_TEXT.skill) &&
+                seen.skill.text.includes(meta) &&
+                seen.memory?.group === basename(cwd) &&
+                seen.memory.path === cwd &&
+                seen.memory.text.includes(SL_TEXT.memory) &&
+                seen.memory.text.includes(meta),
+            JSON.stringify({ ...seen, meta })
+        );
+        await h.ev(`(${LEARN_LINE(skillId)})?.scrollIntoView({ block: "center" })`);
+        await shot("2-groups");
+
+        // 3. Edit the skill's line on this tab
+        const typed = await learnEditTo(h, LEARN_LINE(skillId), LINE_EDIT, SL_TEXT.edited);
+        const shown =
+            typed && (await polishWaitFor(h, `(${LEARN_LINE(skillId)})?.textContent.includes(${JSON.stringify(SL_TEXT.edited)})`, LEARN_SETTLE_MS));
+        const stored = ((await accepted()).skills ?? []).find((s) => s.skill === name && s.key === SL_KEYS.skill);
+        rec(
+            "3. Edit: the skill's line shows the new text, and the vault holds it",
+            shown && stored?.text === SL_TEXT.edited,
+            JSON.stringify({ typed, shown, stored })
+        );
+        await shot("3-edited");
+
+        // 4. Remove the memory's line, which deletes its file
+        const file = join(ctx.mem.project, "memory", `learned_${SL_KEYS.memory}.md`);
+        const existed = existsSync(file);
+        await h.ev(`(${LEARN_LINE(memId)})?.scrollIntoView({ block: "center" })`);
+        await learnClick(h, LEARN_LINE(memId), "learned-remove");
+        const lineGone = await polishWaitFor(h, `!(${LEARN_LINE(memId)})`, LEARN_SETTLE_MS);
+        rec(
+            "4. Remove: the memory's line is gone, and so is its file under ~/.claude/projects",
+            existed && lineGone && !existsSync(file),
+            JSON.stringify({ file, existed, lineGone, fileLeft: existsSync(file) })
+        );
+        await shot("4-removed");
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownLearned(h, ctx);
     },
 };
 
@@ -38575,7 +41083,14 @@ export const SCENARIOS = [
     toolsPicker,
     toolsLauncher,
     toolsWorktreeGone,
+    setupProject,
     whatsNew,
+    runQueueScenario,
+    runOriginScenario,
+    ideasRail,
+    needsYouLearnCard,
+    setupSkillAdditions,
+    setupLearned,
     initiativePlanReview,
     initiativePopover,
     initiativeLink,

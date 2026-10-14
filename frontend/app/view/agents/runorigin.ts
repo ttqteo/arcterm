@@ -7,7 +7,9 @@
 // neither. No React, no Wave runtime.
 
 import type { AgentVM } from "./agentsviewmodel";
+import { runProgress, runTitle, type RunInfo } from "./runlineage";
 import { isTerminal } from "./runmodel";
+import { queuedRows } from "./runqueuemodel";
 import { sessionSelection } from "./sessionsruns";
 
 export type RunOrigin =
@@ -58,4 +60,96 @@ export function startedRunsText(runs: readonly Pick<Run, "goal" | "status">[]): 
     }
     const active = runs.filter((r) => !isTerminal(r.status)).length;
     return active > 0 ? `${runs.length} runs, ${active} active` : `${runs.length} runs`;
+}
+
+// What the tree needs of a run to say where it stands: RunInfo's, which the lineage builds for a run that has an agent
+// in the roster, without its project and channel.
+export type OriginRun = Pick<
+    RunInfo,
+    "runId" | "title" | "originId" | "status" | "landPath" | "land" | "dag" | "createdTs"
+>;
+
+// originRunInfo is a run the lineage has no agent for (held in planning, queued behind others, or over with its
+// sessions closed) as the tree reads it, so a session's `→` line still finds it.
+export function originRunInfo(run: Run, dag: TaskGroup | undefined): OriginRun {
+    return {
+        runId: run.oid,
+        title: runTitle(run, dag),
+        originId: run.origintabid || undefined,
+        status: run.status,
+        landPath: run.landpath,
+        land: run.land,
+        createdTs: run.createdts,
+        dag,
+    };
+}
+
+// where a click on a session's `→` line goes: a run (its row on the tree, or its sheet), or a queued entry's row
+export type OriginLinkTarget = { kind: "run"; runId: string } | { kind: "queued"; entryId: string };
+export type OriginLink = { text: string; target: OriginLinkTarget };
+
+// how far a run is, in the words of the `→` line: merged or held once it has landed, else its title and the plan's
+// done tasks out of all of them
+function runLinkText(run: OriginRun): string {
+    if (run.land?.state === "landed") {
+        return "→ merged";
+    }
+    if (run.land?.state === "held") {
+        return "→ held";
+    }
+    const status = run.dag?.status ?? run.status;
+    if (status === "cancelled") {
+        return "→ cancelled";
+    }
+    // done with no branch to land: nothing is still on its way in. With one, the land is what remains
+    if (status === "done" && !run.land && !run.landPath) {
+        return "→ done";
+    }
+    const { done, total } = runProgress(run.dag);
+    return total > 0 ? `→ ${run.title} · ${done}/${total}` : `→ ${run.title}`;
+}
+
+/** Pure: the `→` line under the session `agentId` (its tab id): where the runs it started with `wsh runs start` stand,
+ *  and the plans it queued that have not started. One link reads as itself (`→ Setup · 3/5`, `→ Queued #2`,
+ *  `→ merged`, `→ held`); two or more read `→ N runs` and point at the newest. Null when there is none. */
+export function originLinks(
+    agentId: string,
+    runs: Readonly<Record<string, OriginRun>>,
+    queue: readonly RunQueueEntry[]
+): OriginLink | null {
+    const links: (OriginLink & { ts: number })[] = [];
+    for (const run of Object.values(runs)) {
+        if (run.originId === agentId) {
+            links.push({ text: runLinkText(run), target: { kind: "run", runId: run.runId }, ts: run.createdTs ?? 0 });
+        }
+    }
+    for (const row of queuedRows(queue, {})) {
+        if (row.entry.data.origintabid === agentId) {
+            links.push({
+                text: row.place == null ? "→ Blocked" : `→ Queued #${row.place}`,
+                target: { kind: "queued", entryId: row.entry.id },
+                ts: row.entry.queuedts,
+            });
+        }
+    }
+    if (links.length === 0) {
+        return null;
+    }
+    if (links.length === 1) {
+        return { text: links[0].text, target: links[0].target };
+    }
+    const newest = links.reduce((a, b) => (b.ts > a.ts ? b : a));
+    return { text: `→ ${links.length} runs`, target: newest.target };
+}
+
+/** Pure: the name a run's row says it came `from`: the session that started it, while its tab is in the roster. Null
+ *  for a run started from the cockpit, and once that tab is gone. */
+export function originName(
+    run: Pick<RunInfo, "originId">,
+    agents: readonly Pick<AgentVM, "id" | "name">[]
+): string | null {
+    if (!run.originId) {
+        return null;
+    }
+    return agents.find((a) => a.id === run.originId)?.name ?? null;
 }

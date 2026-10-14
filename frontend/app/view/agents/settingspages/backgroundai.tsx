@@ -173,7 +173,7 @@ export function BackgroundAIPage() {
                             onPick={() => writeConfig({ "headless:runtime": o.id })}
                         >
                             <span className="min-w-0 truncate text-[13px] font-medium">{o.label}</span>
-                            <span className="flex-none font-mono text-[11px] text-ink-faint">{o.mono}</span>
+                            <span className="flex-none text-[11px] text-ink-faint">{o.mono}</span>
                             <span className="flex-1" />
                             <span
                                 className={cn(

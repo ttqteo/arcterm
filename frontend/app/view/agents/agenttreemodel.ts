@@ -37,7 +37,7 @@ export type AgentTreeRow =
     // the run's final stage, one per run: `agent` is the current round's verifier session while it is in the roster
     | { kind: "final"; project: string; run: RunInfo; agent?: AgentVM }
     // the fold of what finished: `count` done tasks and `stages` stages with a verdict, the passed final stage included
-    | { kind: "done"; project: string; run: RunInfo; count: number; stages: number; open: boolean }
+    | { kind: "done"; project: string; run: RunInfo; count: number; stages: number; failed: number; open: boolean }
     | { kind: "queued"; project: string; run: RunInfo; count: number; open: boolean };
 
 // TreeFolds is what the human folded: runs whose workers are hidden, runs whose done or queued tasks are listed,
@@ -194,7 +194,14 @@ function runRows(
                 done.some((t) => endedWorkerId(run.runId, t.id) === focusId) ||
                 (finalPassed && finalRowFocusId(run, verifier ? [verifier] : []) === focusId);
             const stageCount = finished.length + (finalPassed ? 1 : 0);
-            rows.push({ kind: "done", project, run, count: done.length, stages: stageCount, open: doneOpen });
+            // a failed review no later round has replaced still stands, so the fold must not wear a check over it
+            const failed = finished.filter(
+                (s) =>
+                    s.outcome === "failed" &&
+                    s.stageRole === "plan-reviewer" &&
+                    s.agent.runId === run.dag?.planreview?.runid
+            ).length;
+            rows.push({ kind: "done", project, run, count: done.length, stages: stageCount, failed, open: doneOpen });
             if (doneOpen) {
                 finished.filter((s) => s.stageRole === "plan-reviewer").forEach(pushStage);
                 done.forEach(pushTask);

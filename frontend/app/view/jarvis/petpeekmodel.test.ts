@@ -256,6 +256,32 @@ describe("queueRows — a held land lands again or dismisses in place", () => {
     });
 });
 
+describe("queueRows — a queued start that did not start", () => {
+    const BLOCKED = item({
+        kind: "run-queue-blocked",
+        key: "run-queue-blocked:q-1a2b",
+        channelid: "",
+        runid: "",
+        queueid: "q-1a2b",
+        action: "Start",
+        source: "Learned additions",
+        text: "Did not start: Rail was held: dirty",
+    });
+
+    it("starts now on the button, with nothing beside it, and shows the reason", () => {
+        const row = queueRows([BLOCKED])[0];
+        expect(row.primary).toMatchObject({ verb: "start-queued", label: "Start now", queueId: "q-1a2b" });
+        expect(row.links).toEqual([]);
+        expect(row.detail).toBe("Did not start: Rail was held: dirty");
+        expect(enterHintLabel(row.primary)).toBe("start now");
+        expect(rowPeekTarget(row)).toBeNull();
+    });
+
+    it("names the kind in words, never the wire kind", () => {
+        expect(rowKindLabel("run-queue-blocked")).toBe("Run to start");
+    });
+});
+
 describe("enterHintLabel", () => {
     it("names what Enter does to the focused row", () => {
         expect(enterHintLabel(queueRows([item({ kind: "run-unverified", key: "u" })])[0].primary)).toBe("acknowledge");

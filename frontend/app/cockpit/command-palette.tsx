@@ -192,6 +192,7 @@ const NEEDS_STATUS: Record<string, string> = {
     "dag-gate": "gate",
     "dag-blocked": "blocked",
     "run-land-held": "land held",
+    "run-queue-blocked": "not started",
     "run-unverified": "unverified",
     "plan-review": "plan",
 };

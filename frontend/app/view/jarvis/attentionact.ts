@@ -11,11 +11,12 @@ export interface AttentionActInput {
     runId: string | null;
     taskId: string;
     retry: boolean; // the blocked dag's task failed and a retry can rerun it (attention.go blockedTask)
+    queueId?: string; // the queue entry a run-queue-blocked item is about (AttentionItem.queueid)
 }
 
 export type AttentionAct = {
-    label: "Approve" | "Retry" | "Accept" | "Land again" | "Work on" | "Open";
-    kind: "approve-dag" | "retry-dag" | "ack-run" | "land-run" | "work-on" | "open";
+    label: "Approve" | "Retry" | "Accept" | "Land again" | "Work on" | "Start now" | "Remove" | "Open";
+    kind: "approve-dag" | "retry-dag" | "ack-run" | "land-run" | "work-on" | "start-queued" | "remove-queued" | "open";
 };
 
 // Approve and Retry need the exact task the server named; without it, and for anything that needs a
@@ -42,5 +43,20 @@ export function attentionAct(x: AttentionActInput): AttentionAct {
     }
     // a plan to review (plan-review) is decided on the agent's rail or the initiative's card, not by a wire act:
     // it opens, where planreviewtarget.ts says
+    // a queued start the engine could not make: it names no run to open, so Start now (the entry's own id) is the
+    // act, and only the Needs you strip offers the Remove beside it (attentionSecondAct)
+    if (x.wireKind === "run-queue-blocked" && (x.queueId ?? "") !== "") {
+        return { label: "Start now", kind: "start-queued" };
+    }
     return { label: "Open", kind: "open" };
+}
+
+// The second button an item gets where there is room for one (the Needs you strip): the way out that is not the
+// first act. Only a blocked queue entry has one, so the Brief and the creature's peek, which draw one button, show
+// attentionAct alone.
+export function attentionSecondAct(x: AttentionActInput): AttentionAct | null {
+    if (x.wireKind === "run-queue-blocked" && (x.queueId ?? "") !== "") {
+        return { label: "Remove", kind: "remove-queued" };
+    }
+    return null;
 }

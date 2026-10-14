@@ -34,6 +34,8 @@ import {
     refreshHistory,
 } from "@/app/view/agents/githistorystore";
 import { anyFilterActive } from "@/app/view/agents/historyquery";
+import { sessionIdFromTranscript } from "@/app/view/agents/ideasmodel";
+import { runIdeaCapture } from "@/app/view/agents/ideasstore";
 import { initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
 import { openLauncher, type LauncherModel } from "@/app/view/agents/launcherstore";
 import { activeReviewKeyAtom, canSendKey, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
@@ -47,6 +49,7 @@ import {
 import { toggleOpenFile } from "@/app/view/agents/reviewmarks";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { resolveActiveRunId } from "@/app/view/agents/runmodel";
+import { runQueueAtom } from "@/app/view/agents/runqueuestore";
 import { backgroundTasksByIdAtom, focusSubagentAtom } from "@/app/view/agents/subagentsstore";
 import { closeSwitcher, switcherKey, tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
 import { openToolPicker } from "@/app/view/agents/toolsstore";
@@ -233,6 +236,13 @@ function backOrHome(model: AgentsViewModel): void {
     }
 }
 
+// the agent session in focus (its transcript's name): the Ideas the capture chord opens when nothing is selected; null for
+// a terminal, or an agent that has not reported in
+function focusedSession(model: AgentsViewModel): string | null {
+    const id = globalStore.get(model.focusIdAtom);
+    return sessionIdFromTranscript(globalStore.get(model.agentsAtom).find((a) => a.id === id)?.transcriptPath);
+}
+
 export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
     // `[`/`]` cycle the rail order (SURFACE_ORDER). A surface outside the cycle (settings) enters at an end.
     const cycleSurface = (delta: number) => {
@@ -393,6 +403,26 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             paletteHidden: true, // the palette's own "Open a tool…" row (palette-commands.ts) is the same action
             when: (ctx) => !ctx.modalOpen,
             run: () => openToolPicker(model),
+        },
+        {
+            // Keep what is selected in an agent's terminal as an idea in its Ideas (the "Add as idea" chip beside the
+            // selection is the same action); with nothing selected, open the focused agent's Ideas and focus its input.
+            // A chord, so it works from a focused terminal, where the chip never takes focus. Consumed even where there is
+            // nothing to add (a plain terminal): left to the terminal it would type a Tab. Live on every surface, as a
+            // What's new "Try it" must be (whatsnew.test.ts): from another surface it brings the Agent surface up first, where
+            // the terminals and the Ideas box are.
+            id: "idea-capture",
+            keys: "Mod:Shift:i",
+            group: "Global",
+            label: "Add the selection as an idea",
+            paletteHidden: true, // a palette row has no selection to add; the key and the chip are the way
+            when: (ctx) => !ctx.modalOpen,
+            run: (ctx) => {
+                if (ctx.surface !== "agent") {
+                    globalStore.set(model.surfaceAtom, "agent");
+                }
+                void runIdeaCapture(focusedSession(model));
+            },
         },
         {
             // Reopen the agent closed last, as a browser reopens a closed tab: asleep, its conversation back on the roster
@@ -1001,7 +1031,14 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         const unread = agent != null ? (globalStore.get(unreadAgentsAtom).get(agent.id) ?? 0) : 0;
         const bgRunning =
             agent != null ? runningBackgroundTasks(globalStore.get(backgroundTasksByIdAtom)[agent.id]).length : 0;
-        return agent != null && doneSuggestion(agent, unread, globalStore.get(model.lineageAtom).runs, bgRunning)
+        return agent != null &&
+            doneSuggestion(
+                agent,
+                unread,
+                globalStore.get(model.lineageAtom).runs,
+                bgRunning,
+                globalStore.get(runQueueAtom)
+            )
             ? agent
             : undefined;
     };

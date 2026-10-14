@@ -481,6 +481,7 @@ func (ws *WshServer) CreateRunCommand(ctx context.Context, data wshrpc.CommandCr
 	}
 	run.RadarOrigin = data.RadarOrigin // nil for normal runs; set only from a Radar handoff
 	run.OriginTabId = data.OriginTabId
+	run.OriginNotify = data.OriginTabId != "" // the session that started it hears how it ended (notifyOrigins)
 	run.OriginTranscript = tabTranscriptPath(ctx, data.OriginTabId)
 	run.EffortRef = effortRef
 	if err := wstore.AppendRun(ctx, data.ChannelId, run); err != nil {

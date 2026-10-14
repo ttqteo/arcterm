@@ -222,6 +222,12 @@ export class RpcApiType {
         return client.wshRpcCall("claudeaccountsetemail", data, opts);
     }
 
+    // command "claudecontext" [call]
+    ClaudeContextCommand(client: WshClient, data: CommandClaudeContextData, opts?: RpcOpts): Promise<CommandClaudeContextRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "claudecontext", data, opts);
+        return client.wshRpcCall("claudecontext", data, opts);
+    }
+
     // command "cleanstorage" [call]
     CleanStorageCommand(client: WshClient, data: CommandCleanStorageData, opts?: RpcOpts): Promise<StorageCleanResult> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "cleanstorage", data, opts);
@@ -792,6 +798,30 @@ export class RpcApiType {
         return client.wshRpcCall("htmlpreviewserve", data, opts);
     }
 
+    // command "ideaadd" [call]
+    IdeaAddCommand(client: WshClient, data: CommandIdeaAddData, opts?: RpcOpts): Promise<Idea> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "ideaadd", data, opts);
+        return client.wshRpcCall("ideaadd", data, opts);
+    }
+
+    // command "idealist" [call]
+    IdeaListCommand(client: WshClient, data: CommandIdeaTargetData, opts?: RpcOpts): Promise<SessionIdeas> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "idealist", data, opts);
+        return client.wshRpcCall("idealist", data, opts);
+    }
+
+    // command "ideatick" [call]
+    IdeaTickCommand(client: WshClient, data: CommandIdeaTargetData, opts?: RpcOpts): Promise<CommandIdeaTickRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "ideatick", data, opts);
+        return client.wshRpcCall("ideatick", data, opts);
+    }
+
+    // command "ideaupdate" [call]
+    IdeaUpdateCommand(client: WshClient, data: CommandIdeaUpdateData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "ideaupdate", data, opts);
+        return client.wshRpcCall("ideaupdate", data, opts);
+    }
+
     // command "jarvisctx" [call]
     JarvisCtxCommand(client: WshClient, data: CommandJarvisCtxData, opts?: RpcOpts): Promise<CommandJarvisCtxRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "jarvisctx", data, opts);
@@ -838,6 +868,36 @@ export class RpcApiType {
     LandRunCommand(client: WshClient, data: CommandLandRunData, opts?: RpcOpts): Promise<RunLand> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "landrun", data, opts);
         return client.wshRpcCall("landrun", data, opts);
+    }
+
+    // command "learnaccepted" [call]
+    LearnAcceptedCommand(client: WshClient, opts?: RpcOpts): Promise<CommandLearnAcceptedRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "learnaccepted", null, opts);
+        return client.wshRpcCall("learnaccepted", null, opts);
+    }
+
+    // command "learnamend" [call]
+    LearnAmendCommand(client: WshClient, data: CommandLearnAmendData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "learnamend", data, opts);
+        return client.wshRpcCall("learnamend", data, opts);
+    }
+
+    // command "learndecide" [call]
+    LearnDecideCommand(client: WshClient, data: CommandLearnDecideData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "learndecide", data, opts);
+        return client.wshRpcCall("learndecide", data, opts);
+    }
+
+    // command "learnkeys" [call]
+    LearnKeysCommand(client: WshClient, data: CommandLearnKeysData, opts?: RpcOpts): Promise<LearnKey[]> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "learnkeys", data, opts);
+        return client.wshRpcCall("learnkeys", data, opts);
+    }
+
+    // command "learnnote" [call]
+    LearnNoteCommand(client: WshClient, data: CommandLearnNoteData, opts?: RpcOpts): Promise<CommandLearnNoteRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "learnnote", data, opts);
+        return client.wshRpcCall("learnnote", data, opts);
     }
 
     // command "listalldevservers" [call]
@@ -1096,6 +1156,36 @@ export class RpcApiType {
     RunAsksCommand(client: WshClient, data: CommandRunAskData, opts?: RpcOpts): Promise<CommandDagAsksRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "runasks", data, opts);
         return client.wshRpcCall("runasks", data, opts);
+    }
+
+    // command "runqueueadd" [call]
+    RunQueueAddCommand(client: WshClient, data: CommandRunQueueAddData, opts?: RpcOpts): Promise<RunQueueEntry> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "runqueueadd", data, opts);
+        return client.wshRpcCall("runqueueadd", data, opts);
+    }
+
+    // command "runqueuelist" [call]
+    RunQueueListCommand(client: WshClient, opts?: RpcOpts): Promise<CommandRunQueueListRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "runqueuelist", null, opts);
+        return client.wshRpcCall("runqueuelist", null, opts);
+    }
+
+    // command "runqueueremove" [call]
+    RunQueueRemoveCommand(client: WshClient, data: CommandRunQueueIdData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "runqueueremove", data, opts);
+        return client.wshRpcCall("runqueueremove", data, opts);
+    }
+
+    // command "runqueuerunnext" [call]
+    RunQueueRunNextCommand(client: WshClient, data: CommandRunQueueIdData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "runqueuerunnext", data, opts);
+        return client.wshRpcCall("runqueuerunnext", data, opts);
+    }
+
+    // command "runqueuestartnow" [call]
+    RunQueueStartNowCommand(client: WshClient, data: CommandRunQueueIdData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "runqueuestartnow", data, opts);
+        return client.wshRpcCall("runqueuestartnow", data, opts);
     }
 
     // command "runtranscriptpath" [call]

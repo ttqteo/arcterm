@@ -29,6 +29,7 @@ const (
 	Event_Slept            = "system:slept"     // type: baseds.SleptData
 	Event_StorageScan      = "storage:scan"     // type: storage.StorageReport
 	Event_JobQueue         = "jobqueue"         // type: wshrpc.JobQueueData
+	Event_IdeasChanged     = "ideas:changed"    // type: wshrpc.IdeasChangedData
 	// orchestration engine events (pkg/orchestrate publishes these; the cockpit rail mirrors them)
 	DagEventChildDone   = "dag:child-done"   // type: string (task id)
 	DagEventGateOpen    = "dag:gate-open"    // type: string (gate task id)
@@ -39,6 +40,8 @@ const (
 	DagEventTaskStalled = "dag:task-stalled" // type: string (task id)
 	DagEventTaskRetried = "dag:task-retried" // type: string (task id)
 	Event_RunEvent      = "run:event"        // type: wshrpc.RunEventData
+	// the run queue (pkg/runqueue): the whole list, after every change the server makes to it
+	Event_RunQueueChanged = "runqueue:changed" // type: wshrpc.RunQueueChangedData
 )
 
 var AllEvents []string = []string{
@@ -55,6 +58,7 @@ var AllEvents []string = []string{
 	Event_JarvisVolunteer,
 	Event_Slept,
 	Event_JobQueue,
+	Event_IdeasChanged,
 	Event_StorageScan,
 	DagEventChildDone,
 	DagEventGateOpen,
@@ -65,6 +69,7 @@ var AllEvents []string = []string{
 	DagEventTaskStalled,
 	DagEventTaskRetried,
 	Event_RunEvent,
+	Event_RunQueueChanged,
 }
 
 type WaveEvent struct {

@@ -447,6 +447,14 @@ None of the fixes has run live; they are unit-tested (`TestRunFinishedWakeNamesT
 `TestLeadCompleteReportsTheLandItWaitedOn`, `TestADirtyHoldLandsOnceTheCheckoutIsClean`,
 `TestAManualLandGetsAConventionalSubject`).
 
+**Follow-up (2026-10-14, run ee18a780):** a dirty hold that never clears. The land held on
+`cmd/wsh/cmd/claude-mod/hooks/{ask-core,register}.ts`, copies `task sync:claudemod` writes on every dev build:
+`claude/arc-mod/` was committed in `59b80aac4` without its copy, so each build left them unstaged. Their bytes were the
+branch's already, but the check matched by name, so `retryDirtyLands` waited on edits nothing would remove, and the
+human set them aside by hand. **Fixed:** `unstagedOverlap` (`land.go`) calls an edit that `hash-object`s to the
+branch's blob a copy, not an overlap; the land puts copies back (`clearEditedCopies`, under the checkout claim) and
+merges. A differing edit still holds. Unit-tested in `TestLandKeepsUncommittedEdits`; not yet run live.
+
 ## Constraints carried into the redesign
 
 - KISS/YAGNI: no new subsystems, no per-task timeout policies, no message bus. Only the failure modes

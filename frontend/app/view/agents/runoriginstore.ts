@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The session a run was started from, read for the agent header and the run sheet, and the one way to open it; and
-// the runs a session started, read for its header.
+// the runs a session started, read for its header and for the `→` line under its tree row.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import * as WOS from "@/app/store/wos";
@@ -17,7 +17,16 @@ import { showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { channelsAtom, loadChannels } from "./channelsstore";
-import { runOrigin, runsStartedBy, type RunOrigin } from "./runorigin";
+import { runFocusAgent, type RunInfo } from "./runlineage";
+import {
+    originName,
+    originRunInfo,
+    runOrigin,
+    runsStartedBy,
+    type OriginLinkTarget,
+    type OriginRun,
+    type RunOrigin,
+} from "./runorigin";
 import { loadSessionsArchive, sessionsArchiveAtom } from "./sessionsarchivestore";
 
 export function useRunOrigin(model: AgentsViewModel, run: Run | undefined): RunOrigin | null {
@@ -110,4 +119,59 @@ export function useRunsStartedBy(agent: Pick<AgentVM, "id" | "transcriptPath">):
     );
     const runs = useAtomValue(live);
     return useMemo(() => runsStartedBy(agent, runs), [runs, agent.id, agent.transcriptPath]);
+}
+
+/** The runs a session started as the tree's `→` line reads them, by run id: every run the channels list under its tab
+ *  (one held in planning, or over with its sessions closed, has no agent in the roster for the lineage to find it by),
+ *  with the lineage's own copy of a run it knows, which carries the digest. */
+export function useOriginRuns(
+    agent: Pick<AgentVM, "id" | "transcriptPath">,
+    lineageRuns: Record<string, RunInfo>
+): Record<string, OriginRun> {
+    const started = useRunsStartedBy(agent);
+    // a run's dag loads on first read; dagoref holds its bare id
+    const infosAtom = useMemo(
+        () =>
+            atom((get) => {
+                const infos: Record<string, OriginRun> = {};
+                for (const run of started) {
+                    const dag = run.dagoref
+                        ? get(WOS.getWaveObjectAtom<TaskGroup>(WOS.makeORef("dag", run.dagoref)))
+                        : undefined;
+                    infos[run.oid] = originRunInfo(run, dag);
+                }
+                return infos;
+            }),
+        [started]
+    );
+    const infos = useAtomValue(infosAtom);
+    return useMemo(() => ({ ...infos, ...lineageRuns }), [infos, lineageRuns]);
+}
+
+/** The name a run's row says it came `from`, while its origin tab is in the roster (originName). A string, so a row
+ *  re-renders when the name changes and not on every roster update. */
+export function useOriginName(model: AgentsViewModel, originId: string | undefined): string | null {
+    const nameAtom = useMemo(() => atom((get) => originName({ originId }, get(model.agentsAtom))), [model, originId]);
+    return useAtomValue(nameAtom);
+}
+
+/** A click on a session's `→` line, through the one router (openTarget): a run that has an agent at work in the roster
+ *  focuses that agent, which is its row on the tree; one with none (not started, or its agents gone) opens its sheet. A
+ *  queued entry has no target the router knows, so its row is scrolled into view. */
+export function openOriginLink(model: AgentsViewModel, target: OriginLinkTarget): void {
+    if (target.kind === "queued") {
+        document.querySelector(`[data-run-queue-row="${CSS.escape(target.entryId)}"]`)?.scrollIntoView({
+            block: "nearest",
+        });
+        return;
+    }
+    const focus = runFocusAgent(globalStore.get(model.lineageAtom), globalStore.get(model.agentsAtom), target.runId);
+    fireAndForget(() =>
+        openTarget(model, focus != null ? { kind: "agent", tabId: focus.id } : { kind: "run", runId: target.runId })
+    );
+}
+
+/** A click on a run's `from <session>`: the session that started it, focused. */
+export function openOriginSession(model: AgentsViewModel, tabId: string): void {
+    fireAndForget(() => openTarget(model, { kind: "agent", tabId }));
 }

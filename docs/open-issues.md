@@ -27,6 +27,71 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-14 (run handoff: the session that started a run is told how it landed)**
+
+- [ ] (arcterm) Run handoff: a run started with `wsh runs start` from a Claude session messages that session once it
+  lands, and waits while you are mid-turn with it. No scenario can bring a deferred run to a messaged outcome, so this is
+  tried only in unit tests with a scripted roster; neither has the `--queue` path (CLI → `RunQueueAdd` → the loop →
+  `CreateRun`) been tried in the running app.
+- [ ] (arcterm) Run handoff: hovering a queued row on the Agent tree fades in its Start now and Remove buttons (another
+  row's stay hidden). Run 973afb5b's Final failed only this step (`run-queue` step 2, opacity read 0) while its
+  screenshots came out blank, so it was force-landed as `df5f68488`; try `task verify:ui -- run-queue` or hover a
+  `wsh runs start --queue` row by hand.
+
+**2026-10-14 (leadless run row)**
+
+- [ ] With one run whose lead tab is open and one whose lead tab is closed, in the Agent sidebar: both rows have the
+  mark beside the title, the same title weight and colour, and the chip line flush under the mark; only the lead's row
+  shows tokens. `agenttree.tsx` `RunRow`.
+
+**2026-10-14 (Cockpit / Jarvis badge split)**
+
+- [ ] With one agent asking and one run waiting to be confirmed: the Cockpit nav badge says 1, the same as its "need
+  you" tab, and Jarvis says 1. Confirm the run in Jarvis and its badge goes away. `attentionstore.ts` `splitAttention`.
+
+**2026-10-14 (brainstorm ideas, run ee18a780)**
+
+- [ ] In an agent tab, type `/idea` (or `/arc:idea`): Claude Code lists the command and runs it, and the idea lands in
+  the rail's Ideas section. `claude plugin validate` does not inspect `commands/`. `claude/arc-mod/commands/idea.md`.
+- [ ] On a Mac, select text in an agent's terminal and press Cmd+Shift+I: a toast with Undo, and the line in Ideas;
+  with nothing selected the Ideas box opens. `ideasstore.ts` `runIdeaCapture`.
+
+**2026-10-14 (Conversations rescan)**
+
+- [ ] In an agent tab run `/clear` (or quit claude and start it again in that terminal): within a second the session it
+  left appears at the top of its project under Conversations, without leaving the Agent surface. `usesessionsscan.ts`.
+- [ ] Mark an old conversation for later (row menu): it moves to the top of its project folder, above newer ones.
+  `agentsidebarmodel.ts` `conversationTree`.
+
+**2026-10-14 (overflow fixes)**
+
+- [ ] Open the RAM popover (app bar) with an agent named past the column: the name ends in "…" before CPU, its
+  command shrinks first, and hovering the row shows the full name. `consumerspanel.tsx`.
+- [ ] Agent → Conversation History, a run of 20+ tasks: its strip thins to fit and "N/M landed" stays in the card.
+  `conversationhistory.tsx`.
+
+**2026-10-14 (learned additions; the three CDP scenarios pass 14/14 on `main`, these need live agents)**
+
+- [ ] Note the same rule twice from two agents (`wsh learn note "<rule>" --key <k> --skill <name>`): a "Learned rule"
+  row appears in Needs you; Why unfolds the quotes; Edit, then Enter, saves the edited text; Accept adds the line
+  under "Your additions" in the skill's rail with a `+N` chip on its row, and in Setup → Learned (fourth tab).
+  Commits `e2499a0f4`, `f2e7616e0`, `6c0ca4220`.
+- [ ] Edit and Remove a line in Setup → Learned: the skill's SKILL.md in `~/.claude/skills` follows; a removed key is
+  not proposed again. Commit `f2e7616e0`.
+
+**2026-10-14 (Setup → Project tab)**
+
+- [ ] On an install with no registered project, open Setup → Project: it says "No projects yet" and shows no groups
+  (decided in `claudecontextmodel.ts`, unit-tested; the `setup-project` scenario covers every other state, but
+  staging zero projects would wipe the dev app's). Then press **Copy path** in the rail and paste: the file's full
+  path (the scenario checks it through a clipboard stub, never the real clipboard). Commit dcdd1cac8.
+
+**2026-10-14 (Agent sidebar: a failed plan review's fold)**
+
+- [ ] With an engine run whose plan review just failed (lead revising), look under the run in the Agent sidebar: the
+  finished fold reads `1 review · 1 failed` with a red dot, not a green check. Once the lead resubmits and round 2
+  starts, the fold goes back to a check. Tried only in unit tests (`agenttreemodel.test.ts`).
+
 **2026-10-14 (Claude mod on a Team account: ask dialog, Token burn gate)**
 
 - [ ] After the next build and `task install`, in a Claude agent: have it ask a choice question; answer once in Claude's
@@ -34,6 +99,20 @@ does not, say what you saw and it becomes a bug row under Actionable.
   card shows, not two. Dismiss on the card with the dialog still open: about 1.5 s later Claude gets "dismissed". Ask it
   to start 3 subagents, pick allow-this-turn on the Token burn card, then a new prompt that starts 3 again: the card
   asks again. Tried only in unit tests, and the transcript path in a headless `claude -p`.
+
+**2026-10-14 (Heavy jobs: run steps named by the run's title)**
+
+- [ ] With an engine run whose Check, Verify or Setup step waits or runs in the heavy-job queue, open the app bar's Jobs
+  chip: that row's second line reads `<run title> · Check · base tree` (the plan's title, else the goal's first line),
+  not `Run 973afb · …`, and ↗ still opens the run. `frontend/app/cockpit/jobqueuepanel.tsx`.
+
+**2026-10-14 (What's new: highlight cards, the rest folded)**
+
+- [ ] In the dev app (`task verify:ui -- whats-new`, then by eye), open What's new from the footer's version: each
+  release shows 4–5 cards (title, two lines of text, Try it at the bottom right), then one "N more changes · M fixes"
+  line. A cut card opens to its whole note on click; one that fits shows no pointer. In the fold, a note with no bold
+  lead that fits two lines (0.15.11 "A new waiting item flashes…") has no chevron and stays aligned with the rows
+  above. Check the cards read well on the Light theme too. `frontend/app/cockpit/whatsnewsheet.tsx`.
 
 **2026-10-14 (Claude memory lint in the Claude mod)**
 
@@ -580,6 +659,7 @@ does not, say what you saw and it becomes a bug row under Actionable.
 | (arcterm) A dag child's question that a human owns is not in the Cockpit's "Cần bạn" strip: the strip lists the attention list's gates, blocked tasks, runs to accept or land and escalations, and `ChildAskCard` (answered through `DagAsksCommand`) is fed by the run sheet and the agent rail, not by `GetAttention`. It stays there, and the Cockpit and dock badges do not count it. Listing it in the strip needs the attention list to carry it, with an answer path through `DagAsksCommand` rather than the agent's block | feature | M | `docs/superpowers/specs/2026-10-07-cockpit-needs-you-design.md` decision 5; `frontend/app/view/agents/childaskcard.tsx`, `frontend/app/view/agents/needsyoustripmodel.ts` |
 | (arcterm) Whether `/model` applies inside a running Claude turn was never checked (the Consumers plan's Task 1 spike could not drive a session: tmux is not installed on this Mac), so the panel's → Sonnet toast says "from its next turn". Check it as the spike describes; if the switch waits for the turn, add spec decision 9's fallback: a re-run of a worker's task on Sonnet through the existing `escalate` dag action (`wsh jarvis dag escalate <task> --model sonnet`) | verification gap | S | `docs/superpowers/specs/2026-10-08-consumers-panel-design.md` decision 9; Task 1 of the Consumers plan, `git show 75f82cd9:docs/superpowers/plans/2026-10-08-consumers-panel.md` |
 | (arcterm) 11 user-guide shots are still `<!-- shot: … -->` placeholders: agent-history, cockpit-needs-you, code-side-column, jarvis-brief, plan-launcher-error, settings-agents, setup-skills, usage-claude-tab, usage-insights-sessions, usage-consumers-tokens, usage-low-ram-card. Each would show real data on a demo store (efforts, the Claude account email, usage from `~/.claude` transcripts, the real skills list) or its CDP scenario failed there; they need fixture data first. Take them at 1600x1000 into `docs/guide/images/` | docs | M | `docs/guide/README.md` |
+| (arcterm) A lead the roster still reads as `working` after its turn ended never gets its wake: `flushLocked` sends only when the lead is at its prompt (`atPrompt(st.State)`), so the line sits queued and the run sits `dag-blocked` with nobody acting. Run aeae1cdf (2026-10-14): the lead's turn ended 15:12 (Stop hooks ran, `turn_duration` logged), `wsh agents list` still showed it `working` at 16:33, and the Final-failed wake from ~16:04 never reached it; resent by hand with `wsh agents send`. Find what leaves the state at `working` past a Stop, and give a queued wake a ceiling (say 10 min with the transcript quiet) after which it is typed anyway or the run reads "lead not answering" in Needs you | bug | M | `pkg/orchestrate/wake.go` `flushLocked`; lead transcript `~/.claude/projects/C--Users-u-AppData-Local-arc-wt-aeae1cdf/3cfe7ead-….jsonl` |
 
 - **`final-stage` CDP scenario, Part B flakes** (2026-10-12). B2–B6 failed in 2 of 3 runs after the lead's
   Final verification block was removed from the details rail, and passed in 2 runs without that change

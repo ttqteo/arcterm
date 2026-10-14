@@ -265,6 +265,11 @@ type Run struct {
 	// OriginTranscript is that session's transcript path when the run started, so the run still lists beside
 	// the session once both have ended and the tab is gone.
 	OriginTranscript string `json:"origintranscript,omitempty"`
+	// OriginNotify is set at create when the origin session is to be told how this run ended; a run from before the
+	// message existed never has it, so none is sent for one.
+	OriginNotify bool `json:"originnotify,omitempty"`
+	// OriginNotifiedTs is when that message was sent (Unix ms): a run with it is never messaged twice.
+	OriginNotifiedTs int64 `json:"originnotifiedts,omitempty"`
 	// EffortRef links a run to the effort chunk it executes (set by the composer's effort picker or
 	// `wsh effort chunk attach --run`). Advisory: the run never ticks the chunk automatically.
 	EffortRef *RunEffortRef `json:"effortref,omitempty"`

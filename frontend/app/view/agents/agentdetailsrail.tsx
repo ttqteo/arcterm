@@ -22,7 +22,7 @@ import {
     LayoutTemplate,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { driveAgent, NUDGE_INPUT } from "./agentactions";
 import { agentDiffScope, openBranchDiff, openDiff } from "./agentdiffnav";
 import {
@@ -60,6 +60,10 @@ import { FileTab } from "./filetab";
 import { finalRowFocusId, isFinalStageId } from "./finalstage";
 import { FinalStageRail } from "./finalstagerail";
 import { capFiles, statusColor } from "./gitstatus";
+import { inputRequestLive } from "./ideacapture";
+import { ideaCounts, sessionIdFromTranscript } from "./ideasmodel";
+import { IdeasHeaderExtra, IdeasSection } from "./ideassection";
+import { ideasInputRequestAtom, useSessionIdeas } from "./ideasstore";
 import { instructionsFileAtom, instructionsKey, loadInstructionsFile } from "./instructionsfile";
 import { entriesAtomFor, liveEntriesByIdAtom } from "./livetranscriptatoms";
 import { prettyModel } from "./modellabel";
@@ -550,6 +554,13 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const changesRange = useAtomValue(railChangesRangeAtom);
     // an agent's uploads are keyed by its terminal block (uploadsstore.ts); one with no terminal has none
     const uploads = useAtomValue(uploadsAtom(agent.blockId ?? ""));
+    // the session's brainstorm ideas (a subagent's interior has none: they are its parent's)
+    const ideasSession = sub == null ? sessionIdFromTranscript(agent.transcriptPath) : null;
+    const ideas = ideaCounts(useSessionIdeas(ideasSession));
+    // the capture shortcut with nothing selected asks for the Add an idea box (ideasstore.ts); on a session with no ideas
+    // the section does not exist, so the one that was asked for is remembered and listed (planAgentRail)
+    const inputRequest = useAtomValue(ideasInputRequestAtom);
+    const [ideasWanted, setIdeasWanted] = useState<string | null>(null);
     const cacheStatus = useAtomValue(agentCacheStatusAtom);
     const sessionUsage = useAtomValue(sessionUsageAtom);
     const now = useAtomValue(model.nowAtom);
@@ -681,6 +692,9 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         inSubagent: sub != null,
         proposed: planReview.rows.length,
         needsYou: !sub && roleRun && role?.kind === "lead" ? yours.length : 0,
+        ideas: ideas.live,
+        ideasFresh: ideas.fresh,
+        ideasRequested: ideasWanted != null && ideasWanted === ideasSession,
         subagents: subs.length,
         files: fileCount,
         filesSwitchable: !ended && railState?.branchDiff != null,
@@ -720,12 +734,14 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 ?.scrollIntoView({ block: "nearest", behavior: smooth ? "smooth" : "auto" });
         });
     };
-    // a strip count toggles its section on Overview: a click closes one open on screen, else reveals it
-    const openSection = (id: AgentRailSectionId) => {
+    // a strip count toggles its section on Overview: a click closes one open on screen, else reveals it. `onlyOpen`
+    // (a request, not a click) never closes it.
+    const openSection = (id: AgentRailSectionId, onlyOpen = false) => {
         const el = document.querySelector<HTMLElement>(`aside[aria-label="Agent details"] [data-rail-section="${id}"]`);
         const head = el?.querySelector("h3")?.getBoundingClientRect();
         const view = el?.closest("[data-rail-scroll]")?.getBoundingClientRect();
         if (
+            !onlyOpen &&
             shown === "overview" &&
             view != null &&
             railStatClick(el?.dataset.open === "true", head, view) === "close"
@@ -743,11 +759,21 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         }
         // revealSection closes over this render's tab state; the request is what fires it
     }, [railRequest, agent.id]);
+    // the capture shortcut with nothing selected: open this agent's Ideas section (the box takes focus when it mounts,
+    // ideassection.tsx). A request for another session is that session's rail's.
+    useEffect(() => {
+        if (!inputRequestLive(inputRequest, ideasSession, Date.now())) {
+            return;
+        }
+        setIdeasWanted(ideasSession);
+        openSection("ideas", true);
+    }, [inputRequest]);
     const LABEL: Record<AgentRailSectionId, string> = {
         plan: "Plan to review",
         subagent: "Subagent",
         status: "Status",
         needs: "Needs you",
+        ideas: "Ideas",
         subagents: "Subagents",
         files: "Files changed",
         artifacts: "Artifacts",
@@ -761,6 +787,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         subagent: RAIL_ICON.subagents,
         status: RAIL_ICON.context,
         needs: RAIL_ICON.bell,
+        ideas: RAIL_ICON.ideas,
         subagents: RAIL_ICON.subagents,
         files: RAIL_ICON.files,
         artifacts: RAIL_ICON.artifacts,
@@ -865,6 +892,8 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         ),
         // only the lead's rail: a worker's own question is already on screen, in its terminal's picker
         needs: () => <NeedsYouSection key={agent.id} model={model} run={roleRun!} asks={yours} />,
+        // keyed by session: another agent's list is a new section, which marks the one it replaces read
+        ideas: () => <IdeasSection key={ideasSession!} sessionId={ideasSession!} />,
         subagents: () => (
             <div className="flex flex-col gap-[7px]">
                 {subs.map((s) => {
@@ -946,10 +975,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         artifacts: () => (
             <div className="flex flex-col gap-[7px]">
                 <div className="flex min-w-0 items-center gap-[6px]">
-                    <span
-                        title={artifacts.topic}
-                        className="min-w-0 flex-1 truncate text-[10.5px] text-muted"
-                    >
+                    <span title={artifacts.topic} className="min-w-0 flex-1 truncate text-[10.5px] text-muted">
                         {artifacts.topic}
                     </span>
                     {artifacts.unseen ? (
@@ -1037,11 +1063,17 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         label: LABEL[p.id],
         icon: ICON[p.id],
         header: p.header,
+        headerExtra:
+            p.id === "ideas" && ideasSession != null ? <IdeasHeaderExtra sessionId={ideasSession} /> : undefined,
         content: CONTENT[p.id](),
     }));
     // the Final verification block follows the status section, as it follows details in the stage's own rail
     const statusAt = planned.findIndex((s) => s.id === "status");
-    const sections: RailSection[] = [...planned.slice(0, statusAt + 1), ...finalSection, ...planned.slice(statusAt + 1)];
+    const sections: RailSection[] = [
+        ...planned.slice(0, statusAt + 1),
+        ...finalSection,
+        ...planned.slice(statusAt + 1),
+    ];
 
     const stripTitle = [
         "Agent details",

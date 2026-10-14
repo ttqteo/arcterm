@@ -5,6 +5,7 @@ package wstore
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -203,6 +204,37 @@ func TestGetRunsByStatus(t *testing.T) {
 	}
 }
 
+func TestGetRunsAwaitingOriginNotice(t *testing.T) {
+	ctx := context.Background()
+	ch, err := CreateChannel(ctx, "origin-notice", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []waveobj.Run{
+		{ID: uuid.NewString(), Goal: "newer", OriginNotify: true, CreatedTs: 2},
+		{ID: uuid.NewString(), Goal: "older", OriginNotify: true, CreatedTs: 1},
+		{ID: uuid.NewString(), Goal: "told", OriginNotify: true, OriginNotifiedTs: 5, CreatedTs: 3},
+		{ID: uuid.NewString(), Goal: "not asked", CreatedTs: 4},
+	} {
+		if err := AppendRun(ctx, ch.OID, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := GetRunsAwaitingOriginNotice(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var goals []string
+	for _, r := range got {
+		if r.ChannelOID == ch.OID {
+			goals = append(goals, r.Goal)
+		}
+	}
+	if len(goals) != 2 || goals[0] != "older" || goals[1] != "newer" {
+		t.Fatalf("want the two untold runs oldest first, got %v", goals)
+	}
+}
+
 func TestEnsureChannelAtPathCreatesOnceAndRefusesNoPath(t *testing.T) {
 	ctx := context.Background()
 	first, err := EnsureChannelAtPath(ctx, "ensure", "/repo/ensure")
@@ -218,5 +250,57 @@ func TestEnsureChannelAtPathCreatesOnceAndRefusesNoPath(t *testing.T) {
 	}
 	if _, err := EnsureChannelAtPath(ctx, "none", ""); err == nil {
 		t.Fatalf("ensure with no path succeeded; a pathless channel is not a project's")
+	}
+}
+
+func TestRunChangedHookFiresAfterEveryCommittedRunWrite(t *testing.T) {
+	ctx := context.Background()
+	ch, err := CreateChannel(ctx, "run-changed-hook", "/p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fired int
+	old := RunChangedHook
+	RunChangedHook = func() { fired++ }
+	t.Cleanup(func() { RunChangedHook = old })
+
+	runId := uuid.NewString()
+	if err := AppendRun(ctx, ch.OID, waveobj.Run{ID: runId, Status: "planning"}); err != nil {
+		t.Fatal(err)
+	}
+	if fired != 1 {
+		t.Fatalf("AppendRun fired the hook %d times, want 1", fired)
+	}
+	if err := UpdateRun(ctx, ch.OID, runId, func(r *waveobj.Run) error { r.Status = "executing"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if fired != 2 {
+		t.Fatalf("UpdateRun fired the hook %d times in all, want 2", fired)
+	}
+	if err := UpdateRun(ctx, ch.OID, runId, func(r *waveobj.Run) error { return errors.New("refused") }); err == nil {
+		t.Fatal("UpdateRun swallowed its fn's error")
+	}
+	if fired != 2 {
+		t.Fatalf("a refused UpdateRun fired the hook: %d, want 2", fired)
+	}
+	if err := UpdateRun(ctx, ch.OID, uuid.NewString(), func(r *waveobj.Run) error { return nil }); err == nil {
+		t.Fatal("UpdateRun of a missing run succeeded")
+	}
+	if fired != 2 {
+		t.Fatalf("an UpdateRun that found no run fired the hook: %d, want 2", fired)
+	}
+}
+
+func TestRunChangedHookIsOptional(t *testing.T) {
+	ctx := context.Background()
+	ch, err := CreateChannel(ctx, "run-changed-nohook", "/p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := RunChangedHook
+	RunChangedHook = nil
+	t.Cleanup(func() { RunChangedHook = old })
+	if err := AppendRun(ctx, ch.OID, waveobj.Run{ID: uuid.NewString(), Status: "planning"}); err != nil {
+		t.Fatalf("AppendRun with no hook: %v", err)
 	}
 }

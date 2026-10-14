@@ -26,6 +26,8 @@ export type PetAct =
     | { id: string; verb: "land"; label: string; channelId: string; runId: string }
     | { id: string; verb: "approve-task"; label: string; channelId: string; runId: string; taskId: string }
     | { id: string; verb: "retry-task"; label: string; channelId: string; runId: string; taskId: string }
+    // a blocked queue entry (pkg/runqueue), started past the cap and its After; it names no run, so it has no escort
+    | { id: string; verb: "start-queued"; label: string; queueId: string }
     // one option of a one-question ask, sent to the agent that asked (askanswer.ts, the Cockpit's own send)
     | { id: string; verb: "answer"; label: string; agentId: string; option: number }
     // a chunk that came due: an agent on its initiative, asked to do what the chunk's notes say
@@ -71,6 +73,22 @@ export function actsForAttention(item: AttentionItem, agents: ReadonlyArray<Agen
             { id: `${item.key}:open`, verb: "open", label: "Open", target: { kind: "oref", ref: item.oref } },
         ];
     }
+    // a queued start that did not start has no run to open, only the entry: the peek offers Start now alone, and
+    // Remove stays the Needs you strip's (attentionact.ts)
+    const queueId = item?.queueid ?? "";
+    if (item?.kind === "run-queue-blocked" && queueId !== "") {
+        const start = attentionAct({
+            wireKind: item.kind,
+            channelId: "",
+            runId: null,
+            taskId: "",
+            retry: false,
+            queueId,
+        });
+        return start.kind === "start-queued"
+            ? [{ id: `${item.key}:start`, verb: "start-queued", label: start.label, queueId }]
+            : [];
+    }
     if (!item?.runid) {
         return []; // nothing addressable: an item with no run cannot be opened or resolved
     }
@@ -83,7 +101,7 @@ export function actsForAttention(item: AttentionItem, agents: ReadonlyArray<Agen
     const channelId = item.channelid ?? "";
     const runId = item.runid;
     const taskId = item.taskid ?? "";
-    const act = attentionAct({ wireKind: item.kind, channelId, runId, taskId, retry: item.retry === true });
+    const act = attentionAct({ wireKind: item.kind, channelId, runId, taskId, retry: item.retry === true, queueId });
     switch (act.kind) {
         case "approve-dag":
             return [

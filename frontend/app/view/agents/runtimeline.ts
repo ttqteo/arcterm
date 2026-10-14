@@ -69,6 +69,7 @@ const RUN_GROUP_KINDS = new Set([
     "review-overruled",
     "task-amended",
     "task-lead-told",
+    "queued-start",
 ]);
 
 export function buildRunTimeline(run: Run, events: RunEvent[]): { groups: RunTimelineGroup[]; preview: RunEvent[] } {
@@ -160,6 +161,7 @@ const KIND_TITLE: Record<string, string> = {
     landed: "Run landed",
     "stage-session-started": "Judging session started",
     "plan-reviewed": "Plan reviewed",
+    "queued-start": "Started from the queue",
 };
 
 // KIND_TONE stays inside the EXISTING status/phase tone utilities (the same token classes
@@ -256,6 +258,7 @@ export function eventText(event: RunEvent): string {
         text?: string;
         held?: number;
         reason?: string;
+        entryid?: string;
     }>(event);
     const task = d?.taskid ?? "";
     switch (event.kind) {
@@ -278,6 +281,8 @@ export function eventText(event: RunEvent): string {
             return [`${eventTitle(event)} · ${task}`, d?.note?.replace(/\s+/g, " ")].filter(Boolean).join(" · ");
         case "merge-held":
             return [`${d?.held ?? 0} merge(s) held`, d?.reason].filter(Boolean).join(" · ");
+        case "queued-start":
+            return [eventTitle(event), d?.entryid].filter(Boolean).join(" · ");
         default:
             return task ? `${eventTitle(event)} · ${task}` : eventTitle(event);
     }

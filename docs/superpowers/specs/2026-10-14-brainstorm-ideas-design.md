@@ -59,9 +59,12 @@ a new `pkg/ideastore`:
 
 ### 4. RPC and events
 
-- `IdeaAddCommand {blockid | sessionid, text, kind, by}` → the idea; `IdeaListCommand {blockid | sessionid}` → the
-  file; `IdeaUpdateCommand {sessionid, op: edit | kind | drop | restore | merge | seen, ids, text?, kind?}`.
-- Merge joins the selected ideas' texts (oldest first) into the first, takes the first's kind, and drops the rest.
+- Every command targets `{blockid | sessionid}` (a session id wins; a block resolves through its transcript path).
+- `IdeaAddCommand {target, text, kind, by}` → the idea; `IdeaListCommand {target}` → the file;
+  `IdeaUpdateCommand {target, op: edit | kind | drop | restore | merge | seen, ids, text?, kind?}`;
+  `IdeaTickCommand {target}` → the nudge text or empty: the Claude mod calls it on each `UserPromptSubmit`, and it
+  counts the prompt and applies the 3-prompt rule (decision 7).
+- Merge joins the selected ideas' texts (oldest first) into the oldest, keeps the oldest's kind, and drops the rest.
 - Every change publishes `ideas:changed` with the session id; the frontend keeps a per-session atom and refetches.
 
 ### 5. On the rail: a count, not a tab
@@ -78,7 +81,7 @@ The section (`Main.dc.html`):
 - Header: Ideas, its count, `N new` and **Mark read** when any are new. Leaving the section (closing it, another tab,
   another agent) also marks them read.
 - Grouped Decided / Ideas / Open, newest first in each, each row: the text, `turn N · agent|you`, and a `New` pill.
-  Hover shows Edit, Mark as decided, Drop.
+  Hover shows Edit, Mark as decided, Drop; Mark as decided is hidden on a row that is already Decided.
 - Rows check for merge (`Ideas-EditMerge.dc.html`): a bar `N selected · Merge · Drop`. Edit is inline, with the kind
   as a three-way choice.
 - Dropped folds at the end, each with Restore.
@@ -112,6 +115,7 @@ so typing still reaches the agent, and it goes when the selection clears or a ke
 - wshserver: block → session resolution, the no-session error.
 - Frontend pure models beside their `.tsx`: grouping and `new` (`ideasmodel.ts`), the count and dot in
   `planRailStats`, the selection-chip visibility rules.
-- Claude mod `hooks/*-core.ts`: the nudge fires at 3 prompts, never in a session with no ideas.
+- `pkg/ideastore` `Tick`: the nudge fires at 3 prompts, never in a session with no ideas. Claude mod
+  `hooks/ideas-core.ts`: the nudge row's text, and the tick-then-append wiring with its failures logged, not thrown.
 - CDP scenario `ideas-rail`: fixture session with ideas → the count and dot, the open section, Mark read clears the
   dot.
