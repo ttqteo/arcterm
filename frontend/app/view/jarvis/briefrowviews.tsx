@@ -193,6 +193,22 @@ function MenuButton({
     );
 }
 
+// "4 proposed": the chunks an agent put forward that wait for a decision, in the asking tone. Drawn right-aligned in
+// the column before a row's actions; the opened row decides them (inlinetrackerview's ProposedGroup).
+function ProposedCount({ text, className }: { text?: string; className?: string }) {
+    if (text == null) {
+        return null;
+    }
+    return (
+        <span
+            data-jarvis-proposed-count
+            className={cn("whitespace-nowrap text-right text-[10.5px] tabular-nums text-asking", className)}
+        >
+            {text}
+        </span>
+    );
+}
+
 // A tracker: an initiative with a plan, one dense row in the Initiatives box. Opened, it expands where it is:
 // the chunk editor renders under the row inside the same raised box, so nothing jumps and no hole is left.
 export function InitiativeRow({
@@ -284,12 +300,20 @@ export function InitiativeRow({
                 ) : (
                     <span />
                 )}
-                <span
-                    data-jarvis-initiative-status
-                    className={cn("truncate whitespace-nowrap text-right text-[10.5px] tabular-nums", status.tone)}
-                >
-                    {status.text}
-                </span>
+                {/* the column before the actions: what the row's state says, and under it the plan waiting for
+                    a decision. The state's span is empty (no height) on a row with nothing to say. */}
+                <div className="flex min-w-0 flex-col items-end">
+                    <span
+                        data-jarvis-initiative-status
+                        className={cn(
+                            "max-w-full truncate whitespace-nowrap text-right text-[10.5px] tabular-nums",
+                            status.tone
+                        )}
+                    >
+                        {status.text}
+                    </span>
+                    <ProposedCount text={line.proposed} className="max-w-full truncate" />
+                </div>
                 <div className="flex min-w-[122px] items-center justify-end gap-1">
                     {resume != null && onWork != null ? (
                         <WorkOnButton resume={resume} focused={focused} onWork={onWork} always />
@@ -368,6 +392,8 @@ export function IdeaRow({
                         {line.state !== "" ? ` · ${line.state}` : ""}
                     </span>
                 </div>
+                {/* the leading keeps it on the first line of the title beside it */}
+                <ProposedCount text={line.proposed} className="mt-px flex-none leading-[17px]" />
                 {onContextMenu != null ? <MenuButton title={line.title} onMenu={onContextMenu} /> : null}
             </div>
             {expanded && children != null ? <div onClick={(e) => e.stopPropagation()}>{children}</div> : null}

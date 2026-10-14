@@ -55,6 +55,8 @@ export type BriefLine = {
     group?: "delta" | "shipped";
     // an initiative with no chunks yet: a captured idea, not a tracker, so it has no progress to draw
     idea?: boolean;
+    // "4 proposed": the chunks an agent put forward that wait for a decision; absent when none do
+    proposed?: string;
     // a tracker card's chunk line: what note names, and each chunk's tone for its segmented bar
     noteLabel?: "Next" | "Blocked on" | "Done";
     segments?: ChunkTone[];
@@ -120,6 +122,7 @@ export function isIdea(card: EffortCardModel): boolean {
 }
 
 export function initiativeLine(card: EffortCardModel): BriefLine {
+    const proposed = card.proposed.length > 0 ? { proposed: `${card.proposed.length} proposed` } : {};
     if (isIdea(card)) {
         return {
             id: "initiatives:" + card.oref,
@@ -137,6 +140,7 @@ export function initiativeLine(card: EffortCardModel): BriefLine {
             age: "",
             detail: "",
             idea: true,
+            ...proposed,
         };
     }
     const blocked = card.blockedChunks.length;
@@ -180,6 +184,7 @@ export function initiativeLine(card: EffortCardModel): BriefLine {
         why: "",
         age: "",
         detail: "",
+        ...proposed,
     };
 }
 

@@ -252,6 +252,72 @@ describe("trackerRows on a flat plan", () => {
     });
 });
 
+describe("trackerRows with proposed chunks", () => {
+    const LINE = "initiatives:" + OREF;
+    const PROPOSED = [
+        {
+            ...chunk("P1 wire the rail", "proposed", "Ticket #3"),
+            trail: [
+                { ts: 1, text: "older" },
+                { ts: 5, text: "after the picker" },
+            ],
+        },
+        chunk("P2 board", "proposed", ""),
+    ];
+    const withProposed = [...CHUNKS, ...PROPOSED];
+
+    it("puts a proposed group first under the row, listing them with stage and newest note", () => {
+        const rows = trackerRows({ ...base, chunks: withProposed });
+        expect(rows[0]).toMatchObject({ kind: "line" });
+        expect(rows[1]).toEqual({
+            kind: "proposed",
+            id: LINE + "/proposed",
+            oref: OREF,
+            rows: [
+                { label: "P1 wire the rail", meta: "Ticket #3 · after the picker" },
+                { label: "P2 board", meta: "" },
+            ],
+        });
+        // the group sits above the plan: the facts row and the stages follow it
+        expect(rows[2]).toMatchObject({ kind: "facts" });
+    });
+
+    it("leaves them out of the stage groups, the chunk rows and every count", () => {
+        const rows = trackerRows({ ...base, chunks: withProposed });
+        expect(ids(rows.filter((r) => r.kind !== "proposed"))).toEqual(ids(trackerRows(base)));
+        expect(rows.find((r) => r.kind === "facts")).toMatchObject({ count: "4 chunks · 2 done" });
+        expect(rows.filter((r) => r.kind === "stage").map((s) => s.kind === "stage" && s.total)).toEqual([2, 2]);
+        // no stage was made for the proposed chunk's own stage
+        expect(rows.some((r) => r.kind === "stage" && r.stage === "Ticket #3")).toBe(false);
+    });
+
+    it("keeps the plan flat when only a proposed chunk carries a stage", () => {
+        const flat = [...FLAT, chunk("P1", "proposed", "Ticket #3")];
+        const rows = trackerRows({ ...base, chunks: flat });
+        expect(rows.some((r) => r.kind === "stage")).toBe(false);
+        expect(rows.filter((r) => r.kind === "chunk")).toHaveLength(3);
+    });
+
+    it("draws the group and nothing else of a plan when every chunk is proposed", () => {
+        const rows = trackerRows({ ...base, chunks: PROPOSED });
+        expect(rows.map((r) => r.kind)).toEqual(["line", "proposed"]);
+    });
+
+    it("draws no group when none is proposed", () => {
+        expect(trackerRows(base).some((r) => r.kind === "proposed")).toBe(false);
+    });
+
+    it("keeps the group off the cursor: its buttons are the way in", () => {
+        expect(trackerNavIds(trackerRows({ ...base, chunks: withProposed }))).toEqual(trackerNavIds(trackerRows(base)));
+    });
+
+    it("never names a proposed chunk as the one picked up next", () => {
+        const onlyProposedOpen = [chunk("A", "done", ""), chunk("P", "proposed", "")];
+        const rows = trackerRows({ ...base, chunks: onlyProposedOpen });
+        expect(rows.filter((r) => r.kind === "chunk").map((r) => r.kind === "chunk" && r.next)).toEqual([false]);
+    });
+});
+
 describe("chunkDueChip", () => {
     it("reads the day, and turns asking once it has come", () => {
         expect(chunkDueChip("2026-10-20", "pending", "2026-10-19")).toEqual({ text: "due 10-20", come: false });

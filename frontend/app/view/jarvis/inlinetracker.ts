@@ -17,9 +17,12 @@
 import type { BriefLine } from "./briefrows";
 import { groupChunksByStage, nextChunk } from "./effortmodel";
 import type { ChunkRowModel } from "./effortstore";
+import { proposedRows, type ProposedRow } from "./proposedmodel";
 
 export type TrackerRow =
     | { kind: "line"; id: string; line: BriefLine; expanded: boolean }
+    // the plan an agent put forward, decided on the row's own buttons: the cursor skips it, as it skips a stage header
+    | { kind: "proposed"; id: string; oref: string; rows: ProposedRow[] }
     | {
           kind: "facts";
           id: string;
@@ -56,6 +59,7 @@ export function expandableORef(line: BriefLine): string | null {
 }
 
 export const chunkRowId = (lineId: string, label: string): string => `${lineId}/chunk:${label}`;
+const proposedRowId = (lineId: string): string => `${lineId}/proposed`;
 // position-keyed, because a stage is a label on a run of chunks and the same name can head two runs.
 // This doubles as the key an explicit collapse/expand is stored under, so there is one identifier,
 // not a row id and a separate override key that can drift apart.
@@ -84,6 +88,10 @@ export function isFlatPlan(chunks: { stage: string }[]): boolean {
  *
  * `chunks` is null while the effort detail is still loading — the row still expands, so the click
  * lands somewhere, and says so rather than flickering an empty plan.
+ *
+ * The chunks an agent proposed and nobody accepted yet are held out of the plan: they are their own group,
+ * first, and are not in the stage groups, the chunk rows or the facts count (the way the summary leaves them
+ * out of done/total).
  */
 export function trackerRows(args: {
     lines: BriefLine[];
@@ -92,7 +100,7 @@ export function trackerRows(args: {
     noteCounts: Map<string, number>;
     stageOverrides: Record<string, boolean>;
 }): TrackerRow[] {
-    const { lines, openLineId, chunks, noteCounts, stageOverrides } = args;
+    const { lines, openLineId, noteCounts, stageOverrides } = args;
     const out: TrackerRow[] = [];
     for (const line of lines) {
         const oref = expandableORef(line);
@@ -101,12 +109,20 @@ export function trackerRows(args: {
         if (!expanded || oref == null) {
             continue;
         }
-        if (chunks == null) {
+        if (args.chunks == null) {
             out.push({ kind: "pending", id: line.id + "/pending", oref, message: "Loading this initiative's plan…" });
             continue;
         }
-        if (chunks.length === 0) {
+        if (args.chunks.length === 0) {
             out.push({ kind: "pending", id: line.id + "/pending", oref, message: "No chunks on this initiative yet." });
+            continue;
+        }
+        const proposed = proposedRows(args.chunks.map((c) => ({ ...c, notes: c.trail })));
+        if (proposed.length > 0) {
+            out.push({ kind: "proposed", id: proposedRowId(line.id), oref, rows: proposed });
+        }
+        const chunks = args.chunks.filter((c) => c.status !== "proposed");
+        if (chunks.length === 0) {
             continue;
         }
         const doneN = chunks.filter((c) => c.status === "done").length;

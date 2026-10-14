@@ -131,11 +131,13 @@ import { EffortCreateForm } from "./effortcreateform";
 import { effortFeed, feedNoteCounts } from "./effortfeed";
 import { buildEffortCard, groupChunksByStage, stageOptions } from "./effortmodel";
 import {
+    acceptProposed,
     addChunkAt,
     appendChunkNote,
     archivedEffortsAtom,
     createIdea,
     deleteEffort,
+    dropProposed,
     editNote,
     effortChunkRows,
     effortDetailAtom,
@@ -150,6 +152,7 @@ import {
     setChunkStage,
     setChunkStatus,
     setEffortStatus,
+    unacceptProposed,
     unarchiveEffort,
 } from "./effortstore";
 import { freshKeys } from "./freshrows";
@@ -183,15 +186,7 @@ import { radarDraftLanding } from "./newrun";
 import { openChannelSheet, openOrPeek, openOrPeekAddress } from "./openref";
 import { forgetOrigin } from "./returnsurface";
 import { loadTaskList, taskListAtom } from "./tasksstore";
-import {
-    appendInStageAt,
-    canRemove,
-    chunkRef,
-    moveTarget,
-    stageMoveTarget,
-    stageRunLabels,
-    stepChunk,
-} from "./trackeredit";
+import { canRemove, chunkRef, moveTarget, stageMoveTarget, stageRunLabels, stepChunk } from "./trackeredit";
 
 const REGIONS = {
     waiting: {
@@ -959,6 +954,9 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
 
     // index math runs on the server's list, pending deletes included: the server still has them
     const planChunks = useMemo(() => (openEffort != null ? effortChunkRows(openEffort) : []), [openEffort]);
+    // The plan as the tracker draws it. The chunks an agent proposed are a group of their own, outside its stage
+    // runs, its cursor and its positions; refs sent to the server still run over planChunks, which has them all.
+    const planOnly = useMemo(() => planChunks.filter((c) => c.status !== "proposed"), [planChunks]);
     const [renamingTitle, setRenamingTitle] = useState<string | null>(null);
     const [detailsOpen, setDetailsOpen] = useState(false);
     const edits = useMemo<TrackerEdits | null>(() => {
@@ -969,6 +967,17 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         const chunks = planChunks;
         const indexOf = (label: string) => chunks.findIndex((c) => c.label === label);
         const ref = (label: string) => chunkRef(chunks, label);
+        // A position the tracker's plan computes (moveTarget, stageMoveTarget, a run's end), as the server counts it:
+        // the proposed chunks sit among the real ones there. The chunk now at that place in the drawn plan marks it.
+        const serverAt = (at: number) => {
+            const there = planOnly[at - 1];
+            return there != null ? indexOf(there.label) + 1 : at;
+        };
+        const afterRun = (runAt: number) => {
+            const labels = stageRunLabels(planOnly, runAt);
+            const last = labels[labels.length - 1];
+            return last != null ? indexOf(last) + 2 : undefined;
+        };
         const scheduleRemove = (labels: string[], text: string) => {
             const pending = chunks.filter((c) => pendingDeletes.has(chunkKey(oref, c.label))).map((c) => c.label);
             if (!canRemove(chunks, [...pending, ...labels])) {
@@ -996,12 +1005,36 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 );
             },
             onRenameChunk: (label, next) => runMutation(() => renameChunk(oref, chunks, label, next)),
-            canMove: (label, dir) => moveTarget(chunks, label, dir) != null,
+            // Accept is immediate and its Undo puts the chunks back as proposed. Drop waits out the undo window like a
+            // deleted chunk, because removing a chunk takes its notes with it and an op sent afterwards cannot bring them
+            // back. Neither goes through scheduleRemove's last-chunk guard: the server lets the last proposed one go.
+            // acceptOps and unacceptOps send the ref they are given as it is, so an all-digit label goes in as its
+            // position (see chunkRef), not as the number the server would read as a different chunk's place
+            onAcceptProposed: (labels) => {
+                runMutation(() => acceptProposed(oref, labels.map(ref)));
+                briefUndo.notify(
+                    labels.length === 1 ? `Accepted “${labels[0]}”` : `Accepted ${labels.length} proposed chunks`,
+                    () =>
+                        runMutation(async () => {
+                            for (const label of labels) {
+                                await unacceptProposed(oref, ref(label));
+                            }
+                        })
+                );
+            },
+            onDropProposed: (labels) =>
+                briefUndo.schedule(
+                    labels.map((l) => chunkKey(oref, l)),
+                    labels.length === 1 ? `Dropped “${labels[0]}”` : `Dropped ${labels.length} proposed chunks`,
+                    () => dropProposed(oref, chunks, labels)
+                ),
+            canMove: (label, dir) => moveTarget(planOnly, label, dir) != null,
             onMoveChunk: (label, dir) => {
-                const at = moveTarget(chunks, label, dir);
-                if (at == null) {
+                const target = moveTarget(planOnly, label, dir);
+                if (target == null) {
                     return;
                 }
+                const at = serverAt(target);
                 const back = indexOf(label) + 1;
                 runMutation(() => moveChunk(oref, chunks, label, at));
                 briefUndo.notify(`Moved “${label}” ${dir}`, () =>
@@ -1009,11 +1042,12 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 );
             },
             onMoveToStage: (label, stage) => {
-                const at = stageMoveTarget(chunks, label, stage);
+                const target = stageMoveTarget(planOnly, label, stage);
                 const prev = chunks.find((c) => c.label === label);
-                if (at == null || prev == null) {
+                if (target == null || prev == null) {
                     return;
                 }
+                const at = serverAt(target);
                 const back = indexOf(label) + 1;
                 runMutation(() => moveChunkToStage(oref, chunks, label, stage, at));
                 briefUndo.notify(`Moved to ${stage || "unstaged"}`, () =>
@@ -1022,9 +1056,9 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
             },
             onDeleteChunk: (label) => scheduleRemove([label], `Deleted “${label}”`),
             onRenameStage: (at, next) =>
-                runMutation(() => setChunkStage(oref, stageRunLabels(chunks, at).map(ref), next)),
+                runMutation(() => setChunkStage(oref, stageRunLabels(planOnly, at).map(ref), next)),
             onDeleteStage: (at) => {
-                const labels = stageRunLabels(chunks, at);
+                const labels = stageRunLabels(planOnly, at);
                 const name = chunks.find((c) => c.label === labels[0])?.stage || "unstaged";
                 scheduleRemove(
                     labels,
@@ -1032,9 +1066,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 );
             },
             onAddChunk: (label, stage, runAt) =>
-                runMutation(() =>
-                    addChunkAt(oref, label, stage, runAt != null ? appendInStageAt(chunks, runAt) : undefined)
-                ),
+                runMutation(() => addChunkAt(oref, label, stage, runAt != null ? afterRun(runAt) : undefined)),
             onRename: (title) => setRenamingTitle(title),
             onDetails: () => setDetailsOpen(true),
             onActivity: (e) => fireAndForget(() => openOrPeekAddress(model, oref, e)),
@@ -1055,7 +1087,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 briefUndo.schedule([effortKey(oref)], `Deleted “${openEffort.title}”`, () => deleteEffort(oref));
             },
         };
-    }, [model, openEffortORef, openEffort, planChunks, pendingDeletes, runMutation, setOpenInitiative]);
+    }, [model, openEffortORef, openEffort, planChunks, planOnly, pendingDeletes, runMutation, setOpenInitiative]);
 
     // Alt+↑/↓: published only while the cursor sits on a chunk of the open plan
     const setChunkMove = useSetAtom(chunkMoveAtom);
@@ -1073,7 +1105,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         if (selectedChunk == null || openInitiative == null) {
             return null;
         }
-        const visible = planChunks.filter((c) => !pendingDeletes.has(chunkKey(selectedChunk.oref, c.label)));
+        const visible = planOnly.filter((c) => !pendingDeletes.has(chunkKey(selectedChunk.oref, c.label)));
         const to = stepChunk(visible, selectedChunk.row.label, dir);
         if (to == null) {
             return null;
@@ -1346,7 +1378,8 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 // the stage override needs the plan, which a never-opened initiative has not loaded yet
                 await loadEffortDetail(effortOref);
                 const effort = globalStore.get(effortDetailAtom).get(effortOref);
-                const chunks = effort != null ? effortChunkRows(effort) : [];
+                // the plan as the tracker groups it: the proposed chunks are not in its stages
+                const chunks = effort != null ? effortChunkRows(effort).filter((c) => c.status !== "proposed") : [];
                 const at = groupChunksByStage(chunks).findIndex((g) => g.rows.some((r) => r.label === chunk));
                 const stage = chunks.find((c) => c.label === chunk)?.stage ?? "";
                 if (at >= 0) {
@@ -1434,6 +1467,11 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                         <IdeaDetail
                             jotted={noteStamp(openEffort.createdts)}
                             edits={edits}
+                            proposed={
+                                tracker.detail.find(
+                                    (r): r is Extract<DetailRow, { kind: "proposed" }> => r.kind === "proposed"
+                                )?.rows
+                            }
                             onPlan={() => {
                                 const c = cardOf(l);
                                 if (c != null) {
@@ -2194,11 +2232,11 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                             initiative={openEffort?.title ?? ""}
                             label={selectedChunk.row.label}
                             stage={selectedChunk.row.stage}
-                            flat={isFlatPlan(planChunks)}
+                            flat={isFlatPlan(planOnly)}
                             status={selectedChunk.row.status}
                             position={{
-                                n: planChunks.findIndex((c) => c.label === selectedChunk.row.label) + 1,
-                                total: planChunks.length,
+                                n: planOnly.findIndex((c) => c.label === selectedChunk.row.label) + 1,
+                                total: planOnly.length,
                             }}
                             feed={tracker.feed}
                             expanded={readingNote}

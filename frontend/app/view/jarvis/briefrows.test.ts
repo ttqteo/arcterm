@@ -169,6 +169,21 @@ describe("initiativeLine", () => {
         expect(paused).toMatchObject({ idea: true, state: "paused" });
     });
 
+    it("says how many proposed chunks wait, on a tracker and on an idea, and nothing when none do", () => {
+        const four = ["P1", "P2", "P3", "P4"].map((label) => ({ label, status: "proposed" }));
+        // the server's summary counts and picks the next chunk over everything but the proposed ones
+        const tracker = initiativeLine(
+            buildEffortCard(summary([{ label: "A", status: "done" }, ...four], { total: 1, activechunk: undefined }))
+        );
+        expect(tracker).toMatchObject({ proposed: "4 proposed", progress: { done: 1, total: 1, pct: 100 } });
+        expect(tracker.idea).toBeUndefined();
+        // an idea whose only chunks are proposed stays an idea
+        const idea = initiativeLine(buildEffortCard(summary(four, { total: 0, activechunk: undefined })));
+        expect(idea).toMatchObject({ idea: true, progress: null, proposed: "4 proposed" });
+        expect(initiativeLine(buildEffortCard(summary([{ label: "A", status: "pending" }]))).proposed).toBeUndefined();
+        expect(initiativeLine(buildEffortCard(summary([]))).proposed).toBeUndefined();
+    });
+
     it("keeps a plan of only skipped chunks a tracker, and an archived empty one archived", () => {
         expect(initiativeLine(buildEffortCard(summary([{ label: "A", status: "skipped" }]))).idea).toBeUndefined();
         expect(initiativeLine(buildEffortCard(summary([], { status: "archived" })))).toMatchObject({
