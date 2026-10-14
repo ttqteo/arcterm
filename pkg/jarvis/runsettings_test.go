@@ -186,3 +186,25 @@ func TestEffectiveAutonomous(t *testing.T) {
 		t.Error("no run is not autonomous")
 	}
 }
+
+func TestRunSettingsLightReviewerRoutePending(t *testing.T) {
+	route := &waveobj.RoutePin{Runtime: "claude", Model: "haiku"}
+	r := ApplyPendingEngineSettings(engineRun(), PendingEngineSettings{LightReviewerRoute: route})
+	if r.LightReviewerRoute == nil || *r.LightReviewerRoute != *route {
+		t.Fatalf("pending: light reviewer route = %+v, want %+v", r.LightReviewerRoute, route)
+	}
+	if got := ApplyPendingEngineSettings(r, PendingEngineSettings{}); got.LightReviewerRoute != nil {
+		t.Fatalf("a nil value must clear the run's: %+v", got.LightReviewerRoute)
+	}
+}
+
+func TestRunSettingsLightReviewerRouteLive(t *testing.T) {
+	route := &waveobj.RoutePin{Runtime: "claude", Model: "haiku"}
+	g := ApplyLiveEngineSettings(waveobj.TaskGroup{OID: "d1"}, PendingEngineSettings{LightReviewerRoute: route})
+	if g.LightReviewerRoute == nil || *g.LightReviewerRoute != *route {
+		t.Fatalf("live: light reviewer route = %+v, want %+v", g.LightReviewerRoute, route)
+	}
+	if got := ApplyLiveEngineSettings(g, PendingEngineSettings{}); got.LightReviewerRoute != nil {
+		t.Fatalf("a nil value must clear the group's: %+v", got.LightReviewerRoute)
+	}
+}

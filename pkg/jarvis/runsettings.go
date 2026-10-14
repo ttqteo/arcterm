@@ -25,18 +25,20 @@ import (
 // WorkerRoute is deliberately not symmetric with those two: a nil route is itself a value (inherit the
 // lead), so it is always applied. A caller that omits it is asking for inheritance, not asking for the
 // stored route to be left alone — the sheet always sends the route it is showing, so the two readings
-// only diverge for a hand-rolled client. ReviewerPicks and ReviewerRoute follow the same rule for the same
-// reason: false is the WorkerRoute rule standing, and a nil reviewer route is the lead's.
+// only diverge for a hand-rolled client. ReviewerPicks, ReviewerRoute and LightReviewerRoute follow the same
+// rule for the same reason: false is the WorkerRoute rule standing, a nil reviewer route is the lead's, and a
+// nil light reviewer route is claude/sonnet.
 //
 // Autonomous is a pointer like Parallelism, not always-applied like the routes: nil leaves the stored value
 // alone, so a save that is not about Approvals (the width action) and one that is only about it (the palette
 // toggle) cannot overwrite each other.
 type PendingEngineSettings struct {
-	Parallelism   *int
-	WorkerRoute   *waveobj.RoutePin
-	ReviewerPicks bool
-	ReviewerRoute *waveobj.RoutePin
-	Autonomous    *bool
+	Parallelism        *int
+	WorkerRoute        *waveobj.RoutePin
+	ReviewerPicks      bool
+	ReviewerRoute      *waveobj.RoutePin
+	LightReviewerRoute *waveobj.RoutePin
+	Autonomous         *bool
 }
 
 // EffectiveAutonomous is the Approvals setting in force for a run: the owning group's once one exists,
@@ -75,6 +77,7 @@ func ApplyPendingEngineSettings(r waveobj.Run, s PendingEngineSettings) waveobj.
 	r.WorkerRoute = s.WorkerRoute
 	r.ReviewerPicks = s.ReviewerPicks
 	r.ReviewerRoute = s.ReviewerRoute
+	r.LightReviewerRoute = s.LightReviewerRoute
 	if s.Autonomous != nil {
 		r.Autonomous = *s.Autonomous
 	}
@@ -91,6 +94,7 @@ func ApplyLiveEngineSettings(g waveobj.TaskGroup, s PendingEngineSettings) waveo
 	g.WorkerRoute = s.WorkerRoute
 	g.ReviewerPicks = s.ReviewerPicks
 	g.ReviewerRoute = s.ReviewerRoute
+	g.LightReviewerRoute = s.LightReviewerRoute
 	if s.Autonomous != nil {
 		g.Autonomous = *s.Autonomous
 	}

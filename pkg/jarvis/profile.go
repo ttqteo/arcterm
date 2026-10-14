@@ -351,6 +351,9 @@ func ResolveProfileWithDiagnostics(global waveobj.JarvisProfile, override *waveo
 		if override.ReviewerRoute != nil {
 			out.ReviewerRoute = override.ReviewerRoute
 		}
+		if override.LightReviewerRoute != nil {
+			out.LightReviewerRoute = override.LightReviewerRoute
+		}
 		if override.Landing != nil {
 			out.Landing = *override.Landing
 		}
@@ -381,7 +384,7 @@ func ProfileOverrideIsEmpty(o *waveobj.ProfileOverride) bool {
 	}
 	return patch == nil && o.Route == nil && o.DefaultMode == nil &&
 		o.Parallelism == nil && o.WorkerRoute == nil && o.ReviewerPicks == nil && o.ReviewerRoute == nil &&
-		o.Landing == nil && o.Autonomous == nil
+		o.LightReviewerRoute == nil && o.Landing == nil && o.Autonomous == nil
 }
 
 func RenderPrinciples(items waveobj.PrincipleList) string {
