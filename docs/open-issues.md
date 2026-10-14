@@ -27,6 +27,14 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-14 (Claude mod on a Team account: ask dialog, Token burn gate)**
+
+- [ ] After the next build and `task install`, in a Claude agent: have it ask a choice question; answer once in Claude's
+  own dialog and once on the arcterm card: each answer reaches Claude (never "The user dismissed the question") and one
+  card shows, not two. Dismiss on the card with the dialog still open: about 1.5 s later Claude gets "dismissed". Ask it
+  to start 3 subagents, pick allow-this-turn on the Token burn card, then a new prompt that starts 3 again: the card
+  asks again. Tried only in unit tests, and the transcript path in a headless `claude -p`.
+
 **2026-10-14 (Claude memory lint in the Claude mod)**
 
 - [ ] After the next build and `task install`, on Windows and on the Mac: add a line `- [X](x.md) — test` to the

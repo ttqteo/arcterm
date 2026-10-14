@@ -32,6 +32,13 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
 - **Subagent questions name the model**: when an agent asks to start a subagent with no model set, or on Opus, the
   question says so and suggests haiku for collecting or sonnet for code; answer No (or Tab) and name one to switch.
 
+### Fixed
+
+- **A pick in Claude's own question dialog no longer comes back as dismissed** on a Team or Enterprise Claude account,
+  and the arcterm card stays the one waiting for your answer instead of being swapped for another.
+- **The Token burn card asks again on each prompt** on a Team or Enterprise Claude account: one allow or deny held for
+  the rest of the session, and its estimate now counts what the session has already used.
+
 ## 0.15.12 — 2026-10-14
 
 ### Added

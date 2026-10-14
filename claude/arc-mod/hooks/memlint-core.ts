@@ -12,20 +12,6 @@ export type MemoryFile = { name: string; text: string; mtimeMs: number };
 
 export type Memory = { file: string; name?: string; body: string; touchedMs: number };
 
-// where claude keeps a project's memory: <config dir>/projects/<cwd, every non-alphanumeric a dash>/memory.
-// an autoMemoryDirectory setting moves it, and this then finds no MEMORY.md and stays silent
-export function memoryDir(configDir: string, cwd: string): string {
-    return `${configDir.replace(/[\\/]+$/, "")}/projects/${cwd.replace(/[^a-zA-Z0-9]/g, "-")}/memory`;
-}
-
-// claude's config dir: CLAUDE_CONFIG_DIR, else ~/.claude; null when no home is known
-export function claudeConfigDir(env: { configDir?: string; home?: string }): string | null {
-    if (env.configDir) {
-        return env.configDir;
-    }
-    return env.home ? `${env.home.replace(/[\\/]+$/, "")}/.claude` : null;
-}
-
 export function parseMemory(f: MemoryFile): Memory {
     const name = f.text.match(/^name:\s*(.+)$/m)?.[1].trim().replace(/^["']|["']$/g, "");
     const modified = f.text.match(/^\s*modified:\s*["']?(\d{4}-\d{2}-\d{2})/m)?.[1];
