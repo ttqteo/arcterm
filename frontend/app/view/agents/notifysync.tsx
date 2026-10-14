@@ -31,6 +31,7 @@ import {
     coalesce,
     COALESCE_MS,
     diffEvents,
+    FOLDED_OS_DELAY_MS,
     notifyEventOf,
     osText,
     parseTarget,
@@ -38,6 +39,7 @@ import {
     routeNotify,
     saysOnSprout,
     snapshotOf,
+    stillWaiting,
     toastOf,
     type NotifyEvent,
     type NotifyRoute,
@@ -116,6 +118,15 @@ export function NotifySync({ model }: { model: AgentsViewModel }): null {
     };
     const buffer = useRef<{ route: NotifyRoute; event: NotifyEvent }[]>([]);
     const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // the "os-later" events a folded Sprout holds back from the OS, and when arcterm last came to the front: one you
+    // brought it forward for since is one you saw
+    const later = useRef(new Set<ReturnType<typeof setTimeout>>());
+    const focusedAt = useRef(0);
+    useEffect(() => {
+        if (focused) {
+            focusedAt.current = Date.now();
+        }
+    }, [focused]);
 
     const deliver = (route: NotifyRoute, e: NotifyEvent) => {
         if (route === "toast") {
@@ -141,11 +152,28 @@ export function NotifySync({ model }: { model: AgentsViewModel }): null {
             }
         }
     };
+    const hold = (event: NotifyEvent) => {
+        const heldAt = Date.now();
+        const t = setTimeout(() => {
+            later.current.delete(t);
+            const waiting = stillWaiting(event, globalStore.get(model.agentsAtom), globalStore.get(attentionAtom));
+            if (!waiting || focusedAt.current >= heldAt || !ctx.current!.settings.os) {
+                return;
+            }
+            buffer.current.push({ route: "os", event });
+            if (timer.current == null) {
+                timer.current = setTimeout(flush, COALESCE_MS);
+            }
+        }, FOLDED_OS_DELAY_MS);
+        later.current.add(t);
+    };
     const enqueue = (events: NotifyEvent[]) => {
         for (const event of events) {
             const route = routeNotify(event, ctx.current!);
             if (route === "os" || route === "toast") {
                 buffer.current.push({ route, event });
+            } else if (route === "os-later") {
+                hold(event);
             }
             if (saysOnSprout(route, ctx.current!.size)) {
                 // Sprout says a decision, a finished turn and a permission prompt in place of a toast (folded, beside
@@ -194,6 +222,10 @@ export function NotifySync({ model }: { model: AgentsViewModel }): null {
             if (timer.current != null) {
                 clearTimeout(timer.current);
             }
+            for (const t of later.current) {
+                clearTimeout(t);
+            }
+            later.current.clear();
         };
     }, [model]);
 

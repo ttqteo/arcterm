@@ -13,6 +13,13 @@ with `<!-- try: <id> -->`, the id of a global keybinding (`buildGlobalBindings` 
 `frontend/app/store/keybindings/bindings.ts`, such as `go:usage` or `open-tool`): its note gets a Try it button that
 runs it. `whatsnew.test.ts` fails on an id that is gone.
 
+## Unreleased
+
+### Changed
+
+- **Folded, Sprout tells you first**: while Sprout is folded and another app is in front, an agent that needs you
+  shows only Sprout's bubble; the system notification follows 30 seconds later, and only if it still waits on you.
+
 ## 0.15.12 — 2026-10-14
 
 ### Added

@@ -14,6 +14,7 @@ import {
     routeNotify,
     saysOnSprout,
     snapshotOf,
+    stillWaiting,
     toastOf,
     type NotifyEvent,
     type RouteCtx,
@@ -170,16 +171,16 @@ describe("routeNotify", () => {
     it("still sends a backgrounded Float's news to the OS", () =>
         expect(routeNotify(ev("request"), ctx({ size: "float", focused: false }))).toBe("os"));
     // folded, Sprout floats over every app and says it all; in the background it may be on another Space or under a
-    // fullscreen app, so what needs you goes to the OS as well (saysOnSprout keeps the bubble)
+    // fullscreen app, so what needs you goes to the OS as well, late (saysOnSprout keeps the bubble)
     it("leaves everything to the folded Sprout while arcterm is in front", () => {
         for (const kind of ["request", "reply", "notify", "attention"] as const) {
             expect(routeNotify(ev(kind), ctx({ size: "sprout" }))).toBe("avatar");
         }
     });
-    it("also sends what needs you to the OS while folded in the background", () => {
+    it("holds what needs you for the OS while folded in the background", () => {
         const loud = (kind: NotifyEvent["kind"]) => ({ ...ev(kind), loud: true });
-        expect(routeNotify(loud("request"), ctx({ size: "sprout", focused: false }))).toBe("os");
-        expect(routeNotify(loud("attention"), ctx({ size: "sprout", focused: false }))).toBe("os");
+        expect(routeNotify(loud("request"), ctx({ size: "sprout", focused: false }))).toBe("os-later");
+        expect(routeNotify(loud("attention"), ctx({ size: "sprout", focused: false }))).toBe("os-later");
         expect(routeNotify(ev("reply"), ctx({ size: "sprout", focused: false }))).toBe("avatar");
         expect(routeNotify(ev("notify"), ctx({ size: "sprout", focused: false }))).toBe("avatar");
     });
@@ -221,9 +222,26 @@ describe("saysOnSprout", () => {
     it("is Sprout's when routed to it, and folded whatever the route but none", () => {
         expect(saysOnSprout("avatar", "full")).toBe(true);
         expect(saysOnSprout("os", "sprout")).toBe(true);
+        expect(saysOnSprout("os-later", "sprout")).toBe(true);
         expect(saysOnSprout("os", "float")).toBe(false);
         expect(saysOnSprout("toast", "full")).toBe(false);
         expect(saysOnSprout("none", "sprout")).toBe(false);
+    });
+});
+
+describe("stillWaiting", () => {
+    const decision: NotifyEvent = { ...ev("attention"), target: { kind: "attention", key: "k" } };
+    it("holds a request while its agent still asks", () => {
+        expect(stillWaiting(ev("request"), [{ id: "a", state: "asking" }], [])).toBe(true);
+        expect(stillWaiting(ev("request"), [{ id: "a", state: "working" }], [])).toBe(false);
+        expect(stillWaiting(ev("request"), [], [])).toBe(false);
+    });
+    it("holds a decision while it is still listed", () => {
+        expect(stillWaiting(decision, [], [{ key: "k" }])).toBe(true);
+        expect(stillWaiting(decision, [], [{ key: "other" }])).toBe(false);
+    });
+    it("holds nothing else", () => {
+        expect(stillWaiting(ev("reply"), [{ id: "a", state: "asking" }], [])).toBe(false);
     });
 });
 

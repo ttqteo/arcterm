@@ -189,7 +189,12 @@ export interface RouteCtx {
     settings: { os: boolean; toast: boolean; reply: boolean };
 }
 
-export type NotifyRoute = "os" | "toast" | "avatar" | "none";
+// "os-later": Sprout says it now, and the OS only if it still waits on you after FOLDED_OS_DELAY_MS
+export type NotifyRoute = "os" | "os-later" | "toast" | "avatar" | "none";
+
+// how long a folded Sprout's "needs you" waits for you before the OS repeats it: long enough that you answer from the
+// bubble, short enough that one hidden under a fullscreen app or on another Space still reaches you
+export const FOLDED_OS_DELAY_MS = 30_000;
 
 /** Pure: where one event goes. While focused, a `wsh notify` and anything that needs you are the avatar's (Sprout's
  *  bubble, petsources.tsx), so the two never say the same thing in the same corner; in Float, where Sprout walks the
@@ -201,8 +206,8 @@ export function routeNotify(e: NotifyEvent, ctx: RouteCtx): NotifyRoute {
     }
     if (ctx.size === "sprout") {
         // in the background, Sprout may be on another Space or under a fullscreen app: what needs you reaches the OS
-        // too (saysOnSprout keeps the bubble)
-        return !ctx.focused && e.loud && ctx.settings.os ? "os" : "avatar";
+        // too, but late, so the OS toast does not land on the bubble saying the same thing (saysOnSprout keeps it)
+        return !ctx.focused && e.loud && ctx.settings.os ? "os-later" : "avatar";
     }
     if (!ctx.focused) {
         return ctx.settings.os ? "os" : "none";
@@ -253,6 +258,24 @@ export function petEventOf(e: NotifyEvent, nowMs: number, size: WindowSize): Pet
  *  how a folded window speaks even when the OS speaks too. */
 export function saysOnSprout(route: NotifyRoute, size: WindowSize): boolean {
     return route === "avatar" || (size === "sprout" && route !== "none");
+}
+
+/** Pure: whether a held "os-later" event still waits on you: its agent still asks, its decision is still listed.
+ *  Anything else was said once and is not held. */
+export function stillWaiting(
+    e: NotifyEvent,
+    agents: readonly Pick<AgentVM, "id" | "state">[],
+    attention: readonly Pick<AttentionItem, "key">[]
+): boolean {
+    if (e.kind === "request" && e.target.kind === "agent") {
+        const id = e.target.agentId;
+        return agents.some((a) => a.id === id && a.state === "asking");
+    }
+    if (e.kind === "attention" && e.target.kind === "attention") {
+        const key = e.target.key;
+        return attention.some((i) => i.key === key);
+    }
+    return false;
 }
 
 export const COALESCE_MS = 2000;

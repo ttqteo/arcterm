@@ -27,6 +27,12 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-14 (folded Sprout holds the OS toast)**
+
+- [ ] Fold Sprout, put another app in front, and let an agent ask: only Sprout's "NEEDS YOU" bubble shows, no Windows
+  toast. Leave it unanswered 30 s: the Windows toast follows. Answer within 30 s, or click arcterm, and no toast
+  comes. Commit "fix(notify): a folded Sprout says needs-you first, the OS toast only if it still waits".
+
 **2026-10-14 (Jarvis graph peek removed)**
 
 - [ ] On Jarvis, open a record's peek (from the Brief and from Sprout's popup): its footer shows only the log line, no
