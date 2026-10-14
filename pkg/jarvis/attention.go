@@ -46,6 +46,8 @@ const (
 	// a chunk whose due date has come, still open: it names no channel either, so it addresses the
 	// initiative through ORef and the chunk through ChunkLabel.
 	AttentionChunkDue = "chunk-due"
+	// a plan an agent proposed: one item per initiative in play with proposed chunks, waiting since the oldest
+	AttentionPlanReview = "plan-review"
 )
 
 // mirrors orchestrate.TaskState_* and the two RadarReport/RadarFinding vocabularies, spelled here
@@ -401,7 +403,8 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 	// breaks ties inside a kind. Key is the final tiebreak so map iteration cannot reorder equal items.
 	triage := radarTriageItems(in.Radar)
 	due := chunkDueItems(in.Efforts, in.Today)
-	for _, group := range [][]wshrpc.AttentionItem{gates, escalations, asks, triage, unverified, due} {
+	plans := planReviewItems(in.Efforts)
+	for _, group := range [][]wshrpc.AttentionItem{gates, escalations, asks, plans, triage, unverified, due} {
 		g := group
 		sort.SliceStable(g, func(i, j int) bool {
 			if g[i].WaitingSince != g[j].WaitingSince {
@@ -411,10 +414,12 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 		})
 	}
 
-	out := make([]wshrpc.AttentionItem, 0, len(gates)+len(escalations)+len(asks)+len(triage)+len(unverified)+len(due))
+	out := make([]wshrpc.AttentionItem, 0, len(gates)+len(escalations)+len(asks)+len(plans)+len(triage)+len(unverified)+len(due))
 	out = append(out, gates...)
 	out = append(out, escalations...)
 	out = append(out, asks...)
+	// a proposed plan waits on the person, but nothing runs while it does
+	out = append(out, plans...)
 	// triage is last because it is the weakest claim in the list: an untriaged finding blocks nothing
 	// that is running, where every kind above it is holding a worker or a pipeline in place.
 	out = append(out, triage...)
@@ -461,6 +466,42 @@ func chunkDueItems(efforts []*waveobj.Effort, today string) []wshrpc.AttentionIt
 				Why:          "Due " + c.Due + ".",
 			})
 		}
+	}
+	return out
+}
+
+// planReviewItems are the initiatives whose plan waits on the person: proposed chunks, not yet accepted or dropped.
+// The key names only the initiative, so accepting some of the chunks keeps the one item and its count moves.
+func planReviewItems(efforts []*waveobj.Effort) []wshrpc.AttentionItem {
+	var out []wshrpc.AttentionItem
+	for _, e := range efforts {
+		if e == nil || (e.Status != "active" && e.Status != "paused") {
+			continue
+		}
+		n, since := 0, int64(0)
+		for _, c := range e.Chunks {
+			if c.Status != "proposed" {
+				continue
+			}
+			n++
+			if since == 0 || (c.UpdatedTs != 0 && c.UpdatedTs < since) {
+				since = c.UpdatedTs
+			}
+		}
+		if n == 0 {
+			continue
+		}
+		out = append(out, wshrpc.AttentionItem{
+			Kind:         AttentionPlanReview,
+			Key:          "plan-review:" + e.OID,
+			Source:       e.Title,
+			Text:         fmt.Sprintf("%d proposed", n),
+			Action:       "Review",
+			ORef:         waveobj.MakeORef(waveobj.OType_Effort, e.OID).String(),
+			EffortOID:    e.OID,
+			WaitingSince: since,
+			Why:          "An agent proposed these chunks. They count once you accept them.",
+		})
 	}
 	return out
 }

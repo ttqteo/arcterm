@@ -8,6 +8,7 @@
 
 import { attentionAct, type AttentionAct } from "@/app/view/jarvis/attentionact";
 import type { AttentionRunRow } from "@/app/view/jarvis/attentionrun";
+import { planReviewAgent } from "@/app/view/jarvis/planreviewtarget";
 import { formatAge, type AgentVM } from "./agentsviewmodel";
 import { normProjectPath } from "./channelderive";
 import { parseCardData } from "./jarviscards";
@@ -19,6 +20,7 @@ const KIND_LABEL: Record<string, string> = {
     "run-land-held": "Run to land",
     escalation: "Escalation",
     "chunk-due": "Due",
+    "plan-review": "Plan to review",
 };
 
 export type StripOpen =
@@ -26,7 +28,7 @@ export type StripOpen =
     | { kind: "agent"; agentId: string }
     // the run's sheet, or the channel's newest when the item names no run (what Jarvis's Open does)
     | { kind: "channel"; channelId: string; runId: string | null }
-    // a chunk that came due: its initiative, which names no channel
+    // a chunk that came due, or a plan to review whose agent is gone: its initiative, which names no channel
     | { kind: "effort"; effortId: string };
 
 export interface StripRow {
@@ -125,8 +127,10 @@ export function buildNeedsYouRows(input: {
             source: a.source,
             title: a.text,
         };
-        const agent = escalationAgent(a, input.channelMessages[channelId], input.roster);
-        const effortId = a.kind === "chunk-due" ? idOf(a.oref, "effort") : "";
+        // a plan to review opens the agent that proposed it while one is open, else its initiative
+        const agent =
+            escalationAgent(a, input.channelMessages[channelId], input.roster) ?? planReviewAgent(a, input.roster);
+        const effortId = a.kind === "chunk-due" || a.kind === "plan-review" ? idOf(a.oref, "effort") : "";
         rows.push({
             key: a.key,
             kindLabel: KIND_LABEL[a.kind],

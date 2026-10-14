@@ -9,9 +9,11 @@
 // resolves it. A row with genuinely nothing to do returns [] and stays a readout — the rate-limit countdown
 // is that row, and it is honest rather than an omission.
 
-// attentionact.ts is pure too, and petvoice.ts is type-only, so the purity above holds
+// attentionact.ts and planreviewtarget.ts are pure too, and petvoice.ts is type-only, so the purity above holds
+import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { attentionAct } from "./attentionact";
 import type { PetEventSource } from "./petvoice";
+import { planReviewORef } from "./planreviewtarget";
 
 // Where an escort lands; every landing is an address that goes through openAddress.
 export type PetTarget = { kind: "oref"; ref: string; anchor?: string };
@@ -44,7 +46,18 @@ export interface PetActState {
 // A held land gets Land again (a branch merged by hand lands at once) and Dismiss beside it, the way out
 // for a branch that will never land. Everything else needs a written answer, a picked option or a judgment, so
 // the escort covers it here; a question one key can answer also gets its options in the peek (petpeekmodel.ts).
-export function actsForAttention(item: AttentionItem): PetAct[] {
+export function actsForAttention(item: AttentionItem, agents: ReadonlyArray<AgentVM> = []): PetAct[] {
+    // a plan to review has no run either: Review opens the agent that proposed it while one is open, else its initiative
+    if (item?.kind === "plan-review" && item.oref) {
+        return [
+            {
+                id: `${item.key}:open`,
+                verb: "open",
+                label: item.action,
+                target: { kind: "oref", ref: planReviewORef(item, agents) },
+            },
+        ];
+    }
     // a due chunk has no run: it is addressed by its initiative, Work on first, then Open to read it
     if (item?.kind === "chunk-due" && item.oref) {
         return [

@@ -57,3 +57,14 @@ describe("attentionAct: a chunk that came due", () => {
         });
     });
 });
+
+describe("attentionAct: a plan to review", () => {
+    it("opens, with no wire act, since it has no run", () => {
+        expect(attentionAct({ wireKind: "plan-review", channelId: "", runId: null, taskId: "", retry: false })).toEqual(
+            {
+                label: "Open",
+                kind: "open",
+            }
+        );
+    });
+});

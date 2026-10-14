@@ -193,6 +193,7 @@ const NEEDS_STATUS: Record<string, string> = {
     "dag-blocked": "blocked",
     "run-land-held": "land held",
     "run-unverified": "unverified",
+    "plan-review": "plan",
 };
 
 function needsIcon(row: NeedsRow): LucideIcon {
@@ -203,12 +204,16 @@ function needsIcon(row: NeedsRow): LucideIcon {
 }
 
 function needsEcho(row: NeedsRow, t: NeedsTarget | null): string {
-    const name = row.agent?.name ?? "";
+    const name = row.agent?.name ?? row.planAgent?.name ?? "";
     switch (t?.kind) {
         case "agent":
-            return `Opens ${name}’s terminal at its question`;
+            return row.planAgent != null
+                ? `Opens ${name}’s terminal, where its plan is reviewed`
+                : `Opens ${name}’s terminal at its question`;
         case "review":
             return `Opens ${name}’s review`;
+        case "effort":
+            return "Opens the initiative";
         case "dag":
             return "Opens the run’s task graph";
         case "run":

@@ -8,6 +8,7 @@
 import { formatAge, type AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { attentionAct, type AttentionAct } from "./attentionact";
 import { buildEffortCard, type EffortCardModel } from "./effortmodel";
+import { planReviewORef } from "./planreviewtarget";
 
 export const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -143,7 +144,9 @@ export type QueueNav =
     // the oref the server sent. The full oref is carried, matching the effort variant: the consumer
     // strips the otype, so the model never has to know which surface answers for it.
     | { kind: "radar"; oref: string }
-    | { kind: "record"; oref: string };
+    | { kind: "record"; oref: string }
+    // a plan to review whose agent is still open: the agent's rail is where it is decided (planreviewtarget.ts)
+    | { kind: "agent"; oref: string };
 export interface QueueRow {
     key: string;
     kind: string;
@@ -202,12 +205,15 @@ const QUEUE_KIND_LABEL: Record<string, string> = {
     "run-unverified": "unverified",
     "radar-triage": "triage",
     "chunk-due": "due",
+    "plan-review": "plan",
 };
 
 export function buildAttentionQueue(input: {
     attention: AttentionItem[];
     efforts: EffortCardModel[];
     blockers?: BlockerRow[];
+    // the live agents, so a plan to review opens the one that proposed it; without them it opens the initiative
+    roster?: ReadonlyArray<AgentVM>;
 }): QueueRow[] {
     // an effort the Brief is not holding (archived, or another project's) resolves to no title; the
     // chunk label still names the work, so the row keeps it rather than dropping the attribution.
@@ -222,6 +228,13 @@ export function buildAttentionQueue(input: {
         const radarORef = a.kind === "radar-triage" && a.oref != null && a.oref !== "" ? a.oref : null;
         // a chunk that came due names its initiative the same way, and opens it on the chunk's row
         const dueORef = a.kind === "chunk-due" && a.oref != null && a.oref !== "" ? a.oref : null;
+        // a plan to review opens the agent that proposed it while one is open, else its initiative
+        const planORef = a.kind === "plan-review" ? planReviewORef(a, input.roster ?? []) : "";
+        const planNav: QueueNav | null = planORef.startsWith("agent:")
+            ? { kind: "agent", oref: planORef }
+            : planORef.startsWith("effort:")
+              ? { kind: "effort", oref: planORef }
+              : null;
         return {
             key: a.key,
             kind: QUEUE_KIND_LABEL[a.kind] ?? a.kind,
@@ -233,19 +246,22 @@ export function buildAttentionQueue(input: {
             ts: a.waitingsince > 0 ? a.waitingsince : null,
             // a standalone item names no channel, so there is no run body to land on; it renders as
             // static info rather than a button that would navigate nowhere (NeedsRow's rule, kept).
-            action: channelId !== "" || radarORef != null || dueORef != null ? a.action : null,
+            action: channelId !== "" || radarORef != null || dueORef != null || planNav != null ? a.action : null,
             nav:
                 radarORef != null
                     ? { kind: "radar", oref: radarORef }
                     : dueORef != null
                       ? { kind: "effort", oref: dueORef }
-                      : channelId !== ""
-                        ? { kind: "channel", channelId, runId: a.runid != null && a.runid !== "" ? a.runid : null }
-                        : null,
+                      : planNav != null
+                        ? planNav
+                        : channelId !== ""
+                          ? { kind: "channel", channelId, runId: a.runid != null && a.runid !== "" ? a.runid : null }
+                          : null,
             tone: a.kind === "dag-blocked" ? "error" : "asking",
-            // a due chunk IS the initiative's row (detail carries the title), as a blocked chunk is below
+            // a due chunk IS the initiative's row (detail carries the title), as a blocked chunk is below; so is
+            // a plan to review, whose source is the initiative's title
             attrib:
-                dueORef == null && a.effortoid != null && a.effortoid !== ""
+                dueORef == null && a.kind !== "plan-review" && a.effortoid != null && a.effortoid !== ""
                     ? [effortTitles.get(a.effortoid) ?? "", a.chunklabel ?? ""].filter((s) => s !== "").join(" · ")
                     : "",
             why: a.why ?? "",
@@ -326,7 +342,7 @@ export interface QueueSummary {
 }
 
 // the design's four kind words (design L1010-1013); every wire kind reads as one of them
-export function queueKindLabel(row: QueueRow): "gate" | "ask" | "failed" | "blocked" | "triage" | "due" {
+export function queueKindLabel(row: QueueRow): "gate" | "ask" | "failed" | "blocked" | "triage" | "due" | "plan" {
     switch (row.wireKind) {
         case "dag-gate":
             return "gate";
@@ -339,6 +355,8 @@ export function queueKindLabel(row: QueueRow): "gate" | "ask" | "failed" | "bloc
             return "triage";
         case "chunk-due":
             return "due";
+        case "plan-review":
+            return "plan";
         default:
             return "blocked";
     }

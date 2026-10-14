@@ -294,3 +294,43 @@ describe("buildNeedsYouRows: a chunk that came due", () => {
         expect(row.act).toEqual({ label: "Work on", kind: "work-on" });
     });
 });
+
+describe("buildNeedsYouRows: a plan to review", () => {
+    const plan = item({
+        kind: "plan-review",
+        key: "plan-review:e1",
+        channelid: "",
+        runid: "",
+        taskid: "",
+        oref: "effort:e1",
+        effortoid: "e1",
+        text: "2 proposed",
+    });
+    const rowFor = (roster: AgentVM[]) =>
+        buildNeedsYouRows({
+            attention: [plan],
+            filter: "all",
+            channelProject: new Map(),
+            channelMessages: {},
+            roster,
+        })[0];
+
+    it("reads Plan to review, asks for you, and opens rather than acts", () => {
+        const row = rowFor([]);
+        expect(row.kindLabel).toBe("Plan to review");
+        expect(row.tone).toBe("asking");
+        expect(row.text).toBe("2 proposed");
+        expect(row.act).toEqual({ label: "Open", kind: "open" });
+    });
+
+    it("opens the initiative when no agent is open on it", () => {
+        expect(rowFor([agent({ id: "x", effortId: "e2" })]).open).toEqual({ kind: "effort", effortId: "e1" });
+    });
+
+    it("opens the agent when one is open on the initiative", () => {
+        expect(rowFor([agent({ id: "t7", effortId: "e1", state: "idle" })]).open).toEqual({
+            kind: "agent",
+            agentId: "t7",
+        });
+    });
+});
