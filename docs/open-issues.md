@@ -759,18 +759,16 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   state ("waits on every task") while the tree's row shows Tree running, and from B3 on the stage row has
   lost focus (no pane). That change touches neither the modal nor focus, so the cause is unproven either
   way. Repro: `ARC_FINAL_OUT=<dir> node scripts/cdp/final-verify.mjs final-stage`, a few runs.
-- **Memory hygiene: a switched subproject loads and writes its own memory** (2026-10-14, by hand once after
-  shipping; no run can do it). The `autoMemoryDirectory` probe covered `claude -p` loading only.
-  1. In Setup → Memory, pick a sharing subproject, review every change from the shared memory, and apply
-     its **Switch memory** change.
-  2. Start an interactive `claude` in that subproject's folder and ask what its memory index holds: it
-     should name the own folder's `MEMORY.md` entries, not the shared ones.
-  3. Ask it to remember something new, then confirm the new file and its index line land in the own folder
-     (the `autoMemoryDirectory` value in `<subproject>/.claude/settings.local.json`).
-- **Memory hygiene: the volunteer judge says a sweep's changes at least once** (2026-10-14, by hand once
-  after shipping). Leave a project with open changes in Setup → Memory, let the hourly sweep run (or
-  restart Arc, which sweeps at startup), and confirm it is said at least once: a `jarvisvolunteer` line in
-  `waveapp.log` naming the `memory-hygiene:<project>:<checkedAt>` candidate, or the pet's card.
+- **Memory hygiene: the volunteer never says a sweep's changes** (2026-10-14, found in a live check). Two
+  causes, each needing a design call:
+  1. The memory cards never reach the judge while 5 or more loose ends exist. The loose-end producer runs
+     first, sorts by ID, and `prefilter` caps the shortlist at 5; a declined candidate is not emitted, so
+     the same 5 loose ends fill every sweep. The real vault had 28 stale active dossiers.
+  2. Alone on the shortlist (an empty vault), the judge still said none to "<project>'s memory has 4
+     changes to review": the card has no snippet, and the prompt says to prefer silence.
+
+  A successful volunteer writes no log line (only "said nothing (<reason>)" is logged); read the
+  `jarvis:volunteer` event history or watch the pet to see one.
 
 Tracked in their own initiatives, not here:
 

@@ -490,6 +490,30 @@ func TestUndoPutsLineBackUnderItsNeighbour(t *testing.T) {
 	applyTestExpect(t, map[string]string{idx: "- [B](b.md) — b\n- [C](c.md) — c\n- [D](d.md) — d\n", filepath.Join(dir, "c.md"): "c\n"})
 }
 
+func TestUndoUnderABlankLineUsesTheLineBelow(t *testing.T) {
+	dir := applyTestFolder(t, map[string]string{
+		"MEMORY.md": "# Memory\n\n- [A](a.md) — a\n- [B](b.md) — b\n- [C](c.md) — c\n",
+		"a.md":      "a\n",
+		"b.md":      "b\n",
+	})
+	idx := filepath.Join(dir, "MEMORY.md")
+	del := func(name, line string) wshrpc.MemChange {
+		op := wshrpc.MemOp{Folder: dir, Memories: []string{name}, IndexRemove: []string{line}}
+		return applyTestChange(t, "delete", op, filepath.Join(dir, name))
+	}
+	backupRoot := t.TempDir()
+	a := applyTestRun(t, del("a.md", "- [A](a.md) — a"), backupRoot)
+	b := applyTestRun(t, del("b.md", "- [B](b.md) — b"), backupRoot)
+
+	// both sat under the blank line, so the line above can't place them; A goes first, then B above C
+	for _, id := range []string{a, b} {
+		if conflict, err := Undo(backupRoot, id); err != nil || conflict != "" {
+			t.Fatalf("Undo %s = %q, %v", id, conflict, err)
+		}
+	}
+	applyTestExpect(t, map[string]string{idx: "# Memory\n\n- [A](a.md) — a\n- [B](b.md) — b\n- [C](c.md) — c\n"})
+}
+
 func TestUndoIndexLineGoneIsConflict(t *testing.T) {
 	inv := judgeTestInventory(t)
 	reply := `{"changes": [{"kind": "trim", "title": "Shorter beta", "files": ["beta.md"], "old": "the same thing", "new": "one thing", "index_line": "- [Beta rule](beta.md) — one thing"}]}`

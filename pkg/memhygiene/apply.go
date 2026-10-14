@@ -47,11 +47,12 @@ type applyManifestFile struct {
 }
 
 // applyIndexUndo is one index's exact-line edit: it deleted Removed (in file order), the first of them
-// at line At just under After, and inserted Added.
+// at line At just under After and the last just above Before, and inserted Added.
 type applyIndexUndo struct {
 	Removed []string `json:"removed,omitempty"`
 	At      int      `json:"at"`
 	After   string   `json:"after,omitempty"`
+	Before  string   `json:"before,omitempty"`
 	Added   string   `json:"added,omitempty"`
 }
 
@@ -513,6 +514,9 @@ func applyIndexEdit(p *applyPlan, op wshrpc.MemOp) error {
 		if at > 0 {
 			undo.After = orig[at-1]
 		}
+		if last := slices.Index(orig, removed[len(removed)-1]); last+1 < len(orig) {
+			undo.Before = orig[last+1]
+		}
 		if add != "" && filepath.Clean(addFolder) == filepath.Clean(op.Folder) {
 			if slices.Contains(tf.Lines, add) {
 				return applyConflict{path}
@@ -543,9 +547,10 @@ func applyIndexEdit(p *applyPlan, op wshrpc.MemOp) error {
 }
 
 // applyIndexReverse undoes one index edit on the index as it is now, which sibling changes may have
-// shifted: the removed lines go back where Added is, or else under After, or else at At clamped to the
-// file. Added gone, or a removed line already back, is an applyConflict. An index the apply created is
-// deleted when nothing is left in it.
+// shifted: the removed lines go back where Added is, or else under After, or else above Before, or else
+// at At clamped to the file. A blank After or Before can't place them, since an index has many. Added
+// gone, or a removed line already back, is an applyConflict. An index the apply created is deleted when
+// nothing is left in it.
 func applyIndexReverse(path string, undo applyIndexUndo, created bool) (applyWrite, error) {
 	tf, err := ReadText(path)
 	if err != nil {
@@ -559,10 +564,10 @@ func applyIndexReverse(path string, undo applyIndexUndo, created bool) (applyWri
 		}
 		tf.Lines = slices.Delete(tf.Lines, i, i+1)
 		at = i
-	} else if strings.TrimSpace(undo.After) != "" {
-		if i := slices.Index(tf.Lines, undo.After); i >= 0 {
-			at = i + 1
-		}
+	} else if i := applyAnchor(tf.Lines, undo.After); i >= 0 {
+		at = i + 1
+	} else if i := applyAnchor(tf.Lines, undo.Before); i >= 0 {
+		at = i
 	}
 	for _, line := range undo.Removed {
 		if slices.Contains(tf.Lines, line) {
@@ -574,6 +579,14 @@ func applyIndexReverse(path string, undo applyIndexUndo, created bool) (applyWri
 		return applyWrite{remove: true}, nil
 	}
 	return applyWrite{data: tf.Bytes()}, nil
+}
+
+// applyAnchor is the line's index in lines, or -1 when it's blank or gone.
+func applyAnchor(lines []string, line string) int {
+	if strings.TrimSpace(line) == "" {
+		return -1
+	}
+	return slices.Index(lines, line)
 }
 
 // applyNormalize drops \r so model text, which has LF endings, matches a CRLF file's lines.
