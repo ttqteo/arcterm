@@ -92,14 +92,14 @@ func (ws *WshServer) AgentSyncSkillsCommand(ctx context.Context) (*wshrpc.Comman
 	}
 	out := make([]wshrpc.AgentSyncSkill, len(rows))
 	for i, r := range rows {
-		out[i] = wshrpc.AgentSyncSkill{Name: r.Name, Description: r.Description, States: r.States, Deltas: r.Deltas}
+		out[i] = wshrpc.AgentSyncSkill{Name: r.Name, Description: r.Description, States: r.States, Deltas: r.Deltas, Shipped: r.Shipped}
 		for _, a := range r.Additions {
 			out[i].Additions = append(out[i].Additions, learnAddition(a.Key, a.Text, a.Learned, a.Count))
 		}
 	}
 	cols := make([]wshrpc.AgentSyncSkillColumn, 0)
 	for _, c := range agentsync.SkillColumns(p) {
-		cols = append(cols, wshrpc.AgentSyncSkillColumn{Runtime: c.Runtime, Label: c.Label, Present: c.Present})
+		cols = append(cols, wshrpc.AgentSyncSkillColumn{Runtime: c.Runtime, Label: c.Label, Present: c.Present, Path: c.Path})
 	}
 	plan, err := agentsync.PlanAdopt(p, nil)
 	if err != nil {
@@ -128,4 +128,32 @@ func (ws *WshServer) ClaudeContextCommand(ctx context.Context, data wshrpc.Comma
 		}
 	}
 	return &wshrpc.CommandClaudeContextRtnData{Files: out}, nil
+}
+
+func skillDocRtn(doc agentsync.SkillDoc) *wshrpc.CommandAgentSyncSkillDocRtnData {
+	return &wshrpc.CommandAgentSyncSkillDocRtnData{Path: doc.Path, Content: doc.Content, Mtime: doc.Mtime}
+}
+
+func (ws *WshServer) AgentSyncSkillReadCommand(ctx context.Context, data wshrpc.CommandAgentSyncSkillReadData) (*wshrpc.CommandAgentSyncSkillDocRtnData, error) {
+	doc, err := agentsync.ReadSkill(agentsync.DefaultPaths(), data.Name)
+	if err != nil {
+		return nil, err
+	}
+	return skillDocRtn(doc), nil
+}
+
+func (ws *WshServer) AgentSyncSkillWriteCommand(ctx context.Context, data wshrpc.CommandAgentSyncSkillWriteData) (*wshrpc.CommandAgentSyncSteeringWriteRtnData, error) {
+	res, err := agentsync.WriteSkill(agentsync.DefaultPaths(), data.Name, data.Content, data.BaseMtime)
+	if err != nil {
+		return nil, err
+	}
+	return &wshrpc.CommandAgentSyncSteeringWriteRtnData{Mtime: res.Mtime, Conflict: res.Conflict}, nil
+}
+
+func (ws *WshServer) AgentSyncSkillCreateCommand(ctx context.Context, data wshrpc.CommandAgentSyncSkillCreateData) (*wshrpc.CommandAgentSyncSkillDocRtnData, error) {
+	doc, err := agentsync.CreateSkill(agentsync.DefaultPaths(), data.Name, data.Description)
+	if err != nil {
+		return nil, err
+	}
+	return skillDocRtn(doc), nil
 }

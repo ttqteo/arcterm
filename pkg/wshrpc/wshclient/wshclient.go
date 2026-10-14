@@ -99,9 +99,27 @@ func AgentSyncApplyCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentSyncApplyD
 	return resp, err
 }
 
+// command "agentsyncskillcreate", wshserver.AgentSyncSkillCreateCommand
+func AgentSyncSkillCreateCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentSyncSkillCreateData, opts *wshrpc.RpcOpts) (*wshrpc.CommandAgentSyncSkillDocRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandAgentSyncSkillDocRtnData](w, "agentsyncskillcreate", data, opts)
+	return resp, err
+}
+
+// command "agentsyncskillread", wshserver.AgentSyncSkillReadCommand
+func AgentSyncSkillReadCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentSyncSkillReadData, opts *wshrpc.RpcOpts) (*wshrpc.CommandAgentSyncSkillDocRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandAgentSyncSkillDocRtnData](w, "agentsyncskillread", data, opts)
+	return resp, err
+}
+
 // command "agentsyncskills", wshserver.AgentSyncSkillsCommand
 func AgentSyncSkillsCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandAgentSyncSkillsRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandAgentSyncSkillsRtnData](w, "agentsyncskills", nil, opts)
+	return resp, err
+}
+
+// command "agentsyncskillwrite", wshserver.AgentSyncSkillWriteCommand
+func AgentSyncSkillWriteCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentSyncSkillWriteData, opts *wshrpc.RpcOpts) (*wshrpc.CommandAgentSyncSteeringWriteRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandAgentSyncSteeringWriteRtnData](w, "agentsyncskillwrite", data, opts)
 	return resp, err
 }
 

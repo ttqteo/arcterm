@@ -42,6 +42,15 @@ export const setupSkillsAtom = atom<CommandAgentSyncSkillsRtnData | null>(
 ) as PrimitiveAtom<CommandAgentSyncSkillsRtnData | null>;
 export const setupSkillKeepAtom = atom<SkillKeep>({}) as PrimitiveAtom<SkillKeep>;
 export const setupSkillSelectedAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+// one editor per vault skill being edited in the rail, keyed by name: a skill is in edit mode while it has one, and
+// its draft survives a surface switch or picking another skill
+export const setupSkillEditorsAtom = atom<Record<string, DocEditor>>({}) as PrimitiveAtom<Record<string, DocEditor>>;
+// the New skill form in the rail; null when it is closed
+export interface NewSkillForm {
+    name: string;
+    description: string;
+}
+export const setupNewSkillAtom = atom<NewSkillForm | null>(null) as PrimitiveAtom<NewSkillForm | null>;
 export const setupBusyAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
 export const setupErrorAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 
@@ -134,7 +143,9 @@ export async function loadSkills(): Promise<void> {
     }
 }
 
+// Picking a skill closes the New skill form: the rail shows one thing at a time.
 export function selectSkill(name: string): void {
+    globalStore.set(setupNewSkillAtom, null);
     globalStore.set(setupSkillSelectedAtom, name);
 }
 
@@ -202,6 +213,107 @@ export function amendLearned(
             });
         } finally {
             await Promise.all([loadLearned(), loadSkills()]);
+        }
+    });
+}
+
+function setSkillEditor(name: string, ed: DocEditor | null): void {
+    const { [name]: _, ...rest } = globalStore.get(setupSkillEditorsAtom);
+    globalStore.set(setupSkillEditorsAtom, ed == null ? rest : { ...rest, [name]: ed });
+}
+
+// Opens a vault skill's SKILL.md in the rail's editor. A skill already being edited keeps its draft.
+export function editSkill(name: string): Promise<void> {
+    if (globalStore.get(setupSkillEditorsAtom)[name] != null) {
+        return Promise.resolve();
+    }
+    return busy(async () => {
+        const doc = await RpcApi.AgentSyncSkillReadCommand(TabRpcClient, { name }, { timeout: READ_TIMEOUT_MS });
+        setSkillEditor(name, editorReload(doc.content ?? "", doc.mtime ?? 0));
+    });
+}
+
+export function typeSkill(name: string, draft: string): void {
+    const ed = globalStore.get(setupSkillEditorsAtom)[name];
+    if (ed != null) {
+        setSkillEditor(name, editorTyped(ed, draft));
+    }
+}
+
+// Leaves edit mode and drops the draft.
+export function closeSkillEditor(name: string): void {
+    setSkillEditor(name, null);
+}
+
+export function reloadSkill(name: string): Promise<void> {
+    return busy(async () => {
+        const doc = await RpcApi.AgentSyncSkillReadCommand(TabRpcClient, { name }, { timeout: READ_TIMEOUT_MS });
+        setSkillEditor(name, editorReload(doc.content ?? "", doc.mtime ?? 0));
+    });
+}
+
+// Writes the draft into the vault, then copies it into every harness at once, as the shared doc does. Returns the
+// saved text, or null when nothing landed (a conflict keeps the editor open with the draft).
+export async function saveSkill(name: string, overwrite: boolean): Promise<string | null> {
+    let saved: string | null = null;
+    await busy(async () => {
+        const ed = globalStore.get(setupSkillEditorsAtom)[name];
+        if (ed == null) {
+            return;
+        }
+        const written = ed.draft;
+        const res = await RpcApi.AgentSyncSkillWriteCommand(TabRpcClient, {
+            name,
+            content: written,
+            basemtime: saveBaseMtime(ed, overwrite),
+        });
+        if (res.conflict) {
+            setSkillEditor(name, editorSaved(ed, written, res));
+            return;
+        }
+        saved = written;
+        // typing that landed while the write was in flight stays a draft, and the editor with it
+        const now = globalStore.get(setupSkillEditorsAtom)[name];
+        setSkillEditor(name, now != null && now.draft !== written ? editorSaved(now, written, res) : null);
+        await RpcApi.AgentSyncApplyCommand(TabRpcClient, {});
+        await loadSkills();
+    });
+    return saved;
+}
+
+export function openNewSkill(): void {
+    globalStore.set(setupNewSkillAtom, { name: "", description: "" });
+}
+
+export function typeNewSkill(form: NewSkillForm): void {
+    globalStore.set(setupNewSkillAtom, form);
+}
+
+export function closeNewSkill(): void {
+    globalStore.set(setupNewSkillAtom, null);
+}
+
+// Creates the skill in the vault, copies it into every harness, selects it and opens it in the editor.
+export function createSkill(): Promise<void> {
+    return busy(async () => {
+        const form = globalStore.get(setupNewSkillAtom);
+        if (form == null) {
+            return;
+        }
+        const name = form.name.trim();
+        const doc = await RpcApi.AgentSyncSkillCreateCommand(TabRpcClient, {
+            name,
+            description: form.description.trim(),
+        });
+        // the skill exists once create returns, so a failed copy into the harnesses still opens it: a retry would only
+        // find the name taken. The form gives way once the matrix has the new row, so the rail never flashes another.
+        try {
+            await RpcApi.AgentSyncApplyCommand(TabRpcClient, {});
+        } finally {
+            await loadSkills();
+            setSkillEditor(name, editorReload(doc.content ?? "", doc.mtime ?? 0));
+            globalStore.set(setupSkillSelectedAtom, name);
+            globalStore.set(setupNewSkillAtom, null);
         }
     });
 }

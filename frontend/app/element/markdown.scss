@@ -372,6 +372,16 @@
     }
 }
 
+// A document laid out in its host's scroller (Markdown scrollable={false}: the Agent panel's File tab, the Setup skill
+// rail) never scrolls or clips itself. The rule above gives .content overflow-y: auto, which outranks .non-scrollable,
+// and where the engine resolves .markdown's 100% height against the host (WebKit, inside a flex column) that drew a
+// second scrollbar inside the host's.
+.markdown.markdown-doc:has(> .content.non-scrollable),
+.markdown.markdown-doc .content.non-scrollable {
+    height: auto;
+    overflow: visible;
+}
+
 // The same document in the Agent panel's File tab (mddoc.tsx): a side panel's column, far narrower than the Code
 // surface's 760px measure, so the headings step down and the lines sit closer. Body text keeps DESIGN.md's 14px.
 .markdown.markdown-doc.markdown-rail .content {

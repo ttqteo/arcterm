@@ -13,6 +13,9 @@ type AgentSyncCommands interface {
 	AgentSyncAdoptCommand(ctx context.Context, data CommandAgentSyncAdoptData) (*CommandAgentSyncAdoptRtnData, error)
 	AgentSyncSkillsCommand(ctx context.Context) (*CommandAgentSyncSkillsRtnData, error)
 	ClaudeContextCommand(ctx context.Context, data CommandClaudeContextData) (*CommandClaudeContextRtnData, error)
+	AgentSyncSkillReadCommand(ctx context.Context, data CommandAgentSyncSkillReadData) (*CommandAgentSyncSkillDocRtnData, error)
+	AgentSyncSkillWriteCommand(ctx context.Context, data CommandAgentSyncSkillWriteData) (*CommandAgentSyncSteeringWriteRtnData, error)
+	AgentSyncSkillCreateCommand(ctx context.Context, data CommandAgentSyncSkillCreateData) (*CommandAgentSyncSkillDocRtnData, error)
 }
 
 type AgentSyncHarness struct {
@@ -96,6 +99,8 @@ type AgentSyncSkill struct {
 	Deltas map[string][]string `json:"deltas,omitempty"`
 	// Additions are the lines the user accepted into this skill; the vault's SKILL.md never holds them.
 	Additions []LearnAddition `json:"additions,omitempty"`
+	// Shipped marks a skill arcterm ships: its vault copy is reseeded on every sync, so it is not edited.
+	Shipped bool `json:"shipped,omitempty"`
 }
 
 // AgentSyncSkillColumn is one column of the skills matrix: a harness with a fixed skills directory.
@@ -103,6 +108,8 @@ type AgentSyncSkillColumn struct {
 	Runtime string `json:"runtime"`
 	Label   string `json:"label"`
 	Present bool   `json:"present"`
+	// Path is the harness's skills folder, where arcterm writes its copy of each vault skill.
+	Path string `json:"path"`
 }
 
 type CommandAgentSyncSkillsRtnData struct {
@@ -132,4 +139,26 @@ type ClaudeContextFile struct {
 
 type CommandClaudeContextRtnData struct {
 	Files []ClaudeContextFile `json:"files"`
+}
+
+type CommandAgentSyncSkillReadData struct {
+	Name string `json:"name"`
+}
+
+// CommandAgentSyncSkillDocRtnData is one vault skill's SKILL.md, with its mtime for the save guard.
+type CommandAgentSyncSkillDocRtnData struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+	Mtime   int64  `json:"mtime"`
+}
+
+type CommandAgentSyncSkillWriteData struct {
+	Name      string `json:"name"`
+	Content   string `json:"content"`
+	BaseMtime int64  `json:"basemtime"`
+}
+
+type CommandAgentSyncSkillCreateData struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }

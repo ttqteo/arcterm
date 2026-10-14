@@ -5,7 +5,7 @@ Mỗi harness đọc chỉ dẫn và skill ở một chỗ khác nhau (`~/.claud
 Setup có bốn tab:
 
 - **Instructions**: một tài liệu Markdown chung, được chiếu vào file chỉ dẫn của từng harness.
-- **Skills**: xem skill của mọi harness cạnh nhau và đưa chúng vào vault để arcterm giữ đồng bộ.
+- **Skills**: xem skill của mọi harness cạnh nhau, đưa chúng vào vault, và sửa hoặc tạo skill dùng chung ngay trong Setup.
 - **Tools**: thư viện các tool TUI (lazygit, yazi, btop…) để cài và mở đúng thư mục. Tab này không dùng vault; xem [Agent → Tools](agent.md#tools).
 - **Project**: mọi file định hình Claude Code trong một project (chỉ dẫn, memory, settings, skill, `.arc/setup`), đọc ngay trong app thay vì mở terminal. Tab này chỉ đọc và không dùng vault; xem [Project](#project-file-định-hình-claude-trong-một-project).
 
@@ -26,7 +26,7 @@ Chiều đồng bộ là một chiều: vault → harness. arcterm không đọc
 
 arcterm chỉ đồng bộ vào harness mà bạn **đã dùng**: thư mục cấu hình của harness (ví dụ `~/.claude`, `~/.codex`) phải đã tồn tại. Harness chưa chạy lần nào hiện là **Not set up** và bị bỏ qua; arcterm không tự tạo cấu hình cho nó.
 
-Việc đồng bộ chạy khi bạn bấm **Save** ở tab Instructions, khi bạn bấm **Manage … in arcterm** ở tab Skills, và mỗi lần bạn khởi chạy một agent (một harness không bao giờ khởi động với vùng chỉ dẫn cũ). Có thể chạy tay: `wsh agent-sync status` (xem từng harness phản ánh gì), `wsh agent-sync sync [--dry-run]` và `wsh agent-sync adopt [--apply]`.
+Việc đồng bộ chạy khi bạn bấm **Save** ở tab Instructions, khi bạn bấm **Save**, **Create and edit** hoặc **Manage … in arcterm** ở tab Skills, và mỗi lần bạn khởi chạy một agent (một harness không bao giờ khởi động với vùng chỉ dẫn cũ). Có thể chạy tay: `wsh agent-sync status` (xem từng harness phản ánh gì), `wsh agent-sync sync [--dry-run]` và `wsh agent-sync adopt [--apply]`.
 
 ## Sửa instructions dùng chung
 
@@ -35,7 +35,7 @@ Việc đồng bộ chạy khi bạn bấm **Save** ở tab Instructions, khi b�
 3. Bấm **Save to N harnesses**. N là số harness đang có mặt trên máy. Lệnh lưu ghi tài liệu vào vault rồi chiếu ngay vào từng harness.
 4. Muốn bỏ thay đổi thì bấm **Discard**.
 
-Đầu trang bên phải ghi tình hình chung: `3 harnesses in sync`, hoặc `1 of 3 harnesses out of date`, hoặc `No harnesses set up`.
+Đầu trang bên phải ghi tình hình chung: `3 harnesses up to date`, hoặc `1 of 3 harnesses out of date`, hoặc `No harnesses set up`.
 
 ### Mỗi harness nhận gì
 
@@ -51,7 +51,7 @@ Cột **Harness files** liệt kê file chỉ dẫn của từng harness, đư�
 
 | Trạng thái | Nghĩa là |
 |---|---|
-| **In sync** | Vùng của arcterm trong file khớp với tài liệu chung. |
+| **Up to date** | Vùng của arcterm trong file khớp với tài liệu chung. |
 | **Out of date** | File có vùng của arcterm nhưng nội dung đã khác tài liệu chung trong vault (vùng bị sửa tay, hoặc tài liệu chung vừa đổi ngoài arcterm). Bản nháp chưa lưu không tính. Lưu lại sẽ làm mới. |
 | **Not written yet** | File chưa có, chưa có vùng của arcterm, hoặc tài liệu chung đang trống. |
 | **Not set up** | Harness chưa có thư mục cấu hình; mờ đi và bị bỏ qua. |
@@ -79,9 +79,9 @@ Chưa chọn thì bản nháp của bạn được giữ nguyên, không mất.
 
 Tab **Skills** là một ma trận: mỗi hàng là một skill, mỗi cột là một harness có thư mục skill cố định (Claude Code, Antigravity, Codex, OpenCode). Cột của harness chưa dùng có nhãn **not set up**. pi không có cột: nó đọc skill từ danh sách đường dẫn trong `settings.json` của chính nó; `wsh agent-sync status` cho biết cấu hình đó có trỏ vào skill đã đồng bộ hay không.
 
-Dòng đầu trang ghi tình hình (`19 skills · 3 managed by arcterm`) và nút **Manage N skills in arcterm**.
+Dòng đầu trang ghi tình hình (`19 skills · 3 managed by arcterm`), nút **New skill**, và nút **Manage N skills in arcterm** khi còn skill nằm ngoài vault (không còn thì nút ẩn).
 
-<!-- shot: setup-skills.png | Tab Skills: ma trận skill × harness chia nhóm (Needs a decision, Differs between harnesses, Same copy in N harnesses, Only in …, Managed by arcterm), một hàng được chọn và cột phải hiện "Where it lives" | Mở Setup, bấm tab **Skills** (`#setup-tab-skills`); hàng là `[role="row"]` trong `[aria-label="Skills by harness"]`. Cần vài skill nằm trong `~/.claude/skills` và `~/.codex/skills` để có nhóm khác nhau; năm skill của arcterm luôn có mặt ở nhóm "Managed by arcterm" -->
+<!-- shot: setup-skills.png | Tab Skills: ma trận skill × harness chia nhóm (Needs a decision, Differs between harnesses, Same copy in N harnesses, Only in …, Your skills, Ships with arcterm), một hàng được chọn và cột phải hiện "Where it lives" | Mở Setup, bấm tab **Skills** (`#setup-tab-skills`); hàng là `[role="row"]` trong `[aria-label="Skills by harness"]`. Cần vài skill nằm trong `~/.claude/skills` và `~/.codex/skills` để có nhóm khác nhau; các skill của arcterm luôn có mặt ở nhóm "Ships with arcterm" -->
 
 ### Đọc ma trận
 
@@ -93,20 +93,27 @@ Các hàng chia nhóm, theo thứ tự:
 | **Differs between harnesses** | Khác nhau ở phần đầu (frontmatter) hoặc file đi kèm; arcterm giữ một bản dùng chung và ghi lại điểm khác của từng harness. |
 | **Same copy in N harnesses** | Cùng một skill bạn đã chép tay vào nhiều harness. |
 | **Only in <Harness>** | Skill chỉ có ở một harness. |
-| **Managed by arcterm** | Skill đã nằm trong vault, được ghi vào mọi harness. |
+| **Your skills** | Skill của bạn đã nằm trong vault, được chép vào mọi harness. Sửa được bằng **Edit**. |
+| **Ships with arcterm** | Skill đi kèm arcterm (xem dưới). Chỉ đọc. |
 
 Ô trong ma trận:
 
 | Ô | Nghĩa |
 |---|---|
-| **Synced** | Harness có đúng bản arcterm sẽ ghi. |
-| **Not synced** | Bản trong harness khác bản arcterm sẽ ghi (sẽ được sửa ở lần đồng bộ kế tiếp). |
+| **Up to date** | Bản arcterm chép vào thư mục skill của harness (trên máy này) khớp với vault. Không có gì được đẩy lên mạng. |
+| **Out of date** | Bản trong thư mục của harness cũ hơn vault; lần Save hoặc lần khởi chạy agent kế tiếp chép lại. |
 | **Own copy** | Thư mục cùng tên do bạn tự tạo (không có dấu của arcterm). arcterm không đọc, ghi hay xóa nó. |
 | **Only here** / **Differs** / **Body differs** / **Overrides …** | Tình trạng của skill chưa được quản lý, so với bản gốc. |
 | **Kept** / **Replaced** | Sau khi bạn chọn giữ bản của một harness: bản được giữ, và bản sẽ bị thay (cất đi, xem dưới). |
 | — | Harness này không có skill đó. |
 
-Bấm một hàng để xem chi tiết ở cột phải: mô tả của skill, nơi nó nằm (đường dẫn từng bản), và điểm khác. Nút **Open SKILL.md** mở file đó trong [Code](code.md).
+Bấm một hàng để xem chi tiết ở cột phải: mô tả của skill, nơi nó nằm (đường dẫn từng bản), điểm khác, và với skill trong vault là mục **Copied into**: thư mục skill của từng harness mà arcterm chép nó vào. Skill chưa được quản lý có nút **Open in Code** mở `SKILL.md` của nó trong [Code](code.md).
+
+### Sửa và tạo skill
+
+- **Sửa**: chọn một skill ở nhóm **Your skills** rồi bấm **Edit** ở chân cột phải. `SKILL.md` trong vault mở ngay trong cột phải (cột rộng ra); hàng đang có bản nháp hiện chữ **edited**. **Save** ghi vào vault rồi chép sang mọi harness ngay; **Discard** bỏ bản nháp. Bản nháp còn nguyên khi bạn chọn skill khác hay chuyển surface. Nếu file bị sửa ở chỗ khác trong lúc bạn soạn, Save báo **Reload** / **Overwrite** như tab Instructions.
+- **Tạo**: bấm **New skill**, nhập tên (chữ thường, số và dấu gạch nối, như `trade-check`; không trùng skill nào đã có) và mô tả (agent đọc nó để biết khi nào dùng skill), rồi **Create and edit**. arcterm tạo `<vault>/skills/<tên>/SKILL.md`, chép vào mọi harness, và mở file trong trình soạn thảo.
+- Skill đi kèm arcterm không có nút Edit: mỗi lần đồng bộ arcterm ghi đè lại chúng (xem dưới).
 
 ### Đưa skill vào vault
 
@@ -119,11 +126,11 @@ Chi tiết cần biết:
 - Bản bị bỏ khi bạn chọn **Keep** không bị xóa: nó được cất ở `<vault>/skills-replaced/<harness>/<tên>/` để khôi phục bằng tay.
 - Phần khác biệt của từng harness nằm trong thư mục `.arc/` của skill, không bao giờ chép sang harness: `.arc/<harness>.yaml` là các dòng frontmatter ghi đè, `.arc/<harness>/…` là file đi kèm chỉ dành cho harness đó. Thư mục `.arc/` được giữ nguyên qua các lần đồng bộ.
 - Mỗi thư mục skill arcterm ghi vào harness có file dấu `.arc-managed`. Thư mục không có dấu này là của bạn và không bao giờ bị ghi hay xóa. Skill rời khỏi vault thì bản đã ghi (có dấu) bị gỡ khỏi các harness.
-- Setup **không tạo và không sửa nội dung skill**. Muốn sửa, mở `SKILL.md` bằng **Open SKILL.md** (hoặc bất kỳ trình soạn thảo nào); muốn thêm skill mới dùng chung, tạo thư mục `<vault>/skills/<tên>/SKILL.md`. Lần đồng bộ kế tiếp ghi nó vào mọi harness.
+- Setup chỉ sửa `SKILL.md`. File đi kèm khác của skill (script, tài liệu tham khảo) thì sửa trong `<vault>/skills/<tên>/` bằng trình soạn thảo bất kỳ; lần đồng bộ kế tiếp ghi chúng vào mọi harness.
 
 ### Skills đi kèm arcterm
 
-arcterm mang theo năm skill, được đưa vào `<vault>/skills/` ở mỗi lần đồng bộ (nên chúng luôn nằm ở nhóm **Managed by arcterm**) và từ đó chiếu vào mọi harness:
+arcterm mang theo năm skill, được đưa vào `<vault>/skills/` ở mỗi lần đồng bộ (nên chúng luôn nằm ở nhóm **Ships with arcterm**) và từ đó chiếu vào mọi harness:
 
 | Skill | Dùng khi |
 |---|---|

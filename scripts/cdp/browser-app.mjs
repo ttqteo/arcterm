@@ -56,7 +56,9 @@ export function findChrome(platform = process.platform, env = process.env, exist
     return (CHROME_PATHS[platform] ?? CHROME_PATHS.linux).find((p) => exists(p)) ?? null;
 }
 
-// its own profile, so it never opens in, or locks, the person's Chrome; the size matches verify.mjs's viewport
+// its own profile, so it never opens in, or locks, the person's Chrome; the size matches verify.mjs's viewport.
+// The disable flags keep Chrome from filling that profile with what it fetches in the background (ML models, a TTS
+// engine, Safe Browsing lists: 156 MB in a day), none of which a scenario uses
 export function chromeArgs({ cdpPort, url, profile, headed }) {
     return [
         ...(headed ? [] : ["--headless=new"]),
@@ -64,6 +66,10 @@ export function chromeArgs({ cdpPort, url, profile, headed }) {
         `--user-data-dir=${profile}`,
         "--no-first-run",
         "--no-default-browser-check",
+        "--disable-component-update",
+        "--disable-background-networking",
+        "--disable-sync",
+        "--disable-features=OptimizationHints,OptimizationGuideModelDownloading,OptimizationHintsFetching,OptimizationTargetPrediction",
         "--window-size=1600,950",
         url,
     ];

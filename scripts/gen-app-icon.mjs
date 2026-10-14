@@ -59,10 +59,11 @@ const MAC_SIZES = [
     [1024, 824, 40, 42],
 ];
 
-// icns entry types per pixel size; the @2x types reuse the next size up
+// icns entry types per pixel size; the @2x types reuse the next size up. 16 and 32px are ARGB, as
+// iconutil writes them: macOS decodes a PNG in icp4/icp5 as noise (the Finder's 16px list icon).
 const ICNS_TYPES = [
-    ["icp4", 16],
-    ["icp5", 32],
+    ["ic04", 16, "argb"],
+    ["ic05", 32, "argb"],
     ["ic11", 32],
     ["ic12", 64],
     ["ic07", 128],
@@ -174,13 +175,39 @@ function ico(images) {
     return Buffer.concat([header, dir, ...images.map((i) => i.data)]);
 }
 
-// icns: a big-endian "icns" header, then one [type, length, PNG] entry per type
-function icns(pngs) {
-    const entries = ICNS_TYPES.map(([type, size]) => {
+// ic04/ic05 data: "ARGB", then each channel (all A, then R, G, B) in icns RLE: a byte n < 128 copies the
+// next n + 1 bytes, a byte n >= 128 repeats the next byte n - 125 times
+function argb(size, px) {
+    const parts = [Buffer.from("ARGB", "ascii")];
+    for (const ch of [3, 0, 1, 2]) {
+        const v = Array.from({ length: size * size }, (_, i) => px[i * 4 + ch]);
+        let i = 0;
+        while (i < v.length) {
+            let run = 1;
+            while (i + run < v.length && run < 130 && v[i + run] === v[i]) run++;
+            if (run >= 3) {
+                parts.push(Buffer.from([run + 125, v[i]]));
+                i += run;
+                continue;
+            }
+            let j = i;
+            while (j < v.length && j - i < 128 && !(v[j] === v[j + 1] && v[j] === v[j + 2])) j++;
+            parts.push(Buffer.from([j - i - 1, ...v.slice(i, j)]));
+            i = j;
+        }
+    }
+    return Buffer.concat(parts);
+}
+
+// icns: a big-endian "icns" header, then one [type, length, data] entry per type
+function icns(icons) {
+    const entries = ICNS_TYPES.map(([type, size, format]) => {
+        const icon = icons.get(size);
+        const data = format === "argb" ? argb(size, icon.px) : icon.png;
         const head = Buffer.alloc(8);
         head.write(type, 0, "ascii");
-        head.writeUInt32BE(8 + pngs.get(size).length, 4);
-        return Buffer.concat([head, pngs.get(size)]);
+        head.writeUInt32BE(8 + data.length, 4);
+        return Buffer.concat([head, data]);
     });
     const header = Buffer.alloc(8);
     header.write("icns", 0, "ascii");
@@ -198,15 +225,16 @@ const images = SIZES.map(([size, step, block]) => {
 writeFileSync(OUT, ico(images));
 console.log(`wrote ${OUT}: ${SIZES.map(([s]) => s).join(", ")}px`);
 
-const macPngs = new Map(
+const macIcons = new Map(
     MAC_SIZES.map(([size, tile, step, block]) => {
-        const data = png(size, render(size, step, block, tile));
+        const px = render(size, step, block, tile);
+        const data = png(size, px);
         if (previewDir) writeFileSync(join(previewDir, `mac-${size}.png`), data);
-        return [size, data];
+        return [size, { px, png: data }];
     })
 );
-writeFileSync(ICNS_OUT, icns(macPngs));
+writeFileSync(ICNS_OUT, icns(macIcons));
 console.log(`wrote ${ICNS_OUT}: ${MAC_SIZES.map(([s]) => s).join(", ")}px`);
 // off Windows, Tauri's codegen needs a PNG for the window icon (the Dock icon of an unbundled `cargo tauri dev`)
-writeFileSync(PNG_OUT, macPngs.get(512));
+writeFileSync(PNG_OUT, macIcons.get(512).png);
 console.log(`wrote ${PNG_OUT}: 512px`);

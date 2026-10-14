@@ -21,6 +21,9 @@ new draws it as one of its release's cards and folds every other line under a co
 
 ### Added
 
+- **Edit and create skills in Setup**: on Setup → Skills, **Edit** opens a vault skill's `SKILL.md` right in the side
+  panel and **Save** copies it into every harness at once; **New skill** asks a name and a description, then opens the
+  new skill to write. Skills that ship with arcterm stay read-only.
 - **Canvases**: every mockup an agent drew lives on in Agent → Canvases, with a preview of each; open one to page
   through its boards, or Clean up to move the old ones to the trash. Agents no longer delete a canvas when its feature
   ships unless you turn that on in Settings → Storage. <!-- try: go:canvases --> <!-- big -->
@@ -65,6 +68,13 @@ new draws it as one of its release's cards and folds every other line under a co
 
 ### Changed
 
+- **Setup says where a skill's copy is, not "Synced"**: a cell now reads **Up to date** or **Out of date** against
+  the copy in that harness's skills folder on this machine, and the side panel lists those folders under Copied into.
+  The Instructions tab says Up to date too.
+- **Setup → Skills separates your skills from arcterm's**: the vault's skills sit under **Your skills** (with Edit) and
+  **Ships with arcterm** (read-only); the side panel is wider and grows with the window, and its SKILL.md scrolls with
+  the panel rather than in a second scrollbar of its own; **Manage … in arcterm** shows only while a skill sits outside
+  the vault.
 - A run whose lead tab is closed looks the same in the Agent sidebar as one whose lead is open: same mark, title and
   line under it; only the token count is missing.
 - **The Cockpit badge counts only agents that need you**, matching its "need you" tab. Runs to confirm or land,
@@ -88,6 +98,8 @@ new draws it as one of its release's cards and folds every other line under a co
 
 ### Fixed
 
+- **arcterm's icon shows at small sizes on a Mac**: in Finder's list view, app lists and other small places it was a
+  noisy red-and-blue square instead of the t> mark.
 - **Runs that finish together land one after another** instead of each after the first being held. A land waits its
   turn in its project (`Landing · #2 in line` in the Agent tree), merges the base into the run's branch itself and
   re-runs Check and Verify on the result, so you no longer merge `main` into a branch by hand before Land again.

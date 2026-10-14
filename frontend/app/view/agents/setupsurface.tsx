@@ -3,11 +3,11 @@
 
 // The Setup surface: the instructions and skills every harness reads. The Instructions tab edits the
 // shared doc, which every save writes into each harness's file, and lists each harness file's state.
-// The Skills tab views every harness's skills and moves them into the vault; it never creates or edits
-// one. The Tools tab is the library of terminal tools (toolslibrary.tsx). The Learned tab lists the lines the user
-// accepted from what agents learned (learnedtab.tsx); a skill's own lines also show in its rail. The Project tab
-// lists the Claude files of one project (projectcontexttab.tsx). Logic lives in setupmodel.ts, skillsmatrix.ts and
-// learnedmodel.ts, the RPCs and the atoms in setupstore.ts.
+// The Skills tab views every harness's skills, moves them into the vault, and edits or creates a vault
+// skill in its rail. The Tools tab is the library of terminal tools (toolslibrary.tsx). The Learned tab lists the
+// lines the user accepted from what agents learned (learnedtab.tsx); a skill's own lines also show in its rail. The
+// Project tab lists the Claude files of one project (projectcontexttab.tsx). Logic lives in setupmodel.ts,
+// skillsmatrix.ts and learnedmodel.ts, the RPCs and the atoms in setupstore.ts.
 
 import { openFileInCode } from "@/app/cockpit/openfilestore";
 import { Markdown } from "@/app/element/markdown";
@@ -42,24 +42,35 @@ import {
 } from "./setupmodel";
 import {
     adoptSkills,
+    closeNewSkill,
+    closeSkillEditor,
+    createSkill,
     discardShared,
+    editSkill,
     loadSetup,
     loadSkills,
+    openNewSkill,
     openSkillFile,
     reloadShared,
+    reloadSkill,
     saveShared,
+    saveSkill,
     selectSkill,
     setSkillKeep,
     setupBusyAtom,
     setupErrorAtom,
+    setupNewSkillAtom,
     setupSharedAtom,
     setupSharedPathAtom,
+    setupSkillEditorsAtom,
     setupSkillKeepAtom,
     setupSkillsAtom,
     setupSkillSelectedAtom,
     setupStatusAtom,
     setupTabAtom,
+    typeNewSkill,
     typeShared,
+    typeSkill,
     type SetupTab,
 } from "./setupstore";
 import { BTN_SECONDARY, FADE_IN, SECTION_HEAD } from "./setupstyles";
@@ -68,10 +79,13 @@ import {
     adoptCount,
     copyDelta,
     manageLabel,
+    MAX_SKILL_NAME,
+    skillCopyTargets,
     skillFilePath,
     skillFileSource,
     skillGroups,
     skillLinkTarget,
+    skillNameError,
     skillNote,
     skillPreview,
     skillsSummary,
@@ -81,10 +95,18 @@ import {
     type SkillRow,
 } from "./skillsmatrix";
 import { ToolsHeader, ToolsLibrary } from "./toolslibrary";
-import { useFileText } from "./usefiletext";
+import { fileTextOf, useFileText } from "./usefiletext";
 
 const BTN_PRIMARY =
     "h-8 cursor-pointer rounded border-0 bg-accent px-[14px] text-[13px] font-bold text-background shadow-inset-highlight hover:bg-accenthover disabled:cursor-default disabled:opacity-40 disabled:hover:bg-accent";
+
+// The skill rail grows with the window so a SKILL.md reads at a comfortable measure, and wider again while editing; the
+// matrix keeps the rest (its harness columns are fixed, so the floor of either width still leaves the names room).
+const RAIL_WIDTH = "w-[clamp(440px,38%,680px)]";
+const RAIL_EDIT_WIDTH = "w-[clamp(560px,50%,860px)]";
+
+const INPUT =
+    "h-[30px] min-w-0 rounded-[7px] border border-edge-mid bg-background px-2.5 text-[13px] text-primary outline-none placeholder:text-muted focus:border-accent";
 
 const TONE_DOT: Record<Tone, string> = { ok: "bg-success", warn: "bg-warning", none: "bg-ink-faint" };
 const TONE_TEXT: Record<Tone, string> = { ok: "text-ink-mid", warn: "text-warning-soft", none: "text-muted" };
@@ -291,11 +313,13 @@ function LineEditor({
     onChange,
     path,
     placeholder,
+    label,
 }: {
     ed: DocEditor;
     onChange: (v: string) => void;
     path: string;
     placeholder: string;
+    label: string;
 }) {
     const lines = ed.draft.split("\n");
     return (
@@ -305,9 +329,9 @@ function LineEditor({
                     {path}
                 </span>
                 <span className="flex-1" />
-                <span>Markdown</span>
-                <span className="text-muted">·</span>
-                <span>
+                <span className="flex-none">Markdown</span>
+                <span className="flex-none text-muted">·</span>
+                <span className="flex-none whitespace-nowrap">
                     {lineCount(ed.draft)} {lineCount(ed.draft) === 1 ? "line" : "lines"}
                 </span>
             </div>
@@ -339,7 +363,7 @@ function LineEditor({
                         </Fragment>
                     ))}
                     <textarea
-                        aria-label="Instructions for every harness"
+                        aria-label={label}
                         value={ed.draft}
                         spellCheck={false}
                         rows={1}
@@ -402,6 +426,7 @@ function SharedEditor({ rows }: { rows: AgentSyncHarness[] }) {
                 ed={ed}
                 path={path}
                 onChange={typeShared}
+                label="Instructions for every harness"
                 placeholder="The instructions every harness should follow. Saving writes them into each harness's file."
             />
         </div>
@@ -500,17 +525,30 @@ function SkillsHeader() {
         return null;
     }
     const n = adoptCount(data, keep);
+    // Manage only has work when a harness holds a skill outside the vault; at zero it would read as a dead control
     return (
         <>
             <span className="text-[12px] text-ink-mid">{skillsSummary(data)}</span>
             <button
                 type="button"
-                disabled={busy || n === 0}
-                onClick={() => fireAndForget(adoptSkills)}
-                className={BTN_PRIMARY}
+                data-skill-new
+                disabled={busy}
+                onClick={openNewSkill}
+                className={cn(BTN_SECONDARY, "h-8 text-[13px]")}
             >
-                {manageLabel(n)}
+                New skill
             </button>
+            {n > 0 ? (
+                <button
+                    type="button"
+                    data-skill-manage
+                    disabled={busy}
+                    onClick={() => fireAndForget(adoptSkills)}
+                    className={BTN_PRIMARY}
+                >
+                    {manageLabel(n)}
+                </button>
+            ) : null}
         </>
     );
 }
@@ -532,11 +570,12 @@ function SkillCellView({ cell }: { cell: SkillCell }) {
 }
 
 // the name, and a "+N" chip when the user taught the skill lines of their own
-function SkillNameCell({ row }: { row: SkillRow }) {
+function SkillNameCell({ row, edited }: { row: SkillRow; edited: boolean }) {
     const chip = additionsChip(row);
     return (
         <span role="cell" className="flex min-w-0 items-center gap-1.5 text-[12px] text-ink-hi">
             <span className="truncate">{row.name}</span>
+            {edited ? <span className="flex-none text-[11px] text-accent-soft">edited</span> : null}
             {chip != null ? (
                 <span
                     data-testid="skill-additions-chip"
@@ -559,6 +598,7 @@ function SkillsMatrix({
     groups: SkillGroup[];
     selected: string | null;
 }) {
+    const editors = useAtomValue(setupSkillEditorsAtom);
     // the column count comes from the backend, so the template cannot be a static utility
     const grid = { gridTemplateColumns: `minmax(0, 1fr) repeat(${columns.length}, ${SKILL_COLUMN_WIDTH})` };
     const onKey = (e: KeyboardEvent, name: string) => {
@@ -611,6 +651,7 @@ function SkillsMatrix({
                         {g.rows.map((r) => (
                             <div
                                 key={r.name}
+                                data-skill-row={r.name}
                                 role="row"
                                 tabIndex={0}
                                 aria-selected={r.name === selected}
@@ -624,7 +665,7 @@ function SkillsMatrix({
                                         : "hover:bg-surface-hover"
                                 )}
                             >
-                                <SkillNameCell row={r} />
+                                <SkillNameCell row={r} edited={editors[r.name] != null && isDirty(editors[r.name])} />
                                 {r.cells.map((c) => (
                                     <SkillCellView key={c.runtime} cell={c} />
                                 ))}
@@ -696,102 +737,331 @@ function SkillFilePreview({ model, path, preview }: { model: AgentsViewModel; pa
     );
 }
 
-function SkillRail({ model, row, skillsroot }: { model: AgentsViewModel; row: SkillRow; skillsroot: string }) {
+// The rail's footer: Edit for a vault skill of the user's, Discard and Save while editing it, Open in Code for a copy
+// arcterm does not own yet. A shipped skill has no footer (SkillRail): every launch puts its vault copy back.
+function SkillRailFooter({
+    model,
+    row,
+    path,
+    ed,
+    onSaved,
+}: {
+    model: AgentsViewModel;
+    row: SkillRow;
+    path: string;
+    ed: DocEditor | undefined;
+    onSaved: (text: string) => void;
+}) {
+    const busy = useAtomValue(setupBusyAtom);
+    if (row.kind !== "managed") {
+        return (
+            <button
+                type="button"
+                disabled={busy}
+                onClick={() => fireAndForget(() => openSkillFile(model, path))}
+                className={BTN_SECONDARY}
+            >
+                Open in Code
+            </button>
+        );
+    }
+    if (ed == null) {
+        return (
+            <button
+                type="button"
+                data-skill-edit
+                disabled={busy}
+                onClick={() => fireAndForget(() => editSkill(row.name))}
+                className={BTN_SECONDARY}
+            >
+                Edit
+            </button>
+        );
+    }
+    const dirty = isDirty(ed);
+    const changed = changedLineCount(ed.base, ed.draft);
+    const save = async (overwrite: boolean) => {
+        const text = await saveSkill(row.name, overwrite);
+        if (text != null) {
+            onSaved(text);
+        }
+    };
+    return (
+        <>
+            <button
+                type="button"
+                data-skill-cancel
+                disabled={busy}
+                onClick={() => closeSkillEditor(row.name)}
+                className={BTN_SECONDARY}
+            >
+                {dirty ? "Discard" : "Done"}
+            </button>
+            <span className="flex-1" />
+            {dirty ? (
+                <span className="text-[12px] text-accent-soft">
+                    {changed} {changed === 1 ? "line" : "lines"} changed
+                </span>
+            ) : null}
+            <button
+                type="button"
+                data-skill-save
+                disabled={!dirty || busy}
+                onClick={() => fireAndForget(() => save(false))}
+                className={BTN_PRIMARY}
+            >
+                {busy ? "Saving…" : "Save"}
+            </button>
+        </>
+    );
+}
+
+function SkillRail({
+    model,
+    row,
+    skillsroot,
+    columns,
+}: {
+    model: AgentsViewModel;
+    row: SkillRow;
+    skillsroot: string;
+    columns: AgentSyncSkillColumn[];
+}) {
     const keep = useAtomValue(setupSkillKeepAtom);
     const busy = useAtomValue(setupBusyAtom);
+    const editors = useAtomValue(setupSkillEditorsAtom);
+    const ed = row.kind === "managed" && !row.shipped ? editors[row.name] : undefined;
     const path = skillFilePath(row, skillsroot, keep);
-    const [file] = useFileText(path);
+    const [file, setFile] = useFileText(path);
     const preview = file.status === "ok" ? skillPreview(row, file.text) : null;
     const description = preview?.description ?? row.description;
     const source = skillFileSource(row, keep);
     const differs = row.kind === "decide" || row.kind === "differs";
+    const targets = skillCopyTargets(row, columns);
     const card = "flex flex-col gap-[5px] rounded border border-border px-2.5 py-[9px]";
     return (
         <motion.aside
             key={row.name}
             {...FADE_IN}
             aria-label="Skill detail"
-            className="flex w-[440px] flex-none flex-col border-l border-border bg-surface"
+            data-skill-rail={row.name}
+            className={cn(
+                "flex flex-none flex-col border-l border-border bg-surface",
+                ed != null ? RAIL_EDIT_WIDTH : RAIL_WIDTH
+            )}
         >
-            <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto p-4">
-                <div className="flex flex-col gap-1.5">
-                    <div className="text-[14px] font-medium text-primary">{row.name}</div>
-                    {description ? <div className="text-[13px] leading-[1.5] text-secondary">{description}</div> : null}
-                    <div className="text-[12.5px] leading-[1.5] text-muted">{skillNote(row)}</div>
+            {ed != null ? (
+                <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+                    <div className="flex flex-col gap-1">
+                        <div className="text-[14px] font-medium text-primary">Editing {row.name}</div>
+                        <div className="text-[12.5px] leading-[1.5] text-muted">
+                            Saving writes the vault copy and copies it into each harness's skills folder on this
+                            machine.
+                        </div>
+                    </div>
+                    <PaneReveal open={!!ed.conflict} variants={composerReveal} className="flex-none">
+                        <ConflictNotice
+                            busy={busy}
+                            onReload={() => fireAndForget(() => reloadSkill(row.name))}
+                            onOverwrite={() =>
+                                fireAndForget(async () => {
+                                    const text = await saveSkill(row.name, true);
+                                    if (text != null) {
+                                        setFile(fileTextOf(text));
+                                    }
+                                })
+                            }
+                        />
+                    </PaneReveal>
+                    <div data-skill-editor className="flex min-h-0 flex-1 flex-col">
+                        <LineEditor
+                            ed={ed}
+                            path={path}
+                            onChange={(v) => typeSkill(row.name, v)}
+                            label={`SKILL.md of ${row.name}`}
+                            placeholder={"---\nname: …\ndescription: Use when …\n---"}
+                        />
+                    </div>
                 </div>
-                <div className="flex flex-col gap-2">
-                    <div className={SECTION_HEAD}>{differs ? "What differs" : "Where it lives"}</div>
-                    {row.kind === "managed" ? (
-                        <>
-                            <div className={card}>
-                                <span className="text-[12.5px] font-semibold text-secondary">arcterm vault</span>
-                                <span className="truncate text-[10.5px] text-muted">{path}</span>
-                            </div>
-                            {Object.entries(row.deltas).map(([runtime, over]) => (
-                                <div key={runtime} className={card}>
+            ) : (
+                <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto p-4">
+                    <div className="flex flex-col gap-1.5">
+                        <div className="text-[14px] font-medium text-primary">{row.name}</div>
+                        {description ? (
+                            <div className="text-[13px] leading-[1.5] text-secondary">{description}</div>
+                        ) : null}
+                        <div className="text-[12.5px] leading-[1.5] text-muted">{skillNote(row)}</div>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                        <div className={SECTION_HEAD}>{differs ? "What differs" : "Where it lives"}</div>
+                        {row.kind === "managed" ? (
+                            <>
+                                <div className={card}>
+                                    <span className="text-[12.5px] font-semibold text-secondary">arcterm vault</span>
+                                    <span className="truncate text-[10.5px] text-muted">{path}</span>
+                                </div>
+                                {Object.entries(row.deltas).map(([runtime, over]) => (
+                                    <div key={runtime} className={card}>
+                                        <span className="flex items-center gap-2 text-[12.5px] font-semibold text-secondary">
+                                            <HarnessMark runtime={runtime} />
+                                            {runtimeMeta(runtime).label}
+                                        </span>
+                                        <span className="text-[10.5px] text-muted">Overrides {over.join(", ")}</span>
+                                    </div>
+                                ))}
+                            </>
+                        ) : (
+                            row.copies.map((c) => (
+                                <div key={c.runtime} className={card}>
                                     <span className="flex items-center gap-2 text-[12.5px] font-semibold text-secondary">
-                                        <HarnessMark runtime={runtime} />
-                                        {runtimeMeta(runtime).label}
+                                        <HarnessMark runtime={c.runtime} />
+                                        {c.label}
+                                        {differs ? (
+                                            <span className="ml-auto text-[11px] font-normal text-muted">
+                                                {copyDelta(c)}
+                                            </span>
+                                        ) : null}
                                     </span>
-                                    <span className="text-[10.5px] text-muted">Overrides {over.join(", ")}</span>
+                                    <PathTail path={c.path} />
+                                </div>
+                            ))
+                        )}
+                    </div>
+                    {targets.length > 0 ? (
+                        <div data-skill-copies className="flex flex-col gap-2">
+                            <div className={SECTION_HEAD}>Copied into</div>
+                            {targets.map((t) => (
+                                <div key={t.runtime} className="flex min-w-0 items-center gap-2">
+                                    <HarnessMark runtime={t.runtime} />
+                                    <span className="flex-none text-[12px] text-secondary">{t.label}</span>
+                                    <span title={t.path} className="min-w-0 truncate text-[11px] text-muted">
+                                        {t.path}
+                                    </span>
                                 </div>
                             ))}
-                        </>
-                    ) : (
-                        row.copies.map((c) => (
-                            <div key={c.runtime} className={card}>
-                                <span className="flex items-center gap-2 text-[12.5px] font-semibold text-secondary">
-                                    <HarnessMark runtime={c.runtime} />
-                                    {c.label}
-                                    {differs ? (
-                                        <span className="ml-auto text-[11px] font-normal text-muted">
-                                            {copyDelta(c)}
-                                        </span>
-                                    ) : null}
-                                </span>
-                                <PathTail path={c.path} />
-                            </div>
-                        ))
-                    )}
-                </div>
-                {row.needsKeep ? <KeepChoice row={row} /> : null}
-                <div className="flex flex-col gap-2">
-                    <div className="flex items-baseline gap-2">
-                        <span className={SECTION_HEAD}>SKILL.md</span>
-                        {source != null ? <span className="text-[11px] text-muted">{source}'s copy</span> : null}
-                    </div>
-                    {preview != null ? (
-                        <SkillFilePreview model={model} path={path} preview={preview} />
-                    ) : (
-                        <div className="text-[12.5px] text-muted">
-                            {file.status === "loading" ? "Reading…" : "SKILL.md could not be read."}
                         </div>
-                    )}
-                </div>
-                {row.additions.length > 0 ? (
-                    <div data-testid="learned-additions" className="flex flex-col gap-2">
+                    ) : null}
+                    {row.needsKeep ? <KeepChoice row={row} /> : null}
+                    <div className="flex flex-col gap-2">
                         <div className="flex items-baseline gap-2">
-                            <span className={SECTION_HEAD}>Your additions</span>
-                            <span className="text-[11px] text-muted">added after the text above, in every harness</span>
+                            <span className={SECTION_HEAD}>SKILL.md</span>
+                            {source != null ? <span className="text-[11px] text-muted">{source}'s copy</span> : null}
                         </div>
-                        <div className="flex flex-col gap-1">
-                            {skillLines(row.name, row.additions).map((l) => (
-                                <LearnedLine key={l.id} line={l} />
-                            ))}
+                        {preview != null ? (
+                            <SkillFilePreview model={model} path={path} preview={preview} />
+                        ) : (
+                            <div className="text-[12.5px] text-muted">
+                                {file.status === "loading" ? "Reading…" : "SKILL.md could not be read."}
+                            </div>
+                        )}
+                    </div>
+                    {row.additions.length > 0 ? (
+                        <div data-testid="learned-additions" className="flex flex-col gap-2">
+                            <div className="flex items-baseline gap-2">
+                                <span className={SECTION_HEAD}>Your additions</span>
+                                <span className="text-[11px] text-muted">
+                                    added after the text above, in every harness
+                                </span>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                                {skillLines(row.name, row.additions).map((l) => (
+                                    <LearnedLine key={l.id} line={l} />
+                                ))}
+                            </div>
+                        </div>
+                    ) : null}
+                </div>
+            )}
+            {row.kind === "managed" && row.shipped ? null : (
+                <div className="flex flex-none items-center gap-2 border-t border-border px-4 py-3">
+                    <SkillRailFooter
+                        model={model}
+                        row={row}
+                        path={path}
+                        ed={ed}
+                        onSaved={(t) => setFile(fileTextOf(t))}
+                    />
+                </div>
+            )}
+        </motion.aside>
+    );
+}
+
+// The New skill form, in the rail's place: a name and the description an agent reads to decide when to use it.
+// Create writes the vault skill, copies it into every harness and opens it in the editor.
+function NewSkillRail({ taken }: { taken: string[] }) {
+    const form = useAtomValue(setupNewSkillAtom);
+    const busy = useAtomValue(setupBusyAtom);
+    if (form == null) {
+        return null;
+    }
+    const name = form.name.trim();
+    const nameError = skillNameError(name, taken);
+    const ready = name !== "" && nameError == null && form.description.trim() !== "" && !busy;
+    return (
+        <motion.aside
+            {...FADE_IN}
+            aria-label="New skill"
+            data-new-skill-form
+            className={cn("flex flex-none flex-col border-l border-border bg-surface", RAIL_WIDTH)}
+        >
+            <form
+                className="flex min-h-0 flex-1 flex-col"
+                onSubmit={(e) => {
+                    e.preventDefault();
+                    if (ready) {
+                        fireAndForget(createSkill);
+                    }
+                }}
+            >
+                <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+                    <div className="flex flex-col gap-1">
+                        <div className="text-[14px] font-medium text-primary">New skill</div>
+                        <div className="text-[12.5px] leading-[1.5] text-muted">
+                            Made in the vault on this machine and copied into each harness's skills folder.
                         </div>
                     </div>
-                ) : null}
-            </div>
-            <div className="flex flex-none gap-2 border-t border-border px-4 py-3">
-                <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => fireAndForget(() => openSkillFile(model, path))}
-                    className={BTN_SECONDARY}
-                >
-                    Open SKILL.md
-                </button>
-            </div>
+                    <label className="flex flex-col gap-1.5">
+                        <span className={SECTION_HEAD}>Name</span>
+                        <input
+                            data-new-skill-name
+                            autoFocus
+                            value={form.name}
+                            maxLength={MAX_SKILL_NAME + 8}
+                            spellCheck={false}
+                            placeholder="trade-check"
+                            onChange={(e) => typeNewSkill({ ...form, name: e.target.value })}
+                            className={cn(INPUT, "font-mono text-[12.5px]")}
+                        />
+                        <span
+                            data-new-skill-name-error
+                            className={cn("text-[11.5px]", nameError != null ? "text-warning-soft" : "text-muted")}
+                        >
+                            {nameError ?? "The folder name, and how you call it: /trade-check."}
+                        </span>
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                        <span className={SECTION_HEAD}>Description</span>
+                        <textarea
+                            data-new-skill-description
+                            value={form.description}
+                            rows={4}
+                            placeholder="Use when … (an agent reads this to decide when to use the skill)"
+                            onChange={(e) => typeNewSkill({ ...form, description: e.target.value })}
+                            className={cn(INPUT, "h-auto resize-none py-2 leading-[1.5]")}
+                        />
+                    </label>
+                </div>
+                <div className="flex flex-none items-center gap-2 border-t border-border px-4 py-3">
+                    <button type="button" disabled={busy} onClick={closeNewSkill} className={BTN_SECONDARY}>
+                        Cancel
+                    </button>
+                    <span className="flex-1" />
+                    <button type="submit" data-new-skill-create disabled={!ready} className={BTN_PRIMARY}>
+                        {busy ? "Creating…" : "Create and edit"}
+                    </button>
+                </div>
+            </form>
         </motion.aside>
     );
 }
@@ -799,6 +1069,7 @@ function SkillRail({ model, row, skillsroot }: { model: AgentsViewModel; row: Sk
 function SkillsTab({ model }: { model: AgentsViewModel }) {
     const { data, groups } = useSkillGroups();
     const selectedName = useAtomValue(setupSkillSelectedAtom);
+    const newSkill = useAtomValue(setupNewSkillAtom);
     const error = useAtomValue(setupErrorAtom);
     // re-read on every visit: an agent may have written a skill since
     useEffect(() => {
@@ -818,11 +1089,18 @@ function SkillsTab({ model }: { model: AgentsViewModel }) {
                             <SkillsMatrix
                                 columns={data.columns ?? []}
                                 groups={groups}
-                                selected={selected?.name ?? null}
+                                selected={newSkill != null ? null : (selected?.name ?? null)}
                             />
                         </div>
-                        {selected != null ? (
-                            <SkillRail model={model} row={selected} skillsroot={data.skillsroot} />
+                        {newSkill != null ? (
+                            <NewSkillRail taken={rows.map((r) => r.name)} />
+                        ) : selected != null ? (
+                            <SkillRail
+                                model={model}
+                                row={selected}
+                                skillsroot={data.skillsroot}
+                                columns={data.columns ?? []}
+                            />
                         ) : null}
                     </>
                 )}

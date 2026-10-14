@@ -115,6 +115,7 @@ declare global {
         states: {[key: string]: string};
         deltas?: {[key: string]: string[]};
         additions?: LearnAddition[];
+        shipped?: boolean;
     };
 
     // wshrpc.AgentSyncSkillColumn
@@ -122,6 +123,7 @@ declare global {
         runtime: string;
         label: string;
         present: boolean;
+        path: string;
     };
 
     // wshrpc.AgentSyncSkillMove
@@ -422,6 +424,31 @@ declare global {
     // wshrpc.CommandAgentSyncApplyRtnData
     type CommandAgentSyncApplyRtnData = {
         actions: AgentSyncAction[];
+    };
+
+    // wshrpc.CommandAgentSyncSkillCreateData
+    type CommandAgentSyncSkillCreateData = {
+        name: string;
+        description: string;
+    };
+
+    // wshrpc.CommandAgentSyncSkillDocRtnData
+    type CommandAgentSyncSkillDocRtnData = {
+        path: string;
+        content: string;
+        mtime: number;
+    };
+
+    // wshrpc.CommandAgentSyncSkillReadData
+    type CommandAgentSyncSkillReadData = {
+        name: string;
+    };
+
+    // wshrpc.CommandAgentSyncSkillWriteData
+    type CommandAgentSyncSkillWriteData = {
+        name: string;
+        content: string;
+        basemtime: number;
     };
 
     // wshrpc.CommandAgentSyncSkillsRtnData

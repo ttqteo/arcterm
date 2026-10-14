@@ -9,10 +9,13 @@ import {
     adoptKeep,
     copyDelta,
     manageLabel,
+    skillCopyTargets,
     skillFilePath,
     skillFileSource,
     skillGroups,
     skillLinkTarget,
+    skillNameError,
+    skillNote,
     skillPreview,
     skillRows,
     skillsSummary,
@@ -20,10 +23,10 @@ import {
 } from "./skillsmatrix";
 
 const COLUMNS: AgentSyncSkillColumn[] = [
-    { runtime: "claude", label: "Claude Code", present: true },
-    { runtime: "codex", label: "Codex", present: true },
-    { runtime: "opencode", label: "OpenCode", present: true },
-    { runtime: "pi", label: "Pi", present: false },
+    { runtime: "claude", label: "Claude Code", present: true, path: "/h/.claude/skills" },
+    { runtime: "codex", label: "Codex", present: true, path: "/h/.codex/skills" },
+    { runtime: "opencode", label: "OpenCode", present: true, path: "/h/.config/opencode/skills" },
+    { runtime: "pi", label: "Pi", present: false, path: "" },
 ];
 
 function move(runtime: string, name: string, over: Partial<AgentSyncSkillMove> = {}): AgentSyncSkillMove {
@@ -74,7 +77,24 @@ describe("skillGroups", () => {
             { title: "Same copy in 2 harnesses", names: ["commit", "wrangler"] },
             { title: "Only in Claude Code", names: ["graphify"] },
             { title: "Only in Codex", names: ["review-spec"] },
-            { title: "Managed by arcterm", names: ["vaulted"] },
+            { title: "Your skills", names: ["vaulted"] },
+        ]);
+    });
+
+    it("splits the vault's skills: the user's own first, then the read-only ones arcterm ships", () => {
+        const groups = groupsOf(
+            data({
+                skills: [
+                    { name: "notes", states: {}, shipped: true },
+                    { name: "trade-check", states: {} },
+                    { name: "cockpit-ui", states: {}, shipped: true },
+                    { name: "review-plan", states: {} },
+                ],
+            })
+        );
+        expect(groups).toEqual([
+            { title: "Your skills", names: ["review-plan", "trade-check"] },
+            { title: "Ships with arcterm", names: ["cockpit-ui", "notes"] },
         ]);
     });
 
@@ -129,7 +149,18 @@ describe("skillRows cells", () => {
     }
 
     it("maps managed states, and a column that is not set up reads as nothing", () => {
-        expect(cells("vaulted")).toEqual(["Synced", "Not synced", "Own copy", "—"]);
+        expect(cells("vaulted")).toEqual(["Up to date", "Out of date", "Own copy", "—"]);
+    });
+
+    it("names the local copy a managed cell describes, so nothing reads as an upload", () => {
+        setPlatform("darwin");
+        const titles = skillRows(sample(), {})
+            .find((r) => r.name === "vaulted")!
+            .cells.map((c) => c.title);
+        expect(titles[0]).toBe("/h/.claude/skills/vaulted matches the vault");
+        expect(titles[1]).toBe(
+            "/h/.codex/skills/vaulted is older than the vault; saving or the next agent launch updates it"
+        );
     });
 
     it("shows what each unmanaged copy carries", () => {
@@ -283,5 +314,52 @@ describe("copyDelta", () => {
         expect(copies.map(copyDelta)).toEqual(["Base copy", "Overrides description"]);
         const t = skillRows(sample(), {}).find((x) => x.name === "translate")!.copies;
         expect(copyDelta(t[1])).toBe("Body text differs");
+    });
+});
+
+describe("managed skills: shipped and copy targets", () => {
+    beforeEach(() => setPlatform("darwin"));
+    const shipped = () =>
+        data({
+            skills: [
+                { name: "notes", states: { claude: "synced" }, shipped: true },
+                { name: "mine", states: { claude: "synced" } },
+            ],
+        });
+
+    it("marks a shipped skill and says it is read-only", () => {
+        const rows = skillRows(shipped(), {});
+        const notes = rows.find((r) => r.name === "notes")!;
+        const mine = rows.find((r) => r.name === "mine")!;
+        expect([notes.shipped, mine.shipped]).toEqual([true, false]);
+        expect(skillNote(notes)).toContain("read-only");
+        expect(skillNote(mine)).toContain("on this machine");
+    });
+
+    it("lists the folder each set-up harness holds the copy in", () => {
+        const mine = skillRows(shipped(), {}).find((r) => r.name === "mine")!;
+        expect(skillCopyTargets(mine, COLUMNS)).toEqual([
+            { runtime: "claude", label: "Claude Code", path: "/h/.claude/skills/mine" },
+            { runtime: "codex", label: "Codex", path: "/h/.codex/skills/mine" },
+            { runtime: "opencode", label: "OpenCode", path: "/h/.config/opencode/skills/mine" },
+        ]);
+        const graphify = skillRows(sample(), {}).find((r) => r.name === "graphify")!;
+        expect(skillCopyTargets(graphify, COLUMNS)).toEqual([]);
+    });
+});
+
+describe("skillNameError", () => {
+    it("accepts lowercase words joined by single hyphens, and an empty field says nothing yet", () => {
+        expect(skillNameError("trade-check", [])).toBeNull();
+        expect(skillNameError("v2", [])).toBeNull();
+        expect(skillNameError("", [])).toBeNull();
+    });
+
+    it("refuses other shapes, long names and taken names", () => {
+        for (const bad of ["Trade", "two words", "-lead", "trail-", "a--b", "../up", "a_b"]) {
+            expect(skillNameError(bad, [])).toMatch(/Lowercase/);
+        }
+        expect(skillNameError("a".repeat(65), [])).toMatch(/64/);
+        expect(skillNameError("notes", ["notes"])).toBe("A skill named notes already exists.");
     });
 });

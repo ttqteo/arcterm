@@ -65,9 +65,9 @@ describe("headerStatus", () => {
         expect(headerStatus([h("pi", { present: false })])).toEqual({ text: "No harnesses set up", tone: "none" });
     });
 
-    it("reports every present harness in sync", () => {
+    it("reports every present harness up to date", () => {
         const rows = [h("claude", { steering: "current" }), h("pi", { present: false })];
-        expect(headerStatus(rows)).toEqual({ text: "1 harness in sync", tone: "ok" });
+        expect(headerStatus(rows)).toEqual({ text: "1 harness up to date", tone: "ok" });
     });
 
     it("counts stale and unwritten harnesses as behind the shared doc", () => {

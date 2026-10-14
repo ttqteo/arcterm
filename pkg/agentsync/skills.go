@@ -494,6 +494,8 @@ type SkillRow struct {
 	// Additions are the lines the user accepted into this skill. The vault's SKILL.md never holds them;
 	// each harness's copy gets them at render.
 	Additions []Addition `json:"additions,omitempty"`
+	// Shipped marks a skill arcterm ships: its vault copy is reseeded on every sync, so it is not edited.
+	Shipped bool `json:"shipped,omitempty"`
 }
 
 // skillFrontmatter is the SKILL.md header. Only the description is read; name comes from the
@@ -564,6 +566,8 @@ type SkillColumn struct {
 	Runtime string `json:"runtime"`
 	Label   string `json:"label"`
 	Present bool   `json:"present"`
+	// Path is the harness's skills folder, where arcterm writes its copy of each vault skill.
+	Path string `json:"path"`
 }
 
 // SkillColumns lists the harnesses the skills matrix has a column for.
@@ -573,7 +577,8 @@ func SkillColumns(p Paths) []SkillColumn {
 		if spec.SkillsPath(p.Home) == "" {
 			continue
 		}
-		out = append(out, SkillColumn{Runtime: spec.Runtime, Label: spec.Label, Present: configRootExists(spec, p.Home)})
+		out = append(out, SkillColumn{Runtime: spec.Runtime, Label: spec.Label, Present: configRootExists(spec, p.Home),
+			Path: spec.SkillsPath(p.Home)})
 	}
 	return out
 }
@@ -597,6 +602,7 @@ func SkillRows(p Paths) ([]SkillRow, error) {
 			States:      map[string]string{},
 			Deltas:      skillDeltas(p.SkillsRoot, name),
 			Additions:   additions,
+			Shipped:     isShipped(p, name),
 		})
 	}
 	for _, spec := range harness.List() {

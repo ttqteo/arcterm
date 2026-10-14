@@ -46,3 +46,12 @@ objc2-foundation = { version = "=0.3.2", default-features = false, features = ["
 # not answer. Pinned to the versions already in the tree via tao.
 objc2-core-foundation = { version = "=0.3.2", default-features = false, features = ["std", "CFArray", "CFCGTypes", "CFDictionary", "CFNumber", "CFString"] }
 objc2-core-graphics = { version = "=0.3.2", default-features = false, features = ["std", "CGGeometry", "CGWindow"] }
+
+# A debug build keeps line tables only, which panic stacks need, and dependencies keep no debug info: full debug info
+# made src-tauri/target several times larger and its builds and links slower, and nobody steps into a dependency here.
+# Release builds already carry none.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-14 (merge of the Mac's Setup → Skills edit work into main)**
+
+- [ ] (arcterm) Setup → Skills after the merge: a vault skill with accepted lines shows its `+N` chip and, while its
+  editor holds unsaved text, `edited` beside it; its rail lists **Your additions** under SKILL.md and, for a skill
+  under Your skills, the Edit footer; a skill under Ships with arcterm has no footer. The merge joined both sides by
+  hand in `setupsurface.tsx`; `setup-skill-edit` and `setup-skill-additions` were not run on the merged tree.
+
 **2026-10-14 (land queue, run 33724b1d)**
 
 - [ ] (arcterm) Land line: finish 3 small runs close together that each add a `CHANGELOG.md` line. They land one after
