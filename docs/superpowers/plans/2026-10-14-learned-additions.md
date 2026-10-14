@@ -39,9 +39,11 @@ scenarios.
 - Proposal **ID** = `<target>#<key>`; **target** is `skill:<name>` or `memory:<cwd>`.
 - **Key**: `^[a-z0-9]+(-[a-z0-9]+)*$`, at most 64 bytes. **Text**: 1–200 runes, one line.
 - **Session**: `<WAVETERM_BLOCKID or "cli">:<YYYY-MM-DD local>`.
-- Proposal rule: notes for one ID within the last 30 days from at least **2 distinct sessions**, ID not muted.
+- Proposal rule: when a note is added, its ID becomes **proposed** if its notes within the 30 days before that note
+  come from at least **2 distinct sessions** and the ID is not muted. A proposed ID is recorded in `proposed.json` and
+  stays pending, however old its notes grow, until it is taken (accepted) or muted (dismissed): proposals do not expire.
 - Additions cap: 20 per skill. "New" highlight: learned within the last 7 days (inclusive of today).
-- Store dir: `filepath.Join(wavebase.GetWaveDataDir(), "learn")` holding `notes.jsonl` and `muted.json`.
+- Store dir: `filepath.Join(wavebase.GetWaveDataDir(), "learn")` holding `notes.jsonl`, `muted.json` and `proposed.json`.
 - Attention kind: `"learn-proposal"`.
 
 ---
@@ -75,7 +77,7 @@ func TestOneSessionMakesNoProposal(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got, err := s.Pending(day0)
+	got, err := s.Pending()
 	if err != nil || len(got) != 0 {
 		t.Fatalf("want no proposal, got %v %v", got, err)
 	}
@@ -87,7 +89,7 @@ func TestTwoSessionsMakeAProposal(t *testing.T) {
 	n := note("notes-vi", "b2:2026-10-14", day0)
 	n.Text = "Always write notes in Vietnamese"
 	_ = s.Add(n)
-	got, _ := s.Pending(day0)
+	got, _ := s.Pending()
 	if len(got) != 1 {
 		t.Fatalf("want 1 proposal, got %v", got)
 	}
@@ -104,8 +106,20 @@ func TestNotesOlderThan30DaysDoNotCount(t *testing.T) {
 	s := Open(t.TempDir())
 	_ = s.Add(note("notes-vi", "b1:2026-09-01", day0.Add(-31*24*time.Hour)))
 	_ = s.Add(note("notes-vi", "b2:2026-10-14", day0))
-	if got, _ := s.Pending(day0); len(got) != 0 {
+	if got, _ := s.Pending(); len(got) != 0 {
 		t.Fatalf("want none, got %v", got)
+	}
+}
+
+func TestProposalDoesNotExpire(t *testing.T) {
+	s := Open(t.TempDir())
+	_ = s.Add(note("notes-vi", "b1:2026-08-14", day0.Add(-61*24*time.Hour)))
+	_ = s.Add(note("notes-vi", "b2:2026-08-15", day0.Add(-60*24*time.Hour)))
+	if got, _ := s.Pending(); len(got) != 1 {
+		t.Fatalf("a proposal must wait however old its notes are, got %v", got)
+	}
+	if _, err := s.Peek("skill:notes#notes-vi"); err != nil {
+		t.Fatalf("peek an old proposal: %v", err)
 	}
 }
 
@@ -116,7 +130,7 @@ func TestMuteDropsNotesAndRefusesNewOnes(t *testing.T) {
 	if err := s.Mute("skill:notes#notes-vi"); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := s.Pending(day0); len(got) != 0 {
+	if got, _ := s.Pending(); len(got) != 0 {
 		t.Fatalf("muted id still proposed: %v", got)
 	}
 	if err := s.Add(note("notes-vi", "b3:2026-10-15", day0)); !errors.Is(err, ErrMuted) {
@@ -129,7 +143,7 @@ func TestTakeReturnsTheProposalAndClearsItsNotes(t *testing.T) {
 	_ = s.Add(note("notes-vi", "b1:2026-10-13", day0))
 	_ = s.Add(note("notes-vi", "b2:2026-10-14", day0))
 	_ = s.Add(note("other-key", "b2:2026-10-14", day0))
-	p, err := s.Take("skill:notes#notes-vi", day0)
+	p, err := s.Take("skill:notes#notes-vi")
 	if err != nil || p.Sessions != 2 {
 		t.Fatalf("take: %+v %v", p, err)
 	}
@@ -137,7 +151,7 @@ func TestTakeReturnsTheProposalAndClearsItsNotes(t *testing.T) {
 	if len(keys) != 1 || keys[0].Key != "other-key" {
 		t.Fatalf("other notes must survive, got %v", keys)
 	}
-	if _, err := s.Take("skill:notes#notes-vi", day0); !errors.Is(err, ErrNoProposal) {
+	if _, err := s.Take("skill:notes#notes-vi"); !errors.Is(err, ErrNoProposal) {
 		t.Fatalf("second take: want ErrNoProposal, got %v", err)
 	}
 }
@@ -163,7 +177,7 @@ func TestMalformedLineIsSkipped(t *testing.T) {
 	_ = s.Add(note("notes-vi", "b1:2026-10-13", day0))
 	appendRaw(t, dir, "{not json\n")
 	_ = s.Add(note("notes-vi", "b2:2026-10-14", day0))
-	if got, err := s.Pending(day0); err != nil || len(got) != 1 {
+	if got, err := s.Pending(); err != nil || len(got) != 1 {
 		t.Fatalf("want 1 proposal despite a bad line, got %v %v", got, err)
 	}
 }
@@ -184,17 +198,20 @@ Add the helper `appendRaw(t, dir, s)` at the bottom of the test file (opens `not
 - `func ID(target, key string) string { return target + "#" + key }`.
 - `Add(n Note) error`: validate (key regexp and ≤64 bytes; target prefix `skill:` with a non-empty name or `memory:`
   with a non-empty cwd; text trimmed, 1–200 runes, no `\n`/`\r`; session non-empty; quote trimmed and capped at 300
-  runes); if muted return `ErrMuted`; `MkdirAll` the dir; append one JSON line to `notes.jsonl`.
+  runes); if muted return `ErrMuted`; `MkdirAll` the dir; append one JSON line to `notes.jsonl`; then, if the ID is not
+  yet proposed and its notes with `TS >= n.TS-30d` come from ≥2 distinct sessions, add the ID to `proposed.json`.
 - `readNotes()`: read `notes.jsonl` line by line; skip and `log.Printf("learn: skipping malformed line %d: %v", ...)`
   a line that fails to decode; a missing file is no notes.
-- `Pending(now time.Time) ([]Proposal, error)`: group notes by ID with `TS >= now-30d`, skip muted, keep groups with
-  ≥2 distinct sessions; `Text` is the newest note's text, `Quotes` are the counted notes oldest-first (non-empty
-  quotes only), `Since` the oldest counted note's TS. Sort by `Since` ascending.
-- `Take(id string, now time.Time) (Proposal, error)`: the proposal for `id` computed as in `Pending` but **without** the
-  2-session minimum (one session is enough once the user acts on it), `ErrNoProposal` when it has no notes in the
-  window; then rewrite `notes.jsonl` without that ID's notes (write `notes.jsonl.tmp`, then `os.Rename`).
-- `Peek(id string, now time.Time) (Proposal, error)`: like `Take` without the rewrite.
-- `Mute(id string) error`: add to `muted.json` (a sorted JSON string array), drop the ID's notes.
+- `proposed.json` and `muted.json` are sorted JSON string arrays; a missing file is an empty list.
+- `Pending() ([]Proposal, error)`: one proposal per ID in `proposed.json` that is not muted and still has notes, built
+  from **all** its notes (no window: proposals do not expire). `Text` is the newest note's text, `Quotes` the notes
+  oldest-first (non-empty quotes only), `Sessions` the distinct sessions, `Since` the oldest note's TS. Sort by
+  `Since` ascending.
+- `Peek(id string) (Proposal, error)`: the proposal for `id` as `Pending` builds it; `ErrNoProposal` when `id` is not
+  in `proposed.json` or has no notes.
+- `Take(id string) (Proposal, error)`: `Peek`, then rewrite `notes.jsonl` without that ID's notes (write
+  `notes.jsonl.tmp`, then `os.Rename`) and drop the ID from `proposed.json`.
+- `Mute(id string) error`: add to `muted.json`, drop the ID's notes and its `proposed.json` entry.
 - `Keys(target string) ([]KeyInfo, error)`: every key with notes for that target (window ignored), newest text,
   note count; sorted by key.
 - Every method takes `s.mu`.
@@ -215,7 +232,7 @@ Add the helper `appendRaw(t, dir, s)` at the bottom of the test file (opens `not
 
 ```go
 func TestUpsertAdditionWritesThenReplacesByKey(t *testing.T) {
-	p := testPaths(t, true)
+	p := testPaths(t, "")
 	seedSkill(t, p, "notes")
 	if err := UpsertAddition(p.SkillsRoot, "notes", Addition{Key: "notes-vi", Text: "Write notes in Vietnamese", Learned: "2026-10-12", Count: 2}); err != nil {
 		t.Fatal(err)
@@ -231,7 +248,7 @@ func TestUpsertAdditionWritesThenReplacesByKey(t *testing.T) {
 }
 
 func TestUpsertAdditionRefusesAMissingSkillAndTheCap(t *testing.T) {
-	p := testPaths(t, true)
+	p := testPaths(t, "")
 	if err := UpsertAddition(p.SkillsRoot, "ghost", Addition{Key: "k", Text: "t", Learned: "2026-10-14", Count: 1}); !errors.Is(err, ErrNoSkill) {
 		t.Fatalf("want ErrNoSkill, got %v", err)
 	}
@@ -251,7 +268,7 @@ func TestUpsertAdditionRefusesAMissingSkillAndTheCap(t *testing.T) {
 }
 
 func TestRemoveAddition(t *testing.T) {
-	p := testPaths(t, true)
+	p := testPaths(t, "")
 	seedSkill(t, p, "notes")
 	_ = UpsertAddition(p.SkillsRoot, "notes", Addition{Key: "a", Text: "A", Learned: "2026-10-14", Count: 1})
 	_ = UpsertAddition(p.SkillsRoot, "notes", Addition{Key: "b", Text: "B", Learned: "2026-10-14", Count: 1})
@@ -265,7 +282,7 @@ func TestRemoveAddition(t *testing.T) {
 }
 
 func TestRenderSkillAppendsAdditionsForEveryRuntime(t *testing.T) {
-	p := testPaths(t, true)
+	p := testPaths(t, "")
 	seedSkill(t, p, "notes")
 	_ = UpsertAddition(p.SkillsRoot, "notes", Addition{Key: "notes-vi", Text: "Write notes in Vietnamese", Learned: "2026-10-14", Count: 3})
 	for _, rt := range []string{"claude", "codex"} {
@@ -284,17 +301,34 @@ func TestRenderSkillAppendsAdditionsForEveryRuntime(t *testing.T) {
 	}
 }
 
+func TestApplyWritesAdditionsIntoTheHarnessSkill(t *testing.T) {
+	p := testPaths(t, "", ".claude")
+	seedSkill(t, p, "notes")
+	_ = UpsertAddition(p.SkillsRoot, "notes", Addition{Key: "notes-vi", Text: "Write notes in Vietnamese", Learned: "2026-10-14", Count: 3})
+	if _, err := Apply(p, false); err != nil {
+		t.Fatal(err)
+	}
+	md, err := os.ReadFile(filepath.Join(p.Home, ".claude", "skills", "notes", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(md), "\n## Your additions\n<!-- arc:user -->\n") || !strings.HasSuffix(string(md), "- Write notes in Vietnamese (learned 2026-10-14, 3×)\n") {
+		t.Fatalf("the projected SKILL.md lacks the additions:\n%s", md)
+	}
+}
+
 func TestSeedShippedSkillsKeepsAdditions(t *testing.T) {
 	// seed a shipped skill, add an addition, seed again: additions.md survives (mirror the setup of
 	// TestSeedShippedSkillsFillsAnEmptyRoot at skills_test.go:346 and its shippedFS() helper)
 }
 ```
 
-Fill in `TestSeedShippedSkillsKeepsAdditions` following `TestSeedShippedSkillsFillsAnEmptyRoot`. Use runtime names
-that `harness.List()` really has (check `pkg/harness/catalog.go`); `claude` and `codex` above are placeholders if they
-differ.
+Fill in `TestSeedShippedSkillsKeepsAdditions` following `TestSeedShippedSkillsFillsAnEmptyRoot`. `testPaths(t,
+canonical, configRoots...)` takes the steering text and the harness config roots to create (`.claude` is Claude Code's,
+`pkg/harness/catalog.go:57`). `claude` and `codex` are runtimes in `pkg/harness/catalog.go`. The Apply test stands in for
+a live check: it proves an accepted line reaches `~/.claude/skills/<skill>/SKILL.md`.
 
-**Step 2:** `go test ./pkg/agentsync -run 'Addition|RenderSkillAppends|SeedShippedSkillsKeepsAdditions'` — expected: build failure.
+**Step 2:** `go test ./pkg/agentsync -run 'Addition|RenderSkillAppends|SeedShippedSkillsKeepsAdditions|ApplyWritesAdditions'` — expected: build failure.
 
 **Step 3: Implement** `pkg/agentsync/additions.go`:
 
@@ -461,20 +495,22 @@ includes them. Run `go test ./pkg/jarvis -run 'Learn'` — build failure.
 
 - `pkg/jarvis/attention.go`: `AttentionLearnProposal = "learn-proposal"` beside the other kinds (`:32-48`);
   `Learn []learn.Proposal` on `AttentionInput` (`:79`); `learnItems` appended in `BuildAttention` the way `chunkDueItems`
-  is (`:403`); in `GatherAttentionFromLedger` set `in.Learn` from `learn.Default().Pending(time.Now())`, logging (not
+  is (`:403`); in `GatherAttentionFromLedger` set `in.Learn` from `learn.Default().Pending()`, logging (not
   returning) an error so a bad log never empties Needs you.
 - `wshserver_learn.go`:
   - `LearnNote`: a skill target needs `<SkillsRoot>/<skill>/SKILL.md`, else an error naming the vault's skills and
     suggesting `--memory`; neither skill nor cwd is an error. `ErrMuted` → `{Muted: true}`, no error. After `Add`,
-    `Proposed` = the ID is in `Pending(now)`.
+    `Proposed` = the ID is in `Pending()`.
   - `LearnKeys`: `Keys(target)` mapped to `[]LearnKey`.
   - `LearnDecide` accept: `Peek`; for a skill, `agentsync.UpsertAddition(SkillsRoot, name, Addition{Key, Text: data.Text
     or p.Text, Learned: today, Count: p.Sessions})` then `agentsync.Apply(agentsync.DefaultPaths(), false)`; for memory,
     `learn.UpsertMemory(wavebase.GetHomeDir(), …, quotes)`; only after the write succeeds, `Take`. A write error
-    (`ErrAdditionsFull`, `ErrNoSkill`) is returned and the proposal stays. Dismiss: `Mute(id)`.
+    is returned and the proposal stays: `ErrAdditionsFull` as is, and `ErrNoSkill` (the skill left the vault while the
+    proposal waited) as `the skill <name> is no longer in the vault; dismiss this card`. Dismiss: `Mute(id)`.
   - `LearnAccepted`: every canonical skill's `ReadAdditions` plus `ListMemories(home)`; empty slices, never nil.
   - `LearnAmend`: remove → `RemoveAddition` + `Apply`, or `RemoveMemory(dir, key)`; then `Mute` the ID (`memory:<cwd>`
-    for memory). Edit → `UpsertAddition`/`UpsertMemory` with the new text, `Count: 0` and the existing learned date.
+    for memory). Edit → `UpsertAddition` (then `Apply`) or `UpsertMemory` with the new text, `Count: 0` and the existing learned
+    date.
 - `wshserver_agentsync.go:93`: copy `r.Additions` into `AgentSyncSkill.Additions`.
 
 **Step 4:** `task generate`, then `go test ./pkg/jarvis -run 'Learn|Attention' && go build ./...` — PASS.
@@ -567,8 +603,11 @@ Run `npx vitest run frontend/app/cockpit/palette-needs.test.ts frontend/app/view
 
 **Step 3:** the vitest command above — PASS; then the Check line.
 
-**Acceptance:** scenario `needs-you-learn-card` (registered in Task 8) shows the row, unfolds Why, opens Edit, and
-dismisses it.
+Give the row and its controls stable hooks for the scenarios: `data-learn-id="<learnId>"` on the row, and
+`data-testid` `learn-why`, `learn-accept`, `learn-edit`, `learn-edit-input`, `learn-dismiss` on its parts.
+
+**Acceptance:** scenario `needs-you-learn-card` (registered in Task 8) shows the row, unfolds Why, clicks Accept,
+accepts an edited line with Enter, shows the failure toast at the 20-additions cap, and dismisses a row.
 
 **Step 4:** Commit: `git commit -m "feat(learn): accept, edit or dismiss a learned rule from Needs you" -- <the files above>`
 
@@ -609,52 +648,82 @@ Run `npx vitest run frontend/app/view/agents/learnedmodel.test.ts frontend/app/v
   - The Learned tab mounts `learnedtab.tsx`: the groups from `learnedGroups`, lines styled exactly like the rail's
     block (share one `LearnedLine` component exported from `learnedtab.tsx`), and an empty state: "Nothing learned
     yet. When you correct an agent the same way in two sessions, it asks you here first."
+  - Stable hooks for the scenarios: `data-learned-line="<skill or cwd>#<key>"` on each `LearnedLine`,
+    `data-testid` `learned-edit`, `learned-edit-input`, `learned-remove` on its parts, `learned-additions` on the
+    rail's block, `skill-additions-chip` on the chip, and `learned-empty` on the empty state.
 
 **Step 3:** the vitest command above — PASS; then the Check line.
 
-**Acceptance:** scenarios `setup-skill-additions` (the rail block, the "new" highlight, the `+1` chip) and
-`setup-learned` (the Learned tab's groups and Remove) from Task 8.
+**Acceptance:** scenarios `setup-skill-additions` (the rail block, the "new" highlight, the `+1` chip, the rail's Edit
+and Remove) and `setup-learned` (the empty state, the Learned tab's groups, its Edit and Remove) from Task 8.
 
 **Step 4:** Commit: `git commit -m "feat(learn): show learned lines in Setup, apart from the shipped text" -- <the files above>`
 
 ---
 
-### Task 8: CDP scenarios, changelog, hand check
+### Task 8: CDP scenarios and changelog
 
 **Depends on:** Task 5, Task 6, Task 7
-**Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/open-issues.md`
+**Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`
 
-Read the scenario contract at the top of `scripts/cdp/scenarios.mjs` (`:1-50`), the `surface-smoke` entry (`:90-112`),
-and the existing Setup Skills scenarios (`git grep -n 'name: "setup-' scripts/cdp/scenarios.mjs`) for how they create
-and clean up a user-owned vault skill fixture. Scenarios call RPCs from the page through `h.ev(...)` with
-`window.TabRpcClient` (see `:7964`). Learn notes live in the dev app's own data dir, so they never touch the user's.
-Use a `mkdtempSync` cwd for memory fixtures, so the learned memory lands in a throwaway
-`~/.claude/projects/<slug>/memory`, and delete that project dir in teardown. A failed arrange or teardown step must
-fail the scenario, not be skipped.
+Read the scenario contract at the top of `scripts/cdp/scenarios.mjs` (`:1-50`) and the `surface-smoke` entry
+(`:90-112`). Scenarios call RPCs with `h.rpc("<command lowercased, without Command>", data)` (e.g. `h.rpc("learnnote",
+…)`, `h.rpc("agentsyncapply", { dryrun: false })`). There are no Setup Skills fixture scenarios to copy; build the
+fixtures below. A failed arrange or teardown step must fail the scenario, not be skipped, and an arrange that fails
+part-way runs the teardown for what it made (as `settings-vault-sync` does, `:33307-33323`).
+
+**What the Final app shares with the user, and how the fixtures stay apart.** Final's app has its own data dir
+(`ARC_DEV_DATA_DIR`), so `notes.jsonl`, `muted.json` and `proposed.json` are throwaway. It does **not** have its own vault
+or home: the vault root is `vaultRoot(h)` (`scripts/cdp/notes-wsh.mjs:27`, the configured path or
+`~/.waveterm/vault`), and `agentsync.Apply` writes into the real `~/.claude/skills` (and each other harness's skills
+dir). Do not point the app at a temp vault: `Apply` removes from every harness the managed skills that vault lacks.
+Instead:
+
+- **Fixture skill** (helpers `arrangeLearnSkill(h)` / `teardownLearnSkill(h, ctx)`, shared by the scenarios that need
+  one): `root = await vaultRoot(h)`; throw if `vaultRemote(root)` is non-empty (as `:23166-23168` do, so a fixture is
+  never pushed); name `cdp-learn-<Date.now()>`; throw if `<root>/skills/<name>` exists; write
+  `<root>/skills/<name>/SKILL.md` (`---\nname: <name>\ndescription: CDP fixture for the learned-additions scenarios\n---\n\nA fixture skill.\n`);
+  then `h.rpc("agentsyncapply", { dryrun: false })`. Teardown: `rmSync` `<root>/skills/<name>` (recursive), then
+  `agentsyncapply` again, which removes the copies arcterm projected into each harness, then throw if
+  `~/.claude/skills/<name>` still exists.
+- **Fixture memory**: `cwd = mkdtempSync(join(tmpdir(), "cdp-learn-"))`; a learned memory for it lands in
+  `~/.claude/projects/<slug>/memory`, where `<slug>` is `cwd` with every character that is not an ASCII letter or digit
+  replaced by `-` (mirrors `agentobserve.SlugifyCwd`, `pkg/agentobserve/slug.go:25`). Teardown removes
+  `~/.claude/projects/<slug>` and `cwd`.
+- **Proposals**: two `learnnote` calls per key, sessions `cdp-a:<today>` and `cdp-b:<today>`, each with a quote.
 
 **Step 1: Add three scenarios.**
 
-- `needs-you-learn-card`: arrange two `LearnNoteCommand` calls for one memory key with sessions `cdp-a:<today>` and
-  `cdp-b:<today>`; goto cockpit; assert the learn row with its text and Accept / Edit / Dismiss (shot); click Why and
-  assert both quotes (shot); click Edit and assert the input holds the text (shot); Escape, then Dismiss and assert the
-  row is gone. Teardown: nothing else to undo (the mute stays in the dev data dir).
-- `setup-skill-additions`: arrange the fixture skill, two notes for it, then `LearnDecideCommand` accept; goto setup,
-  Skills tab, select the skill; assert the `+1` chip, the additions block with the line, `lineMeta` and the "new"
-  background (shot); Edit the line to a new text and assert it (shot). Teardown: `LearnAmendCommand` remove, then the
-  fixture skill's own cleanup.
-- `setup-learned`: arrange that skill line plus an accepted memory line in a temp cwd; goto setup, Learned tab; assert
-  both groups and lines (shot); Remove the memory line and assert it is gone (shot). Teardown: remove the skill line,
-  the fixture skill, and the temp project dir.
+- `needs-you-learn-card` (one fixture skill, one fixture memory cwd): arrange four proposals: memory keys
+  `cdp-accept`, `cdp-edit` and `cdp-dismiss`, and skill key `cdp-full` on the fixture skill after writing 20 lines
+  straight into `<root>/skills/<name>/.arc/additions.md` in Task 2's line format (`- t<i> <!-- arc:learn key=k<i>
+  learned=<today> count=1 -->`). Goto cockpit, then:
+  1. the `cdp-accept` row shows its text and Accept / Edit / Dismiss (shot); click Why and assert both quotes (shot);
+  2. click Accept: the row leaves, and `learnaccepted` lists the `cdp-accept` memory;
+  3. on `cdp-edit`, click Edit and assert the input holds the text (shot); type a new text and press Enter: the row
+     leaves, and `learnaccepted` lists `cdp-edit` with the new text;
+  4. on `cdp-full`, click Accept: an error toast says to remove one first, and the row stays (shot);
+  5. on `cdp-dismiss`, click Dismiss: the row leaves, and a third `learnnote` for it returns `muted: true`.
+  Teardown: `learndecide` dismiss on `cdp-full` if still pending, `teardownLearnSkill`, the memory fixture.
+- `setup-skill-additions` (one fixture skill): arrange two notes for it, then `learndecide` accept. Goto setup, Skills
+  tab, select the skill; assert the `+1` chip, the additions block with the line, `lineMeta` (`<dd/mm> · 2×`) and the
+  "new" background (shot); click Edit, type a new text, Enter, and assert the line shows it (shot); click Remove and
+  assert the block and the chip are gone (shot). Teardown: `learnamend` remove (a no-op once removed), then
+  `teardownLearnSkill`.
+- `setup-learned` (one fixture skill, one fixture memory cwd): first, before arranging lines, goto setup → Learned and
+  call `learnaccepted`: when it returns no lines, assert the empty-state text (shot); when the machine already has
+  learned lines, record the step as passed with the detail `skipped: N learned lines already exist` (the
+  empty-state branch is also covered by `learnedGroups([])` in Task 7). Then arrange one accepted skill line and one
+  accepted memory line, reload the tab, and assert both groups and lines (shot); Edit the skill line on this tab and
+  assert the new text (shot); Remove the memory line and assert it is gone and its file under
+  `~/.claude/projects/<slug>/memory` is deleted (shot). Teardown: `learnamend` remove the skill line, then
+  `teardownLearnSkill` and the memory fixture.
 
 **Step 2:** `node --check scripts/cdp/scenarios.mjs`.
 
-**Step 3:** `CHANGELOG.md`: the top section is dated 0.15.12, so open a new `## Unreleased` above it with an `Added`
-line: "Agents now note how you correct them. When the same correction comes up in two sessions, Needs you asks
-whether to keep it as a rule, and the lines you accept appear, highlighted, under Setup → Learned and in each
-skill." Read the file's header for the format and keep its style.
+**Step 3:** `CHANGELOG.md`: the top section is already `## Unreleased`; add this line under its `### Added` (do not
+open a second section): "**Agents learn your corrections**: agents now note how you correct them. When the same
+correction comes up in two sessions, Needs you asks whether to keep it as a rule, and the lines you accept appear,
+highlighted, under Setup → Learned and in each skill." Keep the file's style.
 
-**Step 4:** `docs/open-issues.md`, section "0 · Waiting on a hand check": `- [ ] (arcterm) Learned additions: correct
-a live Claude agent the same way in two tabs, see the Needs you card, accept it, and check that
-~/.claude/skills/<skill>/SKILL.md ends with "## Your additions".`
-
-**Step 5:** Commit: `git commit -m "test(learn): CDP scenarios for the learn card, rail and Learned tab" -- scripts/cdp/scenarios.mjs CHANGELOG.md docs/open-issues.md`
+**Step 4:** Commit: `git commit -m "test(learn): CDP scenarios for the learn card, rail and Learned tab" -- scripts/cdp/scenarios.mjs CHANGELOG.md`
