@@ -1014,7 +1014,9 @@ function ContextGroupView({ group, selected }: { group: ContextGroup; selected: 
                 <span className="text-[11px] text-muted">{group.count}</span>
             </button>
             {!open ? null : group.sections.length === 0 ? (
-                <div className="px-2.5 py-[7px] text-[12.5px] text-ink-faint">—</div>
+                <div data-context-empty className="px-2.5 py-[7px] text-[12.5px] text-ink-faint">
+                    —
+                </div>
             ) : (
                 group.sections.map((s) => (
                     <Fragment key={s.head ?? ""}>
@@ -1051,7 +1053,17 @@ function ContextRail({ row }: { row: ClaudeContextFile }) {
                     {row.description ? (
                         <div className="text-[13px] leading-[1.5] text-secondary">{row.description}</div>
                     ) : null}
-                    <div className="break-all text-[11px] text-muted">{row.path}</div>
+                    <div className="flex items-start gap-2">
+                        <div className="min-w-0 flex-1 break-all text-[11px] text-muted">{row.path}</div>
+                        <button
+                            type="button"
+                            data-context-copy
+                            onClick={() => fireAndForget(() => navigator.clipboard.writeText(row.path))}
+                            className={cn(BTN_SECONDARY, "flex-none")}
+                        >
+                            Copy path
+                        </button>
+                    </div>
                 </div>
                 {file.status === "loading" ? (
                     <div className="text-[12.5px] text-muted">Reading…</div>
@@ -1072,15 +1084,6 @@ function ContextRail({ row }: { row: ClaudeContextFile }) {
                         {file.text}
                     </pre>
                 )}
-            </div>
-            <div className="flex flex-none gap-2 border-t border-border px-4 py-3">
-                <button
-                    type="button"
-                    onClick={() => void navigator.clipboard.writeText(row.path)}
-                    className={BTN_SECONDARY}
-                >
-                    Copy path
-                </button>
             </div>
         </motion.aside>
     );
@@ -1171,7 +1174,22 @@ Expected: clean. (If `setupsurface.tsx` was not prettier-clean at HEAD, only the
 
 If a dev app is running (`task dev`), open Setup → Project (`g .`, then the Project tab), pick arcterm, select a
 memory file, and take `node scripts/cdp-shot.mjs cdp-shots/setup-project-manual.png`. If no dev app is running, do
-not start one for this: Task 5's scenario and Final cover it.
+not start one for this: Final runs Task 5's `setup-project` scenario, whose steps show each part of this tab:
+
+| What this task builds | `setup-project` step |
+|---|---|
+| The project column, the six groups, the "Claude reads this" and hook-count notes, a missing file's row | 1 |
+| A memory file read in the rail, with its frontmatter description | 2 |
+| An empty group's "—" row (Skills & agents) | 3 |
+| Global folded, opened by a click on its heading | 4 |
+| A settings file that does not parse: the row's "invalid JSON" note, the raw text in the rail | 5 |
+| An empty file: the rail's "Empty, or could not be read." line | 6 |
+| Copy path in the rail head | 7 |
+| Reload re-reads the project (a memory file added since shows) | 8 |
+| The project's folder gone: the alert banner, no list | 9 |
+
+The "No projects yet" state goes unverified: staging it would mean removing every registered project from the dev
+app.
 
 **Step 7: Commit**
 
@@ -1196,12 +1214,15 @@ Where:
 **Step 1: Write the scenario**
 
 `scenarios.mjs` already imports `mkdtempSync`, `mkdirSync`, `writeFileSync`, `rmSync`, `homedir`, `tmpdir` and `join`.
-`polishWaitFor`, `polishNap`, `waitForProjectInConfig` and `ttClick` are defined earlier in the file.
+`polishWaitFor`, `polishNap`, `waitForProjectInConfig`, `ttClick`, `notesClipStub` and `NOTES_CLIP_RESTORE` are defined
+earlier in the file.
 
 ```js
 // --- setup-project: Setup → Project lists a project's Claude files in six groups and reads the selected one in the
-// rail. The fixture is a temp project with a CLAUDE.md and a settings.json holding one hook, and a memory folder
-// under ~/.claude/projects/<slug> holding an index and one feedback memory; teardown removes all three.
+// rail. The fixture is a temp project with a CLAUDE.md, a settings.json holding one hook, a settings.local.json that
+// does not parse and an empty .arc/setup, and a memory folder under ~/.claude/projects/<slug> holding an index and
+// one feedback memory; teardown removes the project, its folder and the memory folder. The last step deletes the
+// project's folder to show the path-gone banner, so it runs last.
 const SP_PROJECT = "verify-setup-project";
 const spSlug = (p) => p.replace(/[^A-Za-z0-9]/g, "-");
 const setupProject = {
@@ -1217,6 +1238,9 @@ const setupProject = {
                 join(ctx.root, ".claude", "settings.json"),
                 JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "echo hi" }] }] } })
             );
+            writeFileSync(join(ctx.root, ".claude", "settings.local.json"), '{ "hooks": not json');
+            mkdirSync(join(ctx.root, ".arc"), { recursive: true });
+            writeFileSync(join(ctx.root, ".arc", "setup"), "");
             ctx.memProject = join(homedir(), ".claude", "projects", spSlug(ctx.root));
             const mem = join(ctx.memProject, "memory");
             mkdirSync(mem, { recursive: true });
@@ -1277,6 +1301,81 @@ const setupProject = {
         await h.shot("cdp-shots/setup-project-1-memory.png");
         const rail = await h.ev(`document.querySelector("[data-context-rail]")?.textContent?.slice(0, 200) ?? null`);
         rec("2. selecting the feedback memory reads it in the rail with its description", read && rail.includes("The fixture's one rule"), rail);
+
+        // a row by its label, clicked; the rail's text once it holds `want`
+        const clickRow = (label) =>
+            h.ev(`(() => { const b = [...document.querySelectorAll("[data-context-file]")].find((x) => x.textContent.includes(${JSON.stringify(label)})); b?.click(); return !!b; })()`);
+        const railHas = (want) =>
+            polishWaitFor(h, `(document.querySelector("[data-context-rail]")?.textContent ?? "").includes(${JSON.stringify(want)})`, 5000);
+
+        const skills = await h.ev(`(() => {
+            const g = document.querySelector('[data-context-group="skills"]');
+            return { empty: g?.querySelector("[data-context-empty]")?.textContent?.trim() ?? null, files: g?.querySelectorAll("[data-context-file]").length ?? -1 };
+        })()`);
+        rec('3. Skills & agents, empty in the fixture, shows one "—" row', skills.empty === "—" && skills.files === 0, JSON.stringify(skills));
+
+        const globalRows = `[...document.querySelectorAll('[data-context-group="global"] [data-context-file], [data-context-group="global"] [data-context-missing]')].map((r) => r.textContent)`;
+        const folded = await h.ev(`${globalRows}.length`);
+        await h.ev(`document.querySelector('[data-context-group="global"] button[aria-expanded]')?.click()`);
+        const opened = await polishWaitFor(h, `${globalRows}.length === 2`, 3000);
+        const global = await h.ev(globalRows);
+        rec(
+            "4. Global starts folded; a click on its heading shows ~/.claude/CLAUDE.md and ~/.claude/settings.json",
+            folded === 0 && opened && global.some((t) => t.includes("~/.claude/CLAUDE.md")) && global.some((t) => t.includes("~/.claude/settings.json")),
+            JSON.stringify({ folded, global })
+        );
+
+        const badNote = await h.ev(`[...document.querySelectorAll("[data-context-file]")].find((b) => b.textContent.includes("settings.local.json"))?.querySelector("[data-context-note]")?.textContent ?? null`);
+        const badClicked = await clickRow("settings.local.json");
+        const badRaw = badClicked && (await railHas('{ "hooks": not json'));
+        await polishNap(300);
+        await h.shot("cdp-shots/setup-project-2-invalid-json.png");
+        rec('5. settings.local.json that does not parse notes "invalid JSON" and the rail shows its raw text', badNote === "invalid JSON" && badRaw, JSON.stringify({ badNote, badClicked, badRaw }));
+
+        const setupClicked = await clickRow(".arc/setup");
+        const empty = setupClicked && (await railHas("Empty, or could not be read."));
+        rec('6. the empty .arc/setup reads "Empty, or could not be read." in the rail', empty, JSON.stringify({ setupClicked, empty }));
+
+        // a stub over Clipboard.prototype's writeText: the real one rejects without OS focus and would overwrite the user's clipboard
+        await h.ev(notesClipStub(false));
+        await h.ev(`document.querySelector("[data-context-rail] [data-context-copy]")?.click()`);
+        const copied = await polishWaitFor(h, `(window.__notesClip ?? []).length === 1`, 2000);
+        const clip = await h.ev(`window.__notesClip ?? []`);
+        await h.ev(NOTES_CLIP_RESTORE);
+        rec(
+            "7. Copy path in the rail head copies the file's full path",
+            copied && clip[0]?.replace(/\\/g, "/").endsWith("/.arc/setup") && clip[0].length > ".arc/setup".length,
+            JSON.stringify(clip)
+        );
+
+        writeFileSync(
+            join(ctx.memProject, "memory", "project_added.md"),
+            "---\nname: added\ndescription: Written after the tab opened\ntype: project\n---\n\nAdded body.\n"
+        );
+        await h.ev(`document.querySelector('button[aria-label="Read the files again"]')?.click()`);
+        const added = await polishWaitFor(
+            h,
+            `[...document.querySelectorAll('[data-context-group="memory"] [data-context-file]')].some((b) => b.textContent.includes("project_added.md"))`,
+            5000
+        );
+        rec("8. Reload re-reads the project: a memory file written since shows under Memory", added, "");
+
+        let rmError = null;
+        try {
+            rmSync(ctx.root, { recursive: true, force: true });
+        } catch (e) {
+            rmError = String(e?.message ?? e);
+        }
+        await h.ev(`document.querySelector('button[aria-label="Read the files again"]')?.click()`);
+        const gone = await polishWaitFor(
+            h,
+            `!!document.querySelector('[data-context-tab] [role="alert"]') && !document.querySelector("[data-context-group]")`,
+            5000
+        );
+        await polishNap(300);
+        await h.shot("cdp-shots/setup-project-3-path-gone.png");
+        const alert = await h.ev(`document.querySelector('[data-context-tab] [role="alert"]')?.textContent ?? null`);
+        rec("9. with the project's folder gone, Reload shows the alert banner and no list", rmError == null && gone, JSON.stringify({ rmError, alert }));
         return steps;
     },
     async teardown(h, ctx) {
@@ -1314,8 +1413,9 @@ Expected: no output, exit 0. (Do not run prettier on `scripts/*.mjs`.)
 **Step 3: Run it if a dev app is up**
 
 If a dev app is running on CDP `:9222`: `task verify:ui -- setup-project surface-smoke`
-Expected: both PASS, `cdp-shots/setup-project-1-memory.png` shows the memory file in the rail. If no dev app is
-running, skip: Final runs it.
+Expected: both PASS, all nine steps; `cdp-shots/setup-project-1-memory.png` shows the memory file in the rail,
+`setup-project-2-invalid-json.png` the raw text of the bad settings file, `setup-project-3-path-gone.png` the banner.
+If no dev app is running, skip: Final runs it.
 
 **Step 4: The CHANGELOG line**
 

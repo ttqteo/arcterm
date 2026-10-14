@@ -31,7 +31,7 @@ project filter (`projectFilterAtom`) and on the first project when the filter is
 
 | Group | Files |
 |---|---|
-| Instructions | `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`; the one Claude reads (first that exists in `instructionCandidates` order) is marked |
+| Instructions | `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`; the one Claude reads (first that exists in `instructionCandidates` order) is marked, and so is `CLAUDE.local.md` when it exists, since Claude loads it beside that one |
 | Memory | `~/.claude/projects/<slug>/memory/*.md`: `MEMORY.md` first, then the rest grouped by frontmatter `type` (user, feedback, project, reference, then untyped) |
 | Settings | `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json`; settings rows note their hook count |
 | Skills & agents | `.claude/skills/*/SKILL.md`, `.claude/agents/*.md`, `.claude/commands/*.md` |
@@ -39,11 +39,13 @@ project filter (`projectFilterAtom`) and on the first project when the filter is
 | Global (folded) | `~/.claude/CLAUDE.md`, `~/.claude/settings.json` |
 
 A group with nothing in it shows one muted "—" row, so a missing file reads as missing rather than forgotten. Each
-row shows its label, its note (memory type, hook count, "Claude reads this") and its age.
+row shows its label, its note (hook count, "invalid JSON", "Claude reads this") and its age. Memory rows show no
+note: their type is the head of the section they sit under (user, feedback, project, reference, other).
 
 ### 3. One Go RPC builds the list
 
-New package `pkg/claudecontext`, pure `Scan(projectPath, home string) []ClaudeContextFile`:
+New package `pkg/claudecontext`, pure `Scan(projectPath, home string) ([]File, error)`; it errors when the project's
+folder does not exist. The handler copies each `File` into the wire type, which lives in wshrpc only:
 
 ```go
 type ClaudeContextFile struct {
