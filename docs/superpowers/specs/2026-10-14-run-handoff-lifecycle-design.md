@@ -84,7 +84,9 @@ An entry becomes `blocked`, and stays so until Start now or Remove, when:
 - its `After` run is cancelled, or its land is held for a reason other than `Dirty` (a dirty hold lands by itself
   once the checkout is clean, so the entry keeps waiting);
 - its plan file no longer exists at start;
-- `CreateRun` fails (the error is the reason).
+- `CreateRun` fails (the error is the reason);
+- its `After` is a queue entry that was removed (reason `<title> was removed`). When an `After` entry starts
+  instead, every entry waiting on it is pointed at the new run and keeps waiting for that run to land.
 
 Start now starts the entry past the cap and past `After`. Run next moves it to the head of the queue, where it still
 waits for room (and for its `After`): the way to let one plan go before the others without exceeding the cap. Remove
