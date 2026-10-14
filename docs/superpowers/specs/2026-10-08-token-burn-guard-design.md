@@ -124,9 +124,12 @@ non-zero with nothing on stdout and the mod lets the spawn run: a broken gate ne
   - `promptSubmitted()` clears a turn decision, a deny included; `sessionStarted()` clears all, a session
     decision included.
 - `register.ts` only wires it: `tool.call` on `Agent`, `Task`, `Workflow` (only while `active`) calls `check`
-  with `wsh tokengate` as the ask and logs the note when there is one; `classic.UserPromptSubmit` calls
-  `promptSubmitted` (not `turn.start`, which does not say whose turn it is); `session.start` calls
-  `sessionStarted`; `session.measure` keeps the last context reading for the args.
+  with `wsh tokengate` as the ask and logs the note when there is one; `prompt.submit` calls `promptSubmitted`
+  (not `turn.start`, which does not say whose turn it is) when `endsTurnSay(e.origin.kind)`: the person's prompt
+  or one sent for them, never a task's report, a subagent's hand-back (`peer`), another session's message, an
+  observer or an auto-continuation (fixed 2026-10-15: three background subagents' hand-backs ended an Allow this
+  turn, so the agent's next spawn asked again); `session.start` calls `sessionStarted`; `session.measure` keeps
+  the last context reading for the args.
 - Spawns from a subagent go through the same gate.
 
 Checked live 2026-10-15: Claude starts each call, and its hook, as it writes the call's block, so one message's

@@ -17,7 +17,7 @@ import { lintContext, lintMemory, parseMemory, referencedPaths, taskNames } from
 import type { Ran } from "./mention-core";
 import { leadingMention, mentionRefusal, sendArgs, sendOutcome } from "./mention-core";
 import { idleArgs } from "./status-core";
-import { createSpawnGate, RUN_VERDICT, tokengateArgs, tokengateLine } from "./tokengate-core";
+import { createSpawnGate, endsTurnSay, RUN_VERDICT, tokengateArgs, tokengateLine } from "./tokengate-core";
 import type { Group, SpawnVerdict } from "./tokengate-core";
 import { usageArgs } from "./usage-core";
 
@@ -244,11 +244,14 @@ async function configDirOf($: EngineInterface): Promise<string | null> {
     });
 }
 
-// a prompt goes in: the spawn gate forgets a turn's say, and the transcript path is worked out afresh (a /clear
-// or a resume changes the session's id). claude's UserPromptSubmit hook carried the path, but an org that
-// manages Claude Code (Team, Enterprise) passes classic hooks over for a plugin a person installs
-async function promptStarted($: EngineInterface) {
-    spawnGate.promptSubmitted();
+// a prompt goes in: the spawn gate forgets a turn's say when the prompt is the person's (not a subagent's
+// hand-back or a task's report), and the transcript path is worked out afresh (a /clear or a resume changes the
+// session's id). claude's UserPromptSubmit hook carried the path, but an org that manages Claude Code (Team,
+// Enterprise) passes classic hooks over for a plugin a person installs
+async function promptStarted($: EngineInterface, originKind: string) {
+    if (endsTurnSay(originKind)) {
+        spawnGate.promptSubmitted();
+    }
     try {
         const configDir = await configDirOf($);
         transcriptPath = configDir && sessionCwd ? transcriptFile(configDir, sessionCwd, await $.session.id()) : null;
@@ -360,7 +363,7 @@ export const register: Register = (on) => {
     on("prompt.submit", async ($, e, next) => {
         const m = active && e.origin.kind === "composer" ? leadingMention(e.text) : null;
         if (m === null) {
-            await promptStarted($);
+            await promptStarted($, e.origin.kind);
             if (active) {
                 await nudgeIdeas($);
             }

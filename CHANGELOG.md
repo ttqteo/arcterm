@@ -72,6 +72,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - **The Token burn card no longer asks about a subagent arcterm will refuse anyway**: once a session has started
   its 10 subagents, the spawn is refused with that reason at once, not after you allowed it. A subagent that arrives
   while the gate is still deciding on the ones before it is counted too, instead of slipping through with them.
+- **Allow this turn lasts the whole turn**: a background subagent reporting back no longer ends it, or a Don't
+  spawn, so the Token burn card no longer comes back before your next prompt.
 
 ## 0.15.12 — 2026-10-14
 

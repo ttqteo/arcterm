@@ -106,6 +106,23 @@ export function decisionAfter(v: SpawnVerdict): Decision {
     return v.scope === "turn" ? "allow-turn" : null;
 }
 
+// prompts that are not the person's next one: a background task's report, a subagent's hand-back or another
+// session's message, an observer, a continuation claude starts by itself. "Allow this turn" and "Don't spawn" last
+// through them (seen 2026-10-15: three subagents' hand-backs ended an Allow this turn before the agent's next spawn)
+const AGENT_SIDE_ORIGINS = new Set([
+    "task-notification",
+    "peer",
+    "peer-send-message",
+    "observer",
+    "observer-activity",
+    "auto-continuation",
+]);
+
+// whether a prompt of this origin (prompt.submit's e.origin.kind) ends the turn's say on spawns
+export function endsTurnSay(originKind: string): boolean {
+    return !AGENT_SIDE_ORIGINS.has(originKind);
+}
+
 // parallel Agent calls in one message reach their hooks together; the gate waits this long for the siblings
 export const GATHER_MS = 400;
 

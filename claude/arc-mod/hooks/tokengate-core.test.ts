@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { createSpawnGate, decisionAfter, joinGroup, spawnCount, tokengateArgs, tokengateLine } from "./tokengate-core";
+import {
+    createSpawnGate,
+    decisionAfter,
+    endsTurnSay,
+    joinGroup,
+    spawnCount,
+    tokengateArgs,
+    tokengateLine,
+} from "./tokengate-core";
 import type { Group, SpawnVerdict } from "./tokengate-core";
 
 describe("spawnCount", () => {
@@ -75,6 +83,27 @@ describe("decisionAfter", () => {
         expect(decisionAfter(v(true, "turn"))).toBe("allow-turn");
         expect(decisionAfter(v(true, "session"))).toBe("allow-session");
         expect(decisionAfter(v(false, null))).toBe("deny-turn");
+    });
+});
+
+// seen live 2026-10-15: three background subagents' hand-backs came in as prompts and ended an Allow this turn
+describe("endsTurnSay", () => {
+    it("ends the turn's say on a prompt from the person or sent for them", () => {
+        for (const kind of ["composer", "bridge", "plugin", "sdk", "scheduled-trigger", "unclassified"]) {
+            expect(endsTurnSay(kind), kind).toBe(true);
+        }
+    });
+    it("keeps it through a report, a message from another session and a continuation claude starts itself", () => {
+        for (const kind of [
+            "task-notification",
+            "peer",
+            "peer-send-message",
+            "observer",
+            "observer-activity",
+            "auto-continuation",
+        ]) {
+            expect(endsTurnSay(kind), kind).toBe(false);
+        }
     });
 });
 
