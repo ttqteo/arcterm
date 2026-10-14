@@ -74,12 +74,12 @@ func TestRunsShowLinesReviewerSettings(t *testing.T) {
 		ID: "r-1", Status: "executing", Mode: jarvis.RunMode_Orchestrator, Runtime: "claude", CreatedTs: 1,
 		ReviewerPicks: true, ReviewerRoute: &waveobj.RoutePin{Runtime: "claude", Model: "opus"},
 	}
-	lines := runsShowLines(ch, run, nil, 2, nil)
+	lines := runsShowLines(ch, run, nil, 2, nil, nil)
 	if !slices.Contains(lines, "route    claude  workers=reviewer-picks  reviewers=claude opus") {
 		t.Fatalf("route line missing the workers and reviewers settings:\n%s", strings.Join(lines, "\n"))
 	}
 	run.ReviewerPicks, run.ReviewerRoute = false, nil
-	if lines = runsShowLines(ch, run, nil, 2, nil); !slices.Contains(lines, "route    claude") {
+	if lines = runsShowLines(ch, run, nil, 2, nil, nil); !slices.Contains(lines, "route    claude") {
 		t.Fatalf("a run without the settings must print today's route line:\n%s", strings.Join(lines, "\n"))
 	}
 }

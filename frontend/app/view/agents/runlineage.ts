@@ -22,6 +22,8 @@ export interface RunInfo {
     title: string;
     // the lead's project, or the run's checkout for a run with no lead in the roster
     project: string;
+    // the lead's full project path, which `project` shortens to its folder: the land line is keyed on it
+    projectPath?: string;
     // whether the run has ever had a lead session, so a run with none in the roster can say which it is
     leadStarted?: boolean;
     // the tab of the session that started the run with `wsh runs start`, which the tree lists it under
@@ -307,7 +309,11 @@ export function taskStateLabel(task: TaskNode, now: number): string | undefined 
         : label;
 }
 
-const STAGE_LABELS: Record<string, string> = { "plan-reviewer": "Plan review", verifier: "Final verification" };
+const STAGE_LABELS: Record<string, string> = {
+    "plan-reviewer": "Plan review",
+    verifier: "Final verification",
+    "land-resolver": "Conflict resolver",
+};
 
 // stageLabel is what a stage session's row is titled.
 export function stageLabel(stageRole: string): string {

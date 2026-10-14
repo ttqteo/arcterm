@@ -69,6 +69,7 @@ func TestLaunchOriginReadsAStagePromptBack(t *testing.T) {
 	}{
 		{jarvis.UsageRole_PlanReviewer, planReviewPrompt(g, "tree")},
 		{jarvis.UsageRole_Verifier, verifierPrompt(context.Background(), g, &waveobj.Run{})},
+		{jarvis.UsageRole_LandResolver, landResolverPrompt(&waveobj.Run{ID: originRun, BaseBranch: "main", LandPath: "/tree"}, []string{"a.txt"})},
 	}
 	for _, c := range cases {
 		want := LaunchOrigin{RunID: originRun, Role: c.role}

@@ -1,0 +1,4 @@
+# files whose conflicts the land resolves when both sides only added lines: the base's lines, then the run's
+CHANGELOG.md
+docs/open-issues.md
+scripts/cdp/scenarios.mjs

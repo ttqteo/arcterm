@@ -76,6 +76,16 @@ describe("runStatusView", () => {
         expect(runStatusView("done", { state: "landed" })).toEqual({ label: "landed", tone: "done" });
         expect(runStatusView("done")).toEqual({ label: "complete", tone: "done" });
     });
+    it("says a land in line or being resolved is still on its way, not held", () => {
+        expect(runStatusView("done", { state: "queued", queuedts: 20 })).toEqual({
+            label: "land queued",
+            tone: "running",
+        });
+        expect(runStatusView("done", { state: "resolving", conflicts: ["CHANGELOG.md"] })).toEqual({
+            label: "resolving",
+            tone: "running",
+        });
+    });
 });
 
 describe("finishedRunLabel", () => {
@@ -170,6 +180,32 @@ describe("dagProgressLabel", () => {
         expect(dagProgressLabel(held({ state: "held", dismissed: true }), false).text).toBe("Land held");
         expect(finishedRunLabel(held({ state: "held" }))).toBe("Land held");
     });
+    describe("a land waiting for its project's turn", () => {
+        const inLine = (runId: string, land: RunLand, projectPath = "/p/arc"): RunInfo => ({
+            ...info("done", [{ state: "done" }] as TaskGroup["tasks"]),
+            runId,
+            status: "done",
+            projectPath,
+            land,
+        });
+        const turn = inLine("a", { state: "pending" });
+        const first = inLine("b", { state: "queued", queuedts: 10 });
+        const second = inLine("c", { state: "queued", queuedts: 20 });
+        it("says it is in line, and its place once the project's runs are known", () => {
+            expect(dagProgressLabel(second, false).text).toBe("Landing · in line");
+            expect(dagProgressLabel(second, false, [turn, first, second]).text).toBe("Landing · #3 in line");
+            expect(dagProgressLabel(first, false, [turn, first, second]).text).toBe("Landing · #2 in line");
+            expect(finishedRunLabel(second)).toBe("Landing · in line");
+        });
+        it("says a land being resolved is resolving, with a place for no one", () => {
+            const resolving = inLine("d", { state: "resolving", conflicts: ["CHANGELOG.md"] });
+            expect(dagProgressLabel(resolving, false, [turn, resolving]).text).toBe("Landing · resolving conflicts");
+        });
+        it("keeps a project with the same folder name out of the line", () => {
+            const namesake = inLine("e", { state: "queued", queuedts: 1 }, "/elsewhere/arc");
+            expect(dagProgressLabel(second, false, [namesake, second]).text).toBe("Landing · #1 in line");
+        });
+    });
     it("says how far a cancelled run got", () => {
         const four = [
             { state: "done" },
@@ -198,6 +234,8 @@ describe("runComplete", () => {
     });
     it("is not complete while a land is in flight or held", () => {
         expect(runComplete(info("done", { state: "pending" }))).toBe(false);
+        expect(runComplete(info("done", { state: "queued" }))).toBe(false);
+        expect(runComplete(info("done", { state: "resolving" }))).toBe(false);
         expect(runComplete(info("done", { state: "held" }))).toBe(false);
     });
     it("is not complete while the lead is still wrapping up", () => {

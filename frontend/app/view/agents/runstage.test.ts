@@ -18,6 +18,11 @@ describe("runStage", () => {
             [{ status: "executing", dag: dag("finalizing", { state: "checking", step: "final" }) }, "Final check"],
             [{ status: "executing", dag: dag("done", { state: "passed" }) }, "Wrapping up"],
             [{ status: "done", land: { state: "pending" }, dag: dag("done", { state: "passed" }) }, "Landing"],
+            [{ status: "done", land: { state: "queued", queuedts: 20 }, dag: dag("done") }, "Landing · in line"],
+            [
+                { status: "done", land: { state: "resolving", conflicts: ["CHANGELOG.md"] }, dag: dag("done") },
+                "Landing · resolving conflicts",
+            ],
             [{ status: "done", land: { state: "held", reason: "staged changes" }, dag: dag("done") }, "Land held"],
             [{ status: "done", land: { state: "landed" }, dag: dag("done", { state: "passed" }) }, "Landed"],
             [{ status: "done", dag: dag("done") }, "Complete"],
@@ -26,6 +31,18 @@ describe("runStage", () => {
         ];
         for (const [r, want] of cases) {
             expect(runStage(r).label, JSON.stringify(r)).toBe(want);
+        }
+    });
+
+    // run office reads the RunStageKey union: a land in line or being resolved is still the landing stage
+    it("keeps a queued and a resolving land under the landing key, which needs nobody and is not complete", () => {
+        for (const state of ["pending", "queued", "resolving"]) {
+            const stage = runStage({ status: "done", land: { state }, dag: dag("done", { state: "passed" }) });
+            expect(stage, state).toMatchObject({ key: "landing", needsYou: false, complete: false, tone: "running" });
+            expect(
+                stage.tail.map((p) => p.state),
+                state
+            ).toEqual(["done", "done", "active"]);
         }
     });
 

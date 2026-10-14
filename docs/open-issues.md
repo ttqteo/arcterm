@@ -27,6 +27,18 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-14 (land queue, run 33724b1d)**
+
+- [ ] (arcterm) Land line: finish 3 small runs close together that each add a `CHANGELOG.md` line. They land one after
+  another with no hold, the later ones reading **Landing · #N in line** in the tree and the run sheet meanwhile
+  (01939e1, 6d6cb41). The CDP `land-queue` scenario only draws seeded lands that the driver skips.
+- [ ] (arcterm) Resolver: land a run whose branch really conflicts with `main`. A **Conflict resolver** session starts
+  in the landing tree, the land reads **Landing · resolving conflicts**, and once the resolver commits the merge and
+  completes, the land goes back in line and lands. If the resolver cannot merge, it is held naming the files. No check
+  started a real model; the tree's resolver row is vitest-only (03b96bd, 66a1ec1, 5e3e45a).
+- [ ] (arcterm) Queued start after a held run: queue a plan `--after` a run, hold that run's final, Land anyway. The
+  queued run starts by itself, and `wsh runs land` lists it as released (40ba52f, de7e7e1).
+
 **2026-10-14 (initiatives on the Agent surface, run 961cdb3d)**
 
 - [ ] (arcterm) Plan to review: on a real Claude agent that proposed chunks (`wsh effort chunk add --proposed`),

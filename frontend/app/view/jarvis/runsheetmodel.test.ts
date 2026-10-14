@@ -12,9 +12,11 @@ import {
     doneBody,
     doneBodyHasDiff,
     finalStageEndable,
+    landDock,
     launcherReading,
     orderedTasks,
     runGraphRef,
+    sheetLandPlace,
     sheetLead,
     sheetRoute,
     sheetStatus,
@@ -467,6 +469,37 @@ describe("sheetStatus", () => {
         expect(s.meter).toEqual({ kind: "strip" });
     });
 
+    // a land in line or being resolved is not Done either: the run is not in its base yet, and nobody has to act
+    it("says Landing for a land in line, with its place when the project's runs are known", () => {
+        const queued = (landPlace?: SheetRead["landPlace"]) =>
+            sheetStatus(
+                read({
+                    run: run({ status: "done", land: { state: "queued", queuedts: 20 }, basebranch: "main" }),
+                    landPlace,
+                })
+            );
+        const s = queued({ place: 2, aheadTitle: "ship the thing" });
+        expect(s).toMatchObject({ verb: "Landing", tone: "success", pulse: true, meter: { kind: "strip" } });
+        expect(s.sub).toBe("#2 in line to merge wave/3457abcd into main");
+        expect(s.next).toMatch(/by itself/);
+        expect(queued().sub).toBe("in line to merge wave/3457abcd into main");
+    });
+
+    it("says Landing for a land being resolved, who is merging what, and that nobody has to act", () => {
+        const s = sheetStatus(
+            read({
+                run: run({
+                    status: "done",
+                    land: { state: "resolving", conflicts: ["CHANGELOG.md"] },
+                    basebranch: "main",
+                }),
+            })
+        );
+        expect(s).toMatchObject({ verb: "Landing", tone: "success", pulse: true, meter: { kind: "strip" } });
+        expect(s.sub).toBe("a resolver is merging main into wave/3457abcd");
+        expect(s.next).toMatch(/by itself/);
+    });
+
     it("waits on you for a done run whose land is held, with the reason, until it is dismissed", () => {
         const held = (land: RunLand) => sheetStatus(read({ run: run({ status: "done", land }) }));
         const s = held({ state: "held", reason: "staged changes" });
@@ -484,6 +517,57 @@ describe("sheetStatus", () => {
         expect(s.meta.map((m) => m.text)).toEqual(["cancelled 30s ago", "2 survivors"]);
         const clean = sheetStatus(read({ run: run({ status: "cancelled" }) }));
         expect(clean.sub).toBe("stopped after 2 of 4 tasks");
+    });
+});
+
+describe("landDock and sheetLandPlace", () => {
+    const withLand = (land: RunLand, over: Partial<Run> = {}) =>
+        run({ status: "done", land, basebranch: "main", ...over });
+
+    it("says where a land in line stands, and behind what", () => {
+        const queued = withLand({ state: "queued", queuedts: 20 });
+        expect(landDock(queued, { place: 2, aheadTitle: "ship the thing" })).toEqual({
+            kind: "queued",
+            text: "In line to land: #2, behind ship the thing",
+        });
+        expect(landDock(queued, { place: 1 })).toEqual({ kind: "queued", text: "In line to land: #1" });
+        expect(landDock(queued)).toEqual({ kind: "queued", text: "In line to land" });
+    });
+
+    it("says who is merging what into the branch, and in which files", () => {
+        expect(landDock(withLand({ state: "resolving", conflicts: ["CHANGELOG.md", "docs/open-issues.md"] }))).toEqual({
+            kind: "resolving",
+            text: "A resolver is merging main into wave/3457abcd: CHANGELOG.md, docs/open-issues.md",
+        });
+        expect(landDock(withLand({ state: "resolving" }, { basebranch: "" }))).toEqual({
+            kind: "resolving",
+            text: "A resolver is merging its base into wave/3457abcd",
+        });
+    });
+
+    it("lists a held land's conflicts under its reason", () => {
+        expect(
+            landDock(withLand({ state: "held", reason: "merging main conflicts", conflicts: ["docs/open-issues.md"] }))
+        ).toEqual({ kind: "held", reason: "merging main conflicts", conflicts: "docs/open-issues.md" });
+        expect(landDock(withLand({ state: "held" }))).toEqual({
+            kind: "held",
+            reason: "the engine gave no reason",
+            conflicts: null,
+        });
+    });
+
+    it("has no line for a land that is pending, landed or absent", () => {
+        expect(landDock(withLand({ state: "pending" }))).toBeNull();
+        expect(landDock(withLand({ state: "landed" }))).toBeNull();
+        expect(landDock(run({ status: "done" }))).toBeNull();
+    });
+
+    it("reads a run's place among its project's runs, naming the land just ahead", () => {
+        const a = withLand({ state: "pending" }, { id: "a", goal: "first goal\nmore" });
+        const b = withLand({ state: "queued", queuedts: 10 }, { id: "b" });
+        const elsewhere = withLand({ state: "pending" }, { id: "c", projectpath: "/other" });
+        expect(sheetLandPlace(b, [a, b, elsewhere])).toEqual({ place: 2, aheadTitle: "first goal" });
+        expect(sheetLandPlace(a, [a, b])).toBeUndefined();
     });
 });
 

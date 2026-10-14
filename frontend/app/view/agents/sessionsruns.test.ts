@@ -263,6 +263,73 @@ describe("stage sessions", () => {
             "Port the header · plan review"
         );
     });
+
+    describe("a land resolver", () => {
+        const resolver = (over: Partial<LiveSession> = {}) =>
+            mk({ id: "lr", runid: "r1", role: "land-resolver", lastactivets: 10, tokenstotal: 9, ...over });
+        const grouped = (list: LiveSession[]) => groupRunSessions([...sessions, ...list]).runs[0];
+        const view = (list: LiveSession[], land?: RunLand) =>
+            runView({ group: grouped(list), run: { land } as Run, dag, now: 0 });
+        const member = (v: ReturnType<typeof runView>) => v.members.find((m) => m.key === "land-resolver");
+
+        it("groups as a stage member after the verification, not under the lead", () => {
+            const group = grouped([resolver()]);
+            expect(group.stages["land-resolver"].map((s) => s.id)).toEqual(["lr"]);
+            expect(group.lead.map((s) => s.id)).toEqual(["lead"]);
+            const v = view([resolver()], { state: "queued" } as RunLand);
+            expect(v.members.map((m) => m.key)).toEqual([
+                LEAD_MEMBER,
+                "t-1",
+                "plan-reviewer",
+                "verifier",
+                "land-resolver",
+            ]);
+            expect(member(v)).toMatchObject({ label: "Conflict resolver", tokens: 9, session: { id: "lr" } });
+            // it is a stage, not a task: the run's counts and needs-you rows stay its tasks'
+            expect(v.total).toBe(1);
+            expect(v.needs).toEqual([]);
+        });
+
+        it("places and labels its session by its stage", () => {
+            expect(memberOfSession({ role: "land-resolver" })).toBe("land-resolver");
+            expect(sessionLabel(resolver(), { r1: "Port the header" })).toBe("Port the header · conflict resolver");
+        });
+
+        it("reads a live one as resolving, never reviewing", () => {
+            const land = { state: "resolving", resolver: "rs1", resolvertried: true } as RunLand;
+            expect(member(view([resolver({ live: true })], land))?.status).toEqual({
+                key: "review",
+                text: "resolving",
+            });
+            // live with no land read yet: still its own word
+            expect(member(view([resolver({ live: true })]))?.status).toEqual({ key: "review", text: "resolving" });
+        });
+
+        it("reads an ended one from the run's land, as the tree does", () => {
+            const status = (land: RunLand) => member(view([resolver()], land))?.status;
+            expect(status({ state: "resolving", resolver: "rs1" } as RunLand)).toEqual({
+                key: "review",
+                text: "resolving",
+            });
+            expect(status({ state: "held", resolvertried: true } as RunLand)).toEqual({
+                key: "failed",
+                text: "failed",
+            });
+            for (const state of ["queued", "pending", "landed"]) {
+                expect(status({ state, resolvertried: true } as RunLand)).toEqual({ key: "done", text: "passed" });
+            }
+        });
+
+        it("reads an ended one with no land loaded as done, like a stage the dag has no verdict for", () => {
+            expect(member(view([resolver()]))?.status).toEqual({ key: "done", text: "done" });
+        });
+
+        it("leaves the other stages as the dag reads them", () => {
+            const v = view([resolver()], { state: "held", resolvertried: true } as RunLand);
+            expect(v.members.find((m) => m.key === "plan-reviewer")?.status).toEqual({ key: "done", text: "passed" });
+            expect(v.members.find((m) => m.key === "verifier")?.status).toEqual({ key: "failed", text: "failed" });
+        });
+    });
 });
 
 describe("sessionPrimary", () => {

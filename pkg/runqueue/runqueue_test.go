@@ -199,19 +199,35 @@ func TestRemove(t *testing.T) {
 func TestSetBlockedThenWaiting(t *testing.T) {
 	useTempStore(t)
 	a := addPlan(t, "a", "")
-	if err := SetBlocked(a.Id, "Learned additions was held"); err != nil {
+	if err := SetBlocked(a.Id, "Learned additions was held", "run-1"); err != nil {
 		t.Fatalf("SetBlocked: %v", err)
 	}
 	list, _ := List()
-	if list[0].State != wshrpc.RunQueueState_Blocked || list[0].Reason != "Learned additions was held" {
+	if list[0].State != wshrpc.RunQueueState_Blocked || list[0].Reason != "Learned additions was held" || list[0].BlockedOn != "run-1" {
 		t.Errorf("after SetBlocked: %+v", list[0])
 	}
 	if err := SetWaiting(a.Id); err != nil {
 		t.Fatalf("SetWaiting: %v", err)
 	}
 	list, _ = List()
-	if list[0].State != wshrpc.RunQueueState_Waiting || list[0].Reason != "" {
+	if list[0].State != wshrpc.RunQueueState_Waiting || list[0].Reason != "" || list[0].BlockedOn != "" {
 		t.Errorf("after SetWaiting: %+v", list[0])
+	}
+}
+
+func TestSetBlockedWithoutARunLeavesBlockedOnEmpty(t *testing.T) {
+	useTempStore(t)
+	a := addPlan(t, "a", "")
+	if err := SetBlocked(a.Id, "route unavailable", "run-1"); err != nil {
+		t.Fatal(err)
+	}
+	// a later block for another cause replaces the run the first one named
+	if err := SetBlocked(a.Id, "its create failed", ""); err != nil {
+		t.Fatal(err)
+	}
+	list, _ := List()
+	if list[0].Reason != "its create failed" || list[0].BlockedOn != "" {
+		t.Errorf("a block that is not about a run kept BlockedOn: %+v", list[0])
 	}
 }
 
@@ -221,7 +237,7 @@ func TestUnknownIdErrors(t *testing.T) {
 	ops := map[string]func(string) error{
 		"Remove":     Remove,
 		"MoveFirst":  MoveFirst,
-		"SetBlocked": func(id string) error { return SetBlocked(id, "why") },
+		"SetBlocked": func(id string) error { return SetBlocked(id, "why", "") },
 		"SetWaiting": SetWaiting,
 	}
 	for name, op := range ops {

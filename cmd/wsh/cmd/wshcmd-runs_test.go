@@ -313,14 +313,14 @@ func TestRunsShowLines(t *testing.T) {
 		EffortRef:  &waveobj.RunEffortRef{EffortOID: "e-1", ChunkLabel: "Build"},
 		BaseCommit: "aaaaaaaaaa", EndCommit: "bbbbbbbbbb", Report: "lead report",
 	}
-	out := strings.Join(runsShowLines(ch, run, nil, 2, nil), "\n")
+	out := strings.Join(runsShowLines(ch, run, nil, 2, nil, nil), "\n")
 	for _, want := range []string{"r-1", "ship it", "waveterm (channel ch-1)", "effort:e-1", `"Build"`, "aaaaaaa..bbbbbbb", "lead report"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("show output lacks %q:\n%s", want, out)
 		}
 	}
 	run.Evidence = &waveobj.RunEvidence{Summary: "sealed summary", AddTotal: 4, Files: []waveobj.EvidenceFile{{Path: "x"}}}
-	out = strings.Join(runsShowLines(ch, run, nil, 2, nil), "\n")
+	out = strings.Join(runsShowLines(ch, run, nil, 2, nil, nil), "\n")
 	if !strings.Contains(out, "sealed summary") || strings.Contains(out, "lead report") || !strings.Contains(out, "1 files  +4 -0") {
 		t.Fatalf("a sealed run must show its sealed summary:\n%s", out)
 	}
@@ -338,7 +338,7 @@ func TestRunsShowLinesPrintsUsage(t *testing.T) {
 			{Role: "reviewer", TaskId: "t-1", CacheRead: 500_000},
 		}}},
 	}
-	lines := runsShowLines(ch, run, digest, 2, nil)
+	lines := runsShowLines(ch, run, digest, 2, nil, nil)
 	if !slices.Contains(lines, "usage    lead 1.0M · workers 3.4M · reviewers 500k") {
 		t.Fatalf("show must print the dag's usage:\n%s", strings.Join(lines, "\n"))
 	}
@@ -347,11 +347,11 @@ func TestRunsShowLinesPrintsUsage(t *testing.T) {
 		{Role: "worker", TaskId: "t-1", Output: 3_400_000},
 		{Role: "reviewer", TaskId: "t-1", CacheRead: 500_000},
 	}}
-	lines = runsShowLines(ch, run, digest, 2, nil)
+	lines = runsShowLines(ch, run, digest, 2, nil, nil)
 	if !slices.Contains(lines, "usage    lead 1.2M · workers 3.4M · reviewers 500k") {
 		t.Fatalf("a sealed run must print its sealed usage:\n%s", strings.Join(lines, "\n"))
 	}
-	if lines = runsShowLines(ch, &waveobj.Run{ID: "r-2"}, nil, 2, nil); slices.ContainsFunc(lines, func(l string) bool { return strings.HasPrefix(l, "usage") }) {
+	if lines = runsShowLines(ch, &waveobj.Run{ID: "r-2"}, nil, 2, nil, nil); slices.ContainsFunc(lines, func(l string) bool { return strings.HasPrefix(l, "usage") }) {
 		t.Fatalf("a run with no total prints none:\n%s", strings.Join(lines, "\n"))
 	}
 }
@@ -380,7 +380,7 @@ func TestRunsShowLinesPrintsTheRunsOwnQuestion(t *testing.T) {
 	ch := &waveobj.Channel{OID: "c-1", Name: "alpha"}
 	run := &waveobj.Run{ID: "r-1", Goal: "g", Status: "executing"}
 	asks := []wshrpc.DagAskItem{{Questions: []baseds.AgentAskQuestion{{Header: "Path", Question: "Which path?", Options: []baseds.AgentAskOption{{Label: "A"}, {Label: "B", Description: "the other"}}}}}}
-	lines := runsShowLines(ch, run, nil, 2, asks)
+	lines := runsShowLines(ch, run, nil, 2, asks, nil)
 	for _, want := range []string{"question", "  [Path] Which path?", "    0) A", "    1) B - the other"} {
 		if !slices.Contains(lines, want) {
 			t.Fatalf("missing %q in:\n%s", want, strings.Join(lines, "\n"))
@@ -389,7 +389,7 @@ func TestRunsShowLinesPrintsTheRunsOwnQuestion(t *testing.T) {
 	if !slices.ContainsFunc(lines, func(l string) bool { return strings.HasPrefix(l, "answer:  wsh runs answer r-1 ") }) {
 		t.Fatalf("no answer line in:\n%s", strings.Join(lines, "\n"))
 	}
-	if slices.Contains(runsShowLines(ch, run, nil, 2, nil), "question") {
+	if slices.Contains(runsShowLines(ch, run, nil, 2, nil, nil), "question") {
 		t.Fatal("a run with no pending question printed a question block")
 	}
 }
@@ -436,11 +436,11 @@ func TestRunsRecordLines(t *testing.T) {
 func TestRunsShowLinesPrintsTheRecordAfterTheReport(t *testing.T) {
 	ch := &waveobj.Channel{OID: "ch-1", Name: "waveterm"}
 	run := &waveobj.Run{ID: "r-1", Status: "done", Mode: "orchestrator", Report: "lead report"}
-	if lines := runsShowLines(ch, run, nil, 2, nil); slices.Contains(lines, "record") {
+	if lines := runsShowLines(ch, run, nil, 2, nil, nil); slices.Contains(lines, "record") {
 		t.Fatalf("a run with no record printed one:\n%s", strings.Join(lines, "\n"))
 	}
 	run.Evidence = &waveobj.RunEvidence{Summary: "lead report", Dag: &waveobj.EvidenceDag{Tasks: []waveobj.EvidenceDagTask{{TaskId: "t-1", State: "done"}}}}
-	lines := runsShowLines(ch, run, nil, 2, nil)
+	lines := runsShowLines(ch, run, nil, 2, nil, nil)
 	report, record := slices.Index(lines, "lead report"), slices.Index(lines, "record")
 	if report < 0 || record < report || !slices.Contains(lines, "t-1 done") {
 		t.Fatalf("show must print the record after the report:\n%s", strings.Join(lines, "\n"))
@@ -481,7 +481,7 @@ func TestRunsShowLinesPrintVerificationAndLand(t *testing.T) {
 		Evidence: &waveobj.RunEvidence{Verification: &waveobj.RunVerification{State: "unverified", Reasons: []string{"the plan has no Verify"}}},
 		Land:     &waveobj.RunLand{State: "landed", Commit: "0123456789abcdef", Notes: []string{"merged onto 2 commits that landed on main during the run; the combination was not verified"}},
 	}
-	lines := runsShowLines(ch, run, nil, 2, nil)
+	lines := runsShowLines(ch, run, nil, 2, nil, nil)
 	for _, want := range []string{
 		"outcome  unverified",
 		"         unverified: the plan has no Verify",
@@ -493,7 +493,7 @@ func TestRunsShowLinesPrintVerificationAndLand(t *testing.T) {
 		}
 	}
 	run.Land = &waveobj.RunLand{State: "held", Reason: "the checkout is on x, not main"}
-	if lines = runsShowLines(ch, run, nil, 2, nil); !slices.Contains(lines, "land     held: the checkout is on x, not main") {
+	if lines = runsShowLines(ch, run, nil, 2, nil, nil); !slices.Contains(lines, "land     held: the checkout is on x, not main") {
 		t.Fatalf("show must print the held reason:\n%s", strings.Join(lines, "\n"))
 	}
 }
@@ -503,10 +503,102 @@ func TestRunsShowLinesPrintTheLandBesideTheStatus(t *testing.T) {
 	ch := &waveobj.Channel{OID: "ch-1", Name: "waveterm"}
 	run := &waveobj.Run{ID: "r-1", Status: "done", Mode: "orchestrator", Land: &waveobj.RunLand{State: "held", Reason: "the merge conflicts with main in a.mjs; it was aborted"}}
 	digest := &wshrpc.CommandDagStatusRtnData{}
-	lines := runsShowLines(ch, run, digest, 2, nil)
+	lines := runsShowLines(ch, run, digest, 2, nil, nil)
 	status := slices.IndexFunc(lines, func(l string) bool { return strings.HasPrefix(l, "status ") })
 	if status < 0 || status+1 >= len(lines) || lines[status+1] != "land     held: the merge conflicts with main in a.mjs; it was aborted" {
 		t.Fatalf("the land must follow the status line:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
+func TestRunsLandLinesQueued(t *testing.T) {
+	queued := func(id, goal, project string, ts int64) *waveobj.Run {
+		return &waveobj.Run{ID: id, Goal: goal, ProjectPath: project, Land: &waveobj.RunLand{State: "queued", QueuedTs: ts}}
+	}
+	first := queued("dfad20dc-1111-2222-3333-444455556666", "Docs refresh\nthe long second line", "/work/arc", 10)
+	second := queued("ffadbfbf-1111-2222-3333-444455556666", "Learned additions", "/work/arc", 20)
+	other := queued("ee18a780-1111-2222-3333-444455556666", "Elsewhere", "/work/other", 5)
+	runs := []*waveobj.Run{first, second, other}
+
+	if got := runsLandLines(second, runs); !slices.Equal(got, []string{"land     queued: #2 in line, behind dfad20dc Docs refresh"}) {
+		t.Fatalf("the second in line names the run ahead of it:\n%s", strings.Join(got, "\n"))
+	}
+	if got := runsLandLines(first, runs); !slices.Equal(got, []string{"land     queued: #1 in line"}) {
+		t.Fatalf("the first in line has nothing ahead of it:\n%s", strings.Join(got, "\n"))
+	}
+
+	// a land in its turn is ahead of every queued one
+	turn := &waveobj.Run{ID: "973afb5b-1111", Goal: "Mid land", ProjectPath: "/work/arc", Land: &waveobj.RunLand{State: "pending"}}
+	if got := runsLandLines(first, append(runs, turn)); !slices.Equal(got, []string{"land     queued: #2 in line, behind 973afb5b Mid land"}) {
+		t.Fatalf("a pending land counts as ahead:\n%s", strings.Join(got, "\n"))
+	}
+
+	// the runs of the project were not loaded: the state alone still reads
+	if got := runsLandLines(second, nil); !slices.Equal(got, []string{"land     queued"}) {
+		t.Fatalf("a place that cannot be worked out prints the state alone:\n%s", strings.Join(got, "\n"))
+	}
+}
+
+func TestRunsLandLinesResolving(t *testing.T) {
+	run := &waveobj.Run{ID: "r-1", BaseBranch: "main", Land: &waveobj.RunLand{State: "resolving", Conflicts: []string{"a.go", "docs/b.md"}}}
+	if got := runsLandLines(run, []*waveobj.Run{run}); !slices.Equal(got, []string{"land     resolving: a resolver is merging main (a.go, docs/b.md)"}) {
+		t.Fatalf("resolving must name the base and the files:\n%s", strings.Join(got, "\n"))
+	}
+	run.Land.Conflicts = nil
+	if got := runsLandLines(run, nil); !slices.Equal(got, []string{"land     resolving: a resolver is merging main"}) {
+		t.Fatalf("no files, no parentheses:\n%s", strings.Join(got, "\n"))
+	}
+}
+
+func TestRunsLandLinesHeldConflicts(t *testing.T) {
+	run := &waveobj.Run{ID: "r-1", Land: &waveobj.RunLand{
+		State: "held", Reason: "merging main into wave/r-1 conflicts in a.go, b.go; merge it there, then Land again",
+		Conflicts: []string{"a.go", "b.go"}, Notes: []string{"a note"},
+	}}
+	want := []string{
+		"land     held: merging main into wave/r-1 conflicts in a.go, b.go; merge it there, then Land again",
+		"         conflicts: a.go, b.go",
+		"         note: a note",
+	}
+	if got := runsLandLines(run, nil); !slices.Equal(got, want) {
+		t.Fatalf("a held land lists its conflicts before its notes:\n%s", strings.Join(got, "\n"))
+	}
+	run.Land = &waveobj.RunLand{State: "held", Reason: "the checkout is on x, not main"}
+	if got := runsLandLines(run, nil); !slices.Equal(got, []string{"land     held: the checkout is on x, not main"}) {
+		t.Fatalf("a hold with no conflicts prints no conflicts line:\n%s", strings.Join(got, "\n"))
+	}
+	if got := runsLandLines(&waveobj.Run{ID: "r-2"}, nil); got != nil {
+		t.Fatalf("a run with no land prints nothing, got %v", got)
+	}
+}
+
+func TestRunsShowLinesPrintsTheLinePlace(t *testing.T) {
+	ch := &waveobj.Channel{OID: "ch-1", Name: "arc"}
+	ahead := &waveobj.Run{ID: "r-1", Goal: "First", ProjectPath: "/work/arc", Land: &waveobj.RunLand{State: "queued", QueuedTs: 1}}
+	run := &waveobj.Run{ID: "r-2", Status: "done", ProjectPath: "/work/arc", Land: &waveobj.RunLand{State: "queued", QueuedTs: 2}}
+	lines := runsShowLines(ch, run, nil, 2, nil, []*waveobj.Run{ahead, run})
+	if !slices.Contains(lines, "land     queued: #2 in line, behind r-1 First") {
+		t.Fatalf("show must print the place in line:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
+func TestRunsReleasedLines(t *testing.T) {
+	queue := []wshrpc.RunQueueEntry{
+		{Id: "q-0001", After: "r-1", Title: "Docs", State: wshrpc.RunQueueState_Waiting},
+		{Id: "q-0002", After: "r-9", Title: "Other run's", State: wshrpc.RunQueueState_Waiting},
+		{Id: "q-0003", After: "r-1", Title: "Was blocked by it", State: wshrpc.RunQueueState_Blocked, BlockedOn: "r-1"},
+		{Id: "q-0004", After: "r-1", Title: "Failed to start", State: wshrpc.RunQueueState_Blocked, Reason: "the plan is gone"},
+		{Id: "q-0005", Title: "No after", State: wshrpc.RunQueueState_Waiting},
+	}
+	got := runsReleasedLines("r-1", queue)
+	want := []string{"         queued runs after it start when there is room: q-0001 Docs, q-0003 Was blocked by it"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("released = %q, want %q", got, want)
+	}
+	if got := runsReleasedLines("r-2", queue); got != nil {
+		t.Fatalf("nothing waits on r-2, got %q", got)
+	}
+	if got := runsReleasedLines("r-1", nil); got != nil {
+		t.Fatalf("an empty queue prints nothing, got %q", got)
 	}
 }
 

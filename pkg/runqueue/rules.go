@@ -74,14 +74,23 @@ func ClampMaxActive(v *int) int {
 	return *v
 }
 
+// Block is why a waiting entry can never start by waiting. On is the run whose outcome blocked it, empty when the
+// block is not about a run's outcome (an After that is neither a run nor a queued entry).
+type Block struct {
+	Reason string
+	On     string
+}
+
 // Next walks the queue in order. start is the id of the first waiting entry that may start now: its After is empty
 // or a run that landed, and fewer than maxActive top-level runs are active (maxActive 0 is no cap). block names each
 // waiting entry that can never start by waiting, with the reason: its After run was cancelled or ended held, or its
 // After is neither a run nor a queued entry. An entry that waits on a run still going, a dirty hold or another
 // queued entry (never ready: it has no run to have landed) is neither started nor blocked, and does not hold up the
-// entries behind it. Entries already blocked are skipped.
-func Next(entries []wshrpc.RunQueueEntry, runs map[string]*waveobj.Run, maxActive int) (start string, block map[string]string) {
-	block = map[string]string{}
+// entries behind it. A blocked entry is skipped, except that unblock lists the ones blocked on a run (BlockedOn) that
+// has landed since: a held run is landed later by hand, and these carry on. They are not started in this call; the
+// caller sets them waiting and asks again. An entry blocked for any other cause has no BlockedOn and stays blocked.
+func Next(entries []wshrpc.RunQueueEntry, runs map[string]*waveobj.Run, maxActive int) (start string, block map[string]Block, unblock []string) {
+	block = map[string]Block{}
 	room := maxActive <= 0
 	if !room {
 		all := make([]*waveobj.Run, 0, len(runs))
@@ -96,6 +105,11 @@ func Next(entries []wshrpc.RunQueueEntry, runs map[string]*waveobj.Run, maxActiv
 	}
 	for _, e := range entries {
 		if e.State == wshrpc.RunQueueState_Blocked {
+			if e.BlockedOn != "" {
+				if _, landed, _ := Outcome(runs[e.BlockedOn]); landed {
+					unblock = append(unblock, e.Id)
+				}
+			}
 			continue
 		}
 		if e.After == "" {
@@ -113,13 +127,13 @@ func Next(entries []wshrpc.RunQueueEntry, runs map[string]*waveobj.Run, maxActiv
 					start = e.Id
 				}
 			default:
-				block[e.Id] = runTitle(after) + " was " + endedAs(after, reason)
+				block[e.Id] = Block{Reason: runTitle(after) + " was " + endedAs(after, reason), On: e.After}
 			}
 		} else if !queued[e.After] {
-			block[e.Id] = e.After + " is not a run or a queued entry"
+			block[e.Id] = Block{Reason: e.After + " is not a run or a queued entry"}
 		}
 	}
-	return start, block
+	return start, block, unblock
 }
 
 // endedAs words how a final run that did not land ended, to follow "was": "held: <reason>" or "cancelled".

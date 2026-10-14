@@ -121,6 +121,7 @@ export function lineageAtomFor(agentsAtom: Atom<AgentVM[]>): Atom<Lineage> {
                 channelId: leadRun?.channeloid || run.channeloid || "",
                 title: runTitle(leadRun, dag),
                 project: lastPathSegment(leadRun?.projectpath),
+                projectPath: leadRun?.projectpath || undefined,
                 leadStarted: (leadRun?.phases ?? []).some((p) => (p.workerorefs ?? []).length > 0),
                 originId: leadRun?.origintabid || undefined,
                 createdTs: leadRun?.createdts,

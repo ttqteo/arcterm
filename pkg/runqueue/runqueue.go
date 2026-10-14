@@ -156,11 +156,14 @@ func MoveFirst(id string) error {
 	})
 }
 
-// SetBlocked marks the entry blocked, with the reason the tree and Needs you show.
-func SetBlocked(id, reason string) error {
+// SetBlocked marks the entry blocked, with the reason the tree and Needs you show. blockedOn is the run whose outcome
+// blocked it, so the block lifts when that run lands later; it is empty for a block that is not about a run's outcome
+// (a start that failed, a plan that is gone, an entry that was removed), which only the person lifts.
+func SetBlocked(id, reason, blockedOn string) error {
 	return update(id, func(entries []wshrpc.RunQueueEntry, i int) []wshrpc.RunQueueEntry {
 		entries[i].State = wshrpc.RunQueueState_Blocked
 		entries[i].Reason = reason
+		entries[i].BlockedOn = blockedOn
 		return entries
 	})
 }
@@ -170,6 +173,7 @@ func SetWaiting(id string) error {
 	return update(id, func(entries []wshrpc.RunQueueEntry, i int) []wshrpc.RunQueueEntry {
 		entries[i].State = wshrpc.RunQueueState_Waiting
 		entries[i].Reason = ""
+		entries[i].BlockedOn = ""
 		return entries
 	})
 }

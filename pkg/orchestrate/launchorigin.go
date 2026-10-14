@@ -17,18 +17,20 @@ import (
 const (
 	planReviewerOpener = "You are the plan reviewer for run "
 	verifierOpener     = "You are the final verifier for run "
+	landResolverOpener = "You are the land resolver for run "
 )
 
 var stageOpeners = map[string]string{
 	jarvis.UsageRole_PlanReviewer: planReviewerOpener,
 	jarvis.UsageRole_Verifier:     verifierOpener,
+	jarvis.UsageRole_LandResolver: landResolverOpener,
 }
 
 // LaunchOrigin is the run a session's own transcript says launched it.
 type LaunchOrigin struct {
 	RunID  string
 	TaskID string // the task whose tree it ran in; a lane's tasks share their first task's tree, which this names
-	Role   string // jarvis.UsageRole_PlanReviewer or _Verifier for a stage session, else ""
+	Role   string // jarvis.UsageRole_PlanReviewer, _Verifier or _LandResolver for a stage session, else ""
 }
 
 // LaunchOriginOf places a session the engine launched from its working directory and first prompt, for when the store

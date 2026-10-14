@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -153,7 +154,11 @@ var runsLandCmd = &cobra.Command{
 	Long: `Merge a finished run's wave/<run-id> branch back into the branch the run started from, in the
 project checkout, then remove its landing tree and branch. The engine does this itself when the run
 completes; this retries a held land once its reason is cleared. It can take minutes when it re-runs
-Check and Verify. --force lands a run whose final stage failed.`,
+Check and Verify. --force lands a run whose final stage failed.
+
+Lands of one project go one at a time. A land that is not next in line prints "queued" with its place and
+lands by itself in its turn; one whose branch conflicts with the base prints "resolving" while a resolver
+session merges it. Both exit 0: follow them with 'wsh runs show'.`,
 	Args:    cobra.ExactArgs(1),
 	PreRunE: preRunSetupRpcClient,
 	RunE:    runsLandRun,
@@ -873,9 +878,15 @@ func runsListLines(rows []runsRow, withChannel bool, now int64) []string {
 // runsFind locates a run by id. No RPC reads one run directly, and a project holds few channels, so this
 // walks them: --channel or the current project first, since that is where the id usually came from.
 func runsFind(cmd *cobra.Command, runId string) (*waveobj.Channel, *waveobj.Run, error) {
+	ch, run, _, err := runsFindIn(cmd, runId)
+	return ch, run, err
+}
+
+// runsFindIn is runsFind plus the runs of the channel it found the run in, which a land's place in line is read from
+func runsFindIn(cmd *cobra.Command, runId string) (*waveobj.Channel, *waveobj.Run, []*waveobj.Run, error) {
 	chans, err := runsChannels()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if here, herr := runsChannel(cmd, false); herr == nil {
 		chans = append([]*waveobj.Channel{here}, chans...)
@@ -888,15 +899,19 @@ func runsFind(cmd *cobra.Command, runId string) (*waveobj.Channel, *waveobj.Run,
 		seen[ch.OID] = true
 		rows, err := runsOf(ch)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		for _, row := range rows {
 			if row.Run.ID == runId {
-				return ch, row.Run, nil
+				runs := make([]*waveobj.Run, len(rows))
+				for i, r := range rows {
+					runs[i] = r.Run
+				}
+				return ch, row.Run, runs, nil
 			}
 		}
 	}
-	return nil, nil, fmt.Errorf("no run %s in any project (ids come from 'wsh runs list')", runId)
+	return nil, nil, nil, fmt.Errorf("no run %s in any project (ids come from 'wsh runs list')", runId)
 }
 
 // runsDigest reads the task digest of a run that owns a dag, or nil when it owns none or the read fails;
@@ -915,7 +930,7 @@ func runsDigest(channelId string, run *waveobj.Run) *wshrpc.CommandDagStatusRtnD
 }
 
 func runsShowRun(cmd *cobra.Command, args []string) error {
-	ch, run, err := runsFind(cmd, args[0])
+	ch, run, runs, err := runsFindIn(cmd, args[0])
 	if err != nil {
 		return err
 	}
@@ -924,7 +939,7 @@ func runsShowRun(cmd *cobra.Command, args []string) error {
 	if isJSON(cmd) {
 		return jsonOut(map[string]any{"channel": ch.Name, "channelid": ch.OID, "run": run, "dag": digest, "asks": asks})
 	}
-	for _, line := range runsShowLines(ch, run, digest, time.Now().UnixMilli(), asks) {
+	for _, line := range runsShowLines(ch, run, digest, time.Now().UnixMilli(), asks, runs) {
 		fmt.Println(line)
 	}
 	return nil
@@ -940,7 +955,7 @@ func runsAsks(channelId string, run *waveobj.Run) []wshrpc.DagAskItem {
 	return rtn.Asks
 }
 
-func runsShowLines(ch *waveobj.Channel, r *waveobj.Run, digest *wshrpc.CommandDagStatusRtnData, now int64, asks []wshrpc.DagAskItem) []string {
+func runsShowLines(ch *waveobj.Channel, r *waveobj.Run, digest *wshrpc.CommandDagStatusRtnData, now int64, asks []wshrpc.DagAskItem, runs []*waveobj.Run) []string {
 	lines := []string{
 		"run      " + r.ID,
 		"goal     " + runsClip(r.Goal, runsShowGoalWidth),
@@ -948,7 +963,7 @@ func runsShowLines(ch *waveobj.Channel, r *waveobj.Run, digest *wshrpc.CommandDa
 		fmt.Sprintf("status   %s  mode=%s  created %s", r.Status, runsMode(r), runsAgo(r.CreatedTs, now)),
 	}
 	// beside the status: a held land is what a reader must not miss, and the digest below runs to dozens of lines
-	lines = append(lines, runsLandLines(r.Land)...)
+	lines = append(lines, runsLandLines(r, runs)...)
 	lines = append(lines, runsQuestionLines(r.ID, asks)...)
 	route := r.Runtime
 	if r.Model != "" {
@@ -1154,27 +1169,69 @@ func runsEndFinal(channelId, runId, action, reason string) error {
 	return wshclient.DagActionCommand(RpcClient, wshrpc.CommandDagActionData{ChannelId: channelId, RunId: runId, Action: action, Notes: reason}, &wshrpc.RpcOpts{Timeout: runsCancelTimeoutMs})
 }
 
-// runsLandLines are where a run's branch stands on its way back into its base
-func runsLandLines(l *waveobj.RunLand) []string {
+// runsLandLines are where a run's branch stands on its way back into its base. runs are the runs of the run's
+// project: a queued land names its place in the line from them.
+func runsLandLines(r *waveobj.Run, runs []*waveobj.Run) []string {
+	l := r.Land
 	if l == nil {
 		return nil
 	}
 	head := "land     " + l.State
 	switch {
+	case l.State == orchestrate.LandState_Queued:
+		head += runsQueuedLandTail(r, runs)
+	case l.State == orchestrate.LandState_Resolving:
+		head += ": a resolver is merging " + cmp.Or(r.BaseBranch, "the base")
+		if len(l.Conflicts) > 0 {
+			head += " (" + strings.Join(l.Conflicts, ", ") + ")"
+		}
 	case l.Reason != "":
 		head += ": " + l.Reason
 	case l.Commit != "":
 		head += " " + runsShort(l.Commit)
 	}
 	lines := []string{head}
+	if l.State == orchestrate.LandState_Held && len(l.Conflicts) > 0 {
+		lines = append(lines, "         conflicts: "+strings.Join(l.Conflicts, ", "))
+	}
 	for _, note := range l.Notes {
 		lines = append(lines, "         note: "+note)
 	}
 	return lines
 }
 
+// runsQueuedLandTail is where a queued land stands in its project's line, or nothing when runs do not say.
+func runsQueuedLandTail(r *waveobj.Run, runs []*waveobj.Run) string {
+	place, ahead := orchestrate.LandPlace(runs, r.ID)
+	if place == 0 {
+		return ""
+	}
+	tail := fmt.Sprintf(": #%d in line", place)
+	if ahead != nil {
+		title, _, _ := strings.Cut(ahead.Goal, "\n")
+		tail += ", behind " + strings.TrimSpace(runsShortRun(ahead.ID)+" "+runsClip(title, runsGoalWidth))
+	}
+	return tail
+}
+
+// runsReleasedLines name the queued starts that wait on a run that has just landed: the loop starts each once there
+// is room. A start blocked for any other reason stays blocked, so it is not named.
+func runsReleasedLines(runID string, queue []wshrpc.RunQueueEntry) []string {
+	var names []string
+	for _, e := range queue {
+		if e.After != runID || (e.State == wshrpc.RunQueueState_Blocked && e.BlockedOn != runID) {
+			continue
+		}
+		names = append(names, strings.TrimSpace(e.Id+" "+runsClip(e.Title, runsGoalWidth)))
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	return []string{"         queued runs after it start when there is room: " + strings.Join(names, ", ")}
+}
+
 func runsLandRun(cmd *cobra.Command, args []string) error {
-	ch, run, err := runsFind(cmd, args[0])
+	ch, run, runs, err := runsFindIn(cmd, args[0])
 	if err != nil {
 		return err
 	}
@@ -1183,10 +1240,18 @@ func runsLandRun(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	for _, line := range runsLandLines(land) {
+	run.Land = land
+	for _, line := range runsLandLines(run, runs) {
 		fmt.Println(line)
 	}
-	if land.State != orchestrate.LandState_Landed {
+	switch land.State {
+	case orchestrate.LandState_Landed:
+		for _, line := range runsReleasedLines(run.ID, runsQueueEntries()) {
+			fmt.Println(line)
+		}
+	case orchestrate.LandState_Queued, orchestrate.LandState_Resolving:
+		// in line, or being merged with its base: it lands by itself, so this is no failure
+	default:
 		return fmt.Errorf("run %s did not land", run.ID)
 	}
 	return nil
@@ -1290,6 +1355,11 @@ func runsShort(sha string) string {
 		return "?"
 	}
 	return sha[:min(7, len(sha))]
+}
+
+// runsShortRun is a run id's first 8 characters, the form the cockpit and the effort notes name a run by
+func runsShortRun(id string) string {
+	return id[:min(8, len(id))]
 }
 
 func runsClip(s string, n int) string {

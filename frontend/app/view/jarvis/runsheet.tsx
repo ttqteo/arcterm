@@ -17,7 +17,7 @@ import { diffScopeOfRun, openDiff } from "@/app/view/agents/agentdiffnav";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { jumpToAgent } from "@/app/view/agents/channelsprimitives";
-import { runAtom } from "@/app/view/agents/channelsstore";
+import { activeChannelRunsAtom, runAtom } from "@/app/view/agents/channelsstore";
 import { ChildAskCard } from "@/app/view/agents/childaskcard";
 import { userOwnedAsks } from "@/app/view/agents/childaskmodel";
 import { childAsksAtom } from "@/app/view/agents/childaskstore";
@@ -68,12 +68,15 @@ import {
     configLine,
     doneBody,
     finalStageEndable,
+    landDock,
     orderedTasks,
     runGraphRef,
+    sheetLandPlace,
     sheetLead,
     sheetStatus,
     taskRow,
     taskSectionMeta,
+    type LandPlaceRead,
     type SheetBar,
     type SheetDagRead,
     type SheetRowAction,
@@ -143,6 +146,8 @@ type SheetCtx = {
     run: Run;
     agents: AgentVM[];
     now: number;
+    // a queued land's place among its project's runs
+    landPlace?: LandPlaceRead;
     onClose: () => void;
 };
 
@@ -161,6 +166,9 @@ export function RunSheet({
     const run = useAtomValue(runAtom(runProp.id)) ?? runProp;
     const agents = useAtomValue(model.agentsAtom);
     const now = useAtomValue(model.nowAtom);
+    // the sheet's channel is the active one, and a project's runs are all in its channel
+    const channelRuns = useAtomValue(activeChannelRunsAtom);
+    const landPlace = run.land?.state === "queued" ? sheetLandPlace(run, channelRuns) : undefined;
 
     // a done run shows its sealed evidence; one sealed before the feature existed is backfilled once, and the
     // mirrored update re-renders this with run.evidence present
@@ -170,7 +178,7 @@ export function RunSheet({
         }
     }, [run.id, run.status, run.evidence]);
 
-    const ctx: SheetCtx = { model, channel, run, agents, now, onClose };
+    const ctx: SheetCtx = { model, channel, run, agents, now, landPlace, onClose };
     const graph = runGraphRef(run);
     if (graph != null) {
         return <LinkedRunSheet ctx={ctx} dagOref={"dag:" + graph} />;
@@ -194,7 +202,15 @@ function RunSheetFrame({ ctx, dag }: { ctx: SheetCtx; dag: SheetDagRead | null }
     const userAsks = userOwnedAsks(asks);
     const asker = leadAsker(run, agents);
     const survivors = cancelSurvivors(run, agents).length;
-    const status = sheetStatus({ run, nowMs: now, dag, userAsks, workerAsking: asker != null, survivors });
+    const status = sheetStatus({
+        run,
+        nowMs: now,
+        landPlace: ctx.landPlace,
+        dag,
+        userAsks,
+        workerAsking: asker != null,
+        survivors,
+    });
     const body = doneBody(run);
     const group = dag?.group ?? null;
     const finalEntry = finalCheckEntry(group);
@@ -1027,6 +1043,7 @@ function Dock({
     const worker = run.mode !== "orchestrator" && !isTerminal(run.status) ? leadWorker(run, agents) : undefined;
     // a held land leads the dock: the run is done and waits only on the human clearing the reason and retrying
     const held = run.land?.state === "held";
+    const landLine = landDock(run, ctx.landPlace);
     const [landing, setLanding] = useState(false);
     // a blocked run's stopped worker, restarted in its own session (the palette's run:resume)
     const resumePhase = currentPhaseIndex(run);
@@ -1062,13 +1079,31 @@ function Dock({
     };
     return (
         <div data-run-sheet-dock className="flex flex-col gap-1.5 border-t border-edge-faint px-4 py-[11px]">
-            {held ? (
+            {landLine?.kind === "held" ? (
+                <>
+                    <span
+                        data-run-sheet-land-held
+                        className="text-[11px] leading-[1.45] text-warning [overflow-wrap:anywhere]"
+                    >
+                        Not merged back: {landLine.reason}
+                        <span className="text-muted"> · the work is on wave/{run.id}</span>
+                    </span>
+                    {landLine.conflicts != null ? (
+                        <span
+                            data-run-sheet-land-conflicts
+                            className="text-[11px] leading-[1.45] text-muted [overflow-wrap:anywhere]"
+                        >
+                            Conflicts: {landLine.conflicts}
+                        </span>
+                    ) : null}
+                </>
+            ) : landLine != null ? (
+                // in line or with a resolver: the engine carries it on, so this is a reading and has no button
                 <span
-                    data-run-sheet-land-held
-                    className="text-[11px] leading-[1.45] text-warning [overflow-wrap:anywhere]"
+                    data-run-sheet-land-line={landLine.kind}
+                    className="text-[11px] leading-[1.45] text-working [overflow-wrap:anywhere]"
                 >
-                    Not merged back: {run.land?.reason || "the engine gave no reason"}
-                    <span className="text-muted"> · the work is on wave/{run.id}</span>
+                    {landLine.text}
                 </span>
             ) : null}
             <div className="flex items-center gap-2">

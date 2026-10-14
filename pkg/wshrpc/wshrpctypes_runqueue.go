@@ -24,6 +24,7 @@ type RunQueueEntry struct {
 	QueuedTs    int64                `json:"queuedts"`
 	State       string               `json:"state"` // RunQueueState_*
 	Reason      string               `json:"reason,omitempty"`
+	BlockedOn   string               `json:"blockedon,omitempty"` // the run whose outcome blocked it; set only for that kind of block
 }
 
 // RunQueueCommands are how `wsh runs` and the cockpit hand a start to the queue and act on what waits in it.

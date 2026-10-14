@@ -289,7 +289,8 @@ type Run struct {
 	// reviewer is placed only by these. Empty for runs the engine did not launch.
 	TaskId string `json:"taskid,omitempty"`
 	Review bool   `json:"review,omitempty"`
-	// StageRole marks a dag-level judging session, one that works no task: "plan-reviewer" or "verifier".
+	// StageRole marks a dag-level session that works no task: "plan-reviewer" or "verifier" (judging), or
+	// "land-resolver" (merging the base into the run's branch).
 	StageRole string `json:"stagerole,omitempty"`
 	// Branch is the git branch a dag child's worker committed on: its lane's wave/<key>. Cleanup deletes the
 	// branch and the worktree, so a finished worker's branch is known only from here. Empty outside a repo.
@@ -329,7 +330,7 @@ func (*Run) GetOType() string {
 
 // RunLand is where a run's branch stands on its way back into the branch it started from.
 type RunLand struct {
-	State  string   `json:"state"`            // pending | landed | held
+	State  string   `json:"state"`            // pending | queued | resolving | landed | held
 	Reason string   `json:"reason,omitempty"` // why it is held
 	Commit string   `json:"commit,omitempty"` // the merge commit
 	Notes  []string `json:"notes,omitempty"`  // what the landed result was not verified against, e.g. a moved base
@@ -341,6 +342,18 @@ type RunLand struct {
 	Dirty bool `json:"dirty,omitempty"`
 	// Force is a held land that was asked to go past a failed final stage, so the engine's retry of it does too.
 	Force bool `json:"force,omitempty"`
+	// QueuedTs is when a queued land asked for its project's turn; the line is in this order. A land that goes back
+	// in line (its turn found the checkout claimed, or its resolver finished) keeps its first QueuedTs.
+	QueuedTs int64 `json:"queuedts,omitempty"`
+	// Resolver is the run id of the session merging the base into wave/<run> while State is resolving, and
+	// ResolverTs when it started. ResolverTried stays set on every later RunLand of the run: one resolver per land.
+	Resolver      string   `json:"resolver,omitempty"`
+	ResolverTs    int64    `json:"resolverts,omitempty"`
+	ResolverTried bool     `json:"resolvertried,omitempty"`
+	Conflicts     []string `json:"conflicts,omitempty"` // the files the base merge conflicted in
+	// Fixture marks a land a CDP scenario seeded to draw its state: the land driver never tends it. Only
+	// scripts/cdp/scenarios.mjs writes it, through object.UpdateObject.
+	Fixture bool `json:"fixture,omitempty"`
 }
 
 // TaskNode.ModelSource values: who set the task's RunSpec model.
@@ -674,7 +687,7 @@ type RunVerification struct {
 // UsageRow is one session's tokens on one model, for a run's per-role totals. Tokens only: prices stay in
 // the frontend's single price table.
 type UsageRow struct {
-	Role         string `json:"role"` // lead | worker | reviewer | plan-reviewer | verifier
+	Role         string `json:"role"` // lead | worker | reviewer | plan-reviewer | verifier | land-resolver
 	TaskId       string `json:"taskid,omitempty"`
 	Model        string `json:"model,omitempty"`
 	Input        int    `json:"input"`

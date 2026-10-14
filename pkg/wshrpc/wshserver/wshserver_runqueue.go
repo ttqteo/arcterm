@@ -43,7 +43,7 @@ const (
 // seams the tests script: what the loop reads and calls outside the queue's own file
 var (
 	// runQueueLoadRuns returns the runs the rules need keyed by id: every run not done or cancelled, plus each run in
-	// afterIds, finished or not.
+	// afterIds (the runs entries wait After or are blocked on), finished or not.
 	runQueueLoadRuns = loadRunQueueRuns
 	// runQueueCreateRun is the start itself: the same call `wsh runs start` makes.
 	runQueueCreateRun = func(ctx context.Context, data wshrpc.CommandCreateRunData) (*wshrpc.CommandCreateRunRtnData, error) {
@@ -145,49 +145,72 @@ func startReadyEntries(ctx context.Context) {
 	}
 }
 
-// nextQueuedStart applies the rules to the queue as it is now: it blocks the entries that can never start, and
-// returns the one to start, if any. It reads nothing it cannot see whole: an unreadable queue or run list starts
-// nothing and blocks nothing.
+// nextQueuedStart applies the rules to the queue as it is now: it blocks the entries that can never start, lifts the
+// blocks of entries whose run has landed since, and returns the one to start, if any. It reads nothing it cannot see
+// whole: an unreadable queue or run list starts nothing and changes nothing.
 func nextQueuedStart(ctx context.Context) (wshrpc.RunQueueEntry, bool) {
+	entry, ok, unblocked := readQueuedStart(ctx)
+	if !unblocked {
+		return entry, ok
+	}
+	// an entry that waits again may be the one to start, and the pass above skipped it while it was blocked
+	entry, ok, _ = readQueuedStart(ctx)
+	return entry, ok
+}
+
+// readQueuedStart is one pass over the queue. unblocked says it set entries waiting again, so the answer is stale.
+func readQueuedStart(ctx context.Context) (entry wshrpc.RunQueueEntry, ok, unblocked bool) {
 	entries, err := runqueue.List()
 	if err != nil {
 		log.Printf("runqueue: reading the queue: %v", err)
-		return wshrpc.RunQueueEntry{}, false
+		return wshrpc.RunQueueEntry{}, false, false
 	}
 	entries = withoutStartedEntries(entries)
 	if len(entries) == 0 {
-		return wshrpc.RunQueueEntry{}, false
+		return wshrpc.RunQueueEntry{}, false, false
 	}
-	afterIds := make([]string, 0, len(entries))
+	// a run that landed is done, so the loader reads it only when asked: the run each blocked entry waits on too
+	runIds := make([]string, 0, len(entries))
 	for _, e := range entries {
 		if e.After != "" {
-			afterIds = append(afterIds, e.After)
+			runIds = append(runIds, e.After)
+		}
+		if e.BlockedOn != "" {
+			runIds = append(runIds, e.BlockedOn)
 		}
 	}
-	runs, err := runQueueLoadRuns(ctx, afterIds)
+	runs, err := runQueueLoadRuns(ctx, runIds)
 	if err != nil {
 		log.Printf("runqueue: reading the runs: %v", err)
-		return wshrpc.RunQueueEntry{}, false
+		return wshrpc.RunQueueEntry{}, false, false
 	}
-	start, block := runqueue.Next(entries, runs, runQueueMaxActive())
-	blocked := false
-	for id, reason := range block {
-		switch err := runqueue.SetBlocked(id, reason); {
+	start, block, unblock := runqueue.Next(entries, runs, runQueueMaxActive())
+	changed := false
+	for id, b := range block {
+		switch err := runqueue.SetBlocked(id, b.Reason, b.On); {
 		case err == nil:
-			blocked = true
+			changed = true
 		case !errors.Is(err, runqueue.ErrNotFound):
 			log.Printf("runqueue: blocking %s: %v", id, err)
 		}
 	}
-	if blocked {
+	for _, id := range unblock {
+		switch err := runqueue.SetWaiting(id); {
+		case err == nil:
+			changed, unblocked = true, true
+		case !errors.Is(err, runqueue.ErrNotFound):
+			log.Printf("runqueue: unblocking %s: %v", id, err)
+		}
+	}
+	if changed {
 		publishRunQueue()
 	}
 	for _, e := range entries {
 		if e.Id == start {
-			return e, true
+			return e, true, unblocked
 		}
 	}
-	return wshrpc.RunQueueEntry{}, false
+	return wshrpc.RunQueueEntry{}, false, unblocked
 }
 
 // startQueuedEntry creates the run the entry stands for. On success the entry leaves the queue, any entry chained
@@ -205,7 +228,7 @@ func startQueuedEntry(ctx context.Context, e wshrpc.RunQueueEntry) error {
 		if ctx.Err() != nil {
 			return err
 		}
-		if serr := runqueue.SetBlocked(e.Id, err.Error()); serr != nil && !errors.Is(serr, runqueue.ErrNotFound) {
+		if serr := runqueue.SetBlocked(e.Id, err.Error(), ""); serr != nil && !errors.Is(serr, runqueue.ErrNotFound) {
 			log.Printf("runqueue: blocking %s after its start failed: %v", e.Id, serr)
 		}
 		publishRunQueue()
@@ -263,7 +286,7 @@ func publishRunQueue() {
 }
 
 // loadRunQueueRuns is the loop's view of the runs: those that count against the cap (not done or cancelled), and the
-// runs an entry waits After, which may be long finished.
+// runs an entry waits After or is blocked on, which may be long finished.
 func loadRunQueueRuns(ctx context.Context, afterIds []string) (map[string]*waveobj.Run, error) {
 	live, err := wstore.GetRunsByStatus(ctx, jarvis.RunStatus_Planning, jarvis.RunStatus_AwaitingReview, jarvis.RunStatus_Executing, jarvis.RunStatus_Blocked)
 	if err != nil {
@@ -443,7 +466,7 @@ func (ws *WshServer) RunQueueRemoveCommand(ctx context.Context, data wshrpc.Comm
 		if dep.After != e.Id {
 			continue
 		}
-		if err := runqueue.SetBlocked(dep.Id, e.Title+" was removed"); err != nil && !errors.Is(err, runqueue.ErrNotFound) {
+		if err := runqueue.SetBlocked(dep.Id, e.Title+" was removed", ""); err != nil && !errors.Is(err, runqueue.ErrNotFound) {
 			return err
 		}
 	}
