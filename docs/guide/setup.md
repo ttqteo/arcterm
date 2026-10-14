@@ -2,13 +2,14 @@
 
 Mỗi harness đọc chỉ dẫn và skill ở một chỗ khác nhau (`~/.claude/CLAUDE.md`, `~/.pi/agent/AGENTS.md`, `~/.codex/AGENTS.md`…). Nếu bạn muốn mọi agent tuân theo cùng một bộ quy tắc, việc tự chép tay ra từng nơi rất dễ lệch. Surface **Setup** giữ **một bản duy nhất** trong vault của arcterm rồi ghi nó vào mọi harness đã cài.
 
-Setup có ba tab:
+Setup có bốn tab:
 
 - **Instructions**: một tài liệu Markdown chung, được chiếu vào file chỉ dẫn của từng harness.
 - **Skills**: xem skill của mọi harness cạnh nhau và đưa chúng vào vault để arcterm giữ đồng bộ.
 - **Tools**: thư viện các tool TUI (lazygit, yazi, btop…) để cài và mở đúng thư mục. Tab này không dùng vault; xem [Agent → Tools](agent.md#tools).
+- **Project**: mọi file định hình Claude Code trong một project (chỉ dẫn, memory, settings, skill, `.arc/setup`), đọc ngay trong app thay vì mở terminal. Tab này chỉ đọc và không dùng vault; xem [Project](#project-file-định-hình-claude-trong-một-project).
 
-Mở bằng nav rail (nút **Setup** ở đáy) hoặc `Ctrl+G` rồi `.`. Setup không lọc theo project. Mỗi lần mở surface, nó đọc lại từ đĩa, nên file bạn sửa ngoài arcterm không bị hiện cũ.
+Mở bằng nav rail (nút **Setup** ở đáy) hoặc `Ctrl+G` rồi `.`. Instructions, Skills và Tools không lọc theo project; tab Project bắt đầu ở project đang lọc trên app bar. Mỗi lần mở surface, nó đọc lại từ đĩa, nên file bạn sửa ngoài arcterm không bị hiện cũ.
 
 ![Tab Instructions: cột trái liệt kê "For every harness" và các file của từng harness với trạng thái, ở giữa trình soạn thảo Markdown có số dòng và nút Discard / Save to N harnesses, bên phải ghi chú "How saving works"](images/setup-instructions.png)
 
@@ -135,3 +136,20 @@ arcterm mang theo năm skill, được đưa vào `<vault>/skills/` ở mỗi l�
 Chúng dạy agent cách dùng `wsh` và các quy ước của cockpit; xem [Tích hợp agent](agent-integration.md#skills-đi-kèm).
 
 > Mỗi lần đồng bộ, arcterm ghi đè lại các skill đi kèm bằng bản của app. Đừng sửa chúng trong vault; chỉ thư mục `.arc/` của skill được giữ. Muốn một harness thấy bản khác, đặt phần khác biệt vào `.arc/<harness>.yaml`.
+
+## Project: file định hình Claude trong một project
+
+Tab **Project** liệt kê mọi file Claude Code đọc khi chạy trong một project đã đăng ký, cùng hai file toàn cục cũng áp dụng cho project đó. Cột trái là danh sách project. Tab bắt đầu ở project đang lọc trên app bar, hoặc ở project đầu tiên khi bộ lọc là "all". Khi chưa có project nào, tab ghi "No projects yet".
+
+File chia thành sáu nhóm. Nhóm trống vẫn hiện một dòng "—" mờ, để bạn thấy file đó không có chứ không phải bị bỏ sót:
+
+| Nhóm | File |
+|---|---|
+| Instructions | `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`. File Claude đọc (file đầu tiên có trên đĩa, theo thứ tự này) mang ghi chú "Claude reads this"; `CLAUDE.local.md` cũng mang ghi chú đó khi có |
+| Memory | `~/.claude/projects/<slug>/memory/*.md`: `MEMORY.md` trước, rồi các file chia theo `type` trong frontmatter (user, feedback, project, reference, rồi other) |
+| Settings | `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json`. Dòng settings ghi số hook, `.mcp.json` ghi số MCP server, file không parse được ghi "invalid JSON" |
+| Skills & agents | `.claude/skills/*/SKILL.md`, `.claude/agents/*.md`, `.claude/commands/*.md` |
+| Setup | `.arc/setup` |
+| Global (gập sẵn) | `~/.claude/CLAUDE.md`, `~/.claude/settings.json` |
+
+Bấm vào một file để đọc nó ở rail bên phải. File Markdown hiện kèm thẻ frontmatter; JSON và `.arc/setup` hiện nguyên văn, kể cả JSON bị hỏng. Đầu rail có đường dẫn đầy đủ và nút **Copy path**. Tab đọc lại file khi bạn mở tab, khi đổi project và khi bấm ↻ (**Read the files again**). Tab không theo dõi file, nên một file bạn sửa ngoài arcterm chỉ hiện bản mới sau lần đọc lại kế tiếp. Nếu thư mục của project không còn, tab hiện một banner thay cho danh sách.
