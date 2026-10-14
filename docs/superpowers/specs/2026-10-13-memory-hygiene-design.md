@@ -111,7 +111,8 @@ until they restart.
 ## The check
 
 Runs weekly per project (an hourly ticker, like `jarvisvolunteer.StartLooseEndSweep`, that checks
-projects whose last check is 7 days old, so restarts don't reset the clock) and on **Check now**.
+projects whose last check attempt is 7 days old, so restarts don't reset the clock and a failed check
+waits a week rather than calling the model every hour) and on **Check now**, which runs at any time.
 
 1. **Inventory.** Read the folder: the index lines, and each file's frontmatter, body, size and
    sha256.
@@ -154,7 +155,9 @@ A failed judge run keeps the last good result and shows "Last check failed: <rea
   check" with **Check again** (board `ChangedOnDisk`), and nothing is written. Otherwise Arc copies the
   originals to `<data dir>/memhygiene/backups/<applyId>/` with a manifest, then writes each file
   atomically (temp file + rename).
-- **Keep as is** records the verdict against the change's identity (kind + files + their hashes).
+- **Keep as is** records the verdict against the change's identity (kind + files + their hashes). It
+  applies only to an open or conflicting change; **Review again** only to a kept one. Arc refuses
+  either on any other status, naming it.
 - **Undo** restores the backup if every file still has the hash Arc wrote. Otherwise it reports which
   file changed and doesn't write anything. **Review again** reopens a kept change.
 - The sweep deletes backups older than 30 days. The rail shows the expiry date ("kept a copy of the

@@ -303,6 +303,11 @@ describe("indexCards", () => {
         expect(indexCards(p)[0].after).toBe("Nothing left to review here.");
     });
 
+    it("says not checked yet, not nothing left, before any check", () => {
+        const p = project({ checkedat: 0, nextcheckat: 0, changes: [] });
+        expect(indexCards(p)[0].after).toBe("Not checked yet.");
+    });
+
     it("draws the shared and own index during a split, each with its own delta", () => {
         const p = splitProject([
             change("m1", {

@@ -76,7 +76,8 @@ function sharedRepo(p: MemHygieneProject): string {
     return repoName(p.path, p.formershared || p.folder);
 }
 
-// an undecided change: open, or found changed on disk and waiting on a fresh check.
+// an undecided change: open, or found changed on disk and waiting on a fresh check. memhygiene.Pending
+// in pkg/memhygiene/split.go mirrors it.
 export function isPending(c: MemChange): boolean {
     return c.status !== "applied" && c.status !== "kept";
 }
@@ -208,14 +209,14 @@ export interface IndexCard {
 // the stored index is re-measured after every apply and undo, so it already holds applied changes;
 // only the changes still to review move the after-total.
 function indexCard(
+    p: MemHygieneProject,
     label: string,
     role: string,
     ix: MemIndexStats,
-    changes: MemChange[],
     delta: "indexdelta" | "ownindexdelta"
 ): IndexCard {
     const has = ix.exists || ix.lines > 0;
-    const rest = changes
+    const rest = p.changes
         .filter(isPending)
         .map((c) => c[delta])
         .filter((d) => d && (d.lines || d.bytes));
@@ -228,31 +229,32 @@ function indexCard(
         kb: has ? `${kb(ix.bytes)} of ${LIMIT_BYTES / 1000} KB` : "none yet",
         linesPct: pctOf(ix.lines, LIMIT_LINES),
         kbPct: pctOf(ix.bytes, LIMIT_BYTES),
-        after:
-            rest.length > 0
-                ? `After the changes still to review: ${count(lines, "line")} · ${kb(bytes)} KB`
-                : "Nothing left to review here.",
+        after: !p.checkedat
+            ? "Not checked yet."
+            : rest.length > 0
+              ? `After the changes still to review: ${count(lines, "line")} · ${kb(bytes)} KB`
+              : "Nothing left to review here.",
     };
 }
 
 export function indexCards(p: MemHygieneProject): IndexCard[] {
     if (!isSplit(p)) {
-        return [indexCard("MEMORY.md", `Loaded by ${p.project}`, p.index, p.changes, "indexdelta")];
+        return [indexCard(p, "MEMORY.md", `Loaded by ${p.project}`, p.index, "indexdelta")];
     }
     const done = switched(p);
     return [
         indexCard(
+            p,
             `${sharedRepo(p)}’s MEMORY.md`,
             done ? "No longer loaded here" : `Loaded by ${p.project} today`,
             p.index,
-            p.changes,
             "indexdelta"
         ),
         indexCard(
+            p,
             `${p.project}’s MEMORY.md`,
             done ? `Loaded by ${p.project}` : "Loaded once you switch over",
             p.ownindex ?? NO_INDEX,
-            p.changes,
             "ownindexdelta"
         ),
     ];

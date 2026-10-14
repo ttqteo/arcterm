@@ -84,15 +84,18 @@ func RemoveShared(project string, shared *Inventory, sort map[string][]string, s
 	return out
 }
 
+// Pending: the change is still to review, open or changed on disk since the check. memorymodel.ts
+// isPending mirrors it.
+func Pending(c wshrpc.MemChange) bool {
+	return c.Status == "" || c.Status == splitStatusOpen || c.Status == splitStatusConflict
+}
+
 // OpenSharedChanges counts the shared-memory changes still to review. Switching over while it's
 // above 0 would drop those memories from the project's sessions.
 func OpenSharedChanges(changes []wshrpc.MemChange) int {
 	n := 0
 	for _, c := range changes {
-		if c.Group != splitGroupShared {
-			continue
-		}
-		if c.Status == "" || c.Status == splitStatusOpen || c.Status == splitStatusConflict {
+		if c.Group == splitGroupShared && Pending(c) {
 			n++
 		}
 	}

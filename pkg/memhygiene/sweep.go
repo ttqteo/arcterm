@@ -14,7 +14,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
-// the sweep only looks for due projects each tick; the weekly cadence lives in the state's CheckedAt,
+// the sweep only looks for due projects each tick; the weekly cadence lives in the state's NextCheckAt,
 // so a restart doesn't reset it
 const sweepInterval = time.Hour
 
@@ -75,10 +75,10 @@ func sweepOnce(ctx context.Context, now time.Time) {
 	}
 }
 
-// sweepDue: last checked a week ago or never, and not kept sharing (the user chose to keep sharing,
-// so only Check now checks it).
+// sweepDue: its next check is due (a week after the last attempt, failed or not) or it was never
+// attempted, and it's not kept sharing (the user chose to keep sharing, so only Check now checks it).
 func sweepDue(st *State, now time.Time) bool {
-	if st.Checking || now.Sub(time.UnixMilli(st.CheckedAt)) < checkInterval {
+	if st.Checking || now.UnixMilli() < st.NextCheckAt {
 		return false
 	}
 	return !slices.ContainsFunc(st.Changes, func(c wshrpc.MemChange) bool {

@@ -63,9 +63,16 @@ func Decide(project, changeID, verdict string) (*wshrpc.MemHygieneProject, error
 				return err
 			}
 		case wshrpc.MemVerdict_Keep:
+			// an applied change's files stay applied, so keeping it would misstate what's on disk
+			if !Pending(*c) {
+				return entryRefuse(st, c, verdict)
+			}
 			c.Status, c.DecidedAt = checkStatusKept, now.UnixMilli()
 			return nil
 		case wshrpc.MemVerdict_Reopen:
+			if c.Status != checkStatusKept {
+				return entryRefuse(st, c, verdict)
+			}
 			c.Status, c.DecidedAt, c.ConflictFile = splitStatusOpen, 0, ""
 			return nil
 		}
@@ -75,6 +82,10 @@ func Decide(project, changeID, verdict string) (*wshrpc.MemHygieneProject, error
 		return nil, err
 	}
 	return &st.MemHygieneProject, nil
+}
+
+func entryRefuse(st *State, c *wshrpc.MemChange, verdict string) error {
+	return fmt.Errorf("memory hygiene: can't %s %q in %s: it's %s", verdict, c.Title, st.Project, c.Status)
 }
 
 func entryApply(st *State, c *wshrpc.MemChange, now time.Time) error {
@@ -121,7 +132,9 @@ func entryUndo(st *State, c *wshrpc.MemChange) error {
 	return nil
 }
 
-// entryBegin marks a registered project as checking, refusing one that already is.
+// entryBegin marks a registered project as checking, refusing one that already is. It moves the next
+// sweep a week out up front, so a check that fails or is cut short waits for the next weekly sweep
+// instead of making a model call every hour.
 func entryBegin(project string) error {
 	if _, ok := registryFn()[project]; !ok {
 		return fmt.Errorf("memory hygiene: %s is not a registered project", project)
@@ -131,6 +144,7 @@ func entryBegin(project string) error {
 			return fmt.Errorf("memory hygiene: %s is already being checked", project)
 		}
 		st.Checking = true
+		st.NextCheckAt = time.Now().Add(checkInterval).UnixMilli()
 		return nil
 	})
 	return err

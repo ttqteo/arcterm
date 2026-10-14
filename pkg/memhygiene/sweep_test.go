@@ -5,6 +5,7 @@ package memhygiene
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -13,6 +14,7 @@ func sweepTestSetCheckedAt(t *testing.T, project string, at time.Time) {
 	t.Helper()
 	if _, err := Update(project, func(st *State) error {
 		st.CheckedAt = at.UnixMilli()
+		st.NextCheckAt = at.Add(checkInterval).UnixMilli()
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -56,6 +58,42 @@ func TestSweepPicksStaleProjectsOnly(t *testing.T) {
 	}
 	if n := len(env.judgePrompts()); n != 2 {
 		t.Errorf("want one judge call for each due project, got %d", n)
+	}
+}
+
+func TestSweepWaitsAWeekAfterAFailedCheck(t *testing.T) {
+	env := checkTestSetup(t)
+	checkTestSimple(t, env, "p")
+	now := time.Now()
+	old := now.Add(-8 * 24 * time.Hour)
+	sweepTestSetCheckedAt(t, "p", old)
+	env.setReply(func(string) (string, error) { return "", errors.New("model down") })
+
+	sweepOnce(context.Background(), now)
+	st := checkTestLoad(t, "p")
+	if st.LastError == "" || st.CheckedAt != old.UnixMilli() {
+		t.Fatalf("the sweep's check didn't fail: lasterror %q, checkedat %d", st.LastError, st.CheckedAt)
+	}
+	if n := len(env.judgePrompts()); n != 1 {
+		t.Fatalf("want one judge call from the failed check, got %d", n)
+	}
+
+	sweepOnce(context.Background(), now.Add(sweepInterval))
+	if n := len(env.judgePrompts()); n != 1 {
+		t.Fatalf("the next hourly sweep retried the failed check: %d judge calls", n)
+	}
+
+	sweepOnce(context.Background(), now.Add(checkInterval+time.Minute))
+	if n := len(env.judgePrompts()); n != 2 {
+		t.Fatalf("the weekly sweep after the failure didn't retry it: %d judge calls", n)
+	}
+
+	env.setReply(func(string) (string, error) { return checkTestNoChanges, nil })
+	if err := StartCheck("p"); err != nil {
+		t.Fatalf("Check now refused a project whose sweep isn't due: %v", err)
+	}
+	if st := sweepTestWait(t, "p", old.UnixMilli()); st.CheckedAt == old.UnixMilli() {
+		t.Fatalf("Check now didn't check after a failure: %q", st.LastError)
 	}
 }
 

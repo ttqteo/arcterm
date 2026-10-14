@@ -4,13 +4,67 @@
 package memhygiene
 
 import (
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
 // the package's shared test helpers: every task's tests use these and define no git or temp-repo
 // helper of their own.
+
+// fakeGitEnv makes the test binary act as a git outside any repo whose messages follow the locale, as
+// a translated git's do, so a test needn't find a translated git installed.
+const fakeGitEnv = "MEMHYGIENE_FAKE_GIT"
+
+func TestMain(m *testing.M) {
+	if os.Getenv(fakeGitEnv) != "" {
+		msg := "fatal: kein Git-Repository (oder irgendeines der Elternverzeichnisse): .git"
+		if os.Getenv("LC_ALL") == "C" {
+			msg = "fatal: not a git repository (or any of the parent directories): .git"
+		}
+		fmt.Fprintln(os.Stderr, msg)
+		os.Exit(128)
+	}
+	os.Exit(m.Run())
+}
+
+// useLocalizedGit puts a copy of the test binary first on PATH as git, run as the fake above, with a
+// German locale set.
+func useLocalizedGit(t *testing.T) {
+	t.Helper()
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	name := "git"
+	if runtime.GOOS == "windows" {
+		name = "git.exe"
+	}
+	src, err := os.Open(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+	dst, err := os.OpenFile(filepath.Join(bin, name), os.O_CREATE|os.O_WRONLY, 0o755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(dst, src); err != nil {
+		dst.Close()
+		t.Fatal(err)
+	}
+	if err := dst.Close(); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv(fakeGitEnv, "1")
+	t.Setenv("LC_ALL", "de_DE.UTF-8")
+	t.Setenv("LANGUAGE", "de")
+}
 
 // initRepo makes a temp repo on branch main, hermetic against the user's git config, with one
 // initial commit.

@@ -522,3 +522,34 @@ func TestDecideRefusesUnknown(t *testing.T) {
 		t.Fatal("undo of a change that isn't applied must fail")
 	}
 }
+
+func TestDecideRefusesKeepAndReopenOutOfStatus(t *testing.T) {
+	env := checkTestSetup(t)
+	folder := checkTestSimple(t, env, "p")
+	env.setReply(func(string) (string, error) { return checkTestDelete("a.md"), nil })
+	checkTestRun(t, env, "p")
+	id := checkTestLoad(t, "p").Changes[0].Id
+
+	if _, err := Decide("p", id, "reopen"); err == nil || !strings.Contains(err.Error(), "open") {
+		t.Fatalf("reopen of an open change: %v, want an error naming its status", err)
+	}
+	checkTestDecide(t, "p", id, "apply")
+	if _, err := Decide("p", id, "keep"); err == nil || !strings.Contains(err.Error(), "applied") {
+		t.Fatalf("keep of an applied change: %v, want an error naming its status", err)
+	}
+	if _, err := Decide("p", id, "reopen"); err == nil || !strings.Contains(err.Error(), "applied") {
+		t.Fatalf("reopen of an applied change: %v, want an error naming its status", err)
+	}
+	if st := checkTestLoad(t, "p"); st.Changes[0].Status != "applied" {
+		t.Fatalf("a refused verdict moved the change to %q", st.Changes[0].Status)
+	}
+	if _, err := os.Stat(filepath.Join(folder, "a.md")); !os.IsNotExist(err) {
+		t.Fatalf("a refused verdict touched the applied files: %v", err)
+	}
+
+	checkTestDecide(t, "p", id, "undo")
+	checkTestDecide(t, "p", id, "keep")
+	if p := checkTestDecide(t, "p", id, "reopen"); p.Changes[0].Status != "open" {
+		t.Fatalf("reopen of a kept change left it %q", p.Changes[0].Status)
+	}
+}

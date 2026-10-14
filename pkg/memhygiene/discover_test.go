@@ -240,6 +240,18 @@ func TestDiscoverSkipsMissingPathAndFolder(t *testing.T) {
 	}
 }
 
+func TestDiscoverNotARepoUnderALocalizedGit(t *testing.T) {
+	path := t.TempDir()
+	claudeHome := t.TempDir()
+	want := discoverMemDir(t, claudeHome, agentobserve.SlugifyCwd(path))
+	useLocalizedGit(t)
+
+	r := discoverOnly(t, path, claudeHome)
+	if r.Skip != "" || r.Toplevel != path || r.Folder != want {
+		t.Fatalf("Skip, Toplevel, Folder = %q, %q, %q, want none, %q, %q", r.Skip, r.Toplevel, r.Folder, path, want)
+	}
+}
+
 func TestDiscoverNotARepoUsesPath(t *testing.T) {
 	path := t.TempDir()
 	claudeHome := t.TempDir()

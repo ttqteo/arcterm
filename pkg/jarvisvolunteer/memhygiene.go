@@ -30,7 +30,7 @@ func (p *MemoryHygieneProducer) Candidates(_ context.Context, _ *Trigger) ([]Can
 	}
 	var out []Candidate
 	for _, proj := range projects {
-		n := openChanges(proj.Changes)
+		n := pendingChanges(proj.Changes)
 		// a CheckedAt of 0 has no fact to stamp from; the gate's prefilter would drop it anyway
 		if n == 0 || proj.CheckedAt == 0 {
 			continue
@@ -52,10 +52,10 @@ func (p *MemoryHygieneProducer) Candidates(_ context.Context, _ *Trigger) ([]Can
 	return out, nil
 }
 
-func openChanges(changes []wshrpc.MemChange) int {
+func pendingChanges(changes []wshrpc.MemChange) int {
 	n := 0
 	for _, c := range changes {
-		if c.Status == "open" {
+		if memhygiene.Pending(c) {
 			n++
 		}
 	}

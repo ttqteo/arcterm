@@ -22,19 +22,19 @@ func changes(statuses ...string) []wshrpc.MemChange {
 	return out
 }
 
-func TestMemoryHygieneProducerOnePerProjectWithOpenChanges(t *testing.T) {
+func TestMemoryHygieneProducerOnePerProjectWithPendingChanges(t *testing.T) {
 	ps := []wshrpc.MemHygieneProject{
-		{Project: "waveterm", CheckedAt: 1000, Changes: changes("open", "applied", "open", "kept")},
-		{Project: "decided", CheckedAt: 2000, Changes: changes("applied", "kept", "conflict")},
+		{Project: "waveterm", CheckedAt: 1000, Changes: changes("open", "applied", "conflict", "kept")},
+		{Project: "decided", CheckedAt: 2000, Changes: changes("applied", "kept")},
 		{Project: "empty", CheckedAt: 3000, Changes: []wshrpc.MemChange{}},
-		{Project: "single", CheckedAt: 4000, Changes: changes("open")},
+		{Project: "single", CheckedAt: 4000, Changes: changes("conflict")},
 	}
 	got, err := hygieneProducer(ps).Candidates(context.Background(), &Trigger{Kind: TriggerSweep})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(got) != 2 {
-		t.Fatalf("want one candidate per project with open changes (2), got %+v", got)
+		t.Fatalf("want one candidate per project with open or conflicting changes (2), got %+v", got)
 	}
 	want := Candidate{
 		Class:      ClassMemoryHygiene,

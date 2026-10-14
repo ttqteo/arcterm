@@ -40,7 +40,7 @@ type MemHygieneProject struct {
 	Project      string         `json:"project"`
 	Path         string         `json:"path"`
 	CheckedAt    int64          `json:"checkedat"`   // unix ms; 0 = never checked
-	NextCheckAt  int64          `json:"nextcheckat"` // unix ms; 0 = never checked
+	NextCheckAt  int64          `json:"nextcheckat"` // unix ms, a week after the last attempt; 0 = never attempted
 	Checking     bool           `json:"checking"`
 	LastError    string         `json:"lasterror"` // the last failed check's reason; the last good result stays
 	Memories     int            `json:"memories"`
