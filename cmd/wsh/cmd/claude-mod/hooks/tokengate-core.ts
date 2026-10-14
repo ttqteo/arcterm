@@ -115,52 +115,72 @@ export type SpawnAsk = (g: Group) => Promise<SpawnVerdict>;
 export function createSpawnGate(sleep: (ms: number) => Promise<void>) {
     let decision: { kind: Decision; reason: string | null } = { kind: null, reason: null };
     let open: { group: Group; verdict: Promise<SpawnVerdict> } | null = null;
-    return {
-        // why the spawn may not run; null lets it
-        async check(tool: SpawnTool, input: Record<string, unknown>, ask: SpawnAsk): Promise<string | null> {
-            if (decision.kind === "allow-turn" || decision.kind === "allow-session") {
-                return null;
-            }
-            if (decision.kind === "deny-turn") {
-                return decision.reason;
-            }
-            const count = spawnCount(tool, input);
-            let mine = open;
-            if (mine) {
-                // gathering, or the card is already up: this spawn shares the group's verdict
-                mine.group = joinGroup(mine.group, tool, count);
-            } else {
-                const opened: { group: Group; verdict: Promise<SpawnVerdict> } = {
-                    group: joinGroup(null, tool, count),
-                    verdict: Promise.resolve(RUN_VERDICT),
-                };
-                opened.verdict = (async () => {
-                    try {
-                        await sleep(GATHER_MS);
-                        const v = await ask(opened.group);
-                        const kind = decisionAfter(v);
-                        if (kind) {
-                            decision = { kind, reason: v.reason };
-                        }
-                        return v;
-                    } finally {
-                        open = null;
+    // claude runs every hook whose tool matches a call, and the Agent tool still answers to Task, its old name: one
+    // Agent call reaches check from both hooks. a call's answer is kept by its tool_use_id until the next prompt
+    const calls = new Map<string, Promise<string | null>>();
+
+    async function decide(tool: SpawnTool, input: Record<string, unknown>, ask: SpawnAsk): Promise<string | null> {
+        if (decision.kind === "allow-turn" || decision.kind === "allow-session") {
+            return null;
+        }
+        if (decision.kind === "deny-turn") {
+            return decision.reason;
+        }
+        const count = spawnCount(tool, input);
+        let mine = open;
+        if (mine) {
+            // gathering, or the card is already up: this spawn shares the group's verdict
+            mine.group = joinGroup(mine.group, tool, count);
+        } else {
+            const opened: { group: Group; verdict: Promise<SpawnVerdict> } = {
+                group: joinGroup(null, tool, count),
+                verdict: Promise.resolve(RUN_VERDICT),
+            };
+            opened.verdict = (async () => {
+                try {
+                    await sleep(GATHER_MS);
+                    const v = await ask(opened.group);
+                    const kind = decisionAfter(v);
+                    if (kind) {
+                        decision = { kind, reason: v.reason };
                     }
-                })();
-                mine = opened;
-                open = opened;
+                    return v;
+                } finally {
+                    open = null;
+                }
+            })();
+            mine = opened;
+            open = opened;
+        }
+        const v = await mine.verdict;
+        return v.run ? null : v.reason;
+    }
+
+    return {
+        // why the spawn may not run; null lets it. a call already asked about gets the same answer, kept before any
+        // await so a hook that arrives while the gate gathers finds it too
+        check(tool: SpawnTool, input: Record<string, unknown>, ask: SpawnAsk): Promise<string | null> {
+            const id = filled(input.tool_use_id) ? input.tool_use_id : null;
+            const seen = id ? calls.get(id) : undefined;
+            if (seen) {
+                return seen;
             }
-            const v = await mine.verdict;
-            return v.run ? null : v.reason;
+            const answer = decide(tool, input, ask);
+            if (id) {
+                calls.set(id, answer);
+            }
+            return answer;
         },
         // the person's next prompt ends a turn's say, a deny included; a session's stays
         promptSubmitted() {
+            calls.clear();
             if (decision.kind !== "allow-session") {
                 decision = { kind: null, reason: null };
             }
         },
         // a new or cleared session forgets every say
         sessionStarted() {
+            calls.clear();
             decision = { kind: null, reason: null };
         },
     };
