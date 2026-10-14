@@ -34,6 +34,7 @@ import {
     refreshHistory,
 } from "@/app/view/agents/githistorystore";
 import { anyFilterActive } from "@/app/view/agents/historyquery";
+import { initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
 import { openLauncher, type LauncherModel } from "@/app/view/agents/launcherstore";
 import { activeReviewKeyAtom, canSendKey, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
 import { canRequest } from "@/app/view/agents/proseanchor";
@@ -902,8 +903,13 @@ export function buildUsageBindings(handlers: {
 // History and a session's transcript cover the terminal, so the keys that act on the focused agent (j/k, the arrows, d, f,
 // r, c) stand down there: History publishes its own list cursor on this surface, and j/k must belong to it alone
 const centerAtRest = () => globalStore.get(centerModeAtom) === "terminal";
-const agentNav = (ctx: KeyContext) => navigate(ctx) && ctx.surface === "agent" && centerAtRest();
-const agentNavStrict = (ctx: KeyContext) => navigateStrict(ctx) && ctx.surface === "agent" && centerAtRest();
+// The initiative popover on the agent header owns its keys (m, n, the arrows, Enter, Escape) while it is open, so every
+// single-key Agent binding stands down: this dispatcher runs on window capture, ahead of the popover's own handler.
+const initiativePopoverClosed = () => globalStore.get(initiativePopoverAtom) == null;
+const agentNav = (ctx: KeyContext) =>
+    navigate(ctx) && ctx.surface === "agent" && centerAtRest() && initiativePopoverClosed();
+const agentNavStrict = (ctx: KeyContext) =>
+    navigateStrict(ctx) && ctx.surface === "agent" && centerAtRest() && initiativePopoverClosed();
 
 // Agent (Focus) surface bindings. Moved out of agentsurface.tsx so the registry has one home
 // and the array is stable: run() reads live atoms instead of closing over per-render focus/order.
@@ -1055,6 +1061,27 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             label: "Toggle agent rail",
             when: nav,
             run: () => globalStore.set(railVisibleAtom, !globalStore.get(railVisibleAtom)),
+        },
+        {
+            id: "agent:initiative",
+            keys: "i",
+            group: "Agent",
+            label: "The agent's initiative",
+            // Opens the popover on the focused agent's initiative, or the Link to initiative picker when it has none.
+            // The focused agent is in the model's atoms, which a when() cannot read (whenstate.ts), so run() looks
+            // it up and lets the key pass when there is nothing to open. Open, the popover's own keys take over
+            // (agentNav yields), and `i` there closes it.
+            when: nav,
+            run: () => {
+                const agent = globalStore.get(model.agentsAtom).find((a) => a.id === focusId());
+                if (agent == null) {
+                    return false;
+                }
+                if (agent.effortId == null) {
+                    return clickThrough("[data-initiative-link]");
+                }
+                globalStore.set(initiativePopoverAtom, agent.id);
+            },
         },
         {
             id: "agent:fullscreen",

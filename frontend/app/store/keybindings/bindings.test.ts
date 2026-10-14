@@ -35,6 +35,7 @@ import { reopenClosedAgent } from "@/app/cockpit/cockpit-actions";
 import { openToolPicker } from "@/app/view/agents/toolsstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
+import { initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
 import { briefPeekRecordAtom } from "@/app/view/jarvis/jarvisstore";
 import { activeRunIdAtom, activeSubjectAtom } from "@/app/view/jarvis/jarvissubjectstore";
@@ -1815,6 +1816,91 @@ describe("the open avatar popup keeps its keys on every surface", () => {
                         );
                     }
                 }
+            }
+        }
+        expect(claimed).toEqual([]);
+    });
+});
+
+describe("agent:initiative", () => {
+    const nav: KeyContext = { surface: "agent", editable: false, modalOpen: false, leader: null };
+    const key = (k: string) =>
+        ({ key: k, code: "", control: false, shift: false, cmd: false, option: false, meta: false, alt: false }) as any;
+    const agent = (id: string, effortId?: string) => ({ id, kind: "agent", state: "idle", effortId });
+    const modelWith = (focus: string, agents: any[]) =>
+        ({
+            focusIdAtom: atom<string | undefined>(focus),
+            surfaceAtom: atom<SurfaceKey>("agent"),
+            agentsAtom: atom(agents),
+        }) as any;
+    const bindings = (model: any) => [...buildGlobalBindings(model), ...buildAgentBindings(model)];
+    const find = (model: any, id: string) => bindings(model).find((b) => b.id === id)!;
+
+    beforeEach(() => vi.stubGlobal("document", { activeElement: null, querySelector: () => null }));
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        globalStore.set(initiativePopoverAtom, null);
+    });
+
+    it("is i on the Agent surface, in navigate posture", () => {
+        const b = find(modelWith("a1", [agent("a1", "e1")]), "agent:initiative");
+        expect(b.keys).toBe("i");
+        expect(b.when!(nav)).toBe(true);
+        expect(b.when!({ ...nav, editable: true })).toBe(false); // typing in the terminal or a field
+        expect(b.when!({ ...nav, modalOpen: true })).toBe(false);
+        expect(b.when!({ ...nav, surface: "cockpit" })).toBe(false);
+    });
+
+    it("opens the popover for the focused agent that has an initiative", () => {
+        const model = modelWith("a2", [agent("a1", "e1"), agent("a2", "e2")]);
+        expect(find(model, "agent:initiative").run(nav)).not.toBe(false);
+        expect(globalStore.get(initiativePopoverAtom)).toBe("a2");
+    });
+
+    it("opens the Link to initiative picker for an agent with none, else lets the key pass", () => {
+        const model = modelWith("a1", [agent("a1")]);
+        expect(find(model, "agent:initiative").run(nav)).toBe(false); // no button on screen
+        const click = vi.fn();
+        vi.stubGlobal("document", { activeElement: null, querySelector: () => ({ click }) });
+        expect(find(model, "agent:initiative").run(nav)).not.toBe(false);
+        expect(click).toHaveBeenCalledTimes(1);
+        expect(globalStore.get(initiativePopoverAtom)).toBeNull();
+    });
+
+    it("lets the key pass when the focus is on no agent (a plain terminal)", () => {
+        expect(find(modelWith("t1", [agent("a1", "e1")]), "agent:initiative").run(nav)).toBe(false);
+        expect(globalStore.get(initiativePopoverAtom)).toBeNull();
+    });
+
+    it("yields while the popover is open, and so does every other single-key Agent binding", () => {
+        const model = modelWith("a1", [agent("a1", "e1")]);
+        const ids = [
+            "agent:initiative",
+            "agent:prev-up",
+            "agent:next-down",
+            "agent:prev-k",
+            "agent:next-j",
+            "agent:toggle-rail",
+            "agent:fullscreen",
+            "agent:back",
+        ];
+        for (const id of ids) {
+            expect(find(model, id).when!(nav), `${id} before`).toBe(true);
+        }
+        globalStore.set(initiativePopoverAtom, "a1");
+        for (const id of ids) {
+            expect(find(model, id).when!(nav), `${id} while open`).toBe(false);
+        }
+    });
+
+    it("leaves the popover's keys unclaimed while it is open: m, n, i, the arrows, Enter, Escape", () => {
+        const model = modelWith("a1", [agent("a1", "e1")]);
+        globalStore.set(initiativePopoverAtom, "a1");
+        const claimed: string[] = [];
+        for (const k of ["m", "n", "i", "ArrowUp", "ArrowDown", "Enter", "Escape"]) {
+            const result = matchBinding(key(k), nav, bindings(model));
+            if (result.kind === "run") {
+                claimed.push(`${k}: ${result.binding.id}`);
             }
         }
         expect(claimed).toEqual([]);

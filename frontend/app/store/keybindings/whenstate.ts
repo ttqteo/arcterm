@@ -31,6 +31,7 @@ import { canvasStateAtom } from "@/app/view/agents/canvasstore";
 import { compareOnAtom } from "@/app/view/agents/comparestore";
 import { docReviewStateAtom } from "@/app/view/agents/docreviewstore";
 import { historyFiltersAtom } from "@/app/view/agents/githistorystore";
+import { initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
 import { activeReviewKeyAtom, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
 import { dockedTerminalAtom } from "@/app/view/agents/railstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
@@ -69,6 +70,7 @@ export const PREDICATE_ATOMS: Atom<unknown>[] = [
     centerModeAtom, // buildAgentBindings: agentNav / agentNavStrict (every Agent key), agent:back, agent:leave-center
     tabSwitcherAtom, // buildGlobalBindings: switcher:cancel, and switcher:next / prev under the open switcher
     dockedTerminalAtom, // buildAgentBindings: agent:terminal-panel
+    initiativePopoverAtom, // buildAgentBindings: agentNav / agentNavStrict (every single-key Agent binding yields to the popover)
 ];
 
 function bumpWhenVersion() {
