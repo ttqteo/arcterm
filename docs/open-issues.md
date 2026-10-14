@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-14 (Conversations rescan)**
+
+- [ ] In an agent tab run `/clear` (or quit claude and start it again in that terminal): within a second the session it
+  left appears at the top of its project under Conversations, without leaving the Agent surface. `usesessionsscan.ts`.
+- [ ] Mark an old conversation for later (row menu): it moves to the top of its project folder, above newer ones.
+  `agentsidebarmodel.ts` `conversationTree`.
+
 **2026-10-14 (learned additions; the three CDP scenarios pass 14/14 on `main`, these need live agents)**
 
 - [ ] Note the same rule twice from two agents (`wsh learn note "<rule>" --key <k> --skill <name>`): a "Learned rule"

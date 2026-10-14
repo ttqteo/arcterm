@@ -49,6 +49,9 @@ new draws it as one of its release's cards and folds every other line under a co
 
 ### Fixed
 
+- **An ended session shows in Conversations right away** when its tab stays open: after `/clear`, after quitting
+  claude and starting it again in the same terminal, or after resuming another session there. A session marked for
+  later now stays at the top of its project instead of sinking under "Show more".
 - A run whose plan review failed no longer shows a green check on its finished fold in the Agent sidebar: the fold
   shows a red dot and "1 failed" until the lead's next round replaces that review.
 - What's new shows the open arrow only on notes that have more to read; a short note that already shows in full no
