@@ -72,15 +72,13 @@ export function PaletteNotesView(props: NotesViewProps) {
                             {active ? (
                                 <VerbHint verb={it.verb} />
                             ) : (
-                                <span className="shrink-0 font-mono text-[10.5px] text-muted">{it.meta}</span>
+                                <span className="shrink-0 text-[10.5px] text-muted">{it.meta}</span>
                             )}
                         </button>
                     );
                 })}
                 {overflow > 0 ? (
-                    <div className="shrink-0 px-2 py-0.5 font-mono text-[10.5px] text-muted">
-                        +{overflow} more, keep typing
-                    </div>
+                    <div className="shrink-0 px-2 py-0.5 text-[10.5px] text-muted">+{overflow} more, keep typing</div>
                 ) : null}
             </div>
             {/* keyed by note, so the next note starts at its top */}

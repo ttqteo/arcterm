@@ -1338,7 +1338,7 @@ function FinalRow({ model, run, agent }: { model: AgentsViewModel; run: RunInfo;
             </Slot>
             <div className="min-w-0 flex-1">
                 <div className="truncate text-[12.5px] font-medium text-ink-hi">{stageLabel("verifier")}</div>
-                <div className={cn("mt-[3px] truncate text-[10.5px] tabular-nums", FINAL_SUB_INK[view.tone])}>
+                <div data-final-sub className={cn("mt-[3px] truncate text-[10.5px] tabular-nums", FINAL_SUB_INK[view.tone])}>
                     {view.subline}
                 </div>
             </div>

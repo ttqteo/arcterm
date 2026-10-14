@@ -67,7 +67,7 @@ function RunIdChip({ id }: { id: string }) {
             onClick={copy}
             title={copied ? "Copied" : `Copy run id ${id}`}
             aria-label="Copy run id"
-            className="inline-flex flex-none cursor-pointer items-center gap-1.5 rounded-[5px] border border-border bg-surface-raised px-1.5 py-px text-secondary hover:border-edge-strong hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="inline-flex flex-none cursor-pointer items-center gap-1.5 rounded-[5px] border border-border bg-surface-raised font-mono px-1.5 py-px text-secondary hover:border-edge-strong hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
             {id.slice(0, RUN_ID_SHOWN)}
             {copied ? <Check size={11} aria-hidden className="text-success" /> : <Copy size={11} aria-hidden />}
@@ -113,7 +113,7 @@ export function SheetShell({
                         </span>
                     </div>
                     {meta || runId ? (
-                        <div className="flex min-w-0 items-center gap-2 font-mono text-[10.5px] text-muted">
+                        <div className="flex min-w-0 items-center gap-2 text-[10.5px] text-muted">
                             {runId ? <RunIdChip id={runId} /> : null}
                             {meta ? <span className="min-w-0 truncate">{meta}</span> : null}
                         </div>

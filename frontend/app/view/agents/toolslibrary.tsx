@@ -699,7 +699,7 @@ function ToolFormPane({ form, statuses }: { form: ToolForm; statuses: ToolStatus
                 ) : null}
                 <span className="flex-1" />
                 <span className="text-[11.5px] text-muted">Saved to</span>
-                <span className="font-mono text-[11.5px] text-ink-mid">tools.json</span>
+                <span className="text-[11.5px] text-ink-mid">tools.json</span>
             </div>
         </div>
     );
