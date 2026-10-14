@@ -81,7 +81,7 @@ The section (`Main.dc.html`):
 - Header: Ideas, its count, `N new` and **Mark read** when any are new. Leaving the section (closing it, another tab,
   another agent) also marks them read.
 - Grouped Decided / Ideas / Open, newest first in each, each row: the text, `turn N · agent|you`, and a `New` pill.
-  Hover shows Edit, Mark as decided, Drop.
+  Hover shows Edit, Mark as decided, Drop; Mark as decided is hidden on a row that is already Decided.
 - Rows check for merge (`Ideas-EditMerge.dc.html`): a bar `N selected · Merge · Drop`. Edit is inline, with the kind
   as a three-way choice.
 - Dropped folds at the end, each with Restore.

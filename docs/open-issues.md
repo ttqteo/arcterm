@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-14 (brainstorm ideas, run ee18a780)**
+
+- [ ] In an agent tab, type `/idea` (or `/arc:idea`): Claude Code lists the command and runs it, and the idea lands in
+  the rail's Ideas section. `claude plugin validate` does not inspect `commands/`. `claude/arc-mod/commands/idea.md`.
+- [ ] On a Mac, select text in an agent's terminal and press Cmd+Shift+I: a toast with Undo, and the line in Ideas;
+  with nothing selected the Ideas box opens. `ideasstore.ts` `runIdeaCapture`.
+
 **2026-10-14 (Conversations rescan)**
 
 - [ ] In an agent tab run `/clear` (or quit claude and start it again in that terminal): within a second the session it
