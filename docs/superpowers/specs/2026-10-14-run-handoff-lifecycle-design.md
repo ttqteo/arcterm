@@ -22,7 +22,7 @@ session when its run lands.
 - In: a persisted queue of run starts with a cap on active runs and an optional "after" dependency; queued rows and
   a session↔run link on the Agent tree; one message to the origin session when its run lands.
 - Out: a RAM-based start rule (decided against: a run's RAM at start says nothing about its width ten minutes later,
-  and heavy commands already queue on RAM in `pkg/jobqueue`); reordering the queue (Start now covers it); queueing
+  and heavy commands already queue on RAM in `pkg/jobqueue`); drag reordering (Run next covers it); queueing
   from the + Run launcher (a person at the launcher starts now); resuming a closed origin session to deliver the
   message; a message when a queued run starts.
 
@@ -37,11 +37,12 @@ would have sent, plus:
 |---|---|
 | `Id` | `q-` + 4 hex, its own id space |
 | `After` | a run id or a queue entry id, optional |
-| `QueuedTs` | when it entered the queue; the queue is FIFO by this |
+| `QueuedTs` | when it entered the queue (shown, not used for order) |
 | `State` | `waiting` or `blocked` |
 | `Reason` | why it is blocked |
 
-It is stored as one JSON file in the data dir (`runqueue.json`), written atomically. No waveobj, so no migration.
+The queue's order is the order of the entries in the file: a new entry goes last, Run next moves one first. It is
+stored as one JSON file in the data dir (`runqueue.json`), written atomically. No waveobj, so no migration.
 When an entry starts it is removed; from then on the run is an ordinary run carrying `OriginTabId`.
 
 A `queued` run status was considered and rejected: every status switch (lineage, attention, runs list, cancel, seal)
@@ -57,17 +58,18 @@ created at start, so it takes the base and reads the plan as they are then.
 - `--after` takes a run id or a queue entry id, a unique prefix of either, and implies `--queue`. Pointing at a queue
   entry chains two queued plans before either has a run id.
 - `wsh runs list` lists queue entries first, marked `queued #N`, `after <id>` or `blocked: <reason>`.
-- `wsh runs start-now <q-id>` and `wsh runs dequeue <q-id>` are the tree's Start now and Remove.
+- `wsh runs start-now <q-id>`, `wsh runs run-next <q-id>` and `wsh runs dequeue <q-id>` are the tree's Start now,
+  Run next and Remove.
 - The engine handoff in AGENTS.md ("A finished plan offers the engine first") gains a second engine choice,
   **Arc engine, queued**, worded so the person reads it as "the engine, when there is room".
 
-New wshrpc commands (`RunQueueAdd`, `RunQueueList`, `RunQueueStartNow`, `RunQueueRemove`) and a
+New wshrpc commands (`RunQueueAdd`, `RunQueueList`, `RunQueueStartNow`, `RunQueueRunNext`, `RunQueueRemove`) and a
 `runqueue:changed` event; run `task generate` after adding them.
 
 ### 3. The scheduler starts one entry at a time
 
 A loop in wavesrv evaluates the queue at startup, on every run status change, on every land change, when an entry is
-added or removed, and when `runs:maxactive` changes. One evaluation walks the entries in FIFO order and starts the
+added, moved or removed, and when `runs:maxactive` changes. One evaluation walks the entries in queue order and starts the
 **first** one that is ready, then evaluates again, so it never overshoots the cap:
 
 - **Active runs** are top-level runs (orchestrator and quick; not task, reviewer, stage or lead-spawned child runs)
@@ -84,7 +86,9 @@ An entry becomes `blocked`, and stays so until Start now or Remove, when:
 - its plan file no longer exists at start;
 - `CreateRun` fails (the error is the reason).
 
-Start now starts the entry past the cap and past `After`. Remove drops it.
+Start now starts the entry past the cap and past `After`. Run next moves it to the head of the queue, where it still
+waits for room (and for its `After`): the way to let one plan go before the others without exceeding the cap. Remove
+drops it.
 
 Setting: `runs:maxactive`, default 3.
 
@@ -94,7 +98,8 @@ Setting: `runs:maxactive`, default 3.
   becomes the run row in the same place: nothing jumps.
 - A clock glyph, the plan's title, and a meta line: `Queued #2`, `After Learned additions`, or `Blocked · <reason>`
   in the warning token.
-- Hover shows **Start now** and **Remove**; the context menu has both. Remove confirms.
+- Hover shows **Start now** and **Remove**; the context menu has those and **Run next** (left out on the head entry).
+  Remove confirms.
 - A click shows nothing in the centre (there is nothing to show yet); the tooltip has the plan path, the lead and
   worker route and when it was queued. No new panel (compact by default).
 - A blocked entry is also a Needs you item ("Brainstorm ideas did not start: Learned additions was held") with the
@@ -145,7 +150,7 @@ Setting: `runs:wakeorigin`, default true.
 
 ## Testing
 
-- Go, `pkg/runqueue`: FIFO order; the cap; `After` on a run and on a queue entry; each blocked case, and a dirty hold
+- Go, `pkg/runqueue`: queue order and Run next; the cap; `After` on a run and on a queue entry; each blocked case, and a dirty hold
   that keeps waiting; Start now past both gates; the atomic file write and reload.
 - Go, scheduler: with scripted runs, one start per evaluation, never past the cap.
 - Go, message: the text for landed, held and done-without-land; `OriginNotifiedTs` idempotence across a restart; held
