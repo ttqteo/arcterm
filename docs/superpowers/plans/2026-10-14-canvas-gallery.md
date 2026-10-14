@@ -6,7 +6,7 @@
 
 **Check:** `node --stack-size=4000 node_modules/typescript/lib/tsc.js --noEmit`
 
-**Final:** `node scripts/cdp/final-verify.mjs canvas-gallery surface-smoke`
+**Final:** `node scripts/cdp/final-verify.mjs canvas-gallery canvas-gallery-preview surface-smoke`
 
 **Prototype:** D:/work/arcterm/.superpowers/design/canvas-gallery/project
 
@@ -24,9 +24,11 @@ host's existing `capture_webview` when a board has settled on screen and the pre
 **Tech stack:** Go, wshrpc + `task generate`, React 19, jotai, Tailwind 4 tokens, vitest, the CDP scenario harness.
 
 **Prototype boards → scenario steps** (scenario `canvas-gallery`, built in Task 6; every UI task names its step):
-`Main` → step 1 (grid, the no-preview card), `Empty` → step 2 (search with no match), `Viewer` → step 3 (a canvas open,
-→ to the next board), `Cleanup` → step 4 (the backdated topic ticked, the bar's total), `Storage` → step 6 (the summary
-card and the Auto-clean row). The boards' thumbnails are drawn as abstract shapes and the Cleanup board is drawn as of
+`Empty` → step 0 (no canvas anywhere) and step 2 (search with no match), `Main` → step 1 (grid, the no-preview card,
+the key-hint footer, the arrow cursor), `Viewer` → step 3 (a canvas open, → to the next board), `Cleanup` → step 4
+(the backdated topic ticked, Space, Untick all, the bar's text), `Storage` → step 6 (the summary card and the
+Auto-clean row). Preview capture has its own scenario, `canvas-gallery-preview` (`host: true`, since it drives the
+host's `capture_webview`; the browser app on a Mac skips it and still runs `canvas-gallery`). The boards' thumbnails are drawn as abstract shapes and the Cleanup board is drawn as of
 8 Nov; compare structure (elements, order, copy, controls), not those pictures or dates.
 
 Rules every task keeps (AGENTS.md, DESIGN.md): no raw hex in `.ts`/`.tsx` (colours are `@theme` tokens); Inter
@@ -217,8 +219,8 @@ meta for today vs earlier, cursor clamps at edges and moves by `cols` up/down.
   `frontend/app/view/agents/canvasthumb.ts`, `frontend/app/view/agents/canvasthumb.test.ts`
 - Modify: `frontend/app/view/agents/agentcenter.ts` (`CenterMode`, `showCanvases`), `agentsurface.tsx:817-829`
   (`AgentCenterPane`), `agenttree.tsx` (the Canvases row under the Conversation History button),
-  `canvaspane.tsx` (export `BoardFrameView`, `StepButton`; call the preview capture), `canvasmodel.ts` (nothing new
-  unless a helper is shared), `frontend/app/store/keybindings/bindings.ts` (`GO_TARGETS`, the gallery keys),
+  `canvaspane.tsx` (export `BoardFrameView`, `StepButton`; call the preview capture),
+  `frontend/app/store/keybindings/bindings.ts` (`GO_TARGETS`, the gallery keys),
   `docs/keyboard-shortcuts.md`
 
 **Mode and entry points.** `CenterMode` gains `"canvases"`; `showCanvases(model)` sets it and `landOn(model.surfaceAtom,
@@ -231,7 +233,8 @@ lists it through the bindings as it lists `go:history`.
 **State** (`canvasgallerystore.ts`): `canvasGalleryAtom` = `{ view: "grid" | "viewer" | "cleanup"; dir: string | null;
 board: number; query: string; cursor: number }` (survives a surface switch; the mode's components unmount like
 History's), `canvasListAtom` (`GalleryCanvas[] | null`), `loadCanvases()` = `RpcApi.ListCanvasesCommand` into it, called
-on mount of the grid and after a clean. Base URLs per design dir: `getWebServerEndpoint() + await
+on mount of the grid (so coming back from the viewer re-reads the list and shows a preview the viewer just took) and
+after a clean. `cursor` indexes the flat order of the visible cards (groups in order) and starts at 0. Base URLs per design dir: `getWebServerEndpoint() + await
 RpcApi.CanvasServeCommand(TabRpcClient, designdir)` cached in a module `Map` (as `canvaspoller.ts:100-110` does).
 
 **Grid** (board `Main`; scenario step 1): header `Canvases`, pill `N · size` (`formatSize` from the storage model),
@@ -240,9 +243,13 @@ RpcApi.CanvasServeCommand(TabRpcClient, designdir)` cached in a module `Map` (as
 `grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4`: `bg-surface-raised border border-edge-mid rounded-lg`, a
 16:10 `bg-surface-code` preview — `<img loading="lazy" src={base + "/" + topic + "/thumb.png?v=" + thumbts}>` when
 `thumbts > 0`, else the board names and "No preview yet: it is taken the first time you open it" — a board-count badge,
-the topic (13px semibold), `cardMeta`. The cursor card wears `ring-2 ring-accent`. `data-canvas-card={topic}`.
-Empty states (board `Empty`; step 2): none at all — "No canvases yet" + the design-local line; a query with no match —
-`No canvas matches “<q>”` + a **Clear the search** link. Loading: `SkeletonLine` cards.
+the topic (13px semibold), `cardMeta`. The cursor card wears `ring-2 ring-accent` and `data-cursor`.
+`data-canvas-card={topic}`. A key-hint footer under the grid, as on the board: `←↑↓→` move · `Enter` open · `/` search
+(keycaps in JetBrains Mono, `text-muted`). Empty states (board `Empty`; steps 0 and 2): none at all — "No canvases
+yet" + "An agent draws one when you ask it for a mockup (the design-local skill). Every canvas in your projects shows
+up here, and stays until you delete it."; a query with no match — `No canvas matches “<q>”` + "The search reads topic,
+board and project names." (the board says "topic and board names"; the search also matches the project, per the spec)
++ a **Clear the search** link. Loading: `SkeletonLine` cards.
 
 **Viewer** (board `Viewer`; step 3): header with a back button (`ArrowLeft`, title "Back to canvases (Esc)"), topic,
 `projectname · changed <time>`, the boards as a segmented control between `StepButton`s (their title shows `←`/`→`
@@ -267,6 +274,12 @@ injected so `canvasthumb.test.ts` covers: skip when fresh, skip the second call,
 capture throws. Call it 1 s after a board frame's iframe `load` with the board still selected, from the viewer and from
 `CanvasPane` (not while marking, not under All tiles).
 
+**Acceptance** (Task 6 writes the scenarios; build so they pass): `canvas-gallery` step 0 (the no-canvas empty state),
+step 1 (the grid, the placeholder card, the footer, ArrowRight / ArrowDown / ArrowLeft moving `data-cursor`), step 2
+(`/` focuses the search, the no-match state, Esc clears), step 3 (Enter opens the viewer, → steps the board, Esc
+back); `canvas-gallery-preview` (opening a topic with no `thumb.png` in the viewer writes one within a few seconds, and
+its grid card shows an `<img>` after Esc).
+
 **Step:** `npx vitest run frontend/app/view/agents/canvasthumb.test.ts frontend/app/view/agents/canvasgallery.test.ts`,
 then the typecheck (Check line). Try it in the dev app if one is running (`node scripts/cdp-shot.mjs`); else say what
 was not tried. Commit.
@@ -275,13 +288,13 @@ was not tried. Commit.
 
 ### Task 4: Settings → Storage: the Design canvases card and the Auto-clean row
 
-**Depends on:** Task 1
+**Depends on:** Task 1, Task 3
 
-**Files:** `frontend/app/view/agents/storagemodel.ts`, `frontend/app/view/agents/storagemodel.test.ts`, `frontend/app/view/agents/settingspages/storage.tsx`, `frontend/app/view/agents/settingsmodel.ts`, `frontend/app/view/agents/settingsmodel.test.ts`, `docs/guide/settings.md`
+**Files:** `frontend/app/view/agents/storagemodel.ts`, `frontend/app/view/agents/storagemodel.test.ts`, `frontend/app/view/agents/settingspages/storage.tsx`, `frontend/app/view/agents/settingssurface.tsx`, `frontend/app/view/agents/settingsmodel.ts`, `frontend/app/view/agents/settingsmodel.test.ts`, `docs/guide/settings.md`
 
 Detail: Modify `frontend/app/view/agents/storagemodel.ts` (+ `.test.ts`), `frontend/app/view/agents/settingspages/
-storage.tsx`, `frontend/app/view/agents/settingsmodel.ts:478-510` (+ `settingsmodel.test.ts:216,341`),
-`docs/guide/settings.md` (the Storage section)
+storage.tsx`, `frontend/app/view/agents/settingssurface.tsx:362` (pass `model`), `frontend/app/view/agents/
+settingsmodel.ts:478-510` (+ `settingsmodel.test.ts:216,341`), `docs/guide/settings.md` (the Storage section)
 
 Board `Storage`; scenario step 6.
 
@@ -290,9 +303,10 @@ Board `Storage`; scenario step 6.
   you see each one before it goes to ~/.arc/trash for 7 days.", action: null }`. `cleanableTotal` must not count it
   (its items are guarded; add a test).
 - `storage.tsx`: `CategoryCard` for `canvases` draws no entry rows; its head shows the size, `N canvases`, and an
-  **Open the gallery** button (`data-storage-canvases-open`) that calls `showCanvases(model)` — the settings page
-  reaches the model the way its other cross-surface buttons do (look for `openSettingsSection`'s model, or
-  `openAddress`; do not hand-roll `surfaceAtom`).
+  **Open the gallery** button (`data-storage-canvases-open`) that calls `showCanvases(model)` (Task 3,
+  `agentcenter.ts`; do not edit that file here). `StoragePage` takes `{ model: AgentsViewModel }`: `SectionBody` in
+  `settingssurface.tsx:362` already holds the model and passes it as it does to `AgentsPage`; `StoragePage` hands it
+  to the canvases card. Do not hand-roll `surfaceAtom`.
 - Auto-clean card: a third row `storage.canvasonship` — title "Agents delete a canvas when its feature ships", desc
   "Off: agents keep every canvas, and list the shipped ones when you ask them to tidy up.", key
   `storage:canvasonship`, scope `synced`, `config: true`; a `Toggle` (`on = value ?? false`). The
@@ -323,7 +337,11 @@ Board `Cleanup`; scenario step 4 (and step 5, the move).
 - Move to trash: `RpcApi.CleanStorageCommand(TabRpcClient, { category: "canvases", itemids: [...sel], allowguarded:
   true })`; a toast "Moved N canvases to the trash" (the app's toast helper, as Storage's clean uses); skipped ids keep
   their card ticked with the reason as its `title`; then `loadCanvases()`; back to the grid when nothing failed.
-- Keys (`galleryNav` + `view === "cleanup"`): arrows move, Space toggles, Esc cancels. Docs line.
+- Keys (`galleryNav` + `view === "cleanup"`): arrows move, Space toggles, Esc cancels. The cursor (`data-cursor`, as
+  in the grid) starts at 0 in the flat cleanup order (suggested group, then Newer). Docs line.
+- **Acceptance** (Task 6 writes the steps): `canvas-gallery` step 4 (the backdated topic ticked, Space untoggles and
+  re-toggles the cursor card, ArrowRight + Space ticks a second, the bar reads `2 selected · <size>`, Untick all →
+  "Nothing selected" and Move to trash disabled, a click re-ticks `gallery-old`) and step 5 (Move to trash).
 - vitest for any helper you add to `canvasgallery.ts`; Check. Commit.
 
 ---
@@ -340,24 +358,43 @@ canvas paragraph near line 364, Vietnamese like the rest of the file), `CHANGELO
 **The scenario** `canvas-gallery` (surface `agent`), modelled on `canvas-many-boards` (`arrangeCanvasBoards`,
 `teardownCanvasBoards`, `polishWaitFor`, `waitForProjectInConfig`):
 
-- arrange: a temp project dir registered with `h.rpc("createproject", { name: "verify-canvas-gallery", path })` and
-  `waitForProjectInConfig`; three topics under its `.superpowers/design`: `gallery-alpha` (boards `Main`, `States`, a
-  1×1 `thumb.png` newer than both), `gallery-beta` (one board, no thumb), `gallery-old` (one board, every file's mtime
-  set 40 days back with `utimesSync`). Then `h.goto("agent")`.
-- step 1 (board Main): click the tree's Canvases button; the three cards render, `gallery-beta`'s card shows the
-  no-preview line, `gallery-alpha`'s shows an `<img>`; shot `canvas-gallery-grid.png`.
-- step 2 (board Empty): type `settings sync` in the search; the no-match line shows; shot; clear it.
-- step 3 (board Viewer): Enter on `gallery-alpha`; one iframe; `ArrowRight` moves the segmented control to `States`;
-  shot `canvas-gallery-viewer.png`; Esc returns to the grid.
-- step 4 (board Cleanup): Clean up; `gallery-old` is ticked and the others are not; the bar reads `1 selected`; shot.
+- arrange: write a temp project dir (not registered yet) with three topics under its `.superpowers/design`:
+  `gallery-beta` (one board, no thumb, mtime now), `gallery-alpha` (boards `Main`, `States`, a 1×1 `thumb.png` newer
+  than both; board mtimes 5 minutes before beta's, so the grid order is beta, alpha, old), `gallery-old` (one board,
+  every file's mtime set 40 days back with `utimesSync`). Then `h.goto("agent")`.
+- step 0 (board Empty, no canvas): before registering the project, `h.rpc("listcanvases")`; when it returns `[]`,
+  click the tree's Canvases button and assert "No canvases yet" and the design-local line; shot
+  `canvas-gallery-empty.png`. When the profile already holds canvases, `skipStep` naming them ("the store already has
+  N canvases: run on a fresh Final store"). Then register the project with `h.rpc("createproject", { name:
+  "verify-canvas-gallery", path })` and `waitForProjectInConfig`, and re-open the mode (click Conversation History,
+  then Canvases: the grid re-reads on mount).
+- step 1 (board Main): the three cards render, `gallery-beta`'s card shows the no-preview line, `gallery-alpha`'s an
+  `<img>`, and the footer reads `←↑↓→ move`, `Enter open`, `/ search`; `data-cursor` is on `gallery-beta`; ArrowRight →
+  `gallery-alpha`, ArrowDown → `gallery-old` (the last card: down clamps), ArrowLeft → `gallery-alpha`; shot
+  `canvas-gallery-grid.png`.
+- step 2 (board Empty, no match): press `/`; the search (`data-canvas-gallery-search`) is `document.activeElement`;
+  type `settings sync`; `No canvas matches “settings sync”`, "The search reads topic, board and project names." and
+  Clear the search show; shot; Esc empties the search and the three cards return; Esc again blurs it.
+- step 3 (board Viewer): the cursor is on `gallery-alpha` (step 1); Enter opens it; one iframe; `ArrowRight` moves the
+  segmented control to `States`; shot `canvas-gallery-viewer.png`; Esc returns to the grid.
+- step 4 (board Cleanup): Clean up; `gallery-old` is ticked (`data-checked`) and the others are not; the bar reads `1
+  selected`; Space on the cursor card (`gallery-old`, first in the suggested group) → "Nothing selected", Space again
+  → `1 selected`; ArrowRight + Space ticks `gallery-beta` → `2 selected · <size>`; Untick all → "Nothing selected" and
+  Move to trash disabled; click `gallery-old`'s card → `1 selected`; shot.
 - step 5: Move to trash; `gallery-old`'s card leaves and its dir is gone from the project.
 - step 6 (board Storage): open Settings → Storage; the Design canvases card shows `2 canvases` and Open the gallery; the
   Auto-clean card has the canvas row, off; shot `canvas-gallery-storage.png`.
 - teardown (best effort, as `teardownCanvasBoards`): `deleteproject`, remove the temp dir, remove the
   `*-canvas-verify-canvas-gallery-gallery-old` entry from `~/.arc/trash`.
 
-Run it against a running dev app: `CDP_PORT=9222 task verify:ui -- canvas-gallery`. If no dev app runs, say so; Final
-runs it.
+**The scenario** `canvas-gallery-preview` (surface `agent`, `host: true`): arrange a second temp project
+`verify-canvas-gallery-preview`, registered, with one topic `preview-beta` (two boards, no `thumb.png`); open Agent →
+Canvases, Enter on `preview-beta` (the only card, so the cursor is on it); poll up to 8 s for
+`<topic>/thumb.png` to exist on disk and be non-empty; shot `canvas-gallery-preview.png`; Esc; `preview-beta`'s card
+shows an `<img>` whose `src` ends in `thumb.png?v=<n>`. Teardown: `deleteproject`, remove the temp dir.
+
+Run them against a running dev app: `CDP_PORT=9222 task verify:ui -- canvas-gallery canvas-gallery-preview`. If no dev
+app runs, say so; Final runs them.
 
 **Docs.** `docs/guide/agent.md`: a short paragraph (Vietnamese) on Agent → Canvases (`g v`, the tree row), the viewer
 keys (← →, Esc), Clean up (30 days, trash 7 days), and that canvases are kept unless the Storage setting is on.
@@ -366,6 +403,5 @@ Canvases, with a preview of each; open one to page through its boards, or Clean 
 Agents no longer delete a canvas when its feature ships unless you turn that on in Settings → Storage.
 <!-- try: go:canvases --> <!-- big -->" (check the release has fewer than 5 `big` lines; drop `<!-- big -->` if not).
 `docs/open-issues.md`: a "RAM watch" line for the gallery (measure the dev app's WebView2 working set with the grid of
-17 canvases open and in the viewer; write the numbers, or "not measured" and why) and, under "0 · Waiting on a hand
-check", `- [ ] (arcterm) **Canvas previews.** Open a canvas in Agent → Canvases and wait a second: its card shows the
-picture next time; edit a board and open it again: the picture follows.` Commit.
+17 canvases open and in the viewer; write the numbers, or "not measured" and why). Preview capture is covered by
+`canvas-gallery-preview`, so no hand-check line. Commit.
