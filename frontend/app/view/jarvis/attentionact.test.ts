@@ -58,6 +58,17 @@ describe("attentionAct: a chunk that came due", () => {
     });
 });
 
+describe("attentionAct: a plan to review", () => {
+    it("opens, with no wire act, since it has no run", () => {
+        expect(attentionAct({ wireKind: "plan-review", channelId: "", runId: null, taskId: "", retry: false })).toEqual(
+            {
+                label: "Open",
+                kind: "open",
+            }
+        );
+    });
+});
+
 describe("a blocked queue entry", () => {
     const blocked = (over: Partial<AttentionActInput> = {}): AttentionActInput =>
         a({ wireKind: "run-queue-blocked", channelId: "", runId: null, queueId: "q-1a2b", ...over });

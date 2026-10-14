@@ -35,7 +35,7 @@ describe("workOnPrompt", () => {
 describe("planIdeaPrompt", () => {
     it("asks for a plan of chunks on the idea, and a stop before any work", () => {
         expect(planIdeaPrompt("Màu mờ khó đọc", "e1")).toBe(
-            "plan the idea Màu mờ khó đọc (effort:e1): break it into chunks with `wsh effort chunk add`, then stop so I can review the plan before any work starts"
+            "plan the idea Màu mờ khó đọc (effort:e1): break it into chunks with `wsh effort chunk add --proposed`, then stop so I can review the plan before any work starts"
         );
     });
 });

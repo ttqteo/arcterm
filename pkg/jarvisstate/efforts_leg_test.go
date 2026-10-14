@@ -31,6 +31,21 @@ func TestEffortSummaryActiveChunkFallsBackToFirstNonDone(t *testing.T) {
 	}
 }
 
+func TestEffortSummaryLeavesProposedOutOfProgress(t *testing.T) {
+	e := &waveobj.Effort{
+		Title: "t", Status: "active",
+		Chunks: []waveobj.EffortChunk{
+			{Label: "p1", Status: "proposed"},
+			{Label: "c1", Status: "done"},
+			{Label: "c2", Status: "pending"},
+		},
+	}
+	s := EffortSummaryOf(e)
+	if s.Done != 1 || s.Total != 2 || s.ActiveChunk != "c2" || len(s.Chunks) != 3 {
+		t.Fatalf("summary: %+v", s)
+	}
+}
+
 func TestEffortsFiltersArchived(t *testing.T) {
 	es := []*waveobj.Effort{
 		{Title: "live", Status: "active", Chunks: []waveobj.EffortChunk{{Label: "x", Status: "done"}}},

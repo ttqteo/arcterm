@@ -41,6 +41,8 @@ export function attentionAct(x: AttentionActInput): AttentionAct {
     if (x.wireKind === "chunk-due") {
         return { label: "Work on", kind: "work-on" };
     }
+    // a plan to review (plan-review) is decided on the agent's rail or the initiative's card, not by a wire act:
+    // it opens, where planreviewtarget.ts says
     // a queued start the engine could not make: it names no run to open, so Start now (the entry's own id) is the
     // act, and only the Needs you strip offers the Remove beside it (attentionSecondAct)
     if (x.wireKind === "run-queue-blocked" && (x.queueId ?? "") !== "") {

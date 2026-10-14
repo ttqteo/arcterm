@@ -219,6 +219,7 @@ A link inside an item view does a full open, even with `Mod` held.
 | `j` / `k` (or `↓` / `↑`, `→` / `←`) | Next / previous row of the project tree: agents and terminals, in the tree's order. A terminal row takes the centre as an agent does |
 | `Mod`+`` ` `` | Fold the terminal panel under the agent to a 32 px strip showing the terminal's name and latest output line, or open it again. Works from inside the terminal; active only while a terminal is in the panel, else the key is the terminal's own. By key position, so the same on every layout |
 | `d` | Toggle the agent rail |
+| `i` | The focused agent's initiative: opens a popover on the header (its progress, the chunk this agent is on, what is next, a note). An agent with no initiative opens Link to initiative instead. Inside the popover: `m` Mark done (the next chunk starts), `n` Add note, `↑` / `↓` move over the chunks, `Enter` opens a chunk's status menu, `Esc` or `i` closes it |
 | `f` | Toggle terminal fullscreen |
 | `Mod`+`Shift`+`Enter` (or `F11`) | Toggle terminal fullscreen from inside the terminal too. A Mac keyboard has no `F11` of its own, so `Cmd`+`Shift`+`Enter` is the one to use there |
 | `Shift`+`F` | Toggle float: the window shrinks to the focused terminal, and its pin keeps it on top of other apps |
@@ -309,6 +310,7 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `/` | Filter the Brief's rows (`Esc` clears) |
 | `Enter` | Open the row under the cursor |
 | `w` | Work on the initiative under the cursor in a new agent, or go to the agent already open on it |
+| `v` | Review: walk the initiatives that changed since you last reviewed them, then the ones idle for two weeks. While a pass is on: `Enter` Mark reviewed and open the next, `j` / `k` (or `←` / `→`) move through the pass, `Esc` leaves it |
 | `Alt`+`↑` / `Alt`+`↓` | Move the chunk under the cursor up / down within its stage |
 | `e` | Expand / collapse the record band |
 | `Shift`+`J` / `Shift`+`K` | Next / previous run in this channel |

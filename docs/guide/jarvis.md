@@ -42,8 +42,41 @@ Việc lớn hơn một run sống thành initiative (effort): một danh sách 
 - Thứ tự cho biết nên làm gì trước: initiative có chunk bị chặn hoặc có blocker lên đầu, rồi đến những cái đang có agent mở, rồi theo hoạt động gần nhất; initiative tạm dừng xuống cuối. Brief hiện tám hàng rồi `+N more`; **Show K archived** hiện các initiative đã lưu trữ.
 - Bấm một hàng (hoặc `Enter`) để mở initiative ngay tại chỗ, không nhảy đi đâu: các chunk theo stage hiện dưới hàng, mỗi chunk một dòng gồm trạng thái, nhãn (tối đa hai dòng), số ghi chú và chữ trạng thái. Bấm chữ trạng thái để đổi trạng thái chunk; **Add chunk** và **New stage** ở cuối. `Alt+↑` / `Alt+↓` đổi thứ tự chunk trong stage, `Enter` mở chunk.
 - **Work on** (`w`) mở một agent mới làm initiative, hoặc nhảy tới agent đã mở trên nó (nút khi đó đọc **Go to agent**). Bắt đầu run từ đó thì run được gắn vào chunk lúc tạo.
-- Menu của hàng (luôn hiện): **Rename**, **Edit details…**, **Pause** / **Resume**, **Archive**, **Delete**.
+- Menu của hàng (luôn hiện): **Rename**, **Edit details…**, **Link to…** (hoặc **Unlink from …**), **Pause** / **Resume**, **Archive**, **Delete**.
 - Một ý tưởng (initiative chưa có chunk) mở ra với **Plan it** (một agent chia ý tưởng thành chunk) và **Add first chunk** (biến nó thành initiative).
+
+### Chunk do agent đề xuất
+
+Chunk một agent đề xuất bằng `wsh effort chunk add --proposed` (**Plan it** cũng đề xuất) có trạng thái `proposed`: nó **không tính** vào `done/total` hay thanh tiến độ cho tới khi bạn chấp nhận. Chunk chờ hiện ở ba chỗ:
+
+- Hàng initiative ghi `N proposed` dưới ô trạng thái; hàng ý tưởng ở cột Ideas ghi cùng chữ đó.
+- Mở initiative (hoặc ý tưởng) ra thì có nhóm **Proposed · N** với từng chunk và ba nút ✓ **Accept** (thành `pending`), ✎ **Rename** và ✕ **Drop**, cùng **Accept all** và **Drop all** cho cả nhóm. **Drop** ở Brief có vài giây để **Undo** trước khi chunk bị xóa thật. Một ý tưởng bị **Drop all** vẫn là ý tưởng.
+- **Waiting on you** có một mục `plan` cho mỗi initiative còn chunk chờ (đọc `N proposed`, nút **Open**): nó mở agent đã đề xuất khi agent còn mở, không thì mở initiative. Hàng đó cũng hiện ở popup của Sprout (**Plan to review**) và đếm vào huy hiệu như các việc chờ khác.
+
+Khi agent còn mở, bạn quyết định ngay trên rail của nó: [Agent → Plan to review](agent.md#plan-to-review-trên-rail).
+
+### Initiative con
+
+Một initiative có thể là **một phần của** initiative khác. **Link to…** trong menu ⋯ của hàng mở picker (không liệt kê chính nó và những gì nằm dưới nó); chọn một initiative thì hàng chuyển xuống dưới initiative đó. **Unlink from …** đưa nó về cấp trên cùng; cả hai đều có **Undo** trong toast. Server từ chối một liên kết làm initiative nằm dưới chính nó (`that would put the initiative under itself`).
+
+- Initiative con nằm ngay dưới cha, thụt vào và có khuỷu nối lên cha; dòng phụ đọc `↳ Part of <cha>`. Hàng cha ghi `+N sub` sau tên.
+- Mở hàng cha thì dưới nó có **Sub-initiatives** (tên, `done/total`, trạng thái) và **Ideas** liên kết với nó (kèm `N proposed` nếu có); bấm một dòng để mở hàng đó.
+- Cha bị xóa thì các con của nó vẫn hiện, thành hàng cấp trên cùng.
+
+### Review: cái gì đổi, cái gì nằm yên
+
+Tiêu đề vùng **Initiatives** có nút **Review · N** khi có initiative cần nhìn lại (không có thì không hiện; review không gấp nên không đếm vào huy hiệu). Hai loại:
+
+- **Changed**: đổi kể từ lần bạn đánh dấu **reviewed** nó (initiative chưa từng review thì tính từ lần "Since you looked"). Hàng của nó có chấm màu accent trước tên.
+- **Idle**: đang `active`, không agent nào làm, và không đổi cũng không được review trong 14 ngày. Ô trạng thái của hàng đọc `idle 3w`.
+
+`v` hoặc **Review · N** bắt đầu một lượt đi qua hàng đợi theo thứ tự: bị chặn, đang chờ bạn, đang có agent làm, changed, rồi idle. Mỗi lúc một initiative mở ra, các cái còn lại là một dòng kèm lý do (`blocked`, `asks you`, `at work`, `changed`, `idle`):
+
+- Khối **Since you reviewed** liệt kê những gì xảy ra từ lần đánh dấu trước (chunk xong, chunk thêm, đổi trạng thái, ghi chú); một initiative idle ghi `nothing moved in N weeks and no agent is on it`.
+- Nút: **Keep going** (đánh dấu rồi sang cái kế), **Go to agent** hoặc **Work on**, **Pause** / **Resume**, **Archive**, và **Mark reviewed** (`Enter`). Initiative idle xếp **Pause** và **Archive** lên đầu. **Pause** và **Archive** cũng đánh dấu cái đó là đã review.
+- `j` / `k` (hoặc `←` / `→`) đi qua lượt mà không động tới con trỏ của danh sách; `Esc` hoặc **Exit review** rời đi. Hết hàng đợi thì đọc **All reviewed**. Lượt còn nguyên khi bạn sang surface khác rồi quay lại; dấu đã review thì được nhớ giữa các lần mở app.
+
+Popup của Sprout có một dòng `N initiatives changed · M idle` với **Review in Jarvis**: bấm nó mở Jarvis ngay trong lượt review.
 
 ### Panel của chunk
 

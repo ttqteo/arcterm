@@ -39611,6 +39611,1349 @@ const setupLearned = {
     },
 };
 
+// --- initiatives on the Agent surface ----------------------------------------------------------------------------
+// docs/superpowers/specs/2026-10-14-initiatives-on-agent-design.md. Five scenarios share the helpers below: the plan an
+// agent proposes, reviewed on its details rail (initiative-plan-review); the initiative popover on its header
+// (initiative-popover); Link to initiative (initiative-link); a review pass over the Jarvis List (initiative-review); and
+// parent and child initiatives on it (initiative-parents).
+//
+// An agent here is a terminal tab that publishes a Claude agent:status, as agent-uploads makes one, with the tab's
+// session:effort naming its initiative. No scenario launches a real agent (AGENTS.md: a real agent costs tokens).
+//
+// Keys and clicks are real CDP input events: the single-key bindings are read off window capture and ignore a synthetic
+// event aimed at the wrong element, and a JS .click() does not focus the button it clicks.
+const INIT_VK = { Enter: 13, Escape: 27, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40 };
+const INIT_WAIT_MS = 15000;
+const INIT_RAIL = `document.querySelector('aside[aria-label="Agent details"]')`;
+// the Brief's regions and rows hold no oref of their own, so a row is found by its title: each title below is unique
+// to its scenario and none holds another
+const INIT_ROW = (title) =>
+    `[...document.querySelectorAll('[data-jarvis-brief-row="initiative"]')].find((r) => r.innerText.includes(${JSON.stringify(title)}))`;
+// the Date.now offset the review scenario stubs in, and where the page keeps the real one
+const INIT_DAY_MS = 24 * 3600 * 1000;
+
+// A key as a person types it. A letter goes as keyDown with its text; the rest as rawKeyDown, Enter with its char too.
+async function initPress(h, key, mods = 0) {
+    const vk = INIT_VK[key];
+    if (vk == null) {
+        const code = `Key${key.toUpperCase()}`;
+        const windowsVirtualKeyCode = key.toUpperCase().charCodeAt(0);
+        await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", key, code, text: key, windowsVirtualKeyCode, modifiers: mods });
+        await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode, modifiers: mods });
+    } else {
+        await h.cdp("Input.dispatchKeyEvent", { type: "rawKeyDown", key, code: key, windowsVirtualKeyCode: vk, modifiers: mods });
+        if (key === "Enter") {
+            await h.cdp("Input.dispatchKeyEvent", { type: "char", key, code: key, text: "\r", windowsVirtualKeyCode: vk });
+        }
+        await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key, code: key, windowsVirtualKeyCode: vk, modifiers: mods });
+    }
+    await polishNap(300);
+}
+
+async function initType(h, text) {
+    await h.cdp("Input.insertText", { text });
+    await polishNap(200);
+}
+
+// A mouse click at the middle of the element `expr` evaluates to; false when none is drawn.
+async function initClick(h, expr, { mods = 0 } = {}) {
+    const measure = () =>
+        h.ev(`(() => {
+            const el = ${expr};
+            if (!el) return null;
+            el.scrollIntoView({ block: "center", behavior: "instant" });
+            const r = el.getBoundingClientRect();
+            return r.width > 0 && r.height > 0 ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null;
+        })()`);
+    // a row the List is still moving into place (its layout animation) is clicked where it settles, not where it was
+    let box = await measure();
+    for (let i = 0; i < 8 && box != null; i++) {
+        await polishNap(120);
+        const again = await measure();
+        const steady = again != null && again.x === box.x && again.y === box.y;
+        box = again;
+        if (steady) break;
+    }
+    if (box == null) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y });
+    for (const type of ["mousePressed", "mouseReleased"]) {
+        await h.cdp("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button: "left", clickCount: 1, modifiers: mods });
+    }
+    await polishNap(300);
+    return true;
+}
+
+// Replaces what an input holds: its text is selected, then typed over.
+async function initFill(h, inputExpr, text) {
+    await h.ev(`(() => { const el = ${inputExpr}; el?.focus(); el?.select?.(); })()`);
+    await initType(h, text);
+}
+
+const initCtx = () => ({ oids: [], agents: [], prevStorage: {} });
+
+// Polls a Node-side check (an RPC read) until it holds.
+async function initUntil(check, ms = INIT_WAIT_MS) {
+    for (let waited = 0; waited < ms; waited += 250) {
+        if (await check()) return true;
+        await polishNap(250);
+    }
+    return false;
+}
+
+async function initCreate(h, ctx, { title, project, chunks = [], parentoid }) {
+    const made = await h.rpc("effortcreate", {
+        title,
+        ...(project ? { project } : {}),
+        ...(parentoid ? { parentoid } : {}),
+        chunks: chunks.map((label) => ({ label })),
+    });
+    ctx.oids.push(made.effortoid);
+    return made.effortoid;
+}
+const initOps = (h, oid, ops) => h.rpc("effortmutate", { effortoid: oid, author: "you", ops });
+const initEffort = async (h, oid) => (await h.rpc("effortget", { effortoid: oid }))?.effort;
+const initChunks = async (h, oid) => (await initEffort(h, oid))?.chunks ?? [];
+const initChunk = async (h, oid, label) => (await initChunks(h, oid)).find((c) => c.label === label);
+const initLabels = async (h, oid) => (await initChunks(h, oid)).map((c) => c.label);
+
+// the page's own tab's workspace, so the tab made below lands in the window under test
+async function initWorkspace(h, ctx) {
+    if (ctx.workspaceId != null) return;
+    const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+    const wslist = await h.rpc("workspacelist", null);
+    const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+    ctx.workspaceId = ws.workspacedata.oid;
+}
+
+const initStatus = (h, agent, state) =>
+    h.rpc("eventpublish", {
+        event: "agent:status",
+        scopes: [`block:${agent.blockId}`],
+        persist: 1,
+        data: { oref: `block:${agent.blockId}`, state, agent: "claude", title: agent.name, ts: Date.now() },
+    });
+
+// A plain terminal in a tab of its own that reports as a Claude agent; the tab id is the agent id. `effort` is the
+// initiative's oref for session:effort, left off for an agent with none.
+async function initOpenAgent(h, ctx, { name, project, effort }) {
+    await initWorkspace(h, ctx);
+    const agent = { name, project };
+    // tracked as soon as it exists, so a failure below still lets teardown close the tab
+    agent.tabId = await waveService(h, "workspace", "CreateTab", [ctx.workspaceId, name, false]);
+    ctx.agents.push(agent);
+    const tab = await waveService(h, "object", "GetObject", [`tab:${agent.tabId}`]);
+    agent.blockId = tab?.blockids?.[0];
+    if (!agent.blockId) throw new Error("the new tab has no block");
+    // the shell starts in ~: nothing in the app tree should hold a temp dir
+    await h.rpc("setmeta", { oref: `block:${agent.blockId}`, meta: { view: "term", controller: "shell", "cmd:cwd": "~" } });
+    await h.rpc("setmeta", {
+        oref: `tab:${agent.tabId}`,
+        meta: { "session:project": project, ...(effort ? { "session:effort": effort } : {}) },
+    });
+    await initStatus(h, agent, "idle");
+    return agent;
+}
+
+// Makes the agent's pane the one shown (an empty grid keeps it alone), clicking its tree row until then so a click that
+// lands before the roster has settled is not lost. True once its header and rail are up.
+async function initFocusAgent(h, agent) {
+    await h.goto("agent");
+    return polishWaitFor(
+        h,
+        `(() => {
+            const pane = document.querySelector('[data-agent-terminal="${agent.tabId}"]');
+            if (pane != null && !pane.classList.contains("hidden") && document.querySelector("[data-agent-header]") != null && ${INIT_RAIL} != null) return true;
+            document.querySelector('[data-agent-row="${agent.tabId}"]')?.click();
+            return false;
+        })()`,
+        INIT_WAIT_MS
+    );
+}
+
+// The agent surface's saved state, each key put back by initRestore: the rail shown, each of its sections at its default,
+// and an empty grid so the agent made next is shown alone. All of them are read once per page load, hence the reload.
+async function initPrepare(h, ctx, extra = {}) {
+    const keys = [RAIL_VISIBLE_KEY, RAIL_SECTIONS_KEY, GRID_KEY, ...Object.keys(extra)];
+    for (const key of keys) {
+        ctx.prevStorage[key] = await h.ev(`localStorage.getItem(${JSON.stringify(key)})`);
+    }
+    await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true")`);
+    await h.ev(`localStorage.removeItem(${JSON.stringify(RAIL_SECTIONS_KEY)})`);
+    await h.ev(
+        `localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify({ ids: [], focused: null }))})`
+    );
+    for (const [key, value] of Object.entries(extra)) {
+        await h.ev(
+            value == null
+                ? `localStorage.removeItem(${JSON.stringify(key)})`
+                : `localStorage.setItem(${JSON.stringify(key)}, ${JSON.stringify(value)})`
+        );
+    }
+    if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+}
+
+// A fixture roster makes the agents this makes invisible to the tree.
+const initFixtureSkip = () =>
+    existsSync(TREE_RAIL_FIXTURE)
+        ? "a cockpit fixture roster is active, so the agents this scenario makes never reach the tree: run `npm run cockpit:fixtures -- --clear` and reload"
+        : null;
+
+// Puts back what a scenario changed: closes its tabs, deletes its initiatives, restores the storage keys, and reloads onto
+// the live roster. Each step is tried on its own, so a failure in one does not leave the rest behind.
+async function initTeardown(h, ctx, name, { reload = true } = {}) {
+    const step = async (what, fn) => {
+        try {
+            await fn();
+        } catch (e) {
+            console.error(`${name} teardown: ${what} failed: ${e?.message ?? e}`);
+        }
+    };
+    if (ctx.skip) return;
+    await step("restore Date.now", () => h.ev(`(() => { if (window.__initRealNow) { Date.now = window.__initRealNow; delete window.__initRealNow; } })()`));
+    // a picker or popover a failed step left open
+    await step("close an open picker or popover", async () => {
+        if (await h.ev(`!!document.querySelector("[data-initiative-picker], [data-initiative-popover]")`)) await initPress(h, "Escape");
+    });
+    await step("close the Jarvis panel", () =>
+        h.ev(`document.querySelector('[data-pet-peek] button[aria-label="Close Jarvis panel"]')?.click()`)
+    );
+    await step("leave a review pass", () => h.ev(`document.querySelector("[data-jarvis-review-exit]")?.click()`));
+    await step("close the detail sheet", () =>
+        h.ev(`document.querySelector('[data-jarvis-brief-sheet] button[aria-label="Close detail sheet"]')?.click()`)
+    );
+    for (const agent of ctx.agents) {
+        await step(`close ${agent.tabId}`, () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, agent.tabId, false]));
+    }
+    for (const oid of ctx.oids) {
+        await step(`delete ${oid}`, () => h.rpc("effortdelete", { effortoid: oid }).catch(() => {}));
+    }
+    for (const [key, prev] of Object.entries(ctx.prevStorage)) {
+        await step(`restore ${key}`, () => h.ev(restoreStorageKey(key, prev)));
+    }
+    if (reload) {
+        await step("reload onto the live roster", async () => {
+            if (!(await ahReload(h))) console.error(`${name} teardown: the page did not come back after the reload`);
+        });
+    }
+    await step("leave the app on the Cockpit", () => h.goto("cockpit"));
+}
+
+// What a step records, and the rec/steps pair every assert builds. `ok` is a strict true, so a missing value never passes.
+function initRecorder() {
+    const steps = [];
+    const rec = (step, ok, detail) =>
+        steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+    return { steps, rec };
+}
+
+// --- initiative-plan-review: a plan an agent proposes, decided on its rail --------------------------------------------
+const PR_PROJECT = "verify-init-plan";
+const PR_MAIN = "Plan review: ship the feed";
+const PR_DONE = "Spec the feed";
+const PR_P1 = "Parse the feed";
+const PR_P2 = "Cache the parsed feed";
+const PR_P3 = "Render the feed rows";
+const PR_P4 = "Wire the feed keys";
+const PR_P4_NEW = "Wire the feed chords";
+const PR_P2_STAGE = "Cache layer";
+const PR_IDEA = "Plan review idea: sort out the feed";
+const PR_IDEA_A = "Idea chunk alpha";
+const PR_IDEA_B = "Idea chunk beta";
+const PR_ALL = "Plan review accept-all: tune the feed";
+const PR_ALL_DONE = "Tuned the feed";
+const PR_ALL_A = "Tune the feed cache";
+const PR_ALL_B = "Tune the feed index";
+const PR_DROP = "Plan review drop-all: prune the feed";
+const PR_DROP_DONE = "Pruned the feed";
+const PR_DROP_A = "Prune the feed cache";
+const PR_DROP_B = "Prune the feed index";
+
+// the rail's Plan to review rows: state, label (an open rename input holds it instead) and the row's whole text
+// (a row's label is its first span: the app moves a title attribute to data-arc-title once the pointer has been over it, so
+// no selector reads the label through [title])
+const PR_LABEL = `((r) => r.querySelector("input")?.value ?? r.querySelector(":scope > div > span")?.textContent ?? "")`;
+const prRows = (h) =>
+    h.ev(`[...(${INIT_RAIL}?.querySelectorAll("[data-plan-row]") ?? [])].map((r) => ({
+        state: r.dataset.planRow,
+        label: ${PR_LABEL}(r),
+        text: r.innerText.replace(/\\s+/g, " ").trim(),
+    }))`);
+const prRow = (label) =>
+    `[...(${INIT_RAIL}?.querySelectorAll("[data-plan-row]") ?? [])].find((r) => ${PR_LABEL}(r) === ${JSON.stringify(label)})`;
+const prButton = (label, name) => `(${prRow(label)})?.querySelector('button[aria-label="${name}"]')`;
+// the section's footer buttons are found by their text
+const prFoot = (text) =>
+    `[...(${INIT_RAIL}?.querySelectorAll('[data-rail-section="plan"] button') ?? [])].find((b) => b.innerText.trim() === ${JSON.stringify(text)})`;
+const prSection = `${INIT_RAIL}?.querySelector('[data-rail-section="plan"]')`;
+
+const initiativePlanReview = {
+    name: "initiative-plan-review",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = initCtx();
+        ctx.skip = initFixtureSkip();
+        if (ctx.skip) return ctx;
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            await initPrepare(h, ctx);
+            // the initiative whose plan is reviewed: one done chunk, then four proposed ones
+            ctx.main = await initCreate(h, ctx, { title: PR_MAIN, project: PR_PROJECT, chunks: [PR_DONE] });
+            await initOps(h, ctx.main, [
+                { op: "setChunkStatus", chunk: PR_DONE, status: "done" },
+                { op: "addChunk", label: PR_P1, stage: "Build", status: "proposed" },
+                { op: "addChunk", label: PR_P2, stage: PR_P2_STAGE, status: "proposed" },
+                { op: "addChunk", label: PR_P3, stage: "Build", status: "proposed" },
+                { op: "addChunk", label: PR_P4, stage: "Build", status: "proposed" },
+            ]);
+            // an idea with two proposed chunks and nothing else
+            ctx.idea = await initCreate(h, ctx, { title: PR_IDEA, project: PR_PROJECT });
+            await initOps(h, ctx.idea, [
+                { op: "addChunk", label: PR_IDEA_A, status: "proposed" },
+                { op: "addChunk", label: PR_IDEA_B, status: "proposed" },
+            ]);
+            // two more agents: one has its plan accepted with Accept all, one dropped with Drop all
+            ctx.all = await initCreate(h, ctx, { title: PR_ALL, project: PR_PROJECT, chunks: [PR_ALL_DONE] });
+            await initOps(h, ctx.all, [
+                { op: "setChunkStatus", chunk: PR_ALL_DONE, status: "done" },
+                { op: "addChunk", label: PR_ALL_A, status: "proposed" },
+                { op: "addChunk", label: PR_ALL_B, status: "proposed" },
+            ]);
+            ctx.drop = await initCreate(h, ctx, { title: PR_DROP, project: PR_PROJECT, chunks: [PR_DROP_DONE] });
+            await initOps(h, ctx.drop, [
+                { op: "setChunkStatus", chunk: PR_DROP_DONE, status: "done" },
+                { op: "addChunk", label: PR_DROP_A, status: "proposed" },
+                { op: "addChunk", label: PR_DROP_B, status: "proposed" },
+            ]);
+            ctx.agentAll = await initOpenAgent(h, ctx, { name: "verify-plan-all", project: PR_PROJECT, effort: `effort:${ctx.all}` });
+            ctx.agentDrop = await initOpenAgent(h, ctx, { name: "verify-plan-drop", project: PR_PROJECT, effort: `effort:${ctx.drop}` });
+            ctx.agent = await initOpenAgent(h, ctx, { name: "verify-plan-main", project: PR_PROJECT, effort: `effort:${ctx.main}` });
+            ctx.focus = await initFocusAgent(h, ctx.agent);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.skip) return [skipStep("initiative plan review", ctx.skip)];
+        if (ctx.arrangeError != null) return [{ step: "0. the initiatives and agents were made", ok: false, detail: ctx.arrangeError }];
+        if (ctx.focus !== true) {
+            return [{ step: "0. the agent's pane is shown with its header and details rail", ok: false, detail: "it never reached the Agent surface" }];
+        }
+        const { steps, rec } = initRecorder();
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
+        try {
+            const waitRows = (n, state = "proposed") =>
+                polishWaitFor(h, `${INIT_RAIL}?.querySelectorAll('[data-plan-row="${state}"]').length === ${n}`, INIT_WAIT_MS);
+            const stateOf = (label) => initChunk(h, ctx.main, label).then((c) => c?.status ?? "gone");
+
+            // --- 1. the rail opens on Plan to review, its four rows first ---------------------------------------------
+            const four = await waitRows(4);
+            const rail1 = await h.ev(`(() => {
+                const rail = ${INIT_RAIL};
+                const sections = [...(rail?.querySelectorAll("[data-rail-section]") ?? [])];
+                const plan = rail?.querySelector('[data-rail-section="plan"]');
+                return { first: sections[0]?.dataset.railSection ?? null, heading: plan?.textContent.includes("Plan to review") ?? false,
+                    rows: plan?.querySelectorAll('[data-plan-row="proposed"]').length ?? 0, count: plan?.innerText.includes("4 proposed") ?? false };
+            })()`);
+            await polishNap(500);
+            await h.shot("cdp-shots/initiative-plan-review-1-rail.png");
+            rec(
+                '1. the rail shows "Plan to review" first, with the four proposed rows',
+                four === true && rail1.first === "plan" && rail1.heading && rail1.rows === 4 && rail1.count,
+                rail1
+            );
+
+            // --- 2. the header chip, and the rail brought back to the plan -----------------------------------------------
+            const chip = await h.ev(`document.querySelector("[data-agent-header] [data-plan-review-chip]")?.textContent.trim() ?? null`);
+            // the rail on another section: its Files tab when the agent has a worktree, else scrolled away from the top
+            const moved = await h.ev(`(() => {
+                const tab = ${INIT_RAIL}?.querySelector('[data-rail-tab="tree"]');
+                if (tab) { tab.click(); return "files tab"; }
+                const scroller = ${INIT_RAIL}?.querySelector("[data-rail-scroll]");
+                if (scroller) { scroller.scrollTop = scroller.scrollHeight; return "scrolled"; }
+                return "nothing to move";
+            })()`);
+            await polishNap(400);
+            const planGone = await h.ev(`(() => {
+                const plan = ${prSection};
+                const view = ${INIT_RAIL}?.querySelector("[data-rail-scroll]")?.getBoundingClientRect();
+                if (!plan || !view) return true;
+                const r = plan.getBoundingClientRect();
+                return r.width === 0 || r.bottom <= view.top || r.top >= view.bottom;
+            })()`);
+            const clicked = await initClick(h, `document.querySelector("[data-agent-header] [data-plan-review-chip]")`);
+            const back = await polishWaitFor(
+                h,
+                `(() => {
+                    const plan = ${prSection};
+                    const view = ${INIT_RAIL}?.querySelector("[data-rail-scroll]")?.getBoundingClientRect();
+                    if (!plan || !view) return false;
+                    const r = plan.getBoundingClientRect();
+                    return r.width > 0 && r.top >= view.top - 2 && r.top < view.bottom;
+                })()`,
+                4000
+            );
+            rec(
+                '2. the header chip reads "4 to review", and a click on it brings the rail back to Plan to review',
+                chip === "4 to review" && clicked && back === true,
+                { chip, moved, planGone, clicked, back }
+            );
+
+            // --- 3. Sprout's popup and the Brief's Waiting on you list it ------------------------------------------------
+            await h.ev(`document.querySelector('[aria-label="Jarvis condition"]')?.click()`);
+            const sprout = await polishWaitFor(
+                h,
+                `[...document.querySelectorAll("[data-pet-row]")].some((r) => r.innerText.includes(${JSON.stringify(PR_MAIN)}) && r.innerText.includes("Plan to review"))`,
+                INIT_WAIT_MS
+            );
+            await h.ev(`document.querySelector('[data-pet-peek] button[aria-label="Close Jarvis panel"]')?.click()`);
+            await polishWaitFor(h, `!document.querySelector("[data-pet-peek]")`, 3000);
+            await h.goto("jarvis");
+            const brief = await polishWaitFor(
+                h,
+                `[...document.querySelectorAll('[data-jarvis-brief-row="queue"]')].some((r) => r.innerText.includes(${JSON.stringify(PR_MAIN)}) && /plan/i.test(r.innerText) && r.innerText.includes("proposed"))`,
+                INIT_WAIT_MS
+            );
+            rec(
+                '3. Sprout\'s popup lists "Plan to review" for the initiative, and so does the Brief\'s Waiting on you',
+                sprout === true && brief === true,
+                { sprout, brief }
+            );
+            await h.goto("agent");
+
+            // --- 4. Rename: the row and the initiative's chunk carry the new label ---------------------------------------
+            await initClick(h, prButton(PR_P4, "Rename"));
+            const input = `${INIT_RAIL}?.querySelector('input[aria-label="Rename ${PR_P4}"]')`;
+            const inputUp = await polishWaitFor(h, `!!${input}`, 3000);
+            await initFill(h, input, PR_P4_NEW);
+            await initPress(h, "Enter");
+            const renamed = await polishWaitFor(h, `!!(${prRow(PR_P4_NEW)})`, INIT_WAIT_MS);
+            const labels4 = await initLabels(h, ctx.main);
+            rec(
+                "4. Rename on a row, typed over and entered: the row and the initiative's chunk carry the new label",
+                inputUp === true && renamed === true && labels4.includes(PR_P4_NEW) && !labels4.includes(PR_P4),
+                { inputUp, renamed, labels: labels4 }
+            );
+
+            // a rename to a label the plan already holds is refused, with the error under the buttons in the error colour
+            await initClick(h, prButton(PR_P3, "Rename"));
+            await initFill(h, `${INIT_RAIL}?.querySelector('input[aria-label="Rename ${PR_P3}"]')`, PR_DONE);
+            await initPress(h, "Enter");
+            const dup = await polishWaitFor(h, `!!${INIT_RAIL}?.querySelector('[data-rail-section="plan"] [role="alert"]')`, 5000);
+            const dupInfo = await h.ev(`(() => {
+                const a = ${INIT_RAIL}?.querySelector('[data-rail-section="plan"] [role="alert"]');
+                const buttons = ${INIT_RAIL}?.querySelector('[data-rail-section="plan"]')?.querySelectorAll("button");
+                const last = buttons ? buttons[buttons.length - 1] : null;
+                return a ? { text: a.innerText, error: a.className.includes("text-error"),
+                    underButtons: last ? !!(last.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING) : false } : null;
+            })()`);
+            await initPress(h, "Escape");
+            rec(
+                "4b. renaming a row to the label of an existing chunk shows the refusal under the buttons, in the error colour",
+                dup === true && dupInfo?.error === true && dupInfo.underButtons === true && /EC-DUPLICATE-LABEL|already exists/.test(dupInfo.text),
+                dupInfo
+            );
+            const stillP3 = await stateOf(PR_P3);
+
+            // --- 5. Accept, Undo, Accept again ---------------------------------------------------------------------------
+            await initClick(h, prButton(PR_P1, "Accept"));
+            const accepted = await polishWaitFor(h, `${INIT_RAIL}?.querySelector('[data-plan-row="accepted"]')?.innerText.includes("accepted · now pending") === true`, INIT_WAIT_MS);
+            const afterAccept = await stateOf(PR_P1);
+            // the row shows the decision as soon as it is held, while the call is still going and its buttons are disabled
+            await polishWaitFor(h, `!!(${prRow(PR_P1)})?.querySelector("button:not([disabled])")`, 5000);
+            await initClick(h, `(${prRow(PR_P1)})?.querySelector("button")`);
+            const undone = await polishWaitFor(h, `!!(${prRow(PR_P1)}) && ${prRow(PR_P1)}.dataset.planRow === "proposed"`, INIT_WAIT_MS);
+            const afterUndo = await stateOf(PR_P1);
+            await initClick(h, prButton(PR_P1, "Accept"));
+            await waitRows(2, "proposed");
+            const afterAgain = await stateOf(PR_P1);
+            rec(
+                '5. Accept reads "accepted · now pending" and the chunk is pending; Undo puts it back to proposed; Accept again',
+                accepted === true && afterAccept === "pending" && undone === true && afterUndo === "proposed" && afterAgain === "pending" && stillP3 === "proposed",
+                { accepted, afterAccept, undone, afterUndo, afterAgain }
+            );
+
+            // --- 6. Drop, and Undo brings it back where it was, with its stage ----------------------------------------------
+            await initClick(h, prButton(PR_P2, "Drop"));
+            const dropped = await polishWaitFor(h, `${INIT_RAIL}?.querySelector('[data-plan-row="dropped"]')?.innerText.includes("dropped") === true`, INIT_WAIT_MS);
+            const afterDrop = await stateOf(PR_P2);
+            rec('6. Drop reads "dropped" and the chunk is gone from the initiative', dropped === true && afterDrop === "gone", { dropped, afterDrop });
+            await polishWaitFor(h, `!!(${prRow(PR_P2)})?.querySelector("button:not([disabled])")`, 5000);
+            await initClick(h, `(${prRow(PR_P2)})?.querySelector("button")`);
+            const restored = await polishWaitFor(h, `${prRow(PR_P2)}?.dataset.planRow === "proposed"`, INIT_WAIT_MS);
+            const back2 = await initChunk(h, ctx.main, PR_P2);
+            const order = await initLabels(h, ctx.main);
+            rec(
+                "6b. Undo on a dropped row brings the chunk back as proposed at its old place, with its stage",
+                restored === true && back2?.status === "proposed" && back2.stage === PR_P2_STAGE && order.indexOf(PR_P2) === order.indexOf(PR_P1) + 1,
+                { restored, status: back2?.status, stage: back2?.stage, order }
+            );
+            await initClick(h, prButton(PR_P2, "Drop"));
+            await polishWaitFor(h, `${INIT_RAIL}?.querySelector('[data-plan-row="dropped"]')?.innerText.includes("dropped") === true`, INIT_WAIT_MS);
+            rec("6c. dropping it again removes it", (await stateOf(PR_P2)) === "gone", { status: await stateOf(PR_P2) });
+
+            // --- 7. the Jarvis List counts what waits ---------------------------------------------------------------------
+            await h.goto("jarvis");
+            const mainRow = `(${INIT_ROW(PR_MAIN)})`;
+            const ideaRow = `(${INIT_ROW(PR_IDEA)})`;
+            const counts = await polishWaitFor(
+                h,
+                `${mainRow}?.querySelector("[data-jarvis-proposed-count]")?.innerText.trim() === "2 proposed" && ${ideaRow}?.querySelector("[data-jarvis-proposed-count]")?.innerText.trim() === "2 proposed"`,
+                INIT_WAIT_MS
+            );
+            await polishNap(400);
+            await h.shot("cdp-shots/initiative-plan-review-7-list.png");
+            rec(
+                '7. on the Jarvis List the initiative\'s row and the idea\'s row (in the Ideas column) each read "2 proposed"',
+                counts === true,
+                await h.ev(`({ main: ${mainRow}?.querySelector("[data-jarvis-proposed-count]")?.innerText ?? null, idea: ${ideaRow}?.querySelector("[data-jarvis-proposed-count]")?.innerText ?? null })`)
+            );
+
+            // --- 8. opened, the initiative lists its proposed chunks; Accept there makes one pending ----------------------
+            await initClick(h, `${mainRow}?.querySelector(':scope > [role="button"]')`);
+            const group = await polishWaitFor(h, `${mainRow}?.parentElement?.querySelector("[data-jarvis-initiative-detail] [data-jarvis-proposed-group]") != null`, INIT_WAIT_MS);
+            const groupText = await h.ev(`${mainRow}?.parentElement?.querySelector("[data-jarvis-proposed-group]")?.innerText.replace(/\\s+/g, " ").trim() ?? null`);
+            await initClick(h, `${mainRow}?.parentElement?.querySelector('[data-jarvis-proposed-chunk="${PR_P3}"] [data-jarvis-proposed-action="accept"]')`);
+            const p3Pending = await initUntil(async () => (await stateOf(PR_P3)) === "pending", 5000);
+            rec(
+                '8. opened, the initiative shows "Proposed · 2"; Accept on one there makes the chunk pending',
+                group === true && /^proposed · 2/i.test(groupText ?? "") && p3Pending === true,
+                { group, groupText, p3Pending }
+            );
+            await initClick(h, `${mainRow}?.querySelector(':scope > [role="button"]')`);
+
+            // --- 9. the idea: Drop all removes both chunks, and it is still an idea ----------------------------------------
+            await initClick(h, `${ideaRow}?.querySelector(':scope > [role="button"]')`);
+            const ideaOpen = await polishWaitFor(h, `${ideaRow}?.parentElement?.querySelector("[data-jarvis-idea-detail] [data-jarvis-proposed-group]") != null`, INIT_WAIT_MS);
+            await initClick(h, `${ideaRow}?.parentElement?.querySelector('[data-jarvis-idea-detail] [data-jarvis-proposed-action="drop-all"]')`);
+            // a drop on the List is deferred by the undo window (briefundo.ts UNDO_WINDOW_MS), so the chunks are read after it
+            await polishNap(5800);
+            let ideaChunks = await initLabels(h, ctx.idea);
+            for (let i = 0; i < 10 && ideaChunks.length > 0; i++) {
+                await polishNap(500);
+                ideaChunks = await initLabels(h, ctx.idea);
+            }
+            const stillIdea = await polishWaitFor(h, `!!(${INIT_ROW(PR_IDEA)})`, 5000);
+            rec(
+                "9. on the opened idea, Drop all removes both chunks and it is still an idea",
+                ideaOpen === true && ideaChunks.length === 0 && stillIdea === true,
+                { ideaOpen, ideaChunks, stillIdea }
+            );
+            await h.goto("agent");
+
+            // --- 10. Accept all and continue ----------------------------------------------------------------------------
+            const waiting = await waitRows(1);
+            const label10 = (await prRows(h)).find((r) => r.state === "proposed")?.label ?? "";
+            await uploadsShellUp(h, ctx.agent.blockId);
+            await initClick(h, prFoot("Accept all and continue"));
+            const p4 = await initUntil(async () => (await stateOf(PR_P4_NEW)) === "pending", 5000);
+            // the agent's terminal as plain text, from the block's "term" file (uploadsTermHas): the shell echoes what was sent
+            const echoed = (await uploadsTermHas(h, ctx.agent.blockId, `Plan accepted, start with ${PR_P4_NEW}`)).seen;
+            const chipGone = await polishWaitFor(h, `!document.querySelector("[data-agent-header] [data-plan-review-chip]")`, 5000);
+            // the agent starts on the chunk, so its state changes; the rail reads the initiative again and ends the decided
+            // rows it held for Undo
+            await initStatus(h, ctx.agent, "working");
+            const sectionGone = await polishWaitFor(h, `!${prSection}`, INIT_WAIT_MS);
+            await h.goto("jarvis");
+            const queueGone = await polishWaitFor(
+                h,
+                `![...document.querySelectorAll('[data-jarvis-brief-row="queue"]')].some((r) => r.innerText.includes(${JSON.stringify(PR_MAIN)}))`,
+                INIT_WAIT_MS
+            );
+            rec(
+                '10. Accept all and continue accepts the renamed chunk and sends "Plan accepted, start with <it>" to the agent; the chip, the section and the Waiting on you row go',
+                waiting === true && label10 === PR_P4_NEW && p4 === true && echoed === true && chipGone === true && sectionGone === true && queueGone === true,
+                { waiting, first: label10, p4, echoed, chipGone, sectionGone, queueGone }
+            );
+            await h.goto("agent");
+
+            // --- 11. Accept all on another agent sends nothing; Drop all on a third empties its section --------------------
+            await initFocusAgent(h, ctx.agentAll);
+            await polishWaitFor(h, `${INIT_RAIL}?.querySelectorAll('[data-plan-row="proposed"]').length === 2`, INIT_WAIT_MS);
+            await uploadsShellUp(h, ctx.agentAll.blockId);
+            await initClick(h, prFoot("Accept all"));
+            const allPending = await initUntil(
+                async () => (await initChunks(h, ctx.all)).filter((c) => c.status === "pending").length === 2,
+                5000
+            );
+            await polishNap(1500);
+            // a terminal with nothing readable would pass a "nothing sent" check for nothing, so it must have a prompt
+            const leaked = await uploadsTermHas(h, ctx.agentAll.blockId, "Plan accepted");
+            rec(
+                "11. Accept all (without continue) makes both chunks pending and sends nothing to the agent's terminal",
+                allPending === true && leaked.readable === true && leaked.seen === false,
+                { allPending, leaked }
+            );
+
+            await initFocusAgent(h, ctx.agentDrop);
+            await polishWaitFor(h, `${INIT_RAIL}?.querySelectorAll('[data-plan-row="proposed"]').length === 2`, INIT_WAIT_MS);
+            await initClick(h, prFoot("Drop all"));
+            const bothDropped = await initUntil(async () => (await initLabels(h, ctx.drop)).join("|") === PR_DROP_DONE, 5000);
+            await initStatus(h, ctx.agentDrop, "working");
+            const dropSectionGone = await polishWaitFor(h, `!${prSection}`, INIT_WAIT_MS);
+            rec(
+                "12. Drop all removes both chunks, and the section leaves the rail",
+                bothDropped === true && dropSectionGone === true,
+                { bothDropped, dropSectionGone }
+            );
+        } catch (e) {
+            rec("the scenario ran to its end", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await initTeardown(h, ctx, "initiative-plan-review");
+    },
+};
+
+// --- initiative-popover: the initiative on the agent's header, opened in place -----------------------------------------
+const POP_PROJECT = "verify-init-popover";
+const POP_TITLE = "Popover: draft the initiative popover";
+const POP_C1 = "Shape the popover API";
+const POP_C2 = "Draft the popover rows";
+const POP_C3 = "Wire the popover keys";
+const POP_C3_NEW = "Wire the popover chords";
+const POP_C4 = "Write the popover docs";
+const POP_P1 = "Tune the popover spacing";
+const POP_NOTE_SEED = "Drafted the rows, the menu is next.";
+const POP_NOTE = "Chords wired, spacing is next.";
+const POP = `document.querySelector("[data-initiative-popover]")`;
+const popRows = (h, kind) =>
+    h.ev(`[...document.querySelectorAll('[data-initiative-popover] [data-popover-row="${kind}"]')].map((r) => r.dataset.chunkLabel)`);
+const popRow = (label) =>
+    `[...document.querySelectorAll("[data-initiative-popover] [data-popover-row]")].find((r) => r.dataset.chunkLabel === ${JSON.stringify(label)})`;
+// the popover's own keys need focus on its root (it holds it when it opens), and `i` focus on the surface
+const popOpen = async (h) => {
+    await h.ev(`document.querySelector("[data-cockpit-surface-wrap]")?.focus()`);
+    await initPress(h, "i");
+    const up = await polishWaitFor(h, `!!${POP}`, 4000);
+    await polishNap(500);
+    return up;
+};
+
+const initiativePopover = {
+    name: "initiative-popover",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = initCtx();
+        ctx.skip = initFixtureSkip();
+        if (ctx.skip) return ctx;
+        try {
+            await initPrepare(h, ctx);
+            ctx.oid = await initCreate(h, ctx, { title: POP_TITLE, project: POP_PROJECT, chunks: [POP_C1, POP_C2, POP_C3, POP_C4] });
+            ctx.agent = await initOpenAgent(h, ctx, { name: "verify-popover", project: POP_PROJECT, effort: `effort:${ctx.oid}` });
+            await initOps(h, ctx.oid, [
+                { op: "setChunkStatus", chunk: POP_C1, status: "done" },
+                { op: "setChunkStatus", chunk: POP_C2, status: "active" },
+                { op: "attachWork", chunk: POP_C2, kind: "agent", oref: `agent:${ctx.agent.tabId}` },
+                // one chunk the agent proposed and nobody decided on
+                { op: "addChunk", label: POP_P1, status: "proposed" },
+                // last, so it is the chunk's newest note
+                { op: "appendNote", chunk: POP_C2, note: POP_NOTE_SEED },
+            ]);
+            ctx.focus = await initFocusAgent(h, ctx.agent);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.skip) return [skipStep("initiative popover", ctx.skip)];
+        if (ctx.arrangeError != null) return [{ step: "0. the initiative and the agent were made", ok: false, detail: ctx.arrangeError }];
+        if (ctx.focus !== true) {
+            return [{ step: "0. the agent's pane is shown with its header and details rail", ok: false, detail: "it never reached the Agent surface" }];
+        }
+        const { steps, rec } = initRecorder();
+        try {
+            const status = async (label) => (await initChunk(h, ctx.oid, label))?.status ?? "gone";
+
+            // --- 1. `i` opens it on the chunk this agent is on, with that chunk's note ----------------------------------------
+            const linkUp = await polishWaitFor(h, `document.querySelector("[data-agent-header] [data-initiative-link-open]")?.innerText.includes(${JSON.stringify(POP_TITLE)}) === true`, INIT_WAIT_MS);
+            const up = await popOpen(h);
+            const first = await h.ev(`(() => {
+                const pop = ${POP};
+                const cur = pop?.querySelector('[data-popover-row="current"]');
+                return pop ? { heading: pop.textContent.includes("This agent is on"), current: cur?.dataset.chunkLabel ?? null,
+                    note: pop.textContent.includes(${JSON.stringify(POP_NOTE_SEED)}), title: pop.textContent.includes(${JSON.stringify(POP_TITLE)}),
+                    progress: pop.textContent.includes("1/4") } : null;
+            })()`);
+            await h.shot("cdp-shots/initiative-popover-1-open.png");
+            rec(
+                '1. `i` opens the popover on "This agent is on" with the active chunk and its latest note',
+                linkUp === true && up === true && first?.heading === true && first.current === POP_C2 && first.note === true && first.title === true && first.progress === true,
+                { linkUp, up, first }
+            );
+
+            // --- 2. Next lists the two pending chunks; the chunk menu renames one and defers it -----------------------------------
+            const next = await popRows(h, "next");
+            await initClick(h, popRow(POP_C3));
+            const menuUp = await polishWaitFor(h, `!!document.querySelector("[data-initiative-popover] [data-popover-menu]")`, 3000);
+            const items = await h.ev(`[...document.querySelectorAll("[data-initiative-popover] [data-menu-item]")].map((i) => i.dataset.menuItem)`);
+            await initClick(h, `document.querySelector('[data-initiative-popover] [data-menu-item="rename"]')`);
+            const renameInput = `document.querySelector('[data-initiative-popover] input[aria-label="Rename ${POP_C3}"]')`;
+            const inputUp = await polishWaitFor(h, `!!${renameInput}`, 3000);
+            await initFill(h, renameInput, POP_C3_NEW);
+            await initPress(h, "Enter");
+            const renamed = await initUntil(async () => (await initLabels(h, ctx.oid)).includes(POP_C3_NEW), 5000);
+            await polishWaitFor(h, `!!(${popRow(POP_C3_NEW)})`, 5000);
+            await initClick(h, popRow(POP_C3_NEW));
+            await polishWaitFor(h, `!!document.querySelector("[data-initiative-popover] [data-popover-menu]")`, 3000);
+            await initClick(h, `document.querySelector('[data-initiative-popover] [data-menu-item="deferred"]')`);
+            const deferred = await initUntil(async () => (await status(POP_C3_NEW)) === "deferred", 5000);
+            await polishWaitFor(h, `!(${popRow(POP_C3_NEW)})`, 3000);
+            const nextAfter = await popRows(h, "next");
+            rec(
+                "2. Next lists the two pending chunks; a click opens a chunk's menu: Rename renames it, and deferred sets its status",
+                JSON.stringify(next) === JSON.stringify([POP_C3, POP_C4]) && menuUp === true && items.join() === "pending,active,blocked,deferred,skipped,rename" &&
+                    inputUp === true && renamed === true && deferred === true && JSON.stringify(nextAfter) === JSON.stringify([POP_C4]),
+                { next, menuUp, items, inputUp, renamed, deferred, nextAfter }
+            );
+
+            // --- 3. `m` marks the agent's chunk done, and the next one (a deferred one too) becomes active --------------------
+            await initPress(h, "m");
+            const marked = await initUntil(async () => (await status(POP_C2)) === "done" && (await status(POP_C3_NEW)) === "active", 5000);
+            await polishWaitFor(h, `${POP}?.querySelector('[data-popover-row="current"]')?.dataset.chunkLabel === ${JSON.stringify(POP_C3_NEW)}`, 5000);
+            const cur3 = await h.ev(`${POP}?.querySelector('[data-popover-row="current"]')?.dataset.chunkLabel ?? null`);
+            rec(
+                "3. `m` marks the agent's chunk done; advance makes the following chunk (here a deferred one) active, and the popover follows it",
+                marked === true && cur3 === POP_C3_NEW,
+                { marked, current: cur3, statuses: [await status(POP_C2), await status(POP_C3_NEW), await status(POP_C4)] }
+            );
+
+            // --- 4. `n` adds a note -------------------------------------------------------------------------------------------
+            await initPress(h, "n");
+            const noteInput = `document.querySelector('[data-initiative-popover] input[aria-label^="Add a note to"]')`;
+            const noteUp = await polishWaitFor(h, `!!${noteInput}`, 3000);
+            await initType(h, POP_NOTE);
+            await initPress(h, "Enter");
+            const noted = await initUntil(async () => ((await initChunk(h, ctx.oid, POP_C3_NEW))?.notes ?? []).some((n) => n.text === POP_NOTE), 5000);
+            const shown = await polishWaitFor(h, `${POP}?.textContent.includes(${JSON.stringify(POP_NOTE)}) === true`, 5000);
+            rec("4. `n`, a typed note and Enter append it to the chunk, and the popover shows it", noteUp === true && noted === true && shown === true, { noteUp, noted, shown });
+
+            // --- 5. Esc closes it and focus goes back -------------------------------------------------------------------------
+            await initPress(h, "Escape");
+            const closed = await polishWaitFor(h, `!${POP}`, 3000);
+            await polishNap(300);
+            const focus5 = await h.ev(`(() => {
+                const a = document.activeElement;
+                return { tag: a?.tagName ?? null, wrap: a?.hasAttribute("data-cockpit-surface-wrap") ?? false, link: a?.hasAttribute("data-initiative-link-open") ?? false };
+            })()`);
+            rec("5. Esc closes the popover and focus returns to where it was", closed === true && (focus5.wrap || focus5.link), { closed, focus5 });
+
+            // --- 6. the peek gesture on the link opens no popover: it peeks the initiative -------------------------------------
+            await initClick(h, `document.querySelector("[data-agent-header] [data-initiative-link-open]")`, { mods: PEEK_BIT });
+            const peeked = await polishWaitFor(h, `!!document.querySelector('[data-pet-peek-item="effort"]')`, INIT_WAIT_MS);
+            const peekText = await h.ev(`document.querySelector('[data-pet-peek-item="effort"]')?.innerText.includes(${JSON.stringify(POP_TITLE)}) ?? false`);
+            const popoverUp = await h.ev(`!!${POP}`);
+            rec(
+                `6. ${PEEK_GLYPH.split(" · ")[1]} on the header's initiative link opens no popover: Sprout's popup peeks the initiative`,
+                peeked === true && peekText === true && popoverUp === false,
+                { peeked, peekText, popoverUp }
+            );
+            await h.ev(`document.querySelector('[data-pet-peek] button[aria-label="Close Jarvis panel"]')?.click()`);
+            await polishWaitFor(h, `!document.querySelector("[data-pet-peek]")`, 3000);
+
+            // --- 7. the proposed chunk: "1 proposed · Review on the rail" brings the rail to Plan to review ------------------------
+            await polishWaitFor(h, `!!document.querySelector("[data-agent-header] [data-plan-review-chip]")`, INIT_WAIT_MS);
+            // the rail on another section, so the click has somewhere to bring it back from
+            await h.ev(`${INIT_RAIL}?.querySelector('[data-rail-tab="tree"]')?.click()`);
+            await polishNap(300);
+            const up7 = await popOpen(h);
+            const review = await h.ev(`document.querySelector("[data-initiative-popover] [data-popover-review]")?.innerText.trim() ?? null`);
+            await initClick(h, `document.querySelector("[data-initiative-popover] [data-popover-review]")`);
+            const closed7 = await polishWaitFor(h, `!${POP}`, 3000);
+            const railPlan = await polishWaitFor(h, `(() => {
+                const plan = ${INIT_RAIL}?.querySelector('[data-rail-section="plan"]');
+                const view = ${INIT_RAIL}?.querySelector("[data-rail-scroll]")?.getBoundingClientRect();
+                if (!plan || !view) return false;
+                const r = plan.getBoundingClientRect();
+                return r.width > 0 && r.top >= view.top - 2 && r.top < view.bottom;
+            })()`, 5000);
+            await h.shot("cdp-shots/initiative-popover-7-review.png");
+            rec(
+                '7. a proposed chunk reads "1 proposed · Review on the rail"; clicking it closes the popover and brings the rail to Plan to review',
+                up7 === true && /1 proposed/.test(review ?? "") && closed7 === true && railPlan === true,
+                { up7, review, closed7, railPlan }
+            );
+
+            // --- 8. Open in Jarvis lands on Jarvis with the initiative selected ---------------------------------------------------
+            await h.goto("agent");
+            const up8 = await popOpen(h);
+            await initClick(h, `document.querySelector("[data-initiative-popover] [data-popover-open-jarvis]")`);
+            // the destination's selection is the Brief's detail sheet on the initiative
+            const onJarvis = await polishWaitFor(
+                h,
+                `document.querySelector('[data-jarvis-brief-sheet="effort"]')?.innerText.includes(${JSON.stringify(POP_TITLE)}) === true`,
+                INIT_WAIT_MS
+            );
+            const surface = await h.activeSurfaceLabel();
+            await polishNap(500);
+            await h.shot("cdp-shots/initiative-popover-8-jarvis.png");
+            rec(
+                "8. Open in Jarvis lands on the Jarvis surface with the initiative selected: its detail sheet is open",
+                up8 === true && onJarvis === true && surface === SURFACE_LABEL.jarvis,
+                { up8, onJarvis, surface }
+            );
+        } catch (e) {
+            rec("the scenario ran to its end", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await initTeardown(h, ctx, "initiative-popover");
+    },
+};
+
+// --- initiative-link: an agent with no initiative links one from its header ---------------------------------------------
+const LINK_PROJECT = "verify-init-link";
+const LINK_TITLE = "Link: the initiative to pick";
+const LINK_C1 = "First link chunk";
+const LINK_C2 = "Second link chunk";
+const tabEffort = async (h, tabId) =>
+    (await waveService(h, "object", "GetObject", [`tab:${tabId}`]))?.meta?.["session:effort"] ?? null;
+const LINK_BTN = `document.querySelector("[data-agent-header] [data-initiative-link]")`;
+const LINK_PICKER = `document.querySelector("[data-initiative-picker]")`;
+
+const initiativeLink = {
+    name: "initiative-link",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = initCtx();
+        ctx.skip = initFixtureSkip();
+        if (ctx.skip) return ctx;
+        try {
+            await initPrepare(h, ctx);
+            ctx.oid = await initCreate(h, ctx, { title: LINK_TITLE, project: LINK_PROJECT, chunks: [LINK_C1, LINK_C2] });
+            ctx.agentA = await initOpenAgent(h, ctx, { name: "verify-link-a", project: LINK_PROJECT });
+            ctx.agentB = await initOpenAgent(h, ctx, { name: "verify-link-b", project: LINK_PROJECT });
+            ctx.focus = await initFocusAgent(h, ctx.agentA);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.skip) return [skipStep("initiative link", ctx.skip)];
+        if (ctx.arrangeError != null) return [{ step: "0. the initiative and the agents were made", ok: false, detail: ctx.arrangeError }];
+        if (ctx.focus !== true) {
+            return [{ step: "0. the agent's pane is shown with its header and details rail", ok: false, detail: "it never reached the Agent surface" }];
+        }
+        const { steps, rec } = initRecorder();
+        try {
+            // --- 1. an agent with no initiative offers to link one --------------------------------------------------------------
+            const offered = await polishWaitFor(h, `${LINK_BTN}?.innerText.trim() === "+ Link to initiative"`, INIT_WAIT_MS);
+            const noLink = await h.ev(`!document.querySelector("[data-agent-header] [data-initiative-link-open]")`);
+            rec('1. the header of an agent with no initiative shows "+ Link to initiative"', offered === true && noLink === true, { offered, noLink });
+
+            // --- 2. a click opens the picker, listing the initiative ------------------------------------------------------------------
+            await initClick(h, LINK_BTN);
+            const pickerUp = await polishWaitFor(h, `!!${LINK_PICKER}`, 4000);
+            const row = `document.querySelector('[data-initiative-picker] [data-picker-row="effort:${ctx.oid}"]')`;
+            // an initiative of another project sits behind "others"; this one is the agent's own project's
+            const listed = await polishWaitFor(h, `!!${row}`, INIT_WAIT_MS);
+            const picker = await h.ev(`(() => {
+                const p = ${LINK_PICKER};
+                return p ? { rows: p.querySelectorAll("[data-picker-row]").length, filter: !!p.querySelector('input[aria-label="Find an initiative"]'),
+                    newRow: !!p.querySelector("[data-picker-new]"), text: p.innerText.replace(/\\s+/g, " ").slice(0, 160) } : null;
+            })()`);
+            await polishNap(400);
+            await h.shot("cdp-shots/initiative-link-2-picker.png");
+            rec(
+                "2. clicking it opens the picker, which lists the initiative and offers a new one",
+                pickerUp === true && listed === true && picker?.filter === true && picker.newRow === true,
+                { pickerUp, listed, picker }
+            );
+
+            // --- 3. picking it sets the tab's session:effort and the header links it -----------------------------------------------
+            await initClick(h, row);
+            const set = await initUntil(async () => (await tabEffort(h, ctx.agentA.tabId)) === `effort:${ctx.oid}`, 8000);
+            const linked = await polishWaitFor(
+                h,
+                `document.querySelector("[data-agent-header] [data-initiative-link-open]")?.innerText.includes(${JSON.stringify(LINK_TITLE)}) === true`,
+                INIT_WAIT_MS
+            );
+            const gone = await polishWaitFor(h, `!${LINK_PICKER} && !${LINK_BTN}`, 3000);
+            // it also puts the agent on the initiative's first pending chunk, so that chunk reads as its work
+            const attached = await initUntil(
+                async () => ((await initChunk(h, ctx.oid, LINK_C1))?.workrefs ?? []).some((w) => w.oref === `agent:${ctx.agentA.tabId}`),
+                5000
+            );
+            rec(
+                "3. picking the initiative sets the tab's session:effort, the header shows the initiative link, and the agent is attached to its first pending chunk",
+                set === true && linked === true && gone === true && attached === true,
+                { set, linked, gone, attached }
+            );
+
+            // --- 4. the second agent: `i` opens the picker, and a new initiative is made from the session -------------------------------
+            await initFocusAgent(h, ctx.agentB);
+            const offeredB = await polishWaitFor(h, `${LINK_BTN}?.innerText.trim() === "+ Link to initiative"`, INIT_WAIT_MS);
+            const nameB = await h.ev(`document.querySelector("[data-agent-header] .font-semibold")?.textContent.trim() ?? ""`);
+            await h.ev(`document.querySelector("[data-cockpit-surface-wrap]")?.focus()`);
+            await initPress(h, "i");
+            const pickerB = await polishWaitFor(h, `!!document.querySelector("[data-initiative-picker] [data-picker-new]")`, 4000);
+            await initClick(h, `document.querySelector("[data-initiative-picker] [data-picker-new]")`);
+            const newOref = await (async () => {
+                let got = null;
+                await initUntil(async () => {
+                    got = await tabEffort(h, ctx.agentB.tabId);
+                    return got != null;
+                }, 8000);
+                return got;
+            })();
+            // tracked now, so teardown deletes the idea it made
+            if (newOref != null) ctx.oids.push(newOref.replace(/^effort:/, ""));
+            const idea = newOref != null ? await initEffort(h, newOref.replace(/^effort:/, "")) : null;
+            // a session named after its initiative reads just "initiative" (initiativeLinkText), not the title twice
+            const linkedB = await polishWaitFor(
+                h,
+                `document.querySelector("[data-agent-header] [data-initiative-link-open]")?.innerText.trim() === "◇ initiative"`,
+                INIT_WAIT_MS
+            );
+            rec(
+                '4. on the second agent `i` opens the picker; "+ New initiative from this session" makes an idea titled with the agent\'s name, sets session:effort to it, and the header links it',
+                offeredB === true && pickerB === true && nameB !== "" && idea?.title === nameB && (idea.chunks ?? []).length === 0 && linkedB === true,
+                { offeredB, pickerB, nameB, newOref, title: idea?.title, chunks: (idea?.chunks ?? []).length, linkedB }
+            );
+        } catch (e) {
+            rec("the scenario ran to its end", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await initTeardown(h, ctx, "initiative-link");
+    },
+};
+
+// --- initiative-review: a review pass over what changed and what sat idle ------------------------------------------------
+// Three initiatives made at real time T, each marked reviewed in localStorage so none reads from the "Since you looked"
+// cursor: the blocked and the changed one at T - 1h (their updatedts is after it, so they changed), the idle one at
+// T + 1 min (after its last change, so it did not). updatedts cannot be forged over RPC, so Date.now is stubbed in the
+// page to T + 20 days before Jarvis opens (and put back in teardown): the idle one's last change and its mark are then
+// 20 days old, which reads "idle 2w". The stub makes every other active initiative in the store idle too, so no step
+// asserts a total: each reads the three seeded orefs, the order they are walked in relative to each other, and their marks.
+const REV_KEY = "jarvis.review.reviewed";
+const REV_BLOCKED = "Review blocked: stuck on the feed";
+const REV_CHANGED = "Review changed: moved the feed";
+const REV_IDLE = "Review idle: parked feed work";
+const REV_AGENT = "verify-review-agent";
+const REV_CURRENT = `document.querySelector("[data-jarvis-review-current]")?.dataset.jarvisReviewCurrent ?? null`;
+// every initiative of the pass in order, the open one included, with whether it is marked in this pass
+const REV_PASS = `[...document.querySelectorAll("[data-jarvis-review-current], [data-jarvis-review-row]")].map((e) => ({
+    oref: e.dataset.jarvisReviewCurrent ?? e.dataset.jarvisReviewRow,
+    open: e.hasAttribute("data-jarvis-review-current"),
+    marked: e.classList.contains("opacity-45"),
+}))`;
+const REV_COUNT = `(() => {
+    const m = /^Review · (\\d+)$/.exec(document.querySelector("[data-jarvis-review-enter]")?.innerText.trim() ?? "");
+    return m ? Number(m[1]) : 0;
+})()`;
+const REV_ACTIONS = `[...(document.querySelector("[data-jarvis-review-current]")?.querySelectorAll("[data-jarvis-review-action]") ?? [])].map((b) => b.dataset.jarvisReviewAction)`;
+const reviewMarks = (h) => h.ev(`JSON.parse(localStorage.getItem(${JSON.stringify(REV_KEY)}) ?? "{}")`);
+
+// `j` until the pass is on `oref` (the pass wraps, so no more presses than it holds)
+async function reviewGoTo(h, oref) {
+    const total = (await h.ev(REV_PASS)).length;
+    for (let i = 0; i <= total; i++) {
+        if ((await h.ev(REV_CURRENT)) === oref) return true;
+        await initPress(h, "j");
+    }
+    return (await h.ev(REV_CURRENT)) === oref;
+}
+
+const reviewRowShown = async (h, title) => {
+    if (await h.ev(`!!(${INIT_ROW(title)})`)) return true;
+    // the Initiatives region draws a few rows, and the rest sit behind its "+N more"
+    await h.ev(`document.querySelector('[data-jarvis-brief-region="initiatives"] [data-jarvis-brief-more="more"]')?.click()`);
+    return polishWaitFor(h, `!!(${INIT_ROW(title)})`, 5000);
+};
+
+const initiativeReview = {
+    name: "initiative-review",
+    surface: "jarvis",
+    async arrange(h) {
+        const ctx = initCtx();
+        ctx.skip = initFixtureSkip();
+        if (ctx.skip) return ctx;
+        try {
+            await initPrepare(h, ctx);
+            const make = async (title) => initCreate(h, ctx, { title, project: "verify-init-review", chunks: ["First feed chunk", "Second feed chunk"] });
+            ctx.blocked = await make(REV_BLOCKED);
+            ctx.changed = await make(REV_CHANGED);
+            ctx.idle = await make(REV_IDLE);
+            await initOps(h, ctx.blocked, [{ op: "setChunkStatus", chunk: "First feed chunk", status: "blocked", note: "waiting on the feed owner" }]);
+            await initOps(h, ctx.changed, [{ op: "setChunkStatus", chunk: "First feed chunk", status: "done" }]);
+            const t = Date.now();
+            ctx.t = t;
+            ctx.prevStorage[REV_KEY] = await h.ev(`localStorage.getItem(${JSON.stringify(REV_KEY)})`);
+            const marks = {
+                ...(JSON.parse(ctx.prevStorage[REV_KEY] ?? "{}") ?? {}),
+                [`effort:${ctx.blocked}`]: t - 3600_000,
+                [`effort:${ctx.changed}`]: t - 3600_000,
+                [`effort:${ctx.idle}`]: t + 60_000,
+            };
+            await h.ev(`localStorage.setItem(${JSON.stringify(REV_KEY)}, ${JSON.stringify(JSON.stringify(marks))})`);
+            // the marks are read once, when the page starts
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            // the blocked initiative has an agent open on it, so its review offers Go to agent
+            ctx.agent = await initOpenAgent(h, ctx, { name: REV_AGENT, project: "verify-init-review", effort: `effort:${ctx.blocked}` });
+            await h.ev(`(() => {
+                if (window.__initRealNow) return;
+                const real = Date.now.bind(Date);
+                window.__initRealNow = real;
+                Date.now = () => real() + ${20 * INIT_DAY_MS};
+            })()`);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.skip) return [skipStep("initiative review", ctx.skip)];
+        if (ctx.arrangeError != null) return [{ step: "0. the initiatives, their marks and the agent were made", ok: false, detail: ctx.arrangeError }];
+        const { steps, rec } = initRecorder();
+        try {
+            const oref = { blocked: `effort:${ctx.blocked}`, changed: `effort:${ctx.changed}`, idle: `effort:${ctx.idle}` };
+            const seeded = [oref.blocked, oref.changed, oref.idle];
+            const only = (list) => list.filter((o) => seeded.includes(o));
+            const passOrder = async () => only((await h.ev(REV_PASS)).map((p) => p.oref));
+            await h.goto("jarvis");
+            await h.ev("document.activeElement?.blur?.()");
+
+            // --- 1. before the pass: the List marks the changed and the idle ones, and the heading counts them --------------------
+            const rows = await Promise.all([REV_BLOCKED, REV_CHANGED, REV_IDLE].map((t) => reviewRowShown(h, t)));
+            const listed = await polishWaitFor(
+                h,
+                `(${INIT_ROW(REV_IDLE)})?.querySelector("[data-jarvis-initiative-status]")?.innerText.trim() === "idle 2w"`,
+                INIT_WAIT_MS
+            );
+            const marks1 = await h.ev(`({
+                changedDot: !!(${INIT_ROW(REV_CHANGED)})?.querySelector("[data-jarvis-changed-dot]"),
+                blockedDot: !!(${INIT_ROW(REV_BLOCKED)})?.querySelector("[data-jarvis-changed-dot]"),
+                idleDot: !!(${INIT_ROW(REV_IDLE)})?.querySelector("[data-jarvis-changed-dot]"),
+                idle: (${INIT_ROW(REV_IDLE)})?.querySelector("[data-jarvis-initiative-status]")?.innerText.trim() ?? null,
+                blocked: (${INIT_ROW(REV_BLOCKED)})?.querySelector("[data-jarvis-initiative-status]")?.innerText.trim() ?? null,
+            })`);
+            const count0 = await h.ev(REV_COUNT);
+            await h.shot("cdp-shots/initiative-review-1-list.png");
+            rec(
+                '1. before the pass the List reads "idle 2w" on the idle initiative and puts the changed dot on the changed one, and the heading counts the review queue',
+                rows.every(Boolean) && listed === true && marks1.changedDot === true && marks1.blockedDot === true && marks1.idleDot === false && count0 >= 3,
+                { rows, listed, marks1, count0 }
+            );
+            const cursor0 = await h.ev(`document.querySelector('[data-jarvis-brief-cursor="true"]')?.innerText.slice(0, 60) ?? null`);
+
+            // --- 2. Sprout's popup says what changed, and its link begins the pass -----------------------------------------------------
+            await h.ev(`document.querySelector('[aria-label="Jarvis condition"]')?.click()`);
+            const sprout = await polishWaitFor(h, `!!document.querySelector("[data-pet-review-line]")`, INIT_WAIT_MS);
+            const sproutLine = await h.ev(`document.querySelector("[data-pet-review-line]")?.innerText.replace(/\\s+/g, " ").trim() ?? null`);
+            await h.shot("cdp-shots/initiative-review-2-sprout.png");
+            await initClick(h, `document.querySelector("[data-pet-review-link]")`);
+            const sproutPass = await polishWaitFor(h, `!!document.querySelector("[data-jarvis-review-pos]")`, INIT_WAIT_MS);
+            const orderSprout = await passOrder();
+            rec(
+                '2. Sprout\'s popup lists "initiatives changed", and "Review in Jarvis" lands on Jarvis already in the review pass, over the three',
+                sprout === true && /initiatives? changed/.test(sproutLine ?? "") && sproutPass === true && JSON.stringify(orderSprout) === JSON.stringify(seeded),
+                { sprout, sproutLine, sproutPass, orderSprout }
+            );
+            await initPress(h, "Escape");
+            const leftSprout = await polishWaitFor(h, `!document.querySelector("[data-jarvis-review-pos]")`, 3000);
+
+            // --- 3. `v` begins the pass; the blocked one is walked before the changed one, and the changed before the idle one -------------
+            await h.ev("document.activeElement?.blur?.()");
+            await initPress(h, "v");
+            const entered = await polishWaitFor(h, `!!document.querySelector("[data-jarvis-review-pos]")`, 5000);
+            const order = await passOrder();
+            const onBlocked = await reviewGoTo(h, oref.blocked);
+            await polishWaitFor(h, `document.querySelectorAll("[data-jarvis-review-current] [data-jarvis-review-event]").length > 0`, INIT_WAIT_MS);
+            const since = await h.ev(`(() => {
+                const cur = document.querySelector("[data-jarvis-review-current]");
+                const s = cur?.querySelector("[data-jarvis-review-since]");
+                return { heading: s?.textContent.includes("Since you reviewed") ?? false,
+                    events: [...(cur?.querySelectorAll("[data-jarvis-review-event]") ?? [])].map((e) => e.innerText.replace(/\\s+/g, " ").trim()),
+                    status: cur?.querySelector("[data-jarvis-initiative-status]")?.innerText.trim() ?? null,
+                    actions: ${REV_ACTIONS} };
+            })()`);
+            await polishNap(400);
+            await h.shot("cdp-shots/initiative-review-3-blocked.png");
+            rec(
+                "3. `v` begins the pass over the queue: the blocked, changed and idle initiatives are walked in that order, and the blocked one opens on what happened since the mark",
+                leftSprout === true && entered === true && JSON.stringify(order) === JSON.stringify(seeded) && onBlocked === true &&
+                    since.heading === true && since.events.some((e) => e.includes("First feed chunk")),
+                { leftSprout, entered, order, onBlocked, since }
+            );
+
+            // --- 4. Go to agent leaves for the agent open on the initiative; the pass is where it was on coming back ----------------------
+            const goLabel = await h.ev(`document.querySelector('[data-jarvis-review-current] [data-jarvis-review-action="work"]')?.innerText.trim() ?? null`);
+            await initClick(h, `document.querySelector('[data-jarvis-review-current] [data-jarvis-review-action="work"]')`);
+            const onAgent = await polishWaitFor(
+                h,
+                `(() => { const p = document.querySelector('[data-agent-terminal="${ctx.agent.tabId}"]'); return p != null && !p.classList.contains("hidden"); })()`,
+                INIT_WAIT_MS
+            );
+            const surfaceAgent = await h.activeSurfaceLabel();
+            await h.goto("jarvis");
+            const stillOnBlocked = await polishWaitFor(h, `${REV_CURRENT} === ${JSON.stringify(oref.blocked)}`, 5000);
+            rec(
+                "4. on the blocked initiative with an agent open, its first action after Keep going is Go to agent: it lands on that agent, and the pass is still on the blocked one on coming back",
+                goLabel === "Go to agent" && onAgent === true && surfaceAgent === SURFACE_LABEL.agent && stillOnBlocked === true,
+                { goLabel, onAgent, surfaceAgent, stillOnBlocked }
+            );
+
+            // --- 5. Enter marks it and opens the next unmarked one, in pass order ---------------------------------------------------------
+            await h.ev("document.activeElement?.blur?.()");
+            const before5 = await h.ev(REV_PASS);
+            const at = before5.findIndex((p) => p.open);
+            const expectNext = [...before5.slice(at + 1), ...before5.slice(0, at)].find((p) => !p.marked)?.oref ?? null;
+            await initPress(h, "Enter");
+            await polishWaitFor(h, `${REV_CURRENT} !== ${JSON.stringify(oref.blocked)}`, 5000);
+            const after5 = await h.ev(REV_PASS);
+            const marks5 = await reviewMarks(h);
+            rec(
+                "5. Enter marks the open initiative reviewed (faded and stamped) and opens the next one not yet marked",
+                after5.find((p) => p.oref === oref.blocked)?.marked === true && (await h.ev(REV_CURRENT)) === expectNext && marks5[oref.blocked] > ctx.t + INIT_DAY_MS,
+                { expectNext, current: await h.ev(REV_CURRENT), marked: after5.find((p) => p.oref === oref.blocked)?.marked, mark: marks5[oref.blocked] }
+            );
+
+            // --- 6. the changed one: k and j move back and forward without moving the List's cursor; Work on shows; Keep going marks it -------
+            await reviewGoTo(h, oref.changed);
+            const workLabel = await h.ev(`document.querySelector('[data-jarvis-review-current] [data-jarvis-review-action="work"]')?.innerText.trim() ?? null`);
+            const actions6 = await h.ev(REV_ACTIONS);
+            const here = await h.ev(REV_CURRENT);
+            await initPress(h, "k");
+            const afterK = await h.ev(REV_CURRENT);
+            await initPress(h, "j");
+            const afterJ = await h.ev(REV_CURRENT);
+            const cursor6 = await h.ev(`document.querySelector('[data-jarvis-brief-cursor="true"]')?.innerText.slice(0, 60) ?? null`);
+            await initClick(h, `document.querySelector('[data-jarvis-review-current] [data-jarvis-review-action="keep"]')`);
+            await polishWaitFor(h, `${REV_CURRENT} !== ${JSON.stringify(oref.changed)}`, 5000);
+            const after6 = await h.ev(REV_PASS);
+            rec(
+                "6. on the changed initiative (no agent): Work on is offered but not pressed, k then j go back and forward and leave the List's cursor where it was, and Keep going marks it",
+                workLabel === "Work on" && actions6[0] === "keep" && here === oref.changed && afterK !== here && afterJ === here && cursor6 === cursor0 &&
+                    after6.find((p) => p.oref === oref.changed)?.marked === true,
+                { workLabel, actions6, here, afterK, afterJ, cursor0, cursor6, marked: after6.find((p) => p.oref === oref.changed)?.marked }
+            );
+
+            // --- 7. the idle one: "idle 2w", Pause and Archive first; Pause parks it, and Archive closes it ---------------------------------
+            await reviewGoTo(h, oref.idle);
+            await polishWaitFor(h, `document.querySelectorAll("[data-jarvis-review-current] [data-jarvis-review-quiet]").length > 0`, INIT_WAIT_MS);
+            const idleInfo = await h.ev(`(() => {
+                const cur = document.querySelector("[data-jarvis-review-current]");
+                return { status: cur?.querySelector("[data-jarvis-initiative-status]")?.innerText.trim() ?? null,
+                    quiet: cur?.querySelector("[data-jarvis-review-quiet]")?.innerText.trim() ?? null, actions: ${REV_ACTIONS} };
+            })()`);
+            await polishNap(300);
+            await h.shot("cdp-shots/initiative-review-7-idle.png");
+            await initClick(h, `document.querySelector('[data-jarvis-review-current] [data-jarvis-review-action="pause"]')`);
+            const paused = await initUntil(async () => (await initEffort(h, ctx.idle))?.status === "paused", 8000);
+            const markedIdle = await initUntil(async () => ((await reviewMarks(h))[oref.idle] ?? 0) > ctx.t + INIT_DAY_MS, 8000);
+            rec(
+                '7. the idle initiative reads "idle 2w" and nothing moved, with Pause and Archive first; Pause parks it and marks it reviewed',
+                idleInfo.status === "idle 2w" && idleInfo.actions.slice(0, 2).join() === "pause,archive" && /nothing moved in 2 weeks/.test(idleInfo.quiet ?? "") && paused === true && markedIdle === true,
+                { idleInfo, paused, markedIdle }
+            );
+            // open again (the pass keeps a marked one listed) and archive it
+            await reviewGoTo(h, oref.idle);
+            const resume = await h.ev(`document.querySelector('[data-jarvis-review-current] [data-jarvis-review-action="pause"]')?.innerText.trim() ?? null`);
+            await initClick(h, `document.querySelector('[data-jarvis-review-current] [data-jarvis-review-action="archive"]')`);
+            const archived = await initUntil(async () => (await initEffort(h, ctx.idle))?.status === "archived", 8000);
+            rec("7b. a paused initiative offers Resume, and Archive closes it", resume === "Resume" && archived === true, { resume, archived });
+
+            // --- 8. the rest of the pass is marked through (Enter), the end reads "All reviewed", and Esc leaves it ----------------------------
+            let presses = 0;
+            for (; presses < 120 && !(await h.ev(`!!document.querySelector("[data-jarvis-review-done]")`)); presses++) {
+                await h.ev("document.activeElement?.blur?.()");
+                await initPress(h, "Enter");
+            }
+            const done = await h.ev(`!!document.querySelector("[data-jarvis-review-done]")`);
+            await h.shot("cdp-shots/initiative-review-8-done.png");
+            await initPress(h, "Escape");
+            const left = await polishWaitFor(h, `!document.querySelector("[data-jarvis-review-pos]")`, 3000);
+            const marksEnd = await reviewMarks(h);
+            const seededMarked = [oref.blocked, oref.changed, oref.idle].every((o) => (marksEnd[o] ?? 0) > ctx.t + INIT_DAY_MS);
+            // none of the three is queued any more. The count itself is not asserted: another initiative made in the store
+            // meanwhile would join the queue, so a fresh pass is begun (if there is anything to review at all) and read
+            const countEnd = await h.ev(REV_COUNT);
+            await h.ev("document.activeElement?.blur?.()");
+            await initPress(h, "v");
+            const again = await passOrder();
+            if (await h.ev(`!!document.querySelector("[data-jarvis-review-pos]")`)) await initPress(h, "Escape");
+            rec(
+                '8. the pass ends on "All reviewed" with every initiative marked, Esc leaves it, and none of the three is queued for review any more',
+                done === true && left === true && seededMarked === true && again.length === 0,
+                { presses, done, left, seededMarked, countStart: count0, countEnd, queuedAgain: again }
+            );
+        } catch (e) {
+            rec("the scenario ran to its end", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await initTeardown(h, ctx, "initiative-review");
+    },
+};
+
+// --- initiative-parents: sub-initiatives sit under their parent on the Jarvis List ----------------------------------------
+const PAR_PROJECT = "verify-init-parents";
+const PAR_PARENT = "Parents: the feed platform";
+const PAR_CHILD_A = "Parents child: feed ingest";
+const PAR_CHILD_B = "Parents child: feed render";
+const PAR_IDEA = "Parents idea: feed alerts";
+const PAR_OTHER = "Parents unrelated: feed archive";
+const PAR_ORPHAN = "Parents orphan: feed leftovers";
+const PAR_GONE = "Parents gone: a parent that goes";
+// a row's depth, elbow, parent line and sub count, by title
+const parRow = (h, title) =>
+    h.ev(`(() => {
+        const row = ${INIT_ROW(title)};
+        return row ? { depth: Number(row.dataset.jarvisInitiativeDepth ?? "0"), elbow: !!row.querySelector("[data-jarvis-initiative-elbow]"),
+            meta: row.querySelector("[data-jarvis-initiative-meta]")?.innerText.trim() ?? null,
+            sub: row.querySelector("[data-jarvis-initiative-sub]")?.innerText.trim() ?? null } : null;
+    })()`);
+const parToast = (h) => h.ev(`document.body.innerText`);
+// the row's ⋯ menu: a real click on it opens the menu at the pointer; the item is found by its label
+async function parMenu(h, title, item) {
+    await reviewRowShown(h, title);
+    const opened = await initClick(h, `(${INIT_ROW(title)})?.querySelector('[aria-label="Actions for ${title}"]')`);
+    const up = await polishWaitFor(h, `!!document.querySelector("[data-menu-item]")`, 3000);
+    const picked = up ? await initClick(h, `document.querySelector('[data-menu-item="${item}"]')`) : false;
+    return { opened, up, picked };
+}
+
+const initiativeParents = {
+    name: "initiative-parents",
+    surface: "jarvis",
+    async arrange(h) {
+        const ctx = initCtx();
+        try {
+            const make = (title, extra = {}) => initCreate(h, ctx, { title, project: PAR_PROJECT, chunks: ["Feed chunk one", "Feed chunk two"], ...extra });
+            ctx.parent = await make(PAR_PARENT);
+            ctx.childA = await make(PAR_CHILD_A, { parentoid: ctx.parent });
+            ctx.childB = await make(PAR_CHILD_B, { parentoid: ctx.parent });
+            // an idea (no chunks), linked under the parent with the link op
+            ctx.idea = await make(PAR_IDEA, { chunks: [] });
+            await initOps(h, ctx.idea, [{ op: "link", parentoid: ctx.parent }]);
+            ctx.other = await make(PAR_OTHER);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.arrangeError != null) return [{ step: "0. the initiatives were made", ok: false, detail: ctx.arrangeError }];
+        const { steps, rec } = initRecorder();
+        try {
+            await h.goto("jarvis");
+            const oref = (oid) => `effort:${oid}`;
+            const shown = await Promise.all([PAR_PARENT, PAR_CHILD_A, PAR_CHILD_B, PAR_OTHER].map((t) => reviewRowShown(h, t)));
+
+            // --- 1. the children sit under the parent, indented, with "↳ Part of" ------------------------------------------------------------
+            await polishWaitFor(h, `${INIT_ROW(PAR_CHILD_A)}?.dataset.jarvisInitiativeDepth === "1"`, INIT_WAIT_MS);
+            const parent = await parRow(h, PAR_PARENT);
+            const a = await parRow(h, PAR_CHILD_A);
+            const b = await parRow(h, PAR_CHILD_B);
+            // the rows' own titles in List order (a child's meta line holds its parent's title, so the whole text would match twice)
+            const titles = await h.ev(`[...document.querySelectorAll('[data-jarvis-brief-row="initiative"]')].map((r) => r.querySelector(".truncate.font-semibold")?.textContent.trim())`);
+            const at = titles.indexOf(PAR_PARENT);
+            // the children follow the parent at once, in the order their own recency gives them
+            const order = titles.slice(at + 1, at + 3).sort();
+            await polishNap(400);
+            await h.shot("cdp-shots/initiative-parents-1-list.png");
+            rec(
+                '1. the two children sit right under the parent, indented with an elbow and "↳ Part of" its title',
+                shown.every(Boolean) && parent?.depth === 0 && a?.depth === 1 && a.elbow && b?.depth === 1 && b.elbow &&
+                    (a.meta ?? "").startsWith(`↳ Part of ${PAR_PARENT}`) && (b.meta ?? "").startsWith(`↳ Part of ${PAR_PARENT}`) && at >= 0 && order.join() === [PAR_CHILD_A, PAR_CHILD_B].sort().join(),
+                { shown, parent, a, b, at, order }
+            );
+            rec('2. the parent reads "+2 sub"', parent?.sub === "+2 sub", { sub: parent?.sub });
+
+            // --- 3. opened, the parent lists its sub-initiatives and its linked ideas ---------------------------------------------------------
+            await initClick(h, `(${INIT_ROW(PAR_PARENT)})?.querySelector(':scope > [role="button"]')`);
+            const linked = await polishWaitFor(h, `!!(${INIT_ROW(PAR_PARENT)})?.querySelector("[data-jarvis-linked]")`, INIT_WAIT_MS);
+            const lists = await h.ev(`(() => {
+                const l = (${INIT_ROW(PAR_PARENT)})?.querySelector("[data-jarvis-linked]");
+                return { subs: [...(l?.querySelectorAll("[data-jarvis-linked-sub]") ?? [])].map((e) => e.dataset.jarvisLinkedSub),
+                    ideas: [...(l?.querySelectorAll("[data-jarvis-linked-idea]") ?? [])].map((e) => e.dataset.jarvisLinkedIdea) };
+            })()`);
+            await polishNap(400);
+            await h.shot("cdp-shots/initiative-parents-3-open.png");
+            rec(
+                "3. opening the parent lists both children under Sub-initiatives and the idea under its linked Ideas",
+                linked === true && [oref(ctx.childA), oref(ctx.childB)].every((o) => lists.subs.includes(o)) && lists.subs.length === 2 && lists.ideas.join() === oref(ctx.idea),
+                lists
+            );
+            await initClick(h, `(${INIT_ROW(PAR_PARENT)})?.querySelector(':scope > [role="button"]')`);
+
+            // --- 4. the unrelated row's ⋯ → Link to… moves it under the parent -------------------------------------------------------------------
+            const menu = await parMenu(h, PAR_OTHER, "Link to…");
+            const pickerUp = await polishWaitFor(h, `!!document.querySelector("[data-initiative-picker]")`, 4000);
+            await initClick(h, `document.querySelector('[data-initiative-picker] [data-picker-row="${oref(ctx.parent)}"]')`);
+            const moved = await polishWaitFor(h, `${INIT_ROW(PAR_OTHER)}?.dataset.jarvisInitiativeDepth === "1"`, INIT_WAIT_MS);
+            const other = await parRow(h, PAR_OTHER);
+            const server4 = (await initEffort(h, ctx.other))?.parentoid;
+            const toast4 = (await parToast(h)).includes(`Linked under “${PAR_PARENT}”`);
+            rec(
+                "4. the unrelated initiative's ⋯ → Link to… and a pick of the parent moves it under it, and says so",
+                menu.picked === true && pickerUp === true && moved === true && other?.depth === 1 && (other.meta ?? "").startsWith(`↳ Part of ${PAR_PARENT}`) && server4 === ctx.parent && toast4 === true,
+                { menu, pickerUp, moved, other, server4, toast4 }
+            );
+
+            // --- 5. a link that would make a cycle is refused ------------------------------------------------------------------------------------
+            // the picker never offers the initiative's own descendants...
+            await parMenu(h, PAR_PARENT, "Link to…");
+            await polishWaitFor(h, `!!document.querySelector("[data-initiative-picker]")`, 4000);
+            const offers = await h.ev(`[...document.querySelectorAll("[data-initiative-picker] [data-picker-row]")].map((r) => r.dataset.pickerRow)`);
+            await initPress(h, "Escape");
+            await polishWaitFor(h, `!document.querySelector("[data-initiative-picker]")`, 3000);
+            // ...and the server refuses one made by hand
+            const refused = await initOps(h, ctx.parent, [{ op: "link", parentoid: ctx.childA }]).then(
+                () => null,
+                (e) => String(e?.message ?? e)
+            );
+            const stillTop = (await initEffort(h, ctx.parent))?.parentoid ?? "";
+            rec(
+                "5. Link to… on the parent offers none of its descendants, and linking it under its own child is refused with the cycle message",
+                [ctx.childA, ctx.childB, ctx.other, ctx.parent].every((oid) => !offers.includes(oref(oid))) && /under itself/.test(refused ?? "") && stillTop === "",
+                { offers: offers.length, refused, stillTop }
+            );
+
+            // --- 6. Unlink returns it to the top level -------------------------------------------------------------------------------------------------
+            const unlink = await parMenu(h, PAR_OTHER, `Unlink from ${PAR_PARENT}`);
+            const top = await polishWaitFor(h, `${INIT_ROW(PAR_OTHER)}?.dataset.jarvisInitiativeDepth === "0"`, INIT_WAIT_MS);
+            const back = await parRow(h, PAR_OTHER);
+            const server6 = (await initEffort(h, ctx.other))?.parentoid ?? "";
+            rec(
+                "6. ⋯ → Unlink returns the initiative to the top level, with no parent line",
+                unlink.picked === true && top === true && back?.depth === 0 && back.elbow === false && !(back.meta ?? "").includes("Part of") && server6 === "",
+                { unlink, top, back, server6 }
+            );
+
+            // --- 7. a parent deleted under its child leaves the child a row at the top, not a lost one ------------------------------------------------
+            // (an initiative deleted under its child leaves the child holding a dangling parentoid)
+            ctx.gone = await initCreate(h, ctx, { title: PAR_GONE, project: PAR_PROJECT, chunks: ["Feed chunk one"] });
+            ctx.orphan = await initCreate(h, ctx, { title: PAR_ORPHAN, project: PAR_PROJECT, chunks: ["Feed chunk one"], parentoid: ctx.gone });
+            await h.rpc("effortdelete", { effortoid: ctx.gone });
+            ctx.oids = ctx.oids.filter((o) => o !== ctx.gone);
+            // the Brief reads the store again when it is shown, so it is left and come back to
+            await h.goto("cockpit");
+            await h.goto("jarvis");
+            const kept = await polishWaitFor(h, `!!(${INIT_ROW(PAR_ORPHAN)}) && !(${INIT_ROW(PAR_GONE)})`, INIT_WAIT_MS);
+            const orphan = await parRow(h, PAR_ORPHAN);
+            rec(
+                "7. an initiative whose parent was deleted stays on the List as a top-level row",
+                kept === true && orphan?.depth === 0 && orphan.elbow === false,
+                { kept, orphan }
+            );
+        } catch (e) {
+            rec("the scenario ran to its end", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await initTeardown(h, ctx, "initiative-parents", { reload: false });
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -39748,4 +41091,9 @@ export const SCENARIOS = [
     needsYouLearnCard,
     setupSkillAdditions,
     setupLearned,
+    initiativePlanReview,
+    initiativePopover,
+    initiativeLink,
+    initiativeReview,
+    initiativeParents,
 ];

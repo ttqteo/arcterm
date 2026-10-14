@@ -40,6 +40,16 @@ new draws it as one of its release's cards and folds every other line under a co
 - **Claude checks its memory at session start**: on every machine with arcterm, a new Claude session looks over the
   project's Claude memory and, when something has gone stale (a broken link, a file or `task` that no longer exists, a
   memory untouched for 30 days), shows a toast and lists it in its first reply, offering to fix it.
+- **Review an agent's proposed plan on its rail**: when an agent proposes chunks for its initiative, its details rail
+  opens on Plan to review; accept, rename or drop each, or Accept all and continue. Proposed chunks don't count toward
+  progress until accepted. <!-- try: go:agent -->
+- **The agent's initiative from its header**: click the initiative link (or press `i`) for its progress, the chunk
+  this agent is on with Mark done, what's next and a note; an agent with no initiative can Link to one.
+  <!-- try: go:agent -->
+- **Review initiatives**: Jarvis → Initiatives → Review (`v`) walks what changed since you last reviewed, then the
+  ones idle for two weeks, with Pause, Archive and Mark reviewed. <!-- try: go:jarvis -->
+- **Sub-initiatives on the List**: link an initiative under another from its ⋯ menu; children sit under their parent.
+  <!-- try: go:jarvis -->
 - **Queue a plan instead of starting it**: `wsh runs start --plan <file> --queue` (or `--after` another run, which
   implies `--queue`) leaves the plan waiting on the Agent tree, and arcterm starts it by itself when fewer than
   `runs:maxactive` runs are going. A queued plan is a row in its project's folder with Start now, Run next and Remove.

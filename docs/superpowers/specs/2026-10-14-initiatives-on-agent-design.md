@@ -24,7 +24,7 @@ Backend, small:
 - Reviewing uses the ops that exist: Accept is `setChunkStatus proposed → pending`, Rename is `renameChunk`, Drop is
   `removeChunk`. No new op.
 - `pkg/jarvis/attention.go` builds a new attention kind `plan-review` beside `chunk-due`: one item per initiative
-  with proposed chunks ("Jarvis as graph · 4 proposed by graph layout"), keyed so it disappears when none is left.
+  with proposed chunks ("Jarvis as graph · 4 proposed"), keyed so it disappears when none is left.
   It reaches every reader of the attention queue: Sprout, the nav rail badge, Jarvis's Waiting on you, the Cockpit's
   Needs you. Label "Plan to review".
 
@@ -55,8 +55,8 @@ proposed chunks carry the same buttons inside the opened row.
 
 ### 3. The initiative popover on the agent header
 
-The header's initiative link (`InitiativeLink`, `agentheader.tsx`) opens a popover in place; Ctrl/Cmd-click keeps
-today's open-in-Jarvis (the app's peek gesture). Key `i` on the Agent surface (free there; `jarvis:focus-composer`
+The header's initiative link (`InitiativeLink`, `agentheader.tsx`) opens a popover in place; Ctrl/Cmd-click, the
+app's peek gesture, peeks the initiative in Sprout's popup instead, and the popover's Open in Jarvis goes there. Key `i` on the Agent surface (free there; `jarvis:focus-composer`
 is Jarvis-only) toggles it. Contents, 340px:
 
 - "Initiative · <project>", the title, "↳ Part of <parent>" when linked, the segment bar with done/total, the
@@ -80,8 +80,9 @@ Review is not urgent, so it never enters the attention queue and never adds to S
 
 - A per-initiative "reviewed at" kept in localStorage as a map `oref → ts` (like "Since you looked"'s
   `jarvis.briefing.lastseen`); an initiative never reviewed starts from that cursor.
-- Changed: `updatedts` after its reviewed-at. Idle: active, no workref on any chunk, unchanged for 14 days (a
-  constant, no setting). The List's status cell shows "idle 3w" muted.
+- Changed: `updatedts` after its reviewed-at. Idle: active, no workref on any chunk, unchanged and not reviewed for
+  14 days (a constant, no setting), so Mark reviewed takes it out of the queue until 14 more still days pass. The
+  List's status cell shows "idle 3w" muted.
 - The List's Initiatives heading gains **Review · N**; Sprout's popup ends with a muted line
   "N initiatives changed · M idle · Review in Jarvis".
 - Review mode narrows the region to changed and idle initiatives, in the order blocked, asks you, at work, changed,

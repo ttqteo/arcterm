@@ -10,6 +10,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type PrimitiveAtom } from "jotai";
 import { loadBriefingAsync, stateRpcTimeoutMs } from "./briefingstore";
 import { chunkTone, type ChunkTone } from "./effortmodel";
+import { acceptOps, attachAgentOp, dropOps, linkOp, restoreOps, unacceptOps } from "./proposedmodel";
 import { chunkRef, type EditChunk } from "./trackeredit";
 
 export const effortDetailAtom = atom<Map<string, Effort>>(new Map()) as PrimitiveAtom<Map<string, Effort>>;
@@ -195,12 +196,7 @@ export async function moveChunkToStage(
 }
 // highest position first, so an index ref (see chunkRef) is never shifted by an earlier removal
 export async function removeChunks(oref: string, chunks: EditChunk[], labels: string[]): Promise<void> {
-    const idx = (l: string) => chunks.findIndex((c) => c.label === l);
-    const ordered = [...labels].sort((a, b) => idx(b) - idx(a));
-    await mutateEffort(
-        oref,
-        ordered.map((label) => ({ op: "removeChunk", chunk: chunkRef(chunks, label) }))
-    );
+    await mutateEffort(oref, dropOps(chunks, labels));
 }
 export async function addChunkAt(oref: string, label: string, stage: string, at?: number): Promise<void> {
     await mutateEffort(oref, [{ op: "addChunk", label: label.trim(), stage: stage || undefined, at }]);
@@ -212,8 +208,35 @@ export async function removeNote(oref: string, chunk: string, at: number, ts: nu
     await mutateEffort(oref, [{ op: "removeNote", chunk, at, notets: ts }]);
 }
 
-// an idea is a title written down to come back to: no project, no chunks, no form
-export async function createIdea(title: string): Promise<void> {
-    await RpcApi.EffortCreateCommand(TabRpcClient, { title, chunks: [] }, { timeout: stateRpcTimeoutMs });
+// the plan an agent proposed: accepting makes the chunks pending (and so counted), dropping removes them.
+// restoreProposed and unacceptProposed are the Undo of a drop and of an accept.
+export async function acceptProposed(oref: string, labels: string[]): Promise<void> {
+    await mutateEffort(oref, acceptOps(labels));
+}
+export async function unacceptProposed(oref: string, label: string): Promise<void> {
+    await mutateEffort(oref, unacceptOps(label));
+}
+export async function dropProposed(oref: string, chunks: EditChunk[], labels: string[]): Promise<void> {
+    await mutateEffort(oref, dropOps(chunks, labels));
+}
+export async function restoreProposed(oref: string, label: string, stage: string, at: number): Promise<void> {
+    await mutateEffort(oref, restoreOps(label, stage, at));
+}
+
+// tie an agent's terminal tab to a chunk, so the chunk reads as that agent's work
+export async function attachAgent(oref: string, chunk: string, tabId: string): Promise<void> {
+    await mutateEffort(oref, [attachAgentOp(chunk, tabId)]);
+}
+
+// "" unlinks
+export async function linkEffort(oref: string, parentOref: string): Promise<void> {
+    await mutateEffort(oref, [linkOp(parentOref)]);
+}
+
+// an idea is a title written down to come back to: no project, no chunks, no form. It returns the new
+// initiative's oref, for a caller that goes on to link or attach something to it.
+export async function createIdea(title: string): Promise<string> {
+    const rtn = await RpcApi.EffortCreateCommand(TabRpcClient, { title, chunks: [] }, { timeout: stateRpcTimeoutMs });
     void loadBriefingAsync();
+    return "effort:" + rtn.effortoid;
 }

@@ -57,7 +57,8 @@ export interface NotifySnapshot {
 }
 
 // attention kinds that wait on a decision of yours. An ask is left to the roster (its agent turns asking) and radar
-// triage is a backlog, not a block. A chunk that came due is a decision you dated yourself, told once when it comes.
+// triage is a backlog, not a block. A chunk that came due is a decision you dated yourself, told once when it comes;
+// a plan an agent proposed waits on you to accept it, told once when its initiative first has one to review.
 export const DECISION_KINDS: ReadonlySet<string> = new Set([
     "gate",
     "escalation",
@@ -67,6 +68,7 @@ export const DECISION_KINDS: ReadonlySet<string> = new Set([
     "run-queue-blocked",
     "run-unverified",
     "chunk-due",
+    "plan-review",
 ]);
 
 export function snapshotOf(
@@ -137,14 +139,16 @@ export function diffEvents(prev: NotifySnapshot | null, next: NotifySnapshot): N
     if (prev.attentionLoaded) {
         for (const [key, i] of next.attention) {
             if (!prev.attention.has(key)) {
-                // a due chunk's text is the chunk; the initiative it belongs to says more than its date. A queued
-                // start that did not start has the plan's title for its source, which its text (the reason) leaves out
+                // a due chunk's text is the chunk and a plan's a count: the initiative they belong to says more than
+                // a date or a why. A queued start that did not start has the plan's title for its source, which its
+                // text (the reason) leaves out
                 const due = i.kind === "chunk-due";
-                const named = due || i.kind === "run-queue-blocked";
+                const plan = i.kind === "plan-review";
+                const named = due || plan || i.kind === "run-queue-blocked";
                 out.push({
                     kind: "attention",
                     target: { kind: "attention", key },
-                    label: due ? "Due" : "Decision",
+                    label: due ? "Due" : plan ? "Plan to review" : "Decision",
                     tone: "asking",
                     title: i.text,
                     body: named ? i.source : (i.why ?? i.source),

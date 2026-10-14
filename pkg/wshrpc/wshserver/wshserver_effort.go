@@ -5,6 +5,7 @@ package wshserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -91,6 +92,23 @@ func (ws *WshServer) EffortMutateCommand(ctx context.Context, data wshrpc.Comman
 			}
 			if _, err := effortstore.Get(ctx, op.ParentOID); err != nil {
 				return nil, fmt.Errorf("EC-BAD-PARENT: parent effort not found")
+			}
+			cycle, err := jarvis.LinkMakesCycle(data.EffortOID, op.ParentOID, func(oid string) (string, error) {
+				p, err := effortstore.Get(ctx, oid)
+				if errors.Is(err, wstore.ErrNotFound) {
+					// an ancestor deleted under its child leaves a dangling parent: the chain ends there
+					return "", nil
+				}
+				if err != nil {
+					return "", err
+				}
+				return p.ParentOID, nil
+			})
+			if err != nil {
+				return nil, fmt.Errorf("EC-BAD-PARENT: %w", err)
+			}
+			if cycle {
+				return nil, fmt.Errorf("EC-BAD-PARENT: that would put the initiative under itself")
 			}
 		}
 	}

@@ -67,9 +67,12 @@ import { ideasInputRequestAtom, useSessionIdeas } from "./ideasstore";
 import { instructionsFileAtom, instructionsKey, loadInstructionsFile } from "./instructionsfile";
 import { entriesAtomFor, liveEntriesByIdAtom } from "./livetranscriptatoms";
 import { prettyModel } from "./modellabel";
+import { PlanReviewSection } from "./planreviewsection";
+import { useInitiativeReread, usePlanReview } from "./planreviewstore";
 import { artifactsView } from "./railartifacts";
 import { RAIL_ICON } from "./railicons";
 import { RAIL_ROW, RAIL_ROW_ACTION } from "./railrow";
+import { clearRailSectionRequest, railSectionRequestAtom } from "./railsection";
 import { ServersSection } from "./railservers";
 import {
     loadRailForAgent,
@@ -571,6 +574,11 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     );
     const endedWorker = useAtomValue(model.endedWorkerAtom);
     const ended = endedWorker?.agent.id === agent.id ? endedWorker : undefined;
+    // the agent's initiative, read again as the agent works: a plan it proposes lands there. The Plan to review rows are
+    // that read; the decided ones the section holds count too, so it stays up for their Undo
+    useInitiativeReread(agent.effortId, agent.state, true);
+    const planReview = usePlanReview(agent.effortId);
+    const railRequest = useAtomValue(railSectionRequestAtom)[agent.id];
     const artifacts = artifactsView(useAtomValue(canvasStateAtom(agent.id)));
     const panels = useAtomValue(railPanelsAtom);
     const defaultTab = useAtomValue(railTabDefaultAtom);
@@ -682,6 +690,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const fileCount = ended ? ended.files.length : railState?.isRepo ? changes.length : null;
     const railInput = {
         inSubagent: sub != null,
+        proposed: planReview.rows.length,
         needsYou: !sub && roleRun && role?.kind === "lead" ? yours.length : 0,
         ideas: ideas.live,
         ideasFresh: ideas.fresh,
@@ -713,8 +722,20 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
               : "";
     const project = agentProject(lineage, agents, agent);
 
-    // a strip count toggles its section on Overview: a click closes one open on screen, else opens it, then brings it
-    // into view once it has rendered. `onlyOpen` (a request, not a click) never closes it.
+    // opens the rail on Overview with a section open, then brings it into view once it has rendered
+    const revealSection = (id: AgentRailSectionId) => {
+        selectRailTab(agent.id, "overview", hasTree);
+        showRail();
+        globalStore.set(railSectionOpenAtom, (prev) => ({ ...prev, [id]: true }));
+        requestAnimationFrame(() => {
+            const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            document
+                .querySelector(`aside[aria-label="Agent details"] [data-rail-section="${id}"]`)
+                ?.scrollIntoView({ block: "nearest", behavior: smooth ? "smooth" : "auto" });
+        });
+    };
+    // a strip count toggles its section on Overview: a click closes one open on screen, else reveals it. `onlyOpen`
+    // (a request, not a click) never closes it.
     const openSection = (id: AgentRailSectionId, onlyOpen = false) => {
         const el = document.querySelector<HTMLElement>(`aside[aria-label="Agent details"] [data-rail-section="${id}"]`);
         const head = el?.querySelector("h3")?.getBoundingClientRect();
@@ -728,16 +749,16 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             globalStore.set(railSectionOpenAtom, (prev) => ({ ...prev, [id]: false }));
             return;
         }
-        selectRailTab(agent.id, "overview", hasTree);
-        showRail();
-        globalStore.set(railSectionOpenAtom, (prev) => ({ ...prev, [id]: true }));
-        requestAnimationFrame(() => {
-            const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-            document
-                .querySelector(`aside[aria-label="Agent details"] [data-rail-section="${id}"]`)
-                ?.scrollIntoView({ block: "nearest", behavior: smooth ? "smooth" : "auto" });
-        });
+        revealSection(id);
     };
+    // a section asked for from outside the rail (railsection.ts): the header's "N TO REVIEW" chip
+    useEffect(() => {
+        if (railRequest != null) {
+            revealSection(railRequest);
+            clearRailSectionRequest(agent.id);
+        }
+        // revealSection closes over this render's tab state; the request is what fires it
+    }, [railRequest, agent.id]);
     // the capture shortcut with nothing selected: open this agent's Ideas section (the box takes focus when it mounts,
     // ideassection.tsx). A request for another session is that session's rail's.
     useEffect(() => {
@@ -748,6 +769,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         openSection("ideas", true);
     }, [inputRequest]);
     const LABEL: Record<AgentRailSectionId, string> = {
+        plan: "Plan to review",
         subagent: "Subagent",
         status: "Status",
         needs: "Needs you",
@@ -761,6 +783,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         run: role?.kind === "worker" ? "Task" : "Run",
     };
     const ICON: Record<AgentRailSectionId, ReactNode> = {
+        plan: RAIL_ICON.bell,
         subagent: RAIL_ICON.subagents,
         status: RAIL_ICON.context,
         needs: RAIL_ICON.bell,
@@ -775,6 +798,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     };
     // thunks: a section the plan leaves out is never built (run would touch a roleRun that may not exist)
     const CONTENT: Record<AgentRailSectionId, () => ReactNode> = {
+        plan: () => <PlanReviewSection key={agent.id} agent={agent} />,
         subagent: () => (
             <div className="flex flex-col gap-[6px]">
                 <SubLabel>Subagent of {agent.name}</SubLabel>

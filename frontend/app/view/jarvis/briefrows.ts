@@ -55,10 +55,22 @@ export type BriefLine = {
     group?: "delta" | "shipped";
     // an initiative with no chunks yet: a captured idea, not a tracker, so it has no progress to draw
     idea?: boolean;
+    // "4 proposed": the chunks an agent put forward that wait for a decision; absent when none do
+    proposed?: string;
     // a tracker card's chunk line: what note names, and each chunk's tone for its segmented bar
     noteLabel?: "Next" | "Blocked on" | "Done";
     segments?: ChunkTone[];
+    // a tracker nested under another (nestInitiatives): how deep it sits, and the initiative it is part of
+    depth?: number;
+    parentOref?: string;
+    // direct sub-initiatives under this one, for the title's "+N sub"
+    subCount?: number;
 };
+
+// What nestInitiatives adds to a card: its depth under the top-level initiatives (0 at the top), the sub-initiatives
+// directly beneath it, and the initiative it is part of when that one is in the same list.
+export type Nesting = { depth: number; subCount: number; parentOref?: string; parentTitle?: string };
+export type NestedCard = EffortCardModel & Nesting;
 
 export type LineGroup = { label: string; lines: BriefLine[] };
 
@@ -119,7 +131,32 @@ export function isIdea(card: EffortCardModel): boolean {
     return card.status !== "archived" && card.done + card.remaining + card.skipped === 0;
 }
 
-export function initiativeLine(card: EffortCardModel): BriefLine {
+// The meta line under a tracker's title: where it sits. A sub-initiative says what it is part of in place of its own
+// ticket and project; a parent adds how many sub-initiatives it holds.
+function trackerMeta(card: EffortCardModel & Partial<Nesting>): string {
+    const sub = card.subCount ?? 0;
+    return joined([
+        card.parentTitle != null
+            ? `↳ Part of ${card.parentTitle}`
+            : joined([card.ticket, card.project || "no project"]),
+        sub > 0 ? plural(sub, "sub-initiative") : undefined,
+    ]);
+}
+
+// the nesting a card carries, if nestInitiatives gave it any; a card never nested leaves the line without the fields
+function nestingFields(card: EffortCardModel & Partial<Nesting>): Partial<BriefLine> {
+    if (card.depth == null) {
+        return {};
+    }
+    return {
+        depth: card.depth,
+        subCount: card.subCount ?? 0,
+        ...(card.parentOref != null ? { parentOref: card.parentOref } : {}),
+    };
+}
+
+export function initiativeLine(card: EffortCardModel & Partial<Nesting>): BriefLine {
+    const proposed = card.proposed.length > 0 ? { proposed: `${card.proposed.length} proposed` } : {};
     if (isIdea(card)) {
         return {
             id: "initiatives:" + card.oref,
@@ -137,6 +174,7 @@ export function initiativeLine(card: EffortCardModel): BriefLine {
             age: "",
             detail: "",
             idea: true,
+            ...proposed,
         };
     }
     const blocked = card.blockedChunks.length;
@@ -171,7 +209,7 @@ export function initiativeLine(card: EffortCardModel): BriefLine {
         // the whole label: the card gives it a line of its own and truncates it there
         note,
         noteLabel,
-        meta: joined([card.ticket, card.project || "no project"]),
+        meta: trackerMeta(card),
         state,
         stateTone,
         progress: { done: card.done, total: card.done + card.remaining, pct: card.progressPct },
@@ -180,6 +218,8 @@ export function initiativeLine(card: EffortCardModel): BriefLine {
         why: "",
         age: "",
         detail: "",
+        ...nestingFields(card),
+        ...proposed,
     };
 }
 
@@ -187,6 +227,90 @@ export function initiativeLine(card: EffortCardModel): BriefLine {
 // of ideas never pushes a live tracker behind "Show more" and the reverse.
 export function splitIdeas(cards: EffortCardModel[]): { trackers: EffortCardModel[]; ideas: EffortCardModel[] } {
     return { trackers: cards.filter((c) => !isIdea(c)), ideas: cards.filter(isIdea) };
+}
+
+const oidOf = (oref: string) => oref.replace(/^effort:/, "");
+
+// The trackers as the List draws them: each sub-initiative right after the initiative it is part of (a grandchild one
+// level deeper), the top-level ones keeping the order they came in and a sub-initiative keeping its place among its
+// siblings. A parent that is not in `cards` (archived, filtered out, deleted: `parentoid` can dangle) leaves its child
+// at the top, and data that holds a cycle or a self-link loses no row: what the walk from the top never reaches is
+// walked from where it stands.
+export function nestInitiatives(cards: EffortCardModel[]): NestedCard[] {
+    const byOid = new Map(cards.map((c) => [oidOf(c.oref), c]));
+    const parentOf = (c: EffortCardModel): EffortCardModel | undefined => {
+        const p = c.parentoid != null && c.parentoid !== "" ? byOid.get(c.parentoid) : undefined;
+        return p !== c ? p : undefined;
+    };
+    const kids = new Map<string, EffortCardModel[]>();
+    for (const c of cards) {
+        const p = parentOf(c);
+        if (p != null) {
+            kids.set(p.oref, [...(kids.get(p.oref) ?? []), c]);
+        }
+    }
+    const out: NestedCard[] = [];
+    const seen = new Set<string>();
+    const place = (c: EffortCardModel, depth: number, parent?: NestedCard) => {
+        if (seen.has(c.oref)) {
+            return;
+        }
+        seen.add(c.oref);
+        const row: NestedCard = {
+            ...c,
+            depth,
+            subCount: 0,
+            ...(parent != null ? { parentOref: parent.oref, parentTitle: parent.title } : {}),
+        };
+        out.push(row);
+        if (parent != null) {
+            parent.subCount++;
+        }
+        for (const k of kids.get(c.oref) ?? []) {
+            place(k, depth + 1, row);
+        }
+    };
+    for (const c of cards) {
+        if (parentOf(c) == null) {
+            place(c, 0);
+        }
+    }
+    for (const c of cards) {
+        place(c, 0);
+    }
+    return out;
+}
+
+// What a row's depth reads once some of the rows are gone (a filter, a delete waiting out its undo window): a row whose
+// parent is no longer drawn stands at the top, and what hangs under it moves up with it. The same list comes back when
+// nothing moves.
+export function settleNesting(lines: BriefLine[]): BriefLine[] {
+    const depthOf = new Map<string, number>();
+    let moved = false;
+    const out = lines.map((l) => {
+        const parentDepth = l.parentOref != null ? depthOf.get(l.parentOref) : undefined;
+        const depth = parentDepth != null ? parentDepth + 1 : 0;
+        if (l.target != null && "oref" in l.target) {
+            depthOf.set(l.target.oref, depth);
+        }
+        if (depth === (l.depth ?? 0)) {
+            return l;
+        }
+        moved = true;
+        return { ...l, depth };
+    });
+    return moved ? out : lines;
+}
+
+// What is linked under an initiative, for its opened detail: the sub-initiatives (they have a plan) and the ideas
+// (they do not yet), live ones only, each in the order `cards` has them.
+export function linkedUnder(
+    parentOref: string,
+    cards: EffortCardModel[]
+): { subs: EffortCardModel[]; ideas: EffortCardModel[] } {
+    const oid = oidOf(parentOref);
+    const under = cards.filter((c) => c.parentoid === oid && c.status !== "archived" && c.oref !== parentOref);
+    return { subs: under.filter((c) => !isIdea(c)), ideas: under.filter(isIdea) };
 }
 
 const needsEyes = (row: ActiveWorkRow) =>

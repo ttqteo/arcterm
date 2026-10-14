@@ -430,6 +430,25 @@ describe("diffEvents: a chunk that came due", () => {
     });
 });
 
+describe("diffEvents: a plan to review", () => {
+    const plan = { ...item("plan-review:e1", "plan-review"), text: "2 proposed", source: "Nav rail" };
+    it("is told once, as Plan to review, naming its initiative", () => {
+        const [e, ...rest] = diffEvents(snap([], []), snap([], [plan]));
+        expect(rest).toEqual([]);
+        expect(e).toMatchObject({
+            kind: "attention",
+            label: "Plan to review",
+            title: "2 proposed",
+            body: "Nav rail",
+            target: { kind: "attention", key: "plan-review:e1" },
+        });
+    });
+    it("is not told again while its count moves under the same key", () => {
+        const fewer = { ...plan, text: "1 proposed" };
+        expect(diffEvents(snap([], [plan]), snap([], [fewer]))).toEqual([]);
+    });
+});
+
 describe("diffEvents: a queued start that did not start", () => {
     it("is told once as a Decision, with the reason as the title and the plan as the body", () => {
         const blocked = {
