@@ -112,6 +112,28 @@ describe("createSpawnGate", () => {
         expect(asked).toHaveLength(1);
     });
 
+    // claude runs both the Agent and the Task hook for one Agent call (Task is the tool's old name), one inside the other
+    it("asks once for a call that reaches the gate from two hooks, and gives both its verdict", async () => {
+        const gate = createSpawnGate(now);
+        const { asked, ask } = asker(allow(null));
+        const call = { tool_use_id: "toolu_1", subagent_type: "Explore" };
+        expect(await gate.check("Agent", call, ask)).toBeNull();
+        expect(await gate.check("Task", call, ask)).toBeNull();
+        expect(asked).toEqual([{ tool: "Agent", agents: 1, atLeast: false, types: ["Explore"] }]);
+    });
+
+    it("counts a call once when its two hooks arrive while the gate gathers", async () => {
+        let wake = () => {};
+        const gate = createSpawnGate(() => new Promise<void>((resolve) => (wake = resolve)));
+        const { asked, ask } = asker(allow(null));
+        const call = { tool_use_id: "toolu_1" };
+        const a = gate.check("Agent", call, ask);
+        const b = gate.check("Task", call, ask);
+        wake();
+        expect(await Promise.all([a, b])).toEqual([null, null]);
+        expect(asked).toEqual([{ tool: "Agent", agents: 1, atLeast: false, types: ["general-purpose"] }]);
+    });
+
     it("asks again after a plain Allow", async () => {
         const gate = createSpawnGate(now);
         const { asked, ask } = asker(allow(null));

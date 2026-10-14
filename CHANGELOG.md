@@ -58,6 +58,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - **Work on a due chunk turns into Go to agent** once the agent it started is open, on the Brief, the Needs you strip
   and Sprout's peek, so the row takes you back to that agent. An unverified run in Waiting on you no longer reads
   "blocked".
+- **A Claude subagent asks once on the Token burn card**, not twice: the gate ran a second time for the same spawn
+  under the tool's old name, Task, so a plain Allow brought the card straight back.
 
 ## 0.15.12 — 2026-10-14
 
