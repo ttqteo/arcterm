@@ -3,7 +3,9 @@
 
 import { buildGlobalBindings } from "@/app/store/keybindings/bindings";
 import type { SurfaceKey } from "@/app/view/agents/agents";
+import { existsSync, statSync } from "fs";
 import { atom } from "jotai";
+import { resolve } from "path";
 import { describe, expect, it } from "vitest";
 import changelog from "../../../CHANGELOG.md?raw";
 import { postCloseContext } from "./palette-commands";
@@ -186,7 +188,44 @@ describe("noteIcon", () => {
     it("gives an unknown note sparkles, tinted by its place", () => {
         expect(noteIcon("**Faster startup**: x", 0)).toEqual({ icon: "sparkles", tone: 1 });
         expect(noteIcon("**Faster startup**: x", 7)).toEqual({ icon: "sparkles", tone: 2 });
+        expect(noteIcon("**Faster startup**: x", 0, "Fixed")).toEqual({ icon: "bug", tone: 3 });
     });
+
+    it("takes run as a noun only", () => {
+        expect(noteIcon("**A blocked run offers Resume lead**: x", 0).icon).toBe("rocket");
+        expect(noteIcon("**Long names no longer run into the CPU column**: x", 0).icon).toBe("gauge");
+    });
+});
+
+describe("shots", () => {
+    it("lifts a highlight's picture out of its text", () => {
+        const [r] = parseChangelog(
+            "## 1.0.0 — 2026-01-01\n\n### Added\n\n- **Canvases**: a gallery. <!-- try: go:canvases --> <!-- big -->\n  <!-- shot: canvases.webp -->\n"
+        );
+        expect(r.sections[0].entries[0]).toEqual({
+            text: "**Canvases**: a gallery.",
+            tryId: "go:canvases",
+            big: true,
+            shot: "canvases.webp",
+        });
+    });
+
+    // a picture shows only on a card, ships inside the app, and every release adds a few: keep each one there and small
+    const shots = parseChangelog(changelog).flatMap((r) =>
+        r.sections.flatMap((s) => s.entries.filter((e) => e.shot != null))
+    );
+    it.each(shots.length > 0 ? shots.map((e) => [e.shot!, e] as const) : [["(none)", null] as const])(
+        "%s is a big note's picture in public/whatsnew, under 120 KB",
+        (file, entry) => {
+            if (entry == null) {
+                return;
+            }
+            const path = resolve(__dirname, "../../../public/whatsnew", file);
+            expect(entry.big, `${file} is on a note that is not big, so no card shows it`).toBe(true);
+            expect(existsSync(path), `no public/whatsnew/${file}`).toBe(true);
+            expect(statSync(path).size).toBeLessThanOrEqual(120 * 1024);
+        }
+    );
 });
 
 describe("entryBody", () => {

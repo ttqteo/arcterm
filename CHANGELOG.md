@@ -17,14 +17,19 @@ A new feature someone would open the app to try ends with `<!-- big -->` (either
 new draws it as one of its release's cards and folds every other line under a count. At most 5 per release, and
 `whatsnew.test.ts` fails a release with more; a fix, a tweak or a rename is never big.
 
+A big line may also end with `<!-- shot: <file> -->`, a picture of the feature in `public/whatsnew/` that its card
+shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, named `<version>-<topic>.webp`
+(`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
+missing file, on one over 120 KB, and on a picture given to a line that is not big.
+
 ## Unreleased
 
 ### Changed
 
 - **Canvases is now the Canvas gallery**: the sidebar row, the gallery's title and the `Ctrl+G` `v` command use the new
   name. <!-- try: go:canvases -->
-- **What's new** is livelier: your Jarvis pet tells the news in its corner, each highlight leads with a colored icon for
-  what it is about, and the newest release, the fold line and the Added, Changed and Fixed lists carry icons too.
+- **What's new** is livelier: a release's highlights show a picture of the feature, every note leads with a colored
+  icon for what it is about, and your Jarvis pet tells the news in the corner.
 
 ## 0.15.12 — 2026-10-14
 
@@ -36,6 +41,7 @@ new draws it as one of its release's cards and folds every other line under a co
 - **Canvases**: every mockup an agent drew lives on in Agent → Canvases, with a preview of each; open one to page
   through its boards, or Clean up to move the old ones to the trash. Agents no longer delete a canvas when its feature
   ships unless you turn that on in Settings → Storage. <!-- try: go:canvases --> <!-- big -->
+  <!-- shot: 0.15.12-canvases.webp -->
 - **Runs as an office**: in Jarvis, the Runs list's **office** chip draws each run as a pixel office floor under its
   row: the lead in a glass corner office and one person per task, typing, stuck, in review, carrying the merge, or
   raising a hand when they need you. Click a person to open their terminal.
@@ -76,14 +82,16 @@ new draws it as one of its release's cards and folds every other line under a co
   `from <session>`. A click on either goes to the other.
 - **Pick the corner Sprout folds into**: right-click the Sprout button → **Fold to**, or Settings → General → Window
   → Fold to: top left, top right, bottom left or bottom right. Folded, Sprout moves there at once; a drag still keeps
-  its own spot until you pick a corner again. <!-- big -->
+  its own spot until you pick a corner again. <!-- big --> <!-- shot: 0.15.12-fold-corner.webp -->
 - **Close several agents at once from the Consumers panel**: hover a row and tick it, or tick Sleeping to pick every
   sleeping agent, then press Close in the bar under the list. It asks first only when a ticked agent is working; the
   closed agents' conversations stay under Conversations. A run's lead and workers still close with their run. <!-- big -->
+  <!-- shot: 0.15.12-close-agents.webp -->
 - **Pick one project's sleeping agents in the Consumers panel**: when the agents asleep come from more than one
   project, Sleeping lists them under a head per project, with a tick that picks just that project's.
 - **What's new**: click the version at the bottom right for the latest release notes, a headline each (click one for
   the rest); **Try it** on a note takes you to that feature. The shortcuts button beside it is now a round help icon. <!-- big -->
+  <!-- shot: 0.15.12-whats-new.webp -->
 - **Code browses folders that are not git repositories** (from the kaeltran16 fork): a plain folder picked in Code
   lists and searches its files, skipping `node_modules`, build output and dot-folders; Changed and Diff are greyed
   out with the reason. <!-- big -->

@@ -37987,6 +37987,16 @@ const whatsNew = {
             sheet.releases.length > 1 && sheet.releases.length <= 5 && sheet.tries > 0,
             JSON.stringify(sheet)
         );
+        // a highlight's picture is served from public/whatsnew; wait for the first to draw before the shot
+        const pictures = await h.ev(`Promise.all([...document.querySelectorAll("[data-whats-new] img[data-whats-new-shot]")].map((i) =>
+            fetch(i.src).then((r) => ({ shot: i.dataset.whatsNewShot, ok: r.ok }), () => ({ shot: i.dataset.whatsNewShot, ok: false }))))`);
+        await polishWaitFor(h, `(() => { const i = document.querySelector("[data-whats-new] img[data-whats-new-shot]"); return i == null || (i.complete && i.naturalWidth > 0); })()`, 4000);
+        const cardIcons = await h.ev(`[...document.querySelectorAll("[data-whats-new] [data-whats-new-card]")].every((c) => !!c.querySelector("[data-whats-new-icon] svg"))`);
+        rec(
+            "3b. every card leads with an icon, and every picture a card names is served",
+            cardIcons && pictures.length > 0 && pictures.every((p) => p.ok),
+            JSON.stringify({ cardIcons, pictures })
+        );
         await h.shot("cdp-shots/whats-new-2-sheet.png");
 
         // highlights first: a release's big notes are cards (5 at most), every other note folds under one count line
@@ -38018,6 +38028,18 @@ const whatsNew = {
             JSON.stringify({ before, after })
         );
         await h.shot("cdp-shots/whats-new-3-opened.png");
+        // under the fold every note leads with its icon too, a fix with no better one a bug
+        const rows = await h.ev(`(() => {
+            const r = document.querySelector("[data-whats-new] [data-release]");
+            const lis = [...r.querySelectorAll("li:not([data-whats-new-card])")];
+            return { rows: lis.length, iconed: lis.filter((li) => !!li.querySelector("[data-whats-new-icon] svg")).length,
+                icons: [...new Set(lis.map((li) => li.querySelector("[data-whats-new-icon]")?.dataset.whatsNewIcon))].length };
+        })()`);
+        rec("5b. every note under the fold leads with an icon, and they differ", rows.rows > 0 && rows.iconed === rows.rows && rows.icons > 5, JSON.stringify(rows));
+        await h.ev(`document.querySelector('[data-whats-new] li:not([data-whats-new-card])').scrollIntoView({ block: "start" })`);
+        await briefNap(150);
+        await h.shot("cdp-shots/whats-new-3b-rows.png");
+
 
         // a Try it may sit inside a fold: open them all
         await h.ev(`document.querySelectorAll('[data-whats-new] [data-whats-new-more][aria-expanded="false"]').forEach((b) => b.click())`);

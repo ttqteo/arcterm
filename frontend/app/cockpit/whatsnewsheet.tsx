@@ -17,13 +17,19 @@ import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import {
+    AppWindow,
     ArrowRight,
     AtSign,
+    Bell,
     Bookmark,
     Bot,
+    Brain,
+    BrainCircuit,
     Bug,
     ChevronRight,
     FileDiff,
+    FileText,
+    Files,
     FolderCode,
     Gauge,
     Gift,
@@ -31,17 +37,28 @@ import {
     History,
     Image,
     Keyboard,
+    Layers,
+    LayoutGrid,
     Lightbulb,
+    ListChecks,
     ListTree,
     ListX,
+    MessageCircleQuestion,
     Moon,
+    NotebookPen,
+    Paintbrush,
     Palette,
+    PanelLeft,
     PartyPopper,
     RefreshCw,
     Rocket,
+    Search,
+    SlidersHorizontal,
     Sparkles,
     Sprout,
+    SquarePlus,
     SquareTerminal,
+    Target,
     UserRound,
     WandSparkles,
     type LucideIcon,
@@ -56,6 +73,7 @@ import {
     inlineSpans,
     noteIcon,
     releasesToShow,
+    shotUrl,
     splitHighlights,
     type Entry,
     type NoteIcon,
@@ -70,24 +88,43 @@ const NOTE_ICONS: Record<NoteIcon, LucideIcon> = {
     palette: Palette,
     gift: Gift,
     sprout: Sprout,
+    jarvis: BrainCircuit,
+    theme: Paintbrush,
     user: UserRound,
     wand: WandSparkles,
     lightbulb: Lightbulb,
+    target: Target,
     diff: FileDiff,
+    check: ListChecks,
+    sync: RefreshCw,
     terminal: SquareTerminal,
     folder: FolderCode,
     branch: GitBranch,
-    rocket: Rocket,
     moon: Moon,
+    rocket: Rocket,
+    layers: Layers,
     gauge: Gauge,
     keyboard: Keyboard,
     at: AtSign,
+    question: MessageCircleQuestion,
     close: ListX,
     bookmark: Bookmark,
     image: Image,
     outline: ListTree,
+    doc: FileText,
+    note: NotebookPen,
+    file: Files,
+    settings: SlidersHorizontal,
+    sidebar: PanelLeft,
+    window: AppWindow,
+    new: SquarePlus,
+    search: Search,
+    bell: Bell,
+    model: Brain,
+    grid: LayoutGrid,
     history: History,
     bot: Bot,
+    bug: Bug,
     sparkles: Sparkles,
 };
 
@@ -218,7 +255,7 @@ function MoreNotes({
                 ? sections.map((s) => (
                       <div key={s.kind} className="mt-2">
                           <SectionLabel kind={s.kind} />
-                          <EntryList entries={s.entries} model={model} />
+                          <EntryList entries={s.entries} kind={s.kind} model={model} />
                       </div>
                   ))
                 : null}
@@ -253,71 +290,105 @@ function HighlightCard({ entry, index, model }: { entry: Entry; index: number; m
     const expandable = useClamped(textRef, !open) || open;
     const tryIt = useTryBinding(entry, model);
     const { icon, tone } = noteIcon(entry.text, index);
-    const Icon = NOTE_ICONS[icon];
     return (
         <li
             data-whats-new-card
-            data-whats-new-icon={icon}
-            className="flex gap-3 rounded-md border border-edge-mid bg-surface px-3.5 py-3"
+            className="flex flex-col gap-3 rounded-md border border-edge-mid bg-surface px-3.5 py-3"
         >
-            <div
-                aria-hidden
-                className={cn("flex size-8 shrink-0 items-center justify-center rounded-[8px]", TONE_TILE[tone])}
-            >
-                <Icon size={17} strokeWidth={1.8} />
-            </div>
-            <div className="flex min-w-0 flex-1 flex-col gap-2">
-                <button
-                    type="button"
-                    aria-expanded={expandable ? open : undefined}
-                    disabled={!expandable}
-                    onClick={() => setOpen((v) => !v)}
-                    className={cn("group flex min-w-0 flex-col gap-1 text-left", expandable && "cursor-pointer")}
-                >
-                    {lead != null ? (
-                        <span className="text-[13.5px] leading-[1.45] font-semibold text-primary">{lead}</span>
-                    ) : null}
-                    <div
-                        ref={textRef}
-                        className={cn(
-                            "text-[12.5px] leading-[1.55]",
-                            lead != null ? "text-secondary" : "text-primary",
-                            expandable && "group-hover:text-primary",
-                            !open && (lead != null ? "line-clamp-2" : "line-clamp-3")
-                        )}
+            {entry.shot != null ? (
+                // the pictures are cut to 2:1, so the box is the picture and nothing shifts while it loads
+                <img
+                    data-whats-new-shot={entry.shot}
+                    src={shotUrl(entry.shot)}
+                    alt={lead ?? ""}
+                    loading="lazy"
+                    className="aspect-[2/1] w-full rounded-[6px] border border-edge-mid bg-surface-code object-cover object-top"
+                />
+            ) : null}
+            <div className="flex gap-3">
+                <NoteTile icon={icon} tone={tone} size="card" />
+                <div className="flex min-w-0 flex-1 flex-col gap-2">
+                    <button
+                        type="button"
+                        aria-expanded={expandable ? open : undefined}
+                        disabled={!expandable}
+                        onClick={() => setOpen((v) => !v)}
+                        className={cn("group flex min-w-0 flex-col gap-1 text-left", expandable && "cursor-pointer")}
                     >
-                        <NoteText text={body} />
-                    </div>
-                </button>
-                {tryIt != null ? (
-                    <div className="flex justify-end">
-                        <TryButton tryId={entry.tryId!} {...tryIt} />
-                    </div>
-                ) : null}
+                        {lead != null ? (
+                            <span className="text-[13.5px] leading-[1.45] font-semibold text-primary">{lead}</span>
+                        ) : null}
+                        <div
+                            ref={textRef}
+                            className={cn(
+                                "text-[12.5px] leading-[1.55]",
+                                lead != null ? "text-secondary" : "text-primary",
+                                expandable && "group-hover:text-primary",
+                                !open && (lead != null ? "line-clamp-2" : "line-clamp-3")
+                            )}
+                        >
+                            <NoteText text={body} />
+                        </div>
+                    </button>
+                    {tryIt != null ? (
+                        <div className="flex justify-end">
+                            <TryButton tryId={entry.tryId!} {...tryIt} />
+                        </div>
+                    ) : null}
+                </div>
             </div>
         </li>
     );
 }
 
-function EntryList({ entries, model }: { entries: Entry[]; model: AgentsViewModel }) {
+// a note's icon on its tint: a card's leads its title, a row's sits where the row's chevron was
+function NoteTile({ icon, tone, size }: { icon: NoteIcon; tone: NoteTone; size: "card" | "row" }) {
+    const Icon = NOTE_ICONS[icon];
+    return (
+        <div
+            aria-hidden
+            data-whats-new-icon={icon}
+            className={cn(
+                "flex shrink-0 items-center justify-center",
+                size === "card" ? "size-8 rounded-[8px]" : "mt-[1px] size-5 rounded-[5px]",
+                TONE_TILE[tone]
+            )}
+        >
+            <Icon size={size === "card" ? 17 : 12} strokeWidth={size === "card" ? 1.8 : 2} />
+        </div>
+    );
+}
+
+function EntryList({ entries, kind, model }: { entries: Entry[]; kind: SectionKind; model: AgentsViewModel }) {
     return (
         <ul className="flex flex-col">
             {entries.map((e, i) => (
-                <EntryRow key={i} entry={e} model={model} />
+                <EntryRow key={i} entry={e} index={i} kind={kind} model={model} />
             ))}
         </ul>
     );
 }
 
-// Headlines first: an entry shows its bold lead alone (one without a lead, its first two lines), and a click opens the
-// whole note. An entry with nothing more to show (no lead, and it fits its two lines) gets no chevron and no click.
-function EntryRow({ entry, model }: { entry: Entry; model: AgentsViewModel }) {
+// Headlines first: an entry shows its icon and its bold lead alone (one without a lead, its first two lines), and a
+// click opens the whole note. An entry with nothing more to show (no lead, and it fits its two lines) takes no click.
+function EntryRow({
+    entry,
+    index,
+    kind,
+    model,
+}: {
+    entry: Entry;
+    index: number;
+    kind: SectionKind;
+    model: AgentsViewModel;
+}) {
     const [open, setOpen] = useState(false);
     const textRef = useRef<HTMLSpanElement>(null);
     const lead = entryLead(entry.text);
     const clamped = useClamped(textRef, lead == null && !open);
     const tryIt = useTryBinding(entry, model);
     const expandable = lead != null || clamped;
+    const { icon, tone } = noteIcon(entry.text, index, kind);
     return (
         <li className="flex items-start gap-3">
             <button
@@ -326,19 +397,11 @@ function EntryRow({ entry, model }: { entry: Entry; model: AgentsViewModel }) {
                 disabled={!expandable}
                 onClick={() => setOpen((v) => !v)}
                 className={cn(
-                    "group flex min-w-0 flex-1 items-start gap-1.5 rounded-[6px] py-1.5 text-left",
+                    "group flex min-w-0 flex-1 items-start gap-2 rounded-[6px] py-1 text-left",
                     expandable && "cursor-pointer"
                 )}
             >
-                <ChevronRight
-                    size={13}
-                    aria-hidden
-                    className={cn(
-                        "mt-[4px] shrink-0 text-muted transition-transform group-hover:text-primary",
-                        open && "rotate-90",
-                        !expandable && "invisible"
-                    )}
-                />
+                <NoteTile icon={icon} tone={tone} size="row" />
                 <span
                     ref={textRef}
                     className={cn(

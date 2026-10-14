@@ -4,7 +4,8 @@
 // What's new reads CHANGELOG.md itself, so the notes a user sees are the lines written for them in the same commit as
 // the change, never a second copy that drifts. An entry may end with `<!-- try: <binding id> -->`: hidden on GitHub,
 // it gives the entry a button that runs that global keybinding (whatsnew.test.ts checks every id still exists). An
-// entry marked `<!-- big -->` is one of its release's few highlights, drawn as a card above the folded rest.
+// entry marked `<!-- big -->` is one of its release's few highlights, drawn as a card above the folded rest, and a
+// highlight's `<!-- shot: <file> -->` names its picture in public/whatsnew/ (the test checks it is there and small).
 
 export type SectionKind = "Added" | "Changed" | "Fixed";
 
@@ -12,6 +13,7 @@ export interface Entry {
     text: string; // the entry's markdown, the try comment removed
     tryId?: string;
     big?: boolean;
+    shot?: string; // a file in public/whatsnew/
 }
 
 export interface Section {
@@ -29,6 +31,7 @@ const RELEASE_RE = /^## (\d+\.\d+\.\d+)\s+—\s+(\d{4}-\d{2}-\d{2})\s*$/;
 const SECTION_RE = /^### (Added|Changed|Fixed)\s*$/;
 const TRY_RE = /\s*<!--\s*try:\s*([\w:.-]+)\s*-->\s*/;
 const BIG_RE = /\s*<!--\s*big\s*-->\s*/;
+const SHOT_RE = /\s*<!--\s*shot:\s*([\w.-]+\.(?:webp|png|jpg))\s*-->\s*/;
 const SECTION_ORDER: SectionKind[] = ["Added", "Changed", "Fixed"];
 
 // a release's cards: past this many they read as a wall again (whatsnew.test.ts holds CHANGELOG.md to it)
@@ -105,6 +108,11 @@ function toEntry(raw: string): Entry {
         entry.text = entry.text.replace(BIG_RE, " ").trim();
         entry.big = true;
     }
+    const shot = SHOT_RE.exec(entry.text);
+    if (shot != null) {
+        entry.text = entry.text.replace(SHOT_RE, " ").trim();
+        entry.shot = shot[1];
+    }
     return entry;
 }
 
@@ -154,63 +162,119 @@ export type NoteIcon =
     | "palette"
     | "gift"
     | "sprout"
+    | "jarvis"
+    | "theme"
     | "user"
     | "wand"
     | "lightbulb"
+    | "target"
     | "diff"
+    | "check"
+    | "sync"
     | "terminal"
     | "folder"
     | "branch"
-    | "rocket"
     | "moon"
+    | "rocket"
+    | "layers"
     | "gauge"
     | "keyboard"
     | "at"
+    | "question"
     | "close"
     | "bookmark"
     | "image"
     | "outline"
+    | "doc"
+    | "note"
+    | "file"
+    | "settings"
+    | "sidebar"
+    | "window"
+    | "new"
+    | "search"
+    | "bell"
+    | "model"
+    | "grid"
     | "history"
     | "bot"
+    | "bug"
     | "sparkles";
 
-// one of the six graph-lane colors, which every theme keeps, so a card's tint reads the same in each
+// one of the six graph-lane colors, which every theme keeps, so a note's tint reads the same in each
 export type NoteTone = 1 | 2 | 3 | 4 | 5 | 6;
 
-// First match wins, so the narrow words come before the ones nearly every note says (agent, session): "Claude
+// First match wins, so the narrow words come before the ones nearly every note says (agent, session, file): "Claude
 // account" is the account before it is Code, "terminal tools … in the right folder" the tools before the folder.
 const ICON_RULES: { re: RegExp; icon: NoteIcon; tone: NoteTone }[] = [
     { re: /\bcanvas|\bmockups?\b/, icon: "palette", tone: 4 },
     { re: /\bwhat's new\b|\brelease notes?\b/, icon: "gift", tone: 5 },
-    { re: /\bsprout\b|\bjarvis\b|\bspider-man\b|\bcharacter\b|\bfold(s|ed|ing)?\b/, icon: "sprout", tone: 2 },
+    {
+        re: /\bsprout\b|\bpet\b|\bminion\b|\bspider-man\b|\bcharacter\b|\bteleports?\b|\bfold(s|ed|ing)?\b/,
+        icon: "sprout",
+        tone: 2,
+    },
+    { re: /\bjarvis\b/, icon: "jarvis", tone: 5 },
+    { re: /\btheme\b|\bcolou?rs?\b|\baccent\b|\bappearance\b/, icon: "theme", tone: 4 },
     { re: /\baccounts?\b|\blogin\b/, icon: "user", tone: 2 },
     { re: /\bskills?\b/, icon: "wand", tone: 4 },
     { re: /\bideas?\b/, icon: "lightbulb", tone: 3 },
+    { re: /\binitiatives?\b|\befforts?\b|\bchunks?\b/, icon: "target", tone: 3 },
     { re: /\bdiff\b|\bcommit|\breview/, icon: "diff", tone: 1 },
-    { re: /\btools?\b|\bterminals?\b|\blazygit\b/, icon: "terminal", tone: 6 },
-    { re: /\bcode\b|\bfolders?\b|\bfiles?\b|\bpin\b/, icon: "folder", tone: 6 },
-    { re: /\bgit\b|\bbranch/, icon: "branch", tone: 1 },
-    { re: /\bsleep|\bidle\b/, icon: "moon", tone: 4 },
-    { re: /\bruns?\b|\borchestrat|\bworkers?\b|\bqueue/, icon: "rocket", tone: 5 },
-    { re: /\bresources?\b|\bcpu\b|\bram\b|\bstorage\b|\bdisk\b|\busage\b|\btokens?\b/, icon: "gauge", tone: 3 },
-    { re: /\bctrl\b|\bshortcuts?\b|\bkeys\b|\bswitcher\b/, icon: "keyboard", tone: 1 },
+    { re: /\bverify\b|\bfinal (?:check|step|stage)\b|\bchecks?\b/, icon: "check", tone: 2 },
+    { re: /\bsync/, icon: "sync", tone: 1 },
+    { re: /\btools?\b|\bterminals?\b|\blazygit\b|\bdev server\b/, icon: "terminal", tone: 6 },
+    { re: /\bcode\b|\bfolders?\b/, icon: "folder", tone: 6 },
+    { re: /\bgit\b|\bbranch|\bworktrees?\b|\bland(s|ed|ing)?\b|\bmerges?\b/, icon: "branch", tone: 1 },
+    { re: /\bsleep|\basleep\b|\bidle\b/, icon: "moon", tone: 4 },
+    {
+        // "run" is also a verb ("runs off its edge"), so only a run named as one counts
+        re: /\b(?:a|an|the|new|each|every|queued|held|finished|blocked|unverified|orchestrator)\s+runs?\b|\bruns? (?:that|whose|sheet|list|row)\b|^runs?\b|\borchestrat|\bworkers?\b|\bplans?\b/,
+        icon: "rocket",
+        tone: 5,
+    },
+    { re: /\bqueue|\bjobs?\b|\bheavy\b/, icon: "layers", tone: 3 },
+    {
+        re: /\bresources?\b|\bcpu\b|\bram\b|\bstorage\b|\bdisk\b|\busage\b|\btokens?\b|\bcache\b/,
+        icon: "gauge",
+        tone: 3,
+    },
+    { re: /\bctrl\b|\bshortcuts?\b|\bkeys\b|\bswitcher\b|⌘|\balt\+tab\b|\bzoom\b/, icon: "keyboard", tone: 1 },
     { re: /@?\bmention|\bmessages?\b/, icon: "at", tone: 2 },
+    { re: /\bquestions?\b|\basks?\b|\bpermission\b|\bprompts?\b/, icon: "question", tone: 3 },
     { re: /\bclose|\bdelete|\btrash\b|\bclean up\b/, icon: "close", tone: 5 },
     { re: /\bbookmark|\bmark for later\b/, icon: "bookmark", tone: 3 },
-    { re: /\bimages?\b|\bpaste\b/, icon: "image", tone: 6 },
+    { re: /\bimages?\b|\bpaste\b|\bscreenshots?\b/, icon: "image", tone: 6 },
     { re: /\boutline\b|\bheadings?\b/, icon: "outline", tone: 1 },
+    { re: /\bmarkdown\b|\bpreview\b|\bhtml\b|\bpdf\b/, icon: "doc", tone: 1 },
+    { re: /\bnotes?\b/, icon: "note", tone: 3 },
+    { re: /\bfiles?\b|\bpin(s|ned)?\b|\bpaths?\b/, icon: "file", tone: 6 },
+    { re: /\bsettings\b|\bsetup\b|\binstructions\b/, icon: "settings", tone: 1 },
+    { re: /\bsidebar\b|\brows?\b|\btree\b|\brail\b/, icon: "sidebar", tone: 1 },
+    {
+        re: /\bfloat\b|\bwindows?\b|\bdock\b|\btaskbar\b|\bmacos\b|\bmac\b|\bfull-screen\b|\bapp bar\b/,
+        icon: "window",
+        tone: 6,
+    },
+    { re: /\bnew dialog\b|\bnew agent\b|\blaunch|\bhome\b/, icon: "new", tone: 2 },
+    { re: /\bsearch\b|\bpalette\b|\bfinds?\b/, icon: "search", tone: 4 },
+    { re: /\bbadge\b|\bcounts?\b|\bunread\b|\bnotif|\bflash|\btoast\b|\bwaiting\b/, icon: "bell", tone: 3 },
+    { re: /\bmodels?\b|\bopus\b|\bsonnet\b|\bhaiku\b/, icon: "model", tone: 4 },
+    { re: /\bgrid\b|\bsplit\b|\blayout\b/, icon: "grid", tone: 6 },
     { re: /\btranscripts?\b|\bsessions?\b|\bconversations?\b/, icon: "history", tone: 6 },
-    { re: /\bagents?\b|\bcodex\b|\bclaude\b/, icon: "bot", tone: 2 },
+    { re: /\bagents?\b|\bsubagents?\b|\bcodex\b|\bclaude\b|\bantigravity\b/, icon: "bot", tone: 2 },
 ];
 
-// The picture a highlight card leads with, picked by the words of its headline (its bold lead, or its first words
-// when it has none). A note no rule knows gets sparkles, tinted by its place so a release's cards still differ.
-export function noteIcon(text: string, index: number): { icon: NoteIcon; tone: NoteTone } {
+// The picture a note leads with, picked by the words of its headline (its bold lead, or its first words when it has
+// none). A note no rule knows gets a bug when it is a fix, otherwise sparkles tinted by its place, so a run of them
+// still differs.
+export function noteIcon(text: string, index: number, kind?: SectionKind): { icon: NoteIcon; tone: NoteTone } {
     const head = (entryLead(text) ?? text.slice(0, 100)).replace(/[*`]/g, "").toLowerCase();
     const rule = ICON_RULES.find((r) => r.re.test(head));
-    return rule != null
-        ? { icon: rule.icon, tone: rule.tone }
-        : { icon: "sparkles", tone: ((index % 6) + 1) as NoteTone };
+    if (rule != null) {
+        return { icon: rule.icon, tone: rule.tone };
+    }
+    return kind === "Fixed" ? { icon: "bug", tone: 3 } : { icon: "sparkles", tone: ((index % 6) + 1) as NoteTone };
 }
 
 // Numeric semver order; a missing or non-numeric part counts as 0, so "0.15" sorts with "0.15.0".
@@ -296,4 +360,9 @@ export function formatReleaseDate(date: string): string {
 // every try id in the changelog, for the test that keeps them pointing at live bindings
 export function tryIds(releases: Release[]): string[] {
     return releases.flatMap((r) => r.sections.flatMap((s) => s.entries.flatMap((e) => (e.tryId ? [e.tryId] : []))));
+}
+
+// where a highlight's picture is served: public/ is the app's root in dev and in the bundle
+export function shotUrl(file: string): string {
+    return `/whatsnew/${file}`;
 }
