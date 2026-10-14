@@ -4,8 +4,9 @@
 // The Setup surface: the instructions and skills every harness reads. The Instructions tab edits the
 // shared doc, which every save writes into each harness's file, and lists each harness file's state.
 // The Skills tab views every harness's skills and moves them into the vault; it never creates or edits
-// one. The Tools tab is the library of terminal tools (toolslibrary.tsx). Logic lives in setupmodel.ts and
-// skillsmatrix.ts, the RPCs and the atoms in setupstore.ts.
+// one. The Tools tab is the library of terminal tools (toolslibrary.tsx). The Learned tab lists the lines the user
+// accepted from what agents learned (learnedtab.tsx); a skill's own lines also show in its rail. Logic lives in
+// setupmodel.ts, skillsmatrix.ts and learnedmodel.ts, the RPCs and the atoms in setupstore.ts.
 
 import { openFileInCode } from "@/app/cockpit/openfilestore";
 import { Markdown } from "@/app/element/markdown";
@@ -21,6 +22,8 @@ import { motion, MotionConfig } from "motion/react";
 import { Fragment, useEffect, type KeyboardEvent } from "react";
 import type { AgentsViewModel } from "./agents";
 import { formatAgo } from "./agentsviewmodel";
+import { skillLines } from "./learnedmodel";
+import { LearnedLine, LearnedTab } from "./learnedtab";
 import { RuntimeMark } from "./runtimemark";
 import { runtimeMeta } from "./runtimemeta";
 import {
@@ -58,6 +61,7 @@ import {
     type SetupTab,
 } from "./setupstore";
 import {
+    additionsChip,
     adoptCount,
     copyDelta,
     manageLabel,
@@ -97,6 +101,7 @@ const TABS: { key: SetupTab; label: string }[] = [
     { key: "instructions", label: "Instructions" },
     { key: "skills", label: "Skills" },
     { key: "tools", label: "Tools" },
+    { key: "learned", label: "Learned" },
 ];
 
 function useRows(): AgentSyncHarness[] {
@@ -533,6 +538,25 @@ function SkillCellView({ cell }: { cell: SkillCell }) {
     );
 }
 
+// the name, and a "+N" chip when the user taught the skill lines of their own
+function SkillNameCell({ row }: { row: SkillRow }) {
+    const chip = additionsChip(row);
+    return (
+        <span role="cell" className="flex min-w-0 items-center gap-1.5 text-[12px] text-ink-hi">
+            <span className="truncate">{row.name}</span>
+            {chip != null ? (
+                <span
+                    data-testid="skill-additions-chip"
+                    title="Lines you taught this skill"
+                    className="flex-none rounded bg-accentbg px-1.5 text-[10.5px] font-semibold tabular-nums text-accent-soft"
+                >
+                    {chip}
+                </span>
+            ) : null}
+        </span>
+    );
+}
+
 function SkillsMatrix({
     columns,
     groups,
@@ -607,9 +631,7 @@ function SkillsMatrix({
                                         : "hover:bg-surface-hover"
                                 )}
                             >
-                                <span role="cell" className="truncate text-[12px] text-ink-hi">
-                                    {r.name}
-                                </span>
+                                <SkillNameCell row={r} />
                                 {r.cells.map((c) => (
                                     <SkillCellView key={c.runtime} cell={c} />
                                 ))}
@@ -753,6 +775,19 @@ function SkillRail({ model, row, skillsroot }: { model: AgentsViewModel; row: Sk
                         </div>
                     )}
                 </div>
+                {row.additions.length > 0 ? (
+                    <div data-testid="learned-additions" className="flex flex-col gap-2">
+                        <div className="flex items-baseline gap-2">
+                            <span className={SECTION_HEAD}>Your additions</span>
+                            <span className="text-[11px] text-muted">added after the text above, in every harness</span>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            {skillLines(row.name, row.additions).map((l) => (
+                                <LearnedLine key={l.id} line={l} />
+                            ))}
+                        </div>
+                    </div>
+                ) : null}
             </div>
             <div className="flex flex-none gap-2 border-t border-border px-4 py-3">
                 <button
@@ -803,6 +838,16 @@ function SkillsTab({ model }: { model: AgentsViewModel }) {
     );
 }
 
+function LearnedPane() {
+    const error = useAtomValue(setupErrorAtom);
+    return (
+        <div className="flex min-w-0 flex-1 flex-col">
+            <ErrorBanner error={error} />
+            <LearnedTab />
+        </div>
+    );
+}
+
 export function SetupSurface({ model }: { model: AgentsViewModel }) {
     const tab = useAtomValue(setupTabAtom);
     // re-read on every visit: a harness file edited outside arcterm must not show stale
@@ -816,7 +861,13 @@ export function SetupSurface({ model }: { model: AgentsViewModel }) {
                     <div className="text-[15px] font-semibold text-primary">Setup</div>
                     <Tabs />
                     <div className="flex-1" />
-                    {tab === "instructions" ? <HeaderStatus /> : tab === "skills" ? <SkillsHeader /> : <ToolsHeader />}
+                    {tab === "instructions" ? (
+                        <HeaderStatus />
+                    ) : tab === "skills" ? (
+                        <SkillsHeader />
+                    ) : tab === "tools" ? (
+                        <ToolsHeader />
+                    ) : null}
                 </div>
                 <motion.div
                     key={tab}
@@ -830,8 +881,10 @@ export function SetupSurface({ model }: { model: AgentsViewModel }) {
                         <InstructionsTab />
                     ) : tab === "skills" ? (
                         <SkillsTab model={model} />
-                    ) : (
+                    ) : tab === "tools" ? (
                         <ToolsLibrary model={model} />
+                    ) : (
+                        <LearnedPane />
                     )}
                 </motion.div>
             </div>

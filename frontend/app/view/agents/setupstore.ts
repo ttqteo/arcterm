@@ -10,6 +10,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type PrimitiveAtom } from "jotai";
 import type { AgentsViewModel } from "./agents";
+import type { LearnedEntry } from "./learnedmodel";
 import {
     editorDiscard,
     editorLoaded,
@@ -24,7 +25,7 @@ import { adoptKeep, type SkillKeep } from "./skillsmatrix";
 import type { ToolForm } from "./toolslibrarymodel";
 import { failedAtom, installingAtom } from "./toolsstore";
 
-export type SetupTab = "instructions" | "skills" | "tools";
+export type SetupTab = "instructions" | "skills" | "tools" | "learned";
 
 // local filesystem reads behind an rpc with no default timeout: a stalled backend must reject rather
 // than leave the pane on "Reading…" forever
@@ -162,6 +163,47 @@ export function adoptSkills(): Promise<void> {
 
 export function openSkillFile(model: AgentsViewModel, path: string): Promise<void> {
     return busy(() => openFileInCode(model, path));
+}
+
+// ---- learned ----
+
+// every line the user accepted (skill additions and learned memories); null until the first read
+export const setupLearnedAtom = atom<CommandLearnAcceptedRtnData | null>(
+    null
+) as PrimitiveAtom<CommandLearnAcceptedRtnData | null>;
+
+export async function loadLearned(): Promise<void> {
+    try {
+        globalStore.set(
+            setupLearnedAtom,
+            await RpcApi.LearnAcceptedCommand(TabRpcClient, { timeout: READ_TIMEOUT_MS })
+        );
+        globalStore.set(setupErrorAtom, null);
+    } catch (e) {
+        globalStore.set(setupErrorAtom, errText(e));
+    }
+}
+
+// Edit a line's text or remove it (a removal also mutes the key). A skill line changes what every harness
+// reads, so the skills list is re-read with the learned one, whether or not the change went through: a
+// removal that failed after the line was gone would otherwise leave the rail showing it.
+export function amendLearned(
+    line: Pick<LearnedEntry, "skill" | "dir" | "key">,
+    change: { text: string } | { remove: true }
+): Promise<void> {
+    return busy(async () => {
+        try {
+            await RpcApi.LearnAmendCommand(TabRpcClient, {
+                skill: line.skill,
+                dir: line.dir,
+                key: line.key,
+                text: "text" in change ? change.text : undefined,
+                remove: "remove" in change,
+            });
+        } finally {
+            await Promise.all([loadLearned(), loadSkills()]);
+        }
+    });
 }
 
 // ---- tools ----
