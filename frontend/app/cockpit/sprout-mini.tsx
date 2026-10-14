@@ -174,9 +174,9 @@ const CHIP =
     "flex h-6 flex-none cursor-pointer items-center rounded-[6px] border border-edge-mid px-2 text-[11px] font-semibold text-secondary hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
 // The card's last row while window:autosprout is on: restore, and no fold on leaving for an hour, until the next 8:00,
-// or until a typed time, all from one box whose list (in the card's flow, so the click-through poll still counts it)
-// offers the hour and the morning while it is focused and empty; while such a pause holds, when it ends and a way to
-// end it now. onTyping keeps the card open while there is text in the box, so the cursor can leave it.
+// or until a typed time, all from one box whose popup offers the hour and the morning while it is focused and empty;
+// while such a pause holds, when it ends and a way to end it now. onTyping keeps the card open while there is text in
+// the box, so the cursor can leave it.
 function FoldPauseRow({ onPause, onTyping }: { onPause: () => void; onTyping: (typing: boolean) => void }) {
     const on = autoSproutOn(useAtomValue(getSettingsKeyAtom("window:autosprout")));
     const until = useAtomValue(getSettingsKeyAtom("window:autosproutpauseuntil"));
@@ -222,61 +222,68 @@ function FoldPauseRow({ onPause, onTyping }: { onPause: () => void; onTyping: (t
                 <Pause size={12} strokeWidth={2} aria-hidden />
                 Restore, don&apos;t fold for
             </span>
-            <form
-                className="flex h-6 min-w-0 items-center rounded-[6px] border border-edge-mid bg-surface focus-within:border-accent"
-                onSubmit={(e) => {
-                    e.preventDefault();
-                    if (typed != null) {
-                        pauseUntil(typed);
-                    }
-                }}
-            >
-                <input
-                    data-mini-pause-input
-                    value={text}
-                    onChange={(e) => {
-                        setText(e.target.value);
-                        onTyping(e.target.value !== "");
-                    }}
-                    onFocus={() => setFocused(true)}
-                    onBlur={() => setFocused(false)}
-                    onKeyDown={(e) => {
-                        if (e.key === "Escape") {
-                            setText("");
-                            onTyping(false);
+            <div className="relative">
+                <form
+                    className="flex h-6 min-w-0 items-center rounded-[6px] border border-edge-mid bg-surface focus-within:border-accent"
+                    onSubmit={(e) => {
+                        e.preventDefault();
+                        if (typed != null) {
+                            pauseUntil(typed);
                         }
                     }}
-                    placeholder="Custom…"
-                    aria-label="Don't fold for a while, or until a time"
-                    className="min-w-0 flex-1 bg-transparent px-1.5 text-[11px] text-primary outline-none placeholder:text-muted"
-                />
-                <button
-                    type="submit"
-                    aria-label="Restore and don't fold until then"
-                    disabled={typed == null}
-                    className="flex h-full cursor-pointer items-center px-1 text-muted hover:text-primary disabled:cursor-default disabled:opacity-40"
                 >
-                    <CornerDownLeft size={11} strokeWidth={2} aria-hidden />
-                </button>
-            </form>
-            {focused && text.trim() === "" ? (
-                <div data-mini-pause-presets className="flex flex-col rounded-[6px] border border-edge-mid p-0.5">
-                    {presets.map((p) => (
-                        <button
-                            key={p.key}
-                            type="button"
-                            data-mini-pause-preset={p.key}
-                            // keep the box focused through the press, or the list closes before the click lands
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => pauseUntil(p.end)}
-                            className={cn(ROW, "h-6 text-[11px] font-semibold text-secondary hover:text-primary")}
-                        >
-                            {p.label}
-                        </button>
-                    ))}
-                    <span className="px-2 pb-0.5 pt-1 text-[10.5px] text-muted">or type 2h, 30m, 14:30</span>
-                </div>
-            ) : null}
+                    <input
+                        data-mini-pause-input
+                        value={text}
+                        onChange={(e) => {
+                            setText(e.target.value);
+                            onTyping(e.target.value !== "");
+                        }}
+                        onFocus={() => setFocused(true)}
+                        onBlur={() => setFocused(false)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Escape") {
+                                setText("");
+                                onTyping(false);
+                            }
+                        }}
+                        placeholder="Custom…"
+                        aria-label="Don't fold for a while, or until a time"
+                        className="min-w-0 flex-1 bg-transparent px-1.5 text-[11px] text-primary outline-none placeholder:text-muted"
+                    />
+                    <button
+                        type="submit"
+                        aria-label="Restore and don't fold until then"
+                        disabled={typed == null}
+                        className="flex h-full cursor-pointer items-center px-1 text-muted hover:text-primary disabled:cursor-default disabled:opacity-40"
+                    >
+                        <CornerDownLeft size={11} strokeWidth={2} aria-hidden />
+                    </button>
+                </form>
+                {focused && text.trim() === "" ? (
+                    // opens up, over the card's rows: the row is the card's last, and below the card the
+                    // see-through window may end or let the click fall through
+                    <div
+                        data-mini-pause-presets
+                        className="absolute inset-x-0 bottom-full z-10 mb-1 flex flex-col rounded-[8px] border border-edge-strong bg-surface-raised p-1"
+                    >
+                        {presets.map((p) => (
+                            <button
+                                key={p.key}
+                                type="button"
+                                data-mini-pause-preset={p.key}
+                                // keep the box focused through the press, or the list closes before the click lands
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => pauseUntil(p.end)}
+                                className={cn(ROW, "h-7 text-[11.5px] font-semibold text-secondary hover:text-primary")}
+                            >
+                                {p.label}
+                            </button>
+                        ))}
+                        <span className="px-2 pb-0.5 pt-1 text-[10.5px] text-muted">or type 2h, 30m, 14:30</span>
+                    </div>
+                ) : null}
+            </div>
             {text.trim() !== "" ? (
                 <span className="text-[10.5px] text-muted">
                     {typed != null ? `until ${pauseEndLabel(typed, now)}` : "e.g. 2h, 30m, or until 14:30"}

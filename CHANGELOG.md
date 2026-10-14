@@ -19,6 +19,8 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
 
 - **The Jarvis graph peek is gone**: `Shift+G` on Jarvis and the record peek's **Where it sits on the map** no longer
   open the vault graph, which drew mostly unlinked dots. A record's runs are still listed in its peek.
+- The folded Sprout's 1 hour and till 8:00 now pop up over the card from the "Restore, don't fold for" box, instead
+  of pushing the card taller.
 
 ## 0.15.12 — 2026-10-14
 

@@ -41,8 +41,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
 **2026-10-14 (fold pause box)**
 
 - [ ] With "Fold when you leave arcterm" on, fold into Sprout and hover it: "Restore, don't fold for" shows only the
-  Custom… box. Click into it: 1 hour and till 8:00 drop down under it inside the card, with "or type 2h, 30m, 14:30";
-  clicking one restores and the card says "No fold until …". Typing hides the list and shows the until-hint.
+  Custom… box. Click into it: 1 hour and till 8:00 pop up above the box, over the card's rows (the card does not grow),
+  with "or type 2h, 30m, 14:30"; clicking one restores and the card says "No fold until …". Typing hides the list
+  and shows the until-hint.
 
 **2026-10-14 (fold corner)**
 
