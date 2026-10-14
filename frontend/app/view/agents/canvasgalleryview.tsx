@@ -4,33 +4,47 @@
 // Agent → Canvases (agentcenter.ts' `canvases` mode): every registered project's design canvases as a grid of cards with
 // a cached preview, and a viewer that opens one canvas a board at a time. Thin: grouping, search and the card text come
 // from canvasgallery.ts, the place and the list from canvasgallerystore.ts, the board frame from canvaspane.tsx. The
-// keys are buildAgentBindings' (the arrows, Enter, `/`, `[` `]`, Escape), so this file holds no key handler but the
-// search box's own.
+// keys are buildAgentBindings' (the arrows, Enter, `/`, `[` `]`, Space, Escape), so this file holds no key handler but
+// the search box's own.
 
 import { Skeleton, SkeletonLine } from "@/app/element/skeleton";
 import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ArrowLeft, LayoutGrid, Search } from "lucide-react";
+import { ArrowLeft, Check, LayoutGrid, Search } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { AgentsViewModel } from "./agents";
 import { changedLine } from "./canvascursor";
-import { boardCountLabel, cardMeta, type GalleryCanvas } from "./canvasgallery";
 import {
+    boardCountLabel,
+    cardMeta,
+    cleanupGroups,
+    cleanupMeta,
+    selectionLabel,
+    selectionTotal,
+    SUGGEST_AFTER_DAYS,
+    type GalleryCanvas,
+} from "./canvasgallery";
+import {
+    cancelCleanup,
     canvasBase,
     canvasGalleryAtom,
     canvasListAtom,
     canvasListErrorAtom,
+    cleanupAtom,
     closeCanvas,
     galleryGroups,
     loadCanvases,
+    moveSelectionToTrash,
     openCanvas,
     openCursorCanvas,
     setGalleryQuery,
     setViewerBoard,
     startCleanup,
     stepViewerBoard,
+    toggleCleanupCard,
+    untickAll,
 } from "./canvasgallerystore";
 import {
     boardUrl,
@@ -46,7 +60,7 @@ import { pollCanvasOnce, tauriCanvasIO, type CanvasIO } from "./canvaspoller";
 import type { CanvasState } from "./canvasstore";
 import { maybeCaptureThumb, tauriThumbIO } from "./canvasthumb";
 import { formatSize } from "./storagemodel";
-import { SWAP_BTN } from "./swapbar";
+import { SWAP_BTN, SWAP_PRIMARY_BTN } from "./swapbar";
 
 const BOARD_EXT = ".dc.html";
 
@@ -74,6 +88,9 @@ export function CanvasGallery({ model }: { model: AgentsViewModel }) {
     }, [g.view, list, open]);
     if (g.view === "viewer") {
         return open != null ? <CanvasViewer key={open.dir} model={model} canvas={open} /> : <GridSkeleton />;
+    }
+    if (g.view === "cleanup") {
+        return <CanvasCleanup />;
     }
     return <CanvasGrid model={model} />;
 }
@@ -168,7 +185,12 @@ function CanvasGrid({ model }: { model: AgentsViewModel }) {
                 <div className="flex-1" />
                 {has ? (
                     <>
-                        <button type="button" data-canvas-cleanup-open onClick={startCleanup} className={SWAP_BTN}>
+                        <button
+                            type="button"
+                            data-canvas-cleanup-open
+                            onClick={() => startCleanup(now)}
+                            className={SWAP_BTN}
+                        >
                             Clean up
                         </button>
                         <label className="flex h-[28px] w-[240px] flex-none items-center gap-2 rounded-[6px] border border-edge-mid bg-surface-raised pl-[10px] pr-2 focus-within:border-edge-strong">
@@ -310,6 +332,183 @@ function CanvasCard({
             <div className="flex min-w-0 flex-col gap-[3px] px-3 pb-[11px] pt-[10px]">
                 <span className="truncate text-[13px] font-semibold text-primary">{c.topic}</span>
                 <span className="truncate text-[11.5px] tabular-nums text-muted">{cardMeta(c, now)}</span>
+            </div>
+        </button>
+    );
+}
+
+// Clean up (board Cleanup): the same cards with a tick box, the long-unchanged ones ticked, and a bar that acts on the
+// selection. The keys (arrows, Space, Escape) are buildAgentBindings'; the cards also toggle on a click
+function CanvasCleanup() {
+    const g = useAtomValue(canvasGalleryAtom);
+    const list = useAtomValue(canvasListAtom);
+    const c = useAtomValue(cleanupAtom);
+    const bases = useCanvasBases(list);
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const empty = list != null && list.length === 0;
+    useEffect(() => {
+        if (list == null) {
+            void loadCanvases();
+        } else if (empty) {
+            // the last canvas went: the grid has the empty state
+            cancelCleanup();
+        }
+    }, [list, empty]);
+
+    const groups = list == null ? null : cleanupGroups(list, c.now);
+    const sections = [
+        { key: "suggested", label: "Unchanged 30+ days · suggested", items: groups?.suggested ?? [] },
+        { key: "newer", label: "Newer", items: groups?.newer ?? [] },
+    ].filter((s) => s.items.length > 0);
+    const shown = sections.reduce((n, s) => n + s.items.length, 0);
+    const cursor = Math.min(Math.max(0, g.cursor), shown - 1);
+    useEffect(() => {
+        scrollRef.current?.querySelector("[data-cursor]")?.scrollIntoView({ block: "nearest" });
+    }, [cursor, shown]);
+
+    const total = selectionTotal(list ?? [], c.selected);
+    let index = 0;
+    return (
+        <div data-canvas-cleanup className="flex min-h-0 flex-1 flex-col bg-background">
+            <div className="flex flex-none items-center gap-[10px] border-b border-border px-[24px] pb-[14px] pt-[18px]">
+                <h1 className="text-[15px] font-semibold tracking-[-0.01em] text-primary">Clean up canvases</h1>
+                <span className="text-[12px] text-muted">
+                    Ticked: unchanged for {SUGGEST_AFTER_DAYS} days or more. Untick what you keep.
+                </span>
+                <div className="flex-1" />
+                <button
+                    type="button"
+                    data-canvas-cleanup-cancel
+                    title="Leave clean up (Esc)"
+                    onClick={cancelCleanup}
+                    className={SWAP_BTN}
+                >
+                    Cancel
+                </button>
+            </div>
+            {list == null ? (
+                <GridSkeleton />
+            ) : (
+                <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-[24px] pb-[24px] pt-[6px]">
+                    {sections.map((s) => (
+                        <div key={s.key} data-canvas-group={s.key}>
+                            <div className="flex items-center gap-[10px] px-[2px] pb-[10px] pt-[18px]">
+                                <span className={cn(REGION_LABEL, "text-muted")}>{s.label}</span>
+                                <div className="h-px flex-1 bg-edge-faint" />
+                                <span className="text-[10.5px] tabular-nums text-muted">{s.items.length}</span>
+                            </div>
+                            <div
+                                data-canvas-grid
+                                className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-[14px]"
+                            >
+                                {s.items.map((canvas) => {
+                                    const at = index++;
+                                    return (
+                                        <CleanupCard
+                                            key={canvas.dir}
+                                            canvas={canvas}
+                                            base={bases.get(canvas.designdir)}
+                                            now={c.now}
+                                            checked={c.selected.has(canvas.dir)}
+                                            cursor={at === cursor}
+                                            reason={c.skipped[canvas.dir]}
+                                            onToggle={() => toggleCleanupCard(canvas.dir)}
+                                        />
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+            <div
+                data-canvas-cleanup-bar
+                className="flex flex-none items-center gap-3 border-t border-edge-mid bg-surface px-[24px] py-3"
+            >
+                <span className="text-[13px] font-semibold tabular-nums text-primary">{selectionLabel(total)}</span>
+                <span className="text-[12px] text-muted">They stay in ~/.arc/trash for 7 days.</span>
+                <div className="flex-1" />
+                <button
+                    type="button"
+                    data-canvas-untick-all
+                    disabled={c.moving}
+                    onClick={untickAll}
+                    className={SWAP_BTN}
+                >
+                    Untick all
+                </button>
+                <button
+                    type="button"
+                    data-canvas-trash
+                    disabled={total.count === 0 || c.moving}
+                    onClick={() => void moveSelectionToTrash()}
+                    className={SWAP_PRIMARY_BTN}
+                >
+                    Move to trash
+                </button>
+            </div>
+        </div>
+    );
+}
+
+function CleanupCard({
+    canvas: c,
+    base,
+    now,
+    checked,
+    cursor,
+    reason,
+    onToggle,
+}: {
+    canvas: GalleryCanvas;
+    base: string | undefined;
+    now: number;
+    checked: boolean;
+    cursor: boolean;
+    reason: string | undefined;
+    onToggle: () => void;
+}) {
+    return (
+        <button
+            type="button"
+            role="checkbox"
+            aria-checked={checked}
+            aria-label={c.topic}
+            data-canvas-card={c.topic}
+            data-checked={checked ? "" : undefined}
+            data-skipped={reason != null ? "" : undefined}
+            data-cursor={cursor ? "" : undefined}
+            title={reason ?? c.topic}
+            onClick={onToggle}
+            className={cn(
+                "flex cursor-pointer flex-col overflow-hidden rounded-lg border text-left",
+                checked
+                    ? "border-edge-strong bg-surface-selected"
+                    : "border-edge-mid bg-surface-raised hover:border-edge-strong",
+                cursor && "ring-2 ring-accent"
+            )}
+        >
+            <div
+                className={cn(
+                    "relative aspect-[16/10] w-full overflow-hidden border-b border-edge-mid bg-surface-code",
+                    !checked && "opacity-75"
+                )}
+            >
+                <CardPreview canvas={c} base={base} />
+                <span
+                    aria-hidden="true"
+                    className={cn(
+                        "absolute left-2 top-2 flex h-[18px] w-[18px] items-center justify-center rounded-[5px] border-[1.5px]",
+                        checked ? "border-accent bg-accent" : "border-ink-faint bg-surface-code/85"
+                    )}
+                >
+                    {checked ? <Check size={12} strokeWidth={3} className="text-background" /> : null}
+                </span>
+            </div>
+            <div className="flex min-w-0 flex-col gap-[3px] px-[11px] pb-[10px] pt-[9px]">
+                <span className="truncate text-[12.5px] font-semibold text-primary">{c.topic}</span>
+                <span className="truncate text-[11px] tabular-nums text-muted">{cleanupMeta(c, now)}</span>
+                {reason != null ? <span className="truncate text-[11px] text-error">{reason}</span> : null}
             </div>
         </button>
     );

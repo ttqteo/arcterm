@@ -14,11 +14,14 @@ import { AGENT_DIGITS } from "@/app/view/agents/agentsidebarmodel";
 import { answerDigitTarget, canSubmitAsk, moveCursor, type AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { nextAgentView, setAgentView } from "@/app/view/agents/agentview";
 import {
+    cancelCleanup,
     canvasGalleryAtom,
     closeCanvas,
+    moveCleanupCards,
     moveGalleryCards,
     openCursorCanvas,
     stepViewerBoard,
+    toggleCleanupCursor,
 } from "@/app/view/agents/canvasgallerystore";
 import { paneState } from "@/app/view/agents/canvasmodel";
 import { focusedCanvas, focusedCanvasMode, setMarking, stepCanvasBoard } from "@/app/view/agents/canvasstore";
@@ -1016,13 +1019,15 @@ const agentNav = (ctx: KeyContext) =>
 const agentNavStrict = (ctx: KeyContext) =>
     navigateStrict(ctx) && ctx.surface === "agent" && centerAtRest() && initiativePopoverClosed();
 // Canvases (the gallery) covers the terminal as History does, with keys of its own: the arrows, Enter and `/` on its grid,
-// the arrows, `[` `]` and Escape on an open canvas. Each takes its view from canvasGalleryAtom, so they never share a key.
+// the arrows, `[` `]` and Escape on an open canvas, the arrows, Space and Escape in clean up. Each takes its view from
+// canvasGalleryAtom, so they never share a key.
 const onGallery = (ctx: KeyContext) =>
     ctx.surface === "agent" && globalStore.get(centerModeAtom) === "canvases" && initiativePopoverClosed();
 const galleryNav = (ctx: KeyContext) => navigate(ctx) && onGallery(ctx);
 const galleryView = () => globalStore.get(canvasGalleryAtom).view;
 const inGalleryGrid = (ctx: KeyContext) => galleryNav(ctx) && galleryView() === "grid";
 const inGalleryViewer = (ctx: KeyContext) => galleryNav(ctx) && galleryView() === "viewer";
+const inGalleryCleanup = (ctx: KeyContext) => galleryNav(ctx) && galleryView() === "cleanup";
 // An open canvas and the clean-up mode go back to the grid on Escape, so the Escape that leaves the centre stands down;
 // the grid has nothing to back out of, and leaves. Escape inside the search box is the box's own.
 const galleryHoldsEscape = () =>
@@ -1235,6 +1240,45 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             // strict like every Escape here; agent:leave-center stands down while a canvas is open (galleryHoldsEscape)
             when: (ctx) => navigateStrict(ctx) && onGallery(ctx) && galleryView() === "viewer",
             run: () => closeCanvas(),
+        },
+        // Clean up walks the same cards in its own order (the suggested group, then Newer)
+        ...(
+            [
+                ["ArrowLeft", "canvases:cleanup-left", "Previous canvas"],
+                ["ArrowRight", "canvases:cleanup-right", "Next canvas"],
+                ["ArrowUp", "canvases:cleanup-up", "Canvas above"],
+                ["ArrowDown", "canvases:cleanup-down", "Canvas below"],
+            ] as const
+        ).map(
+            ([key, id, label]): Binding => ({
+                id,
+                keys: key,
+                group: "Agent",
+                label,
+                paletteHidden: true,
+                when: inGalleryCleanup,
+                run: () => moveCleanupCards(key),
+            })
+        ),
+        {
+            id: "canvases:tick",
+            keys: "Space",
+            group: "Agent",
+            label: "Tick or untick the canvas",
+            paletteHidden: true,
+            when: inGalleryCleanup,
+            // an empty list has no card under the cursor, so the key passes
+            run: () => toggleCleanupCursor(),
+        },
+        {
+            id: "canvases:cleanup-cancel",
+            keys: "Escape",
+            group: "Agent",
+            label: "Cancel clean up",
+            paletteHidden: true,
+            // strict like every Escape here; agent:leave-center stands down in clean up (galleryHoldsEscape)
+            when: (ctx) => navigateStrict(ctx) && onGallery(ctx) && galleryView() === "cleanup",
+            run: () => cancelCleanup(),
         },
         {
             id: "agent:prev",

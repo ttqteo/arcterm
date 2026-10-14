@@ -1,6 +1,8 @@
 // Pure model for Agent → Canvases (spec 2026-10-14-canvas-gallery-design.md): grouping, search, the clean-up
 // suggestion, the selection's totals, and when a preview is stale. No React, no Wave runtime imports.
 
+import { formatSize } from "./storagemodel";
+
 // the fields match the StorageCanvas rows ListCanvasesCommand returns; own type so the model needs no generated types
 export type GalleryCanvas = {
     topic: string;
@@ -67,8 +69,30 @@ export function cleanupGroups(
     };
 }
 
+// the clean-up cards in the order they are drawn, which is the order its cursor walks
+export function cleanupOrder(items: GalleryCanvas[], now: number): GalleryCanvas[] {
+    const g = cleanupGroups(items, now);
+    return [...g.suggested, ...g.newer];
+}
+
 export function initialSelection(items: GalleryCanvas[], now: number): Set<string> {
     return new Set(items.filter((c) => isSuggested(c, now)).map((c) => c.dir));
+}
+
+export function toggled(sel: Set<string>, dir: string): Set<string> {
+    const next = new Set(sel);
+    if (!next.delete(dir)) {
+        next.add(dir);
+    }
+    return next;
+}
+
+// what a clean leaves ticked: the canvases still in the list, minus those it moved. A skipped one is still in the list
+// (unless it was already gone), so it keeps its tick and the reason
+export function selectionAfterClean(sel: Set<string>, items: GalleryCanvas[], cleaned: string[]): Set<string> {
+    const moved = new Set(cleaned);
+    const here = new Set(items.map((c) => c.dir));
+    return new Set([...sel].filter((dir) => here.has(dir) && !moved.has(dir)));
 }
 
 export function selectionTotal(items: GalleryCanvas[], sel: Set<string>): { count: number; bytes: number } {
@@ -83,18 +107,38 @@ export function selectionTotal(items: GalleryCanvas[], sel: Set<string>): { coun
     return { count, bytes };
 }
 
+export function selectionLabel(total: { count: number; bytes: number }): string {
+    return total.count === 0 ? "Nothing selected" : `${total.count} selected · ${formatSize(total.bytes)}`;
+}
+
+// the toast after Move to trash: what moved, and what a skip left behind
+export function trashMessage(moved: number, skipped: number): string {
+    const noun = moved === 1 ? "canvas" : "canvases";
+    return `Moved ${moved} ${noun} to the trash${skipped > 0 ? `, ${skipped} skipped` : ""}`;
+}
+
 // a card's preview is taken when there is none, or the board changed after it
 export function previewStale(c: Pick<GalleryCanvas, "modts" | "thumbts">): boolean {
     return c.thumbts === 0 || c.thumbts < c.modts;
 }
 
-export function cardMeta(c: GalleryCanvas, now: number): string {
+// the time of day when the canvas changed today, else the date
+function cardWhen(c: GalleryCanvas, now: number): string {
     const at = new Date(c.modts);
     if (c.modts >= startOfDay(now)) {
         const pad = (n: number) => String(n).padStart(2, "0");
-        return `${c.projectname} · ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+        return `${pad(at.getHours())}:${pad(at.getMinutes())}`;
     }
-    return `${c.projectname} · ${at.getDate()} ${MONTHS[at.getMonth()]}`;
+    return `${at.getDate()} ${MONTHS[at.getMonth()]}`;
+}
+
+export function cardMeta(c: GalleryCanvas, now: number): string {
+    return `${c.projectname} · ${cardWhen(c, now)}`;
+}
+
+// a clean-up card's line: the project is the group's business there, the size is what the move frees
+export function cleanupMeta(c: GalleryCanvas, now: number): string {
+    return `${boardCountLabel(c.boards.length)} · ${cardWhen(c, now)} · ${formatSize(c.bytes)}`;
 }
 
 export function boardCountLabel(n: number): string {

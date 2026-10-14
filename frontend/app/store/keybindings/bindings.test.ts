@@ -5,7 +5,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { centerModeAtom } from "@/app/view/agents/agentcenter";
 import { SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
 import type { GalleryCanvas } from "@/app/view/agents/canvasgallery";
-import { canvasGalleryAtom, canvasListAtom } from "@/app/view/agents/canvasgallerystore";
+import { canvasGalleryAtom, canvasListAtom, cleanupAtom, startCleanup } from "@/app/view/agents/canvasgallerystore";
 import type { LauncherKind } from "@/app/view/agents/launcher";
 import { atom, type PrimitiveAtom } from "jotai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -1804,6 +1804,14 @@ describe("Agent → Canvases keys", () => {
         "canvases:next-board-bracket",
         "canvases:back",
     ];
+    const CLEANUP_KEYS = [
+        "canvases:cleanup-left",
+        "canvases:cleanup-right",
+        "canvases:cleanup-up",
+        "canvases:cleanup-down",
+        "canvases:tick",
+        "canvases:cleanup-cancel",
+    ];
     const live = (ids: string[]) => ids.map((id) => find(id).when!(agentCtx));
 
     beforeEach(() => {
@@ -1845,15 +1853,86 @@ describe("Agent → Canvases keys", () => {
         // the clean-up mode brings its own keys with it
         gallery({ view: "cleanup", dir: null });
         expect(live([...GRID_KEYS, ...VIEWER_KEYS])).toEqual([...GRID_KEYS, ...VIEWER_KEYS].map(() => false));
+        expect(live(CLEANUP_KEYS)).toEqual(CLEANUP_KEYS.map(() => true));
+        gallery({ view: "grid" });
+        expect(live(CLEANUP_KEYS)).toEqual(CLEANUP_KEYS.map(() => false));
+        gallery({ view: "viewer", dir: "/p/.superpowers/design/alpha" });
+        expect(live(CLEANUP_KEYS)).toEqual(CLEANUP_KEYS.map(() => false));
+    });
+
+    describe("in clean up", () => {
+        // newest first inside a group: old is the only suggested canvas, so the drawn order is old, beta, alpha
+        const NOW = Date.UTC(2026, 9, 14, 12, 0, 0);
+        const sel = () => globalStore.get(cleanupAtom).selected;
+
+        beforeEach(() => {
+            globalStore.set(canvasListAtom, [
+                canvas("alpha", NOW - 2 * 60 * 60 * 1000, ["Main"]),
+                canvas("beta", NOW - 60 * 60 * 1000, ["Main"]),
+                canvas("old", NOW - 40 * DAY, ["Main"]),
+            ]);
+            startCleanup(NOW);
+        });
+
+        afterEach(() => {
+            globalStore.set(cleanupAtom, { selected: new Set<string>(), now: 0, skipped: {}, moving: false });
+        });
+
+        it("starts on the suggested canvas, ticked", () => {
+            expect(galleryNow()).toMatchObject({ view: "cleanup", cursor: 0 });
+            expect(sel()).toEqual(new Set(["/p/.superpowers/design/old"]));
+        });
+
+        it("walks the suggested group and then Newer with the arrows, clamping at the ends", () => {
+            const at = () => galleryNow().cursor;
+            find("canvases:cleanup-right").run(agentCtx);
+            expect(at()).toBe(1);
+            find("canvases:cleanup-down").run(agentCtx);
+            expect(at()).toBe(2);
+            find("canvases:cleanup-down").run(agentCtx);
+            expect(at()).toBe(2);
+            find("canvases:cleanup-up").run(agentCtx);
+            expect(at()).toBe(1);
+            find("canvases:cleanup-left").run(agentCtx);
+            expect(at()).toBe(0);
+            find("canvases:cleanup-left").run(agentCtx);
+            expect(at()).toBe(0);
+        });
+
+        it("ticks and unticks the card under the cursor with Space", () => {
+            find("canvases:tick").run(agentCtx);
+            expect(sel()).toEqual(new Set());
+            find("canvases:tick").run(agentCtx);
+            expect(sel()).toEqual(new Set(["/p/.superpowers/design/old"]));
+            find("canvases:cleanup-right").run(agentCtx);
+            find("canvases:tick").run(agentCtx);
+            expect(sel()).toEqual(new Set(["/p/.superpowers/design/old", "/p/.superpowers/design/beta"]));
+        });
+
+        it("lets Space pass when there is no card, and does not tick while a move is under way", () => {
+            globalStore.set(cleanupAtom, { ...globalStore.get(cleanupAtom), moving: true });
+            find("canvases:tick").run(agentCtx);
+            expect(sel()).toEqual(new Set(["/p/.superpowers/design/old"]));
+            globalStore.set(canvasListAtom, []);
+            expect(find("canvases:tick").run(agentCtx)).toBe(false);
+        });
+
+        it("cancels back to the grid on Escape and forgets the ticks", () => {
+            find("canvases:cleanup-down").run(agentCtx);
+            find("canvases:cleanup-cancel").run(agentCtx);
+            expect(galleryNow()).toMatchObject({ view: "grid", dir: null, cursor: 0 });
+            expect(sel()).toEqual(new Set());
+        });
     });
 
     it("hides the brackets from the palette and labels the keys", () => {
         expect(find("canvases:prev-board-bracket").keys).toBe("[");
         expect(find("canvases:next-board-bracket").keys).toBe("]");
-        for (const id of [...GRID_KEYS, ...VIEWER_KEYS]) {
+        for (const id of [...GRID_KEYS, ...VIEWER_KEYS, ...CLEANUP_KEYS]) {
             expect(find(id).paletteHidden).toBe(true);
             expect(find(id).label).not.toBe("");
         }
+        expect(find("canvases:tick").keys).toBe("Space");
         expect(find("canvases:prev-board").label).toBe("Previous board");
         expect(find("canvases:right").label).toBe("Next canvas");
     });

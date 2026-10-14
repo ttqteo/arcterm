@@ -260,6 +260,22 @@ describe("keybinding conflict invariant", () => {
             expect(find("canvases:left").when!(agentCtx)).toBe(false);
             expect(find("surface:prev").when!(agentCtx)).toBe(false);
             expect(find("surface:next").when!(agentCtx)).toBe(false);
+            // clean up has its own arrows, Space and Escape; the grid's, the viewer's and the agent's all stand down
+            inGallery("cleanup");
+            for (const id of [
+                "canvases:cleanup-left",
+                "canvases:cleanup-down",
+                "canvases:tick",
+                "canvases:cleanup-cancel",
+            ]) {
+                expect(find(id).when!(agentCtx)).toBe(true);
+            }
+            for (const id of ["canvases:left", "canvases:open", "canvases:prev-board", "canvases:back", "agent:prev"]) {
+                expect(find(id).when!(agentCtx)).toBe(false);
+            }
+            expect(find("agent:leave-center").when!(agentCtx)).toBe(false);
+            // [ ] stay the surface switch's: clean up has no use for them
+            expect(find("surface:prev").when!(agentCtx)).toBe(true);
         } finally {
             globalStore.set(centerModeAtom, "terminal");
             inGallery("grid");
@@ -273,19 +289,31 @@ describe("keybinding conflict invariant", () => {
         const all = buildAgentBindings(model);
         const leave = all.find((x) => x.id === "agent:leave-center")!;
         const back = all.find((x) => x.id === "canvases:back")!;
+        const cancel = all.find((x) => x.id === "canvases:cleanup-cancel")!;
         globalStore.set(centerModeAtom, "canvases");
         try {
             inGallery("grid");
             expect(leave.when!(agentCtx)).toBe(true);
             expect(back.when!(agentCtx)).toBe(false);
+            expect(cancel.when!(agentCtx)).toBe(false);
             inGallery("viewer", OPEN_DIR);
             expect(leave.when!(agentCtx)).toBe(false);
             expect(back.when!(agentCtx)).toBe(true);
+            expect(cancel.when!(agentCtx)).toBe(false);
             // inside a field the field keeps its Escape
             expect(back.when!({ ...agentCtx, editable: true })).toBe(false);
+            // clean up: Escape cancels clean up and nothing else, whatever else is open or focused
             inGallery("cleanup");
             expect(leave.when!(agentCtx)).toBe(false);
             expect(back.when!(agentCtx)).toBe(false);
+            expect(cancel.when!(agentCtx)).toBe(true);
+            expect(cancel.when!({ ...agentCtx, editable: true })).toBe(false);
+            expect(cancel.when!({ ...agentCtx, modalOpen: true })).toBe(false);
+            expect(cancel.when!({ ...agentCtx, surface: "jarvis" })).toBe(false);
+            // only one Escape binding claims the key in clean up
+            expect(all.filter((x) => x.keys === "Escape" && x.when?.(agentCtx)).map((x) => x.id)).toEqual([
+                "canvases:cleanup-cancel",
+            ]);
             // History keeps the plain rule whatever the gallery was left on
             globalStore.set(centerModeAtom, "history");
             expect(leave.when!(agentCtx)).toBe(true);

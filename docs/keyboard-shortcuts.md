@@ -256,6 +256,9 @@ gallery is a grid of cards (Today / Yesterday / Earlier); a card opens in a view
 | `Esc` | In the grid: back to the terminal |
 | `←` / `→` | In an open canvas: previous / next board, round the ends. `[` / `]` step too, but the hints show only the arrows: a Vietnamese Telex input method turns `[` `]` into `ơ` `ư` |
 | `Esc` | In an open canvas: back to the grid |
+| `←` / `↑` / `↓` / `→` | In Clean up (the grid's **Clean up** button): move the card cursor over the suggested group, then Newer |
+| `Space` | In Clean up: tick or untick the card under the cursor. A click does the same; **Untick all** and **Move to trash** are in the bar |
+| `Esc` | In Clean up: cancel, back to the grid |
 
 ### Agent: terminal grid
 

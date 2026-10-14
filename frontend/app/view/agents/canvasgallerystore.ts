@@ -5,13 +5,26 @@
 // clean-up selection), and the list of canvases it shows. Module-level atoms, like railstore.ts, so the place survives a
 // surface switch (the mode's components unmount, like History's) and the key bindings can read and move it.
 
+import { pushToast } from "@/app/cockpit/notificationstore";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { getWebServerEndpoint } from "@/util/endpoints";
 import { atom, type PrimitiveAtom } from "jotai";
 import { moveGalleryCursor, type CursorKey } from "./canvascursor";
-import { groupByDay, searchCanvases, stepIndex, type GalleryCanvas, type GalleryGroup } from "./canvasgallery";
+import {
+    cleanupGroups,
+    cleanupOrder,
+    groupByDay,
+    initialSelection,
+    searchCanvases,
+    selectionAfterClean,
+    stepIndex,
+    toggled,
+    trashMessage,
+    type GalleryCanvas,
+    type GalleryGroup,
+} from "./canvasgallery";
 
 export type GalleryView = "grid" | "viewer" | "cleanup";
 
@@ -113,8 +126,119 @@ export function closeCanvas(): void {
     setGallery({ view: "grid", dir: null, board: 0 });
 }
 
-export function startCleanup(): void {
+// Clean up. `now` is read once when the mode opens and kept, so a card does not hop between the two groups while the
+// person ticks; `selected` is the topic dirs (the clean ids), `skipped` the reasons the last move gave, by dir
+export type CleanupState = { selected: Set<string>; now: number; skipped: Record<string, string>; moving: boolean };
+
+const NO_CLEANUP: CleanupState = { selected: new Set(), now: 0, skipped: {}, moving: false };
+export const cleanupAtom = atom<CleanupState>(NO_CLEANUP) as PrimitiveAtom<CleanupState>;
+
+// a move that outlives its clean-up (cancelled, or another one opened) toasts and touches nothing else
+let cleanupRun = 0;
+
+function setCleanup(patch: Partial<CleanupState>): void {
+    globalStore.set(cleanupAtom, (c) => ({ ...c, ...patch }));
+}
+
+export function startCleanup(now: number): void {
+    cleanupRun++;
+    const list = globalStore.get(canvasListAtom) ?? [];
+    globalStore.set(cleanupAtom, { selected: initialSelection(list, now), now, skipped: {}, moving: false });
     setGallery({ view: "cleanup", cursor: 0 });
+}
+
+export function cancelCleanup(): void {
+    cleanupRun++;
+    globalStore.set(cleanupAtom, NO_CLEANUP);
+    // the grid's cursor counts its own cards, not the clean-up order
+    setGallery({ view: "grid", cursor: 0 });
+}
+
+export function toggleCleanupCard(dir: string): void {
+    if (!globalStore.get(cleanupAtom).moving) {
+        globalStore.set(cleanupAtom, (c) => ({ ...c, selected: toggled(c.selected, dir) }));
+    }
+}
+
+export function untickAll(): void {
+    if (!globalStore.get(cleanupAtom).moving) {
+        setCleanup({ selected: new Set() });
+    }
+}
+
+// Space: the card under the cursor. False when there is none, so the key passes
+export function toggleCleanupCursor(): boolean {
+    const list = globalStore.get(canvasListAtom);
+    const cards = cleanupOrder(list ?? [], globalStore.get(cleanupAtom).now);
+    if (cards.length === 0) {
+        return false;
+    }
+    const at = Math.min(Math.max(0, globalStore.get(canvasGalleryAtom).cursor), cards.length - 1);
+    toggleCleanupCard(cards[at].dir);
+    return true;
+}
+
+export function moveCleanupCards(key: CursorKey): boolean {
+    const list = globalStore.get(canvasListAtom);
+    if (list == null) {
+        return false;
+    }
+    const groups = cleanupGroups(list, globalStore.get(cleanupAtom).now);
+    const sizes = [groups.suggested.length, groups.newer.length];
+    setGallery({ cursor: moveGalleryCursor(sizes, gridColumns(), globalStore.get(canvasGalleryAtom).cursor, key) });
+    return true;
+}
+
+// moving a folder is a rename, but into ~/.arc/trash, which can be another drive: a copy
+const TRASH_TIMEOUT_MS = 2 * 60_000;
+
+export async function moveSelectionToTrash(): Promise<void> {
+    const before = globalStore.get(cleanupAtom);
+    // what the bar counts: the ticked canvases that are still listed
+    const ids = (globalStore.get(canvasListAtom) ?? []).filter((c) => before.selected.has(c.dir)).map((c) => c.dir);
+    if (before.moving || ids.length === 0) {
+        return;
+    }
+    const run = cleanupRun;
+    setCleanup({ moving: true, skipped: {} });
+    try {
+        const result = await RpcApi.CleanStorageCommand(
+            TabRpcClient,
+            { category: "canvases", itemids: ids, allowguarded: true },
+            { timeout: TRASH_TIMEOUT_MS }
+        );
+        const cleaned = result.cleaned ?? [];
+        const skipped = result.skipped ?? [];
+        await loadCanvases();
+        pushToast({
+            title: "Canvases",
+            message: trashMessage(cleaned.length, skipped.length),
+            level: skipped.length > 0 ? "warn" : "info",
+        });
+        if (run !== cleanupRun) {
+            return;
+        }
+        const list = globalStore.get(canvasListAtom) ?? [];
+        const here = new Set(list.map((c) => c.dir));
+        // a skip whose folder is gone anyway ("already gone") has nothing left to show
+        const stuck = skipped.filter((s) => here.has(s.id));
+        if (stuck.length === 0) {
+            cancelCleanup();
+            return;
+        }
+        setCleanup({
+            selected: selectionAfterClean(before.selected, list, cleaned),
+            skipped: Object.fromEntries(stuck.map((s) => [s.id, s.reason])),
+        });
+        const left = cleanupOrder(list, before.now).length;
+        setGallery({ cursor: Math.min(globalStore.get(canvasGalleryAtom).cursor, Math.max(0, left - 1)) });
+    } catch (e) {
+        pushToast({ title: "Canvases", message: `Couldn't move to the trash: ${String(e)}`, level: "error" });
+    } finally {
+        if (run === cleanupRun) {
+            setCleanup({ moving: false });
+        }
+    }
 }
 
 export function openCursorCanvas(now: number): boolean {

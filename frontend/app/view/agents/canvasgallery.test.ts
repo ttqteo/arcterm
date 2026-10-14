@@ -4,14 +4,20 @@ import {
     boardCountLabel,
     cardMeta,
     cleanupGroups,
+    cleanupMeta,
+    cleanupOrder,
     groupByDay,
     initialSelection,
     isSuggested,
     moveCursor,
     previewStale,
     searchCanvases,
+    selectionAfterClean,
+    selectionLabel,
     selectionTotal,
     stepIndex,
+    toggled,
+    trashMessage,
     type GalleryCanvas,
 } from "./canvasgallery";
 
@@ -120,6 +126,36 @@ describe("cleanup helpers", () => {
         expect(selectionTotal([fresh, stale, staler], sel)).toEqual({ count: 2, bytes: 12000 });
         expect(selectionTotal([fresh, stale, staler], new Set())).toEqual({ count: 0, bytes: 0 });
     });
+
+    it("lists the clean-up cards suggested group first, then Newer, each newest first", () => {
+        expect(cleanupOrder([fresh, staler, stale], NOW).map((c) => c.topic)).toEqual(["stale", "staler", "fresh"]);
+        expect(cleanupOrder([], NOW)).toEqual([]);
+    });
+
+    it("toggles a dir in a copy and leaves the set it was given alone", () => {
+        const sel = new Set(["d/stale"]);
+        expect(toggled(sel, "d/fresh")).toEqual(new Set(["d/stale", "d/fresh"]));
+        expect(toggled(sel, "d/stale")).toEqual(new Set());
+        expect(sel).toEqual(new Set(["d/stale"]));
+    });
+
+    it("keeps a skipped canvas ticked after a clean, and drops the moved and the vanished", () => {
+        const sel = new Set(["d/stale", "d/staler", "d/gone", "d/fresh"]);
+        // d/staler moved, d/gone is no longer listed (already gone), d/stale was skipped and is still there
+        expect(selectionAfterClean(sel, [fresh, stale], ["d/staler"])).toEqual(new Set(["d/stale", "d/fresh"]));
+        // a clean whose re-read failed still lists the moved dir: the moved list wins
+        expect(selectionAfterClean(sel, [fresh, stale, staler], ["d/staler"])).toEqual(new Set(["d/stale", "d/fresh"]));
+    });
+
+    it("words the bar's summary and the toast", () => {
+        expect(selectionLabel({ count: 0, bytes: 0 })).toBe("Nothing selected");
+        expect(selectionLabel({ count: 2, bytes: 12000 })).toBe("2 selected · 12 KB");
+        expect(selectionLabel({ count: 1, bytes: 3 * 1024 * 1024 })).toBe("1 selected · 3 MB");
+        expect(trashMessage(1, 0)).toBe("Moved 1 canvas to the trash");
+        expect(trashMessage(3, 0)).toBe("Moved 3 canvases to the trash");
+        expect(trashMessage(2, 1)).toBe("Moved 2 canvases to the trash, 1 skipped");
+        expect(trashMessage(0, 2)).toBe("Moved 0 canvases to the trash, 2 skipped");
+    });
 });
 
 describe("previewStale", () => {
@@ -137,6 +173,20 @@ describe("cardMeta", () => {
         expect(cardMeta(canvas({ modts: new Date(2026, 9, 14, 9, 5).getTime() }), NOW)).toBe("arcterm · 09:05");
         expect(cardMeta(canvas({ modts: new Date(2026, 9, 13, 23, 59).getTime() }), NOW)).toBe("arcterm · 13 Oct");
         expect(cardMeta(canvas({ modts: new Date(2026, 7, 2, 10, 0).getTime() }), NOW)).toBe("arcterm · 2 Aug");
+    });
+});
+
+describe("cleanupMeta", () => {
+    it("reads boards, date and size, the date as cardMeta gives it", () => {
+        const old = canvas({
+            boards: ["Main", "States"],
+            modts: new Date(2026, 8, 5, 10, 0).getTime(),
+            bytes: 200 * 1024,
+        });
+        expect(cleanupMeta(old, NOW)).toBe("2 boards · 5 Sep · 200 KB");
+        expect(cleanupMeta(canvas({ boards: ["Main"], modts: NOW, bytes: 1751 * 1024 }), NOW)).toBe(
+            "1 board · 13:37 · 2 MB"
+        );
     });
 });
 
