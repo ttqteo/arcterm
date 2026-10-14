@@ -112,14 +112,17 @@ measures is the drawing, and the data it reads is already in memory for the run 
 real workers.
 
 **Scenario `jarvis-office-bench`:** goto Jarvis with the Office off, force GC (`HeapProfiler.collectGarbage`), read
-`Performance.getMetrics`; turn the Office on, wait 2 s, GC, read; hold 30 s, read; turn it off, GC, read. Then repeat
-the 30 s hold under `Emulation.setEmulatedMedia` with `prefers-reduced-motion: reduce`.
+`Performance.getMetrics`; hold 30 s with the Office off, read (the page's own busy, the baseline); turn the Office on,
+wait 2 s, GC, read; hold 30 s, read; turn it off, GC, read. Then repeat the 30 s hold under
+`Emulation.setEmulatedMedia` with `prefers-reduced-motion: reduce`. The busy budgets are the office's cost: the hold's
+busy minus the baseline's, since the Jarvis page does its own work whether the office is on or not (the first Final
+measured 7.8 % busy with the frame clock stopped).
 
 | Measure | Budget |
 |---|---|
 | JS heap, open minus closed (after GC) | ≤ 5 MB |
 | DOM nodes added | ≤ 2,000 |
-| Main thread busy over the 30 s hold (`TaskDuration` delta / 30 s) | ≤ 2 % |
+| Main thread busy over the 30 s hold (`TaskDuration` delta / 30 s), minus the office-off baseline | ≤ 2 % |
 | Same, reduced motion | ≤ 0.5 % |
 | Sprite cache entries | ≤ 320 (the bound above) |
 | Heap after turning it off (after GC), minus the closed baseline | ≤ 1 MB |
