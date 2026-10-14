@@ -58,7 +58,7 @@ Keep a canvas after the feature it designed ships, unless `wsh canvas policy` pr
 `delete-on-ship`: then delete its `.superpowers/design/<topic>/` folder in the same session. On
 `keep`, an error, or no `wsh`, keep it. When the person asks to tidy up, list the topics whose
 feature has shipped (folder, last change, what shipped it) and delete only the ones they pick;
-they can also clean up in arcterm's Agent → Canvases. A canvas is never committed.
+they can also clean up in arcterm's Agent → Canvas gallery. A canvas is never committed.
 
 ## The canvas as a spec
 

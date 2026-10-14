@@ -127,7 +127,7 @@ describe("moveSelectionToTrash", () => {
         expect(data.allowguarded).toBe(true);
         expect([...data.itemids!].sort()).toEqual([dirOf("new"), dirOf("old-a"), dirOf("old-b")]);
         expect(toast).toHaveBeenCalledWith({
-            title: "Canvases",
+            title: "Canvas gallery",
             message: "Moved 3 canvases to the trash",
             level: "info",
         });
@@ -148,7 +148,7 @@ describe("moveSelectionToTrash", () => {
         list.mockResolvedValue([OLD_B, NEW]);
         await moveSelectionToTrash();
         expect(toast).toHaveBeenCalledWith({
-            title: "Canvases",
+            title: "Canvas gallery",
             message: "Moved 1 canvas to the trash, 1 skipped",
             level: "warn",
         });

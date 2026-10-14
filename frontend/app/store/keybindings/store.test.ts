@@ -46,7 +46,7 @@ function stubModel(focusId?: string): any {
     return { focusIdAtom: atom<string | undefined>(focusId) as PrimitiveAtom<string | undefined> };
 }
 
-// where Agent → Canvases is: a view, and the topic folder it has open
+// where Agent → Canvas gallery is: a view, and the topic folder it has open
 const OPEN_DIR = "/p/.superpowers/design/t";
 function inGallery(view: "grid" | "viewer" | "cleanup", dir: string | null = null) {
     globalStore.set(canvasGalleryAtom, { view, dir, board: 0, query: "", cursor: 0 });

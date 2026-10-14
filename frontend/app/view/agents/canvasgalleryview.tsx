@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Agent → Canvases (agentcenter.ts' `canvases` mode): every registered project's design canvases as a grid of cards with
+// Agent → Canvas gallery (agentcenter.ts' `canvases` mode): every registered project's design canvases as a grid of cards with
 // a cached preview, and a viewer that opens one canvas a board at a time. Thin: grouping, search and the card text come
 // from canvasgallery.ts, the place and the list from canvasgallerystore.ts, the board frame from canvaspane.tsx. The
 // keys are buildAgentBindings' (the arrows, Enter, `/`, `[` `]`, Space, Escape), so this file holds no key handler but
@@ -173,7 +173,7 @@ function CanvasGrid({ model }: { model: AgentsViewModel }) {
     return (
         <div data-canvas-gallery className="flex min-h-0 flex-1 flex-col bg-background">
             <div className="flex flex-none items-center gap-[10px] border-b border-border px-[24px] pb-[14px] pt-[18px]">
-                <h1 className="text-[15px] font-semibold tracking-[-0.01em] text-primary">Canvases</h1>
+                <h1 className="text-[15px] font-semibold tracking-[-0.01em] text-primary">Canvas gallery</h1>
                 {list != null ? (
                     <span
                         data-canvas-gallery-count

@@ -18,7 +18,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/sessiontrash"
 )
 
-// canvases are the design-local mockups each project keeps in .superpowers/design/<topic>: Agent → Canvases lists
+// canvases are the design-local mockups each project keeps in .superpowers/design/<topic>: Agent → Canvas gallery lists
 // them and cleans them up, and Settings → Storage counts them. Nothing removes one unless the person asks.
 
 const (
@@ -226,7 +226,7 @@ func (canvases) clean(ctx context.Context, env *Env, ids []string, opts CleanOpt
 			continue
 		}
 		if !opts.AllowGuarded {
-			skip(&res, id, "a canvas moves to the trash only from Clean up in Agent → Canvases")
+			skip(&res, id, "a canvas moves to the trash only from Clean up in Agent → Canvas gallery")
 			continue
 		}
 		id = filepath.Clean(id)

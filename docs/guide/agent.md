@@ -403,7 +403,7 @@ Agent dùng skill design-local có thể đính kèm một **canvas** — các b
 
 ### Thư viện canvas
 
-Mọi canvas mà agent đã vẽ trong các project của bạn nằm ở **Agent → Canvases**: bấm nút **Canvases** dưới Conversation History ở đầu sidebar, hoặc `Ctrl+G` `v`. Nó thay terminal như Conversation History. Mỗi canvas là một thẻ có ảnh xem trước (chụp một lần, khi bạn mở board của nó lần đầu), xếp mới nhất trước theo Today / Yesterday / Earlier; `/` tìm theo tên topic, board và project, `↑` `↓` `←` `→` chọn thẻ, `Enter` mở.
+Mọi canvas mà agent đã vẽ trong các project của bạn nằm ở **Agent → Canvas gallery**: bấm nút **Canvas gallery** dưới Conversation History ở đầu sidebar, hoặc `Ctrl+G` `v`. Nó thay terminal như Conversation History. Mỗi canvas là một thẻ có ảnh xem trước (chụp một lần, khi bạn mở board của nó lần đầu), xếp mới nhất trước theo Today / Yesterday / Earlier; `/` tìm theo tên topic, board và project, `↑` `↓` `←` `→` chọn thẻ, `Enter` mở.
 
 Mở một canvas thì xem từng board một: `←` `→` đổi board, `Esc` về lưới. Viewer không gắn với agent nào nên không có đánh dấu hay Send; muốn sửa canvas cùng một agent thì mở nó từ nhóm **Canvases** của agent đó trong palette `Ctrl+P`.
 

@@ -2423,7 +2423,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                     )}
                 >
                     <LayoutGrid size={14} aria-hidden />
-                    Canvases
+                    Canvas gallery
                 </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-[8px]">

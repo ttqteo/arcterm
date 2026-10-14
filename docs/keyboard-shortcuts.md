@@ -105,7 +105,7 @@ agent's header `…` menu, and Search → Commands → "Open a tool…". The sea
 | `Mod`+`G` `j` | Jarvis — channels, records, recall |
 | `Mod`+`G` `r` | Radar |
 | `Mod`+`G` `s` | Conversation History (in the Agent surface) |
-| `Mod`+`G` `v` | Canvases — the gallery of every project's design canvases (in the Agent surface) |
+| `Mod`+`G` `v` | Canvas gallery — every project's design canvases (in the Agent surface) |
 | `Mod`+`G` `f` | Files |
 | `Mod`+`G` `u` | Usage |
 | `Mod`+`G` `b` | Code — browse source |
@@ -225,7 +225,7 @@ A link inside an item view does a full open, even with `Mod` held.
 | `Mod`+`Shift`+`Enter` (or `F11`) | Toggle terminal fullscreen from inside the terminal too. A Mac keyboard has no `F11` of its own, so `Cmd`+`Shift`+`Enter` is the one to use there |
 | `Shift`+`F` | Toggle float: the window shrinks to the focused terminal, and its pin keeps it on top of other apps |
 | `r` | Review: open the focused lead's Spec review or Plan review dialog, or show the focused agent's Doc review in place of its terminal |
-| `Esc` | Back to where you jumped from, else to Cockpit; exits fullscreen first; from Conversation History, the Canvases grid or a session transcript, back to the terminal |
+| `Esc` | Back to where you jumped from, else to Cockpit; exits fullscreen first; from Conversation History, the Canvas gallery grid or a session transcript, back to the terminal |
 | `Shift`+`Esc` | Return focus to the nav (from inside the terminal) |
 | `Ctrl`+`C` | In a terminal on Windows: copy while text is selected (the selection goes with it), else the interrupt as always. `Cmd`+`C` copies on a Mac. `Ctrl`+`Shift`+`C` copies too |
 | `←` / `→` / `Home` / `End` | Move between the panel's tabs (Overview, Files, File) while its tab strip has focus; the agent keys stand down there |
@@ -242,9 +242,9 @@ that act on the focused agent stand down while either is open: `j` / `k`, the ar
 `Enter` jumps to a live session or resumes an ended one, and `Esc` returns to the terminal. The `Ctrl`+`Tab` switcher still works and brings
 the terminal back. An ended session opened from the sidebar covers the terminal the same way, and `Esc` leaves it.
 
-### Agent: Canvases
+### Agent: Canvas gallery
 
-Opened with `Mod`+`G` `v` or the sidebar's Canvases button. Like History it covers the terminal, so the keys that act on
+Opened with `Mod`+`G` `v` or the sidebar's Canvas gallery button. Like History it covers the terminal, so the keys that act on
 the focused agent stand down while it is open; the `Ctrl`+`Tab` switcher still works and brings the terminal back. The
 gallery is a grid of cards (Today / Yesterday / Earlier); a card opens in a viewer that shows one board at a time.
 
@@ -288,7 +288,7 @@ picker instead of moving through the list. `Shift`+`Esc` goes back to the list.
 | `j` / `k` (or `↓` / `↑`, `→` / `←`) | Next / previous agent or terminal, by the rule above, stopping at the ends of the list; not while a terminal holds focus |
 | `f` / `Mod`+`Shift`+`Enter` / `F11` | Fullscreen shows only the focused cell; the grid returns when you leave it |
 
-Canvas mode, a review, the subagent view, Conversation History, the Canvases gallery and an ended session's or a done
+Canvas mode, a review, the subagent view, Conversation History, the Canvas gallery and an ended session's or a done
 worker's transcript each show one thing in place of the grid; the grid comes back as it was. A terminal picked from the tree, `j` / `k`,
 `Ctrl`+`Tab` or Search no longer does: it takes a cell by the rule above.
 

@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// State of Agent → Canvases (agentcenter.ts' `canvases` mode): where the gallery is (the grid, one open canvas, or the
+// State of Agent → Canvas gallery (agentcenter.ts' `canvases` mode): where the gallery is (the grid, one open canvas, or the
 // clean-up selection), and the list of canvases it shows. Module-level atoms, like railstore.ts, so the place survives a
 // surface switch (the mode's components unmount, like History's) and the key bindings can read and move it.
 
@@ -211,7 +211,7 @@ export async function moveSelectionToTrash(): Promise<void> {
         const skipped = result.skipped ?? [];
         await loadCanvases();
         pushToast({
-            title: "Canvases",
+            title: "Canvas gallery",
             message: trashMessage(cleaned.length, skipped.length),
             level: skipped.length > 0 ? "warn" : "info",
         });
@@ -233,7 +233,7 @@ export async function moveSelectionToTrash(): Promise<void> {
         const left = cleanupOrder(list, before.now).length;
         setGallery({ cursor: Math.min(globalStore.get(canvasGalleryAtom).cursor, Math.max(0, left - 1)) });
     } catch (e) {
-        pushToast({ title: "Canvases", message: `Couldn't move to the trash: ${String(e)}`, level: "error" });
+        pushToast({ title: "Canvas gallery", message: `Couldn't move to the trash: ${String(e)}`, level: "error" });
     } finally {
         if (run === cleanupRun) {
             setCleanup({ moving: false });

@@ -152,7 +152,7 @@ function focusCodeSearchInput(): void {
     }
 }
 
-// g-leader surface teleports (collision-free letters; see design spec). Conversation History and Canvases are modes of
+// g-leader surface teleports (collision-free letters; see design spec). Conversation History and the Canvas gallery are modes of
 // the Agent surface, not surfaces, so each target carries its own id and the opener that shows its mode.
 const GO_TARGETS: {
     letter: string;
@@ -166,7 +166,7 @@ const GO_TARGETS: {
     { letter: "j", surface: "jarvis", label: "Jarvis (projects, records, recall)" },
     { letter: "r", surface: "radar", label: "Radar" },
     { letter: "s", surface: "agent", label: "Conversation History", id: "go:history", open: showHistory },
-    { letter: "v", surface: "agent", label: "Canvases", id: "go:canvases", open: showCanvases },
+    { letter: "v", surface: "agent", label: "Canvas gallery", id: "go:canvases", open: showCanvases },
     { letter: "f", surface: "files", label: "Diff" },
     { letter: "u", surface: "usage", label: "Usage" },
     { letter: "b", surface: "code", label: "Code (browse source)" },
@@ -204,7 +204,7 @@ const clickThrough = (selector: string): boolean | void => {
 const terminalSwapped = (model: AgentsViewModel) =>
     focusedCanvasMode(model) != null || focusedDocReview(model)?.mode === "review";
 
-// A canvas open in Agent → Canvases pages through its boards with `[` `]` as the agent's canvas does.
+// A canvas open in Agent → Canvas gallery pages through its boards with `[` `]` as the agent's canvas does.
 const galleryViewerOpen = () =>
     globalStore.get(centerModeAtom) === "canvases" && globalStore.get(canvasGalleryAtom).view === "viewer";
 
@@ -1018,7 +1018,7 @@ const agentNav = (ctx: KeyContext) =>
     navigate(ctx) && ctx.surface === "agent" && centerAtRest() && initiativePopoverClosed();
 const agentNavStrict = (ctx: KeyContext) =>
     navigateStrict(ctx) && ctx.surface === "agent" && centerAtRest() && initiativePopoverClosed();
-// Canvases (the gallery) covers the terminal as History does, with keys of its own: the arrows, Enter and `/` on its grid,
+// The Canvas gallery covers the terminal as History does, with keys of its own: the arrows, Enter and `/` on its grid,
 // the arrows, `[` `]` and Escape on an open canvas, the arrows, Space and Escape in clean up. Each takes its view from
 // canvasGalleryAtom, so they never share a key.
 const onGallery = (ctx: KeyContext) =>
@@ -1148,7 +1148,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                 !galleryHoldsEscape(),
             run: () => showTerminal(),
         },
-        // Agent → Canvases. Moving over cards and paging through boards are postures, not actions to search for.
+        // Agent → Canvas gallery. Moving over cards and paging through boards are postures, not actions to search for.
         ...(
             [
                 ["ArrowLeft", "canvases:left", "Previous canvas"],

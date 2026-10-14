@@ -1,4 +1,4 @@
-// Pure model for Agent → Canvases (spec 2026-10-14-canvas-gallery-design.md): grouping, search, the clean-up
+// Pure model for Agent → Canvas gallery (spec 2026-10-14-canvas-gallery-design.md): grouping, search, the clean-up
 // suggestion, the selection's totals, and when a preview is stale. No React, no Wave runtime imports.
 
 import { formatSize } from "./storagemodel";

@@ -25264,7 +25264,7 @@ const canvasManyBoards = {
     teardown: (h, ctx) => teardownCanvasBoards(h, ctx, "canvas-many-boards"),
 };
 
-// --- Agent → Canvases: the gallery, the viewer, Clean up, and the Storage card ------------------------------------
+// --- Agent → Canvas gallery: the gallery, the viewer, Clean up, and the Storage card ------------------------------------
 // docs/superpowers/specs/2026-10-14-canvas-gallery-design.md. A temp project, registered mid-run so the empty board can
 // be shown first, holds three topics: gallery-beta (one board, no preview, newest), gallery-alpha (boards Main and States,
 // a 1x1 thumb.png newer than both) and gallery-old (one board, every file 40 days back), so the grid reads beta, alpha,
@@ -25744,7 +25744,7 @@ const canvasGallery = {
             JSON.stringify({ storageUp, listed: listed.map((c) => c.topic), want, onShip, ...storage })
         );
 
-        // 6b. Open the gallery lands on Agent → Canvases
+        // 6b. Open the gallery lands on Agent → Canvas gallery
         await h.ev(`document.querySelector("[data-storage-canvases-open]")?.click()`);
         const opened = await polishWaitFor(h, `document.querySelector("[data-canvas-gallery]") != null`, 5000);
         const surface = await h.activeSurfaceLabel();
@@ -25754,7 +25754,7 @@ const canvasGallery = {
     teardown: (h, ctx) => cgTeardown(h, ctx, "canvas-gallery", CG_PROJECT),
 };
 
-// --- Agent → Canvases previews: opening a canvas takes its thumb.png ---------------------------------------------------
+// --- Agent → Canvas gallery previews: opening a canvas takes its thumb.png ---------------------------------------------------
 // A canvas with no preview is captured about a second after its board settles in the viewer (canvasthumb.ts): the host's
 // capture_webview, cropped to the board and scaled to at most 480 px, written over <topic>/thumb.png. The card then shows
 // it. The browser app has no window to capture, so this one is host-only; canvas-gallery runs there without it.

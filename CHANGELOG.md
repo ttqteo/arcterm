@@ -17,6 +17,13 @@ A new feature someone would open the app to try ends with `<!-- big -->` (either
 new draws it as one of its release's cards and folds every other line under a count. At most 5 per release, and
 `whatsnew.test.ts` fails a release with more; a fix, a tweak or a rename is never big.
 
+## Unreleased
+
+### Changed
+
+- **Canvases is now the Canvas gallery**: the sidebar row, the gallery's title and the `Ctrl+G` `v` command use the new
+  name. <!-- try: go:canvases -->
+
 ## 0.15.12 — 2026-10-14
 
 ### Added

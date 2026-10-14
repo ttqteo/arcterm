@@ -1755,21 +1755,21 @@ describe("g s: Conversation History", () => {
     });
 });
 
-describe("g v: Canvases", () => {
+describe("g v: Canvas gallery", () => {
     afterEach(() => globalStore.set(centerModeAtom, "terminal"));
 
-    it("opens the canvases in the Agent surface", () => {
+    it("opens the Canvas gallery in the Agent surface", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("cockpit") } as any;
         const canvases = buildGlobalBindings(model).find((b) => b.id === "go:canvases")!;
         expect(canvases.keys).toBe("g v");
-        expect(canvases.label).toBe("Canvases");
+        expect(canvases.label).toBe("Canvas gallery");
         canvases.run(ctx());
         expect(globalStore.get(model.surfaceAtom)).toBe("agent");
         expect(globalStore.get(centerModeAtom)).toBe("canvases");
     });
 });
 
-describe("Agent → Canvases keys", () => {
+describe("Agent → Canvas gallery keys", () => {
     const agentCtx: KeyContext = { surface: "agent", editable: false, modalOpen: false, leader: null };
     const typing: KeyContext = { ...agentCtx, editable: true };
     const find = (id: string) => buildAgentBindings(stubModel()).find((b) => b.id === id)!;

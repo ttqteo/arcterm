@@ -9,7 +9,7 @@
 //   run       one orchestrator run's detail (its members, and the one in view read): sessionsSelAtom's "run:<id>",
 //             and the member sessionsMemberAtom, as History's run detail reads them
 //   history   Conversation History: the old Sessions surface's master-detail, embedded
-//   canvases  Canvases: the gallery of every project's design canvases, and its viewer (canvasgallerystore.ts)
+//   canvases  Canvas gallery: the gallery of every project's design canvases, and its viewer (canvasgallerystore.ts)
 // The terminal stack stays mounted, hidden, in the others, so a live xterm is never torn down and re-fitted.
 // "session" is already overloaded in this codebase (workspace tab sessions, the Brief region), so the sessions*Atoms
 // on the model keep their names rather than churn a rename.
@@ -44,7 +44,7 @@ export function showHistory(model: Pick<AgentsViewModel, "surfaceAtom">): void {
     landOn(model.surfaceAtom, "agent");
 }
 
-/** Open Canvases in the Agent surface. */
+/** Open the Canvas gallery in the Agent surface. */
 export function showCanvases(model: Pick<AgentsViewModel, "surfaceAtom">): void {
     globalStore.set(centerModeAtom, "canvases");
     landOn(model.surfaceAtom, "agent");
