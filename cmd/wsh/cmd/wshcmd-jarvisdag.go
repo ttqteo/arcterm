@@ -326,10 +326,21 @@ func planReviewLine(pr *waveobj.PlanReviewStage, now int64) string {
 	head := fmt.Sprintf("plan review  %s  round=%d", pr.State, pr.Round)
 	switch pr.State {
 	case orchestrate.PlanReviewState_Reviewing:
-		if pr.StartedTs > 0 {
-			head += "  for " + durOrZero(now-pr.StartedTs)
+		var started int64
+		var reviewers []string
+		for _, r := range pr.Reviewers {
+			if r.StartedTs > 0 && (started == 0 || r.StartedTs < started) {
+				started = r.StartedTs
+			}
+			reviewers = append(reviewers, orchestrate.PlanReviewLensTitle(r.Lens)+" "+r.State)
 		}
-		return head + "  the reviewer is at work; its verdict wakes the lead"
+		if started > 0 {
+			head += "  for " + durOrZero(now-started)
+		}
+		if len(reviewers) > 0 {
+			head += "  reviewers: " + strings.Join(reviewers, " · ")
+		}
+		return head + "  the reviewers are at work; the round's verdict wakes the lead"
 	case orchestrate.PlanReviewState_Failed:
 		next := "waiting on the lead's revised submit"
 		if pr.Round >= orchestrate.MaxPlanReviewRounds {
@@ -635,7 +646,7 @@ var dagDoneLines = map[string]string{
 	"merge":             "task {task} merge requested; `wsh jarvis dag status` shows whether it landed or is blocked on a conflict",
 	"review-pass":       "review pass recorded; the engine merges the task. Ending this session",
 	"review-fail":       "review fail recorded; the lead gets the findings. Ending this session",
-	"planreview-pass":   "plan review pass recorded; the engine dispatches the first tasks. Ending this session",
+	"planreview-pass":   "plan review pass recorded; the round passes once every reviewer has. Ending this session",
 	"planreview-fail":   "plan review fail recorded; the lead revises the plan. Ending this session",
 	"planreview-accept": "plan review accepted; the engine dispatches the first tasks",
 	"final-pass":        "final pass recorded; the run completes. Ending this session",

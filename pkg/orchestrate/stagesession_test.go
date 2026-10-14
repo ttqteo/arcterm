@@ -6,6 +6,7 @@ package orchestrate
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -116,7 +117,7 @@ func TestTendStageSessionGivesUpAfterOneRespawn(t *testing.T) {
 	}
 	restoreAfterStages(t, func() { spawnWorker = old })
 	owner := dagOwner(t, ctx, dag)
-	session := func() StageSession { return StageSession{Role: "verifier", Tree: t.TempDir()} }
+	session := func() (StageSession, error) { return StageSession{Role: "verifier", Tree: t.TempDir()}, nil }
 	var runID string
 	var startedTs int64
 	var respawns int
@@ -126,6 +127,60 @@ func TestTendStageSessionGivesUpAfterOneRespawn(t *testing.T) {
 	}
 	if reason := tendStageSession(ctx, ctx, dag, owner, session, &runID, &startedTs, &respawns, 2, &afterCommit); !strings.Contains(reason, "could not start: no terminal") {
 		t.Fatalf("the second failure gives up, got %q", reason)
+	}
+}
+
+// a session whose brief cannot be built is spent like one that could not start, and nothing is spawned
+func TestTendStageSessionCountsABuilderErrorAsASpawnFailure(t *testing.T) {
+	ctx, dag := seedPendingDag(t)
+	calls := captureSpawns(t)
+	owner := dagOwner(t, ctx, dag)
+	session := func() (StageSession, error) { return StageSession{}, errors.New("no diff") }
+	var runID string
+	var startedTs int64
+	var respawns int
+	var afterCommit []func()
+	if reason := tendStageSession(ctx, ctx, dag, owner, session, &runID, &startedTs, &respawns, 1, &afterCommit); reason != "" || respawns != 1 {
+		t.Fatalf("the first builder error is retried, got %q with %d respawns", reason, respawns)
+	}
+	if reason := tendStageSession(ctx, ctx, dag, owner, session, &runID, &startedTs, &respawns, 2, &afterCommit); reason != "it could not start: no diff" {
+		t.Fatalf("the second builder error gives up, got %q", reason)
+	}
+	if len(*calls) != 0 || runID != "" {
+		t.Fatalf("nothing is spawned without a brief, got %d spawns and run %q", len(*calls), runID)
+	}
+}
+
+// a session with its own route runs on it, and its lens rides on the started event; the final verifier has none
+func TestSpawnStageSessionRunsOnItsRouteAndNamesItsLens(t *testing.T) {
+	ctx, dag := seedPendingDag(t)
+	calls := captureSpawns(t)
+	f := newFakeLead(t)
+	owner := dagOwner(t, ctx, dag)
+	route := waveobj.RoutePin{Runtime: "claude", Model: "haiku"}
+	runID, err := spawnStageSession(ctx, ctx, dag, owner, StageSession{Role: jarvis.UsageRole_PlanReviewer, Tree: t.TempDir(), Lens: PlanReviewLens_Spec, Route: route})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := wstore.GetRun(ctx, dag.ChannelId, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Runtime != "claude" || run.Model != "haiku" || (*calls)[0].cap.Runtime != "claude" {
+		t.Fatalf("the session runs on its route, got run %s/%s", run.Runtime, run.Model)
+	}
+	if _, err := spawnStageSession(ctx, ctx, dag, owner, StageSession{Role: jarvis.UsageRole_Verifier, Tree: t.TempDir()}); err != nil {
+		t.Fatal(err)
+	}
+	var lenses []any
+	for _, row := range f.rows {
+		if row["eventkind"] == waveobj.RunEventKindStageSessionStarted {
+			lens, ok := row["lens"]
+			lenses = append(lenses, lens, ok)
+		}
+	}
+	if want := []any{PlanReviewLens_Spec, true, nil, false}; !reflect.DeepEqual(lenses, want) {
+		t.Fatalf("started rows' lens = %v, want %v", lenses, want)
 	}
 }
 

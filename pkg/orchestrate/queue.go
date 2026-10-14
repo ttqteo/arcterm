@@ -185,7 +185,7 @@ func reviewFailedWake(taskID string) string {
 	return fmt.Sprintf("wake: review failed for task %s. wsh jarvis dag status", taskID)
 }
 
-// planReviewFailedWake carries the plan reviewer's findings whole: the lead revises the plan from them. After
+// planReviewFailedWake carries the round's merged findings whole: the lead revises the plan from them. After
 // the last round the call is the human's, or on an autonomous run the lead's.
 func planReviewFailedWake(round int, findings string, last, autonomous bool) string {
 	switch {
@@ -199,8 +199,8 @@ func planReviewFailedWake(round int, findings string, last, autonomous bool) str
 	return fmt.Sprintf("wake: plan review failed in round %d: %s. Revise the plan (put spec changes to the human) and run `wsh jarvis dag submit` again.", round, flatLine(findings))
 }
 
-// planReviewLostWake is for a plan reviewer that twice ended without a verdict: there are no findings to act
-// on, so the same plan can be submitted again.
+// planReviewLostWake is for a round whose required reviewer twice ended without a verdict and no reviewer failed:
+// there are no findings to act on, so the same plan can be submitted again.
 func planReviewLostWake(round int, reason string, last, autonomous bool) string {
 	switch {
 	case last && autonomous:

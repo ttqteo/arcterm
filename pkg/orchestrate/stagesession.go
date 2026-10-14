@@ -18,8 +18,12 @@ import (
 )
 
 // StageSession is one dag-level judging session (plan reviewer, final verifier): a fresh session that works
-// no task, reads Tree, and ends with a verdict command its Prompt names.
-type StageSession struct{ Role, Label, Tree, Prompt string }
+// no task, reads Tree, and ends with a verdict command its Prompt names. Lens names a plan reviewer's lens (empty
+// for the final verifier); a zero Route runs it on reviewerRoute.
+type StageSession struct {
+	Role, Label, Tree, Prompt, Lens string
+	Route                           waveobj.RoutePin
+}
 
 // reviewerRoute is the route judging sessions run on: the group's reviewer route when it names one, else the
 // lead's.
@@ -30,11 +34,23 @@ func reviewerRoute(owner *waveobj.Run, g *waveobj.TaskGroup) waveobj.RoutePin {
 	return waveobj.RoutePin{Runtime: runroute.DefaultRuntime(owner.Runtime), Model: owner.Model}
 }
 
-// spawnStageSession starts s on the reviewer route, as a task reviewer is: the model picked for judgment. Its
-// child run carries the dag, the session id and StageRole, and no task, so usage counts it under its role and
-// a bare complete is not taken for a worker's.
+// lightReviewerRoute is the route the plan review's lens and follow-up reviewers run on: the group's Light
+// reviewers route when it names one, else LightPickRoute on every runtime.
+func lightReviewerRoute(g *waveobj.TaskGroup) waveobj.RoutePin {
+	if r := g.LightReviewerRoute; r != nil && (r.Runtime != "" || r.Model != "") {
+		return waveobj.RoutePin{Runtime: runroute.DefaultRuntime(r.Runtime), Model: r.Model}
+	}
+	return LightPickRoute
+}
+
+// spawnStageSession starts s on its route, by default the reviewer route, as a task reviewer is: the model picked
+// for judgment. Its child run carries the dag, the session id and StageRole, and no task, so usage counts it under
+// its role and a bare complete is not taken for a worker's.
 func spawnStageSession(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owner *waveobj.Run, s StageSession) (string, error) {
-	pin := reviewerRoute(owner, g)
+	pin := s.Route
+	if pin.Runtime == "" && pin.Model == "" {
+		pin = reviewerRoute(owner, g)
+	}
 	capability, err := runroute.Resolve(pin)
 	if err == nil {
 		err = validateLeadHarness(pin.Runtime)
@@ -77,7 +93,11 @@ func spawnStageSession(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owne
 	}
 	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Run, runID))
 	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Channel, g.ChannelId))
-	appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindStageSessionStarted, nil, map[string]any{"role": s.Role, "runid": runID})
+	detail := map[string]any{"role": s.Role, "runid": runID}
+	if s.Lens != "" {
+		detail["lens"] = s.Lens
+	}
+	appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindStageSessionStarted, nil, detail)
 	return runID, nil
 }
 
@@ -111,8 +131,8 @@ func stageSessionLost(ctx context.Context, g *waveobj.TaskGroup, runID string, s
 // tendStageSession keeps a stage's one session going for a tick: it replaces a lost session, and starts the
 // missing one, within MaxReviewRespawns. runID, startedTs and respawns are the stage's own bookkeeping. It
 // returns why the stage gives up on its session, or "" while one is working or the next tick retries. The
-// session is built only when one is spawned.
-func tendStageSession(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owner *waveobj.Run, session func() StageSession, runID *string, startedTs *int64, respawns *int, now int64, afterCommit *[]func()) string {
+// session is built only when one is spawned; a builder error counts as a spawn failure.
+func tendStageSession(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owner *waveobj.Run, session func() (StageSession, error), runID *string, startedTs *int64, respawns *int, now int64, afterCommit *[]func()) string {
 	if *runID != "" {
 		reason, final := stageSessionLost(ctx, g, *runID, *startedTs, now)
 		if reason == "" {
@@ -125,7 +145,11 @@ func tendStageSession(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owner
 		}
 		*respawns++
 	}
-	id, err := spawnStageSession(ctx, spawnCtx, g, owner, session())
+	s, err := session()
+	id := ""
+	if err == nil {
+		id, err = spawnStageSession(ctx, spawnCtx, g, owner, s)
+	}
 	if err != nil {
 		if *respawns >= MaxReviewRespawns {
 			return "it could not start: " + err.Error()

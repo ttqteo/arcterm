@@ -236,21 +236,6 @@ func postLeadHandoff(ctx context.Context, channelId string, owner *waveobj.Run) 
 	}
 }
 
-// handOffAfterPlanReview hands the dag's lead its compaction once the plan review cleared the plan.
-func handOffAfterPlanReview(ctx context.Context, dagID string) {
-	g, err := wstore.GetDag(ctx, dagID)
-	if err != nil {
-		log.Printf("handoff after plan review: loading dag %s: %v", dagID, err)
-		return
-	}
-	owner, err := wstore.GetRun(ctx, g.ChannelId, g.RunID)
-	if err != nil {
-		log.Printf("handoff after plan review: loading run %s: %v", g.RunID, err)
-		return
-	}
-	postLeadHandoff(ctx, g.ChannelId, owner)
-}
-
 func (ws *WshServer) DagSubmitCommand(ctx context.Context, data wshrpc.CommandDagSubmitData) (*waveobj.TaskGroup, error) {
 	var plan jarvis.Plan
 	if data.Round {
@@ -353,6 +338,7 @@ func (ws *WshServer) DagSubmitCommand(ctx context.Context, data wshrpc.CommandDa
 	}
 	proposed.PlanPath, proposed.SpecPath = data.PlanPath, data.SpecPath
 	proposed.ReviewerPicks, proposed.ReviewerRoute = run.ReviewerPicks, run.ReviewerRoute
+	proposed.LightReviewerRoute = run.LightReviewerRoute
 	proposed.Autonomous = run.Autonomous
 	// a plan file is reviewed before any worker starts; a JSON dag has no plan to review
 	if data.PlanPath != "" {
@@ -605,12 +591,8 @@ func (ws *WshServer) DagActionCommand(ctx context.Context, data wshrpc.CommandDa
 		if err != nil {
 			return err
 		}
-		dagID := run.DagORef
-		if data.Action != "planreview-fail" {
-			handOffAfterPlanReview(ctx, dagID)
-		}
 		// the verdict is durable; the tick it clears dispatches the first layer, which outlasts the caller's RPC budget
-		scheduleDag(dagID)
+		scheduleDag(run.DagORef)
 		return nil
 	case "final-pass", "final-fail":
 		// RunId is the verifier's own run, resolved from its terminal as `dag review` does
@@ -643,17 +625,9 @@ func (ws *WshServer) DagActionCommand(ctx context.Context, data wshrpc.CommandDa
 	return orchestrate.ApplyAction(ctx, run.DagORef, data.TaskId, data.Action, target)
 }
 
-// leadORef is the tab oref of the worker driving the run's running phase, or "" when there is none.
-// An orchestrator run has exactly one phase, so this is the lead. Empty is a normal answer (the lead
-// exited, or the run is deferred) and steerRunLead treats it as a no-op.
+// leadORef is the lead's tab oref, or ""; steerRunLead treats empty as a no-op.
 func leadORef(run *waveobj.Run) string {
-	for i := range run.Phases {
-		p := &run.Phases[i]
-		if p.State == jarvis.PhaseState_Running && len(p.WorkerOrefs) > 0 {
-			return p.WorkerOrefs[0]
-		}
-	}
-	return ""
+	return orchestrate.LeadWorkerORef(run)
 }
 
 // gatherDagAsks lists the dag's question queue: every pending ask of its children, whoever holds it.

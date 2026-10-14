@@ -34,6 +34,33 @@ func stubDagSpawns(t *testing.T) *[]jarvis.RunWorkerOptions {
 	return &spawned
 }
 
+// recordRound records a verdict from every reviewer of the dag's round: full gives fullVerdict, every lens passes.
+func recordRound(t *testing.T, ctx context.Context, dagID, fullVerdict string) {
+	t.Helper()
+	g, err := wstore.GetDag(ctx, dagID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range g.PlanReview.Reviewers {
+		v, text := orchestrate.ReviewVerdict_Pass, "fine"
+		if r.Lens == orchestrate.PlanReviewLens_Full && fullVerdict == orchestrate.ReviewVerdict_Fail {
+			v, text = fullVerdict, "spec 4.1 has no task"
+		}
+		if err := orchestrate.RecordPlanReviewVerdict(ctx, dagID, r.RunID, v, text, nil); err != nil {
+			t.Fatalf("%s: %v", r.Lens, err)
+		}
+	}
+}
+
+// reviewerRunIDs are the run ids of the round's reviewers, full first.
+func reviewerRunIDs(g *waveobj.TaskGroup) []string {
+	var out []string
+	for _, r := range g.PlanReview.Reviewers {
+		out = append(out, r.RunID)
+	}
+	return out
+}
+
 func TestDagSubmitReviewsThePlanBeforeAnyWorkerStarts(t *testing.T) {
 	ctx := context.Background()
 	newRun := func(t *testing.T) (string, string) {
@@ -73,8 +100,13 @@ func TestDagSubmitReviewsThePlanBeforeAnyWorkerStarts(t *testing.T) {
 		if g.PlanReview == nil || g.PlanReview.State != orchestrate.PlanReviewState_Reviewing || g.PlanReview.Round != 1 || g.Status != orchestrate.DagStatus_PlanReview {
 			t.Fatalf("want round 1 reviewing, got status %s review %+v", g.Status, g.PlanReview)
 		}
-		if g.Tasks[0].RunID != "" || len(*spawned) != 1 || (*spawned)[0].TaskId != "" {
-			t.Fatalf("only the plan reviewer may start, got %+v", *spawned)
+		if g.Tasks[0].RunID != "" || len(*spawned) != 5 || len(g.PlanReview.Reviewers) != 5 {
+			t.Fatalf("only the plan reviewers may start, got %+v", *spawned)
+		}
+		for _, opts := range *spawned {
+			if opts.TaskId != "" {
+				t.Fatalf("only the plan reviewers may start, got %+v", *spawned)
+			}
 		}
 	})
 
@@ -103,9 +135,7 @@ func TestDagSubmitReviewsThePlanBeforeAnyWorkerStarts(t *testing.T) {
 		if err := (&WshServer{}).DagActionCommand(ctx, wshrpc.CommandDagActionData{ChannelId: channelId, RunId: runId, Action: "planreview-accept", Notes: "go"}); err == nil {
 			t.Fatal("accept while the reviewer works must be refused")
 		}
-		if err := orchestrate.RecordPlanReviewVerdict(ctx, g.OID, g.PlanReview.RunID, orchestrate.ReviewVerdict_Fail, "spec 4.1 has no task", nil); err != nil {
-			t.Fatal(err)
-		}
+		recordRound(t, ctx, g.OID, orchestrate.ReviewVerdict_Fail)
 		g2, err := submit(channelId, runId, writePlan(t, revised))
 		if err != nil {
 			t.Fatal(err)
@@ -113,8 +143,9 @@ func TestDagSubmitReviewsThePlanBeforeAnyWorkerStarts(t *testing.T) {
 		if g2.OID != g.OID || len(g2.Tasks) != 2 || g2.PlanReview.Round != 2 || g2.PlanReview.State != orchestrate.PlanReviewState_Reviewing {
 			t.Fatalf("want the same dag with the revised tasks in round 2, got %d tasks and %+v", len(g2.Tasks), g2.PlanReview)
 		}
-		if g2.PlanReview.RunID == "" || g2.PlanReview.RunID == g.PlanReview.RunID || len(*spawned) != 2 {
-			t.Fatalf("round 2 gets a fresh reviewer, got %+v after %d spawns", g2.PlanReview, len(*spawned))
+		first, second := reviewerRunIDs(g), reviewerRunIDs(g2)
+		if len(second) == 0 || second[0] == "" || second[0] == first[0] || len(*spawned) != len(first)+len(second) {
+			t.Fatalf("round 2 gets fresh reviewers, got %+v after %d spawns", g2.PlanReview, len(*spawned))
 		}
 	})
 
@@ -125,9 +156,7 @@ func TestDagSubmitReviewsThePlanBeforeAnyWorkerStarts(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := orchestrate.RecordPlanReviewVerdict(ctx, g.OID, g.PlanReview.RunID, orchestrate.ReviewVerdict_Pass, "fine", nil); err != nil {
-			t.Fatal(err)
-		}
+		recordRound(t, ctx, g.OID, orchestrate.ReviewVerdict_Pass)
 		if _, err := submit(channelId, runId, writePlan(t, revised)); err == nil || !strings.Contains(err.Error(), "dag conflict") {
 			t.Fatalf("want dag conflict, got %v", err)
 		}
@@ -160,9 +189,7 @@ func TestPlanReviewResubmitKeepsTheRunsPrototype(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := orchestrate.RecordPlanReviewVerdict(ctx, g.OID, g.PlanReview.RunID, orchestrate.ReviewVerdict_Fail, "spec 4.1 has no task", nil); err != nil {
-		t.Fatal(err)
-	}
+	recordRound(t, ctx, g.OID, orchestrate.ReviewVerdict_Fail)
 	g2, err := submit("**Prototype:** .superpowers/design/other/Main.dc.html\n\n### Task 1: input\n\n### Task 2: spec 4.1\n")
 	if err != nil {
 		t.Fatal(err)
@@ -185,9 +212,11 @@ func TestPlanReviewHandsOffOnlyOnceThePlanClears(t *testing.T) {
 	ctx := context.Background()
 	const plan = "# Coupons\n\n### Task 1: input\nadd the field\n"
 	var handed []string
+	stub := func(_ context.Context, channelId, runId string) { handed = append(handed, channelId+"/"+runId) }
 	old := postHandoff
-	postHandoff = func(_ context.Context, channelId, runId string) { handed = append(handed, channelId+"/"+runId) }
+	postHandoff = stub
 	t.Cleanup(func() { postHandoff = old })
+	t.Cleanup(orchestrate.SetPostHandoffForTest(stub))
 	ws := &WshServer{}
 
 	submit := func(t *testing.T) (string, string, *waveobj.TaskGroup) {
@@ -233,14 +262,21 @@ func TestPlanReviewHandsOffOnlyOnceThePlanClears(t *testing.T) {
 		}
 	}
 
-	t.Run("a pass hands off; the submit and a failed round do not", func(t *testing.T) {
+	t.Run("a passed round hands off; the submit and a lone reviewer's pass do not", func(t *testing.T) {
 		stubDagSpawns(t)
 		handed = nil
 		channelId, leadId, g := submit(t)
 		if len(handed) != 0 {
 			t.Fatalf("a plan under review must not be handed off at submit, got %v", handed)
 		}
-		act(t, channelId, g.PlanReview.RunID, "planreview-pass")
+		reviewers := reviewerRunIDs(g)
+		act(t, channelId, reviewers[0], "planreview-pass")
+		if len(handed) != 0 {
+			t.Fatalf("a lone reviewer's pass leaves the round out, got handoffs %v", handed)
+		}
+		for _, runId := range reviewers[1:] {
+			act(t, channelId, runId, "planreview-pass")
+		}
 		assertDispatched(t, g.OID)
 		if want := []string{channelId + "/" + leadId}; !reflect.DeepEqual(handed, want) {
 			t.Fatalf("handoffs = %v, want %v", handed, want)
@@ -251,7 +287,11 @@ func TestPlanReviewHandsOffOnlyOnceThePlanClears(t *testing.T) {
 		stubDagSpawns(t)
 		handed = nil
 		channelId, leadId, g := submit(t)
-		act(t, channelId, g.PlanReview.RunID, "planreview-fail")
+		reviewers := reviewerRunIDs(g)
+		act(t, channelId, reviewers[0], "planreview-fail")
+		for _, runId := range reviewers[1:] {
+			act(t, channelId, runId, "planreview-pass")
+		}
 		if len(handed) != 0 {
 			t.Fatalf("a failed review goes back to the lead to revise, got handoffs %v", handed)
 		}
@@ -261,4 +301,56 @@ func TestPlanReviewHandsOffOnlyOnceThePlanClears(t *testing.T) {
 			t.Fatalf("handoffs = %v, want %v", handed, want)
 		}
 	})
+}
+
+// the Light reviewers route is the human's: a submit carries the run's onto the group, and a resubmit keeps the
+// group's, as it keeps the reviewer route
+func TestDagSubmitCarriesLightReviewerRoute(t *testing.T) {
+	ctx := context.Background()
+	stubDagSpawns(t)
+	ch, err := wstore.CreateChannel(ctx, "dag-planreview-light", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := &waveobj.RoutePin{Runtime: "claude", Model: "haiku"}
+	run := jarvis.NewRun("ship coupons", "ws-1", ch.ProjectPath, nil, jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 1)
+	run.Status = jarvis.RunStatus_Planning
+	run.LightReviewerRoute = route
+	if err := wstore.AppendRun(ctx, ch.OID, run); err != nil {
+		t.Fatal(err)
+	}
+	submit := func(src string) *waveobj.TaskGroup {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "plan.md")
+		if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		g, err := (&WshServer{}).DagSubmitCommand(ctx, wshrpc.CommandDagSubmitData{ChannelId: ch.OID, RunId: run.ID, PlanPath: path})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return g
+	}
+	g := submit("### Task 1: input\n")
+	if g.LightReviewerRoute == nil || *g.LightReviewerRoute != *route {
+		t.Fatalf("the group must hold the run's Light reviewers route, got %+v", g.LightReviewerRoute)
+	}
+	for _, r := range g.PlanReview.Reviewers {
+		child, err := wstore.GetRun(ctx, ch.OID, r.RunID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.Lens != orchestrate.PlanReviewLens_Full && (child.Runtime != route.Runtime || child.Model != route.Model) {
+			t.Fatalf("the %s lens runs on %s/%s, want the Light reviewers route", r.Lens, child.Runtime, child.Model)
+		}
+	}
+	recordRound(t, ctx, g.OID, orchestrate.ReviewVerdict_Fail)
+	g2 := submit("### Task 1: input\n\n### Task 2: spec 4.1\n")
+	stored, err := wstore.GetDag(ctx, g.OID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g2.PlanReview.Round != 2 || stored.LightReviewerRoute == nil || *stored.LightReviewerRoute != *route {
+		t.Fatalf("the route survives a resubmit, got round %d route %+v", g2.PlanReview.Round, stored.LightReviewerRoute)
+	}
 }

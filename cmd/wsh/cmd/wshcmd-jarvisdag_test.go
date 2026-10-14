@@ -893,14 +893,14 @@ func TestDagStatusTellsAFailedPlanReviewFromOneInProgress(t *testing.T) {
 		return strings.Join(dagStatusLines(&wshrpc.CommandDagStatusRtnData{Group: g}, now), "\n")
 	}
 	reviewing := reviewingDag(2)
-	reviewing.PlanReview.StartedTs = now - 90_000
+	reviewing.PlanReview.Reviewers = []waveobj.PlanReviewer{{Lens: orchestrate.PlanReviewLens_Followup, State: orchestrate.PlanReviewerState_Reviewing, StartedTs: now - 90_000}}
 	failed := failedPlanReviewDag(1)
 	last := failedPlanReviewDag(orchestrate.MaxPlanReviewRounds)
 	for _, tc := range []struct {
 		g    *waveobj.TaskGroup
 		want string
 	}{
-		{reviewing, "plan review  reviewing  round=2  for 1m30s  the reviewer is at work; its verdict wakes the lead"},
+		{reviewing, "plan review  reviewing  round=2  for 1m30s  reviewers: Round-2 follow-up reviewing  the reviewers are at work; the round's verdict wakes the lead"},
 		{failed, "plan review  failed  round=1  waiting on the lead's revised submit: spec 4.1 has no task"},
 		{last, "the last round; waiting on the lead to put it to the human: spec 4.1 has no task"},
 	} {
@@ -910,5 +910,24 @@ func TestDagStatusTellsAFailedPlanReviewFromOneInProgress(t *testing.T) {
 	}
 	if strings.Contains(status(failed), "at work") || strings.Contains(status(reviewing), "waiting on the lead") {
 		t.Fatal("a failed plan review must not read like one in progress")
+	}
+}
+
+func TestPlanReviewLineListsReviewers(t *testing.T) {
+	now := time.Now().UnixMilli()
+	pr := &waveobj.PlanReviewStage{State: orchestrate.PlanReviewState_Reviewing, Round: 1, Reviewers: []waveobj.PlanReviewer{
+		{Lens: orchestrate.PlanReviewLens_Full, State: orchestrate.PlanReviewerState_Reviewing, StartedTs: now - 60_000},
+		{Lens: orchestrate.PlanReviewLens_Spec, State: orchestrate.PlanReviewerState_Passed, StartedTs: now - 120_000},
+		{Lens: orchestrate.PlanReviewLens_Order, State: orchestrate.PlanReviewerState_Failed, StartedTs: now - 90_000},
+		{Lens: orchestrate.PlanReviewLens_Tests, State: orchestrate.PlanReviewerState_Lost},
+		{Lens: orchestrate.PlanReviewLens_Final, State: orchestrate.PlanReviewerState_Reviewing, StartedTs: now - 30_000},
+	}}
+	want := "plan review  reviewing  round=1  for 2m  reviewers: Full review reviewing · Spec coverage passed · Task order and files failed · Tests and commands lost · Final coverage reviewing"
+	if got := planReviewLine(pr, now); !strings.HasPrefix(got, want) {
+		t.Fatalf("got  %q\nwant %q...", got, want)
+	}
+	pr.State = orchestrate.PlanReviewState_Failed
+	if got := planReviewLine(pr, now); strings.Contains(got, "reviewers:") {
+		t.Fatalf("a settled round lists no reviewers, got %q", got)
 	}
 }
