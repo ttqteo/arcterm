@@ -49,9 +49,10 @@ type SettingsType struct {
 	NotifyToast *bool `json:"notify:toast,omitempty"`
 	NotifyReply *bool `json:"notify:reply,omitempty"`
 
-	StorageClear     bool     `json:"storage:*,omitempty"`
-	StorageAutoClean *bool    `json:"storage:autoclean,omitempty"`
-	StorageNudgeGb   *float64 `json:"storage:nudgegb,omitempty"`
+	StorageClear        bool     `json:"storage:*,omitempty"`
+	StorageAutoClean    *bool    `json:"storage:autoclean,omitempty"`
+	StorageNudgeGb      *float64 `json:"storage:nudgegb,omitempty"`
+	StorageCanvasOnShip *bool    `json:"storage:canvasonship,omitempty"` // nil = off: agents keep a canvas when its feature ships
 
 	TermClear                  bool     `json:"term:*,omitempty"`
 	TermFontSize               float64  `json:"term:fontsize,omitempty"`

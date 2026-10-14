@@ -12,7 +12,7 @@ import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ChevronDown, ChevronLeft, ChevronRight, SquareDashed, X } from "lucide-react";
-import { useEffect, useState, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
 import type { AgentsViewModel } from "./agents";
 import { projectOf, type AgentVM } from "./agentsviewmodel";
 import { openLauncher } from "./launcherstore";
@@ -47,10 +47,11 @@ import {
     updateCanvas,
     type CanvasState,
 } from "./canvasstore";
+import { maybeCaptureThumb, tauriThumbIO, THUMB_SETTLE_MS } from "./canvasthumb";
 import { SWAP_BAR, SWAP_BTN, SWAP_BTN_ON, SWAP_LABEL, SWAP_PRIMARY_BTN, SwapTabs } from "./swapbar";
 
 // room above a board's frame for its label; the scroll pane's top padding
-const CANVAS_TOP_PAD = 36;
+export const CANVAS_TOP_PAD = 36;
 const LABEL_OFFSET = 22;
 
 const MARK_CHIP =
@@ -165,7 +166,15 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
                 {pane === "server-down" ? (
                     <ServerDown />
                 ) : pane === "removed" ? (
-                    <Removed agent={agent} topic={s.topic} />
+                    <Removed topic={s.topic} after="The swap control disappears once you go back to the terminal.">
+                        <button
+                            type="button"
+                            onClick={() => detachCanvas(agent.id)}
+                            className={cn("mt-[4px]", SWAP_BTN)}
+                        >
+                            Back to terminal
+                        </button>
+                    </Removed>
                 ) : (
                     // the shown board, or every one under All in a grid of tiles, each iframe at the board's full size, so the
                     // canvas scrolls here, in arcterm, instead of showing the board pages' own scrollbars. The gutter is
@@ -191,6 +200,17 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
                                     }
                                     reloadKey={s.reloadKey}
                                     onOpen={() => selectCanvasTab(agent.id, f.board.name)}
+                                    // the gallery's preview, taken off the board the user is looking at
+                                    onSettled={
+                                        pane === "board" && !marking && !all && f.board.name === board.name
+                                            ? (el) =>
+                                                  void maybeCaptureThumb(tauriThumbIO, {
+                                                      topicDir: s.dir,
+                                                      boardEl: el,
+                                                      modts: s.lastModifiedMs ?? 0,
+                                                  })
+                                            : undefined
+                                    }
                                 >
                                     {marking && f.board.name === board.name ? (
                                         <MarkLayer agentId={agent.id} marks={s.marks} />
@@ -281,14 +301,25 @@ function BoardPicker({
     );
 }
 
-// ‹ or › beside the board tabs, a step as [ or ] takes
-function StepButton({ dir, onStep }: { dir: "prev" | "next"; onStep: (delta: number) => void }) {
+// ‹ or › beside the board tabs, a step as [ or ] takes. The gallery's viewer names only the arrows: a Vietnamese Telex IME
+// turns [ and ] into ơ and ư, so it never advertises them
+export function StepButton({
+    dir,
+    onStep,
+    keysHint = "brackets",
+}: {
+    dir: "prev" | "next";
+    onStep: (delta: number) => void;
+    keysHint?: "brackets" | "arrows";
+}) {
     const prev = dir === "prev";
+    const arrow = prev ? "←" : "→";
+    const keys = keysHint === "arrows" ? arrow : `${formatChordString(prev ? "[" : "]")} or ${arrow}`;
     return (
         <button
             type="button"
             data-canvas-board-step={dir}
-            title={`${prev ? "Previous" : "Next"} board (${formatChordString(prev ? "[" : "]")} or ${prev ? "←" : "→"})`}
+            title={`${prev ? "Previous" : "Next"} board (${keys})`}
             aria-label={prev ? "Previous board" : "Next board"}
             onClick={() => onStep(prev ? -1 : 1)}
             className={cn(SWAP_BTN, "px-[5px]")}
@@ -304,13 +335,14 @@ function StepButton({ dir, onStep }: { dir: "prev" | "next"; onStep: (delta: num
 
 // Under All every tile wears a transparent cover: its iframe would swallow the click, and a click on a tile opens
 // that board on its own tab, where it is drawn whole and can be operated
-function BoardFrameView({
+export function BoardFrameView({
     frame,
     selected,
     tile,
     src,
     reloadKey,
     onOpen,
+    onSettled,
     children,
 }: {
     frame: BoardFrame;
@@ -319,10 +351,27 @@ function BoardFrameView({
     src: string | null;
     reloadKey: number;
     onOpen: () => void;
+    // called with the board's frame THUMB_SETTLE_MS after its page loads, if the caller still wants it by then (the
+    // latest prop is read when the time is up, so a board left or marked meanwhile passes undefined)
+    onSettled?: (frameEl: HTMLElement) => void;
     children?: ReactNode;
 }) {
     const { board, scale } = frame;
     const label = boardLabel(board.name);
+    const frameRef = useRef<HTMLDivElement>(null);
+    const settleTimer = useRef<number | undefined>(undefined);
+    const latestSettled = useRef(onSettled);
+    latestSettled.current = onSettled;
+    useEffect(() => () => window.clearTimeout(settleTimer.current), []);
+    const onLoaded = () => {
+        window.clearTimeout(settleTimer.current);
+        settleTimer.current = window.setTimeout(() => {
+            const el = frameRef.current;
+            if (el != null && el.querySelector("iframe") != null) {
+                latestSettled.current?.(el);
+            }
+        }, THUMB_SETTLE_MS);
+    };
     return (
         <>
             <button
@@ -339,6 +388,7 @@ function BoardFrameView({
                 {board.title != null ? <span className="truncate">{board.title}</span> : null}
             </button>
             <div
+                ref={frameRef}
                 data-canvas-frame={board.name}
                 data-canvas-board={selected ? "" : undefined}
                 className={cn(
@@ -353,6 +403,7 @@ function BoardFrameView({
                         src={src}
                         title={board.name}
                         sandbox="allow-scripts allow-same-origin"
+                        onLoad={onLoaded}
                         className="absolute left-0 top-0 border-0"
                         style={{
                             width: board.w,
@@ -516,7 +567,7 @@ function MarkTray({ agent, marks }: { agent: AgentVM; marks: Mark[] }) {
     );
 }
 
-function EdgeState({ children }: { children: ReactNode }) {
+export function EdgeState({ children }: { children: ReactNode }) {
     return (
         <div className="flex flex-1 flex-col items-center justify-center gap-[10px] p-[24px] text-center">
             {children}
@@ -527,7 +578,7 @@ function EdgeState({ children }: { children: ReactNode }) {
 const EXPLAINER = "max-w-[440px] text-[13px] leading-[1.5] text-secondary";
 
 // wavesrv serves the canvas itself, so this is a refusal or a dropped request, and the poller's next tick retries
-function ServerDown() {
+export function ServerDown() {
     return (
         <EdgeState>
             <span className="flex items-center gap-[8px] text-[14px] font-semibold text-primary">
@@ -541,17 +592,15 @@ function ServerDown() {
     );
 }
 
-function Removed({ agent, topic }: { agent: AgentVM; topic: string }) {
+// `after` is the sentence about where the user goes next, and `children` the button that takes them there
+export function Removed({ topic, after, children }: { topic: string; after: string; children: ReactNode }) {
     return (
         <EdgeState>
             <span className="text-[14px] font-semibold text-primary">{topic} was removed</span>
             <span className={EXPLAINER}>
-                Its folder under .superpowers/design is gone, usually because the feature shipped. The swap control
-                disappears once you go back to the terminal.
+                Its folder under .superpowers/design is gone, usually because the feature shipped. {after}
             </span>
-            <button type="button" onClick={() => detachCanvas(agent.id)} className={cn("mt-[4px]", SWAP_BTN)}>
-                Back to terminal
-            </button>
+            {children}
         </EdgeState>
     );
 }

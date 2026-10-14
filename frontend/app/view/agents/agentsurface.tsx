@@ -44,6 +44,7 @@ import { AgentLaunchHero } from "./agentlaunchhero";
 import { AgentTree } from "./agenttree";
 import { ConversationHistory } from "./conversationhistory";
 import { asksInTerminal, projectOf } from "./agentsviewmodel";
+import { CanvasGallery } from "./canvasgalleryview";
 import { CanvasPane } from "./canvaspane";
 import { useCanvasPoller } from "./canvaspoller";
 import { canvasStateAtom } from "./canvasstore";
@@ -813,12 +814,14 @@ function seedTerminalName(blockId: string) {
     });
 }
 
-// History and a session's transcript take the centre column; the terminal stack stays mounted beside them
+// History, the canvases and a session's transcript take the centre column; the terminal stack stays mounted beside them
 function AgentCenterPane({ model, mode }: { model: AgentsViewModel; mode: Exclude<CenterMode, "terminal"> }) {
     return (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {mode === "history" ? (
                 <ConversationHistory model={model} />
+            ) : mode === "canvases" ? (
+                <CanvasGallery model={model} />
             ) : mode === "run" ? (
                 <RunPane model={model} />
             ) : (

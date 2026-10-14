@@ -15,7 +15,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const MIB = 1024 * 1024;
 const GIB = 1024 * MIB;
 
-export const CARD_ORDER = ["runworktrees", "sessions", "housekeeping", "buildoutput"] as const;
+export const CARD_ORDER = ["runworktrees", "sessions", "housekeeping", "buildoutput", "canvases"] as const;
 
 export const CARD_COPY: Record<(typeof CARD_ORDER)[number], { title: string; blurb: string; action: string | null }> = {
     runworktrees: {
@@ -36,6 +36,11 @@ export const CARD_COPY: Record<(typeof CARD_ORDER)[number], { title: string; blu
     buildoutput: {
         title: "Build output",
         blurb: "node_modules, target, dist and the like that git ignores in your projects. The next build recreates them.",
+        action: null,
+    },
+    canvases: {
+        title: "Design canvases",
+        blurb: "Mockups agents drew with design-local, in each project's .superpowers/design. They stay until you clean them up in the gallery, where you see each one before it goes to ~/.arc/trash for 7 days.",
         action: null,
     },
 };

@@ -18,6 +18,7 @@ const (
 	ConfigKey_StorageClear                   = "storage:*"
 	ConfigKey_StorageAutoClean               = "storage:autoclean"
 	ConfigKey_StorageNudgeGb                 = "storage:nudgegb"
+	ConfigKey_StorageCanvasOnShip            = "storage:canvasonship"
 
 	ConfigKey_TermClear                      = "term:*"
 	ConfigKey_TermFontSize                   = "term:fontsize"

@@ -862,3 +862,14 @@ Jarvis (what survived the 2026-09-22/23 memory and recall-arm removals):
 - The memory subsystem and the Jarvis recall arm (Ask, proactive cards, embeddings) — removed
   2026-09-22/23 on measured usage. Revive only on evidence that note bodies, not index lines, change an
   agent's behaviour (`docs/deferred.md`).
+
+---
+
+## 5 · (arcterm) RAM watch
+
+Features that hold memory over time, measured when they landed. A heavy one is a candidate to drop or to put behind a
+setting; that call is the person's. Layers are the compact RAM popup's.
+
+| Feature | Commit | Layer | Measured | Date | Verdict |
+|---|---|---|---|---|---|
+| Agent → Canvases: the grid of lazy `<img>` previews, and the viewer's one board iframe | `75278d142` | Interface | The page's JS heap after a GC, from Final's `canvas-gallery` steps 1 (grid) and 3 (viewer) on a 3-canvas fixture: 41.6 MB and 41.8 MB (43.4 and 43.4 in an earlier run). Not measured: the WebView2 working set, and the 17-canvas case. The heap figure is the page's own JS and says nothing of the board iframe. Between visits only the list (a row per canvas) and the folder-URL cache stay. | 2026-10-14 | pending |

@@ -359,7 +359,7 @@ function SectionBody({
         case "agents":
             return <AgentsPage model={model} runtime={runtime} onRuntime={onRuntime} />;
         case "storage":
-            return <StoragePage />;
+            return <StoragePage model={model} />;
         case "headless":
             return <BackgroundAIPage />;
         case "about":

@@ -4,6 +4,8 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { centerModeAtom } from "@/app/view/agents/agentcenter";
 import { SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
+import type { GalleryCanvas } from "@/app/view/agents/canvasgallery";
+import { canvasGalleryAtom, canvasListAtom, cleanupAtom, startCleanup } from "@/app/view/agents/canvasgallerystore";
 import type { LauncherKind } from "@/app/view/agents/launcher";
 import { atom, type PrimitiveAtom } from "jotai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -1540,7 +1542,7 @@ describe("agent review mode keys", () => {
     it("Ctrl+Enter stands down in History and a session, which hide the review pane without leaving review mode", () => {
         setAgentView("a1", "review", 1);
         try {
-            for (const mode of ["history", "session"] as const) {
+            for (const mode of ["history", "session", "canvases"] as const) {
                 globalStore.set(centerModeAtom, mode);
                 expect(onKey("Mod:Enter", typing)).toEqual([]);
                 setGeneralNote("a1", "tighten §3");
@@ -1622,7 +1624,7 @@ describe("Agent centre modes", () => {
     const agentCtx: KeyContext = { surface: "agent", editable: false, modalOpen: false, leader: null };
     const typing: KeyContext = { ...agentCtx, editable: true };
     const find = (id: string, model: any = stubModel()) => buildAgentBindings(model).find((b) => b.id === id)!;
-    const CENTER_MODES = ["history", "session"] as const;
+    const CENTER_MODES = ["history", "session", "canvases"] as const;
 
     afterEach(() => {
         vi.unstubAllGlobals();
@@ -1750,6 +1752,251 @@ describe("g s: Conversation History", () => {
         history.run(ctx());
         expect(globalStore.get(model.surfaceAtom)).toBe("agent");
         expect(globalStore.get(centerModeAtom)).toBe("history");
+    });
+});
+
+describe("g v: Canvases", () => {
+    afterEach(() => globalStore.set(centerModeAtom, "terminal"));
+
+    it("opens the canvases in the Agent surface", () => {
+        const model = { surfaceAtom: atom<SurfaceKey>("cockpit") } as any;
+        const canvases = buildGlobalBindings(model).find((b) => b.id === "go:canvases")!;
+        expect(canvases.keys).toBe("g v");
+        expect(canvases.label).toBe("Canvases");
+        canvases.run(ctx());
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+        expect(globalStore.get(centerModeAtom)).toBe("canvases");
+    });
+});
+
+describe("Agent → Canvases keys", () => {
+    const agentCtx: KeyContext = { surface: "agent", editable: false, modalOpen: false, leader: null };
+    const typing: KeyContext = { ...agentCtx, editable: true };
+    const find = (id: string) => buildAgentBindings(stubModel()).find((b) => b.id === id)!;
+    const galleryNow = () => globalStore.get(canvasGalleryAtom);
+    const gallery = (patch: Partial<ReturnType<typeof galleryNow>>) =>
+        globalStore.set(canvasGalleryAtom, { ...galleryNow(), ...patch });
+    const FRESH = { view: "grid", dir: null, board: 0, query: "", cursor: 0 } as const;
+    const canvas = (topic: string, modts: number, boards: string[]): GalleryCanvas => ({
+        topic,
+        project: "/p",
+        projectname: "p",
+        designdir: "/p/.superpowers/design",
+        dir: `/p/.superpowers/design/${topic}`,
+        boards,
+        modts,
+        thumbts: 0,
+        bytes: 1,
+    });
+    const DAY = 24 * 60 * 60 * 1000;
+    const GRID_KEYS = [
+        "canvases:left",
+        "canvases:right",
+        "canvases:up",
+        "canvases:down",
+        "canvases:open",
+        "canvases:search",
+    ];
+    const VIEWER_KEYS = [
+        "canvases:prev-board",
+        "canvases:next-board",
+        "canvases:prev-board-bracket",
+        "canvases:next-board-bracket",
+        "canvases:back",
+    ];
+    const CLEANUP_KEYS = [
+        "canvases:cleanup-left",
+        "canvases:cleanup-right",
+        "canvases:cleanup-up",
+        "canvases:cleanup-down",
+        "canvases:tick",
+        "canvases:cleanup-cancel",
+    ];
+    const live = (ids: string[]) => ids.map((id) => find(id).when!(agentCtx));
+
+    beforeEach(() => {
+        globalStore.set(centerModeAtom, "canvases");
+        globalStore.set(canvasGalleryAtom, FRESH);
+        // two today, one long ago: the cursor walks across the group edge
+        globalStore.set(canvasListAtom, [
+            canvas("alpha", Date.now(), ["Main", "States"]),
+            canvas("beta", Date.now(), ["Main"]),
+            canvas("old", Date.now() - 40 * DAY, ["Main"]),
+        ]);
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        globalStore.set(centerModeAtom, "terminal");
+        globalStore.set(canvasGalleryAtom, FRESH);
+        globalStore.set(canvasListAtom, null);
+    });
+
+    it("is live only while the centre mode is canvases, on the Agent surface, outside a field", () => {
+        const right = find("canvases:right");
+        expect(right.when!(agentCtx)).toBe(true);
+        expect(right.when!(typing)).toBe(false);
+        expect(right.when!({ ...agentCtx, modalOpen: true })).toBe(false);
+        expect(right.when!({ ...agentCtx, surface: "jarvis" })).toBe(false);
+        for (const mode of ["terminal", "history", "session"] as const) {
+            globalStore.set(centerModeAtom, mode);
+            expect(right.when!(agentCtx)).toBe(false);
+        }
+    });
+
+    it("gives the grid its arrows, Enter and /, and the viewer its arrows, brackets and Escape", () => {
+        expect(live(GRID_KEYS)).toEqual(GRID_KEYS.map(() => true));
+        expect(live(VIEWER_KEYS)).toEqual(VIEWER_KEYS.map(() => false));
+        gallery({ view: "viewer", dir: "/p/.superpowers/design/alpha" });
+        expect(live(GRID_KEYS)).toEqual(GRID_KEYS.map(() => false));
+        expect(live(VIEWER_KEYS)).toEqual(VIEWER_KEYS.map(() => true));
+        // the clean-up mode brings its own keys with it
+        gallery({ view: "cleanup", dir: null });
+        expect(live([...GRID_KEYS, ...VIEWER_KEYS])).toEqual([...GRID_KEYS, ...VIEWER_KEYS].map(() => false));
+        expect(live(CLEANUP_KEYS)).toEqual(CLEANUP_KEYS.map(() => true));
+        gallery({ view: "grid" });
+        expect(live(CLEANUP_KEYS)).toEqual(CLEANUP_KEYS.map(() => false));
+        gallery({ view: "viewer", dir: "/p/.superpowers/design/alpha" });
+        expect(live(CLEANUP_KEYS)).toEqual(CLEANUP_KEYS.map(() => false));
+    });
+
+    describe("in clean up", () => {
+        // newest first inside a group: old is the only suggested canvas, so the drawn order is old, beta, alpha
+        const NOW = Date.UTC(2026, 9, 14, 12, 0, 0);
+        const sel = () => globalStore.get(cleanupAtom).selected;
+
+        beforeEach(() => {
+            globalStore.set(canvasListAtom, [
+                canvas("alpha", NOW - 2 * 60 * 60 * 1000, ["Main"]),
+                canvas("beta", NOW - 60 * 60 * 1000, ["Main"]),
+                canvas("old", NOW - 40 * DAY, ["Main"]),
+            ]);
+            startCleanup(NOW);
+        });
+
+        afterEach(() => {
+            globalStore.set(cleanupAtom, { selected: new Set<string>(), now: 0, skipped: {}, moving: false });
+        });
+
+        it("starts on the suggested canvas, ticked", () => {
+            expect(galleryNow()).toMatchObject({ view: "cleanup", cursor: 0 });
+            expect(sel()).toEqual(new Set(["/p/.superpowers/design/old"]));
+        });
+
+        it("walks the suggested group and then Newer with the arrows, clamping at the ends", () => {
+            const at = () => galleryNow().cursor;
+            find("canvases:cleanup-right").run(agentCtx);
+            expect(at()).toBe(1);
+            find("canvases:cleanup-down").run(agentCtx);
+            expect(at()).toBe(2);
+            find("canvases:cleanup-down").run(agentCtx);
+            expect(at()).toBe(2);
+            find("canvases:cleanup-up").run(agentCtx);
+            expect(at()).toBe(1);
+            find("canvases:cleanup-left").run(agentCtx);
+            expect(at()).toBe(0);
+            find("canvases:cleanup-left").run(agentCtx);
+            expect(at()).toBe(0);
+        });
+
+        it("ticks and unticks the card under the cursor with Space", () => {
+            find("canvases:tick").run(agentCtx);
+            expect(sel()).toEqual(new Set());
+            find("canvases:tick").run(agentCtx);
+            expect(sel()).toEqual(new Set(["/p/.superpowers/design/old"]));
+            find("canvases:cleanup-right").run(agentCtx);
+            find("canvases:tick").run(agentCtx);
+            expect(sel()).toEqual(new Set(["/p/.superpowers/design/old", "/p/.superpowers/design/beta"]));
+        });
+
+        it("lets Space pass when there is no card, and does not tick while a move is under way", () => {
+            globalStore.set(cleanupAtom, { ...globalStore.get(cleanupAtom), moving: true });
+            find("canvases:tick").run(agentCtx);
+            expect(sel()).toEqual(new Set(["/p/.superpowers/design/old"]));
+            globalStore.set(canvasListAtom, []);
+            expect(find("canvases:tick").run(agentCtx)).toBe(false);
+        });
+
+        it("cancels back to the grid on Escape and forgets the ticks", () => {
+            find("canvases:cleanup-down").run(agentCtx);
+            find("canvases:cleanup-cancel").run(agentCtx);
+            expect(galleryNow()).toMatchObject({ view: "grid", dir: null, cursor: 0 });
+            expect(sel()).toEqual(new Set());
+        });
+    });
+
+    it("hides the brackets from the palette and labels the keys", () => {
+        expect(find("canvases:prev-board-bracket").keys).toBe("[");
+        expect(find("canvases:next-board-bracket").keys).toBe("]");
+        for (const id of [...GRID_KEYS, ...VIEWER_KEYS, ...CLEANUP_KEYS]) {
+            expect(find(id).paletteHidden).toBe(true);
+            expect(find(id).label).not.toBe("");
+        }
+        expect(find("canvases:tick").keys).toBe("Space");
+        expect(find("canvases:prev-board").label).toBe("Previous board");
+        expect(find("canvases:right").label).toBe("Next canvas");
+    });
+
+    it("moves the card cursor over the cards in drawn order and clamps at the ends", () => {
+        const at = () => galleryNow().cursor;
+        find("canvases:down").run(agentCtx);
+        expect(at()).toBe(1);
+        find("canvases:down").run(agentCtx);
+        expect(at()).toBe(2);
+        find("canvases:down").run(agentCtx);
+        expect(at()).toBe(2);
+        find("canvases:left").run(agentCtx);
+        expect(at()).toBe(1);
+        find("canvases:up").run(agentCtx);
+        expect(at()).toBe(0);
+        find("canvases:up").run(agentCtx);
+        expect(at()).toBe(0);
+    });
+
+    it("moves the cursor over what the search leaves", () => {
+        gallery({ query: "old", cursor: 0 });
+        find("canvases:right").run(agentCtx);
+        expect(galleryNow().cursor).toBe(0);
+    });
+
+    it("opens the card under the cursor, and lets Enter pass on an empty grid", () => {
+        gallery({ cursor: 1 });
+        find("canvases:open").run(agentCtx);
+        expect(galleryNow()).toMatchObject({ view: "viewer", dir: "/p/.superpowers/design/beta", board: 0, cursor: 1 });
+        gallery({ view: "grid", dir: null, query: "no such canvas" });
+        expect(find("canvases:open").run(agentCtx)).toBe(false);
+        expect(galleryNow().view).toBe("grid");
+    });
+
+    it("steps the open canvas' boards round the ends and goes back to the grid", () => {
+        gallery({ view: "viewer", dir: "/p/.superpowers/design/alpha", board: 0, cursor: 0 });
+        find("canvases:next-board").run(agentCtx);
+        expect(galleryNow().board).toBe(1);
+        find("canvases:next-board-bracket").run(agentCtx);
+        expect(galleryNow().board).toBe(0);
+        find("canvases:prev-board").run(agentCtx);
+        expect(galleryNow().board).toBe(1);
+        find("canvases:back").run(agentCtx);
+        expect(galleryNow()).toMatchObject({ view: "grid", dir: null, cursor: 0 });
+    });
+
+    it("lets / pass when no search box is on screen, and focuses the box when there is one", () => {
+        vi.stubGlobal("document", { querySelector: () => null });
+        expect(find("canvases:search").run(agentCtx)).toBe(false);
+        const input = { focus: vi.fn(), select: vi.fn() };
+        vi.stubGlobal("document", { querySelector: vi.fn(() => input) });
+        find("canvases:search").run(agentCtx);
+        expect(input.focus).toHaveBeenCalled();
+        expect(input.select).toHaveBeenCalled();
+    });
+
+    it("keeps the surface switch's [ ] for the grid and gives them to the viewer", () => {
+        const next = buildGlobalBindings(stubModel()).find((b) => b.id === "surface:next")!;
+        expect(next.when!(agentCtx)).toBe(true);
+        gallery({ view: "viewer", dir: "/p/.superpowers/design/alpha" });
+        expect(next.when!(agentCtx)).toBe(false);
+        // another surface is unaffected
+        expect(next.when!({ ...agentCtx, surface: "jarvis" })).toBe(true);
     });
 });
 

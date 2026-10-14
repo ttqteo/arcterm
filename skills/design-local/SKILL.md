@@ -54,10 +54,11 @@ Hand over and stop. Render, screenshot or re-read the files only when the user a
 
 ## Cleaning up
 
-Keep a canvas after the feature it designed ships: the person keeps them to look back at. Never
-delete a `.superpowers/design/<topic>/` folder on your own. When the person asks to tidy up, list
-the topics whose feature has shipped (folder, last change, what shipped it) and delete only the
-ones they pick. A canvas is never committed.
+Keep a canvas after the feature it designed ships, unless `wsh canvas policy` prints
+`delete-on-ship`: then delete its `.superpowers/design/<topic>/` folder in the same session. On
+`keep`, an error, or no `wsh`, keep it. When the person asks to tidy up, list the topics whose
+feature has shipped (folder, last change, what shipped it) and delete only the ones they pick;
+they can also clean up in arcterm's Agent → Canvases. A canvas is never committed.
 
 ## The canvas as a spec
 

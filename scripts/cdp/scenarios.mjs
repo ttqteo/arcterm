@@ -25257,6 +25257,579 @@ const canvasManyBoards = {
     teardown: (h, ctx) => teardownCanvasBoards(h, ctx, "canvas-many-boards"),
 };
 
+// --- Agent → Canvases: the gallery, the viewer, Clean up, and the Storage card ------------------------------------
+// docs/superpowers/specs/2026-10-14-canvas-gallery-design.md. A temp project, registered mid-run so the empty board can
+// be shown first, holds three topics: gallery-beta (one board, no preview, newest), gallery-alpha (boards Main and States,
+// a 1x1 thumb.png newer than both) and gallery-old (one board, every file 40 days back), so the grid reads beta, alpha,
+// old. The steps share one place (the card cursor, the gallery's view), so they run in order. The cursor walk and the
+// counts need a store with no other canvas: a populated one skips the whole scenario, and Final's store is empty.
+// Preview capture needs the host's window capture, so canvas-gallery-preview has it.
+const CG_PROJECT = "verify-canvas-gallery";
+const CG_PREVIEW_PROJECT = "verify-canvas-gallery-preview";
+const CG_DAY_MS = 24 * 60 * 60 * 1000;
+const CG_TRASH = join(homedir(), ".arc", "trash");
+// a card's <img> keeps its place only when the file decodes
+const CG_PNG = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    "base64"
+);
+
+// one topic folder under the project's .superpowers/design: a canvas.json and a file per board, plus a thumb.png when
+// thumbAt is given. Every file and folder takes the mtime `at`, the thumb `thumbAt` (ms), stamped last so the writes
+// above do not move them
+function cgWriteTopic(cwd, topic, { boards, at, thumbAt = null }) {
+    const dir = join(cwd, ".superpowers", "design", topic);
+    const project = join(dir, "project");
+    mkdirSync(project, { recursive: true });
+    const files = boards.map((b) => `${b}.dc.html`);
+    writeFileSync(
+        join(project, "canvas.json"),
+        JSON.stringify({
+            boards: Object.fromEntries(files.map((f, i) => [f, { x: i * 720, y: 0, w: 640, h: 480, title: boards[i] }])),
+            order: files,
+        })
+    );
+    for (const b of boards) {
+        writeFileSync(
+            join(project, `${b}.dc.html`),
+            `<!doctype html><title>${b}</title><body style="margin:0;padding:32px;background:#fff;color:#111;font:20px system-ui"><h1>${b}</h1><p>${topic} board</p>`
+        );
+    }
+    if (thumbAt != null) {
+        writeFileSync(join(dir, "thumb.png"), CG_PNG);
+        utimesSync(join(dir, "thumb.png"), new Date(thumbAt), new Date(thumbAt));
+    }
+    for (const path of [...readdirSync(project).map((f) => join(project, f)), project, dir]) {
+        utimesSync(path, new Date(at), new Date(at));
+    }
+    return dir;
+}
+
+function cgSeed(cwd) {
+    const now = Date.now();
+    cgWriteTopic(cwd, "gallery-beta", { boards: ["Main"], at: now });
+    cgWriteTopic(cwd, "gallery-alpha", { boards: ["Main", "States"], at: now - 5 * 60_000, thumbAt: now });
+    cgWriteTopic(cwd, "gallery-old", { boards: ["Main"], at: now - 40 * CG_DAY_MS });
+}
+
+// real key events, which the bindings read. No text on any of them: a key that moves focus (/) would otherwise type its
+// character into the box it focused
+const CG_KEYS = {
+    ArrowLeft: { key: "ArrowLeft", code: "ArrowLeft", windowsVirtualKeyCode: 37 },
+    ArrowUp: { key: "ArrowUp", code: "ArrowUp", windowsVirtualKeyCode: 38 },
+    ArrowRight: { key: "ArrowRight", code: "ArrowRight", windowsVirtualKeyCode: 39 },
+    ArrowDown: { key: "ArrowDown", code: "ArrowDown", windowsVirtualKeyCode: 40 },
+    Enter: { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 },
+    Escape: { key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 },
+    Space: { key: " ", code: "Space", windowsVirtualKeyCode: 32 },
+    "/": { key: "/", code: "Slash", windowsVirtualKeyCode: 191 },
+};
+// blur first: a clicked card or a board's frame would otherwise keep the key
+async function cgPress(h, name, { blur = true } = {}) {
+    if (blur) await h.ev("document.activeElement?.blur?.()");
+    for (const type of ["keyDown", "keyUp"]) {
+        await h.cdp("Input.dispatchKeyEvent", { type, ...CG_KEYS[name] });
+    }
+    await polishNap(250);
+}
+
+const CG_CARDS = `[...document.querySelectorAll("[data-canvas-card]")].map((c) => c.getAttribute("data-canvas-card"))`;
+const CG_CURSOR = `[...document.querySelectorAll("[data-canvas-card][data-cursor]")].map((c) => c.getAttribute("data-canvas-card"))`;
+const CG_CHECKED = `[...document.querySelectorAll("[data-canvas-card][data-checked]")].map((c) => c.getAttribute("data-canvas-card"))`;
+const CG_BAR = `(document.querySelector("[data-canvas-cleanup-bar] span")?.textContent ?? "").trim()`;
+const CG_FRAMES = `[...document.querySelectorAll("[data-canvas-frame]")].map((f) => f.getAttribute("data-canvas-frame"))`;
+const cgCursorOn = (h, topic) =>
+    polishWaitFor(h, `JSON.stringify(${CG_CURSOR}) === ${JSON.stringify(JSON.stringify([topic]))}`, 3000);
+const cgBarIs = (h, re) => polishWaitFor(h, `${re}.test(${CG_BAR})`, 3000);
+const cgToast = (text) =>
+    `[...document.querySelectorAll("[data-notification-toast]")].some((t) => (t.textContent || "").includes(${JSON.stringify(text)}))`;
+const cgTopic = (cwd, topic) => join(cwd, ".superpowers", "design", topic);
+const cgRemove = (path) => rmSync(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+
+// the page's JS heap after a collection, in MB: the gallery's RAM figure for docs/open-issues.md "RAM watch"
+async function cgHeap(h) {
+    try {
+        await h.cdp("Performance.enable");
+        await h.cdp("HeapProfiler.collectGarbage").catch(() => {});
+        const { metrics } = await h.cdp("Performance.getMetrics");
+        const used = metrics.find((m) => m.name === "JSHeapUsedSize")?.value;
+        return used == null ? null : Math.round((used / 1048576) * 10) / 10;
+    } catch {
+        return null;
+    }
+}
+
+// Esc out of whatever the gallery shows (a search, a canvas, clean up, then the grid itself), so the next scenario meets
+// the terminal and not a centre mode. Best effort: a teardown step never throws
+async function cgLeaveGallery(h) {
+    await h.goto("agent");
+    for (let i = 0; i < 4; i++) {
+        const open = await h.ev(
+            `document.querySelector("[data-canvas-gallery], [data-canvas-viewer], [data-canvas-cleanup]") != null`
+        );
+        if (!open) break;
+        await cgPress(h, "Escape");
+    }
+}
+
+// best effort, so one failed step does not strand the rest
+async function cgTeardown(h, ctx, name, project) {
+    const step = async (what, fn) => {
+        try {
+            await fn();
+        } catch (e) {
+            console.error(`${name} teardown: ${what} failed: ${e?.message ?? e}`);
+        }
+    };
+    await step("leave the gallery", () => cgLeaveGallery(h));
+    if (ctx.registered) {
+        await step("delete the project", () => h.rpc("deleteproject", { name: project }));
+    }
+    await step("remove the temp dir", () => cgRemove(ctx.cwd));
+    // Move to trash renames a topic to <ms>-canvas-<project folder>-<topic>
+    await step("remove the trash entries", () => {
+        if (!existsSync(CG_TRASH)) return;
+        for (const entry of readdirSync(CG_TRASH).filter((n) => n.includes(`-canvas-${basename(ctx.cwd)}-`))) {
+            cgRemove(join(CG_TRASH, entry));
+        }
+    });
+    await step("go home", () => h.goto("cockpit"));
+}
+
+const canvasGallery = {
+    name: "canvas-gallery",
+    surface: "agent",
+    async arrange() {
+        const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-canvas-gallery-")), registered: false };
+        try {
+            cgSeed(ctx.cwd);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture topics were written", false, ctx.arrangeError);
+            return steps;
+        }
+        const design = join(ctx.cwd, ".superpowers", "design");
+
+        // 0. board Empty: no canvas anywhere (the project is not registered yet)
+        const existing = (await h.rpc("listcanvases", null)) ?? [];
+        if (existing.length > 0) {
+            const names = existing.slice(0, 4).map((c) => c.topic).join(", ");
+            return [
+                skipStep(
+                    "canvas gallery",
+                    `the store already has ${existing.length} canvases (${names}${existing.length > 4 ? ", …" : ""}): run on a fresh Final store`
+                ),
+            ];
+        }
+        await h.ev(`document.querySelector("[data-agent-canvases-open]")?.click()`);
+        const emptyUp = await polishWaitFor(h, `document.querySelector('[data-canvas-gallery-empty="none"]') != null`, 8000);
+        const empty = await h.ev(`(() => ({
+            text: document.querySelector('[data-canvas-gallery-empty="none"]')?.textContent ?? "",
+            search: document.querySelector("[data-canvas-gallery-search]") != null,
+            cleanup: document.querySelector("[data-canvas-cleanup-open]") != null,
+        }))()`);
+        await h.shot("cdp-shots/canvas-gallery-empty.png");
+        rec(
+            "0. with no canvas anywhere the gallery says No canvases yet and names the design-local skill, with no search and no Clean up",
+            emptyUp && empty.text.includes("No canvases yet") && empty.text.includes("design-local") && !empty.search && !empty.cleanup,
+            JSON.stringify({ emptyUp, ...empty })
+        );
+
+        // the project is registered now; the grid reads the list when the mode mounts, so leave it and come back
+        ctx.registered = true;
+        await h.rpc("createproject", { name: CG_PROJECT, path: ctx.cwd });
+        await waitForProjectInConfig(h, CG_PROJECT);
+        await h.ev(`document.querySelector("[data-agent-history-open]")?.click()`);
+        await polishNap(400);
+        await h.ev(`document.querySelector("[data-agent-canvases-open]")?.click()`);
+
+        // 1. board Main: the grid, the card without a preview, the key hints, the arrow cursor
+        const three = await polishWaitFor(h, `${CG_CARDS}.length === 3`, 10000);
+        const order = await h.ev(CG_CARDS);
+        const previewed = await polishWaitFor(
+            h,
+            `(() => { const i = document.querySelector('[data-canvas-card="gallery-alpha"] img'); return !!i && i.complete && i.naturalWidth === 1; })()`,
+            10000
+        );
+        const grid = await h.ev(`(() => {
+            const card = (t) => document.querySelector('[data-canvas-card="' + t + '"]');
+            const text = document.querySelector("[data-canvas-gallery]")?.textContent ?? "";
+            return {
+                noPreview:
+                    (card("gallery-beta")?.textContent ?? "").includes("No preview yet: it is taken the first time you open it") &&
+                    !card("gallery-beta")?.querySelector("img"),
+                alphaSrc: card("gallery-alpha")?.querySelector("img")?.getAttribute("src") ?? null,
+                hints: ["←↑↓→ move", "Enter open", "/ search"].every((s) => text.includes(s)),
+                pill: document.querySelector("[data-canvas-gallery-count]")?.textContent ?? null,
+                search: document.querySelector("[data-canvas-gallery-search]") != null,
+            };
+        })()`);
+        const onBeta = await cgCursorOn(h, "gallery-beta");
+        const walk = [];
+        for (const [key, want] of [
+            ["ArrowRight", "gallery-alpha"],
+            ["ArrowDown", "gallery-old"],
+            ["ArrowDown", "gallery-old"],
+            ["ArrowLeft", "gallery-alpha"],
+        ]) {
+            await cgPress(h, key);
+            walk.push(`${key}:${await cgCursorOn(h, want)}`);
+        }
+        await h.shot("cdp-shots/canvas-gallery-grid.png");
+        rec(
+            "1. the grid draws beta, alpha, old; beta says No preview yet, alpha shows its thumb.png; the hints read ←↑↓→ move, Enter open, / search; the cursor starts on beta, → reaches alpha, ↓ reaches old and clamps there, ← returns to alpha",
+            three &&
+                JSON.stringify(order) === JSON.stringify(["gallery-beta", "gallery-alpha", "gallery-old"]) &&
+                grid.noPreview &&
+                previewed &&
+                /\/gallery-alpha\/thumb\.png\?v=\d+$/.test(grid.alphaSrc ?? "") &&
+                grid.hints &&
+                grid.search &&
+                /^3 · \d+ KB$/.test(grid.pill ?? "") &&
+                onBeta &&
+                walk.every((w) => w.endsWith(":true")),
+            JSON.stringify({ three, order, previewed, ...grid, onBeta, walk, heapMB: await cgHeap(h) })
+        );
+
+        // 2. board Empty, no match: / focuses the search; Esc empties it, then gives the keys back
+        await cgPress(h, "/");
+        const focused = await polishWaitFor(h, `document.activeElement?.hasAttribute("data-canvas-gallery-search") === true`, 3000);
+        await h.ev(`document.activeElement?.select?.()`);
+        await h.cdp("Input.insertText", { text: "settings sync" });
+        const none = await polishWaitFor(h, `document.querySelector('[data-canvas-gallery-empty="search"]') != null`, 3000);
+        const noMatch = await h.ev(`(() => {
+            const el = document.querySelector('[data-canvas-gallery-empty="search"]');
+            return {
+                text: el?.textContent ?? "",
+                clear: [...(el?.querySelectorAll("button") ?? [])].some((b) => b.textContent.trim() === "Clear the search"),
+                cards: ${CG_CARDS}.length,
+            };
+        })()`);
+        await h.shot("cdp-shots/canvas-gallery-nomatch.png");
+        await cgPress(h, "Escape", { blur: false });
+        const cleared = await polishWaitFor(
+            h,
+            `${CG_CARDS}.length === 3 && document.querySelector("[data-canvas-gallery-search]")?.value === ""`,
+            3000
+        );
+        const keptFocus = await h.ev(`document.activeElement?.hasAttribute("data-canvas-gallery-search") === true`);
+        await cgPress(h, "Escape", { blur: false });
+        const blurred = await polishWaitFor(h, `document.activeElement?.hasAttribute("data-canvas-gallery-search") !== true`, 3000);
+        rec(
+            "2. / focuses the search; settings sync matches nothing (No canvas matches “settings sync”, the explainer, Clear the search); Esc empties the box and the three cards return, Esc again blurs it",
+            focused &&
+                none &&
+                noMatch.text.includes("No canvas matches “settings sync”") &&
+                noMatch.text.includes("The search reads topic, board and project names.") &&
+                noMatch.clear &&
+                noMatch.cards === 0 &&
+                cleared &&
+                keptFocus &&
+                blurred,
+            JSON.stringify({ focused, none, ...noMatch, cleared, keptFocus, blurred })
+        );
+
+        // 3. board Viewer: Enter opens the card under the cursor, → steps the boards, Esc returns
+        // (the search put the cursor back on the first card)
+        await cgPress(h, "ArrowRight");
+        const onAlpha = await cgCursorOn(h, "gallery-alpha");
+        await cgPress(h, "Enter");
+        const viewerUp = await polishWaitFor(h, `document.querySelector("[data-canvas-viewer]") != null`, 5000);
+        const boardUp = await polishWaitFor(
+            h,
+            `document.querySelector('[data-canvas-viewer-state="board"]') != null && document.querySelectorAll("[data-canvas-viewer] iframe").length === 1`,
+            15000
+        );
+        const tabs = await h.ev(
+            `[...document.querySelectorAll("[data-canvas-viewer-tab]")].map((t) => t.getAttribute("data-canvas-viewer-tab") + ":" + t.getAttribute("aria-selected"))`
+        );
+        await cgPress(h, "ArrowRight");
+        const stepped = await polishWaitFor(
+            h,
+            `document.querySelector('[data-canvas-viewer-tab="States"]')?.getAttribute("aria-selected") === "true" && JSON.stringify(${CG_FRAMES}) === '["States.dc.html"]'`,
+            5000
+        );
+        await polishNap(1200);
+        const iframes = await h.ev(`document.querySelectorAll("[data-canvas-viewer] iframe").length`);
+        const heapMB = await cgHeap(h);
+        await h.shot("cdp-shots/canvas-gallery-viewer.png");
+        await cgPress(h, "Escape");
+        const gridBack = await polishWaitFor(
+            h,
+            `document.querySelector("[data-canvas-viewer]") == null && ${CG_CARDS}.length === 3`,
+            5000
+        );
+        rec(
+            "3. Enter opens gallery-alpha in the viewer (one iframe, boards Main and States, Main picked); → moves the picker to States and shows that board alone; Esc returns to the grid",
+            onAlpha &&
+                viewerUp &&
+                boardUp &&
+                JSON.stringify(tabs) === JSON.stringify(["Main:true", "States:false"]) &&
+                stepped &&
+                iframes === 1 &&
+                gridBack,
+            JSON.stringify({ onAlpha, viewerUp, boardUp, tabs, stepped, iframes, gridBack, heapMB })
+        );
+
+        // 3b. a canvas whose folder goes while it is open reads Removed. The cursor is still on alpha; ← is beta
+        await cgPress(h, "ArrowLeft");
+        const onBeta2 = await cgCursorOn(h, "gallery-beta");
+        await cgPress(h, "Enter");
+        await polishWaitFor(h, `document.querySelector('[data-canvas-viewer-state="board"]') != null`, 15000);
+        cgRemove(cgTopic(ctx.cwd, "gallery-beta"));
+        // the viewer's poll runs every 3 s
+        const removed = await polishWaitFor(h, `document.querySelector('[data-canvas-viewer-state="removed"]') != null`, 15000);
+        const removedText = await h.ev(`document.querySelector("[data-canvas-viewer-state]")?.textContent ?? ""`);
+        await h.shot("cdp-shots/canvas-gallery-removed.png");
+        // a preview capture in flight can write thumb.png into the deleted folder and make it again: clear it, then put
+        // the topic back for the steps that follow (the list is read when the grid mounts, which Esc does)
+        await polishNap(1500);
+        cgRemove(cgTopic(ctx.cwd, "gallery-beta"));
+        cgWriteTopic(ctx.cwd, "gallery-beta", { boards: ["Main"], at: Date.now() });
+        await cgPress(h, "Escape");
+        const restored = await polishWaitFor(
+            h,
+            `document.querySelector("[data-canvas-viewer]") == null && ${CG_CARDS}.length === 3`,
+            8000
+        );
+        rec(
+            "3b. deleting an open canvas's folder shows gallery-beta was removed in the viewer; Esc returns to the grid",
+            onBeta2 && removed && removedText.includes("gallery-beta was removed") && restored,
+            JSON.stringify({ onBeta2, removed, removedText: removedText.slice(0, 120), restored })
+        );
+
+        // 4. board Cleanup: gallery-old is ticked, Space toggles the card under the cursor, Untick all, a click ticks
+        await h.ev(`document.querySelector("[data-canvas-cleanup-open]")?.click()`);
+        const cleanUp = await polishWaitFor(
+            h,
+            `document.querySelector("[data-canvas-cleanup]") != null && ${CG_CARDS}.length === 3`,
+            5000
+        );
+        const start = await h.ev(`(() => ({
+            order: ${CG_CARDS},
+            checked: ${CG_CHECKED},
+            cursor: ${CG_CURSOR},
+            suggested: [...(document.querySelector('[data-canvas-group="suggested"]')?.querySelectorAll("[data-canvas-card]") ?? [])].map((c) => c.getAttribute("data-canvas-card")),
+            bar: ${CG_BAR},
+        }))()`);
+        await cgPress(h, "Space");
+        const spaceOff = await cgBarIs(h, "/^Nothing selected$/");
+        await cgPress(h, "Space");
+        const spaceOn = await cgBarIs(h, "/^1 selected/");
+        await cgPress(h, "ArrowRight");
+        await cgPress(h, "Space");
+        const two = await cgBarIs(h, "/^2 selected · \\d+ (KB|MB)$/");
+        const twoChecked = await h.ev(CG_CHECKED);
+        await h.ev(`document.querySelector("[data-canvas-untick-all]")?.click()`);
+        const none2 = await cgBarIs(h, "/^Nothing selected$/");
+        const trashOff = await h.ev(`document.querySelector("[data-canvas-trash]")?.disabled === true`);
+        await spClick(h, `document.querySelector('[data-canvas-card="gallery-old"]')`);
+        const oneAgain = await cgBarIs(h, "/^1 selected/");
+        const oneChecked = await h.ev(CG_CHECKED);
+        await h.shot("cdp-shots/canvas-gallery-cleanup.png");
+        rec(
+            "4. Clean up draws old (ticked) under the suggested group, then beta and alpha unticked, the cursor on old and the bar reading 1 selected; Space unticks then ticks it; → Space ticks beta (2 selected · size); Untick all reads Nothing selected with Move to trash disabled; a click on old's card ticks it again",
+            cleanUp &&
+                JSON.stringify(start.order) === JSON.stringify(["gallery-old", "gallery-beta", "gallery-alpha"]) &&
+                JSON.stringify(start.checked) === JSON.stringify(["gallery-old"]) &&
+                JSON.stringify(start.cursor) === JSON.stringify(["gallery-old"]) &&
+                JSON.stringify(start.suggested) === JSON.stringify(["gallery-old"]) &&
+                /^1 selected/.test(start.bar) &&
+                spaceOff &&
+                spaceOn &&
+                two &&
+                JSON.stringify(twoChecked) === JSON.stringify(["gallery-old", "gallery-beta"]) &&
+                none2 &&
+                trashOff &&
+                oneAgain &&
+                JSON.stringify(oneChecked) === JSON.stringify(["gallery-old"]),
+            JSON.stringify({ cleanUp, start, spaceOff, spaceOn, two, twoChecked, none2, trashOff, oneAgain, oneChecked })
+        );
+
+        // 5. Move to trash. The cursor is on beta (→ in step 4): Space ticks it, then its folder is deleted, so the clean
+        // skips it ("already gone"). Clean up drops a skip whose folder is gone, so the view returns to the grid with the
+        // toast naming the skip
+        await cgPress(h, "Space");
+        const twoTicked = await cgBarIs(h, "/^2 selected/");
+        cgRemove(cgTopic(ctx.cwd, "gallery-beta"));
+        await h.ev(`document.querySelector("[data-canvas-trash]")?.click()`);
+        const toasted = await polishWaitFor(h, cgToast("Moved 1 canvas to the trash, 1 skipped"), 20000);
+        const left = await polishWaitFor(
+            h,
+            `document.querySelector("[data-canvas-cleanup]") == null && document.querySelector("[data-canvas-grid]") != null`,
+            10000
+        );
+        const after = await h.ev(`(() => ({ cards: ${CG_CARDS}, pill: document.querySelector("[data-canvas-gallery-count]")?.textContent ?? null }))()`);
+        ctx.trashed = existsSync(CG_TRASH)
+            ? readdirSync(CG_TRASH).filter((n) => n.includes(`-canvas-${basename(ctx.cwd)}-`))
+            : [];
+        await h.shot("cdp-shots/canvas-gallery-trashed.png");
+        rec(
+            "5. Move to trash takes gallery-old into ~/.arc/trash, skips gallery-beta (its folder is gone), toasts “Moved 1 canvas to the trash, 1 skipped” and returns to the grid with gallery-alpha alone",
+            twoTicked &&
+                toasted &&
+                left &&
+                JSON.stringify(after.cards) === JSON.stringify(["gallery-alpha"]) &&
+                !existsSync(cgTopic(ctx.cwd, "gallery-old")) &&
+                !existsSync(cgTopic(ctx.cwd, "gallery-beta")) &&
+                existsSync(cgTopic(ctx.cwd, "gallery-alpha")) &&
+                ctx.trashed.length === 1 &&
+                ctx.trashed[0].endsWith("-gallery-old"),
+            JSON.stringify({ twoTicked, toasted, left, ...after, trashed: ctx.trashed })
+        );
+
+        // 6. board Storage: the Design canvases summary card and the canvas row of Auto-clean
+        const scanFrom = Date.now();
+        await h.rpc("rescanstorage", null);
+        const scanBy = Date.now() + 60_000;
+        for (;;) {
+            const r = await h.rpc("getstorage", null);
+            if (r?.scannedts >= scanFrom && !r.scanning) break;
+            if (Date.now() > scanBy) throw new Error("no storage scan within 60 s");
+            await polishNap(500);
+        }
+        const listed = (await h.rpc("listcanvases", null)) ?? [];
+        const onShip = (await h.rpc("getfullconfig", null))?.settings?.["storage:canvasonship"] === true;
+        await h.goto("settings");
+        await polishWaitFor(h, `document.querySelector('button[data-section="storage"]') != null`, 5000);
+        await h.ev(`document.querySelector('button[data-section="storage"]').click()`);
+        const storageUp = await polishWaitFor(
+            h,
+            `document.querySelector('[data-settings-section="storage"] [data-setting-card="canvases"] [data-storage-count]') != null`,
+            8000
+        );
+        const card = `document.querySelector('[data-settings-section="storage"] [data-setting-card="canvases"]')`;
+        const row = `document.querySelector('[data-settings-section="storage"] [data-setting-card="autoclean"] [data-setting-row="storage.canvasonship"]')`;
+        await h.ev(`${row}?.scrollIntoView({ block: "end" })`);
+        await polishNap(350);
+        const storage = await h.ev(`(() => {
+            const card = ${card};
+            const row = ${row};
+            return {
+                cards: [...document.querySelectorAll('[data-settings-section="storage"] [data-setting-card]')].map((c) => c.getAttribute("data-setting-card")),
+                // the card's name sits above its box, in the same section
+                title: card?.parentElement?.textContent.includes("Design canvases") ?? false,
+                count: card?.querySelector("[data-storage-count]")?.textContent.trim() ?? null,
+                open: card?.querySelector("[data-storage-canvases-open]")?.textContent.trim() ?? null,
+                label: row?.textContent.includes("Agents delete a canvas when its feature ships") ?? false,
+                checked: row?.querySelector('[role="switch"]')?.getAttribute("aria-checked") ?? null,
+            };
+        })()`);
+        await h.shot("cdp-shots/canvas-gallery-storage.png");
+        const want = `${listed.length} ${listed.length === 1 ? "canvas" : "canvases"}`;
+        rec(
+            "6. Settings → Storage has a Design canvases card (its title, the canvas count, Open the gallery) before Auto-clean, and Auto-clean has the canvas row, off unless the config says on",
+            storageUp &&
+                JSON.stringify(listed.map((c) => c.topic)) === JSON.stringify(["gallery-alpha"]) &&
+                JSON.stringify(storage.cards.slice(-2)) === JSON.stringify(["canvases", "autoclean"]) &&
+                storage.title &&
+                storage.count === want &&
+                storage.open === "Open the gallery" &&
+                storage.label &&
+                storage.checked === String(onShip),
+            JSON.stringify({ storageUp, listed: listed.map((c) => c.topic), want, onShip, ...storage })
+        );
+
+        // 6b. Open the gallery lands on Agent → Canvases
+        await h.ev(`document.querySelector("[data-storage-canvases-open]")?.click()`);
+        const opened = await polishWaitFor(h, `document.querySelector("[data-canvas-gallery]") != null`, 5000);
+        const surface = await h.activeSurfaceLabel();
+        rec("6b. Open the gallery switches to Agent with the gallery showing", opened && surface === "Agent", JSON.stringify({ opened, surface }));
+        return steps;
+    },
+    teardown: (h, ctx) => cgTeardown(h, ctx, "canvas-gallery", CG_PROJECT),
+};
+
+// --- Agent → Canvases previews: opening a canvas takes its thumb.png ---------------------------------------------------
+// A canvas with no preview is captured about a second after its board settles in the viewer (canvasthumb.ts): the host's
+// capture_webview, cropped to the board and scaled to at most 480 px, written over <topic>/thumb.png. The card then shows
+// it. The browser app has no window to capture, so this one is host-only; canvas-gallery runs there without it.
+const canvasGalleryPreview = {
+    name: "canvas-gallery-preview",
+    host: true,
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-canvas-gallery-preview-")), registered: false };
+        try {
+            ctx.existing = (await h.rpc("listcanvases", null)) ?? [];
+            ctx.topicDir = cgWriteTopic(ctx.cwd, "preview-beta", { boards: ["Main", "Detail"], at: Date.now() });
+            if (ctx.existing.length === 0) {
+                ctx.registered = true;
+                await h.rpc("createproject", { name: CG_PREVIEW_PROJECT, path: ctx.cwd });
+                await waitForProjectInConfig(h, CG_PREVIEW_PROJECT);
+            }
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. the project and its topic were made", false, ctx.arrangeError);
+            return steps;
+        }
+        if (ctx.existing.length > 0) {
+            return [
+                skipStep(
+                    "canvas gallery preview",
+                    `the store already has ${ctx.existing.length} canvases: the one card the cursor is on must be preview-beta, so run on a fresh Final store`
+                ),
+            ];
+        }
+        const thumb = join(ctx.topicDir, "thumb.png");
+
+        await h.ev(`document.querySelector("[data-agent-canvases-open]")?.click()`);
+        const carded = await polishWaitFor(h, `JSON.stringify(${CG_CARDS}) === '["preview-beta"]'`, 10000);
+        const before = await h.ev(`(() => {
+            const card = document.querySelector('[data-canvas-card="preview-beta"]');
+            return { cursor: card?.hasAttribute("data-cursor") ?? false, img: card?.querySelector("img") != null };
+        })()`);
+        rec(
+            "0. the gallery holds preview-beta alone, the cursor on it, with no preview image yet",
+            carded && before.cursor && !before.img && !existsSync(thumb),
+            JSON.stringify({ carded, ...before })
+        );
+
+        await cgPress(h, "Enter");
+        const viewerUp = await polishWaitFor(h, `document.querySelector('[data-canvas-viewer-state="board"]') != null`, 15000);
+        let written = false;
+        for (let waited = 0; waited < 10_000 && !written; waited += 250) {
+            written = existsSync(thumb) && statSync(thumb).size > 0;
+            if (!written) await polishNap(250);
+        }
+        const png = written ? readFileSync(thumb) : Buffer.alloc(0);
+        const isPng = png.length > 24 && png.subarray(0, 8).equals(CG_PNG.subarray(0, 8));
+        // the IHDR width: scaled down to 480 px, never up
+        const width = isPng ? png.readUInt32BE(16) : 0;
+        await h.shot("cdp-shots/canvas-gallery-preview.png");
+        rec(
+            "1. opening preview-beta writes a non-empty PNG thumb.png into its folder within 10 s, at most 480 px wide",
+            viewerUp && written && isPng && width > 0 && width <= 480,
+            JSON.stringify({ viewerUp, written, bytes: png.length, isPng, width })
+        );
+
+        await cgPress(h, "Escape");
+        const shown = await polishWaitFor(
+            h,
+            `(() => { const i = document.querySelector('[data-canvas-card="preview-beta"] img'); return !!i && /\\/preview-beta\\/thumb\\.png\\?v=\\d+$/.test(i.getAttribute("src") ?? "") && i.complete && i.naturalWidth > 0; })()`,
+            10000
+        );
+        const src = await h.ev(`document.querySelector('[data-canvas-card="preview-beta"] img')?.getAttribute("src") ?? null`);
+        rec("2. back in the grid, preview-beta's card shows an <img> from thumb.png?v=<time>", shown, JSON.stringify({ shown, src }));
+        return steps;
+    },
+    teardown: (h, ctx) => cgTeardown(h, ctx, "canvas-gallery-preview", CG_PREVIEW_PROJECT),
+};
+
 // --- the details rail's sections: Artifacts and Uploads in the order the spec gives, and the tree's Terminals -------
 // docs/superpowers/specs/2026-10-05-agent-sessions-merge-design.md, decision 6. The roster is one dev fixture agent;
 // the terminals are two real plain tabs in two projects; the agent owns a temp canvas with two boards. Uploads is a
@@ -33444,7 +34017,7 @@ const SP_PAGES = [
     { id: "appearance", cards: ["theme", "colors", "fonts", "jarvis"] },
     { id: "terminal", cards: ["text", "cursor", "behavior"] },
     { id: "agents", cards: ["claudeaccount", "sleep", "runs", "flags"] },
-    { id: "storage", cards: ["runworktrees", "sessions", "housekeeping", "buildoutput", "autoclean"] },
+    { id: "storage", cards: ["runworktrees", "sessions", "housekeeping", "buildoutput", "canvases", "autoclean"] },
     { id: "headless", cards: ["runtime", "openrouter", "radar"] },
     { id: "about", cards: ["versions", "agents"] },
 ];
@@ -35214,7 +35787,7 @@ const SS_RUN_CLEAN = "5a0c0de0-0000-4000-8000-000000000001";
 const SS_RUN_DIRTY = "5a0c0de0-0000-4000-8000-000000000002";
 const SS_NUDGE_DAY_KEY = "storage.nudge.lastday"; // storagenudge.tsx
 const SS_DAY_MS = 24 * 60 * 60 * 1000;
-const SS_CARDS = ["runworktrees", "sessions", "housekeeping", "buildoutput", "autoclean"];
+const SS_CARDS = ["runworktrees", "sessions", "housekeeping", "buildoutput", "canvases", "autoclean"];
 const ssCard = (cat) => `document.querySelector('[data-settings-section="storage"] [data-setting-card="${cat}"]')`;
 // a row is found by the end of its id: a session's id is its path, a project's row its project's path
 const ssRowIds = (cat) =>
@@ -35390,7 +35963,7 @@ const settingsStorage = {
         await polishNap(350);
         await h.shot("cdp-shots/settings-storage-1-page.png");
         rec(
-            "1. Storage sits after Agents in the index; its page holds the four category cards, then Auto-clean; run worktrees, sessions and logs have a clean button, build output none",
+            "1. Storage sits after Agents in the index; its page holds the five category cards (Design canvases among them), then Auto-clean; run worktrees, sessions and logs have a clean button, build output and canvases none",
             up &&
                 index.indexOf("storage") === index.indexOf("agents") + 1 &&
                 JSON.stringify(cards) === JSON.stringify(SS_CARDS) &&
@@ -41302,6 +41875,8 @@ export const SCENARIOS = [
     canvasSwap,
     canvasTabsScenario,
     canvasManyBoards,
+    canvasGallery,
+    canvasGalleryPreview,
     agentRailSections,
     railServers,
     agentGrid,

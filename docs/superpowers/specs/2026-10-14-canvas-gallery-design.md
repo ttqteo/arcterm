@@ -37,7 +37,8 @@ Today a canvas reopens only from the palette, only for the selected agent's proj
 - Keys: arrows move the card cursor, Enter opens, `/` searches. Up/down/left/right only take this meaning while the
   centre mode is `canvases` and no viewer is open; the agent-nav arrow bindings stand down there, as they already do on
   a canvas board (`bindings.ts` `boardReady`).
-- Empty states (board `Empty`): no canvas anywhere; the search matches nothing.
+- Empty states (board `Empty`): no canvas anywhere; the search matches nothing ("The search reads topic, board and
+  project names.").
 
 ## The viewer (board `Viewer`)
 
@@ -47,8 +48,8 @@ Today a canvas reopens only from the palette, only for the selected agent's proj
 - The board renders in one iframe, reusing the canvas pane's board rendering (`canvaspane.tsx`) without marks or Send:
   there is no agent to send to. Its paneState handling (probing, server-down, removed) is the pane's.
 - Leaving the viewer unmounts the iframe; leaving the centre mode unmounts everything, like History. The open topic and
-  board live in one jotai atom (`canvasGalleryAtom`: `{ view: "grid" | "viewer" | "cleanup", project, topic, board }`)
-  so a surface switch comes back to the same place.
+  board live in one jotai atom (`canvasGalleryAtom`: `{ view: "grid" | "viewer" | "cleanup", dir, board, query,
+  cursor }`, `dir` the topic folder) so a surface switch comes back to the same place.
 - To keep editing a canvas with an agent, the palette's existing per-agent **Canvases** group does it. The viewer has no
   Open on agent menu.
 
@@ -66,7 +67,8 @@ Today a canvas reopens only from the palette, only for the selected agent's proj
 
 ## Listing
 
-- New wshrpc command `ListCanvasesCommand() ([]CanvasTopic, error)`, one call per gallery open: for every registered
+- New wshrpc command `ListCanvasesCommand() ([]StorageCanvas, error)` (the Storage prefix because the generated TypeScript
+  names a type by its bare Go name), one call per gallery open: for every registered
   project, each topic under `.superpowers/design` that `isCanvasSegment` accepts, with `project`, `dir`, `boards`
   (`project/*.dc.html` names, `canvas.json` order when present), `modts` (newest board), `thumbts` (0 when none),
   `bytes`. No watcher; the gallery re-reads when it opens and after a clean.
@@ -93,7 +95,7 @@ Today a canvas reopens only from the palette, only for the selected agent's proj
   shape `sessiontrash.Purge` already removes after 7 days.
 - `autoclean.go` never picks the category. `cleanableTotal` leaves it out (guarded items already are).
 - Settings → Storage draws it as a summary card, not a row list: size, `N canvases`, a blurb, **Open the gallery**
-  (`openAddress` to the Agent surface in `canvases` mode). `CARD_ORDER` gains `canvases` after `buildoutput`.
+  (`showCanvases(model)`; `StoragePage` takes the model from `SectionBody`, as `AgentsPage` does). `CARD_ORDER` gains `canvases` after `buildoutput`.
 
 ## Setting and agents
 

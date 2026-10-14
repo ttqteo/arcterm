@@ -29,6 +29,7 @@ const (
 	CategorySessions     StorageCategory = "sessions"
 	CategoryHousekeeping StorageCategory = "housekeeping"
 	CategoryBuildOutput  StorageCategory = "buildoutput"
+	CategoryCanvases     StorageCategory = "canvases"
 )
 
 // what an item is, for the row and for auto-clean's pick
@@ -40,6 +41,7 @@ const (
 	KindWebviewCache = "webviewcache"
 	KindBuild        = "build"
 	KindAttachments  = "attachments"
+	KindCanvas       = "canvas"
 )
 
 // StorageItem is one thing a category can clean: a run's worktree, a session, a rolled log, the trash, the

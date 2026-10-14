@@ -3347,6 +3347,7 @@ declare global {
         "storage:*"?: boolean;
         "storage:autoclean"?: boolean;
         "storage:nudgegb"?: number;
+        "storage:canvasonship"?: boolean;
         "term:*"?: boolean;
         "term:fontsize"?: number;
         "term:fontfamily"?: string;
@@ -3485,6 +3486,19 @@ declare global {
         ts: number;
         reclaimed: number;
         error?: string;
+    };
+
+    // storage.StorageCanvas
+    type StorageCanvas = {
+        topic: string;
+        project: string;
+        projectname: string;
+        designdir: string;
+        dir: string;
+        boards: string[];
+        modts: number;
+        thumbts: number;
+        bytes: number;
     };
 
     // storage.StorageCategoryReport

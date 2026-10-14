@@ -360,8 +360,8 @@ content is always fluid.
   window controls.
 - **Nav rail** — fixed 78px wide (56px on narrow windows via
   `navRailCollapsed(windowWidth)` in `navrailwidth.ts`).
-- **Agent surface tree** — a "Conversation History" row (New agent is the app
-  bar's, not repeated here), then three sections (Active, Terminals, Conversations), each a counted header
+- **Agent surface tree** — a "Conversation History" row and a "Canvases" row
+  under it (New agent is the app bar's, not repeated here), then three sections (Active, Terminals, Conversations), each a counted header
   that folds it, holding collapsible project folder rows of one-line rows
   (status dot or mark, name, meta). The selected row is a grey fill
   (`bg-surface-selected`). Asking is a word in the row, not a filled row: an
@@ -513,8 +513,9 @@ code is written.
 - Token values come from `frontend/tailwindsetup.css` `@theme`, never from memory or an
   older canvas.
 - A mockup is scaffolding, never committed: once its feature ships the code is the design, but
-  the topic folder stays until the person deletes it or picks it from the list an agent offers
-  when asked to tidy up (`design-local` skill, "Cleaning up"). The canvases already under `docs/prototype/` predate this rule and
+  the topic folder stays unless Settings → Storage → Agents delete a canvas when its feature ships
+  is on, until the person deletes it or picks it from the list an agent offers when asked to tidy
+  up (`design-local` skill, "Cleaning up"). The canvases already under `docs/prototype/` predate this rule and
   stay only because code comments and specs cite them.
 
 ## Architecture & Patterns

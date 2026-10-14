@@ -215,6 +215,7 @@ describe("settingsSections", () => {
             "agents:sleepaftermin",
             "storage:autoclean",
             "storage:nudgegb",
+            "storage:canvasonship",
             "headless:runtime",
             "headless:openroutercheapmodel",
             "radar:auditruntime",
@@ -338,7 +339,8 @@ describe("settings pages", () => {
         expect(cards["storage/sessions"]).toEqual([]);
         expect(cards["storage/housekeeping"]).toEqual([]);
         expect(cards["storage/buildoutput"]).toEqual([]);
-        expect(cards["storage/autoclean"]).toEqual(["storage.autoclean", "storage.nudge"]);
+        expect(cards["storage/canvases"]).toEqual([]);
+        expect(cards["storage/autoclean"]).toEqual(["storage.autoclean", "storage.nudge", "storage.canvasonship"]);
         expect(cards["headless/runtime"]).toEqual(["headless.runtime"]);
         expect(cards["headless/openrouter"]).toEqual(["headless.apikey", "headless.cheap"]);
         expect(cards["headless/radar"]).toEqual(["headless.radaraudit"]);
@@ -351,7 +353,7 @@ describe("settings pages", () => {
             .flatMap(sectionRows)
             .map((r) => r.id);
         expect(new Set(ids).size).toBe(ids.length);
-        expect(ids).toHaveLength(48 + RUNTIME_FLAGS.claude.length);
+        expect(ids).toHaveLength(49 + RUNTIME_FLAGS.claude.length);
     });
 
     it("leaves the backend-authoritative run route off the config path", () => {

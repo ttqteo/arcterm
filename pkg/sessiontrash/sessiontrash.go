@@ -117,15 +117,15 @@ func Delete(o Options, transcriptPath string) (string, error) {
 		_ = os.RemoveAll(entry)
 		return "", fmt.Errorf("writing the trash entry: %w", err)
 	}
-	if err := moveEntry(transcript, filepath.Join(entry, name)); err != nil {
+	if err := MoveEntry(transcript, filepath.Join(entry, name)); err != nil {
 		_ = os.RemoveAll(entry)
 		return "", fmt.Errorf("moving the transcript to the trash: %w", err)
 	}
 	sibling := filepath.Join(dir, id)
 	if st, err := os.Lstat(sibling); err == nil && st.IsDir() {
-		if err := moveEntry(sibling, filepath.Join(entry, id)); err != nil {
+		if err := MoveEntry(sibling, filepath.Join(entry, id)); err != nil {
 			// all or nothing: the transcript goes back, so the session is not left without its subagents
-			if back := moveEntry(filepath.Join(entry, name), transcript); back != nil {
+			if back := MoveEntry(filepath.Join(entry, name), transcript); back != nil {
 				return "", fmt.Errorf("moving the session's directory to the trash: %w (and the transcript is in %s: %v)", err, entry, back)
 			}
 			_ = os.RemoveAll(entry)
@@ -204,9 +204,9 @@ func samePath(a, b string) bool {
 	return a == b
 }
 
-// moveEntry renames src to dst, or copies it and removes the original when the rename cannot (the trash on
-// another volume than the projects dir).
-func moveEntry(src, dst string) error {
+// MoveEntry renames src to dst, or copies it and removes the original when the rename cannot (the trash on
+// another volume than the projects dir). The storage canvases category trashes a design topic with it.
+func MoveEntry(src, dst string) error {
 	if err := os.Rename(src, dst); err == nil {
 		return nil
 	}

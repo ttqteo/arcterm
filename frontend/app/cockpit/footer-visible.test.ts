@@ -137,8 +137,8 @@ describe("agent canvas mode chips", () => {
         expect(chipsInTerm).not.toContain("c canvas");
     });
 
-    it("History and a session offer only esc terminal and switch: F11 and send stand down, even mid-marking", () => {
-        for (const mode of ["history", "session"] as const) {
+    it("History, the canvases and a session offer only esc terminal and switch: F11 and send stand down, even mid-marking", () => {
+        for (const mode of ["history", "session", "canvases"] as const) {
             globalStore.set(centerModeAtom, mode);
             expect(chips()).toEqual(["esc terminal", "Ctrl:Tab switch", ...globals()]);
             setCanvasMode("a1", "canvas", 1);

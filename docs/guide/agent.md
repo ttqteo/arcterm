@@ -401,6 +401,16 @@ Skill `doc-review` đi kèm arcterm dạy agent khi nào nên xin duyệt một 
 
 Agent dùng skill design-local có thể đính kèm một **canvas** — các board `.dc.html` — vào chính nó. Khi có canvas, header có nút chuyển **Terminal | Canvas**; `c` chuyển qua lại, `[` / `]` đổi board, `m` đánh dấu các vùng của board, `Ctrl+Enter` gửi các dấu cho agent. Canvas thay terminal nhưng sidebar, header và rail vẫn giữ nguyên. Các board hiện ở mục **Artifacts** của rail.
 
+### Thư viện canvas
+
+Mọi canvas mà agent đã vẽ trong các project của bạn nằm ở **Agent → Canvases**: bấm nút **Canvases** dưới Conversation History ở đầu sidebar, hoặc `Ctrl+G` `v`. Nó thay terminal như Conversation History. Mỗi canvas là một thẻ có ảnh xem trước (chụp một lần, khi bạn mở board của nó lần đầu), xếp mới nhất trước theo Today / Yesterday / Earlier; `/` tìm theo tên topic, board và project, `↑` `↓` `←` `→` chọn thẻ, `Enter` mở.
+
+Mở một canvas thì xem từng board một: `←` `→` đổi board, `Esc` về lưới. Viewer không gắn với agent nào nên không có đánh dấu hay Send; muốn sửa canvas cùng một agent thì mở nó từ nhóm **Canvases** của agent đó trong palette `Ctrl+P`.
+
+**Clean up** (nút ở đầu lưới) biến lưới thành các ô tick: canvas không đổi từ 30 ngày trở lên được tick sẵn, nhóm còn lại thì chưa. `Space` tick hoặc bỏ tick thẻ đang chọn, **Untick all** bỏ hết, **Move to trash** chuyển các thẻ đã tick vào `~/.arc/trash`, nơi chúng nằm 7 ngày rồi mới bị xóa hẳn; `Esc` thoát mà không làm gì. Đây là chỗ duy nhất trong thư viện xóa canvas.
+
+Canvas được giữ lại: agent không xóa canvas khi tính năng của nó đã ship, trừ khi bạn bật **Agents delete a canvas when its feature ships** ở Settings → Storage → Auto-clean. Cũng ở Storage, thẻ **Design canvases** cho biết dung lượng và số canvas, với nút **Open the gallery**.
+
 ## Conversation History và phiên đã kết thúc
 
 ### Làm thế nào

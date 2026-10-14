@@ -907,6 +907,12 @@ func ListBranchesCommand(w *wshutil.WshRpc, data wshrpc.CommandListBranchesData,
 	return resp, err
 }
 
+// command "listcanvases", wshserver.ListCanvasesCommand
+func ListCanvasesCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) ([]storage.StorageCanvas, error) {
+	resp, err := sendRpcRequestCallHelper[[]storage.StorageCanvas](w, "listcanvases", nil, opts)
+	return resp, err
+}
+
 // command "listdetachededges", wshserver.ListDetachedEdgesCommand
 func ListDetachedEdgesCommand(w *wshutil.WshRpc, data wshrpc.CommandListDetachedEdgesData, opts *wshrpc.RpcOpts) (*wshrpc.CommandListDetachedEdgesRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandListDetachedEdgesRtnData](w, "listdetachededges", data, opts)

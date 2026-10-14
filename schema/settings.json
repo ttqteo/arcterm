@@ -35,6 +35,9 @@
         "storage:nudgegb": {
           "type": "number"
         },
+        "storage:canvasonship": {
+          "type": "boolean"
+        },
         "term:*": {
           "type": "boolean"
         },

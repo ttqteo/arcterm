@@ -21,6 +21,9 @@ new draws it as one of its release's cards and folds every other line under a co
 
 ### Added
 
+- **Canvases**: every mockup an agent drew lives on in Agent → Canvases, with a preview of each; open one to page
+  through its boards, or Clean up to move the old ones to the trash. Agents no longer delete a canvas when its feature
+  ships unless you turn that on in Settings → Storage. <!-- try: go:canvases --> <!-- big -->
 - **Runs as an office**: in Jarvis, the Runs list's **office** chip draws each run as a pixel office floor under its
   row: the lead in a glass corner office and one person per task, typing, stuck, in review, carrying the merge, or
   raising a hand when they need you. Click a person to open their terminal.

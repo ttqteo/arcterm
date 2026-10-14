@@ -6,6 +6,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { centerModeAtom } from "@/app/view/agents/agentcenter";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { setAgentView } from "@/app/view/agents/agentview";
+import { canvasGalleryAtom } from "@/app/view/agents/canvasgallerystore";
 import {
     attachCanvas,
     canvasStateAtom,
@@ -43,6 +44,12 @@ import { PREDICATE_ATOMS } from "./whenstate";
 // the canvas guards read the focused agent id from the model
 function stubModel(focusId?: string): any {
     return { focusIdAtom: atom<string | undefined>(focusId) as PrimitiveAtom<string | undefined> };
+}
+
+// where Agent → Canvases is: a view, and the topic folder it has open
+const OPEN_DIR = "/p/.superpowers/design/t";
+function inGallery(view: "grid" | "viewer" | "cleanup", dir: string | null = null) {
+    globalStore.set(canvasGalleryAtom, { view, dir, board: 0, query: "", cursor: 0 });
 }
 
 // a1 focused with a ready two-board canvas, in terminal mode; callers move it into canvas/marking
@@ -225,6 +232,94 @@ describe("keybinding conflict invariant", () => {
         } finally {
             globalStore.set(centerModeAtom, "terminal");
             globalStore.set(listNavAtom, null);
+        }
+    });
+
+    // Canvases covers the terminal like History, with its own arrows, Enter and Escape in each of its views; none may meet
+    // the agent's, the surface switch's `[` `]`, or the Escape that leaves the centre
+    it("global + list-nav + agent bindings do not conflict while Canvases is open, in any view", () => {
+        const model = stubModel();
+        globalStore.set(centerModeAtom, "canvases");
+        const agentCtx = { surface: "agent" as const, editable: false, modalOpen: false, leader: null };
+        const all = [...buildGlobalBindings(model), ...buildListNavBindings(model), ...buildAgentBindings(model)];
+        const find = (id: string) => all.find((x) => x.id === id)!;
+        try {
+            for (const view of ["grid", "viewer", "cleanup"] as const) {
+                inGallery(view, OPEN_DIR);
+                expect(() => assertNoConflicts(all)).not.toThrow();
+            }
+            // not vacuous: each view's keys are live there and the agent's and the surface's are not
+            inGallery("grid");
+            expect(find("canvases:left").when!(agentCtx)).toBe(true);
+            expect(find("agent:prev").when!(agentCtx)).toBe(false);
+            expect(find("canvases:prev-board").when!(agentCtx)).toBe(false);
+            expect(find("surface:prev").when!(agentCtx)).toBe(true);
+            inGallery("viewer", OPEN_DIR);
+            expect(find("canvases:prev-board").when!(agentCtx)).toBe(true);
+            expect(find("canvases:prev-board-bracket").when!(agentCtx)).toBe(true);
+            expect(find("canvases:left").when!(agentCtx)).toBe(false);
+            expect(find("surface:prev").when!(agentCtx)).toBe(false);
+            expect(find("surface:next").when!(agentCtx)).toBe(false);
+            // clean up has its own arrows, Space and Escape; the grid's, the viewer's and the agent's all stand down
+            inGallery("cleanup");
+            for (const id of [
+                "canvases:cleanup-left",
+                "canvases:cleanup-down",
+                "canvases:tick",
+                "canvases:cleanup-cancel",
+            ]) {
+                expect(find(id).when!(agentCtx)).toBe(true);
+            }
+            for (const id of ["canvases:left", "canvases:open", "canvases:prev-board", "canvases:back", "agent:prev"]) {
+                expect(find(id).when!(agentCtx)).toBe(false);
+            }
+            expect(find("agent:leave-center").when!(agentCtx)).toBe(false);
+            // [ ] stay the surface switch's: clean up has no use for them
+            expect(find("surface:prev").when!(agentCtx)).toBe(true);
+        } finally {
+            globalStore.set(centerModeAtom, "terminal");
+            inGallery("grid");
+        }
+    });
+
+    // Escape in a viewer or the clean-up mode goes back to the grid; only the grid's Escape leaves the centre
+    it("hands Escape to the viewer and to clean up, and to the centre only from the grid", () => {
+        const model = stubModel();
+        const agentCtx = { surface: "agent" as const, editable: false, modalOpen: false, leader: null };
+        const all = buildAgentBindings(model);
+        const leave = all.find((x) => x.id === "agent:leave-center")!;
+        const back = all.find((x) => x.id === "canvases:back")!;
+        const cancel = all.find((x) => x.id === "canvases:cleanup-cancel")!;
+        globalStore.set(centerModeAtom, "canvases");
+        try {
+            inGallery("grid");
+            expect(leave.when!(agentCtx)).toBe(true);
+            expect(back.when!(agentCtx)).toBe(false);
+            expect(cancel.when!(agentCtx)).toBe(false);
+            inGallery("viewer", OPEN_DIR);
+            expect(leave.when!(agentCtx)).toBe(false);
+            expect(back.when!(agentCtx)).toBe(true);
+            expect(cancel.when!(agentCtx)).toBe(false);
+            // inside a field the field keeps its Escape
+            expect(back.when!({ ...agentCtx, editable: true })).toBe(false);
+            // clean up: Escape cancels clean up and nothing else, whatever else is open or focused
+            inGallery("cleanup");
+            expect(leave.when!(agentCtx)).toBe(false);
+            expect(back.when!(agentCtx)).toBe(false);
+            expect(cancel.when!(agentCtx)).toBe(true);
+            expect(cancel.when!({ ...agentCtx, editable: true })).toBe(false);
+            expect(cancel.when!({ ...agentCtx, modalOpen: true })).toBe(false);
+            expect(cancel.when!({ ...agentCtx, surface: "jarvis" })).toBe(false);
+            // only one Escape binding claims the key in clean up
+            expect(all.filter((x) => x.keys === "Escape" && x.when?.(agentCtx)).map((x) => x.id)).toEqual([
+                "canvases:cleanup-cancel",
+            ]);
+            // History keeps the plain rule whatever the gallery was left on
+            globalStore.set(centerModeAtom, "history");
+            expect(leave.when!(agentCtx)).toBe(true);
+        } finally {
+            globalStore.set(centerModeAtom, "terminal");
+            inGallery("grid");
         }
     });
 
@@ -440,13 +535,19 @@ describe("PREDICATE_ATOMS completeness (whenstate.ts)", () => {
             return (realGet as (a: unknown) => unknown)(a);
         }) as typeof globalStore.get;
         try {
-            for (const ctx of contexts()) {
-                for (const binding of all) {
-                    binding.when?.(ctx);
+            // the terminal's centre, and Canvases': with the centre on Canvases the agent keys stop at centerAtRest, and
+            // the gallery's predicates read the gallery's atom only there
+            for (const centre of ["terminal", "canvases"] as const) {
+                globalStore.set(centerModeAtom, centre);
+                for (const ctx of contexts()) {
+                    for (const binding of all) {
+                        binding.when?.(ctx);
+                    }
                 }
             }
         } finally {
             (globalStore as { get: typeof globalStore.get }).get = realGet;
+            globalStore.set(centerModeAtom, "terminal");
             globalStore.set(diffScopeAtom, null);
             globalStore.set(renamingRowAtom, null);
             detachCanvas("a1");
