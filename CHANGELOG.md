@@ -21,6 +21,9 @@ new draws it as one of its release's cards and folds every other line under a co
 
 ### Added
 
+- **Canvases**: every mockup an agent drew lives on in Agent → Canvases, with a preview of each; open one to page
+  through its boards, or Clean up to move the old ones to the trash. Agents no longer delete a canvas when its feature
+  ships unless you turn that on in Settings → Storage. <!-- try: go:canvases --> <!-- big -->
 - **Ideas on the agent's rail**: while you brainstorm, the agent lists what was decided, floated and left open, and you
   can add, edit, merge or drop ideas, or run the idea command in Claude to keep the idea just discussed. An Ideas count
   on the rail opens the list and shows a dot while some are new; an ended session in Conversation History shows its list
