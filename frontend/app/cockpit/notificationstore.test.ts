@@ -1,6 +1,6 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { dismissToast, holdToast, pushToast, releaseToast, toastsAtom } from "./notificationstore";
+import { dismissToast, holdToast, pushToast, releaseToast, runToastAction, toastsAtom } from "./notificationstore";
 
 describe("notificationstore", () => {
     beforeEach(() => {
@@ -56,5 +56,40 @@ describe("notificationstore", () => {
         holdToast(999);
         releaseToast(999);
         expect(globalStore.get(toastsAtom)).toHaveLength(0);
+    });
+
+    it("carries an action the toast offers, such as Undo", () => {
+        const run = vi.fn();
+        pushToast({
+            title: "Added to Ideas",
+            message: "",
+            level: "info",
+            check: true,
+            ttlMs: 5000,
+            action: { label: "Undo", run },
+        });
+        const toast = globalStore.get(toastsAtom)[0];
+        expect(toast.check).toBe(true);
+        expect(toast.action?.label).toBe("Undo");
+        toast.action?.run();
+        expect(run).toHaveBeenCalledTimes(1);
+    });
+
+    it("runs an action and closes its toast", () => {
+        const run = vi.fn();
+        pushToast({ title: "a", message: "", level: "info", action: { label: "Undo", run } });
+        pushToast({ title: "b", message: "", level: "info" });
+        const first = globalStore.get(toastsAtom)[0];
+        runToastAction(first.id);
+        expect(run).toHaveBeenCalledTimes(1);
+        expect(globalStore.get(toastsAtom).map((t) => t.title)).toEqual(["b"]);
+    });
+
+    it("closes a toast that has no action, or is gone, without running anything", () => {
+        pushToast({ title: "plain", message: "", level: "info" });
+        const id = globalStore.get(toastsAtom)[0].id;
+        runToastAction(id);
+        expect(globalStore.get(toastsAtom)).toHaveLength(0);
+        expect(() => runToastAction(999)).not.toThrow();
     });
 });

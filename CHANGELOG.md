@@ -17,6 +17,13 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
 
 ### Added
 
+- **Ideas on the agent's rail**: while you brainstorm, the agent lists what was decided, floated and left open, and you
+  can add, edit, merge or drop ideas, or run the idea command in Claude to keep the idea just discussed. An Ideas count
+  on the rail opens the list and shows a dot while some are new; an ended session in Conversation History shows its list
+  too.
+- **Keep a selection as an idea**: select text in an agent's terminal and press `Ctrl+Shift+I` (`Cmd+Shift+I` on a Mac),
+  or click **Add as idea** beside the selection, to keep it in the agent's Ideas; the toast has Undo. With nothing
+  selected, the same keys open the Ideas box. <!-- try: idea-capture -->
 - **Reopen an agent you just closed**: `Ctrl+Shift+T` (`Cmd+Shift+T` on a Mac) brings back the agent closed last, as a
   browser reopens a closed tab. Its conversation returns asleep, so it costs nothing until you wake it or send it a
   message. The last 5 closed agents are kept. <!-- try: reopen-agent -->

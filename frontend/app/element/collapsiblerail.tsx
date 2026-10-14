@@ -32,47 +32,58 @@ export interface RailSection {
     // when set, the rail draws the section's header row and owns open/closed; the caller's content then
     // carries no heading of its own
     header?: RailSectionHeader;
+    // drawn at the end of the header row, outside the button that opens and closes it (a count of what is new, a
+    // "Mark read"); only with `header`
+    headerExtra?: ReactNode;
 }
 
 function HeadedSection({ section, header }: { section: RailSection; header: RailSectionHeader }) {
     const [stored, setStored] = useAtom(railSectionOpenAtom);
     const expandable = sectionExpandable(header);
     const open = sectionOpen(stored, section.id, header);
+    const heading = (
+        <h3 className={cn("text-[12px] font-medium", section.headerExtra != null && "min-w-0 flex-1")}>
+            <button
+                type="button"
+                disabled={!expandable}
+                aria-expanded={expandable ? open : undefined}
+                aria-controls={expandable ? `rail-section-${section.id}` : undefined}
+                onClick={() => setStored(toggleSection(stored, section.id, header))}
+                className={cn(
+                    "group flex w-full items-center gap-[8px] rounded-[6px] py-[5px] text-left",
+                    expandable ? "cursor-pointer text-muted hover:text-secondary" : "cursor-default text-ink-faint"
+                )}
+            >
+                {section.label}
+                {header.count != null ? (
+                    <span className="text-[11px] tabular-nums text-ink-faint">{header.count}</span>
+                ) : null}
+                {header.summary && !open ? (
+                    <span className="min-w-0 truncate text-[11px] font-normal text-ink-faint">{header.summary}</span>
+                ) : null}
+                <ChevronRight
+                    size={12}
+                    aria-hidden
+                    className={cn(
+                        "text-ink-faint transition-transform",
+                        open && "rotate-90",
+                        !expandable && "invisible"
+                    )}
+                />
+            </button>
+        </h3>
+    );
     return (
         <section data-rail-section={section.id} data-open={open ? "true" : "false"}>
             {/* the button sits inside the heading, so a screen reader still lists the section by its label */}
-            <h3 className="text-[12px] font-medium">
-                <button
-                    type="button"
-                    disabled={!expandable}
-                    aria-expanded={expandable ? open : undefined}
-                    aria-controls={expandable ? `rail-section-${section.id}` : undefined}
-                    onClick={() => setStored(toggleSection(stored, section.id, header))}
-                    className={cn(
-                        "group flex w-full items-center gap-[8px] rounded-[6px] py-[5px] text-left",
-                        expandable ? "cursor-pointer text-muted hover:text-secondary" : "cursor-default text-ink-faint"
-                    )}
-                >
-                    {section.label}
-                    {header.count != null ? (
-                        <span className="text-[11px] tabular-nums text-ink-faint">{header.count}</span>
-                    ) : null}
-                    {header.summary && !open ? (
-                        <span className="min-w-0 truncate text-[11px] font-normal text-ink-faint">
-                            {header.summary}
-                        </span>
-                    ) : null}
-                    <ChevronRight
-                        size={12}
-                        aria-hidden
-                        className={cn(
-                            "text-ink-faint transition-transform",
-                            open && "rotate-90",
-                            !expandable && "invisible"
-                        )}
-                    />
-                </button>
-            </h3>
+            {section.headerExtra != null ? (
+                <div className="flex items-center gap-[6px]">
+                    {heading}
+                    {section.headerExtra}
+                </div>
+            ) : (
+                heading
+            )}
             {open ? (
                 <div id={`rail-section-${section.id}`} className="pb-[10px] pt-[8px]">
                     {section.content}

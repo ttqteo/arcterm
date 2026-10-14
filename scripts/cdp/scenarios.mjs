@@ -37103,6 +37103,960 @@ const whatsNew = {
     },
 };
 
+// ideas-rail (docs/superpowers/specs/2026-10-14-brainstorm-ideas-design.md): the Ideas count and section on an agent's
+// details rail. The agent is a real shell (its block is the roster fixture's blockId) whose transcript is
+// <base>/ideas-fixture.jsonl, so its session is `ideas-fixture` and the rail reads the ideas wavesrv keeps for it. The
+// ideas are seeded through wshrpc, the way `wsh idea` writes them (the texts are Main.dc.html's), and each step then
+// drives the section as a person would: the strip's count, a click, the pointer over a row, the box's keys, the rows'
+// checkboxes. An ended session, `ideas-ended`, comes from a getsessionsactivity mock like agent-history's (every other
+// command, the idea ones included, goes through to the real client) and is opened from Conversations. Steps 14-18 are
+// capturing a terminal selection (Capture-Selection.dc.html): the shell prints a line, a real mouse drag selects it, and the
+// chip, the shortcut (Ctrl+Shift+I, dispatched over CDP), the toast's Undo and the shortcut with nothing selected are driven
+// as a person would. Teardown closes the terminal, deletes the project and the two idea files (<data dir>/ideas/), puts
+// back the fixture roster and the keys.
+const IDEAS_AGENT = "fx-ideas-rail";
+const IDEAS_PROJECT = "verify-ideas-rail";
+const IDEAS_SESSION = "ideas-fixture";
+const IDEAS_ENDED = "ideas-ended";
+const IDEAS_KEYS = [
+    RAIL_VISIBLE_KEY,
+    RAIL_SECTIONS_KEY,
+    "agent.rail.tab",
+    "agent.rail.wideWidth",
+    GRID_KEY,
+    TREE_COLLAPSED_KEY,
+    ...AH_FOLDS_KEYS,
+];
+const IDEAS_MOCK_KEY = "__arcIdeasRailMock";
+const IDEAS_ASIDE = `document.querySelector('aside[aria-label="Agent details"]')`;
+const IDEAS_STAT = `${IDEAS_ASIDE}?.querySelector('[data-rail-stat="ideas"]')`;
+const IDEAS_SECTION = `${IDEAS_ASIDE}?.querySelector("[data-ideas-section]")`;
+// Main.dc.html's nine ideas, and the meta line each reads after the seeding below
+const IDEAS_TEXT = {
+    d1: "Agent tự ghi ý qua wsh idea add; không chạy model phụ",
+    d2: "Danh sách gắn theo session; resume vẫn còn",
+    d3: "Thêm tay: bôi đen + phím tắt, ô nhập, /idea, sửa/gộp/bỏ",
+    i1: "Ideas là một ô đếm như Files changed, không phải tab",
+    i2: "Nhóm theo Decided / Ideas / Open để catchup nhanh",
+    i3: "Bấm một ý thì nhảy về đúng lượt trong transcript",
+    i4: "Đẩy một ý sang note hoặc effort chunk khi đáng giữ lâu",
+    o1: "Phím tắt bôi đen: Ctrl+Shift+I có trùng DevTools ở bản dev?",
+    o2: "Agent quên ghi thì Stop hook nhắc, hay im lặng?",
+    dropped: "Model phụ (haiku) quét transcript mỗi lượt",
+};
+const IDEAS_META = {
+    d1: "turn 2 · agent",
+    d3: "turn 3 · agent",
+    i2: "turn 3 · agent",
+    i3: "turn 3 · you",
+    o1: "turn 3 · agent",
+    d2: "turn 4 · agent",
+    i4: "turn 4 · agent",
+    o2: "turn 4 · agent",
+    i1: "turn 5 · agent",
+};
+
+const ideasList = (h, session = IDEAS_SESSION) => h.rpc("idealist", { sessionid: session });
+const ideaOf = (list, text) => (list?.ideas ?? []).find((i) => i.text === text);
+const ideasLive = (list) => (list?.ideas ?? []).filter((i) => !i.dropped);
+const ideasRow = (id) => `[data-ideas-section] [data-ideas-row="${id}"]`;
+const ideasClick = (h, selector) =>
+    h.ev(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.click(); return true; })()`);
+
+// The seeding of the plan: three prompts and the first decision; a second decision, two ideas (one the user's), a question
+// and an idea that is dropped; the list marked read; then, a moment later (so they are after seenat), a decision, an
+// idea and a question; one more prompt and one more idea. That is 9 live (3 decided, 4 ideas, 2 open), 4 of them after
+// seenat, and 1 dropped
+async function ideasSeed(h) {
+    const tick = () => h.rpc("ideatick", { sessionid: IDEAS_SESSION });
+    const add = (text, kind, by = "agent") => h.rpc("ideaadd", { sessionid: IDEAS_SESSION, text, kind, by });
+    await tick();
+    await tick();
+    await add(IDEAS_TEXT.d1, "decision");
+    await tick();
+    await add(IDEAS_TEXT.d3, "decision");
+    await add(IDEAS_TEXT.i2, "idea");
+    await add(IDEAS_TEXT.i3, "idea", "you");
+    await add(IDEAS_TEXT.o1, "question");
+    const gone = await add(IDEAS_TEXT.dropped, "idea");
+    await h.rpc("ideaupdate", { sessionid: IDEAS_SESSION, op: "drop", ids: [gone.id] });
+    await h.rpc("ideaupdate", { sessionid: IDEAS_SESSION, op: "seen" });
+    await polishNap(5);
+    await tick();
+    await add(IDEAS_TEXT.d2, "decision");
+    await add(IDEAS_TEXT.i4, "idea");
+    await add(IDEAS_TEXT.o2, "question");
+    await tick();
+    await add(IDEAS_TEXT.i1, "idea");
+}
+
+// the strip's Ideas count and the section, as the page draws them
+const ideasView = (h) =>
+    h.ev(`(() => {
+        const aside = ${IDEAS_ASIDE};
+        const stat = aside?.querySelector('[data-rail-stat="ideas"]');
+        const section = aside?.querySelector("[data-ideas-section]");
+        const rows = [...(section?.querySelectorAll("[data-ideas-row]") ?? [])].map((r) => ({
+            id: r.dataset.ideasRow,
+            group: r.closest("[data-ideas-group]")?.dataset.ideasGroup ?? null,
+            text: r.querySelector("[data-ideas-text]")?.textContent ?? "",
+            meta: r.querySelector("[data-ideas-meta]")?.textContent ?? "",
+            fresh: r.dataset.fresh === "true",
+            pill: r.querySelector("[data-ideas-newpill]") != null,
+            dropped: r.dataset.dropped === "true",
+            checked: r.querySelector("[data-ideas-check]")?.getAttribute("aria-checked") === "true",
+            restore: r.querySelector('[data-ideas-action="restore"]') != null,
+        }));
+        return {
+            stat: stat
+                ? { count: stat.getAttribute("data-count"), title: stat.getAttribute("title"), dot: stat.querySelector("[data-rail-stat-dot]") != null }
+                : null,
+            open: section != null,
+            newCount: aside?.querySelector("[data-ideas-newcount]")?.textContent?.trim() ?? null,
+            markRead: aside?.querySelector("[data-ideas-markread]") != null,
+            groups: [...(section?.querySelectorAll("[data-ideas-group]") ?? [])].map((g) => g.dataset.ideasGroup + ":" + g.dataset.count),
+            groupLabels: [...(section?.querySelectorAll("[data-ideas-group]") ?? [])].map(
+                (g) => [...g.querySelectorAll("span")].slice(0, 2).map((s) => s.textContent).join(" ")
+            ),
+            rows,
+            pills: rows.filter((r) => r.pill).length,
+            selbar: section?.querySelector("[data-ideas-selbar]")?.textContent ?? null,
+            mergeDisabled: section?.querySelector("[data-ideas-merge]")?.disabled ?? null,
+            editor: section?.querySelector("[data-ideas-editbox]") != null,
+            droppedOpen: section?.querySelector("[data-ideas-dropped]")?.getAttribute("aria-expanded") === "true",
+            addValue: section?.querySelector("[data-ideas-add]")?.value ?? null,
+        };
+    })()`);
+
+// the three live groups' marks, the Dropped fold's left out
+const liveGroups = (v) => v.groups.filter((g) => !g.startsWith("dropped:"));
+const liveLabels = (v) => v.groupLabels.filter((l) => !l.startsWith("Dropped"));
+const foldCount = (v) => Number(v.groups.find((g) => g.startsWith("dropped:"))?.split(":")[1] ?? 0);
+const ideaNum = (id) => Number(id.slice(1));
+
+const ideasRowOf = (v, list, text) => {
+    const id = ideaOf(list, text)?.id;
+    return v.rows.find((r) => r.id === id);
+};
+
+// the pointer over the middle of an element, after it is scrolled into view: a real hover, which the CSS reveals read
+async function ideasHover(h, selector) {
+    const box = await h.ev(`(() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) return null;
+        el.scrollIntoView({ block: "nearest" });
+        const r = el.getBoundingClientRect();
+        return r.width > 0 ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null;
+    })()`);
+    if (!box) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y });
+    await polishNap(250);
+    return true;
+}
+
+// text typed into a field as a keyboard does (Input.insertText, so a controlled input sees an input event); `replace`
+// selects what is there first
+async function ideasType(h, selector, text, replace = false) {
+    const focused = await h.ev(`(() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) return false;
+        el.focus();
+        ${replace ? "el.select();" : ""}
+        return document.activeElement === el;
+    })()`);
+    if (!focused) return false;
+    await h.cdp("Input.insertText", { text });
+    await polishNap(150);
+    return true;
+}
+
+// A real mouse drag over the terminal line that reads exactly `text`: pressed at its first letter, moved along it,
+// released just past its last (the dev probe __arcIdeaCapture, ideasstore.ts, says where the line is on screen: the
+// WebGL renderer leaves no DOM text to find). False when the line is not on screen.
+async function ideasSelectLine(h, blockId, text) {
+    const spot = await h.ev(`window.__arcIdeaCapture?.locate(${JSON.stringify(blockId)}, ${JSON.stringify(text)}) ?? null`);
+    if (!spot) return false;
+    const at = (type, x, extra) => h.cdp("Input.dispatchMouseEvent", { type, x: Math.round(x), y: Math.round(spot.y), ...extra });
+    await at("mouseMoved", spot.x0, { button: "none", buttons: 0 });
+    await at("mousePressed", spot.x0, { button: "left", buttons: 1, clickCount: 1 });
+    for (const f of [0.25, 0.5, 0.75, 1]) {
+        await at("mouseMoved", spot.x0 + (spot.x1 - spot.x0) * f, { button: "left", buttons: 1 });
+    }
+    await at("mouseReleased", spot.x1, { button: "left", buttons: 0, clickCount: 1 });
+    await polishNap(300);
+    return true;
+}
+
+// the "Add as idea" chip as the page draws it, and whether the terminal still holds the keyboard focus; null while absent
+const ideasChipFacts = (h) =>
+    h.ev(`(() => {
+        const chip = document.querySelector("[data-ideas-capture-chip]");
+        if (!chip) return null;
+        const r = chip.getBoundingClientRect();
+        const pane = chip.closest(".view-term")?.getBoundingClientRect();
+        return {
+            visible: getComputedStyle(chip).visibility === "visible" && r.width > 0 && r.height > 0,
+            text: chip.textContent.trim(),
+            keycap: chip.querySelector("span")?.textContent?.trim() ?? null,
+            top: Math.round(r.top),
+            left: Math.round(r.left),
+            inPane: pane != null && r.left >= pane.left - 1 && r.right <= pane.right + 1 && r.top >= pane.top - 1 && r.bottom <= pane.bottom + 1,
+            termFocused: document.activeElement?.classList?.contains("xterm-helper-textarea") === true,
+        };
+    })()`);
+
+// a toast as the page draws it: its text and its action button's label
+const ideasToastFacts = (h) =>
+    h.ev(`(() => {
+        const t = [...document.querySelectorAll("[data-notification-toast]")].find((b) => b.textContent.includes("Added to Ideas"));
+        return t ? { text: t.textContent.trim(), action: t.parentElement?.querySelector("[data-notification-action]")?.textContent?.trim() ?? null } : null;
+    })()`);
+
+// the terminal's selection, from the dev probe; "" while nothing is selected
+const ideasTermSelection = (h, blockId) => h.ev(`window.__arcIdeaCapture?.selection(${JSON.stringify(blockId)}) ?? null`);
+
+// Ctrl+Shift+I (the key's own modifiers: Ctrl 2, Shift 8), dispatched as a person's keystroke
+const ideasCaptureKey = (h) => railTabsKey(h, "I", "KeyI", 73, 10);
+
+// the Ended session's transcript is one prompt; the live one also names the project's folder as its cwd
+const ideasTranscript =(cwd, prompt) =>
+    JSON.stringify({ cwd, type: "user", message: { role: "user", content: [{ type: "text", text: prompt }] } }) + "\n";
+
+// answers getsessionsactivity with the ended session and passes every other command on to what was there
+async function installIdeasMock(h, sessions, apiUrl) {
+    return h.ev(`(async () => {
+        const mod = await import(${JSON.stringify(apiUrl)});
+        const api = mod.RpcApi;
+        if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
+        if (window.${IDEAS_MOCK_KEY}) return "already-installed";
+        const prev = api.mockClient ?? null;
+        const sessions = ${JSON.stringify(sessions)};
+        const mock = {
+            mockWshRpcCall(client, command, data, opts) {
+                if (command === "getsessionsactivity") return Promise.resolve({ sessions });
+                return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
+            },
+            mockWshRpcStream(client, command, data, opts) {
+                return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
+            },
+        };
+        window.${IDEAS_MOCK_KEY} = { api, prev };
+        api.setMockRpcClient(mock);
+        const probe = await api.GetSessionsActivityCommand(window.TabRpcClient, { windowdays: 30, limit: 100 });
+        const listed = await api.IdeaListCommand(window.TabRpcClient, { sessionid: ${JSON.stringify(IDEAS_SESSION)} });
+        return (probe.sessions ?? []).some((s) => s.id === ${JSON.stringify(IDEAS_ENDED)}) && listed != null ? "ok" : "not-intercepted";
+    })()`);
+}
+
+const removeIdeasMock = (h) =>
+    h.ev(`(() => {
+        const f = window.${IDEAS_MOCK_KEY};
+        if (!f) return "absent";
+        f.api.setMockRpcClient(f.prev);
+        delete window.${IDEAS_MOCK_KEY};
+        return "restored";
+    })()`);
+
+const ideasRail = {
+    name: "ideas-rail",
+    surface: "agent",
+    async arrange(h) {
+        const base = mkdtempSync(join(tmpdir(), "verify-ideas-rail-"));
+        const ctx = {
+            base,
+            terminals: [],
+            prevFixture: existsSync(TREE_RAIL_FIXTURE) ? readFileSync(TREE_RAIL_FIXTURE, "utf8") : null,
+            prevKeys: {},
+        };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            for (const k of IDEAS_KEYS) {
+                ctx.prevKeys[k] = await h.ev(`localStorage.getItem(${JSON.stringify(k)})`);
+            }
+            ctx.dataDir = (await h.rpc("waveinfo", null)).datadir;
+            // the two lists start empty, whatever an earlier run left
+            for (const id of [IDEAS_SESSION, IDEAS_ENDED]) {
+                rmSync(join(ctx.dataDir, "ideas", `${id}.json`), { force: true });
+            }
+            ctx.repo = join(base, "repo");
+            mkdirSync(ctx.repo);
+            ctx.transcript = join(base, `${IDEAS_SESSION}.jsonl`);
+            writeFileSync(ctx.transcript, ideasTranscript(ctx.repo, "brainstorm the ideas rail"));
+            ctx.endedTranscript = join(base, `${IDEAS_ENDED}.jsonl`);
+            writeFileSync(ctx.endedTranscript, ideasTranscript(ctx.repo, "an ended brainstorm"));
+            await h.rpc("createproject", { name: IDEAS_PROJECT, path: ctx.repo });
+            ctx.project = IDEAS_PROJECT;
+            // the reload below must boot a frontend whose project list already has it (Conversations lists registered ones)
+            await waitForProjectInConfig(h, IDEAS_PROJECT);
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            await openRailTerminal(h, ctx, IDEAS_PROJECT);
+            const term = ctx.terminals[0];
+            // the tab is an agent's, as launchAgent marks one, and the block carries the session the agent reported
+            await h.rpc("setmeta", { oref: `tab:${term.tabId}`, meta: { "session:agent": "claude" } });
+            await h.rpc("setmeta", { oref: `block:${term.blockId}`, meta: { "agent:transcriptpath": ctx.transcript } });
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(
+                TREE_RAIL_FIXTURE,
+                JSON.stringify(
+                    [
+                        {
+                            id: IDEAS_AGENT,
+                            name: "ideas agent",
+                            project: IDEAS_PROJECT,
+                            task: "brainstorm the ideas rail",
+                            state: "idle",
+                            agent: "claude",
+                            model: "opus",
+                            idleSince: Date.now() - 60_000,
+                            blockId: term.blockId,
+                            transcriptPath: ctx.transcript,
+                        },
+                    ],
+                    null,
+                    2
+                )
+            );
+            ctx.wroteFixture = true;
+            // a known rail: open, every section at its default (Ideas is closed), Overview, the default width, an empty
+            // grid, and the tree and Conversations unfolded
+            await h.ev(`(() => {
+                localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true");
+                for (const k of ${JSON.stringify(IDEAS_KEYS.filter((k) => k !== RAIL_VISIBLE_KEY && k !== GRID_KEY))}) localStorage.removeItem(k);
+                localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify({ ids: [], focused: null }))});
+            })()`);
+            // the roster is read once at boot
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            ctx.modules = await ahResolveModules(h);
+            const now = Date.now();
+            ctx.mock = ctx.modules.urls
+                ? await installIdeasMock(
+                      h,
+                      [
+                          {
+                              id: IDEAS_ENDED,
+                              runtime: "claude",
+                              projectpath: ctx.repo,
+                              projectname: IDEAS_PROJECT,
+                              branch: "main",
+                              model: "opus",
+                              tokenstotal: 1200,
+                              status: "done",
+                              startedts: now - 3_600_000,
+                              durationms: 60_000,
+                              events: [],
+                              task: "an ended brainstorm",
+                              lastactivets: now - 600_000,
+                              resumecommand: `claude --resume ${IDEAS_ENDED}`,
+                              transcriptpath: ctx.endedTranscript,
+                          },
+                      ],
+                      ctx.modules.urls.api
+                  )
+                : `no-module-url (${ctx.modules.error})`;
+            await h.goto("agent");
+            ctx.inRoster = await polishWaitFor(h, `!!document.querySelector('[data-agent-terminal="${IDEAS_AGENT}"]')`, 15000);
+            if (!ctx.inRoster) return ctx;
+            // a pane starts its shell when it is first shown (a hidden one has no size to start it at)
+            await h.rpc("uireveal", { address: `agent:${IDEAS_AGENT}` }, UI_ROUTE);
+            ctx.shellUp = await uploadsShellUp(h, term.blockId);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) =>
+            steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        const ready = ctx.arrangeError == null && ctx.inRoster === true && ctx.shellUp === true && ctx.mock === "ok";
+        rec(
+            "0. the fixture agent is focused with its rail, over a real shell, and the sessions mock is in place",
+            ready,
+            ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster, shellUp: ctx.shellUp, mock: ctx.mock })
+        );
+        if (!ready) return steps;
+        const shot = (name) => h.shot(`cdp-shots/ideas-rail-${name}.png`);
+        const T = IDEAS_TEXT;
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
+        try {
+            // --- 1. absent at 0 --------------------------------------------------------------------------------------
+            const railUp = await polishWaitFor(h, `${IDEAS_ASIDE}?.querySelector('[role="tablist"]') != null`, 10000);
+            let v = await ideasView(h);
+            let list = await ideasList(h);
+            rec(
+                "1. absent at 0: no Lightbulb count in the strip and no Ideas section (Tab-Unread, the no-ideas state)",
+                railUp && v.stat == null && !v.open && (list?.ideas ?? []).length === 0,
+                { railUp, stat: v.stat, open: v.open, ideas: (list?.ideas ?? []).length }
+            );
+            await shot("absent");
+
+            // --- 2. the count with its dot ---------------------------------------------------------------------------
+            await ideasSeed(h);
+            const counted = await polishWaitFor(h, `${IDEAS_STAT}?.getAttribute("data-count") === "9"`, 8000);
+            v = await ideasView(h);
+            list = await ideasList(h);
+            const fresh = ideasLive(list).filter((i) => i.ts > list.seenat);
+            rec(
+                "2. count with unread dot: the strip's Lightbulb reads 9 with its dot, titled `Ideas: 9, 4 new`",
+                counted &&
+                    v.stat?.count === "9" &&
+                    v.stat.dot === true &&
+                    v.stat.title === "Ideas: 9, 4 new" &&
+                    ideasLive(list).length === 9 &&
+                    fresh.length === 4 &&
+                    (list.ideas ?? []).filter((i) => i.dropped).length === 1,
+                { stat: v.stat, live: ideasLive(list).length, fresh: fresh.length, open: v.open }
+            );
+            await shot("count-dot");
+
+            // --- 3. the section opens from the count ------------------------------------------------------------------
+            const closedBefore = v.open === false;
+            await h.ev(`${IDEAS_STAT}?.click()`);
+            const opened = await polishWaitFor(h, `${IDEAS_SECTION} != null`, 5000);
+            await polishNap(400);
+            v = await ideasView(h);
+            const metasOk = Object.entries(IDEAS_META).every(([k, meta]) => ideasRowOf(v, list, T[k])?.meta === meta);
+            rec(
+                "3. ideas section open: Decided 3 / Ideas 4 / Open 2, `4 new`, four New pills, and each row's `turn N · agent|you`",
+                closedBefore &&
+                    opened &&
+                    JSON.stringify(liveGroups(v)) === JSON.stringify(["decision:3", "idea:4", "question:2"]) &&
+                    JSON.stringify(liveLabels(v)) === JSON.stringify(["Decided 3", "Ideas 4", "Open 2"]) &&
+                    v.newCount === "4 new" &&
+                    v.markRead &&
+                    v.pills === 4 &&
+                    metasOk,
+                { closedBefore, groups: liveGroups(v), labels: liveLabels(v), newCount: v.newCount, pills: v.pills, metasOk }
+            );
+            await shot("section-open");
+
+            // --- 4. hover actions -------------------------------------------------------------------------------------
+            const i1 = ideaOf(list, T.i1);
+            const d1 = ideaOf(list, T.d1);
+            const hovered = await ideasHover(h, ideasRow(i1.id));
+            const hov = await h.ev(`(() => {
+                const look = (row) => {
+                    const edit = row?.querySelector('[data-ideas-action="edit"]');
+                    const check = row?.querySelector("[data-ideas-check]");
+                    return {
+                        hover: row?.matches(":hover") ?? false,
+                        actions: edit ? getComputedStyle(edit.parentElement).opacity : null,
+                        check: check ? getComputedStyle(check.parentElement).opacity : null,
+                        edit: edit != null,
+                        decide: row?.querySelector('[data-ideas-action="decide"]') != null,
+                        drop: row?.querySelector('[data-ideas-action="drop"]') != null,
+                    };
+                };
+                return {
+                    over: look(document.querySelector(${JSON.stringify(ideasRow(i1.id))})),
+                    decided: look(document.querySelector(${JSON.stringify(ideasRow(d1.id))})),
+                };
+            })()`);
+            rec(
+                "4. hover actions: the row under the pointer shows Edit, Mark as decided, Drop and its checkbox; a row not hovered shows none, and a Decided row offers no Mark as decided",
+                hovered &&
+                    hov.over.hover &&
+                    hov.over.actions === "1" &&
+                    hov.over.check === "1" &&
+                    hov.over.edit &&
+                    hov.over.decide &&
+                    hov.over.drop &&
+                    hov.decided.hover === false &&
+                    hov.decided.actions === "0" &&
+                    hov.decided.decide === false,
+                hov
+            );
+            await shot("hover");
+
+            // --- 5. inline edit ---------------------------------------------------------------------------------------
+            const i2 = ideaOf(list, T.i2);
+            const i3 = ideaOf(list, T.i3);
+            const edited = "Một ý đã sửa: nhóm theo ba loại để đọc nhanh";
+            await ideasClick(h, `${ideasRow(i2.id)} [data-ideas-action="edit"]`);
+            const boxUp = await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-editbox]") != null`, 4000);
+            const typed = await ideasType(h, "[data-ideas-editbox]", edited, true);
+            await ideasClick(h, `[data-ideas-editor="${i2.id}"] [data-ideas-kind="question"]`);
+            await polishNap(200);
+            await shot("inline-edit");
+            await railTabsKey(h, "Enter", "Enter", 13, 2); // Ctrl+Enter saves
+            const movedToOpen = await polishWaitFor(
+                h,
+                `${IDEAS_SECTION}?.querySelector('[data-ideas-group="question"] [data-ideas-row="${i2.id}"]') != null`,
+                6000
+            );
+            let after = await ideasList(h);
+            v = await ideasView(h);
+            const editedRow = after.ideas.find((i) => i.id === i2.id);
+            // another row: edit, type, Esc: nothing changes
+            await ideasClick(h, `${ideasRow(i3.id)} [data-ideas-action="edit"]`);
+            await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-editbox]") != null`, 4000);
+            await ideasType(h, "[data-ideas-editbox]", " (not kept)");
+            await railTabsKey(h, "Escape", "Escape", 27);
+            const closed = await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-editbox]") == null`, 4000);
+            const kept = (await ideasList(h)).ideas.find((i) => i.id === i3.id);
+            const keptRow = (await ideasView(h)).rows.find((r) => r.id === i3.id);
+            rec(
+                "5. inline edit: the edited idea is in Open with its new text (idealist agrees); another edit cancelled with Esc is unchanged",
+                boxUp &&
+                    typed &&
+                    movedToOpen &&
+                    editedRow?.text === edited &&
+                    editedRow.kind === "question" &&
+                    v.rows.find((r) => r.id === i2.id)?.text === edited &&
+                    closed &&
+                    kept?.text === T.i3 &&
+                    keptRow?.text === T.i3,
+                { movedToOpen, text: editedRow?.text, kind: editedRow?.kind, closed, keptText: kept?.text, keptRow: keptRow?.text }
+            );
+
+            // --- 6. mark as decided -----------------------------------------------------------------------------------
+            const o2 = ideaOf(list, T.o2);
+            await ideasClick(h, `${ideasRow(o2.id)} [data-ideas-action="decide"]`);
+            const decided = await polishWaitFor(
+                h,
+                `${IDEAS_SECTION}?.querySelector('[data-ideas-group="decision"] [data-ideas-row="${o2.id}"]') != null`,
+                6000
+            );
+            v = await ideasView(h);
+            const o2Now = (await ideasList(h)).ideas.find((i) => i.id === o2.id);
+            rec(
+                "6. mark as decided: an Open row moves to Decided and the group counts follow (Decided 4 / Ideas 3 / Open 2)",
+                decided && o2Now?.kind === "decision" && JSON.stringify(liveGroups(v)) === JSON.stringify(["decision:4", "idea:3", "question:2"]),
+                { decided, kind: o2Now?.kind, groups: liveGroups(v) }
+            );
+            await shot("decided");
+
+            // --- 7. select and merge ----------------------------------------------------------------------------------
+            list = await ideasList(h);
+            const a = ideaOf(list, T.i1);
+            const b = ideaOf(list, T.i4);
+            const third = ideaOf(list, T.i3);
+            const droppedBefore = (list.ideas ?? []).filter((i) => i.dropped).length;
+            await ideasClick(h, `${ideasRow(a.id)} [data-ideas-check]`);
+            await ideasClick(h, `${ideasRow(b.id)} [data-ideas-check]`);
+            const barUp = await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-selbar]") != null`, 4000);
+            await ideasClick(h, `${ideasRow(third.id)} [data-ideas-action="edit"]`);
+            await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-editbox]") != null`, 4000);
+            v = await ideasView(h);
+            const bar = await h.ev(`(() => {
+                const bar = ${IDEAS_SECTION}?.querySelector("[data-ideas-selbar]");
+                return {
+                    text: bar?.textContent ?? null,
+                    merge: bar?.querySelector("[data-ideas-merge]")?.textContent ?? null,
+                    drop: bar?.querySelector("[data-ideas-selection-drop]")?.textContent ?? null,
+                    clear: bar?.querySelector("[data-ideas-clear]") != null,
+                };
+            })()`);
+            rec(
+                "7a. select: two checked rows give the bar `2 selected · Merge · Drop`, with a third row's edit open (Ideas-EditMerge)",
+                barUp &&
+                    bar.text?.startsWith("2 selected") &&
+                    bar.merge === "Merge" &&
+                    bar.drop === "Drop" &&
+                    bar.clear &&
+                    v.mergeDisabled === false &&
+                    v.editor &&
+                    v.rows.filter((r) => r.checked).length === 2,
+                { bar, mergeDisabled: v.mergeDisabled, editor: v.editor, checked: v.rows.filter((r) => r.checked).map((r) => r.id) }
+            );
+            await shot("select-edit");
+            await railTabsKey(h, "Escape", "Escape", 27); // closes the edit box, not the selection
+            await ideasClick(h, "[data-ideas-merge]");
+            // the oldest of the two keeps the row (and its kind); the other is dropped
+            const keepId = a.ts < b.ts || (a.ts === b.ts && ideaNum(a.id) < ideaNum(b.id)) ? a.id : b.id;
+            const goneId = keepId === a.id ? b.id : a.id;
+            const joined = (keepId === a.id ? [a.text, b.text] : [b.text, a.text]).join("; ");
+            const merged = await polishWaitFor(
+                h,
+                `[...(${IDEAS_SECTION}?.querySelectorAll('[data-ideas-row="${keepId}"] [data-ideas-text]') ?? [])].some((t) => t.textContent === ${JSON.stringify(joined)})`,
+                6000
+            );
+            list = await ideasList(h);
+            v = await ideasView(h);
+            const keepNow = list.ideas.find((i) => i.id === keepId);
+            const goneNow = list.ideas.find((i) => i.id === goneId);
+            rec(
+                "7b. merge: one row holds both texts oldest first joined by `; `, the other is in Dropped, the count is one less (9 to 8)",
+                merged &&
+                    keepNow?.text === joined &&
+                    keepNow.dropped !== true &&
+                    goneNow?.dropped === true &&
+                    ideasLive(list).length === 8 &&
+                    v.stat?.count === "8" &&
+                    v.selbar == null &&
+                    (list.ideas ?? []).filter((i) => i.dropped).length === droppedBefore + 1,
+                { merged, live: ideasLive(list).length, stat: v.stat?.count, selbar: v.selbar, dropped: (list.ideas ?? []).filter((i) => i.dropped).length }
+            );
+            // a checked row clears with Esc: the focus is on the checkbox, as a click leaves it
+            await h.ev(`(() => { const c = document.querySelector(${JSON.stringify(`${ideasRow(third.id)} [data-ideas-check]`)}); c?.focus(); c?.click(); })()`);
+            const oneUp = await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-selbar]")?.textContent?.startsWith("1 selected")`, 4000);
+            const oneBar = await ideasView(h);
+            await railTabsKey(h, "Escape", "Escape", 27);
+            await polishNap(300);
+            v = await ideasView(h);
+            rec(
+                "7c. one checked row: `1 selected` with Merge off; Esc clears the selection",
+                oneUp && oneBar.mergeDisabled === true && v.selbar == null && v.rows.every((r) => !r.checked),
+                { oneUp, mergeDisabled: oneBar.mergeDisabled, selbar: v.selbar }
+            );
+
+            // --- 8. drop ----------------------------------------------------------------------------------------------
+            list = await ideasList(h);
+            const o1 = ideaOf(list, T.o1);
+            const liveBefore = ideasLive(list).length;
+            const droppedBefore8 = (list.ideas ?? []).filter((i) => i.dropped).length;
+            await ideasHover(h, ideasRow(o1.id));
+            await shot("drop-hover");
+            await ideasClick(h, `${ideasRow(o1.id)} [data-ideas-action="drop"]`);
+            const dropped = await polishWaitFor(h, `${IDEAS_STAT}?.getAttribute("data-count") === "${liveBefore - 1}"`, 6000);
+            v = await ideasView(h);
+            rec(
+                "8. drop: the count is one less and the Dropped fold's count one more",
+                dropped && v.stat?.count === String(liveBefore - 1) && foldCount(v) === droppedBefore8 + 1,
+                { count: v.stat?.count, fold: foldCount(v), expectedFold: droppedBefore8 + 1 }
+            );
+
+            // --- 9. Dropped open, Restore -----------------------------------------------------------------------------
+            await ideasClick(h, "[data-ideas-dropped]");
+            await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-dropped]")?.getAttribute("aria-expanded") === "true"`, 4000);
+            await polishNap(300);
+            v = await ideasView(h);
+            const droppedRows = v.rows.filter((r) => r.dropped);
+            await h.ev(`${IDEAS_SECTION}?.querySelector("[data-ideas-dropped]")?.scrollIntoView({ block: "center" })`);
+            await shot("dropped-open");
+            await ideasClick(h, `[data-ideas-section] [data-ideas-row="${o1.id}"] [data-ideas-action="restore"]`);
+            const restored = await polishWaitFor(
+                h,
+                `${IDEAS_SECTION}?.querySelector('[data-ideas-group="question"] [data-ideas-row="${o1.id}"]') != null`,
+                6000
+            );
+            v = await ideasView(h);
+            rec(
+                "9. dropped open: every dropped row has Restore; Restore puts one back in its group and the count is one more",
+droppedRows.length === droppedBefore8 + 1 &&
+                    droppedRows.every((r) => r.restore) &&
+                    restored &&
+                    v.stat?.count === String(liveBefore) &&
+                    foldCount(v) === droppedBefore8,
+                { droppedRows: droppedRows.length, restoreEach: droppedRows.every((r) => r.restore), restored, count: v.stat?.count, fold: foldCount(v) }
+            );
+
+            // --- 10. add an idea --------------------------------------------------------------------------------------
+            const mine = "Ý tôi tự thêm vào bằng ô nhập";
+            await h.ev(`${IDEAS_SECTION}?.querySelector("[data-ideas-add]")?.scrollIntoView({ block: "center" })`);
+            const typedAdd = await ideasType(h, "[data-ideas-add]", mine);
+            await railTabsKey(h, "Enter", "Enter", 13);
+            const added = await polishWaitFor(
+                h,
+                `[...(${IDEAS_SECTION}?.querySelectorAll('[data-ideas-group="idea"] [data-ideas-text]') ?? [])].some((t) => t.textContent === ${JSON.stringify(mine)})`,
+                6000
+            );
+            v = await ideasView(h);
+            list = await ideasList(h);
+            const addedIdea = ideaOf(list, mine);
+            const addedRow = v.rows.find((r) => r.id === addedIdea?.id);
+            rec(
+                "10. add an idea: a new row in Ideas read as the user's own (`you`), the count one more, the input empty",
+                typedAdd &&
+                    added &&
+                    addedIdea?.by === "you" &&
+                    addedIdea.kind === "idea" &&
+                    /(^|· )you$/.test(addedRow?.meta ?? "") &&
+                    addedRow?.group === "idea" &&
+                    v.stat?.count === String(liveBefore + 1) &&
+                    v.addValue === "",
+                { added, by: addedIdea?.by, meta: addedRow?.meta, count: v.stat?.count, input: v.addValue }
+            );
+            await shot("added");
+
+            // --- 11. Mark read ----------------------------------------------------------------------------------------
+            v = await ideasView(h);
+            const beforeRead = { dot: v.stat?.dot, newCount: v.newCount, pills: v.pills };
+            await ideasClick(h, "[data-ideas-markread]");
+            const read = await polishWaitFor(h, `${IDEAS_STAT}?.querySelector("[data-rail-stat-dot]") == null`, 6000);
+            await polishNap(300);
+            v = await ideasView(h);
+            list = await ideasList(h);
+            const newest = Math.max(...(list.ideas ?? []).map((i) => i.ts));
+            rec(
+                "11. mark read clears dot: the dot, `N new` and the pills are gone, and seenat is past every idea",
+                beforeRead.dot === true &&
+                    beforeRead.newCount != null &&
+                    beforeRead.pills > 0 &&
+                    read &&
+                    v.stat?.dot === false &&
+                    v.newCount == null &&
+                    v.markRead === false &&
+                    v.pills === 0 &&
+                    list.seenat >= newest,
+                { beforeRead, dot: v.stat?.dot, newCount: v.newCount, pills: v.pills, seenat: list.seenat, newest }
+            );
+            await shot("read");
+
+            // --- 12. leaving marks read -------------------------------------------------------------------------------
+            const late = await h.rpc("ideaadd", { sessionid: IDEAS_SESSION, text: "Một ý mới từ agent khi đang xem", kind: "idea", by: "agent" });
+            const dotBack = await polishWaitFor(
+                h,
+                `${IDEAS_STAT}?.querySelector("[data-rail-stat-dot]") != null && ${IDEAS_ASIDE}?.querySelector("[data-ideas-newcount]")?.textContent?.trim() === "1 new"`,
+                6000
+            );
+            // the Files tab needs the agent's working directory, which the rail reads from its transcript
+            const filesTab = await polishWaitFor(h, `${IDEAS_ASIDE}?.querySelector('[data-rail-tab="tree"]') != null`, 20000);
+            await h.ev(`${IDEAS_ASIDE}?.querySelector('[data-rail-tab="tree"]')?.click()`);
+            const left = await polishWaitFor(h, `${IDEAS_SECTION} == null`, 5000);
+            let seen = false;
+            for (let waited = 0; waited < 6000 && !seen; waited += 250) {
+                seen = ((await ideasList(h)).seenat ?? 0) >= late.ts;
+                if (!seen) await polishNap(250);
+            }
+            const dotGone = await polishWaitFor(h, `${IDEAS_STAT}?.querySelector("[data-rail-stat-dot]") == null`, 6000);
+            await shot("left");
+            await h.ev(`${IDEAS_ASIDE}?.querySelector('[data-rail-tab="overview"]')?.click()`);
+            rec(
+                "12. leaving marks read: a new idea brings the dot back; switching the rail to its other tab sends seen, so seenat is past that idea and the dot is gone",
+                dotBack && filesTab && left && seen && dotGone,
+                { dotBack, filesTab, left, seen, dotGone }
+            );
+
+            // --- 13. an ended session, opened from Conversations ------------------------------------------------------
+            await h.rpc("ideaadd", { sessionid: IDEAS_ENDED, text: "Ý một của phiên đã kết thúc", kind: "decision", by: "agent" });
+            await h.rpc("ideaadd", { sessionid: IDEAS_ENDED, text: "Ý hai của phiên đã kết thúc", kind: "idea", by: "agent" });
+            const rowSel = `[data-agent-session-row="claude:${IDEAS_ENDED}"]`;
+            let listed = await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(rowSel)})`, 8000);
+            if (!listed) {
+                // the sidebar rescans on re-entry, at most every 5s
+                await h.goto("cockpit");
+                await polishNap(AH_SCAN_GAP_MS);
+                await h.goto("agent");
+                listed = await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(rowSel)})`, 8000);
+            }
+            await h.ev(`document.querySelector(${JSON.stringify(rowSel)})?.click()`);
+            const sessionShown = await polishWaitFor(h, `!!document.querySelector("[data-agent-session]")`, 8000);
+            const folded = await polishWaitFor(h, `!!document.querySelector("[data-agent-session] [data-ideas-ended]")`, 8000);
+            const foldedView = await h.ev(`(() => {
+                const ended = document.querySelector("[data-agent-session] [data-ideas-ended]");
+                return {
+                    toggle: ended?.querySelector("[data-ideas-ended-toggle]")?.textContent?.trim() ?? null,
+                    rows: ended?.querySelectorAll("[data-ideas-row]").length ?? -1,
+                    expanded: ended?.querySelector("[data-ideas-ended-toggle]")?.getAttribute("aria-expanded") ?? null,
+                };
+            })()`);
+            await shot("ended-folded");
+            await h.ev(`document.querySelector("[data-agent-session] [data-ideas-ended-toggle]")?.click()`);
+            const expanded = await polishWaitFor(
+                h,
+                `document.querySelectorAll("[data-agent-session] [data-ideas-ended] [data-ideas-row]").length === 2`,
+                6000
+            );
+            const endedRows = await h.ev(`[...document.querySelectorAll("[data-agent-session] [data-ideas-ended] [data-ideas-text]")].map((t) => t.textContent)`);
+            const pills = await h.ev(`document.querySelectorAll("[data-agent-session] [data-ideas-newpill]").length`);
+            await shot("ended-open");
+            const endedList = await ideasList(h, IDEAS_ENDED);
+            rec(
+                "13. ended session: opened from Conversations, the session view holds the folded `Ideas · 2`; expanded, both rows show, with no New pills, and looking does not mark the list read",
+                listed &&
+                    sessionShown &&
+                    folded &&
+                    foldedView.toggle === "Ideas · 2" &&
+                    foldedView.rows === 0 &&
+                    foldedView.expanded === "false" &&
+                    expanded &&
+                    endedRows.includes("Ý một của phiên đã kết thúc") &&
+                    endedRows.includes("Ý hai của phiên đã kết thúc") &&
+                    pills === 0 &&
+                    endedList.seenat === 0,
+                { listed, sessionShown, foldedView, expanded, endedRows, pills, seenat: endedList.seenat }
+            );
+
+            // --- 14. the "Add as idea" chip beside a selection (Capture-Selection.dc.html) ----------------------------
+            // back on the agent's own terminal: the shell prints a line, which a mouse drag then selects
+            const term = ctx.terminals[0];
+            await h.rpc("uireveal", { address: `agent:${IDEAS_AGENT}` }, UI_ROUTE);
+            const paneBack = await polishWaitFor(
+                h,
+                `(document.querySelector('[data-agent-terminal="${IDEAS_AGENT}"] .xterm-screen')?.getClientRects().length ?? 0) > 0 && ${IDEAS_STAT} != null`,
+                15000
+            );
+            const nBefore = ideasLive(await ideasList(h)).length;
+            const marker = `ideas-capture-line-${Date.now().toString(36)}`;
+            const printed = await termLogPrint(h, term.blockId, marker);
+            const dragged = await ideasSelectLine(h, term.blockId, marker);
+            const chipShown = await polishWaitFor(h, `getComputedStyle(document.querySelector("[data-ideas-capture-chip]") ?? document.body).visibility === "visible" && !!document.querySelector("[data-ideas-capture-chip]")`, 5000);
+            const spot = await h.ev(`window.__arcIdeaCapture?.locate(${JSON.stringify(term.blockId)}, ${JSON.stringify(marker)}) ?? null`);
+            const chip = await ideasChipFacts(h);
+            const selected = ((await ideasTermSelection(h, term.blockId)) ?? "").trim();
+            await shot("selection-chip");
+            // a key typed (and rubbed out) takes the chip away; the next selection brings it back
+            await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "x", code: "KeyX", text: "x", windowsVirtualKeyCode: 88 });
+            await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "x", code: "KeyX", windowsVirtualKeyCode: 88 });
+            const chipGone = await polishWaitFor(h, `!document.querySelector("[data-ideas-capture-chip]")`, 3000);
+            await railTabsKey(h, "Backspace", "Backspace", 8);
+            const draggedAgain = await ideasSelectLine(h, term.blockId, marker);
+            const chipBack = await polishWaitFor(h, `!!document.querySelector("[data-ideas-capture-chip]")`, 5000);
+            rec(
+                "14. selection chip: dragging over a terminal line shows `Add as idea` with its keycap just under the line's end, inside the pane and without taking the terminal's focus; a typed key takes it away and the next selection brings it back",
+                paneBack &&
+                    printed &&
+                    dragged &&
+                    chipShown &&
+                    selected === marker &&
+                    chip?.visible === true &&
+                    chip.text.startsWith("Add as idea") &&
+                    chip.keycap != null &&
+                    chip.keycap !== "" &&
+                    chip.inPane === true &&
+                    spot != null &&
+                    chip.top > spot.y &&
+                    chip.termFocused === true &&
+                    chipGone &&
+                    draggedAgain &&
+                    chipBack,
+                { paneBack, printed, dragged, chipShown, selected, chip, lineY: spot?.y, chipGone, draggedAgain, chipBack }
+            );
+
+            // --- 15. the shortcut adds the selection -------------------------------------------------------------------
+            await ideasCaptureKey(h);
+            const toastUp = await polishWaitFor(h, `[...document.querySelectorAll("[data-notification-toast]")].some((b) => b.textContent.includes("Added to Ideas"))`, 6000);
+            const toast = await ideasToastFacts(h);
+            const counted15 = await polishWaitFor(h, `${IDEAS_STAT}?.getAttribute("data-count") === "${nBefore + 1}"`, 6000);
+            const cleared = ((await ideasTermSelection(h, term.blockId)) ?? "x") === "";
+            const chipAfter = await ideasChipFacts(h);
+            list = await ideasList(h);
+            const mineIdeas = (list.ideas ?? []).filter((i) => i.text === marker && !i.dropped);
+            const captured = mineIdeas[0];
+            await shot("shortcut-adds");
+            rec(
+                "15. shortcut adds: the toast `Added to Ideas` with Undo shows, the selection is cleared and the chip gone, the count is one more, and idealist has the line as an idea by you",
+                toastUp &&
+                    toast?.action === "Undo" &&
+                    counted15 &&
+                    cleared &&
+                    chipAfter == null &&
+                    mineIdeas.length === 1 &&
+                    captured.by === "you" &&
+                    captured.kind === "idea",
+                { toast, counted15, cleared, chipAfter, found: mineIdeas.length, by: captured?.by, kind: captured?.kind }
+            );
+
+            // --- 16. Undo ----------------------------------------------------------------------------------------------
+            await h.ev(`[...document.querySelectorAll("[data-notification-action]")].find((b) => b.textContent.trim() === "Undo")?.click()`);
+            const undone = await polishWaitFor(h, `${IDEAS_STAT}?.getAttribute("data-count") === "${nBefore}"`, 6000);
+            const toastGone = await polishWaitFor(h, `![...document.querySelectorAll("[data-notification-toast]")].some((b) => b.textContent.includes("Added to Ideas"))`, 4000);
+            list = await ideasList(h);
+            const undoneIdea = (list.ideas ?? []).find((i) => i.id === captured?.id);
+            rec(
+                "16. undo: Undo puts the count back and the idea is dropped in idealist",
+                undone && toastGone && undoneIdea?.dropped === true && ideasLive(list).length === nBefore,
+                { undone, toastGone, dropped: undoneIdea?.dropped, live: ideasLive(list).length, expected: nBefore }
+            );
+
+            // --- 17. a click on the chip adds ---------------------------------------------------------------------------
+            const draggedThird = await ideasSelectLine(h, term.blockId, marker);
+            const chipThird = await polishWaitFor(h, `getComputedStyle(document.querySelector("[data-ideas-capture-chip]") ?? document.body).visibility === "visible" && !!document.querySelector("[data-ideas-capture-chip]")`, 5000);
+            const button = await h.ev(`(() => {
+                const r = document.querySelector("[data-ideas-capture-add]")?.getBoundingClientRect();
+                return r && r.width > 0 ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null;
+            })()`);
+            if (button) {
+                await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: button.x, y: button.y, button: "none", buttons: 0 });
+                await h.cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: button.x, y: button.y, button: "left", buttons: 1, clickCount: 1 });
+                await h.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: button.x, y: button.y, button: "left", buttons: 0, clickCount: 1 });
+            }
+            const counted17 = await polishWaitFor(h, `${IDEAS_STAT}?.getAttribute("data-count") === "${nBefore + 1}"`, 6000);
+            const clearedThird = ((await ideasTermSelection(h, term.blockId)) ?? "x") === "";
+            const focusKept = await h.ev(`document.activeElement?.classList?.contains("xterm-helper-textarea") === true`);
+            list = await ideasList(h);
+            const again = (list.ideas ?? []).filter((i) => i.text === marker && !i.dropped);
+            await shot("chip-click-adds");
+            rec(
+                "17. chip click adds: selecting again and pressing the chip adds the line (the count is one more, the selection cleared), and the terminal keeps the focus",
+                draggedThird &&
+                    chipThird &&
+                    button != null &&
+                    counted17 &&
+                    clearedThird &&
+                    focusKept === true &&
+                    again.length === 1 &&
+                    again[0].id !== captured?.id &&
+                    again[0].by === "you",
+                { draggedThird, chipThird, button, counted17, clearedThird, focusKept, found: again.length }
+            );
+            await h.ev(`document.querySelectorAll("[data-notification-close]").forEach((b) => b.click())`);
+
+            // --- 18. the shortcut with nothing selected opens the Ideas input -------------------------------------------
+            // the section is closed first, so it is the shortcut that opens it, and the terminal holds the focus
+            await h.ev(`${IDEAS_ASIDE}?.querySelector('[data-rail-section="ideas"] h3 button')?.click()`);
+            const closedFirst = await polishWaitFor(h, `${IDEAS_SECTION} == null`, 4000);
+            const focusedTerm = await h.ev(`(() => {
+                const t = document.querySelector('[data-agent-terminal="${IDEAS_AGENT}"] .xterm-helper-textarea');
+                t?.focus();
+                return document.activeElement === t;
+            })()`);
+            const nothingSelected = ((await ideasTermSelection(h, term.blockId)) ?? "x") === "";
+            await ideasCaptureKey(h);
+            const inputFocused = await polishWaitFor(h, `document.activeElement?.matches?.("[data-ideas-add]") === true && ${IDEAS_SECTION} != null`, 6000);
+            const input = await h.ev(`(() => {
+                const el = document.activeElement;
+                const r = el?.getBoundingClientRect();
+                return { tag: el?.tagName ?? null, label: el?.getAttribute?.("placeholder") ?? null, shown: r != null && r.width > 0 && r.height > 0 };
+            })()`);
+            await shot("shortcut-no-selection");
+            rec(
+                "18. shortcut with no selection: with the Ideas section closed and nothing selected, the shortcut opens it and the focus is on its Add an idea input",
+                closedFirst && focusedTerm === true && nothingSelected && inputFocused && input.shown && input.label === "Add an idea",
+                { closedFirst, focusedTerm, nothingSelected, inputFocused, input }
+            );
+        } catch (e) {
+            rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`ideas-rail teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("remove the sessions mock", () => removeIdeasMock(h));
+        for (const t of ctx.terminals ?? []) {
+            await step("close the terminal", () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false]));
+        }
+        if (ctx.project) {
+            // deleteproject leaves the channel createproject made, so that goes too
+            await step("remove the project", async () => {
+                await h.rpc("deleteproject", { name: ctx.project });
+                const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+                for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.repo))) {
+                    await h.rpc("deletechannel", { channelid: c.oid });
+                }
+            });
+        }
+        if (ctx.wroteFixture) {
+            await step("restore the fixture roster", () =>
+                ctx.prevFixture != null ? writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture) : rmSync(TREE_RAIL_FIXTURE, { force: true })
+            );
+        }
+        if (ctx.dataDir) {
+            await step("delete the two idea files", () => {
+                for (const id of [IDEAS_SESSION, IDEAS_ENDED]) rmSync(join(ctx.dataDir, "ideas", `${id}.json`), { force: true });
+            });
+        }
+        await step("restore the keys", async () => {
+            for (const [k, v] of Object.entries(ctx.prevKeys ?? {})) {
+                await h.ev(v == null ? `localStorage.removeItem(${JSON.stringify(k)})` : `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)})`);
+            }
+        });
+        await step("reload onto the restored roster", () => ahReload(h));
+        await step("remove the temp dir", () => rmSync(ctx.base, { recursive: true, force: true }));
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -37233,4 +38187,5 @@ export const SCENARIOS = [
     toolsLauncher,
     toolsWorktreeGone,
     whatsNew,
+    ideasRail,
 ];
