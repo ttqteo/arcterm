@@ -29,7 +29,7 @@ export function workOnPrompt(title: string, effortOid: string, lastNote?: { ts: 
 // An idea has no plan to pick up from, so its agent is asked for one: chunks only, and a stop for review,
 // since a first chunk is what moves the idea to the cards.
 export function planIdeaPrompt(title: string, effortOid: string): string {
-    return `plan the idea ${title} (effort:${effortOid}): break it into chunks with \`wsh effort chunk add\`, then stop so I can review the plan before any work starts`;
+    return `plan the idea ${title} (effort:${effortOid}): break it into chunks with \`wsh effort chunk add --proposed\`, then stop so I can review the plan before any work starts`;
 }
 
 // A chunk that came due (wsh effort chunk due) carries in its notes what to check and what the result decides;

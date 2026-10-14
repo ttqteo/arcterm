@@ -56,7 +56,7 @@ An effort too foggy to name its phases gets a tracker of decisions first, not bu
 | `wsh effort delete <effort> [--force]` | delete (refuses unless archived or `--force`) |
 | `wsh effort advance <effort> [--note "..."]` | active chunk → done; marker moves to the next non-done chunk |
 | `wsh effort reopen <effort> <chunk>` | undo an advance (done → active, previous active back to pending) |
-| `wsh effort chunk add <effort> "<label>" [--at N] [--owner X] [--due YYYY-MM-DD\|+Nd]` | add a chunk |
+| `wsh effort chunk add <effort> "<label>" [--at N] [--owner X] [--due YYYY-MM-DD\|+Nd] [--proposed]` | add a chunk; `--proposed` leaves it for the person to accept or drop |
 | `wsh effort chunk rename <effort> <chunk> "<label>"` | rename a chunk |
 | `wsh effort chunk move <effort> <chunk> <at>` | reorder (1-based target position) |
 | `wsh effort chunk remove <effort> <chunk>` | remove a chunk |
@@ -88,6 +88,9 @@ Chunks are always referenced by exact label, never index.
   what to measure and what each result decides. From that day it waits in the cockpit's Needs you until the
   chunk is done, deferred or skipped, or its date moves on (`wsh effort chunk due`). Nothing runs at the
   date; the person picks it up.
+- **Propose, don't add, what nobody asked for.** Chunks you add on your own (scope you found, a split you
+  suggest, a whole plan for an idea) go in with `--proposed`. The person accepts or drops them on your rail; a
+  proposed chunk is not progress and `advance` never starts it. Once you have proposed a plan, stop and say so.
 - **Skipped shrinks the denominator**: an effort that finishes by skipping still reads 100%.
 - Run↔chunk links detach automatically when the run's evidence seals; session workrefs detach at
   session end. Nothing auto-ticks — completion is always a deliberate action.
@@ -95,4 +98,5 @@ Chunks are always referenced by exact label, never index.
 ## Statuses
 
 `pending` (not started) · `active` (in progress — one at a time) · `blocked` (needs eyes) ·
-`deferred` (parked, counts as remaining) · `done` · `skipped` (not doing it).
+`deferred` (parked, counts as remaining) · `done` · `skipped` (not doing it) · `proposed` (your suggestion,
+waiting on the person; counts in neither done nor total).

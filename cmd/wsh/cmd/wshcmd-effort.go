@@ -256,7 +256,7 @@ var effortReopenCmd = &cobra.Command{
 }
 
 var effortChunkAddCmd = &cobra.Command{
-	Use:     "add <effort> \"<label>\" [--at N] [--owner X] [--stage S] [--due YYYY-MM-DD|+Nd]",
+	Use:     "add <effort> \"<label>\" [--at N] [--owner X] [--stage S] [--due YYYY-MM-DD|+Nd] [--proposed]",
 	Short:   "add a chunk (phase)",
 	Args:    cobra.ExactArgs(2),
 	PreRunE: preRunSetupRpcClient,
@@ -268,6 +268,9 @@ var effortChunkAddCmd = &cobra.Command{
 		op := wshrpc.EffortOp{Op: "addChunk", Label: args[1], Owner: mustFlagString(cmd, "owner"), Stage: mustFlagString(cmd, "stage"), Due: due}
 		if at, err := cmd.Flags().GetInt("at"); err == nil && at > 0 {
 			op.At = &at
+		}
+		if p, _ := cmd.Flags().GetBool("proposed"); p {
+			op.Status = "proposed"
 		}
 		return mutateOne(args[0], op, isJSON(cmd))
 	},
@@ -314,7 +317,7 @@ var effortChunkRemoveCmd = &cobra.Command{
 }
 
 var effortChunkStatusCmd = &cobra.Command{
-	Use:     "status <effort> <chunk> <pending|active|done|deferred|blocked|skipped> [--note \"...\"]",
+	Use:     "status <effort> <chunk> <pending|active|done|deferred|blocked|skipped|proposed> [--note \"...\"]",
 	Short:   "set a chunk's status",
 	Args:    cobra.ExactArgs(3),
 	PreRunE: preRunSetupRpcClient,
@@ -485,10 +488,11 @@ func parseAt(s string) (int, error) {
 
 // formatEffortShow renders the human-readable detail block. Stage grouping is by consecutive run,
 // the same rule the card renders: a header prints when the stage changes, so a stage that reappears
-// later prints again rather than the chunks being reordered to gather them.
+// later prints again rather than the chunks being reordered to gather them. A proposed chunk prints but is
+// left out of the progress total, as the summary's Done/Total leaves it out.
 func formatEffortShow(e *waveobj.Effort) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# %s (%s) — %d/%d\n", e.Title, e.Status, countDone(e), len(e.Chunks))
+	fmt.Fprintf(&b, "# %s (%s) — %d/%d\n", e.Title, e.Status, countDone(e), countProgress(e))
 	stage := ""
 	for i, c := range e.Chunks {
 		if c.Stage != stage {
@@ -509,6 +513,17 @@ func countDone(e *waveobj.Effort) int {
 	n := 0
 	for _, c := range e.Chunks {
 		if c.Status == "done" {
+			n++
+		}
+	}
+	return n
+}
+
+// countProgress is the progress total: every chunk but a proposed one, which is not work until accepted.
+func countProgress(e *waveobj.Effort) int {
+	n := 0
+	for _, c := range e.Chunks {
+		if c.Status != "proposed" {
 			n++
 		}
 	}
@@ -550,6 +565,7 @@ func init() {
 	effortChunkAddCmd.Flags().String("owner", "", "chunk owner")
 	effortChunkAddCmd.Flags().String("stage", "", "grouping label")
 	effortChunkAddCmd.Flags().String("due", "", "the day it comes due: YYYY-MM-DD or +Nd")
+	effortChunkAddCmd.Flags().Bool("proposed", false, "propose the chunk; it counts once accepted")
 	effortChunkStatusCmd.Flags().String("note", "", "annotation")
 	effortChunkNoteCmd.Flags().String("note", "", "annotation text (required)")
 	effortChunkNoteCmd.MarkFlagRequired("note")
