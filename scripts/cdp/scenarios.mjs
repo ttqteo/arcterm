@@ -20009,7 +20009,7 @@ const FST_AGENT = `(() => {
         rows: [...(tree?.querySelectorAll("[data-final-row]") ?? [])].map((r) => ({
             tone: r.getAttribute("data-final-tone"),
             title: flat(r.querySelector(".truncate")),
-            sub: flat(r.querySelector(".font-mono")),
+            sub: flat(r.querySelector("[data-final-sub]")),
             selected: r.classList.contains("bg-accentbg"),
         })),
         slot: slot?.getAttribute("data-final-slot") ?? null,
