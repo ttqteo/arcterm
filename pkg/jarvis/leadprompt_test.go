@@ -104,7 +104,6 @@ func TestOrchestrationRulesNameRunSpecPlanAndCommands(t *testing.T) {
 		"Spec: C:/p/spec.md.",
 		"Plan: C:/p/plan.md.",
 		"wsh jarvis dag answer <task> <answers-json>",
-		"wsh jarvis dag forward <task>",
 		"wsh jarvis dag retry <task>",
 		"wsh jarvis dag escalate <task> --model <model>",
 		"wsh jarvis dag skip <task>",
@@ -117,6 +116,32 @@ func TestOrchestrationRulesNameRunSpecPlanAndCommands(t *testing.T) {
 		if !strings.Contains(r, want) {
 			t.Fatalf("rules missing %q:\n%s", want, r)
 		}
+	}
+}
+
+// a forwarded question surfaced the worker's raw text in the cockpit: the lead asks the human itself, with
+// its own recommendation, and checks the queue first since the human may have answered it there.
+func TestOrchestrationRulesLeadAsksWorkerQuestionItself(t *testing.T) {
+	r := OrchestrationRules("run-1", "", "", "", false)
+	var line string
+	for _, l := range strings.Split(r, "\n") {
+		if strings.HasPrefix(l, "- questions:") {
+			line = l
+		}
+	}
+	if line == "" {
+		t.Fatalf("rules have no questions line:\n%s", r)
+	}
+	if strings.Contains(line, "dag forward") {
+		t.Errorf("the questions line still forwards:\n%s", line)
+	}
+	for _, want := range []string{AskTool("claude"), AskTool("pi") + " on pi", "what you recommend first", "wsh jarvis dag answer <task> <answers-json>", "deadline passes"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("questions line missing %q:\n%s", want, line)
+		}
+	}
+	if strings.Index(line, "wsh jarvis dag asks") > strings.Index(line, "deadline passes") || !strings.Contains(line, "Before you ask, and before you ask again, run `wsh jarvis dag asks`") {
+		t.Errorf("the lead checks `dag asks` before asking:\n%s", line)
 	}
 }
 

@@ -136,7 +136,9 @@ func OrchestrationRules(runId, specPath, planPath, effortOID string, autonomous 
 		fmt.Fprintf(&b, " Effort: effort:%s.", effortOID)
 	}
 	b.WriteString(" The engine schedules, merges and tests. Each wake names an event and the command that shows it; re-read only what the event needs.\n")
-	b.WriteString("- questions: answer from the spec and plan; check code with Read/Grep when they don't settle it; `wsh jarvis dag answer <task> <answers-json>`. A product or scope call, or spec, plan and code disagreeing: `wsh jarvis dag forward <task> \"<what you checked, what you recommend>\"`.\n")
+	// the engine moves an unanswered question to the human at its deadline and then refuses the lead's answer,
+	// which can happen while the lead's own ask is open.
+	fmt.Fprintf(&b, "- questions: answer from the spec and plan; check code with Read/Grep when they don't settle it; `wsh jarvis dag answer <task> <answers-json>`. A product or scope call, or spec, plan and code disagreeing: ask the human yourself with %s (%s on pi), what you checked and what you recommend first, then relay the human's choice with `wsh jarvis dag answer <task> <answers-json>`. Before you ask, and before you ask again, run `wsh jarvis dag asks`: the human may have answered it in the cockpit. A question moves to the human by itself when its deadline passes (`dag asks` shows it) or the human takes it over, and `dag answer` is then refused; when that happens, or `dag asks` no longer lists the task, relay nothing: it is answered, or waits on the run sheet for the human.\n", AskTool("claude"), AskTool("pi"))
 	b.WriteString("- task still failing, or worker hung: `wsh jarvis dag retry <task>`, retry on another model with `wsh jarvis dag escalate <task> --model <model>`, `wsh jarvis dag skip <task>`, or forward.\n")
 	b.WriteString("- a task failed as stopped-by-human: the human stopped its worker; leave it to them, and don't retry, escalate or skip it unless they ask.\n")
 	b.WriteString("- merge conflict, or tests failed at a merge point: fix it in this working tree, where the lanes land, commit, `wsh jarvis dag merge <task> --continue` (the engine re-runs Verify).\n")
