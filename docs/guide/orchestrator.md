@@ -1,6 +1,6 @@
 # Orchestrator: chạy và giám sát run
 
-Trang này nói về việc **giao việc cho nhiều agent chạy song song** và theo dõi chúng cho tới khi kết quả nằm trong repo của bạn: bắt đầu một run (Quick, Orchestrate từ một goal, Orchestrate từ một plan file), cách engine chọn model, review plan, xem DAG, những lúc run cần bạn xét đoán, final stage, và run được merge về như thế nào.
+Trang này nói về việc **giao việc cho nhiều agent chạy song song** và theo dõi chúng cho tới khi kết quả nằm trong repo của bạn: bắt đầu một run (Quick, Orchestrate từ một goal, Orchestrate từ một plan file, hoặc xếp hàng một plan chờ chỗ), cách engine chọn model, review plan, xem DAG, những lúc run cần bạn xét đoán, final stage, và run được merge về như thế nào.
 
 Các trang liên quan: [Plan file](plan-format.md) (định dạng plan engine chạy), [Jarvis](jarvis.md) (run sheet, câu hỏi, các hộp review, initiative), [Cockpit](cockpit.md) (thẻ run trên Cockpit), [Agent](agent.md) (terminal của lead và worker), [Phím tắt](../keyboard-shortcuts.md).
 
@@ -166,6 +166,38 @@ Từ dòng lệnh: `wsh runs start --plan <plan.md>` (xem [CLI](#cli)).
 Engine mở một lead **chỉ ở sự kiện cần xét đoán đầu tiên**, với luật điều phối làm prompt và sự kiện làm dòng đầu. Một plan land xong và kết thúc final stage ở trạng thái *passed* hoặc *unverified*, không có gì để quyết, thì không bao giờ có lead: engine tự đóng run, niêm phong bằng chứng và merge nó về. Nếu Setup của plan hỏng trong cây của run lúc submit, lead cũng được mở (với lỗi Setup trong tay) thay vì từ chối plan; plan hỏng lúc parse thì hộp New đã chặn từ trước và không run nào được tạo.
 
 Dùng palette: gõ một goal vào ô **Search, or type a goal…** (`Ctrl+P`); chữ không khớp gì được coi là goal, và **Quick** hay **Orchestrate** mở hộp New ở dòng run với goal đã điền sẵn và project vừa dùng được chọn sẵn, để bạn xác nhận project trước khi chạy gì cả. Một run mà một session bắt đầu bằng `wsh runs start` mang link về session đó: `↰ <session>` trên header của lead (hay của agent run Quick) và dòng **started from** trên run sheet; header của session có link `↳` tới các run nó đã bắt đầu.
+
+### Queued starts: xếp hàng một run chờ chỗ
+
+Một session viết xong plan có thể giao nó cho engine **xếp hàng** thay vì chạy ngay:
+
+```bash
+wsh runs start --plan <plan.md> --queue
+wsh runs start --plan <plan.md> --after <run-id hoặc q-id>
+```
+
+Lệnh kiểm plan ngay (plan hỏng hoặc không đọc được bị từ chối tại chỗ, không nằm chờ trong hàng), thêm một mục vào hàng và in `queued q-3f2a (#2 in line) — starts when fewer than 3 runs are active`. Từ đó arcterm tự lo. Hàng chỉ nhận mục từ `wsh runs start`: hộp New và palette bắt đầu run ngay.
+
+- **Trần số run.** Mục sẵn sàng đầu tiên theo thứ tự hàng chạy khi số run **cấp cao** đang hoạt động ít hơn `runs:maxactive` (mặc định 3; `0` là không giới hạn). Run đang hoạt động là run orchestrator hoặc Quick chưa `done` và chưa `cancelled`; run của task, reviewer, stage và run con của lead không tính. Run `done` mà land đang bị giữ không còn agent nào nên cũng không tính. Run bắt đầu từ hộp New chạy ngay và vẫn tính vào trần. Mỗi lần chỉ một mục được khởi chạy rồi mới xét mục kế, nên hàng không bao giờ tự vượt trần (chỉ Start now vượt). Không có thẻ trong Settings: ghi `runs:maxactive` vào `settings.json`.
+- **`--after`.** Nhận id của một run hoặc của một mục trong hàng (đủ một tiền tố duy nhất của một trong hai) và ngầm hiểu `--queue`. Mục chỉ chạy sau khi run đó đã **land** (merge về base, hoặc `done` mà không có branch để merge); dùng khi hai plan đụng cùng file. Trỏ vào một mục trong hàng để nối hai plan xếp hàng trước khi cái nào có run id: khi mục đứng trước bắt đầu, mục sau trỏ sang run của nó và tiếp tục chờ run ấy land. Một mục đang chờ `--after` không giữ chân các mục sau nó.
+- **Plan được đọc và base được lấy lúc bắt đầu, không phải lúc xếp hàng.** Run chỉ được tạo khi mục chạy, nên file plan phải còn ở đó lúc ấy, và một chỗ sửa trong lúc chờ là bản sẽ chạy. Route thì ngược lại, chốt lúc xếp hàng: model bạn đã duyệt ở lúc giao là model sẽ chạy.
+
+**Trên cây Agent.** Mục đang chờ là một hàng trong folder project của nó, ngay dưới các run của project, theo thứ tự hàng: biểu tượng đồng hồ, tên plan và dòng phụ `Queued #2` (vị trí trong cả hàng, không riêng project), `After <tên>` hoặc `Blocked · <lý do>` ở màu cảnh báo. Rê chuột lên hàng để có **Start now** và **Remove** (Remove hỏi lại); menu chuột phải thêm **Run next**, trừ ở mục đầu hàng. Bấm vào không mở gì ở giữa vì chưa có gì để xem; tooltip nói đường dẫn plan, route của lead và worker, và mục được xếp từ bao giờ. Khi mục chạy, hàng của nó thành hàng run ở đúng chỗ đó. Đừng nhầm với `queued #N` của một agent đang chờ lệnh nặng ([Usage](usage.md#hàng-đợi-lệnh-nặng)): đó là chờ RAM, không phải chờ chỗ cho run.
+
+| Nút | Lệnh | Làm gì |
+|---|---|---|
+| **Start now** | `wsh runs start-now <q-id>` | chạy mục ngay, vượt trần và vượt `--after`. Chỉ một mục được khởi chạy một lúc, và một lần khởi chạy có thể mất vài phút (dựng worktree, Setup): gặp `another queued run is starting; try again in a moment` thì mục **không** hỏng và không bị chặn, chờ rồi bấm lại. Khởi chạy lỗi thì mục bị chặn với lỗi đó làm lý do |
+| **Run next** | `wsh runs run-next <q-id>` | đưa mục lên đầu hàng. Nó vẫn chờ chỗ và chờ `--after`: đây là cách cho một plan đi trước các plan khác mà không vượt trần |
+| **Remove** | `wsh runs dequeue <q-id>` | bỏ mục, không chạy. Mục nào xếp sau với `--after` trỏ vào nó bị chặn với lý do `<tên> was removed` |
+
+**Mục bị chặn.** Một mục chuyển sang `blocked` và ở đó cho tới khi bạn Start now hoặc Remove nó, khi: run nó chờ (`--after`) bị hủy, hoặc land của run đó bị giữ vì lý do khác `Dirty` (land bị giữ do checkout bẩn tự land khi checkout sạch, nên mục vẫn chờ); mục nó chờ bị Remove; file plan không còn lúc bắt đầu; hoặc khởi chạy lỗi. Nó cũng thành một mục trong **Needs you**, loại **Run to start**, với dòng `Did not start: <lý do>` và hai nút **Start now** và **Remove**, nên bạn thấy nó mà không cần mở cây. Run next đặt mục chờ lại, nhưng nếu nguyên nhân còn đó (run `--after` vẫn bị giữ) lần xét kế tiếp chặn nó lại với cùng lý do: Start now hoặc Remove là lối đi tiếp.
+
+**Session nhận tin khi run land.** Run bắt đầu bằng `wsh runs start` từ một session, xếp hàng hay không, nhớ session đó. Khi run có kết quả cuối, session nhận **một** tin: `[arc] Run <id> "<goal>" landed: merged into <base> (5/5 tasks, Final passed, …)`, hoặc `… held: <lý do>`, kèm dòng `Plan: …` và lời dặn. Với run đã land, lời dặn là xét kết quả như session đã viết plan (so với spec, ghi lại điều còn cần kiểm tay, dòng CHANGELOG, chunk của initiative), báo cáo cho bạn vài dòng và không bắt đầu run khác. Với land bị giữ, là chẩn đoán bằng `wsh runs show`, không ép land, và đề xuất cách sửa cho bạn.
+
+- Kết quả cuối là: `landed`; `held` mà không phải `Dirty` (hold kiểu `Dirty` tự land khi checkout sạch, nên chưa gửi gì); hoặc `done` mà không có branch để land. Run bị hủy không gửi (người hủy thường là bạn), và run `blocked` giữa chừng không gửi (Needs you đã lo).
+- Session đang làm việc hoặc đang hỏi thì tin chờ tới khi nó rảnh hoặc đang chờ, nên không chen vào lượt bạn đang nói chuyện với nó. Session đang ngủ được đánh thức. Tab của session đã đóng thì không gửi gì.
+- Mỗi run chỉ một tin. Run đã có kết quả từ trước lúc app khởi động mà chưa có tin thì được gửi lúc khởi động.
+- Mỗi tin là một lượt trên toàn bộ context của session: session dài trả phần cache read của nó. Tắt bằng `runs:wakeorigin` = `false` trong `settings.json` (mặc định bật, không có thẻ trong Settings).
 
 ## Review plan
 
@@ -445,8 +477,9 @@ Công việc lớn sống thành initiative (`wsh effort`, vùng **Initiatives**
 
 | Lệnh | Làm gì |
 |---|---|
-| `wsh runs start [goal]` | khởi chạy một run như hộp New. `--mode quick\|orchestrator`, `--plan <md>` (ngầm orchestrator), `--runtime`/`--model` (route lead), `--worker-runtime`/`--worker-model`, `--reviewer-picks`, `--reviewer-runtime`/`--reviewer-model`, `--parallelism`, `--landing branch\|checkout` (thắng profile; mặc định branch), `--prototype`, `--effort`/`--chunk` (đi cùng nhau), `--json`. Các cờ worker, reviewer, parallelism, landing, prototype cần run orchestrator; `--reviewer-picks` không đi với `--worker-runtime`/`--worker-model`. |
-| `wsh runs list [--all] [--tasks] [--limit N] [--json]` | liệt kê run của project, mới nhất trước (`--tasks` gồm cả run của worker/reviewer) |
+| `wsh runs start [goal]` | khởi chạy một run như hộp New. `--mode quick\|orchestrator`, `--plan <md>` (ngầm orchestrator), `--runtime`/`--model` (route lead), `--worker-runtime`/`--worker-model`, `--reviewer-picks`, `--reviewer-runtime`/`--reviewer-model`, `--parallelism`, `--landing branch\|checkout` (thắng profile; mặc định branch), `--prototype`, `--effort`/`--chunk` (đi cùng nhau), `--queue`, `--after <run-id hoặc q-id>`, `--json`. Các cờ worker, reviewer, parallelism, landing, prototype cần run orchestrator; `--reviewer-picks` không đi với `--worker-runtime`/`--worker-model`. `--queue` xếp hàng lần bắt đầu thay vì làm ngay, `--after` ngầm hiểu `--queue` ([Queued starts](#queued-starts-xếp-hàng-một-run-chờ-chỗ)). |
+| `wsh runs start-now <q-id>` / `run-next <q-id>` / `dequeue <q-id>` | trên một mục đang xếp hàng: chạy ngay, vượt trần và `--after` / đưa lên đầu hàng (vẫn chờ chỗ) / bỏ mà không chạy |
+| `wsh runs list [--all] [--tasks] [--limit N] [--json]` | liệt kê run của project, mới nhất trước (`--tasks` gồm cả run của worker/reviewer), các mục đang xếp hàng ở trên cùng, đánh dấu `queued #N`, `after <id>` hoặc `blocked: <lý do>`. `--json` in `{"queued": [...], "runs": [...]}`, không còn là một mảng trần |
 | `wsh runs show <run-id> [--json]` | trạng thái, route (thêm `workers=…` và `reviewers=…`), initiative, commit, `usage`, digest task, `outcome` kèm lý do, `land`, báo cáo, và câu hỏi đang chờ của run |
 | `wsh runs answer <run-id> <answers-json>` | trả lời câu hỏi của chính run (của lead) mà `runs show` in; `[{"selectedindexes":[0]}]` hoặc `[{"text":"…"}]` |
 | `wsh runs cancel <run-id> [--yes]` | hủy run; có worker sống thì cần `--yes` |

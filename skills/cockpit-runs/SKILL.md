@@ -9,7 +9,16 @@ description: Use when you need to start an arcterm run (quick, or orchestrator f
 
 - `wsh runs start "<goal>"` or `wsh runs start --plan <plan.md>`: a plan implies an orchestrator run.
   `--effort <id> --chunk <label|n>` attaches it to an initiative chunk (ids from `wsh effort list`).
-- `wsh runs list` shows this project's top-level runs; `--tasks` adds the runs that work one task of another.
+- `wsh runs start --plan <plan.md> --queue [--after <id>]` queues the start instead of making it: arcterm starts the
+  run when fewer than `runs:maxactive` top-level runs are active (3 unless set; 0 is no cap). `--after` takes a run id
+  or a queue id (a unique prefix of either), also waits for that run to land, and implies `--queue`. It prints
+  `queued q-3f2a (#2 in line) — …`.
+- `wsh runs start-now <q-id>` starts a queued entry now, past the cap and past its `--after`. `wsh runs run-next <q-id>`
+  moves it to the head of the queue, where it still waits for room and for its `--after`. `wsh runs dequeue <q-id>`
+  removes it without starting it.
+- `wsh runs list` shows this project's top-level runs, queued entries first (`queued #N`, `after <id>` or
+  `blocked: <reason>`); `--tasks` adds the runs that work one task of another, `--all` every project. `--json` prints
+  `{"queued": [...], "runs": [...]}`, not a bare array.
 - `wsh runs show <run-id>` shows status, route, commits, the task digest and the sealed report.
 - `wsh runs answer <run-id> '<answers-json>'` answers the run's own pending question (a lead's AskUserQuestion), which `wsh runs show` prints with numbered options.
 - `wsh runs cancel <run-id>` cancels a run.
@@ -40,6 +49,25 @@ Rules:
   harness and model (it is their cost to choose), pass what they pick, and suggest saving a route for
   the project in the cockpit so the next start needs none. Without a project route, the lead falls back
   to the harness preference in settings, which can name no model.
+- A queued start reads the plan and takes the base commit when it starts, not when it is queued: the plan file must
+  still be there then (a missing one blocks the entry), and an edit to it meanwhile is what runs. The route is the
+  exception: it is fixed when you queue, so the models you told the user about at `wsh runs route` are the ones that
+  run. Queue when the user picked the queued engine choice at the handoff (it is the recommended one when
+  `wsh runs list --all` shows `runs:maxactive` runs active or more); chain with `--after` a plan that touches the same
+  files as another run.
+- A queued entry is blocked, and stays so, when its `--after` run was cancelled or its land is held (not a dirty
+  checkout, which lands by itself), its `--after` entry was removed, its plan file is gone, or its start failed
+  (`blocked: <reason>`). It is also a Needs you item. `run-next` makes it wait again, but while the cause remains
+  (the `--after` run is still held) the next pass blocks it again: `start-now` or `dequeue` is the way on.
+- `start-now` starts one entry at a time and can take minutes. "another queued run is starting; try again in a moment"
+  is not the entry failing: it is not blocked, so wait and run it again. A start that does fail blocks the entry with
+  the error as its reason. As with `start`, a reply that never comes may still be a run that started: `wsh runs list`
+  first.
+- A run started from this session sends the session one message when it lands (`[arc] Run <id> "<goal>" landed: …`) or
+  is held (`… held: <reason>`), unless `runs:wakeorigin` is false in settings (unset is true). It arrives while the
+  session is idle or waiting, once per run, and not when the run was cancelled or the session is closed. It asks for a
+  review of the result as the session that wrote the plan: do that, report to the user in a few lines, and do not start
+  another run.
 - `cancel` stops live workers, so it asks for `--yes` when there are any. Cancel only a run the user
   asked you to stop. A finished run cannot be cancelled.
 - Steer one task of a run (asks, approve, retry, merge, message a worker) with `wsh jarvis dag <cmd>
