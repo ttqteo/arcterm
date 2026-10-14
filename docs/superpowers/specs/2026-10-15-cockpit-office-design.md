@@ -1,9 +1,9 @@
 # Cockpit office — design
 
 **Date:** 2026-10-15
-**Status:** design agreed in chat, not built. Part 1 of 3.
-**Canvas:** none yet. The look reuses the Run office sprites (`2026-10-14-run-office-design.md`); a `design-local`
-canvas under `.superpowers/design/cockpit-office/` is optional before the plan.
+**Status:** design agreed in chat, not built. Part 1 of 4.
+**Canvas:** `.superpowers/design/cockpit-office/project/` (gitignored; `Main`, `States`, `Night`, `Tired`,
+`RamPanel`). The people reuse the Run office sprites (`2026-10-14-run-office-design.md`).
 
 ## What it is
 
@@ -17,9 +17,9 @@ It is for fun, and it is a working view: the person asked for an office that fee
 Cockpit. RAM and CPU come first: the office ships only inside the budgets under **Benchmark**, and it shows its own
 cost in the RAM panel.
 
-## The three parts
+## The parts
 
-The office is built in three parts, each with its own spec, plan and run. A part starts only after the one before has
+The office is built in four parts, each with its own spec, plan and run. A part starts only after the one before has
 landed and the person has used it and still wants the next.
 
 1. **This spec:** the office view, the boss, personalities, day and night, energy from the 5-hour quota, and the
@@ -34,6 +34,12 @@ landed and the person has used it and still wants the next.
    a run's Final shots, a keepsake when a task is done or a run lands (stored as scene data, redrawn when viewed, no
    PNG), and each new canvas. Photos hang on a wall; a click opens the Final shots viewer, the keepsake, or Agent →
    Canvases. Changing the pet or the theme loses nothing.
+4. **System staff** (own spec): arcterm's background systems as office staff, each shown only while it has work.
+   The cleaner is AutoClean (`pkg/storage/autoclean.go`): she pushes her cart across the floors when it has cleaned
+   something, with a line saying what (`3 worktrees, 120 MB`). The guard at the door is the Token burn guard
+   (`pkg/tokengate`): while a costly spawn waits, he stands before the elevator with the would-be subagents in a
+   queue, and the boss walking up opens that Token burn card. The queue at the machine room is the job queue
+   (`pkg/jobqueue`): each heavy command waiting for RAM is a person holding a box; a click opens the Jobs popover.
 
 No part calls a model. Every rule reads data arcterm already holds: agent and task states, the quota, the clock.
 
@@ -53,7 +59,7 @@ No part calls a model. Every rule reads data arcterm already holds: agent and ta
 - **A floor per project** that has a card, ordered by project name; cards with no project share a floor called
   `Home`, last. Floor order and desk order are **stable**: a desk belongs to an agent while its card exists, and a
   state change never moves anyone to another desk.
-- **Desks** (88 px) in order of agent name, then id. A floor's left end is the coffee corner (machine and sofa); its
+- **Desks** (88 px, with a 24 px aisle after each, where the boss stands) in order of agent name, then id. A floor's left end is the coffee corner (machine and sofa); its
   right end is the elevator. A floor wider than the office scrolls horizontally inside itself and follows the boss.
 - **A run** with a card is a team at the end of its project's floor, after a glass partition: the lead's glass office
   and one desk per dag task, built by the existing `officeFloor` (`view/jarvis/officemodel.ts`) with its poses,
@@ -99,8 +105,8 @@ A person away from the desk walks back when the agent is working or asking again
 - While the boss stands still at a desk, the desk's card shows beside it: the **same `AgentRow`** the grid draws,
   with the props `CockpitSurface` already passes the cursor card (selections, typed answers, composer), or for a run
   desk the run's **`LeadCard`** with that task's row as its cursor. No card is rewritten for the office.
-- It hides while the boss walks and when `Esc` is pressed, until the boss moves again. It sits above the desk and
-  flips to stay inside the office's box.
+- It hides while the boss walks and when `Esc` is pressed, until the boss moves again. It sits under the desk, over
+  the floor below, with a pointer to the desk, and flips above it only when the office has no room below.
 - **Open terminal** leaves for the Agent surface through `openTarget`, as the card does today.
 - **Card streams:** in Office, `useCardStreams` is given only the popup's card, not one per agent.
 
@@ -156,14 +162,16 @@ A person away from the desk walks back when the agent is working or asking again
 
 ## Its cost in the RAM panel
 
-The Consumers panel (from the RAM chip) already lists **Interface**, the webview that draws the cockpit. While the
-office is mounted it gets an **Office** line under Interface, in both the full and the compact panel:
+The Consumers panel (from the RAM chip) already lists **Interface**, the webview that draws the cockpit, in its
+**arcterm** block (Agents, Interface, Server, Host, Terminals: RAM only on a Mac; CPU per process is read only where
+the Resource Manager runs, on Windows). While the office is mounted the block gets an **Office** line under those
+figures, in both the full and the compact panel:
 
 ```
-Interface                         312 MB · 4 % CPU
-  └ Office  ● animating (2 walking, 6 typing)
-            Office JS ~0.3 % · 72 people · 140 images (180 KB) · 1,350 nodes
-            [Turn animation off]
+arcterm                                              Total, with agents 2.1 GB
+Agents 1.4 GB   Interface 312 MB   Server 96 MB   Host 41 MB   Terminals 210 MB
+Office  ● animating · 2 walking · 6 typing
+        Office JS 0.3 %   72 people   140 images · 180 KB   1,350 nodes   [Turn animation off]
 ```
 
 - **Measured:** the office's own JS time (`performance.now()` around each frame-clock and walk-clock step, summed
@@ -171,8 +179,9 @@ Interface                         312 MB · 4 % CPU
   entries and bytes (the data URLs' lengths), and the office root's DOM nodes. The counters are read only while the
   panel is open.
 - **Not shown:** a heap figure for the office alone. WKWebView has no `performance.memory`, so a number there would be
-  made up; Interface above is the whole webview's RAM. The tooltip says the JS figure leaves out the browser's own
-  layout and paint, and that turning the animation off and watching Interface's CPU is the full answer.
+  made up; Interface above is the whole webview's RAM, office included. The tooltip says the JS figure leaves out
+  the browser's own layout and paint; the whole webview's CPU is Interface's CPU where the panel reads it (Windows),
+  and on a Mac arcterm's WebKit web-content process in Activity Monitor, read with the animation on and then off.
 - The button sets `officeAnimationAtom`; Settings → Appearance → Office holds the same switch and the work hours.
 
 ## Files
@@ -229,7 +238,8 @@ in the RAM panel, and that reading goes into RAM watch too.
 
 ## Out of scope
 
-- Everything in parts 2 and 3: coins, shop, decor, work-life bonus, the photographer, the photo wall.
+- Everything in parts 2 to 4: coins, shop, decor, work-life bonus, the photographer, the photo wall, the system
+  staff.
 - The pet in the office: it keeps walking the footer.
 - A top-down office, free walking in two dimensions, people talking to each other, meeting rooms, sound.
 - An office anywhere but the Cockpit; the Run office in Jarvis stays as it is.
