@@ -19,7 +19,7 @@ export interface PetEventSource {
     ref: string;
     anchor?: string;
     title: string;
-    sourceType: string; // dossier | decision | memory | run
+    sourceType: string; // dossier | decision | memory | run | memhygiene
 }
 
 export interface PetEvent {
@@ -34,6 +34,7 @@ export interface PetEvent {
         | "connection"
         | "loose-end"
         | "ledger"
+        | "memory-hygiene"
         // announcement channels: notifications and pending agent questions
         | "notify"
         | "ask"
@@ -70,6 +71,7 @@ const KIND_LABEL: Record<PetEvent["kind"], string> = {
     connection: "This just connected",
     "loose-end": "Still open",
     ledger: "Work state",
+    "memory-hygiene": "Memory to review",
     notify: "Notice",
     ask: "Needs you",
     quote: "Quote",

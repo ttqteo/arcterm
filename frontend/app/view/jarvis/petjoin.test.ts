@@ -112,6 +112,27 @@ describe("eventFromVolunteer", () => {
         expect(ev?.text).toBe("shipped: ask bridge - landed, changed 12 files");
         expect(ev?.sources?.[0].ref).toBe("run:run-1");
     });
+
+    // the memory hygiene producer sends a title and no body; its ref lands on the Setup surface's Memory tab
+    it("maps the memory-hygiene class to an utterance with a memhygiene source", () => {
+        const ev = eventFromVolunteer({
+            class: "memory-hygiene",
+            id: "memory-hygiene:waveterm:900",
+            at: 900,
+            title: "waveterm's memory has 3 changes to review",
+            text: "",
+            sourcetype: "memhygiene",
+            ref: "memhygiene:waveterm",
+        });
+        expect(ev?.kind).toBe("memory-hygiene");
+        expect(ev?.text).toBe("waveterm's memory has 3 changes to review");
+        expect(ev?.sources?.[0]).toEqual({
+            ref: "memhygiene:waveterm",
+            anchor: undefined,
+            title: "waveterm's memory has 3 changes to review",
+            sourceType: "memhygiene",
+        });
+    });
 });
 
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";

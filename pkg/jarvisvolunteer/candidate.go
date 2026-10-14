@@ -8,11 +8,12 @@ package jarvisvolunteer
 
 import "context"
 
-// The three knowledge classes. Each reads an engine that already computes; none adds a retrieval pass.
+// The knowledge classes. Each reads an engine that already computes; none adds a retrieval pass.
 const (
-	ClassConnection = "connection" // an attribution edge that just formed
-	ClassLooseEnd   = "loose-end"  // a dossier going quiet
-	ClassLedger     = "ledger"     // the state of your work: shipped runs, needs-you items
+	ClassConnection    = "connection"     // an attribution edge that just formed
+	ClassLooseEnd      = "loose-end"      // a dossier going quiet
+	ClassLedger        = "ledger"         // the state of your work: shipped runs, needs-you items
+	ClassMemoryHygiene = "memory-hygiene" // a project's memory check left changes to review
 )
 
 // Every terminal path names its reason. Returning nothing on failure is what made six distinct failures
@@ -43,7 +44,7 @@ type Candidate struct {
 	At         int64 // UnixMilli, from the fact
 	Title      string
 	Snippet    string
-	SourceType string // dossier | decision | memory | run
+	SourceType string // dossier | decision | memory | run | memhygiene
 	SourceRef  string
 	Anchor     string // optional sub-object to highlight within SourceRef
 }

@@ -43,7 +43,7 @@ var producersFor = func(t *Trigger) []Producer {
 	case TriggerRunRest:
 		return []Producer{NewConnectionProducer(), NewLedgerProducer()}
 	default:
-		return []Producer{NewLooseEndProducer()}
+		return []Producer{NewLooseEndProducer(), NewMemoryHygieneProducer()}
 	}
 }
 
