@@ -13524,15 +13524,21 @@ async function arrangeFixtureRun(h, ctx, label, leadName, leadExtra, runExtra) {
     const wslist = await h.rpc("workspacelist", null);
     const ch = await h.rpc("createchannel", { name: `verify-${label}`, projectpath: ctx.cwd });
     ctx.channelId = ch.oid;
-    const created = await h.rpc("createrun", {
-        channelid: ctx.channelId,
-        workspaceid: wslist[0].workspacedata.oid,
-        goal: `verify ${label}: do nothing`,
-        runtime: "claude",
-        mode: "orchestrator",
-        deferstart: true,
-        ...runExtra,
-    });
+    // createrun probes the lead's harness before it loads the channel; on a cold Final boot that outlasted the
+    // 5s default and the channel load failed with "context deadline exceeded"
+    const created = await h.rpc(
+        "createrun",
+        {
+            channelid: ctx.channelId,
+            workspaceid: wslist[0].workspacedata.oid,
+            goal: `verify ${label}: do nothing`,
+            runtime: "claude",
+            mode: "orchestrator",
+            deferstart: true,
+            ...runExtra,
+        },
+        { timeout: 30000 }
+    );
     ctx.runId = created.run.id;
     ctx.landPath = created.run.landpath;
     mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
@@ -13619,7 +13625,11 @@ async function teardownFixtureRun(h, ctx, name, restore) {
     }
     await step("reload onto the live roster", async () => {
         await h.ev("location.reload()");
-        await new Promise((r) => setTimeout(r, 2500));
+        // a fixed wait left the next scenario on a page still booting: a cold Final boot took 35s to render
+        await new Promise((r) => setTimeout(r, 500));
+        if (!(await polishWaitFor(h, `!!document.querySelector("nav button")`, 30000))) {
+            throw new Error("the app did not come back within 30s of the reload");
+        }
     });
     // engine trees live under the arc-wt root, not the temp dir, and a cancel leaves the landing tree: only a land
     // removes it. A worker just stopped holds its lane's tree for a moment, hence the retries.
