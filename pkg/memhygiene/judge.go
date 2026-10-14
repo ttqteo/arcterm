@@ -262,12 +262,11 @@ func judgeBuild(jc judgeChange, inv *Inventory, docTarget string, eolLen int) (w
 		}
 	}
 
+	// the index stays out of Files, as for a split: its edit is exact-line, so applying one change in a
+	// folder must not turn every sibling's hash check into a conflict.
 	var paths []string
 	if op.DocPath != "" {
 		paths = append(paths, op.DocPath)
-	}
-	if len(op.IndexRemove) > 0 || op.IndexAdd != "" {
-		paths = append(paths, inv.IndexPath)
 	}
 	for _, name := range jc.Files {
 		paths = append(paths, filepath.Join(inv.Folder, name))

@@ -66,9 +66,14 @@ func (p *applyPlan) set(path string, w applyWrite) {
 func (p *applyPlan) put(path string, data []byte) { p.set(path, applyWrite{data: data}) }
 func (p *applyPlan) remove(path string)           { p.set(path, applyWrite{remove: true}) }
 
-// Apply writes a change. When a file differs from its check-time hash it returns that path as the
-// conflict and writes nothing. Otherwise it backs up every file it touches under
-// <backupRoot>/<applyID>/ first.
+// applyConflict is a file whose content no longer fits the change, found while building the plan.
+type applyConflict struct{ path string }
+
+func (c applyConflict) Error() string { return "conflict in " + c.path }
+
+// Apply writes a change. When a file differs from its check-time hash, or an index line it removes is
+// gone or one it adds is already there, it returns that path as the conflict and writes nothing.
+// Otherwise it backs up every file it touches under <backupRoot>/<applyID>/ first.
 func Apply(change wshrpc.MemChange, backupRoot string, now time.Time) (applyID string, conflict string, err error) {
 	for _, f := range change.Files {
 		hash, err := HashFile(f.Path)
@@ -80,6 +85,9 @@ func Apply(change wshrpc.MemChange, backupRoot string, now time.Time) (applyID s
 		}
 	}
 	plan, err := applyBuild(change)
+	if c := (applyConflict{}); errors.As(err, &c) {
+		return "", c.path, nil
+	}
 	if err != nil {
 		return "", "", fmt.Errorf("applying %s %q: %w", change.Kind, change.Title, err)
 	}
@@ -441,7 +449,8 @@ func applyCopyMemories(p *applyPlan, op wshrpc.MemOp, move bool) error {
 
 // applyIndexEdit removes IndexRemove from Folder's MEMORY.md and adds IndexAdd to IndexFolder's
 // (Folder when unset). In the same index the added line takes the first removed line's place, so a
-// trim or merge keeps the entry where it was; otherwise it goes after the last non-blank line.
+// trim or merge keeps the entry where it was; otherwise it goes after the last non-blank line. A
+// removed line that is gone, or an added line already there, is an applyConflict on that index.
 func applyIndexEdit(p *applyPlan, op wshrpc.MemOp) error {
 	add := op.IndexAdd
 	addFolder := op.IndexFolder
@@ -458,7 +467,7 @@ func applyIndexEdit(p *applyPlan, op wshrpc.MemOp) error {
 		for _, line := range op.IndexRemove {
 			i := slices.Index(tf.Lines, line)
 			if i < 0 {
-				return fmt.Errorf("index line not in %s: %q", path, line)
+				return applyConflict{path}
 			}
 			tf.Lines = slices.Delete(tf.Lines, i, i+1)
 			if at < 0 || i < at {
@@ -466,6 +475,9 @@ func applyIndexEdit(p *applyPlan, op wshrpc.MemOp) error {
 			}
 		}
 		if add != "" && filepath.Clean(addFolder) == filepath.Clean(op.Folder) {
+			if slices.Contains(tf.Lines, add) {
+				return applyConflict{path}
+			}
 			tf.Lines = slices.Insert(tf.Lines, at, add)
 			add = ""
 		}
@@ -478,6 +490,9 @@ func applyIndexEdit(p *applyPlan, op wshrpc.MemOp) error {
 	tf, err := ReadText(path)
 	if err != nil {
 		return err
+	}
+	if slices.Contains(tf.Lines, add) {
+		return applyConflict{path}
 	}
 	at := len(tf.Lines)
 	for at > 0 && strings.TrimSpace(tf.Lines[at-1]) == "" {

@@ -369,3 +369,69 @@ func TestPruneBackupsAfter30Days(t *testing.T) {
 		t.Errorf("pruning a missing backup root: %v", err)
 	}
 }
+
+func TestApplyJudgeSiblingsNoConflict(t *testing.T) {
+	inv := judgeTestInventory(t)
+	reply := `{"changes": [
+		{"kind": "delete", "title": "Stale alpha", "files": ["alpha.md"]},
+		{"kind": "trim", "title": "Shorter beta", "files": ["beta.md"], "old": "the same thing", "new": "one thing", "index_line": "- [Beta rule](beta.md) — one thing"}
+	]}`
+	changes, err := ParseJudge(reply, inv, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	backupRoot := t.TempDir()
+	applyTestRun(t, changes[0], backupRoot)
+	id := applyTestRun(t, changes[1], backupRoot)
+	applyTestExpect(t, map[string]string{
+		inv.IndexPath:                         "- [Beta rule](beta.md) — one thing\n",
+		filepath.Join(inv.Folder, "alpha.md"): "",
+		filepath.Join(inv.Folder, "beta.md"):  "Beta says one thing.\n",
+	})
+
+	// the manifest comes from the write plan, so undo still restores the index left out of Files
+	if conflict, err := Undo(backupRoot, id); err != nil || conflict != "" {
+		t.Fatalf("Undo = %q, %v", conflict, err)
+	}
+	applyTestExpect(t, map[string]string{inv.IndexPath: judgeTestLineB + "\n", filepath.Join(inv.Folder, "beta.md"): "Beta says the same thing.\n"})
+}
+
+func TestApplyIndexLineGoneIsConflict(t *testing.T) {
+	inv := judgeTestInventory(t)
+	changes, err := ParseJudge(`{"changes": [{"kind": "delete", "title": "Stale alpha", "files": ["alpha.md"]}]}`, inv, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, inv.IndexPath, judgeTestLineB+"\n")
+	backupRoot := filepath.Join(t.TempDir(), "backups")
+	id, conflict, err := Apply(changes[0], backupRoot, applyTestNow)
+	if err != nil || id != "" || conflict != inv.IndexPath {
+		t.Errorf("Apply = %q, conflict %q, %v; want conflict %s", id, conflict, err, inv.IndexPath)
+	}
+	applyTestExpect(t, map[string]string{inv.IndexPath: judgeTestLineB + "\n", filepath.Join(inv.Folder, "alpha.md"): inv.Memories[0].Body})
+	if _, err := os.Stat(backupRoot); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("a conflicting apply wrote a backup: %v", err)
+	}
+}
+
+func TestApplyIndexLineAlreadyPresentIsConflict(t *testing.T) {
+	inv := judgeTestInventory(t)
+	const line = "- [Gamma](gamma.md) — gamma"
+	changes, err := ParseJudge(`{"changes": [{"kind": "add-to-index", "title": "Worth loading", "files": ["gamma.md"], "index_line": "`+line+`"}]}`, inv, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := judgeTestLineA + "\n" + judgeTestLineB + "\n" + line + "\n"
+	writeFile(t, inv.IndexPath, index)
+	gamma := filepath.Join(inv.Folder, "gamma.md")
+	gammaBefore := applyTestSnapshot(t, []string{gamma})[gamma]
+	backupRoot := filepath.Join(t.TempDir(), "backups")
+	id, conflict, err := Apply(changes[0], backupRoot, applyTestNow)
+	if err != nil || id != "" || conflict != inv.IndexPath {
+		t.Errorf("Apply = %q, conflict %q, %v; want conflict %s", id, conflict, err, inv.IndexPath)
+	}
+	applyTestExpect(t, map[string]string{inv.IndexPath: index, gamma: gammaBefore})
+	if _, err := os.Stat(backupRoot); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("a conflicting apply wrote a backup: %v", err)
+	}
+}

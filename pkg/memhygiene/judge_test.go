@@ -140,7 +140,6 @@ func TestParseJudgeBuildsOpAndHashes(t *testing.T) {
 		}
 		return h
 	}
-	indexRef := wshrpc.MemFileRef{Path: inv.IndexPath, Sha256: hash(inv.IndexPath)}
 	alpha := filepath.Join(inv.Folder, "alpha.md")
 	beta := filepath.Join(inv.Folder, "beta.md")
 	gamma := filepath.Join(inv.Folder, "gamma.md")
@@ -153,8 +152,8 @@ func TestParseJudgeBuildsOpAndHashes(t *testing.T) {
 	}
 
 	del := changes[0]
-	if want := []wshrpc.MemFileRef{indexRef, alphaRef}; !reflect.DeepEqual(del.Files, want) {
-		t.Errorf("delete files = %+v, want %+v", del.Files, want)
+	if want := []wshrpc.MemFileRef{alphaRef}; !reflect.DeepEqual(del.Files, want) {
+		t.Errorf("delete files = %+v, want %+v (the index stays out)", del.Files, want)
 	}
 	if !reflect.DeepEqual(del.Op.IndexRemove, []string{judgeTestLineA}) || del.Op.Folder != inv.Folder || !reflect.DeepEqual(del.Op.Memories, []string{"alpha.md"}) {
 		t.Errorf("delete op = %+v", del.Op)
@@ -186,7 +185,7 @@ func TestParseJudgeBuildsOpAndHashes(t *testing.T) {
 
 	merge := changes[2]
 	newRef := wshrpc.MemFileRef{Path: filepath.Join(inv.Folder, "alpha-beta.md"), Sha256: ""}
-	if want := []wshrpc.MemFileRef{indexRef, alphaRef, betaRef, newRef}; !reflect.DeepEqual(merge.Files, want) {
+	if want := []wshrpc.MemFileRef{alphaRef, betaRef, newRef}; !reflect.DeepEqual(merge.Files, want) {
 		t.Errorf("merge files = %+v, want %+v", merge.Files, want)
 	}
 	if merge.Op.WriteName != "alpha-beta.md" || merge.Op.WriteBody != "One thing.\n" || !reflect.DeepEqual(merge.Op.IndexRemove, []string{judgeTestLineA, judgeTestLineB}) {
@@ -197,7 +196,7 @@ func TestParseJudgeBuildsOpAndHashes(t *testing.T) {
 	}
 
 	move := changes[3]
-	if want := []wshrpc.MemFileRef{{Path: doc, Sha256: hash(doc)}, indexRef, betaRef}; !reflect.DeepEqual(move.Files, want) {
+	if want := []wshrpc.MemFileRef{{Path: doc, Sha256: hash(doc)}, betaRef}; !reflect.DeepEqual(move.Files, want) {
 		t.Errorf("move files = %+v, want %+v", move.Files, want)
 	}
 	if move.Op.DocPath != doc || move.Op.DocSection != "## Gotchas" || move.Op.DocPassage != "- beta rule" || move.ApplyLabel != "Move to AGENTS.md" {
@@ -205,7 +204,7 @@ func TestParseJudgeBuildsOpAndHashes(t *testing.T) {
 	}
 
 	add := changes[4]
-	if want := []wshrpc.MemFileRef{indexRef, {Path: gamma, Sha256: hash(gamma)}}; !reflect.DeepEqual(add.Files, want) {
+	if want := []wshrpc.MemFileRef{{Path: gamma, Sha256: hash(gamma)}}; !reflect.DeepEqual(add.Files, want) {
 		t.Errorf("add files = %+v, want %+v", add.Files, want)
 	}
 	if !add.Op.StripHarvester || add.Op.IndexAdd != "- [Gamma](gamma.md) — gamma" || len(add.Op.IndexRemove) != 0 || add.IndexDelta.Lines != 1 {

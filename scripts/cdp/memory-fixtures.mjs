@@ -284,7 +284,7 @@ export function buildMemoryFixture(root, now = Date.now()) {
             op: { folder: own, memories: ["build-reference.md"], old: trimOld, new: trimNew },
         }),
         delete: change("delete", {
-            paths: [[ownIndex], [flakyPath]],
+            paths: [[flakyPath]],
             title: "A one-time test result, not a rule",
             applylabel: "Delete memory",
             effect: `Index ${signedBytes(-(Buffer.byteLength(line.flaky) + 1))}`,
@@ -297,7 +297,7 @@ export function buildMemoryFixture(root, now = Date.now()) {
             op: { folder: own, memories: ["flaky-retry-test.md"], indexremove: [line.flaky] },
         }),
         merge: change("merge", {
-            paths: [[ownIndex], [answerPath], [submitPath]],
+            paths: [[answerPath], [submitPath]],
             title: "Two entries about EC-TIME from wsh jarvis",
             note: "The bodies are joined into ec-time-answer.md; the other files are deleted.",
             applylabel: "Merge entries",
@@ -330,7 +330,7 @@ export function buildMemoryFixture(root, now = Date.now()) {
             },
         }),
         moveToDoc: change("move-to-doc", {
-            paths: [[doc], [ownIndex], [checkPath]],
+            paths: [[doc], [checkPath]],
             title: "A plan-writing rule the repo should own",
             note: "Leaves AGENTS.md changed in your working tree. Commit it with your next change.",
             applylabel: "Move to AGENTS.md",
@@ -351,7 +351,7 @@ export function buildMemoryFixture(root, now = Date.now()) {
             },
         }),
         addToIndex: change("add-to-index", {
-            paths: [[ownIndex], [harvestedPath]],
+            paths: [[harvestedPath]],
             title: "A memory the index doesn't link",
             note: "The old harvester’s fields are dropped from a memory it keeps.",
             applylabel: "Add to index",
@@ -487,7 +487,7 @@ export function buildMemoryFixture(root, now = Date.now()) {
     );
     const failedCheckedAt = now - 2 * DAY_MS;
     const failedKept = change("delete", {
-        paths: [[failedIndex], [failedMemory]],
+        paths: [[failedMemory]],
         title: "A rule the repo no longer follows",
         applylabel: "Delete memory",
         effect: `Index ${signedBytes(-(Buffer.byteLength(failedLine) + 1))}`,
