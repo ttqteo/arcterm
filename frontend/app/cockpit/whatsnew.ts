@@ -120,21 +120,97 @@ export function splitHighlights(release: Release): { highlights: Entry[]; rest: 
     return { highlights, rest };
 }
 
-// The fold line under the cards: "58 more changes · 12 fixes", without "more" when no card sits above it.
-export function foldLabel(rest: Section[], afterCards: boolean): string {
+export type FoldPart = { kind: "changes" | "fixes"; text: string };
+
+// The fold line's counts, each drawn beside its own icon: "58 more changes", "12 fixes", without "more" when no card
+// sits above them.
+export function foldParts(rest: Section[], afterCards: boolean): FoldPart[] {
     const count = (kinds: SectionKind[]) =>
         rest.filter((s) => kinds.includes(s.kind)).reduce((n, s) => n + s.entries.length, 0);
     const more = afterCards ? "more " : "";
     const changes = count(["Added", "Changed"]);
     const fixes = count(["Fixed"]);
-    const parts: string[] = [];
+    const parts: FoldPart[] = [];
     if (changes > 0) {
-        parts.push(`${changes} ${more}${changes === 1 ? "change" : "changes"}`);
+        parts.push({ kind: "changes", text: `${changes} ${more}${changes === 1 ? "change" : "changes"}` });
     }
     if (fixes > 0) {
-        parts.push(`${fixes} ${parts.length === 0 ? more : ""}${fixes === 1 ? "fix" : "fixes"}`);
+        parts.push({
+            kind: "fixes",
+            text: `${fixes} ${parts.length === 0 ? more : ""}${fixes === 1 ? "fix" : "fixes"}`,
+        });
     }
-    return parts.join(" · ");
+    return parts;
+}
+
+// The fold line under the cards: "58 more changes · 12 fixes".
+export function foldLabel(rest: Section[], afterCards: boolean): string {
+    return foldParts(rest, afterCards)
+        .map((p) => p.text)
+        .join(" · ");
+}
+
+export type NoteIcon =
+    | "palette"
+    | "gift"
+    | "sprout"
+    | "user"
+    | "wand"
+    | "lightbulb"
+    | "diff"
+    | "terminal"
+    | "folder"
+    | "branch"
+    | "rocket"
+    | "moon"
+    | "gauge"
+    | "keyboard"
+    | "at"
+    | "close"
+    | "bookmark"
+    | "image"
+    | "outline"
+    | "history"
+    | "bot"
+    | "sparkles";
+
+// one of the six graph-lane colors, which every theme keeps, so a card's tint reads the same in each
+export type NoteTone = 1 | 2 | 3 | 4 | 5 | 6;
+
+// First match wins, so the narrow words come before the ones nearly every note says (agent, session): "Claude
+// account" is the account before it is Code, "terminal tools … in the right folder" the tools before the folder.
+const ICON_RULES: { re: RegExp; icon: NoteIcon; tone: NoteTone }[] = [
+    { re: /\bcanvas|\bmockups?\b/, icon: "palette", tone: 4 },
+    { re: /\bwhat's new\b|\brelease notes?\b/, icon: "gift", tone: 5 },
+    { re: /\bsprout\b|\bjarvis\b|\bspider-man\b|\bcharacter\b|\bfold(s|ed|ing)?\b/, icon: "sprout", tone: 2 },
+    { re: /\baccounts?\b|\blogin\b/, icon: "user", tone: 2 },
+    { re: /\bskills?\b/, icon: "wand", tone: 4 },
+    { re: /\bideas?\b/, icon: "lightbulb", tone: 3 },
+    { re: /\bdiff\b|\bcommit|\breview/, icon: "diff", tone: 1 },
+    { re: /\btools?\b|\bterminals?\b|\blazygit\b/, icon: "terminal", tone: 6 },
+    { re: /\bcode\b|\bfolders?\b|\bfiles?\b|\bpin\b/, icon: "folder", tone: 6 },
+    { re: /\bgit\b|\bbranch/, icon: "branch", tone: 1 },
+    { re: /\bsleep|\bidle\b/, icon: "moon", tone: 4 },
+    { re: /\bruns?\b|\borchestrat|\bworkers?\b|\bqueue/, icon: "rocket", tone: 5 },
+    { re: /\bresources?\b|\bcpu\b|\bram\b|\bstorage\b|\bdisk\b|\busage\b|\btokens?\b/, icon: "gauge", tone: 3 },
+    { re: /\bctrl\b|\bshortcuts?\b|\bkeys\b|\bswitcher\b/, icon: "keyboard", tone: 1 },
+    { re: /@?\bmention|\bmessages?\b/, icon: "at", tone: 2 },
+    { re: /\bclose|\bdelete|\btrash\b|\bclean up\b/, icon: "close", tone: 5 },
+    { re: /\bbookmark|\bmark for later\b/, icon: "bookmark", tone: 3 },
+    { re: /\bimages?\b|\bpaste\b/, icon: "image", tone: 6 },
+    { re: /\boutline\b|\bheadings?\b/, icon: "outline", tone: 1 },
+    { re: /\btranscripts?\b|\bsessions?\b|\bconversations?\b/, icon: "history", tone: 6 },
+    { re: /\bagents?\b|\bcodex\b|\bclaude\b/, icon: "bot", tone: 2 },
+];
+
+// The picture a highlight card leads with, picked by the words of its headline (its bold lead, or its first words
+// when it has none). A note no rule knows gets sparkles, tinted by its place so a release's cards still differ.
+export function noteIcon(text: string, index: number): { icon: NoteIcon; tone: NoteTone } {
+    const head = (entryLead(text) ?? text.slice(0, 100)).replace(/[*`]/g, "").toLowerCase();
+    const rule = ICON_RULES.find((r) => r.re.test(head));
+    return rule != null
+        ? { icon: rule.icon, tone: rule.tone }
+        : { icon: "sparkles", tone: ((index % 6) + 1) as NoteTone };
 }
 
 // Numeric semver order; a missing or non-numeric part counts as 0, so "0.15" sorts with "0.15.0".

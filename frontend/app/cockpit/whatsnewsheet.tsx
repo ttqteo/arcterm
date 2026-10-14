@@ -9,25 +9,105 @@ import { displayKeys } from "@/app/store/keybindings/matcher";
 import { bindingsAtom } from "@/app/store/keybindings/store";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
+import { petCharacter } from "@/app/view/jarvis/petcharacter";
+import { spriteFor } from "@/app/view/jarvis/petsprite";
+import { petCharacterAtom } from "@/app/view/jarvis/petstore";
+import { SproutSvg } from "@/app/view/jarvis/sproutsvg";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ArrowRight, ChevronRight } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import {
+    ArrowRight,
+    AtSign,
+    Bookmark,
+    Bot,
+    Bug,
+    ChevronRight,
+    FileDiff,
+    FolderCode,
+    Gauge,
+    Gift,
+    GitBranch,
+    History,
+    Image,
+    Keyboard,
+    Lightbulb,
+    ListTree,
+    ListX,
+    Moon,
+    Palette,
+    PartyPopper,
+    RefreshCw,
+    Rocket,
+    Sparkles,
+    Sprout,
+    SquareTerminal,
+    UserRound,
+    WandSparkles,
+    type LucideIcon,
+} from "lucide-react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { versionInfoAtom } from "./versioninfo";
 import {
     entryBody,
     entryLead,
-    foldLabel,
+    foldParts,
     formatReleaseDate,
     inlineSpans,
+    noteIcon,
     releasesToShow,
     splitHighlights,
     type Entry,
+    type NoteIcon,
+    type NoteTone,
     type Release,
     type Section,
+    type SectionKind,
 } from "./whatsnew";
 import { closeWhatsNew, loadReleases, runTry, tryBinding, whatsNewOpenAtom } from "./whatsnewstore";
+
+const NOTE_ICONS: Record<NoteIcon, LucideIcon> = {
+    palette: Palette,
+    gift: Gift,
+    sprout: Sprout,
+    user: UserRound,
+    wand: WandSparkles,
+    lightbulb: Lightbulb,
+    diff: FileDiff,
+    terminal: SquareTerminal,
+    folder: FolderCode,
+    branch: GitBranch,
+    rocket: Rocket,
+    moon: Moon,
+    gauge: Gauge,
+    keyboard: Keyboard,
+    at: AtSign,
+    close: ListX,
+    bookmark: Bookmark,
+    image: Image,
+    outline: ListTree,
+    history: History,
+    bot: Bot,
+    sparkles: Sparkles,
+};
+
+// spelled out whole so Tailwind sees each class
+const TONE_TILE: Record<NoteTone, string> = {
+    1: "bg-graphlane-1/15 text-graphlane-1",
+    2: "bg-graphlane-2/15 text-graphlane-2",
+    3: "bg-graphlane-3/15 text-graphlane-3",
+    4: "bg-graphlane-4/15 text-graphlane-4",
+    5: "bg-graphlane-5/15 text-graphlane-5",
+    6: "bg-graphlane-6/15 text-graphlane-6",
+};
+
+const SECTION_ICON: Record<SectionKind, { Icon: LucideIcon; tint: string }> = {
+    Added: { Icon: Sparkles, tint: "text-graphlane-2" },
+    Changed: { Icon: RefreshCw, tint: "text-graphlane-1" },
+    Fixed: { Icon: Bug, tint: "text-graphlane-3" },
+};
+
+const FOLD_ICON = { changes: SECTION_ICON.Added, fixes: SECTION_ICON.Fixed };
 
 export function WhatsNewSheet({ model }: { model: AgentsViewModel }) {
     const open = useAtomValue(whatsNewOpenAtom);
@@ -50,7 +130,8 @@ export function WhatsNewSheet({ model }: { model: AgentsViewModel }) {
         >
             {open ? (
                 <>
-                    <div className="flex shrink-0 items-center gap-2 border-b border-border px-5 py-[13px]">
+                    <div className="flex shrink-0 items-center gap-2.5 border-b border-border px-5 py-2">
+                        <HeaderPet />
                         <span className="text-[14px] font-semibold text-primary">What's new</span>
                         <span className="text-[12.5px] tabular-nums text-muted">in arcterm {current}</span>
                         <span className="ml-auto shrink-0 rounded-[5px] border border-edge-mid px-[7px] py-0.5 font-mono text-[10.5px] text-muted">
@@ -63,7 +144,9 @@ export function WhatsNewSheet({ model }: { model: AgentsViewModel }) {
                         ) : shown.length === 0 ? (
                             <div className="py-6 text-[13px] text-muted">No notes for this build.</div>
                         ) : (
-                            shown.map((r) => <ReleaseNotes key={r.version} release={r} model={model} />)
+                            shown.map((r, i) => (
+                                <ReleaseNotes key={r.version} release={r} latest={i === 0} model={model} />
+                            ))
                         )}
                     </div>
                 </>
@@ -73,18 +156,21 @@ export function WhatsNewSheet({ model }: { model: AgentsViewModel }) {
 }
 
 // A release leads with its few highlights as cards; every other note, its fixes too, waits under one fold line.
-function ReleaseNotes({ release, model }: { release: Release; model: AgentsViewModel }) {
+function ReleaseNotes({ release, latest, model }: { release: Release; latest: boolean; model: AgentsViewModel }) {
     const { highlights, rest } = splitHighlights(release);
     return (
         <section data-release={release.version} className="border-b border-border pt-4 pb-3 last:border-b-0">
             <div className="mb-1 flex items-baseline gap-2">
+                {latest ? (
+                    <PartyPopper size={14} aria-hidden className="shrink-0 self-center text-graphlane-3" />
+                ) : null}
                 <span className="text-[13.5px] font-semibold tabular-nums text-primary">{release.version}</span>
                 <span className="text-[12px] tabular-nums text-muted">{formatReleaseDate(release.date)}</span>
             </div>
             {highlights.length > 0 ? (
                 <ul className="mt-2 flex flex-col gap-2">
                     {highlights.map((e, i) => (
-                        <HighlightCard key={i} entry={e} model={model} />
+                        <HighlightCard key={i} entry={e} index={i} model={model} />
                     ))}
                 </ul>
             ) : null}
@@ -103,8 +189,8 @@ function MoreNotes({
     model: AgentsViewModel;
 }) {
     const [open, setOpen] = useState(false);
-    const label = foldLabel(sections, afterCards);
-    if (label === "") {
+    const parts = foldParts(sections, afterCards);
+    if (parts.length === 0) {
         return null;
     }
     return (
@@ -117,12 +203,21 @@ function MoreNotes({
                 className="flex cursor-pointer items-center gap-1 text-[12px] text-muted hover:text-primary"
             >
                 <ChevronRight size={13} className={cn("transition-transform", open && "rotate-90")} aria-hidden />
-                {label}
+                {parts.map((p, i) => {
+                    const { Icon, tint } = FOLD_ICON[p.kind];
+                    return (
+                        <span key={p.kind} className="flex items-center gap-1">
+                            {i > 0 ? <span className="mr-0.5">{" · "}</span> : null}
+                            <Icon size={12} aria-hidden className={tint} />
+                            {p.text}
+                        </span>
+                    );
+                })}
             </button>
             {open
                 ? sections.map((s) => (
                       <div key={s.kind} className="mt-2">
-                          <div className={cn(REGION_LABEL, "mb-0.5 text-muted")}>{s.kind}</div>
+                          <SectionLabel kind={s.kind} />
                           <EntryList entries={s.entries} model={model} />
                       </div>
                   ))
@@ -131,47 +226,75 @@ function MoreNotes({
     );
 }
 
-// A highlight: its bold lead as the title and the rest of the note under it, cut at two lines (a note with no lead, its
-// text cut at three). A click opens the whole note, only when it was cut.
-function HighlightCard({ entry, model }: { entry: Entry; model: AgentsViewModel }) {
+// The pet the person picked, telling the news, in the sheet's corner.
+function HeaderPet() {
+    const character = petCharacter(useAtomValue(petCharacterAtom));
+    const sprite = useMemo(() => spriteFor("speak", [], null, character), [character]);
+    return <SproutSvg sprite={sprite} cellPx={2} />;
+}
+
+function SectionLabel({ kind }: { kind: SectionKind }) {
+    const { Icon, tint } = SECTION_ICON[kind];
+    return (
+        <div className={cn(REGION_LABEL, "mb-0.5 flex items-center gap-1.5 text-muted")}>
+            <Icon size={12} aria-hidden className={tint} />
+            {kind}
+        </div>
+    );
+}
+
+// A highlight: an icon picked by its headline, then its bold lead as the title and the rest of the note under it, cut
+// at two lines (a note with no lead, its text cut at three). A click opens the whole note, only when it was cut.
+function HighlightCard({ entry, index, model }: { entry: Entry; index: number; model: AgentsViewModel }) {
     const [open, setOpen] = useState(false);
     const textRef = useRef<HTMLDivElement>(null);
     const lead = entryLead(entry.text);
     const body = lead != null ? entryBody(entry.text) : entry.text;
     const expandable = useClamped(textRef, !open) || open;
     const tryIt = useTryBinding(entry, model);
+    const { icon, tone } = noteIcon(entry.text, index);
+    const Icon = NOTE_ICONS[icon];
     return (
         <li
             data-whats-new-card
-            className="flex flex-col gap-2 rounded-md border border-edge-mid bg-surface px-3.5 py-3"
+            data-whats-new-icon={icon}
+            className="flex gap-3 rounded-md border border-edge-mid bg-surface px-3.5 py-3"
         >
-            <button
-                type="button"
-                aria-expanded={expandable ? open : undefined}
-                disabled={!expandable}
-                onClick={() => setOpen((v) => !v)}
-                className={cn("group flex min-w-0 flex-col gap-1 text-left", expandable && "cursor-pointer")}
+            <div
+                aria-hidden
+                className={cn("flex size-8 shrink-0 items-center justify-center rounded-[8px]", TONE_TILE[tone])}
             >
-                {lead != null ? (
-                    <span className="text-[13.5px] leading-[1.45] font-semibold text-primary">{lead}</span>
-                ) : null}
-                <div
-                    ref={textRef}
-                    className={cn(
-                        "text-[12.5px] leading-[1.55]",
-                        lead != null ? "text-secondary" : "text-primary",
-                        expandable && "group-hover:text-primary",
-                        !open && (lead != null ? "line-clamp-2" : "line-clamp-3")
-                    )}
+                <Icon size={17} strokeWidth={1.8} />
+            </div>
+            <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <button
+                    type="button"
+                    aria-expanded={expandable ? open : undefined}
+                    disabled={!expandable}
+                    onClick={() => setOpen((v) => !v)}
+                    className={cn("group flex min-w-0 flex-col gap-1 text-left", expandable && "cursor-pointer")}
                 >
-                    <NoteText text={body} />
-                </div>
-            </button>
-            {tryIt != null ? (
-                <div className="flex justify-end">
-                    <TryButton tryId={entry.tryId!} {...tryIt} />
-                </div>
-            ) : null}
+                    {lead != null ? (
+                        <span className="text-[13.5px] leading-[1.45] font-semibold text-primary">{lead}</span>
+                    ) : null}
+                    <div
+                        ref={textRef}
+                        className={cn(
+                            "text-[12.5px] leading-[1.55]",
+                            lead != null ? "text-secondary" : "text-primary",
+                            expandable && "group-hover:text-primary",
+                            !open && (lead != null ? "line-clamp-2" : "line-clamp-3")
+                        )}
+                    >
+                        <NoteText text={body} />
+                    </div>
+                </button>
+                {tryIt != null ? (
+                    <div className="flex justify-end">
+                        <TryButton tryId={entry.tryId!} {...tryIt} />
+                    </div>
+                ) : null}
+            </div>
         </li>
     );
 }

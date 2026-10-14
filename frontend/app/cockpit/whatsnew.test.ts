@@ -12,9 +12,11 @@ import {
     entryBody,
     entryLead,
     foldLabel,
+    foldParts,
     formatReleaseDate,
     inlineSpans,
     MAX_HIGHLIGHTS,
+    noteIcon,
     parseChangelog,
     releasesToShow,
     splitHighlights,
@@ -152,6 +154,38 @@ describe("foldLabel", () => {
         expect(foldLabel([sec("Added", 1), sec("Fixed", 1)], false)).toBe("1 change · 1 fix");
         expect(foldLabel([sec("Fixed", 3)], true)).toBe("3 more fixes");
         expect(foldLabel([], true)).toBe("");
+    });
+
+    it("splits into parts so each count draws beside its icon", () => {
+        expect(foldParts([sec("Added", 2), sec("Fixed", 1)], true)).toEqual([
+            { kind: "changes", text: "2 more changes" },
+            { kind: "fixes", text: "1 fix" },
+        ]);
+    });
+});
+
+describe("noteIcon", () => {
+    it("picks by the headline's words, the narrow ones first", () => {
+        expect(noteIcon("**Canvases**: every mockup an agent drew lives on", 0).icon).toBe("palette");
+        expect(noteIcon("**Pick the corner Sprout folds into**: right-click", 0).icon).toBe("sprout");
+        expect(noteIcon("**What's new**: click the version at the bottom right", 0).icon).toBe("gift");
+        expect(noteIcon("**Code browses folders that are not git repositories** (from a fork)", 0).icon).toBe("folder");
+        expect(
+            noteIcon("**The New agent dialog says which Claude account a Claude Code launch runs on**: x", 0).icon
+        ).toBe("user");
+        expect(noteIcon("**A library of terminal tools that opens in the right folder**: x", 0).icon).toBe("terminal");
+        expect(noteIcon("**Mark files reviewed in the Diff surface's log**: x", 0).icon).toBe("diff");
+        expect(noteIcon("**Close several agents at once from the Consumers panel**: x", 0).icon).toBe("close");
+    });
+
+    it("reads the first words of a note with no bold lead", () => {
+        expect(noteIcon("An agent idle for 30 minutes goes to sleep: its RAM is freed", 0).icon).toBe("moon");
+        expect(noteIcon("An **Outline** button lists a document's headings", 0).icon).toBe("outline");
+    });
+
+    it("gives an unknown note sparkles, tinted by its place", () => {
+        expect(noteIcon("**Faster startup**: x", 0)).toEqual({ icon: "sparkles", tone: 1 });
+        expect(noteIcon("**Faster startup**: x", 7)).toEqual({ icon: "sparkles", tone: 2 });
     });
 });
 

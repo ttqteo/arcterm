@@ -23,6 +23,8 @@ new draws it as one of its release's cards and folds every other line under a co
 
 - **Canvases is now the Canvas gallery**: the sidebar row, the gallery's title and the `Ctrl+G` `v` command use the new
   name. <!-- try: go:canvases -->
+- **What's new** is livelier: your Jarvis pet tells the news in its corner, each highlight leads with a colored icon for
+  what it is about, and the newest release, the fold line and the Added, Changed and Fixed lists carry icons too.
 
 ## 0.15.12 — 2026-10-14
 
