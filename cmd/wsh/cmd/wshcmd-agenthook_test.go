@@ -445,4 +445,35 @@ func TestSubagentApprovalAskNamesTheSubagent(t *testing.T) {
 			t.Errorf("reason missing %q: %s", want, h.PermissionDecisionReason)
 		}
 	}
+	if strings.Contains(h.PermissionDecisionReason, "haiku") {
+		t.Errorf("a sonnet subagent should get no model hint: %s", h.PermissionDecisionReason)
+	}
+}
+
+func TestSubagentApprovalAskHintsAModel(t *testing.T) {
+	reasonFor := func(input string) string {
+		ev := ccHookEvent{HookEventName: "PreToolUse", ToolName: "Agent", ToolInput: json.RawMessage(input)}
+		var out struct {
+			HookSpecificOutput struct {
+				PermissionDecisionReason string `json:"permissionDecisionReason"`
+			} `json:"hookSpecificOutput"`
+		}
+		if err := json.Unmarshal(subagentApprovalAsk(ev), &out); err != nil {
+			t.Fatalf("ask is not json: %v", err)
+		}
+		return out.HookSpecificOutput.PermissionDecisionReason
+	}
+	unset := reasonFor(`{"description":"Find callers","prompt":"..."}`)
+	for _, want := range []string{"general-purpose, no model set", "this session's (often Opus)", "haiku", "sonnet", "answer No (or Tab)"} {
+		if !strings.Contains(unset, want) {
+			t.Errorf("unset model: reason missing %q: %s", want, unset)
+		}
+	}
+	opus := reasonFor(`{"description":"Find callers","model":"opus","prompt":"..."}`)
+	if !strings.Contains(opus, "on opus") || !strings.Contains(opus, "fits haiku") {
+		t.Errorf("opus model: reason should name it and hint a cheaper one: %s", opus)
+	}
+	if strings.Contains(opus, "no model set") {
+		t.Errorf("opus model: reason should not call the model unset: %s", opus)
+	}
 }

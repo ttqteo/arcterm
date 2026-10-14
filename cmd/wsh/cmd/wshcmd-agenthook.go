@@ -213,8 +213,12 @@ func subagentApprovalAsk(ev ccHookEvent) []byte {
 	if what == "" {
 		what = "general-purpose"
 	}
+	// the payload carries no session model, so an unset one is named as unset: it falls to the type's own
+	// model or, failing that, this session's, which is often Opus
 	if in.Model != "" {
 		what += " on " + in.Model
+	} else {
+		what += ", no model set"
 	}
 	if in.Background {
 		what += ", in the background"
@@ -222,7 +226,20 @@ func subagentApprovalAsk(ev ccHookEvent) []byte {
 	if in.Description != "" {
 		what = fmt.Sprintf("%q (%s)", in.Description, what)
 	}
-	return preToolUseDecision("ask", "Start a subagent: "+what+"? It rereads its whole context on every tool call, which can cost millions of tokens. arcterm asks before each one.")
+	reason := "Start a subagent: " + what + "? It rereads its whole context on every tool call, which can cost millions of tokens. arcterm asks before each one."
+	if in.Model == "" || strings.Contains(strings.ToLower(in.Model), "opus") {
+		reason += " " + subagentModelHint(in.Model)
+	}
+	return preToolUseDecision("ask", reason)
+}
+
+// subagentModelHint names the cheaper model a subagent's work may fit, and how to switch to it from the prompt.
+func subagentModelHint(model string) string {
+	hint := "Collecting (search, list, grep) fits haiku; code and judging fit sonnet."
+	if model == "" {
+		hint = "With no model set it runs on its agent type's model, or this session's (often Opus). " + hint
+	}
+	return hint + " To change it, answer No (or Tab) and name the model."
 }
 
 // canvasRevealFor names the canvas an agent just wrote a board of, and the project it sits in, so the

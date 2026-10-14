@@ -19,6 +19,8 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
 
 - **Folded, Sprout tells you first**: while Sprout is folded and another app is in front, an agent that needs you
   shows only Sprout's bubble; the system notification follows 30 seconds later, and only if it still waits on you.
+- **Subagent questions name the model**: when an agent asks to start a subagent with no model set, or on Opus, the
+  question says so and suggests haiku for collecting or sonnet for code; answer No (or Tab) and name one to switch.
 
 ## 0.15.12 — 2026-10-14
 
