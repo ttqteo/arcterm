@@ -57,7 +57,7 @@ other reviewer that sends one is refused: "only the full reviewer picks models; 
   override, `Light reviewers route` in the profile view, nil override = inherit). It is on create-run (both launch
   surfaces: `newruncontrol.tsx` and `runlauncher.tsx`, a `Light reviewers` model row beside `Reviewers`). It is on the
   run, carried onto the group at submit like `ReviewerRoute`. It is on run settings (the run sheet's edit row and its
-  read-only summary, `SetRunSettings` applies it to run and group). The server validates it with
+  read-only summary, `SetRunSettings` writes it to the run before a dag exists and to the group after submit, as `PendingEngineSettings` does for `ReviewerRoute`). The server validates it with
   `validateRoute("lightReviewerRoute", …)`. `routemigrate.go` is not involved: the field is born in the current pin
   format. `wsh runs` gets no flag (YAGNI: agents that start runs take the default).
 - `StageSession` gains a `Route` pin. A zero pin keeps `reviewerRoute(owner, g)`, so the final verifier is
@@ -196,7 +196,7 @@ the follow-up reviews every line, with no findings to confirm. There is no separ
 |---|---|---|
 | DAG graph stage line (`taskroute.ts` `stageEntries`, `daggraph.tsx`) | `plan review · <state> · <model>` | `plan review · <state> · round <n>`, then one chip per reviewer `<title> · <state> · <short model>`, with `data-plan-reviewer="<lens>"` and `data-plan-reviewer-state="<state>"`. The model is the reviewer route for `full` and the Light reviewers route for the others. |
 | Timeline `stage-session-started` (`runtimeline.ts`) | "Plan reviewer started" | "Plan reviewer started · <title>"; the event detail gains `lens` |
-| Timeline `plan-reviewed` (`runtimelineview.tsx`) | the row plus pick sub-rows | the row, one sub-row per reviewer `<title> · <state>` (`data-plan-review-reviewer="<lens>"`), then the pick sub-rows |
+| Timeline `plan-reviewed` (`runtimelineview.tsx`, and the graph modal's timeline rail `timelinerail.tsx`, which is the timeline an engine run shows) | the row plus pick sub-rows | the row, one sub-row per reviewer `<title> · <state>` (`data-plan-review-reviewer="<lens>"`), then the pick sub-rows (the rail shows the reviewer sub-rows only) |
 | Agent tree stage rows (`agenttreemodel.ts` `stageOutcome`, `agenttree.tsx`) | one row, outcome from `planreview.runid` | one row per reviewer session, outcome from the reviewer with that run id (`lost` reads as failed). A run id not in the current round reads failed when round > 1, as today. The row's title names the lens. |
 | `wsh jarvis dag status` (`planReviewLine`) | state, round, age, findings head | while reviewing, adds `reviewers: Full review reviewing · Spec coverage passed · …` |
 | `wsh … planreview pass` ack | "the engine dispatches the first tasks" | "the round passes once every reviewer has; ending this session" |
@@ -223,7 +223,7 @@ Go (`pkg/orchestrate`), behavior-level, with the stubbed spawn the existing plan
 - cancel stops every reviewer's run; the docs are cleared on pass and accept;
 - a stage stored with the old shape (top-level runid, no reviewers) starts five reviewers on its next tick.
 
-Server: `SetRunSettings` and create-run carry `lightreviewerroute` to the run and group, and validate it. Frontend
+Server: `SetRunSettings` and create-run carry `lightreviewerroute` to the run (and to the group after submit), and validate it. Frontend
 (vitest): `stageEntries` reviewer chips, the reviewer sub-rows, `stageOutcome` per reviewer, and the run-settings and
 profile model rows for the new field.
 
