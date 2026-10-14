@@ -16,6 +16,7 @@
 
 import { formatAgeShort, projectOf, type AgentVM } from "./agentsviewmodel";
 import { UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
+import type { QueuedRow } from "./runqueuemodel";
 import { overlayLive, type LiveSession } from "./sessionsarchivestore";
 import { groupRunSessions, memberSession, runSelKey, sessionKey, type RunSessions } from "./sessionsruns";
 
@@ -313,28 +314,41 @@ export type ProjectTreeRow =
     | { kind: "divider"; project: string }
     // `place` names the folder it runs in when that is not the project's root (terminalPlace)
     | { kind: "terminal"; project: string; terminal: AgentVM; place?: string }
+    // a plan queued to start, in its project's folder right under the project's agents. Named apart from the tree's
+    // "queued" row, which folds a run's queued tasks.
+    | ({ kind: "queuedentry" } & QueuedRow)
     | AgentBodyRow;
 
 /** Pure: the sidebar's one tree per project. `tree` is buildAgentTree's output; `terminals` are the plain shells and
  *  tools (liveTerminalsAtom). Each project's folder lists its agent rows, a divider when terminals follow, then its
  *  terminals in the order given. The folders are the agents' projects in the tree's order, then the projects only
- *  terminals are in, then Home (the terminals with no project). A collapsed project keeps its group row, which counts
- *  what it hides, and loses the rows under it.
+ *  terminals or queued plans are in, then Home (the terminals with no project). A collapsed project keeps its group row,
+ *  which counts what it hides, and loses the rows under it.
+ *
+ *  `queue` (queuedRows) is the plans waiting to start: each goes in its project's folder right after the project's
+ *  agent rows, in queue order, ahead of the divider and the terminals. They are not agents, so the group row does not
+ *  count them, and treeNavIds skips them (they select nothing).
  *
  *  The surface's split moves nothing here: its cells keep their rows in their folders, each marked as in the split
  *  (the tree draws the mark), so choosing a row never moves it out from under the pointer.
  *
- *  Filtered to a project (the app bar's switcher), no folder and no fold: that project's agent rows, a divider and its
- *  terminals together with those that name no project, as the Terminals section filtered before. */
+ *  Filtered to a project (the app bar's switcher), no folder and no fold: that project's agent rows, its queued plans, a
+ *  divider and its terminals together with those that name no project, as the Terminals section filtered before. */
 export function projectTree(input: {
     tree: AgentTreeRow[];
     terminals: AgentVM[];
     filter: string;
     collapsed: readonly string[];
     roots: ReadonlyMap<string, string>; // project name -> root path
+    queue?: readonly QueuedRow[];
 }): ProjectTreeRow[] {
     const { tree, terminals, filter, roots } = input;
     const collapsed = new Set(input.collapsed);
+    const queue = input.queue ?? [];
+    // an entry whose channel names no project is filed under Home, as a terminal with none is
+    const queueFolder = (q: QueuedRow) => q.project || HOME_PROJECT;
+    const queuedRowsOf = (project: string): ProjectTreeRow[] =>
+        queue.filter((q) => queueFolder(q) === project).map((q) => ({ kind: "queuedentry", ...q, project }));
     const termProject = (t: AgentVM) => projectOf(t) || HOME_PROJECT;
     const termRows = (project: string, list: AgentVM[]): ProjectTreeRow[] =>
         list.map((terminal) => ({
@@ -354,6 +368,7 @@ export function projectTree(input: {
                 out.push(r);
             }
         }
+        out.push(...queuedRowsOf(filter));
         // a shell attributed to no project shows under every one
         const mine = terminals.filter((t) => projectOf(t) === "" || projectOf(t) === filter);
         if (mine.length > 0 && out.length > 0) {
@@ -376,10 +391,10 @@ export function projectTree(input: {
             bodies.get(r.project)?.body.push(r);
         }
     }
-    // the agents' projects in the tree's order, then the others in the order terminals came, Home last
+    // the agents' projects in the tree's order, then the others in the order terminals and queued plans came, Home last
     const order = [...bodies.keys()];
     const seen = new Set(order);
-    const others = [...new Set(terminals.map(termProject))]
+    const others = [...new Set([...terminals.map(termProject), ...queue.map(queueFolder)])]
         .filter((p) => !seen.has(p))
         .sort((a, b) => Number(a === HOME_PROJECT) - Number(b === HOME_PROJECT));
     const out: ProjectTreeRow[] = [];
@@ -400,8 +415,9 @@ export function projectTree(input: {
             continue;
         }
         const body = folder?.body ?? [];
-        out.push(...body);
-        if (list.length > 0 && body.length > 0) {
+        const waiting = queuedRowsOf(project);
+        out.push(...body, ...waiting);
+        if (list.length > 0 && body.length + waiting.length > 0) {
             out.push({ kind: "divider", project });
         }
         out.push(...termRows(project, list));

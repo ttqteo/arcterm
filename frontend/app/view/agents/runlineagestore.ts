@@ -84,7 +84,7 @@ export function toggleTaskExtrasOpen(runId: string, taskId: string): void {
     globalStore.set(treeFoldsAtom, (f) => ({ ...f, extrasOpen: toggled(f.extrasOpen, taskFoldKey(runId, taskId)) }));
 }
 
-function lastPathSegment(path: string | undefined): string {
+export function lastPathSegment(path: string | undefined): string {
     return (path ?? "").split(/[\\/]/).filter(Boolean).pop() ?? "";
 }
 

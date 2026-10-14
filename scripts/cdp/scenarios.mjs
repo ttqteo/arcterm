@@ -37103,6 +37103,312 @@ const whatsNew = {
     },
 };
 
+// --- run-queue: plans queued to start are rows on the Agent tree, with Start now, Run next and Remove ---------------------
+// (docs/superpowers/specs/2026-10-14-run-handoff-lifecycle-design.md, decision 4.) A real queue in wavesrv and real rows,
+// nothing mocked. `runs:maxactive` is 1 and a run held by deferstart (it spawns nothing) is active, so no entry has room
+// and the loop starts none by itself. A start that carries a plan submits it, and that spawns a plan reviewer (a real
+// session) whether or not deferstart holds the run: so the one entry the scenario starts, C, has a goal and no plan
+// (run quick, held by deferstart, so it spawns nothing). A and B hold plans but are only ever removed, and D's plan is
+// deleted before its start, which fails at reading it.
+const RQ_TITLES = { a: "Queue plan A", b: "Queue plan B", c: "Queue plan C", d: "Queue plan D" };
+const RQ_RPC = { timeout: 30000 };
+const rqSel = (id) => `[data-run-queue-row="${id}"]`;
+const rqRow = (id) => `document.querySelector(${JSON.stringify(rqSel(id))})`;
+const rqList = async (h) => (await h.rpc("runqueuelist", null))?.entries ?? [];
+const rqChannelRuns = async (h, channelId) => (await h.rpc("getchannelruns", { channelid: channelId }))?.runs ?? [];
+
+// every queue row on the tree in the order it is drawn, with its title and its second line
+const rqRows = (h) =>
+    h.ev(`[...document.querySelectorAll("[data-run-queue-row]")].map((r) => ({
+        id: r.dataset.runQueueRow,
+        title: r.querySelector(".truncate")?.textContent ?? "",
+        meta: r.querySelector("[data-run-queue-meta]")?.textContent ?? "",
+    }))`);
+
+// the centre of an element, scrolled into the tree's view first (the sidebar scrolls)
+const rqPoint = (h, sel) =>
+    h.ev(`(() => {
+        const el = document.querySelector(${JSON.stringify(sel)});
+        if (!el) return null;
+        el.scrollIntoView({ block: "nearest" });
+        const r = el.getBoundingClientRect();
+        return r.width > 0 ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null;
+    })()`);
+async function rqMove(h, sel) {
+    const at = await rqPoint(h, sel);
+    if (at == null) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+    await polishNap(350);
+    return true;
+}
+async function rqClick(h, sel) {
+    const at = await rqPoint(h, sel);
+    if (at == null) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+    for (const type of ["mousePressed", "mouseReleased"]) {
+        await h.cdp("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: 1 });
+    }
+    await polishNap(250);
+    return true;
+}
+const rqContext = (h, id) =>
+    h.ev(`(() => {
+        const el = ${rqRow(id)};
+        if (!el) return false;
+        el.scrollIntoView({ block: "nearest" });
+        const r = el.getBoundingClientRect();
+        el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 24, clientY: r.top + r.height / 2, button: 2 }));
+        return true;
+    })()`);
+// Escape closes the menu, and the Agent surface's own "esc back" binding takes the same key to Cockpit, which hides the
+// tree the next step clicks in: so the surface is opened again
+async function rqCloseMenu(h) {
+    for (const type of ["keyDown", "keyUp"]) {
+        await h.cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    }
+    await polishWaitFor(h, `!${CA_MENU_PANEL}`, 2000);
+    await h.goto("agent");
+}
+const rqMenuItems = async (h) => ({
+    start: await h.ev(caMenuHas("Start now")),
+    next: await h.ev(caMenuHas("Run next")),
+    remove: await h.ev(caMenuHas("Remove")),
+});
+
+const runQueueScenario = {
+    name: "run-queue",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-run-queue-")), ids: {} };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            ctx.prevMax = (await h.rpc("getfullconfig", null))?.settings?.["runs:maxactive"] ?? null;
+            await h.rpc("setconfig", { "runs:maxactive": 1 });
+            const wslist = await h.rpc("workspacelist", null);
+            ctx.workspaceId = wslist[0].workspacedata.oid;
+            const ch = await h.rpc("createchannel", { name: "verify-run-queue", projectpath: ctx.cwd });
+            ctx.channelId = ch.oid;
+            // active, so the cap of 1 is full; held by deferstart, so it spawns nothing
+            // a fresh store's first run pays for the harness probes, which can outlast the default call budget
+            await h.rpc(
+                "createrun",
+                {
+                    channelid: ctx.channelId,
+                    workspaceid: ctx.workspaceId,
+                    goal: "verify run-queue: the run that fills the cap",
+                    runtime: "claude",
+                    mode: "quick",
+                    deferstart: true,
+                },
+                RQ_RPC
+            );
+            const plan = (key, title) => {
+                const path = join(ctx.cwd, `${key}.md`);
+                writeFileSync(path, `# ${title}\n\n### Task 1: Do nothing\n\nMake no change.\n`);
+                return path;
+            };
+            const forPlan = { channelid: ctx.channelId, workspaceid: ctx.workspaceId, runtime: "claude", mode: "orchestrator", deferstart: true };
+            const add = (data, after) => h.rpc("runqueueadd", { data, ...(after ? { after } : {}) }, RQ_RPC);
+            const a = await add({
+                ...forPlan,
+                planpath: plan("a", RQ_TITLES.a),
+                workerroute: { runtime: "codex", model: "gpt-5" },
+            });
+            ctx.ids.a = a.id;
+            const b = await add({ ...forPlan, planpath: plan("b", RQ_TITLES.b) }, a.id);
+            ctx.ids.b = b.id;
+            const c = await add({
+                channelid: ctx.channelId,
+                workspaceid: ctx.workspaceId,
+                goal: RQ_TITLES.c,
+                runtime: "claude",
+                mode: "quick",
+                deferstart: true,
+            });
+            ctx.ids.c = c.id;
+            const planD = plan("d", RQ_TITLES.d);
+            const d = await add({ ...forPlan, planpath: planD });
+            ctx.ids.d = d.id;
+            // its plan gone, D's start fails reading it, which blocks the entry. The loop may be mid-evaluation, and a
+            // Start now then answers "another queued run is starting" and blocks nothing: try again until D is blocked
+            rmSync(planD);
+            for (let i = 0; i < 8 && !ctx.dBlocked; i++) {
+                try {
+                    await h.rpc("runqueuestartnow", { id: d.id }, RQ_RPC);
+                } catch (e) {
+                    ctx.dStartError = String(e?.message ?? e);
+                }
+                ctx.dBlocked = (await rqList(h)).find((e) => e.id === d.id)?.state === "blocked";
+                if (!ctx.dBlocked) await polishNap(500);
+            }
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+        const arranged = ctx.arrangeError == null && ctx.dBlocked === true;
+        rec(
+            "0. the queue holds A, B and C waiting and D blocked, under a cap of 1",
+            arranged,
+            ctx.arrangeError ?? JSON.stringify({ ids: ctx.ids, dStartError: ctx.dStartError ?? null })
+        );
+        if (!arranged) return steps;
+        const { a, b, c, d } = ctx.ids;
+        const mine = [a, b, c, d];
+        const ours = async () => (await rqRows(h)).filter((r) => mine.includes(r.id));
+        const order = (rows) => rows.map((r) => r.id);
+        const metaOf = (rows, id) => rows.find((r) => r.id === id)?.meta ?? "";
+
+        // 1. every entry is a row, in queue order, with its place or what it waits on
+        await polishWaitFor(h, `${rqRow(d)} != null`, 8000);
+        await rqPoint(h, rqSel(a));
+        const rows1 = await ours();
+        await h.shot("cdp-shots/run-queue-1-rows.png");
+        rec(
+            "1. A, B, C and D are rows in queue order: A Queued #1, B After A's title, C Queued #3 (B holds place 2), D Blocked ·",
+            JSON.stringify(order(rows1)) === JSON.stringify(mine) &&
+                metaOf(rows1, a) === "Queued #1" &&
+                metaOf(rows1, b) === `After ${RQ_TITLES.a}` &&
+                metaOf(rows1, c) === "Queued #3" &&
+                metaOf(rows1, d).startsWith("Blocked ·"),
+            JSON.stringify(rows1)
+        );
+
+        // 2. hover shows the two buttons; the tooltip carries the plan, the route and the age
+        await rqMove(h, rqSel(a));
+        const hover = await h.ev(`(() => {
+            // the buttons sit in one wrapper that fades in on hover
+            const shown = (id, act) => {
+                const b = document.querySelector('[data-run-queue-row="' + id + '"] [data-queue-act="' + act + '"]');
+                return b ? Number(getComputedStyle(b.parentElement).opacity) : null;
+            };
+            return {
+                start: shown(${JSON.stringify(a)}, "start"),
+                remove: shown(${JSON.stringify(a)}, "remove"),
+                // the row the pointer is not on keeps them hidden
+                otherStart: shown(${JSON.stringify(c)}, "start"),
+                // the tooltip host lifts a hovered element's title into data-arc-title (element/titletiphost.tsx)
+                title: ${rqRow(a)}?.getAttribute("title") ?? ${rqRow(a)}?.getAttribute("data-arc-title") ?? "",
+            };
+        })()`);
+        await h.shot("cdp-shots/run-queue-2-hover.png");
+        rec(
+            "2. hovering A shows its Start now and Remove buttons (C's stay hidden); its tooltip names the plan, Lead claude and Workers codex",
+            hover.start === 1 &&
+                hover.remove === 1 &&
+                hover.otherStart === 0 &&
+                hover.title.includes("a.md") &&
+                hover.title.includes("Lead claude") &&
+                hover.title.includes("Workers codex"),
+            JSON.stringify(hover)
+        );
+
+        // 3. the menu: Start now, Run next and Remove, but no Run next on the head
+        await rqContext(h, c);
+        await polishWaitFor(h, caMenuHas("Run next"), 3000);
+        const menuC = await rqMenuItems(h);
+        await h.shot("cdp-shots/run-queue-3-menu.png");
+        await rqCloseMenu(h);
+        await rqContext(h, a);
+        await polishWaitFor(h, caMenuHas("Start now"), 3000);
+        const menuA = await rqMenuItems(h);
+        await rqCloseMenu(h);
+        await rqContext(h, c);
+        await polishWaitFor(h, caMenuHas("Run next"), 3000);
+        await h.ev(caMenuClick("Run next"));
+        await polishWaitFor(h, `(() => {
+            const ids = [...document.querySelectorAll("[data-run-queue-row]")].map((r) => r.dataset.runQueueRow).filter((id) => ${JSON.stringify(mine)}.includes(id));
+            return ids[0] === ${JSON.stringify(c)};
+        })()`, 4000);
+        const rows3 = await ours();
+        await h.shot("cdp-shots/run-queue-3-run-next.png");
+        rec(
+            "3. C's menu lists Start now, Run next and Remove, A's (the head) has no Run next; Run next on C puts C first (Queued #1) and A second (Queued #2)",
+            menuC.start && menuC.next && menuC.remove &&
+                menuA.start && !menuA.next && menuA.remove &&
+                order(rows3)[0] === c &&
+                metaOf(rows3, c) === "Queued #1" &&
+                metaOf(rows3, a) === "Queued #2",
+            JSON.stringify({ menuC, menuA, rows3 })
+        );
+
+        // 4. Remove asks first, and removing A takes its row and its queue entry; B, which waited on A, blocks
+        await rqMove(h, rqSel(a));
+        const clickedRemove = await rqClick(h, `${rqSel(a)} [data-queue-act="remove"]`);
+        const asked = await polishWaitFor(h, `document.querySelector('[role="dialog"]') != null`, 3000);
+        const dialogText = asked ? await h.ev(`document.querySelector('[role="dialog"]').textContent`) : "";
+        await h.shot("cdp-shots/run-queue-4-confirm.png");
+        const listedBefore = (await rqList(h)).map((e) => e.id);
+        await h.ev(
+            `[...document.querySelectorAll('[role="dialog"] button')].find((b) => b.textContent.includes("Remove"))?.click()`
+        );
+        const gone = await polishWaitFor(h, `${rqRow(a)} == null`, 4000);
+        await polishWaitFor(h, `(${rqRow(b)}?.textContent ?? "").includes("Blocked")`, 4000);
+        const listedAfter = (await rqList(h)).map((e) => e.id);
+        const rows4 = await ours();
+        await h.shot("cdp-shots/run-queue-4-removed.png");
+        rec(
+            "4. Remove on A asks first (and removes nothing yet); confirming drops A's row and its entry, and B, which waited on A, reads Blocked ·",
+            clickedRemove &&
+                asked &&
+                dialogText.includes(RQ_TITLES.a) &&
+                listedBefore.includes(a) &&
+                gone &&
+                !listedAfter.includes(a) &&
+                listedAfter.includes(c) &&
+                metaOf(rows4, b).startsWith("Blocked ·"),
+            JSON.stringify({ clickedRemove, asked, dialogText, listedBefore, listedAfter, rows4 })
+        );
+
+        // 5. Start now on C starts it past the cap: its row and entry go, and the channel has a new run
+        const runsBefore = await rqChannelRuns(h, ctx.channelId);
+        await rqMove(h, rqSel(c));
+        const clickedStart = await rqClick(h, `${rqSel(c)} [data-queue-act="start"]`);
+        const started = await polishWaitFor(h, `${rqRow(c)} == null`, 20000);
+        const listed5 = (await rqList(h)).map((e) => e.id);
+        const runsAfter = await rqChannelRuns(h, ctx.channelId);
+        const newRuns = runsAfter.filter((r) => !runsBefore.some((x) => x.id === r.id));
+        await h.shot("cdp-shots/run-queue-5-started.png");
+        rec(
+            "5. Start now on C drops its row and its entry and makes one new run in the channel (held, spawning no agent)",
+            clickedStart && started && !listed5.includes(c) && newRuns.length === 1,
+            JSON.stringify({ clickedStart, started, listed5, newRuns: newRuns.map((r) => ({ id: r.id, goal: r.goal, status: r.status })) })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const failures = [];
+        const attempt = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                failures.push(`${what}: ${String(e?.message ?? e)}`);
+            }
+        };
+        // the entries go first, so restoring the cap below cannot start one (a plan entry would spawn a plan reviewer)
+        const mine = Object.values(ctx.ids ?? {});
+        await attempt("remove the entries", async () => {
+            for (const e of await rqList(h)) {
+                if (mine.includes(e.id)) await h.rpc("runqueueremove", { id: e.id });
+            }
+        });
+        if (ctx.channelId) {
+            await attempt("cancel the runs", async () => {
+                for (const run of await rqChannelRuns(h, ctx.channelId)) {
+                    if (run.status !== "cancelled") await h.rpc("cancelrun", { channelid: ctx.channelId, runid: run.id });
+                }
+            });
+            await attempt("delete the channel", () => h.rpc("deletechannel", { channelid: ctx.channelId }));
+        }
+        if ("prevMax" in ctx) await attempt("restore runs:maxactive", () => h.rpc("setconfig", { "runs:maxactive": ctx.prevMax }));
+        await attempt("remove the temp dir", () => rmSync(ctx.cwd, { recursive: true, force: true }));
+        if (failures.length > 0) throw new Error(failures.join("; "));
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -37233,4 +37539,5 @@ export const SCENARIOS = [
     toolsLauncher,
     toolsWorktreeGone,
     whatsNew,
+    runQueueScenario,
 ];

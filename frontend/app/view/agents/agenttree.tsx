@@ -35,6 +35,7 @@ import {
     ChevronDown,
     ChevronRight,
     ChevronUp,
+    Clock,
     Columns2,
     Copy,
     CopyPlus,
@@ -77,6 +78,8 @@ import { dockedTerminalAtom } from "./railstore";
 import { renamingRowAtom } from "./rowrenameatom";
 import { cancellingRunIdsAtom } from "./runactions";
 import { runEventsAtom } from "./runeventstore";
+import { isBlockedEntry, queuedMeta, queuedTooltip, type QueuedRow } from "./runqueuemodel";
+import { confirmRemoveQueued, queuedRowsAtom, runQueuedNext, startQueuedNow, useRunQueueFeed } from "./runqueuestore";
 import { runMenuEntries } from "./runrowmenu";
 import { centerModeAtom, showHistory, showSession, showTerminal } from "./agentcenter";
 import {
@@ -1957,6 +1960,82 @@ function TerminalRow({
     );
 }
 
+// A plan queued to start (the run queue, runqueuestore.ts). It has no session or run yet, so a click selects nothing and
+// shows nothing in the centre; the tooltip carries the plan, its route and its age instead. Hover offers Start now and
+// Remove, and the menu adds Run next (not on the head of the queue, which has nowhere to go). A blocked entry reads in the
+// warning token, as a held land does.
+function QueuedEntryRow({ model, row }: { model: AgentsViewModel; row: QueuedRow }) {
+    const { entry } = row;
+    const now = useAtomValue(model.nowAtom);
+    const blocked = isBlockedEntry(entry);
+    const meta = queuedMeta(row);
+    const start = () => fireAndForget(() => startQueuedNow(entry));
+    const onContextMenu = (e: React.MouseEvent) => {
+        const items: ContextMenuItem[] = [
+            { label: "Start now", icon: <Play size={15} />, click: start },
+            ...(row.place === 1
+                ? []
+                : [
+                      {
+                          label: "Run next",
+                          icon: <ChevronUp size={15} />,
+                          click: () => fireAndForget(() => runQueuedNext(entry)),
+                      },
+                  ]),
+            { type: "separator" },
+            { label: "Remove", icon: <X size={15} />, danger: true, click: () => confirmRemoveQueued(entry) },
+        ];
+        ContextMenuModel.getInstance().showContextMenu(items, e);
+    };
+    const act =
+        "flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-[4px] text-muted hover:text-primary";
+    return (
+        <div
+            data-run-queue-row={entry.id}
+            title={queuedTooltip(entry, now)}
+            onContextMenu={onContextMenu}
+            className="group relative flex items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms] hover:bg-surface-hover"
+        >
+            <Slot>
+                <Clock size={13} aria-hidden className={blocked ? LEAD_MARK_CLASS.warning : "text-muted"} />
+            </Slot>
+            <div className="min-w-0 flex-1">
+                <div className="truncate text-[13px] font-medium text-secondary">{entry.title}</div>
+                {/* a blocked reason can outrun the row: its own tooltip says all of it */}
+                <div
+                    data-run-queue-meta
+                    title={blocked ? meta : undefined}
+                    className={cn("truncate text-[11px]", blocked ? "text-warning" : "text-muted")}
+                >
+                    {meta}
+                </div>
+            </div>
+            <span className="flex flex-none items-center gap-[2px] opacity-0 transition-opacity duration-100 focus-within:opacity-100 group-hover:opacity-100">
+                <button
+                    type="button"
+                    data-queue-act="start"
+                    title="Start now"
+                    aria-label={`Start ${entry.title} now`}
+                    onClick={start}
+                    className={act}
+                >
+                    <Play size={12} aria-hidden />
+                </button>
+                <button
+                    type="button"
+                    data-queue-act="remove"
+                    title="Remove from queue"
+                    aria-label={`Remove ${entry.title} from the queue`}
+                    onClick={() => confirmRemoveQueued(entry)}
+                    className={cn(act, "hover:text-error")}
+                >
+                    <X size={12} aria-hidden />
+                </button>
+            </span>
+        </div>
+    );
+}
+
 // The sidebar's second section: every ended conversation and orchestrator run, in a folder per project (the one with the
 // newest conversation first), or the chosen project's alone when the app bar narrows the sidebar
 // (the switcher names it). A plain list, not the Active section's animated one: it can run
@@ -2192,12 +2271,16 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const failed = useAtomValue(failedAtom);
     // the terminals whose folder was removed (worktreegonestore.ts); the surface keeps them read
     const gone = useAtomValue(goneTerminalIdsAtom);
+    // the plans queued to start (the run queue), each a row in its project's folder under the agents
+    useRunQueueFeed();
+    const queue = useAtomValue(queuedRowsAtom);
     const rows = projectTree({
         tree,
         terminals,
         filter,
         collapsed: collapsedList,
         roots,
+        queue,
     });
     // numbered as Alt+1..9 reach them: focusAgentAt walks activeNavOrder, which builds this list from the same inputs
     const digits = agentDigits(treeNavIds(rows));
@@ -2303,6 +2386,11 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                             aria-hidden
                                             className="mx-[10px] my-[4px] h-px bg-border"
                                         />
+                                    );
+                                case "queuedentry":
+                                    return plain(
+                                        `queued-entry-${r.entry.id}`,
+                                        <QueuedEntryRow model={model} row={r} />
                                     );
                                 case "terminal":
                                     return plain(
