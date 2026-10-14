@@ -63,6 +63,7 @@ type WshRpcInterface interface {
 	StreamCommands
 	DocCommands
 	ResMonCommands
+	MemHygieneCommands
 	WshRpcRemoteFileInterface
 	WshRpcFileInterface
 }

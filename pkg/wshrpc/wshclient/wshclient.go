@@ -223,6 +223,10 @@ func ClaudeAccountAddCommand(w *wshutil.WshRpc, data wshrpc.CommandClaudeAccount
 func ClaudeAccountListCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandClaudeAccountListRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandClaudeAccountListRtnData](w, "claudeaccountlist", nil, opts)
 	return resp, err
+// command "checkmemoryhygiene", wshserver.CheckMemoryHygieneCommand
+func CheckMemoryHygieneCommand(w *wshutil.WshRpc, data wshrpc.CommandCheckMemoryHygieneData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "checkmemoryhygiene", data, opts)
+	return err
 }
 
 // command "claudeaccountremove", wshserver.ClaudeAccountRemoveCommand
@@ -378,6 +382,10 @@ func DagSubmitCommand(w *wshutil.WshRpc, data wshrpc.CommandDagSubmitData, opts 
 func DeleteAgentSessionCommand(w *wshutil.WshRpc, data wshrpc.CommandDeleteAgentSessionData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "deleteagentsession", data, opts)
 	return err
+// command "decidememorychange", wshserver.DecideMemoryChangeCommand
+func DecideMemoryChangeCommand(w *wshutil.WshRpc, data wshrpc.CommandDecideMemoryChangeData, opts *wshrpc.RpcOpts) (*wshrpc.MemHygieneProject, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.MemHygieneProject](w, "decidememorychange", data, opts)
+	return resp, err
 }
 
 // command "deleteblock", wshserver.DeleteBlockCommand
@@ -970,6 +978,12 @@ func ListDevServersCommand(w *wshutil.WshRpc, data wshrpc.CommandListDevServersD
 // command "listharnesses", wshserver.ListHarnessesCommand
 func ListHarnessesCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandListHarnessesRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandListHarnessesRtnData](w, "listharnesses", nil, opts)
+	return resp, err
+}
+
+// command "listmemoryhygiene", wshserver.ListMemoryHygieneCommand
+func ListMemoryHygieneCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandListMemoryHygieneRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandListMemoryHygieneRtnData](w, "listmemoryhygiene", nil, opts)
 	return resp, err
 }
 
