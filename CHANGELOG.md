@@ -13,15 +13,6 @@ with `<!-- try: <id> -->`, the id of a global keybinding (`buildGlobalBindings` 
 `frontend/app/store/keybindings/bindings.ts`, such as `go:usage` or `open-tool`): its note gets a Try it button that
 runs it. `whatsnew.test.ts` fails on an id that is gone.
 
-## Unreleased
-
-### Changed
-
-- **The Jarvis graph peek is gone**: `Shift+G` on Jarvis and the record peek's **Where it sits on the map** no longer
-  open the vault graph, which drew mostly unlinked dots. A record's runs are still listed in its peek.
-- The folded Sprout's 1 hour and till 8:00 now pop up over the card from the "Restore, don't fold for" box, instead
-  of pushing the card taller.
-
 ## 0.15.12 — 2026-10-14
 
 ### Added
@@ -44,11 +35,13 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
 
 ### Changed
 
+- **The Jarvis graph peek is gone**: `Shift+G` on Jarvis and the record peek's **Where it sits on the map** no longer
+  open the vault graph, which drew mostly unlinked dots. A record's runs are still listed in its peek.
 - **A tidier agent header**: Open a tool, Float and Redraw moved into a new `…` button (the same menu as a right-click
   on the header), leaving `…`, Split, Fullscreen and Close. A project folder in the sidebar no longer shows a `+` on
   hover; open a terminal from **New**.
-- The folded Sprout's "Restore, don't fold for" is one box now: click into it and 1 hour and till 8:00 drop down
-  under it, or type a time as before.
+- The folded Sprout's "Restore, don't fold for" is one box now: click into it and 1 hour and till 8:00 pop up over
+  the card, or type a time as before.
 - **Close the agent or terminal in focus with ⌘⇧W on a Mac**, the same shape as Ctrl+Shift+W on Windows. ⌘W on its
   own now does nothing.
 - **One click on the folded Sprout opens its card of agents and terminals** and keeps it open, instead of the Jarvis
