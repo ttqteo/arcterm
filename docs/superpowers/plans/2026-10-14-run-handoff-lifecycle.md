@@ -126,7 +126,7 @@ Rules (`rules.go`), pure, on `[]*waveobj.Run` passed in:
 ### Task 2: RPC, settings, the scheduler loop and `wsh runs --queue`
 
 **Depends on:** Task 1
-**Files:** `pkg/wshrpc/wshrpctypes_runqueue.go`, `pkg/wshrpc/wshrpctypes.go`, `pkg/wshrpc/wshserver/wshserver_runqueue.go`, `pkg/wshrpc/wshserver/wshserver_runqueue_test.go`, `pkg/wps/wpstypes.go`, `pkg/tsgen/tsgenevent.go`, `pkg/wconfig/settingsconfig.go`, `cmd/server/main-server.go`, `cmd/wsh/cmd/wshcmd-runs.go`, `cmd/wsh/cmd/wshcmd-runs_test.go`, `pkg/wshrpc/wshclient/wshclient.go`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`, `frontend/types/waveevent.d.ts`, `pkg/wconfig/metaconsts.go`
+**Files:** `pkg/wshrpc/wshrpctypes_runqueue.go`, `pkg/wshrpc/wshrpctypes.go`, `pkg/wshrpc/wshrpctypes_channels.go`, `pkg/waveobj/wtype.go`, `pkg/wshrpc/wshserver/wshserver_runqueue.go`, `pkg/wshrpc/wshserver/wshserver_runqueue_test.go`, `pkg/wps/wpstypes.go`, `pkg/tsgen/tsgenevent.go`, `pkg/wconfig/settingsconfig.go`, `cmd/server/main-server.go`, `cmd/wsh/cmd/wshcmd-runs.go`, `cmd/wsh/cmd/wshcmd-runs_test.go`, `pkg/wshrpc/wshclient/wshclient.go`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`, `frontend/types/waveevent.d.ts`, `pkg/wconfig/metaconsts.go`
 
 **Where:**
 - Modify: `pkg/wshrpc/wshrpctypes_runqueue.go` (add the interface and data types), `pkg/wshrpc/wshrpctypes.go:46`
@@ -161,6 +161,12 @@ type RunQueueChangedData struct {
     Entries []RunQueueEntry `json:"entries"`
 }
 ```
+
+Types the later tasks need, added here so only this task runs `task generate` (tasks 3 and 4 run side by side):
+`QueueId string \`json:"queueid,omitempty"\`` on `wshrpc.AttentionItem` (`pkg/wshrpc/wshrpctypes_channels.go:95`;
+Task 3 fills it), and on `waveobj.Run` beside `OriginTabId` (`pkg/waveobj/wtype.go:262-267`; Task 4 sets them):
+`OriginNotify bool \`json:"originnotify,omitempty"\`` (the run's origin is to be told how it ended; set at create,
+so runs from before this change are never messaged) and `OriginNotifiedTs int64 \`json:"originnotifiedts,omitempty"\``.
 
 Settings: `RunsMaxActive *int \`json:"runs:maxactive,omitempty"\`` (active runs before a queued start waits; unset is
 3, 0 is no cap) and `RunsWakeOrigin *bool \`json:"runs:wakeorigin,omitempty"\`` (message the session that started a run
@@ -211,13 +217,12 @@ Server (`wshserver_runqueue.go`):
 ### Task 3: A blocked queue entry in Needs you
 
 **Depends on:** Task 2
-**Files:** `pkg/jarvis/attention.go`, `pkg/jarvis/attention_test.go`, `pkg/wshrpc/wshrpctypes_channels.go`, `frontend/types/gotypes.d.ts`, `frontend/app/view/jarvis/attentionact.ts`, `frontend/app/view/jarvis/attentionact.test.ts`, `frontend/app/view/jarvis/attentionrun.ts`, `frontend/app/view/agents/needsyoustripmodel.ts`, `frontend/app/cockpit/command-palette.tsx`, `frontend/app/view/jarvis/briefingmodel.ts`
+**Files:** `pkg/jarvis/attention.go`, `pkg/jarvis/attention_test.go`, `frontend/app/view/jarvis/attentionact.ts`, `frontend/app/view/jarvis/attentionact.test.ts`, `frontend/app/view/jarvis/attentionrun.ts`, `frontend/app/view/agents/needsyoustripmodel.ts`, `frontend/app/cockpit/command-palette.tsx`, `frontend/app/view/jarvis/briefingmodel.ts`
 
 **Where:**
 - Modify: `pkg/jarvis/attention.go` (kind constant beside `AttentionRunLandHeld` at `:41`; `Queue` on
   `AttentionInput` at `:79`; items in `BuildAttention` at `:281`; `GatherAttentionFromLedger` at `:796` fills `Queue`
-  from `runqueue.List()`), `pkg/wshrpc/wshrpctypes_channels.go:95` (`QueueId string \`json:"queueid,omitempty"\``
-  on `AttentionItem`), `attentionact.ts` (an optional `queueId` on `AttentionActInput`; act `{label: "Start now",
+  from `runqueue.List()`; `AttentionItem.QueueId` already exists from Task 2), `attentionact.ts` (an optional `queueId` on `AttentionActInput`; act `{label: "Start now",
   kind: "start-queued"}`), `attentionrun.ts` (`call` runs `RunQueueStartNowCommand`; done text `Started · <source>`),
   `needsyoustripmodel.ts:15` (`"run-queue-blocked": "Run to start"`), `command-palette.tsx:194`
   (`"run-queue-blocked": "not started"`), and wherever `briefingmodel.ts` / `needsyoustripmodel.ts` build an
@@ -232,22 +237,21 @@ anyway; wsh runs dequeue <id> drops it."`. Waiting entries make no item.
    `attentionact.test.ts`: `run-queue-blocked` with a queue id → Start now; without one → Open.
 2. Run `go test ./pkg/jarvis -run Attention` and `npx vitest run frontend/app/view/jarvis/attentionact.test.ts` —
    fail.
-3. Implement; run `task generate` for the new field.
+3. Implement.
 4. Run them again — pass.
 5. Commit `feat(runqueue): a queued run that cannot start waits in Needs you with Start now`.
 
 ### Task 4: The origin session hears how its run ended
 
 **Depends on:** Task 2
-**Files:** `pkg/waveobj/wtype.go`, `pkg/wstore/wstore_channel.go`, `pkg/wshrpc/wshserver/wshserver_runs.go`, `pkg/wshrpc/wshserver/wshserver_originnotify.go`, `pkg/wshrpc/wshserver/wshserver_originnotify_test.go`, `pkg/wshrpc/wshserver/wshserver_runqueue.go`, `frontend/types/gotypes.d.ts`, `docs/open-issues.md`
+**Files:** `pkg/wstore/wstore_channel.go`, `pkg/wshrpc/wshserver/wshserver_runs.go`, `pkg/wshrpc/wshserver/wshserver_originnotify.go`, `pkg/wshrpc/wshserver/wshserver_originnotify_test.go`, `pkg/wshrpc/wshserver/wshserver_runqueue.go`, `docs/open-issues.md`
 
 **Where:**
-- Modify: `pkg/waveobj/wtype.go:262-267` (beside `OriginTabId`), `wshserver_runs.go:483` (set `OriginNotify`),
+- Modify: `wshserver_runs.go:483` (set `OriginNotify`; the field exists from Task 2),
   `wshserver_runqueue.go` (`evaluate` also calls `notifyOrigins`)
 - Create: `wshserver_originnotify.go`, `wshserver_originnotify_test.go`
 
-Run fields: `OriginNotify bool \`json:"originnotify,omitempty"\`` (set at create when `OriginTabId != ""`, so runs from
-before this change are never messaged) and `OriginNotifiedTs int64 \`json:"originnotifiedts,omitempty"\``.
+`CreateRunCommand` sets `run.OriginNotify = data.OriginTabId != ""`.
 
 `notifyOrigins(ctx)`:
 - Return when `runs:wakeorigin` is false.
@@ -279,7 +283,7 @@ the run's dag (`DagORef`), and leave the line out when there is none.
    gone → stamped, no message; held dirty → nothing; held → the held text; `runs:wakeorigin` false → nothing; a run
    without `OriginNotify` → nothing. Table-test `originMessage` for landed with and without evidence, held, and no dag.
 2. Run them — they fail.
-3. Implement; `task generate` for the two Run fields.
+3. Implement.
 4. Run `go test ./pkg/wshrpc/wshserver -run 'Origin|RunQueue' ./pkg/wstore` — pass.
 5. Add under "0 · Waiting on a hand check" in `docs/open-issues.md`: `- [ ] (arcterm) Run handoff: a run started with
    wsh runs start from a Claude session messages that session once it lands, and waits while you are mid-turn with it.`
@@ -343,7 +347,7 @@ starts by itself when fewer than `runs:maxactive` runs are going, with the tree'
 
 ### Task 6: A session and its runs point at each other
 
-**Depends on:** Task 5
+**Depends on:** Task 4, Task 5
 **Files:** `frontend/app/view/agents/runorigin.ts`, `frontend/app/view/agents/runorigin.test.ts`, `frontend/app/view/agents/donesuggest.ts`, `frontend/app/view/agents/donesuggest.test.ts`, `frontend/app/view/agents/agenttree.tsx`, `CHANGELOG.md`, `docs/open-issues.md`
 
 **Where:**
