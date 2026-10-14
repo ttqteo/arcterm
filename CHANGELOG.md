@@ -13,7 +13,7 @@ with `<!-- try: <id> -->`, the id of a global keybinding (`buildGlobalBindings` 
 `frontend/app/store/keybindings/bindings.ts`, such as `go:usage` or `open-tool`): its note gets a Try it button that
 runs it. `whatsnew.test.ts` fails on an id that is gone.
 
-## Unreleased
+## 0.15.12 — 2026-10-14
 
 ### Added
 
