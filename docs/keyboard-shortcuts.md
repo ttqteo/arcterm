@@ -219,6 +219,7 @@ A link inside an item view does a full open, even with `Mod` held.
 |---|---|
 | `j` / `k` (or `↓` / `↑`, `→` / `←`) | Next / previous row of the project tree: agents and terminals, in the tree's order. A terminal row takes the centre as an agent does |
 | `Mod`+`` ` `` | Fold the terminal panel under the agent to a 32 px strip showing the terminal's name and latest output line, or open it again. Works from inside the terminal; active only while a terminal is in the panel, else the key is the terminal's own. By key position, so the same on every layout |
+| `Cmd`+`R` (Mac) | Redraw the terminal: repaint garbled text and have the TUI draw itself again, without restarting the session (the header menu's **Redraw terminal**). Works from inside the terminal, on the one holding the keys (the panel's too), else the focused agent's. Not on Windows, where `Ctrl`+`R` is the shell's reverse search |
 | `d` | Toggle the agent rail |
 | `i` | The focused agent's initiative: opens a popover on the header (its progress, the chunk this agent is on, what is next, a note). An agent with no initiative opens Link to initiative instead. Inside the popover: `m` Mark done (the next chunk starts), `n` Add note, `↑` / `↓` move over the chunks, `Enter` opens a chunk's status menu, `Esc` or `i` closes it |
 | `f` | Toggle terminal fullscreen |

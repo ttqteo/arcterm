@@ -84,6 +84,21 @@ export function redrawTerminal(blockId: string): boolean {
     return true;
 }
 
+// The block whose mounted terminal holds the keyboard focus, so a key pressed in a terminal (the panel's, beside the
+// agent's) acts on that one. Undefined when focus is outside every terminal.
+export function focusedTerminalBlockId(): string | undefined {
+    const active = document.activeElement;
+    if (active == null) {
+        return undefined;
+    }
+    for (const [blockId, wrap] of liveTermWraps) {
+        if (wrap.connectElem.contains(active)) {
+            return blockId;
+        }
+    }
+    return undefined;
+}
+
 // The last line with text on the block's mounted terminal, which the folded terminal panel shows as its latest output
 // (terminaldock.ts lastOutputLine). Undefined when the block has no mounted terminal or nothing is on its screen.
 export function latestTerminalLine(blockId: string): string | undefined {

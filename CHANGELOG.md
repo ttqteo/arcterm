@@ -38,6 +38,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- **⌘R redraws the terminal** on a Mac: garbled text in an agent or terminal pane repaints and the TUI draws
+  itself again, as the header menu's Redraw does, from inside the terminal too.
 - **A tidier Ideas list**: when a later decision replaces an earlier line, the agent drops or rewrites the old one, and
   it no longer records status (commits, estimates) as ideas, so the list shows where a brainstorm stands. Each line
   holds the gist in a few words, leaving the details to the spec, and the agent adds nothing when nothing new came up.

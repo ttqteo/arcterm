@@ -110,6 +110,7 @@ import {
     reviewQueueAtom,
 } from "@/app/view/jarvis/reviewstore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
+import { focusedTerminalBlockId, redrawTerminal } from "@/app/view/term/termwrap";
 import { isMacOS } from "@/util/platformutil";
 import type { MutableRefObject } from "react";
 import { ownsKeys } from "./dispatcher";
@@ -1416,6 +1417,24 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             label: "Fold or open the terminal panel",
             when: (ctx) => ctx.surface === "agent" && !ctx.modalOpen && globalStore.get(dockedTerminalAtom) != null,
             run: () => globalStore.set(terminalDockFoldedAtom, !globalStore.get(terminalDockFoldedAtom)),
+        },
+        {
+            // The header menu's Redraw on a key, from inside the terminal too: the terminal holding the keys (the
+            // panel's, or the agent's), else the focused agent's. ⌘R on a Mac only: on Windows Mod+R is Ctrl+R, the
+            // shell's reverse search.
+            id: "agent:redraw",
+            keys: "Mod:r",
+            group: "Agent",
+            label: "Redraw the terminal",
+            when: (ctx) => isMacOS() && ctx.surface === "agent" && !ctx.modalOpen && centerAtRest(),
+            run: () => {
+                const id = focusId();
+                const items = [...globalStore.get(model.agentsAtom), ...globalStore.get(model.terminalsAtom)];
+                const blockId = focusedTerminalBlockId() ?? items.find((a) => a.id === id)?.blockId;
+                if (blockId != null) {
+                    redrawTerminal(blockId);
+                }
+            },
         },
         {
             id: "agent:return-nav",

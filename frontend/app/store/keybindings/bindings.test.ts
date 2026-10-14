@@ -50,6 +50,7 @@ import { peekKeyCommand } from "@/app/view/jarvis/petpeekmodel";
 import { noteChunkAtom } from "@/app/view/jarvis/jarvisstore";
 import { enterReview, exitReview, reviewModeAtom, reviewedAtom, reviewQueueAtom } from "@/app/view/jarvis/reviewstore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
+import { focusedTerminalBlockId, redrawTerminal } from "@/app/view/term/termwrap";
 import { codeTreeFocusedAtom } from "@/app/view/code/codestore";
 import { codeSearchModeAtom } from "@/app/view/code/codesearchstore";
 import {
@@ -102,6 +103,12 @@ vi.mock("@/app/cockpit/cockpit-actions", async (orig) => ({
 vi.mock("@/app/view/agents/agentactions", async (orig) => ({
     ...(await orig<typeof import("@/app/view/agents/agentactions")>()),
     confirmCloseSession: vi.fn(),
+}));
+
+vi.mock("@/app/view/term/termwrap", async (orig) => ({
+    ...(await orig<typeof import("@/app/view/term/termwrap")>()),
+    redrawTerminal: vi.fn(() => true),
+    focusedTerminalBlockId: vi.fn(() => undefined),
 }));
 
 // the canvas guards read the focused agent id from the model
@@ -1131,6 +1138,31 @@ describe("leader reachability and the fullscreen chord", () => {
         expect(b.keys).toBe("Mod:Shift:Enter");
         expect(b.when!(inTerm)).toBe(true);
         expect(b.when!({ ...inTerm, surface: "cockpit" })).toBe(false);
+    });
+
+    it("Mod+R redraws the terminal holding the keys, else the focused agent's or terminal's, on a Mac only", () => {
+        const m = {
+            ...stubModel("t1"),
+            agentsAtom: atom([{ id: "a1", blockId: "ba" }]),
+            terminalsAtom: atom([{ id: "t1", blockId: "bt" }]),
+        };
+        const b = buildAgentBindings(m).find((x) => x.id === "agent:redraw")!;
+        expect(b.keys).toBe("Mod:r");
+        expect(b.when!(inTerm)).toBe(true);
+        expect(b.when!({ ...inTerm, surface: "cockpit" })).toBe(false);
+        expect(b.when!({ ...inTerm, modalOpen: true })).toBe(false);
+        vi.mocked(redrawTerminal).mockClear();
+        b.run(inTerm);
+        expect(vi.mocked(redrawTerminal).mock.calls).toEqual([["bt"]]);
+        vi.mocked(focusedTerminalBlockId).mockReturnValueOnce("bp");
+        b.run(inTerm);
+        expect(vi.mocked(redrawTerminal).mock.calls).toEqual([["bt"], ["bp"]]);
+        setPlatform("win32");
+        try {
+            expect(b.when!(inTerm)).toBe(false); // Ctrl+R stays the shell's reverse search
+        } finally {
+            setPlatform("darwin");
+        }
     });
 
     it("Mod+` folds or opens the terminal panel, live in the terminal, and only while a terminal is docked", () => {
