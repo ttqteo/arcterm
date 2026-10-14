@@ -38,6 +38,8 @@ runs it. `whatsnew.test.ts` fails on an id that is gone.
   and the arcterm card stays the one waiting for your answer instead of being swapped for another.
 - **The Token burn card asks again on each prompt** on a Team or Enterprise Claude account: one allow or deny held for
   the rest of the session, and its estimate now counts what the session has already used.
+- The Heavy jobs popover names a run's Check, Verify, Setup and Final steps by the run's title instead of only its short
+  id ("Run 973afb").
 
 ## 0.15.12 — 2026-10-14
 

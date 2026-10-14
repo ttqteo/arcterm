@@ -35,6 +35,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   to start 3 subagents, pick allow-this-turn on the Token burn card, then a new prompt that starts 3 again: the card
   asks again. Tried only in unit tests, and the transcript path in a headless `claude -p`.
 
+**2026-10-14 (Heavy jobs: run steps named by the run's title)**
+
+- [ ] With an engine run whose Check, Verify or Setup step waits or runs in the heavy-job queue, open the app bar's Jobs
+  chip: that row's second line reads `<run title> · Check · base tree` (the plan's title, else the goal's first line),
+  not `Run 973afb · …`, and ↗ still opens the run. `frontend/app/cockpit/jobqueuepanel.tsx`.
+
 **2026-10-14 (Claude memory lint in the Claude mod)**
 
 - [ ] After the next build and `task install`, on Windows and on the Mac: add a line `- [X](x.md) — test` to the
