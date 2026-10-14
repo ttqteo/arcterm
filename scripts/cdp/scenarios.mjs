@@ -37648,6 +37648,51 @@ const runQueueScenario = {
             clickedStart && started && !listed5.includes(c) && newRuns.length === 1,
             JSON.stringify({ clickedStart, started, listed5, newRuns: newRuns.map((r) => ({ id: r.id, goal: r.goal, status: r.status })) })
         );
+
+        // 6. the new run's sheet lists the start from the queue on its timeline, as a sentence under the RUN group. The
+        // run is held by deferstart, so opening its sheet spawns nothing
+        if (newRuns.length === 1) {
+            try {
+                await h.goto("jarvis");
+                const opened = await h.ev(`(async () => {
+                    for (let i = 0; i < 20 && typeof window.__openAddress !== "function"; i++) {
+                        await new Promise((r) => setTimeout(r, 250));
+                    }
+                    if (typeof window.__openAddress !== "function") return { ok: false, why: "no __openAddress hook" };
+                    return window.__openAddress(${JSON.stringify(`run:${newRuns[0].id}`)});
+                })()`);
+                const sheetUp = await polishWaitFor(h, `document.querySelector('[data-run-sheet]') != null`, 15000);
+                // the toggle shows once the run's events are in; the sheet opens the timeline closed
+                const toggled = await polishWaitFor(
+                    h,
+                    `[...document.querySelectorAll("[data-run-sheet] [data-run-sheet-timeline-toggle]")].length > 0`,
+                    15000
+                );
+                await h.ev(`(() => {
+                    const t = document.querySelector("[data-run-sheet] [data-run-sheet-timeline-toggle]");
+                    if (t && t.getAttribute("aria-expanded") !== "true") t.click();
+                })()`);
+                const rowShown = await polishWaitFor(
+                    h,
+                    `[...document.querySelectorAll("[data-run-sheet-timeline] span")].some((s) => s.children.length === 0 && s.textContent.trim() === "Started from the queue")`,
+                    5000
+                );
+                const timeline = await h.ev(`(() => ({
+                    goal: document.querySelector("[data-run-sheet]")?.textContent.includes(${JSON.stringify(RQ_TITLES.c)}) ?? false,
+                    rows: [...document.querySelectorAll("[data-run-sheet-timeline] span.truncate")].map((s) => s.textContent.trim()),
+                }))()`);
+                await h.shot("cdp-shots/run-queue-6-timeline.png");
+                rec(
+                    "6. the new run's sheet timeline shows a row reading Started from the queue (the sheet is C's run)",
+                    opened?.ok === true && sheetUp && toggled && rowShown && timeline.goal,
+                    JSON.stringify({ runId: newRuns[0].id, opened, sheetUp, toggled, rowShown, ...timeline })
+                );
+            } catch (e) {
+                rec("6. the new run's sheet timeline shows a row reading Started from the queue", false, String(e?.message ?? e));
+            }
+        } else {
+            rec("6. the new run's sheet timeline shows a row reading Started from the queue", false, "step 5 made no single new run to open");
+        }
         return steps;
     },
     async teardown(h, ctx) {
