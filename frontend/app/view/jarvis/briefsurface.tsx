@@ -952,7 +952,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     // write through and refresh the briefing's summary leg, and a rejected op would otherwise leave the
     // row looking unchanged with no explanation.
     const [mutateError, setMutateError] = useState<string | null>(null);
-    const runMutation = useCallback((fn: () => Promise<void>) => {
+    const runMutation = useCallback((fn: () => Promise<unknown>) => {
         setMutateError(null);
         fn().catch((e) => setMutateError(e instanceof Error ? e.message : String(e)));
     }, []);

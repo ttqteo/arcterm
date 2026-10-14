@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { isIdea } from "./briefrows";
 import {
     buildEffortCard,
     chunkTone,
     effortDeltaRow,
     effortFacts,
     groupChunksByStage,
+    nextChunk,
     partitionEfforts,
     stageOptions,
 } from "./effortmodel";
@@ -97,6 +99,55 @@ describe("buildEffortCard", () => {
             ...base, chunks: base.chunks.filter((c) => c.status !== "skipped"), total: 7,
         } as EffortSummary);
         expect(m.countLine).toBe("2 of 7 · active: Phase 3");
+    });
+});
+
+// a proposed chunk is the agent's suggestion until accepted: the summary's total already leaves it out, so
+// every segment, chip, count and idea test here has to agree with that
+describe("buildEffortCard with proposed chunks", () => {
+    const withProposed = {
+        oref: "effort:p",
+        title: "Radial graph",
+        status: "active",
+        done: 1,
+        total: 2,
+        activechunk: "B",
+        updatedts: 1,
+        chunks: [
+            { label: "P", status: "proposed" },
+            { label: "A", status: "done" },
+            { label: "B", status: "pending" },
+        ],
+    } as EffortSummary;
+
+    it("leaves them out of the bar, the chips and the remaining count, and lists them apart", () => {
+        const m = buildEffortCard(withProposed);
+        expect(m.segments).toEqual(["done", "pending"]);
+        expect(m.chips.map((c) => c.label)).toEqual(["A", "B"]);
+        expect(m.remaining).toBe(1);
+        expect(m.progressPct).toBe(50);
+        expect(m.countLine).toBe("1 of 2 · active: B");
+        expect(m.proposed).toEqual(["P"]);
+    });
+
+    it("counts the chip overflow without them", () => {
+        const many = Array.from({ length: 13 }, (_, i) => ({ label: `c${i}`, status: "pending" }));
+        const chunks = [{ label: "P", status: "proposed" }, ...many];
+        const m = buildEffortCard({ ...withProposed, done: 0, total: 13, chunks } as EffortSummary);
+        expect(m.chips).toHaveLength(12);
+        expect(m.chipOverflow).toBe(1);
+    });
+
+    it("reads an initiative whose only chunks are proposed as an idea", () => {
+        const only = { ...withProposed, done: 0, total: 0, activechunk: undefined, chunks: [withProposed.chunks[0]] };
+        const m = buildEffortCard(only as EffortSummary);
+        expect(isIdea(m)).toBe(true);
+        expect(m.proposed).toEqual(["P"]);
+        expect(m.segments).toEqual([]);
+    });
+
+    it("has nothing proposed on a plain initiative", () => {
+        expect(buildEffortCard(base).proposed).toEqual([]);
     });
 });
 
@@ -298,6 +349,25 @@ describe("effortFacts", () => {
         ]);
     });
 
+    it("leaves proposed chunks out of every count, the bar and the next chunk", () => {
+        const f = effortFacts(
+            effort({ chunks: [chunk("P", "proposed"), chunk("A", "done"), chunk("B", "pending")] }),
+            []
+        );
+        expect([f.done, f.counted, f.skipped]).toEqual([1, 2, 0]);
+        expect(f.segments).toEqual([
+            { tone: "done", n: 1 },
+            { tone: "pending", n: 1 },
+        ]);
+        expect(f.next).toEqual({ label: "B", stage: "", tone: "pending" });
+        expect(nextChunk([chunk("P", "proposed"), chunk("B", "pending")])?.label).toBe("B");
+    });
+
+    it("says there are no chunks yet when the only ones are proposed", () => {
+        const f = effortFacts(effort({ chunks: [chunk("P", "proposed")] }), []);
+        expect(f).toMatchObject({ done: 0, counted: 0, segments: [], next: null, idle: "No chunks yet." });
+    });
+
     it("says when there is nothing left to pick up", () => {
         expect(effortFacts(effort({}), [])).toMatchObject({ next: null, idle: "No chunks yet." });
         expect(effortFacts(effort({ chunks: [chunk("A", "done"), chunk("B", "skipped")] }), [])).toMatchObject({
@@ -317,5 +387,9 @@ describe("groupChunksByStage fractions", () => {
     it("an all-skipped stage is 0/0, never a word that wraps", () => {
         const [g] = groupChunksByStage([row("A", "skipped")]);
         expect(g.fraction).toBe("0/0");
+    });
+    it("leaves a proposed chunk out of the denominator, as the initiative's own count does", () => {
+        const [g] = groupChunksByStage([row("A", "done"), row("A", "pending"), row("A", "proposed")]);
+        expect(g.fraction).toBe("1/2");
     });
 });

@@ -33,6 +33,8 @@ export type EffortCardModel = {
     // every chunk's tone in plan order, the skipped ones left out as the count's denominator leaves them out
     segments: ChunkTone[];
     blockedChunks: string[];
+    // the chunks an agent proposed and nobody accepted yet, in plan order: out of the bar, the chips and every count
+    proposed: string[];
     shortId: string;
     // each chunk's stage by label, for rows that name a chunk without its effort detail loaded
     chunkStages: Record<string, string>;
@@ -56,7 +58,9 @@ export function buildEffortCard(e: EffortSummary): EffortCardModel {
         if (e.activechunk) countLine += ` · active: ${e.activechunk}`;
     }
     const pct = skipped === e.total && e.total > 0 ? 100 : Math.round((e.done / denominator) * 100);
-    const chunks = e.chunks ?? [];
+    const all = e.chunks ?? [];
+    // the summary's total already leaves a proposed chunk out; the bar and the chips follow it
+    const chunks = all.filter((c) => c.status !== "proposed");
     const chips = chunks.slice(0, CHIP_CAP).map((c) => ({ label: c.label, tone: chunkTone(c.status) }));
     return {
         oref: e.oref,
@@ -80,8 +84,9 @@ export function buildEffortCard(e: EffortSummary): EffortCardModel {
         // claim someone is on it when it is only next in line
         segments: chunks.filter((c) => c.status !== "skipped").map((c) => chunkTone(c.status)),
         blockedChunks: chunks.filter((c) => c.status === "blocked").map((c) => c.label),
+        proposed: all.filter((c) => c.status === "proposed").map((c) => c.label),
         shortId: e.oref.replace(/^effort:/, "").slice(0, 8),
-        chunkStages: Object.fromEntries(chunks.map((c) => [c.label, c.stage ?? ""])),
+        chunkStages: Object.fromEntries(all.map((c) => [c.label, c.stage ?? ""])),
         lastnote: e.lastnote,
     };
 }
@@ -93,10 +98,11 @@ export function buildEffortCard(e: EffortSummary): EffortCardModel {
 export type StageGroup<T> = { stage: string; rows: T[]; fraction: string; done: number; total: number };
 
 // the card's rule, kept: skipped chunks shrink the denominator, so a stage finished by skipping
-// reads as finished rather than stuck.
+// reads as finished rather than stuck. A proposed chunk is not part of the work until accepted, so it is out of
+// the total as it is out of the initiative's own.
 function stageCounts(rows: { status: string }[]): { done: number; total: number } {
-    const skipped = rows.filter((r) => r.status === "skipped").length;
-    return { done: rows.filter((r) => r.status === "done").length, total: rows.length - skipped };
+    const counted = rows.filter((r) => r.status !== "skipped" && r.status !== "proposed").length;
+    return { done: rows.filter((r) => r.status === "done").length, total: counted };
 }
 
 export function groupChunksByStage<T extends { stage: string; status: string }>(rows: T[]): StageGroup<T>[] {
@@ -128,11 +134,13 @@ export function stageOptions(rows: { stage: string }[]): string[] {
     return seen;
 }
 
-// the chunk an initiative picks up next: the active one, else the first not yet settled. It is the rule
-// the backend's summary leg applies, so every surface that names "next" names the same chunk.
+// the chunk an initiative picks up next: the active one, else the first not yet settled, a proposed one not
+// being settled or open. It is the rule the backend's summary leg applies, so every surface that names "next"
+// names the same chunk.
 export function nextChunk<T extends { status: string }>(chunks: T[]): T | undefined {
     return (
-        chunks.find((c) => c.status === "active") ?? chunks.find((c) => c.status !== "done" && c.status !== "skipped")
+        chunks.find((c) => c.status === "active") ??
+        chunks.find((c) => c.status !== "done" && c.status !== "skipped" && c.status !== "proposed")
     );
 }
 
@@ -166,7 +174,8 @@ export type EffortFacts = {
 // The sheet's header block: the facts, the progress, the chunk picked up next, and the children still in
 // play. Parent and children come off the briefing's summaries because that is the one list holding every effort.
 export function effortFacts(effort: Effort, all: EffortSummary[]): EffortFacts {
-    const chunks = effort.chunks ?? [];
+    // a proposed chunk is a suggestion, not yet work: every count here is over the rest, as the summary's is
+    const chunks = (effort.chunks ?? []).filter((c) => c.status !== "proposed");
     const meta: [string, string][] = [["project", effort.project ?? "none"]];
     if (effort.ticket != null && effort.ticket !== "") {
         meta.push(["ticket", effort.ticket]);
