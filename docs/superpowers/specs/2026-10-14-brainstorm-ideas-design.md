@@ -59,8 +59,11 @@ a new `pkg/ideastore`:
 
 ### 4. RPC and events
 
-- `IdeaAddCommand {blockid | sessionid, text, kind, by}` → the idea; `IdeaListCommand {blockid | sessionid}` → the
-  file; `IdeaUpdateCommand {sessionid, op: edit | kind | drop | restore | merge | seen, ids, text?, kind?}`.
+- Every command targets `{blockid | sessionid}` (a session id wins; a block resolves through its transcript path).
+- `IdeaAddCommand {target, text, kind, by}` → the idea; `IdeaListCommand {target}` → the file;
+  `IdeaUpdateCommand {target, op: edit | kind | drop | restore | merge | seen, ids, text?, kind?}`;
+  `IdeaTickCommand {target}` → the nudge text or empty: the Claude mod calls it on each `UserPromptSubmit`, and it
+  counts the prompt and applies the 3-prompt rule (decision 7).
 - Merge joins the selected ideas' texts (oldest first) into the oldest, keeps the oldest's kind, and drops the rest.
 - Every change publishes `ideas:changed` with the session id; the frontend keeps a per-session atom and refetches.
 
