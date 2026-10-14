@@ -175,3 +175,8 @@ func (ws *WshServer) CleanStorageCommand(ctx context.Context, data wshrpc.Comman
 	}
 	return &res, nil
 }
+
+// ListCanvasesCommand reads the disk on every call and needs no scanner: the gallery asks once when it opens
+func (ws *WshServer) ListCanvasesCommand(ctx context.Context) ([]storage.StorageCanvas, error) {
+	return storage.ListCanvases(configProjectPaths()), nil
+}

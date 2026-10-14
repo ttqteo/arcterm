@@ -513,8 +513,9 @@ code is written.
 - Token values come from `frontend/tailwindsetup.css` `@theme`, never from memory or an
   older canvas.
 - A mockup is scaffolding, never committed: once its feature ships the code is the design, but
-  the topic folder stays until the person deletes it or picks it from the list an agent offers
-  when asked to tidy up (`design-local` skill, "Cleaning up"). The canvases already under `docs/prototype/` predate this rule and
+  the topic folder stays unless Settings → Storage → Agents delete a canvas when its feature ships
+  is on, until the person deletes it or picks it from the list an agent offers when asked to tidy
+  up (`design-local` skill, "Cleaning up"). The canvases already under `docs/prototype/` predate this rule and
   stay only because code comments and specs cite them.
 
 ## Architecture & Patterns

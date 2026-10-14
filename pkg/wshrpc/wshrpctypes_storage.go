@@ -17,6 +17,8 @@ type StorageCommands interface {
 	RescanStorageCommand(ctx context.Context) error
 	// CleanStorageCommand cleans the named items of one category, re-checking each, then rescans
 	CleanStorageCommand(ctx context.Context, data CommandCleanStorageData) (*storage.StorageCleanResult, error)
+	// ListCanvasesCommand lists every registered project's design canvases, newest first (Agent → Canvases)
+	ListCanvasesCommand(ctx context.Context) ([]storage.StorageCanvas, error)
 }
 
 type CommandCleanStorageData struct {
