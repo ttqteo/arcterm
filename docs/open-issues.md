@@ -33,6 +33,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   lands, and waits while you are mid-turn with it. No scenario can bring a deferred run to a messaged outcome, so this is
   tried only in unit tests with a scripted roster; neither has the `--queue` path (CLI → `RunQueueAdd` → the loop →
   `CreateRun`) been tried in the running app.
+- [ ] (arcterm) Run handoff: hovering a queued row on the Agent tree fades in its Start now and Remove buttons (another
+  row's stay hidden). Run 973afb5b's Final failed only this step (`run-queue` step 2, opacity read 0) while its
+  screenshots came out blank, so it was force-landed as `df5f68488`; try `task verify:ui -- run-queue` or hover a
+  `wsh runs start --queue` row by hand.
 
 **2026-10-14 (leadless run row)**
 
