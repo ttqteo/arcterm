@@ -36,6 +36,8 @@ new draws it as one of its release's cards and folds every other line under a co
 
 ### Changed
 
+- **The Cockpit badge counts only agents that need you**, matching its "need you" tab. Runs to confirm or land,
+  approvals, escalations and due chunks are counted on Jarvis, where you act on them.
 - **Open a tool moved to `Ctrl+Shift+O`** (`Cmd+Shift+O` on a Mac), freeing `Ctrl+Shift+T` for reopening an agent.
 - **Folded, Sprout tells you first**: while Sprout is folded and another app is in front, an agent that needs you
   shows only Sprout's bubble; the system notification follows 30 seconds later, and only if it still waits on you.

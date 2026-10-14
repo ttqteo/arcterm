@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-14 (Cockpit / Jarvis badge split)**
+
+- [ ] With one agent asking and one run waiting to be confirmed: the Cockpit nav badge says 1, the same as its "need
+  you" tab, and Jarvis says 1. Confirm the run in Jarvis and its badge goes away. `attentionstore.ts` `splitAttention`.
+
 **2026-10-14 (Conversations rescan)**
 
 - [ ] In an agent tab run `/clear` (or quit claude and start it again in that terminal): within a second the session it

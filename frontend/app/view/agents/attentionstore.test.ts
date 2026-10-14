@@ -65,46 +65,51 @@ describe("taskbarSignal", () => {
 });
 
 describe("splitAttention", () => {
-    it("counts every item but radar triage on Cockpit, channel or not", () => {
+    it("counts asks on Cockpit, channel or not", () => {
+        const out = splitAttention([item({ key: "a", kind: "ask", channelid: "c1" }), item({ key: "b", kind: "ask" })]);
+        expect(out.cockpit.map((i) => i.key)).toEqual(["a", "b"]);
+        expect(out.jarvis).toHaveLength(0);
+    });
+
+    it("counts gates, runs, escalations, due chunks and learn proposals on Jarvis, not Cockpit", () => {
         const out = splitAttention([
-            item({ key: "a", channelid: "c1" }),
-            item({ key: "b" }),
+            item({ key: "a", kind: "ask" }),
             item({ key: "c", kind: "dag-gate", channelid: "c2" }),
             item({ key: "d", kind: "escalation", channelid: "c1" }),
             item({ key: "e", kind: "run-land-held", channelid: "c1" }),
+            item({ key: "f", kind: "run-unverified", channelid: "c1" }),
+            item({ key: "g", kind: "chunk-due" }),
+            item({ key: "h", kind: "learn-proposal" }),
         ]);
-        expect(out.cockpit.map((i) => i.key)).toEqual(["a", "b", "c", "d", "e"]);
-        expect(out.radar).toHaveLength(0);
+        expect(out.cockpit.map((i) => i.key)).toEqual(["a"]);
+        expect(out.jarvis.map((i) => i.key)).toEqual(["c", "d", "e", "f", "g", "h"]);
     });
 
-    it("gives Jarvis no group: its nav entry carries no attention badge", () => {
-        const out = splitAttention([item({ key: "a", channelid: "c1" })]);
-        expect(Object.keys(out).sort()).toEqual(["cockpit", "radar"]);
-    });
-
-    it("routes radar triage to the Radar badge, not Cockpit, even though it names no channel", () => {
+    it("routes radar triage to the Radar badge, even though it names no channel", () => {
         const out = splitAttention([
             item({ key: "r", kind: "radar-triage", channelid: "", oref: "radarreport:x" }),
-            item({ key: "b" }),
+            item({ key: "b", kind: "ask" }),
         ]);
         expect(out.radar.map((i) => i.key)).toEqual(["r"]);
         expect(out.cockpit.map((i) => i.key)).toEqual(["b"]);
     });
 
-    it("keeps the two groups disjoint and complete, in server order", () => {
+    it("keeps the three groups disjoint and complete, in server order", () => {
         const items = [
-            item({ key: "a", channelid: "c1" }),
+            item({ key: "a", kind: "ask" }),
             item({ key: "r", kind: "radar-triage" }),
-            item({ key: "b" }),
+            item({ key: "g", kind: "dag-gate" }),
+            item({ key: "b", kind: "ask" }),
         ];
         const out = splitAttention(items);
-        expect(out.cockpit.length + out.radar.length).toBe(items.length);
+        expect(out.cockpit.length + out.jarvis.length + out.radar.length).toBe(items.length);
         expect(out.cockpit.map((i) => i.key)).toEqual(["a", "b"]);
     });
 
     it("reads a missing list as empty", () => {
         const out = splitAttention(undefined as unknown as AttentionItem[]);
         expect(out.cockpit).toHaveLength(0);
+        expect(out.jarvis).toHaveLength(0);
         expect(out.radar).toHaveLength(0);
     });
 });
@@ -120,7 +125,7 @@ describe("cockpitWaitingCount", () => {
 
     it("counts an ask both the roster and the server list know once", () => {
         const agents = [agent({ id: "a1", state: "asking", blockId: "b1" })];
-        const items = [item({ kind: "ask", key: "ask:block:b1" }), item({ kind: "dag-gate", key: "gate:1" })];
+        const items = [item({ kind: "ask", key: "ask:block:b1" }), item({ kind: "ask", key: "ask:block:b2" })];
         expect(cockpitWaitingCount(items, agents, new Set())).toBe(2);
     });
 
