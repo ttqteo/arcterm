@@ -1,6 +1,6 @@
 # Land queue implementation plan
 
-**Verify:** `node scripts/verify.mjs ./pkg/orchestrate ./pkg/runqueue ./pkg/wshrpc/... ./cmd/wsh/...`
+**Verify:** `node scripts/verify.mjs ./pkg/orchestrate ./pkg/runqueue ./pkg/jarvis ./pkg/waveobj ./pkg/wshrpc/... ./cmd/wsh/...`
 
 **Check:** `node --stack-size=4000 node_modules/typescript/lib/tsc.js --noEmit`
 
@@ -82,6 +82,9 @@ under the existing `landing` key with their own labels.
 	ResolverTs    int64    `json:"resolverts,omitempty"`
 	ResolverTried bool     `json:"resolvertried,omitempty"`
 	Conflicts     []string `json:"conflicts,omitempty"` // the files the base merge conflicted in
+	// Fixture marks a land a CDP scenario seeded to draw its state: the land driver never tends it (Task 3, Task 5).
+	// Only scripts/cdp/scenarios.mjs writes it, through object.UpdateObject.
+	Fixture bool `json:"fixture,omitempty"`
 ```
 
 and update the `State` comment to `pending | queued | resolving | landed | held`.
@@ -161,7 +164,7 @@ scripts/cdp/scenarios.mjs
 
 **Depends on:** Task 1
 
-**Files:** `pkg/orchestrate/landline.go`, `pkg/orchestrate/landline_test.go`, `pkg/orchestrate/land.go`, `pkg/orchestrate/watchdog.go`, `pkg/waveobj/wtype.go`
+**Files:** `pkg/orchestrate/landline.go`, `pkg/orchestrate/landline_test.go`, `pkg/orchestrate/land.go`, `pkg/orchestrate/watchdog.go`, `pkg/waveobj/runevent.go`
 
 - Create: `pkg/orchestrate/landline.go`
 - Create: `pkg/orchestrate/landline_test.go`
@@ -176,8 +179,8 @@ scripts/cdp/scenarios.mjs
   turn is free **and** no `queued` land of the same project is older (read `wstore.GetRunsByLandState(ctx,
   LandState_Queued)`, filter by project key). Then it lands as today and releases the turn, then kicks the driver
   (`go driveLandLine(context.Background())`). Otherwise it saves `RunLand{State: queued, QueuedTs: now, Force: force,
-  ResolverTried: <previous land's>}`, appends a run event (add `RunEventKindLandQueued` beside the existing land
-  event kinds in `pkg/waveobj`, with `{"ahead": n}`), and returns that land with no error.
+  ResolverTried: <previous land's>}`, appends a run event (add `RunEventKindLandQueued` beside `RunEventKindLandHeld` in
+  `pkg/waveobj/runevent.go`, with `{"ahead": n}`), and returns that land with no error.
 - `driveLandLine(ctx)`: guarded so only one pass runs at a time (an atomic flag; a pass that finds it set returns).
   For each project with `queued` lands, if `tryTakeTurn` succeeds for the oldest (by `QueuedTs`, then run id), and
   `landLocks.TryLock(run.ID)` succeeds (else release the turn), run the land in `goStage("land "+run.ID, …)` under
@@ -192,6 +195,10 @@ scripts/cdp/scenarios.mjs
 - On the first driver pass after wavesrv starts, a run whose land is `pending` with no turn held for it (the server
   died mid-land) goes back to `queued` with its `QueuedTs` set to now. Add `LandState_Pending` lands to that scan
   only on the first pass (a `sync.Once`).
+- Every scan of the driver (queued, the first pass's pending, and Task 5's resolving) and `LandRun`'s older-queued
+  check skip a land with `Fixture` set: a CDP scenario seeds those to draw the states, on runs that have no branch to
+  land. Test it in `TestLandLineSkipsFixture`: a `queued` and a `pending` fixture land are unchanged after a drive
+  (the pending one on the first pass too).
 - Watchdog: call `driveLandLine(ctx)` right after `retryDirtyLands(ctx)` (`watchdog.go:75`).
 - Export `LandPlace(runs []*waveobj.Run, runID string) (place int, ahead *waveobj.Run)`: 1 + the number of runs of the
   same project whose land is `queued` with an older `QueuedTs`, + 1 more if a run of the project is `pending` (in its
@@ -210,6 +217,7 @@ up):
 - `TestClaimBusyRequeues`: with the project claimed by `claimProject` (a task merge), a land returns `queued`, keeps
   its `QueuedTs`, and lands once the claim is released and the line is driven.
 - `TestDirtyRetryQueues`: a dirty hold whose checkout is clean again becomes `queued`, then lands.
+- `TestLandLineSkipsFixture` (above).
 - `TestLandPlace`: pure: runs with lands `pending`, `queued`(ts 10), `queued`(ts 20) in one project and a `queued`
   in another → places 0, 2, 3 and 1 with the right `ahead`.
 
@@ -267,7 +275,7 @@ run on the new HEAD, which differs from the verified commit, so they run.
 
 **Depends on:** Task 4
 
-**Files:** `pkg/orchestrate/landresolver.go`, `pkg/orchestrate/landresolver_test.go`, `pkg/orchestrate/land.go`, `pkg/orchestrate/landline.go`, `pkg/orchestrate/launchorigin.go`
+**Files:** `pkg/orchestrate/landresolver.go`, `pkg/orchestrate/landresolver_test.go`, `pkg/orchestrate/land.go`, `pkg/orchestrate/landline.go`, `pkg/orchestrate/launchorigin.go`, `pkg/waveobj/runevent.go`
 
 - Create: `pkg/orchestrate/landresolver.go`
 - Create: `pkg/orchestrate/landresolver_test.go`
@@ -281,7 +289,8 @@ run on the new HEAD, which differs from the verified commit, so they run.
   `spawnStageSession(ctx, ctx, g, run, StageSession{Role: jarvis.UsageRole_LandResolver, Label: "land resolver",
   Tree: run.LandPath, Prompt: landResolverPrompt(run, files)})`, and return
   `RunLand{State: resolving, Resolver: <id>, ResolverTs: now, ResolverTried: true, Conflicts: files, QueuedTs: <kept>,
-  Force: <kept>}`, with a run event (`RunEventKindLandResolving`, `{"files": files, "resolver": id}`). No dag, or
+  Force: <kept>}`, with a run event (`RunEventKindLandResolving`, added beside `RunEventKindLandQueued` in
+  `pkg/waveobj/runevent.go`, `{"files": files, "resolver": id}`). No dag, or
   already tried, or the spawn fails → the held land of Task 4, its reason ending "; a resolver already tried" or
   "; the resolver could not start: <err>" as the case is.
 - `landResolverPrompt`: you are in the landing tree of run <id> (`wave/<id>`); `git merge <BaseBranch>`; it conflicts
@@ -298,6 +307,8 @@ run on the new HEAD, which differs from the verified commit, so they run.
   after `ReviewTimeout`) → stop it as a lost stage session is stopped (`stopReviewer`), held with
   "merging <base> into wave/<id> conflicts in <files>, and the resolver <reason>; merge it there, then Land again".
 - A `resolving` land does not hold the turn: the next queued land of the project goes meanwhile.
+- The driver's `resolving` scan skips a land with `Fixture` set, like its other scans (Task 3); add a
+  `resolving` fixture land to the tests below and check it is unchanged after a drive.
 
 **Step 1: Write the failing tests** with the spawn and the session status faked through package vars (follow how
 the verifier's tests fake `spawnWorker`/`startWorker`; grep `spawnWorker =` in `pkg/orchestrate/*_test.go`):
@@ -335,8 +346,8 @@ the verifier's tests fake `spawnWorker`/`startWorker`; grep `spawnWorker =` in `
   again in the same pass so an unblocked entry can start now.
 - `Outcome` already treats `pending` as not final; make sure `queued` and `resolving` are not final either (they are
   not `landed` or `held`, so the switch falls through — add the test).
-- Check that a land write pokes the queue loop (`PokeRunQueue` "is the hook every run write calls"); if `saveLand`'s
-  `wstore.UpdateRun` does not reach it, poke from where a land is saved.
+- No `land.go` edit: a land write already pokes the queue loop, since `saveLand` writes through `wstore.UpdateRun`
+  and `wstore.RunChangedHook` is `wshserver.PokeRunQueue` (`cmd/server/main-server.go:336`).
 
 **Step 1: Write the failing tests:**
 
@@ -380,13 +391,13 @@ released line. **Step 2:** Fail. **Step 3:** Implement. **Step 4:** `go test ./c
 
 **Depends on:** Task 1
 
-**Files:** `frontend/app/view/agents/landline.ts`, `frontend/app/view/agents/landline.test.ts`, `frontend/app/view/agents/runstage.ts`, `frontend/app/view/agents/runmodel.ts`, `frontend/app/view/jarvis/runsheetmodel.ts`, `frontend/app/view/jarvis/runsheet.tsx`, `scripts/cdp/scenarios.mjs`
+**Files:** `frontend/app/view/agents/landline.ts`, `frontend/app/view/agents/landline.test.ts`, `frontend/app/view/agents/runstage.ts`, `frontend/app/view/agents/runmodel.ts`, `frontend/app/view/agents/agenttree.tsx`, `frontend/app/view/jarvis/runsheetmodel.ts`, `frontend/app/view/jarvis/runsheet.tsx`, `scripts/cdp/scenarios.mjs`
 
 - Create: `frontend/app/view/agents/landline.ts`, `frontend/app/view/agents/landline.test.ts`
 - Modify: `frontend/app/view/agents/runstage.ts` (the `landing` label only), `frontend/app/view/agents/runmodel.ts`
   (`landView`), `frontend/app/view/jarvis/runsheetmodel.ts` and `runsheet.tsx` (the dock line near
-  "Not merged back", `runsheet.tsx:1070`, `runsheetmodel.ts:157`), the Agent tree row that renders
-  `dagProgressLabel` if it has the project's runs at hand
+  "Not merged back", `runsheet.tsx:1070`, `runsheetmodel.ts:157`), `frontend/app/view/agents/agenttree.tsx` (the run
+  row at `agenttree.tsx:697`)
 - Modify: `scripts/cdp/scenarios.mjs` (new scenario `land-queue`)
 
 **Behaviour:**
@@ -395,20 +406,30 @@ released line. **Step 2:** Fail. **Step 3:** Implement. **Step 4:** `go test ./c
   +1 for a `pending` one), returning `{ place, ahead }`.
 - `runStage`: keep the `landing` key for `pending`, `queued` and `resolving`; its label is `Landing`,
   `Landing · in line` and `Landing · resolving conflicts`. `landView` gets `land queued` and `resolving` (tone
-  `running`). Where the runs of the project are known (the tree row, the run sheet), `Landing · #2 in line`.
+  `running`). `dagProgressLabel` takes an optional third argument, the runs of the run's project, and with it a
+  queued land reads `Landing · #2 in line`. In `agenttree.tsx` the run row (`agenttree.tsx:697`) passes it the runs
+  of its project (the runs its project folder already lists); the run sheet does the same.
 - Run sheet dock: `queued` → "In line to land: #2, behind <title>"; `resolving` → "A resolver is merging <base> into
   wave/<id>: <files>"; held with `conflicts` lists them under the reason.
 - Scenario `land-queue` in `scripts/cdp/scenarios.mjs`, built on the run fixtures of
-  `docs/reference/cdp-run-fixtures.md` (arrange/seed/teardown helpers already in `scenarios.mjs`): three done runs in
-  one project with lands `pending`, `queued` and `resolving` (conflicts `["CHANGELOG.md"]`); goto the Agent surface;
-  shot the project's tree; assert the rows read `Landing`, `Landing · #2 in line` and
-  `Landing · resolving conflicts`; open the queued run's sheet, shot it, assert "In line to land: #2". Teardown removes
-  the seeded runs.
+  `docs/reference/cdp-run-fixtures.md`. The seam is the `Fixture` flag of Task 1: a land seeded with
+  `fixture: true` is never tended by the land driver (Task 3, Task 5), so the states stay as written. Arrange: one
+  channel on the temp dir, four `createrun` calls on it (`deferstart: true`, no dag, as `arrangeFixtureRun` does;
+  record every run id in `ctx`), a roster fixture with a lead per run (`treeRailRoster`, as `arrangeFixtureRun`
+  writes it), then write each run with `fstWriteRun` to `status: "done"` and a land with `fixture: true`:
+  `pending`; `queued` with `queuedts` 20; `resolving` with `conflicts: ["CHANGELOG.md"]`; `held` with
+  `conflicts: ["docs/open-issues.md"]` and a reason. Reload onto the roster. Steps:
+  1. goto the Agent surface; shot the project's tree; assert the rows read `Landing`, `Landing · #2 in line`,
+     `Landing · resolving conflicts` and `Land held`.
+  2. open the queued run's sheet (`window.__openAddress("run:<id>")`); shot it; assert "In line to land: #2".
+  3. open the resolving run's sheet; shot it; assert "A resolver is merging" and `CHANGELOG.md`.
+  4. open the held run's sheet; shot it; assert its conflicts line names `docs/open-issues.md`.
+  Teardown runs `teardownFixtureRun` for every run made (channel once). Add the scenario to `SCENARIOS`.
 
 **Step 1:** Failing vitest for `landPlace` and for `runStage`'s labels (extend `runstage.test.ts` / `runmodel.test.ts`).
 **Step 2:** `npx vitest run frontend/app/view/agents/landline.test.ts frontend/app/view/agents/runstage.test.ts`
-fails. **Step 3:** Implement. **Step 4:** They pass; the Check command passes. **Step 5:** Run the scenario
-(`task verify:ui -- land-queue`) against a dev app if one is up; if none can run, say so in your report. Commit.
+fails. **Step 3:** Implement. **Step 4:** They pass; the Check command passes. **Step 5:** Commit. The run's Final runs the `land-queue` scenario
+on the merged result, with the driver of Task 3 and Task 5 in it.
 
 ---
 
