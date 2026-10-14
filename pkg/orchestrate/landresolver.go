@@ -85,6 +85,9 @@ func tendResolvingLands(ctx context.Context) {
 	}
 }
 
+// TendResolvingLandsForTest runs a pass of tendResolvingLands for tests in other packages, which have no land driver.
+func TendResolvingLandsForTest(ctx context.Context) { tendResolvingLands(ctx) }
+
 // tendResolver reads run again under the land lock tendResolvingLands took, and releases it.
 func tendResolver(ctx context.Context, listed *waveobj.Run) {
 	defer landLocks.Unlock(listed.ID)
