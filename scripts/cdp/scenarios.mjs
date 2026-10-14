@@ -26,6 +26,16 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SURFACE_LABEL } from "./attach.mjs";
 import { narrationFeed } from "./narrationfeed.mjs";
+import {
+    MEMORY_FAILED_ERROR,
+    MEMORY_PROJECTS,
+    MEMORY_SHARED_REPO,
+    buildMemoryFixture,
+    memoryBackupDir,
+    memoryStatePath,
+    settleMemoryStates,
+    writeMemoryStates,
+} from "./memory-fixtures.mjs";
 import { notesWsh, vaultRemote, vaultRoot } from "./notes-wsh.mjs";
 import { makeCockpitOfficeScenarios } from "./cockpitofficescenarios.mjs";
 import {
@@ -43313,6 +43323,448 @@ const traySettingsRow = {
     async teardown() {},
 };
 
+// --- setup memory: the Memory tab over fixture states in temp folders -----------------------------
+// Arranged for real, with no test hook: createproject registers the fixture projects on temp git repos,
+// and memory-fixtures.mjs writes their state files into the dev store with real hashes, naming memory
+// folders under the same temp root. Apply and undo then touch only those folders. It never clicks Check now
+// (or Check again), which would run a model check. Copy and layout are the memory-hygiene mockup's boards.
+const MEMORY_FIXTURE_NAMES = Object.values(MEMORY_PROJECTS);
+
+async function setupMemoryArrange(h) {
+    const ctx = { root: mkdtempSync(join(tmpdir(), "verify-setup-memory-")), registered: [], applyIds: [] };
+    try {
+        ctx.fx = buildMemoryFixture(ctx.root);
+        ctx.dataDir = (await h.rpc("waveinfo", null)).datadir;
+        for (const { name, path } of ctx.fx.projects) {
+            await h.rpc("createproject", { name, path });
+            ctx.registered.push({ name, path });
+        }
+        for (const { name } of ctx.fx.projects) await waitForProjectInConfig(h, name);
+        writeMemoryStates(ctx.dataDir, ctx.fx.states);
+        await polishReload(h);
+    } catch (e) {
+        await setupMemoryTeardown(h, ctx).catch(() => {});
+        throw e;
+    }
+    return ctx;
+}
+
+async function setupMemoryAssert(h, ctx) {
+    const steps = [];
+    const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+    const { fx } = ctx;
+    const own = fx.ownChanges;
+    const split = fx.splitChanges;
+    const q = (sel) => JSON.stringify(sel);
+    const projectSel = (name) => `[data-memory-project=${q(name)}]`;
+    const changeSel = (id) => `[data-memory-change=${q(id)}]`;
+    const text = (sel) => h.ev(`(document.querySelector(${q(sel)})?.textContent ?? "").trim()`);
+    const disabled = (sel) => h.ev(`document.querySelector(${q(sel)})?.disabled ?? null`);
+    const click = async (sel) => {
+        if (
+            !(await h.ev(
+                `(() => { const b = document.querySelector(${q(sel)}); if (!b) return false; b.click(); return true; })()`
+            ))
+        ) {
+            throw new Error(`nothing to click at ${sel}`);
+        }
+    };
+    const toolbarStatus = () =>
+        h.ev(
+            `(document.getElementById("setup-tab-memory")?.closest("[data-surface-toolbar]")?.lastElementChild?.textContent ?? "").trim()`
+        );
+    // the check line sits under the project name, beside Check now
+    const checkLine = () =>
+        h.ev(
+            `(document.querySelector("[data-memory-check]")?.parentElement?.firstElementChild?.lastElementChild?.textContent ?? "").trim()`
+        );
+    const railStatus = (name) =>
+        h.ev(`(document.querySelector(${q(projectSel(name))})?.lastElementChild?.textContent ?? "").trim()`);
+    const rowStatus = (id) =>
+        h.ev(`(document.querySelector(${q(changeSel(id))})?.lastElementChild?.textContent ?? "").trim()`);
+    const selectProject = async (name) => {
+        if (!(await polishWaitFor(h, `!!document.querySelector(${q(projectSel(name))})`, 10000))) {
+            throw new Error(`${name} is not in the Memory tab's project rail`);
+        }
+        await click(projectSel(name));
+        await polishWaitFor(
+            h,
+            `document.querySelector(${q(projectSel(name))})?.getAttribute("aria-pressed") === "true"`,
+            5000
+        );
+    };
+    const selectChange = async (id) => {
+        await click(changeSel(id));
+        await polishWaitFor(
+            h,
+            `document.querySelector(${q(changeSel(id))})?.getAttribute("aria-selected") === "true"`,
+            5000
+        );
+    };
+    // teardown removes each apply's backup by its id
+    const recordApplyId = async (changeId) => {
+        const listed = await h.rpc("listmemoryhygiene", null);
+        const id = listed.projects
+            .find((p) => p.project === MEMORY_PROJECTS.own)
+            ?.changes.find((c) => c.id === changeId)?.applyid;
+        if (id) ctx.applyIds.push(id);
+        return id;
+    };
+    const bytes = (path) => (existsSync(path) ? readFileSync(path) : null);
+    const same = (a, b) => a != null && b != null && Buffer.compare(a, b) === 0;
+    const run = async (step, fn) => {
+        try {
+            const { ok, detail } = await fn();
+            rec(step, ok, detail);
+        } catch (e) {
+            rec(step, false, String(e?.message ?? e));
+        }
+    };
+
+    await h.cdp("Emulation.setDeviceMetricsOverride", {
+        width: 1600,
+        height: 950,
+        deviceScaleFactor: 1,
+        mobile: false,
+    });
+    await h.goto("setup");
+    await click("#setup-tab-memory");
+    await polishWaitFor(h, `!!document.querySelector("[data-memory-project]")`, 10000);
+
+    await run(
+        "1. Main: the own project with the toolbar status, a meter, one index card, five rows and a trim's detail",
+        async () => {
+            await selectProject(MEMORY_PROJECTS.own);
+            await selectChange(own.trim.id);
+            const ix = fx.states[MEMORY_PROJECTS.own].index;
+            const meter = `${ix.lines} lines · ${(ix.bytes / 1000).toFixed(1)} of 25 KB`;
+            const got = {
+                toolbar: await toolbarStatus(),
+                rail: await text(projectSel(MEMORY_PROJECTS.own)),
+                cards: await h.ev(`document.querySelectorAll("[data-memory-card]").length`),
+                rows: await h.ev(`document.querySelectorAll("[data-memory-change]").length`),
+                detail: await text("[data-memory-detail]"),
+                keep: await disabled("[data-memory-keep]"),
+                apply: await disabled("[data-memory-apply]"),
+                applyLabel: await text("[data-memory-apply]"),
+            };
+            await h.shot("cdp-shots/setup-memory-main.png");
+            const toReview = Number(/^(\d+) projects? to review$/.exec(got.toolbar)?.[1] ?? 0);
+            return {
+                ok:
+                    toReview >= 3 &&
+                    got.rail.includes(meter) &&
+                    got.cards === 1 &&
+                    got.rows === 5 &&
+                    got.detail.includes("Why") &&
+                    got.detail.includes("Change") &&
+                    got.detail.includes(own.trim.title) &&
+                    got.keep === false &&
+                    got.apply === false &&
+                    got.applyLabel === "Apply trim",
+                detail: JSON.stringify({ ...got, detail: got.detail.slice(0, 160), meter }),
+            };
+        }
+    );
+
+    await run(
+        "2. Split: split-a shows the split text, two index cards, three labelled groups and a move-here",
+        async () => {
+            await selectProject(MEMORY_PROJECTS.splitA);
+            await selectChange(split.moveBuild.id);
+            const got = {
+                rail: await text(projectSel(MEMORY_PROJECTS.splitA)),
+                body: await h.ev(`(document.querySelector("[data-memory-check]")?.closest("main")?.textContent ?? "")`),
+                cards: await h.ev(`document.querySelectorAll("[data-memory-card]").length`),
+                groups: await h.ev(
+                    `[...document.querySelectorAll('[role="rowgroup"][aria-label]')].map((g) => g.getAttribute("aria-label"))`
+                ),
+                detail: await text("[data-memory-detail]"),
+            };
+            await h.shot("cdp-shots/setup-memory-split.png");
+            const repo = MEMORY_SHARED_REPO;
+            return {
+                ok:
+                    got.rail.includes(`Shares ${repo}’s memory`) &&
+                    got.body.includes(
+                        `Claude Code gives a git repo one memory, so ${MEMORY_PROJECTS.splitA} sessions load ${repo}’s MEMORY.md`
+                    ) &&
+                    got.cards === 2 &&
+                    JSON.stringify(got.groups) ===
+                        JSON.stringify([`From ${repo}’s memory`, "Already in its own folder", "Switch over"]) &&
+                    got.detail.startsWith("Move here"),
+                detail: JSON.stringify({ ...got, body: got.body.slice(0, 200), detail: got.detail.slice(0, 120) }),
+            };
+        }
+    );
+
+    await run("3. SplitGate: the settings change is held while shared changes are still to review", async () => {
+        await selectChange(split.settings.id);
+        const got = {
+            apply: await disabled("[data-memory-apply]"),
+            applyLabel: await text("[data-memory-apply]"),
+            gate: await text("[data-memory-gate]"),
+        };
+        await h.shot("cdp-shots/setup-memory-split-gate.png");
+        return {
+            ok:
+                got.apply === true &&
+                got.applyLabel === "Switch memory" &&
+                got.gate ===
+                    `Review the 3 changes from ${MEMORY_SHARED_REPO}’s memory first. Switching now would drop those memories from ${MEMORY_PROJECTS.splitA} sessions.`,
+            detail: JSON.stringify(got),
+        };
+    });
+
+    await run(
+        "4. Applied with Undo: the trim writes the trimmed bytes, reads Applied, and Undo restores the original",
+        async () => {
+            const original = bytes(fx.paths.trim);
+            const trimmed = Buffer.from(original.toString("utf8").replace(fx.trim.old, fx.trim.new), "utf8");
+            await selectProject(MEMORY_PROJECTS.own);
+            await selectChange(own.trim.id);
+            await click("[data-memory-apply]");
+            const appliedShown = await polishWaitFor(h, `!!document.querySelector("[data-memory-undo]")`, 10000);
+            await recordApplyId(own.trim.id);
+            const applied = {
+                file: same(bytes(fx.paths.trim), trimmed),
+                detail: await text("[data-memory-detail]"),
+                undo: await text("[data-memory-undo]"),
+                row: await rowStatus(own.trim.id),
+            };
+            await h.shot("cdp-shots/setup-memory-applied.png");
+            await click("[data-memory-undo]");
+            const reopened = await polishWaitFor(h, `!!document.querySelector("[data-memory-apply]")`, 10000);
+            const restored = same(bytes(fx.paths.trim), original);
+            const row = await rowStatus(own.trim.id);
+            return {
+                ok:
+                    appliedShown &&
+                    applied.file &&
+                    /Applied at \d/.test(applied.detail) &&
+                    applied.undo === "Undo" &&
+                    applied.row === "Applied" &&
+                    reopened &&
+                    restored &&
+                    row === "To review",
+                detail: JSON.stringify({
+                    ...applied,
+                    detail: applied.detail.slice(-160),
+                    reopened,
+                    restored,
+                    rowAfterUndo: row,
+                }),
+            };
+        }
+    );
+
+    await run("5. ChangedOnDisk: a file edited after the check stops the apply with the conflict alert", async () => {
+        const edited = Buffer.from(`${readFileSync(fx.paths.delete, "utf8")}Edited after the check.\n`, "utf8");
+        writeFileSync(fx.paths.delete, edited);
+        const index = bytes(fx.paths.ownIndex);
+        await selectChange(own.delete.id);
+        await click("[data-memory-apply]");
+        const shown = await polishWaitFor(h, `!!document.querySelector("[data-memory-conflict]")`, 10000);
+        const got = {
+            alert: await text("[data-memory-conflict]"),
+            checkAgain: await text("[data-memory-conflict] button"),
+            apply: await disabled("[data-memory-apply]"),
+            row: await rowStatus(own.delete.id),
+            file: same(bytes(fx.paths.delete), edited),
+            index: same(bytes(fx.paths.ownIndex), index),
+        };
+        await h.shot("cdp-shots/setup-memory-changed-on-disk.png");
+        return {
+            ok:
+                shown &&
+                got.alert.includes("Changed on disk since the check.") &&
+                got.alert.includes("flaky-retry-test.md") &&
+                got.checkAgain === "Check again" &&
+                got.apply === true &&
+                got.row === "Changed on disk" &&
+                got.file &&
+                got.index,
+            detail: JSON.stringify({ ...got, alert: got.alert.slice(0, 160) }),
+        };
+    });
+
+    await run("6. Keep / Review again: a kept change reads Kept as is, and Review again opens it again", async () => {
+        await selectChange(own.merge.id);
+        await click("[data-memory-keep]");
+        const kept = await polishWaitFor(h, `!!document.querySelector("[data-memory-undo]")`, 10000);
+        const got = {
+            detail: await text("[data-memory-detail]"),
+            button: await text("[data-memory-undo]"),
+            row: await rowStatus(own.merge.id),
+        };
+        await h.shot("cdp-shots/setup-memory-kept.png");
+        await click("[data-memory-undo]");
+        const reopened = await polishWaitFor(h, `!!document.querySelector("[data-memory-apply]")`, 10000);
+        const row = await rowStatus(own.merge.id);
+        return {
+            ok:
+                kept &&
+                got.detail.includes("Kept as is. The next check skips it unless the memory changes.") &&
+                got.button === "Review again" &&
+                got.row === "Kept" &&
+                reopened &&
+                row === "To review",
+            detail: JSON.stringify({ ...got, detail: got.detail.slice(-120), reopened, rowAfter: row }),
+        };
+    });
+
+    await run("7. Check states: never checked, a failed check over its last result, and a check running", async () => {
+        const got = {};
+        for (const [key, name] of [
+            ["fresh", MEMORY_PROJECTS.fresh],
+            ["failed", MEMORY_PROJECTS.failed],
+            ["checking", MEMORY_PROJECTS.checking],
+        ]) {
+            await selectProject(name);
+            got[key] = {
+                rail: await railStatus(name),
+                line: await checkLine(),
+                rows: await h.ev(`document.querySelectorAll("[data-memory-change]").length`),
+                checkNow: await disabled("[data-memory-check]"),
+            };
+            await h.shot(`cdp-shots/setup-memory-${key}.png`);
+        }
+        return {
+            ok:
+                got.fresh.rail === "Not checked yet" &&
+                got.fresh.line === "Not checked yet" &&
+                got.failed.rail === "Last check failed" &&
+                got.failed.line.endsWith(`Last check failed: ${MEMORY_FAILED_ERROR}`) &&
+                got.failed.rows === 1 &&
+                got.checking.rail === "Checking…" &&
+                got.checking.line === "Checking…" &&
+                got.checking.checkNow === true,
+            detail: JSON.stringify(got),
+        };
+    });
+
+    await run(
+        "8. Error alert: an undo whose backup is gone shows the backend's message and writes nothing",
+        async () => {
+            const before = { index: bytes(fx.paths.ownIndex), note: bytes(fx.paths.harvested) };
+            await selectProject(MEMORY_PROJECTS.own);
+            await selectChange(own.addToIndex.id);
+            await click("[data-memory-apply]");
+            if (!(await polishWaitFor(h, `!!document.querySelector("[data-memory-undo]")`, 10000))) {
+                return { ok: false, detail: `the add-to-index did not apply: ${await text("[data-memory-error]")}` };
+            }
+            const applied = { index: bytes(fx.paths.ownIndex), note: bytes(fx.paths.harvested) };
+            const applyId = await recordApplyId(own.addToIndex.id);
+            if (!applyId) return { ok: false, detail: "the applied change has no apply id" };
+            rmSync(memoryBackupDir(ctx.dataDir, applyId), { recursive: true, force: true });
+            await click("[data-memory-undo]");
+            const shown = await polishWaitFor(h, `!!document.querySelector("[data-memory-error]")`, 10000);
+            const got = {
+                alert: await text("[data-memory-error]"),
+                row: await rowStatus(own.addToIndex.id),
+                changed: !same(applied.index, before.index) && !same(applied.note, before.note),
+                kept: same(bytes(fx.paths.ownIndex), applied.index) && same(bytes(fx.paths.harvested), applied.note),
+            };
+            await h.shot("cdp-shots/setup-memory-error.png");
+            return {
+                ok:
+                    shown &&
+                    got.alert.startsWith(`Could not undo the change in ${MEMORY_PROJECTS.own}: `) &&
+                    got.alert.includes("backup manifest") &&
+                    got.row === "Applied" &&
+                    got.changed &&
+                    got.kept,
+                detail: JSON.stringify(got),
+            };
+        }
+    );
+
+    await run("9. Every project checked: with no change left open the toolbar says so", async () => {
+        writeMemoryStates(ctx.dataDir, settleMemoryStates(fx.states));
+        await polishReload(h);
+        await h.goto("setup");
+        await click("#setup-tab-memory");
+        await polishWaitFor(h, `!!document.querySelector("[data-memory-project]")`, 10000);
+        // a dev store with real projects may have changes of its own to review, which the fixture can't settle
+        const listed = await h.rpc("listmemoryhygiene", null);
+        const others = listed.projects
+            .filter((p) => !MEMORY_FIXTURE_NAMES.includes(p.project))
+            .filter((p) => p.changes.some((c) => c.status !== "applied" && c.status !== "kept"))
+            .map((p) => p.project);
+        const toolbar = await toolbarStatus();
+        await h.shot("cdp-shots/setup-memory-all-checked.png");
+        if (others.length > 0) {
+            return {
+                ok: toolbar === `${others.length} project${others.length === 1 ? "" : "s"} to review`,
+                detail: `toolbar="${toolbar}"; this store's own projects to review: ${others.join(", ")}`,
+            };
+        }
+        return { ok: toolbar === "Every project checked", detail: `toolbar="${toolbar}"` };
+    });
+
+    await run("10. Landing: memhygiene:<project> opens Setup → Memory with the project selected", async () => {
+        await h.goto("cockpit");
+        await polishWaitFor(h, `typeof window.__openAddress === "function"`, 5000);
+        await h.ev(`window.__openAddress(${q(`memhygiene:${MEMORY_PROJECTS.splitA}`)})`);
+        const landed = await polishWaitFor(
+            h,
+            `document.querySelector(${q(projectSel(MEMORY_PROJECTS.splitA))})?.getAttribute("aria-pressed") === "true"`,
+            10000
+        );
+        const got = {
+            surface: await h.activeSurfaceLabel(),
+            tab: await h.ev(`document.getElementById("setup-tab-memory")?.getAttribute("aria-selected")`),
+            pressed: landed,
+        };
+        await h.shot("cdp-shots/setup-memory-landing.png");
+        return { ok: got.surface === SURFACE_LABEL.setup && got.tab === "true" && landed, detail: JSON.stringify(got) };
+    });
+    return steps;
+}
+
+async function setupMemoryTeardown(h, ctx) {
+    const failed = [];
+    const step = async (what, fn) => {
+        try {
+            await fn();
+        } catch (e) {
+            failed.push(`${what}: ${e?.message ?? e}`);
+        }
+    };
+    const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+    const paths = new Set(ctx.registered.map((r) => norm(r.path)));
+    for (const { name } of ctx.registered) await step(`delete project ${name}`, () => h.rpc("deleteproject", { name }));
+    // createproject made a channel at each path, which deleteproject leaves
+    await step("delete the projects' channels", async () => {
+        const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+        for (const c of channels.filter((c) => paths.has(norm(c.projectpath)))) {
+            await h.rpc("deletechannel", { channelid: c.oid });
+        }
+    });
+    if (ctx.dataDir) {
+        for (const name of MEMORY_FIXTURE_NAMES) {
+            await step(`remove the state of ${name}`, () =>
+                rmSync(memoryStatePath(ctx.dataDir, name), { force: true })
+            );
+        }
+        // undo keeps a backup until the sweep prunes it, so the applies' backups go here
+        await step("remove the fixture's backups", () => {
+            for (const id of ctx.applyIds) rmSync(memoryBackupDir(ctx.dataDir, id), { recursive: true, force: true });
+        });
+    }
+    await step("remove the temp root", () => rmSync(ctx.root, { recursive: true, force: true, maxRetries: 3 }));
+    await step("reload", () => polishReload(h));
+    await step("return to the cockpit", () => h.goto("cockpit"));
+    if (failed.length > 0) throw new Error(`setup-memory teardown: ${failed.join("; ")}`);
+}
+
+const setupMemory = {
+    name: "setup-memory",
+    surface: "setup",
+    arrange: setupMemoryArrange,
+    assert: setupMemoryAssert,
+    teardown: setupMemoryTeardown,
+};
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
