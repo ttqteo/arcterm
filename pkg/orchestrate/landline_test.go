@@ -21,6 +21,12 @@ import (
 // its land has no Check or Verify to re-run.
 func (f *mergeFixture) addLandRun(t *testing.T, file string) string {
 	t.Helper()
+	return f.addLandRunWriting(t, file, file+"\n")
+}
+
+// addLandRunWriting is addLandRun with the file's whole content given, so two runs can edit one file.
+func (f *mergeFixture) addLandRunWriting(t *testing.T, file, content string) string {
+	t.Helper()
 	run := jarvis.NewRun("add "+file, "ws-1", f.projectPath(t), nil, jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 1)
 	if err := wstore.AppendRun(f.ctx, f.channel, run); err != nil {
 		t.Fatal(err)
@@ -30,7 +36,7 @@ func (f *mergeFixture) addLandRun(t *testing.T, file string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	commitOnBranch(t, tree, file, file+"\n")
+	commitOnBranch(t, tree, file, content)
 	if err := wstore.UpdateRun(f.ctx, f.channel, run.ID, func(r *waveobj.Run) error {
 		r.LandPath, r.BaseBranch, r.BaseCommit, r.Status = tree, "main", base, jarvis.RunStatus_Done
 		return nil
