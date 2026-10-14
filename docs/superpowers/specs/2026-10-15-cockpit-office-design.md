@@ -53,8 +53,10 @@ No part calls a model. Every rule reads data arcterm already holds: agent and ta
   (`atomWithStorage("cockpit.view")`, `"cards"` by default; storage read in try/catch, falls back to cards).
 - Office replaces **only the card grid**. The status tabs, the project switcher, Live only, the Needs you strip, the
   folded sections under the grid (Backgrounded, Idle, Background), the Events rail and the HintsBar stay as they are.
-- The office draws exactly the cards the grid would draw after the tab, project and Live only filters, so a filter
-  narrows the office as it narrows the grid. Background agents and plain terminals stay in their folded sections.
+- The office draws exactly the cards the grid would draw after the tab, project and Live only filters, and the
+  agents of the Idle section (an agent idle past the Finished window, which the grid parks there), so a filter
+  narrows the office as it narrows the grid. In Office the Idle section is not drawn under it: its agents are in the
+  lounge. Background agents and plain terminals stay in their folded sections.
 - Off (Cards), nothing of the office is mounted. Leaving the Cockpit unmounts it, as every surface but Agent does.
 
 ## The plan
@@ -99,9 +101,9 @@ Pure mapping in `officeplanmodel.ts`. An asking agent, or a run worker whose age
 |---|---|---|
 | `working` | sitting, a nod over the keys (2 frames) | monitor light green |
 | `asking` | raised hand (2 frames), `!` bubble | light amber, label **Needs you** |
-| `idle`, in the Cockpit's Finished window | cheers once (2 frames, ~1.5 s), then dozing | label **done** |
-| `idle`, under 3 min | dozing, eyes closed | light off |
-| `idle` 3 min or more | walks to the lounge, stands at the coffee machine with a cup | desk empty, dimmed |
+| `idle`, in the Cockpit's Finished window (5 min, `IDLE_GRACE_MS`) | cheers once (2 frames, ~1.5 s), then dozing | label **done** |
+| `idle` past it (in the Idle section), waiting for a free walker slot | dozing, eyes closed | light off |
+| `idle` past it | walks to the lounge, stands at the coffee machine with a cup | desk empty, dimmed |
 | `idle` 10 min or more | walks to the sofa, sits with the back to you, watching the TV | desk empty, dimmed |
 
 | Run seat (task state, `pkg/orchestrate/dag.go`) | Pose |
@@ -155,13 +157,13 @@ A person away from the desk walks back when the agent is working or asking again
   identity tokens. Run workers wear the lane colours by task position; the lead wears `--color-office-lead`.
 - **Walkers:** at most 3 people (the boss not counted) walk at once; the rest wait at their desk in order of
   `idleSince`. They walk the boss's way, through the doors. Who goes where is a pure function of state, `idleSince`,
-  the id hash and the minute (`officebehavior.ts`); one shared 60 s timer advances the minute. No per-person timers,
-  no randomness.
+  the id hash and the time (`officebehavior.ts`); the Cockpit's coarse clock (`structuralNowAtom`, ~15 s) advances
+  it, and the office runs no timer of its own for this. No per-person timers, no randomness.
 - **Day and night** from the local clock and the work hours (`officeHoursAtom`, `atomWithStorage("cockpit.office.hours")`,
   9 to 18 by default; Saturday and Sunday count as outside hours). Day: the windows are light. Evening (the 3 h after
   the end) and night: the windows go dark, the floors take the night tint (`--color-office-night`), an idle person's
   desk is empty (gone home, label `gone home`), a person at work gets a desk lamp and its pool of light, a meeting
-  room with a running task lights its table, and the sign glows brighter. The 60 s timer re-reads the phase.
+  room with a running task lights its table, and the sign glows brighter. The same coarse clock re-reads the phase.
 - **Energy** from the 5-hour window of the active Claude account, the one the app bar meter draws
   (`ratelimitstore.ts`, `fivehour`):
 
