@@ -697,6 +697,7 @@ Jarvis (what survived the 2026-09-22/23 memory and recall-arm removals):
 
 - **U2 Tasks:** in-Wave `## Notes` editing; decision supersede UI (backend `SupersedeDecision` exists);
   manual dossier creation; live push.
+- **Jarvis as graph (deferred 2026-10-14):** a List | Graph view of the Brief; see `docs/deferred.md`.
 - **E Continuity:** a cheap model tier for boundary summaries; completed-task prose re-freshness; a
   per-task resume card beyond the pet's newest-narrative peek.
 - **D attribution tuning:** `timeBoxMs` 30d, `weightLayer3` 0.3 (needs a human ground-truth pass),
