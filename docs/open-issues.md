@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-14 (Setup → Project tab)**
+
+- [ ] On an install with no registered project, open Setup → Project: it says "No projects yet" and shows no groups
+  (decided in `claudecontextmodel.ts`, unit-tested; the `setup-project` scenario covers every other state, but
+  staging zero projects would wipe the dev app's). Then press **Copy path** in the rail and paste: the file's full
+  path (the scenario checks it through a clipboard stub, never the real clipboard). Commit dcdd1cac8.
+
 **2026-10-14 (reopen a closed agent, Ctrl+Shift+T)**
 
 - [ ] Close a claude agent with Ctrl+Shift+W, then press Ctrl+Shift+T (also from inside another terminal): it comes
