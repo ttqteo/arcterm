@@ -11,17 +11,19 @@ import { pushToast } from "@/app/cockpit/notificationstore";
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import { globalStore } from "@/app/store/jotaiStore";
 import { modalsModel } from "@/app/store/modalmodel";
+import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { PANEL_WIDTH } from "@/app/view/agents/consumers";
 import { usePanelPlacement } from "@/app/view/agents/consumerspanel";
+import { runTitle } from "@/app/view/agents/runlineage";
 import { formatGB } from "@/app/view/agents/workercapacity";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
-import { useAtomValue } from "jotai";
+import { atom, useAtomValue } from "jotai";
 import { Pause } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
     formatElapsed,
     formatLeft,
@@ -121,6 +123,29 @@ function PauseBar({ data, now }: { data: JobQueueData | null; now: number }) {
     );
 }
 
+// a run's title as the Agent sidebar names it: its plan's title, else its goal's first line; undefined until it loads
+function useRunTitle(runId: string | undefined): string | undefined {
+    const titleAtom = useMemo(
+        () =>
+            atom((get) => {
+                if (!runId) {
+                    return undefined;
+                }
+                const run = get(WOS.getWaveObjectAtom<Run>(WOS.makeORef("run", runId)));
+                if (run == null) {
+                    return undefined;
+                }
+                // dagoref holds the dag's bare id, whatever its name says
+                const dag = run.dagoref
+                    ? get(WOS.getWaveObjectAtom<TaskGroup>(WOS.makeORef("dag", run.dagoref)))
+                    : undefined;
+                return runTitle(run, dag);
+            }),
+        [runId]
+    );
+    return useAtomValue(titleAtom);
+}
+
 function Row({
     job,
     now,
@@ -134,7 +159,7 @@ function Row({
 }) {
     const running = job.running === true;
     const target = openTargetFor(job, agents);
-    const source = sourceLabel(job, agents);
+    const source = sourceLabel(job, agents, useRunTitle(job.runid));
     return (
         <div
             data-job-row={job.id}

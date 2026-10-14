@@ -86,7 +86,7 @@ describe("buildAgentTree with run lineage", () => {
                 case "worker":
                     return `${r.nested ? "  nested" : "worker"}:${r.task.id}:${r.agent?.id ?? "-"}${r.extras ? `:+${r.extras}${r.extrasOpen ? "v" : ">"}` : ""}`;
                 case "done":
-                    return `done:${r.count}${r.stages ? `+${r.stages}` : ""}:${r.open}`;
+                    return `done:${r.count}${r.stages ? `+${r.stages}` : ""}${r.failed ? `!${r.failed}` : ""}:${r.open}`;
                 case "queued":
                     return `${r.kind}:${r.count}:${r.open}`;
                 case "parent":
@@ -215,6 +215,29 @@ describe("buildAgentTree with run lineage", () => {
                 })
             );
             expect(shape(rows)).toEqual(["group:waveterm:1:0", "run:run-1:1", "done:1+1:false", "final:ver2"]);
+        });
+
+        it("marks the done fold failed while a failed plan review has no later round", () => {
+            const r = run("run-1", [task("t-1", "pending")]);
+            r.dag.planreview = { state: "failed", round: 1, runid: "rv1" };
+            const roles: Lineage["roles"] = {
+                lead: { kind: "lead", runId: "run-1" },
+                rev1: { kind: "stage", leadRunId: "run-1", stageRole: "plan-reviewer" },
+            };
+            const agents = [agent("lead", "idle"), stageAgent("rev1", "rv1")];
+            expect(shape(buildAgentTree(agents, ["lead", "rev1"], lineage([r], roles)))).toEqual([
+                "group:waveterm:1:0",
+                "lead:run-1:0",
+                "done:0+1!1:false",
+                "queued:1:false",
+            ]);
+            // the next round replaces it, so the fold no longer counts it failed
+            r.dag.planreview = { state: "reviewing", round: 2, runid: "rv2" };
+            const next = [...agents, stageAgent("rev2", "rv2")];
+            roles.rev2 = { kind: "stage", leadRunId: "run-1", stageRole: "plan-reviewer" };
+            expect(shape(buildAgentTree(next, ["lead", "rev1", "rev2"], lineage([r], roles)))).toContain(
+                "done:0+1:false"
+            );
         });
 
         it("stays live while the dag has no verdict for it", () => {

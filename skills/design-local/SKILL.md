@@ -54,8 +54,10 @@ Hand over and stop. Render, screenshot or re-read the files only when the user a
 
 ## Cleaning up
 
-When the feature a canvas designed ships, delete its `.superpowers/design/<topic>/` folder in the
-same session. A canvas is never committed.
+Keep a canvas after the feature it designed ships: the person keeps them to look back at. Never
+delete a `.superpowers/design/<topic>/` folder on your own. When the person asks to tidy up, list
+the topics whose feature has shipped (folder, last change, what shipped it) and delete only the
+ones they pick. A canvas is never committed.
 
 ## The canvas as a spec
 

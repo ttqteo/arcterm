@@ -10,6 +10,26 @@ where it would plug in, and how to pick it back up. Append new entries at the to
 > Pruned 2026-10-05: 27 entries whose work shipped, was retired with its subsystem, or was superseded were
 > removed. Recover any of them with `git show c99f2041:docs/deferred.md`.
 
+## (arcterm) Jarvis as graph: a List | Graph view of the Brief (deferred 2026-10-14)
+
+- **Deferred:** a Graph view of the Jarvis Brief beside List (`Shift+G`, List stays the default, the choice is
+  remembered): Sprout at the centre, rings of projects, initiatives and live chunks, the agent or run riding on its
+  chunk, state shown by pulse and glow, filter chips (state, project, depth, ideas), a right panel with the row's
+  actions, drag one initiative onto another to link it as a child. It replaced the removed vault graph peek
+  (`f5ac40a29`), which drew vault records rather than initiatives.
+- **Why:** the person spends nearly all their time on the Agent surface, so a second view one level inside Jarvis
+  would rarely be opened, and it costs a layout model, a panel that redoes the List's edits and its own CDP scenarios
+  to keep in step. The useful parts (reviewing a plan an agent proposes, a review pass over changed initiatives,
+  idle ones, parent/child links) are being built where the person is instead: the Agent surface's Needs you strip,
+  the initiative link in the agent header, and the List.
+- **Plugs in:** needs no backend: `EffortSummary` carries `parentoid` and each chunk's `status` and `workrefs`, and
+  "asks you" is a live chunk whose workref has an ask in the Brief's attention queue. A pure layout model (angles by
+  leaf count per project, labels nudged apart in priority order) with a vitest beside it; the view swaps the Brief's
+  two columns under the same header. Mockup: `.superpowers/design/jarvis-graph/project/` (gitignored; six boards,
+  `Main` interactive), screenshots of the decluttered version reviewed in-session.
+- **Revive when:** five or more initiatives run at once often enough that "what is stuck where" is a question the
+  List's rows do not answer at a glance.
+
 ## (arcterm) Per-tool shortcuts in the tool library (deferred 2026-10-13)
 
 - **What:** a Shortcut field per tool in Setup → Tools (the library has none), so a tool opens from one chord without

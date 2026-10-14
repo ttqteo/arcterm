@@ -114,6 +114,7 @@ declare global {
         description?: string;
         states: {[key: string]: string};
         deltas?: {[key: string]: string[]};
+        additions?: LearnAddition[];
     };
 
     // wshrpc.AgentSyncSkillColumn
@@ -196,6 +197,7 @@ declare global {
         taskid?: string;
         retry?: boolean;
         oref?: string;
+        learnid?: string;
         effortoid?: string;
         chunklabel?: string;
         why?: string;
@@ -329,6 +331,18 @@ declare global {
         createdts: number;
         email?: string;
         notoken?: boolean;
+    };
+
+    // wshrpc.ClaudeContextFile
+    type ClaudeContextFile = {
+        group: string;
+        path: string;
+        label: string;
+        exists: boolean;
+        size?: number;
+        modts?: number;
+        note?: string;
+        description?: string;
     };
 
     // wshrpc.ClaudeProjectData
@@ -611,6 +625,16 @@ declare global {
     type CommandClaudeAccountSetEmailData = {
         id: string;
         email: string;
+    };
+
+    // wshrpc.CommandClaudeContextData
+    type CommandClaudeContextData = {
+        path: string;
+    };
+
+    // wshrpc.CommandClaudeContextRtnData
+    type CommandClaudeContextRtnData = {
+        files: ClaudeContextFile[];
     };
 
     // wshrpc.CommandCleanStorageData
@@ -1502,6 +1526,51 @@ declare global {
         channelid: string;
         runid: string;
         force?: boolean;
+    };
+
+    // wshrpc.CommandLearnAcceptedRtnData
+    type CommandLearnAcceptedRtnData = {
+        skills: LearnedSkillLine[];
+        memories: LearnedMemoryLine[];
+    };
+
+    // wshrpc.CommandLearnAmendData
+    type CommandLearnAmendData = {
+        skill?: string;
+        dir?: string;
+        cwd?: string;
+        key: string;
+        text?: string;
+        remove: boolean;
+    };
+
+    // wshrpc.CommandLearnDecideData
+    type CommandLearnDecideData = {
+        id: string;
+        accept: boolean;
+        text?: string;
+    };
+
+    // wshrpc.CommandLearnKeysData
+    type CommandLearnKeysData = {
+        skill?: string;
+        cwd?: string;
+    };
+
+    // wshrpc.CommandLearnNoteData
+    type CommandLearnNoteData = {
+        key: string;
+        skill?: string;
+        cwd?: string;
+        text: string;
+        quote?: string;
+        session: string;
+    };
+
+    // wshrpc.CommandLearnNoteRtnData
+    type CommandLearnNoteRtnData = {
+        proposed: boolean;
+        muted: boolean;
     };
 
     // wshrpc.CommandListBranchesData
@@ -2534,6 +2603,40 @@ declare global {
         for?: string;
         run?: boolean;
         reason?: string;
+    };
+
+    // wshrpc.LearnAddition
+    type LearnAddition = {
+        key: string;
+        text: string;
+        learned: string;
+        count: number;
+    };
+
+    // wshrpc.LearnKey
+    type LearnKey = {
+        key: string;
+        text: string;
+        notes: number;
+    };
+
+    // wshrpc.LearnedMemoryLine
+    type LearnedMemoryLine = {
+        cwd: string;
+        dir: string;
+        key: string;
+        text: string;
+        learned: string;
+        count: number;
+    };
+
+    // wshrpc.LearnedSkillLine
+    type LearnedSkillLine = {
+        skill: string;
+        key: string;
+        text: string;
+        learned: string;
+        count: number;
     };
 
     // waveobj.MetaTSType

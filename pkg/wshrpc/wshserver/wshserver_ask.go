@@ -33,6 +33,16 @@ func (ws *WshServer) AskCommand(ctx context.Context, data wshrpc.CommandAskData)
 	if err != nil {
 		return wshrpc.AskRtnData{}, fmt.Errorf("invalid oref %q: %w", data.ORef, err)
 	}
+	// a Claude session in an org that manages Claude Code (Team, Enterprise) runs its settings PreToolUse
+	// `wsh ask` even where the arc mod's card is already up for the same call: the org's security plugin
+	// skips the mod's classic.PreToolUse hook that would have stopped it. Replacing the waited-on ask would
+	// orphan the mod's waiter and swap its card for a keystroke-answered one, so the projection is a no-op
+	if !data.Wait {
+		if pending, ok := agentask.GlobalRegistry.Get(data.ORef); ok &&
+			agentask.GlobalRegistry.HasWaiter(pending.AskId) && agentask.SameQuestions(pending.Questions, data.Questions) {
+			return wshrpc.AskRtnData{AskId: pending.AskId}, nil
+		}
+	}
 	askId := uuid.New().String()
 	// one raise time for both the registry entry and the published event: the attention list ages an ask
 	// off its registry Ts while the frontend ages it off the event's, and two time.Now() calls would let

@@ -53,6 +53,13 @@ func (w *waiters) Resolve(askId string, res WaitResult) bool {
 	return true
 }
 
+func (w *waiters) Has(askId string) bool {
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	_, ok := w.m[askId]
+	return ok
+}
+
 func (w *waiters) Remove(askId string) {
 	w.lock.Lock()
 	delete(w.m, askId)
@@ -65,3 +72,20 @@ func (r *Registry) ResolveWaiter(askId string, res WaitResult) bool {
 	return r.waits.Resolve(askId, res)
 }
 func (r *Registry) RemoveWaiter(askId string) { r.waits.Remove(askId) }
+
+// HasWaiter reports whether a --wait caller is still blocked on the ask.
+func (r *Registry) HasWaiter(askId string) bool { return r.waits.Has(askId) }
+
+// SameQuestions reports whether two asks put the same questions, by their text in order: a second
+// projection of one AskUserQuestion call, whatever fields each side carried.
+func SameQuestions(a, b []baseds.AgentAskQuestion) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Question != b[i].Question {
+			return false
+		}
+	}
+	return true
+}

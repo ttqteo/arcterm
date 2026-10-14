@@ -219,6 +219,12 @@ func ClaudeAccountSetEmailCommand(w *wshutil.WshRpc, data wshrpc.CommandClaudeAc
 	return err
 }
 
+// command "claudecontext", wshserver.ClaudeContextCommand
+func ClaudeContextCommand(w *wshutil.WshRpc, data wshrpc.CommandClaudeContextData, opts *wshrpc.RpcOpts) (*wshrpc.CommandClaudeContextRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandClaudeContextRtnData](w, "claudecontext", data, opts)
+	return resp, err
+}
+
 // command "cleanstorage", wshserver.CleanStorageCommand
 func CleanStorageCommand(w *wshutil.WshRpc, data wshrpc.CommandCleanStorageData, opts *wshrpc.RpcOpts) (*storage.StorageCleanResult, error) {
 	resp, err := sendRpcRequestCallHelper[*storage.StorageCleanResult](w, "cleanstorage", data, opts)
@@ -856,6 +862,36 @@ func JobSlotCommand(w *wshutil.WshRpc, data wshrpc.CommandJobSlotData, opts *wsh
 // command "landrun", wshserver.LandRunCommand
 func LandRunCommand(w *wshutil.WshRpc, data wshrpc.CommandLandRunData, opts *wshrpc.RpcOpts) (*waveobj.RunLand, error) {
 	resp, err := sendRpcRequestCallHelper[*waveobj.RunLand](w, "landrun", data, opts)
+	return resp, err
+}
+
+// command "learnaccepted", wshserver.LearnAcceptedCommand
+func LearnAcceptedCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandLearnAcceptedRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandLearnAcceptedRtnData](w, "learnaccepted", nil, opts)
+	return resp, err
+}
+
+// command "learnamend", wshserver.LearnAmendCommand
+func LearnAmendCommand(w *wshutil.WshRpc, data wshrpc.CommandLearnAmendData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "learnamend", data, opts)
+	return err
+}
+
+// command "learndecide", wshserver.LearnDecideCommand
+func LearnDecideCommand(w *wshutil.WshRpc, data wshrpc.CommandLearnDecideData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "learndecide", data, opts)
+	return err
+}
+
+// command "learnkeys", wshserver.LearnKeysCommand
+func LearnKeysCommand(w *wshutil.WshRpc, data wshrpc.CommandLearnKeysData, opts *wshrpc.RpcOpts) ([]wshrpc.LearnKey, error) {
+	resp, err := sendRpcRequestCallHelper[[]wshrpc.LearnKey](w, "learnkeys", data, opts)
+	return resp, err
+}
+
+// command "learnnote", wshserver.LearnNoteCommand
+func LearnNoteCommand(w *wshutil.WshRpc, data wshrpc.CommandLearnNoteData, opts *wshrpc.RpcOpts) (*wshrpc.CommandLearnNoteRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandLearnNoteRtnData](w, "learnnote", data, opts)
 	return resp, err
 }
 

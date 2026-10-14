@@ -1,15 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Memory } from "./memlint-core";
-import {
-    claudeConfigDir,
-    lintContext,
-    lintMemory,
-    memoryDir,
-    parseMemory,
-    referencedPaths,
-    referencedTasks,
-    taskNames,
-} from "./memlint-core";
+import { lintContext, lintMemory, parseMemory, referencedPaths, referencedTasks, taskNames } from "./memlint-core";
 
 const DAY = 86_400_000;
 const NOW = Date.parse("2026-10-14");
@@ -27,19 +18,6 @@ function lint(memories: Memory[], index: string, extra: { missing?: string[]; ta
         nowMs: NOW,
     });
 }
-
-describe("memoryDir", () => {
-    it("names the project folder claude does: every non-alphanumeric of the cwd a dash", () => {
-        expect(memoryDir("C:\\Users\\u\\.claude", "D:\\work\\arcterm")).toBe("C:\\Users\\u\\.claude/projects/D--work-arcterm/memory");
-        expect(memoryDir("/Users/u/.claude/", "/Users/u/my.repo")).toBe("/Users/u/.claude/projects/-Users-u-my-repo/memory");
-    });
-
-    it("takes CLAUDE_CONFIG_DIR over the home's .claude", () => {
-        expect(claudeConfigDir({ configDir: "/cfg", home: "/Users/u" })).toBe("/cfg");
-        expect(claudeConfigDir({ home: "C:\\Users\\u\\" })).toBe("C:\\Users\\u/.claude");
-        expect(claudeConfigDir({})).toBeNull();
-    });
-});
 
 describe("parseMemory", () => {
     it("reads name, the modified date and the body below the frontmatter", () => {

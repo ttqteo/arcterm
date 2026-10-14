@@ -19,6 +19,7 @@ const KIND_LABEL: Record<string, string> = {
     "run-land-held": "Run to land",
     escalation: "Escalation",
     "chunk-due": "Due",
+    "learn-proposal": "Learned rule",
 };
 
 export type StripOpen =
@@ -40,6 +41,8 @@ export interface StripRow {
     act: AttentionAct;
     run: AttentionRunRow;
     open: StripOpen | null;
+    // a proposed learned rule: the id Accept, Edit and Dismiss decide (LearnDecide); null on every other kind
+    learnId: string | null;
 }
 
 const ESCALATION_PREFIX = "esc:";
@@ -113,7 +116,9 @@ export function buildNeedsYouRows(input: {
             continue;
         }
         const channelId = a.channelid ?? "";
-        if (input.filter !== "all" && input.channelProject.get(channelId) !== input.filter) {
+        const learnId = a.kind === "learn-proposal" && a.learnid ? a.learnid : null;
+        // a learned rule is tied to a skill or a project folder, never a channel, so the project filter keeps it
+        if (learnId == null && input.filter !== "all" && input.channelProject.get(channelId) !== input.filter) {
             continue;
         }
         const run: AttentionRunRow = {
@@ -145,6 +150,7 @@ export function buildNeedsYouRows(input: {
                       : channelId !== ""
                         ? { kind: "channel", channelId, runId: run.runId }
                         : null,
+            learnId,
         });
     }
     return rows;

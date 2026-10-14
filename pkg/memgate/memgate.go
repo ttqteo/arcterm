@@ -46,6 +46,10 @@ var (
 	jobGoTestAll     = Job{"go test ./...", 2560 * mib}
 	jobVerify        = Job{"scripts/verify.mjs", 2560 * mib}
 	jobGoOrchestrate = Job{"go test pkg/orchestrate", 2 * gib}
+	// other projects': an e2e script starts the app's servers, builds the frontend and drives Chromium
+	jobE2E        = Job{"e2e script", 4 * gib}
+	jobPytest     = Job{"pytest (all)", 1 * gib}
+	jobAstroBuild = Job{"astro build", 2 * gib}
 )
 
 // Classify names the heaviest step of a shell command line, and false when no step is heavy.
@@ -128,12 +132,30 @@ func classifyStep(words []string) (Job, bool) {
 	if len(words) == 0 {
 		return Job{}, false
 	}
-	name, args := path.Base(words[0]), words[1:]
+	name, args := strings.TrimSuffix(path.Base(words[0]), ".exe"), words[1:]
 	switch name {
 	case "task":
 		return classifyTask(args)
 	case "npm":
 		return classifyNpm(args)
+	case "pnpm":
+		return classifyPnpm(args)
+	case "uv":
+		return classifyUv(args)
+	case "python", "python3", "py":
+		if i := index(args, "-m"); i >= 0 && i+1 < len(args) && args[i+1] == "pytest" {
+			return pytest(args[i+2:])
+		}
+		return Job{}, false
+	case "sh", "bash":
+		// a -c string is not split here; a script run by name is
+		if has(args, "-c") {
+			return Job{}, false
+		}
+		if ops := operands(args); len(ops) > 0 {
+			return classifyTool(path.Base(ops[0]), nil)
+		}
+		return Job{}, false
 	case "npx":
 		if len(args) == 0 {
 			return Job{}, false
@@ -212,8 +234,100 @@ func classifyTool(name string, args []string) (Job, bool) {
 		return jobTypecheck, true
 	case "tauri":
 		return tauriCLI(args)
+	case "pytest", "py.test":
+		return pytest(args)
+	case "astro":
+		if has(operands(args), "build") {
+			return jobAstroBuild, true
+		}
+	case "e2e.sh":
+		return jobE2E, true
 	}
 	return Job{}, false
+}
+
+// pnpm's flags that take a value, so the script name is found past them
+var pnpmValueFlags = []string{"-C", "--dir", "-F", "--filter"}
+
+func classifyPnpm(args []string) (Job, bool) {
+	ops := skipValueFlags(args, pnpmValueFlags)
+	if len(ops) == 0 {
+		return Job{}, false
+	}
+	rest := ops[1:]
+	switch ops[0] {
+	case "install", "i", "add":
+		return jobInstall, true
+	case "test", "t":
+		return vitest(rest)
+	case "build":
+		return jobViteBuild, true
+	case "run", "run-script":
+		if len(rest) > 0 {
+			switch rest[0] {
+			case "test":
+				return vitest(rest[1:])
+			case "build":
+				return jobViteBuild, true
+			}
+		}
+		return Job{}, false
+	case "exec", "dlx":
+		if len(rest) > 0 {
+			return classifyTool(path.Base(rest[0]), rest[1:])
+		}
+		return Job{}, false
+	}
+	return classifyTool(ops[0], rest)
+}
+
+// uv run's flags that take a value, so the command it runs is found past them
+var uvRunValueFlags = []string{"--env-file", "--with", "--with-editable", "--with-requirements", "--python", "-p",
+	"--project", "--directory", "--package", "--extra", "--group", "--index", "--config-file", "--cache-dir"}
+
+func classifyUv(args []string) (Job, bool) {
+	ops := skipValueFlags(args, uvRunValueFlags)
+	if len(ops) < 2 || ops[0] != "run" {
+		return Job{}, false
+	}
+	return classifyStep(skipValueFlags(ops[1:], uvRunValueFlags))
+}
+
+// skipValueFlags drops the leading flags, and the value after each one in valued; the rest is returned whole,
+// so the program's own flags stay with it.
+func skipValueFlags(args []string, valued []string) []string {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if !strings.HasPrefix(a, "-") {
+			return args[i:]
+		}
+		if has(valued, a) {
+			i++
+		}
+	}
+	return nil
+}
+
+// a whole pytest run; one naming a file, a test id or a -k expression is light
+func pytest(args []string) (Job, bool) {
+	if has(args, "-k") {
+		return Job{}, false
+	}
+	for _, op := range operands(args) {
+		if strings.HasSuffix(op, ".py") || strings.Contains(op, ".py::") {
+			return Job{}, false
+		}
+	}
+	return jobPytest, true
+}
+
+func index(words []string, w string) int {
+	for i, x := range words {
+		if x == w {
+			return i
+		}
+	}
+	return -1
 }
 
 // a whole vitest run; one naming a file or a test name is light
@@ -230,12 +344,19 @@ func vitest(args []string) (Job, bool) {
 }
 
 func classifyNode(args []string) (Job, bool) {
-	for _, a := range operands(args) {
+	for i, a := range args {
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
 		switch {
 		case strings.HasSuffix(a, "typescript/lib/tsc.js"), strings.HasSuffix(a, "typescript/bin/tsc"):
 			return jobTypecheck, true
 		case a == "scripts/verify.mjs", strings.HasSuffix(a, "/scripts/verify.mjs"):
 			return jobVerify, true
+		case strings.HasSuffix(a, "vitest/vitest.mjs"):
+			return vitest(args[i+1:])
+		case strings.HasSuffix(a, "astro/bin/astro.mjs"):
+			return classifyTool("astro", args[i+1:])
 		}
 	}
 	return Job{}, false

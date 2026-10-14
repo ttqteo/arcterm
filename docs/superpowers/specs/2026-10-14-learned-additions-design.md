@@ -48,7 +48,8 @@ A proposal card shows the target, the one proposed line, and the quotes as evide
 - **Edit** opens an inline input on the card (no modal), then accepts.
 - **Dismiss** mutes the key; it is never proposed again.
 
-Proposals do not expire.
+Proposals do not expire: once a key qualifies, wavesrv records it as proposed, and it waits until the user acts on
+it however old its notes grow.
 
 ### 3. Skill additions live in `.arc/additions.md`, rendered last
 
@@ -82,7 +83,7 @@ Accepting a memory proposal writes a `feedback` memory file to the project's Cla
   `@theme` token, never hex); each line shows `14/10 · 3×` with **Edit** and **Remove**. A line accepted in the last
   7 days also gets a faint accent background: that is the "new" highlight.
 - **Skill list.** A `+N` chip beside a skill that has additions.
-- **Setup → Learned tab.** A third Setup tab lists every accepted line in one place: skill additions grouped by
+- **Setup → Learned tab.** A fourth Setup tab, after Instructions, Skills and Tools, lists every accepted line in one place: skill additions grouped by
   skill, learned memories grouped by project, each with the same date, count, "new" highlight, **Edit** and
   **Remove**. Claude's own memory dir appears nowhere else in the cockpit (the Jarvis peek reads only the vault's
   memory), so this tab is where learned memories are seen.
@@ -93,7 +94,8 @@ Accepting a memory proposal writes a `feedback` memory file to the project's Cla
 
 - `--skill` naming a skill not in the vault (including a plugin skill): `wsh learn note` fails, lists the vault's
   skills, and suggests `--memory`.
-- A skill deleted from the vault while a proposal waits: the card says so and offers memory instead, or dismiss.
+- A skill deleted from the vault while a proposal waits: Accept fails with a toast naming the missing skill, and the
+  card stays for the user to dismiss.
 - arcterm stops shipping a skill: the seed never deletes vault directories, so its additions remain.
 - wavesrv not running: `wsh learn note` fails with one line; the `learn` skill tells the agent not to retry and to
   mention it once.
@@ -102,9 +104,9 @@ Accepting a memory proposal writes a `feedback` memory file to the project's Cla
 ## Testing
 
 - **Go, `pkg/learn`:** note append; the two-session threshold (two notes in one session make no proposal); the
-  30-day window; mute; accept writes `additions.md`; a second accept replaces the line; the 20-line cap.
-- **Go, `pkg/agentsync`:** `renderSkill` appends additions under the marker for every runtime; `seedShippedSkills`
-  keeps `additions.md`.
+  30-day window; a proposal that outlives its notes' window; mute; accept writes `additions.md`; a second accept replaces the line; the 20-line cap.
+- **Go, `pkg/agentsync`:** `renderSkill` appends additions under the marker for every runtime; `Apply` writes them
+  into each harness's SKILL.md; `seedShippedSkills` keeps `additions.md`.
 - **vitest:** the 7-day "new" rule, the Learned tab grouping, the proposal row model.
 - **CDP scenarios:** `setup-skill-additions` (the highlighted block and the `+N` chip), `setup-learned` (the Learned
   tab) and `needs-you-learn-card`, from fixtures.
