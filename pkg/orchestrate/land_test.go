@@ -492,6 +492,46 @@ func TestLandRemovesAnUntrackedCopyOfWhatTheBranchAdds(t *testing.T) {
 	}
 }
 
+// the lead adopts a spec from the checkout and the run revises it: the untracked original is an earlier version
+// of the run's file, so the land replaces it (run dca34385 held on it); a file the run never held stays the human's
+func TestLandUntrackedEarlierVersionOfWhatTheBranchAdds(t *testing.T) {
+	t.Run("a revision on the branch replaces the original", func(t *testing.T) {
+		f, tree := landFixture(t)
+		commitOnBranch(t, tree, "feature.txt", "feature, revised\n")
+		writeFile(t, filepath.Join(f.project, "feature.txt"), "feature\n")
+
+		if land := f.landRun(t, false); land.State != LandState_Landed {
+			t.Fatalf("land = %+v, want landed", land)
+		}
+		if got := strings.ReplaceAll(readFile(t, filepath.Join(f.project, "feature.txt")), "\r\n", "\n"); got != "feature, revised\n" {
+			t.Fatalf("feature.txt = %q, want the run's revision", got)
+		}
+	})
+	t.Run("a snapshot a resubmit amended away replaces the original", func(t *testing.T) {
+		f, tree := landFixture(t)
+		writeFile(t, filepath.Join(tree, "feature.txt"), "feature, revised\n")
+		gitCmd(t, tree, "commit", "-a", "--amend", "--no-edit")
+		writeFile(t, filepath.Join(f.project, "feature.txt"), "feature\n")
+
+		if land := f.landRun(t, false); land.State != LandState_Landed {
+			t.Fatalf("land = %+v, want landed", land)
+		}
+		if got := strings.ReplaceAll(readFile(t, filepath.Join(f.project, "feature.txt")), "\r\n", "\n"); got != "feature, revised\n" {
+			t.Fatalf("feature.txt = %q, want the run's revision", got)
+		}
+	})
+	t.Run("a version the run never held holds the land", func(t *testing.T) {
+		f, _ := landFixture(t)
+		writeFile(t, filepath.Join(f.project, "feature.txt"), "the human's feature\n")
+		head := gitCmd(t, f.project, "rev-parse", "main")
+
+		f.assertHeld(t, f.landRun(t, false), head, "an untracked feature.txt in the checkout differs from the one the run adds")
+		if got := readFile(t, filepath.Join(f.project, "feature.txt")); got != "the human's feature\n" {
+			t.Fatalf("feature.txt = %q, want the human's file intact", got)
+		}
+	})
+}
+
 func TestLandForceLandsAFailedOutcome(t *testing.T) {
 	f, _ := landFixture(t)
 	f.setFinal(t, &waveobj.FinalStage{State: FinalState_Failed, Round: 2, Detail: "Check failed"})

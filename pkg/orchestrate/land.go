@@ -646,9 +646,10 @@ func onlyMarkdown(ctx context.Context, dir, from, to string) bool {
 	return true
 }
 
-// clearUntrackedCopies removes an untracked file in the checkout that is the same as one the branch adds: the
-// lead wrote its spec or plan there before submit, and the engine committed that file on the branch. git would
-// refuse to overwrite it. One that differs is the human's, and holds the land.
+// clearUntrackedCopies removes an untracked file in the checkout that is a version of one the branch adds: the
+// lead wrote its spec or plan there before submit, or adopted it from there, and the engine committed that file
+// on the branch, which may since have revised it. git would refuse to overwrite it. One the run never held is
+// the human's, and holds the land.
 func clearUntrackedCopies(ctx context.Context, project, branch string) string {
 	copies, differs, err := untrackedCopies(ctx, project, branch)
 	if err != nil {
@@ -669,8 +670,8 @@ func untrackedDiffersReason(path string) string {
 	return fmt.Sprintf("an untracked %s in the checkout differs from the one the run adds", path)
 }
 
-// untrackedCopies lists, as full paths, the untracked files in the checkout that are the same as ones the branch
-// adds, or names the first that differs instead. It changes nothing.
+// untrackedCopies lists, as full paths, the untracked files in the checkout that are versions of ones the branch
+// adds, or names the first that is not instead. It changes nothing.
 func untrackedCopies(ctx context.Context, project, branch string) (copies []string, differs string, err error) {
 	base, err := git(ctx, project, "merge-base", "HEAD", branch)
 	if err != nil {
@@ -701,11 +702,41 @@ func untrackedCopies(ctx context.Context, project, branch string) (copies []stri
 			return nil, "", fmt.Errorf("reading the untracked %s: %w", p, err)
 		}
 		if mine != theirs {
-			return nil, p, nil
+			held, err := runHeld(ctx, project, base, branch, p, mine)
+			if err != nil {
+				return nil, "", err
+			}
+			if !held {
+				return nil, p, nil
+			}
 		}
 		copies = append(copies, full)
 	}
 	return copies, "", nil
+}
+
+// runHeld reports whether blob is a version of p the run's branch has held since base: in its history, or at a
+// tip its reflog records, which keeps the docs snapshot a resubmit after a failed plan review amended away (run
+// dca34385 revised the spec it adopted, and its land held on the untracked original).
+func runHeld(ctx context.Context, project, base, branch, p, blob string) (bool, error) {
+	raw := []string{"log", "--raw", "-m", "--no-abbrev", "--no-renames", "--format="}
+	for _, args := range [][]string{
+		slices.Concat(raw, []string{base + ".." + branch, "--", p}),
+		slices.Concat(raw, []string{"--walk-reflogs", branch, "--", p}),
+	} {
+		out, err := git(ctx, project, args...)
+		if err != nil {
+			return false, fmt.Errorf("listing the versions of %s the run's branch held: %w", p, err)
+		}
+		// a raw line is ":<old mode> <new mode> <old blob> <new blob> <status>\t<path>"
+		for _, line := range strings.Split(out, "\n") {
+			meta, _, _ := strings.Cut(line, "\t")
+			if f := strings.Fields(meta); len(f) == 5 && f[3] == blob {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 // LandConflicts names the files the land of a branch-landed run would conflict in, sorted, while its lead can

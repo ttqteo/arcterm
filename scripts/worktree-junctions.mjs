@@ -4,7 +4,9 @@
 // removes those junction links BEFORE the worktree directory goes — a recursive delete can follow
 // a junction and wipe the main checkout's copy through the link, so junction-first ordering is the
 // whole point. Only junction links are ever removed; a real directory is left alone with a warning.
-// Usage: node scripts/worktree-junctions.mjs prepare|cleanup [worktree-path]
+// `is-linked <dir>` exits 0 when dir is such a link, so `npm:install` leaves a junctioned node_modules alone:
+// npm install there replaces the link with a full install of the worktree's own.
+// Usage: node scripts/worktree-junctions.mjs prepare|cleanup [worktree-path] | is-linked <dir>
 import { lstatSync, mkdirSync, realpathSync, rmdirSync, rmSync, symlinkSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
@@ -126,6 +128,18 @@ export function cleanup(wtPath) {
     }
 }
 
+function isLinked(dir) {
+    if (!isJunction(dir)) {
+        return false;
+    }
+    let target = "?";
+    try {
+        target = realpathSync(dir);
+    } catch {}
+    console.log(`${dir}: a link to ${target}; not installing over it`);
+    return true;
+}
+
 // the CLI runs only when this file is the entry point, not when release-build.mjs imports it
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
     const [sub, arg] = process.argv.slice(2);
@@ -134,8 +148,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     } else if (sub === "cleanup") {
         // no path arg: resolve cwd to its git toplevel (cleanup() needs the worktree root, not a subdir)
         cleanup(arg ? resolve(arg) : git(["rev-parse", "--show-toplevel"], process.cwd()));
+    } else if (sub === "is-linked" && arg) {
+        process.exitCode = isLinked(arg) ? 0 : 1;
     } else {
-        console.error("usage: node scripts/worktree-junctions.mjs prepare|cleanup [worktree-path]");
+        console.error("usage: node scripts/worktree-junctions.mjs prepare|cleanup [worktree-path] | is-linked <dir>");
         process.exitCode = 2;
     }
 }
