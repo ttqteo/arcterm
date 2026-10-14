@@ -63,6 +63,8 @@ new draws it as one of its release's cards and folds every other line under a co
 
 ### Fixed
 
+- **A finished run no longer waits to land on a file in your checkout that already matches the run's version**,
+  such as a generated copy a dev build rewrites. A real edit of yours to a file the run changes still holds it.
 - **An ended session shows in Conversations right away** when its tab stays open: after `/clear`, after quitting
   claude and starting it again in the same terminal, or after resuming another session there. A session marked for
   later now stays at the top of its project instead of sinking under "Show more".
