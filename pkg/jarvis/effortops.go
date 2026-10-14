@@ -20,7 +20,7 @@ import (
 )
 
 var effortChunkStatuses = map[string]bool{
-	"pending": true, "active": true, "done": true, "deferred": true, "blocked": true, "skipped": true,
+	"pending": true, "active": true, "done": true, "deferred": true, "blocked": true, "skipped": true, "proposed": true,
 }
 
 var effortStatuses = map[string]bool{"active": true, "paused": true, "done": true, "archived": true}
@@ -181,11 +181,14 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 			if err := validDue(op.Due); err != nil {
 				return err
 			}
+			if op.Status != "" && op.Status != "proposed" {
+				return fmt.Errorf("EC-INVALID-STATUS: a new chunk is pending, or proposed with --proposed; not %q", op.Status)
+			}
 		case "removeChunk":
 			if _, err := ResolveChunkIndex(e, op.Chunk); err != nil {
 				return err
 			}
-			if len(e.Chunks) == 1 {
+			if len(e.Chunks) == 1 && e.Chunks[0].Status != "proposed" {
 				return fmt.Errorf("EC-LAST-CHUNK: cannot remove the last chunk")
 			}
 		case "renameChunk", "moveChunk", "setChunkStatus", "setChunkStage", "setChunkDue", "setOwner":
@@ -199,7 +202,7 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 				}
 			case "setChunkStatus":
 				if !effortChunkStatuses[op.Status] {
-					return fmt.Errorf("EC-INVALID-STATUS: %q not one of pending|active|done|deferred|blocked|skipped", op.Status)
+					return fmt.Errorf("EC-INVALID-STATUS: %q not one of pending|active|done|deferred|blocked|skipped|proposed", op.Status)
 				}
 			case "renameChunk":
 				if strings.TrimSpace(op.Label) == "" {
@@ -311,9 +314,13 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 			if op.At != nil {
 				idx = *op.At - 1
 			}
-			c := waveobj.EffortChunk{Label: op.Label, Status: "pending", Stage: strings.TrimSpace(op.Stage), Owner: op.Owner, Due: op.Due, UpdatedTs: now}
+			status, verb := "pending", "added"
+			if op.Status == "proposed" {
+				status, verb = "proposed", "proposed"
+			}
+			c := waveobj.EffortChunk{Label: op.Label, Status: status, Stage: strings.TrimSpace(op.Stage), Owner: op.Owner, Due: op.Due, UpdatedTs: now}
 			e.Chunks = append(e.Chunks[:idx], append([]waveobj.EffortChunk{c}, e.Chunks[idx:]...)...)
-			effortNote(e, "chunk added: "+op.Label+noteSuffix(cmdNote), now)
+			effortNote(e, "chunk "+verb+": "+op.Label+noteSuffix(cmdNote), now)
 			effortEvent(e, "chunk-added", op.Label, "", now)
 		case "removeChunk":
 			idx, _ := ResolveChunkIndex(e, op.Chunk)
