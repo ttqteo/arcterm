@@ -701,70 +701,6 @@ func ownsDag(ctx context.Context, run *waveobj.Run) bool {
 	return err == nil && g.RunID == run.ID
 }
 
-// resumeRefusal is why a run's failed phase cannot be resumed, or "" when it can. The worker's tab is
-// checked by the restart itself.
-func resumeRefusal(run *waveobj.Run, phaseIdx int) string {
-	switch {
-	case run.DagORef != "":
-		return "a run with a submitted plan is the engine's to restart"
-	case phaseIdx < 0 || phaseIdx >= len(run.Phases):
-		return fmt.Sprintf("phase index %d out of range", phaseIdx)
-	case run.Phases[phaseIdx].State != jarvis.PhaseState_Failed:
-		return fmt.Sprintf("phase %d is %q, not failed", phaseIdx, run.Phases[phaseIdx].State)
-	case len(run.Phases[phaseIdx].WorkerOrefs) == 0:
-		return "the phase never had a worker"
-	case run.SessionId == "":
-		return "the run has no session to resume"
-	}
-	if _, ok := jarvis.ResumeWorkerArgs(run.Runtime, run.SessionId, nil, jarvis.ResumeNudge); !ok {
-		return fmt.Sprintf("runtime %q cannot resume a session", run.Runtime)
-	}
-	return ""
-}
-
-// resumeRun puts a failed phase back to running and restarts its worker in its own session and tab. The phase
-// is running before the worker starts, so a worker that exits at once, or never starts, fails it again through
-// the exit hook like any other exit; a restart that errors outright is rolled back to failed.
-func resumeRun(ctx context.Context, channelId, runId string, phaseIdx int) error {
-	var worker, runtime, sessionId string
-	err := wstore.UpdateRun(ctx, channelId, runId, func(r *waveobj.Run) error {
-		if reason := resumeRefusal(r, phaseIdx); reason != "" {
-			return errors.New(reason)
-		}
-		workers := r.Phases[phaseIdx].WorkerOrefs
-		worker, runtime, sessionId = workers[len(workers)-1], r.Runtime, r.SessionId
-		next, e := jarvis.ResumePhase(*r, phaseIdx)
-		if e != nil {
-			return e
-		}
-		*r = next
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("cannot resume run %s: %w", runId, err)
-	}
-	if rerr := jarvis.ResumeRunWorker(ctx, worker, runtime, sessionId, jarvis.ResumeNudge); rerr != nil {
-		if err := wstore.UpdateRun(ctx, channelId, runId, func(r *waveobj.Run) error {
-			if r.Phases[phaseIdx].State != jarvis.PhaseState_Running {
-				return nil // the exit hook already failed it
-			}
-			next, e := jarvis.FailPhase(*r, phaseIdx, time.Now().UnixMilli())
-			if e != nil {
-				return e
-			}
-			*r = next
-			return nil
-		}); err != nil {
-			log.Printf("resume: rolling back run %s phase %d: %v", runId, phaseIdx, err)
-		}
-		publishRunUpdate(channelId, runId)
-		return fmt.Errorf("resuming run %s: %w", runId, rerr)
-	}
-	appendRunEvent(ctx, channelId, runId, waveobj.RunEventKindWorkerResumed, phaseIdxOf(phaseIdx), map[string]any{})
-	publishRunUpdate(channelId, runId)
-	return nil
-}
-
 func (ws *WshServer) AdvanceRunCommand(ctx context.Context, data wshrpc.CommandAdvanceRunData) error {
 	sealDue, err := advanceRun(ctx, data)
 	if sealDue {
@@ -781,7 +717,7 @@ func advanceRun(ctx context.Context, data wshrpc.CommandAdvanceRunData) (sealDue
 		return false, fmt.Errorf("channelid and runid are required")
 	}
 	if data.Action == jarvis.RunAction_Resume {
-		return false, resumeRun(ctx, data.ChannelId, data.RunId, data.PhaseIdx)
+		return false, orchestrate.ResumeRun(ctx, data.ChannelId, data.RunId, data.PhaseIdx)
 	}
 	preStatus := ""
 	var preRun *waveobj.Run

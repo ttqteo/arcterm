@@ -5,6 +5,8 @@ package orchestrate
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"testing"
 
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
@@ -42,6 +44,7 @@ func captureRunEvents(t *testing.T) map[string][]string {
 	return kinds
 }
 
+// the fixture has no session, so there is nothing to resume and the run stays blocked
 func TestMarkInterruptedRunsBlocksAnExecutingRunOnce(t *testing.T) {
 	kinds := captureRunEvents(t)
 	channelId, run := newInterruptedRun(t, nil)
@@ -86,5 +89,65 @@ func TestMarkInterruptedRunsLeavesOtherRunsAlone(t *testing.T) {
 				t.Fatalf("want no events, got %v", kinds[run.ID])
 			}
 		})
+	}
+}
+
+// A run the app restart stopped sat blocked until someone noticed and pressed Resume (run 3d3dc6ac, 7 days):
+// a quick run and a lead that has not submitted its plan both come back in their own session at boot.
+func TestMarkInterruptedRunsResumesARunWithASession(t *testing.T) {
+	for name, c := range map[string]struct{ mode, kind string }{
+		"quick run":            {jarvis.RunMode_Quick, jarvis.PhaseKind_Execute},
+		"lead before its plan": {jarvis.RunMode_Orchestrator, jarvis.PhaseKind_Orchestrate},
+	} {
+		t.Run(name, func(t *testing.T) {
+			kinds := captureRunEvents(t)
+			sessionId := "sess-" + c.mode
+			var resumed []string
+			old := jarvis.ResumeRunWorker
+			jarvis.ResumeRunWorker = func(_ context.Context, tab, _, sid, _ string) error {
+				resumed = append(resumed, tab+" "+sid)
+				return nil
+			}
+			restoreAfterStages(t, func() { jarvis.ResumeRunWorker = old })
+			channelId, run := newInterruptedRun(t, func(r *waveobj.Run) {
+				r.Mode, r.Phases[0].Kind, r.Runtime, r.SessionId = c.mode, c.kind, "claude", sessionId
+			})
+			ctx := context.Background()
+			MarkInterruptedRuns(ctx)
+			got, err := wstore.GetRun(ctx, channelId, run.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Status != jarvis.RunStatus_Executing || got.Phases[0].State != jarvis.PhaseState_Running {
+				t.Fatalf("run status=%q phase=%q, want executing and running", got.Status, got.Phases[0].State)
+			}
+			// the store is shared with other tests' runs, so only this run's resume is looked for
+			if !slices.Contains(resumed, "tab:worker "+sessionId) {
+				t.Fatalf("want the worker resumed in its session, got %v", resumed)
+			}
+			want := []string{waveobj.RunEventKindInterrupted, waveobj.RunEventKindWorkerResumed}
+			if k := kinds[run.ID]; !slices.Equal(k, want) {
+				t.Fatalf("events = %v, want %v", k, want)
+			}
+		})
+	}
+}
+
+func TestMarkInterruptedRunsLeavesARunBlockedWhenItsRestartFails(t *testing.T) {
+	captureRunEvents(t)
+	old := jarvis.ResumeRunWorker
+	jarvis.ResumeRunWorker = func(context.Context, string, string, string, string) error {
+		return errors.New("the worker's tab is gone")
+	}
+	restoreAfterStages(t, func() { jarvis.ResumeRunWorker = old })
+	channelId, run := newInterruptedRun(t, func(r *waveobj.Run) { r.Runtime, r.SessionId = "claude", "sess-gone" })
+	ctx := context.Background()
+	MarkInterruptedRuns(ctx)
+	got, err := wstore.GetRun(ctx, channelId, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != jarvis.RunStatus_Blocked || got.Phases[0].State != jarvis.PhaseState_Failed {
+		t.Fatalf("run status=%q phase=%q, want blocked and failed", got.Status, got.Phases[0].State)
 	}
 }
