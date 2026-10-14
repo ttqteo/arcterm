@@ -620,6 +620,17 @@ Tracked in their own initiatives, not here:
 - **arcterm Claude mod live verify** (usage strip, card answer, Esc, dag child ask, settings hooks; `CLAUDE_CODE_PLUGIN_DIRS` loading with no enable prompt; a card answered after more than ten minutes still answers the call) — effort `99832658`, chunk 9. Each needs an interactive Claude session in the dev app; the headless half is `node scripts/claude-mod-load-check.mjs`. Spec `docs/superpowers/specs/2026-10-02-claude-mod-design.md`.
 - **Orchestrator wall-clock** — effort `b1fe5d7e`: live-verify the unit-tested fixes, the round-2 final tree lock, the Timing section live check.
 
+### (arcterm) RAM watch
+
+- **Run office** (2026-10-14, `jarvis-office-bench`, 104 desks, dev app): heap +4.71 MB open, +1501
+  DOM nodes, 13 % main thread over 30 s (7.2 % reduced motion), 79 sprites, +1.93
+  MB after off, 530 ms to draw. Budgets: 5 MB, 2,000, 2 %, 0.5 %, 320, 1 MB, 150 ms. Mounted only while the
+  office is on. **Misses four budgets**: busy, busy under reduced motion, heap after off, time to draw. Four runs
+  that day read busy 9.3–25.8 %, reduced 4.2–11.3 %, after off +1.74–3.09 MB, draw 167–530 ms (heap open 3.76–4.71 MB,
+  nodes and sprites the same every run). A one-off diagnostic (not committed) found the dev app idling at 9–10 % main
+  thread with the office off, so the two busy budgets read the app's own activity; the frame clock added about 6
+  points over the reduced-motion window at 104 desks.
+
 ---
 
 ## 2 · Blocked

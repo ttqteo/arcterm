@@ -21,6 +21,9 @@ new draws it as one of its release's cards and folds every other line under a co
 
 ### Added
 
+- **Runs as an office**: in Jarvis, the Runs list's **office** chip draws each run as a pixel office floor under its
+  row: the lead in a glass corner office and one person per task, typing, stuck, in review, carrying the merge, or
+  raising a hand when they need you. Click a person to open their terminal.
 - **Setup → Project**: one place to see what shapes Claude in a project: its CLAUDE.md or AGENTS.md, its memory
   grouped by type, its settings and hooks, its skills, agents and commands, and `.arc/setup`. Pick a file to read it
   beside the list. <!-- try: go:setup -->

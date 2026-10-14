@@ -180,6 +180,7 @@ import { clearSubject, persistedSubjectAtom, setComposingRun, stageRunAtom } fro
 import { JarvisTour, TourButton, TourOffer } from "./jarvistourview";
 import { NewInitiativeControl } from "./newinitiativecontrol";
 import { radarDraftLanding } from "./newrun";
+import { LiveOfficeFloor, OfficeClock, OfficeFixtureFloors, officeOnAtom, OfficeToggle } from "./officeview";
 import { openChannelSheet, openOrPeek, openOrPeekAddress } from "./openref";
 import { forgetOrigin } from "./returnsurface";
 import { loadTaskList, taskListAtom } from "./tasksstore";
@@ -310,6 +311,7 @@ function Region({
     onOnly,
     tools,
     act,
+    after,
     children,
 }: {
     id: RegionId;
@@ -324,6 +326,8 @@ function Region({
     tools?: ReactNode;
     // the control that starts what the empty box says is missing
     act?: ReactNode;
+    // drawn whether or not the region is empty (the Runs region's office clock and DEV fixture floors)
+    after?: ReactNode;
     children: ReactNode;
 }) {
     const region = REGIONS[id];
@@ -354,6 +358,7 @@ function Region({
             ) : (
                 children
             )}
+            {after}
         </section>
     );
 }
@@ -589,6 +594,13 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         }
     }, [model]);
 
+    // DEV-only: the run office scenarios' seams (officedevhooks.ts)
+    useEffect(() => {
+        if (import.meta.env.DEV) {
+            void import("./officedevhooks").then((m) => m.installOfficeDevHooks());
+        }
+    }, []);
+
     // The lists the Brief's boot restore validates against. Loaded here rather than inherited: in the Brief
     // composition the Subjects column does not mount, and that column is what loads both of these today.
     useEffect(() => {
@@ -724,6 +736,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     );
     const ideaWindow = useMemo(() => capRegion(effortGroups.ideas, IDEA_CAP, ideasOpen), [effortGroups, ideasOpen]);
     const [runKind, setRunKind] = useAtom(briefRunKindAtom);
+    const officeOn = useAtomValue(officeOnAtom);
     const sessions = useMemo(
         () =>
             model_ == null
@@ -1770,7 +1783,20 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                             meta={`${liveN} live`}
                                             only={only === "sessions"}
                                             onOnly={() => toggleOnly("sessions")}
-                                            tools={<RunKindToggle value={runKind} onChange={setRunKind} />}
+                                            tools={
+                                                <>
+                                                    <RunKindToggle value={runKind} onChange={setRunKind} />
+                                                    <OfficeToggle />
+                                                </>
+                                            }
+                                            after={
+                                                officeOn ? (
+                                                    <>
+                                                        <OfficeClock />
+                                                        <OfficeFixtureFloors />
+                                                    </>
+                                                ) : null
+                                            }
                                             act={
                                                 <button
                                                     type="button"
@@ -1814,6 +1840,17 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                                     }
                                                                     onOpenChunk={revealChunk}
                                                                 />
+                                                                {officeOn && l.runOid ? (
+                                                                    <div className="mb-2 mt-1">
+                                                                        <LiveOfficeFloor
+                                                                            model={model}
+                                                                            runId={l.runOid}
+                                                                            selected={
+                                                                                sheetOpen && stageRun?.id === l.runOid
+                                                                            }
+                                                                        />
+                                                                    </div>
+                                                                ) : null}
                                                             </motion.div>
                                                         ))}
                                                     </AnimatePresence>
