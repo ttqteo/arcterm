@@ -9,8 +9,7 @@ rail, so the person no longer opens them from a terminal.
   every harness's skills. The details rail links the project's `CLAUDE.md`/`AGENTS.md` (`instructionsfile.ts`).
 - Nothing in the app shows the project-level files: Claude's project memory (`~/.claude/projects/<slug>/memory/`),
   `.claude/settings*.json` and its hooks, `.mcp.json`, project skills, agents and commands, `.arc/setup`. Reading them
-  means a terminal and knowing where each lives; the memory folder's name is a slug of the path, and on Windows one
-  folder can sit under two slugs (`d--…` and `D--…`, `TestScanClaudeProjectsMergesOneFolderUnderTwoSlugs`).
+  means a terminal and knowing where each lives; the memory folder's name is a slug of the path.
 
 ## Scope
 
@@ -24,8 +23,9 @@ rail, so the person no longer opens them from a terminal.
 `SetupTab` gains `"project"` (label "Project"), after Tools. The tab follows the Skills tab's layout: a list, and a
 440px read-only rail (`SkillRail`'s shape) for the selected file. Choosing a file never switches to Code.
 
-A project picker heads the list. Its rows are the registry (`projectsAtom`, `projectsstore.ts`); it starts on the app
-bar's project filter (`projectFilterAtom`) and on the first project when the filter is "all".
+The projects sit in a narrow column left of the list, as the Instructions tab's file column does (the app has no
+dropdown to reuse). Its rows are the registry (`projectListAtom`, `projectsstore.ts`); it starts on the app bar's
+project filter (`projectFilterAtom`) and on the first project when the filter is "all".
 
 ### 2. Six groups, empty ones still shown
 
@@ -58,15 +58,15 @@ type ClaudeContextFile struct {
 }
 ```
 
-- Memory folders: `agentobserve.SlugifyCwd(projectPath)`, and on Windows the same path with the drive letter's case
-  flipped; files from both are merged (a name in both keeps the newer).
+- Memory folder: `agentobserve.SlugifyCwd(projectPath)`. A slug whose drive letter differs only in case (`d--…`,
+  `D--…`) names the same folder on Windows and macOS, whose file systems ignore case, so one folder is read.
 - Memory rows read `type` (top-level or under `metadata:`) and `description` from frontmatter.
 - Settings rows count the entries under `hooks`; a file that does not parse gets the note "invalid JSON".
 - `ClaudeContextCommand(ctx, CommandClaudeContextData{Path}) (*CommandClaudeContextRtnData, error)` sits in
   `wshrpctypes_agentsync.go` beside `AgentSyncSkillsCommand`, with its handler in `wshserver_agentsync.go`; then
   `task generate`. A path that does not exist is an error.
 
-Go owns this because the slug rule and the two-slug merge already live there; the frontend would otherwise copy them.
+Go owns this because the slug rule already lives there; the frontend would otherwise copy it.
 
 ### 4. Frontend pieces
 
@@ -87,8 +87,8 @@ Go owns this because the slug rule and the two-slug merge already live there; th
 
 ## Testing
 
-- `go test ./pkg/claudecontext`: temp project and home dirs; missing files; the two-slug merge (Windows only, as in
-  the existing test); frontmatter type and description, both shapes; hook count; invalid JSON.
+- `go test ./pkg/claudecontext`: temp project and home dirs; missing files; the memory folder under the project's
+  slug; frontmatter type and description, both shapes; hook count; invalid JSON.
 - `npx vitest run frontend/app/view/agents/claudecontextmodel.test.ts`.
 - CDP scenario `setup-project` in `scripts/cdp/scenarios.mjs`: open Setup → Project, select a memory file, shoot the
   rail; assert the six group headings.
