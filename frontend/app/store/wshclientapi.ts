@@ -1098,6 +1098,36 @@ export class RpcApiType {
         return client.wshRpcCall("runasks", data, opts);
     }
 
+    // command "runqueueadd" [call]
+    RunQueueAddCommand(client: WshClient, data: CommandRunQueueAddData, opts?: RpcOpts): Promise<RunQueueEntry> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "runqueueadd", data, opts);
+        return client.wshRpcCall("runqueueadd", data, opts);
+    }
+
+    // command "runqueuelist" [call]
+    RunQueueListCommand(client: WshClient, opts?: RpcOpts): Promise<CommandRunQueueListRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "runqueuelist", null, opts);
+        return client.wshRpcCall("runqueuelist", null, opts);
+    }
+
+    // command "runqueueremove" [call]
+    RunQueueRemoveCommand(client: WshClient, data: CommandRunQueueIdData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "runqueueremove", data, opts);
+        return client.wshRpcCall("runqueueremove", data, opts);
+    }
+
+    // command "runqueuerunnext" [call]
+    RunQueueRunNextCommand(client: WshClient, data: CommandRunQueueIdData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "runqueuerunnext", data, opts);
+        return client.wshRpcCall("runqueuerunnext", data, opts);
+    }
+
+    // command "runqueuestartnow" [call]
+    RunQueueStartNowCommand(client: WshClient, data: CommandRunQueueIdData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "runqueuestartnow", data, opts);
+        return client.wshRpcCall("runqueuestartnow", data, opts);
+    }
+
     // command "runtranscriptpath" [call]
     RunTranscriptPathCommand(client: WshClient, data: CommandRunTranscriptPathData, opts?: RpcOpts): Promise<string> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "runtranscriptpath", data, opts);

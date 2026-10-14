@@ -1091,6 +1091,36 @@ func RunAsksCommand(w *wshutil.WshRpc, data wshrpc.CommandRunAskData, opts *wshr
 	return resp, err
 }
 
+// command "runqueueadd", wshserver.RunQueueAddCommand
+func RunQueueAddCommand(w *wshutil.WshRpc, data wshrpc.CommandRunQueueAddData, opts *wshrpc.RpcOpts) (*wshrpc.RunQueueEntry, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.RunQueueEntry](w, "runqueueadd", data, opts)
+	return resp, err
+}
+
+// command "runqueuelist", wshserver.RunQueueListCommand
+func RunQueueListCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandRunQueueListRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandRunQueueListRtnData](w, "runqueuelist", nil, opts)
+	return resp, err
+}
+
+// command "runqueueremove", wshserver.RunQueueRemoveCommand
+func RunQueueRemoveCommand(w *wshutil.WshRpc, data wshrpc.CommandRunQueueIdData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "runqueueremove", data, opts)
+	return err
+}
+
+// command "runqueuerunnext", wshserver.RunQueueRunNextCommand
+func RunQueueRunNextCommand(w *wshutil.WshRpc, data wshrpc.CommandRunQueueIdData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "runqueuerunnext", data, opts)
+	return err
+}
+
+// command "runqueuestartnow", wshserver.RunQueueStartNowCommand
+func RunQueueStartNowCommand(w *wshutil.WshRpc, data wshrpc.CommandRunQueueIdData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "runqueuestartnow", data, opts)
+	return err
+}
+
 // command "runtranscriptpath", wshserver.RunTranscriptPathCommand
 func RunTranscriptPathCommand(w *wshutil.WshRpc, data wshrpc.CommandRunTranscriptPathData, opts *wshrpc.RpcOpts) (string, error) {
 	resp, err := sendRpcRequestCallHelper[string](w, "runtranscriptpath", data, opts)

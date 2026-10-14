@@ -198,6 +198,7 @@ declare global {
         oref?: string;
         effortoid?: string;
         chunklabel?: string;
+        queueid?: string;
         why?: string;
         cites?: string[];
     };
@@ -1698,6 +1699,24 @@ declare global {
         runid: string;
     };
 
+    // wshrpc.CommandRunQueueAddData
+    type CommandRunQueueAddData = {
+        data: CommandCreateRunData;
+        after?: string;
+    };
+
+    // wshrpc.CommandRunQueueIdData
+    type CommandRunQueueIdData = {
+        id: string;
+    };
+
+    // wshrpc.CommandRunQueueListRtnData
+    type CommandRunQueueListRtnData = {
+        entries: RunQueueEntry[];
+        maxactive: number;
+        active: number;
+    };
+
     // wshrpc.CommandRunTranscriptPathData
     type CommandRunTranscriptPathData = {
         channelid: string;
@@ -2946,6 +2965,8 @@ declare global {
         parentleadoref?: string;
         origintabid?: string;
         origintranscript?: string;
+        originnotify?: boolean;
+        originnotifiedts?: number;
         effortref?: RunEffortRef;
         dagoref?: string;
         sessionid?: string;
@@ -3031,6 +3052,23 @@ declare global {
         artifacts?: string[];
         startedts?: number;
         donets?: number;
+    };
+
+    // wshrpc.RunQueueChangedData
+    type RunQueueChangedData = {
+        entries: RunQueueEntry[];
+    };
+
+    // wshrpc.RunQueueEntry
+    type RunQueueEntry = {
+        id: string;
+        data: CommandCreateRunData;
+        title: string;
+        projectpath: string;
+        after?: string;
+        queuedts: number;
+        state: string;
+        reason?: string;
     };
 
     // waveobj.RunRadarOrigin
@@ -3204,6 +3242,8 @@ declare global {
         "jobs:slots"?: number;
         "jobs:mode"?: string;
         "jobs:pauseuntil"?: number;
+        "runs:maxactive"?: number;
+        "runs:wakeorigin"?: boolean;
     };
 
     // wshrpc.ShippedItem

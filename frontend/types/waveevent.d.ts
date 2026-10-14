@@ -30,6 +30,7 @@ declare global {
         | "dag:task-stalled"
         | "dag:task-retried"
         | "run:event"
+        | "runqueue:changed"
     ;
 
     type WaveEvent = {
@@ -61,7 +62,8 @@ declare global {
         { event: "dag:child-ask"; data?: string; } | 
         { event: "dag:task-stalled"; data?: string; } | 
         { event: "dag:task-retried"; data?: string; } | 
-        { event: "run:event"; data?: RunEventData; }
+        { event: "run:event"; data?: RunEventData; } | 
+        { event: "runqueue:changed"; data?: RunQueueChangedData; }
     );
 
 }

@@ -203,21 +203,36 @@ func PostChannelMessageIf(ctx context.Context, channelId string, msg waveobj.Cha
 	return posted, err
 }
 
+// RunChangedHook, when set, is called after every run write that commits (AppendRun and UpdateRun: every run
+// status and land change goes through one of them), never inside the transaction and never on a write that failed.
+// It runs on the writer's goroutine, so it must return at once: the run queue's loop sets it to a non-blocking poke.
+var RunChangedHook func()
+
+func runChanged() {
+	if hook := RunChangedHook; hook != nil {
+		hook()
+	}
+}
+
 // AppendRun adds a run to the channel as its db_run row.
 func AppendRun(ctx context.Context, channelId string, run waveobj.Run) error {
 	stampRunIdentity(channelId, &run)
-	return WithTx(ctx, func(tx *TxWrap) error {
+	err := WithTx(ctx, func(tx *TxWrap) error {
 		if err := bumpChannel(tx.Context(), channelId); err != nil {
 			return err
 		}
 		return dbUpsertObjTx(tx.Context(), &run)
 	})
+	if err == nil {
+		runChanged()
+	}
+	return err
 }
 
 // UpdateRun applies fn to the channel's run and writes its row. The read, fn and the write share one
 // write transaction.
 func UpdateRun(ctx context.Context, channelId, runId string, fn func(*waveobj.Run) error) error {
-	return WithTx(ctx, func(tx *TxWrap) error {
+	err := WithTx(ctx, func(tx *TxWrap) error {
 		if err := bumpChannel(tx.Context(), channelId); err != nil {
 			return err
 		}
@@ -235,6 +250,10 @@ func UpdateRun(ctx context.Context, channelId, runId string, fn func(*waveobj.Ru
 		stampRunIdentity(channelId, run)
 		return dbUpsertObjTx(tx.Context(), run)
 	})
+	if err == nil {
+		runChanged()
+	}
+	return err
 }
 
 // GetRun reads a single run by id from its db_run row (runId == oid), verifying it belongs to channelId.

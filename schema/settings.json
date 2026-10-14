@@ -227,6 +227,12 @@
         },
         "jobs:pauseuntil": {
           "type": "integer"
+        },
+        "runs:maxactive": {
+          "type": "integer"
+        },
+        "runs:wakeorigin": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
