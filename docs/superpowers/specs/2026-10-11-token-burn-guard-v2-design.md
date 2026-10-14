@@ -170,9 +170,13 @@ gathers them; `tokengateArgs` passes `--types` and the `--transcript` that `regi
 - No transcript path, or no session tokens in a window: the session clause and that column are left out.
 - A type with too few samples falls back to `all`, then to 1.5M without a range.
 - A resumed session counts its own file; a `--fork-session` is a new file and starts from zero.
-- Workflow agents: no workflow transcript exists on this machine to check where Claude Code writes them. If they land
-  under the session's `subagents/` dir they count like any subagent; if not, the session share misses them. The live
-  check settles which and records it here.
+- Workflow agents (checked live 2026-10-14): Claude Code writes each to
+  `<session>/subagents/workflows/<runId>/agent-<id>.jsonl`, its `.meta.json` saying `agentType: "workflow-subagent"`
+  (and no `toolUseId`), beside the run's `journal.jsonl`. The walk maps them to the session through the outermost
+  `subagents` dir, so the session share counts them, and Subagent cost shows them as their own `workflow-subagent`
+  row; `journal.jsonl` has no usage records and is no sample. The gate still prices a Workflow's agents by the `all`
+  row. The Workflow tool's own permission dialog comes after the gate, so its agents can start minutes after the
+  logged `ts` (3.5 min in the check): the review's 10-minute window covers only a short wait there.
 
 ## Testing
 
