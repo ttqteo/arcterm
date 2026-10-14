@@ -7,6 +7,8 @@ import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
 import { useTabModel } from "@/app/store/tab-model";
 import { DEFAULT_TERM_FONT, MONO_FONTS, stackOf } from "@/app/view/agents/fonts";
+import { IdeaCaptureChip } from "@/app/view/agents/ideacapturechip";
+import { sessionIdFromTranscript } from "@/app/view/agents/ideasmodel";
 import { activePalette, deriveTermTheme } from "@/app/view/agents/themes";
 import { themeOverridesAtom, themePresetAtom } from "@/app/view/agents/themestore";
 import type { TermViewModel } from "@/app/view/term/term-model";
@@ -257,6 +259,10 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
                 <TermLinkTooltip termWrap={termWrapInst} />
             </NullErrorBoundary>
             <Search {...searchProps} />
+            <IdeaCaptureChip
+                blockId={blockId}
+                sessionId={sessionIdFromTranscript(blockData?.meta?.["agent:transcriptpath"])}
+            />
         </div>
     );
 };

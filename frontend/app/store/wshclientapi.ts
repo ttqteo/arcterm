@@ -798,6 +798,30 @@ export class RpcApiType {
         return client.wshRpcCall("htmlpreviewserve", data, opts);
     }
 
+    // command "ideaadd" [call]
+    IdeaAddCommand(client: WshClient, data: CommandIdeaAddData, opts?: RpcOpts): Promise<Idea> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "ideaadd", data, opts);
+        return client.wshRpcCall("ideaadd", data, opts);
+    }
+
+    // command "idealist" [call]
+    IdeaListCommand(client: WshClient, data: CommandIdeaTargetData, opts?: RpcOpts): Promise<SessionIdeas> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "idealist", data, opts);
+        return client.wshRpcCall("idealist", data, opts);
+    }
+
+    // command "ideatick" [call]
+    IdeaTickCommand(client: WshClient, data: CommandIdeaTargetData, opts?: RpcOpts): Promise<CommandIdeaTickRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "ideatick", data, opts);
+        return client.wshRpcCall("ideatick", data, opts);
+    }
+
+    // command "ideaupdate" [call]
+    IdeaUpdateCommand(client: WshClient, data: CommandIdeaUpdateData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "ideaupdate", data, opts);
+        return client.wshRpcCall("ideaupdate", data, opts);
+    }
+
     // command "jarvisctx" [call]
     JarvisCtxCommand(client: WshClient, data: CommandJarvisCtxData, opts?: RpcOpts): Promise<CommandJarvisCtxRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "jarvisctx", data, opts);

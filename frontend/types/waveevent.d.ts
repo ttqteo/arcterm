@@ -20,6 +20,7 @@ declare global {
         | "jarvis:volunteer"
         | "system:slept"
         | "jobqueue"
+        | "ideas:changed"
         | "storage:scan"
         | "dag:child-done"
         | "dag:gate-open"
@@ -52,6 +53,7 @@ declare global {
         { event: "jarvis:volunteer"; data?: VolunteerData; } | 
         { event: "system:slept"; data?: SleptData; } | 
         { event: "jobqueue"; data?: JobQueueData; } | 
+        { event: "ideas:changed"; data?: IdeasChangedData; } | 
         { event: "storage:scan"; data?: StorageReport; } | 
         { event: "dag:child-done"; data?: string; } | 
         { event: "dag:gate-open"; data?: string; } | 
