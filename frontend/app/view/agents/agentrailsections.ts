@@ -1,8 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Agent details rail's sections: which show, in what order, with which counts. The session block first (its
-// context and spend, opening on its token usage and facts), then attention (needs you), then the lists the agent holds
+// The Agent details rail's sections: which show, in what order, with which counts. A plan waiting for review first,
+// then the session block (its context and spend, opening on its token usage and facts), then attention (needs you), then the lists the agent holds
 // (subagents, changed files, artifacts, uploads, servers, background tasks), and its run. The tab strip counts, in one
 // fixed order (planRailStats), only the lists a click can act on: an empty one would crowd the strip past the rail's
 // 300px and clip its last icons. The body lists the ones with something in them. Plain terminals are not an agent's: the Agent tree lists them in a
@@ -15,10 +15,12 @@ import type { BackgroundTaskStatus } from "./transcriptprojection";
 // the lists the tab strip counts, in its order
 export type AgentRailStatId = "subagents" | "files" | "artifacts" | "uploads" | "servers" | "bgtasks";
 
-export type AgentRailSectionId = "subagent" | "status" | "needs" | AgentRailStatId | "run";
+export type AgentRailSectionId = "plan" | "subagent" | "status" | "needs" | AgentRailStatId | "run";
 
 export interface AgentRailInput {
     inSubagent: boolean; // a subagent's interior is open in place of the parent
+    // the rows of the agent's Plan to review: its initiative's proposed chunks, and ones just decided that stay for Undo
+    proposed: number;
     needsYou: number; // the lead's asks owned by the user
     subagents: number;
     files: number | null; // null: not known (loading, or not a git repo)
@@ -80,6 +82,10 @@ export function railStatClick(
 
 export function planAgentRail(i: AgentRailInput): AgentRailSectionPlan[] {
     const out: AgentRailSectionPlan[] = [];
+    // a plan waiting on the person is the first thing the rail shows; it draws its own heading and does not collapse
+    if (!i.inSubagent && i.proposed > 0) {
+        out.push({ id: "plan" });
+    }
     if (i.inSubagent) {
         out.push({ id: "subagent" });
     }

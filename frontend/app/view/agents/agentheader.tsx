@@ -55,6 +55,8 @@ import { agentGridAtom, currentGrid, eligibleIds, openInSplit, removeFromGrid } 
 import { liveTokensAtom } from "./livetokensstore";
 import { rosterSeededAtom } from "./liveagents";
 import { isFinalStageId } from "./finalstage";
+import { useInitiativeReread, usePlanReview } from "./planreviewstore";
+import { openRailSection } from "./railsection";
 import { railVisibleAtom, terminalFullscreenAtom } from "./railstore";
 import { agentProject, isEndedWorkerId, leadAgentOf } from "./runlineage";
 import { startedRunsText } from "./runorigin";
@@ -139,6 +141,29 @@ function InitiativeLink({ model, agent }: { model: AgentsViewModel; agent: Agent
                 {initiativeLinkText(agent.name, effort)}
             </button>
         </>
+    );
+}
+
+// "N TO REVIEW": the initiative holds chunks that wait for a decision, and this opens the details rail on them. It is
+// its own flex item, after the truncating text, so a long project or initiative name never clips it away.
+function PlanReviewChip({ agent }: { agent: AgentVM }) {
+    // the header is what is on screen when the agent stops with a plan, so it reads the initiative again too (the
+    // rail's own read is the same one in flight, see planreviewstore.ts)
+    useInitiativeReread(agent.effortId, agent.state, false);
+    const { proposed } = usePlanReview(agent.effortId);
+    if (proposed === 0) {
+        return null;
+    }
+    return (
+        <button
+            type="button"
+            data-plan-review-chip
+            onClick={() => openRailSection(agent.id, "plan")}
+            title="Review the proposed plan on the details rail"
+            className="inline-flex h-[18px] flex-none cursor-pointer items-center self-center rounded-[5px] border border-asking/30 bg-askingbg px-[7px] text-[10px] font-bold uppercase tracking-[.04em] text-asking hover:border-asking/60"
+        >
+            {proposed} to review
+        </button>
     );
 }
 
@@ -477,6 +502,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                     ) : null}
                     <StartedRunsLink model={model} agent={agent} />
                 </span>
+                {agent.effortId != null ? <PlanReviewChip agent={agent} /> : null}
             </div>
             <div className="flex-1" />
             <div className="flex items-center gap-[7px]">

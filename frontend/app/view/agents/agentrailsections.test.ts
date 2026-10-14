@@ -19,6 +19,7 @@ const base: AgentRailInput = {
     servers: 0,
     bgTasks: 1,
     hasRun: false,
+    proposed: 0,
 };
 const ids = (i: AgentRailInput) => planAgentRail(i).map((s) => s.id);
 const header = (i: AgentRailInput, id: AgentRailSectionId) => planAgentRail(i).find((s) => s.id === id)?.header;
@@ -53,6 +54,16 @@ describe("planAgentRail", () => {
     it("files with no count (loading, not a repo) stays listed with a header but no number", () => {
         expect(header({ ...base, files: null }, "files")).toEqual({});
         expect(ids({ ...base, files: 0 })).not.toContain("files");
+    });
+    it("a plan to review comes first, before the session block, uncounted", () => {
+        expect(ids({ ...base, proposed: 4 })).toEqual(["plan", "status", "files", "bgtasks"]);
+        expect(planAgentRail({ ...base, proposed: 4 })[0].header).toBeUndefined();
+        // and ahead of needs-you too
+        expect(ids({ ...base, proposed: 1, needsYou: 2 }).slice(0, 3)).toEqual(["plan", "status", "needs"]);
+    });
+    it("has no plan to review when nothing is proposed, nor inside a subagent", () => {
+        expect(ids({ ...base, proposed: 0 })).not.toContain("plan");
+        expect(ids({ ...base, proposed: 4, inSubagent: true })).toEqual(["subagent", "status"]);
     });
     it("a subagent interior shows its head and the session block only", () => {
         expect(ids({ ...base, inSubagent: true, needsYou: 1, hasRun: true, artifacts: 2, uploads: 1 })).toEqual([
