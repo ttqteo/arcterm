@@ -61,7 +61,7 @@ a new `pkg/ideastore`:
 
 - `IdeaAddCommand {blockid | sessionid, text, kind, by}` → the idea; `IdeaListCommand {blockid | sessionid}` → the
   file; `IdeaUpdateCommand {sessionid, op: edit | kind | drop | restore | merge | seen, ids, text?, kind?}`.
-- Merge joins the selected ideas' texts (oldest first) into the first, takes the first's kind, and drops the rest.
+- Merge joins the selected ideas' texts (oldest first) into the oldest, keeps the oldest's kind, and drops the rest.
 - Every change publishes `ideas:changed` with the session id; the frontend keeps a per-session atom and refetches.
 
 ### 5. On the rail: a count, not a tab
@@ -112,6 +112,7 @@ so typing still reaches the agent, and it goes when the selection clears or a ke
 - wshserver: block → session resolution, the no-session error.
 - Frontend pure models beside their `.tsx`: grouping and `new` (`ideasmodel.ts`), the count and dot in
   `planRailStats`, the selection-chip visibility rules.
-- Claude mod `hooks/*-core.ts`: the nudge fires at 3 prompts, never in a session with no ideas.
+- `pkg/ideastore` `Tick`: the nudge fires at 3 prompts, never in a session with no ideas. Claude mod
+  `hooks/ideas-core.ts`: the nudge row's text, and the tick-then-append wiring with its failures logged, not thrown.
 - CDP scenario `ideas-rail`: fixture session with ideas → the count and dot, the open section, Mark read clears the
   dot.
