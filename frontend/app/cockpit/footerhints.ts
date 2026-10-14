@@ -91,6 +91,5 @@ export const SURFACE_HINTS: Partial<Record<SurfaceKey, FooterHint[]>> = {
         { ids: ["jarvis:new-run"], glyph: "r", label: "new run" },
         { ids: ["jarvis:work-on"], glyph: "w", label: "work on" },
         { ids: ["jarvis:filter"], glyph: "/", label: "filter" },
-        { ids: ["jarvis:graph-peek"], keys: "Shift:g", label: "graph" },
     ],
 };

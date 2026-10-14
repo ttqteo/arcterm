@@ -24,7 +24,7 @@ describe("footer hints reference real bindings", () => {
                 ...buildFilesBindings(),
                 ...buildListNavBindings(model),
                 ...buildCockpitBindings(),
-                ...buildJarvisBindings(model), // includes the graph peek
+                ...buildJarvisBindings(model),
             ].map((b) => b.id)
         );
         const referenced = [...GLOBAL_HINTS, ...Object.values(SURFACE_HINTS).flat()].flatMap((h) => h.ids);

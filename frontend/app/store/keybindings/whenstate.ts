@@ -38,13 +38,7 @@ import { focusSubagentAtom } from "@/app/view/agents/subagentsstore";
 import { tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
 import { codeTreeFocusedAtom } from "@/app/view/code/codestore";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
-import {
-    briefPeekRecordAtom,
-    chunkMoveAtom,
-    graphPeekOpenAtom,
-    noteChunkAtom,
-    trackerMenuAtom,
-} from "@/app/view/jarvis/jarvisstore";
+import { briefPeekRecordAtom, chunkMoveAtom, noteChunkAtom, trackerMenuAtom } from "@/app/view/jarvis/jarvisstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import { atom, type Atom, type PrimitiveAtom } from "jotai";
@@ -53,14 +47,13 @@ import { listNavAtom } from "./listnav";
 export const whenVersionAtom = atom(0) as PrimitiveAtom<number>;
 
 // Every atom reachable from a when(ctx) predicate's evaluation in bindings.ts, direct or through a
-// shared helper (e.g. onStage, inCompare, inTree) — audited against every `globalStore.get(...)` call
+// shared helper (e.g. onJarvis, inCompare, inTree) — audited against every `globalStore.get(...)` call
 // site in that file and cross-checked by the completeness test described above.
 export const PREDICATE_ATOMS: Atom<unknown>[] = [
     compareOnAtom, // buildFilesBindings: on/inCompare/inHistory/filtering, surface:back-home
     historyFiltersAtom, // buildFilesBindings: filtering, surface:back-home
     lineReviewsAtom, // buildFilesBindings: files:review-send
     activeReviewKeyAtom, // buildFilesBindings: files:review-send
-    graphPeekOpenAtom, // buildJarvisBindings: onStage, surface:back-home
     noteChunkAtom, // buildJarvisBindings: jarvis:close-notes, and surface:back-home yields to it
     chunkMoveAtom, // buildJarvisBindings: jarvis:chunk-up / jarvis:chunk-down
     trackerMenuAtom, // buildJarvisBindings: jarvis:close-tracker-menu, jarvis:close-notes, surface:back-home

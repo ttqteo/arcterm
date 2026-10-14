@@ -309,7 +309,6 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `w` | Work on the initiative under the cursor in a new agent, or go to the agent already open on it |
 | `Alt`+`↑` / `Alt`+`↓` | Move the chunk under the cursor up / down within its stage |
 | `e` | Expand / collapse the record band |
-| `Shift`+`G` | Graph peek (`Esc` closes) |
 | `Shift`+`J` / `Shift`+`K` | Next / previous run in this channel |
 | `j` / `k` | With a run sheet open: next / previous run in the list it counts (Runs, or Shipped for a finished run) |
 | `1`…`9` | Answer an ask option on a run body |

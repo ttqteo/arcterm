@@ -117,11 +117,11 @@ export const TOUR_TRACKS: TourTrack[] = [
                 id: "brief:keys",
                 vi: {
                     title: "Phím tắt của Brief",
-                    body: "j / k: lên xuống giữa các hàng · Enter: mở hàng · r: run mới · e: mở hoặc gập dải record · Shift+G: graph peek. Shift+? mở danh sách phím đầy đủ.",
+                    body: "j / k: lên xuống giữa các hàng · Enter: mở hàng · r: run mới · e: mở hoặc gập dải record. Shift+? mở danh sách phím đầy đủ.",
                 },
                 en: {
                     title: "The Brief's keys",
-                    body: "j / k: move between rows · Enter: open the row · r: new run · e: open or fold the record band · Shift+G: graph peek. Shift+? lists every key.",
+                    body: "j / k: move between rows · Enter: open the row · r: new run · e: open or fold the record band. Shift+? lists every key.",
                 },
             },
         ],

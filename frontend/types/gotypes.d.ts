@@ -1645,17 +1645,6 @@ declare global {
         decisions: AmbientDecision[];
     };
 
-    // wshrpc.CommandResolveDossierEdgesData
-    type CommandResolveDossierEdgesData = {
-        dossierid: string;
-    };
-
-    // wshrpc.CommandResolveDossierEdgesRtnData
-    type CommandResolveDossierEdgesRtnData = {
-        runs: GraphNode[];
-        links: GraphLink[];
-    };
-
     // wshrpc.CommandResolveFocusScopeData
     type CommandResolveFocusScopeData = {
         kind: string;
@@ -1896,12 +1885,6 @@ declare global {
     // wshrpc.CommandUpdateHarnessRtnData
     type CommandUpdateHarnessRtnData = {
         version: string;
-    };
-
-    // wshrpc.CommandVaultGraphRtnData
-    type CommandVaultGraphRtnData = {
-        nodes: GraphNode[];
-        links: GraphLink[];
     };
 
     // wshrpc.CommandVaultSetRemoteData
@@ -2429,25 +2412,6 @@ declare global {
         behind?: number;
         hasbase?: boolean;
         error?: string;
-    };
-
-    // wshrpc.GraphLink
-    type GraphLink = {
-        from: string;
-        to: string;
-        kind: string;
-        provenance?: string;
-        bucket?: string;
-        state?: string;
-    };
-
-    // wshrpc.GraphNode
-    type GraphNode = {
-        id: string;
-        kind: string;
-        label: string;
-        status?: string;
-        updated?: number;
     };
 
     // wshrpc.HarnessInfo

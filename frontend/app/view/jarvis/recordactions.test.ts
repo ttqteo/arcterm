@@ -23,7 +23,6 @@ vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 vi.mock("@/app/store/wos", () => ({ loadAndPinWaveObject: vi.fn().mockResolvedValue(null) }));
 
 import { globalStore } from "@/app/store/jotaiStore";
-import { graphBloomAtom } from "./jarvisgraphstore";
 import { recordDetailAtom, recordRunsAtom, recordScopeAtom } from "./jarvissubjectstore";
 import { afterRecordWrite, appendDecision, detachedEdgesAtom, detachEdge } from "./recordactions";
 import { tasksErrorAtom } from "./tasksstore";
@@ -36,7 +35,6 @@ describe("afterRecordWrite", () => {
         globalStore.set(recordDetailAtom, { "task-a": { status: "active" } as unknown as DossierDetail });
         globalStore.set(recordScopeAtom, { "task-a": { runorefs: ["run:old"] } as unknown as SpaceScope });
         globalStore.set(recordRunsAtom, { "task-a": [{ id: "old" }] as unknown as Run[] });
-        globalStore.set(graphBloomAtom, new Map([["task-a", { runs: [], links: [] }]]));
     });
 
     it("replaces the record's detail with a fresh read", async () => {
@@ -48,11 +46,6 @@ describe("afterRecordWrite", () => {
         await afterRecordWrite("task-a");
         expect(globalStore.get(recordScopeAtom)["task-a"].runorefs).toEqual([]);
         expect(globalStore.get(recordRunsAtom)["task-a"]).toEqual([]);
-    });
-
-    it("drops the record's graph attribution bloom", async () => {
-        await afterRecordWrite("task-a");
-        expect(globalStore.get(graphBloomAtom).has("task-a")).toBe(false);
     });
 
     it("re-reads the whole-vault ambient map", async () => {

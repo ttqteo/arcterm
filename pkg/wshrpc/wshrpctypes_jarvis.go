@@ -12,9 +12,7 @@ import (
 type JarvisCommands interface {
 	ConsultCommand(ctx context.Context, data CommandConsultData) chan RespOrErrorUnion[ConsultChunk]                                       // one-shot headless CLI consult; streams reply chunks, posts a consult-reply on completion
 	ResolveFocusScopeCommand(ctx context.Context, data CommandResolveFocusScopeData) (*SpaceScope, error)                                  // resolve a record's scope bundle (runs -> channels + worker tabs)
-	VaultGraphCommand(ctx context.Context) (*CommandVaultGraphRtnData, error)                                                              // whole-vault wikilink graph (U3 base canvas): all vault nodes + resolved [[links]], no runs/attribution
 	ReadVaultNoteCommand(ctx context.Context, data CommandReadVaultNoteData) (*CommandReadVaultNoteRtnData, error)                         // read one vault note's title and body for the avatar popup's note peek; errors on an unknown id
-	ResolveDossierEdgesCommand(ctx context.Context, data CommandResolveDossierEdgesData) (*CommandResolveDossierEdgesRtnData, error)       // a dossier's attributed run nodes + typed attribution edges (U3 focus bloom)
 	ResolveAmbientCommand(ctx context.Context) (*CommandResolveAmbientRtnData, error)                                                      // whole-vault ambient attribution: every dossier, its attributed run orefs, and its decisions
 	GetDossierCommand(ctx context.Context, data CommandGetDossierData) (*DossierDetail, error)                                             // read one task dossier + its decisions for the Tasks surface
 	ListTaskDossiersCommand(ctx context.Context) (*CommandListTaskDossiersRtnData, error)                                                  // list ALL task dossiers (any status) for the Tasks surface, newest-updated first
@@ -156,32 +154,6 @@ type SpaceScope struct {
 	TabIds      []string `json:"tabids"`
 }
 
-// GraphNode is one node in the vault graph surface (U3). Kind: task|decision|memory|run.
-// Status is frontmatter-derived (absent for memory notes; runs carry their run status).
-type GraphNode struct {
-	Id      string `json:"id"`
-	Kind    string `json:"kind"`
-	Label   string `json:"label"`
-	Status  string `json:"status,omitempty"`
-	Updated int64  `json:"updated,omitempty"`
-}
-
-// GraphLink is one edge. Kind: wikilink|attribution. Provenance/Bucket/State are set only on
-// attribution edges (dossier->run, from D's EdgesFor); wikilinks leave them empty.
-type GraphLink struct {
-	From       string `json:"from"`
-	To         string `json:"to"`
-	Kind       string `json:"kind"`
-	Provenance string `json:"provenance,omitempty"`
-	Bucket     string `json:"bucket,omitempty"`
-	State      string `json:"state,omitempty"`
-}
-
-type CommandVaultGraphRtnData struct {
-	Nodes []GraphNode `json:"nodes"`
-	Links []GraphLink `json:"links"`
-}
-
 type CommandReadVaultNoteData struct {
 	Id string `json:"id"`
 }
@@ -194,15 +166,6 @@ type CommandReadVaultNoteRtnData struct {
 	Body    string `json:"body"`
 	Updated int64  `json:"updated"`
 	Project string `json:"project,omitempty"`
-}
-
-type CommandResolveDossierEdgesData struct {
-	DossierId string `json:"dossierid"`
-}
-
-type CommandResolveDossierEdgesRtnData struct {
-	Runs  []GraphNode `json:"runs"`
-	Links []GraphLink `json:"links"`
 }
 
 // AmbientTask is a dossier reduced to what an ambient tag renders: its id and display label. The whole

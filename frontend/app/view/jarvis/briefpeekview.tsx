@@ -22,12 +22,12 @@ import { fleetCounts } from "@/app/view/agents/jarviscards";
 import type { RunStatusTone } from "@/app/view/agents/runmodel";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue, useSetAtom } from "jotai";
-import { Check, ChevronDown, ChevronUp, Waypoints, X } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { buildRecordPeek, type PeekRunRow, type PeekStatusRow } from "./briefpeek";
 import { FAINT_TEXT, META_TEXT, SMALL_BTN } from "./briefstyle";
 import { fleetForRecord } from "./fleetscope";
-import { briefGraphRecordAtom, briefPeekRecordAtom, graphPeekOpenAtom } from "./jarvisstore";
+import { briefPeekRecordAtom } from "./jarvisstore";
 import {
     loadRecordDetail,
     loadRecordScope,
@@ -262,14 +262,11 @@ export function RecordPeekBody({
     model,
     recordId,
     place,
-    onMap,
     onClose,
 }: {
     model: AgentsViewModel;
     recordId: string;
     place: Place;
-    // the map button's exit; each host leaves its own way
-    onMap: () => void;
     // the header's close; the popup draws its own header and passes none
     onClose?: () => void;
 }) {
@@ -424,16 +421,6 @@ export function RecordPeekBody({
                     {/* a label, not a button: the peek reports the count and the Brief owns the log,
                         so this states it and stops there. */}
                     <span className={META_TEXT}>{peek.logLine}</span>
-                    <span className="flex-1" />
-                    <button
-                        type="button"
-                        data-jarvis-peek-open-graph
-                        onClick={onMap}
-                        className={cn(SMALL_BTN, "inline-flex items-center gap-1.5")}
-                    >
-                        <Waypoints size={12} className="text-muted" />
-                        Where it sits on the map
-                    </button>
                 </div>
             </>
         );
@@ -461,15 +448,6 @@ export function BriefPeek({ model }: { model: AgentsViewModel }) {
         setRecordId(null);
         returnToOrigin("record");
     };
-    // The peek's one exit. It closes the peek first: the graph peek is an overlay on the surface, and leaving the
-    // record modal up over it would stack two modals, both claiming Escape.
-    const openMap = () => {
-        if (recordId == null) return;
-        globalStore.set(briefGraphRecordAtom, recordId);
-        forgetOrigin();
-        setRecordId(null);
-        globalStore.set(graphPeekOpenAtom, true);
-    };
 
     return (
         <ModalShell
@@ -480,7 +458,7 @@ export function BriefPeek({ model }: { model: AgentsViewModel }) {
         >
             <div data-jarvis-brief-band="peek" className="flex min-h-0 flex-col">
                 {recordId != null ? (
-                    <RecordPeekBody model={model} recordId={recordId} place="brief" onMap={openMap} onClose={close} />
+                    <RecordPeekBody model={model} recordId={recordId} place="brief" onClose={close} />
                 ) : null}
             </div>
         </ModalShell>

@@ -46,15 +46,6 @@ export const briefRevealChunkAtom = atom<((effortOref: string, chunk: string) =>
     ((effortOref: string, chunk: string) => void) | null
 >;
 
-// The graph peek overlay. Session-scoped, not persisted: a peek is a momentary look at one object's
-// neighbourhood, so reopening the app on top of one would be reopening a destination it is not.
-export const graphPeekOpenAtom = atom(false);
-
-// The record the Brief's graph peek was opened to focus, or null. Separate from the peek's `record` atom
-// because a map button names an object to centre on. Cleared with the peek, so the next unaddressed open
-// does not re-centre on a record the user has left.
-export const briefGraphRecordAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
-
 // the Brief's effort titles and chunk stages by oid, for the run sheet's ↳ chunk line (it mounts outside
 // the Brief's snapshot)
 export const briefEffortIndexAtom = atom<EffortIndex>(new Map()) as PrimitiveAtom<EffortIndex>;

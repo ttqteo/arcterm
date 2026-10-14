@@ -27,6 +27,12 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-14 (Jarvis graph peek removed)**
+
+- [ ] On Jarvis, open a record's peek (from the Brief and from Sprout's popup): its footer shows only the log line, no
+  "Where it sits on the map"; `Shift+G` on Jarvis does nothing and the footer hints list no "graph"; Escape still
+  closes the record peek, then leaves Jarvis. Commit "refactor(jarvis): remove the vault graph peek".
+
 **2026-10-14 (Sprout names the project)**
 
 - [ ] In Float or folded, let an agent finish a turn: Sprout's bubble reads "NOTICE · <project>" above "<agent>
@@ -671,8 +677,6 @@ Jarvis (what survived the 2026-09-22/23 memory and recall-arm removals):
 
 - **U2 Tasks:** in-Wave `## Notes` editing; decision supersede UI (backend `SupersedeDecision` exists);
   manual dossier creation; live push.
-- **U3 Graph:** search/filter; read rail; cross-surface nav out of a node; whole-vault attribution; the
-  visual constants (opacity/width/dash/`RUN_SQUARE_SCALE`) want a dense-vault legibility check.
 - **E Continuity:** a cheap model tier for boundary summaries; completed-task prose re-freshness; a
   per-task resume card beyond the pet's newest-narrative peek.
 - **D attribution tuning:** `timeBoxMs` 30d, `weightLayer3` 0.3 (needs a human ground-truth pass),

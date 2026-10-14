@@ -812,20 +812,6 @@ it is editor theming, not cockpit light mode.
   moves a dossier off `active` when its run finishes; that is the root, and this bound only stops it leaking into
   attribution.
 
-## Jarvis U3 — graph edge/node visual tunables (2026-07-27)
-
-`frontend/app/view/jarvis/jarvisgraphderive.ts` (`attributionStyle`) and `jarvisgraph.tsx` ship
-PLACEHOLDER visual constants, to be calibrated once a real populated vault is rendered (the current
-values were picked to be legible in isolation, not against a dense graph):
-- confidence bucket → edge opacity: strong 1.0, medium 0.6, weak 0.35
-- confidence bucket → edge width: strong 1.4, medium 1.0, weak 0.7
-- `informing` dash pattern: `[3, 3]` (`DASH_INFORMING`)
-- run-node square half-extent vs a same-degree circle radius: `RUN_SQUARE_SCALE` = 1.6
-
-Also deferred in U3: search/filter over the graph, a read rail, cross-surface nav out of a node,
-live push (the base graph is a snapshot per surface open), and whole-vault attribution — the
-attribution bloom is resolved per focused task, never for every dossier at once.
-
 ## Diff surface — narrow-window folding and row density (2026-08-03)
 
 - **Diff surface narrow-window folding and row density declined** (2026-08-03). The Git-review mockup folds the commit pane to a chip below ~1100px, drops the author column, folds the graph to three lanes and turns history into a drawer below 900px, and exposes comfortable 34px / compact 28px rows. Both declined in `docs/superpowers/specs/2026-08-03-git-review-history-reads-design.md` decision 2: the cockpit runs at roughly 1600×950, so every breakpoint would be an untested path, and `historypane.tsx` keeps its single `ROW_H = 34`. Revive only on evidence of a narrow-window user.

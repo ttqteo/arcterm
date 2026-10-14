@@ -182,10 +182,10 @@ export function rememberSaid(event: PetEvent): void {
     globalStore.set(petSaidAtom, [event, ...said].slice(0, PET_SAID_MAX));
 }
 
-// The peek overlay's open state. Global for the same reason graphPeekOpenAtom and autonomyPanelOpenAtom
-// are: Escape on a deep surface is bound to "back to Cockpit" (bindings.ts surface:back-home) and the
-// dispatcher runs on window CAPTURE, so floating-ui's own Escape handling can never pre-empt it. Without
-// the guard there, dismissing the peek also ejects the user to the Cockpit.
+// The peek overlay's open state. Global for the same reason autonomyPanelOpenAtom is: Escape on a deep
+// surface is bound to "back to Cockpit" (bindings.ts surface:back-home) and the dispatcher runs on window
+// CAPTURE, so floating-ui's own Escape handling can never pre-empt it. Without the guard there, dismissing
+// the peek also ejects the user to the Cockpit.
 export const petPeekOpenAtom = atom(false);
 
 // The decision a volunteered utterance pointed at, for decisionlog.tsx to scroll to and flash. A

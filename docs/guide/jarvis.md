@@ -32,7 +32,7 @@ Cột bên cạnh (340px) giữ phần đã qua:
 
 Brief hẹp hơn 1100px thì cột bên cạnh rớt xuống dưới cột chính. Khi **Runs** hay **Initiatives** trống, vùng đó hiện một khung nét đứt với một câu và nút bắt đầu (**New run**, **New initiative**).
 
-Cuối tiêu đề mỗi vùng có nút biểu tượng nhỏ **Show only** (bấm lại: **Show every region**) để xem riêng vùng đó; tiêu đề chỉ là nhãn, bấm vào không làm gì. `/` lọc các hàng của Brief (`Esc` xóa lọc), `j` / `k` đi giữa các hàng, `Enter` mở hàng dưới con trỏ, `r` mở run mới, `e` mở rộng dải record, `Shift+G` mở graph peek; footer liệt kê các phím này khi bạn ở Jarvis. Ô composer nhắn cho lead / worker nằm trong run sheet đang mở, không ở Brief ([Run sheet](#run-sheet)).
+Cuối tiêu đề mỗi vùng có nút biểu tượng nhỏ **Show only** (bấm lại: **Show every region**) để xem riêng vùng đó; tiêu đề chỉ là nhãn, bấm vào không làm gì. `/` lọc các hàng của Brief (`Esc` xóa lọc), `j` / `k` đi giữa các hàng, `Enter` mở hàng dưới con trỏ, `r` mở run mới, `e` mở rộng dải record; footer liệt kê các phím này khi bạn ở Jarvis. Ô composer nhắn cho lead / worker nằm trong run sheet đang mở, không ở Brief ([Run sheet](#run-sheet)).
 
 ## Initiatives
 

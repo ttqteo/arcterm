@@ -14,13 +14,15 @@ import {
     linkSync,
     mkdirSync,
     mkdtempSync,
+    readdirSync,
     readFileSync,
     rmSync,
+    statSync,
     utimesSync,
     writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SURFACE_LABEL } from "./attach.mjs";
 import { narrationFeed } from "./narrationfeed.mjs";
@@ -2535,30 +2537,40 @@ async function dropPeekItemsRadar(h, oid) {
 const PEEK_ITEMS_NOTE = "peek-items-fixture";
 const PEEK_ITEMS_NOTE_TITLE = "Peek fixture note";
 
-const newestMemoryNote = async (h) => {
-    const nodes = (await h.rpc("vaultgraph", null))?.nodes ?? [];
-    const note = nodes.filter((n) => n.kind === "memory").sort((a, b) => (b.updated ?? 0) - (a.updated ?? 0))[0];
-    return note ? { id: note.id, label: note.label } : null;
+// The newest memory note on disk that the app reads back by its file name: a note whose frontmatter names
+// another id does not answer readvaultnote that way, so it is passed over.
+const newestMemoryNote = async (h, root) => {
+    const dir = join(root, "memory");
+    if (!existsSync(dir)) return null;
+    // a project's notes sit one folder down (memory/<project>/), so the walk goes into folders
+    const files = readdirSync(dir, { recursive: true })
+        .filter((f) => f.endsWith(".md"))
+        .map((f) => ({ id: basename(f, ".md"), t: statSync(join(dir, f)).mtimeMs }))
+        .sort((a, b) => b.t - a.t)
+        .slice(0, 20);
+    for (const { id } of files) {
+        const note = await h.rpc("readvaultnote", { id }).catch(() => null);
+        if (note?.id) return { id: note.id, label: note.title };
+    }
+    return null;
 };
 
 // The newest memory note already in the vault, read and never written. A vault with none, which is the fresh
 // profile's default vault under a Final, gets one fixture note, removed in teardown. The root mirrors
-// wconfig.resolveVaultRoot, and the vault graph must then list the note, so a wrong root fails here instead of
+// wconfig.resolveVaultRoot, and the app must then read the note back, so a wrong root fails here instead of
 // leaving a stray file.
 async function arrangePeekItemsNote(h, ctx) {
-    ctx.note = await newestMemoryNote(h);
+    const root = await vaultRoot(h);
+    ctx.note = await newestMemoryNote(h, root);
     if (ctx.note != null) return;
-    const settings = (await h.rpc("getfullconfig", null))?.settings ?? {};
-    const configured = settings["memory:vaultpath"] || settings["jarvis:vaultpath"];
-    const root = configured ? configured.replace(/^~(?=$|[\\/])/, homedir()) : join(homedir(), ".waveterm", "vault");
     ctx.noteFile = join(root, "memory", `${PEEK_ITEMS_NOTE}.md`);
     mkdirSync(join(root, "memory"), { recursive: true });
     writeFileSync(
         ctx.noteFile,
         `---\ntitle: ${PEEK_ITEMS_NOTE_TITLE}\n---\n\nA memory note the peek-item-views scenario writes into an empty vault and removes after.\n`
     );
-    ctx.note = await newestMemoryNote(h);
-    if (ctx.note?.id !== PEEK_ITEMS_NOTE) throw new Error(`the vault graph does not list the note written to ${ctx.noteFile}`);
+    ctx.note = await newestMemoryNote(h, root);
+    if (ctx.note?.id !== PEEK_ITEMS_NOTE) throw new Error(`the app does not read back the note written to ${ctx.noteFile}`);
 }
 
 const peekItemViews = {
@@ -12053,143 +12065,6 @@ const routePickerRefused = {
     },
 };
 
-// --- brief-contextual-map: the Brief's honest graph exits ---------------------------------------------
-// The graph peek mounts with the Brief's own exits: a record closes into the peek, and a run offers no
-// control at all because B5 has not given runs a Stage sheet yet. It used to open by priming an attached
-// thread from a memory note's "Ask Jarvis"; that entry point went with the Vault surface, and the exits
-// below never depended on it. The surviving contextual entries are a radar finding and a run.
-const briefContextualMap = {
-    name: "brief-contextual-map",
-    surface: "jarvis",
-    async arrange() {
-        return {};
-    },
-    async assert(h) {
-        const steps = [];
-        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
-        const settle = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
-
-        // arrange: a reloaded surface, so the restore below is the only thing that has run
-        await h.ev("location.reload()");
-        await settle(2600);
-
-        await h.goto("jarvis");
-        await settle(500);
-
-        // 1. Shift+G mounts the graph peek in Brief mode. The Stage-only keys must stay absent: the Brief
-        //    has no rail to toggle and no Stage thread to start.
-        await h.ev(
-            `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'G', code: 'KeyG', shiftKey: true, bubbles: true }))`
-        );
-        await settle(900);
-        const peek = await h.ev(`(() => {
-            const el = document.querySelector('[data-jarvis-graph-peek]');
-            if (!el) return null;
-            const text = el.innerText || '';
-            return {
-                text: text.slice(0, 200),
-                actions: [...el.querySelectorAll('button')].map((b) => (b.innerText || '').trim()),
-            };
-        })()`);
-        rec(
-            "1. Shift+G opens the graph peek over the Brief",
-            peek != null && /\bgraph\b/i.test(peek.text) && /\d+ nodes/.test(peek.text),
-            JSON.stringify(peek)
-        );
-
-        // 2. With nothing selected the overlay offers no node actions at all — the two exits are asserted
-        //    where they can exist, on a focused task node (4b). Asserting them here would be asserting them
-        //    against a state the graph deliberately does not have.
-        const runControl = await h.ev(`(() => {
-            const el = document.querySelector('[data-jarvis-graph-peek]');
-            if (!el) return null;
-            const runs = [...el.querySelectorAll('button')].filter((b) => /open run/i.test(b.innerText || '')).length;
-            const ask = [...el.querySelectorAll('button')].filter((b) => /ask jarvis about this node/i.test(b.innerText || '')).length;
-            return { runs, ask };
-        })()`);
-        rec(
-            "2. the graph peek opens over the Brief with no node selected, so no node action is offered",
-            runControl != null && runControl.runs === 0 && runControl.ask === 0,
-            JSON.stringify(runControl)
-        );
-
-        // 3. a task node closes into the record peek rather than onto a Stage that is not there. Reached
-        //    through the record peek's own map button, which is the one route that names a record to focus.
-        await h.ev(
-            `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))`
-        );
-        await settle(500);
-        const closed = await h.ev(`document.querySelector('[data-jarvis-graph-peek]') == null`);
-        rec("3a. Escape closes the graph peek and leaves the Brief", closed === true, "");
-
-        const listed = await h.rpc("listtaskdossiers", null);
-        if ((listed?.dossiers ?? []).length === 0) {
-            rec("3b. a task node closes into the record peek", false, "no dossier in this profile - seed one before reading this as a pass");
-            return steps;
-        }
-        // the palette is the only in-app route from the Brief to a record (see brief-peek for the full
-        // explanation): nothing on the Brief itself names one.
-        await h.ev(
-            `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', code: 'KeyP', ${MOD_KEY_JS}, bubbles: true }))`
-        );
-        await settle(300);
-        await h.ev(`document.querySelector('[data-palette-scope="records"]')?.click()`);
-        await settle(900);
-        await h.ev(`(() => {
-            const headers = [...document.querySelectorAll('div')].filter(
-                (d) => (d.textContent || '').trim().toLowerCase() === 'records'
-            );
-            const group = headers[0] ? headers[0].parentElement : null;
-            const row = group ? group.querySelector('button[data-idx]') : null;
-            if (row) row.click();
-            return true;
-        })()`);
-        await settle(900);
-        const mapClicked = await h.ev(`(() => {
-            const b = document.querySelector('[data-jarvis-peek-open-graph]');
-            if (!b) return false;
-            b.click();
-            return true;
-        })()`);
-        await settle(1200);
-        const focused = await h.ev(`(() => {
-            const el = document.querySelector('[data-jarvis-graph-peek]');
-            if (!el) return null;
-            const open = [...el.querySelectorAll('button')].filter((b) => /^open record$/i.test((b.innerText || '').trim()));
-            const runs = [...el.querySelectorAll('button')].filter((b) => /open run/i.test(b.innerText || '')).length;
-            return { open: open.length, runs };
-        })()`);
-        rec(
-            "3b. the record peek's map button focuses its task node: one Open record, no run control",
-            mapClicked === true && focused != null && focused.open === 1 && focused.runs === 0,
-            JSON.stringify({ mapClicked, focused })
-        );
-
-        const backToPeek = await h.ev(`(() => {
-            const el = document.querySelector('[data-jarvis-graph-peek]');
-            if (!el) return false;
-            const b = [...el.querySelectorAll('button')].find((x) => /^open record$/i.test((x.innerText || '').trim()));
-            if (!b) return false;
-            b.click();
-            return true;
-        })()`);
-        await settle(900);
-        const landed = await h.ev(`(() => ({
-            peek: !!document.querySelector('[data-jarvis-brief-band="peek"]'),
-            graph: !!document.querySelector('[data-jarvis-graph-peek]'),
-        }))()`);
-        rec(
-            "3c. Open record closes the graph into the Brief's record peek",
-            backToPeek === true && landed.peek === true && landed.graph === false,
-            JSON.stringify({ backToPeek, landed })
-        );
-        return steps;
-    },
-    async teardown(h) {
-        await h.goto("cockpit");
-    },
-};
-
 // --- brief-composer-steer-only: no composer without a live lead to message --------------------------
 // The Brief's composer only steers a running session's lead (briefcomposertarget.ts); the Ask audiences it
 // used to have were retired. So with no session sheet open there is no composer at all. The "composer
@@ -21309,10 +21184,9 @@ const briefInitiativesPolish = {
     },
 };
 
-// --- brief-peeks-polish: the record peek and the graph peek on the brief scale ----------------------
+// --- brief-peeks-polish: the record peek on the brief scale ---------------------------------------------
 // docs/superpowers/specs/2026-09-29-brief-peeks-polish-design.md. A record whose objective is over 400 characters:
-// its peek titles by the first sentence and clamps the rest; the graph peek focused on it prints the objective
-// neither in its header nor on the canvas, and keeps Open record on screen. A profile with no such record gets one
+// its peek titles by the first sentence and clamps the rest. A profile with no such record gets one
 // from a deferred run (run creation captures a dossier from the goal); the dossier stays in the vault afterwards,
 // as run-sheet-polish's does, since no RPC deletes one.
 const PEEKS_LONG = 400;
@@ -21321,8 +21195,6 @@ const PEEKS_GOAL =
     "This goal is long on purpose, so the record it captures has an objective the peek must clamp. ".repeat(6);
 const PEEKS_ESC = `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))`;
 const PEEKS_RECORD = `document.querySelector('[data-jarvis-brief-band="peek"]')`;
-const PEEKS_GRAPH = `document.querySelector('[data-jarvis-graph-peek]')`;
-const PEEKS_OPEN = `[...(${PEEKS_GRAPH}?.querySelectorAll('button') ?? [])].find((b) => /^open record$/i.test((b.innerText || '').trim()))`;
 
 const briefPeeksPolish = {
     name: "brief-peeks-polish",
@@ -21353,7 +21225,6 @@ const briefPeeksPolish = {
             }
             if (found == null) throw new Error("no record has an objective over 400 characters, and seeding made none");
             ctx.recordId = found.id;
-            ctx.objective = found.objective.trim();
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -21408,42 +21279,9 @@ const briefPeeksPolish = {
             toggled === true && sweptOk(expanded),
             JSON.stringify({ toggled, expanded })
         );
-
-        await h.ev(`${PEEKS_RECORD}?.querySelector('[data-jarvis-peek-open-graph]')?.click()`);
-        const focused = await polishWaitFor(h, `!!${PEEKS_OPEN}`, 8000);
-        const panel = focused
-            ? ""
-            : await h.ev(`(${PEEKS_GRAPH}?.innerText ?? 'no graph peek').replace(/\\s+/g, ' ').slice(0, 160)`);
-        rec("5. the map button opens the graph peek with the record selected", focused, panel);
-        if (!focused) return steps;
-        await polishNap(800);
-        await h.shot("cdp-shots/brief-peeks-polish-2-graph.png");
-
-        // the canvas element holds no text node, so the sweep passes over it
-        const graphSweep = await h.ev(polishSweep(PEEKS_GRAPH));
-        rec("6. nothing in the graph peek is under 10.5px", sweptOk(graphSweep), JSON.stringify(graphSweep));
-
-        const probe = JSON.stringify(ctx.objective.replace(/\s+/g, " ").slice(0, 40));
-        const graph = await h.ev(`(() => {
-            const root = ${PEEKS_GRAPH};
-            const flat = (el) => (el?.innerText ?? '').replace(/\\s+/g, ' ');
-            const pane = root.querySelector('[data-jarvis-graph-canvas]');
-            const r = ${PEEKS_OPEN}.getBoundingClientRect();
-            return {
-                header: flat(root.firstElementChild).includes(${probe}),
-                pane: pane != null,
-                card: flat(pane).includes(${probe}),
-                openInView: r.height > 0 && r.top >= 0 && r.bottom <= window.innerHeight,
-            };
-        })()`);
-        rec("7. the graph header prints no objective", graph.header === false, JSON.stringify(graph));
-        rec("8. the side panel's Open record button is inside the viewport", graph.openInView === true, JSON.stringify(graph));
-        rec("9. the canvas draws no selection card", graph.pane === true && graph.card === false, JSON.stringify(graph));
         return steps;
     },
     async teardown(h, ctx) {
-        await h.ev(PEEKS_ESC).catch(() => {});
-        await polishNap(300);
         await h.ev(PEEKS_ESC).catch(() => {});
         // cwd is made first, so a seed that threw before createrun returned still has its channel and dir removed
         if (ctx.cwd != null) await teardownFixtureRun(h, ctx, "brief-peeks-polish");
@@ -37269,7 +37107,6 @@ export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
     codeTreeOnArrival,
-    briefContextualMap,
     briefRestore,
     briefComposerSteerOnly,
     terminalTheme,

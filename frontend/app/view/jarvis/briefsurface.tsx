@@ -153,8 +153,6 @@ import {
     unarchiveEffort,
 } from "./effortstore";
 import { freshKeys } from "./freshrows";
-import { type PeekFocus } from "./graphfocus";
-import { GraphPeek } from "./graphpeek";
 import { initiativeResume, noteStamp, openAgentFor, orderInitiatives, type InitiativeResume } from "./initiativework";
 import { workOnDueChunk, workOnInitiative } from "./initiativeworkaction";
 import {
@@ -169,14 +167,12 @@ import {
 import { IdeaDetail, InitiativeDetail, type TrackerEdits } from "./inlinetrackerview";
 import {
     briefEffortIndexAtom,
-    briefGraphRecordAtom,
     briefPeekRecordAtom,
     briefProfileAtom,
     briefRevealChunkAtom,
     briefRunListAtom,
     briefSheetOpenAtom,
     chunkMoveAtom,
-    graphPeekOpenAtom,
     noteChunkAtom,
     readingNoteAtom,
 } from "./jarvisstore";
@@ -1205,22 +1201,11 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     // sheet draws the surface's active subject, so what is open lives in the subject store instead.
     const [profileTarget, setProfileTarget] = useAtom(briefProfileAtom);
 
-    // The surface's own keys: the run switcher, the record band, the composer's i/Escape, and
-    // the graph peek. The Stage used to register these for a composition that no longer exists.
+    // The surface's own keys: the run switcher, the record band and the composer's i/Escape. The Stage
+    // used to register these for a composition that no longer exists.
     const jarvisBindings = useMemo(() => buildJarvisBindings(model), [model]);
     useKeybindings(jarvisBindings);
 
-    // Where the graph peek opens: the record the peek's map button named. The Brief has no Stage subject
-    // and no thread, so with no record named the peek opens on nothing rather than guessing one.
-    const graphRecord = useAtomValue(briefGraphRecordAtom);
-    const graphOpen = useAtomValue(graphPeekOpenAtom);
-    const graphFocus = useMemo<PeekFocus>(() => ({ dossierId: graphRecord ?? null, runORef: null }), [graphRecord]);
-    // closing clears the explicit record too: leaving it set would re-centre every later open on a record
-    // the user has moved on from
-    const closeBriefGraph = () => {
-        globalStore.set(graphPeekOpenAtom, false);
-        globalStore.set(briefGraphRecordAtom, null);
-    };
     const projectCount = snapshot?.state.projects?.length ?? 0;
     const paused = efforts.filter((e) => e.status === "paused").length;
     const liveN = view.sessionLines.filter((l) => !l.stale).length;
@@ -2279,22 +2264,6 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 Mounted here rather than beside the surface switch because it is the Brief's own overlay —
                 the three-pane composition opens a record on the Stage instead. */}
             <BriefPeek model={model} />
-            {/* The same overlay the Stage used to mount, with the Brief's own exits. canOpenRuns is true
-                now that a run has a destination: openref.ts's run landing opens the channel's detail sheet, which
-                is where the run body and its gate live. A graph-selected record closes into the record
-                peek. */}
-            <AnimatePresence>
-                {graphOpen ? (
-                    <GraphPeek
-                        key="brief-graph-peek"
-                        model={model}
-                        focus={graphFocus}
-                        canOpenRuns
-                        onOpenRecord={(id) => globalStore.set(briefPeekRecordAtom, id)}
-                        onClose={closeBriefGraph}
-                    />
-                ) : null}
-            </AnimatePresence>
             {/* B4's detail sheet, now drawing the surface's active subject: a channel's run body (or its
                 launcher), or an initiative's chunk detail. */}
             <BriefSheet model={model} />

@@ -542,31 +542,6 @@ func runHasWorkerTab(run *waveobj.Run, tabID string) bool {
 	return false
 }
 
-func (ws *WshServer) VaultGraphCommand(ctx context.Context) (*wshrpc.CommandVaultGraphRtnData, error) {
-	v, err := wavevault.OpenVault(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("opening vault: %w", err)
-	}
-	return vaultGraph(v)
-}
-
-// vaultGraph is the vault-backed core (testable with an explicit vault): every vault node projected to
-// a GraphNode plus the resolved wikilink edges. No runs, no attribution — those bloom via ResolveDossierEdges.
-func vaultGraph(v *wavevault.Vault) (*wshrpc.CommandVaultGraphRtnData, error) {
-	sg, err := v.Retriever(wavevault.AllScope()).Graph()
-	if err != nil {
-		return nil, fmt.Errorf("reading vault graph: %w", err)
-	}
-	out := &wshrpc.CommandVaultGraphRtnData{Nodes: []wshrpc.GraphNode{}, Links: []wshrpc.GraphLink{}}
-	for _, n := range sg.Nodes {
-		out.Nodes = append(out.Nodes, vaultNodeToGraphNode(n))
-	}
-	for _, e := range sg.Edges {
-		out.Links = append(out.Links, wshrpc.GraphLink{From: e.From, To: e.To, Kind: "wikilink"})
-	}
-	return out, nil
-}
-
 func (ws *WshServer) ReadVaultNoteCommand(ctx context.Context, data wshrpc.CommandReadVaultNoteData) (*wshrpc.CommandReadVaultNoteRtnData, error) {
 	if data.Id == "" {
 		return nil, fmt.Errorf("id is required")
@@ -594,97 +569,6 @@ func readVaultNote(v *wavevault.Vault, id string) (*wshrpc.CommandReadVaultNoteR
 		out.Project = n.Scope
 	}
 	return out, nil
-}
-
-func nodeKind(collection string) string {
-	switch collection {
-	case wavevault.CollTasks:
-		return "task"
-	case wavevault.CollDecisions:
-		return "decision"
-	default:
-		return "memory"
-	}
-}
-
-// nodeLabel is the human label: a task's objective, else a frontmatter title, else the id.
-func nodeLabel(n wavevault.Node, kind string) string {
-	if kind == "task" {
-		if s, ok := n.Frontmatter["objective"].(string); ok && s != "" {
-			return s
-		}
-	}
-	if s, ok := n.Frontmatter["title"].(string); ok && s != "" {
-		return s
-	}
-	return n.ID
-}
-
-func vaultNodeToGraphNode(n wavevault.Node) wshrpc.GraphNode {
-	kind := nodeKind(n.Collection)
-	gn := wshrpc.GraphNode{Id: n.ID, Kind: kind, Label: nodeLabel(n, kind), Updated: n.UpdatedTs}
-	if s, ok := n.Frontmatter["status"].(string); ok {
-		gn.Status = s
-	}
-	return gn
-}
-
-func (ws *WshServer) ResolveDossierEdgesCommand(ctx context.Context, data wshrpc.CommandResolveDossierEdgesData) (*wshrpc.CommandResolveDossierEdgesRtnData, error) {
-	if data.DossierId == "" {
-		return nil, fmt.Errorf("dossierid is required")
-	}
-	v, err := wavevault.OpenVault(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("opening vault: %w", err)
-	}
-	edges, err := jarvisattrib.EdgesFor(ctx, v, data.DossierId)
-	if err != nil {
-		return nil, fmt.Errorf("resolving edges: %w", err)
-	}
-	runs, err := wstore.DBGetAllObjsByType[*waveobj.Run](ctx, waveobj.OType_Run)
-	if err != nil {
-		return nil, fmt.Errorf("loading runs: %w", err)
-	}
-	byORef := make(map[string]*waveobj.Run, len(runs))
-	for _, run := range runs {
-		byORef["run:"+run.OID] = run
-	}
-	out := buildDossierGraph(data.DossierId, edges, byORef)
-	return &out, nil
-}
-
-// buildDossierGraph is the pure edge->graph core: one run node per attributed run (skipping a run
-// missing from byORef, but still surfacing its edge) and one typed attribution link per edge carrying
-// provenance + confidence bucket + state. Order-stable by edge order; dedups run nodes by oref.
-func buildDossierGraph(dossierID string, edges []jarvisattrib.AttributedEdge, byORef map[string]*waveobj.Run) wshrpc.CommandResolveDossierEdgesRtnData {
-	out := wshrpc.CommandResolveDossierEdgesRtnData{Runs: []wshrpc.GraphNode{}, Links: []wshrpc.GraphLink{}}
-	seenRun := map[string]bool{}
-	for _, e := range edges {
-		out.Links = append(out.Links, wshrpc.GraphLink{
-			From:       dossierID,
-			To:         e.RunORef,
-			Kind:       "attribution",
-			Provenance: e.Provenance,
-			Bucket:     jarvisattrib.BucketFor(e.Layers),
-			State:      string(e.State),
-		})
-		if seenRun[e.RunORef] {
-			continue
-		}
-		seenRun[e.RunORef] = true
-		run := byORef[e.RunORef]
-		if run == nil {
-			continue // missing run: edge surfaced, node skipped (mirrors buildSpaceScope)
-		}
-		out.Runs = append(out.Runs, wshrpc.GraphNode{
-			Id:      e.RunORef,
-			Kind:    "run",
-			Label:   run.Goal,
-			Status:  run.Status,
-			Updated: run.CreatedTs,
-		})
-	}
-	return out
 }
 
 func (ws *WshServer) ResolveAmbientCommand(ctx context.Context) (*wshrpc.CommandResolveAmbientRtnData, error) {

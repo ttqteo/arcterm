@@ -21,7 +21,6 @@ import { NO_FILTERS } from "@/app/view/agents/historyquery";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { codeTreeFocusedAtom } from "@/app/view/code/codestore";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
-import { graphPeekOpenAtom } from "@/app/view/jarvis/jarvisstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { atom, type PrimitiveAtom } from "jotai";
 import { describe, expect, it } from "vitest";
@@ -309,7 +308,6 @@ describe("keybinding conflict invariant", () => {
     it("global + list-nav + jarvis-surface bindings do not conflict (the Subjects cursor published)", () => {
         const model = stubModel();
         globalStore.set(listNavAtom, { surface: "jarvis", navigableIds: [], cursorId: undefined, setCursor() {} });
-        globalStore.set(graphPeekOpenAtom, false);
         expect(() =>
             assertNoConflicts([...buildGlobalBindings(model), ...buildListNavBindings(model), ...buildJarvisBindings(model)])
         ).not.toThrow();
@@ -319,7 +317,6 @@ describe("keybinding conflict invariant", () => {
     it("global + ask + jarvis-surface bindings do not conflict (a worker asking, no list cursor)", () => {
         const model = stubModel();
         globalStore.set(listNavAtom, null);
-        globalStore.set(graphPeekOpenAtom, false);
         const askRef = { current: { id: "w1", state: "asking" } as AgentVM };
         expect(() =>
             assertNoConflicts([
@@ -432,7 +429,6 @@ describe("PREDICATE_ATOMS completeness (whenstate.ts)", () => {
         // reaching a later globalStore.get — a short-circuited read would falsely report a registered
         // atom as unused.
         globalStore.set(diffScopeAtom, null);
-        globalStore.set(graphPeekOpenAtom, false);
         globalStore.set(autonomyPanelOpenAtom, false);
         globalStore.set(petPeekOpenAtom, false);
         globalStore.set(renamingRowAtom, null);

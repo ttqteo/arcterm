@@ -4,14 +4,11 @@
 // The record body (PeekRecord.dc.html) is the Brief's record peek itself, so the two cannot drift; only its exits
 // differ. The list is what says whether the record is still there.
 
-import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
-import { landOn } from "@/app/view/jarvis/returnsurface";
 import { useAtomValue } from "jotai";
 import { useEffect } from "react";
 import { RecordPeekBody } from "../briefpeekview";
-import { briefGraphRecordAtom, graphPeekOpenAtom } from "../jarvisstore";
-import { closePeek, reportPeekFacts, type PeekTarget } from "../peekstore";
+import { reportPeekFacts, type PeekTarget } from "../peekstore";
 import { taskListAtom } from "../tasksstore";
 import { recordPeekFacts } from "./peekrecordmodel";
 
@@ -23,17 +20,9 @@ export function PeekRecordBody({ model, target }: { model: AgentsViewModel; targ
         reportPeekFacts(target, recordPeekFacts(summary));
     }, [target, summary]);
 
-    // the map is the Brief's overlay, so it is a full open: the popup closes and the Brief comes up on it
-    const openMap = () => {
-        closePeek();
-        globalStore.set(briefGraphRecordAtom, dossierId);
-        globalStore.set(graphPeekOpenAtom, true);
-        landOn(model.surfaceAtom, "jarvis");
-    };
-
     return (
         <div className="flex min-h-0 flex-col">
-            <RecordPeekBody model={model} recordId={dossierId} place="popup" onMap={openMap} />
+            <RecordPeekBody model={model} recordId={dossierId} place="popup" />
         </div>
     );
 }

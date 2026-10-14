@@ -180,13 +180,6 @@
     --color-mem-feedback: #e6b450; /* convention-amber */
     --color-mem-user: #a78bfa; /* preference-purple */
 
-    /* Jarvis vault graph node kinds + the semantic attribution-edge hue (U3) */
-    --color-graph-task: #8aa0ff; /* task/dossier — decision-blue */
-    --color-graph-decision: #54c79a; /* decision node — fact-green */
-    --color-graph-memory: #a78bfa; /* memory note — preference-purple */
-    --color-graph-run: #e6b450; /* run evidence — amber */
-    --color-graph-semantic: #d98cff; /* L4 semantic attribution edge hue */
-
     /* Neutral overlays (theme-agnostic, preserved) */
     --color-hover: rgba(255, 255, 255, 0.1);
     --color-hoverbg: rgba(255, 255, 255, 0.2);

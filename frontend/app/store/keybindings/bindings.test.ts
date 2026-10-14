@@ -35,7 +35,7 @@ import { openToolPicker } from "@/app/view/agents/toolsstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
-import { graphPeekOpenAtom, briefPeekRecordAtom } from "@/app/view/jarvis/jarvisstore";
+import { briefPeekRecordAtom } from "@/app/view/jarvis/jarvisstore";
 import { activeRunIdAtom, activeSubjectAtom } from "@/app/view/jarvis/jarvissubjectstore";
 import { tourAtom } from "@/app/view/jarvis/jarvistourstore";
 import { peekTarget } from "@/app/view/jarvis/openref";
@@ -54,7 +54,6 @@ import {
     buildFinalShotsBindings,
     buildGlobalBindings,
     buildJarvisBindings,
-    buildJarvisGraphBindings,
     buildJarvisTourBindings,
     buildListNavBindings,
     buildUsageBindings,
@@ -338,7 +337,6 @@ describe("Escape back to the Cockpit", () => {
         )!;
 
     it("leaves a deep surface, but is not bound on the Cockpit itself", () => {
-        globalStore.set(graphPeekOpenAtom, false);
         globalStore.set(autonomyPanelOpenAtom, false);
         const b = backHome();
         expect(b.keys).toBe("Escape");
@@ -349,18 +347,15 @@ describe("Escape back to the Cockpit", () => {
     // an overlay that dismisses on Escape must also suppress this, or one press does both: closes the
     // overlay AND leaves the surface. The dispatcher runs on window capture, so the overlay cannot win
     // the key by registering its own handler — it has to be declared here.
-    it("yields to whichever Jarvis overlay owns Escape", () => {
+    it("yields to the Jarvis autonomy panel, which owns Escape while open", () => {
         const b = backHome();
-        globalStore.set(graphPeekOpenAtom, true);
-        expect(b.when!(ctx("jarvis"))).toBe(false);
-        globalStore.set(graphPeekOpenAtom, false);
         globalStore.set(autonomyPanelOpenAtom, true);
         expect(b.when!(ctx("jarvis"))).toBe(false);
         globalStore.set(autonomyPanelOpenAtom, false);
         expect(b.when!(ctx("jarvis"))).toBe(true);
     });
 
-    // the pet lives in window chrome, so unlike the two above its peek can be open on ANY deep surface
+    // the pet lives in window chrome, so unlike the autonomy panel its peek can be open on ANY deep surface
     it("yields to the pet's peek on every deep surface it can be open over", () => {
         const b = backHome();
         globalStore.set(petPeekOpenAtom, true);
@@ -377,7 +372,6 @@ describe("Escape back to the Cockpit", () => {
     // destination, and the DAG modal is reachable from its run sheet.
     it("yields to the Brief's record peek and DAG modal", () => {
         const b = backHome();
-        globalStore.set(graphPeekOpenAtom, false);
         globalStore.set(autonomyPanelOpenAtom, false);
         globalStore.set(petPeekOpenAtom, false);
         globalStore.set(briefPeekRecordAtom, "task-a");
@@ -483,41 +477,9 @@ describe("jarvis surface bindings", () => {
     const launcherModel = { launcherAtom: atom<LauncherKind | null>(null) as PrimitiveAtom<LauncherKind | null> };
     const byId = (id: string) => buildJarvisBindings(launcherModel).find((b) => b.id === id)!;
 
-    // The Brief mounts no Stage, so it registers only the graph shortcut (buildJarvisGraphBindings).
-    // Sharing one builder rather than re-declaring the key is what keeps the chord from drifting apart
-    // between the two compositions.
-    it("exposes the graph shortcut on its own, without the Stage-only keys", () => {
-        const graphOnly = buildJarvisGraphBindings();
-        expect(graphOnly.map((b) => b.id)).toEqual(["jarvis:graph-peek"]);
-        const shared = graphOnly[0];
-        const fromFull = byId("jarvis:graph-peek");
-        expect(shared.keys).toBe(fromFull.keys);
-        // the Stage-only keys act on panes the Brief does not have
-        expect(graphOnly.some((b) => b.id === "jarvis:toggle-rail" || b.id === "jarvis:new-run")).toBe(false);
-    });
-
     // the click-through bindings (+ Channel, the record band) and composer focus act on rendered DOM, so
     // only their guards are asserted here — this suite runs in node, and the surface has no render harness
     // (see docs: surface behaviour is checked over CDP, not jsdom).
-    it("toggles the graph peek with Shift:g — distinct from the g leader, and live while the peek is open", () => {
-        globalStore.set(graphPeekOpenAtom, false);
-        const g = byId("jarvis:graph-peek");
-        expect(g.keys).toBe("Shift:g");
-        g.run(jarvisCtx);
-        expect(globalStore.get(graphPeekOpenAtom)).toBe(true);
-        expect(g.when!(jarvisCtx)).toBe(true); // its own toggle stays reachable behind the overlay
-        g.run(jarvisCtx);
-        expect(globalStore.get(graphPeekOpenAtom)).toBe(false);
-    });
-
-    it("suppresses the surface keys while the graph peek owns the surface", () => {
-        globalStore.set(graphPeekOpenAtom, true);
-        for (const id of ["jarvis:new-run", "jarvis:record-band", "jarvis:next-run"]) {
-            expect(byId(id).when!(jarvisCtx)).toBe(false);
-        }
-        globalStore.set(graphPeekOpenAtom, false);
-        expect(byId("jarvis:new-run").when!(jarvisCtx)).toBe(true);
-    });
 
     // the app bar has one New button now, so `r` opens the launcher at the run door itself rather than pressing it
     it("r opens the New dialog on a run row", () => {
@@ -529,14 +491,12 @@ describe("jarvis surface bindings", () => {
 
     // the Brief's filter takes / the way the Diff history's does, on its own surface
     it("focuses the Brief filter with /", () => {
-        globalStore.set(graphPeekOpenAtom, false);
         const f = byId("jarvis:filter");
         expect(f.keys).toBe("/");
         expect(f.when!(jarvisCtx)).toBe(true);
     });
 
     it("guards every key on the surface, the typing state and modals", () => {
-        globalStore.set(graphPeekOpenAtom, false);
         for (const b of buildJarvisBindings(launcherModel)) {
             expect(b.when!({ ...jarvisCtx, surface: "cockpit" })).toBe(false);
             expect(b.when!({ ...jarvisCtx, modalOpen: true })).toBe(false);
@@ -549,7 +509,6 @@ describe("jarvis surface bindings", () => {
     });
 
     it("steps the selected channel's runs with Shift:j / Shift:k, clamped at both ends", () => {
-        globalStore.set(graphPeekOpenAtom, false);
         globalStore.set(activeSubjectAtom, { kind: "channel", id: "ch1" });
         globalStore.set(activeChannelRunsAtom, [
             { id: "r1", status: "running" },
@@ -570,7 +529,6 @@ describe("jarvis surface bindings", () => {
     });
 
     it("passes the run keys through when the subject is not a channel, or has nothing to switch", () => {
-        globalStore.set(graphPeekOpenAtom, false);
         globalStore.set(activeSubjectAtom, { kind: "dossier", id: "d1" });
         expect(byId("jarvis:next-run").run(jarvisCtx)).toBe(false);
 
@@ -1822,7 +1780,6 @@ describe("the open avatar popup keeps its keys on every surface", () => {
             ...buildFilesBindings(),
             ...buildCodeBindings(),
             ...buildJarvisBindings(model),
-            ...buildJarvisGraphBindings(),
             ...buildChannelsAskBindings(model, { current: { id: "agent-tab" } as any }),
         ];
         globalStore.set(petPeekOpenAtom, true);

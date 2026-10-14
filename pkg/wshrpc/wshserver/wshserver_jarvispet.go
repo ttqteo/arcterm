@@ -31,8 +31,8 @@ func (ws *WshServer) GetLatestResumeCommand(ctx context.Context) (*wshrpc.Comman
 // before Updated was populated still ranks rather than vanishing.
 //
 // Always returns non-nil: an empty result with Card nil is "nothing to resume", which is a real answer and
-// not an error. The scan reads every run row — the same read ResolveSpaceScope and ResolveDossierEdges
-// already make — but the response is one card, so the cost is bounded where the caller can feel it.
+// not an error. The scan reads every run row — the same read ResolveSpaceScope already makes — but the
+// response is one card, so the cost is bounded where the caller can feel it.
 func buildLatestResume(runs []*waveobj.Run) *wshrpc.CommandGetLatestResumeRtnData {
 	out := &wshrpc.CommandGetLatestResumeRtnData{}
 	var bestRank int64

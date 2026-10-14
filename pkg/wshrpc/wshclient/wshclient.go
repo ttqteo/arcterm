@@ -1043,12 +1043,6 @@ func ResolveAmbientCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.Com
 	return resp, err
 }
 
-// command "resolvedossieredges", wshserver.ResolveDossierEdgesCommand
-func ResolveDossierEdgesCommand(w *wshutil.WshRpc, data wshrpc.CommandResolveDossierEdgesData, opts *wshrpc.RpcOpts) (*wshrpc.CommandResolveDossierEdgesRtnData, error) {
-	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandResolveDossierEdgesRtnData](w, "resolvedossieredges", data, opts)
-	return resp, err
-}
-
 // command "resolvefocusscope", wshserver.ResolveFocusScopeCommand
 func ResolveFocusScopeCommand(w *wshutil.WshRpc, data wshrpc.CommandResolveFocusScopeData, opts *wshrpc.RpcOpts) (*wshrpc.SpaceScope, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.SpaceScope](w, "resolvefocusscope", data, opts)
@@ -1274,12 +1268,6 @@ func UpdateHarnessCommand(w *wshutil.WshRpc, data wshrpc.CommandUpdateHarnessDat
 func UpdateWorkspaceTabIdsCommand(w *wshutil.WshRpc, arg1 string, arg2 []string, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "updateworkspacetabids", wshrpc.MultiArg{Args: []any{arg1, arg2}}, opts)
 	return err
-}
-
-// command "vaultgraph", wshserver.VaultGraphCommand
-func VaultGraphCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandVaultGraphRtnData, error) {
-	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandVaultGraphRtnData](w, "vaultgraph", nil, opts)
-	return resp, err
 }
 
 // command "vaultsetremote", wshserver.VaultSetRemoteCommand

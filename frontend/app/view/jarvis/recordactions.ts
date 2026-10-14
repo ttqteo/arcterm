@@ -12,7 +12,6 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { reloadAmbient } from "@/app/view/agents/ambientstore";
 import { fireAndForget } from "@/util/util";
 import { atom, type PrimitiveAtom } from "jotai";
-import { invalidateBloom } from "./jarvisgraphstore";
 import { reloadRecordDetail, reloadRecordScope } from "./jarvissubjectstore";
 import { isTerminalTransition } from "./tasksderive";
 import { loadTaskList, tasksErrorAtom } from "./tasksstore";
@@ -22,7 +21,6 @@ import { loadTaskList, tasksErrorAtom } from "./tasksstore";
 // subjects, which is why its call site carries a 30s budget. Blocking a click on that would be worse than
 // a tag that updates a beat late.
 export async function afterRecordWrite(dossierId: string): Promise<void> {
-    invalidateBloom(dossierId);
     reloadAmbient();
     await Promise.all([reloadRecordDetail(dossierId), reloadRecordScope(dossierId)]);
 }

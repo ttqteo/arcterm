@@ -76,7 +76,6 @@ import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
 import {
     briefPeekRecordAtom,
     chunkMoveAtom,
-    graphPeekOpenAtom,
     noteChunkAtom,
     readingNoteAtom,
     trackerMenuAtom,
@@ -443,17 +442,16 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             keys: "Escape",
             group: "Navigation",
             label: "Back, else to Cockpit",
-            // the Jarvis graph peek owns Escape while it is open: closing an overlay is what the user means
-            // by Escape there, and navigating home instead would leave the peek open behind the Cockpit.
-            // The autonomy panel owns it for the same reason — and it cannot claim the key itself, since
-            // this dispatcher runs on window capture, ahead of any handler the panel could register.
+            // the autonomy panel owns Escape while it is open: closing an overlay is what the user means by
+            // Escape there, and navigating home instead would leave the panel open behind the Cockpit. It
+            // cannot claim the key itself, since this dispatcher runs on window capture, ahead of any handler
+            // the panel could register.
             when: (ctx) =>
                 navigateStrict(ctx) &&
                 ESC_HOME_SURFACES.has(ctx.surface) &&
                 // any open ModalShell (the Brief's Profile window, its sheet) closes on Escape itself; going
                 // home instead unmounts it with its state still set, so it reopens on the way back
                 !anyModalOpen() &&
-                !globalStore.get(graphPeekOpenAtom) &&
                 !globalStore.get(autonomyPanelOpenAtom) &&
                 // and the pet's peek, for the same reason again — it is global chrome, so it can be open
                 // on ANY of these surfaces, not just Jarvis
@@ -634,35 +632,17 @@ export function buildChannelsAskBindings(
 }
 
 // Jarvis surface keys — the surface's own controls, reachable without the mouse. Two shapes:
-//   * state the registry owns outright (the graph peek, the run switcher)
+//   * state the registry owns outright (the run switcher)
 //   * a click on a control the surface already draws (New initiative, Work on, the record band's expand)
 // The second shape is deliberate. Whether a band is *expandable* is the band's own derivation from the
 // run's attribution (recordbandview) and re-deriving it here would be a second source of truth that
 // drifts; the button only exists when the band can open, so clicking it is exactly the mouse's contract.
 // Every DOM-reaching run() returns false when its control is absent, so the key passes through rather
 // than pretending to have acted.
-// The jarvis surface's guard. Module-level rather than a local `on` inside buildJarvisBindings, because the
-// graph chord and the surface's own keys are registered from different call sites and a second copy of this
-// predicate is how the two become different chords wearing the same keys.
+// The jarvis surface's guard.
 const onJarvis = (ctx: KeyContext) => ctx.surface === "jarvis" && !ctx.editable && !ctx.modalOpen;
 
-export function buildJarvisGraphBindings(): Binding[] {
-    return [
-        {
-            id: "jarvis:graph-peek",
-            keys: "Shift:g",
-            group: "Jarvis",
-            label: "Graph peek (Esc closes)",
-            when: onJarvis,
-            run: () => globalStore.set(graphPeekOpenAtom, (v) => !v),
-        },
-    ];
-}
-
 export function buildJarvisBindings(model: LauncherModel): Binding[] {
-    // the peek is an overlay over the whole Stage: acting behind it would change a surface the user cannot
-    // see. Only its own toggle stays live (the peek also closes on Escape, which it owns while open).
-    const onStage = (ctx: KeyContext) => onJarvis(ctx) && !globalStore.get(graphPeekOpenAtom);
 
     // One rung per press: an expanded note card folds, then the sidebar closes. Only then does Escape
     // fall through to esc-home, which is guarded on the same atom — otherwise a single press would close
@@ -719,13 +699,12 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
     return [
         trackerMenuEscape,
         noteSidebarEscape,
-        ...buildJarvisGraphBindings(),
         {
             id: "jarvis:new-run",
             keys: "r",
             group: "Jarvis",
             label: "New run",
-            when: onStage,
+            when: onJarvis,
             run: () => openLauncher(model, "run"),
         },
         {
@@ -733,7 +712,7 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
             keys: "Shift:n",
             group: "Jarvis",
             label: "New initiative",
-            when: onStage,
+            when: onJarvis,
             run: () => clickThrough("[data-jarvis-new-initiative]"),
         },
         {
@@ -741,7 +720,7 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
             keys: "w",
             group: "Jarvis",
             label: "Work on the initiative under the cursor, or go to its open agent",
-            when: onStage,
+            when: onJarvis,
             run: () => clickThrough('[data-jarvis-brief-cursor="true"] [data-jarvis-work-on]'),
         },
         {
@@ -749,7 +728,7 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
             keys: "e",
             group: "Jarvis",
             label: "Expand / collapse the record band",
-            when: onStage,
+            when: onJarvis,
             run: () => clickThrough("[data-jarvis-band-toggle]"),
         },
         {
@@ -757,7 +736,7 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
             keys: "Shift:j",
             group: "Jarvis",
             label: "Next run in this project",
-            when: onStage,
+            when: onJarvis,
             run: () => stepRun(1),
         },
         {
@@ -765,7 +744,7 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
             keys: "Shift:k",
             group: "Jarvis",
             label: "Previous run in this project",
-            when: onStage,
+            when: onJarvis,
             run: () => stepRun(-1),
         },
         {
@@ -773,7 +752,7 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
             keys: "Alt:ArrowUp",
             group: "Jarvis",
             label: "Move the chunk up within its stage",
-            when: (ctx) => onStage(ctx) && globalStore.get(chunkMoveAtom) != null,
+            when: (ctx) => onJarvis(ctx) && globalStore.get(chunkMoveAtom) != null,
             run: () => globalStore.get(chunkMoveAtom)?.("up"),
         },
         {
@@ -781,7 +760,7 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
             keys: "Alt:ArrowDown",
             group: "Jarvis",
             label: "Move the chunk down within its stage",
-            when: (ctx) => onStage(ctx) && globalStore.get(chunkMoveAtom) != null,
+            when: (ctx) => onJarvis(ctx) && globalStore.get(chunkMoveAtom) != null,
             run: () => globalStore.get(chunkMoveAtom)?.("down"),
         },
         {
@@ -789,7 +768,7 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
             keys: "i",
             group: "Jarvis",
             label: "Focus the composer",
-            when: onStage,
+            when: onJarvis,
             run: () => {
                 const el = document.querySelector<HTMLElement>(COMPOSER_FIELDS);
                 if (el == null) {
@@ -803,7 +782,7 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
             keys: "/",
             group: "Jarvis",
             label: "Filter the Brief",
-            when: onStage,
+            when: onJarvis,
             run: () => {
                 const el = document.querySelector<HTMLInputElement>("[data-jarvis-brief-filter]");
                 if (el == null) {

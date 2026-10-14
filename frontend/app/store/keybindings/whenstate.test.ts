@@ -19,7 +19,6 @@ import { focusSubagentAtom } from "@/app/view/agents/subagentsstore";
 import { tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
 import { codeTreeFocusedAtom } from "@/app/view/code/codestore";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
-import { graphPeekOpenAtom } from "@/app/view/jarvis/jarvisstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { atom, type PrimitiveAtom } from "jotai";
 import { afterEach, describe, expect, it } from "vitest";
@@ -29,7 +28,6 @@ import { watchFocusedAgent, whenVersionAtom } from "./whenstate";
 afterEach(() => {
     globalStore.set(diffScopeAtom, null);
     globalStore.set(historyFiltersAtom, NO_FILTERS);
-    globalStore.set(graphPeekOpenAtom, false);
     globalStore.set(autonomyPanelOpenAtom, false);
     globalStore.set(petPeekOpenAtom, false);
     globalStore.set(codeTreeFocusedAtom, false);
@@ -80,16 +78,10 @@ describe("whenVersionAtom", () => {
     });
 
     // One case per atom PREDICATE_ATOMS added beyond the Diff surface's two — surface:back-home's
-    // guard (bindings.ts) reads graphPeekOpenAtom, autonomyPanelOpenAtom and petPeekOpenAtom
+    // guard (bindings.ts) reads autonomyPanelOpenAtom and petPeekOpenAtom
     // directly; buildCodeBindings' inTree reads codeTreeFocusedAtom;
     // buildListNavBindings' active reads listNavAtom; buildAgentBindings' subagent:back/agent:back
     // read renamingRowAtom and focusSubagentAtom.
-    it("bumps when the Jarvis graph peek opens", () => {
-        const before = globalStore.get(whenVersionAtom);
-        globalStore.set(graphPeekOpenAtom, true);
-        expect(globalStore.get(whenVersionAtom)).toBeGreaterThan(before);
-    });
-
     it("bumps when the autonomy panel opens", () => {
         const before = globalStore.get(whenVersionAtom);
         globalStore.set(autonomyPanelOpenAtom, true);

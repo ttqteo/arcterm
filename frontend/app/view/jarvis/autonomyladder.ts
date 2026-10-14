@@ -10,7 +10,7 @@ import { atom } from "jotai";
 // The panel's open state, global because the keybinding layer has to see it: Escape on a deep surface is
 // bound to "back to Cockpit" (bindings.ts surface:back-home), and the app's dispatcher runs on window
 // CAPTURE — so floating-ui's own Escape handling can never pre-empt it. Without this guard, dismissing the
-// panel also throws you out of Jarvis. Same shape and same reason as graphPeekOpenAtom.
+// panel also throws you out of Jarvis.
 export const autonomyPanelOpenAtom = atom(false);
 
 export const LADDER: { tier: JarvisTier; label: string; blurb: string }[] = [
