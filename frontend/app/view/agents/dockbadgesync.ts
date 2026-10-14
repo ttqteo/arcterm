@@ -21,7 +21,11 @@ export function useDockBadge(model: AgentsViewModel): void {
     const attention = useAtomValue(attentionAtom);
     const agents = useAtomValue(model.agentsAtom);
     const answered = answeredAskIdsAcross(Object.values(useAtomValue(channelMessagesAtom)));
-    const count = dockBadgeCount(unread.size, cockpitWaitingCount(splitAttention(attention).cockpit, agents, answered));
+    const split = splitAttention(attention);
+    const count = dockBadgeCount(
+        unread.size,
+        cockpitWaitingCount(split.cockpit, agents, answered) + split.jarvis.length
+    );
     useEffect(() => {
         if (isWindows()) {
             return;

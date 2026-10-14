@@ -572,8 +572,9 @@ function projectsInScope(ended: ReadonlyMap<string, ConversationEntry[]>, filter
 }
 
 /** Pure: the Conversations section. A folder row per project the filter (the app bar's project switcher: ALL_PROJECTS or
- *  a project's name) keeps, then, unless the folder is collapsed, its ended conversations newest first (equal times in
- *  key order): the first CONVERSATION_PAGE plus one page per "Show more" press on that folder, then a pager row
+ *  a project's name) keeps, then, unless the folder is collapsed, its ended conversations in the order `ended` holds them
+ *  (endedConversationsByProject's, newest first, after laterFirst): the first CONVERSATION_PAGE plus one page per
+ *  "Show more" press on that folder, then a pager row
  *  counting what is still hidden and, once a press opened more, offering to fold back to the first page. Filtered to a project, the one folder's rows alone: no folder row, so no fold
  *  applies. */
 export function conversationTree(
@@ -585,7 +586,9 @@ export function conversationTree(
     const out: ConversationTreeRow[] = [];
     const flat = filter !== ALL_PROJECTS;
     for (const project of projectsInScope(ended, filter)) {
-        const list = [...ended.get(project)].sort((a, b) => b.lastactivets - a.lastactivets || byText(a.key, b.key));
+        // in the order given: endedConversationsByProject's newest first, then laterFirst's marked ones ahead (sorting
+        // again here would put a marked session back under "Show more")
+        const list = ended.get(project);
         const open = flat || !collapsed.has(project);
         const attn = list.filter((r) => r.kind === "session" && r.session.needsAttention).length;
         if (!flat) {
@@ -614,8 +617,22 @@ export function conversationCount(ended: ReadonlyMap<string, ConversationEntry[]
     return n;
 }
 
-/** Pure: did an agent leave the roster between two snapshots of its ids? Its session just ended, so the sidebar
- *  rescans. */
+/** Pure: what the roster holds for agentExited: each agent's tab id and, apart, each transcript an agent is writing. A
+ *  tab that stays while its session ends (/clear, a claude quit and started again in it, a resume of another session)
+ *  keeps its id but drops its transcript. */
+export function rosterSessionKeys(agents: readonly Pick<AgentVM, "id" | "transcriptPath">[]): Set<string> {
+    const out = new Set<string>();
+    for (const a of agents) {
+        out.add(`tab:${a.id}`);
+        if (a.transcriptPath) {
+            out.add(`transcript:${a.transcriptPath.replace(/\\/g, "/").toLowerCase()}`);
+        }
+    }
+    return out;
+}
+
+/** Pure: did an agent, or the transcript one was writing, leave the roster between two snapshots of rosterSessionKeys?
+ *  A session just ended, so the sidebar rescans. */
 export function agentExited(prev: ReadonlySet<string>, next: ReadonlySet<string>): boolean {
     for (const id of prev) {
         if (!next.has(id)) {

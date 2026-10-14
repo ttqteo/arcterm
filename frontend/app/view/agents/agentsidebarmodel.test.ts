@@ -21,6 +21,7 @@ import {
     projectLabel,
     projectTree,
     registeredConversations,
+    rosterSessionKeys,
     runTokens,
     scanDue,
     sessionAgeLabel,
@@ -523,7 +524,7 @@ describe("conversationTree", () => {
         }
     });
 
-    it("sorts a hand-built map without touching its lists", () => {
+    it("keeps a list's order, so a session laterFirst put ahead stays above Show more", () => {
         const rowOf = (id: string, at: number): EndedSessionRow => ({
             kind: "session",
             project: "p",
@@ -535,8 +536,7 @@ describe("conversationTree", () => {
         });
         const list = [rowOf("old", NOW - 5 * MIN), rowOf("new", NOW - MIN)];
         const ended = new Map([["p", list]]);
-        expect(rowIds(tree(ended))).toEqual(["folder:p", "new", "old"]);
-        expect(list.map(entryId)).toEqual(["old", "new"]);
+        expect(rowIds(tree(ended))).toEqual(["folder:p", "old", "new"]);
     });
 
     it("takes a project named like an Object property for what it is", () => {
@@ -1029,6 +1029,17 @@ describe("conversationProjects", () => {
 describe("agentExited", () => {
     it("is true when an id left the roster", () => {
         expect(agentExited(new Set(["a", "b"]), new Set(["a"]))).toBe(true);
+    });
+    it("is true when a tab stays but its session moved on", () => {
+        const before = rosterSessionKeys([{ id: "t1", transcriptPath: "C:\\p\\one.jsonl" }]);
+        expect(agentExited(before, rosterSessionKeys([{ id: "t1", transcriptPath: "C:\\p\\two.jsonl" }]))).toBe(true);
+        expect(agentExited(before, rosterSessionKeys([{ id: "t1" }]))).toBe(true);
+    });
+    it("is false when a tab only starts writing its transcript, or the path's case or slashes differ", () => {
+        const before = rosterSessionKeys([{ id: "t1" }]);
+        const after = rosterSessionKeys([{ id: "t1", transcriptPath: "C:\\p\\one.jsonl" }]);
+        expect(agentExited(before, after)).toBe(false);
+        expect(agentExited(after, rosterSessionKeys([{ id: "t1", transcriptPath: "c:/P/one.jsonl" }]))).toBe(false);
     });
     it("is false for a roster that only grew or stayed", () => {
         expect(agentExited(new Set(["a"]), new Set(["a", "b"]))).toBe(false);

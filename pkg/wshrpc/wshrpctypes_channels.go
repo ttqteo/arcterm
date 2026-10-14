@@ -111,6 +111,8 @@ type AttentionItem struct {
 	// radar triage sets it; channel-backed items leave it empty because ChannelId+RunId already address
 	// them, and the frontend's rule is that an item naming no destination renders static.
 	ORef string `json:"oref,omitempty"`
+	// LearnID is the proposal a learn-proposal item decides (<target>#<key>), what LearnDecide takes.
+	LearnID string `json:"learnid,omitempty"`
 
 	// EffortOID/ChunkLabel are the initiative this waiting thing belongs to, read off the owning run's
 	// EffortRef. Only the oid travels: the effort's title is already on the Brief, so joining it here

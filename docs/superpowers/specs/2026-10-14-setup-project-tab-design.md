@@ -31,19 +31,22 @@ project filter (`projectFilterAtom`) and on the first project when the filter is
 
 | Group | Files |
 |---|---|
-| Instructions | `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`; the one Claude reads (first that exists in `instructionCandidates` order) is marked |
+| Instructions | `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`; the one Claude reads (first that exists in `instructionCandidates` order) is marked, and so is `CLAUDE.local.md` when it exists, since Claude loads it beside that one |
 | Memory | `~/.claude/projects/<slug>/memory/*.md`: `MEMORY.md` first, then the rest grouped by frontmatter `type` (user, feedback, project, reference, then untyped) |
-| Settings | `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json`; settings rows note their hook count |
+| Settings | `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json`; settings rows note their hook count, `.mcp.json` its MCP server count ("2 MCP servers") |
 | Skills & agents | `.claude/skills/*/SKILL.md`, `.claude/agents/*.md`, `.claude/commands/*.md` |
 | Setup | `.arc/setup` |
 | Global (folded) | `~/.claude/CLAUDE.md`, `~/.claude/settings.json` |
 
 A group with nothing in it shows one muted "—" row, so a missing file reads as missing rather than forgotten. Each
-row shows its label, its note (memory type, hook count, "Claude reads this") and its age.
+row shows its label, its note (hook count, MCP server count, "invalid JSON", "Claude reads this") and its age.
+Memory rows show no note: their type is the head of the section they sit under (user, feedback, project, reference,
+other).
 
 ### 3. One Go RPC builds the list
 
-New package `pkg/claudecontext`, pure `Scan(projectPath, home string) []ClaudeContextFile`:
+New package `pkg/claudecontext`, pure `Scan(projectPath, home string) ([]File, error)`; it errors when the project's
+folder does not exist. The handler copies each `File` into the wire type, which lives in wshrpc only:
 
 ```go
 type ClaudeContextFile struct {
@@ -73,7 +76,9 @@ Go owns this because the slug rule already lives there; the frontend would other
 - `claudecontextmodel.ts` (pure, `claudecontextmodel.test.ts`): order groups and rows, add the "—" rows, split memory
   by type, pick the default project.
 - `setupstore.ts`: the project, the scan result and the selected path as atoms, so they survive a surface switch;
-  `loadClaudeContext(path)`.
+  `loadClaudeContext(project, path)` (a response a newer load overtook is dropped), `reloadClaudeContext()` for ↻,
+  `selectContextProject(name)` (clears the selected file) and `selectContextFile(path)`. With no registered project
+  the tab shows "No projects yet".
 - `projectcontexttab.tsx`: the list and the rail (`setupsurface.tsx` is past 800 lines). The rail reads the file with
   `useFileText`: markdown through `Markdown` with `FrontmatterCard`, JSON and `.arc/setup` as a code block. Its head
   shows the full path and a copy button.

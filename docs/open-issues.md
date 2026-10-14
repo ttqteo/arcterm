@@ -34,6 +34,47 @@ does not, say what you saw and it becomes a bug row under Actionable.
   tried only in unit tests with a scripted roster; neither has the `--queue` path (CLI → `RunQueueAdd` → the loop →
   `CreateRun`) been tried in the running app.
 
+**2026-10-14 (Cockpit / Jarvis badge split)**
+
+- [ ] With one agent asking and one run waiting to be confirmed: the Cockpit nav badge says 1, the same as its "need
+  you" tab, and Jarvis says 1. Confirm the run in Jarvis and its badge goes away. `attentionstore.ts` `splitAttention`.
+
+**2026-10-14 (Conversations rescan)**
+
+- [ ] In an agent tab run `/clear` (or quit claude and start it again in that terminal): within a second the session it
+  left appears at the top of its project under Conversations, without leaving the Agent surface. `usesessionsscan.ts`.
+- [ ] Mark an old conversation for later (row menu): it moves to the top of its project folder, above newer ones.
+  `agentsidebarmodel.ts` `conversationTree`.
+
+**2026-10-14 (overflow fixes)**
+
+- [ ] Open the RAM popover (app bar) with an agent named past the column: the name ends in "…" before CPU, its
+  command shrinks first, and hovering the row shows the full name. `consumerspanel.tsx`.
+- [ ] Agent → Conversation History, a run of 20+ tasks: its strip thins to fit and "N/M landed" stays in the card.
+  `conversationhistory.tsx`.
+
+**2026-10-14 (learned additions; the three CDP scenarios pass 14/14 on `main`, these need live agents)**
+
+- [ ] Note the same rule twice from two agents (`wsh learn note "<rule>" --key <k> --skill <name>`): a "Learned rule"
+  row appears in Needs you; Why unfolds the quotes; Edit, then Enter, saves the edited text; Accept adds the line
+  under "Your additions" in the skill's rail with a `+N` chip on its row, and in Setup → Learned (fourth tab).
+  Commits `e2499a0f4`, `f2e7616e0`, `6c0ca4220`.
+- [ ] Edit and Remove a line in Setup → Learned: the skill's SKILL.md in `~/.claude/skills` follows; a removed key is
+  not proposed again. Commit `f2e7616e0`.
+
+**2026-10-14 (Setup → Project tab)**
+
+- [ ] On an install with no registered project, open Setup → Project: it says "No projects yet" and shows no groups
+  (decided in `claudecontextmodel.ts`, unit-tested; the `setup-project` scenario covers every other state, but
+  staging zero projects would wipe the dev app's). Then press **Copy path** in the rail and paste: the file's full
+  path (the scenario checks it through a clipboard stub, never the real clipboard). Commit dcdd1cac8.
+
+**2026-10-14 (Agent sidebar: a failed plan review's fold)**
+
+- [ ] With an engine run whose plan review just failed (lead revising), look under the run in the Agent sidebar: the
+  finished fold reads `1 review · 1 failed` with a red dot, not a green check. Once the lead resubmits and round 2
+  starts, the fold goes back to a check. Tried only in unit tests (`agenttreemodel.test.ts`).
+
 **2026-10-14 (Claude mod on a Team account: ask dialog, Token burn gate)**
 
 - [ ] After the next build and `task install`, in a Claude agent: have it ask a choice question; answer once in Claude's
@@ -41,6 +82,20 @@ does not, say what you saw and it becomes a bug row under Actionable.
   card shows, not two. Dismiss on the card with the dialog still open: about 1.5 s later Claude gets "dismissed". Ask it
   to start 3 subagents, pick allow-this-turn on the Token burn card, then a new prompt that starts 3 again: the card
   asks again. Tried only in unit tests, and the transcript path in a headless `claude -p`.
+
+**2026-10-14 (Heavy jobs: run steps named by the run's title)**
+
+- [ ] With an engine run whose Check, Verify or Setup step waits or runs in the heavy-job queue, open the app bar's Jobs
+  chip: that row's second line reads `<run title> · Check · base tree` (the plan's title, else the goal's first line),
+  not `Run 973afb · …`, and ↗ still opens the run. `frontend/app/cockpit/jobqueuepanel.tsx`.
+
+**2026-10-14 (What's new: highlight cards, the rest folded)**
+
+- [ ] In the dev app (`task verify:ui -- whats-new`, then by eye), open What's new from the footer's version: each
+  release shows 4–5 cards (title, two lines of text, Try it at the bottom right), then one "N more changes · M fixes"
+  line. A cut card opens to its whole note on click; one that fits shows no pointer. In the fold, a note with no bold
+  lead that fits two lines (0.15.11 "A new waiting item flashes…") has no chevron and stays aligned with the rows
+  above. Check the cards read well on the Light theme too. `frontend/app/cockpit/whatsnewsheet.tsx`.
 
 **2026-10-14 (Claude memory lint in the Claude mod)**
 

@@ -136,3 +136,14 @@ describe("palette-needs: a chunk that came due", () => {
         expect(needsTarget(needsRows([due], [])[0])).toEqual({ kind: "effort", effortId: "e1" });
     });
 });
+
+describe("palette-needs: a learned rule", () => {
+    const learn = {
+        ...item("learn-proposal", "learn:skill:notes#short"),
+        learnid: "skill:notes#short",
+    } as AttentionItem;
+    it("is a review, not a blocked item", () => {
+        const g = needsGroups(needsRows([learn], []));
+        expect(g.map((x) => [x.group, x.rows.length])).toEqual([["reviews", 1]]);
+    });
+});

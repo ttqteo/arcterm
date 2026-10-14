@@ -12,6 +12,7 @@ type AgentSyncCommands interface {
 	AgentSyncApplyCommand(ctx context.Context, data CommandAgentSyncApplyData) (*CommandAgentSyncApplyRtnData, error)
 	AgentSyncAdoptCommand(ctx context.Context, data CommandAgentSyncAdoptData) (*CommandAgentSyncAdoptRtnData, error)
 	AgentSyncSkillsCommand(ctx context.Context) (*CommandAgentSyncSkillsRtnData, error)
+	ClaudeContextCommand(ctx context.Context, data CommandClaudeContextData) (*CommandClaudeContextRtnData, error)
 }
 
 type AgentSyncHarness struct {
@@ -93,6 +94,8 @@ type AgentSyncSkill struct {
 	States map[string]string `json:"states"`
 	// Deltas maps runtime -> the frontmatter keys and sidecar files it overrides.
 	Deltas map[string][]string `json:"deltas,omitempty"`
+	// Additions are the lines the user accepted into this skill; the vault's SKILL.md never holds them.
+	Additions []LearnAddition `json:"additions,omitempty"`
 }
 
 // AgentSyncSkillColumn is one column of the skills matrix: a harness with a fixed skills directory.
@@ -109,4 +112,24 @@ type CommandAgentSyncSkillsRtnData struct {
 	// Unmanaged and Unresolved are what an adopt would do, ungrouped: the frontend groups them.
 	Unmanaged  []AgentSyncSkillMove `json:"unmanaged"`
 	Unresolved []string             `json:"unresolved"`
+}
+
+type CommandClaudeContextData struct {
+	Path string `json:"path"`
+}
+
+// ClaudeContextFile is one row of Setup → Project (pkg/claudecontext.File).
+type ClaudeContextFile struct {
+	Group       string `json:"group"` // instructions | memory | settings | skills | setup | global
+	Path        string `json:"path"`
+	Label       string `json:"label"`
+	Exists      bool   `json:"exists"`
+	Size        int64  `json:"size,omitempty"`
+	ModTs       int64  `json:"modts,omitempty"`
+	Note        string `json:"note,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+type CommandClaudeContextRtnData struct {
+	Files []ClaudeContextFile `json:"files"`
 }
