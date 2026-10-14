@@ -90,6 +90,26 @@ describe("parseAddress", () => {
         );
     });
 
+    describe("memhygiene:", () => {
+        it("reads a project", () => {
+            expect(parseAddress("memhygiene:waveterm")).toEqual({ kind: "memhygiene", project: "waveterm" });
+        });
+
+        // a project name may hold ":", so this kind alone splits at the first one
+        it("keeps a ':' in the project name", () => {
+            expect(parseAddress("memhygiene:a:b")).toEqual({ kind: "memhygiene", project: "a:b" });
+        });
+
+        it("refuses an empty project", () => {
+            expect(parseAddress("memhygiene:")).toEqual({ kind: "unsupported", message: CANNOT_OPEN });
+        });
+
+        it("leaves every other kind on the two-part rule, and memory: a note", () => {
+            expect(parseAddress("run:a:b")).toEqual({ kind: "unsupported", message: CANNOT_OPEN });
+            expect(parseAddress("memory:abc")).toEqual({ kind: "note", noteId: "abc" });
+        });
+    });
+
     // radar: is the attachment namespace (resolveAttached), not an address
     it.each(["commit:abc", "session:s-1", "radar:f-1", "decision:dec-1"])("leaves %s unsupported", (address) => {
         expect(parseAddress(address)).toEqual({ kind: "unsupported", message: CANNOT_OPEN });

@@ -14,7 +14,8 @@ export type OpenTarget =
     | { kind: "effort"; effortId: string }
     | { kind: "radar"; reportId: string; findingId?: string }
     | { kind: "note"; noteId: string }
-    | { kind: "canvas"; topic: string; board?: string };
+    | { kind: "canvas"; topic: string; board?: string }
+    | { kind: "memhygiene"; project: string };
 
 export type Unsupported = { kind: "unsupported"; message: string };
 
@@ -25,7 +26,14 @@ export type AddressHint = { sourceType?: string; anchor?: string; caller?: { blo
 export const CANNOT_OPEN = "This item can't be opened";
 export const CANNOT_LOCATE_RECORD = "This citation can't locate its record";
 
+const MEMHYGIENE_PREFIX = "memhygiene:";
+
 export function parseAddress(address: string, hint?: AddressHint): OpenTarget | Unsupported {
+    // a project name may hold ":", so this kind alone splits at the first one
+    if (address?.startsWith(MEMHYGIENE_PREFIX)) {
+        const project = address.slice(MEMHYGIENE_PREFIX.length);
+        return project !== "" ? { kind: "memhygiene", project } : { kind: "unsupported", message: CANNOT_OPEN };
+    }
     const parts = (address ?? "").split(":");
     if (parts.length !== 2 || parts[0] === "" || parts[1] === "") {
         return { kind: "unsupported", message: CANNOT_OPEN };

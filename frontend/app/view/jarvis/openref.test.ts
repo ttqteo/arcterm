@@ -14,6 +14,7 @@ const rpc = vi.hoisted(() => ({
     EffortGetCommand: vi.fn(),
     FileInfoCommand: vi.fn(),
     ReadVaultNoteCommand: vi.fn(),
+    ListMemoryHygieneCommand: vi.fn(),
 }));
 const loadAndPin = vi.hoisted(() => vi.fn());
 const resolveCwd = vi.hoisted(() => vi.fn());
@@ -39,6 +40,7 @@ import type { AgentsViewModel, SurfaceKey } from "../agents/agents";
 import type { AgentVM } from "../agents/agentsviewmodel";
 import { attachCanvas, detachCanvas, getCanvas, setCanvasMode } from "../agents/canvasstore";
 import { activeChannelIdAtom } from "../agents/channelsstore";
+import { memorySelectedChangeAtom, memorySelectedProjectAtom } from "../agents/memorystore";
 import {
     currentReportIdAtom,
     loadReports,
@@ -46,6 +48,7 @@ import {
     radarScopeAtom,
     radarSelectedIdAtom,
 } from "../agents/radarstore";
+import { setupTabAtom } from "../agents/setupstore";
 import type { OpenTarget } from "./address";
 import { effortDetailAtom } from "./effortstore";
 import { briefPeekRecordAtom, briefSheetOpenAtom } from "./jarvisstore";
@@ -115,6 +118,9 @@ beforeEach(() => {
     globalStore.set(effortDetailAtom, new Map());
     globalStore.set(peekItemAtom, null);
     globalStore.set(petPeekOpenAtom, false);
+    globalStore.set(setupTabAtom, "instructions");
+    globalStore.set(memorySelectedProjectAtom, null);
+    globalStore.set(memorySelectedChangeAtom, null);
 });
 
 describe("run and channel landings", () => {
@@ -378,6 +384,62 @@ describe("effort landing", () => {
             message: "That initiative no longer exists",
         });
         expect(globalStore.get(briefSheetOpenAtom)).toBe(false);
+    });
+});
+
+describe("memory hygiene landing", () => {
+    const projects = (...names: string[]) => ({ projects: names.map((project) => ({ project })) });
+
+    it("writes the Memory tab and the project before it switches to Setup", async () => {
+        const model = makeModel();
+        rpc.ListMemoryHygieneCommand.mockResolvedValue(projects("other", "a:b"));
+        globalStore.set(memorySelectedChangeAtom, "c-old");
+        let atSwitch: unknown = null;
+        const unsub = globalStore.sub(model.surfaceAtom, () => {
+            atSwitch = {
+                tab: globalStore.get(setupTabAtom),
+                project: globalStore.get(memorySelectedProjectAtom),
+                change: globalStore.get(memorySelectedChangeAtom),
+            };
+        });
+        expect(await openAddress(model, "memhygiene:a:b")).toEqual({ ok: true });
+        unsub();
+        expect(atSwitch).toEqual({ tab: "memory", project: "a:b", change: null });
+        expect(globalStore.get(model.surfaceAtom)).toBe("setup");
+    });
+
+    it("refuses a project that is not registered, and switches nothing", async () => {
+        const model = makeModel();
+        rpc.ListMemoryHygieneCommand.mockResolvedValue(projects("other"));
+        expect(await openAddress(model, "memhygiene:gone")).toEqual({
+            ok: false,
+            reason: "unavailable",
+            message: "gone is not a registered project",
+        });
+        expect(globalStore.get(model.surfaceAtom)).toBe("cockpit");
+        expect(globalStore.get(setupTabAtom)).toBe("instructions");
+        expect(globalStore.get(memorySelectedProjectAtom)).toBeNull();
+    });
+
+    it("says the list failed rather than that the project is missing", async () => {
+        const model = makeModel();
+        rpc.ListMemoryHygieneCommand.mockRejectedValue(new Error("EC-TIME"));
+        expect(await openAddress(model, "memhygiene:waveterm")).toEqual({
+            ok: false,
+            reason: "failed",
+            message: "Couldn't open memory of waveterm: EC-TIME",
+        });
+        expect(globalStore.get(model.surfaceAtom)).toBe("cockpit");
+    });
+
+    it("is not peekable: a peek lands", async () => {
+        const model = makeModel();
+        rpc.ListMemoryHygieneCommand.mockResolvedValue(projects("waveterm"));
+        const target: OpenTarget = { kind: "memhygiene", project: "waveterm" };
+        expect(isPeekable(target)).toBe(false);
+        expect(await peekTarget(model, target)).toEqual({ ok: true });
+        expect(globalStore.get(model.surfaceAtom)).toBe("setup");
+        expect(globalStore.get(peekItemAtom)).toBeNull();
     });
 });
 
