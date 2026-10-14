@@ -162,6 +162,8 @@ file (only comments changed on the wire types).
 
 - `cmd/wsh/cmd/wshcmd-effort_test.go`, beside the existing `Lookup("stage")` test:
   `if effortChunkAddCmd.Flags().Lookup("proposed") == nil { t.Fatal("chunk add has no --proposed") }`.
+- Same file, beside the existing `formatEffortShow` test: an effort with chunks `[done A, pending B, proposed P]`
+  renders a header ending `— 1/2` (proposed is not progress), and P's line still prints with `[proposed]`.
 - `frontend/app/view/jarvis/initiativework.test.ts`: the expected Plan it prompt becomes
   `` plan the idea Màu mờ khó đọc (effort:e1): break it into chunks with `wsh effort chunk add --proposed`, then stop so I can review the plan before any work starts ``.
 
@@ -171,7 +173,8 @@ Run `go test ./cmd/wsh/cmd -run 'Effort'` and `npx vitest run frontend/app/view/
 
 - `wshcmd-effort.go`: `effortChunkAddCmd.Flags().Bool("proposed", false, "propose the chunk; it counts once accepted")`;
   in `RunE`, `if p, _ := cmd.Flags().GetBool("proposed"); p { op.Status = "proposed" }`; the `Use` string gains
-  `[--proposed]`.
+  `[--proposed]`. `formatEffortShow`'s header (line 491) counts its total as the chunks that are not `proposed`
+  (a `countProgress` beside `countDone`), so `wsh effort show` agrees with the summary's `Done/Total`.
 - `initiativework.ts` line 32: the prompt says `` `wsh effort chunk add --proposed` ``.
 - `skills/effort-tracking/SKILL.md`: in the command table row for `chunk add`, add `[--proposed]`; under the rules,
   one paragraph: "**Propose, don't add, what nobody asked for.** Chunks you add on your own (scope you found, a split
@@ -186,7 +189,7 @@ Run `go test ./cmd/wsh/cmd -run 'Effort'` and `npx vitest run frontend/app/view/
 
 **Depends on:** Task 1
 
-**Files:** `pkg/jarvis/attention.go`, `pkg/jarvis/attention_plan_test.go`, `frontend/app/cockpit/palette-needs.ts`, `frontend/app/cockpit/palette-needs.test.ts`, `frontend/app/view/agents/needsyoustripmodel.ts`, `frontend/app/view/agents/needsyoustripmodel.test.ts`, `frontend/app/view/agents/notifyevents.ts`, `frontend/app/view/jarvis/attentionact.ts`, `frontend/app/view/jarvis/attentionact.test.ts`, `frontend/app/view/jarvis/briefingmodel.ts`, `frontend/app/view/jarvis/briefingmodel.test.ts`
+**Files:** `pkg/jarvis/attention.go`, `pkg/jarvis/attention_plan_test.go`, `frontend/app/view/jarvis/planreviewtarget.ts`, `frontend/app/view/jarvis/planreviewtarget.test.ts`, `frontend/app/cockpit/palette-needs.ts`, `frontend/app/cockpit/palette-needs.test.ts`, `frontend/app/view/agents/needsyoustripmodel.ts`, `frontend/app/view/agents/needsyoustripmodel.test.ts`, `frontend/app/view/agents/notifyevents.ts`, `frontend/app/view/jarvis/attentionact.ts`, `frontend/app/view/jarvis/attentionact.test.ts`, `frontend/app/view/jarvis/briefingmodel.ts`, `frontend/app/view/jarvis/briefingmodel.test.ts`, `frontend/app/view/jarvis/petpeekmodel.ts`, `frontend/app/view/jarvis/petpeekmodel.test.ts`, `frontend/app/view/jarvis/petacts.ts`, `frontend/app/view/jarvis/petacts.test.ts`
 
 One item per initiative in play (`active` or `paused`) holding at least one `proposed` chunk.
 
@@ -280,21 +283,34 @@ func planReviewItems(efforts []*waveobj.Effort) []wshrpc.AttentionItem {
 In `BuildAttention`, `plans := planReviewItems(in.Efforts)`; add `plans` to the sort loop's group list after
 `asks`, and `out = append(out, plans...)` right after `out = append(out, asks...)`.
 
-**Step 3: Frontend kind maps** (each has a test file; add one case per test, mirroring `chunk-due`):
+**Step 3: One resolver for where a plan-review item opens** (spec §2: the agent when it is still open, else the
+initiative). `planreviewtarget.ts` (pure): `planReviewAgent(item: AttentionItem, roster: ReadonlyArray<AgentVM>):
+AgentVM | undefined` returns the live roster agent whose `effortId` equals `item.effortoid`, the newest when several
+match, and `undefined` for any other kind; `planReviewORef(item, roster)` returns `agent:<id>` for that agent, else
+`item.oref`. `planreviewtarget.test.ts`: one matching agent, two (the newest wins), none (the effort oref), and a
+non-plan-review item (undefined). Every reader below opens a plan-review item through it; none resolves it on its own.
 
-- `needsyoustripmodel.ts`: `KIND_LABEL["plan-review"] = "Plan to review"`; its `open` is `{ kind: "effort", effortId }`
-  (same as `chunk-due`: extend the `effortId` line to both kinds); tone `asking`. The strip's Open on a plan-review row
-  goes to the live agent whose `effortId` matches (newest first) when there is one, else the effort: add that to the
-  `open` resolution as `{ kind: "agent", agentId }` using the `roster` input already passed in.
-- `briefingmodel.ts`: `"plan-review": "plan"` in the kind map beside `"chunk-due": "due"`; the nav target is the
-  effort like chunk-due's.
-- `palette-needs.ts`: `"plan-review": "plan"`, opening the effort like `chunk-due`.
+**Step 4: Frontend kind maps** (each has a test file; add one case per test, mirroring `chunk-due`, plus one with a
+matching live agent that asserts the agent target):
+
+- `needsyoustripmodel.ts`: `KIND_LABEL["plan-review"] = "Plan to review"`; tone `asking`; its `open` is
+  `{ kind: "agent", agentId }` when `planReviewAgent(a, input.roster)` finds one, else `{ kind: "effort", effortId }`
+  (extend the `effortId` line to both kinds).
+- `briefingmodel.ts`: `"plan-review": "plan"` in the kind map beside `"chunk-due": "due"`; the row's nav opens
+  `planReviewORef(a, roster)` (the agent, else the effort as chunk-due's does).
+- `palette-needs.ts`: `"plan-review": "plan"`; the target is the agent from `planReviewAgent` when one is found, else
+  the effort like `chunk-due`.
+- `petacts.ts`: `actsForAttention(item, agents: ReadonlyArray<AgentVM> = [])`; a `plan-review` item returns one
+  `open` act labelled `item.action` ("Review") targeting `{ kind: "oref", ref: planReviewORef(item, agents) }` (it has
+  no run, so it must come before the `!item?.runid` return). `petpeekmodel.ts` passes its `agents` in; it adds
+  `"plan-review"` to `DETAIL_KINDS` (the "2 proposed" text is the detail) and `ROW_KIND_LABEL["plan-review"] =
+  "Plan to review"`.
 - `attentionact.ts`: `plan-review` acts as Open (no wire act).
 - `notifyevents.ts`: add `"plan-review"` to the kinds that notify, beside `"chunk-due"`.
 
-Run `npx vitest run frontend/app/view/agents/needsyoustripmodel.test.ts frontend/app/view/jarvis/briefingmodel.test.ts frontend/app/cockpit/palette-needs.test.ts frontend/app/view/jarvis/attentionact.test.ts` and the Go test: PASS.
+Run `npx vitest run frontend/app/view/jarvis/planreviewtarget.test.ts frontend/app/view/agents/needsyoustripmodel.test.ts frontend/app/view/jarvis/briefingmodel.test.ts frontend/app/cockpit/palette-needs.test.ts frontend/app/view/jarvis/attentionact.test.ts frontend/app/view/jarvis/petacts.test.ts frontend/app/view/jarvis/petpeekmodel.test.ts` and the Go test: PASS.
 
-**Step 4: Commit** `feat(attention): plan-review, an initiative with proposed chunks`.
+**Step 5: Commit** `feat(attention): plan-review, an initiative with proposed chunks`.
 
 ---
 
@@ -394,6 +410,11 @@ if cycle {
 whose only chunks are proposed (`done 0, total 0`) is an idea (`isIdea` from `briefrows.ts` returns true) and has
 `proposed` listing them.
 
+Same file, the opened detail: `effortFacts` of an `Effort` with chunks `[proposed P, done A, pending B]` gives
+`done: 1`, `counted: 2`, `segments` `[{done,1},{pending,1}]` (P is not a pending segment, though `chunkTone` maps an
+unknown status to `pending`), and `next.label` `"B"`; `nextChunk` of `[proposed P, pending B]` is B; an effort whose
+only chunks are proposed has `counted: 0`, no segments and `idle` `"No chunks yet."`.
+
 `proposedmodel.test.ts`:
 
 ```ts
@@ -437,7 +458,9 @@ Run `npx vitest run frontend/app/view/jarvis/effortmodel.test.ts frontend/app/vi
 
 - `effortmodel.ts`: `EffortCardModel` gains `proposed: string[]` (labels, plan order). `segments` and `chips` leave
   out `proposed` as `segments` leaves out `skipped`; `remaining` already reads `e.total`, which Task 1 made exclude
-  proposed.
+  proposed. `effortFacts` works on the chunks that are not `proposed` (done, counted, skipped, segments, next, idle);
+  `nextChunk` skips `proposed` as it skips `done` and `skipped`. Every count the List and the sheet draw then agrees
+  with the summary's `done/total`.
 - `proposedmodel.ts` (pure, no jotai or RPC; header comment says so):
   - `proposedRows(chunks: { label: string; status: string; stage?: string; notes?: { ts: number; text: string }[] }[])`
     → `{ label, meta }[]`, `meta` = stage, then the newest note's text, joined with ` · `.
@@ -448,7 +471,9 @@ Run `npx vitest run frontend/app/view/jarvis/effortmodel.test.ts frontend/app/vi
 - `effortstore.ts`: `acceptProposed(oref, labels)` and `dropProposed(oref, chunks, labels)` through `mutateEffort`
   with the ops above; `attachAgent(oref, chunk, tabId)` sending
   `{ op: "attachWork", chunk, kind: "agent", oref: "agent:" + tabId }`; `linkEffort(oref, parentOref | "")` sending
-  `{ op: "link", parentoid: parentOref.replace(/^effort:/, "") }` ("" unlinks).
+  `{ op: "link", parentoid: parentOref.replace(/^effort:/, "") }` ("" unlinks); `createIdea(title)` returns the new
+  idea's oref (`"effort:" + rtn.effortoid` from `EffortCreateCommand`) instead of `void`, so Task 7's "+ New initiative
+  from this session" can link to it (its existing callers ignore the value).
 
 **Step 3: Run, PASS; `task check:ts` (allow 3+ minutes). Commit** `feat(initiatives): proposed chunks in the effort model and store`.
 
@@ -479,7 +504,9 @@ first, before `status`; with `proposed: 0` there is no `plan`; inside a subagent
   One row per `proposedRows` entry, 40px min height, a top `edge-faint` rule: a 9px dashed `asking` ring, the label
   12.5px `text-primary` and its meta 10.5px `text-ink-mid`; icon buttons Accept (`Check`, `text-success`), Rename
   (`Pencil`, swaps the label for an input, Enter saves through `renameChunk`, Esc cancels), Drop (`X`). A decided row
-  shows "accepted · now pending" / "dropped" and an Undo link until the next detail read drops it from the list. Footer
+  shows "accepted · now pending" / "dropped" and an Undo link until the next detail read drops it from the list (Undo of
+an accept sets the chunk back to `proposed`; Undo of a drop adds it back at its old position, with its stage, as
+`proposed`). Footer
   buttons in the rail's secondary recipe: **Accept all and continue** (accepts all, then
   `driveAgent(agent.blockId, continueMessage(first))` from `agentactions.ts`), **Accept all**, **Drop all**; a muted
   line says what continue sends. A failed mutation shows the error under the buttons in `text-error`.
@@ -527,7 +554,9 @@ on the List) leaves those out.
   "Initiative · <project>" with the status at the right, title 14px semibold, "↳ Part of <parent>" link when
   `parentoid`, `SegmentBar` (from `briefrowviews.tsx`) with done/total; **This agent is on** row (selected grey fill,
   accent inset ring as the keyboard cursor) with **Mark done** (`advanceChunk`) and the latest note under it; **Next**
-  rows (click opens the chunk on the Jarvis List through `openref.ts`); "N proposed · Review on the rail" when any;
+  rows (spec §3: a click, or `Enter` on the cursor row, opens a small menu in the popover listing the chunk statuses
+  `pending`, `active`, `blocked`, `deferred`, `skipped` through `setChunkStatus`, and **Rename**, which swaps the row's
+  label for an input saved through `renameChunk`; it never leaves the agent); "N proposed · Review on the rail" when any;
   footer **Add note** (an inline input; Enter appends through `appendChunkNote` to the agent's chunk), **Open in
   Jarvis**, Esc. Its own `onKeyDown` handles `m`, `n`, `↑`/`↓`, `Enter`, `Esc` with `stopPropagation`.
 - `initiativepicker.tsx` (shared by this task and Task 10): filter input, rows from `pickerRows`, "+ New initiative from
@@ -535,8 +564,8 @@ on the List) leaves those out.
 - `agentheader.tsx`: `InitiativeLink` opens the popover on click; Ctrl/Cmd-click (`isPeekGesture`) keeps today's
   `openOrPeek` to Jarvis. An agent with no `effortId` shows **+ Link to initiative** (dashed `edge-strong`, 20px) that
   opens the picker; a pick runs `SetMetaCommand({ oref: "tab:" + agent.id, meta: { "session:effort": oref } })` then
-  `attachAgent(oref, <active chunk, else first pending>, agent.id)`; "new" calls `createIdea(agent.name)` and links to
-  it.
+  `attachAgent(oref, <active chunk, else first pending>, agent.id)`; "new" calls `createIdea(agent.name)` (Task 5 made
+  it return the oref) and sets `session:effort` to that oref; a new idea has no chunk, so nothing is attached.
 - `initiativePopoverAtom` (`string | null`, the agent id) beside the popover; `bindings.ts` `buildAgentBindings` gains
   `{ id: "agent:initiative", keys: "i", group: "Agent", label: "The agent's initiative", when: nav && focused agent }`
   toggling it for the focused agent; the single-key Agent bindings yield while it is set; `whenstate.ts` lists the atom
@@ -551,20 +580,30 @@ on the List) leaves those out.
 
 **Depends on:** Task 5
 
-**Files:** `frontend/app/view/jarvis/inlinetracker.ts`, `frontend/app/view/jarvis/inlinetracker.test.ts`, `frontend/app/view/jarvis/inlinetrackerview.tsx`
+**Files:** `frontend/app/view/jarvis/inlinetracker.ts`, `frontend/app/view/jarvis/inlinetracker.test.ts`, `frontend/app/view/jarvis/inlinetrackerview.tsx`, `frontend/app/view/jarvis/briefrows.ts`, `frontend/app/view/jarvis/briefrows.test.ts`, `frontend/app/view/jarvis/briefrowviews.tsx`
+
+Boards: `ParentChild.dc.html` (the row's "4 proposed" in the column before the actions).
 
 An opened initiative (or idea) on the List shows its proposed chunks as their own group above the plan, with the
-rail's buttons, so a plan-review item opened when its agent is gone can still be decided.
+rail's buttons, so a plan-review item opened when its agent is gone can still be decided. A closed row says how many
+wait: an initiative's row and an idea's row in the Ideas column both carry "N proposed" (spec §1).
 
-**Step 1: Failing test** in `inlinetracker.test.ts`: `trackerRows` of an effort with proposed chunks yields a
+**Step 1: Failing tests.** `inlinetracker.test.ts`: `trackerRows` of an effort with proposed chunks yields a
 `proposed` group row first, listing them, and leaves them out of the stage groups and their counts.
+`briefrows.test.ts`: `initiativeLine` of a tracker card with `proposed: ["P1","P2","P3","P4"]` carries
+`proposed: "4 proposed"`; of an idea card whose only chunks are proposed (`isIdea` true) also `"4 proposed"`; of a
+card with none, no `proposed` text.
 
 **Step 2: Implement** the group in `inlinetracker.ts` and its view in `inlinetrackerview.tsx`: a "Proposed · N" header
 in `text-asking` with Accept all / Drop all, each row with Accept / Rename / Drop (reuse the row look of
 `planreviewsection.tsx`; copy the classes rather than importing an agents view into jarvis), calling `acceptProposed`
 / `dropProposed` / `renameChunk`. An idea with only proposed chunks shows this group in place of IdeaDetail's "Plan it".
+`briefrows.ts`: `BriefLine` gains an optional `proposed` text, set by `initiativeLine` for trackers and ideas;
+`briefrowviews.tsx` draws it right-aligned in `text-asking` 10.5px, no wrap, in the column before the row's actions
+(the board's place), on initiative and idea rows.
 
-**Step 3: Tests, `task check:ts`. Commit** `feat(jarvis): decide proposed chunks on the List`.
+**Step 3: Tests, `task check:ts`.** CDP steps: `initiative-plan-review` steps 7–8 and its idea steps (Task 11).
+**Commit** `feat(jarvis): decide proposed chunks on the List`.
 
 ---
 
@@ -587,11 +626,15 @@ const card = (oref: string, over: Partial<any> = {}) => ({
 });
 
 describe("isIdle", () => {
-    it("is active, nobody on it, and still for 14 days", () => {
-        expect(isIdle(card("a", { updatedts: 0 }), 15 * 86_400_000)).toBe(true);
-        expect(isIdle(card("a", { updatedts: 0, working: true }), 15 * 86_400_000)).toBe(false);
-        expect(isIdle(card("a", { updatedts: 2 * 86_400_000 }), 15 * 86_400_000)).toBe(false);
-        expect(isIdle(card("a", { status: "paused" }), 99 * 86_400_000)).toBe(false);
+    it("is active, nobody on it, and still and unreviewed for 14 days", () => {
+        const now = 15 * 86_400_000;
+        expect(isIdle(card("a", { updatedts: 0 }), undefined, now)).toBe(true);
+        expect(isIdle(card("a", { updatedts: 0, working: true }), undefined, now)).toBe(false);
+        expect(isIdle(card("a", { updatedts: 2 * 86_400_000 }), undefined, now)).toBe(false);
+        expect(isIdle(card("a", { status: "paused" }), undefined, 99 * 86_400_000)).toBe(false);
+        // Mark reviewed takes it out of the queue until 14 more still days pass
+        expect(isIdle(card("a", { updatedts: 0 }), now - 86_400_000, now)).toBe(false);
+        expect(isIdle(card("a", { updatedts: 0 }), 0, now)).toBe(true);
     });
 });
 
@@ -605,11 +648,18 @@ describe("reviewQueue", () => {
             card("ask", { updatedts: now - 1000, asking: true }),
             card("stuck", { updatedts: now - 1000, blockedChunks: ["x"] }),
             card("seen", { updatedts: now - 5000 }),
+            card("idleseen", { updatedts: 1 }),
         ];
-        const reviewed = { seen: now - 4000 };
+        const reviewed = { seen: now - 4000, idleseen: now - 2 * 86_400_000 };
         expect(reviewQueue(cards as any, reviewed, now - 86_400_000, now).map((q) => q.oref)).toEqual([
             "stuck", "ask", "work", "changed", "idle",
         ]);
+    });
+    it("empties once each one is marked reviewed", () => {
+        const now = 30 * 86_400_000;
+        const cards = [card("idle", { updatedts: 1 }), card("changed", { updatedts: now - 1000 })];
+        const reviewed = { idle: now - 10, changed: now - 10 };
+        expect(reviewQueue(cards as any, reviewed, now - 86_400_000, now)).toEqual([]);
     });
 });
 
@@ -630,7 +680,8 @@ it), which the surface computes from the effort summaries and the attention queu
 
 **Step 2: Implement.**
 
-- `reviewmodel.ts`: `IDLE_MS = 14 * DAY`; `isIdle`, `reviewQueue(cards, reviewed: Record<string, number>,
+- `reviewmodel.ts`: `IDLE_MS = 14 * DAY`; `isIdle(card, reviewedAt: number | undefined, now)` (active, no workref,
+  `updatedts` and `reviewedAt` both older than `IDLE_MS`; never reviewed counts as old), `reviewQueue(cards, reviewed: Record<string, number>,
   fallback: number, now)` (an initiative never reviewed uses `fallback`, the "Since you looked" cursor), `eventsSince`,
   `idleLabel(updatedts, now)` ("idle 3w"), and `eventLine(event)` mapping `chunk-done` → `✓ <label> · done`,
   `chunk-added` → `+ <label> · added`, `chunk-status` → `<label> · <status>`, `effort-status` → `now <status>`,
@@ -647,7 +698,10 @@ it), which the surface computes from the effort summaries and the attention queu
   carries a 6px accent dot before its title.
 - `bindings.ts` (`buildJarvisBindings`): `jarvis:review` `v` enters review; while `reviewModeAtom` is set, `Enter`
   marks reviewed and steps, `j`/`k` and `←`/`→` move, `Esc` exits (and `surface:back-home` yields, as for the peek);
-  `whenstate.ts` lists `reviewModeAtom`.
+  `whenstate.ts` lists `reviewModeAtom`. Jarvis also runs `buildListNavBindings`, which owns `j`/`k`/`Enter` there:
+  its `active` predicate returns false while `reviewModeAtom` is set, so the review bindings take those keys. A
+  `bindings.test.ts` case resolves `j`, `k` and `Enter` on Jarvis with review mode on to the review bindings, and with
+  it off to the list-nav ones.
 - `petpeek.tsx`: below the rows, when any initiative is changed or idle, one muted line
   "N initiatives changed · M idle" with a **Review in Jarvis** link that lands on Jarvis in review mode. It does not
   add to the badge.
@@ -666,15 +720,19 @@ Board: `ParentChild.dc.html`.
 
 **Step 1: Failing test** in `briefrows.test.ts`: `nestInitiatives(cards)` puts each child right after its parent with
 `depth: 1` (a grandchild `depth: 2`), keeps the parents in their given order, treats a child whose parent is not in
-the list (archived, filtered out) as top level, and gives the parent `subCount`.
+the list (archived, filtered out) as top level, and gives the parent `subCount`. `linkedUnder(parentOref, cards)`
+returns `{ subs, ideas }`: the non-archived cards whose `parentoid` is the parent, split by `isIdea` (spec §5: an idea
+linked to an initiative shows under it in the opened detail), each in the given order.
 
 **Step 2: Implement.**
 
 - `briefrows.ts`: `nestInitiatives` as tested, applied to the trackers after `orderInitiatives` and before the caps.
 - `briefrowviews.tsx`: a child row is indented 20px per depth with an elbow (`border-l` + `border-b` `edge-strong`,
   `rounded-bl-[6px]`, 10×24px) and its meta line reads "↳ Part of <parent>"; a parent's title carries "+N sub" in
-  `text-ink-mid` 10.5px; the opened parent lists Sub-initiatives (title, done/total, status), each opening its row.
-- `briefsurface.tsx`: the row ⋯ menu gains **Link to…** (opens `InitiativePicker` excluding the initiative and its
+  `text-ink-mid` 10.5px; the opened parent lists Sub-initiatives (title, done/total, status), each opening its row,
+  and under them the Ideas linked to it (title, "N proposed" when any), each opening the idea, both from
+  `linkedUnder`. A linked idea stays in the Ideas column as well.
+- `briefsurface.tsx`: the initiative row's ⋯ menu gains **Link to…** (opens `InitiativePicker` excluding the initiative and its
   descendants; a pick calls `linkEffort`) and **Unlink from <parent>** when linked. A refused link (the cycle error)
   shows as the menu's error toast.
 
@@ -692,28 +750,45 @@ the list (archived, filtered out) as top level, and gives the parent `subCount`.
 made (efforts through `effortmutate`/delete, tabs closed). Make the agent the way `openUploadsAgent` does: a terminal
 tab that publishes a Claude agent status, plus `setmeta` of `tab:<id>` with `"session:effort": "effort:<oid>"`.
 
-- `initiative-plan-review`: create an initiative with one done chunk, then `effortmutate` two `addChunk` ops with
-  `status: "proposed"`; open the agent. Steps: (1) the rail shows "Plan to review" first with both rows (shot);
-  (2) the header shows "2 TO REVIEW"; (3) Accept on the first row reads "accepted · now pending" and the effort's
-  chunk is `pending`; (4) Drop all removes the rest and the section leaves the rail; (5) Sprout's popup and the
-  Brief's Waiting on you list "Plan to review" while any remained (check before step 4).
+- `initiative-plan-review`: create an initiative with one done chunk, then `effortmutate` four `addChunk` ops with
+  `status: "proposed"` (P1–P4); create an idea with two proposed chunks and nothing else; open the agent. Steps:
+  (1) the rail shows "Plan to review" first with four rows (shot); (2) the header shows "4 TO REVIEW", and clicking the
+  chip with the rail on another section brings the rail back to Plan to review; (3) Sprout's popup and the Brief's
+  Waiting on you list "Plan to review"; (4) Rename on P4, type, Enter: the row and the effort's chunk carry the new
+  label; (5) Accept on P1 reads "accepted · now pending" and the chunk is `pending`; Undo returns it to `proposed`;
+  Accept again; (6) Drop on P2 reads "dropped" and the chunk is gone; (7) on the Jarvis List the initiative's row reads
+  "2 proposed" and the idea's row in the Ideas column "2 proposed" (shot); (8) opening the initiative shows
+  "Proposed · 2"; Accept on P3 there makes it `pending`; (9) opening the idea, Drop all removes both chunks and it is
+  still an idea; (10) back on the agent, Accept all and continue accepts the renamed P4, the agent's terminal receives
+  "Plan accepted, start with <P4's label>" (read the xterm buffer, or record the controller-input RPC the send makes),
+  the section leaves the rail, the chip goes, and the Waiting on you row is gone.
 - `initiative-popover`: an initiative with chunks `[done, active (workref agent:<tab>), pending, pending]` and a note
   on the active one. Steps: (1) `i` opens the popover showing "This agent is on" with the active chunk and its note
-  (shot); (2) Next lists the two pending chunks; (3) `m` marks it done and the next becomes active; (4) `n`, type,
-  Enter appends a note; (5) Esc closes it and focus returns.
-- `initiative-link`: an agent tab with no `session:effort` and one initiative in its project. Steps: (1) the header
-  shows "+ Link to initiative"; (2) clicking it opens the picker listing the initiative (shot); (3) picking it sets
-  the tab's `session:effort` and the header shows the initiative link.
-- `initiative-review`: three initiatives: one changed after its review mark (seed `jarvis.review.reviewed` in
-  localStorage with an old ts), one blocked, one idle (`updatedts` 20 days back cannot be forged over RPC, so seed the
-  idle one through the review model's `now`: stub `Date.now` in the page to 20 days ahead before opening, and restore
-  it in teardown). Steps: (1) the Initiatives heading reads "Review · 3"; (2) `v` enters review with the blocked one
-  open and "Since you reviewed" listing its events (shot); (3) Enter marks it and opens the next; (4) the idle one
-  shows "idle 2w" and Pause first; (5) the end reads "All reviewed"; (6) Sprout's popup shows "initiatives changed".
-- `initiative-parents`: a parent with two children (`link` ops) and an unrelated initiative. Steps: (1) the children
-  sit under the parent indented with "↳ Part of" (shot); (2) the parent reads "+2 sub"; (3) the unrelated row's ⋯ →
-  Link to… → the parent moves it under; (4) linking the parent under its child is refused with the cycle message;
-  (5) Unlink returns it to top level.
+  (shot); (2) Next lists the two pending chunks; clicking the first opens its menu, Rename, type, Enter renames the
+  chunk, and the menu's `deferred` sets its status; (3) `m` marks the agent's chunk done and the following chunk becomes
+  active (`advance` takes a deferred one too); (4) `n`, type, Enter appends a note; (5) Esc closes it and focus returns; (6) Ctrl+click on the header's
+  initiative link opens no popover and lands on Jarvis with the initiative selected.
+- `initiative-link`: two agent tabs with no `session:effort` and one initiative in their project. Steps: (1) the
+  header shows "+ Link to initiative"; (2) clicking it opens the picker listing the initiative (shot); (3) picking it
+  sets the tab's `session:effort` and the header shows the initiative link; (4) on the second agent, the picker's
+  "+ New initiative from this session" creates an idea titled with the agent's name, sets that tab's
+  `session:effort` to it, and the header links it (teardown deletes the idea).
+- `initiative-review`: three initiatives, made in the scenario at real time T: one changed, one blocked (a chunk set
+  `blocked`), one idle. Seed `jarvis.review.reviewed` in localStorage with a mark for every one of them, so none
+  falls back to the "Since you looked" cursor: the changed and the blocked ones at T − 1h (changed: their `updatedts`
+  is after the mark), the idle one at T + 1 min (after its last change, so not changed). `updatedts` cannot be forged
+  over RPC, so stub `Date.now` in the page to T + 20 days before opening Jarvis (restore it in teardown): the idle
+  one's change and mark are then 20 days old. Assert on the three seeded orefs, not on totals, so another effort in
+  the store cannot move the count. Steps: (1) the Initiatives heading reads "Review · 3"; (2) `v` enters review with
+  the blocked one open and "Since you reviewed" listing its events (shot); (3) Enter marks it and opens the next (the
+  changed one), and `k` then `j` move back and forward without moving the List's cursor; (4) Enter again opens the idle
+  one, which shows "idle 2w" with Pause and Archive first; (5) Enter, and the end reads "All reviewed"; Esc leaves;
+  the heading's Review count is gone (all three marked); (6) Sprout's popup showed "initiatives changed" before step 2.
+- `initiative-parents`: a parent with two children (`link` ops), an idea linked under the parent (`link` op), and an
+  unrelated initiative. Steps: (1) the children sit under the parent indented with "↳ Part of" (shot); (2) the parent
+  reads "+2 sub"; (3) opening the parent lists both under Sub-initiatives and the idea under its linked Ideas;
+  (4) the unrelated row's ⋯ → Link to… → the parent moves it under; (5) linking the parent under its child is refused
+  with the cycle message; (6) Unlink returns it to top level.
 
 **Step 2: Docs.**
 

@@ -80,8 +80,9 @@ Review is not urgent, so it never enters the attention queue and never adds to S
 
 - A per-initiative "reviewed at" kept in localStorage as a map `oref → ts` (like "Since you looked"'s
   `jarvis.briefing.lastseen`); an initiative never reviewed starts from that cursor.
-- Changed: `updatedts` after its reviewed-at. Idle: active, no workref on any chunk, unchanged for 14 days (a
-  constant, no setting). The List's status cell shows "idle 3w" muted.
+- Changed: `updatedts` after its reviewed-at. Idle: active, no workref on any chunk, unchanged and not reviewed for
+  14 days (a constant, no setting), so Mark reviewed takes it out of the queue until 14 more still days pass. The
+  List's status cell shows "idle 3w" muted.
 - The List's Initiatives heading gains **Review · N**; Sprout's popup ends with a muted line
   "N initiatives changed · M idle · Review in Jarvis".
 - Review mode narrows the region to changed and idle initiatives, in the order blocked, asks you, at work, changed,
