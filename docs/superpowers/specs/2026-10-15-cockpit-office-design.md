@@ -79,6 +79,12 @@ and the two columns share whatever width the hall leaves.
 - **The hall** runs between the columns, top to bottom (234 px wide). At its top, **the lounge**: a rug, a TV on the
   wall, the sofa facing it, the coffee machine and a plant, where idle people go. At its foot, by the entrance,
   **Home**: a booth holding the cards with no project, one desk per row; it grows up the hall, under the lounge.
+- **The lounge holds a fixed set of spots:** the sofa's seats, and standing places by the coffee machine and the
+  plant, as many as fit with their labels: every label sits whole inside the lounge, over no other label or person
+  (a name too long for its room is cut with an ellipsis, the full text in the person's title). Spots fill by
+  `idleSince`, longest first, so a newcomer never moves someone already there. Whoever does not fit is not drawn: a
+  muted `+N in the lounge` line in the lounge counts them, and their desk stays empty and dimmed, its title saying
+  where they are. The lounge never grows, so a crowd moves no room.
 - **Doors:** every room has one door onto the hall, in the upper part of its hall-side wall (an agents' room's level
   with its first row of desks, as the `Main` board draws it), so a stretched room keeps its door where it was; the
   Home booth's is in its top wall. The plan grows so the booth sits below every door of the left column: no door opens
@@ -231,7 +237,8 @@ Office  ● animating · 2 walking · 6 typing
 ```
 
 - **Measured:** the office's own JS time (`performance.now()` around each frame-clock and walk-clock step, summed
-  over the last 10 s, shown as a share of one core), the people drawn, walking and animated, the sprite cache's
+  over the last 10 s, shown as a share of one core), the people drawn (people at a desk or a seat, in a lounge
+  spot, walking, and the boss; never the `+N`), walking and animated, the sprite cache's
   entries and bytes (the data URLs' lengths), and the office root's DOM nodes. The counters are read only while the
   panel is open.
 - **Not shown:** a heap figure for the office alone. WKWebView has no `performance.memory`, so a number there would be
@@ -276,7 +283,11 @@ in Office, so the comparison overstates the office's cost, never understates it.
 
 **Scenario:** Cockpit in Cards, GC, read `Performance.getMetrics`; hold 30 s (the baseline); switch to Office, wait
 2 s, GC, read; hold 30 s with 3 walkers and the boss walking; hold 30 s quiet (every agent idle inside the Finished
-window, the hold starting once everyone has settled at a desk and no clock runs); switch back to Cards, GC, read. Then repeat the walking hold under `prefers-reduced-motion: reduce`.
+window, the hold starting once everyone has settled at a desk and no clock runs); then repeat the walking hold under
+`prefers-reduced-motion: reduce`; switch back to Cards, GC, read; open Office and switch back to Cards again, GC,
+read. The second round trip is what row 7 holds: a leak grows on every trip, while the dev page's own growth over
+the bench's minutes (+1.6 MB with the office never opened, run a81096a1) drowns a 1 MB budget measured from the
+first Cards read. The first trip's figure is printed for information.
 
 | Measure | Budget |
 |---|---|
@@ -286,7 +297,7 @@ window, the hold starting once everyone has settled at a desk and no clock runs)
 | Same, reduced motion | ≤ 0.5 % |
 | Same, quiet office | ≤ 0.3 % |
 | Sprite cache entries | ≤ 600 |
-| Heap after switching back to Cards (after GC), minus the Cards read before | ≤ 1 MB |
+| Heap a second Office round trip adds, back in Cards (after GC), minus the first return's read | ≤ 1 MB |
 | Toggle click to the office drawn | ≤ 150 ms |
 
 Estimated from the Run office's measured numbers (104 desks: +1.6 MB, ~1,500 nodes): about 900–1,200 nodes and
