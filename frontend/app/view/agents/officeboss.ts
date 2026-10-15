@@ -40,16 +40,27 @@ export function canStand(plan: Plan, p: Point): boolean {
 
 const furnitureCache = new WeakMap<Plan, Box[]>();
 
-/** What the boss's feet stay off: each desk with the person at it and its name, and each meeting table with its
- *  chairs. A desk's spot and a table's stay clear, so the boss stands in front of a desk, never on it. */
+// a plant drawn at (x, y) by scenery.ts: its pot, so one may pass behind its leaves
+const pot = (x: number, y: number): Box => ({ x: x + 6, y: y + 26, w: 22, h: 18 });
+
+/** What the boss's feet stay off: each desk with the person at it and its name, each meeting table with its chairs,
+ *  and what scenery.ts draws on the floor: the lounge's sofa with the people on it, its coffee machine, and the
+ *  plants. A desk's spot and a table's stay clear, so the boss stands in front of a desk, never on it. */
 function furniture(plan: Plan): Box[] {
     let boxes = furnitureCache.get(plan);
     if (boxes == null) {
+        const l = plan.lounge;
         boxes = [
             ...plan.desks.map((d) => ({ x: d.x - 8, y: d.y - 20, w: 96, h: 100 })),
             ...plan.rooms.flatMap((r) =>
                 r.table ? [{ x: r.table.x - 8, y: r.table.y - 20, w: r.table.w + 16, h: r.table.h + 53 }] : []
             ),
+            { x: l.x + 34, y: l.y + 122, w: 162, h: 66 },
+            { x: l.x + 166, y: l.y + 93, w: 36, h: 60 },
+            pot(l.x + 200, l.y + 172),
+            ...plan.rooms
+                .filter((r) => r.kind === "agents")
+                .map((r) => pot(r.box.x + r.box.w - 44, r.box.y + r.box.h - 64)),
         ];
         furnitureCache.set(plan, boxes);
     }
