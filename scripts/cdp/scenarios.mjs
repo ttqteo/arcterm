@@ -25491,6 +25491,7 @@ const canvasGallery = {
                     (card("gallery-beta")?.textContent ?? "").includes("No preview yet: it is taken the first time you open it") &&
                     !card("gallery-beta")?.querySelector("img"),
                 alphaSrc: card("gallery-alpha")?.querySelector("img")?.getAttribute("src") ?? null,
+                alphaThumb: card("gallery-alpha")?.querySelector("img")?.getAttribute("data-canvas-thumb") ?? null,
                 hints: ["←↑↓→ move", "Enter open", "/ search"].every((s) => text.includes(s)),
                 pill: document.querySelector("[data-canvas-gallery-count]")?.textContent ?? null,
                 search: document.querySelector("[data-canvas-gallery-search]") != null,
@@ -25509,12 +25510,13 @@ const canvasGallery = {
         }
         await h.shot("cdp-shots/canvas-gallery-grid.png");
         rec(
-            "1. the grid draws beta, alpha, old; beta says No preview yet, alpha shows its thumb.png; the hints read ←↑↓→ move, Enter open, / search; the cursor starts on beta, → reaches alpha, ↓ reaches old and clamps there, ← returns to alpha",
+            "1. the grid draws beta, alpha, old; beta says No preview yet, alpha shows its thumb.png through a blob: URL (the packaged CSP's img-src takes no http:); the hints read ←↑↓→ move, Enter open, / search; the cursor starts on beta, → reaches alpha, ↓ reaches old and clamps there, ← returns to alpha",
             three &&
                 JSON.stringify(order) === JSON.stringify(["gallery-beta", "gallery-alpha", "gallery-old"]) &&
                 grid.noPreview &&
                 previewed &&
-                /\/gallery-alpha\/thumb\.png\?v=\d+$/.test(grid.alphaSrc ?? "") &&
+                /^blob:/.test(grid.alphaSrc ?? "") &&
+                /\/gallery-alpha\/thumb\.png\?v=\d+$/.test(grid.alphaThumb ?? "") &&
                 grid.hints &&
                 grid.search &&
                 /^3 · \d+ KB$/.test(grid.pill ?? "") &&
@@ -25845,11 +25847,11 @@ const canvasGalleryPreview = {
         await cgPress(h, "Escape");
         const shown = await polishWaitFor(
             h,
-            `(() => { const i = document.querySelector('[data-canvas-card="preview-beta"] img'); return !!i && /\\/preview-beta\\/thumb\\.png\\?v=\\d+$/.test(i.getAttribute("src") ?? "") && i.complete && i.naturalWidth > 0; })()`,
+            `(() => { const i = document.querySelector('[data-canvas-card="preview-beta"] img'); return !!i && /^blob:/.test(i.getAttribute("src") ?? "") && /\\/preview-beta\\/thumb\\.png\\?v=\\d+$/.test(i.getAttribute("data-canvas-thumb") ?? "") && i.complete && i.naturalWidth > 0; })()`,
             10000
         );
-        const src = await h.ev(`document.querySelector('[data-canvas-card="preview-beta"] img')?.getAttribute("src") ?? null`);
-        rec("2. back in the grid, preview-beta's card shows an <img> from thumb.png?v=<time>", shown, JSON.stringify({ shown, src }));
+        const src = await h.ev(`(() => { const i = document.querySelector('[data-canvas-card="preview-beta"] img'); return i ? [i.getAttribute("src"), i.getAttribute("data-canvas-thumb")] : null; })()`);
+        rec("2. back in the grid, preview-beta's card shows thumb.png?v=<time> through a blob: URL", shown, JSON.stringify({ shown, src }));
         return steps;
     },
     teardown: (h, ctx) => cgTeardown(h, ctx, "canvas-gallery-preview", CG_PREVIEW_PROJECT),

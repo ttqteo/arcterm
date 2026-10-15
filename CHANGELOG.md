@@ -66,9 +66,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
-- **Canvas previews and Send work on a Mac**: the Canvas gallery's cards now take their preview the first time you open
-  a canvas, and Send captures the board, instead of neither ever working on a Mac. They use the Screen Recording
-  permission arcterm already has; without it Send says so.
+- **Canvas previews show, and work on a Mac**: the Canvas gallery's cards show the preview taken the first time you
+  open a canvas (the installed app drew them blank before), a Mac now takes them, and Send captures the board there.
+  They use the Screen Recording permission arcterm already has; without it Send says so.
 - **An agent cut off by a restart carries on**: when arcterm quits, updates or crashes while a claude, pi, agy or
   codex agent is working, waiting on a permission or asking you something, it comes back with a note to pick up where
   it left off (and to ask again if it was waiting on you), instead of sitting at its prompt until you type "continue".
