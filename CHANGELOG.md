@@ -90,6 +90,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   Redraw did.
 - **The Office card stays in the office**: the card beside a desk keeps to the office's height and scrolls, instead of
   running down the page with the agent's whole last answer; a finished card's age no longer runs into Review changes.
+- **A run that finished while arcterm was out of touch reads finished**: when the window loses its connection to the
+  backend for a while (folded, say) and a run moves on or lands meanwhile, the Agent tree catches up as soon as it
+  reconnects, instead of showing the run working with a task stalled until the app restarts.
 
 ## 0.15.13 — 2026-10-15
 

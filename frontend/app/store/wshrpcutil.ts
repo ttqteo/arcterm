@@ -1,6 +1,7 @@
 // Copyright 2025, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { reloadCachedWaveObjects } from "@/app/store/wos";
 import { setWpsRpcClient, wpsReconnectHandler } from "@/app/store/wps";
 import { TabClient } from "@/app/store/tabrpcclient";
 import { WshRouter } from "@/app/store/wshrouter";
@@ -26,6 +27,8 @@ function initWshrpc(routeId: string, authKey?: string): WSControl {
         DefaultRouter.reannounceRoutes();
     });
     addWSReconnectHandler(wpsReconnectHandler);
+    // after wps's handler, so the event subscriptions go out again before the refetches
+    addWSReconnectHandler(reloadCachedWaveObjects);
     return globalWS;
 }
 

@@ -170,6 +170,46 @@ function reloadWaveObject<T extends WaveObj>(oref: string): Promise<T> {
     return prtn;
 }
 
+// the newest refetch per oref; a pushed change drops it, so a refetch answered after the push cannot put back
+// the older copy
+const refetchTokens = new Map<string, number>();
+
+// reloadCachedWaveObjects refetches every object the cache holds, each time the socket comes back. A
+// waveobj:update pushed while it was down never arrives, and an object that changes no more (a finished run,
+// its dag) kept the copy from before the drop for good: the Agent tree read a landed run as working.
+function reloadCachedWaveObjects(): void {
+    if (isPreviewWindow()) {
+        return;
+    }
+    for (const [oref, wov] of waveObjectValueCache) {
+        if (wov.pendingPromise != null) {
+            // its first load is still out and lands what the backend holds
+            continue;
+        }
+        const token = (refetchTokens.get(oref) ?? 0) + 1;
+        refetchTokens.set(oref, token);
+        GetObject<WaveObj>(oref)
+            .then((val) => {
+                if (refetchTokens.get(oref) !== token) {
+                    return;
+                }
+                refetchTokens.delete(oref);
+                const cur = globalStore.get(wov.dataAtom);
+                // unchanged: keep the value as it was, or every object on screen re-renders at once
+                const unchanged =
+                    val == null ? cur.value == null : cur.value != null && val.version <= cur.value.version;
+                if (unchanged && !cur.error) {
+                    return;
+                }
+                globalStore.set(wov.dataAtom, { value: val, loading: false, error: false });
+            })
+            .catch((err) => {
+                // the cached copy stays: it is no staler than before the refetch
+                dlog("WaveObj refetch failed", oref, err);
+            });
+    }
+}
+
 function createWaveValueObject<T extends WaveObj>(oref: string, shouldFetch: boolean): WaveObjectValue<T> {
     const wov = { pendingPromise: null, dataAtom: null };
     wov.dataAtom = atom({ value: null, loading: true, error: false });
@@ -299,6 +339,7 @@ function updateWaveObject(update: WaveObjUpdate) {
         // a pushed change is newer than any fetch still in flight: drop that fetch, or a late read of
         // the object before it existed overwrites the change and nothing refetches
         wov.pendingPromise = null;
+        refetchTokens.delete(oref);
         globalStore.set(wov.dataAtom, { value: null, loading: false, error: false });
     } else {
         if (!isValidWaveObj(update.obj)) {
@@ -311,6 +352,7 @@ function updateWaveObject(update: WaveObjUpdate) {
         }
         dlog("WaveObj updated", oref);
         wov.pendingPromise = null;
+        refetchTokens.delete(oref);
         globalStore.set(wov.dataAtom, { value: update.obj, loading: false, error: false });
     }
     return;
@@ -363,6 +405,7 @@ export {
     loadAndPinWaveObject,
     makeORef,
     mockObjectForPreview,
+    reloadCachedWaveObjects,
     reloadWaveObject,
     setObjectValue,
     splitORef,
