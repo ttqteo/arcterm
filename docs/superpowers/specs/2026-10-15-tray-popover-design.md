@@ -40,9 +40,9 @@ is a state the built popover reaches:
   - At 0 the title is empty and the icon has no badge.
 - **Memory pressure critical adds a red dot** beside the count (board `A-Critical`), so the icon alone tells you the
   machine is about to stall.
-  - macOS tints a template image whole, so the dot cannot sit in the glyph. Task 4 sets the status item's
-    attributed title: a red `●` before the count, through AppKit as `macwindow.rs` already does. On Windows the dot
-    is drawn into the icon.
+  - macOS tints a template image whole, so the dot cannot sit in the glyph. The host sets the status item's
+    attributed title: a red `●` before the count, through AppKit (`macwindow.rs` `tint_tray_alert`). On Windows the
+    dot is drawn into the icon.
   - If the attributed title cannot be built, the title reads `! 4`.
 - **Offline dims the glyph** to 45% and drops the count (board `A-Offline`). The host sets this itself when wavesrv's
   stderr closes (`[tauri] wavesrv stderr closed`), since no frontend can then tell it.
@@ -67,9 +67,8 @@ is a state the built popover reaches:
     window's native one, since a CSS shadow would be clipped at the edge of a window sized to the page.
   - Always on top, never in the taskbar or Mission Control, and shown on every Space and over full-screen apps.
 - **It must not raise the main window.** On macOS, showing a normal window activates the app, which brings the
-  cockpit forward too. Task 4 spikes this: the popover becomes a non-activating panel through AppKit (like
-  `macwindow.rs`'s calls), or an existing crate's NSPanel conversion if one builds cleanly. The popover is only
-  worth having if the cockpit stays where it was.
+  cockpit forward too. The popover becomes a non-activating panel through AppKit: `macwindow.rs` swaps its window's
+  class to `ArcTrayPanel`. The popover is only worth having if the cockpit stays where it was.
 - **Its own Vite entry:** `frontend/tauri/tray.html` + `tray.tsx`. It is a small React page with the same
   `tailwindsetup.css` and theme: the theme preset sits in the shared `localStorage`, and `themestore.ts` applies it
   the same way. It does not boot the cockpit, the wsh client or WOS.
@@ -204,13 +203,15 @@ the popover, and purging memory (it only drops file cache, which fills again).
 ## Verification
 
 - **Unit tests:** `traysnapshot.test.ts` covers the snapshot: the count rule, the five-row cap with "N more", the
-  pressure caption per level, the storage sums, and the usage chip's level.
+  pressure caption per level, the storage sums, and the usage chip's level. `trayformat.test.ts` covers the page's
+  sizes, words and captions, and `trayactmodel.test.ts` what each `tray:act` does.
 - **Go tests:** `pkg/machinestats` (sampler start/stop, the ring), the pressure watcher's publish-on-change, the
   heaviest-descendant pick, and `StopProcessCommand`'s descendant check, which refuses the agent itself, wavesrv
   and a pid outside the tree.
 - **CDP scenarios** (`scripts/cdp/scenarios.mjs`):
   - `tray.html` loads in headless Chrome with a fixture snapshot (`?fixture=<name>`), one scenario per board:
-    `tray-main`, `tray-freeup`, `tray-storage`, `tray-quiet`, `tray-critical`, `tray-paused`, `tray-offline`.
+    `tray-main`, `tray-freeup`, `tray-storage`, `tray-quiet`, `tray-critical`, `tray-paused`, `tray-offline`,
+    `tray-windows`; `tray-settings-row` finds the toggle in Settings → General.
   - A `tray-actions` scenario clicks Run now, Skip, Stop and a clean-confirm, and asserts the `tray:act` events
     sent.
   - These run on the Mac's `task dev:browser` path; none needs the Tauri host.
@@ -223,7 +224,8 @@ the popover, and purging memory (it only drops file cache, which fills again).
   - the popover under the icon on a full-screen Space;
   - the cockpit staying put when the popover opens;
   - the cold open's time, which `tray.rs` logs to `waveapp.log`, against the 0.5 s line;
-  - closing on a click outside;
+  - closing on a click outside, and on a second click on the icon;
+  - Free up's Stop on a real `sleep 600` under an agent;
   - the offline page after killing wavesrv by its PID;
   - Restart arcterm;
   - Settings → General's toggle hiding the icon.
