@@ -38366,7 +38366,7 @@ const { jarvisOffice, jarvisOfficeBench, jarvisOfficeFloor } = makeOfficeScenari
     tasks: RUN_SHEET_POLISH_TASKS,
     leadId: TREE_RAIL_LEAD_ID,
 });
-const { cockpitOffice, cockpitOfficeBench } = makeCockpitOfficeScenarios({ arrangeFixtureRun, teardownFixtureRun });
+const { cockpitOffice, cockpitOfficeControls, cockpitOfficeBench } = makeCockpitOfficeScenarios({ arrangeFixtureRun, teardownFixtureRun });
 
 // --- run-queue: plans queued to start are rows on the Agent tree, with Start now, Run next and Remove ---------------------
 // (docs/superpowers/specs/2026-10-14-run-handoff-lifecycle-design.md, decision 4.) A real queue in wavesrv and real rows,
@@ -42610,6 +42610,7 @@ export const SCENARIOS = [
     jarvisOfficeBench,
     jarvisOfficeFloor,
     cockpitOffice,
+    cockpitOfficeControls,
     cockpitOfficeBench,
     runQueueScenario,
     runOriginScenario,

@@ -43,6 +43,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- **The Office plays like a pixel game**: ↵ at a desk opens a dialog box at the edge of the office with what the agent
+  says, its question and its numbers, and a ▶ menu of what you can do there: ↑ ↓ pick, ↵ does it, Esc steps back, and
+  Full card (f) shows the whole card. A run's room offers Open lead and Adjust, a worker's seat its task's own buttons.
+  <!-- big -->
+- **The Office fills the Cockpit**: its counts, Cards/Office, projects and Live only sit in a bar inside the office,
+  the footer shows only `m menu` and the newest event, and `m` opens the office menu (Events shows the Events rail,
+  which Office now hides).
 - The Office view is drawn in pixel art: a bright office in work hours and a dim one after hours, people you can tell apart by their hair, the boss in a cap. It also draws with about 280 fewer page elements.
 - **The Office's ⚡ reads as energy**: it shows what is left of Claude's 5-hour window, so 4 % used reads ⚡ 96 %, and
   it turns amber at 10 % left.

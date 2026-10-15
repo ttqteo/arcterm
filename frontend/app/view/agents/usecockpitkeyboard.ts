@@ -12,19 +12,24 @@ import { answerDigitTarget, canSubmitAsk, hasAnswerableAsk, moveCursor, nextAskI
 import { askerAt, columnJump, type RowTarget } from "./cardgridlayout";
 import { isRowKey, rowCardId } from "./leadcardmodel";
 import type { Dir } from "./officeboss";
+import { officeKey, type OfficeLayer } from "./officecontrols";
 
 export const ARROW_DIR: Record<string, Dir> = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
 
-/** What the Cockpit's keys can ask of the office (cockpitoffice.tsx's handle), while it shows Office. */
+/** What the Cockpit's keys can ask of the office while it shows Office (cockpitsurface.tsx binds it to the office's
+ *  handle). officecontrols.ts decides what each key does. */
 export interface OfficeKeys {
+    layer(): OfficeLayer;
+    menuOpen(): boolean;
     walk(dir: Dir): void;
-    goTo(key: string): void;
-    showPath(key: string): void;
-    dismiss(): void;
-    openCard(): boolean;
-    toggleBig(): boolean;
-    order(): string[];
-    asks(): string[];
+    talk(): boolean;
+    card(): boolean;
+    move(delta: -1 | 1): void;
+    activate(): void;
+    back(): void;
+    toggleMenu(): void;
+    desk(delta: -1 | 1): void;
+    nextAsk(): void;
 }
 
 export type CockpitKeyDeps = {
@@ -88,54 +93,72 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
             return;
         }
         if (office) {
-            const dir = ARROW_DIR[e.key];
-            if (dir) {
-                e.preventDefault();
-                office.walk(dir);
-                return;
-            }
-            if (e.key === "j" || e.key === "k") {
-                e.preventDefault();
-                const next = moveCursor(office.order(), cursorId, e.key === "j" ? 1 : -1);
-                if (next) {
-                    setCursorId(next);
-                    office.goTo(next);
-                }
-                return;
-            }
-            if (e.key === "n") {
-                e.preventDefault();
-                const target = nextAskId(office.asks(), lastJumpRef.current);
-                if (target) {
-                    lastJumpRef.current = target;
-                    setCursorId(target);
-                    office.showPath(target);
-                }
-                return;
-            }
-            if (e.key === "Enter" && office.openCard()) {
-                // the ↵ over the boss's desk; with its card open, Enter answers or opens the agent as below
-                e.preventDefault();
-                return;
-            }
-            if (e.key === "f" && !e.metaKey && !e.ctrlKey && !e.altKey && office.toggleBig()) {
-                e.preventDefault();
-                return;
-            }
-            if (e.key === "Escape") {
-                office.dismiss();
-                return;
-            }
-            if (e.key === "h" || e.key === "l") {
-                // a question with several parts keeps h/l for its tabs; in the office they do nothing else
-                const asker = askerAt(cursorId, roster, rowTargets);
-                const n = asker?.ask?.questions?.length ?? 0;
-                if (asker?.state === "asking" && n > 1) {
+            const act = officeKey(office.layer(), office.menuOpen(), e.key, {
+                meta: e.metaKey,
+                ctrl: e.ctrlKey,
+                alt: e.altKey,
+            });
+            switch (act.do) {
+                case "walk":
                     e.preventDefault();
-                    const curTab = Math.min(answerTab[asker.id] ?? 0, n - 1);
-                    selectQuestion(asker.id, Math.max(0, Math.min(n - 1, curTab + (e.key === "h" ? -1 : 1))));
+                    office.walk(act.dir);
+                    return;
+                case "move":
+                    e.preventDefault();
+                    office.move(act.delta);
+                    return;
+                case "activate":
+                    e.preventDefault();
+                    office.activate();
+                    return;
+                case "talk":
+                    // the ↵ over the boss's desk; at no desk, Enter opens the cursor's agent as below
+                    if (office.talk()) {
+                        e.preventDefault();
+                        return;
+                    }
+                    break;
+                case "card":
+                    if (office.card()) {
+                        e.preventDefault();
+                    }
+                    return;
+                case "back":
+                    office.back();
+                    return;
+                case "menu":
+                    e.preventDefault();
+                    office.toggleMenu();
+                    return;
+                case "desk":
+                    e.preventDefault();
+                    office.desk(act.delta);
+                    return;
+                case "nextAsk":
+                    e.preventDefault();
+                    office.nextAsk();
+                    return;
+                case "tab": {
+                    // a question with several parts switches question (h l, and ← → in the dialog box)
+                    const asker = askerAt(cursorId, roster, rowTargets);
+                    const n = asker?.ask?.questions?.length ?? 0;
+                    if (asker?.state === "asking" && n > 1) {
+                        e.preventDefault();
+                        const curTab = Math.min(answerTab[asker.id] ?? 0, n - 1);
+                        selectQuestion(asker.id, Math.max(0, Math.min(n - 1, curTab + act.delta)));
+                    }
+                    return;
                 }
-                return;
+                case "none":
+                    e.preventDefault();
+                    return;
+                case "pass":
+                    // r's composer lives on the card: show the card first, then the reply below opens it (a chord
+                    // passes as it is)
+                    if (e.key === "r" && !e.metaKey && !e.ctrlKey && !e.altKey && office.layer() !== "card") {
+                        office.card();
+                    }
+                    break;
             }
         }
         // surface switch (`[`/`]`) now lives in the global keybinding registry (bindings.ts), so it

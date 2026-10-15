@@ -46,6 +46,7 @@ import {
     leadMark,
     REVIEW_ACTIONS,
     reviewFindings,
+    ROW_ACTION_LABEL,
     runAdjustable,
     runFlowing,
     runningCount,
@@ -82,7 +83,7 @@ const LEAD_PANE_MIN_BODY_PX = 320;
 // the lead pane's open state per run id, set only once you toggle it; the card unmounts on a surface switch
 const leadPaneOpenAtom = atom<Record<string, boolean>>({}) as PrimitiveAtom<Record<string, boolean>>;
 
-const TONE_DOT: Record<RowTone, string> = {
+export const TONE_DOT: Record<RowTone, string> = {
     run: "bg-working pulse-dot",
     ask: "bg-warning",
     soft: "bg-accent-soft",
@@ -92,14 +93,6 @@ const TONE_DOT: Record<RowTone, string> = {
     muted: "bg-muted",
     wait: "shadow-[inset_0_0_0_1.5px_var(--color-muted)]",
 };
-const ACTION_LABEL: Record<RowAction, string> = {
-    retry: "Retry",
-    skip: "Skip",
-    takeover: "Take over",
-    tell: "Tell",
-    resolve: "Continue",
-};
-
 export interface LeadCardProps {
     model: AgentsViewModel;
     cardId: string;
@@ -118,6 +111,8 @@ export interface LeadCardProps {
     onOpen: (id: string) => void;
     onOpenDiff: (id: string) => void;
     onBackground?: () => void;
+    // the Office's dialog box opened this card from its Adjust: start with the Adjust panel open
+    initialPanel?: "adjust";
 }
 
 export function LeadCard(p: LeadCardProps) {
@@ -128,7 +123,7 @@ export function LeadCard(p: LeadCardProps) {
     const sentIds = useAtomValue(model.sentIdsAtom);
     const diff = useAtomValue(diffStatsByIdAtom)[lead?.id ?? ""];
     const error = useAtomValue(runCardErrorAtom)[run.runId];
-    const [panel, setPanel] = useState<"adjust" | "cancel" | null>(null);
+    const [panel, setPanel] = useState<"adjust" | "cancel" | null>(p.initialPanel ?? null);
     const [par, setPar] = useState<number | null>(null);
     const [doneOpen, setDoneOpen] = useState(false);
     const [bodyRef, , bodyRect] = useDimensionsWithCallbackRef<HTMLDivElement>(null);
@@ -716,7 +711,7 @@ function TaskRow({
                                         <span className="rounded-[3px] bg-surface-code px-1 font-mono text-[10.5px] text-ink-mid">
                                             {i + 1}
                                         </span>
-                                        {ACTION_LABEL[a]}
+                                        {ROW_ACTION_LABEL[a]}
                                     </button>
                                 ))}
                                 {canOpen ? (
@@ -741,7 +736,7 @@ function TaskRow({
 }
 
 // the run's task strip, the one the agent tree and the rail draw: a segment per task, or one done/total bar
-function LeadBar({ strip, label }: { strip: TaskStrip; label: string }) {
+export function LeadBar({ strip, label }: { strip: TaskStrip; label: string }) {
     if (strip.kind === "bar") {
         return (
             <div role="img" aria-label={label} className="flex h-[3px] overflow-hidden rounded-[2px]">

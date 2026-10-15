@@ -136,34 +136,47 @@ A person away from the desk walks back when the agent is working or asking again
   sideways sprite mirrored in CSS). At a desk it stands on the floor just in front of it, its back to you, looking at
   the desk, with a ring in the focus colour under its feet. It starts at the desk of the Cockpit's cursor card, else
   the first Needs you desk, else the first desk.
-- **Keys in Office** (only while the Cockpit owns the keyboard, as `usecockpitkeyboard.ts` decides today):
-  - `←` `↑` `↓` `→` walk; held, the boss keeps walking. Walls stop it; doors let it through. (In Cards the arrows
-    move the card cursor; in Office they walk, and `j` `k` move the cursor.)
-  - `j` `k` go to the next or previous desk or seat in office order (band by band: the agents' room by rows, then its
-    meeting rooms' seats; Home last); `n` goes to the next Needs you. The boss walks there through the doors: out of
-    its room, along the hall, into the target room, to the spot in front of the desk. On `n` the path itself shows
-    first, a dotted line in the asking colour from the boss to the desk with `next Needs you` under it, for one
-    second (frame 0 under reduced motion, then the boss is there at once).
-  - `h` `l` switch question on a multi-question ask in the popup, as they do on a card.
-  - Every other Cockpit key acts on the desk at the boss: `1`–`9`, `Enter`, `Space`, `r`, `t`, `b`.
+- **Keys in Office** (only while the Cockpit owns the keyboard), a Game Boy's: the arrows, `↵` as A, `Esc` as B, `m`
+  as START (2026-10-15, canvas `office-controls`; rules in `officecontrols.ts`).
+  - Walking: `←` `↑` `↓` `→` walk (held, the boss keeps walking; walls stop it, doors let it through); `↵` at a desk
+    opens its dialog box; `f` its full card, big.
+  - Dialog box: `↑` `↓` move the ▶ (over a dim item), `↵` does it, `←` `→` and `h` `l` switch the question of a
+    several-part ask, `f` the full card, `Esc` back to walking.
+  - Full card: the arrows walk away (shutting it), `↵` works as on a card, `f` grows or shrinks it, `Esc` back to the
+    dialog box.
+  - Everywhere: `j` `k` the next or previous desk in office order, `n` the next Needs you (its dotted path first),
+    `m` the office menu (`↑` `↓` `↵`, `Esc` or `m` shut it); `1`–`9`, `r`, `t`, `b`, Space act on the desk at the boss.
+    A key with Cmd, Ctrl or Alt is never the office's.
 - **The desk at the boss** is the desk or seat whose spot is nearest, in the room the boss stands in. It is the
   Cockpit's cursor card (a seat's card is its run's `LeadCard` with that task's row as cursor), so the keyboard's card
   order in Office is the office order. In the hall or the lounge the cursor stays on the last desk.
-- **Mouse:** a click on a desk, a seat or a meeting room walks the boss there and opens its card; a click on the
+- **Mouse:** a click on a desk, a seat or a meeting room walks the boss there and opens its dialog box; a click on the
   floor walks the boss there.
 - **Reduced motion or animation off:** the boss is at once where it would have walked.
 
 ## The popup
 
-- While the boss stands still at a desk, the desk's card shows beside it: the **same `AgentRow`** the grid draws,
-  with the props `CockpitSurface` already passes the cursor card (selections, typed answers, composer), or for a seat
-  or a meeting room the run's **`LeadCard`**. No card is rewritten for the office.
-- It sits beside the desk on the hall's side (to the right of the agents' room, to the left of a meeting room), over
-  the hall, with a pointer to the desk, kept inside the office's box. It hides while the boss walks and when `Esc` is
-  pressed, until the boss moves again.
+- **The dialog box** (↵ or a click on a desk) sits at the foot of the office's view, or at its head when a box at the
+  foot would cover the boss, so it never covers the desk. A plate on its top edge names who talks (an agent's status
+  line, ending "Needs you · <age>" while the agent asks; a run's mark, title, project and lead); the left holds what
+  they say (an agent's question under its last words and its last steps, a diff line reading "+N −M in K files", its
+  model, tokens, context and age; a run's lead's last line, the task bar, the counts and a column of tasks; a seat's
+  task row and its worker), the right a ▶ menu: the answers then Send (dim until every question has one; a question in
+  several parts under ◀ its header ▶ and "1 of 2"), or the row's own actions (Tell stays on the full card, whose input
+  takes the words), then Open, Reply, Terminal, Background (Open lead and Adjust at a run), and Full card. Only the item
+  under the ▶ shows its key. A several-question box keeps Terminal under its answers (the States tile leaves it out for
+  room). A run's ▶ menu is 220 px wide, 268 px elsewhere.
+- **The full card** (Full card or `f`) is the grid's own `AgentRow` or `LeadCard` beside the desk, as before; Adjust
+  opens a run's card with its Adjust panel. No card is rewritten for the office.
+- **The office menu** (`m`, or the footer's `m menu`, whose chip lights while it is open) lists Next Needs you, Next
+  desk, Previous desk, Events, Cards view and All keys, each with its key.
+- **The office fills the Cockpit**: no title; the counts that filter, Cards | Office, the project switcher and Live only
+  sit in a HUD bar inside the view, after the clock and energy. The footer holds `m menu` and the newest event; the
+  Events rail is hidden in Office until the menu's Events shows it (Esc while walking hides it). The Needs-you strip,
+  the Backgrounded section and the background-agents strip stay under the office as in Cards (no board draws them).
 - **Open terminal** leaves for the Agent surface through `openTarget`, as the card does today.
 - **Card streams:** Office keeps the grid's streams, one per live agent. Stopping a stream drops that agent's live
-  entries, and the Cockpit hides an agent with nothing to show, so streaming only the popup's card would take agents out
+  entries, and the Cockpit hides an agent with nothing to show, so streaming only the full card would take agents out
   of the office and the tab counts; trimming streams needs a fix of its own.
 
 ## Personality, day and night, energy
