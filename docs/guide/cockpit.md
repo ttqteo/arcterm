@@ -134,7 +134,8 @@ Finished window (mục **Idle** dưới lưới) ngồi ở phòng chờ, nên t
   `Esc` ẩn thẻ cho tới khi sếp đi tiếp.
 - **Giờ làm và năng lượng**: ngoài giờ làm (mặc định 9–18, và cả cuối tuần) văn phòng tối lại, ai idle đã về nhà, ai
   còn làm có đèn bàn. Quota 5 giờ từ 70 % thì có người ngáp, từ 90 % thì có cà phê trên bàn; quota reset thì mọi
-  người vươn vai.
+  người vươn vai. `⚡` ở đầu văn phòng là năng lượng còn lại: 100 % trừ phần quota đã dùng (dùng 4 % thì hiện
+  `⚡ 96 %`), còn 10 % trở xuống thì chuyển màu vàng.
 - **Settings → Appearance → Office** tắt animation và đổi giờ làm. Văn phòng tốn bao nhiêu thì xem ở **panel
   Consumers** (bấm chip RAM): dòng **Office** cho biết JS của văn phòng, số người, ảnh sprite và DOM node, kèm nút tắt
   animation.

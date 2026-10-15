@@ -37,6 +37,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- **The Office's ⚡ reads as energy**: it shows what is left of Claude's 5-hour window, so 4 % used reads ⚡ 96 %, and
+  it turns amber at 10 % left.
 - **A calmer Ideas list**: each idea takes at most two lines, an open question reads brightest and a decision dimmest,
   and hovering one shows its whole text, turn and author beside the rail. Click an idea to pick it for Merge or Drop:
   the card itself lights up, with no checkbox. Only the topic under way stays open; the others fold, with a dot when

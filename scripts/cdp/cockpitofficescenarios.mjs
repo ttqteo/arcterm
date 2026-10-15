@@ -345,7 +345,7 @@ export function makeCockpitOfficeScenarios(fx) {
             await h.shot("cdp-shots/cockpit-office-night.png");
 
             // 10. Tired: the boss stands at pike's desk with its card open; the working desks have coffee, the heading
-            // says 94 %, and a tired working person yawns one frame in four
+            // says 6 % (the energy left of a window 94 % used), and a tired working person yawns one frame in four
             await dev(h, { afterHours: false, energy: 94 });
             await sleep(400);
             await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-pike"))})?.click()`);
@@ -353,8 +353,8 @@ export function makeCockpitOfficeScenarios(fx) {
             const heading = await h.ev(`document.querySelector("[data-office-heading]")?.textContent ?? ""`);
             const tiredYawns = await waitForSprite(h, ["yawn"], 3000);
             rec(
-                "10. the 5-hour window at 94 %: the boss at pike's desk with its card open, coffee on the working desks, the heading says 94 %, a working person yawns",
-                p?.cursor === "fx-office-pike" && p.popup === "agent" && p.cups > 0 && heading.includes("94") && tiredYawns > 0,
+                "10. the 5-hour window at 94 %: the boss at pike's desk with its card open, coffee on the working desks, the heading says 6 % left, a working person yawns",
+                p?.cursor === "fx-office-pike" && p.popup === "agent" && p.cups > 0 && heading.includes("6 %") && tiredYawns > 0,
                 JSON.stringify({ cursor: p?.cursor, popup: p?.popup, cups: p?.cups, heading, tiredYawns })
             );
             await h.shot("cdp-shots/cockpit-office-tired.png");

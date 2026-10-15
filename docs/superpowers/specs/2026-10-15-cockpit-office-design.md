@@ -185,7 +185,8 @@ A person away from the desk walks back when the agent is working or asking again
   | drops from 70 % or more to under 20 % (a reset) | everyone at a desk stretches once |
   | unknown (no reading) | as under 70 % |
 
-  The office's heading shows `⚡ <percent>` beside the clock, `⚡ —` when unknown; at 90 % and over it is amber.
+  The office's heading shows `⚡ <percent>` beside the clock as energy, what is left of the window (100 % less the use:
+  4 % used reads `⚡ 96 %`), `⚡ —` when unknown; at 10 % left and under it is amber.
 
 ## Drawing
 

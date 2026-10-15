@@ -879,7 +879,9 @@ export function CockpitOffice(props: CockpitOfficeProps) {
 
 function OfficeHeading({ now, night, pct }: { now: number; night: boolean; pct?: number }) {
     const time = new Date(now).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    const tired = pct != null && pct >= 90;
+    // energy reads the window the other way: what is left of it, as a battery would
+    const left = pct == null ? undefined : Math.min(100, Math.max(0, 100 - pct));
+    const tired = left != null && left <= 10;
     const kbd = "rounded border border-edge-mid bg-surface-raised px-1 font-mono text-[10.5px] text-secondary";
     return (
         <div data-office-heading className="flex items-center gap-4 text-[12px] text-muted">
@@ -889,11 +891,11 @@ function OfficeHeading({ now, night, pct }: { now: number; night: boolean; pct?:
                 {night ? "after hours" : "work hours"}
             </span>
             <span
-                title="Claude's 5-hour window, as the app bar meter reads it"
+                title="Energy: what is left of Claude's 5-hour window (the app bar meter shows what is used)"
                 className={cn("flex items-center gap-1.5 tabular-nums", tired && "text-asking")}
             >
                 <Zap size={14} />
-                {pct == null ? "—" : `${Math.round(pct)} %`}
+                {left == null ? "—" : `${Math.round(left)} %`}
             </span>
             <span className="ml-auto flex items-center gap-2.5 text-[11.5px]">
                 <span>
