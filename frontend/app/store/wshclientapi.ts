@@ -630,6 +630,12 @@ export class RpcApiType {
         return client.wshRpcCall("getlatestresume", null, opts);
     }
 
+    // command "getmachinestats" [call]
+    GetMachineStatsCommand(client: WshClient, opts?: RpcOpts): Promise<MachineStatsData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getmachinestats", null, opts);
+        return client.wshRpcCall("getmachinestats", null, opts);
+    }
+
     // command "getmeta" [call]
     GetMetaCommand(client: WshClient, data: CommandGetMetaData, opts?: RpcOpts): Promise<MetaType> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getmeta", data, opts);
@@ -1336,6 +1342,12 @@ export class RpcApiType {
     StopDevServerCommand(client: WshClient, data: CommandStopDevServerData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "stopdevserver", data, opts);
         return client.wshRpcCall("stopdevserver", data, opts);
+    }
+
+    // command "stopprocess" [call]
+    StopProcessCommand(client: WshClient, data: CommandStopProcessData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "stopprocess", data, opts);
+        return client.wshRpcCall("stopprocess", data, opts);
     }
 
     // command "stoprunworker" [call]

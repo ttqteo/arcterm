@@ -1963,6 +1963,12 @@ declare global {
         createms: number;
     };
 
+    // wshrpc.CommandStopProcessData
+    type CommandStopProcessData = {
+        blockid: string;
+        pid: number;
+    };
+
     // wshrpc.CommandStopRunWorkerData
     type CommandStopRunWorkerData = {
         channelid: string;
@@ -2097,6 +2103,7 @@ declare global {
         tokensread: boolean;
         tokens?: UsageBucket[];
         dag?: ConsumerDag;
+        heaviest?: ConsumerProcess;
     };
 
     // wshrpc.ConsumerDag
@@ -2104,6 +2111,13 @@ declare global {
         channelid: string;
         runid: string;
         taskid: string;
+    };
+
+    // wshrpc.ConsumerProcess
+    type ConsumerProcess = {
+        pid: number;
+        command: string;
+        bytes: number;
     };
 
     // wshrpc.DagAskItem
@@ -2698,6 +2712,23 @@ declare global {
         text: string;
         learned: string;
         count: number;
+    };
+
+    // wshrpc.MachineStatsData
+    type MachineStatsData = {
+        memtotal: number;
+        memavailable: number;
+        pressure: string;
+        cpupct: number;
+        cpusamples: number[];
+        diskname: string;
+        disktotal: number;
+        diskfree: number;
+    };
+
+    // wshrpc.MemoryPressureData
+    type MemoryPressureData = {
+        level: string;
     };
 
     // waveobj.MetaTSType
@@ -3382,6 +3413,7 @@ declare global {
         "app:*"?: boolean;
         "app:ctrlvpaste"?: boolean;
         "app:disablectrlshiftdisplay"?: boolean;
+        "app:tray"?: boolean;
         "notify:*"?: boolean;
         "notify:os"?: boolean;
         "notify:toast"?: boolean;

@@ -41,5 +41,12 @@ export default defineConfig({
         // the 500 kB default is a network-delivery budget; these chunks load from the app bundle on disk.
         // monaco alone is 3.8 MB and already lazy, so the limit sits just above it to still catch a jump.
         chunkSizeWarningLimit: 4000,
+        // two entries, so tray.html (the menu bar / tray popover's page) ships beside index.html
+        rollupOptions: {
+            input: {
+                main: resolve(__dirname, "index.html"),
+                tray: resolve(__dirname, "tray.html"),
+            },
+        },
     },
 });

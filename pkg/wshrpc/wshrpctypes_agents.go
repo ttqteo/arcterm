@@ -36,6 +36,7 @@ type AgentCommands interface {
 	AgentsSleepCommand(ctx context.Context, data CommandAgentsSleepData) (*CommandAgentsSleepRtnData, error)                              // put an idle agent to sleep: its process ends, its tab and conversation stay
 	AgentsWakeCommand(ctx context.Context, data CommandAgentsWakeData) error                                                              // relaunch a sleeping agent with --resume; with Message, deliver it once the agent reports in
 	AgentsSetViewingCommand(ctx context.Context, data CommandAgentsSetViewingData) error                                                  // the frontend's agents on screen, which the sleep loop never sleeps
+	StopProcessCommand(ctx context.Context, data CommandStopProcessData) error                                                            // end one of an agent's descendant processes and its subtree (the tray's Free up)
 	GetConsumersCommand(ctx context.Context) (*CommandGetConsumersRtnData, error)                                                         // every live agent's RAM and last-10-minutes tokens, and arcterm's own processes' RAM
 }
 
@@ -457,12 +458,25 @@ type ConsumerDag struct {
 // ConsumerAgent is one live agent in a GetConsumers reading. RamBytes is absent when its process tree could
 // not be read; Tokens are its transcript's usage buckets inside the window, read only when TokensRead.
 type ConsumerAgent struct {
-	TabId      string        `json:"tabid"`
-	BlockId    string        `json:"blockid"`
-	RamBytes   *uint64       `json:"rambytes,omitempty"`
-	TokensRead bool          `json:"tokensread"`
-	Tokens     []UsageBucket `json:"tokens,omitempty"`
-	Dag        *ConsumerDag  `json:"dag,omitempty"`
+	TabId      string           `json:"tabid"`
+	BlockId    string           `json:"blockid"`
+	RamBytes   *uint64          `json:"rambytes,omitempty"`
+	TokensRead bool             `json:"tokensread"`
+	Tokens     []UsageBucket    `json:"tokens,omitempty"`
+	Dag        *ConsumerDag     `json:"dag,omitempty"`
+	Heaviest   *ConsumerProcess `json:"heaviest,omitempty"` // its heaviest descendant; absent when it runs nothing but itself
+}
+
+// ConsumerProcess is an agent's heaviest descendant process: what the tray's Free up offers to stop.
+type ConsumerProcess struct {
+	Pid     int32  `json:"pid"`
+	Command string `json:"command"` // memusage.ShortCommand of its command line
+	Bytes   uint64 `json:"bytes"`
+}
+
+type CommandStopProcessData struct {
+	BlockId string `json:"blockid"` // the agent's block: the pid must still be under its process
+	Pid     int32  `json:"pid"`
 }
 
 // CommandGetConsumersRtnData is one reading of the Consumers panel. A nil byte count is one that could not be read.

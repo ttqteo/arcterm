@@ -41,6 +41,27 @@ does not, say what you saw and it becomes a bug row under Actionable.
   its task column, and a worker seat whose review failed leads with Approve / Send back / Retry / Skip.
   `officecontrols.ts`, `officedialog.tsx`, `cockpitoffice.tsx`; merge 519802593.
 
+**2026-10-15 (menu bar / tray popover, run f502b3ed)**
+
+The Final judged only the popover's page in headless Chrome; the icon and the window belong to the Tauri host. Spec
+`docs/superpowers/specs/2026-10-15-tray-popover-design.md`; `src-tauri/src/tray.rs`, `macwindow.rs`,
+`frontend/app/cockpit/traybridge.tsx`.
+
+- [ ] (arcterm) The menu bar icon on a light and a dark menu bar: a count when something waits on you, none at 0, a
+  red `●` before the count at critical memory pressure (`! 4` if the attributed title failed), the dimmed glyph
+  with no count once wavesrv has gone.
+- [ ] (arcterm) Click the icon with the cockpit behind another app, and again on a full-screen Space: the popover
+  opens under the icon and the cockpit stays where it was (the `ArcTrayPanel` class swap); nothing crashes.
+- [ ] (arcterm) The cold open: `[tray] popover ready N ms after the click` in `waveapp.log` stays under 500 ms. Past
+  it, the popover needs a hidden window made at launch.
+- [ ] (arcterm) A click outside closes the popover; a second click on the icon closes it and does not reopen it.
+- [ ] (arcterm) Free up: run `sleep 600` in an agent's terminal; it shows as that agent's heaviest command, and Stop
+  ends it and leaves the agent running.
+- [ ] (arcterm) Kill wavesrv by its PID: the icon dims, the popover opens on the offline page with Last heard within
+  15 s of the kill, Restart arcterm brings it back. With Settings → General's toggle off, the icon stays hidden
+  through the kill.
+- [ ] (arcterm) Settings → General's toggle hides and shows the icon; the popover's gear opens Settings → General.
+
 **2026-10-15 (an agent cut off by a restart carries on)**
 
 - [ ] (arcterm) Give a hand-launched claude agent a task that takes a while, and while it works quit arcterm (or let
