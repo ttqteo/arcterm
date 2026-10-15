@@ -2,7 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { advance, canStand, deskAt, dotsAlong, facing, pathBetween, roomAt, spotOf, stepToward } from "./officeboss";
+import {
+    advance,
+    canStand,
+    cardAt,
+    deskAt,
+    dotsAlong,
+    facing,
+    pathBetween,
+    roomAt,
+    spotOf,
+    stepToward,
+} from "./officeboss";
 import { buildPlan, type Plan, type PlanAgent, type Point } from "./officeplanmodel";
 
 const ag = (id: string, project?: string, state: PlanAgent["state"] = "working"): PlanAgent => ({
@@ -171,6 +182,18 @@ describe("officeboss", () => {
         expect(deskAt(plan, a1)).toBe("a1");
         expect(deskAt(plan, spotOf(plan, "r1")!)).toBe("r1");
         expect(deskAt(plan, { x: plan.hall.x + 100, y: plan.hall.y + 300 })).toBeUndefined();
+    });
+
+    it("offers the cursor's card only while the boss stands still at it", () => {
+        const still = { at: a1, path: [] };
+        expect(cardAt(plan, still, "a1")?.desk?.key).toBe("a1");
+        expect(cardAt(plan, still, "a1")?.room.key).toBe(plan.desks.find((d) => d.key === "a1")!.room);
+        expect(cardAt(plan, { at: spotOf(plan, "r1")!, path: [] }, "r1")?.seat?.key).toBe("r1");
+        expect(cardAt(plan, still, "r1")).toBeUndefined();
+        expect(cardAt(plan, still, undefined)).toBeUndefined();
+        expect(cardAt(plan, null, "a1")).toBeUndefined();
+        expect(cardAt(plan, { at: a1, path: [a1, spotOf(plan, "r1")!] }, "a1")).toBeUndefined();
+        expect(cardAt(plan, { ...still, holding: "left" }, "a1")).toBeUndefined();
     });
 
     it("orders j/k stops band by band: the agents' room by rows, then its meeting seats, Home last", () => {

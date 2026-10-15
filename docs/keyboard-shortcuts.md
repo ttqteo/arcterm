@@ -216,7 +216,8 @@ A link inside an item view does a full open, even with `Mod` held.
 | `←` `↑` `↓` `→` (Office) | Walk the boss; walls stop it, doors let it through |
 | `j` / `k` (Office) | The boss walks to the next / previous desk or seat |
 | `n` (Office) | Show the way to the next Needs you for a second, then walk there |
-| `Esc` (Office) | Hide the card beside the desk until the boss moves |
+| `Enter` (Office) | Open the card the ↵ over the boss's desk offers; with the card open, Enter works as above |
+| `Esc` (Office) | Close the card beside the desk; the ↵ offers it again |
 
 ### Agent
 

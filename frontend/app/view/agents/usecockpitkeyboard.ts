@@ -21,6 +21,7 @@ export interface OfficeKeys {
     goTo(key: string): void;
     showPath(key: string): void;
     dismiss(): void;
+    openCard(): boolean;
     order(): string[];
     asks(): string[];
 }
@@ -109,6 +110,11 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
                     setCursorId(target);
                     office.showPath(target);
                 }
+                return;
+            }
+            if (e.key === "Enter" && office.openCard()) {
+                // the ↵ over the boss's desk; with its card open, Enter answers or opens the agent as below
+                e.preventDefault();
                 return;
             }
             if (e.key === "Escape") {

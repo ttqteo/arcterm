@@ -6,7 +6,7 @@
 // boss stands at is the selected card. Walkers to the lounge take the same paths. Pure: no React, no DOM.
 
 import type { WalkDir } from "@/app/view/office/plansprite";
-import type { Box, Plan, Point, Room } from "./officeplanmodel";
+import type { Box, Desk, Plan, Point, Room, Seat } from "./officeplanmodel";
 
 export type Dir = WalkDir;
 
@@ -163,4 +163,22 @@ export function deskAt(plan: Plan, p: Point): string | undefined {
         }
     }
     return best;
+}
+
+/** The desk or seat whose card the boss can open: the cursor's, while the boss stands still at it. */
+export function cardAt(
+    plan: Plan,
+    boss: { at: Point; path: readonly Point[]; holding?: Dir } | null,
+    cursorId: string | undefined
+): { desk?: Desk; seat?: Seat; room: Room } | undefined {
+    if (boss == null || cursorId == null || boss.path.length > 1 || boss.holding != null) {
+        return undefined;
+    }
+    if (deskAt(plan, boss.at) !== cursorId) {
+        return undefined;
+    }
+    const desk = plan.desks.find((d) => d.key === cursorId);
+    const seat = desk ? undefined : plan.seats.find((s) => s.key === cursorId);
+    const room = plan.rooms.find((r) => r.key === (desk?.room ?? seat?.room));
+    return room ? { desk, seat, room } : undefined;
 }

@@ -72,6 +72,7 @@ import {
     advance,
     BOSS_SPEED,
     canStand,
+    cardAt,
     deskAt,
     dotsAlong,
     facing,
@@ -124,6 +125,8 @@ export interface OfficeHandle {
     goTo(key: string): void;
     showPath(key: string): void;
     dismiss(): void;
+    /** Opens the card the ↵ over the boss's desk offers; false when none is offered. */
+    openCard(): boolean;
     order(): string[];
     asks(): string[];
 }
@@ -163,7 +166,9 @@ const bossAtom = atom<BossState | null>(null) as PrimitiveAtom<BossState | null>
 const walkersAtom = atom<Walker[]>([]) as PrimitiveAtom<Walker[]>;
 const walkingAtom = atom<Record<string, Away | null>>({}) as PrimitiveAtom<Record<string, Away | null>>;
 const dotsAtom = atom<Point[]>([]) as PrimitiveAtom<Point[]>;
-const popupHiddenAtom = atom(false) as PrimitiveAtom<boolean>;
+// the card beside the boss's desk: a click on a desk opens it, ↵ or Enter does at a desk the boss walked to, and any
+// move or Esc shuts it
+const cardOpenAtom = atom(false) as PrimitiveAtom<boolean>;
 // the 5-hour window's use, rounded; FiveHourLeaf sets it, so the 1 s clock the meter reads re-renders that leaf only
 const officeFiveHourAtom = atom<number | undefined>(undefined) as PrimitiveAtom<number | undefined>;
 
@@ -184,6 +189,7 @@ const probe = {
     walking: 0,
     loungeMore: 0,
     popup: "" as "" | "agent" | "run",
+    prompt: "" as "" | "agent" | "run",
 };
 let lastPlan: Plan | null = null;
 let lastWalking: ReadonlySet<string> = new Set();
@@ -461,16 +467,14 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     };
     const kick = useWalkLoop(stepAll);
 
-    const goTo = (key: string, open = true) => {
+    const goTo = (key: string) => {
         const b = globalStore.get(bossAtom);
         const spot = spotOf(planRef.current, key);
         if (!b || !spot) {
             return;
         }
         arrivedRef.current = key;
-        if (open) {
-            globalStore.set(popupHiddenAtom, false);
-        }
+        globalStore.set(cardOpenAtom, false);
         if (!movingRef.current) {
             globalStore.set(bossAtom, { ...b, at: spot, path: [], holding: undefined, dir: "up" });
             return;
@@ -502,7 +506,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         if (!b) {
             return;
         }
-        globalStore.set(popupHiddenAtom, false);
+        globalStore.set(cardOpenAtom, false);
         if (!movingRef.current) {
             globalStore.set(bossAtom, {
                 ...b,
@@ -533,7 +537,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         if (!b || !canStand(planRef.current, at)) {
             return;
         }
-        globalStore.set(popupHiddenAtom, false);
+        globalStore.set(cardOpenAtom, false);
         if (!movingRef.current) {
             globalStore.set(bossAtom, { ...b, at, path: [], holding: undefined });
             afterStop();
@@ -552,7 +556,16 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         release,
         goTo,
         showPath,
-        dismiss: () => globalStore.set(popupHiddenAtom, true),
+        dismiss: () => globalStore.set(cardOpenAtom, false),
+        openCard: () => {
+            const key = cursorRef.current;
+            const at = cardAt(planRef.current, globalStore.get(bossAtom), key);
+            if (globalStore.get(cardOpenAtom) || !at || !key || renderCard(key) == null) {
+                return false;
+            }
+            globalStore.set(cardOpenAtom, true);
+            return true;
+        },
         order: () => planRef.current.order,
         asks: () => planRef.current.asks,
     };
@@ -563,12 +576,13 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     });
     pickRef.current = (key: string) => {
         goTo(key);
+        globalStore.set(cardOpenAtom, true);
         onCursor(key);
     };
     const onPick = useCallback((key: string) => pickRef.current(key), []);
 
-    // the boss comes to where the Cockpit's cursor already is (a pick in the rail, Needs you, a reload); opening the
-    // office draws it there with the card shut, which the next move (a click, j/k, n, an arrow) opens
+    // the boss comes to where the Cockpit's cursor already is (a pick in the rail, Needs you, a reload), with the card
+    // shut: ↵ over the desk offers it
     useEffect(() => {
         if (width === 0) {
             return;
@@ -581,13 +595,11 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                     y: plan.lounge.y + plan.lounge.h - 20,
                 };
             globalStore.set(bossAtom, { at, path: [], dir: "up", speed: BOSS_SPEED });
-            globalStore.set(popupHiddenAtom, true);
             arrivedRef.current = cursorId;
             return;
         }
         if (cursorId && cursorId !== arrivedRef.current) {
-            // the Cockpit settles its first cursor just after the office opens: the boss walks there, the card stays shut
-            goTo(cursorId, arrivedRef.current != null);
+            goTo(cursorId);
         }
     }, [cursorId, width > 0]);
 
@@ -701,7 +713,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             globalStore.set(walkersAtom, []);
             globalStore.set(walkingAtom, {});
             globalStore.set(dotsAtom, []);
-            globalStore.set(popupHiddenAtom, false);
+            globalStore.set(cardOpenAtom, false);
             globalStore.set(officeMeterAtom, null);
             globalStore.set(officeFiveHourAtom, undefined);
             setOfficeRoot(null);
@@ -1417,23 +1429,28 @@ function OfficePopup({
     renderCard: (key: string) => ReactNode;
 }) {
     const b = useAtomValue(bossAtom);
-    const hidden = useAtomValue(popupHiddenAtom);
-    const still = b != null && b.path.length < 2 && b.holding == null;
-    const at = still && cursorId ? deskAt(plan, b.at) : undefined;
-    const desk = at != null && at === cursorId ? plan.desks.find((d) => d.key === cursorId) : undefined;
-    const seat = at != null && at === cursorId && !desk ? plan.seats.find((s) => s.key === cursorId) : undefined;
-    const room = plan.rooms.find((r) => r.key === (desk?.room ?? seat?.room));
-    const card = !hidden && room != null && cursorId != null ? renderCard(cursorId) : null;
-    probe.popup = card ? (desk ? "agent" : "run") : "";
-    if (!card || !room) {
+    const open = useAtomValue(cardOpenAtom);
+    const at = cardAt(plan, b, cursorId);
+    const card = at != null && cursorId != null ? renderCard(cursorId) : null;
+    const kind = at?.desk ? "agent" : "run";
+    probe.popup = card && open ? kind : "";
+    probe.prompt = card && !open ? kind : "";
+    if (!card || !at) {
         return null;
     }
-    const anchor = desk ? { x: desk.x, y: desk.y } : { x: seat!.x, y: seat!.bottom - 40 };
+    if (!open) {
+        // like a game's "press E": over the person's head, clear of their bubble
+        const over = at.desk
+            ? { x: at.desk.x + 40, y: at.desk.y - 50 }
+            : { x: at.seat!.x + 18, y: at.seat!.bottom - 62 };
+        return <OfficePrompt kind={kind} over={over} verb={at.desk?.light === "asking" ? "Answer" : "Show card"} />;
+    }
+    const anchor = at.desk ? { x: at.desk.x, y: at.desk.y } : { x: at.seat!.x, y: at.seat!.bottom - 40 };
     // beside the desk, over the hall; the card fills the box's height and scrolls, as in its grid column
-    const { box, right, pointerTop } = popupBox(plan, anchor, room);
+    const { box, right, pointerTop } = popupBox(plan, anchor, at.room);
     return (
         <div
-            data-office-popup={desk ? "agent" : "run"}
+            data-office-popup={kind}
             className="absolute z-[8] flex flex-col rounded-md border border-edge-mid bg-surface-raised shadow-popover"
             style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
         >
@@ -1446,6 +1463,25 @@ function OfficePopup({
             />
             {card}
         </div>
+    );
+}
+
+// the ↵ over the desk the boss stands at; it bobs on the frame clock, so it holds still when the office does
+function OfficePrompt({ kind, over, verb }: { kind: "agent" | "run"; over: Point; verb: string }) {
+    const tick = useAtomValue(officeTickAtom);
+    return (
+        <button
+            type="button"
+            data-office-prompt={kind}
+            onClick={() => globalStore.set(cardOpenAtom, true)}
+            className="absolute z-[8] flex -translate-x-1/2 -translate-y-full cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md border border-edge-mid bg-surface-raised py-0.5 pl-0.5 pr-2 text-[11.5px] text-primary shadow-popover hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            style={{ left: over.x, top: over.y - (tick % 2) * 2 }}
+        >
+            <kbd className="rounded border border-edge-mid bg-surface-code px-1 font-mono text-[10.5px] text-secondary">
+                ↵
+            </kbd>
+            {verb}
+        </button>
     );
 }
 

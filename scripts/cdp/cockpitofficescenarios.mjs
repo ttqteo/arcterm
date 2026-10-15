@@ -14,7 +14,7 @@ import { busyPct, HOLD_MS, mb, metrics, round1 } from "./officescenarios.mjs";
 
 export const FIXTURE = new URL("../../public/cockpit-fixtures/active.json", import.meta.url);
 export const VIEW_KEY = "cockpit.view";
-const KEY_CODES = { ArrowUp: 38, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39, Escape: 27, j: 74, k: 75, n: 78, o: 79, 1: 49 };
+const KEY_CODES = { ArrowUp: 38, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39, Escape: 27, Enter: 13, j: 74, k: 75, n: 78, o: 79, 1: 49 };
 // the boss's walking speed (officeboss.ts BOSS_SPEED), for how long to hold an arrow
 const BOSS_PX_PER_S = 160;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -137,9 +137,14 @@ export function makeCockpitOfficeScenarios(fx) {
                 return steps;
             }
 
-            // 0. opening the office draws the boss with no card open; a move opens it
+            // 0. opening the office draws the boss at a desk with its card shut and a ↵ over the desk offering it
             let p = await settleBoss(h);
-            rec("0. opening the office draws the boss at a desk with its card shut", p?.boss && p.popup === "", JSON.stringify({ cursor: p?.cursor, popup: p?.popup }));
+            rec(
+                "0. opening the office draws the boss at a desk with its card shut, and a ↵ over the desk offers it",
+                p?.boss && p.popup === "" && p.prompt !== "",
+                JSON.stringify({ cursor: p?.cursor, popup: p?.popup, prompt: p?.prompt })
+            );
+            await h.shot("cdp-shots/cockpit-office-prompt.png");
 
             // 1. Main: quill's card beside its desk
             await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-quill"))})?.click()`);
@@ -194,14 +199,19 @@ export function makeCockpitOfficeScenarios(fx) {
             await sleep(150);
             const hint = await probe(h);
             await h.shot("cdp-shots/cockpit-office-next-ask.png");
-            p = await settleBoss(h, 5000);
+            const atAsk = await settleBoss(h, 5000);
+            // quill holds the answer step 2 picked: Enter here opens the card, it does not send the answer
+            await focusCockpit(h);
+            await key(h, "Enter");
+            await sleep(200);
+            p = await probe(h);
             rec(
-                "5. n shows the way to the next Needs you for a second, then the boss walks there",
-                hint?.dots > 0 && p?.cursor === "fx-office-quill" && p.popup === "agent",
-                JSON.stringify({ dots: hint?.dots, cursor: p?.cursor, popup: p?.popup })
+                "5. n shows the way to the next Needs you for a second, then the boss walks there and ↵ offers its card; Enter opens it",
+                hint?.dots > 0 && atAsk?.cursor === "fx-office-quill" && atAsk.popup === "" && atAsk.prompt === "agent" && p?.popup === "agent",
+                JSON.stringify({ dots: hint?.dots, cursor: atAsk?.cursor, offered: [atAsk?.popup, atAsk?.prompt], opened: p?.popup })
             );
 
-            // 6. Esc hides the card until the boss moves; j and k walk desk by desk in office order
+            // 6. Esc shuts the card and ↵ offers it again; j and k walk desk by desk in office order, offering each card
             await focusCockpit(h);
             await key(h, "Escape");
             await sleep(200);
@@ -211,12 +221,31 @@ export function makeCockpitOfficeScenarios(fx) {
             await key(h, "j");
             const next = await settleBoss(h, 5000);
             await focusCockpit(h);
+            await key(h, "Enter");
+            await sleep(200);
+            const opened = await probe(h);
+            await focusCockpit(h);
             await key(h, "k");
             const back = await settleBoss(h, 5000);
             rec(
-                "6. Esc hides the card; j walks to the next desk in office order with its card open, k walks back",
-                hid?.popup === "" && want != null && next?.cursor === want && next.popup !== "" && back?.cursor === hid.cursor && back.popup !== "",
-                JSON.stringify({ hidden: hid?.popup, want, next: [next?.cursor, next?.popup], back: [back?.cursor, back?.popup] })
+                "6. Esc shuts the card and ↵ offers it again; j walks to the next desk in office order offering its card, Enter opens it, k walks back with the card shut",
+                hid?.popup === "" &&
+                    hid.prompt !== "" &&
+                    want != null &&
+                    next?.cursor === want &&
+                    next.popup === "" &&
+                    next.prompt !== "" &&
+                    opened?.popup !== "" &&
+                    back?.cursor === hid.cursor &&
+                    back.popup === "" &&
+                    back.prompt !== "",
+                JSON.stringify({
+                    shut: [hid?.popup, hid?.prompt],
+                    want,
+                    next: [next?.cursor, next?.popup, next?.prompt],
+                    opened: opened?.popup,
+                    back: [back?.cursor, back?.popup, back?.prompt],
+                })
             );
 
             // 7. a click on the floor walks the boss there; in the hall the cursor stays on the last desk
@@ -238,7 +267,8 @@ export function makeCockpitOfficeScenarios(fx) {
                     Math.abs(p.boss.x - spot.x) <= 3 &&
                     Math.abs(p.boss.y - spot.y) <= 3 &&
                     p.cursor === before.cursor &&
-                    p.popup === "",
+                    p.popup === "" &&
+                    p.prompt === "",
                 JSON.stringify({ spot, boss: p?.boss, cursor: [before?.cursor, p?.cursor], popup: p?.popup })
             );
 

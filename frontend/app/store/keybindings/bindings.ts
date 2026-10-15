@@ -959,7 +959,11 @@ export function buildCockpitBindings(): Binding[] {
         doc("cockpit:next-ask", "n", "Jump to next ask"),
         doc("cockpit:column", "h", "Other column (← → / h l); on a multi-question ask, switch question"),
         doc("cockpit:answer", "1", "Select an answer option (1–9); on a task row with no question, run its action"),
-        doc("cockpit:open", "Enter", "Confirm answer, else open focus; on a task row, open its worker"),
+        doc(
+            "cockpit:open",
+            "Enter",
+            "Confirm answer, else open focus; on a task row, open its worker; in Office, first open the card ↵ offers"
+        ),
         doc("cockpit:peek", "Space", `Peek the agent in the avatar popup (${peekClickLabel()} a link peeks it too)`),
         doc("cockpit:reply", "r", "Reply inline to the agent"),
         doc("cockpit:terminal", "t", "Open the agent's terminal"),
