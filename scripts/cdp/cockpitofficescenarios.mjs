@@ -317,6 +317,36 @@ export function makeCockpitOfficeScenarios(fx) {
                 JSON.stringify({ before: drawsBeforeWalk, after: p?.sceneryDraws })
             );
 
+            // 4d. the lounge's sofa is solid (officeboss.ts furniture): a click on the floor behind it walks the boss
+            // there, ↑ stops it at the sofa's back, and a click on the sofa walks it nowhere
+            const loungeBox = p?.lounge;
+            const clickFloor = (x, y) =>
+                h.ev(`(() => {
+                    const root = document.querySelector("[data-office-root]");
+                    const r = root.getBoundingClientRect();
+                    root.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: r.left + ${x}, clientY: r.top + ${y} }));
+                })()`);
+            await clickFloor(loungeBox.x + 99, loungeBox.y + 207);
+            const behind = await settleBoss(h);
+            await focusCockpit(h);
+            await hold(h, "ArrowUp", 1000);
+            const atSofa = await settleBoss(h, 1000);
+            await h.ev(`document.querySelector("[data-office-root]").scrollIntoView({ block: "start" })`);
+            await h.shot("cdp-shots/cockpit-office-sofa.png");
+            await clickFloor(loungeBox.x + 99, loungeBox.y + 165);
+            const onSofa = await settleBoss(h, 1000);
+            rec(
+                "4d. the boss behind the lounge's sofa walks up to its back and stops there; a click on the sofa walks it nowhere",
+                behind?.boss?.room === "hall" &&
+                    behind.boss.y > loungeBox.y + 200 &&
+                    atSofa?.boss &&
+                    atSofa.boss.y > loungeBox.y + 188 &&
+                    atSofa.boss.y < behind.boss.y &&
+                    onSofa?.boss?.x === atSofa.boss.x &&
+                    onSofa.boss.y === atSofa.boss.y,
+                JSON.stringify({ lounge: loungeBox, behind: behind?.boss, atSofa: atSofa?.boss, onSofa: onSofa?.boss })
+            );
+
             // 5. NextAsk: n shows the way, then the boss walks it
             await focusCockpit(h);
             await key(h, "n");

@@ -76,6 +76,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- **The boss walks around the lounge's furniture**: in the Office the boss no longer walks onto the sofa, the coffee
+  machine or a plant; it stops in front of them, as it does at a desk.
 - **The Office fills the Cockpit's height**: a quiet office no longer stops partway down with an empty strip below
   it; the last room stretches to the bottom. An agent coming in or leaving no longer makes the office blink.
 - **arcterm's share of the RAM bar adds up when the Mac swaps**: the bar counts what arcterm and its agents hold in

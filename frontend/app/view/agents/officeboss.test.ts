@@ -207,6 +207,47 @@ describe("officeboss", () => {
         }
     });
 
+    it("never lets the boss's feet onto the lounge's sofa, its coffee machine, or a plant", () => {
+        const l = plan.lounge;
+        expect(canWalk(plan, { x: l.x + 100, y: l.y + 170 })).toBe(false); // the sofa
+        expect(canWalk(plan, { x: l.x + 178, y: l.y + 181 })).toBe(false); // its right end
+        expect(canWalk(plan, { x: l.x + 100, y: l.y + 130 })).toBe(false); // someone sitting on it
+        expect(canWalk(plan, { x: l.x + 184, y: l.y + 130 })).toBe(false); // the coffee machine
+        expect(canWalk(plan, { x: l.x + 217, y: l.y + 205 })).toBe(false); // the plant's pot
+        const r = room("room:alpha").box;
+        expect(canWalk(plan, { x: r.x + r.w - 27, y: r.y + r.h - 28 })).toBe(false); // the room's plant
+        expect(canWalk(plan, { x: l.x + 100, y: l.y + 100 })).toBe(true); // the rug, facing the sofa
+        expect(canWalk(plan, { x: l.x + 100, y: l.y + 200 })).toBe(true); // behind it
+        expect(stepToward(plan, { x: l.x + 100, y: l.y + 210 }, "up", 200).y).toBeGreaterThan(l.y + 188);
+    });
+
+    it("leaves every desk and seat within a walk of every other, around all the furniture", () => {
+        const key = (p: Point) => `${p.x},${p.y}`;
+        const seen = new Set([key(a1)]);
+        const reached = new Set<string>();
+        const queue = [a1];
+        while (queue.length) {
+            const p = queue.pop()!;
+            const at = deskAt(plan, p);
+            if (at) {
+                reached.add(at);
+            }
+            for (const [dx, dy] of [
+                [3, 0],
+                [-3, 0],
+                [0, 3],
+                [0, -3],
+            ]) {
+                const q = { x: p.x + dx, y: p.y + dy };
+                if (!seen.has(key(q)) && canWalk(plan, q)) {
+                    seen.add(key(q));
+                    queue.push(q);
+                }
+            }
+        }
+        expect([...reached].sort()).toEqual([...plan.desks, ...plan.seats].map((s) => s.key).sort());
+    });
+
     it("stops the boss in front of a desk, and lets it walk off one it stands on", () => {
         const d = plan.desks.find((x) => x.key === "a1")!;
         const up = stepToward(plan, a1, "up", 200);
