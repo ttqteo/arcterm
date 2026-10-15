@@ -57,6 +57,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   the session's facts; Setup → Project lists it, with every other file that shapes the agent. <!-- try: go:setup -->
 - **Stop and Resume sit on the session tile**: the agent's state, its cache countdown and Resume or Stop moved from the
   foot of the agent rail into the session tile, under project · branch · model and over Compact and Clear.
+- **The session's figures open the breakdown**: click the context line or the token bar on the session tile (a ⌄ at
+  the bar's end) to see where the tokens and spend went; the separate Breakdown button is gone.
 
 ### Fixed
 

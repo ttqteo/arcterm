@@ -3,12 +3,12 @@
 //
 // The session block that opens the Agent details rail, shown whole: the rail's status line (context and spend, passed
 // in as head), the session's total tokens before a tokens bar, its facts (the rail passes them in as children), the
-// agent's state and cache with Resume or Stop (state), then Compact/Clear when offered (actions) with the Breakdown
-// toggle at the right, so the cache countdown sits over the Compact/Clear it argues for. The breakdown is the one part
-// that folds: the insight, the per-class split (tokens + ≈ spend) and, for a session that used more than one model, the
-// per-model breakdown, from the session's own transcript (transcriptusagestore/sessionusage). The spend shows once, in
-// the head; a single model's name is in the facts. Class fills come from usagestats.ts's CLASS_FILL (theme tokens
-// only). Spend is an estimate.
+// agent's state and cache with Resume or Stop (state), then Compact/Clear when offered (actions), so the cache
+// countdown sits over the Compact/Clear it argues for. The figures (head and bar) are the breakdown's toggle, with a
+// chevron at the bar's end. The breakdown is the one part that folds: the insight, the per-class split (tokens + ≈
+// spend) and, for a session that used more than one model, the per-model breakdown, from the session's own transcript
+// (transcriptusagestore/sessionusage). The spend shows once, in the head; a single model's name is in the facts. Class
+// fills come from usagestats.ts's CLASS_FILL (theme tokens only). Spend is an estimate.
 
 import { StackedMeter } from "@/app/element/meter";
 import { paneReveal } from "@/app/element/motiontokens";
@@ -33,8 +33,9 @@ function pctStr(n: number): string {
     return +n.toFixed(1) + "%";
 }
 
-// UsageBar is the session's total tokens before the tokens bar, whose legend is the breakdown
-function UsageBar({ usage }: { usage: SessionUsage }) {
+// UsageBar is the session's total tokens before the tokens bar, whose legend is the breakdown: the chevron at its end
+// says the figures open it
+function UsageBar({ usage, open }: { usage: SessionUsage; open: boolean }) {
     return (
         <div title={`${fmt(usage.totalTokens)} tokens this session`} className="flex min-w-0 items-center gap-[8px]">
             <span className="flex-none text-[11.5px] font-semibold tabular-nums text-primary">
@@ -47,6 +48,11 @@ function UsageBar({ usage }: { usage: SessionUsage }) {
                 segs={usage.classes.map((c) => ({ key: c.cls, value: c.tokens, fill: CLASS_FILL[c.cls] }))}
                 total={usage.totalTokens}
             />
+            {open ? (
+                <ChevronUp size={12} aria-hidden className="-ml-[2px] flex-none text-accent-soft" />
+            ) : (
+                <ChevronDown size={12} aria-hidden className="-ml-[2px] flex-none text-accent-soft" />
+            )}
         </div>
     );
 }
@@ -152,12 +158,8 @@ export function SessionSection({
     const [breakdown, setBreakdown] = useAtom(usageBreakdownAtom);
     const loaded = usage != null && usage !== UsageUnavailable && usage.totalTokens > 0 ? usage : null;
 
-    return (
-        // a raised tile, so the session's figures read apart from the lists under it
-        <div
-            data-rail-session
-            className="-mx-[8px] mb-[10px] flex flex-col rounded-[10px] bg-surface-raised px-[12px] pb-[6px] pt-[9px]"
-        >
+    const figures = (
+        <>
             <div className="flex min-w-0 items-center py-[3px]">{head}</div>
             <div className="mt-[6px]">
                 {usage == null ? (
@@ -167,28 +169,37 @@ export function SessionSection({
                 ) : loaded == null ? (
                     <div className="text-[11.5px] text-muted">No token usage recorded yet.</div>
                 ) : (
-                    <UsageBar usage={loaded} />
+                    <UsageBar usage={loaded} open={breakdown} />
                 )}
             </div>
+        </>
+    );
+
+    return (
+        // a raised tile, so the session's figures read apart from the lists under it
+        <div
+            data-rail-session
+            className="-mx-[8px] mb-[10px] flex flex-col rounded-[10px] bg-surface-raised px-[12px] pb-[8px] pt-[9px]"
+        >
+            {loaded ? (
+                // the figures are the breakdown's toggle: the breakdown is their legend, so a click on them opens it
+                <button
+                    type="button"
+                    data-rail-breakdown-toggle
+                    onClick={() => setBreakdown((v) => !v)}
+                    aria-expanded={breakdown}
+                    aria-controls="rail-session-breakdown"
+                    title={breakdown ? "Hide the breakdown" : "Show the breakdown"}
+                    className="-mx-[6px] -my-[3px] flex cursor-pointer flex-col rounded-[7px] px-[6px] py-[3px] text-left hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+                >
+                    {figures}
+                </button>
+            ) : (
+                figures
+            )}
             <div className="mt-[10px]">{children}</div>
             {state != null ? <div className="mt-[8px]">{state}</div> : null}
-            {actions != null || loaded ? (
-                <div className="-ml-[6px] mt-[6px] flex items-center gap-[4px]">
-                    {actions}
-                    {loaded ? (
-                        <button
-                            type="button"
-                            onClick={() => setBreakdown((v) => !v)}
-                            aria-expanded={breakdown}
-                            aria-controls="rail-session-breakdown"
-                            className="-mr-[6px] ml-auto inline-flex cursor-pointer items-center gap-[3px] rounded-[7px] px-[6px] py-[3px] text-[10.5px] font-semibold text-accent-soft hover:bg-surface-hover"
-                        >
-                            Breakdown
-                            {breakdown ? <ChevronUp size={11} aria-hidden /> : <ChevronDown size={11} aria-hidden />}
-                        </button>
-                    ) : null}
-                </div>
-            ) : null}
+            {actions != null ? <div className="-ml-[6px] mt-[6px] flex items-center gap-[4px]">{actions}</div> : null}
             <AnimatePresence initial={false}>
                 {loaded && breakdown ? (
                     <motion.div
