@@ -46,6 +46,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - **Sprout's bubble no longer hides your prompt**: it has a × to close it, and typing puts it away at once instead of
   covering the bottom of the terminal for several seconds. What it said stays unread on Sprout; ⌘J reads it back.
+- **The folded Spider-Man's rooftop is whole again**: on a Mac the window's rounded corner no longer cuts the corner
+  off the rooftop he sits on.
 - **An agent's terminal fills its pane again**: a run's worker or lead opened after it started no longer stays
   drawn at 80×24 inside a larger pane when the Mac is short of RAM; the pane fits itself within two seconds, as
   Redraw did.
