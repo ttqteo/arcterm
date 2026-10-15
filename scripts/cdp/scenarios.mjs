@@ -42150,6 +42150,137 @@ const landQueueScenario = {
     },
 };
 
+// The pet's bubble opens over the bottom of the terminal beside the creature, where a prompt is typed: its × puts it
+// away, and so does a typed key, but not a bare modifier. Either way what it said stays unread (petbubble.tsx,
+// petbubblekeys.ts). Each step finishes well inside the bubble's own 6s, so its time running out cannot pass one.
+const PET_BUBBLE_GONE = `!document.querySelector('[data-pet-bubble]')`;
+const PET_BUBBLE_STEPS = [
+    "a notify's bubble carries a × inside its card, clear of the label",
+    "a click on the × puts the bubble away at once and leaves the unread mark",
+    "a bare Shift in a field leaves the bubble up",
+    "a typed key in a field puts the bubble away at once and leaves the unread mark",
+];
+
+const petBubbleDismiss = {
+    name: "pet-bubble-dismiss",
+    surface: "agent",
+    async arrange() {
+        return {};
+    },
+    async assert(h) {
+        const steps = [];
+        const rec = (step, ok, detail) =>
+            steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        await h.goto("agent");
+        if (!(await polishWaitFor(h, `!!document.querySelector('[aria-label="Jarvis condition"]')`, 10000))) {
+            for (const step of PET_BUBBLE_STEPS) rec(step, false, "no creature on the Agent surface");
+            return steps;
+        }
+        // the peek opened and shut clears the unread mark, so the mark read after each step is that step's own
+        const clearUnread = async () => {
+            await h.ev(`document.querySelector('[aria-label="Jarvis condition"]')?.click()`);
+            await polishWaitFor(h, `!!document.querySelector('[data-pet-peek]')`, 3000);
+            await petEscape(h);
+            await polishWaitFor(h, `!document.querySelector('[data-pet-peek]')`, 3000);
+            return !petMarked(await petSnap(h), "unread");
+        };
+        const say = async (title) => {
+            await h.rpc("notify", { title, level: "info" });
+            const at = Date.now();
+            const shown = await polishWaitFor(
+                h,
+                `document.querySelector('[data-pet-bubble]')?.textContent?.includes(${JSON.stringify(title)}) ?? false`,
+                3000
+            );
+            return { shown, at };
+        };
+        const unreadAfter = () => petUntil(() => petSnap(h), (s) => petMarked(s, "unread"), 2000);
+
+        // 1-2. the ×
+        const cleared1 = await clearUnread();
+        const first = await say("cdp pet-bubble × closes it");
+        await polishNap(400); // the reveal settles
+        const card = await h.ev(`(() => {
+            const card = document.querySelector('[data-pet-bubble]');
+            const x = card?.parentElement?.querySelector('[data-pet-bubble-close]');
+            const label = card?.firstElementChild;
+            if (card == null || x == null || label == null) return null;
+            const c = card.getBoundingClientRect(), b = x.getBoundingClientRect(), l = label.getBoundingClientRect();
+            return {
+                inside: b.left >= c.left && b.right <= c.right && b.top >= c.top && b.bottom <= c.bottom,
+                topRight: c.right - b.right <= 8 && b.top - c.top <= 8,
+                // the label's content box (inside its right padding) ends before the × begins
+                labelClear: l.right - parseFloat(getComputedStyle(label).paddingRight) <= b.left + 1,
+                aria: x.getAttribute("aria-label"),
+                at: { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) },
+            };
+        })()`);
+        await petCropOf(h, "pet-bubble-close", "[data-pet-bubble]", 10);
+        await h.shot("cdp-shots/pet-bubble-close-page.png");
+        rec(
+            PET_BUBBLE_STEPS[0],
+            first.shown && card?.inside === true && card.topRight === true && card.labelClear === true && card.aria === "Dismiss",
+            { shown: first.shown, card }
+        );
+        if (card?.at != null) {
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: card.at.x, y: card.at.y });
+            for (const type of ["mousePressed", "mouseReleased"]) {
+                await h.cdp("Input.dispatchMouseEvent", { type, x: card.at.x, y: card.at.y, button: "left", clickCount: 1 });
+            }
+        }
+        const goneX = await polishWaitFor(h, PET_BUBBLE_GONE, 3000);
+        const goneXMs = Date.now() - first.at;
+        const unreadX = await unreadAfter();
+        // the pointer off the corner, so the next bubble is not held by a hover
+        await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1 });
+        rec(
+            PET_BUBBLE_STEPS[1],
+            card?.at != null && goneX && goneXMs < 4000 && cleared1 && petMarked(unreadX, "unread"),
+            { clicked: card?.at != null, gone: goneX, goneMs: goneXMs, clearedBefore: cleared1, after: petBrief(unreadX) }
+        );
+
+        // 3-4. typing, in a field of its own so no cockpit key binding takes the key
+        const cleared2 = await clearUnread();
+        await h.ev(`(() => {
+            const i = document.createElement("input");
+            i.setAttribute("data-cdp-typing", "");
+            i.style.cssText = "position:fixed;left:0;top:0;width:40px;opacity:0";
+            document.body.appendChild(i);
+            i.focus();
+        })()`);
+        const second = await say("cdp pet-bubble a typed key closes it");
+        for (const type of ["keyDown", "keyUp"]) {
+            await h.cdp("Input.dispatchKeyEvent", {
+                type,
+                key: "Shift",
+                code: "ShiftLeft",
+                windowsVirtualKeyCode: 16,
+                modifiers: type === "keyDown" ? 8 : 0,
+            });
+        }
+        await polishNap(400);
+        const afterShift = await h.ev(`!!document.querySelector('[data-pet-bubble]')`);
+        rec(PET_BUBBLE_STEPS[2], second.shown && afterShift === true, { shown: second.shown, upAfterShift: afterShift });
+        await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "x", code: "KeyX", text: "x", windowsVirtualKeyCode: 88 });
+        await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "x", code: "KeyX", windowsVirtualKeyCode: 88 });
+        const goneKey = await polishWaitFor(h, PET_BUBBLE_GONE, 3000);
+        const goneKeyMs = Date.now() - second.at;
+        const typed = await h.ev(`document.querySelector('[data-cdp-typing]')?.value ?? null`);
+        const unreadKey = await unreadAfter();
+        await h.shot("cdp-shots/pet-bubble-typed.png");
+        rec(
+            PET_BUBBLE_STEPS[3],
+            goneKey && goneKeyMs < 4000 && typed === "x" && cleared2 && petMarked(unreadKey, "unread"),
+            { gone: goneKey, goneMs: goneKeyMs, typed, clearedBefore: cleared2, after: petBrief(unreadKey) }
+        );
+        return steps;
+    },
+    async teardown(h) {
+        await h.ev(`document.querySelector('[data-cdp-typing]')?.remove()`);
+        await h.goto("cockpit"); // leave the app where a human expects it
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -42179,6 +42310,7 @@ export const SCENARIOS = [
     codeTexPdf,
     codeSideColumn,
     jarvisPet,
+    petBubbleDismiss,
     briefSurface,
     briefLayout,
     briefChunkPanel,

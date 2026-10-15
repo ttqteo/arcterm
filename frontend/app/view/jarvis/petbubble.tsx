@@ -4,14 +4,17 @@
 // The creature's speech. One bubble, anchored to whichever corner the creature is sitting in, gone after
 // a few seconds (design §4 decision 8): a bubble that persists until acknowledged is the thing you come
 // to resent over a live terminal. Auto-dismiss loses nothing — the peek reads back everything it said,
-// and the creature keeps an unread marker until you look.
+// and the creature keeps an unread marker until you look. Its × and a typed key put it away sooner: it opens
+// over the bottom of the terminal beside the creature, where a prompt is typed (petbubblekeys.ts).
 
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { InlineMarkdown } from "@/app/view/agents/inlinemarkdown";
 import { cn } from "@/util/util";
 import { autoUpdate, offset, shift, useFloating, type Placement } from "@floating-ui/react";
+import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { keyPutsBubbleAway } from "./petbubblekeys";
 import { bubbleAgent } from "./petjoin";
 import type { PetCorner } from "./petledge";
 import { bubbleMs, bubbleText, eventLabel, type NotifyLevel, type PetEvent } from "./petvoice";
@@ -125,6 +128,21 @@ export function PetBubble({
         refs.setPositionReference(anchor);
     }, [anchor, refs]);
 
+    // in capture: xterm stops the keydowns it handles before they bubble to the window
+    useEffect(() => {
+        if (id == null) {
+            return;
+        }
+        const onKey = (e: KeyboardEvent) => {
+            const onBubble = e.target instanceof Node && refs.floating.current?.contains(e.target) === true;
+            if (keyPutsBubbleAway(e, onBubble)) {
+                dismissRef.current();
+            }
+        };
+        window.addEventListener("keydown", onKey, true);
+        return () => window.removeEventListener("keydown", onKey, true);
+    }, [id, refs]);
+
     return (
         // data-mini-hit: folded, the click-through poll lets the cursor reach it (miniclickthrough.ts)
         <div ref={refs.setFloating} data-mini-hit="bubble" style={floatingStyles} className="z-[61]">
@@ -139,41 +157,61 @@ export function PetBubble({
                 )}
             >
                 {said != null ? (
-                    <button
-                        type="button"
-                        data-pet-bubble
-                        onClick={onOpen}
+                    // the pointer anywhere on the card holds it, the × included
+                    <div
+                        className="relative"
                         onMouseEnter={() => setHoveredId(said.id)}
                         onMouseLeave={() => setHoveredId(null)}
-                        className="flex w-full cursor-pointer flex-col gap-1.5 rounded-[12px] px-3 py-[11px] text-left hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
-                        <EventLabel event={said} className="text-[9px]" />
-                        {agent != null ? (
-                            <span data-pet-bubble-agent className="flex min-w-0 items-baseline gap-1.5">
-                                <span
-                                    data-pet-bubble-agent-name
-                                    className="min-w-0 truncate text-[12px] font-semibold text-primary"
-                                >
-                                    {agent.name}
-                                </span>
-                                {agent.project ? (
-                                    <span data-pet-bubble-agent-project className="flex-none text-[10px] text-muted">
-                                        {agent.project}
-                                    </span>
-                                ) : null}
-                            </span>
-                        ) : null}
-                        {/* clamped: a notification title passes through verbatim and would otherwise stretch
-                            the bubble. Inline only, and links as plain text — the bubble is one button. */}
-                        <span
-                            className={cn(
-                                "text-[12px] leading-[1.45] text-secondary [overflow-wrap:anywhere]",
-                                said.kind === "quote" ? "line-clamp-4" : "line-clamp-3"
-                            )}
+                        <button
+                            type="button"
+                            data-pet-bubble
+                            onClick={onOpen}
+                            className="flex w-full cursor-pointer flex-col gap-1.5 rounded-[12px] px-3 py-[11px] text-left hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         >
-                            <InlineMarkdown text={bubbleText(said)} plainLinks />
-                        </span>
-                    </button>
+                            {/* clear of the × */}
+                            <EventLabel event={said} className="pr-6 text-[9px]" />
+                            {agent != null ? (
+                                <span data-pet-bubble-agent className="flex min-w-0 items-baseline gap-1.5">
+                                    <span
+                                        data-pet-bubble-agent-name
+                                        className="min-w-0 truncate text-[12px] font-semibold text-primary"
+                                    >
+                                        {agent.name}
+                                    </span>
+                                    {agent.project ? (
+                                        <span
+                                            data-pet-bubble-agent-project
+                                            className="flex-none text-[10px] text-muted"
+                                        >
+                                            {agent.project}
+                                        </span>
+                                    ) : null}
+                                </span>
+                            ) : null}
+                            {/* clamped: a notification title passes through verbatim and would otherwise stretch
+                                the bubble. Inline only, and links as plain text — the card is one button. */}
+                            <span
+                                className={cn(
+                                    "text-[12px] leading-[1.45] text-secondary [overflow-wrap:anywhere]",
+                                    said.kind === "quote" ? "line-clamp-4" : "line-clamp-3"
+                                )}
+                            >
+                                <InlineMarkdown text={bubbleText(said)} plainLinks />
+                            </span>
+                        </button>
+                        {/* a sibling of the card's button, not inside it: a button cannot hold a button */}
+                        <button
+                            type="button"
+                            data-pet-bubble-close
+                            aria-label="Dismiss"
+                            title="Dismiss"
+                            onClick={onDismiss}
+                            className="absolute right-1.5 top-1.5 inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-[6px] text-muted hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        >
+                            <X size={13} aria-hidden />
+                        </button>
+                    </div>
                 ) : null}
             </PopoverReveal>
         </div>
