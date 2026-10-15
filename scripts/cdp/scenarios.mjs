@@ -39454,6 +39454,28 @@ const ideasRail = {
                 oneUp && oneBar.mergeDisabled === true && v.selbar == null && v.rows.every((r) => !r.checked),
                 { oneUp, mergeDisabled: oneBar.mergeDisabled, selbar: v.selbar }
             );
+            // a click on the card itself (its text, not the checkbox) checks the row, its box filled in the primary ink
+            // (a pick is grey-family, never the accent); a second click unchecks it
+            await ideasClick(h, `${ideasRow(third.id)} [data-ideas-text]`);
+            const cardUp = await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-selbar]")?.textContent?.startsWith("1 selected")`, 4000);
+            const cardBox = await h.ev(`(() => {
+                const c = document.querySelector(${JSON.stringify(`${ideasRow(third.id)} [data-ideas-check]`)});
+                const probe = document.createElement("span");
+                probe.style.color = "var(--color-primary)";
+                document.body.appendChild(probe);
+                const ink = getComputedStyle(probe).color;
+                probe.remove();
+                return { checked: c?.getAttribute("aria-checked") === "true", fill: c ? getComputedStyle(c).backgroundColor : null, ink };
+            })()`);
+            await shot("card-check");
+            await ideasClick(h, `${ideasRow(third.id)} [data-ideas-text]`);
+            await polishNap(300);
+            v = await ideasView(h);
+            rec(
+                "7d. card click: a click on a row's text checks it (`1 selected`, its box filled in the primary ink) and a second click unchecks it",
+                cardUp && cardBox.checked && cardBox.fill === cardBox.ink && v.selbar == null && v.rows.every((r) => !r.checked),
+                { cardUp, ...cardBox, selbar: v.selbar }
+            );
 
             // --- 8. drop ----------------------------------------------------------------------------------------------
             list = await ideasList(h);

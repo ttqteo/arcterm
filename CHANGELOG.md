@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- **Pick an idea by clicking its card**: a click anywhere on a line in Ideas checks it for Merge or Drop, as its
+  checkbox does, and a checked box fills in bright. Editing an idea, the kind you chose stands out from the other two.
 - **Background tasks, newest first**: the agent rail lists the task started last at the top, so a running one no
   longer sits under the ones already done.
 

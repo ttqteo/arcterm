@@ -3,7 +3,8 @@
 //
 // The Ideas section of an agent session: what was decided, floated and left open in a brainstorm, from the agent's
 // `wsh idea add` and the user's own hand. Rows group as Decided / Ideas / Open, newest first; hovering one offers Edit,
-// Mark as decided and Drop, and its checkbox picks rows to Merge or Drop together; Dropped folds at the end with Restore;
+// Mark as decided and Drop, and a click on it (or its checkbox) picks rows to Merge or Drop together; Dropped folds at
+// the end with Restore;
 // Add an idea takes a line of the user's own. The rail draws the header row (IdeasHeaderExtra adds "N new" and Mark
 // read to it); the section marks the list read when it goes away (closed, another tab, another agent).
 // Every control carries a data-ideas-* attribute for the CDP scenario `ideas-rail`.
@@ -22,7 +23,7 @@ import {
     X,
     type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { inputRequestLive } from "./ideacapture";
 import {
     canMarkDecided,
@@ -87,7 +88,7 @@ function Checkbox({ checked, label, onToggle }: { checked: boolean; label: strin
             onClick={onToggle}
             className={cn(
                 "flex h-[13px] w-[13px] cursor-pointer items-center justify-center rounded-[3px] p-0 outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                checked ? "border-0 bg-primary text-background" : "border border-edge-strong bg-transparent"
+                checked ? "border-0 bg-primary text-background" : "border border-muted bg-transparent"
             )}
         >
             {checked ? <Check size={10} strokeWidth={3} aria-hidden /> : null}
@@ -118,13 +119,26 @@ function IdeaRow({
 }) {
     const Icon = KIND_ICON[ideaKindOf(idea)];
     const onHover = "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100";
+    // a click anywhere on the card picks it, as its checkbox does; not one on its own buttons (the checkbox among
+    // them), nor the end of a drag that selected some of its text
+    const onCardClick = (e: MouseEvent<HTMLDivElement>) => {
+        if ((e.target as HTMLElement).closest("button") != null) {
+            return;
+        }
+        const sel = window.getSelection();
+        if (sel != null && !sel.isCollapsed && e.currentTarget.contains(sel.anchorNode)) {
+            return;
+        }
+        onToggle();
+    };
     return (
         <div
             data-ideas-row={idea.id}
             data-kind={ideaKindOf(idea)}
             data-fresh={fresh ? "true" : "false"}
+            onClick={onCardClick}
             className={cn(
-                "group relative flex items-start gap-[8px] rounded-[6px] py-[5px] pl-[8px] pr-[6px]",
+                "group relative flex cursor-pointer items-start gap-[8px] rounded-[6px] py-[5px] pl-[8px] pr-[6px]",
                 checked ? "bg-surface-selected" : "hover:bg-surface-hover focus-within:bg-surface-hover"
             )}
         >
@@ -271,7 +285,13 @@ function IdeaEditor({
                 className="w-full resize-none rounded-[6px] border border-accent bg-surface px-[8px] py-[6px] text-[12.5px] leading-[1.45] text-primary outline-none"
             />
             <div className="flex items-center gap-[6px]">
-                <div role="radiogroup" aria-label="Kind" className="flex gap-[2px] rounded-[6px] bg-surface p-[2px]">
+                {/* drawn like element/segmented.tsx: an outlined track and the chosen kind in the accent tint, which
+                    read on the editor's raised ground where surface on surface-raised did not */}
+                <div
+                    role="radiogroup"
+                    aria-label="Kind"
+                    className="flex gap-[2px] rounded-[6px] border border-edge-mid bg-surface p-[2px]"
+                >
                     {IDEA_GROUPS.map((g) => (
                         <button
                             key={g.kind}
@@ -283,8 +303,8 @@ function IdeaEditor({
                             className={cn(
                                 "h-[22px] cursor-pointer rounded-[5px] border-0 px-[7px] text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-accent",
                                 kind === g.kind
-                                    ? "bg-surface-selected text-primary"
-                                    : "bg-transparent text-muted hover:text-secondary"
+                                    ? "bg-accentbg font-medium text-primary"
+                                    : "bg-transparent text-muted hover:bg-surface-hover hover:text-secondary"
                             )}
                         >
                             {g.choiceLabel}
