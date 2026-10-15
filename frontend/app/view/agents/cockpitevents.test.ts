@@ -3,7 +3,15 @@
 
 import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
-import { agentTransitions, groupRailEvents, mergeRailEvents, runRailEvents, splitUnread } from "./cockpitevents";
+import {
+    agentTransitions,
+    footerEvent,
+    groupRailEvents,
+    mergeRailEvents,
+    runRailEvents,
+    splitUnread,
+    type RailEvent,
+} from "./cockpitevents";
 import type { RunInfo } from "./runlineage";
 
 const a = (over: Partial<AgentVM>) =>
@@ -115,5 +123,26 @@ describe("groupRailEvents", () => {
     });
     it("offers nothing for a run with a single event", () => {
         expect(groupRailEvents([e("a", "R")], {})[0].more).toBeUndefined();
+    });
+});
+
+describe("footerEvent", () => {
+    const ev = (key: string, ts: number): RailEvent => ({ key, who: "loom", kind: "finished", text: "", ts });
+
+    it("is nothing while there are no events", () => {
+        expect(footerEvent([], [])).toBeNull();
+    });
+
+    it("gives the newest event and how many more came since the rail was last read", () => {
+        const a = ev("a", 3);
+        const b = ev("b", 2);
+        const c = ev("c", 1);
+        expect(footerEvent([a, b, c], [a, b, c])).toEqual({ event: a, moreNew: 2 });
+        expect(footerEvent([a, b, c], [a])).toEqual({ event: a, moreNew: 0 });
+    });
+
+    it("counts none more when everything was read", () => {
+        const a = ev("a", 3);
+        expect(footerEvent([a], [])).toEqual({ event: a, moreNew: 0 });
     });
 });
