@@ -27,7 +27,7 @@ export interface TraySnapshotInput {
     donuts: ProviderDonuts[];
     storage: StorageReport | null;
     consumers: CommandGetConsumersRtnData | null;
-    heardAt: number | null; // the bridge's last answered GetMachineStatsCommand
+    heardAt: number | null; // wavesrv's last answer to the bridge: the heartbeat, the machine poll or a memory-pressure event
     now: number;
 }
 

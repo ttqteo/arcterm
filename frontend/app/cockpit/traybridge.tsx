@@ -39,6 +39,8 @@ import { trayBadge, traySnapshot } from "./traysnapshot";
 import type { TrayAct, TrayPage } from "./traytypes";
 
 const MACHINE_POLL_MS = 1000;
+// how often a shut popover's bridge asks wavesrv something cheap, so "Last heard" is current when wavesrv dies
+const HEARTBEAT_MS = 15_000;
 
 async function showMain(model: AgentsViewModel): Promise<void> {
     if (globalStore.get(floatMiniAtom)) {
@@ -87,7 +89,8 @@ export function TrayBridge({ model }: { model: AgentsViewModel }) {
     const [open, setOpen] = useState(false);
     const [page, setPage] = useState<TrayPage>("main");
     const [machine, setMachine] = useState<MachineStatsData | null>(null);
-    // when wavesrv last answered: the popover's offline page shows it, frozen once wavesrv has gone
+    // when wavesrv last answered (the heartbeat, the machine poll or a memory-pressure event): the popover's offline
+    // page shows it, frozen once wavesrv has gone
     const [heardAt, setHeardAt] = useState<number | null>(null);
     const jobQueue = useAtomValue(jobQueueAtom);
     const donuts = usePlanDonuts(model);
@@ -106,8 +109,22 @@ export function TrayBridge({ model }: { model: AgentsViewModel }) {
             .catch(() => {});
         return waveEventSubscribeSingle({
             eventType: "memorypressure",
-            handler: (e) => setPressure((e.data as MemoryPressureData)?.level ?? ""),
+            handler: (e) => {
+                setPressure((e.data as MemoryPressureData)?.level ?? "");
+                setHeardAt(Date.now());
+            },
         });
+    }, []);
+
+    // WaveInfoCommand answers from memory, so unlike GetMachineStatsCommand it does not keep the CPU sampler running
+    // while the popover is shut
+    useEffect(() => {
+        const t = setInterval(() => {
+            RpcApi.WaveInfoCommand(TabRpcClient)
+                .then(() => setHeardAt(Date.now()))
+                .catch(() => {});
+        }, HEARTBEAT_MS);
+        return () => clearInterval(t);
     }, []);
 
     const badge = trayBadge(peekRows, pressure);
