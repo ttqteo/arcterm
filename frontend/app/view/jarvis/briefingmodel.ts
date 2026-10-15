@@ -347,17 +347,29 @@ export function buildAttentionQueue(input: {
 
 // the kind chip's word: the design's four (design L1010-1013), then one for each wire kind that was falling through
 // to "blocked"
-export function queueKindLabel(
-    row: QueueRow
-): "gate" | "ask" | "failed" | "blocked" | "triage" | "due" | "plan" | "unverified" | "held" | "not started" | "rule" {
-    switch (row.wireKind) {
+export type KindWord =
+    | "gate"
+    | "ask"
+    | "failed"
+    | "blocked"
+    | "triage"
+    | "due"
+    | "plan"
+    | "unverified"
+    | "held"
+    | "not started"
+    | "rule";
+
+// the same word from a wire kind alone, for a surface that holds no QueueRow (the tray popover's waits)
+export function kindWord(wireKind: string, retry = false): KindWord {
+    switch (wireKind) {
         case "dag-gate":
             return "gate";
         case "ask":
         case "escalation":
             return "ask";
         case "dag-blocked":
-            return row.retry ? "failed" : "blocked";
+            return retry ? "failed" : "blocked";
         case "radar-triage":
             return "triage";
         case "chunk-due":
@@ -375,6 +387,10 @@ export function queueKindLabel(
         default:
             return "blocked";
     }
+}
+
+export function queueKindLabel(row: QueueRow): KindWord {
+    return kindWord(row.wireKind, row.retry);
 }
 
 export type QueueAct = AttentionAct;

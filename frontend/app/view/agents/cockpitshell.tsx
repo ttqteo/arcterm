@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { TrayBridge } from "@/app/cockpit/traybridge";
 import { getSettingsKeyAtom } from "@/app/store/global";
 import { atoms } from "@/app/store/global-atoms";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -180,6 +181,8 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
             <NotifySync model={model} />
             {/* a scan can finish while any surface shows */}
             <StorageNudge model={model} />
+            {/* the menu bar / tray icon's count and its popover's feed: what waits can change while any surface shows */}
+            <TrayBridge model={model} />
         </div>
     );
 }

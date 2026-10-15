@@ -42604,6 +42604,37 @@ const trayActions = {
     async teardown() {},
 };
 
+// --- Settings → General: the menu bar / tray icon's toggle -------------------------------------
+// Settings opens on Appearance, so the scenario picks General first. The icon itself is the host's and has no CDP view.
+const traySettingsRow = {
+    name: "tray-settings-row",
+    surface: "settings",
+    async arrange() {
+        return {};
+    },
+    async assert(h) {
+        await h.ev(`(() => { document.querySelector('[data-section="general"]')?.click(); return true; })()`);
+        const found = await polishWaitFor(h, `document.querySelector('[data-setting-row="app.tray"]') != null`, 8000);
+        await h.ev(`document.querySelector('[data-setting-row="app.tray"]')?.scrollIntoView({ block: "center" })`);
+        await polishNap(300);
+        // the toggle's words are its aria-label: the row's text holds only the title and the description
+        const text =
+            (await h.ev(
+                `document.querySelector('[data-setting-row="app.tray"] [role="switch"]')?.getAttribute("aria-label") ?? ""`
+            )) ?? "";
+        const ok = found && (text.includes("Show arcterm in the menu bar") || text.includes("Show arcterm in the tray"));
+        await h.shot("cdp-shots/tray-settings-row.png");
+        return [
+            {
+                step: "1. Settings → General offers the menu bar icon's toggle",
+                ok,
+                detail: found ? text : "no [data-setting-row=app.tray]",
+            },
+        ];
+    },
+    async teardown() {},
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -42767,4 +42798,5 @@ export const SCENARIOS = [
     trayOffline,
     trayWindows,
     trayActions,
+    traySettingsRow,
 ];

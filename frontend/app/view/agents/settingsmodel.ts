@@ -186,6 +186,14 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                             scope: "synced",
                             config: true,
                         },
+                        {
+                            id: "app.tray",
+                            title: "Menu bar icon",
+                            desc: "arcterm's icon beside the clock: what waits on you, memory, CPU and disk, a click away.",
+                            key: "app:tray",
+                            scope: "synced",
+                            config: true,
+                        },
                     ],
                 },
                 {

@@ -12,6 +12,7 @@ import {
     DELTA_CAP,
     EFFORT_CAP,
     groupDelta,
+    kindWord,
     mergeActiveWork,
     oldestWaitingTs,
     projectBriefing,
@@ -932,5 +933,17 @@ describe("buildAttentionQueue: a plan to review", () => {
         const roster = [agent({ id: "t7", effortId: "e2", state: "idle" })];
         const [row] = buildAttentionQueue({ attention: [plan], efforts, roster });
         expect(row.nav).toEqual({ kind: "effort", oref: "effort:e1" });
+    });
+});
+
+describe("kindWord", () => {
+    it("is the Brief's short kind for a wire kind", () => {
+        expect(kindWord("ask")).toBe("ask");
+        expect(kindWord("escalation")).toBe("ask");
+        expect(kindWord("dag-gate")).toBe("gate");
+        expect(kindWord("plan-review")).toBe("plan");
+        expect(kindWord("learn-proposal")).toBe("rule");
+        expect(kindWord("dag-blocked", true)).toBe("failed");
+        expect(kindWord("dag-blocked")).toBe("blocked");
     });
 });
