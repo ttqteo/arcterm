@@ -705,13 +705,14 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 			// a lane's tasks share one tree, so each starts from the commits of the task before it
 			key := LaneWorktreeKey(g, taskID)
 			wtStart := time.Now()
-			wt, head, created, werr := EnsureRunWorktree(spawnCtx, owner.ProjectPath, key, spawnBase)
+			wt, head, _, werr := EnsureRunWorktree(spawnCtx, owner.ProjectPath, key, spawnBase)
 			worktreeMs = time.Since(wtStart).Milliseconds()
 			if werr != nil {
 				failDispatch(ctx, g, taskID, FailureKindWorktree, werr, &afterCommit)
 				continue
 			}
-			if created && g.Setup != "" {
+			// not "created by this call": a failed add or a server that died during Setup leaves a clean tree the retry reuses
+			if g.Setup != "" && !treeSetUp(spawnCtx, wt) {
 				setupStart := time.Now()
 				// no progress sink: Setup runs under the dag mutation lock, so nothing can read a
 				// partial tail while it holds the lock anyway
@@ -727,6 +728,7 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 					failDispatch(ctx, g, taskID, FailureKindSetup, serr, &afterCommit)
 					continue
 				}
+				markTreeSetUp(context.WithoutCancel(ctx), wt)
 				// Setup ran on its own SetupTimeout, and its wall clock is not the spawn's to pay
 				spawnCtx = budget.next()
 			}

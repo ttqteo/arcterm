@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -246,6 +247,41 @@ func taskStepLabel(step string, g *waveobj.TaskGroup, taskID string) string {
 		return step + " · " + t.Label
 	}
 	return step + " · " + t.ID
+}
+
+// setupMarkerName is the file a tree's git admin dir holds once its Setup passed. It goes with the registration,
+// so a tree checked out again is set up again, and it never shows in the tree's status.
+const setupMarkerName = "arc-setup-done"
+
+// setupMarkerPath is wt's Setup marker, "" when git cannot name wt's admin dir.
+func setupMarkerPath(ctx context.Context, wt string) string {
+	dir, err := git(ctx, wt, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		log.Printf("finding the git dir of %s: %v", wt, err)
+		return ""
+	}
+	return filepath.Join(dir, setupMarkerName)
+}
+
+// treeSetUp reports whether Setup passed in wt. A tree it cannot tell about is not set up, so Setup runs again.
+func treeSetUp(ctx context.Context, wt string) bool {
+	marker := setupMarkerPath(ctx, wt)
+	if marker == "" {
+		return false
+	}
+	_, err := os.Stat(marker)
+	return err == nil
+}
+
+// markTreeSetUp records that Setup passed in wt. A failure only costs a second Setup on the lane's next task.
+func markTreeSetUp(ctx context.Context, wt string) {
+	marker := setupMarkerPath(ctx, wt)
+	if marker == "" {
+		return
+	}
+	if err := os.WriteFile(marker, nil, 0o644); err != nil {
+		log.Printf("recording Setup in %s: %v", wt, err)
+	}
 }
 
 func execPlanCommandEnv(ctx context.Context, dir, command string, env []string, timeout time.Duration, progress planProgress) (string, error) {

@@ -225,7 +225,8 @@ func unlinkReparsePoints(wt string) error {
 }
 
 // EnsureRunWorktree returns a usable linked worktree for runID, the commit its next task starts at, and
-// whether this call created the tree, so one-time preparation runs only on a fresh tree. An existing branch
+// whether this call created the tree. Setup does not go by that: a reused tree may never have been set up
+// (see treeSetUp). An existing branch
 // is continued, never discarded: its commits are the finished tasks earlier in the lane, or an earlier
 // attempt's work, which the next task builds on and the lane's merge lands. A clean tree on the branch is
 // reused; a dirty one has its uncommitted state dumped to a recovery patch, and a dirty or missing one is

@@ -123,6 +123,30 @@ func TestDispatchRunsSetupInTheNewWorktreeBeforeTheWorker(t *testing.T) {
 	}
 }
 
+// a worktree add that checks the tree out and still exits nonzero leaves a clean tree on its branch, and so does
+// a server that dies during Setup: the retry reuses that tree, which no Setup has prepared.
+func TestDispatchSetsUpAReusedTreeThatSetupNeverPrepared(t *testing.T) {
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+	f.setPlanCommands(t, "", setupCmd)
+	base, err := ProjectHeadCommit(f.ctx, f.project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, err := CreateRunWorktree(f.ctx, f.project, TaskWorktreeKey(f.ownerID, "t-0"), base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := stubPlanCommand(t, func(context.Context, string, string) error { return nil })
+	stubSpawn(t, new([]string))
+
+	if err := Schedule(f.ctx, f.dagID); err != nil {
+		t.Fatal(err)
+	}
+	if got := calls.in(wt); len(got) != 1 || got[0].command != setupCmd {
+		t.Fatalf("want Setup once in the reused tree %s, got %+v", wt, calls.list())
+	}
+}
+
 func TestSetupFailureFailsTheTaskDropsItsWorktreeAndWakesTheLead(t *testing.T) {
 	lead := newFakeLead(t)
 	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
