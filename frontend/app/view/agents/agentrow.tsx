@@ -457,7 +457,7 @@ export const AgentRow = memo(function AgentRow({
                 >
                     <Check size={12} aria-hidden className="shrink-0 text-accent-soft" />
                     <span className={cn(REGION_LABEL, "text-accent-soft")}>Finished</span>
-                    <span className="min-w-0 flex-1 text-[10.5px] tabular-nums text-muted">
+                    <span className="min-w-0 flex-1 truncate text-[10.5px] tabular-nums text-muted">
                         <FinishedAge agent={agent} nowAtom={nowAtom} />
                     </span>
                     {diff ? (

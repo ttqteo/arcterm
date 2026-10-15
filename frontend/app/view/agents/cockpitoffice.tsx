@@ -88,6 +88,7 @@ import {
     buildPlan,
     HWALL,
     peopleDrawn,
+    popupBox,
     WALL,
     type Box,
     type Desk,
@@ -1423,22 +1424,20 @@ function OfficePopup({
         return null;
     }
     const anchor = desk ? { x: desk.x, y: desk.y } : { x: seat!.x, y: seat!.bottom - 40 };
-    // beside the desk, over the hall: right of the agents' rooms, left of a meeting room
-    const right = room.kind !== "meeting";
-    const left = Math.max(0, Math.min(plan.width - 380, right ? anchor.x + 100 : room.box.x - 380));
-    const top = Math.max(0, Math.min(plan.height - 320, anchor.y - 60));
+    // beside the desk, over the hall; the card fills the box's height and scrolls, as in its grid column
+    const { box, right, pointerTop } = popupBox(plan, anchor, room);
     return (
         <div
             data-office-popup={desk ? "agent" : "run"}
-            className="absolute z-[8] w-[380px] rounded-md border border-edge-mid bg-surface-raised shadow-popover"
-            style={{ left, top }}
+            className="absolute z-[8] flex flex-col rounded-md border border-edge-mid bg-surface-raised shadow-popover"
+            style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
         >
             <span
                 className={cn(
                     "absolute size-2.5 rotate-45 border-edge-mid bg-surface-raised",
                     right ? "-left-[6px] border-b border-l" : "-right-[6px] border-r border-t"
                 )}
-                style={{ top: Math.max(8, Math.min(300, anchor.y + 4 - top)) }}
+                style={{ top: pointerTop }}
             />
             {card}
         </div>

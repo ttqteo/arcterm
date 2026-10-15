@@ -29,6 +29,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - **Background tasks, newest first**: the agent rail lists the task started last at the top, so a running one no
   longer sits under the ones already done.
 
+### Fixed
+
+- **The Office card stays in the office**: the card beside a desk keeps to the office's height and scrolls, instead of
+  running down the page with the agent's whole last answer; a finished card's age no longer runs into Review changes.
+
 ## 0.15.13 — 2026-10-15
 
 ### Added

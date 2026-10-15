@@ -159,6 +159,8 @@ export const FACADE_H = 40;
 export const DOOR = 50;
 export const LOUNGE_PERSON_W = 36; // a person's sprite: 12 cells of PLAN_CELL px
 export const LOUNGE_LABEL_H = 14;
+export const POPUP_W = 380; // the card beside the desk
+export const POPUP_H = 320;
 export const HOME = "Home";
 export const OTHER_RUNS = "Other runs";
 
@@ -294,6 +296,23 @@ export function runLit(r: PlanRun): boolean {
 }
 
 /** A vertical wall with its doors left open. */
+/** Pure: the box of the card beside the desk the boss stands at, kept inside the office's box: on the hall's side of
+ *  the desk (right of the agents' room, left of a meeting room), POPUP_H tall or the office's height, and where its
+ *  pointer to the desk sits on the box's edge. The box sets the card's height: a card fills its box and scrolls,
+ *  as it fills its share of a column in the grid. */
+export function popupBox(
+    size: { width: number; height: number },
+    anchor: Point,
+    room: Pick<Room, "kind" | "box">
+): { box: Box; right: boolean; pointerTop: number } {
+    const right = room.kind !== "meeting";
+    const h = Math.min(POPUP_H, size.height);
+    const x = Math.max(0, Math.min(size.width - POPUP_W, right ? anchor.x + 100 : room.box.x - POPUP_W));
+    const y = Math.max(0, Math.min(size.height - h, anchor.y - 60));
+    const pointerTop = Math.max(8, Math.min(h - 20, anchor.y + 4 - y));
+    return { box: { x, y, w: POPUP_W, h }, right, pointerTop };
+}
+
 export function cut(wall: Box, doors: Box[]): Box[] {
     const out: Box[] = [];
     let y = wall.y;

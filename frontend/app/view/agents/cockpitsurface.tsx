@@ -81,6 +81,9 @@ const TAB_TONE: Record<ChipFilter, { text: string; line: string }> = {
     all: { text: "text-primary", line: "border-primary" },
 };
 
+// the Office popup's card fills the popup's box: no floor, so a card that asks never outgrows it
+const POPUP_SHARE: CardShare = { grow: 1, minPx: 0 };
+
 // Bridges a model PrimitiveAtom to a useState-shaped [value, setter] pair so the lifted orchestration
 // state reads/writes through the model while the existing call sites (incl. functional updaters) work.
 function useModelAtom<T>(a: PrimitiveAtom<T>): [T, (v: T | ((p: T) => T)) => void] {
@@ -459,8 +462,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         />
     );
 
-    const renderCard = (c: GridCard) => {
-        const share = cardShare(c.kind === "run", cardNeedsYou(c));
+    const renderCard = (c: GridCard, share = cardShare(c.kind === "run", cardNeedsYou(c))) => {
         if (c.kind === "agent") {
             return renderAgent(c.agent, share);
         }
@@ -493,7 +495,8 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     };
 
     // the card beside the desk the boss stands at: an agent's AgentRow, or for a seat or a meeting room its run's
-    // LeadCard, the very ones the grid draws; an agent of the Idle section gets its row too
+    // LeadCard, the very ones the grid draws; an agent of the Idle section gets its row too. The popup's box sets
+    // its height (officeplanmodel.ts popupBox), so it has no floor of its own.
     const renderOfficeCard = (key: string): ReactNode => {
         const c = cards.find((x) =>
             x.kind === "agent"
@@ -501,10 +504,10 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                 : x.id === key || key.startsWith(`${x.id}:`) || rowsOf(x).some((r) => r.key === key)
         );
         if (c) {
-            return renderCard(c);
+            return renderCard(c, POPUP_SHARE);
         }
         const parked = shownParkedIdle.find((a) => a.id === key);
-        return parked ? renderAgent(parked, cardShare(false, false)) : null;
+        return parked ? renderAgent(parked, POPUP_SHARE) : null;
     };
 
     const phase = rosterLoadPhase(seeded, [...asking, ...working, ...idle].filter((a) => !hidden.has(a.id)).length);
@@ -642,7 +645,9 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                                         className="flex min-w-0 flex-1 flex-col gap-2.5"
                                         style={{ minHeight: gridViewportPx }}
                                     >
-                                        <AnimatePresence initial={false}>{col.map(renderCard)}</AnimatePresence>
+                                        <AnimatePresence initial={false}>
+                                            {col.map((c) => renderCard(c))}
+                                        </AnimatePresence>
                                     </div>
                                 ))}
                             </div>
