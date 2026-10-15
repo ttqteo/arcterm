@@ -30,15 +30,17 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   sentences on a tinted ground and dims the rest (`/skim` turns the dimming off), and a brainstorm highlights only the
   question waiting on you, its options left bright. A copy, the transcript and Conversation History get the reply
   without the marks. In the fullscreen terminal, a question that scrolled out of view stays above the prompt until
-  you answer.
+  you answer. <!-- big -->
 - **Resume a canvas's session**: a canvas opened from the Canvas gallery offers the session that drew it, beside its
   title: Resume puts that conversation back in a tab, or Jump goes to its agent if it is still running.
-  <!-- try: go:canvases -->
+  <!-- try: go:canvases --> <!-- big --> <!-- shot: 0.15.14-canvas-resume.webp -->
 
 ### Changed
 
 - **The Office's ⚡ reads as energy**: it shows what is left of Claude's 5-hour window, so 4 % used reads ⚡ 96 %, and
   it turns amber at 10 % left.
+- **The Office walks lighter**: a step of the boss or a walker moves only that figure instead of redrawing it, so while
+  they walk the Office takes about 10 % of a core, down from up to 19 %.
 - **A calmer Ideas list**: each idea takes at most two lines, an open question reads brightest and a decision dimmest,
   and hovering one shows its whole text, turn and author beside the rail. Click an idea to pick it for Merge or Drop:
   the card itself lights up, with no checkbox. Only the topic under way stays open; the others fold, with a dot when
