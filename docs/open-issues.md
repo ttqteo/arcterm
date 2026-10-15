@@ -27,6 +27,20 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-16 (the Office plays like a pixel game, run 25462413)**
+
+- [ ] (arcterm) In the installed Mac app (Final ran the scenarios in headless Chrome, not WKWebView): Cockpit → Office.
+  No Cockpit title; the counts, Cards | Office, projects and Live only sit in the framed HUD bar inside the office.
+  Walk to a desk: `↵ Talk` (`↵ Answer` at one that asks) over the person; ↵ opens the dialog box at the office's foot,
+  or at its head when the boss stands in the view's lower half (its name plate should sit clear of the HUD bar: in
+  the Final shot `cockpit-office-dialog-questions.png` it touches the bar's lower edge). ↑ ↓ move the ▶ over a dim
+  Send; ↵ on an answer moves the ▶ to Send and a second ↵ sends; `f` opens the full card, Esc goes back to the box,
+  Esc again to walking. Reply opens the full card with its composer focused, and `m` typed there types. `m` and the
+  footer's `m menu` open the office menu under the HUD bar; its Events shows the Events rail and Esc while walking
+  hides it; the footer names the newest event. With real runs: a meeting room's box shows the lead's last line and
+  its task column, and a worker seat whose review failed leads with Approve / Send back / Retry / Skip.
+  `officecontrols.ts`, `officedialog.tsx`, `cockpitoffice.tsx`; merge 519802593.
+
 **2026-10-15 (menu bar / tray popover, run f502b3ed)**
 
 The Final judged only the popover's page in headless Chrome; the icon and the window belong to the Tauri host. Spec
