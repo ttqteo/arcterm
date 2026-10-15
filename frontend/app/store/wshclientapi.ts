@@ -42,6 +42,12 @@ export class RpcApiType {
         return client.wshRpcCall("agentaskclear", data, opts);
     }
 
+    // command "agentaskpending" [call]
+    AgentAskPendingCommand(client: WshClient, data: string, opts?: RpcOpts): Promise<string> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "agentaskpending", data, opts);
+        return client.wshRpcCall("agentaskpending", data, opts);
+    }
+
     // command "agentcontrol" [responsestream]
 	AgentControlCommand(client: WshClient, data: CommandAgentControlData, opts?: RpcOpts): AsyncGenerator<AgentControlMsg, void, boolean> {
         if (this.mockClient) return this.mockClient.mockWshRpcStream(client, "agentcontrol", data, opts);

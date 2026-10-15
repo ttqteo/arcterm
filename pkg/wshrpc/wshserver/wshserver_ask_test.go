@@ -221,6 +221,28 @@ func TestAskCommandWaitCancelKeepsANewerAsk(t *testing.T) {
 	}
 }
 
+func TestAgentAskPendingCommandNamesThePendingAsk(t *testing.T) {
+	ws := &WshServer{}
+	oref := waveobj.MakeORef("block", uuid.NewString()).String()
+	agentask.GlobalRegistry = agentask.MakeRegistry()
+	if id, err := ws.AgentAskPendingCommand(context.Background(), oref); err != nil || id != "" {
+		t.Fatalf("no ask raised: got %q, %v", id, err)
+	}
+	raised, err := ws.AskCommand(context.Background(), askData(oref, false))
+	if err != nil {
+		t.Fatalf("ask: %v", err)
+	}
+	if id, _ := ws.AgentAskPendingCommand(context.Background(), oref); id != raised.AskId {
+		t.Fatalf("pending ask: got %q, want %q", id, raised.AskId)
+	}
+	if err := ws.AgentAskClearCommand(context.Background(), oref); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	if id, _ := ws.AgentAskPendingCommand(context.Background(), oref); id != "" {
+		t.Fatalf("a cleared ask is not pending: got %q", id)
+	}
+}
+
 func TestAskCommandClearCancelsWaiter(t *testing.T) {
 	ws := &WshServer{}
 	oref := waveobj.MakeORef("block", uuid.NewString()).String()

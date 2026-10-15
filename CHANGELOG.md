@@ -61,9 +61,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
-- **An answered question no longer leaves its agent stuck on asking**: on a Claude Team or Enterprise account the
-  question's card could stay behind after you answered it, hidden while the agent worked and back as "asking" (with
-  a Waiting on you card) every time it finished a turn, until the app reloaded.
+- **An answered question no longer leaves its agent stuck on asking**: a question's card could stay behind after you
+  answered it (most often on a Claude Team or Enterprise account), hidden while the agent worked and back as "asking"
+  (with a Waiting on you card) every time it finished a turn, until the app reloaded. An agent that finishes a turn
+  now drops any card the server no longer holds.
 - **A sleeping session never reads as asking**: a question card left behind on a session that has since gone to sleep
   no longer marks it "asking" in the sidebar, where it stood above the agent that really was waiting on you.
 - **Heavy jobs no longer pile up on a Mac short of memory**: under yellow memory pressure the Jobs queue runs one

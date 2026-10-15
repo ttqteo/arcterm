@@ -146,6 +146,17 @@ func (ws *WshServer) AgentAskClearCommand(ctx context.Context, oref string) erro
 	return nil
 }
 
+func (ws *WshServer) AgentAskPendingCommand(ctx context.Context, oref string) (string, error) {
+	if oref == "" {
+		return "", fmt.Errorf("oref is required")
+	}
+	pending, ok := agentask.GlobalRegistry.Get(oref)
+	if !ok {
+		return "", nil
+	}
+	return pending.AskId, nil
+}
+
 // askResumeGraceMs is how far after an ask a working status has to land before it counts as the agent
 // having moved on. It mirrors the frontend's ASK_STALE_GRACE_MS: a reporter's own working events can
 // land in the same instant as the ask that follows them, and those must not retire it.
