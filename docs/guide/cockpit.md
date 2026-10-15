@@ -131,13 +131,20 @@ mỗi người nhận ra nhờ kiểu tóc, và sếp (bạn) đội mũ. Phòng
   Agent không có project ngồi ở phòng **Home** cạnh cửa vào.
 - **Chỉ thứ cần bạn mới nổi**: dưới bàn là tên agent; chữ trạng thái chỉ hiện **Needs you** (vàng, kèm dấu `!`) và
   **done**. Phòng không ai làm thì tắt đèn. Rê chuột lên bàn để xem trạng thái đầy đủ.
-- **Bạn là sếp**: `←` `↑` `↓` `→` để đi (tường chặn, cửa đi qua được), `j` / `k` tới bàn kế, `n` hiện lối đi chấm
-  chấm tới câu hỏi kế tiếp trong một giây rồi đi tới đó. Đứng ở bàn nào thì thẻ của agent đó, đúng thẻ của lưới, mở
-  cạnh bàn: `1`–`9` trả lời, `r` nhắn, `t` mở terminal, `b` đẩy xuống nền. Bấm vào bàn hay phòng họp cũng được.
-  `Esc` ẩn thẻ cho tới khi sếp đi tiếp.
+- **Bạn là sếp, chơi như game Pokémon**: `←` `↑` `↓` `→` để đi (tường chặn, cửa đi qua được), `j` / `k` tới bàn kế,
+  `n` hiện lối đi chấm chấm tới câu hỏi kế tiếp trong một giây rồi đi tới đó. Đứng ở bàn nào thì trên đầu người đó có
+  `↵ Talk` (hay `↵ Answer` nếu đang hỏi): bấm `↵` mở **hộp thoại** ở mép văn phòng, chứa điều agent nói, câu hỏi, các
+  bước gần nhất và số liệu của nó, kèm menu ▶ bên phải. `↑` `↓` chọn, `↵` làm, `Esc` lùi một bước: hộp thoại có các
+  câu trả lời rồi **Send**, hay **Open**, **Reply**, **Terminal**, **Background**; ở phòng họp là **Open lead**, **Adjust**;
+  ở ghế worker là các nút của task đó. **Full card** (hay `f`) mở thẻ đầy đủ cạnh bàn; `Esc` quay về hộp thoại.
+  `1`–`9`, `r`, `t`, `b` vẫn dùng được như trước. Bấm vào bàn hay phòng họp cũng mở hộp thoại.
+- **Văn phòng chiếm hết màn**: không còn tiêu đề Cockpit; số đếm (need you, working…), Cards | Office, project và
+  **Live only** nằm trong thanh HUD trong văn phòng. Footer chỉ còn `m menu` và event mới nhất; rail Events ẩn trong
+  Office. `m` mở **menu văn phòng** (như START): next Needs you, bàn kế / trước, **Events** (hiện rail), Cards view, và
+  danh sách phím.
 - **Giờ làm và năng lượng**: ngoài giờ làm (mặc định 9–18, và cả cuối tuần) văn phòng tối lại, ai idle đã về nhà, ai
   còn làm có đèn bàn. Quota 5 giờ từ 70 % thì có người ngáp, từ 90 % thì có cà phê trên bàn; quota reset thì mọi
-  người vươn vai. `⚡` ở đầu văn phòng là năng lượng còn lại: 100 % trừ phần quota đã dùng (dùng 4 % thì hiện
+  người vươn vai. `⚡` trên thanh HUD là năng lượng còn lại: 100 % trừ phần quota đã dùng (dùng 4 % thì hiện
   `⚡ 96 %`), còn 10 % trở xuống thì chuyển màu vàng.
 - **Settings → Appearance → Office** tắt animation và đổi giờ làm. Văn phòng tốn bao nhiêu thì xem ở **panel
   Consumers** (bấm chip RAM): dòng **Office** cho biết JS của văn phòng, số người, ảnh sprite và DOM node, kèm nút tắt
