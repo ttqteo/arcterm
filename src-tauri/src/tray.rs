@@ -107,7 +107,8 @@ fn apply(app: &AppHandle, st: &State) {
         }
     }
     let _ = tray.set_tooltip(Some(trayicon::tooltip(st.count, st.alert, st.offline)));
-    let _ = tray.set_visible(st.visible || st.offline);
+    // `app:tray` off keeps the icon hidden, offline too.
+    let _ = tray.set_visible(st.visible);
 }
 
 #[tauri::command]
