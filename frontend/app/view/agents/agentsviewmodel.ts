@@ -946,6 +946,20 @@ export function isAskStale(askTs: number | undefined, statusTs: number | undefin
     return statusTs - askTs > ASK_STALE_GRACE_MS;
 }
 
+/** Pure: the ask a row overlays (withAsk), or null. A sleeping agent's process is gone, so nothing can be waiting on
+ *  an answer from it: an ask its block still holds is one whose clear never reached the cockpit, and overlaying it
+ *  read a parked session as asking above the agent that really was. */
+export function liveAsk(
+    ask: AgentAskData | null | undefined,
+    status: Pick<AgentStatusData, "ts" | "state">,
+    sleeping: boolean
+): AgentAskData | null {
+    if (ask == null || sleeping || isAskStale(ask.ts, status.ts, status.state)) {
+        return null;
+    }
+    return ask;
+}
+
 /** Pure: wire ask questions (lowercase Go json tags) in the view model's shape. Shared by the session ask
  *  and the dag child-ask card, so both render one question shape. */
 export function toAskQuestions(questions: AgentAskData["questions"]): AgentAskQuestion[] {

@@ -23,7 +23,7 @@ import {
     agentVMFromInput,
     askingCount,
     deriveTerminalVMs,
-    isAskStale,
+    liveAsk,
     withAsk,
     type AgentEntry,
     type AgentVM,
@@ -92,9 +92,8 @@ export const liveAgentBaseAtom: Atom<AgentVM[]> = atom((get) => {
             now
         );
         vm.usage = get(getAgentUsageAtom(row.termBlockOref));
-        const ask = get(getAgentAskAtom(row.termBlockOref));
-        const effectiveAsk = ask && !isAskStale(ask.ts, status.ts, status.state) ? ask : null;
-        agents.push(withAsk(vm, effectiveAsk, now));
+        const ask = liveAsk(get(getAgentAskAtom(row.termBlockOref)), status, vm.sleeping != null);
+        agents.push(withAsk(vm, ask, now));
     }
     return agents;
 });
