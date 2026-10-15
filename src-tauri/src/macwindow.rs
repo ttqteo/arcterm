@@ -60,12 +60,12 @@ mod imp {
 
     use objc2::rc::Retained;
     use objc2::runtime::{AnyObject, NSObject, Sel};
-    use objc2::{define_class, msg_send, sel, MainThreadMarker, MainThreadOnly};
+    use objc2::{define_class, msg_send, sel, ClassType, MainThreadMarker, MainThreadOnly};
     use objc2_app_kit::{
-        NSApplication, NSApplicationDidBecomeActiveNotification, NSMenuItem, NSWindow, NSWindowButton,
-        NSWindowCollectionBehavior,
+        NSApplication, NSApplicationDidBecomeActiveNotification, NSColor, NSFontAttributeName,
+        NSForegroundColorAttributeName, NSMenuItem, NSPanel, NSWindow, NSWindowButton, NSWindowCollectionBehavior,
     };
-    use objc2_foundation::{ns_string, NSNotificationCenter};
+    use objc2_foundation::{ns_string, NSMutableAttributedString, NSNotificationCenter, NSRange, NSString};
     use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
     use super::{brings_to_front, takes_key, Arrival, Unfolded};
@@ -214,6 +214,70 @@ mod imp {
     fn in_mission_control(was: NSWindowCollectionBehavior) -> NSWindowCollectionBehavior {
         let behavior = was & !(NSWindowCollectionBehavior::Transient | NSWindowCollectionBehavior::Stationary);
         behavior | NSWindowCollectionBehavior::Managed
+    }
+
+    define_class!(
+        // a panel takes key without making arcterm the active app, so opening the tray popover leaves the cockpit
+        // where it is (spec 2026-10-15-tray-popover-design.md); canBecomeKeyWindow lets its webview take keys
+        #[unsafe(super(NSPanel))]
+        #[thread_kind = MainThreadOnly]
+        #[name = "ArcTrayPanel"]
+        struct ArcTrayPanel;
+
+        impl ArcTrayPanel {
+            #[unsafe(method(canBecomeKeyWindow))]
+            fn can_become_key_window(&self) -> bool {
+                true
+            }
+        }
+    );
+
+    // Runs from the tray's open, on the main thread: the popover's window becomes a non-activating panel and takes the
+    // key without Tauri's show or set_focus, which would activate arcterm.
+    pub fn show_as_panel(window: &WebviewWindow) {
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let Ok(ns) = ns_window(window, mtm) else {
+            return;
+        };
+        unsafe {
+            objc2::ffi::object_setClass(
+                (ns as *const NSWindow).cast_mut().cast(),
+                ArcTrayPanel::class() as *const _ as *const _,
+            );
+        }
+        ns.setStyleMask(ns.styleMask() | objc2_app_kit::NSWindowStyleMask::NonactivatingPanel);
+        ns.setCollectionBehavior(
+            NSWindowCollectionBehavior::CanJoinAllSpaces
+                | NSWindowCollectionBehavior::FullScreenAuxiliary
+                | NSWindowCollectionBehavior::Transient,
+        );
+        ns.orderFrontRegardless();
+        ns.makeKeyWindow();
+    }
+
+    /// Colours the first character of the status item's title (trayicon::MAC_ALERT) red, keeping the button's own
+    /// font, so the red dot shows beside the count at critical memory pressure. Call it after set_title(title).
+    pub fn tint_tray_alert(tray: &tauri::tray::TrayIcon, title: String) {
+        let _ = tray.with_inner_tray_icon(move |inner| {
+            let (Some(item), Some(mtm)) = (inner.ns_status_item(), MainThreadMarker::new()) else {
+                return;
+            };
+            let Some(button) = item.button(mtm) else {
+                return;
+            };
+            let text = NSMutableAttributedString::from_nsstring(&NSString::from_str(&title));
+            let whole = NSRange::new(0, text.length());
+            let dot = NSRange::new(0, "●".encode_utf16().count());
+            unsafe {
+                if let Some(font) = button.font() {
+                    text.addAttribute_value_range(NSFontAttributeName, &font, whole);
+                }
+                text.addAttribute_value_range(NSForegroundColorAttributeName, &NSColor::systemRedColor(), dot);
+            }
+            button.setAttributedTitle(&text);
+        });
     }
 
     // Runs from setup, on the main thread. The fold gives back the behavior it found, so this one holds for good.
@@ -458,6 +522,20 @@ pub fn show_in_mission_control(window: &WebviewWindow) {
     imp::show_in_mission_control(window);
     #[cfg(not(target_os = "macos"))]
     let _ = window;
+}
+
+// Runs from the tray's open, on the main thread.
+pub fn show_as_panel(window: &WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    imp::show_as_panel(window);
+    #[cfg(not(target_os = "macos"))]
+    let _ = window;
+}
+
+// Runs from the tray's apply, on the main thread, after set_title.
+#[cfg(target_os = "macos")]
+pub fn tint_tray_alert(tray: &tauri::tray::TrayIcon, title: String) {
+    imp::tint_tray_alert(tray, title);
 }
 
 // Runs from setup, on the main thread.

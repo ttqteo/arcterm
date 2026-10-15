@@ -10,6 +10,8 @@ mod commands;
 mod notify;
 mod paths;
 mod shellenv;
+mod tray;
+mod trayicon;
 mod webcache;
 mod winframe;
 
@@ -147,6 +149,7 @@ fn spawn_wavesrv(
         }
         // eof on stderr means wavesrv exited; without this line a backend crash leaves no trace
         applog::log_line("[tauri] wavesrv stderr closed");
+        tray::wavesrv_gone();
     });
 
     Ok(child)
@@ -358,7 +361,9 @@ fn main() {
             macwindow::redirect_minimize,
             winframe::hold_window_frame,
             foreground::app_foreground,
-            foreground::raise_topmost
+            foreground::raise_topmost,
+            tray::set_tray_status,
+            tray::tray_popover_size
         ])
         .setup(move |app| {
             // the config window already exists here (Tauri builds it before running setup)
@@ -449,6 +454,11 @@ fn main() {
                 app.manage(job);
             }
             app.state::<WavesrvChild>().0.lock().unwrap().replace(child);
+            // Linux gets no tray: the commands stay registered, and with no icon they do nothing
+            #[cfg(any(target_os = "macos", windows))]
+            if let Err(e) = tray::setup(app.handle()) {
+                applog::log_line(&format!("[tauri] the tray icon failed: {e}"));
+            }
             Ok(())
         })
         .build(context)

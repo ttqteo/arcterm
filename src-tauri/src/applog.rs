@@ -74,6 +74,11 @@ pub fn init(data_home: &Path) {
     }
 }
 
+/// The current log file, for the tray's Show log; None before init.
+pub fn log_path() -> Option<PathBuf> {
+    LOG.get().map(|l| l.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).path.clone())
+}
+
 pub fn log_line(line: &str) {
     println!("{}", line);
     let Some(log) = LOG.get() else { return };
