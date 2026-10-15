@@ -194,10 +194,11 @@ A person away from the desk walks back when the agent is working or asking again
 - **New tokens** in `@theme`, held at their defaults by every theme, with a why comment: people
   (`--color-office-boss`, `--color-office-shirt-claude`, `-codex`, `-pi`, `-agy`, `-other`), scenery
   (`--color-office-wall-top`, `-wall-face`, `-wood-1`, `-wood-2`, `-tile-1`, `-tile-2`, `-carpet`, `-hall`,
-  `-desk-top`, `-desk-face`, `-sofa`, `-brick`, `-mortar`, `-window-day`, `-window-night`, `-plant`, `-pot`), light
+  `-desk-top`, `-desk-face`, `-sofa`, `-brick`, `-mortar`, `-window-day`, `-window-night`, `-plant`), light
   (`--color-office-night`, `-dark`, `-lamp`, `-cup`), and the sign's glow as a shadow token (`--shadow-office-sign`). The sign's
   frame is the accent: it is the brand.
-- Bands outside the view are `content-visibility: auto`.
+- Desks and seats outside the view are `content-visibility: auto` (rooms are placed absolutely, so a band has no
+  box of its own to skip).
 
 ## Motion
 
@@ -243,19 +244,21 @@ Office  ● animating · 2 walking · 6 typing
 | `view/office/spritecache.ts` (moved from `view/jarvis/officesprites.ts`) | rasteriser and data-URL cache for any grid set; entries and bytes for the meter |
 | `view/office/officeclock.ts` (+ test) | the frame and walk clocks, their run/stop rules, the meter counters (`officeMeterAtom`) |
 | `view/jarvis/office*.ts(x)` | import the cache from `view/office/`; nothing else changes in the Run office |
+| `view/agents/officeinputs.ts` (+ test) | the grid's cards and the Idle section's agents → the plan's input |
 | `view/agents/officeplanmodel.ts` (+ test) | cards and runs → bands, rooms, desks, seats, doors, labels, office order, poses, popup side |
 | `view/agents/officebehavior.ts` (+ test) | idle → coffee and sofa, the 3-walker queue, energy, day and night |
 | `view/agents/officeboss.ts` (+ test) | keys and clicks → boss position; walls and doors; paths through doors; desk at the boss |
 | `view/agents/officestore.ts` | `cockpitViewAtom`, `officeHoursAtom`, `officeAnimationAtom` |
 | `view/agents/cockpitoffice.tsx` | the plan, people, boss and popup |
+| `view/agents/cockpitofficedevhooks.ts` | DEV-only `__cockpitOffice` / `__cockpitOfficeProbe` for the CDP scenarios |
 | `view/agents/cockpitsurface.tsx` | the toggle; Office in place of the grid; card streams for the popup only |
 | `view/agents/usecockpitkeyboard.ts` | Office keys, office order for `j` `k` `n` |
 | `view/agents/consumers.ts`, `consumerspanel.tsx` | the Office line |
 | `store/keybindings/bindings.ts` | `cockpit:office` and the walk keys (documentation bindings, as the Cockpit's are) |
-| Settings → Appearance | an Office group: animation, work hours |
+| `settingspages/appearance.tsx`, `settingsmodel.ts`, `settingssurface.tsx` | Settings → Appearance → Office: animation, work hours |
 | `frontend/tailwindsetup.css` | the tokens above |
 | `scripts/cockpit-fixtures/scenarios.mjs` | `office-bench`: 48 agents over 6 projects, every agent state |
-| `scripts/cdp/officescenarios.mjs` | `cockpit-office` (visual) and `cockpit-office-bench` (budgets) |
+| `scripts/cdp/cockpitofficescenarios.mjs` | `cockpit-office` (visual) and `cockpit-office-bench` (budgets), listed in `scenarios.mjs` |
 | `docs/guide/cockpit.md`, `docs/keyboard-shortcuts.md`, `CHANGELOG.md` | the Office section, the keys, one `<!-- big -->` line |
 
 ## Benchmark
