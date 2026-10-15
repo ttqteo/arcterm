@@ -4091,7 +4091,8 @@ git commit -m "feat(tray): the cockpit feeds the popover and the icon's count, S
 The Final scenarios cover the popover's page, and only it. The icon is drawn by the host and the window's behaviour
 is the host's, and on a Mac the Final runs in headless Chrome with no Tauri host, so the spec leaves these as hand
 checks the run reports unverified. Their logic is unit-tested (Task 3: the title and badge per count, the red dot,
-the dimming, the popover's place). These need the real app (`task dev`, then the installed build):
+the dimming, the popover's place). Their owner: the lead adds one effort chunk per check below at wrap-up, so they
+come back to the person. These need the real app (`task dev`, then the installed build):
 
 1. The icon's states, one per board: the template glyph on a light and a dark menu bar; the count beside it
    (`Main`); no count at 0 (`A-Quiet`); the red dot before the count at critical pressure (`A-Critical`;

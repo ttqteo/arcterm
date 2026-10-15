@@ -90,8 +90,8 @@ So it is the popover's only source:
   - `CleanStorageCommand` with the category's confirm copy;
   - the stop command below;
   - opening the cockpit at an item: the router (`openref.ts`) after showing and focusing the main window.
-- **The badge.** `TrayBridge` calls `set_tray_status { count, alert }` whenever the count or the pressure level
-  changes, whether or not the popover is open.
+- **The badge.** `TrayBridge` calls `set_tray_status { count, alert, visible }` whenever the count, the pressure
+  level or `app:tray` changes, whether or not the popover is open.
 - **Why not let the popover connect to wavesrv itself?** It would need copies of the attention queue, the agents
   roster and the usage meters, which are joined in the frontend from several stores. Sprout and the tray must never
   disagree about what waits on you.
@@ -126,7 +126,7 @@ So it is the popover's only source:
 - **`tray.rs`** builds the icon and the right-click menu, opens and places the popover window, closes it on blur,
   and restarts the app for **Restart arcterm** (`AppHandle::restart`).
 - **New commands:**
-  - `set_tray_status { count, alert }`, from the main window;
+  - `set_tray_status { count, alert, visible }`, from the main window (`visible` is `app:tray`);
   - `tray_popover_size { height }`, from the popover.
 
   Add both to `docs/reference/architecture.md`'s command list ("eleven Tauri commands" becomes thirteen).
@@ -154,7 +154,8 @@ Copy and order follow the boards. The rules behind them:
   - Free and total of the system volume, and **Clean up**.
   - A split bar: arcterm's share is the storage report's total plus `storebytes`; everything else is the rest of
     the used space.
-  - "arcterm N GB · M GB can be cleaned", where M is the sum of `cleanablebytes`.
+  - "arcterm N GB · M GB can be cleaned", where M is the sum of `cleanablebytes` over the categories the popover
+    cleans in place (Run worktrees, Old Claude sessions, and Logs, cache and trash).
   - The report is the last scan (`GetStorageCommand`). The popover never starts a scan.
 - **Heavy jobs:**
   - The Jobs popover's rows (`cockpit/jobqueuepanel.tsx`): running or place in the queue, the command, its peak
