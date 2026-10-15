@@ -44,7 +44,7 @@ final stage runs vitest.
   read by `tokenRgb` for the canvases and sprites. Every token name is spelled in full in source (Tailwind 4 drops an
   `@theme` variable whose name never appears literally).
 - The layout does not change: `officeplanmodel.ts` keeps its rooms, desks (120 px apart, rows 130 px apart), seats,
-  tables and doors. Only the lounge's person sizes and its two standing spots move (Task 2).
+  tables, doors and the lounge's spots. Only the lounge's person sizes and its `+N in the lounge` line move (Task 2).
 - 1 art px = 3 CSS px (`PLAN_CELL`). The canvases are `ceil(width / 3) × ceil(height / 3)` and scaled 3× with
   `image-rendering: pixelated`; never draw them at screen resolution.
 - The canvases redraw only when `sceneryKey` changes; never on the frame clock (`officeTickAtom`), a walk step
@@ -565,7 +565,8 @@ git commit -m "feat(cockpit): the office's pixel palette: a token per scenery ro
   `BOSS_POSES: PlanSprite[]` (its boss row, 8); `SHEET_SHIRTS: string[]` (claude, codex, pi, agy shirt tokens);
   `PLAN_TOKENS: string[]`. Unchanged: `PlanOutfit`, `SeatPose`, `WalkDir`, `seatSprite`, `walkSprite`, `mirrorOf`,
   `shirtOf`, `HARNESS_SHIRT`, `OTHER_SHIRT`, `LEAD_SHIRT`, `BOSS_SHIRT`, `LANE_SHIRTS`. `planToken` goes.
-- Produces (`officeplanmodel.ts`): `LOUNGE_PERSON_W = 42`; the lounge's standing spots stand 12 px lower.
+- Produces (`officeplanmodel.ts`): `LOUNGE_PERSON_W = 42`; `loungeMore` moves to the free row between the standing
+  labels and the sofa; the standing spots stay where the `Main` board has them.
 
 Heights, in rows: `sit` `nod` `doze` `yawn` 17; `back` 15; `backseat` 19; `hand1` `hand2` `cheer1` `cheer2`
 `stretch` 20 (20 wide); `cup` `stand` `down1` `down2` `up1` `up2` `side1` `side2` `boss` 23.
@@ -858,10 +859,10 @@ export const MARKS: Record<PlanMark, string[]> = {
     ring: ["..AAAAAAAAAA..", ".A..........A.", "A............A", ".A..........A.", "..AAAAAAAAAA.."],
 };
 
-// the canvas's Cast board: its columns, and its boss row, in prototype/cast.mjs's order
+// the canvas's Cast board: its columns, and its boss row, in the order prototype/boards.mjs's castSheet draws them
 export const SHEET_POSES: PlanSprite[] = ["sit", "nod", "hand1", "hand2", "cheer1", "cheer2", "doze", "yawn",
     "stretch", "back", "backseat", "cup", "down1", "down2", "up1", "up2", "side1", "side2"];
-export const BOSS_POSES: PlanSprite[] = ["stand", "down1", "down2", "up1", "up2", "side1", "side2", "boss"];
+export const BOSS_POSES: PlanSprite[] = ["stand", "boss", "down1", "down2", "up1", "up2", "side1", "side2"];
 export const SHEET_SHIRTS = ["--color-office-shirt-claude", "--color-office-shirt-codex", "--color-office-shirt-pi",
     "--color-office-shirt-agy"];
 ```
@@ -1020,9 +1021,12 @@ constant go; `SKIN`, `PANTS`, `PAPER`, `CUP` stay).
 
 `LOUNGE_PERSON_W = 42` (comment: a person's sprite, 14 cells of PLAN_CELL px); `SEATED_H = 45` and
 `STANDING_H = 69` (comment: the chibi's back on the sofa, 15 rows, and standing with a cup, 23 rows, as
-plansprite.ts draws them). The two standing spots in `LOUNGE_SPOTS` stand 12 px lower, so a standing head clears the
-`+N in the lounge` line: `spot("coffee", 170, 100, 126, 102, 104)` and `spot("coffee", 38, 100, 4, 102, 104)`.
-Update the comment above `LOUNGE_SPOTS` (its numbers: standing feet at 100, their labels' row at 102).
+plansprite.ts draws them). The standing spots stay as the `Main` board draws them (feet at 88, labels at 90, clear of
+the coffee machine's screen); a standing head now reaches 19 px from the lounge's top, over `+N in the lounge`, so that
+line moves to the free row between the standing labels and the sofa's people (their heads at 123), clear of the
+machine (pixel art: x 165..201, y 93..153): `loungeMore: { x: lounge.x + 8, y: lounge.y + 106, w: 150, h:
+LOUNGE_LABEL_H }`. Update the comment above `LOUNGE_SPOTS` (the machine's box, where `+N` goes; spec "The plan",
+the lounge).
 
 - [ ] **Step 7: Run the tests**
 
@@ -1788,8 +1792,9 @@ attributes the scenarios read: `data-office-desk`, `data-office-seat`, `data-off
 transparent button (`z-[3]`, `bg-transparent`, no border; the table is drawn on the over canvas) and the `+N`.
 `LoungerView` passes `phase`.
 
-`Mover` snaps to the grid and uses the new width: `const w = spriteWidth(p.sprite) * PLAN_CELL;` and
-`translate(${Math.round((at.x - w / 2) / PLAN_CELL) * PLAN_CELL}px, ${Math.round(at.y - h)}px)`. It takes `phase` and
+`Mover` snaps to the grid on both axes (`officeboss.ts` never snaps a position) and uses the new width:
+`const w = spriteWidth(p.sprite) * PLAN_CELL;` and
+`translate(${Math.round((at.x - w / 2) / PLAN_CELL) * PLAN_CELL}px, ${Math.round((at.y - h) / PLAN_CELL) * PLAN_CELL}px)`. It takes `phase` and
 passes it to `planSpriteUrl`. `BossView` shows `"stand"` (not `"down1"`) while it stands away from a desk, and draws
 its ring as a sprite:
 
@@ -1804,7 +1809,8 @@ its ring as a sprite:
             />
 ```
 
-with the ring's transform `translate(${Math.round(at.x - 21)}px, ${Math.round(at.y - 9)}px)`. `WalkersView` and
+with the ring's transform on the grid too:
+`translate(${Math.round((at.x - 21) / PLAN_CELL) * PLAN_CELL}px, ${Math.round((at.y - 9) / PLAN_CELL) * PLAN_CELL}px)`. `WalkersView` and
 `BossView` take `phase` (and `BossView` the theme epoch, so its ring redraws after a theme change).
 
 - [ ] **Step 4: Labels and bubbles**

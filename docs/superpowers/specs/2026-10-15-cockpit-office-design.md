@@ -86,7 +86,10 @@ and the two columns share whatever width the hall leaves.
   (a name too long for its room is cut with an ellipsis, the full text in the person's title). Spots fill by
   `idleSince`, longest first, so a newcomer never moves someone already there. Whoever does not fit is not drawn: a
   muted `+N in the lounge` line in the lounge counts them, and their desk stays empty and dimmed, its title saying
-  where they are. The lounge never grows, so a crowd moves no room.
+  where they are. The lounge never grows, so a crowd moves no room. The standing spots stay where the canvas's `Main`
+  board has them (feet 88 px down the lounge, their labels at 90, clear of the coffee machine's screen); the chibi's
+  standing sprite reaches 19 px from the lounge's top, so `+N in the lounge` sits in the free row between the
+  standing labels and the people on the sofa (x 8–158, y 106–120 in the lounge), clear of the machine.
 - **Doors:** every room has one door onto the hall, in the upper part of its hall-side wall (an agents' room's level
   with its first row of desks, as the `Main` board draws it), so a stretched room keeps its door where it was; the
   Home booth's is in its top wall. The plan grows so the booth sits below every door of the left column: no door opens
@@ -235,7 +238,7 @@ what to port from where).
   | 0 | under canvas | floors, wall faces and their windows, the TV, the chairs behind people (at a desk, on a table's far side), the sofa's seat and arms, the coffee machine, plants, each run's screen, the facade, every shadow |
   | 1 | people (`<img>`) | at a desk, on a table's far side, in the lounge |
   | 2 | over canvas | desk tops and laptops, the tables, the sofa's back, the near side's chairs; then each dark room and the night tint; then the lamps and their pools; last the wall caps and the sign, which no tint covers |
-  | 3 | near side (`<img>`) | a seat with its back to you, over the table. Its sprite ends with the chair back the over canvas draws in the same place, so the chair covers the person's back and an empty chair still shows. Being over the tints, its sprite is rasterised shaded (the dark layer, the night tint, or both) when its room is dark or it is after hours |
+  | 3 | near side (`<img>`) | a seat with its back to you, over the table. Its sprite ends with the chair back the over canvas draws in the same place, so the chair covers the person's back and an empty chair still shows. A near-side worker who asks turns to face you with its hand up, at the same z and shaded the same way: under the over canvas the table would cover the face that needs you. Being over the tints, its sprite is rasterised shaded (the dark layer, the night tint, or both) when its room is dark or it is after hours |
   | 3 | buttons | one transparent button per desk, seat and meeting room: the click, `title`, `aria-label` and the focus ring, with no children |
   | 6 | labels | room titles, names, the lounge's labels, `+N`, bubbles |
   | 7 | movers | walkers, the boss and its ring, the path's dots |
@@ -306,6 +309,7 @@ Office  ● animating · 2 walking · 6 typing
 |---|---|
 | `view/office/plansprite.ts` (+ test) | the plan's chibi grids and roles, the bubbles and the ring; a sprite in an outfit, a phase and a shade |
 | `view/office/officepalette.ts` (+ test) | the scenery's roles per phase, their token names spelled in full, the derived roles' factors |
+| `view/office/officegrids.ts` | grids the scenery and the people share pixel for pixel: the near side's chair, drawn by the over canvas and ending a near-side person's sprite |
 | `view/office/scenery.ts` (+ test) | plan, phase, tired → what each canvas draws, in order; the floors' materials; `sceneryKey` |
 | `view/office/spritecache.ts` (moved from `view/jarvis/officesprites.ts`) | rasteriser and data-URL cache for any grid set; entries and bytes for the meter; colours with alpha, cleared on a theme change |
 | `view/office/officeclock.ts` (+ test) | the frame and walk clocks, their run/stop rules, the meter counters (`officeMeterAtom`) |
