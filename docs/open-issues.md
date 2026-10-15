@@ -767,6 +767,20 @@ Tracked in their own initiatives, not here:
   the same hold found paint and raster small: drawing the static scenery (floors, walls, desk parts, 259 of the
   office's 591 nodes) as one pixel canvas, or giving the movers their own layer alone, moved busy by less than the
   holds' own noise (±3 points), and cut only the off-main-thread raster (3.7–4.6 % to 0.7–1.6 %).
+- **Cockpit office in pixel art** (2026-10-15, `cockpit-office-bench`, the same 76-person roster; dev app in headless
+  Chrome on the Mac, before and after interleaved, two runs each, each on its own ports and store; a loaded 8 GB
+  machine, the Cards baseline read 23.5 to 35.7 %): the office's own DOM nodes 498 → 218 (the floors, walls, windows,
+  dark layers, screens, sign and desk parts are now two canvases at art resolution, 391 × 1070 × 4 = ~1.67 MB each);
+  busy walking −9.4 / −8.8 → −7.1 / −20.5 % over Cards (raw 16.5 / 14.7 → 18.0 / 15.2 %), reduced motion −12.2 / −8.0
+  → −9.7 / −18.3 %, quiet −17.0 / −15.5 → −16.6 / −25.3 %; heap −4.29 / −4.46 → −4.70 / −5.87 MB; sprites 91 / 92 →
+  95 / 95; time to draw 84 / 78 → 133 / 201 ms; a second round trip +0.03 / +0.02 MB after (−1.13 / +0.02 before).
+  One budget missed: the second after run drew in 201 ms (budget 150); the first held at 133 ms, and a third after
+  run, read only for the canvas size, at 118 ms. The draw is the one number that rose (about 80 ms before to 130–200
+  ms), and the cause is not established: the open now waits for both canvases to paint, and the miss came in the run
+  whose Cards baseline read 35.7 %. Re-measure the open on a production build or a quiet machine. Busy did not move
+  beyond the holds' noise of ±3 points: the raw readings are 14.7–16.5 % before and 15.2–18.0 % after, and every
+  over-Cards figure sits below the baseline, so the budgets read as held from a baseline that swings by more than
+  they allow.
 
 ---
 

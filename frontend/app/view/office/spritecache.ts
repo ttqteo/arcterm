@@ -6,12 +6,13 @@
 // A namespace keeps each office's entries apart, so each bench counts only its own; a cap bounds a namespace, the
 // oldest entry going first.
 
-export type Rgb = [number, number, number];
+// alpha 0..1 as the 4th, absent when opaque: the office's shadows and tints are translucent tokens
+export type Rgb = [number, number, number, number?];
 
 const caches = new Map<string, Map<string, string>>();
 const colors = new Map<string, Rgb | undefined>();
 
-/** A computed custom property's value ("#rrggbb" or "rgb(r, g, b)") as bytes; anything else undefined. */
+/** A computed custom property's value ("#rrggbb", "rgb(r, g, b)" or "rgba(r, g, b, a)") as bytes; else undefined. */
 export function parseColor(value: string): Rgb | undefined {
     const v = value.trim();
     const hex = /^#([0-9a-f]{6})$/i.exec(v);
@@ -19,8 +20,26 @@ export function parseColor(value: string): Rgb | undefined {
         const n = parseInt(hex[1], 16);
         return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
     }
-    const rgb = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(v);
-    return rgb ? [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])] : undefined;
+    const rgb = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?/i.exec(v);
+    if (!rgb) {
+        return undefined;
+    }
+    const out: Rgb = [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])];
+    const a = rgb[4] == null ? 1 : Number(rgb[4]);
+    if (a < 1) {
+        out[3] = a;
+    }
+    return out;
+}
+
+/** Forgets every colour tokenRgb read: a theme change re-skins the status tokens the office draws with. */
+export function clearTokenColors(): void {
+    colors.clear();
+}
+
+/** Drops a namespace's sprites, so they draw again with the colours of now. */
+export function clearSprites(ns: string): void {
+    caches.get(ns)?.clear();
 }
 
 /** A --color-* token's value on the root, read once: people's colours are identity tokens no theme overrides. */
@@ -48,7 +67,7 @@ export function gridPixels(grid: string[], width: number, color: (code: string) 
             out[i] = rgb[0];
             out[i + 1] = rgb[1];
             out[i + 2] = rgb[2];
-            out[i + 3] = 255;
+            out[i + 3] = Math.round(255 * (rgb[3] ?? 1));
         }
     });
     return out;

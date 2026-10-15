@@ -157,7 +157,7 @@ export const LOUNGE_H = 230;
 export const BOOTH_W = 152;
 export const FACADE_H = 40;
 export const DOOR = 50;
-export const LOUNGE_PERSON_W = 36; // a person's sprite: 12 cells of PLAN_CELL px
+export const LOUNGE_PERSON_W = 42; // a person's sprite: 14 cells of PLAN_CELL px
 export const LOUNGE_LABEL_H = 14;
 export const POPUP_W = 380; // the card beside the desk
 export const POPUP_H = 320;
@@ -177,9 +177,9 @@ interface LoungeSpot {
     bottom: number; // the person's feet, from the lounge's top
     label: Box; // from the lounge's top left
 }
-// a seated person (back, 36 px) and a standing one with a cup (57 px) as plansprite.ts draws them
-const SEATED_H = 36;
-const STANDING_H = 57;
+// the chibi's back on the sofa (15 rows, 45 px) and standing with a cup (23 rows, 69 px) as plansprite.ts draws them
+const SEATED_H = 45;
+const STANDING_H = 69;
 const spot = (at: Away, x: number, bottom: number, lx: number, ly: number, lw: number): LoungeSpot => ({
     at,
     x,
@@ -187,9 +187,10 @@ const spot = (at: Away, x: number, bottom: number, lx: number, ly: number, lw: n
     label: { x: lx, y: ly, w: lw, h: LOUNGE_LABEL_H },
 });
 // The lounge holds fixed spots, filled in this order, around the furniture Building draws (TV on the wall, coffee
-// machine at 168..198 x 104..150, sofa at 34..196 x 150..182, plant at 204..226 x 176..210). A label is 104 px, enough
+// machine at 165..201 x 93..153, sofa at 34..196 x 150..182, plant at 204..226 x 176..210). A label is 104 px, enough
 // for a short name and its age on one line, so the sofa's three labels sit one row each under the sofa and the two
-// standing places share a row above the machine, under a free line for "+N in the lounge". A spot's label and sprite
+// standing places share a row at 90, their heads (69 px tall) reaching up to 19. "+N in the lounge" takes the free row
+// at 106 between those labels and the sofa people's heads (123), left of the machine. A spot's label and sprite
 // touch no other spot's, which a test pins.
 const LOUNGE_SPOTS: LoungeSpot[] = [
     spot("sofa", 38, 168, 4, 186, 104),
@@ -644,7 +645,7 @@ export function buildPlan(input: PlanInput): Plan {
         seats,
         loungers,
         loungeOverflow,
-        loungeMore: { x: lounge.x + 8, y: lounge.y + 16, w: 218, h: LOUNGE_LABEL_H },
+        loungeMore: { x: lounge.x + 8, y: lounge.y + 106, w: 150, h: LOUNGE_LABEL_H },
         order,
         asks,
     };

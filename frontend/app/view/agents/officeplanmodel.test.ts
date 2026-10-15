@@ -337,8 +337,17 @@ describe("officeplanmodel", () => {
 
         it("draws a person as wide and as tall as the model says", () => {
             expect(spriteWidth("cup") * PLAN_CELL).toBe(LOUNGE_PERSON_W);
-            expect(PLAN_SPRITES.cup.length * PLAN_CELL).toBe(57);
-            expect(PLAN_SPRITES.back.length * PLAN_CELL).toBe(36);
+            expect(PLAN_SPRITES.cup.length * PLAN_CELL).toBe(69);
+            expect(PLAN_SPRITES.back.length * PLAN_CELL).toBe(45);
+        });
+
+        it("sizes every lounger's box as its sprite", () => {
+            const p = build(20);
+            for (const l of p.loungers) {
+                const sprite = l.at === "sofa" ? "back" : "cup";
+                expect(l.box.h, l.agentId).toBe(PLAN_SPRITES[sprite].length * PLAN_CELL);
+                expect(l.box.w, l.agentId).toBe(LOUNGE_PERSON_W);
+            }
         });
 
         for (const n of [1, 4, 20]) {

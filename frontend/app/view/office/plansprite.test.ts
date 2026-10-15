@@ -1,56 +1,140 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { NEAR_CHAIR } from "./officegrids";
 import {
+    ARM_PAD,
+    BOSS_POSES,
+    MARKS,
+    markUrl,
     mirrorOf,
     PLAN_SPRITES,
-    planToken,
+    planColor,
+    planGrid,
+    planSpriteUrl,
     seatSprite,
+    SHEET_POSES,
     shirtOf,
+    spriteLeft,
     spriteWidth,
     walkSprite,
+    type PlanLook,
     type PlanSprite,
 } from "./plansprite";
+import { clearSprites, spriteCacheStats } from "./spritecache";
 
 const ALL = Object.keys(PLAN_SPRITES) as PlanSprite[];
+const LOOKS: PlanLook[] = [1, 2, 3, 4, "boss"];
+const ARMS: PlanSprite[] = ["hand1", "hand2", "cheer1", "cheer2", "stretch"];
+const HEIGHT: Record<PlanSprite, number> = {
+    sit: 17,
+    nod: 17,
+    doze: 17,
+    yawn: 17,
+    back: 15,
+    backseat: 19,
+    hand1: 20,
+    hand2: 20,
+    cheer1: 20,
+    cheer2: 20,
+    stretch: 20,
+    cup: 23,
+    stand: 23,
+    down1: 23,
+    down2: 23,
+    up1: 23,
+    up2: 23,
+    side1: 23,
+    side2: 23,
+    boss: 23,
+};
 
 describe("plansprite", () => {
-    it("has the eighteen sprites the canvas's States board draws", () => {
-        expect(ALL).toHaveLength(18);
+    it("has the twenty sprites the canvas's Cast board draws", () => {
+        expect([...ALL].sort()).toEqual((Object.keys(HEIGHT) as PlanSprite[]).sort());
+        expect(SHEET_POSES).toHaveLength(18);
+        expect(BOSS_POSES).toHaveLength(8);
     });
 
-    it("draws every sprite at its width, with known codes only", () => {
-        for (const s of ALL) {
-            for (const row of PLAN_SPRITES[s]) {
-                expect(row.length, s).toBe(spriteWidth(s));
-                expect(row, s).toMatch(/^[HSETNPKC.]+$/);
+    it("draws every sprite in every look at its size, with known codes only", () => {
+        for (const look of LOOKS) {
+            for (const s of ALL) {
+                const g = planGrid(s, look);
+                expect(g.length, `${s} ${look}`).toBe(HEIGHT[s]);
+                for (const row of g) {
+                    expect(row.length, `${s} ${look}`).toBe(spriteWidth(s));
+                    expect(row, `${s} ${look}`).toMatch(/^[OHhSsETtPpKCBWRr_.]+$/);
+                }
             }
         }
     });
 
-    it("keeps a pose's two frames the same height", () => {
-        const pairs: [PlanSprite, PlanSprite][] = [
-            ["sit", "nod"],
-            ["hand1", "hand2"],
-            ["cheer1", "cheer2"],
-            ["down1", "down2"],
-            ["up1", "up2"],
-            ["side1", "side2"],
-        ];
-        for (const [a, b] of pairs) {
-            expect(PLAN_SPRITES[a].length, a).toBe(PLAN_SPRITES[b].length);
+    it("raises arms 20 wide, placed ARM_PAD to the left; everything else is 14 wide", () => {
+        for (const s of ALL) {
+            expect(spriteWidth(s), s).toBe(ARMS.includes(s) ? 20 : 14);
+            expect(spriteLeft(s), s).toBe(ARMS.includes(s) ? -ARM_PAD : 0);
         }
     });
 
-    it("stands 19 rows tall and sits 12 to 14", () => {
-        for (const s of ["cup", "down1", "down2", "up1", "up2", "boss"] as PlanSprite[]) {
-            expect(PLAN_SPRITES[s].length, s).toBe(19);
+    it("ends a near-side seat with the chair the over canvas draws", () => {
+        for (const look of LOOKS) {
+            expect(planGrid("backseat", look).slice(-NEAR_CHAIR.length)).toEqual(NEAR_CHAIR);
         }
-        for (const s of ["sit", "nod", "doze", "yawn", "back", "hand1", "cheer1", "stretch"] as PlanSprite[]) {
-            expect(PLAN_SPRITES[s].length, s).toBeGreaterThanOrEqual(12);
-            expect(PLAN_SPRITES[s].length, s).toBeLessThanOrEqual(14);
+    });
+
+    it("tells the looks apart by the head, and gives the boss alone a cap", () => {
+        const heads = LOOKS.map((l) => planGrid("sit", l).slice(0, 11).join("\n"));
+        expect(new Set(heads).size).toBe(5);
+        for (const l of [1, 2, 3, 4] as PlanLook[]) {
+            expect(planGrid("stand", l).join("")).not.toContain("B");
         }
+        expect(planGrid("boss", "boss").join("")).toContain("B");
+    });
+
+    it("draws the bubbles and the ring", () => {
+        for (const m of ["!", "?", "×"] as const) {
+            expect(MARKS[m]).toHaveLength(9);
+            for (const row of MARKS[m]) {
+                expect(row).toMatch(/^[OFM.]{9}$/);
+            }
+        }
+        expect(MARKS.ring[0]).toHaveLength(14);
+    });
+
+    it("colours a role from the phase, the look and the outfit", () => {
+        const read = (t: string) => {
+            const n = t.length; // a different colour per token, the same each time
+            return [n, n + 1, n + 2] as [number, number, number];
+        };
+        const o = { shirt: "--color-office-shirt-pi", look: 2 };
+        const day = planColor("O", o, "day", read);
+        const after = planColor("O", o, "after", read);
+        expect(day).toEqual(read("--color-office-day-ink"));
+        expect(after).toEqual(read("--color-office-after-ink"));
+        expect(planColor("H", o, "day", read)).toEqual(read("--color-office-plan-hair-2"));
+        expect(planColor("T", o, "day", read)).toEqual(read("--color-office-shirt-pi"));
+        expect(planColor("R", o, "after", read)).toEqual(read("--color-office-after-chair"));
+        expect(planColor("_", o, "day", read)).toEqual(read("--color-office-day-shadow"));
+        expect(planColor(".", o, "day", read)).toBeUndefined();
+    });
+
+    it("keys a sprite and a bubble by the phase, and a sprite by its shade", () => {
+        vi.stubGlobal("document", { documentElement: {}, createElement: () => ({ getContext: () => null }) });
+        vi.stubGlobal("getComputedStyle", () => ({ getPropertyValue: () => "#010203" }));
+        clearSprites("plan");
+        const o = { shirt: "--color-office-shirt-pi", look: 2 };
+        planSpriteUrl("backseat", o, "day");
+        planSpriteUrl("backseat", o, "after");
+        planSpriteUrl("backseat", o, "day", "dark");
+        planSpriteUrl("backseat", o, "day", "night");
+        planSpriteUrl("backseat", o, "day", "both");
+        planSpriteUrl("backseat", o, "day"); // the same as the first: no new entry
+        markUrl("!", "day");
+        markUrl("!", "after");
+        expect(spriteCacheStats("plan").entries).toBe(7);
+        clearSprites("plan");
+        vi.unstubAllGlobals();
     });
 
     it("maps seated poses and walks to sprites", () => {
@@ -63,13 +147,6 @@ describe("plansprite", () => {
         expect(walkSprite("left", 0)).toBe("side1");
         expect(mirrorOf("left")).toBe(true);
         expect(mirrorOf("right")).toBe(false);
-    });
-
-    it("gives the boss a paper tie and anyone else one in their shirt", () => {
-        expect(planToken("N", { shirt: "--x", look: 1, boss: true })).toBe("--color-office-paper");
-        expect(planToken("N", { shirt: "--x", look: 1 })).toBe("--x");
-        expect(planToken("H", { shirt: "--x", look: 9 })).toBe("--color-office-hair-4");
-        expect(planToken("H", { shirt: "--x", look: 0 })).toBe("--color-office-hair-1");
     });
 
     it("dresses a harness in its shirt, anything else in the other one", () => {

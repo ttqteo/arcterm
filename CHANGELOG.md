@@ -40,6 +40,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The Office view is drawn in pixel art: a bright office in work hours and a dim one after hours, people you can tell apart by their hair, the boss in a cap. It also draws with about 280 fewer page elements.
 - **The Office's ⚡ reads as energy**: it shows what is left of Claude's 5-hour window, so 4 % used reads ⚡ 96 %, and
   it turns amber at 10 % left.
 - **The Office walks lighter**: a step of the boss or a walker moves only that figure instead of redrawing it, so while
