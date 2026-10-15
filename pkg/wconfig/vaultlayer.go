@@ -56,8 +56,8 @@ func notifyVaultLayerWrite() {
 }
 
 // VaultRoot resolves the Wave Vault root. memory:vaultpath is the setting Settings > Memory edits;
-// jarvis:vaultpath remains as a legacy fallback; otherwise ~/.waveterm/vault. Read from disk on each call
-// so it holds before the config watcher starts.
+// jarvis:vaultpath remains as a legacy fallback; otherwise ~/.waveterm/vault, or the data dir's vault in a dev
+// app with ARC_DEV_NO_GLOBAL_INSTALL. Read from disk on each call so it holds before the config watcher starts.
 func VaultRoot() string {
 	defaults, local, _ := readSettingsBase()
 	return resolveVaultRoot(defaults, local)
@@ -86,6 +86,10 @@ func resolveVaultRoot(defaults, local waveobj.MetaMapType) string {
 	}
 	if p := merged.GetString(ConfigKey_JarvisVaultPath, ""); p != "" {
 		return wavebase.ExpandHomeDirSafe(p)
+	}
+	// its runs' task dossiers and its efforts would otherwise land in the user's vault
+	if wavebase.NoGlobalInstall() && wavebase.GetWaveDataDir() != "" {
+		return filepath.Join(wavebase.GetWaveDataDir(), "vault")
 	}
 	return filepath.Join(wavebase.GetHomeDir(), defaultVaultSubpath)
 }

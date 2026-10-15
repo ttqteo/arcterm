@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/wavetermdev/waveterm/pkg/harness"
+	"github.com/wavetermdev/waveterm/pkg/wavebase"
 )
 
 // Adoption brings a harness's hand-maintained skill directories into the vault.
@@ -221,6 +222,9 @@ func Adopt(p Paths, apply bool, keep map[string]string) (AdoptPlan, error) {
 	plan, err := PlanAdopt(p, keep)
 	if err != nil || !apply {
 		return plan, err
+	}
+	if p.KeepHarnesses {
+		return plan, fmt.Errorf("this app leaves the harness skills alone (%s is set)", wavebase.NoGlobalInstallVarName)
 	}
 	blocked := map[string]bool{}
 	for _, n := range plan.Unresolved {

@@ -30,7 +30,8 @@ pub fn data_base_for(base: &Path, is_dev: bool) -> PathBuf {
 pub const DEV_DATA_DIR_ENV: &str = "ARC_DEV_DATA_DIR";
 
 // a debug build with this set leaves the user's global agent hooks alone: install-agent-hooks copies the
-// launching wsh to ~/.arc/bin, which every hook runs.
+// launching wsh to ~/.arc/bin, which every hook runs. wavesrv inherits it and keeps its vault in its own data
+// dir, and its agent sync writes no harness (pkg/wavebase NoGlobalInstall).
 pub const DEV_NO_GLOBAL_INSTALL_ENV: &str = "ARC_DEV_NO_GLOBAL_INSTALL";
 
 pub fn dev_data_base(default: PathBuf, is_dev: bool, override_dir: Option<OsString>) -> PathBuf {

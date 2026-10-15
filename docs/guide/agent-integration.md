@@ -18,7 +18,7 @@ Mỗi lần mở, app chạy `wsh install-agent-hooks`. Lệnh này làm mới c
 
 Các tích hợp chỉ hoạt động bên trong terminal của arcterm: chúng cần biến môi trường mà arcterm đặt cho terminal của nó, nên chạy `claude` hay `pi` ở terminal khác thì không có gì thay đổi. Khóa lạ trong file cấu hình được giữ nguyên; file hỏng được báo lỗi và để yên.
 
-Muốn một phiên dev không động vào các file này, đặt `ARC_DEV_NO_GLOBAL_INSTALL=1` trước `task dev`. Agent không hiện trạng thái thì xem `waveapp.log` rồi chạy lại `wsh install-agent-hooks` trong một terminal của arcterm.
+Muốn một phiên dev không động vào các file này, đặt `ARC_DEV_NO_GLOBAL_INSTALL=1` trước `task dev`; phiên đó dùng vault riêng trong thư mục data của nó và không đồng bộ steering hay skill vào các harness. Agent không hiện trạng thái thì xem `waveapp.log` rồi chạy lại `wsh install-agent-hooks` trong một terminal của arcterm.
 
 ## Trạng thái, tên và usage
 

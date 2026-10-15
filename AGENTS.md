@@ -104,7 +104,8 @@ Other useful commands:
   `beforeDevCommand` with `--port N --strictPort`), store (`ARC_DEV_DATA_DIR`, a short path: wavesrv binds
   `data\wave.sock` under it, and Windows caps a unix socket path at 108 bytes), and its own `CARGO_TARGET_DIR`
   and `dist/bin` instead of the junctions, which a build writes through into the main checkout.
-  `ARC_DEV_NO_GLOBAL_INSTALL=1` keeps it from installing its hooks and `~/.arc/bin/wsh` over yours.
+  `ARC_DEV_NO_GLOBAL_INSTALL=1` keeps it from installing its hooks and `~/.arc/bin/wsh` over yours, and keeps its
+  wavesrv on a vault in its own data dir with no agent sync into your harnesses (`browser-app.mjs` always sets it).
   `scripts/cdp/final-verify.mjs` does all of it; then `CDP_PORT=<port> task verify:ui`.
 
 ### Visual verification (dev)

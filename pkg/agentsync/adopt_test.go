@@ -35,6 +35,25 @@ func TestAdoptSeedsTheFirstCopyIntoTheVault(t *testing.T) {
 	}
 }
 
+// adopting moves the user's skills out of the harness into the vault: the final stage's dev app, on a vault of its
+// own, would carry them off
+func TestAdoptRefusesWhenItMustKeepTheHarnesses(t *testing.T) {
+	p := testPaths(t, "", ".claude")
+	p.KeepHarnesses = true
+	src := filepath.Join(p.Home, ".claude", "skills", "graphify", skillFile)
+	writeFile(t, src, "---\nname: graphify\n---\nbody\n")
+
+	if _, err := Adopt(p, true, nil); err == nil {
+		t.Fatal("Adopt applied with KeepHarnesses set")
+	}
+	if got := readFile(t, src); got != "---\nname: graphify\n---\nbody\n" {
+		t.Fatalf("the user's skill = %q, want it where it was", got)
+	}
+	if plan, err := Adopt(p, false, nil); err != nil || len(plan.Moves) != 1 {
+		t.Fatalf("the plan = %+v, %v: a dry run still plans", plan, err)
+	}
+}
+
 func TestAdoptTurnsAFrontmatterVariantIntoADelta(t *testing.T) {
 	p := testPaths(t, "", ".codex", ".config/opencode")
 	writeFile(t, filepath.Join(p.Home, ".codex", "AGENTS.md"), "# Prefs\n")

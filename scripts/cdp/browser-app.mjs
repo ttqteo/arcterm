@@ -7,7 +7,8 @@
 //
 // ARC_BROWSER_CDP_PORT (default 9222), ARC_BROWSER_VITE_PORT (default 5180), ARC_DEV_DATA_DIR (the store) and
 // CHROME_PATH; ARC_BROWSER_WAVESRV and ARC_BROWSER_VITE_SCRIPT exist so the test can run stand-ins. Nothing global is
-// installed (agent hooks, ~/.arc/bin/wsh, skills): that is the Tauri host's job, and it does not run here.
+// installed (agent hooks, ~/.arc/bin/wsh, skills): that is the Tauri host's job, and it does not run here. The vault
+// is the store's own (data/vault), not the user's ~/.waveterm/vault.
 // When any part exits, or a signal comes, it stops the rest and exits nonzero with the reason as its last line.
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -75,7 +76,8 @@ export function chromeArgs({ cdpPort, url, profile, headed }) {
     ];
 }
 
-// what spawn_wavesrv (src-tauri/src/main.rs) gives it
+// what spawn_wavesrv (src-tauri/src/main.rs) gives it, and ARC_DEV_NO_GLOBAL_INSTALL, which keeps its vault in
+// the store and its agent sync out of the user's ~/.claude (pkg/wavebase NoGlobalInstall)
 export function wavesrvEnv({ authKey, root, store, env = process.env }) {
     return {
         ...env,
@@ -83,6 +85,7 @@ export function wavesrvEnv({ authKey, root, store, env = process.env }) {
         WAVETERM_APP_PATH: join(root, "dist"),
         WAVETERM_DATA_HOME: join(store, "data"),
         WAVETERM_CONFIG_HOME: join(store, "config"),
+        ARC_DEV_NO_GLOBAL_INSTALL: "1",
     };
 }
 

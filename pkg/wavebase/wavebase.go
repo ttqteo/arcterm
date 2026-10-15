@@ -34,6 +34,8 @@ const (
 	WaveDevViteVarName          = "WAVETERM_DEV_VITE"
 	WaveWshForceUpdateVarName   = "WAVETERM_WSHFORCEUPDATE"
 	WaveNoConfirmQuitVarName    = "WAVETERM_NOCONFIRMQUIT"
+	// set on a dev app beside the user's own (the final stage's, task dev:browser): it touches nothing outside its store
+	NoGlobalInstallVarName = "ARC_DEV_NO_GLOBAL_INSTALL"
 
 	WaveJwtTokenVarName  = "WAVETERM_JWT"
 	WaveSwapTokenVarName = "WAVETERM_SWAPTOKEN"
@@ -52,6 +54,7 @@ var DataHome_VarCache string         // caches WAVETERM_DATA_HOME
 var AppPath_VarCache string          // caches WAVETERM_APP_PATH
 var AppResourcesPath_VarCache string // caches WAVETERM_RESOURCES_PATH
 var Dev_VarCache string              // caches WAVETERM_DEV
+var NoGlobalInstall_VarCache bool    // caches ARC_DEV_NO_GLOBAL_INSTALL
 
 const WaveLockFile = "wave.lock"
 const DomainSocketBaseName = "wave.sock"
@@ -103,11 +106,19 @@ func CacheAndRemoveEnvVars() error {
 	os.Unsetenv(WaveDevVarName)
 	os.Unsetenv(WaveDevViteVarName)
 	os.Unsetenv(WaveNoConfirmQuitVarName)
+	NoGlobalInstall_VarCache = os.Getenv(NoGlobalInstallVarName) != ""
+	os.Unsetenv(NoGlobalInstallVarName)
 	return nil
 }
 
 func IsDevMode() bool {
 	return Dev_VarCache != ""
+}
+
+// NoGlobalInstall is a dev app that leaves the user's global state alone: it keeps its vault in its own data dir
+// and writes no harness's steering or skills.
+func NoGlobalInstall() bool {
+	return NoGlobalInstall_VarCache
 }
 
 func GetWaveAppPath() string {
