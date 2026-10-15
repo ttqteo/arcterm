@@ -1,7 +1,7 @@
 # Cockpit office — design
 
 **Date:** 2026-10-15
-**Status:** design agreed in chat, not built. Part 1 of 4.
+**Status:** built; the pixel-art revision below landed 2026-10-15. Part 1 of 4.
 **Canvas:** `.superpowers/design/cockpit-office/project/` (gitignored; `Main`, `States`, `Night`, `Tired`,
 `NextAsk`, `RamPanel`). The look follows the person's reference, Game Office (Steam): a floor plan seen from above, drawn here in
 2D pixel art.
