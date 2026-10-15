@@ -33,6 +33,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- **An agent's terminal fills its pane again**: a run's worker or lead opened after it started no longer stays
+  drawn at 80×24 inside a larger pane when the Mac is short of RAM; the pane fits itself within two seconds, as
+  Redraw did.
 - **The Office card stays in the office**: the card beside a desk keeps to the office's height and scrolls, instead of
   running down the page with the agent's whole last answer; a finished card's age no longer runs into Review changes.
 

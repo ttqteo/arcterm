@@ -15,6 +15,7 @@ import { recordPastedImage } from "@/app/view/agents/uploadsingest";
 import { pasteTextFor } from "@/app/view/agents/uploadsstore";
 import {
     fetchWaveFile,
+    getApi,
     getOverrideConfigAtom,
     getSettingsKeyAtom,
     globalStore,
@@ -44,6 +45,7 @@ import {
     handleOsc7Command,
     type ShellIntegrationStatus,
 } from "./osc-handlers";
+import { formatFitDiag, isStaleFit } from "./termfitdiag";
 import { nextMouseEncoding, withMouseEncoding } from "./termmodes";
 import { registerTermHandle } from "./termpaste";
 import { hintFor, makePathLinkProvider, trackForDev } from "./termpathlinks";
@@ -70,9 +72,38 @@ const WebGLParkDelayMs = 30_000;
 // how long redraw holds the PTY one column narrower: long enough that the TUI sees two size changes, not one it
 // can skip as a no-op
 const RedrawNudgeMs = 120;
+// how often each visible pane's fit is checked (see auditFit), besides when the window comes back or takes focus
+const FitAuditMs = 2000;
+// a resize the ResizeObserver reported this recently still has its debounced fit to come, so the audit leaves it be
+const FitAuditSettleMs = 1000;
+// [termfit] lines one pane may write, so a pane whose fit keeps missing cannot flood waveapp.log
+const MaxFitDiagLines = 20;
 
 // the mounted terminal of each block, so a control outside the pane (the agent header's Redraw) can reach it
 const liveTermWraps = new Map<string, TermWrap>();
+
+let fitAuditStarted = false;
+
+function auditAllFits(trigger: string) {
+    for (const wrap of liveTermWraps.values()) {
+        wrap.auditFit(trigger);
+    }
+}
+
+// one timer and one pair of listeners for every mounted terminal, started by the first
+function startFitAudit() {
+    if (fitAuditStarted) {
+        return;
+    }
+    fitAuditStarted = true;
+    setInterval(() => auditAllFits("timer"), FitAuditMs);
+    window.addEventListener("focus", () => auditAllFits("focus"));
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+            auditAllFits("visible");
+        }
+    });
+}
 
 // Redraw the block's terminal: see TermWrap.redraw. False when the block has no mounted terminal.
 export function redrawTerminal(blockId: string): boolean {
@@ -148,6 +179,18 @@ export class TermWrap {
     hiddenSinceShown = false;
     // set when output was replayed into a pane that was hidden, so it nudges the PTY when it shows (see initTerminal)
     nudgeOnShow = false;
+    // how this pane's fit has gone since it mounted, for the [termfit] lines (termfitdiag.ts)
+    fitDiag = {
+        mountTs: Date.now(),
+        roCalls: 0,
+        lastRoTs: 0,
+        resizeCalls: 0,
+        hiddenSkips: 0,
+        shownFits: 0,
+        contextLosses: 0,
+        sent: "",
+        lines: 0,
+    };
     sendDataHandler: (data: string) => void;
     onSearchResultsDidChange?: (result: { resultIndex: number; resultCount: number }) => void;
     toDispose: TermTypes.IDisposable[] = [];
@@ -366,7 +409,12 @@ export class TermWrap {
         this.connectElem = connectElem;
         this.mainFileSubject = null;
         this.heldData = [];
-        this.handleResize_debounced = debounce(50, this.handleResize.bind(this));
+        const handleResizeDebounced = debounce(50, this.handleResize.bind(this));
+        this.handleResize_debounced = () => {
+            this.fitDiag.roCalls++;
+            this.fitDiag.lastRoTs = Date.now();
+            handleResizeDebounced();
+        };
         this.terminal.open(this.connectElem);
 
         // native drag-drop is off so HTML5 drag works, and a dropped file carries no path in the webview. The
@@ -381,7 +429,9 @@ export class TermWrap {
                 this.connectElem.removeEventListener("drop", dropGuard);
             },
         });
+        this.logFit("mount");
         this.handleResize();
+        startFitAudit();
         const pasteHandler = this.pasteHandler.bind(this);
         this.connectElem.addEventListener("paste", pasteHandler, true);
         this.toDispose.push({
@@ -497,6 +547,8 @@ export class TermWrap {
         if (renderer === "webgl") {
             const addon = new WebglAddon();
             this.webglContextLossDisposable = addon.onContextLoss(() => {
+                this.fitDiag.contextLosses++;
+                this.logFit("context-lost");
                 this.setTermRenderer("dom");
             });
             this.terminal.loadAddon(addon);
@@ -772,9 +824,11 @@ export class TermWrap {
     }
 
     handleResize() {
+        this.fitDiag.resizeCalls++;
         // skip while hidden/detached (display:none -> offsetParent null, 0 size) so we don't fit to a
         // 0-size box and shrink the PTY; the ResizeObserver fires again with real dims on re-show.
         if (this.isHidden()) {
+            this.fitDiag.hiddenSkips++;
             this.hiddenSinceShown = true;
             this.parkWebGlWhenHidden();
             return;
@@ -801,6 +855,13 @@ export class TermWrap {
                 `${this.terminal.rows}x${this.terminal.cols}`
             );
             RpcApi.ControllerInputCommand(TabRpcClient, { blockid: this.blockId, termsize: termSize });
+            this.fitDiag.sent = `${termSize.cols}x${termSize.rows}`;
+        }
+        this.fitDiag.shownFits++;
+        if (this.fitDiag.shownFits === 1) {
+            this.logFit("first-fit", { from: `${oldCols}x${oldRows}` });
+        } else if (this.fitAddon.proposeDimensions() == null) {
+            this.logFit("fit-none");
         }
         dlog("resize", `${this.terminal.rows}x${this.terminal.cols}`, `${oldRows}x${oldCols}`, this.hasResized);
         if (!this.hasResized) {
@@ -817,6 +878,7 @@ export class TermWrap {
     // and repaints only the lines it changes, so the stale ones stay. Fit to the pane, rebuild the glyphs and repaint
     // xterm, then narrow the PTY one column and give it back: a TUI repaints whole on a resize, at the right size.
     redraw() {
+        this.logFit("redraw");
         if (this.isHidden()) {
             return;
         }
@@ -824,6 +886,56 @@ export class TermWrap {
         this.webglAddon?.clearTextureAtlas();
         this.terminal.refresh(0, this.terminal.rows - 1);
         this.nudgePtySize();
+    }
+
+    // A visible pane whose xterm is not the size its box fits missed a fit (termfitdiag.ts): log what its fit went
+    // through, then fit it, which sends the PTY the size as the ResizeObserver's fit would have.
+    auditFit(trigger: string) {
+        if (!this.loaded || Date.now() - this.fitDiag.lastRoTs < FitAuditSettleMs || this.isHidden()) {
+            return;
+        }
+        if (!isStaleFit({ cols: this.terminal.cols, rows: this.terminal.rows }, this.fitAddon.proposeDimensions())) {
+            return;
+        }
+        this.logFit("stale", { trigger });
+        this.handleResize();
+        this.logFit("refit", { trigger });
+    }
+
+    private logFit(event: string, extra: Record<string, string> = {}) {
+        const diag = this.fitDiag;
+        if (diag.lines >= MaxFitDiagLines) {
+            return;
+        }
+        diag.lines++;
+        const now = Date.now();
+        const proposed = this.fitAddon.proposeDimensions();
+        const cell = (this.terminal as any)._core?._renderService?.dimensions?.css?.cell;
+        const meta = WOS.getObjectValue<Block>(WOS.makeORef("block", this.blockId))?.meta;
+        getApi().sendLog(
+            formatFitDiag(event, this.blockId, {
+                ...extra,
+                xterm: `${this.terminal.cols}x${this.terminal.rows}`,
+                fits: proposed ? `${proposed.cols}x${proposed.rows}` : "?",
+                box: `${this.connectElem.clientWidth}x${this.connectElem.clientHeight}`,
+                hidden: this.isHidden(),
+                page: document.visibilityState,
+                focus: document.hasFocus(),
+                renderer: this.getTermRenderer(),
+                parked: this.webglParked,
+                cell: cell ? `${cell.width.toFixed(1)}x${cell.height.toFixed(1)}` : null,
+                worker: meta?.["agent:runid"] != null,
+                age: now - diag.mountTs,
+                ro: diag.roCalls,
+                lastRo: diag.lastRoTs ? now - diag.lastRoTs : null,
+                resizes: diag.resizeCalls,
+                hiddenSkips: diag.hiddenSkips,
+                shownFits: diag.shownFits,
+                sent: diag.sent || null,
+                losses: diag.contextLosses,
+                loaded: this.loaded,
+            })
+        );
     }
 
     // Narrow the PTY one column and give it back, so a TUI repaints whole at the pane's size
