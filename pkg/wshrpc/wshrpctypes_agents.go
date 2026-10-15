@@ -489,4 +489,8 @@ type CommandGetConsumersRtnData struct {
 	ServerBytes    *uint64         `json:"serverbytes,omitempty"`
 	HostBytes      *uint64         `json:"hostbytes,omitempty"`
 	TerminalsBytes *uint64         `json:"terminalsbytes,omitempty"` // what plain terminal tabs run: wavesrv's tree minus wavesrv and the agents
+	// what all of the above holds in RAM now, the RAM bar's share: on macOS the footprints also count what was
+	// compressed or swapped out, which under memory pressure sum past the RAM in use
+	InRamBytes    *uint64 `json:"inrambytes,omitempty"`
+	SwapUsedBytes uint64  `json:"swapusedbytes"` // every app's, swapped out to disk; 0 when it could not be read
 }

@@ -5,7 +5,7 @@
 // like the pet's. Read them through cockpitView, officeAnimation and sanitizeHours, which turn anything unexpected
 // into the default.
 
-import type { PrimitiveAtom } from "jotai";
+import { atom, type PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { DEFAULT_HOURS, type WorkHours } from "./officebehavior";
 
@@ -38,3 +38,10 @@ export function cockpitView(v: unknown): CockpitView {
 export function officeAnimation(v: unknown): boolean {
     return v !== false;
 }
+
+// the Events rail while the Cockpit shows Office: hidden there until the office menu's Events (or the footer's event
+// line) shows it; Esc while walking hides it again. Not kept: Office opens with the rail hidden.
+export const officeEventsOpenAtom = atom(false) as PrimitiveAtom<boolean>;
+
+// the office menu (m) is open: cockpitoffice.tsx opens and shuts it, and the footer's m chip lights while it is open
+export const officeMenuOpenAtom = atom(false) as PrimitiveAtom<boolean>;

@@ -426,3 +426,44 @@ func TestApplySeedsShippedSkillsOnlyWhenNotDryRun(t *testing.T) {
 		t.Errorf("claude cockpit-runs SKILL.md = %q", got)
 	}
 }
+
+// the final stage's dev app keeps a vault of its own, which lacks the user's skills: projecting it would remove them
+// from the user's ~/.claude, so it seeds its vault and only reports what it would do to the harnesses
+func TestApplyWithKeepHarnessesSeedsTheVaultAndWritesNoHarness(t *testing.T) {
+	p := testPaths(t, "canonical\n", ".claude")
+	p.Shipped = shippedFS()
+	seedSkill(t, p, "mine")
+	if _, err := Apply(p, false); err != nil {
+		t.Fatal(err)
+	}
+	claude := filepath.Join(p.Home, ".claude")
+	steering := readFile(t, filepath.Join(claude, "CLAUDE.md"))
+	for _, name := range []string{"mine", "cockpit-runs"} {
+		if err := os.RemoveAll(filepath.Join(p.SkillsRoot, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFile(t, p.SteeringDoc, "the dev app's rules\n")
+
+	p.KeepHarnesses = true
+	acts, err := Apply(p, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]bool{}
+	for _, a := range acts {
+		kinds[a.Kind] = true
+	}
+	if !kinds[ActionSteeringWrite] || !kinds[ActionSkillRemove] {
+		t.Errorf("actions = %+v, want the steering write and the removal it would make", acts)
+	}
+	if got := readFile(t, filepath.Join(claude, "CLAUDE.md")); got != steering {
+		t.Errorf("CLAUDE.md = %q, want it untouched", got)
+	}
+	if _, err := os.Stat(filepath.Join(claude, "skills", "mine", skillFile)); err != nil {
+		t.Errorf("the user's skill was removed from the harness: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(p.SkillsRoot, "cockpit-runs", skillFile)); err != nil {
+		t.Errorf("the shipped skills were not seeded into its own vault: %v", err)
+	}
+}

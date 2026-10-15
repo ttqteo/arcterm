@@ -465,9 +465,11 @@ func reconcileSkills(p Paths, dryRun bool) ([]Action, error) {
 
 // Apply runs both projections. Steering first: a harness that starts mid-sync should see the rules
 // before it sees new skills. The shipped skills are seeded into the vault just before the skills
-// projection, so it renders them; a dry run leaves the vault alone.
+// projection, so it renders them; a dry run leaves the vault alone. With KeepHarnesses both projections
+// run dry: the vault is seeded and the actions say what a sync would do, but no harness is written.
 func Apply(p Paths, dryRun bool) ([]Action, error) {
-	actions, err := projectSteering(p, dryRun)
+	project := dryRun || p.KeepHarnesses
+	actions, err := projectSteering(p, project)
 	if err != nil {
 		return actions, err
 	}
@@ -476,7 +478,7 @@ func Apply(p Paths, dryRun bool) ([]Action, error) {
 			return actions, err
 		}
 	}
-	skillActions, err := reconcileSkills(p, dryRun)
+	skillActions, err := reconcileSkills(p, project)
 	return append(actions, skillActions...), err
 }
 

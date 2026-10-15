@@ -413,6 +413,30 @@ function office(now) {
     ];
 }
 
+// the cockpit-office-controls scenario's roster: the office's, and kite, who asks in two parts
+function officeControls(now) {
+    return [
+        ...office(now),
+        {
+            id: "fx-office-kite", name: "kite", project: "mozox", task: "tray popover", state: "asking", agent: "claude", model: "sonnet", blockedMs: 90_000, blockId: "fx-blk-office-kite", previousInfo: [{ kind: "message", text: "Two things before I build the popover." }],
+            ask: {
+                askId: "fx-office-kite-ask",
+                oref: "block:fx-blk-office-kite",
+                questions: [
+                    { header: "Branch", question: "Keep the branch name, or rename it?", options: [{ label: "Keep feat/tray" }, { label: "Rename to feat/tray-popover" }] },
+                    { header: "Tests", question: "Which tests should it add?", multiSelect: true, options: [{ label: "Unit" }, { label: "CDP" }] },
+                ],
+            },
+        },
+    ];
+}
+
+// the worker cockpit-office-controls seats at its run's t-1 (scripts/cdp/cockpitofficescenarios.mjs): runId is the
+// task's child run, so the run's lineage seats it there
+export function officeRunWorker(now, runId) {
+    return { id: "fx-office-vole", name: "vole", project: "arcterm", task: "machine stats", state: "working", agent: "claude", model: "sonnet", activeMs: 300_000, activity: "reading the memory-pressure API", runId, blockId: "fx-blk-office-vole", previousInfo: [{ kind: "message", text: "Reading the memory-pressure API." }] };
+}
+
 // the cockpit office's bench: 48 agents over 6 projects, every state, 2 asking
 const BENCH_PROJECTS = ["arcterm", "mozox", "thesis", "cuscofi", "notes", "infra"];
 function officeBench(now) {
@@ -446,6 +470,7 @@ function officeBench(now) {
 
 export const SCENARIOS = {
     office,
+    "office-controls": officeControls,
     "office-bench": officeBench,
     mixed,
     "all-asking": allAsking,

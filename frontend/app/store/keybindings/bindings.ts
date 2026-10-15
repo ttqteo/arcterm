@@ -962,15 +962,24 @@ export function buildCockpitBindings(): Binding[] {
         doc(
             "cockpit:open",
             "Enter",
-            "Confirm answer, else open focus; on a task row, open its worker; in Office, first open the card ↵ offers"
+            "Confirm answer, else open focus; on a task row, open its worker; in Office, first open the dialog box ↵ offers"
         ),
         doc("cockpit:peek", "Space", `Peek the agent in the avatar popup (${peekClickLabel()} a link peeks it too)`),
         doc("cockpit:reply", "r", "Reply inline to the agent"),
         doc("cockpit:terminal", "t", "Open the agent's terminal"),
         doc("cockpit:background", "b", "Background the agent (keeps running)"),
         doc("cockpit:office", "o", "Switch the Cockpit between Cards and Office"),
-        doc("cockpit:office-walk", "ArrowRight", "Office: walk the boss (← ↑ ↓ →); j / k go desk by desk"),
-        doc("cockpit:office-big", "f", "Office: a bigger or smaller card beside the desk"),
+        doc(
+            "cockpit:office-walk",
+            "ArrowRight",
+            "Office: walk the boss (← ↑ ↓ →); in the dialog box ↑ ↓ move the ▶; j / k go desk by desk"
+        ),
+        doc("cockpit:office-big", "f", "Office: the desk's full card; on the card, bigger or smaller"),
+        doc(
+            "cockpit:office-menu",
+            "m",
+            "Office: the office menu (next Needs you, desks, Events, Cards view, all keys)"
+        ),
     ];
 }
 

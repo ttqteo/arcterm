@@ -77,6 +77,7 @@ describe("wavesrvEnv and viteEnv", () => {
             WAVETERM_APP_PATH: join("/r", "dist"),
             WAVETERM_DATA_HOME: join("/s", "data"),
             WAVETERM_CONFIG_HOME: join("/s", "config"),
+            ARC_DEV_NO_GLOBAL_INSTALL: "1",
         });
         const estart = { ws: "127.0.0.1:1", web: "127.0.0.1:2", version: "0.15.10", buildtime: 7 };
         expect(viteEnv({ estart, authKey: "k", env: {} })).toEqual({

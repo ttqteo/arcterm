@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
 	"github.com/wavetermdev/waveterm/pkg/memusage"
 	"github.com/wavetermdev/waveterm/pkg/usagestats"
@@ -26,12 +27,13 @@ const ConsumersTokenWindow = 10 * time.Minute
 // consumersTokens keeps each transcript's read offset between polls, so a poll parses only what was appended.
 var consumersTokens = usagestats.NewWindowReader()
 
-// seams, so tests script the shell pids, the process table, the sampler and the dag store
+// seams, so tests script the shell pids, the process table, the sampler, the dag store and the swap
 var (
 	consumerBlockPid = blockcontroller.GetBlockControllerPid
 	consumerTable    = memusage.ReadTable
 	consumerSampler  = memusage.Live
 	consumerLoadDag  = wstore.GetDag
+	consumerSwap     = mem.SwapMemoryWithContext
 )
 
 // consumerDag is the dag task a run worker works on, nil for any other agent. run is the worker's own run, the
@@ -99,6 +101,10 @@ func (ws *WshServer) GetConsumersCommand(ctx context.Context) (*wshrpc.CommandGe
 		ServerBytes:    bd.Server,
 		HostBytes:      bd.Host,
 		TerminalsBytes: bd.Terminals,
+		InRamBytes:     bd.InRam,
+	}
+	if sw, serr := consumerSwap(ctx); serr == nil {
+		out.SwapUsedBytes = sw.Used
 	}
 	dags := map[string]*waveobj.TaskGroup{}
 	for i := range rows {

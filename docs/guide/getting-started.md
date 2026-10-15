@@ -48,7 +48,7 @@ Lần đầu `task dev` chậm vì phải build Rust và Go. Những lần sau n
 > $env:ARC_DEV_NO_GLOBAL_INSTALL = "1"; task dev   # PowerShell
 > ```
 >
-> Biến này chỉ có tác dụng với bản dev (debug). Bản đã cài luôn cài tích hợp.
+> Biến này chỉ có tác dụng với bản dev (debug). Bản đã cài luôn cài tích hợp. Với biến này, vault của phiên dev cũng là vault riêng trong thư mục data của nó (memory, initiative, task của run không lẫn vào `~/.waveterm/vault`), và Setup không đồng bộ steering hay skill vào `~/.claude` và các harness khác.
 
 Trên Mac 8 GB, bước build Vite và `task check:ts` dùng hết heap mặc định của Node. Thêm `NODE_OPTIONS=--max-old-space-size=4096` phía trước lệnh.
 

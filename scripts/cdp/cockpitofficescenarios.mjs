@@ -9,12 +9,12 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SCENARIOS as ROSTERS } from "../cockpit-fixtures/scenarios.mjs";
+import { officeRunWorker, SCENARIOS as ROSTERS } from "../cockpit-fixtures/scenarios.mjs";
 import { busyPct, HOLD_MS, mb, metrics, round1 } from "./officescenarios.mjs";
 
 export const FIXTURE = new URL("../../public/cockpit-fixtures/active.json", import.meta.url);
 export const VIEW_KEY = "cockpit.view";
-const KEY_CODES = { ArrowUp: 38, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39, Escape: 27, Enter: 13, f: 70, j: 74, k: 75, n: 78, o: 79, 1: 49 };
+const KEY_CODES = { ArrowUp: 38, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39, Escape: 27, Enter: 13, f: 70, j: 74, k: 75, m: 77, n: 78, o: 79, 1: 49 };
 // the boss's walking speed (officeboss.ts BOSS_SPEED), for how long to hold an arrow
 const BOSS_PX_PER_S = 160;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -100,41 +100,73 @@ async function waitForSprite(h, names, ms) {
 const toggleTo = (h, label) =>
     h.ev(`[...document.querySelectorAll("[data-cockpit-view-toggle] button")].find((b) => b.textContent.trim() === ${JSON.stringify(label)})?.click()`);
 
+// the cockpit-office-controls run's plan, a chain as the Run board draws it. Only t-1 dispatches, one real worker told
+// to do nothing, which teardownFixtureRun cancels and deletes (docs/reference/cdp-run-fixtures.md)
+const OFFICE_RUN_TASKS = [
+    "Machine stats, the memory-pressure event and the tray model",
+    "Each agent's heaviest command and a Free up action",
+    "The tray icon's pixels and the popover's shell",
+    "The job queue and what waits on you, in the popover",
+    "The tray's settings",
+    "Docs and the changelog",
+].map((label, i) => ({
+    id: `t-${i + 1}`,
+    label,
+    description: "do nothing, make no file changes, stop immediately",
+    deps: i === 0 ? [] : [`t-${i}`],
+    gate: false,
+    state: "",
+}));
+
 // fx: { arrangeFixtureRun, teardownFixtureRun } from scenarios.mjs
 export function makeCockpitOfficeScenarios(fx) {
+    // opts.roster names the roster (default "office"), opts.tasks a plan for the run
+    async function arrangeOffice(h, opts = {}) {
+        const ctx = {
+            cwd: mkdtempSync(join(tmpdir(), "cockpit-office-")),
+            prevFixture: existsSync(FIXTURE) ? readFileSync(FIXTURE, "utf8") : null,
+        };
+        await fx.arrangeFixtureRun(h, ctx, "cockpit-office", "office lead", { project: "arcterm" });
+        // a plan gives the run's dialog box a task column and t-1 a worker's seat: wait for t-1's child run, the run id
+        // its worker's roster entry carries
+        if (opts.tasks) {
+            await h.rpc("dagsubmit", { channelid: ctx.channelId, runid: ctx.runId, title: "Menu Bar and Tray Popover", parallelism: 1, tasks: opts.tasks });
+            for (let waited = 0; waited < 60000 && !ctx.workerRunId; waited += 500) {
+                const group = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group;
+                ctx.workerRunId = group?.tasks?.find((t) => t.id === "t-1")?.runid;
+                if (!ctx.workerRunId) await sleep(500);
+            }
+        }
+        // arrangeFixtureRun wrote its own roster around the run's lead: keep the lead, draw the office's roster
+        const now = Date.now();
+        const lead = JSON.parse(readFileSync(FIXTURE, "utf8")).find((a) => a.runId === ctx.runId);
+        const worker = ctx.workerRunId ? [officeRunWorker(now, ctx.workerRunId)] : [];
+        mkdirSync(new URL(".", FIXTURE), { recursive: true });
+        writeFileSync(FIXTURE, JSON.stringify([...(lead ? [lead] : []), ...worker, ...ROSTERS[opts.roster ?? "office"](now)], null, 2));
+        ctx.prevView = await h.ev(`localStorage.getItem(${JSON.stringify(VIEW_KEY)})`);
+        await h.ev(`localStorage.setItem(${JSON.stringify(VIEW_KEY)}, JSON.stringify("office"))`);
+        // the card starts small, whatever an earlier run left
+        await h.ev(`localStorage.removeItem("cockpit.office.bigcard")`);
+        try {
+            await h.ev("location.reload()");
+        } catch {
+            // the evaluate is cut off by the navigation it just started
+        }
+        // the old document can still answer for a moment after the reload starts
+        await sleep(1500);
+        for (let waited = 0; waited < 40000; waited += 500) {
+            if (await h.ev("!!window.TabRpcClient && !!document.querySelector('nav button')").catch(() => false)) break;
+            await sleep(500);
+        }
+        await h.goto("cockpit");
+        ctx.missing = await waitForOffice(h);
+        if (!ctx.missing) await dev(h, { runs: OFFICE_RUNS, afterHours: false, energy: 63 });
+        return ctx;
+    }
     const cockpitOffice = {
         name: "cockpit-office",
         surface: "cockpit",
-        async arrange(h) {
-            const ctx = {
-                cwd: mkdtempSync(join(tmpdir(), "cockpit-office-")),
-                prevFixture: existsSync(FIXTURE) ? readFileSync(FIXTURE, "utf8") : null,
-            };
-            await fx.arrangeFixtureRun(h, ctx, "cockpit-office", "office lead", { project: "arcterm" });
-            // arrangeFixtureRun wrote its own roster around the run's lead: keep the lead, draw the office's roster
-            const lead = JSON.parse(readFileSync(FIXTURE, "utf8")).find((a) => a.runId === ctx.runId);
-            mkdirSync(new URL(".", FIXTURE), { recursive: true });
-            writeFileSync(FIXTURE, JSON.stringify([...(lead ? [lead] : []), ...ROSTERS.office(Date.now())], null, 2));
-            ctx.prevView = await h.ev(`localStorage.getItem(${JSON.stringify(VIEW_KEY)})`);
-            await h.ev(`localStorage.setItem(${JSON.stringify(VIEW_KEY)}, JSON.stringify("office"))`);
-            // the card starts small, whatever an earlier run left
-            await h.ev(`localStorage.removeItem("cockpit.office.bigcard")`);
-            try {
-                await h.ev("location.reload()");
-            } catch {
-                // the evaluate is cut off by the navigation it just started
-            }
-            // the old document can still answer for a moment after the reload starts
-            await sleep(1500);
-            for (let waited = 0; waited < 40000; waited += 500) {
-                if (await h.ev("!!window.TabRpcClient && !!document.querySelector('nav button')").catch(() => false)) break;
-                await sleep(500);
-            }
-            await h.goto("cockpit");
-            ctx.missing = await waitForOffice(h);
-            if (!ctx.missing) await dev(h, { runs: OFFICE_RUNS, afterHours: false, energy: 63 });
-            return ctx;
-        },
+        arrange: (h) => arrangeOffice(h),
         async assert(h, ctx) {
             const steps = [];
             const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
@@ -156,9 +188,9 @@ export function makeCockpitOfficeScenarios(fx) {
             await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-quill"))})?.click()`);
             p = await settleBoss(h);
             rec(
-                "1. a click on quill's desk walks the boss there and opens its card beside the desk",
-                p?.cursor === "fx-office-quill" && p.popup === "agent",
-                JSON.stringify({ cursor: p?.cursor, popup: p?.popup, boss: p?.boss })
+                "1. a click on quill's desk walks the boss there and opens its dialog box",
+                p?.cursor === "fx-office-quill" && p.dialog === "agent",
+                JSON.stringify({ cursor: p?.cursor, dialog: p?.dialog, boss: p?.boss })
             );
             await h.shot("cdp-shots/cockpit-office-main.png");
 
@@ -196,6 +228,50 @@ export function makeCockpitOfficeScenarios(fx) {
                 JSON.stringify(nearAsk)
             );
 
+            // 1d. a view taller than what the office holds: the building grows to the scroller's foot, no gap below
+            const fillW = await h.ev("window.innerWidth");
+            await h.cdp("Emulation.setDeviceMetricsOverride", { width: fillW, height: 2600, deviceScaleFactor: 1, mobile: false });
+            await sleep(600);
+            const fill = await h.ev(`(() => {
+                const el = document.querySelector("[data-cockpit-office]");
+                const root = el.querySelector("[data-office-root]");
+                const bottom = root.getBoundingClientRect().bottom - el.getBoundingClientRect().top + el.scrollTop;
+                return { bottom: Math.round(bottom), scrollH: el.scrollHeight, clientH: el.clientHeight };
+            })()`);
+            await h.shot("cdp-shots/cockpit-office-tall.png");
+            await h.cdp("Emulation.clearDeviceMetricsOverride", {});
+            await sleep(400);
+            rec(
+                "1d. in a view taller than what it holds, the office fills the view to its foot",
+                fill.scrollH <= fill.clientH && fill.bottom + 12 >= fill.clientH - 1,
+                JSON.stringify(fill)
+            );
+
+            // 1e. agents coming in grow the office: the canvas the commit resizes is drawn again before paint, never
+            // shown blank for a frame (a MutationObserver's microtask runs after the commit's layout effects, before a
+            // passive one)
+            const grow = await h.ev(`new Promise((done) => {
+                const c = document.querySelector('[data-office-canvas="under"]');
+                const was = c.height;
+                const mo = new MutationObserver(() => {
+                    mo.disconnect();
+                    const px = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+                    let opaque = 0;
+                    for (let i = 3; i < px.length; i += 4) if (px[i] > 0) opaque++;
+                    done({ was, now: c.height, opaque });
+                });
+                mo.observe(c, { attributes: true, attributeFilter: ["width", "height"] });
+                setTimeout(() => { mo.disconnect(); done({ was, now: c.height, opaque: null }); }, 3000);
+                window.__cockpitOffice({ crowd: 40 });
+            })`);
+            await dev(h, { crowd: 0 });
+            await sleep(400);
+            rec(
+                "1e. agents coming in grow the office without a blank frame: the resized canvas is drawn before paint",
+                grow.now > grow.was && grow.opaque > 0,
+                JSON.stringify(grow)
+            );
+
             // 2. 1 answers from that card
             await focusCockpit(h);
             await key(h, "1");
@@ -206,8 +282,12 @@ export function makeCockpitOfficeScenarios(fx) {
             // 3. the real run's meeting room opens its LeadCard
             await h.ev(`[...document.querySelectorAll("[data-office-room]")].find((b) => !b.dataset.officeRoom.includes("fx-office-run"))?.click()`);
             p = await settleBoss(h);
-            const runText = await h.ev(`(document.querySelector('[data-office-popup="run"]')?.textContent ?? "").length`);
-            rec("3. a click on a meeting room opens its run's card", p?.popup === "run" && runText > 0, JSON.stringify({ popup: p?.popup, cursor: p?.cursor, runText }));
+            const runText = await h.ev(`(document.querySelector('[data-office-dialog]')?.textContent ?? "").length`);
+            rec(
+                "3. a click on a meeting room opens its run's dialog box",
+                (p?.dialog === "lead" || p?.dialog === "leadless") && runText > 0,
+                JSON.stringify({ dialog: p?.dialog, cursor: p?.cursor, runText })
+            );
             await h.shot("cdp-shots/cockpit-office-run.png");
 
             const drawsBeforeWalk = (await probe(h))?.sceneryDraws;
@@ -217,6 +297,10 @@ export function makeCockpitOfficeScenarios(fx) {
             // middle and right again, into the hall
             await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-loom"))})?.click()`);
             const start = await settleBoss(h);
+            // the desk click opened its dialog box, where the arrows move the ▶: shut it so they walk
+            await focusCockpit(h);
+            await key(h, "Escape");
+            await sleep(150);
             const arc = start?.boxes?.["room:arcterm"];
             const edge = arc ? arc.x + arc.w : NaN;
             await focusCockpit(h);
@@ -239,6 +323,9 @@ export function makeCockpitOfficeScenarios(fx) {
             // offering its card; walked off to the side, out of every desk's reach, nothing is offered and the cursor stays
             await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-loom"))})?.click()`);
             await settleBoss(h);
+            await focusCockpit(h);
+            await key(h, "Escape");
+            await sleep(150);
             const loom = await h.ev(`(() => {
                 const root = document.querySelector("[data-office-root]").getBoundingClientRect();
                 const r = document.querySelector(${JSON.stringify(desk("fx-office-loom"))}).getBoundingClientRect();
@@ -273,6 +360,36 @@ export function makeCockpitOfficeScenarios(fx) {
                 JSON.stringify({ before: drawsBeforeWalk, after: p?.sceneryDraws })
             );
 
+            // 4d. the lounge's sofa is solid (officeboss.ts furniture): a click on the floor behind it walks the boss
+            // there, ↑ stops it at the sofa's back, and a click on the sofa walks it nowhere
+            const loungeBox = p?.lounge;
+            const clickFloor = (x, y) =>
+                h.ev(`(() => {
+                    const root = document.querySelector("[data-office-root]");
+                    const r = root.getBoundingClientRect();
+                    root.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: r.left + ${x}, clientY: r.top + ${y} }));
+                })()`);
+            await clickFloor(loungeBox.x + 99, loungeBox.y + 207);
+            const behind = await settleBoss(h);
+            await focusCockpit(h);
+            await hold(h, "ArrowUp", 1000);
+            const atSofa = await settleBoss(h, 1000);
+            await h.ev(`document.querySelector("[data-office-root]").scrollIntoView({ block: "start" })`);
+            await h.shot("cdp-shots/cockpit-office-sofa.png");
+            await clickFloor(loungeBox.x + 99, loungeBox.y + 165);
+            const onSofa = await settleBoss(h, 1000);
+            rec(
+                "4d. the boss behind the lounge's sofa walks up to its back and stops there; a click on the sofa walks it nowhere",
+                behind?.boss?.room === "hall" &&
+                    behind.boss.y > loungeBox.y + 200 &&
+                    atSofa?.boss &&
+                    atSofa.boss.y > loungeBox.y + 188 &&
+                    atSofa.boss.y < behind.boss.y &&
+                    onSofa?.boss?.x === atSofa.boss.x &&
+                    onSofa.boss.y === atSofa.boss.y,
+                JSON.stringify({ lounge: loungeBox, behind: behind?.boss, atSofa: atSofa?.boss, onSofa: onSofa?.boss })
+            );
+
             // 5. NextAsk: n shows the way, then the boss walks it
             await focusCockpit(h);
             await key(h, "n");
@@ -300,15 +417,19 @@ export function makeCockpitOfficeScenarios(fx) {
             const hint = await probe(h);
             await h.shot("cdp-shots/cockpit-office-next-ask.png");
             const atAsk = await settleBoss(h, 5000);
-            // quill holds the answer step 2 picked: Enter here opens the card, it does not send the answer
+            // quill holds the answer step 2 picked: Enter here opens the dialog box, it does not send the answer
             await focusCockpit(h);
             await key(h, "Enter");
             await sleep(200);
             p = await probe(h);
             rec(
-                "5. n shows the way to the next Needs you for a second, then the boss walks there and ↵ offers its card; Enter opens it",
-                hint?.dots > 0 && atAsk?.cursor === "fx-office-quill" && atAsk.popup === "" && atAsk.prompt === "agent" && p?.popup === "agent",
-                JSON.stringify({ dots: hint?.dots, cursor: atAsk?.cursor, offered: [atAsk?.popup, atAsk?.prompt], opened: p?.popup })
+                "5. n shows the way to the next Needs you for a second, then the boss walks there and ↵ offers its card; Enter opens its dialog box",
+                hint?.dots > 0 &&
+                    atAsk?.cursor === "fx-office-quill" &&
+                    atAsk.dialog === "" &&
+                    atAsk.prompt === "agent" &&
+                    p?.dialog === "agent",
+                JSON.stringify({ dots: hint?.dots, cursor: atAsk?.cursor, offered: [atAsk?.dialog, atAsk?.prompt], opened: p?.dialog })
             );
 
             rec(
@@ -317,7 +438,7 @@ export function makeCockpitOfficeScenarios(fx) {
                 JSON.stringify({ dots: dotGrid?.dots, dotsOn: dotGrid?.dotsOn, label: dotGrid?.label, first: dotGrid?.first })
             );
 
-            // 6. Esc shuts the card and ↵ offers it again; j and k walk desk by desk in office order, offering each card
+            // 6. Esc shuts the dialog box and ↵ offers it again; j and k walk desk by desk in office order, offering each card
             await focusCockpit(h);
             await key(h, "Escape");
             await sleep(200);
@@ -334,23 +455,23 @@ export function makeCockpitOfficeScenarios(fx) {
             await key(h, "k");
             const back = await settleBoss(h, 5000);
             rec(
-                "6. Esc shuts the card and ↵ offers it again; j walks to the next desk in office order offering its card, Enter opens it, k walks back with the card shut",
-                hid?.popup === "" &&
+                "6. Esc shuts the dialog box and ↵ offers it again; j walks to the next desk in office order offering its box, Enter opens it, k walks back with the box shut",
+                hid?.dialog === "" &&
                     hid.prompt !== "" &&
                     want != null &&
                     next?.cursor === want &&
-                    next.popup === "" &&
+                    next.dialog === "" &&
                     next.prompt !== "" &&
-                    opened?.popup !== "" &&
+                    opened?.dialog !== "" &&
                     back?.cursor === hid.cursor &&
-                    back.popup === "" &&
+                    back.dialog === "" &&
                     back.prompt !== "",
                 JSON.stringify({
-                    shut: [hid?.popup, hid?.prompt],
+                    shut: [hid?.dialog, hid?.prompt],
                     want,
-                    next: [next?.cursor, next?.popup, next?.prompt],
-                    opened: opened?.popup,
-                    back: [back?.cursor, back?.popup, back?.prompt],
+                    next: [next?.cursor, next?.dialog, next?.prompt],
+                    opened: opened?.dialog,
+                    back: [back?.cursor, back?.dialog, back?.prompt],
                 })
             );
 
@@ -397,6 +518,7 @@ export function makeCockpitOfficeScenarios(fx) {
                     Math.abs(p.boss.y - spot.y) <= 3 &&
                     p.cursor === before.cursor &&
                     p.popup === "" &&
+                    p.dialog === "" &&
                     p.prompt === "",
                 JSON.stringify({ spot, boss: p?.boss, cursor: [before?.cursor, p?.cursor], popup: p?.popup })
             );
@@ -425,18 +547,18 @@ export function makeCockpitOfficeScenarios(fx) {
             );
             await h.shot("cdp-shots/cockpit-office-night.png");
 
-            // 10. Tired: the boss stands at pike's desk with its card open; the working desks have coffee, the heading
+            // 10. Tired: the boss stands at pike's desk with its dialog box open; the working desks have coffee, the HUD
             // says 6 % (the energy left of a window 94 % used), and a tired working person yawns one frame in four
             await dev(h, { afterHours: false, energy: 94 });
             await sleep(400);
             await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-pike"))})?.click()`);
             p = await settleBoss(h);
-            const heading = await h.ev(`document.querySelector("[data-office-heading]")?.textContent ?? ""`);
+            const hudText = await h.ev(`document.querySelector("[data-office-hud]")?.textContent ?? ""`);
             const tiredYawns = await waitForSprite(h, ["yawn"], 3000);
             rec(
-                "10. the 5-hour window at 94 %: the boss at pike's desk with its card open, coffee on the working desks, the heading says 6 % left, a working person yawns",
-                p?.cursor === "fx-office-pike" && p.popup === "agent" && p.cups > 0 && heading.includes("6 %") && tiredYawns > 0,
-                JSON.stringify({ cursor: p?.cursor, popup: p?.popup, cups: p?.cups, heading, tiredYawns })
+                "10. the 5-hour window at 94 %: the boss at pike's desk with its dialog box open, coffee on the working desks, the HUD says 6 % left, a working person yawns",
+                p?.cursor === "fx-office-pike" && p.dialog === "agent" && p.cups > 0 && hudText.includes("6 %") && tiredYawns > 0,
+                JSON.stringify({ cursor: p?.cursor, dialog: p?.dialog, cups: p?.cups, hud: hudText, tiredYawns })
             );
             await h.shot("cdp-shots/cockpit-office-tired.png");
 
@@ -745,6 +867,335 @@ export function makeCockpitOfficeScenarios(fx) {
             });
         },
     };
+    // the office controls canvas (.superpowers/design/office-controls): the HUD bar and footer, the dialog box and its
+    // ▶ menu, a two-part ask, a run's room and a worker's seat, the full card and Esc's steps back, the box's edge, the
+    // office menu and the Events rail
+    const cockpitOfficeControls = {
+        name: "cockpit-office-controls",
+        surface: "cockpit",
+        arrange: (h) => arrangeOffice(h, { roster: "office-controls", tasks: OFFICE_RUN_TASKS }),
+        teardown: (h, ctx) => cockpitOffice.teardown(h, ctx),
+        async assert(h, ctx) {
+            const steps = [];
+            const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+            if (ctx.missing) {
+                rec("0. the office loads", false, ctx.missing);
+                return steps;
+            }
+            await settleBoss(h);
+            const press = async (k, n = 1) => {
+                for (let i = 0; i < n; i++) {
+                    await focusCockpit(h);
+                    await key(h, k);
+                    await sleep(120);
+                }
+                return probe(h);
+            };
+            // the ↵ chip over the desk the boss stands at, while it walks
+            const chip = () => h.ev(`document.querySelector("[data-office-prompt]")?.textContent ?? ""`);
+
+            // 0. the office fills the surface: no Cockpit title, the filters and switches in the HUD bar inside the
+            // view, m menu alone in the footer and not lit, no Events rail
+            const chrome = await h.ev(`(() => {
+                const s = document.querySelector("[data-cockpit-surface]");
+                const hud = s?.querySelector("[data-office-hud]");
+                const foot = s?.querySelector("[data-cockpit-hints]");
+                return {
+                    title: [...(s?.querySelectorAll("h1") ?? [])].some((e) => e.textContent.trim() === "Cockpit"),
+                    hud: hud?.textContent ?? "",
+                    toggle: !!hud?.querySelector("[data-cockpit-view-toggle]"),
+                    menu: !!foot?.querySelector("[data-office-footer-menu]"),
+                    lit: foot?.querySelector("[data-office-footer-menu]")?.getAttribute("aria-expanded") === "true",
+                    foot: foot?.textContent ?? "",
+                    rail: !!document.querySelector('[aria-label="Events"]'),
+                };
+            })()`);
+            rec(
+                "0. the office fills the surface: no Cockpit title, the counts, Cards/Office and Live only in the HUD bar, only m menu in the footer, no Events rail",
+                !chrome.title &&
+                    chrome.hud.includes("work hours") &&
+                    chrome.hud.includes("need you") &&
+                    chrome.hud.includes("Live only") &&
+                    chrome.toggle &&
+                    chrome.menu &&
+                    !chrome.lit &&
+                    !chrome.foot.includes("column") &&
+                    !chrome.rail,
+                JSON.stringify(chrome)
+            );
+            await h.shot("cdp-shots/cockpit-office-hud.png");
+            rec("0b. the run's t-1 dispatched its worker within 60 s", !!ctx.workerRunId, ctx.workerRunId ?? "no child run on t-1");
+
+            // 1. quill's dialog box: its question and what it said, its answers as the ▶ menu, Send dim
+            await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-quill"))})?.click()`);
+            let p = await settleBoss(h);
+            const words = await h.ev(`document.querySelector('[data-office-dialog="agent"]')?.textContent ?? ""`);
+            rec(
+                "1. a click on quill's desk opens its dialog box: the question under what it said, the answers, Send dim, Terminal and Full card",
+                p?.dialog === "agent" &&
+                    JSON.stringify(p.items) ===
+                        JSON.stringify(["Merge now", "Wait for the Final shots", "Show me the diff first", "Send", "Terminal", "Full card"]) &&
+                    JSON.stringify(p.dims) === "[3]" &&
+                    p.sel === 0 &&
+                    words.includes("Merge wave/7c1e into main now") &&
+                    words.includes("The branch is ready."),
+                JSON.stringify({ dialog: p?.dialog, items: p?.items, dims: p?.dims, sel: p?.sel, words: words.slice(0, 160) })
+            );
+            await h.shot("cdp-shots/cockpit-office-dialog.png");
+
+            // 2. ↓ steps the ▶ over the dim Send; ↑ comes back
+            const sels = [];
+            for (let i = 0; i < 3; i++) sels.push((await press("ArrowDown"))?.sel);
+            sels.push((await press("ArrowUp"))?.sel);
+            rec("2. ↓ ↓ ↓ steps the ▶ 1, 2, then over the dim Send to Terminal; ↑ goes back to 2", JSON.stringify(sels) === "[1,2,4,2]", JSON.stringify(sels));
+
+            // 3. ↵ on an answer picks it and moves the ▶ to Send, which lights (no second ↵: it would send)
+            await press("ArrowUp", 2);
+            p = await press("Enter");
+            rec(
+                "3. ↵ on the first answer picks it and moves the ▶ to Send, now lit",
+                JSON.stringify(p?.answerSel?.["0"]) === "[0]" && p.sel === 3 && JSON.stringify(p.dims) === "[]",
+                JSON.stringify({ answerSel: p?.answerSel, sel: p?.sel, dims: p?.dims })
+            );
+            await h.shot("cdp-shots/cockpit-office-dialog-picked.png");
+
+            // 4. f opens the full card; Esc goes back to the box, Esc again to walking, ↵ Answer offered (quill asks)
+            const card = await press("f");
+            const back1 = await press("Escape");
+            const back2 = await press("Escape");
+            const answerChip = await chip();
+            rec(
+                "4. f opens the full card over the box; Esc goes back to the box, a second Esc to walking, ↵ Answer offered at quill, who asks",
+                card?.popup === "agent" &&
+                    card.dialog === "" &&
+                    back1?.dialog === "agent" &&
+                    back1.popup === "" &&
+                    back2?.dialog === "" &&
+                    back2.prompt === "agent" &&
+                    answerChip.includes("Answer"),
+                JSON.stringify({ card: [card?.popup, card?.dialog], back1: [back1?.dialog, back1?.popup], back2: [back2?.dialog, back2?.prompt], chip: answerChip })
+            );
+            await h.shot("cdp-shots/cockpit-office-talk.png");
+
+            // 5. loom at work: ↵ Talk offered once its box is shut; ↵ opens it again: Open, Reply, Terminal,
+            // Background, Full card, and the ▶ stops at the last
+            await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-loom"))})?.click()`);
+            await settleBoss(h);
+            await press("Escape");
+            const talkChip = await chip();
+            await press("Enter");
+            p = await press("ArrowDown", 6);
+            rec(
+                "5. an agent at work offers ↵ Talk, and its box Open, Reply, Terminal, Background and Full card; the ▶ stops at the last",
+                talkChip.includes("Talk") &&
+                    p?.dialog === "agent" &&
+                    JSON.stringify(p.items) === JSON.stringify(["Open", "Reply", "Terminal", "Background", "Full card"]) &&
+                    p.sel === 4,
+                JSON.stringify({ chip: talkChip, items: p?.items, sel: p?.sel })
+            );
+            await h.shot("cdp-shots/cockpit-office-dialog-working.png");
+
+            // 5b. Reply opens the full card with its composer focused; m typed there types, the menu stays shut
+            await press("ArrowUp", 3);
+            await press("Enter");
+            await sleep(300);
+            const focused = await h.ev(`document.activeElement?.tagName ?? ""`);
+            await key(h, "m");
+            await sleep(150);
+            const typed = await h.ev(`({ menu: window.__cockpitOfficeProbe().menu, value: document.activeElement?.value ?? null })`);
+            rec(
+                "5b. Reply opens the full card with its composer focused; m typed there types and the office menu stays shut",
+                focused === "TEXTAREA" && typed.menu === false && (typed.value ?? "").includes("m"),
+                JSON.stringify({ focused, typed })
+            );
+            await key(h, "Escape");
+            await press("Escape", 2);
+
+            // 5c. kite asks in two parts: ◀ Branch ▶ 1 of 2 over the first question's answers; → shows the second's,
+            // ← the first's again
+            await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-kite"))})?.click()`);
+            // kite sits in another room than loom: a long walk
+            const first = await settleBoss(h, 12000);
+            const tabs = () => h.ev(`document.querySelector("[data-office-question-tabs]")?.textContent ?? ""`);
+            const tab1 = await tabs();
+            await h.shot("cdp-shots/cockpit-office-dialog-questions.png");
+            const second = await press("ArrowRight");
+            const tab2 = await tabs();
+            const again = await press("ArrowLeft");
+            rec(
+                "5c. a two-part ask shows ◀ Branch ▶ 1 of 2 over its first answers; → switches to the second question's, ← back",
+                first?.dialog === "agent" &&
+                    tab1.includes("Branch") &&
+                    tab1.includes("1 of 2") &&
+                    JSON.stringify(first.items.slice(0, 3)) === JSON.stringify(["Keep feat/tray", "Rename to feat/tray-popover", "Send"]) &&
+                    tab2.includes("Tests") &&
+                    tab2.includes("2 of 2") &&
+                    JSON.stringify(second?.items?.slice(0, 2)) === JSON.stringify(["Unit", "CDP"]) &&
+                    again?.items?.[0] === "Keep feat/tray",
+                JSON.stringify({ tab1, tab2, first: first?.items, second: second?.items, again: again?.items })
+            );
+            await press("Escape");
+
+            // 6. the real run's meeting room: the run's plate, its bar and counts, a column of its six tasks (four shown,
+            // the rest counted); Open lead first, Adjust (the run has a plan), Full card last
+            await h.ev(`[...document.querySelectorAll("[data-office-room]")].find((b) => !b.dataset.officeRoom.includes("fx-office-run"))?.click()`);
+            await settleBoss(h);
+            const run = await h.ev(`(async () => {
+                // the run's plan can load after the page: wait for its task column
+                for (let i = 0; i < 40 && !document.querySelector('[data-office-dialog="lead"] [data-office-task]'); i++) {
+                    await new Promise((r) => setTimeout(r, 250));
+                }
+                const box = document.querySelector('[data-office-dialog="lead"]');
+                return { text: box?.textContent ?? "", tasks: box?.querySelectorAll("[data-office-task]").length ?? 0 };
+            })()`);
+            p = await probe(h);
+            rec(
+                "6. a meeting room opens its run's box: N/6 in its counts, four task rows and N more in the full card; Open lead first, Adjust, Full card last",
+                p?.dialog === "lead" &&
+                    p.items[0] === "Open lead" &&
+                    p.items.includes("Adjust") &&
+                    p.items[p.items.length - 1] === "Full card" &&
+                    run.tasks === 4 &&
+                    /\d+ more in the full card/.test(run.text) &&
+                    run.text.includes("/6"),
+                JSON.stringify({ dialog: p?.dialog, items: p?.items, tasks: run.tasks, text: run.text.slice(0, 240) })
+            );
+            await h.shot("cdp-shots/cockpit-office-dialog-run.png");
+
+            // 6b. t-1's seat, its worker at work: the task's line and its worker's words; Open, Terminal and Full card
+            await press("Escape");
+            await h.ev(`document.querySelector('[data-office-seat$=":t-1"]')?.click()`);
+            p = await settleBoss(h);
+            const seat = await h.ev(`document.querySelector('[data-office-dialog="worker"]')?.textContent ?? ""`);
+            rec(
+                "6b. a worker's seat at work opens its box: the task and its worker, then Open, Terminal and Full card",
+                p?.dialog === "worker" &&
+                    JSON.stringify(p.items) === JSON.stringify(["Open", "Terminal", "Full card"]) &&
+                    seat.includes("Machine stats") &&
+                    seat.includes("vole"),
+                JSON.stringify({ dialog: p?.dialog, items: p?.items, seat: seat.slice(0, 200) })
+            );
+            await h.shot("cdp-shots/cockpit-office-dialog-seat.png");
+
+            // 7. a short view, the boss low in it: the box takes the head when one at the foot would cover the boss, and
+            // never covers it. Desks only: each is an agent's, which has a box (a fixture run's seat has none)
+            const w = await h.ev("window.innerWidth");
+            await h.cdp("Emulation.setDeviceMetricsOverride", { width: w, height: 760, deviceScaleFactor: 1, mobile: false });
+            await sleep(500);
+            await press("Escape");
+            const low = await h.ev(`(() => {
+                const el = document.querySelector("[data-cockpit-office]");
+                el.scrollTop = el.scrollHeight;
+                const v = el.getBoundingClientRect();
+                const desks = [...document.querySelectorAll("[data-office-desk]")]
+                    .map((d) => ({ d, r: d.getBoundingClientRect() }))
+                    .filter(({ r }) => r.top >= v.top && r.bottom <= v.bottom);
+                desks.sort((a, b) => b.r.bottom - a.r.bottom);
+                desks[0]?.d.click();
+                return desks.length;
+            })()`);
+            p = await settleBoss(h, 5000);
+            const geo = await h.ev(`(() => {
+                const v = document.querySelector("[data-cockpit-office]").getBoundingClientRect();
+                const box = document.querySelector("[data-office-dialog]")?.getBoundingClientRect();
+                const boss = document.querySelector("[data-office-boss]")?.getBoundingClientRect();
+                if (!box || !boss) return { box: !!box, boss: !!boss };
+                // the plate stands 15 px over the box's top edge
+                const top = box.top - 15;
+                const overlap = !(box.right <= boss.left || box.left >= boss.right || box.bottom <= boss.top || top >= boss.bottom);
+                return { overlap, bossBottom: boss.bottom - v.top, viewH: v.height };
+            })()`);
+            await h.cdp("Emulation.clearDeviceMetricsOverride", {});
+            await sleep(400);
+            // a box at the foot, 270 px and its plate 15 px over it, reaches up to viewH - 12 - 270 - 15
+            const footTop = geo.viewH - 297;
+            rec(
+                "7. in a short view the box takes the head when one at the foot would cover the boss, the foot otherwise, and never covers the boss",
+                low > 0 && geo.overlap === false && p?.edge === (geo.bossBottom > footTop ? "top" : "bottom"),
+                JSON.stringify({ low, edge: p?.edge, footTop, geo })
+            );
+
+            // 8. m opens the office menu, the footer's m chip lit: START's items with their keys; ↓ moves; Esc shuts it
+            await press("Escape", 2);
+            const menu = await press("m");
+            const lit = await h.ev(`document.querySelector("[data-office-footer-menu]")?.getAttribute("aria-expanded")`);
+            await h.shot("cdp-shots/cockpit-office-menu.png");
+            const moved = await press("ArrowDown");
+            const shut = await press("Escape");
+            rec(
+                "8. m opens the office menu, the footer's m chip lit: Next Needs you, Next desk, Previous desk, Events, Cards view, All keys; ↓ moves the ▶; Esc shuts it",
+                menu?.menu === true &&
+                    lit === "true" &&
+                    JSON.stringify(menu.menuItems) === JSON.stringify(["Next Needs you", "Next desk", "Previous desk", "Events", "Cards view", "All keys"]) &&
+                    menu.menuSel === 0 &&
+                    moved?.menuSel === 1 &&
+                    shut?.menu === false,
+                JSON.stringify({ items: menu?.menuItems, lit, sel: [menu?.menuSel, moved?.menuSel], shut: shut?.menu })
+            );
+
+            // 9. the menu's Events shows the rail; Esc while walking hides it again
+            await press("m");
+            await press("ArrowDown", 3);
+            await press("Enter");
+            const shown = await h.ev(`!!document.querySelector('[aria-label="Events"]')`);
+            await press("Escape");
+            const hidden = await h.ev(`!document.querySelector('[aria-label="Events"]')`);
+            rec("9. the menu's Events shows the Events rail; Esc while walking hides it", shown && hidden, JSON.stringify({ shown, hidden }));
+
+            // 9b. a HUD filter that hides the open box's desk: the box goes and the keys walk. probe.layer is the raw
+            // layer atom, so the box's absence is read from probe.dialog
+            await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-quill"))})?.click()`);
+            const inBox = await settleBoss(h);
+            const chipSel = `[...document.querySelectorAll('[data-office-hud] [aria-label="Show"] button')].find((b) => b.textContent.includes("working"))`;
+            await h.ev(`${chipSel}?.click()`);
+            await sleep(300);
+            const filtered = await probe(h);
+            const bossBefore = filtered?.boss;
+            await focusCockpit(h);
+            await hold(h, "ArrowLeft", 400);
+            const walked = await settleBoss(h, 2000);
+            await h.ev(`${chipSel}?.click()`);
+            await sleep(300);
+            const pressed = await h.ev(`${chipSel}?.getAttribute("aria-pressed")`);
+            rec(
+                "9b. a box whose desk a HUD filter hides leaves the office walking: no box, and an arrow walks the boss",
+                inBox?.dialog === "agent" &&
+                    filtered?.dialog === "" &&
+                    bossBefore != null &&
+                    walked?.boss != null &&
+                    (walked.boss.x !== bossBefore.x || walked.boss.y !== bossBefore.y) &&
+                    pressed === "false",
+                JSON.stringify({ inBox: inBox?.dialog, filtered: filtered?.dialog, before: bossBefore, after: walked?.boss, pressed })
+            );
+
+            // 10. the footer: its m opens and shuts the office menu with the mouse, and its line shows the newest event.
+            // A fixture roster changes no state, so a run's task-done is published as the engine's would be; it is
+            // the newest, so the line names the run and "finished"
+            await h.ev(`document.querySelector("[data-office-footer-menu]")?.click()`);
+            await sleep(150);
+            const opened = (await probe(h))?.menu;
+            await h.ev(`document.querySelector("[data-office-footer-menu]")?.click()`);
+            await sleep(150);
+            const closed = (await probe(h))?.menu;
+            let line = null;
+            for (let i = 0; i < 2 && !line?.includes("finished"); i++) {
+                const event = { id: "fx-office-controls-done", runid: ctx.runId, channelid: ctx.channelId, ts: Date.now(), kind: "task-done" };
+                await h.rpc("eventpublish", { event: "run:event", scopes: [`run:${ctx.runId}`], data: { channelid: ctx.channelId, runid: ctx.runId, event } });
+                for (let t = 0; t < 3000 && !line?.includes("finished"); t += 200) {
+                    await sleep(200);
+                    line = await h.ev(`document.querySelector("[data-office-footer-event]")?.textContent ?? null`);
+                }
+            }
+            rec(
+                "10. the footer's m opens and shuts the office menu; its line shows the newest event: who, finished, and when",
+                opened === true && closed === false && line != null && line.includes("finished"),
+                JSON.stringify({ opened, closed, line })
+            );
+            await h.shot("cdp-shots/cockpit-office-footer.png");
+
+            return steps;
+        },
+    };
     // the spec's Benchmark: Cards then Office on the office-bench roster plus three fixture runs (~75 people)
     const cockpitOfficeBench = {
         name: "cockpit-office-bench",
@@ -911,5 +1362,5 @@ export function makeCockpitOfficeScenarios(fx) {
         },
     };
 
-    return { cockpitOffice, cockpitOfficeBench };
+    return { cockpitOffice, cockpitOfficeControls, cockpitOfficeBench };
 }

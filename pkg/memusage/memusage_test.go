@@ -139,6 +139,48 @@ func TestInterfaceAbsentWhenNothingIsFound(t *testing.T) {
 	}
 }
 
+func TestMeasureSumsWhatTheWholeAppHoldsInRam(t *testing.T) {
+	foot := map[int32]uint64{10: 60 * mb, 20: 400 * mb, 30: 5 * mb, 31: 900 * mb, 40: 3 * mb, 50: 1700 * mb, 51: 90 * mb, 60: 800 * mb}
+	ram := map[int32]uint64{10: 40 * mb, 20: 140 * mb, 30: 2 * mb, 31: 300 * mb, 40: 1 * mb, 50: 420 * mb, 51: 47 * mb, 60: 500 * mb}
+	resp := map[int32]int32{50: 10, 51: 10, 60: 60}
+	s := sampler(foot, resp)
+	s.Resident = func(pid int32) (uint64, bool) {
+		n, ok := ram[pid]
+		return n, ok
+	}
+	b := Measure(fixtureTable(), s, map[string]int32{"blk-a": 30}, 20, 10, true)
+	// the host, wavesrv's tree (its shells and the agent under one) and the webview; never the unrelated app 60
+	if b.InRam == nil || *b.InRam != 950*mb {
+		t.Fatalf("in RAM = %v, want 950 MB", b.InRam)
+	}
+	if b.Interface == nil || *b.Interface != 1790*mb || b.Agents["blk-a"] != 905*mb {
+		t.Fatalf("the rows stay footprints: interface %v, agents %v", b.Interface, b.Agents)
+	}
+}
+
+func TestMeasureInRamIsTheFootprintWhereNoResidentIsRead(t *testing.T) {
+	// Windows' private working set and the resident set elsewhere are already what a process holds in RAM
+	foot := map[int32]uint64{10: 40 * mb, 20: 100 * mb, 30: 2 * mb, 31: 300 * mb, 40: 1 * mb, 70: 400 * mb}
+	tb := NewTable(map[int32]int32{10: 1, 20: 10, 30: 20, 31: 30, 40: 20, 70: 10})
+	b := Measure(tb, sampler(foot, nil), map[string]int32{"blk-a": 30}, 20, 10, false)
+	if b.InRam == nil || *b.InRam != 843*mb {
+		t.Fatalf("in RAM = %v, want 843 MB", b.InRam)
+	}
+	if b2 := Measure(tb, sampler(nil, nil), nil, 20, 10, false); b2.InRam != nil {
+		t.Fatalf("nothing readable must leave in RAM absent, got %v", *b2.InRam)
+	}
+}
+
+func TestLiveResidentReadsThisProcess(t *testing.T) {
+	s := Live()
+	if s.Resident == nil {
+		t.Skip("this build's footprint is already the resident figure")
+	}
+	if n, ok := s.Resident(int32(os.Getpid())); !ok || n == 0 {
+		t.Fatalf("resident of this test = %d, %v", n, ok)
+	}
+}
+
 func TestLiveFootprintReadsThisProcess(t *testing.T) {
 	n, ok := Live().Footprint(int32(os.Getpid()))
 	if !ok || n == 0 {

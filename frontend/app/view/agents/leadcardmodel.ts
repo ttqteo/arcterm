@@ -40,6 +40,15 @@ export const REVIEW_ACTIONS = [
     ["skip", "Skip"],
 ] as const;
 
+// what a task row's action buttons say (the card's buttons and the Office's dialog box)
+export const ROW_ACTION_LABEL: Record<RowAction, string> = {
+    retry: "Retry",
+    skip: "Skip",
+    takeover: "Take over",
+    tell: "Tell",
+    resolve: "Continue",
+};
+
 /** Pure: the actions a focused row's number keys run, in the order the card numbers them. */
 export function rowKeyActions(row: Pick<TaskRowVM, "inline" | "actions">): string[] {
     return row.inline === "review" ? REVIEW_ACTIONS.map(([a]) => a) : row.actions;

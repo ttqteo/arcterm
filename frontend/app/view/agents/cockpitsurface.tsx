@@ -19,6 +19,8 @@ import {
     askSentKey,
     filterAgents,
     groupAgents,
+    moveCursor,
+    nextAskId,
     applyAgentOrder,
     streamableTranscriptAgents,
     matchesProjectFilter,
@@ -49,12 +51,20 @@ import { answeredAskIdsAcross, needsHuman } from "./jarvisderive";
 import { IdleSection } from "./idlesection";
 import { LeadCard } from "./leadcard";
 import { rowAction } from "./leadcardactions";
-import { buildLeadCard, isLeadDown, rowKeyActions, stopSelector, type LeadCardVM } from "./leadcardmodel";
+import {
+    buildLeadCard,
+    isLeadDown,
+    rowKeyActions,
+    runAdjustable,
+    stopSelector,
+    type LeadCardVM,
+} from "./leadcardmodel";
 import { ensurePreviousInfo, rosterSeededAtom } from "./liveagents";
 import { idsWithEntriesAtom } from "./livetranscriptatoms";
 import { CockpitEmptyState } from "./cockpitemptystate";
 import { CockpitRail } from "./cockpitrail";
-import { useRailTracking } from "./cockpiteventsrail";
+import { useRailEvents, useRailTracking } from "./cockpiteventsrail";
+import { footerEvent } from "./cockpitevents";
 import { HintsBar } from "./cockpithelp";
 import { RollingCount } from "./rollingcount";
 import { ensureRunEvents, runEventsAtom } from "./runeventstore";
@@ -64,7 +74,18 @@ import { useRunDigests } from "./runlineagestore";
 import { ARROW_DIR, useCockpitKeyboard, type OfficeKeys } from "./usecockpitkeyboard";
 import { CockpitOffice, type OfficeHandle } from "./cockpitoffice";
 import { officeInputs } from "./officeinputs";
-import { cockpitView, cockpitViewAtom } from "./officestore";
+import { cockpitView, cockpitViewAtom, officeEventsOpenAtom } from "./officestore";
+import { dialogItems, questionTabs, type DeskKind, type DialogInput, type DialogItemId } from "./officedialogmodel";
+import {
+    AgentDialogBody,
+    AgentPlate,
+    RunDialogBody,
+    RunPlate,
+    WorkerDialogBody,
+    type OfficeDialogVM,
+} from "./officedialog";
+import type { OfficeMenuId } from "./officecontrols";
+import { cheatsheetOpenAtom } from "@/app/cockpit/shortcuts-cheatsheet";
 import { useCardStreams } from "./usecardstreams";
 import { NeedsYouStrip } from "./needsyoustrip";
 import { ProjectSwitcher } from "./projectswitcher";
@@ -404,19 +425,53 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         landOn(model.surfaceAtom, "files");
     };
 
+    const cursorIdRef = useRef(cursorId);
+    cursorIdRef.current = cursorId;
+    // the Events rail is hidden in Office until the office menu (or the footer's event line) shows it
+    const eventsOpen = useAtomValue(officeEventsOpenAtom);
+    const railEvents = useRailEvents(lineage, runEvents);
+    const setOfficeEvents = (open: boolean) => {
+        if (open) {
+            globalStore.set(model.railOpenAtom, true);
+        }
+        globalStore.set(officeEventsOpenAtom, open);
+    };
+
     const officeKeys = useMemo<OfficeKeys>(
         () => ({
+            layer: () => officeRef.current?.layer() ?? "walk",
+            menuOpen: () => officeRef.current?.menuOpen() ?? false,
             walk: (d) => officeRef.current?.walk(d),
-            goTo: (k) => officeRef.current?.goTo(k),
-            showPath: (k) => officeRef.current?.showPath(k),
-            dismiss: () => officeRef.current?.dismiss(),
-            openCard: () => officeRef.current?.openCard() ?? false,
-            toggleBig: () => officeRef.current?.toggleBig() ?? false,
-            order: () => officeRef.current?.order() ?? [],
-            asks: () => officeRef.current?.asks() ?? [],
+            talk: () => officeRef.current?.talk() ?? false,
+            card: () => officeRef.current?.card() ?? false,
+            move: (d) => officeRef.current?.move(d),
+            activate: () => officeRef.current?.activate(),
+            back: () => {
+                // walking already: Esc hides the Events rail the menu showed
+                if (!officeRef.current?.back() && globalStore.get(officeEventsOpenAtom)) {
+                    globalStore.set(officeEventsOpenAtom, false);
+                }
+            },
+            toggleMenu: () => officeRef.current?.toggleMenu(),
+            desk: (d) => {
+                const next = moveCursor(officeRef.current?.order() ?? [], cursorIdRef.current, d);
+                if (next) {
+                    setCursorId(next);
+                    officeRef.current?.goTo(next);
+                }
+            },
+            nextAsk: () => {
+                const target = nextAskId(officeRef.current?.asks() ?? [], lastJumpRef.current);
+                if (target) {
+                    lastJumpRef.current = target;
+                    setCursorId(target);
+                    officeRef.current?.showPath(target);
+                }
+            },
         }),
         []
     );
+
     const toggleView = () => globalStore.set(cockpitViewAtom, view === "office" ? "cards" : "office");
     const onKeyDown = useCockpitKeyboard({
         model, navigableIds, cursorId, setCursorId, answerTab, answerSel,
@@ -430,6 +485,163 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     // buildCockpitBindings); onKeyDown above still performs them. One help surface, one key registry.
     const cockpitBindings = useMemo(() => buildCockpitBindings(), []);
     useKeybindings(cockpitBindings);
+
+    const onOfficeMenu = (id: OfficeMenuId) => {
+        switch (id) {
+            case "nextAsk":
+                officeKeys.nextAsk();
+                return;
+            case "nextDesk":
+                officeKeys.desk(1);
+                return;
+            case "prevDesk":
+                officeKeys.desk(-1);
+                return;
+            case "events":
+                setOfficeEvents(!globalStore.get(officeEventsOpenAtom));
+                return;
+            case "cards":
+                toggleView();
+                return;
+            case "keys":
+                globalStore.set(cheatsheetOpenAtom, true);
+                return;
+        }
+    };
+
+    // what a ▶ item does for an agent: the same calls the card's buttons and the Cockpit's keys make. openId is the tab
+    // a worker's row opens, the agent's own id otherwise
+    const runAgentItem = (a: AgentVM, id: DialogItemId, qi: number, openId = a.id) => {
+        if (id.startsWith("opt:")) {
+            toggleAnswer(a.id, qi, Number(id.slice(4)));
+            return;
+        }
+        switch (id) {
+            case "send":
+                submitAnswer(a.id);
+                return;
+            case "open":
+                openFocus(openId, false);
+                return;
+            case "reply":
+                setOpenComposerId(a.id);
+                officeRef.current?.card();
+                requestAnimationFrame(() => focusRowComposer(a.id));
+                return;
+            case "terminal":
+                model.openTerminal(openId);
+                return;
+            case "background":
+                toggleBackground(a.id);
+                return;
+            case "card":
+                officeRef.current?.card();
+                return;
+        }
+    };
+
+    const agentInput = (a: AgentVM): Pick<DialogInput, "activeQuestion" | "selections" | "texts"> => ({
+        activeQuestion: answerTab[a.id] ?? 0,
+        selections: answerSel[a.id] ?? {},
+        texts: answerText[a.id] ?? {},
+    });
+
+    const agentDialog = (a: AgentVM): OfficeDialogVM => {
+        const input = { kind: "agent" as DeskKind, agent: a, ...agentInput(a) };
+        return {
+            kind: "agent",
+            label: a.name,
+            items: dialogItems(input),
+            tabs: questionTabs(a, input.activeQuestion),
+            plate: <AgentPlate agent={a} nowAtom={model.nowAtom} />,
+            body: <AgentDialogBody agent={a} nowAtom={model.nowAtom} activeQuestion={input.activeQuestion} />,
+            run: (id) => runAgentItem(a, id, input.activeQuestion),
+        };
+    };
+
+    // the dialog box of the desk at the boss (office controls canvas): the same card lookup as renderOfficeCard
+    const dialogFor = (key: string): OfficeDialogVM | null => {
+        const c = cards.find((x) =>
+            x.kind === "agent"
+                ? x.id === key
+                : x.id === key || key.startsWith(`${x.id}:`) || rowsOf(x).some((r) => r.key === key)
+        );
+        if (!c) {
+            const parked = shownParkedIdle.find((a) => a.id === key);
+            return parked ? agentDialog(parked) : null;
+        }
+        if (c.kind === "agent") {
+            return agentDialog(c.agent);
+        }
+        const vm = leadVMs.get(c.id);
+        if (!vm) {
+            return null;
+        }
+        const adjustable = runAdjustable(c.run);
+        const row = rowsOf(c).find((r) => r.key === key);
+        if (row || key !== c.id) {
+            // a worker's seat: its task row (a seat the card shows no row for has only the full card)
+            const worker = row?.worker;
+            const actions = row ? rowKeyActions(row) : [];
+            const input = worker ? agentInput(worker) : { activeQuestion: 0, selections: {}, texts: {} };
+            return {
+                kind: "worker",
+                label: row?.label ?? c.run.title,
+                items: dialogItems({
+                    kind: "worker",
+                    agent: worker,
+                    rowActions: actions,
+                    canOpen: !!row?.openId,
+                    ...input,
+                }),
+                tabs: worker ? questionTabs(worker, input.activeQuestion) : undefined,
+                plate: worker ? (
+                    <AgentPlate agent={worker} nowAtom={model.nowAtom} />
+                ) : (
+                    <RunPlate run={c.run} lead={c.lead} />
+                ),
+                body: row ? (
+                    <WorkerDialogBody
+                        row={row}
+                        worker={worker}
+                        nowAtom={model.nowAtom}
+                        activeQuestion={input.activeQuestion}
+                    />
+                ) : null,
+                run: (id) => {
+                    // a row action's index is its number key's (the box leaves Tell to the card's input)
+                    if (id.startsWith("row:")) {
+                        rowTargets[row!.key]?.actions[Number(id.slice(4))]?.();
+                        return;
+                    }
+                    if (worker) {
+                        runAgentItem(worker, id, input.activeQuestion, row?.openId ?? worker.id);
+                    } else if (id === "card") {
+                        officeRef.current?.card();
+                    }
+                },
+            };
+        }
+        const lead = c.lead;
+        const input = lead ? agentInput(lead) : { activeQuestion: 0, selections: {}, texts: {} };
+        return {
+            kind: lead ? "lead" : "leadless",
+            label: c.run.title,
+            items: dialogItems({ kind: lead ? "lead" : "leadless", agent: lead, adjustable, ...input }),
+            tabs: lead ? questionTabs(lead, input.activeQuestion) : undefined,
+            plate: <RunPlate run={c.run} lead={lead} />,
+            body: <RunDialogBody vm={vm} lead={lead} activeQuestion={input.activeQuestion} />,
+            run: (id) => {
+                if (id === "adjust") {
+                    officeRef.current?.card({ adjust: true });
+                } else if (lead) {
+                    runAgentItem(lead, id, input.activeQuestion);
+                } else if (id === "card") {
+                    officeRef.current?.card();
+                }
+            },
+        };
+    };
 
     // one AgentRow with every callback wired
     const renderAgent = (a: AgentVM, share: CardShare) => (
@@ -464,7 +676,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         />
     );
 
-    const renderCard = (c: GridCard, share = cardShare(c.kind === "run", cardNeedsYou(c))) => {
+    const renderCard = (c: GridCard, share = cardShare(c.kind === "run", cardNeedsYou(c)), adjust?: boolean) => {
         if (c.kind === "agent") {
             return renderAgent(c.agent, share);
         }
@@ -479,6 +691,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                 vm={vm}
                 events={runEvents[c.run.runId] ?? []}
                 leadDown={vm.down}
+                initialPanel={adjust ? "adjust" : undefined}
                 share={share}
                 isCursor={cursorId === c.id}
                 cursorKey={cursorId}
@@ -499,18 +712,99 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     // the card beside the desk the boss stands at: an agent's AgentRow, or for a seat or a meeting room its run's
     // LeadCard, the very ones the grid draws; an agent of the Idle section gets its row too. The popup's box sets
     // its height (officeplanmodel.ts popupBox), so it has no floor of its own.
-    const renderOfficeCard = (key: string): ReactNode => {
+    const renderOfficeCard = (key: string, opts?: { adjust?: boolean }): ReactNode => {
         const c = cards.find((x) =>
             x.kind === "agent"
                 ? x.id === key
                 : x.id === key || key.startsWith(`${x.id}:`) || rowsOf(x).some((r) => r.key === key)
         );
         if (c) {
-            return renderCard(c, POPUP_SHARE);
+            return renderCard(c, POPUP_SHARE, opts?.adjust);
         }
         const parked = shownParkedIdle.find((a) => a.id === key);
         return parked ? renderAgent(parked, POPUP_SHARE) : null;
     };
+
+    const chipDefs: [ChipFilter, string, number][] = [
+        ["asking", "need you", liveAsking],
+        ["working", "working", liveWorking],
+        ["idle", "ready for review", readyCount],
+        ["all", "live", liveCount],
+    ];
+    // the Cards | Office toggle, the project switcher and Live only: the Cards header's right end, and the HUD bar's
+    const viewControls = (
+        <>
+            <div
+                role="group"
+                aria-label="Cockpit view"
+                data-cockpit-view-toggle
+                className="flex gap-0.5 rounded border border-edge-mid bg-surface p-0.5"
+            >
+                {(["cards", "office"] as const).map((v) => (
+                    <button
+                        key={v}
+                        type="button"
+                        aria-pressed={view === v}
+                        title={`${v === "cards" ? "Cards" : "Office"} (o)`}
+                        onClick={() => globalStore.set(cockpitViewAtom, v)}
+                        className={cn(
+                            "cursor-pointer rounded-[4px] border-0 px-2.5 py-[3px] text-[12px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                            view === v ? "bg-surface-selected text-primary" : "bg-transparent text-muted hover:text-ink-hi"
+                        )}
+                    >
+                        {v === "cards" ? "Cards" : "Office"}
+                    </button>
+                ))}
+            </div>
+            <ProjectSwitcher model={model} variant="header" />
+            <button
+                type="button"
+                onClick={() => globalStore.set(model.liveOnlyAtom, !liveOnly)}
+                className={cn(
+                    "flex cursor-pointer items-center gap-[7px] rounded border px-2.5 py-1.5 text-[12px] font-medium",
+                    liveOnly
+                        ? "border-success/60 bg-success/10 text-success"
+                        : "border-edge-mid bg-surface-raised text-muted-foreground hover:border-edge-strong"
+                )}
+            >
+                <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                Live only
+            </button>
+        </>
+    );
+
+    // the HUD bar inside the office's view: the same filters and switches as the Cards header, as compact pills
+    const officeHud = (
+        <>
+            <span className="h-4 w-px shrink-0 bg-edge-mid" />
+            <div role="group" aria-label="Show" className="flex min-w-0 items-center gap-0.5">
+                {chipDefs.map(([key, label, count]) => (
+                    <button
+                        key={key}
+                        type="button"
+                        aria-pressed={chip === key}
+                        onClick={() => setChip(toggleChip(chip, key))}
+                        className={cn(
+                            "flex shrink-0 cursor-pointer items-baseline gap-1.5 rounded-[5px] border-0 px-2 py-[3px] hover:bg-surface-hover",
+                            chip === key ? "bg-surface-selected" : "bg-transparent"
+                        )}
+                    >
+                        <RollingCount
+                            value={count}
+                            className={cn(
+                                "text-[13.5px] font-semibold",
+                                count > 0 || chip === key ? TAB_TONE[key].text : "text-muted"
+                            )}
+                        />
+                        <span className={cn("text-[12px] font-medium", chip === key ? "text-primary" : "text-ink-mid")}>
+                            {label}
+                        </span>
+                    </button>
+                ))}
+            </div>
+            <div className="ml-auto flex flex-none items-center gap-2">{viewControls}</div>
+        </>
+    );
 
     const phase = rosterLoadPhase(seeded, [...asking, ...working, ...idle].filter((a) => !hidden.has(a.id)).length);
 
@@ -530,86 +824,44 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
             className="relative flex h-full w-full text-secondary outline-none"
         >
             <div className="flex min-w-0 flex-1 flex-col bg-background">
-                {/* one row: the tabs carry the counts a subtitle used to repeat */}
-                <div className="sticky top-0 z-[5] shrink-0 bg-background">
-                    <div className="flex flex-wrap items-end gap-x-5 gap-y-1 border-b border-border px-5 pt-2.5">
-                        <h1 className={cn(SURFACE_TITLE_CLASS, "pb-2.5 leading-none")}>Cockpit</h1>
-                        <div className="-mb-px flex flex-wrap gap-0.5">
-                            {(
-                                [
-                                    ["asking", "need you", liveAsking],
-                                    ["working", "working", liveWorking],
-                                    ["idle", "ready for review", readyCount],
-                                    ["all", "live", liveCount],
-                                ] as [ChipFilter, string, number][]
-                            ).map(([key, label, count]) => (
-                                <button
-                                    key={key}
-                                    type="button"
-                                    onClick={() => setChip(toggleChip(chip, key))}
-                                    className={cn(
-                                        "flex cursor-pointer items-baseline gap-1.5 border-0 border-b-2 bg-transparent px-2.5 pb-2 pt-1.5 hover:bg-surface-hover",
-                                        chip === key ? TAB_TONE[key].line : "border-transparent"
-                                    )}
-                                >
-                                    <RollingCount
-                                        value={count}
-                                        className={cn(
-                                            "text-[15px] font-semibold",
-                                            count > 0 || chip === key ? TAB_TONE[key].text : "text-muted"
-                                        )}
-                                    />
-                                    <span
-                                        className={cn(
-                                            "text-[12.5px] font-medium",
-                                            chip === key ? "text-primary" : "text-ink-mid"
-                                        )}
-                                    >
-                                        {label}
-                                    </span>
-                                </button>
-                            ))}
-                        </div>
-                        <div className="mb-1.5 ml-auto flex flex-none items-center gap-2">
-                            <div
-                                role="group"
-                                aria-label="Cockpit view"
-                                data-cockpit-view-toggle
-                                className="flex gap-0.5 rounded border border-edge-mid bg-surface p-0.5"
-                            >
-                                {(["cards", "office"] as const).map((v) => (
+                {/* one row: the tabs carry the counts a subtitle used to repeat; Office has them in its HUD bar */}
+                {view !== "office" ? (
+                    <div className="sticky top-0 z-[5] shrink-0 bg-background">
+                        <div className="flex flex-wrap items-end gap-x-5 gap-y-1 border-b border-border px-5 pt-2.5">
+                            <h1 className={cn(SURFACE_TITLE_CLASS, "pb-2.5 leading-none")}>Cockpit</h1>
+                            <div className="-mb-px flex flex-wrap gap-0.5">
+                                {chipDefs.map(([key, label, count]) => (
                                     <button
-                                        key={v}
+                                        key={key}
                                         type="button"
-                                        aria-pressed={view === v}
-                                        title={`${v === "cards" ? "Cards" : "Office"} (o)`}
-                                        onClick={() => globalStore.set(cockpitViewAtom, v)}
+                                        onClick={() => setChip(toggleChip(chip, key))}
                                         className={cn(
-                                            "cursor-pointer rounded-[4px] border-0 px-2.5 py-[3px] text-[12px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                                            view === v ? "bg-surface-selected text-primary" : "bg-transparent text-muted hover:text-ink-hi"
+                                            "flex cursor-pointer items-baseline gap-1.5 border-0 border-b-2 bg-transparent px-2.5 pb-2 pt-1.5 hover:bg-surface-hover",
+                                            chip === key ? TAB_TONE[key].line : "border-transparent"
                                         )}
                                     >
-                                        {v === "cards" ? "Cards" : "Office"}
+                                        <RollingCount
+                                            value={count}
+                                            className={cn(
+                                                "text-[15px] font-semibold",
+                                                count > 0 || chip === key ? TAB_TONE[key].text : "text-muted"
+                                            )}
+                                        />
+                                        <span
+                                            className={cn(
+                                                "text-[12.5px] font-medium",
+                                                chip === key ? "text-primary" : "text-ink-mid"
+                                            )}
+                                        >
+                                            {label}
+                                        </span>
                                     </button>
                                 ))}
                             </div>
-                            <ProjectSwitcher model={model} variant="header" />
-                            <button
-                                type="button"
-                                onClick={() => globalStore.set(model.liveOnlyAtom, !liveOnly)}
-                                className={cn(
-                                    "flex cursor-pointer items-center gap-[7px] rounded border px-2.5 py-1.5 text-[12px] font-medium",
-                                    liveOnly
-                                        ? "border-success/60 bg-success/10 text-success"
-                                        : "border-edge-mid bg-surface-raised text-muted-foreground hover:border-edge-strong"
-                                )}
-                            >
-                                <span className="h-1.5 w-1.5 rounded-full bg-success" />
-                                Live only
-                            </button>
+                            <div className="mb-1.5 ml-auto flex flex-none items-center gap-2">{viewControls}</div>
                         </div>
                     </div>
-                </div>
+                ) : null}
 
                 <NeedsYouStrip model={model} onFocusAgent={focusAgentCard} />
 
@@ -635,6 +887,11 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                                 cursorId={cursorId}
                                 onCursor={(key) => setCursorId(key)}
                                 renderCard={renderOfficeCard}
+                                dialogFor={dialogFor}
+                                hud={officeHud}
+                                newEvents={railEvents.fresh.length}
+                                eventsOpen={eventsOpen}
+                                onMenu={onOfficeMenu}
                                 handleRef={officeRef}
                             />
                         )
@@ -663,19 +920,33 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                     </div>
                 </div>
 
-                <HintsBar model={model} hints={phase === "ready"} />
+                <HintsBar
+                    model={model}
+                    hints={phase === "ready"}
+                    office={
+                        view === "office"
+                            ? {
+                                  event: footerEvent(railEvents.all, railEvents.fresh),
+                                  onMenu: () => officeRef.current?.toggleMenu(),
+                                  onEvents: () => setOfficeEvents(true),
+                              }
+                            : undefined
+                    }
+                />
             </div>
 
-            <CockpitRail
-                model={model}
-                lineage={lineage}
-                runEvents={runEvents}
-                tags={railTags}
-                onSelectAgent={(id) => {
-                    setCursorId(id);
-                    scrollToPulse(id);
-                }}
-            />
+            {view !== "office" || eventsOpen ? (
+                <CockpitRail
+                    model={model}
+                    lineage={lineage}
+                    runEvents={runEvents}
+                    tags={railTags}
+                    onSelectAgent={(id) => {
+                        setCursorId(id);
+                        scrollToPulse(id);
+                    }}
+                />
+            ) : null}
         </div>
         </MotionConfig>
     );

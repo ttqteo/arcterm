@@ -308,6 +308,25 @@ func TestVaultRootFallbacks(t *testing.T) {
 	}
 }
 
+// the final stage's dev app (ARC_DEV_NO_GLOBAL_INSTALL) keeps its vault in its own store: its runs' task dossiers
+// landed in the user's ~/.waveterm/vault
+func TestVaultRootOfANoGlobalInstallApp(t *testing.T) {
+	configDir, dataDir := t.TempDir(), t.TempDir()
+	prevConfig, prevData, prevNoGlobal := wavebase.ConfigHome_VarCache, wavebase.DataHome_VarCache, wavebase.NoGlobalInstall_VarCache
+	wavebase.ConfigHome_VarCache, wavebase.DataHome_VarCache, wavebase.NoGlobalInstall_VarCache = configDir, dataDir, true
+	t.Cleanup(func() {
+		wavebase.ConfigHome_VarCache, wavebase.DataHome_VarCache, wavebase.NoGlobalInstall_VarCache = prevConfig, prevData, prevNoGlobal
+	})
+
+	if got, want := VaultRoot(), filepath.Join(dataDir, "vault"); got != want {
+		t.Errorf("no setting: VaultRoot() = %q, want %q", got, want)
+	}
+	writeJSONFile(t, filepath.Join(configDir, SettingsFile), map[string]any{ConfigKey_MemoryVaultPath: "~/mv"})
+	if got, want := VaultRoot(), filepath.Join(wavebase.GetHomeDir(), "mv"); got != want {
+		t.Errorf("a set path still wins: VaultRoot() = %q, want %q", got, want)
+	}
+}
+
 func TestWatcherRetargetsOnVaultPathChange(t *testing.T) {
 	configDir, vaultA := setupLayers(t, nil)
 	w, err := newWatcher(fsnotify.NewWatcher)

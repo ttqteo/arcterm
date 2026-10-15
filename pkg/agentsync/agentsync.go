@@ -24,14 +24,18 @@ type Paths struct {
 	// Shipped holds the skills arcterm ships, one top-level directory each, seeded into SkillsRoot.
 	// nil seeds nothing.
 	Shipped fs.FS
+	// KeepHarnesses reads the harness dirs under Home but never writes them: a dev app that installs nothing
+	// global has a vault of its own, and projecting it would strip the user's skills from their harnesses.
+	KeepHarnesses bool
 }
 
 func DefaultPaths() Paths {
 	return Paths{
-		Home:        wavebase.GetHomeDir(),
-		SteeringDoc: memroots.SteeringDocPath(),
-		SkillsRoot:  memroots.SkillsRoot(),
-		Shipped:     skills.FS,
+		Home:          wavebase.GetHomeDir(),
+		SteeringDoc:   memroots.SteeringDocPath(),
+		SkillsRoot:    memroots.SkillsRoot(),
+		Shipped:       skills.FS,
+		KeepHarnesses: wavebase.NoGlobalInstall(),
 	}
 }
 

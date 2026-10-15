@@ -1088,6 +1088,8 @@ declare global {
         serverbytes?: number;
         hostbytes?: number;
         terminalsbytes?: number;
+        inrambytes?: number;
+        swapusedbytes: number;
     };
 
     // wshrpc.CommandGetDossierData

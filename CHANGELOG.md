@@ -44,6 +44,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- **The Office plays like a pixel game**: ↵ at a desk opens a dialog box at the edge of the office with what the agent
+  says, its question and its numbers, and a ▶ menu of what you can do there: ↑ ↓ pick, ↵ does it, Esc steps back, and
+  Full card (f) shows the whole card. A run's room offers Open lead and Adjust, a worker's seat its task's own buttons.
+  <!-- big -->
+- **The Office fills the Cockpit**: its counts, Cards/Office, projects and Live only sit in a bar inside the office,
+  the footer shows only `m menu` and the newest event, and `m` opens the office menu (Events shows the Events rail,
+  which Office now hides).
 - The Office view is drawn in pixel art: a bright office in work hours and a dim one after hours, people you can tell apart by their hair, the boss in a cap. It also draws with about 280 fewer page elements.
 - **The Office's ⚡ reads as energy**: it shows what is left of Claude's 5-hour window, so 4 % used reads ⚡ 96 %, and
   it turns amber at 10 % left.
@@ -77,6 +84,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- **The boss walks around the lounge's furniture**: in the Office the boss no longer walks onto the sofa, the coffee
+  machine or a plant; it stops in front of them, as it does at a desk.
+- **The Office fills the Cockpit's height**: a quiet office no longer stops partway down with an empty strip below
+  it; the last room stretches to the bottom. An agent coming in or leaving no longer makes the office blink.
+- **arcterm's share of the RAM bar adds up when the Mac swaps**: the bar counts what arcterm and its agents hold in
+  RAM now, so on a Mac short of memory it no longer fills the whole used part and shows other apps at 0 MB. What they
+  come to with what macOS compressed or swapped out is named beside it, and the header shows the swap in use.
 - **Canvas previews show, and work on a Mac**: the Canvas gallery's cards show the preview taken the first time you
   open a canvas (the installed app drew them blank before), a Mac now takes them, and Send captures the board there.
   They use the Screen Recording permission arcterm already has; without it Send says so.

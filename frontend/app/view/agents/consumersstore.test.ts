@@ -9,7 +9,13 @@ vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 import { globalStore } from "@/app/store/jotaiStore";
 import { consumersOpenAtom, consumersReadingAtom, loadConsumers, toggleConsumers } from "./consumersstore";
 
-const reading: CommandGetConsumersRtnData = { totalbytes: 8, availablebytes: 2, windowms: 600_000, agents: [] };
+const reading: CommandGetConsumersRtnData = {
+    totalbytes: 8,
+    availablebytes: 2,
+    windowms: 600_000,
+    agents: [],
+    swapusedbytes: 0,
+};
 
 describe("loadConsumers", () => {
     beforeEach(() => globalStore.set(consumersReadingAtom, { data: null, lastOkMs: null, failed: false }));

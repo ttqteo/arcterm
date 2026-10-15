@@ -137,3 +137,16 @@ export function groupRailEvents(events: RailEvent[], open: Record<string, boolea
     }
     return out;
 }
+
+export interface FooterEvent {
+    event: RailEvent;
+    moreNew: number;
+}
+
+/** Pure: the Office footer's line: the newest event, and how many more came since the rail was last read. */
+export function footerEvent(all: RailEvent[], fresh: RailEvent[]): FooterEvent | null {
+    if (all.length === 0) {
+        return null;
+    }
+    return { event: all[0], moreNew: Math.max(0, fresh.length - (fresh.includes(all[0]) ? 1 : 0)) };
+}

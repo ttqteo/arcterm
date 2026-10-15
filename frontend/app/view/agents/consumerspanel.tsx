@@ -58,6 +58,7 @@ import {
     stopWorkerMessage,
     switchToastText,
     togglePickAll,
+    withSwapBytes,
     type ConsumerRow,
     type ConsumersView,
 } from "./consumers";
@@ -341,7 +342,8 @@ function ColumnHeads() {
     );
 }
 
-// free RAM in words, and a bar of all RAM: arcterm with its agents, everything else in use, and free
+// free RAM and the swap in use in words, and a bar of all RAM: what arcterm with its agents holds in it, everything
+// else in use, and free
 function MemoryHeader({
     view,
     fiveHour,
@@ -352,6 +354,7 @@ function MemoryHeader({
     onOpenUsage: () => void;
 }) {
     const bar = view ? ramBar(view) : null;
+    const withSwap = view ? withSwapBytes(view) : undefined;
     return (
         <div className="flex flex-col gap-1.5 border-b border-border px-3 pb-2.5 pt-2">
             <div className="flex items-baseline gap-3">
@@ -363,6 +366,14 @@ function MemoryHeader({
                                     {formatGB(view.freeBytes)}
                                 </span>
                                 {` free of ${formatGB(view.totalBytes)}`}
+                                {view.swapBytes > 0 ? (
+                                    <span
+                                        data-consumers-swap
+                                        title="Swapped out to disk, every app's: macOS adds swap as RAM runs short"
+                                    >
+                                        {` · ${ramLabel(view.swapBytes)} swap`}
+                                    </span>
+                                ) : null}
                             </>
                         ) : (
                             "Reading…"
@@ -394,9 +405,18 @@ function MemoryHeader({
             </div>
             {bar && view ? (
                 <div className="flex items-center gap-3 text-[10.5px] text-muted">
-                    <span className="flex items-center gap-1">
+                    <span
+                        data-consumers-in-ram
+                        className="flex items-center gap-1"
+                        title={
+                            withSwap === undefined
+                                ? "What arcterm and its agents hold in RAM now"
+                                : `What arcterm and its agents hold in RAM now. With what macOS compressed or swapped out of them, ${ramLabel(withSwap)}: the figure Activity Monitor adds up`
+                        }
+                    >
                         <span className="h-[6px] w-[6px] rounded-full bg-accent" />
-                        arcterm {view.appBytes === undefined ? "—" : ramLabel(view.appBytes)}
+                        arcterm {view.inRamBytes === undefined ? "—" : ramLabel(view.inRamBytes)}
+                        {withSwap === undefined ? null : ` in RAM · ${ramLabel(withSwap)} with swap`}
                     </span>
                     <span className="flex items-center gap-1">
                         <span className="h-[6px] w-[6px] rounded-full bg-ink-faint" />
@@ -708,7 +728,7 @@ function CompactHeader({
                 data-consumers-header
                 title={
                     view && bar
-                        ? `other apps ${ramLabel(bar.otherBytes)} · ${formatGB(view.totalBytes)} in all`
+                        ? `other apps ${ramLabel(bar.otherBytes)} · ${formatGB(view.totalBytes)} in all${view.swapBytes > 0 ? ` · ${ramLabel(view.swapBytes)} swap` : ""}`
                         : undefined
                 }
                 className="flex-1"

@@ -14,14 +14,24 @@ import "C"
 
 import "unsafe"
 
-// footprint is the process's physical footprint, the figure Activity Monitor shows: it counts compressed memory,
-// which the resident set misses. It needs no privilege for the user's own processes.
-func footprint(pid int32) (uint64, bool) {
+func rusage(pid int32) (C.struct_rusage_info_v2, bool) {
 	var ri C.struct_rusage_info_v2
-	if C.proc_pid_rusage(C.int(pid), C.RUSAGE_INFO_V2, (*C.rusage_info_t)(unsafe.Pointer(&ri))) != 0 {
-		return 0, false
-	}
-	return uint64(ri.ri_phys_footprint), true
+	ok := C.proc_pid_rusage(C.int(pid), C.RUSAGE_INFO_V2, (*C.rusage_info_t)(unsafe.Pointer(&ri))) == 0
+	return ri, ok
+}
+
+// footprint is the process's physical footprint, the figure Activity Monitor shows: it counts compressed memory,
+// which the resident set misses, and what was swapped out, at its full size. It needs no privilege for the user's
+// own processes.
+func footprint(pid int32) (uint64, bool) {
+	ri, ok := rusage(pid)
+	return uint64(ri.ri_phys_footprint), ok
+}
+
+// resident is the resident set: what the process holds in RAM now, leaving out what macOS compressed or swapped.
+func resident(pid int32) (uint64, bool) {
+	ri, ok := rusage(pid)
+	return uint64(ri.ri_resident_size), ok
 }
 
 // responsiblePid is the process macOS holds responsible for pid, the one Activity Monitor groups it under: the
