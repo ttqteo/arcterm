@@ -10,6 +10,26 @@ where it would plug in, and how to pick it back up. Append new entries at the to
 > Pruned 2026-10-05: 27 entries whose work shipped, was retired with its subsystem, or was superseded were
 > removed. Recover any of them with `git show c99f2041:docs/deferred.md`.
 
+## (arcterm) agy harness kept but unverified (2026-10-15)
+
+- **Held:** Antigravity (`agy`) stays in arcterm as an agent and a task worker, unchanged, but nobody uses it: it
+  was built to be a run worker on the assumption that the AI Pro plan reaches the argon model, and it does not. No
+  machine has `agy` installed (checked on the Mac 2026-10-15: no `agy` on PATH, no `~/.gemini/antigravity-cli`).
+- **Why kept, not removed:** it costs nothing at runtime while agy is absent: `installAgyHooks` is a no-op until
+  `~/.gemini/antigravity-cli` exists, and the harness catalog reports agy off PATH, so no route picks it. Removing it
+  is ~2,300 lines in its own files (`pkg/agyhook`, `pkg/agentsessions/agy.go`, `pkg/usagestats/agy.go`,
+  `cmd/wsh/cmd/wshcmd-agyhook.go`, `agytranscriptprojection.ts`), the `agy-harness` block in
+  `scripts/cdp/scenarios.mjs`, and agy's entry in the runtime lists of ~50 code files and ~55 test files.
+- **The risk:** it rots silently. Its tests run on fixtures captured when it was built (`pkg/agyhook/testdata`, the
+  transcript tests), so a change in agy's hook payloads, conversation files, `agy models` output or resume flags
+  leaves them green. Every feature that touches all harnesses still adds an agy case.
+- **Before using it again:** install agy and run one real worker task end to end: hook events reach the cockpit, an
+  ask comes back, the session shows in Conversation History, `agy models` fills the route picker. The open items
+  from the build are `effort:004e8ece-a631-4837-bc46-5a88b61c6dd0`.
+- **Decide by 2027-01-15** (chunk "Re-measure: does AI Pro reach argon — keep or remove agy" on that effort): if the
+  plan reaches argon, do the live check above; if not, remove agy (the files and list entries above, its docs,
+  `docs/agents/antigravity.md`, and the `agy as a run lead` entry below).
+
 ## (arcterm) Jarvis as graph: a List | Graph view of the Brief (deferred 2026-10-14)
 
 - **Deferred:** a Graph view of the Jarvis Brief beside List (`Shift+G`, List stays the default, the choice is

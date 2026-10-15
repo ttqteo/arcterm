@@ -799,6 +799,12 @@ not yet trusted with `/hooks`. On the Mac first run: `codex --version; echo $COD
 
 Each names its revive condition in `docs/deferred.md` unless a source is given.
 
+Harnesses:
+
+- **(arcterm) agy kept but unverified: decide 2027-01-15** (2026-10-15) — unused, since the AI Pro plan does not
+  reach argon, and installed nowhere, so its fixture-based tests can stay green while it breaks. Keep and check it
+  live if the plan reaches argon by then, otherwise remove it; notes in `docs/deferred.md`.
+
 Cockpit and surfaces:
 
 - **(arcterm) Per-tool shortcuts in the tool library** (2026-10-13) — Setup → Tools has no Shortcut field until the
