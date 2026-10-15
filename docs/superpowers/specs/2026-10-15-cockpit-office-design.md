@@ -79,8 +79,10 @@ and the two columns share whatever width the hall leaves.
 - **The hall** runs between the columns, top to bottom (234 px wide). At its top, **the lounge**: a rug, a TV on the
   wall, the sofa facing it, the coffee machine and a plant, where idle people go. At its foot, by the entrance,
   **Home**: a booth holding the cards with no project, one desk per row; it grows up the hall, under the lounge.
-- **Doors:** every room has one door onto the hall, in the middle of its hall-side wall; the Home booth's is in its
-  top wall.
+- **Doors:** every room has one door onto the hall, in the upper part of its hall-side wall (an agents' room's level
+  with its first row of desks, as the `Main` board draws it), so a stretched room keeps its door where it was; the
+  Home booth's is in its top wall. The plan grows so the booth sits below every door of the left column: no door opens
+  into it.
 - **The facade** closes the plan at the bottom: brick with windows, glass doors at the foot of the hall, and the
   **ARCTERM** sign over them. The outer walls carry small windows on their faces.
 - **Lights:** a room with no one at work (no agent working or asking, no task running) has its lights off: a dark
@@ -290,8 +292,9 @@ window, the hold starting once everyone has settled at a desk and no clock runs)
 Estimated from the Run office's measured numbers (104 desks: +1.6 MB, ~1,500 nodes): about 900–1,200 nodes and
 +1–2 MB at this fixture. The scenario prints the numbers in its PASS/FAIL row and fails over budget. They go into
 `docs/open-issues.md` under **RAM watch**, dated. A miss is reported, not tuned away by raising the budget. React's dev
-build adds work per render (the Run office's busy miss), so the busy figures are read again by hand on a production
-build with the Office line in the RAM panel, and that reading goes into RAM watch too.
+build adds work per render (the Run office's busy miss), so the busy figures are read again on a production build with
+the Office line in the RAM panel once the run has landed. That reading is not the run's: it is the effort chunk
+`Re-measure: cockpit office busy on a production build`, and it goes into RAM watch too.
 
 ## Cost to build
 
