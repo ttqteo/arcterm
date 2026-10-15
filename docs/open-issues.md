@@ -729,22 +729,18 @@ Tracked in their own initiatives, not here:
   after off. One budget missed: 1228 ms to draw on the first open (budget 150 ms). Not Jarvis's floor: reloaded
   first opens read 235–506 ms with it and 327–652 ms with it taken out (warm opens 107–140 against 85–158 ms), so it is
   this machine and the dev build. Re-measure the open on a production build or a quiet machine.
-- **Cockpit office** (2026-10-15, `cockpit-office-bench`, 73 people, dev app in headless Chrome on the Mac, a loaded
-  8 GB machine): heap −4.13 MB, −664 DOM nodes (the office replaces the Cards grid, so both read below Cards), busy
-  −4.7 % over Cards while the boss and three walkers walk (22 % raw, baseline 26.7 %), −6.4 % under reduced motion,
-  −15.2 % in a quiet office, 150 sprites, +2.16 MB after back to Cards, 65 ms to draw. Budgets: 5 MB, 2,000, 2 %,
-  0.5 %, 0.3 %, 600, 1 MB, 150 ms: every budget held. The earlier row 7, read from the first Cards read, read 0.94, 1.16,
-  1.09 and 2.16 MB in four runs and no longer holds; a control run that never opened the office read +1.56 MB on the
-  same step, so most of it is the page's own growth, not the office. Busy is from React's dev build (a performance.measure per
-  render); the production-build reading is the effort chunk 'Re-measure: cockpit office busy on a production build'.
-  Row 7 now holds what a second Office round trip adds (2026-10-15, three runs, 76 people: 48 desks, 27 seats and the
-  boss): +0.01, −1.99 and −2.81 MB back in Cards, all within 1 MB (the first return over the first Cards read read
-  −0.6, +1.89 and +2.39 MB, printed for information). The first trip's figure is the dev page's own growth (+1.56 MB
-  with the office never opened), so a second trip is what shows whether the office keeps anything. Both reads come after
-  a forced GC (`metrics()`), yet the heap on the dev page still swings by up to about 3 MB between reads (−2.81 MB at
-  its lowest); the cause is not established. That swing is larger than the 1 MB budget, so a single read can mask a
-  small leak. Every other row held in all three runs (heap open −4.2 MB, −680 nodes, 143
-  to 145 sprites, 37 to 51 ms to draw).
+- **Cockpit office** (2026-10-15, `cockpit-office-bench`, 76 people: 48 desks, 27 seats and the boss; dev app in
+  headless Chrome on the Mac, a loaded 8 GB machine): every budget held. Heap −4.13 MB and −664 DOM nodes (the office
+  replaces the Cards grid, so both read below Cards); busy −4.7 % over Cards while the boss and three walkers walk (22 %
+  raw, baseline 26.7 %), −6.4 % under reduced motion, −15.2 % in a quiet office; 143 to 150 sprites; 37 to 65 ms to
+  draw. Budgets: 5 MB, 2,000, 2 %, 0.5 %, 0.3 %, 600, 1 MB, 150 ms. Busy is from React's dev build (a
+  performance.measure per render) and sits inside the baseline's noise; the production-build reading is the effort chunk
+  'Re-measure: cockpit office busy on a production build'. Row 7 holds what a second Office round trip adds back in
+  Cards: +0.01, −1.99 and −2.81 MB in three runs, −2.8 MB in the run's Final. Read from the first Cards read, as the
+  spec first had it, the same row read −0.6 to +2.39 MB over seven runs, and a control run that never opened the office
+  read +1.56 MB on that step: the dev page's own growth. Both reads come after a forced GC (`metrics()`), yet the dev
+  page's heap still swings by up to about 3 MB between reads; the cause is not established, and a swing that size can
+  hide a leak under the 1 MB budget.
 
 ---
 

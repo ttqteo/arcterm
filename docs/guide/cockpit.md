@@ -123,8 +123,9 @@ Finished window (mục **Idle** dưới lưới) ngồi ở phòng chờ, nên t
 
 - **Mỗi project là một dải**: bên trái là phòng của các agent (mỗi agent một bàn, quay mặt ra phía bạn), bên phải
   mỗi run một phòng họp, lead ngồi đầu bàn, worker ngồi quanh, màn hình trên tường là DAG của run. **Sảnh** ở giữa có
-  phòng chờ (TV, sofa, máy cà phê): agent idle quá Finished window ra máy cà phê, sau 10 phút thì lên sofa. Agent
-  không có project ngồi ở phòng **Home** cạnh cửa vào.
+  phòng chờ (TV, sofa, máy cà phê): agent idle quá Finished window ra máy cà phê, sau 10 phút thì lên sofa. Phòng
+  chờ có 5 chỗ (3 ghế sofa, 2 chỗ đứng); ai tới sau khi hết chỗ thì dòng `+N in the lounge` đếm, bàn của họ vẫn trống.
+  Agent không có project ngồi ở phòng **Home** cạnh cửa vào.
 - **Chỉ thứ cần bạn mới nổi**: dưới bàn là tên agent; chữ trạng thái chỉ hiện **Needs you** (vàng, kèm dấu `!`) và
   **done**. Phòng không ai làm thì tắt đèn. Rê chuột lên bàn để xem trạng thái đầy đủ.
 - **Bạn là sếp**: `←` `↑` `↓` `→` để đi (tường chặn, cửa đi qua được), `j` / `k` tới bàn kế, `n` hiện lối đi chấm
