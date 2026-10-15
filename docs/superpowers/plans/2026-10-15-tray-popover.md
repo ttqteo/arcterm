@@ -35,8 +35,8 @@ guarded process stop.
   `pkg/wconfig/metaconsts.go`): edit Go, run `task generate`.
 - On this 8 GB Mac prefix the typecheck and Vite builds with `NODE_OPTIONS=--max-old-space-size=4096`.
 - cargo is off the agent PATH on this Mac: run Rust commands with `PATH="/opt/homebrew/opt/rustup/bin:$PATH"`.
-- No new npm packages and no new Rust crates. Allowed: the `tray-icon` feature of `tauri`, and AppKit features of the
-  `objc2-app-kit` dependency `src-tauri/Cargo.toml` already has.
+- No new npm packages and no new Rust crates. Allowed: the `tray-icon` feature of `tauri`, and features of the
+  `objc2-app-kit` and `objc2-foundation` dependencies `src-tauri/Cargo.toml` already has.
 - Commits carry no Co-Authored-By or other attribution trailer.
 
 ## Review Focus
@@ -57,7 +57,7 @@ guarded process stop.
 ### Task 1: Machine stats, the memory-pressure event and the `app:tray` setting (Go)
 
 **Depends on:** none
-**Files:** `pkg/machinestats/machinestats.go`, `pkg/machinestats/machinestats_test.go`, `pkg/machinestats/volume_darwin.go`, `pkg/machinestats/volume_windows.go`, `pkg/machinestats/volume_other.go`, `pkg/wshrpc/wshrpctypes_machine.go`, `pkg/wshrpc/wshrpctypes.go`, `pkg/wshrpc/wshserver/wshserver_machine.go`, `pkg/wps/wpstypes.go`, `pkg/tsgen/tsgenevent.go`, `cmd/server/main-server.go`, `pkg/wconfig/settingsconfig.go`, `pkg/wconfig/metaconsts.go`, `pkg/wshrpc/wshclient/wshclient.go`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`, `frontend/types/waveevent.d.ts`
+**Files:** `pkg/machinestats/machinestats.go`, `pkg/machinestats/machinestats_test.go`, `pkg/machinestats/volume_darwin.go`, `pkg/machinestats/volume_windows.go`, `pkg/machinestats/volume_other.go`, `pkg/wshrpc/wshrpctypes_machine.go`, `pkg/wshrpc/wshrpctypes.go`, `pkg/wshrpc/wshserver/wshserver_machine.go`, `pkg/wps/wpstypes.go`, `pkg/tsgen/tsgenevent.go`, `cmd/server/main-server.go`, `pkg/wconfig/settingsconfig.go`, `pkg/wconfig/metaconsts.go`, `schema/settings.json`, `pkg/wshrpc/wshclient/wshclient.go`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`, `frontend/types/waveevent.d.ts`
 
 **Interfaces:**
 - Produces (Go): `machinestats.Read(ctx) (machinestats.Stats, error)`, `machinestats.PressureWord(jobqueue.Pressure) string`
@@ -575,15 +575,16 @@ In `pkg/wconfig/settingsconfig.go`, after `AppDisableCtrlShiftDisplay` (line 45)
 
 - [ ] **Step 6: Generate, build, vet**
 
-Run: `task generate && go build ./cmd/... ./pkg/... && go vet ./pkg/machinestats/... ./pkg/wshrpc/...`
+Run: `task generate && go build ./cmd/... ./pkg/... && go vet ./pkg/machinestats/... ./pkg/wshrpc/... && go test ./pkg/wconfig/ -run '^TestSettingsKeysInSync$'`
 Expected: no errors. `git diff --stat` shows `frontend/app/store/wshclientapi.ts` with `GetMachineStatsCommand`,
 `frontend/types/waveevent.d.ts` with `memorypressure`, `frontend/types/gotypes.d.ts` with `MachineStatsData` and
-`"app:tray"`.
+`"app:tray"`, and `schema/settings.json` with `"app:tray"` (`task generate`'s `build:schema` writes it;
+`TestSettingsKeysInSync` fails without it).
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add pkg/machinestats pkg/wshrpc/wshrpctypes_machine.go pkg/wshrpc/wshrpctypes.go pkg/wshrpc/wshserver/wshserver_machine.go pkg/wps/wpstypes.go pkg/tsgen/tsgenevent.go cmd/server/main-server.go pkg/wconfig/settingsconfig.go pkg/wconfig/metaconsts.go pkg/wshrpc/wshclient/wshclient.go frontend/app/store/wshclientapi.ts frontend/types/gotypes.d.ts frontend/types/waveevent.d.ts
+git add pkg/machinestats pkg/wshrpc/wshrpctypes_machine.go pkg/wshrpc/wshrpctypes.go pkg/wshrpc/wshserver/wshserver_machine.go pkg/wps/wpstypes.go pkg/tsgen/tsgenevent.go cmd/server/main-server.go pkg/wconfig/settingsconfig.go pkg/wconfig/metaconsts.go schema/settings.json pkg/wshrpc/wshclient/wshclient.go frontend/app/store/wshclientapi.ts frontend/types/gotypes.d.ts frontend/types/waveevent.d.ts
 git commit -m "feat(tray): machine stats, the memorypressure event and app:tray for the menu bar popover"
 ```
 
@@ -597,6 +598,7 @@ git commit -m "feat(tray): machine stats, the memorypressure event and app:tray 
   `memusage.Sampler.Footprint`, `GetConsumersCommand` in `wshserver_consumers.go:69`.
 - Produces (Go): `memusage.Heaviest(t Table, root int32, footprint func(int32) (uint64, bool)) (pid int32, bytes uint64, ok bool)`,
   `memusage.IsDescendant(t Table, root, pid int32) bool`, `memusage.ShortCommand(args []string) string`,
+  `memusage.AgentPid(t Table, root int32, isShell func(pid int32) bool) int32`,
   `memusage.StopTree(t Table, pid int32, grace time.Duration, signal func(int32, syscall.Signal) error, alive func(int32) bool) error` (not Windows).
 - Produces (wire): `ConsumerAgent.Heaviest *ConsumerProcess "heaviest"` with `ConsumerProcess{ Pid int32 "pid";
   Command string "command"; Bytes uint64 "bytes" }`; `StopProcessCommand(ctx, CommandStopProcessData{ BlockId string
@@ -649,6 +651,40 @@ func TestIsDescendantRefuses(t *testing.T) {
 		if IsDescendant(tb, 10, pid) {
 			t.Fatalf("%d must be refused: the agent itself, an outsider, a parent, or gone", pid)
 		}
+	}
+}
+
+// an agent block runs `$SHELL -c <cmd>`; fish and pwsh do not exec, so 30 is that shell, 31 the agent under it, and
+// 32, 33 the agent's commands
+func wrappedTable() Table {
+	return NewTable(map[int32]int32{30: 1, 31: 30, 32: 31, 33: 32})
+}
+
+func TestAgentPidSeesThroughAShellThatDidNotExec(t *testing.T) {
+	tb := wrappedTable()
+	isShell := func(p int32) bool { return p == 30 }
+	agent := AgentPid(tb, 30, isShell)
+	if agent != 31 {
+		t.Fatalf("AgentPid = %d, want 31: the shell's one child is the agent", agent)
+	}
+	foot := map[int32]uint64{31: 9000, 32: 100, 33: 500}
+	pid, _, ok := Heaviest(tb, agent, func(p int32) (uint64, bool) { v, ok := foot[p]; return v, ok })
+	if !ok || pid != 33 {
+		t.Fatalf("got %d %v, want 33 true: the agent itself is never offered", pid, ok)
+	}
+	if IsDescendant(tb, agent, 31) {
+		t.Fatal("a stop on the wrapped agent itself must be refused")
+	}
+}
+
+func TestAgentPidKeepsTheRoot(t *testing.T) {
+	// bash and zsh exec the command, so the root is the agent
+	if got := AgentPid(heaviestTable(), 10, func(int32) bool { return false }); got != 10 {
+		t.Fatalf("a root that is not a shell is the agent: got %d", got)
+	}
+	// a shell with two children wraps no single agent
+	if got := AgentPid(heaviestTable(), 10, func(int32) bool { return true }); got != 10 {
+		t.Fatalf("a shell with two children stays the root: got %d", got)
 	}
 }
 
@@ -727,7 +763,7 @@ func TestStopTreeOnAGonePid(t *testing.T) {
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `go test ./pkg/memusage/ -run 'Heaviest|IsDescendant|ShortCommand|StopTree'`
+Run: `go test ./pkg/memusage/ -run 'Heaviest|IsDescendant|AgentPid|ShortCommand|StopTree'`
 Expected: FAIL to build (`undefined: Heaviest`, …).
 
 - [ ] **Step 3: Write the helpers**
@@ -769,6 +805,17 @@ func Heaviest(t Table, root int32, footprint func(pid int32) (uint64, bool)) (pi
 // IsDescendant says whether pid is still under root now: never root itself, so a stop cannot end the agent.
 func IsDescendant(t Table, root, pid int32) bool {
 	return pid != root && slices.Contains(t.Tree(root), pid)
+}
+
+// AgentPid is the agent's own process under its block's root. An agent block runs `$SHELL -c <cmd>`
+// (pkg/shellexec/shellexec.go): bash and zsh exec the command, so the root is the agent, but fish and pwsh keep the
+// shell, and the agent is its one child. Heaviest and IsDescendant take this pid, so Free up never offers the agent
+// itself and a stop never ends it.
+func AgentPid(t Table, root int32, isShell func(pid int32) bool) int32 {
+	if kids := t.children[root]; len(kids) == 1 && isShell(root) {
+		return kids[0]
+	}
+	return root
 }
 
 // ShortCommand is a command line as a row shows it: the program's file name, then its arguments, cut to 60 runes.
@@ -896,7 +943,8 @@ and in the agent loop, after `a.RamBytes = &n` (line 105):
 
 ```go
 		if root, ok := roots[r.blockId]; ok && terr == nil {
-			if pid, b, ok := memusage.Heaviest(table, root, sampler.Footprint); ok {
+			agent := memusage.AgentPid(table, root, isShellProcess)
+			if pid, b, ok := memusage.Heaviest(table, agent, sampler.Footprint); ok {
 				a.Heaviest = &wshrpc.ConsumerProcess{Pid: pid, Command: commandOf(ctx, pid), Bytes: b}
 			}
 		}
@@ -929,10 +977,28 @@ package wshserver
 import (
 	"context"
 	"fmt"
+	"strings"
 
+	"github.com/shirou/gopsutil/v4/process"
 	"github.com/wavetermdev/waveterm/pkg/memusage"
+	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
+
+// isShellProcess says whether pid runs a shell: the wrapper an agent block's `$SHELL -c` leaves when the shell does
+// not exec its command (memusage.AgentPid).
+func isShellProcess(pid int32) bool {
+	p, err := process.NewProcess(pid)
+	if err != nil {
+		return false
+	}
+	name, err := p.Name()
+	if err != nil {
+		return false
+	}
+	name = strings.TrimSuffix(strings.ToLower(name), ".exe")
+	return name == "sh" || shellutil.GetShellTypeFromShellPath(name) != shellutil.ShellType_unknown
+}
 
 // StopProcessCommand ends one of an agent's descendant processes and its subtree, after checking that the pid is
 // still under that agent now: the Free up list can be seconds old, and a pid can exit and be reused meanwhile.
@@ -946,7 +1012,7 @@ func (ws *WshServer) StopProcessCommand(ctx context.Context, data wshrpc.Command
 	if err != nil {
 		return fmt.Errorf("reading the process list: %w", err)
 	}
-	if !memusage.IsDescendant(table, int32(root), data.Pid) {
+	if !memusage.IsDescendant(table, memusage.AgentPid(table, int32(root), isShellProcess), data.Pid) {
 		return fmt.Errorf("process %d is no longer one of that agent's commands", data.Pid)
 	}
 	return stopProcessTree(ctx, ws, table, data)
@@ -1030,7 +1096,8 @@ git commit -m "feat(tray): each agent's heaviest command on every OS, and StopPr
 - Produces: `trayicon::Rgba { width: u32, height: u32, px: Vec<u8> }`; `trayicon::mac_icon(dim: bool) -> Rgba`
   (48×36 black template glyph); `trayicon::win_icon(size: u32, count: u32, alert: bool, dim: bool) -> Rgba`;
   `trayicon::win_icon_size(scale: f64) -> u32`; `trayicon::badge_text(count: u32) -> String`;
-  `trayicon::mac_title(count: u32, alert: bool, offline: bool) -> String`;
+  `trayicon::mac_title(count: u32, alert: bool, offline: bool) -> String`; `trayicon::MAC_ALERT` (the `"●"` that
+  leads the title at critical pressure);
   `trayicon::tooltip(count: u32, alert: bool, offline: bool) -> String`;
   `trayicon::R { x: f64, y: f64, w: f64, h: f64 }`;
   `trayicon::popover_origin(icon: R, size: (f64, f64), work: R) -> (f64, f64)` (all physical px).
@@ -1105,8 +1172,8 @@ mod tests {
         assert_eq!(mac_title(0, false, false), "");
         assert_eq!(mac_title(4, false, false), "4");
         assert_eq!(mac_title(12, false, false), "12");
-        assert_eq!(mac_title(4, true, false), "! 4");
-        assert_eq!(mac_title(0, true, false), "!");
+        assert_eq!(mac_title(4, true, false), format!("{MAC_ALERT} 4"));
+        assert_eq!(mac_title(0, true, false), MAC_ALERT);
         assert_eq!(mac_title(4, true, true), "");
         assert_eq!(tooltip(0, false, false), "arcterm");
         assert_eq!(tooltip(4, true, false), "arcterm: memory pressure critical, 4 waiting on you");
@@ -1129,7 +1196,7 @@ mod tests {
     fn popover_stands_on_a_bottom_taskbar() {
         let icon = R { x: 1700.0, y: 1040.0, w: 24.0, h: 32.0 };
         let (x, y) = popover_origin(icon, (360.0, 590.0), WIN_WORK);
-        assert_eq!(y, 1040.0 - 590.0 - 8.0);
+        assert_eq!(y, 1032.0 - 590.0 - 8.0); // GAP above the work area's bottom, the taskbar's top
         assert_eq!(x, 1712.0 - 180.0);
     }
 
@@ -1345,12 +1412,16 @@ pub fn badge_text(count: u32) -> String {
     }
 }
 
-/// The text beside the macOS glyph. Task 4's spike may replace the "!" with a red dot in an attributed title.
+/// What leads the macOS title at critical memory pressure: a dot Task 4 colours red through the status item's
+/// attributed title, or "!" when that cannot be done (the spec's fallback, `! 4`).
+pub const MAC_ALERT: &str = "●";
+
+/// The text beside the macOS glyph.
 pub fn mac_title(count: u32, alert: bool, offline: bool) -> String {
     match (offline, alert, count) {
         (true, _, _) => String::new(),
-        (false, true, 0) => "!".to_string(),
-        (false, true, n) => format!("! {n}"),
+        (false, true, 0) => MAC_ALERT.to_string(),
+        (false, true, n) => format!("{MAC_ALERT} {n}"),
         (false, false, 0) => String::new(),
         (false, false, n) => n.to_string(),
     }
@@ -1425,7 +1496,7 @@ git commit -m "feat(tray): the tray icon's pixels (template glyph, Windows badge
 ### Task 4: The tray icon and its popover window (Tauri host)
 
 **Depends on:** Task 3
-**Files:** `src-tauri/src/tray.rs`, `src-tauri/src/main.rs`, `src-tauri/src/macwindow.rs`, `src-tauri/src/applog.rs`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `src-tauri/capabilities/tray.json`, `docs/reference/architecture.md`
+**Files:** `src-tauri/src/tray.rs`, `src-tauri/src/main.rs`, `src-tauri/src/macwindow.rs`, `src-tauri/src/applog.rs`, `src-tauri/src/trayicon.rs`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `src-tauri/capabilities/tray.json`, `docs/reference/architecture.md`
 
 **Interfaces:**
 - Consumes: everything Task 3 produces.
@@ -1439,7 +1510,9 @@ git commit -m "feat(tray): the tray icon's pixels (template glyph, Windows badge
 - [ ] **Step 1: Turn the feature on**
 
 In `src-tauri/Cargo.toml`: `tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }`. In the macOS
-target dependencies, add `"NSPanel"` (and `"NSResponder"` if the build asks for it) to `objc2-app-kit`'s features.
+target dependencies, add `"NSPanel"`, `"NSStatusItem"`, `"NSStatusBarButton"`, `"NSColor"`, `"NSFont"` and
+`"NSAttributedString"` to `objc2-app-kit`'s features, and `"NSAttributedString"` and `"NSRange"` to
+`objc2-foundation`'s (plus any other feature of those two the build asks for).
 Run `PATH="/opt/homebrew/opt/rustup/bin:$PATH" cargo build --manifest-path src-tauri/Cargo.toml` so `Cargo.lock`
 updates. Expected: builds.
 
@@ -1515,6 +1588,44 @@ pub fn show_as_panel(_window: &WebviewWindow) {}
 the window's own class and only add the style mask, `orderFrontRegardless` and `makeKeyWindow` (no Tauri `show`, no
 `set_focus`, which activate the app), and write in the commit message which one shipped.
 
+- [ ] **Step 3b: The red dot beside the count (macOS)**
+
+The spec's red dot at critical pressure: a template image is tinted whole, so the dot is the title's first character
+(`trayicon::MAC_ALERT`, `"●"`), coloured red through the status item's attributed title. tray-icon 0.24.1 (pinned by
+Tauri 2.11.3) gives the `NSStatusItem` through `TrayIcon::with_inner_tray_icon(|t| t.ns_status_item())`. In
+`macwindow.rs`'s macOS module, beside `show_as_panel`:
+
+```rust
+    /// Colours the first character of the status item's title (trayicon::MAC_ALERT) red, keeping the button's own
+    /// font, so the red dot shows beside the count at critical memory pressure. Call it after set_title(title).
+    pub fn tint_tray_alert(tray: &tauri::tray::TrayIcon, title: String) {
+        let _ = tray.with_inner_tray_icon(move |inner| {
+            let (Some(item), Some(mtm)) = (inner.ns_status_item(), MainThreadMarker::new()) else {
+                return;
+            };
+            let Some(button) = (unsafe { item.button(mtm) }) else {
+                return;
+            };
+            let text = NSMutableAttributedString::from_nsstring(&NSString::from_str(&title));
+            let whole = NSRange::new(0, text.length());
+            let dot = NSRange::new(0, "●".encode_utf16().count());
+            unsafe {
+                if let Some(font) = button.font() {
+                    text.addAttribute_value_range(NSFontAttributeName, &font, whole);
+                }
+                text.addAttribute_value_range(NSForegroundColorAttributeName, &NSColor::systemRedColor(), dot);
+            }
+            button.setAttributedTitle(&text);
+        });
+    }
+```
+
+and the public wrapper beside `show_as_panel`'s, a no-op off macOS. Follow objc2 0.6.4 / objc2-app-kit 0.3.2's real
+names where these differ (`initWithString` for the constructor, the casts `addAttribute_value_range` wants). If it
+cannot be built against those crates, set `trayicon::MAC_ALERT` to `"!"` (and nothing calls `tint_tray_alert`), so the
+title reads `! 4`, the spec's fallback, and write in the commit message which one shipped. Whether the dot shows red
+on a real menu bar is a hand check after the run.
+
 - [ ] **Step 4: tray.rs**
 
 Create `src-tauri/src/tray.rs`:
@@ -1555,6 +1666,8 @@ struct State {
     icon: Option<R>,
     height: Option<f64>,
     closed_at: Option<Instant>,
+    // the click that opened the popover, until its page says hello: the cold open's cost, logged
+    opened_at: Option<Instant>,
 }
 
 fn state() -> &'static Mutex<State> {
@@ -1618,7 +1731,11 @@ fn apply(app: &AppHandle, st: &State) {
     {
         let _ = tray.set_icon_as_template(true);
         let title = trayicon::mac_title(st.count, st.alert, st.offline);
-        let _ = tray.set_title(if title.is_empty() { None } else { Some(title) });
+        // Some(""), never None: tray-icon 0.24.1's set_title(None) leaves the old title on the button
+        let _ = tray.set_title(Some(title.clone()));
+        if title.starts_with(trayicon::MAC_ALERT) {
+            crate::macwindow::tint_tray_alert(&tray, title);
+        }
     }
     let _ = tray.set_tooltip(Some(trayicon::tooltip(st.count, st.alert, st.offline)));
     let _ = tray.set_visible(st.visible || st.offline);
@@ -1678,6 +1795,7 @@ fn toggle(app: &AppHandle, rect: Rect) {
         let p = rect.position.to_physical::<f64>(scale);
         let z = rect.size.to_physical::<f64>(scale);
         s.icon = Some(R { x: p.x, y: p.y, w: z.width, h: z.height });
+        s.opened_at = Some(Instant::now());
     }
     if let Err(e) = open(app) {
         log_line(&format!("[tray] opening the popover failed: {e}"));
@@ -1761,6 +1879,11 @@ fn on_act(app: &AppHandle, payload: &str) {
     let kind = v.get("kind").and_then(|k| k.as_str()).unwrap_or("");
     match kind {
         "hello" => {
+            // the spec keeps the window hidden after its first open instead, if this is past 0.5 s on the Mac
+            let opened = state().lock().unwrap().opened_at.take();
+            if let Some(t) = opened {
+                log_line(&format!("[tray] popover ready {} ms after the click", t.elapsed().as_millis()));
+            }
             if state().lock().unwrap().offline {
                 let _ = app.emit_to(TRAY_LABEL, "tray:offline", serde_json::json!({}));
             }
@@ -1845,7 +1968,7 @@ Expected: tests pass, builds with no warnings from `tray.rs` or `trayicon.rs`.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add src-tauri/src/tray.rs src-tauri/src/main.rs src-tauri/src/macwindow.rs src-tauri/src/applog.rs src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/capabilities/tray.json docs/reference/architecture.md
+git add src-tauri/src/tray.rs src-tauri/src/main.rs src-tauri/src/macwindow.rs src-tauri/src/applog.rs src-tauri/src/trayicon.rs src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/capabilities/tray.json docs/reference/architecture.md
 git commit -m "feat(tray): the menu bar / tray icon and its popover window, a non-activating panel on macOS"
 ```
 
@@ -1962,6 +2085,7 @@ export interface TraySnapshot {
     usage: TrayUsage | null;
     storage: TrayStorage | null; // null until Settings → Storage has scanned once
     consumers: TrayConsumers | null; // read only while Free up shows
+    heardAt: number | null; // when the cockpit last got an answer from wavesrv: the offline page's "Last heard"
 }
 
 export type TrayAct =
@@ -2898,6 +3022,7 @@ import { LoadingPage, MainPage, OfflinePage } from "@/app/cockpit/traypage";
 import { pageState } from "@/app/cockpit/trayformat";
 import { FreeUpPage, StoragePage } from "@/app/cockpit/traysubpages";
 import type { TrayAct, TrayPage, TraySnapshot } from "@/app/cockpit/traytypes";
+import { PopoverReveal } from "@/app/element/popoverreveal";
 import { useApplyCockpitTheme } from "@/app/view/agents/themestore";
 import { loadFonts } from "@/util/fontutil";
 import { invoke } from "@tauri-apps/api/core";
@@ -2928,7 +3053,8 @@ function TrayRoot() {
     useApplyCockpitTheme();
     const [snap, setSnap] = useState<TraySnapshot | null>(fixture?.snapshot ?? null);
     const [offline, setOffline] = useState(fixture?.offline ?? false);
-    const [lastHeard, setLastHeard] = useState<number | null>(fixture?.lastHeard ?? null);
+    // not the last snapshot's arrival: the cockpit keeps sending snapshots after wavesrv has gone
+    const lastHeard = snap?.heardAt ?? fixture?.lastHeard ?? null;
     const [page, setPageState] = useState<TrayPage>(fixture?.page ?? "main");
     const rootRef = useRef<HTMLDivElement>(null);
     const setPage = (p: TrayPage) => {
@@ -2941,10 +3067,7 @@ function TrayRoot() {
             return;
         }
         const unlisten = [
-            listen<TraySnapshot>("tray:snapshot", (e) => {
-                setSnap(e.payload);
-                setLastHeard(Date.now());
-            }),
+            listen<TraySnapshot>("tray:snapshot", (e) => setSnap(e.payload)),
             listen("tray:offline", () => setOffline(true)),
         ];
         send({ kind: "hello" });
@@ -2972,8 +3095,9 @@ function TrayRoot() {
         if (fixtureName != null || el == null) {
             return;
         }
+        // offsetHeight, not getBoundingClientRect: the reveal's scale must not shrink the window
         const ro = new ResizeObserver(() => {
-            void invoke("tray_popover_size", { height: Math.ceil(el.getBoundingClientRect().height) }).catch(() => {});
+            void invoke("tray_popover_size", { height: Math.ceil(el.offsetHeight) }).catch(() => {});
         });
         ro.observe(el);
         return () => ro.disconnect();
@@ -2981,12 +3105,12 @@ function TrayRoot() {
 
     const state = pageState(snap, offline);
     return (
-        <div
-            ref={rootRef}
-            role="dialog"
-            aria-label="arcterm"
-            data-tray-page={state === "ready" ? page : state}
-            className="w-[360px] rounded-lg border border-edge-strong bg-surface p-2.5 font-sans"
+        <div ref={rootRef} role="dialog" aria-label="arcterm" data-tray-page={state === "ready" ? page : state} className="w-[360px]">
+        {/* the shared popover reveal (reduced motion respected), from the icon's side; the shadow is the window's own */}
+        <PopoverReveal
+            open
+            origin={snap?.platform === "win" ? "bottom center" : "top center"}
+            className="rounded-lg border border-edge-strong bg-surface p-2.5 font-sans"
         >
             {state === "offline" ? (
                 <OfflinePage lastHeard={lastHeard} send={send} />
@@ -2999,6 +3123,7 @@ function TrayRoot() {
             ) : (
                 <MainPage s={snap} send={send} setPage={setPage} />
             )}
+        </PopoverReveal>
         </div>
     );
 }
@@ -3084,6 +3209,7 @@ const main: TraySnapshot = {
         arcBytes: 6.1 * GB,
         otherBytes: 8.7 * GB,
     },
+    heardAt: null,
 };
 ```
 
@@ -3281,7 +3407,7 @@ git commit -m "feat(tray): the popover's page — cards, Free up, Clean up, offl
 ### Task 6: The cockpit's bridge to the popover, the setting, and the changelog
 
 **Depends on:** Task 2, Task 4, Task 5
-**Files:** `frontend/app/cockpit/traysnapshot.ts`, `frontend/app/cockpit/traysnapshot.test.ts`, `frontend/app/cockpit/traybridge.tsx`, `frontend/app/view/agents/cockpitshell.tsx`, `frontend/app/view/jarvis/briefingmodel.ts`, `frontend/app/view/jarvis/briefingmodel.test.ts`, `frontend/app/view/agents/settingspages/general.tsx`, `frontend/app/view/agents/settingsmodel.ts`, `src-tauri/capabilities/default.json`, `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`
+**Files:** `frontend/app/cockpit/traysnapshot.ts`, `frontend/app/cockpit/traysnapshot.test.ts`, `frontend/app/cockpit/traybridge.tsx`, `frontend/app/view/agents/cockpitshell.tsx`, `frontend/app/view/jarvis/briefingmodel.ts`, `frontend/app/view/jarvis/briefingmodel.test.ts`, `frontend/app/view/agents/settingspages/general.tsx`, `frontend/app/view/agents/settingsmodel.ts`, `frontend/app/view/agents/settingsmodel.test.ts`, `src-tauri/capabilities/default.json`, `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`
 
 **Interfaces:**
 - Consumes: Task 1's `RpcApi.GetMachineStatsCommand`, `MachineStatsData`, `MemoryPressureData`, the `memorypressure`
@@ -3372,6 +3498,7 @@ function input(over: Partial<TraySnapshotInput> = {}): TraySnapshotInput {
             ],
         } as any,
         consumers: null,
+        heardAt: NOW - 3_000,
         now: NOW,
         ...over,
     };
@@ -3382,6 +3509,7 @@ describe("traySnapshot", () => {
         const s = traySnapshot(input());
         expect(s.machine?.pressure).toBe("high");
         expect(s.machine?.cpuSamples).toEqual([30, 38]);
+        expect(s.heardAt).toBe(NOW - 3_000);
         expect(s.jobs.map((j) => j.id)).toEqual(["j1", "j2"]);
         expect(s.jobs[0]).toMatchObject({ running: true, elapsedMs: 72_000, source: "tray-popover", reason: "" });
         expect(s.jobs[1]).toMatchObject({ running: false, position: 1, elapsedMs: 40_000, reason: "memory pressure high, one at a time" });
@@ -3401,6 +3529,7 @@ describe("traySnapshot", () => {
     it("reads Claude's 5h window, and leaves the chip out with no reading", () => {
         const s = traySnapshot(input());
         expect(s.usage?.pct).toBe(62);
+        expect(s.usage?.elapsedPct).toBeCloseTo(64, 5); // 1h48m left of 5h: a percent, not windowElapsed's fraction
         expect(s.usage?.level).toBe("warn");
         expect(s.usage?.title).toContain("week 31%");
         expect(traySnapshot(input({ donuts: [] })).usage).toBeNull();
@@ -3479,6 +3608,7 @@ export interface TraySnapshotInput {
     donuts: ProviderDonuts[];
     storage: StorageReport | null;
     consumers: CommandGetConsumersRtnData | null;
+    heardAt: number | null; // the bridge's last answered GetMachineStatsCommand
     now: number;
 }
 
@@ -3514,12 +3644,13 @@ export function traySnapshot(i: TraySnapshotInput): TraySnapshot {
     }));
     const claude = i.donuts.find((d) => d.provider === "claude");
     const pct = claude?.fivehour.pct;
+    const elapsed = claude == null ? undefined : windowElapsed(claude.fivehour.reset, FIVE_HOURS_MS, i.now);
     const usage =
         claude == null || pct == null
             ? null
             : {
                   pct,
-                  elapsedPct: windowElapsed(claude.fivehour.reset, FIVE_HOURS_MS, i.now) ?? null,
+                  elapsedPct: elapsed == null ? null : elapsed * 100, // windowElapsed is a 0-1 fraction
                   level: usageLevel(pct),
                   title:
                       "Claude's 5-hour window: " +
@@ -3597,6 +3728,7 @@ export function traySnapshot(i: TraySnapshotInput): TraySnapshot {
         usage,
         storage,
         consumers,
+        heardAt: i.heardAt,
     };
 }
 
@@ -3606,8 +3738,7 @@ export function trayBadge(rows: PeekRow[], pressure: string): { count: number; a
 ```
 
 `MachineStatsData`, `JobQueueData`, `StorageReport` and `CommandGetConsumersRtnData` need no import: the generated
-`frontend/types/gotypes.d.ts` declares them globally. Check `windowElapsed`'s unit against how `usagemeters.tsx` places the tick (its `left` style around
-line 219) and convert to a percent if it returns a fraction. Run the tests; expected PASS.
+`frontend/types/gotypes.d.ts` declares them globally. Run the tests; expected PASS.
 
 - [ ] **Step 4: The bridge**
 
@@ -3679,6 +3810,8 @@ export function TrayBridge({ model }: { model: AgentsViewModel }) {
     const [open, setOpen] = useState(false);
     const [page, setPage] = useState<TrayPage>("main");
     const [machine, setMachine] = useState<MachineStatsData | null>(null);
+    // when wavesrv last answered: the popover's offline page shows it, frozen once wavesrv has gone
+    const [heardAt, setHeardAt] = useState<number | null>(null);
     const jobQueue = useAtomValue(jobQueueAtom);
     const donuts = usePlanDonuts(model);
     const storage = useStorageReport(false);
@@ -3689,7 +3822,10 @@ export function TrayBridge({ model }: { model: AgentsViewModel }) {
     // the icon's red dot: one reading at start, then each change wavesrv publishes
     useEffect(() => {
         RpcApi.GetMachineStatsCommand(TabRpcClient)
-            .then((m) => setPressure(m.pressure))
+            .then((m) => {
+                setPressure(m.pressure);
+                setHeardAt(Date.now());
+            })
             .catch(() => {});
         return waveEventSubscribeSingle({
             eventType: "memorypressure",
@@ -3713,6 +3849,7 @@ export function TrayBridge({ model }: { model: AgentsViewModel }) {
                     if (live) {
                         setMachine(m);
                         setPressure(m.pressure);
+                        setHeardAt(Date.now());
                     }
                 })
                 .catch(() => {});
@@ -3726,8 +3863,8 @@ export function TrayBridge({ model }: { model: AgentsViewModel }) {
 
     const platform = isMacOS() ? "mac" : isWindows() ? "win" : "other";
     const snapshot = useMemo(
-        () => traySnapshot({ platform, machine, jobQueue, agents, peekRows, donuts, storage, consumers, now }),
-        [platform, machine, jobQueue, agents, peekRows, donuts, storage, consumers, now]
+        () => traySnapshot({ platform, machine, jobQueue, agents, peekRows, donuts, storage, consumers, heardAt, now }),
+        [platform, machine, jobQueue, agents, peekRows, donuts, storage, consumers, heardAt, now]
     );
     useEffect(() => {
         if (open) {
@@ -3882,9 +4019,24 @@ In `frontend/app/view/agents/settingspages/general.tsx`, beside the `window.auto
 ```
 
 with `const trayOn = (useAtomValue(getSettingsKeyAtom("app:tray")) as boolean | undefined) ?? true;` beside
-`autoSprout` (line 104). Register the row id `app.tray` in `frontend/app/view/agents/settingsmodel.ts` the way
-`window.autosprout` is registered there (its name "Menu bar icon", blurb "arcterm's icon beside the clock: what waits
-on you, memory, CPU and disk, a click away.").
+`autoSprout` (line 104). Register the row in `frontend/app/view/agents/settingsmodel.ts`'s General → Window card,
+after `window.autosprout` (around line 187):
+
+```ts
+                        {
+                            id: "app.tray",
+                            title: "Menu bar icon",
+                            desc: "arcterm's icon beside the clock: what waits on you, memory, CPU and disk, a click away.",
+                            key: "app:tray",
+                            scope: "synced",
+                            config: true,
+                        },
+```
+
+It is a config row in the Window card, so `frontend/app/view/agents/settingsmodel.test.ts`'s exact lists change: in
+"marks exactly the wconfig-backed rows as config rows" (around line 200) add `"app:tray"` right after
+`"window:autosprout"`, and in "puts each row in the card the spec names" (line 307) make `cards["general/window"]`
+`["window.minimize", "window.sproutcorner", "window.autosprout", "app.tray"]`.
 
 - [ ] **Step 7: The main window may raise itself**
 
@@ -3923,27 +4075,35 @@ In `CHANGELOG.md`'s top section (open `## Unreleased` above it if it has a date)
 
 - [ ] **Step 10: Test, typecheck, look**
 
-Run: `npx vitest run frontend/app/cockpit/ frontend/app/view/jarvis/briefingmodel.test.ts frontend/tauri/browsershim/browsershim.test.ts && NODE_OPTIONS=--max-old-space-size=4096 task check:ts`
+Run: `npx vitest run frontend/app/cockpit/ frontend/app/view/jarvis/briefingmodel.test.ts frontend/app/view/agents/settingsmodel.test.ts frontend/tauri/browsershim/browsershim.test.ts && NODE_OPTIONS=--max-old-space-size=4096 task check:ts`
 Expected: PASS, typecheck clean. Then with `task dev:browser` running:
 `node --experimental-websocket scripts/cdp/verify.mjs tray-settings-row tray-main surface-smoke` — all PASS.
 
 - [ ] **Step 11: Commit**
 
 ```bash
-git add frontend/app/cockpit/traysnapshot.ts frontend/app/cockpit/traysnapshot.test.ts frontend/app/cockpit/traybridge.tsx frontend/app/view/agents/cockpitshell.tsx frontend/app/view/jarvis/briefingmodel.ts frontend/app/view/jarvis/briefingmodel.test.ts frontend/app/view/agents/settingspages/general.tsx frontend/app/view/agents/settingsmodel.ts src-tauri/capabilities/default.json scripts/cdp/scenarios.mjs CHANGELOG.md
+git add frontend/app/cockpit/traysnapshot.ts frontend/app/cockpit/traysnapshot.test.ts frontend/app/cockpit/traybridge.tsx frontend/app/view/agents/cockpitshell.tsx frontend/app/view/jarvis/briefingmodel.ts frontend/app/view/jarvis/briefingmodel.test.ts frontend/app/view/agents/settingspages/general.tsx frontend/app/view/agents/settingsmodel.ts frontend/app/view/agents/settingsmodel.test.ts src-tauri/capabilities/default.json scripts/cdp/scenarios.mjs CHANGELOG.md
 git commit -m "feat(tray): the cockpit feeds the popover and the icon's count, Settings → General turns it off"
 ```
 
 ## After the run: hand checks on the Mac
 
-The Final scenarios cover the popover's page. These need the real app (`task dev`, then the installed build):
+The Final scenarios cover the popover's page, and only it. The icon is drawn by the host and the window's behaviour
+is the host's, and on a Mac the Final runs in headless Chrome with no Tauri host, so the spec leaves these as hand
+checks the run reports unverified. Their logic is unit-tested (Task 3: the title and badge per count, the red dot,
+the dimming, the popover's place). These need the real app (`task dev`, then the installed build):
 
-1. The template icon on a light and a dark menu bar; the count beside it; `! N` (or the red dot) at critical
-   pressure (`memory_pressure -S -l critical` in a terminal simulates it).
+1. The icon's states, one per board: the template glyph on a light and a dark menu bar; the count beside it
+   (`Main`); no count at 0 (`A-Quiet`); the red dot before the count at critical pressure (`A-Critical`;
+   `memory_pressure -S -l critical` in a terminal simulates it), or `! N` if Task 4 shipped the fallback; the dimmed
+   glyph with no count while wavesrv is gone (`A-Offline`, step 5).
 2. A click opens the popover under the icon, on a full-screen Space too, and **the cockpit does not come forward**.
-3. A click outside closes it; a second click on the icon closes it without reopening.
-4. Free up's Stop ends a real `sleep 600` started from an agent's shell, and the agent carries on.
-5. Kill wavesrv by its PID: the icon dims, the popover shows the offline page, Restart arcterm brings it back.
-6. Settings → General's toggle hides and shows the icon.
+3. The cold open: `waveapp.log`'s `[tray] popover ready N ms after the click` lines. Past 500 ms on the Mac, the
+   spec's fallback (keep the window hidden after its first open) becomes a follow-up.
+4. A click outside closes it; a second click on the icon closes it without reopening.
+5. Free up's Stop ends a real `sleep 600` started from an agent's shell, and the agent carries on.
+6. Kill wavesrv by its PID: the icon dims, the popover shows the offline page with the time wavesrv last answered,
+   Restart arcterm brings it back.
+7. Settings → General's toggle hides and shows the icon; the popover's gear opens Settings → General.
 
-Windows (no machine now): the tray icon, its badge, and the popover above the taskbar go unverified.
+Windows (no machine now): the tray icon, its badge (`Win-Main`), and the popover above the taskbar go unverified.
