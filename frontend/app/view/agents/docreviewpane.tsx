@@ -14,7 +14,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Check, FileText, MessageSquarePlus, Pencil, X } from "lucide-react";
+import { ArrowDown, Check, FileText, MessageSquarePlus, Pencil, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AgentsViewModel } from "./agents";
 import { askSentKey, type AgentVM } from "./agentsviewmodel";
@@ -41,6 +41,7 @@ import {
     isNarrow,
     leadLabel,
     metaLine,
+    outlineEntries,
     resolveRelative,
     reviewRows,
     sentenceMarks,
@@ -48,6 +49,7 @@ import {
     showsLabel,
     trayState,
     type ImageMark,
+    type OutlineEntry,
     type ReviewRow,
     type SentenceMark,
     type TrayState,
@@ -462,6 +464,7 @@ function Changes(p: {
 
     const { file } = splitPath(state.path);
     const afterSections = diff?.after.sections ?? [];
+    const outline = useMemo(() => outlineEntries(diff?.after.sections ?? []), [diff]);
     return (
         <div
             ref={scrollRef}
@@ -482,7 +485,12 @@ function Changes(p: {
                             scrollTo(target);
                         }
                     }}
-                    canFocus={(text) => focusTarget(text, afterSections) != null}
+                    focusTitle={(text) => {
+                        const target = focusTarget(text, afterSections);
+                        return target != null ? afterSections[target.sectionIndex].title : null;
+                    }}
+                    outline={outline}
+                    onSection={(sectionIndex) => scrollTo({ sectionIndex })}
                 />
                 {load == null ? (
                     <div aria-hidden="true" className="flex flex-col gap-2.5 pt-[26px]">
@@ -592,7 +600,9 @@ function Head(p: {
     sent: boolean;
     narrow: boolean;
     onFocus: (text: string) => void;
-    canFocus: (text: string) => boolean;
+    focusTitle: (text: string) => string | null;
+    outline: OutlineEntry[];
+    onSection: (sectionIndex: number) => void;
 }) {
     const items = (p.review?.items ?? []).map(focusItem);
     const numbered = items.filter((i) => i.n != null);
@@ -623,7 +633,7 @@ function Head(p: {
                             <FocusLink
                                 key={i}
                                 text={item.text}
-                                live={p.canFocus(item.text)}
+                                section={p.focusTitle(item.text)}
                                 onFocus={p.onFocus}
                                 className="flex items-baseline gap-2 text-left text-[13px] text-secondary"
                             >
@@ -643,7 +653,7 @@ function Head(p: {
                                 <FocusLink
                                     key={i}
                                     text={item.text}
-                                    live={p.canFocus(item.text)}
+                                    section={p.focusTitle(item.text)}
                                     onFocus={p.onFocus}
                                     className="flex items-baseline gap-[7px] rounded-[7px] border border-edge-mid bg-surface-raised px-[10px] py-[5px] text-left text-[12.5px] text-secondary"
                                 >
@@ -670,20 +680,49 @@ function Head(p: {
                         ? "Only what changed since your last review is marked."
                         : "Select text in the document to comment on it."}
                 </span>
+                {/* narrow, the column sits above the document, where a list of headings would only push it down */}
+                {!p.narrow && p.outline.length > 0 ? (
+                    <nav aria-label="Sections" data-doc-review-outline className="mt-[14px] flex min-h-0 flex-col">
+                        <span className="pb-[4px] text-[10.5px] font-bold uppercase tracking-[0.1em] text-muted">
+                            Sections
+                        </span>
+                        <div className="flex max-h-[360px] flex-col overflow-y-auto">
+                            {p.outline.map((e) => (
+                                <button
+                                    key={e.sectionIndex}
+                                    type="button"
+                                    data-doc-review-outline-entry={e.sectionIndex}
+                                    onClick={() => p.onSection(e.sectionIndex)}
+                                    className={cn(
+                                        "flex min-w-0 cursor-pointer items-baseline gap-[6px] rounded-[5px] py-[3px] pr-[6px] text-left text-[12.5px] text-secondary hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                                        OUTLINE_INDENT[e.depth]
+                                    )}
+                                >
+                                    {e.label != null ? (
+                                        <span className="flex-none text-[11px] text-muted">{e.label}</span>
+                                    ) : null}
+                                    <span className="truncate">{e.title}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </nav>
+                ) : null}
             </div>
         </div>
     );
 }
 
-// a focus item that names a section scrolls to it; one that names none is inert
+const OUTLINE_INDENT = ["pl-[6px]", "pl-[18px]", "pl-[30px]"];
+
+// a focus item that names a section scrolls to it, and its arrow says so; one that names none is inert
 function FocusLink(p: {
     text: string;
-    live: boolean;
+    section: string | null;
     onFocus: (text: string) => void;
     className: string;
     children: ReactNode;
 }) {
-    if (!p.live) {
+    if (p.section == null) {
         return (
             <span data-doc-review-focus="" className={p.className}>
                 {p.children}
@@ -694,10 +733,20 @@ function FocusLink(p: {
         <button
             type="button"
             data-doc-review-focus={p.text}
+            title={`Go to “${p.section}”`}
             onClick={() => p.onFocus(p.text)}
-            className={cn(p.className, "cursor-pointer hover:border-edge-strong hover:text-primary")}
+            className={cn(
+                p.className,
+                "group cursor-pointer hover:border-edge-strong hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            )}
         >
             {p.children}
+            <ArrowDown
+                size={12}
+                strokeWidth={2}
+                aria-hidden
+                className="flex-none self-center text-muted group-hover:text-primary"
+            />
         </button>
     );
 }

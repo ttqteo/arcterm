@@ -26,6 +26,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A Doc review lists the document's headings under Sections, beside the agent's ask: click one to jump there. The ask's
+  items that lead to a section now show an arrow, and one the agent wrote short ("New in Go" for "What is new in Go")
+  finds its section too.
 - **Claude highlights what to read**: in a Claude session, a reply that explains something draws its 2–4 must-read
   sentences on a tinted ground and dims the rest (`/skim` turns the dimming off), and a brainstorm highlights only the
   question waiting on you, its options left bright. A copy, the transcript and Conversation History get the reply

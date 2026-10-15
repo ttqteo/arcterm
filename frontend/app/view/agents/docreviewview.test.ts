@@ -12,6 +12,7 @@ import {
     isNarrow,
     leadLabel,
     metaLine,
+    outlineEntries,
     resolveRelative,
     reviewRows,
     runLabel,
@@ -281,9 +282,23 @@ describe("focusTarget", () => {
         expect(focusTarget("tightened the method overview wording", sections)).toEqual({ sectionIndex: 1 });
     });
 
+    it("falls back to the section whose title holds the item's lead, the shortest such title", () => {
+        const spec = [
+            { label: "Decisions", title: "Decisions" },
+            { label: "What is new in the Tauri host", title: "What is new in the Tauri host" },
+            { label: "What is new in Go", title: "What is new in Go" },
+            { label: "What is new in Go and Rust", title: "What is new in Go and Rust" },
+        ];
+        expect(focusTarget("New in Go: GetMachineStatsCommand, StopProcessCommand", spec)).toEqual({ sectionIndex: 2 });
+        expect(focusTarget("Tauri host — a tray icon", spec)).toEqual({ sectionIndex: 1 });
+    });
+
     it("is inert when nothing matches", () => {
         expect(focusTarget("tidied wording", sections)).toBeNull();
         expect(focusTarget("§9 is new", sections)).toBeNull();
+        // a lead matches whole words only, and the text after it never counts as one
+        expect(focusTarget("Intro: tidied", sections)).toBeNull();
+        expect(focusTarget("Wording: the method", sections)).toBeNull();
     });
 
     it("splits a chip's leading label from its text", () => {
@@ -293,6 +308,37 @@ describe("focusTarget", () => {
         });
         expect(leadLabel("5. thêm sơ đồ pipeline")).toEqual({ label: "5.", rest: "thêm sơ đồ pipeline" });
         expect(leadLabel("tidied wording")).toBeNull();
+    });
+});
+
+describe("outlineEntries", () => {
+    it("lists every heading, indented under the shallowest, without the front matter", () => {
+        const doc = md(
+            [
+                "Lead-in before any heading.",
+                "# Menu bar and tray popover",
+                "Intro.",
+                "## Decisions",
+                "### The icon",
+                "Icon.",
+                "#### Badge",
+                "Badge.",
+                "## 2. Verification",
+                "Checks.",
+            ].join("\n\n")
+        );
+        expect(outlineEntries(doc.sections)).toEqual([
+            { sectionIndex: 1, label: null, title: "Menu bar and tray popover", depth: 0 },
+            { sectionIndex: 2, label: null, title: "Decisions", depth: 1 },
+            { sectionIndex: 3, label: null, title: "The icon", depth: 2 },
+            { sectionIndex: 4, label: null, title: "Badge", depth: 2 },
+            { sectionIndex: 5, label: "2.", title: "Verification", depth: 1 },
+        ]);
+    });
+
+    it("is empty for a document with one heading or none", () => {
+        expect(outlineEntries(md("# Only\n\nText.").sections)).toEqual([]);
+        expect(outlineEntries(md("Just prose.").sections)).toEqual([]);
     });
 });
 

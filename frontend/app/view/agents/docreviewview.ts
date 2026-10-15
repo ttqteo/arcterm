@@ -215,9 +215,21 @@ export function leadLabel(text: string): { label: string; rest: string } | null 
     return { label: m[1], rest: text.slice(m[1].length).trim() };
 }
 
+// an item's lead, the words before its first `:` or ` — ` (`New in Go: …`)
+const LEAD = /^([^:—]+?)\s*(?::|\s—\s)/;
+const words = (s: string) => {
+    const w = s
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, " ")
+        .trim();
+    return ` ${w} `;
+};
+
 // Where a focus item scrolls: a leading `§` label, else a leading enumerator equal to a section's label, else the
-// section whose title the text names (the longest, so a short title can't claim a sentence about a longer one).
-// `¶n` after the label names a paragraph. null: the item names no section, so it is inert.
+// section whose title the text names (the longest, so a short title can't claim a sentence about a longer one), else
+// the section whose title holds the item's lead as whole words (the shortest, the closest fit: an agent shortens
+// `What is new in Go` to `New in Go: …`). `¶n` after the label names a paragraph. null: the item names no section,
+// so it is inert.
 export function focusTarget(
     text: string,
     sections: { label: string; title: string }[]
@@ -238,7 +250,43 @@ export function focusTarget(
             best = i;
         }
     });
+    if (best >= 0) {
+        return { sectionIndex: best };
+    }
+    const lead = LEAD.exec(text)?.[1];
+    const want = lead != null ? words(lead) : " ";
+    if (want.trim() === "") {
+        return null;
+    }
+    sections.forEach((s, i) => {
+        if (words(s.title).includes(want) && (best < 0 || s.title.length < sections[best].title.length)) {
+            best = i;
+        }
+    });
     return best >= 0 ? { sectionIndex: best } : null;
+}
+
+export interface OutlineEntry {
+    sectionIndex: number;
+    label: string | null; // shown before the title when the heading carries one (`2.`, `§3`)
+    title: string;
+    depth: number; // 0–2, under the shallowest heading
+}
+
+// The outline beside the ask: every heading, so any part of a long document is one click away. The front matter (the
+// text before the first heading) is not a heading, and a document with one heading has nothing to jump between.
+export function outlineEntries(sections: { level: number; label: string; title: string }[]): OutlineEntry[] {
+    const headed = sections.map((s, i) => ({ s, i })).filter(({ s }) => s.level > 0);
+    if (headed.length < 2) {
+        return [];
+    }
+    const top = Math.min(...headed.map(({ s }) => s.level));
+    return headed.map(({ s, i }) => ({
+        sectionIndex: i,
+        label: showsLabel(s) ? s.label : null,
+        title: s.title,
+        depth: Math.min(s.level - top, 2),
+    }));
 }
 
 // GitHub's heading slug: lower case, punctuation dropped (letters and marks of any script kept), spaces to hyphens
