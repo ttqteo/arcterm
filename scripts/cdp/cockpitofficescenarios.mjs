@@ -137,9 +137,13 @@ export function makeCockpitOfficeScenarios(fx) {
                 return steps;
             }
 
+            // 0. opening the office draws the boss with no card open; a move opens it
+            let p = await settleBoss(h);
+            rec("0. opening the office draws the boss at a desk with its card shut", p?.boss && p.popup === "", JSON.stringify({ cursor: p?.cursor, popup: p?.popup }));
+
             // 1. Main: quill's card beside its desk
             await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-quill"))})?.click()`);
-            let p = await settleBoss(h);
+            p = await settleBoss(h);
             rec(
                 "1. a click on quill's desk walks the boss there and opens its card beside the desk",
                 p?.cursor === "fx-office-quill" && p.popup === "agent",

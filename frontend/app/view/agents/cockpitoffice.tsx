@@ -461,14 +461,16 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     };
     const kick = useWalkLoop(stepAll);
 
-    const goTo = (key: string) => {
+    const goTo = (key: string, open = true) => {
         const b = globalStore.get(bossAtom);
         const spot = spotOf(planRef.current, key);
         if (!b || !spot) {
             return;
         }
         arrivedRef.current = key;
-        globalStore.set(popupHiddenAtom, false);
+        if (open) {
+            globalStore.set(popupHiddenAtom, false);
+        }
         if (!movingRef.current) {
             globalStore.set(bossAtom, { ...b, at: spot, path: [], holding: undefined, dir: "up" });
             return;
@@ -565,7 +567,8 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     };
     const onPick = useCallback((key: string) => pickRef.current(key), []);
 
-    // the boss comes to where the Cockpit's cursor already is (a pick in the rail, Needs you, a reload)
+    // the boss comes to where the Cockpit's cursor already is (a pick in the rail, Needs you, a reload); opening the
+    // office draws it there with the card shut, which the next move (a click, j/k, n, an arrow) opens
     useEffect(() => {
         if (width === 0) {
             return;
@@ -578,11 +581,13 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                     y: plan.lounge.y + plan.lounge.h - 20,
                 };
             globalStore.set(bossAtom, { at, path: [], dir: "up", speed: BOSS_SPEED });
+            globalStore.set(popupHiddenAtom, true);
             arrivedRef.current = cursorId;
             return;
         }
         if (cursorId && cursorId !== arrivedRef.current) {
-            goTo(cursorId);
+            // the Cockpit settles its first cursor just after the office opens: the boss walks there, the card stays shut
+            goTo(cursorId, arrivedRef.current != null);
         }
     }, [cursorId, width > 0]);
 

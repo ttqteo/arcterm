@@ -41,6 +41,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   longer sits under the ones already done.
 - **A clearer agent rail**: the session's context, spend and facts sit on their own tile, the list headers (Files
   changed, Servers…) read brighter, and a short rule sets the Overview and Files tabs apart from the counts after them.
+- **The Office opens with no card**: switching to the Office shows the boss at its desk with the card shut; the card
+  opens once you walk to a desk (a click, `j`/`k`, `n`), and Esc still closes it.
 
 ### Fixed
 
