@@ -152,15 +152,14 @@ function useBobFrame(): 0 | 1 {
     return frame;
 }
 
-// Sprout's 64px box: the window's corner away from where the list, the bubble and the chat open, 4px off it, since
-// macOS rounds the window's corners (~12pt) and cut the corner off the rooftop, 2px in its box
+// Sprout's 64px box: the window's corner away from where the list, the bubble and the chat open
 function boxCorner(sides: MiniSides): string {
-    return cn(sides.h === "left" ? "right-1" : "left-1", sides.v === "up" ? "bottom-1" : "top-1");
+    return cn(sides.h === "left" ? "right-0" : "left-0", sides.v === "up" ? "bottom-0" : "top-0");
 }
 
 // the list and the reply bubble: beside Sprout toward the middle of the screen, level with its feet or its head
 export function besideSprout(sides: MiniSides): string {
-    return cn(sides.h === "left" ? "right-[76px]" : "left-[76px]", sides.v === "up" ? "bottom-3" : "top-3");
+    return cn(sides.h === "left" ? "right-[72px]" : "left-[72px]", sides.v === "up" ? "bottom-2" : "top-2");
 }
 
 // the chat and what Sprout says: above or below it, toward the middle of the screen
