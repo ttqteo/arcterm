@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Settings > Appearance: the palette every surface derives from, its role colors, the interface and code
-// faces, Jarvis's character, outfit and quotes, and what an agent row in the sidebar shows. The terminal's own face is
+// faces, Jarvis's character, outfit and quotes, the Cockpit office's animation and work hours, and what an agent row in the sidebar shows. The terminal's own face is
 // a Terminal setting.
 
 import { PET_CHARACTER_NAME, petCharacter } from "@/app/view/jarvis/petcharacter";
@@ -15,9 +15,11 @@ import { Check } from "lucide-react";
 import { useContext, useState } from "react";
 import { MONO_FONTS, SANS_FONTS } from "../fonts";
 import { fontMonoAtom, fontSansAtom } from "../fontstore";
+import { sanitizeHours, type WorkHours } from "../officebehavior";
+import { officeAnimation, officeAnimationAtom, officeHoursAtom } from "../officestore";
 import { ROW_FIELD_ROWS } from "../rowfields";
 import { rowFieldsAtom } from "../rowfieldsstore";
-import { RowCtx, Segmented, SettingCard, SettingRow, Toggle } from "../settingsui";
+import { RowCtx, Segmented, Select, SettingCard, SettingRow, Toggle } from "../settingsui";
 import { chipSwatches, offersSpiderTheme, SPIDER_THEME } from "../themedecor";
 import { SmallSpider } from "../themedecorview";
 import { ACCENT_SWATCHES, activePalette, colorOf, THEMES, type OverrideRole } from "../themes";
@@ -39,6 +41,10 @@ export function AppearancePage() {
                 <PetCharacterRow />
                 <PetOutfitRow />
                 <PetQuotesRow />
+            </SettingCard>
+            <SettingCard id="office" label="Office">
+                <OfficeAnimationRow />
+                <OfficeHoursRow />
             </SettingCard>
             <SettingCard id="agentrows" label="Agent sidebar">
                 <AgentRowFieldRows />
@@ -248,6 +254,59 @@ function PetQuotesRow() {
     return (
         <SettingRow id="appearance.petquotes">
             <Toggle on={on} onToggle={() => setOn(!on)} label="Jarvis quotes" />
+        </SettingRow>
+    );
+}
+
+function OfficeAnimationRow() {
+    const [raw, setOn] = useAtom(officeAnimationAtom);
+    const on = officeAnimation(raw);
+    return (
+        <SettingRow id="appearance.officeanimation">
+            <Toggle on={on} onToggle={() => setOn(!on)} label="Office animation" />
+        </SettingRow>
+    );
+}
+
+const HOURS = Array.from({ length: 24 }, (_, h) => h);
+const hourLabel = (h: number) => `${String(h).padStart(2, "0")}:00`;
+
+// two hour pickers; each offers only hours that keep the start before the end
+function OfficeHoursRow() {
+    const [raw, setHours] = useAtom(officeHoursAtom);
+    const hours = sanitizeHours(raw);
+    const items = (pick: (h: number) => WorkHours, current: number, ok: (h: number) => boolean): ContextMenuItem[] =>
+        HOURS.filter(ok).map((h) => ({
+            label: hourLabel(h),
+            type: "radio",
+            checked: h === current,
+            click: () => setHours(pick(h)),
+        }));
+    return (
+        <SettingRow id="appearance.officehours">
+            <div className="flex items-center gap-2">
+                <Select
+                    value={String(hours.start)}
+                    label={hourLabel(hours.start)}
+                    ariaLabel="Work starts"
+                    items={items(
+                        (h) => ({ ...hours, start: h }),
+                        hours.start,
+                        (h) => h < hours.end
+                    )}
+                />
+                <span className="text-muted">to</span>
+                <Select
+                    value={String(hours.end)}
+                    label={hourLabel(hours.end)}
+                    ariaLabel="Work ends"
+                    items={items(
+                        (h) => ({ ...hours, end: h }),
+                        hours.end,
+                        (h) => h > hours.start
+                    )}
+                />
+            </div>
         </SettingRow>
     );
 }

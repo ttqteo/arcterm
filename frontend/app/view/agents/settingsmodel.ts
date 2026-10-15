@@ -309,6 +309,26 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                     ],
                 },
                 {
+                    id: "office",
+                    label: "Office",
+                    rows: [
+                        {
+                            id: "appearance.officeanimation",
+                            title: "Office animation",
+                            desc: "People in the Cockpit's Office type, walk and wave. Off, everyone holds still and the boss moves at once; the RAM panel's Office line shows what it costs.",
+                            key: "cockpit.office.animation",
+                            scope: "local",
+                        },
+                        {
+                            id: "appearance.officehours",
+                            title: "Work hours",
+                            desc: "Outside them, and all weekend, the office dims, idle people go home and desk lamps come on.",
+                            key: "cockpit.office.hours",
+                            scope: "local",
+                        },
+                    ],
+                },
+                {
                     id: "agentrows",
                     label: "Agent sidebar",
                     rows: ROW_FIELD_ROWS.map((r) => ({

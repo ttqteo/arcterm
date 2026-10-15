@@ -1,0 +1,166 @@
+// Copyright 2026, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+//
+// How the boss moves through the Cockpit office (cockpit office spec, "The boss"): walls stop it, doors let it
+// through, a jump to a desk walks out of its room, along the hall and in through the other door, and the desk the
+// boss stands at is the selected card. Walkers to the lounge take the same paths. Pure: no React, no DOM.
+
+import type { WalkDir } from "@/app/view/office/plansprite";
+import type { Box, Plan, Point, Room } from "./officeplanmodel";
+
+export type Dir = WalkDir;
+
+export const STEP_PX = 3; // one pixel-art cell: moves happen in whole cells
+export const BOSS_SPEED = 160;
+export const JUMP_SPEED = 400;
+export const WALKER_SPEED = 60;
+const DOOR_REACH = 14;
+// the hall's walking lane, clear of Home's booth at the hall's foot
+const LANE_FROM_RIGHT = 36;
+
+const DELTA: Record<Dir, Point> = {
+    up: { x: 0, y: -1 },
+    down: { x: 0, y: 1 },
+    left: { x: -1, y: 0 },
+    right: { x: 1, y: 0 },
+};
+const inside = (p: Point, b: Box) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h;
+
+/** Where anyone may stand: every room, every door, and the hall's floor. */
+export function canStand(plan: Plan, p: Point): boolean {
+    return (
+        plan.hallFloor.some((b) => inside(p, b)) ||
+        plan.rooms.some((r) => inside(p, r.box) || (r.door != null && inside(p, r.door)))
+    );
+}
+
+/** Up to `dist` px toward dir, a cell at a time, stopping before the first spot no one may stand on. */
+export function stepToward(plan: Plan, from: Point, dir: Dir, dist: number): Point {
+    const d = DELTA[dir];
+    let at = from;
+    for (let moved = STEP_PX; moved <= dist; moved += STEP_PX) {
+        const next = { x: from.x + d.x * moved, y: from.y + d.y * moved };
+        if (!canStand(plan, next)) {
+            break;
+        }
+        at = next;
+    }
+    return at;
+}
+
+/** The room a point is in, or "hall" (the lounge is part of the hall). */
+export function roomAt(plan: Plan, p: Point): string {
+    return plan.rooms.find((r) => r.kind !== "lounge" && inside(p, r.box))?.key ?? "hall";
+}
+
+function doorPoints(r: Room): { inner: Point; outer: Point } {
+    const d = r.door!;
+    const mid = { x: d.x + d.w / 2, y: d.y + d.h / 2 };
+    if (r.doorSide === "right") {
+        return { inner: { x: d.x - DOOR_REACH, y: mid.y }, outer: { x: d.x + d.w + DOOR_REACH, y: mid.y } };
+    }
+    if (r.doorSide === "left") {
+        return { inner: { x: d.x + d.w + DOOR_REACH, y: mid.y }, outer: { x: d.x - DOOR_REACH, y: mid.y } };
+    }
+    return { inner: { x: mid.x, y: d.y + d.h + DOOR_REACH }, outer: { x: mid.x, y: d.y - DOOR_REACH } };
+}
+
+const dedupe = (pts: Point[]) => pts.filter((p, i) => i === 0 || p.x !== pts[i - 1].x || p.y !== pts[i - 1].y);
+
+/** The way between two spots: straight within a room, else out through one door, along the hall's lane, and in
+ * through the other. */
+export function pathBetween(plan: Plan, from: Point, to: Point): Point[] {
+    const a = roomAt(plan, from);
+    const b = roomAt(plan, to);
+    if (a === b) {
+        return [from, to];
+    }
+    const roomOf = (k: string) => plan.rooms.find((r) => r.key === k);
+    const lane = plan.hall.x + plan.hall.w - LANE_FROM_RIGHT;
+    const out: Point[] = [from];
+    let hallFrom = from;
+    if (a !== "hall") {
+        const d = doorPoints(roomOf(a)!);
+        out.push(d.inner, d.outer);
+        hallFrom = d.outer;
+    }
+    const enter = b !== "hall" ? doorPoints(roomOf(b)!) : undefined;
+    const hallTo = enter ? enter.outer : to;
+    out.push({ x: lane, y: hallFrom.y }, { x: lane, y: hallTo.y });
+    if (enter) {
+        out.push(enter.outer, enter.inner);
+    }
+    out.push(to);
+    return dedupe(out);
+}
+
+/** Dots every `gap` px along a path, for the hint `n` shows. */
+export function dotsAlong(path: Point[], gap = 14): Point[] {
+    const dots: Point[] = [];
+    let carry = 0;
+    for (let i = 0; i < path.length - 1; i++) {
+        const a = path[i];
+        const b = path[i + 1];
+        const len = Math.hypot(b.x - a.x, b.y - a.y);
+        let d = carry;
+        while (d < len) {
+            dots.push({ x: a.x + ((b.x - a.x) * d) / len, y: a.y + ((b.y - a.y) * d) / len });
+            d += gap;
+        }
+        carry = d - len;
+    }
+    return dots;
+}
+
+/** Walks `dist` px along a path: the point reached, and the path still ahead starting there. */
+export function advance(path: Point[], dist: number): { at: Point; rest: Point[] } {
+    let left = dist;
+    let at = path[0];
+    for (let i = 0; i < path.length - 1; i++) {
+        const b = path[i + 1];
+        const len = Math.hypot(b.x - at.x, b.y - at.y);
+        if (len > left) {
+            at = { x: at.x + ((b.x - at.x) * left) / len, y: at.y + ((b.y - at.y) * left) / len };
+            return { at, rest: [at, ...path.slice(i + 1)] };
+        }
+        left -= len;
+        at = b;
+    }
+    return { at, rest: [at] };
+}
+
+/** The way someone faces going from a to b: the larger of the two moves. */
+export function facing(a: Point, b: Point, was: Dir = "down"): Dir {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    if (dx === 0 && dy === 0) {
+        return was;
+    }
+    return Math.abs(dx) >= Math.abs(dy) ? (dx < 0 ? "left" : "right") : dy < 0 ? "up" : "down";
+}
+
+/** Where the boss stands for a desk or seat key. */
+export function spotOf(plan: Plan, key: string): Point | undefined {
+    return plan.desks.find((d) => d.key === key)?.spot ?? plan.seats.find((s) => s.key === key)?.spot;
+}
+
+/** The desk or seat whose spot is nearest, in the room the boss stands in; undefined in the hall or the lounge. */
+export function deskAt(plan: Plan, p: Point): string | undefined {
+    const room = roomAt(plan, p);
+    if (room === "hall") {
+        return undefined;
+    }
+    let best: string | undefined;
+    let dist = Number.POSITIVE_INFINITY;
+    for (const s of [...plan.desks, ...plan.seats]) {
+        if (s.room !== room) {
+            continue;
+        }
+        const d = Math.hypot(s.spot.x - p.x, s.spot.y - p.y);
+        if (d < dist) {
+            dist = d;
+            best = s.key;
+        }
+    }
+    return best;
+}

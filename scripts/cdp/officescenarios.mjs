@@ -102,7 +102,7 @@ async function waitForOfficeSeams(h) {
     return hooks ?? (await waitForToggle(h));
 }
 
-async function metrics(h) {
+export async function metrics(h) {
     // React's dev build logs every component render as a performance.measure entry that the page keeps (~50 a second
     // here, tens of thousands in a session), so the heap would read the app's own rendering, not the office's
     await h.ev("performance.clearMeasures()");
@@ -112,12 +112,12 @@ async function metrics(h) {
     return { heap: m.JSHeapUsedSize, nodes: m.Nodes, task: m.TaskDuration };
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const HOLD_MS = 30000;
+export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+export const HOLD_MS = 30000;
 // main thread busy as a percent of a window: a TaskDuration delta (seconds) over its length, to 0.1
-const busyPct = (from, to) => ((to.task - from.task) / (HOLD_MS / 1000)) * 100;
-const round1 = (n) => Math.round(n * 10) / 10;
-const mb = (bytes) => Math.round((bytes / (1024 * 1024)) * 100) / 100;
+export const busyPct = (from, to) => ((to.task - from.task) / (HOLD_MS / 1000)) * 100;
+export const round1 = (n) => Math.round(n * 10) / 10;
+export const mb = (bytes) => Math.round((bytes / (1024 * 1024)) * 100) / 100;
 
 // fx: { arrangeFixtureRun, waitForDispatch, briefReload, teardownFixtureRun, tasks, leadId } from scenarios.mjs
 export function makeOfficeScenarios(fx) {

@@ -729,6 +729,14 @@ Tracked in their own initiatives, not here:
   after off. One budget missed: 1228 ms to draw on the first open (budget 150 ms). Not Jarvis's floor: reloaded
   first opens read 235–506 ms with it and 327–652 ms with it taken out (warm opens 107–140 against 85–158 ms), so it is
   this machine and the dev build. Re-measure the open on a production build or a quiet machine.
+- **Cockpit office** (2026-10-15, `cockpit-office-bench`, 73 people, dev app in headless Chrome on the Mac, a loaded
+  8 GB machine): heap −4.13 MB, −664 DOM nodes (the office replaces the Cards grid, so both read below Cards), busy
+  −4.7 % over Cards while the boss and three walkers walk (22 % raw, baseline 26.7 %), −6.4 % under reduced motion,
+  −15.2 % in a quiet office, 150 sprites, +2.16 MB after back to Cards, 65 ms to draw. Budgets: 5 MB, 2,000, 2 %,
+  0.5 %, 0.3 %, 600, 1 MB, 150 ms: all held but the heap after back to Cards, which read 0.94, 1.16, 1.09 and 2.16 MB in
+  four runs (budget 1 MB, left as is). A control run that never opened the office read +1.56 MB on the same step, so
+  most of it is the page's own growth, not the office. Busy is from React's dev build (a performance.measure per
+  render); the production-build reading is the effort chunk 'Re-measure: cockpit office busy on a production build'.
 
 ---
 

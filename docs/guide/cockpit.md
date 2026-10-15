@@ -115,6 +115,29 @@ Mỗi dòng còn có nguồn (run/agent), nội dung, lý do và thời gian ch�
 
 Cả ba gấp lại theo mặc định. Một agent vừa xong giữ nguyên thẻ đầy đủ trong 5 phút để bạn trả lời, sau đó mới chuyển xuống **Idle**. Một agent đang hỏi không bao giờ ở dưới nền: nếu bạn đã đẩy nó xuống mà nó bắt đầu hỏi, thẻ tự hiện lại.
 
+### Văn phòng (Office)
+
+Nút **Cards | Office** cạnh **Live only** (hoặc phím `o`) đổi lưới thẻ thành một văn phòng nhìn từ trên cao. Văn
+phòng vẽ đúng các agent và run của lưới, theo cùng tab, project và **Live only**; chỉ khác cách vẽ. Agent idle quá
+Finished window (mục **Idle** dưới lưới) ngồi ở phòng chờ, nên trong Office mục Idle không hiện nữa.
+
+- **Mỗi project là một dải**: bên trái là phòng của các agent (mỗi agent một bàn, quay mặt ra phía bạn), bên phải
+  mỗi run một phòng họp, lead ngồi đầu bàn, worker ngồi quanh, màn hình trên tường là DAG của run. **Sảnh** ở giữa có
+  phòng chờ (TV, sofa, máy cà phê): agent idle quá Finished window ra máy cà phê, sau 10 phút thì lên sofa. Agent
+  không có project ngồi ở phòng **Home** cạnh cửa vào.
+- **Chỉ thứ cần bạn mới nổi**: dưới bàn là tên agent; chữ trạng thái chỉ hiện **Needs you** (vàng, kèm dấu `!`) và
+  **done**. Phòng không ai làm thì tắt đèn. Rê chuột lên bàn để xem trạng thái đầy đủ.
+- **Bạn là sếp**: `←` `↑` `↓` `→` để đi (tường chặn, cửa đi qua được), `j` / `k` tới bàn kế, `n` hiện lối đi chấm
+  chấm tới câu hỏi kế tiếp trong một giây rồi đi tới đó. Đứng ở bàn nào thì thẻ của agent đó, đúng thẻ của lưới, mở
+  cạnh bàn: `1`–`9` trả lời, `r` nhắn, `t` mở terminal, `b` đẩy xuống nền. Bấm vào bàn hay phòng họp cũng được.
+  `Esc` ẩn thẻ cho tới khi sếp đi tiếp.
+- **Giờ làm và năng lượng**: ngoài giờ làm (mặc định 9–18, và cả cuối tuần) văn phòng tối lại, ai idle đã về nhà, ai
+  còn làm có đèn bàn. Quota 5 giờ từ 70 % thì có người ngáp, từ 90 % thì có cà phê trên bàn; quota reset thì mọi
+  người vươn vai.
+- **Settings → Appearance → Office** tắt animation và đổi giờ làm. Văn phòng tốn bao nhiêu thì xem ở **panel
+  Consumers** (bấm chip RAM): dòng **Office** cho biết JS của văn phòng, số người, ảnh sprite và DOM node, kèm nút tắt
+  animation.
+
 ## Làm thế nào…
 
 ### Trả lời câu hỏi của agent ngay trên thẻ

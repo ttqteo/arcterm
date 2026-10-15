@@ -11,6 +11,19 @@ import type { AgentsViewModel } from "./agents";
 import { answerDigitTarget, canSubmitAsk, hasAnswerableAsk, moveCursor, nextAskId, type AgentVM } from "./agentsviewmodel";
 import { askerAt, columnJump, type RowTarget } from "./cardgridlayout";
 import { isRowKey, rowCardId } from "./leadcardmodel";
+import type { Dir } from "./officeboss";
+
+export const ARROW_DIR: Record<string, Dir> = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
+
+/** What the Cockpit's keys can ask of the office (cockpitoffice.tsx's handle), while it shows Office. */
+export interface OfficeKeys {
+    walk(dir: Dir): void;
+    goTo(key: string): void;
+    showPath(key: string): void;
+    dismiss(): void;
+    order(): string[];
+    asks(): string[];
+}
 
 export type CockpitKeyDeps = {
     model: AgentsViewModel;
@@ -32,6 +45,9 @@ export type CockpitKeyDeps = {
     openFocus: (id: string, reply: boolean) => void;
     scrollToPulse: (id: string) => void;
     focusRowComposer: (id: string) => void;
+    // set while the Cockpit shows Office: the arrows walk, j k n go desk by desk in office order
+    office?: OfficeKeys;
+    toggleView?: () => void;
 };
 
 export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => void {
@@ -55,12 +71,61 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
         openFocus,
         scrollToPulse,
         focusRowComposer,
+        office,
+        toggleView,
     } = deps;
 
     return (e: KeyboardEvent) => {
         const t = e.target as HTMLElement;
         if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable) {
             return; // typing — let the input own its keys
+        }
+        if (e.key === "o" && !e.metaKey && !e.ctrlKey && !e.altKey && toggleView) {
+            e.preventDefault();
+            toggleView();
+            return;
+        }
+        if (office) {
+            const dir = ARROW_DIR[e.key];
+            if (dir) {
+                e.preventDefault();
+                office.walk(dir);
+                return;
+            }
+            if (e.key === "j" || e.key === "k") {
+                e.preventDefault();
+                const next = moveCursor(office.order(), cursorId, e.key === "j" ? 1 : -1);
+                if (next) {
+                    setCursorId(next);
+                    office.goTo(next);
+                }
+                return;
+            }
+            if (e.key === "n") {
+                e.preventDefault();
+                const target = nextAskId(office.asks(), lastJumpRef.current);
+                if (target) {
+                    lastJumpRef.current = target;
+                    setCursorId(target);
+                    office.showPath(target);
+                }
+                return;
+            }
+            if (e.key === "Escape") {
+                office.dismiss();
+                return;
+            }
+            if (e.key === "h" || e.key === "l") {
+                // a question with several parts keeps h/l for its tabs; in the office they do nothing else
+                const asker = askerAt(cursorId, roster, rowTargets);
+                const n = asker?.ask?.questions?.length ?? 0;
+                if (asker?.state === "asking" && n > 1) {
+                    e.preventDefault();
+                    const curTab = Math.min(answerTab[asker.id] ?? 0, n - 1);
+                    selectQuestion(asker.id, Math.max(0, Math.min(n - 1, curTab + (e.key === "h" ? -1 : 1))));
+                }
+                return;
+            }
         }
         // surface switch (`[`/`]`) now lives in the global keybinding registry (bindings.ts), so it
         // fires from every surface, not just the cockpit — see docs Pass A (F1/F2).

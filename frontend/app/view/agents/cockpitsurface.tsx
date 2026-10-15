@@ -6,7 +6,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, useSetAtom, type PrimitiveAtom } from "jotai";
 import { AnimatePresence, MotionConfig } from "motion/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { buildCockpitBindings } from "@/app/store/keybindings/bindings";
 import { focusClaimed } from "@/app/store/keybindings/dispatcher";
 import { openTarget } from "@/app/view/jarvis/openref";
@@ -61,7 +61,10 @@ import { ensureRunEvents, runEventsAtom } from "./runeventstore";
 import { loadRunUsage, runUsageAtom } from "./runtokenstore";
 import { summarizeUsage } from "./runusage";
 import { useRunDigests } from "./runlineagestore";
-import { useCockpitKeyboard } from "./usecockpitkeyboard";
+import { ARROW_DIR, useCockpitKeyboard, type OfficeKeys } from "./usecockpitkeyboard";
+import { CockpitOffice, type OfficeHandle } from "./cockpitoffice";
+import { officeInputs } from "./officeinputs";
+import { cockpitView, cockpitViewAtom } from "./officestore";
 import { useCardStreams } from "./usecardstreams";
 import { NeedsYouStrip } from "./needsyoustrip";
 import { ProjectSwitcher } from "./projectswitcher";
@@ -159,6 +162,9 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     const sentIds = useAtomValue(model.sentIdsAtom);
     const chip = useAtomValue(model.chipFilterAtom);
     const setChip = (c: ChipFilter) => globalStore.set(model.chipFilterAtom, c);
+    // the Cockpit is the card grid or the office (cockpit office spec); the office draws the same cards
+    const view = cockpitView(useAtomValue(cockpitViewAtom));
+    const officeRef = useRef<OfficeHandle | null>(null);
 
     const [pulseId, setPulseId] = useState<string>();
     const lastJumpRef = useRef<string>(undefined);
@@ -169,6 +175,12 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         const el = containerRef.current;
         if (el && !el.contains(document.activeElement) && !focusClaimed()) {
             el.focus({ preventScroll: true });
+        }
+    }, []);
+    // DEV-only seams for the cockpit-office scenarios; never in a production build
+    useEffect(() => {
+        if (import.meta.env.DEV) {
+            void import("./cockpitofficedevhooks").then((m) => m.installCockpitOfficeDevHooks(model));
         }
     }, []);
     const gridScrollRef = useRef<HTMLDivElement>(null);
@@ -190,7 +202,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         ro.observe(el);
         measure();
         return () => ro.disconnect();
-    }, []);
+    }, [view]);
 
     // status chips narrow what the grid renders; cursor/order still operate over the full set
     const projectFilter = useAtomValue(model.projectFilterAtom);
@@ -288,6 +300,12 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     // idle/backgrounded sections share the project scope; live-only hides the parked-idle section
     const shownParkedIdle = liveOnly ? [] : parkedIdle.filter((a) => matchesProjectFilter(a, projectFilter));
     const shownBackgrounded = backgrounded.filter((a) => matchesProjectFilter(a, projectFilter));
+    // the office draws the cards and the Idle section's agents (cockpit office spec, "Where it lives"). This
+    // surface builds its cards anew on every render, so the office's input is kept by its content: a render that
+    // changes nothing the office draws hands it the same arrays, and its plan and memoized desks stay put
+    const officeFresh = view === "office" ? officeInputs(cards, shownParkedIdle, leadVMs, agents, lineage) : null;
+    const officeKey = officeFresh ? JSON.stringify(officeFresh) : "";
+    const officeIn = useMemo(() => officeFresh, [officeKey]);
     // an Events row names where a plain agent now sits when it is off the grid
     const railTags: Record<string, string> = {
         ...Object.fromEntries(parkedIdle.map((a) => [a.id, "idle"])),
@@ -296,11 +314,13 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
 
     // keep the cursor on a visible stop as the set changes; a worker's id follows its row, else the first stop
     useEffect(() => {
-        const next = resolveCursor(cursorId, navigableIds, cursorAlias);
+        // the office's stops include the Idle section's agents and seats with no card row
+        const stops = view === "office" ? [...navigableIds, ...(officeRef.current?.order() ?? [])] : navigableIds;
+        const next = resolveCursor(cursorId, stops, cursorAlias);
         if (next !== cursorId) {
             setCursorId(next);
         }
-    }, [navigableIds.join(","), cursorId]);
+    }, [navigableIds.join(","), cursorId, view]);
 
     // asking overrides backgrounded: a muted agent that starts asking re-surfaces (it's in `asking`,
     // not `working`), so drop it from the set to avoid re-muting when it returns to working.
@@ -381,10 +401,24 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         landOn(model.surfaceAtom, "files");
     };
 
+    const officeKeys = useMemo<OfficeKeys>(
+        () => ({
+            walk: (d) => officeRef.current?.walk(d),
+            goTo: (k) => officeRef.current?.goTo(k),
+            showPath: (k) => officeRef.current?.showPath(k),
+            dismiss: () => officeRef.current?.dismiss(),
+            order: () => officeRef.current?.order() ?? [],
+            asks: () => officeRef.current?.asks() ?? [],
+        }),
+        []
+    );
+    const toggleView = () => globalStore.set(cockpitViewAtom, view === "office" ? "cards" : "office");
     const onKeyDown = useCockpitKeyboard({
         model, navigableIds, cursorId, setCursorId, answerTab, answerSel,
         navCols, rowTargets, askTargets, roster: agents, lastJumpRef, setOpenComposerId,
         selectQuestion, toggleAnswer, submitAnswer, toggleBackground, openFocus, scrollToPulse, focusRowComposer,
+        office: view === "office" ? officeKeys : undefined,
+        toggleView,
     });
 
     // Cockpit triage keys are documented in the shared cheat sheet via these pass-through bindings (see
@@ -458,6 +492,21 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         );
     };
 
+    // the card beside the desk the boss stands at: an agent's AgentRow, or for a seat or a meeting room its run's
+    // LeadCard, the very ones the grid draws; an agent of the Idle section gets its row too
+    const renderOfficeCard = (key: string): ReactNode => {
+        const c = cards.find((x) =>
+            x.kind === "agent"
+                ? x.id === key
+                : x.id === key || key.startsWith(`${x.id}:`) || rowsOf(x).some((r) => r.key === key)
+        );
+        if (c) {
+            return renderCard(c);
+        }
+        const parked = shownParkedIdle.find((a) => a.id === key);
+        return parked ? renderAgent(parked, cardShare(false, false)) : null;
+    };
+
     const phase = rosterLoadPhase(seeded, [...asking, ...working, ...idle].filter((a) => !hidden.has(a.id)).length);
 
     return (
@@ -467,6 +516,12 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
             data-cockpit-surface
             tabIndex={0}
             onKeyDown={onKeyDown}
+            onKeyUp={(e) => {
+                const dir = ARROW_DIR[e.key];
+                if (view === "office" && dir) {
+                    officeRef.current?.release(dir);
+                }
+            }}
             className="relative flex h-full w-full text-secondary outline-none"
         >
             <div className="flex min-w-0 flex-1 flex-col bg-background">
@@ -511,6 +566,28 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                             ))}
                         </div>
                         <div className="mb-1.5 ml-auto flex flex-none items-center gap-2">
+                            <div
+                                role="group"
+                                aria-label="Cockpit view"
+                                data-cockpit-view-toggle
+                                className="flex gap-0.5 rounded border border-edge-mid bg-surface p-0.5"
+                            >
+                                {(["cards", "office"] as const).map((v) => (
+                                    <button
+                                        key={v}
+                                        type="button"
+                                        aria-pressed={view === v}
+                                        title={`${v === "cards" ? "Cards" : "Office"} (o)`}
+                                        onClick={() => globalStore.set(cockpitViewAtom, v)}
+                                        className={cn(
+                                            "cursor-pointer rounded-[4px] border-0 px-2.5 py-[3px] text-[12px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                                            view === v ? "bg-surface-selected text-primary" : "bg-transparent text-muted hover:text-ink-hi"
+                                        )}
+                                    >
+                                        {v === "cards" ? "Cards" : "Office"}
+                                    </button>
+                                ))}
+                            </div>
                             <ProjectSwitcher model={model} variant="header" />
                             <button
                                 type="button"
@@ -543,23 +620,38 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                         ) : null}
                     </AnimatePresence>
 
-                    <div ref={gridScrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 pb-3 pt-2.5">
-                        <div className="flex items-start gap-2.5">
-                            {columns.map((col, ci) => (
-                                <div
-                                    key={ci}
-                                    className="flex min-w-0 flex-1 flex-col gap-2.5"
-                                    style={{ minHeight: gridViewportPx }}
-                                >
-                                    <AnimatePresence initial={false}>{col.map(renderCard)}</AnimatePresence>
-                                </div>
-                            ))}
+                    {view === "office" ? (
+                        officeIn && (
+                            <CockpitOffice
+                                agents={officeIn.agents}
+                                runs={officeIn.runs}
+                                now={structuralNow}
+                                model={model}
+                                cursorId={cursorId}
+                                onCursor={(key) => setCursorId(key)}
+                                renderCard={renderOfficeCard}
+                                handleRef={officeRef}
+                            />
+                        )
+                    ) : (
+                        <div ref={gridScrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 pb-3 pt-2.5">
+                            <div className="flex items-start gap-2.5">
+                                {columns.map((col, ci) => (
+                                    <div
+                                        key={ci}
+                                        className="flex min-w-0 flex-1 flex-col gap-2.5"
+                                        style={{ minHeight: gridViewportPx }}
+                                    >
+                                        <AnimatePresence initial={false}>{col.map(renderCard)}</AnimatePresence>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     <div className="shrink-0 px-5">
                         <BackgroundedSection agents={shownBackgrounded} onRestore={(id) => toggleBackground(id)} />
-                        <IdleSection agents={shownParkedIdle} onOpen={(id) => model.openTerminal(id)} />
+                        {view === "office" ? null : <IdleSection agents={shownParkedIdle} onOpen={(id) => model.openTerminal(id)} />}
                         <BackgroundAgentsStrip model={model} />
                     </div>
                 </div>
