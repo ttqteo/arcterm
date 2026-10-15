@@ -17,6 +17,7 @@ import {
     isNewFinding,
     LIST_GROUP_ORDER,
     listGroupMeta,
+    plural,
     type RadarListGroup,
 } from "./radarmodel";
 import { radarOpenListGroupsAtom } from "./radarstore";
@@ -179,7 +180,9 @@ function FindingRow({
                     <span className="flex-none text-ink-hi">
                         {site.file}:{site.line}
                     </span>
-                    {site.more > 0 ? <span className="ml-2 flex-none text-ink-mid">+{site.more} site</span> : null}
+                    {site.more > 0 ? (
+                        <span className="ml-2 flex-none text-ink-mid">+{plural(site.more, "site")}</span>
+                    ) : null}
                 </span>
             ) : null}
             <span
