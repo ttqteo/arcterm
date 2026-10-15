@@ -236,6 +236,12 @@
         },
         "runs:wakeorigin": {
           "type": "boolean"
+        },
+        "power:*": {
+          "type": "boolean"
+        },
+        "power:keepawake": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false,

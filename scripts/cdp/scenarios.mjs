@@ -33953,6 +33953,108 @@ const settingsRadarAudit = {
     },
 };
 
+// --- settings-keepawake: the Keep the Mac awake toggle on Settings > Agents' Runs card, and the hold itself ------
+// Unset reads as on; the toggle writes power:keepawake. On a Mac, a deferred run (planning, no lead, no worker) makes
+// the app's wavesrv hold `caffeinate -i -w <its pid>` and cancelling it lets go: wavesrv checks every 30 s. The
+// installed arcterm's wavesrv runs from /Applications, so a hold of its own is never taken for this one. The person's
+// own value is put back in teardown.
+const KA_KEY = "power:keepawake";
+const KA_SWITCH = `document.querySelector('[data-setting-card="runs"] [data-setting-row="runs.keepawake"] [role="switch"]')`;
+const KA_WAIT_MS = 45_000;
+
+// the pids of the repo-built wavesrvs (dist/bin) a caffeinate holds the Mac awake for
+function kaHolds() {
+    const ps = execFileSync("ps", ["-axo", "pid=,command="], { encoding: "utf8" });
+    const lines = ps.split("\n");
+    const cmdOf = new Map(lines.map((l) => l.trim().match(/^(\d+) (.*)$/)).filter(Boolean).map((m) => [m[1], m[2]]));
+    return lines
+        .map((l) => l.match(/caffeinate -i -w (\d+)/)?.[1])
+        .filter((pid) => pid && /\/dist\/bin\/wavesrv/.test(cmdOf.get(pid) ?? ""));
+}
+
+async function kaWaitHolds(want) {
+    for (let waited = 0; waited < KA_WAIT_MS; waited += 1000) {
+        if (kaHolds().length > 0 === want) return true;
+        await polishNap(1000);
+    }
+    return false;
+}
+
+const settingsKeepAwake = {
+    name: "settings-keepawake",
+    surface: "settings",
+    async arrange(h) {
+        const settings = (await h.rpc("getfullconfig", null))?.settings ?? {};
+        const prev = { [KA_KEY]: settings[KA_KEY] ?? null };
+        await h.rpc("setconfig", { [KA_KEY]: null });
+        return { prev };
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+
+        await h.goto("settings");
+        const pageOpen = await spOpen(h, "agents");
+        const row = await polishWaitFor(h, `${KA_SWITCH} != null`, 5000);
+        const unset = await h.ev(`({ label: ${KA_SWITCH}?.getAttribute("aria-label") ?? null, checked: ${KA_SWITCH}?.getAttribute("aria-checked") ?? null })`);
+        rec(
+            "1. Settings > Agents' Runs card has Keep the Mac awake, on while the key is unset",
+            pageOpen && row && unset.label === "Keep the Mac awake" && unset.checked === "true",
+            JSON.stringify({ pageOpen, row, ...unset })
+        );
+        await h.ev(`document.querySelector('[data-setting-card="runs"]')?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-keepawake.png");
+
+        await h.ev(`${KA_SWITCH}?.click()`);
+        let stored = {};
+        for (let waited = 0; waited < 5000 && stored[KA_KEY] !== false; waited += 250) {
+            await polishNap(250);
+            stored = (await h.rpc("getfullconfig", null))?.settings ?? {};
+        }
+        const off = await polishWaitFor(h, `${KA_SWITCH}?.getAttribute("aria-checked") === "false"`, 3000);
+        await h.shot("cdp-shots/settings-keepawake-off.png");
+        rec("2. turning it off stores power:keepawake false and the switch reads off", stored[KA_KEY] === false && off, `stored=${stored[KA_KEY]} off=${off}`);
+        await h.rpc("setconfig", { [KA_KEY]: null });
+
+        if (process.platform !== "darwin") {
+            rec("3. a run in flight holds the Mac awake (macOS only)", true, `skipped on ${process.platform}`);
+            return steps;
+        }
+        const before = kaHolds();
+        const wslist = await h.rpc("workspacelist", null);
+        ctx.cwd = mkdtempSync(join(tmpdir(), "verify-keepawake-"));
+        ctx.channelId = (await h.rpc("createchannel", { name: "verify-keepawake", projectpath: ctx.cwd })).oid;
+        ctx.runId = (
+            await h.rpc("createrun", {
+                channelid: ctx.channelId,
+                workspaceid: wslist[0].workspacedata.oid,
+                goal: "verify keepawake: do nothing",
+                runtime: "claude",
+                mode: "orchestrator",
+                deferstart: true,
+            })
+        ).run.id;
+        const held = await kaWaitHolds(true);
+        const holds = kaHolds();
+        await h.rpc("cancelrun", { channelid: ctx.channelId, runid: ctx.runId });
+        const letGo = await kaWaitHolds(false);
+        rec(
+            "3. a run in planning makes wavesrv hold caffeinate -i -w <its pid>, and cancelling it lets go",
+            before.length === 0 && held && letGo,
+            JSON.stringify({ before, held, holds, letGo })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await h.rpc("setconfig", ctx.prev);
+        if (ctx.runId) await h.rpc("cancelrun", { channelid: ctx.channelId, runid: ctx.runId }).catch(() => {});
+        if (ctx.channelId) await h.rpc("deletechannel", { channelid: ctx.channelId }).catch(() => {});
+        if (ctx.cwd) rmSync(ctx.cwd, { recursive: true, force: true });
+        await h.goto("cockpit");
+    },
+};
+
 // --- settings-vault-sync: the Sync now button on Settings > General's Vault & sync card ---------------------
 // The dev app is pointed at a throwaway vault (wavevault opens the configured root on every call), first with
 // no remote, then with a bare temp remote, then with a remote that does not exist. The configured vault is
@@ -42415,6 +42517,7 @@ export const SCENARIOS = [
     routePickerFlat,
     routePickerRefused,
     settingsRadarAudit,
+    settingsKeepAwake,
     settingsVaultSync,
     settingsPages,
     jarvisMotion,

@@ -425,7 +425,7 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
         {
             id: "agents",
             name: "Agents",
-            blurb: "The Claude subscription new agents run on, when an idle agent sleeps, the route new runs take, and the flags every launch starts with.",
+            blurb: "The Claude subscription new agents run on, when an idle agent sleeps, the route new runs take, whether the Mac stays awake for them, and the flags every launch starts with.",
             cards: [
                 // The account list lives behind its own RPCs, not in settings, so the card has no rows for the
                 // index to count or search; ClaudeAccountSection renders it whole.
@@ -462,6 +462,14 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                             desc: "Harness and resolved model for new runs.",
                             key: "harness.preference",
                             scope: "synced",
+                        },
+                        {
+                            id: "runs.keepawake",
+                            title: "Keep the Mac awake",
+                            desc: "While an agent works, a run is going or a heavy job runs, the Mac does not sleep when idle. The display still turns off; on battery it lets go under 20%.",
+                            key: "power:keepawake",
+                            scope: "synced",
+                            config: true,
                         },
                     ],
                 },

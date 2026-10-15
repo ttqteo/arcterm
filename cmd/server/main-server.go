@@ -424,6 +424,8 @@ func main() {
 	blockcontroller.RestoreLiveAgents(context.Background()) // an update or a crash kills every agent, and nothing else restarts one
 	// idle agents sleep after a while, or early when RAM runs low
 	wshserver.StartAgentSleepLoop(context.Background(), func(n wshrpc.NotifyCommandData) { publishNotice(n.Title, n.Message, n.Level) })
+	// the Mac stays out of idle sleep while agents, runs or heavy jobs work (power:keepawake)
+	wshserver.StartKeepAwake(context.Background())
 	jarvisvolunteer.StartLooseEndSweep(context.Background())
 	err = wcore.InitBadgeStore()
 	if err != nil {
