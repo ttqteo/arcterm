@@ -49,6 +49,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - **A tidier Ideas list**: when a later decision replaces an earlier line, the agent drops or rewrites the old one, and
   it no longer records status (commits, estimates) as ideas, so the list shows where a brainstorm stands. Each line
   holds the gist in a few words, leaving the details to the spec, and the agent adds nothing when nothing new came up.
+- **An idea's Edit and Drop buttons sit at its bottom right**, beside the turn line, so hovering a line no longer
+  covers the end of its text.
 - **Wider side panels in Setup**: the file panel on Setup → Project takes about half the window, and the skill panel on
   Setup → Skills grows too, so a file reads at a comfortable width.
 - **Canvases is now the Canvas gallery**: the sidebar row, the gallery's title and the `Ctrl+G` `v` command use the new
