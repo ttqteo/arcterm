@@ -61,7 +61,7 @@ func spawnStageSession(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owne
 		}
 	}
 	if err := appendChildRun(spawnCtx, g.ChannelId, child); err != nil {
-		if serr := stopSpawnedWorker(spawnCtx, oref); serr != nil {
+		if serr := stopUnrecordedWorker(spawnCtx, oref); serr != nil {
 			log.Printf("dag %s: stopping unrecorded %s %s: %v", g.OID, s.Role, oref, serr)
 		}
 		return "", fmt.Errorf("recording the session: %w", err)

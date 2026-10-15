@@ -139,7 +139,7 @@ func spawnReviewer(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, t *waveo
 		}
 	}
 	if err := appendChildRun(spawnCtx, g.ChannelId, child); err != nil {
-		if serr := stopSpawnedWorker(spawnCtx, oref); serr != nil {
+		if serr := stopUnrecordedWorker(spawnCtx, oref); serr != nil {
 			log.Printf("dag %s task %s: stopping unrecorded reviewer %s: %v", g.OID, t.ID, oref, serr)
 		}
 		spendReviewRespawn(ctx, g, t, "recording the reviewer failed: "+err.Error(), afterCommit)
@@ -190,27 +190,38 @@ func reviewerLost(ctx context.Context, g *waveobj.TaskGroup, t *waveobj.TaskNode
 	return "", false
 }
 
-// stopReviewer cancels a reviewer being replaced and stops its process once the tick commits. A reviewer
-// that already finished keeps the status it finished with.
+// stopReviewer cancels a reviewer being replaced and stops its process once the tick commits.
 func stopReviewer(ctx context.Context, g *waveobj.TaskGroup, runID string, afterCommit *[]func()) {
 	*afterCommit = append(*afterCommit, func() {
-		if err := wstore.UpdateRun(ctx, g.ChannelId, runID, func(r *waveobj.Run) error {
-			if r.Status == jarvis.RunStatus_Executing || r.Status == jarvis.RunStatus_Planning {
-				*r = jarvis.CancelRun(*r)
-			}
-			return nil
-		}); err != nil {
-			log.Printf("dag %s: cancelling reviewer run %s: %v", g.OID, runID, err)
-			return
-		}
-		run, err := wstore.GetRun(ctx, g.ChannelId, runID)
-		if err != nil {
-			return
-		}
-		if err := stopRunWorkers(ctx, run); err != nil {
+		if err := stopSession(ctx, g.ChannelId, runID); err != nil {
 			log.Printf("dag %s: stopping reviewer run %s: %v", g.OID, runID, err)
 		}
 	})
+}
+
+// cancelOpenRun cancels a run still working and reports whether it did; a run that finished keeps the status it
+// finished with.
+func cancelOpenRun(r *waveobj.Run) bool {
+	if r.Status != jarvis.RunStatus_Executing && r.Status != jarvis.RunStatus_Planning {
+		return false
+	}
+	*r = jarvis.CancelRun(*r)
+	return true
+}
+
+// stopSession cancels a judging session's run, unless it already finished, and stops its process.
+func stopSession(ctx context.Context, channelId, runID string) error {
+	if err := wstore.UpdateRun(ctx, channelId, runID, func(r *waveobj.Run) error {
+		cancelOpenRun(r)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("cancelling: %w", err)
+	}
+	run, err := wstore.GetRun(ctx, channelId, runID)
+	if err != nil {
+		return fmt.Errorf("loading after cancelling: %w", err)
+	}
+	return stopRunWorkers(ctx, run)
 }
 
 // spendReviewRespawn allows one more reviewer this round; past the limit the review fails for the lead with
