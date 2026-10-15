@@ -22,6 +22,7 @@ import {
     stopWorkerMessage,
     switchToastText,
     togglePickAll,
+    withSwapBytes,
     type ConsumerRow,
 } from "./consumers";
 
@@ -68,6 +69,7 @@ const reading = (
     availablebytes: 1.3 * GB,
     windowms: 600_000,
     agents,
+    swapusedbytes: 0,
     ...over,
 });
 
@@ -347,6 +349,12 @@ describe("buildConsumers", () => {
     it("leaves the total absent until something is read", () => {
         expect(buildConsumers(reading([agent("a")]), [vm("a")], "ram").appBytes).toBeUndefined();
     });
+
+    it("carries what the app holds in RAM and the swap in use", () => {
+        const view = buildConsumers(reading([], { inrambytes: 1.9 * GB, swapusedbytes: 4.5 * GB }), [], "ram");
+        expect(view.inRamBytes).toBe(1.9 * GB);
+        expect(view.swapBytes).toBe(4.5 * GB);
+    });
 });
 
 describe("holdOrder", () => {
@@ -450,25 +458,50 @@ describe("copy", () => {
 
 describe("ramBar", () => {
     it("splits the used RAM into arcterm's share and the rest", () => {
-        const bar = ramBar({ totalBytes: 32 * GB, freeBytes: 8 * GB, appBytes: 4 * GB });
+        const bar = ramBar({ totalBytes: 32 * GB, freeBytes: 8 * GB, inRamBytes: 4 * GB });
         expect(bar.appPct).toBeCloseTo(12.5);
         expect(bar.otherPct).toBeCloseTo(62.5);
         expect(bar.otherBytes).toBe(20 * GB);
     });
 
     it("caps arcterm's share at what is in use", () => {
-        const bar = ramBar({ totalBytes: 16 * GB, freeBytes: 14 * GB, appBytes: 3 * GB });
+        const bar = ramBar({ totalBytes: 16 * GB, freeBytes: 14 * GB, inRamBytes: 3 * GB });
         expect(bar.appPct).toBeCloseTo(12.5);
         expect(bar.otherPct).toBe(0);
     });
 
+    it("takes arcterm's share from what it holds in RAM: its footprint can pass the RAM in use", () => {
+        // swapping hard: arcterm's footprint is 7 GB, 6 GB of the 8 are in use, and arcterm holds 2 GB of them
+        const view = buildConsumers(
+            reading([], { interfacebytes: 7 * GB, inrambytes: 2 * GB, availablebytes: 2 * GB }),
+            [],
+            "ram"
+        );
+        const bar = ramBar(view);
+        expect(bar.appPct).toBeCloseTo(25);
+        expect(bar.otherBytes).toBe(4 * GB);
+    });
+
     it("draws nothing before arcterm's RAM is read, or with no total", () => {
         expect(ramBar({ totalBytes: 16 * GB, freeBytes: 8 * GB }).appPct).toBe(0);
-        expect(ramBar({ totalBytes: 0, freeBytes: 0, appBytes: GB })).toEqual({
+        expect(ramBar({ totalBytes: 0, freeBytes: 0, inRamBytes: GB })).toEqual({
             appPct: 0,
             otherPct: 0,
             otherBytes: 0,
         });
+    });
+});
+
+describe("withSwapBytes", () => {
+    it("names the footprint when what was compressed or swapped out of it is worth a mention", () => {
+        expect(withSwapBytes({ appBytes: 4.6 * GB, inRamBytes: 1.9 * GB })).toBe(4.6 * GB);
+    });
+
+    it("leaves it out when it is close to what is in RAM, under it, or unread", () => {
+        expect(withSwapBytes({ appBytes: 1.2 * GB, inRamBytes: 1.1 * GB })).toBeUndefined();
+        expect(withSwapBytes({ appBytes: 1 * GB, inRamBytes: 1.4 * GB })).toBeUndefined();
+        expect(withSwapBytes({ appBytes: 4 * GB })).toBeUndefined();
+        expect(withSwapBytes({ inRamBytes: 1 * GB })).toBeUndefined();
     });
 });
 

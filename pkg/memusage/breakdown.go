@@ -3,24 +3,41 @@
 
 package memusage
 
+import (
+	"maps"
+	"slices"
+)
+
 // Sampler reads one process's memory and, on darwin, the process responsible for it. Funcs, so tests script them.
+// Resident is what the process holds in RAM now; nil where Footprint already is that.
 type Sampler struct {
 	Footprint   func(pid int32) (uint64, bool)
+	Resident    func(pid int32) (uint64, bool)
 	Responsible func(pid int32) (int32, bool)
 }
 
 // Live is the sampler for this machine.
 func Live() Sampler {
-	return Sampler{Footprint: footprint, Responsible: responsiblePid}
+	return Sampler{Footprint: footprint, Resident: resident, Responsible: responsiblePid}
+}
+
+func (s Sampler) inRam(pid int32) (uint64, bool) {
+	if s.Resident != nil {
+		return s.Resident(pid)
+	}
+	return s.Footprint(pid)
 }
 
 // Breakdown is what one Measure found. A nil pointer, or an id missing from Agents, is a value it could not read.
+// InRam is what all of it holds in RAM now: on darwin the footprints also count what macOS compressed or swapped
+// out, which under memory pressure sum past the RAM in use.
 type Breakdown struct {
 	Agents    map[string]uint64
 	Interface *uint64
 	Server    *uint64
 	Host      *uint64
 	Terminals *uint64
+	InRam     *uint64
 }
 
 // Measure sums each agent's tree (agents maps an id to its tree's root pid), wavesrv and the host, the plain
@@ -30,7 +47,10 @@ type Breakdown struct {
 // every agent's tree are left out of it.
 func Measure(t Table, s Sampler, agents map[string]int32, serverPid, hostPid int32, byResponsibility bool) Breakdown {
 	b := Breakdown{Agents: map[string]uint64{}}
-	skip := map[int32]bool{hostPid: true}
+	skip := map[int32]bool{}
+	if hostPid > 1 {
+		skip[hostPid] = true
+	}
 	for _, pid := range t.Tree(serverPid) {
 		skip[pid] = true
 	}
@@ -41,15 +61,24 @@ func Measure(t Table, s Sampler, agents map[string]int32, serverPid, hostPid int
 			skip[pid] = true
 			inAgent[pid] = true
 		}
-		if sum, ok := sumOf(s, tree); ok {
+		if sum, ok := sumOf(s.Footprint, tree); ok {
 			b.Agents[id] = sum
 		}
 	}
 	b.Server = one(s, serverPid)
 	b.Terminals = terminalsOf(t, s, serverPid, inAgent)
+	// the host, wavesrv's tree and every agent's tree, then the webview
+	app := slices.Collect(maps.Keys(skip))
 	if hostPid > 1 {
 		b.Host = one(s, hostPid)
-		b.Interface = interfaceOf(t, s, hostPid, skip, byResponsibility)
+		webview := interfacePids(t, s, hostPid, skip, byResponsibility)
+		if sum, ok := sumOf(s.Footprint, webview); ok {
+			b.Interface = &sum
+		}
+		app = append(app, webview...)
+	}
+	if sum, ok := sumOf(s.inRam, app); ok {
+		b.InRam = &sum
 	}
 	return b
 }
@@ -69,13 +98,13 @@ func terminalsOf(t Table, s Sampler, serverPid int32, inAgent map[int32]bool) *u
 	if len(rest) == 0 {
 		return new(uint64)
 	}
-	if sum, ok := sumOf(s, rest); ok {
+	if sum, ok := sumOf(s.Footprint, rest); ok {
 		return &sum
 	}
 	return nil
 }
 
-func interfaceOf(t Table, s Sampler, hostPid int32, skip map[int32]bool, byResponsibility bool) *uint64 {
+func interfacePids(t Table, s Sampler, hostPid int32, skip map[int32]bool, byResponsibility bool) []int32 {
 	var candidates []int32
 	if byResponsibility {
 		for _, pid := range t.Pids() {
@@ -92,24 +121,20 @@ func interfaceOf(t Table, s Sampler, hostPid int32, skip map[int32]bool, byRespo
 			kept = append(kept, pid)
 		}
 	}
-	sum, ok := sumOf(s, kept)
-	if !ok {
-		return nil
-	}
-	return &sum
+	return kept
 }
 
-// sumOf is the pids' summed footprint, and false when none of them could be read
-func sumOf(s Sampler, pids []int32) (uint64, bool) {
+// sumOf is what read gives for the pids, summed, and false when none of them could be read
+func sumOf(read func(pid int32) (uint64, bool), pids []int32) (uint64, bool) {
 	var sum uint64
-	read := false
+	found := false
 	for _, pid := range pids {
-		if n, ok := s.Footprint(pid); ok {
+		if n, ok := read(pid); ok {
 			sum += n
-			read = true
+			found = true
 		}
 	}
-	return sum, read
+	return sum, found
 }
 
 func one(s Sampler, pid int32) *uint64 {

@@ -86,6 +86,8 @@ export interface ConsumersView {
     own: OwnUsage[];
     agentsBytes?: number; // every agent's RAM: 0 with none running, absent while none is read
     appBytes?: number; // the whole app: its own processes and every agent; absent while nothing is read
+    inRamBytes?: number; // what the whole app holds in RAM now: on macOS appBytes also counts what was compressed or swapped out
+    swapBytes: number; // every app's, swapped out to disk
 }
 
 // what the reading counted, or undefined when it counted nothing
@@ -193,6 +195,8 @@ export function buildConsumers(
         own,
         agentsBytes: agentBytes.length === 0 ? 0 : sumRead(agentBytes),
         appBytes: sumRead([...own.map((o) => o.bytes), ...agentBytes]),
+        inRamBytes: data.inrambytes,
+        swapBytes: data.swapusedbytes,
     };
 }
 
@@ -301,14 +305,16 @@ export interface RamBar {
     otherBytes: number;
 }
 
-/** The header's memory bar. arcterm's sum can pass what the OS counts as used (a shared page is counted in every
- * process that maps it), so its share is capped at the used part. */
-export function ramBar(view: Pick<ConsumersView, "freeBytes" | "totalBytes" | "appBytes">): RamBar {
+/** The header's memory bar. arcterm's share is what it holds in RAM, not its footprint: a footprint also counts what
+ * macOS compressed or swapped out, and under memory pressure arcterm's alone passed the RAM in use, which left other
+ * apps at 0. A resident set can still pass what the OS counts as used (a shared page is counted in every process that
+ * maps it), so the share stays capped at the used part. */
+export function ramBar(view: Pick<ConsumersView, "freeBytes" | "totalBytes" | "inRamBytes">): RamBar {
     if (view.totalBytes <= 0) {
         return { appPct: 0, otherPct: 0, otherBytes: 0 };
     }
     const used = Math.max(0, view.totalBytes - view.freeBytes);
-    const app = Math.min(view.appBytes ?? 0, used);
+    const app = Math.min(view.inRamBytes ?? 0, used);
     const pct = (b: number) => (b / view.totalBytes) * 100;
     return { appPct: pct(app), otherPct: pct(used - app), otherBytes: used - app };
 }
@@ -344,6 +350,18 @@ export function panelPlacement(opener: Box | null, view: { width: number; height
     return opener.top > view.height / 2
         ? { right, bottom: view.height - opener.top + PANEL_GAP, origin: "bottom right" }
         : { right, top: opener.bottom + PANEL_GAP, origin: "top right" };
+}
+
+// how far arcterm's footprint must pass what it holds in RAM before the header names it
+const SWAP_NOTE_MIN = 256 * 2 ** 20;
+
+/** arcterm's footprint, when what macOS compressed or swapped out of it is enough to name beside what it holds in
+ * RAM; undefined otherwise. */
+export function withSwapBytes(view: Pick<ConsumersView, "appBytes" | "inRamBytes">): number | undefined {
+    if (view.appBytes === undefined || view.inRamBytes === undefined) {
+        return undefined;
+    }
+    return view.appBytes - view.inRamBytes >= SWAP_NOTE_MIN ? view.appBytes : undefined;
 }
 
 /** "300 MB" under a gigabyte, "2.5 GB" above. */

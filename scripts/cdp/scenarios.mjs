@@ -30060,6 +30060,9 @@ const CONSUMERS_READING = {
     interfacebytes: 684 * 2 ** 20,
     serverbytes: 121 * 2 ** 20,
     hostbytes: 47 * 2 ** 20,
+    // swapping: arcterm holds 1.9 GB of its footprint in RAM
+    inrambytes: 1.9 * 2 ** 30,
+    swapusedbytes: 4.5 * 2 ** 30,
     agents: [
         // 80K counted, and 9M cache reads that the count leaves out: no burn
         { tabid: "fx-consumers-mine", blockid: "fx-blk-mine", rambytes: 300 * 2 ** 20, tokensread: true, tokens: [consumersBucket("claude-sonnet-4-6", 80_000, 9_000_000)] },
@@ -30264,6 +30267,7 @@ const consumersPopover = {
             return {
                 rows: [...p.querySelectorAll("[data-consumer-row]")].map((r) => r.dataset.consumerRow),
                 header: p.querySelector("[data-consumers-header]")?.textContent ?? "",
+                inRam: p.querySelector("[data-consumers-in-ram]")?.textContent ?? "",
                 runLabel: p.textContent.toLowerCase().includes("run 85548d0b"),
                 ramCols: p.querySelectorAll("[data-consumer-ram]").length,
                 tokenCols: p.querySelectorAll("[data-consumer-tokens]").length,
@@ -30271,9 +30275,10 @@ const consumersPopover = {
         })()`);
         await h.shot("cdp-shots/consumers-ram.png");
         rec(
-            "3. rows by RAM: the run's worker first under its run, free RAM and the 5-hour quota in the header, each row's RAM and tokens side by side",
+            "3. rows by RAM: the run's worker first under its run, free RAM, the swap and the 5-hour quota in the header, arcterm's share by what it holds in RAM, each row's RAM and tokens side by side",
             !!ram && ram.rows[0] === "fx-consumers-worker" && ram.rows.length === 4 && ram.runLabel &&
-                ram.header.includes("free of") && ram.header.includes("5h quota 62%") && ram.ramCols === 4 && ram.tokenCols === 4,
+                ram.header.includes("free of") && ram.header.includes("4.5 GB swap") && ram.header.includes("5h quota 62%") &&
+                /^arcterm 1\.9 GB in RAM · [\d.]+ GB with swap$/.test(ram.inRam) && ram.ramCols === 4 && ram.tokenCols === 4,
             JSON.stringify(ram)
         );
 

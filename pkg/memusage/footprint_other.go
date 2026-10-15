@@ -21,6 +21,9 @@ func footprint(pid int32) (uint64, bool) {
 	return m.RSS, true
 }
 
+// resident is nil: the footprint here is already what the process holds in RAM
+var resident func(pid int32) (uint64, bool)
+
 // responsiblePid has no equivalent here: the webview's processes are found as the host's children instead.
 func responsiblePid(int32) (int32, bool) {
 	return 0, false

@@ -76,6 +76,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- **arcterm's share of the RAM bar adds up when the Mac swaps**: the bar counts what arcterm and its agents hold in
+  RAM now, so on a Mac short of memory it no longer fills the whole used part and shows other apps at 0 MB. What they
+  come to with what macOS compressed or swapped out is named beside it, and the header shows the swap in use.
 - **Canvas previews show, and work on a Mac**: the Canvas gallery's cards show the preview taken the first time you
   open a canvas (the installed app drew them blank before), a Mac now takes them, and Send captures the board there.
   They use the Screen Recording permission arcterm already has; without it Send says so.

@@ -39,7 +39,7 @@ func consumersRuns() []*waveobj.Run {
 // returns how many times a dag was read.
 func scriptConsumers(t *testing.T, pids map[string]int, table memusage.Table, foot map[int32]uint64) *int {
 	t.Helper()
-	oldPid, oldTable, oldSampler, oldDag, oldVM := consumerBlockPid, consumerTable, consumerSampler, consumerLoadDag, virtualMemory
+	oldPid, oldTable, oldSampler, oldDag, oldVM, oldSwap := consumerBlockPid, consumerTable, consumerSampler, consumerLoadDag, virtualMemory, consumerSwap
 	consumerBlockPid = func(blockId string) int { return pids[blockId] }
 	consumerTable = func() (memusage.Table, error) { return table, nil }
 	consumerSampler = func() memusage.Sampler {
@@ -62,8 +62,11 @@ func scriptConsumers(t *testing.T, pids map[string]int, table memusage.Table, fo
 	virtualMemory = func(context.Context) (*mem.VirtualMemoryStat, error) {
 		return &mem.VirtualMemoryStat{Total: 8 << 30, Available: 2 << 30}, nil
 	}
+	consumerSwap = func(context.Context) (*mem.SwapMemoryStat, error) {
+		return &mem.SwapMemoryStat{Total: 6 << 30, Used: 5 << 30}, nil
+	}
 	t.Cleanup(func() {
-		consumerBlockPid, consumerTable, consumerSampler, consumerLoadDag, virtualMemory = oldPid, oldTable, oldSampler, oldDag, oldVM
+		consumerBlockPid, consumerTable, consumerSampler, consumerLoadDag, virtualMemory, consumerSwap = oldPid, oldTable, oldSampler, oldDag, oldVM, oldSwap
 	})
 	return &dagReads
 }
@@ -102,6 +105,10 @@ func TestGetConsumersReportsEachAgentsRamTokensAndTask(t *testing.T) {
 	}
 	if rtn.ServerBytes == nil || *rtn.ServerBytes != 121*consumersMB {
 		t.Fatalf("server = %v, want 121 MB", rtn.ServerBytes)
+	}
+	// the scripted sampler reads no resident set, so what the app holds in RAM is its footprints: wavesrv's whole tree
+	if rtn.InRamBytes == nil || *rtn.InRamBytes != 1500*consumersMB || rtn.SwapUsedBytes != 5<<30 {
+		t.Fatalf("in RAM %v, swap %d; want 1500 MB and 5 GB", rtn.InRamBytes, rtn.SwapUsedBytes)
 	}
 	byTab := map[string]wshrpc.ConsumerAgent{}
 	for _, a := range rtn.Agents {
