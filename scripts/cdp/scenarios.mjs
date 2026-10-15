@@ -38592,7 +38592,7 @@ const runQueueScenario = {
 // stages one the same way), so no agent launches: the ORIGIN, the session that started a run and queued a plan, and the
 // LEAD, which stands in for the run's own session so the tree draws the run's row (a run with no agent in the roster has
 // none). The run is an orchestrator run held in planning by deferstart (it spawns nothing), made on the origin's tab
-// id, and its lead reports idle: no agent is at work for the run, so a click on the `→` line has none to focus and opens
+// id, and its lead reports idle: no agent is at work for the run, so a click on the run chip has none to focus and opens
 // the run's sheet. `runs:maxactive` is 1, so the plan queued behind the run waits.
 const RO_ORIGIN = "verify-origin-session";
 const RO_LEAD = "verify-origin-lead";
@@ -38600,7 +38600,10 @@ const RO_PROJECT = "verify-run-origin";
 const RO_RPC = { timeout: 30000 };
 // parenthesised: they are spliced into `=== ...` comparisons, and `a ?? null === x` reads as `a ?? (null === x)`
 const roLink = (tabId) => `(document.querySelector('[data-agent-row="${tabId}"] [data-origin-link]')?.textContent.trim() ?? null)`;
-const roFrom = (tabId) => `(document.querySelector('[data-agent-row="${tabId}"] [data-origin-from]')?.textContent.trim() ?? null)`;
+const roLinkTitle = (tabId) => `(document.querySelector('[data-agent-row="${tabId}"] [data-origin-link]')?.title ?? null)`;
+// the ↰ has no words: the origin's name is its tooltip
+const roFrom = (tabId) => `(document.querySelector('[data-agent-row="${tabId}"] [data-origin-from]')?.title ?? null)`;
+const roFromText = (tabId) => `(document.querySelector('[data-agent-row="${tabId}"] [data-origin-from]')?.textContent.trim() ?? null)`;
 // the row the selection fills (the row's `selected` is focusIdAtom's value, which no scenario can read directly)
 const roSelected = (tabId) => `(document.querySelector('[data-agent-row="${tabId}"]')?.className.includes("bg-surface-selected") ?? false)`;
 
@@ -38704,28 +38707,30 @@ const runOriginScenario = {
         if (ctx.arrangeError != null) return steps;
         // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
         try {
-            // 1. the origin's row says where its two links stand, and the run's row says where it came from
+            // 1. the origin's row says where its two links stand, and the run's row says where it came from, in a
+            // tooltip only: its ↰ has no words
             await h.goto("agent");
             const up = await polishWaitFor(
                 h,
-                `${roLink(ctx.tabId)} === "→ 2 runs" && ${roFrom(ctx.leadTabId)} === ${JSON.stringify(`from ${RO_ORIGIN}`)}`,
+                `${roLink(ctx.tabId)} === "2 runs" && ${roFrom(ctx.leadTabId)} === ${JSON.stringify(`Started from ${RO_ORIGIN}`)} && ${roFromText(ctx.leadTabId)} === ""`,
                 20000
             );
             await h.shot("cdp-shots/run-origin-1-two-links.png");
             rec(
-                "1. the origin's row reads → 2 runs (the run and the queued plan), and the run's row reads from <the origin's name>",
+                "1. the origin's run chip reads 2 runs (the run and the queued plan), and the run's ↰ has no words, its tooltip Started from <the origin's name>",
                 up,
-                { link: await h.ev(roLink(ctx.tabId)), from: await h.ev(roFrom(ctx.leadTabId)) }
+                { link: await h.ev(roLink(ctx.tabId)), from: await h.ev(roFrom(ctx.leadTabId)), fromText: await h.ev(roFromText(ctx.leadTabId)) }
             );
 
-            // 2. the plan leaves the queue, so one link is left, and it names the run
+            // 2. the plan leaves the queue, so one link is left. The run has no plan yet, so the chip is its glyph
+            // alone, and the run's title is in its tooltip, not on the row
             await h.rpc("runqueueremove", { id: ctx.entryId });
-            const want = `→ ${ctx.goal}`;
-            const one = await polishWaitFor(h, `${roLink(ctx.tabId)} === ${JSON.stringify(want)}`, 8000);
+            const one = await polishWaitFor(h, `${roLink(ctx.tabId)} === "" && ${roLinkTitle(ctx.tabId)} === ${JSON.stringify(ctx.goal)}`, 8000);
             await h.shot("cdp-shots/run-origin-2-one-link.png");
-            rec("2. with the plan removed, the origin's line reads → and the run's title", one, {
+            rec("2. with the plan removed, the origin's chip has no words and its tooltip is the run's title", one, {
                 link: await h.ev(roLink(ctx.tabId)),
-                want,
+                title: await h.ev(roLinkTitle(ctx.tabId)),
+                want: ctx.goal,
             });
 
             // 3. the run has no agent at work, so the router opens its sheet on Jarvis
@@ -38735,12 +38740,12 @@ const runOriginScenario = {
             const sheetText = await h.ev(`document.querySelector('[data-run-sheet]')?.textContent ?? ""`);
             await h.shot("cdp-shots/run-origin-3-sheet.png");
             rec(
-                "3. a click on the → line opens the run's sheet: the surface is Jarvis and the sheet shows that run",
+                "3. a click on the run chip opens the run's sheet: the surface is Jarvis and the sheet shows that run",
                 sheet && surface === SURFACE_LABEL.jarvis && sheetText.includes(ctx.stamp),
                 { sheet, surface, hasRun: sheetText.includes(ctx.stamp) }
             );
 
-            // 4. a click on the run's from <name> focuses the origin. The run's own row is selected first, so the
+            // 4. a click on the run's ↰ focuses the origin. The run's own row is selected first, so the
             // origin's selection is the click's and not what was there already
             await h.goto("agent");
             await polishWaitFor(h, `${roFrom(ctx.leadTabId)} != null`, 15000);
@@ -38751,7 +38756,7 @@ const runOriginScenario = {
             const focused = await polishWaitFor(h, roSelected(ctx.tabId), 8000);
             await h.shot("cdp-shots/run-origin-4-focused.png");
             rec(
-                "4. a click on the run's from <name> selects the origin session (it was not selected before)",
+                "4. a click on the run's ↰ selects the origin session (it was not selected before)",
                 before === false && focused && (await h.ev(roSelected(ctx.leadTabId))) === false,
                 { before, focused }
             );

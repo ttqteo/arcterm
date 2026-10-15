@@ -41,6 +41,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- **The link between a session and its run is shorter**: under the session it is a small run chip on its second line
+  (`0/7`, `queued #2`, `merged`, `2 runs`) instead of a line with the run's name, and the run's row shows a ↰ instead
+  of `from <session>`. The names are in their tooltips, and a click still goes to the other.
 - **⌘R redraws the terminal** on a Mac: garbled text in an agent or terminal pane repaints and the TUI draws
   itself again, as the header menu's Redraw does, from inside the terminal too.
 - **A tidier Ideas list**: when a later decision replaces an earlier line, the agent drops or rewrites the old one, and

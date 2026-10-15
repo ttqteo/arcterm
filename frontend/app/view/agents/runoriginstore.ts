@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The session a run was started from, read for the agent header and the run sheet, and the one way to open it; and
-// the runs a session started, read for its header and for the `→` line under its tree row.
+// the runs a session started, read for its header and for the run chip on its tree row.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import * as WOS from "@/app/store/wos";
@@ -121,7 +121,7 @@ export function useRunsStartedBy(agent: Pick<AgentVM, "id" | "transcriptPath">):
     return useMemo(() => runsStartedBy(agent, runs), [runs, agent.id, agent.transcriptPath]);
 }
 
-/** The runs a session started as the tree's `→` line reads them, by run id: every run the channels list under its tab
+/** The runs a session started as the tree's run chip reads them, by run id: every run the channels list under its tab
  *  (one held in planning, or over with its sessions closed, has no agent in the roster for the lineage to find it by),
  *  with the lineage's own copy of a run it knows, which carries the digest. */
 export function useOriginRuns(
@@ -155,7 +155,7 @@ export function useOriginName(model: AgentsViewModel, originId: string | undefin
     return useAtomValue(nameAtom);
 }
 
-/** A click on a session's `→` line, through the one router (openTarget): a run that has an agent at work in the roster
+/** A click on a session's run chip, through the one router (openTarget): a run that has an agent at work in the roster
  *  focuses that agent, which is its row on the tree; one with none (not started, or its agents gone) opens its sheet. A
  *  queued entry has no target the router knows, so its row is scrolled into view. */
 export function openOriginLink(model: AgentsViewModel, target: OriginLinkTarget): void {
