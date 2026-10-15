@@ -131,6 +131,13 @@ export const GATHER_MS = 400;
 // continues a chain, and the agents the chain already started count toward the agents rule
 export const BURST_MS = 10_000;
 
+// why a spawn after the turn's Don't spawn may not run. the card's own reason names the spawn it asked about (seen
+// 2026-10-15: an Agent call refused as "run a workflow with at least 1 agent"), so a later one gets this
+export const LATER_DENY_REASON =
+    'Not run: the person chose "Don\'t spawn" earlier this turn, which refuses every spawn until their next prompt. ' +
+    "Do not retry a spawn this turn; do the work in this session or ask the person, " +
+    "and say in your report that the spawn was refused.";
+
 // the verdict that lets a spawn run: off, a cheap spawn, or a broken gate
 export const RUN_VERDICT: SpawnVerdict = { run: true, scope: null, reason: null, note: null };
 
@@ -144,7 +151,7 @@ type OpenGroup = { group: Group; phase: "gathering" | "deciding" | "card"; verdi
 // the gate for one session: the person's say on later spawns, the open group, whose members share one card, and
 // the chain of spawns that came within BURST_MS of each other. sleep and clock are injected so vitest can drive them
 export function createSpawnGate(sleep: (ms: number) => Promise<void>, clock: () => number = Date.now) {
-    let decision: { kind: Decision; reason: string | null } = { kind: null, reason: null };
+    let decision: Decision = null;
     let open: OpenGroup | null = null;
     // the agents the chain started (refused ones left out), and when its last spawn came
     const chain = { started: 0, last: -Infinity };
@@ -153,11 +160,11 @@ export function createSpawnGate(sleep: (ms: number) => Promise<void>, clock: () 
     const calls = new Map<string, Promise<string | null>>();
 
     async function decide(tool: SpawnTool, input: Record<string, unknown>, ask: SpawnAsk): Promise<string | null> {
-        if (decision.kind === "allow-turn" || decision.kind === "allow-session") {
+        if (decision === "allow-turn" || decision === "allow-session") {
             return null;
         }
-        if (decision.kind === "deny-turn") {
-            return decision.reason;
+        if (decision === "deny-turn") {
+            return LATER_DENY_REASON;
         }
         const at = clock();
         if (at - chain.last > BURST_MS) {
@@ -192,7 +199,7 @@ export function createSpawnGate(sleep: (ms: number) => Promise<void>, clock: () 
                     }
                     const kind = decisionAfter(v);
                     if (kind) {
-                        decision = { kind, reason: v.reason };
+                        decision = kind;
                     }
                     return v;
                 } finally {
@@ -224,14 +231,14 @@ export function createSpawnGate(sleep: (ms: number) => Promise<void>, clock: () 
         // the person's next prompt ends a turn's say, a deny included; a session's stays
         promptSubmitted() {
             calls.clear();
-            if (decision.kind !== "allow-session") {
-                decision = { kind: null, reason: null };
+            if (decision !== "allow-session") {
+                decision = null;
             }
         },
         // a new or cleared session forgets every say
         sessionStarted() {
             calls.clear();
-            decision = { kind: null, reason: null };
+            decision = null;
         },
     };
 }
