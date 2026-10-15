@@ -333,7 +333,8 @@ var (
 )
 
 // retryLandTreeRemoval removes a landed run's tree once its lead lets go of it. The land runs as the lead
-// completes, while the tree is still its working directory, and on Windows only the lead's exit frees it.
+// completes, while the tree is still its working directory, and on Windows only the lead's exit frees it. A lead
+// that keeps its session past the retries leaves the tree to SweepWorktreeRoot.
 func retryLandTreeRemoval(project, runID string) {
 	var err error
 	for range landTreeRetryAttempts {
@@ -342,7 +343,7 @@ func retryLandTreeRemoval(project, runID string) {
 			return
 		}
 	}
-	log.Printf("run %s: gave up removing its landing tree after %d attempts: %v", runID, landTreeRetryAttempts, err)
+	log.Printf("run %s: its landing tree is still held after %d attempts, left to the worktree sweep: %v", runID, landTreeRetryAttempts, err)
 }
 
 func runDagID(run *waveobj.Run, g *waveobj.TaskGroup) string {
