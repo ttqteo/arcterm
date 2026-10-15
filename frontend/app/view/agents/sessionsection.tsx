@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The session block that opens the Agent details rail, shown whole: the rail's status line (context and spend, passed
-// in as head), the session's total tokens before a tokens bar, its facts (the rail passes them in as children), then
-// Compact/Clear when offered (actions) with the Breakdown toggle at the right. The breakdown is the one part that folds:
-// the insight, the per-class split (tokens + ≈ spend) and, for a session that used more than one model, the per-model
-// breakdown, from the session's own transcript (transcriptusagestore/sessionusage). The spend shows once, in the head;
-// a single model's name is in the facts. Class fills come from usagestats.ts's CLASS_FILL (theme tokens only). Spend is
-// an estimate.
+// in as head), the session's total tokens before a tokens bar, its facts (the rail passes them in as children), the
+// agent's state and cache with Resume or Stop (state), then Compact/Clear when offered (actions) with the Breakdown
+// toggle at the right, so the cache countdown sits over the Compact/Clear it argues for. The breakdown is the one part
+// that folds: the insight, the per-class split (tokens + ≈ spend) and, for a session that used more than one model, the
+// per-model breakdown, from the session's own transcript (transcriptusagestore/sessionusage). The spend shows once, in
+// the head; a single model's name is in the facts. Class fills come from usagestats.ts's CLASS_FILL (theme tokens
+// only). Spend is an estimate.
 
 import { StackedMeter } from "@/app/element/meter";
 import { paneReveal } from "@/app/element/motiontokens";
@@ -138,10 +139,12 @@ function UsageBreakdown({ usage }: { usage: SessionUsage }) {
 
 export function SessionSection({
     head,
+    state,
     actions,
     children,
 }: {
     head: ReactNode; // the status line: context on the left, spend on the right
+    state?: ReactNode; // the agent's state and cache with Resume or Stop, under the facts
     actions?: ReactNode; // Compact/Clear, on the Breakdown toggle's row
     children: ReactNode; // the session's facts
 }) {
@@ -168,6 +171,7 @@ export function SessionSection({
                 )}
             </div>
             <div className="mt-[10px]">{children}</div>
+            {state != null ? <div className="mt-[8px]">{state}</div> : null}
             {actions != null || loaded ? (
                 <div className="-ml-[6px] mt-[6px] flex items-center gap-[4px]">
                     {actions}

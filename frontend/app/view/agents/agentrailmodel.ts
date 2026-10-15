@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pure: what the Agent details rail says in its context row, its footer status and action, its tool chips, its files
+// Pure: what the Agent details rail says in its context row, its state line and action, its tool chips, its files
 // summary and the worktree line under its branch. No React.
 
 import { usageLevel, type AgentVM } from "./agentsviewmodel";
@@ -82,7 +82,7 @@ export function cacheRewriteTitle(pct: number | undefined, max: number | undefin
 
 export type RailAction = { kind: "resume" | "stop" };
 
-// railAction is the rail footer's one control: Resume nudges an idle agent, Stop interrupts a turn. An agent with
+// railAction is the session block's one control: Resume nudges an idle agent, Stop interrupts a turn. An agent with
 // no live terminal has nothing to drive.
 export function railAction(state: AgentVM["state"], live: boolean): RailAction | null {
     if (!live) {
@@ -91,9 +91,9 @@ export function railAction(state: AgentVM["state"], live: boolean): RailAction |
     return { kind: state === "idle" ? "resume" : "stop" };
 }
 
-// railStatusLine is the rail footer's text: the session's state and how long it has held it, and how long the prompt
-// cache has left (formatCacheCountdown's "—" is a cache nobody has read yet, which the line leaves out). An ended
-// session has no cache to keep warm.
+// railStatusLine is the session block's state line: the session's state and how long it has held it, and how long the
+// prompt cache has left (formatCacheCountdown's "—" is a cache nobody has read yet, which the line leaves out). An
+// ended session has no cache to keep warm.
 export function railStatusLine(o: { state: AgentVM["state"]; age: string; ended: boolean; cache: string }): string {
     if (o.ended) {
         return `ended ${o.age} ago`;

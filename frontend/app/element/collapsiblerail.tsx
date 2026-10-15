@@ -140,7 +140,6 @@ const RAIL_COLLAPSED_PX = 44;
 export function CollapsibleRail({
     openAtom,
     sections,
-    footer,
     ariaLabel,
     title,
     extraIcons,
@@ -156,7 +155,6 @@ export function CollapsibleRail({
 }: {
     openAtom: PrimitiveAtom<boolean>;
     sections: RailSection[];
-    footer?: ReactNode;
     ariaLabel?: string;
     // when given, the collapse control sits in a titled header band of the same height and rule as the
     // calling surface's other column headers, instead of a bare chevron row of its own height. Opt-in per
@@ -287,9 +285,6 @@ export function CollapsibleRail({
                                     )}
                                 </div>
                             )}
-                            {footer ? (
-                                <div className="shrink-0 border-t border-border px-[18px] py-3">{footer}</div>
-                            ) : null}
                         </motion.div>
                     ) : hideWhenCollapsed ? null : (
                         <motion.div

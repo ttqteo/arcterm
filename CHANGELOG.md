@@ -50,6 +50,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   The boss no longer walks onto a desk or the person at it, and the ↵ shows only while it stands in front of a desk.
 - **A bigger Office card**: ⤢ on the card's corner, or `f`, grows it to about half the office and most of its height,
   so a long answer reads without scrolling; the size you pick stays for the next card.
+- **The session tile keeps to the session**: the agent rail no longer lists the project's AGENTS.md or CLAUDE.md under
+  the session's facts; Setup → Project lists it, with every other file that shapes the agent. <!-- try: go:setup -->
+- **Stop and Resume sit on the session tile**: the agent's state, its cache countdown and Resume or Stop moved from the
+  foot of the agent rail into the session tile, under project · branch · model and over Compact and Clear.
 
 ### Fixed
 

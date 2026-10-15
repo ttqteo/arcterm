@@ -821,6 +821,45 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                         spend={spend}
                     />
                 }
+                state={
+                    sub ? undefined : (
+                        <div data-rail-state className="flex items-center gap-[8px]">
+                            <StatusDot state={ended ? "idle" : agent.state} />
+                            <span
+                                title={
+                                    cacheCountdown !== "—" ? cacheRewriteTitle(ctxPct, usage?.contextmax) : undefined
+                                }
+                                className="min-w-0 flex-1 truncate text-[11px] tabular-nums text-muted"
+                            >
+                                {railStatusLine({
+                                    state: agent.state,
+                                    age,
+                                    ended: ended != null,
+                                    cache: cacheCountdown,
+                                })}
+                            </span>
+                            {action?.kind === "resume" ? (
+                                <button
+                                    type="button"
+                                    onClick={() => drive(NUDGE_INPUT)}
+                                    title="nudge the agent to continue from idle"
+                                    className="flex-none cursor-pointer rounded-[6px] border border-accent/45 bg-accent/10 px-[10px] py-[3px] text-[11.5px] font-medium text-accent-soft hover:bg-accent/[0.18]"
+                                >
+                                    Resume
+                                </button>
+                            ) : action?.kind === "stop" ? (
+                                <button
+                                    type="button"
+                                    onClick={() => drive("\x1b")}
+                                    title="interrupt the current turn (Esc in the terminal also stops)"
+                                    className="flex-none cursor-pointer rounded-[6px] border border-error/30 bg-transparent px-[10px] py-[3px] text-[11.5px] font-medium text-error hover:bg-error/10"
+                                >
+                                    Stop
+                                </button>
+                            ) : null}
+                        </div>
+                    )
+                }
                 actions={offerReset ? <ResetActions onReset={drive} /> : undefined}
             >
                 <div className="flex flex-col gap-[6px]">
@@ -1142,38 +1181,6 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 ),
                 title: `${stripTitle} (${formatChordString("d")})`,
             }}
-            footer={
-                sub ? undefined : (
-                    <div className="flex items-center gap-[9px]">
-                        <StatusDot state={ended ? "idle" : agent.state} />
-                        <span
-                            title={cacheCountdown !== "—" ? cacheRewriteTitle(ctxPct, usage?.contextmax) : undefined}
-                            className="min-w-0 flex-1 truncate text-[11px] tabular-nums text-muted"
-                        >
-                            {railStatusLine({ state: agent.state, age, ended: ended != null, cache: cacheCountdown })}
-                        </span>
-                        {action?.kind === "resume" ? (
-                            <button
-                                type="button"
-                                onClick={() => drive(NUDGE_INPUT)}
-                                title="nudge the agent to continue from idle"
-                                className="flex-none cursor-pointer rounded-[6px] border border-accent/45 bg-accent/10 px-[14px] py-[5px] text-[12px] font-medium text-accent-soft hover:bg-accent/[0.18]"
-                            >
-                                Resume
-                            </button>
-                        ) : action?.kind === "stop" ? (
-                            <button
-                                type="button"
-                                onClick={() => drive("\x1b")}
-                                title="interrupt the current turn (Esc in the terminal also stops)"
-                                className="flex-none cursor-pointer rounded-[6px] border border-error/30 bg-transparent px-[14px] py-[5px] text-[12px] font-medium text-error hover:bg-error/10"
-                            >
-                                Stop
-                            </button>
-                        ) : null}
-                    </div>
-                )
-            }
         />
     );
 }

@@ -375,12 +375,11 @@ content is always fluid.
   tile that sets it apart from the lists under it: a one-line
   status (a context ring with its percent and tokens, then the session's
   spend), the session's total tokens before their bar, its facts (project ·
-  branch · model on one unlabelled line, then tools), then Compact and Clear
-  when offered with the Breakdown toggle at the right; the breakdown is the
-  one part that folds. Then Needs you, the counted sections that hold
-  something, and Run/Task.
-  The footer is the session's state and cache with Resume or Stop. Each
-  figure shows once.
+  branch · model on one unlabelled line, then tools), the agent's state and
+  cache with Resume or Stop, then Compact and Clear when offered with the
+  Breakdown toggle at the right; the breakdown is the one part that folds.
+  Then Needs you, the counted sections that hold something, and Run/Task.
+  The rail has no footer. Each figure shows once.
 - **Surfaces** — absolutely stacked (`absolute inset-0`) under a
   `relative min-w-0 flex-1` shell; each surface is `flex flex-col bg-background`.
   The Agent surface stays mounted-but-hidden across nav switches so its xterm
