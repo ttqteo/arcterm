@@ -2,16 +2,44 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cachedSprite, gridPixels, parseColor, spriteCacheStats } from "./spritecache";
+import {
+    cachedSprite,
+    clearSprites,
+    clearTokenColors,
+    gridPixels,
+    parseColor,
+    spriteCacheStats,
+    tokenRgb,
+} from "./spritecache";
 
 describe("spritecache", () => {
     afterEach(() => vi.unstubAllGlobals());
 
-    it("reads hex and rgb colours, and nothing else", () => {
+    it("reads hex and rgb colours, an alpha below 1, and nothing else", () => {
         expect(parseColor(" #0a0b0c ")).toEqual([10, 11, 12]);
         expect(parseColor("rgb(1, 2, 3)")).toEqual([1, 2, 3]);
-        expect(parseColor("rgba(4, 5, 6, 0.5)")).toEqual([4, 5, 6]);
+        expect(parseColor("rgba(4, 5, 6, 0.5)")).toEqual([4, 5, 6, 0.5]);
+        expect(parseColor("rgba(4, 5, 6, 1)")).toEqual([4, 5, 6]);
         expect(parseColor("red")).toBeUndefined();
+    });
+
+    it("writes a colour's alpha", () => {
+        const px = gridPixels(["A"], 1, () => [1, 2, 3, 0.5]);
+        expect(Array.from(px)).toEqual([1, 2, 3, 128]);
+    });
+
+    it("reads a token again after the colours are cleared, and empties a namespace", () => {
+        let value = "#010203";
+        vi.stubGlobal("document", { documentElement: {}, createElement: () => ({ getContext: () => null }) });
+        vi.stubGlobal("getComputedStyle", () => ({ getPropertyValue: () => value }));
+        expect(tokenRgb("--t-clear")).toEqual([1, 2, 3]);
+        value = "#040506";
+        expect(tokenRgb("--t-clear")).toEqual([1, 2, 3]);
+        clearTokenColors();
+        expect(tokenRgb("--t-clear")).toEqual([4, 5, 6]);
+        cachedSprite("t3", "a", ["A"], 1, () => [255, 255, 255]);
+        clearSprites("t3");
+        expect(spriteCacheStats("t3").entries).toBe(0);
     });
 
     it("paints only the coloured cells, at the grid's width", () => {

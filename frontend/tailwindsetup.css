@@ -180,6 +180,68 @@
     --shadow-office-sign-night: 0 0 18px rgba(217, 119, 87, 0.6);
     --shadow-office-lamp: 0 0 22px 8px rgba(243, 212, 138, 0.35); /* a desk lamp's pool of light */
 
+    /* The cockpit office in pixel art (docs/superpowers/specs/2026-10-15-cockpit-office-design.md, "Drawing"): the
+       scenery's base colours in work hours (bright) and after hours (muted, the dark cockpit's), read by
+       view/office/officepalette.ts for the two canvases; their highlights and second tones are fixed factors there.
+       Scenery, like the people: every theme keeps these values. */
+    --color-office-day-ink: #26222e;
+    --color-office-day-shadow: rgba(38, 34, 46, 0.22);
+    --color-office-day-wood: #cc9c6a;
+    --color-office-day-seam: #946640;
+    --color-office-day-face: #e2e6e9;
+    --color-office-day-cap: #a39a8f;
+    --color-office-day-trim: #8a5a3a;
+    --color-office-day-glass: #8cc2ee;
+    --color-office-day-tile: #d6d0c6;
+    --color-office-day-grout: #b9b1a5;
+    --color-office-day-carpet: #a7b2bd;
+    --color-office-day-rug: #7d9e98;
+    --color-office-day-desk: #d9ad78;
+    --color-office-day-desk-face: #7a5236;
+    --color-office-day-chair: #5a647c;
+    --color-office-day-metal: #4a4f5e;
+    --color-office-day-laptop: #b4bac4;
+    --color-office-day-screen: #1f2433;
+    --color-office-day-sofa: #b05a4e;
+    --color-office-day-sofa-face: #86423a;
+    --color-office-day-leaf: #6faa4c;
+    --color-office-day-leaf-dark: #3e7a36;
+    --color-office-day-pot: #b4643e;
+    --color-office-day-brick: #a85a42;
+    --color-office-day-mortar: #7a3e2e;
+    --color-office-after-ink: #121115;
+    --color-office-after-shadow: rgba(0, 0, 0, 0.28);
+    --color-office-after-wood: #46372b;
+    --color-office-after-seam: #2c221b;
+    --color-office-after-face: #5d5a55;
+    --color-office-after-cap: #7d776e;
+    --color-office-after-trim: #3a2c22;
+    --color-office-after-glass: #1f2536;
+    --color-office-after-tile: #33322f;
+    --color-office-after-grout: #272624;
+    --color-office-after-carpet: #363a40;
+    --color-office-after-rug: #3d4a48;
+    --color-office-after-desk: #7e6a55;
+    --color-office-after-desk-face: #4a3c30;
+    --color-office-after-chair: #3e4352;
+    --color-office-after-metal: #3a3d47;
+    --color-office-after-laptop: #6e727c;
+    --color-office-after-screen: #161922;
+    --color-office-after-sofa: #6c4844;
+    --color-office-after-sofa-face: #4f3431;
+    --color-office-after-leaf: #4b6a3c;
+    --color-office-after-leaf-dark: #2f4528;
+    --color-office-after-pot: #7a4a33;
+    --color-office-after-brick: #5a3a31;
+    --color-office-after-mortar: #3f2822;
+    /* the plan's hair: a step lighter than the run office's, so the chibi's dark outline shows around it */
+    --color-office-plan-hair-1: #4a3426;
+    --color-office-plan-hair-2: #7a4a2a;
+    --color-office-plan-hair-3: #3b3d4a;
+    --color-office-plan-hair-4: #b0603a;
+    /* under a label in work hours: the floor is light, the labels' ink is not */
+    --color-office-plate: rgba(31, 30, 29, 0.82);
+
     /* Connection status icon palette (legacy block/connectionbutton; identity, never theme-derived) */
     --color-conn-1: #53b4ea;
     --color-conn-2: #aa67ff;
