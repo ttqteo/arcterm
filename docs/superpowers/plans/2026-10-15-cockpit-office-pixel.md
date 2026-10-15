@@ -65,17 +65,28 @@ final stage runs vitest.
 
 ## Review Focus
 
-- **A theme switch while the office is open.** A run's screen, the laptops' lights, the bubbles and the boss's ring
-  use status tokens; after the switch they show the new theme's colours, with no stale cached colour. Pinned in Task 1
-  (`clearTokenColors`, `clearSprites`), Task 3 (`sceneryKey` carries the theme) and Task 4 (`useThemeEpoch`).
+- **A theme switch, with the office open or away.** A run's screen, the laptops' lights, the bubbles and the boss's
+  ring use status tokens; after the switch they show the new theme's colours, with no stale cached colour, whether the
+  theme changed while the office was open or while it was unmounted (Cards, another surface). Pinned in Task 1
+  (`clearTokenColors`, `clearSprites`), Task 3 (`sceneryKey` carries the theme), Task 4 (`useThemeEpoch`, its last
+  theme kept at module level) and Task 5 (step 13c switches the theme with the office open, step 15b while it is in
+  Cards).
 - **A width that is not a multiple of 3** (the office is as wide as the Cockpit; 1001 px, or `MIN_W` 900): the
   canvases cover the whole plan, the right outer wall is drawn, nothing is cut. Pinned in Task 3.
 - **Work hours ending while the office is open:** one redraw, the plates leave the labels, and a near-side seat
-  re-shades. Pinned in Task 3 (the key) and Task 5 (step 9 counts the draws).
-- **A near-side worker who asks:** it raises its hand facing you over the table, shaded with its room, its bubble
-  beside its head. Pinned in Task 4 (placement) and seen on `Main`'s Billing export table in Task 5's shots.
+  re-shades. Pinned in Task 3 (the key), Task 4 (one draw counted per scene, not per canvas) and Task 5 (step 9b counts
+  the draws).
+- **A near-side worker who asks:** it raises its hand facing you over the table (z 3, over the over canvas, shaded
+  with its room), its bubble beside its head. The prototype puts a near seat that is not `back` under the over canvas,
+  but never drew one (its fixture has no asking task), and there the table would cover an asking face, the one thing
+  that must stand out; so the plan keeps it at z 3. Pinned in Task 4 (placement) and seen in Task 5's step 1c
+  (`cockpit-office-near-ask.png`: `Main`'s runs with Billing export's task 3 asking; the canvas's boards have no such
+  worker).
 - **A crowded lounge:** with the chibi's taller standing sprite, no lounge person overlaps `+N in the lounge` or
-  another spot's label. Pinned in Task 2 (the model's existing lounge test, with the new sizes).
+  another spot's label. Pinned in Task 2 (the model's existing lounge test, with the new sizes) and seen in Task 5's
+  step 14b.
+- **The open time measures the building.** The bench's row 8 stops when the desks are in and each canvas has painted
+  (`canvas[data-office-drawn]`), not at the first desk. Pinned in Task 4 (the attribute) and Task 5 (step 7).
 
 ---
 
@@ -559,6 +570,11 @@ git commit -m "feat(cockpit): the office's pixel palette: a token per scenery ro
 Heights, in rows: `sit` `nod` `doze` `yawn` 17; `back` 15; `backseat` 19; `hand1` `hand2` `cheer1` `cheer2`
 `stretch` 20 (20 wide); `cup` `stand` `down1` `down2` `up1` `up2` `side1` `side2` `boss` 23.
 
+**Shown by:** `cockpit-office` step 1 (`cockpit-office-main.png`: the chibi people at their desks), steps 13 and 13b
+(`cockpit-office-states.png`, `cockpit-office-states-night.png`: every pose in every look, by day and after hours) and
+step 14b (`cockpit-office-lounge.png`: the crowded lounge at the chibi's sizes). Steps 13, 13b and 14b read what
+Tasks 4 and 5 build, so they pass only once those land; this task's own check is its vitest.
+
 - [ ] **Step 1: Write the failing tests**
 
 Replace `frontend/app/view/office/plansprite.test.ts`:
@@ -567,16 +583,18 @@ Replace `frontend/app/view/office/plansprite.test.ts`:
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { NEAR_CHAIR } from "./officegrids";
 import {
     ARM_PAD,
     BOSS_POSES,
     MARKS,
+    markUrl,
     mirrorOf,
     PLAN_SPRITES,
     planColor,
     planGrid,
+    planSpriteUrl,
     seatSprite,
     SHEET_POSES,
     shirtOf,
@@ -586,6 +604,7 @@ import {
     type PlanLook,
     type PlanSprite,
 } from "./plansprite";
+import { clearSprites, spriteCacheStats } from "./spritecache";
 
 const ALL = Object.keys(PLAN_SPRITES) as PlanSprite[];
 const LOOKS: PlanLook[] = [1, 2, 3, 4, "boss"];
@@ -678,6 +697,24 @@ describe("plansprite", () => {
         expect(planColor("R", o, "after", read)).toEqual(read("--color-office-after-chair"));
         expect(planColor("_", o, "day", read)).toEqual(read("--color-office-day-shadow"));
         expect(planColor(".", o, "day", read)).toBeUndefined();
+    });
+
+    it("keys a sprite and a bubble by the phase, and a sprite by its shade", () => {
+        vi.stubGlobal("document", { documentElement: {}, createElement: () => ({ getContext: () => null }) });
+        vi.stubGlobal("getComputedStyle", () => ({ getPropertyValue: () => "#010203" }));
+        clearSprites("plan");
+        const o = { shirt: "--color-office-shirt-pi", look: 2 };
+        planSpriteUrl("backseat", o, "day");
+        planSpriteUrl("backseat", o, "after");
+        planSpriteUrl("backseat", o, "day", "dark");
+        planSpriteUrl("backseat", o, "day", "night");
+        planSpriteUrl("backseat", o, "day", "both");
+        planSpriteUrl("backseat", o, "day"); // the same as the first: no new entry
+        markUrl("!", "day");
+        markUrl("!", "after");
+        expect(spriteCacheStats("plan").entries).toBe(7);
+        clearSprites("plan");
+        vi.unstubAllGlobals();
     });
 
     it("maps seated poses and walks to sprites", () => {
@@ -821,10 +858,10 @@ export const MARKS: Record<PlanMark, string[]> = {
     ring: ["..AAAAAAAAAA..", ".A..........A.", "A............A", ".A..........A.", "..AAAAAAAAAA.."],
 };
 
-// the canvas's Cast board: its columns, and its boss row
+// the canvas's Cast board: its columns, and its boss row, in prototype/cast.mjs's order
 export const SHEET_POSES: PlanSprite[] = ["sit", "nod", "hand1", "hand2", "cheer1", "cheer2", "doze", "yawn",
     "stretch", "back", "backseat", "cup", "down1", "down2", "up1", "up2", "side1", "side2"];
-export const BOSS_POSES: PlanSprite[] = ["stand", "boss", "down1", "down2", "up1", "up2", "side1", "side2"];
+export const BOSS_POSES: PlanSprite[] = ["stand", "down1", "down2", "up1", "up2", "side1", "side2", "boss"];
 export const SHEET_SHIRTS = ["--color-office-shirt-claude", "--color-office-shirt-codex", "--color-office-shirt-pi",
     "--color-office-shirt-agy"];
 ```
@@ -1114,6 +1151,27 @@ describe("scenery", () => {
         expect(logo("sable").role).toBe("laptopOff");
     });
 
+    it("puts the floors and the wall faces under the people, and no floor over them", () => {
+        const s = scenery(plan(), "day", false);
+        for (const m of ["wood", "tiles", "carpet", "face", "brick"]) {
+            expect(s.under.some((o) => o.k === "fill" && o.material === m), m).toBe(true);
+        }
+        expect(s.over.some((o) => o.k === "fill")).toBe(false);
+    });
+
+    it("puts the tables' tops and the sofa's back over the people, the sofa's seat and arms under them", () => {
+        const p = plan();
+        const s = scenery(p, "day", false);
+        for (const r of p.rooms.filter((r) => r.table)) {
+            const at = (o: Extract<Op, { k: "rect" }>) => o.x === art(r.table!.x) + 1 && o.y === art(r.table!.y) + 1;
+            expect(rects(s.over, "desk").some(at), r.key).toBe(true);
+            expect(rects(s.under, "desk").some(at), r.key).toBe(false);
+        }
+        expect(rects(s.over, "sofaFace").length).toBeGreaterThan(0);
+        expect(rects(s.under, "sofaFace")).toHaveLength(0);
+        expect(rects(s.under, "sofa").length).toBeGreaterThan(0);
+    });
+
     it("draws the near side's chairs over the table and the far side's under it", () => {
         const p = plan();
         const s = scenery(p, "day", false);
@@ -1216,6 +1274,13 @@ describe("sceneryKey", () => {
         const screen = plan(1050, { runs: input().runs.map((r) => ({ ...r, tasks: r.tasks.map((t, i) => (i === 4 ? { ...t, state: "running" } : t)) })) });
         expect(key(screen)).not.toBe(k);
         expect(key(plan(1001))).not.toBe(k);
+    });
+
+    it("changes with a room's light and with a desk's light alone", () => {
+        const p = plan();
+        const k = key(p);
+        expect(key({ ...p, rooms: p.rooms.map((r) => (r.key === "room:home" ? { ...r, lit: !r.lit } : r)) })).not.toBe(k);
+        expect(key({ ...p, desks: p.desks.map((d) => (d.key === "loom" ? { ...d, light: "off" as const } : d)) })).not.toBe(k);
     });
 
     it("stays when only people, poses or labels change", () => {
@@ -1514,16 +1579,28 @@ git commit -m "feat(cockpit): the office's scenery as two canvases' draw lists, 
 
 ### Task 4: The office view on two canvases
 **Depends on:** Task 2, Task 3
-**Files:** `frontend/app/view/agents/cockpitoffice.tsx`, `frontend/tailwindsetup.css`
+**Files:** `frontend/app/view/agents/cockpitoffice.tsx`, `frontend/app/view/agents/cockpitofficedevhooks.ts`, `frontend/tailwindsetup.css`
 
 **Interfaces:**
 - Consumes: everything Tasks 1–3 produce; `themePresetAtom`, `themeOverridesAtom` (`./themestore`).
-- Produces: in `readOfficeProbe()`, new fields `sceneryDraws: number` (draws since the office mounted),
-  `phase: OfficePhase`, `sheetSize: number` (`4 * SHEET_POSES.length + BOSS_POSES.length`), `lounge: Box | null`;
-  `unresolved` checks `[...PLAN_TOKENS, ...OFFICE_TOKENS]`. DOM: `canvas[data-office-canvas="under"]` and
-  `canvas[data-office-canvas="over"]` under `[data-office-root]`; `[data-office-plate]` on each label drawn on a
-  plate. Gone from the DOM: `[data-office-floor]`, `[data-office-hall]`, `[data-office-dark]`, `[data-office-night]`,
-  `[data-office-sign]` (Task 5 moves the scenario off them).
+- Produces: in `readOfficeProbe()`, new fields `sceneryDraws: number` (scenes drawn since the page loaded: one per
+  `sceneryKey`, however many canvases), `phase: OfficePhase`, `sheetSize: number` (`4 * SHEET_POSES.length +
+  BOSS_POSES.length`), `lounge: Box | null`; `unresolved` checks `[...PLAN_TOKENS, ...OFFICE_TOKENS]`. DOM:
+  `canvas[data-office-canvas="under"]` and `canvas[data-office-canvas="over"]` under `[data-office-root]`, each
+  carrying `data-office-drawn` once it has painted; `[data-office-plate]` on each label drawn on a plate;
+  `img[data-office-ring]` the boss's ring. The buttons keep the attributes the scenarios read (`data-office-desk`,
+  `data-office-seat`, `data-office-room`, `data-office-pose`). Gone from the DOM: `[data-office-floor]`,
+  `[data-office-hall]`, `[data-office-dark]`, `[data-office-night]`, `[data-office-sign]` (Task 5 moves the scenario
+  off them).
+- Produces (`cockpitofficedevhooks.ts`): `window.__cockpitOfficeTheme(preset: string): string`, which sets
+  `themePresetAtom` and returns the preset it replaced (Task 5's steps 13c and 15b).
+
+**Shown by:** `cockpit-office` steps 1 and 1b (`cockpit-office-main.png`: the building on two canvases, names on
+plates), 1c (`cockpit-office-near-ask.png`: the near-side worker who asks), 9 and 9b (`cockpit-office-night.png`: the
+after-hours palette, lamps, no plates), 10 (`cockpit-office-tired.png`: the cups), 13 and 13b
+(`cockpit-office-states.png`, `cockpit-office-states-night.png`: the Cast sheet by day and after hours), 13c
+(`cockpit-office-theme.png`: the theme switched with the office open), 14b (`cockpit-office-lounge.png`) and 15b
+(the theme switched while in Cards). Task 5 adds 1b, 1c, 4c, 9b, 12b, 13b, 13c and 15b.
 
 - [ ] **Step 1: The phase, tired and the theme in `CockpitOffice`**
 
@@ -1538,16 +1615,31 @@ Under `const night = ...`:
 and above `CockpitOffice`:
 
 ```ts
-// a theme re-skins the status tokens a run's screen, the laptops, the bubbles and the ring use. The theme writes its
-// vars in a layout effect of the app's shell, which runs after this office's own layout effects, so the colours are
-// forgotten in a passive effect, after every layout effect, and the epoch it returns redraws what used them
+// the theme the office's colours were last read in. Module level: tokenRgb's colours and the plan's sprites outlive
+// the office, and a theme can change while it is away (Cards, another surface)
+let drawnTheme: string | undefined;
+
+// a theme re-skins the status tokens a run's screen, the laptops, the bubbles and the ring use
 function useThemeEpoch(): string {
     const key = `${useAtomValue(themePresetAtom)}|${JSON.stringify(useAtomValue(themeOverridesAtom))}`;
-    const [epoch, setEpoch] = useState(key);
+    // mounting after the theme changed while the office was away: its vars are on <html> already, so the old colours
+    // are forgotten before anything here draws (idempotent, so strict mode's second call is harmless)
+    const [epoch, setEpoch] = useState(() => {
+        if (drawnTheme !== key) {
+            clearTokenColors();
+            clearSprites("plan");
+            drawnTheme = key;
+        }
+        return key;
+    });
+    // the theme changing while the office is open: the shell writes its vars in a layout effect that runs after this
+    // office's own, so the colours are forgotten in a passive effect, after every layout effect, and the epoch it
+    // returns redraws what used them
     useEffect(() => {
         if (epoch !== key) {
             clearTokenColors();
             clearSprites("plan");
+            drawnTheme = key;
             setEpoch(key);
         }
     }, [key, epoch]);
@@ -1555,34 +1647,45 @@ function useThemeEpoch(): string {
 }
 ```
 
+In `cockpitofficedevhooks.ts`, beside `__cockpitOfficeAnimation` (declare it in the `Window` interface too):
+
+```ts
+    window.__cockpitOfficeTheme = (preset) => {
+        const prev = globalStore.get(themePresetAtom);
+        globalStore.set(themePresetAtom, preset);
+        return prev;
+    };
+```
+
 - [ ] **Step 2: The two canvases**
 
 ```tsx
+// scenes drawn since the page loaded, for the probe: one per sceneryKey, counted in CockpitOffice, not per canvas
 let sceneryDraws = 0;
 
 // the building at art resolution, scaled 3x: drawn in a passive effect (after the theme's vars are on <html>) and
-// only when its ops change, which happens only when sceneryKey does
+// only when its ops change, which happens only when sceneryKey does (the phase and the theme are in it)
 const OfficeCanvas = memo(function OfficeCanvas(p: {
     which: "under" | "over";
     ops: Op[];
     width: number;
     height: number;
     phase: OfficePhase;
-    theme: string;
     z: number;
 }) {
     const ref = useRef<HTMLCanvasElement>(null);
     useEffect(() => {
-        const ctx = ref.current?.getContext("2d");
-        if (!ctx) {
+        const canvas = ref.current;
+        const ctx = canvas?.getContext("2d");
+        if (!canvas || !ctx) {
             return;
         }
         const image = ctx.createImageData(p.width, p.height);
         image.data.set(rasterise(p.ops, p.width, p.height, officeColors(p.phase)));
         ctx.putImageData(image, 0, 0);
-        sceneryDraws++;
-        probe.sceneryDraws = sceneryDraws;
-    }, [p.ops, p.width, p.height, p.phase, p.theme]);
+        // the bench's open time stops once every canvas has painted
+        canvas.dataset.officeDrawn = "";
+    }, [p.ops, p.width, p.height, p.phase]);
     return (
         <canvas
             ref={ref}
@@ -1603,14 +1706,19 @@ In `CockpitOffice`, after `plan`:
     // the plan is rebuilt on every coarse tick with new objects; the ops only when what they draw has changed
     // eslint-disable-next-line react-hooks/exhaustive-deps
     const scene = useMemo(() => scenery(plan, phase, tired), [sceneKey]);
+    // one draw of the building per scene: both canvases paint in their own effects, which run before this one
+    useEffect(() => {
+        sceneryDraws++;
+        probe.sceneryDraws = sceneryDraws;
+    }, [scene]);
 ```
 
 and in the root `<div data-office-root>`, in place of `<Building …/>`, `<Shades …/>` and `<Walls …/>`:
 
 ```tsx
-                    <OfficeCanvas which="under" ops={scene.under} width={scene.width} height={scene.height} phase={phase} theme={theme} z={0} />
+                    <OfficeCanvas which="under" ops={scene.under} width={scene.width} height={scene.height} phase={phase} z={0} />
                     {/* desks, tables' buttons, seats and loungers as below */}
-                    <OfficeCanvas which="over" ops={scene.over} width={scene.width} height={scene.height} phase={phase} theme={theme} z={2} />
+                    <OfficeCanvas which="over" ops={scene.over} width={scene.width} height={scene.height} phase={phase} z={2} />
 ```
 
 (The canvases are `pointer-events-none`, so a click on the floor reaches the root's `onClick` as before.) Delete
@@ -1658,7 +1766,9 @@ function Person(p: {
 - at a desk: `left = (art(d.x) + 6) * PLAN_CELL`, `bottom = (art(d.y) + 2) * PLAN_CELL`;
 - at a seat: `left = art(s.x - 3) * PLAN_CELL`, `bottom = art(s.bottom) * PLAN_CELL`; a seat is on the near side
   when `s.bottom > table.y + 20` (its room's table): `z = 3`, `shade = !lit && night ? "both" : !lit ? "dark" :
-  night ? "night" : ""`, and the `back` pose draws `"backseat"`; a far seat `z = 1`, no shade;
+  night ? "night" : ""`, and the `back` pose draws `"backseat"`; a far seat `z = 1`, no shade. Every near-side person
+  is at z 3, an asking one (pose `hand`, facing you) included: the prototype puts a near seat that is not `back` under
+  the over canvas, but never drew one, and there the table would cover an asking face (see Review Focus);
 - in the lounge: `left = art(l.x) * PLAN_CELL`, `bottom = art(l.bottom) * PLAN_CELL`.
 
 `DeskView` returns a fragment: the person (when seated) and the button. The button is transparent and childless,
@@ -1673,7 +1783,8 @@ const DESK_CLASS =
 (no pseudo-elements, no spans, no `d.dim && "opacity-60"`: an away desk is no longer faded). `SeatView` likewise: a
 person (`z` 1 or 3 as above) and a transparent button `z-[3]` at `left: art(s.x - 3) * PLAN_CELL`,
 `top: art(s.bottom) * PLAN_CELL - 51`, `42 × 51`. Give `DeskView` and `SeatView` `phase` (and `SeatView` its room's
-`lit` and `near`) as props, so their `sameValues` memo re-renders them when those change. `Table` keeps only its
+`lit` and `near`) as props, so their `sameValues` memo re-renders them when those change. The buttons keep the data
+attributes the scenarios read: `data-office-desk`, `data-office-seat`, `data-office-room`, `data-office-pose`. `Table` keeps only its
 transparent button (`z-[3]`, `bg-transparent`, no border; the table is drawn on the over canvas) and the `+N`.
 `LoungerView` passes `phase`.
 
@@ -1686,6 +1797,7 @@ its ring as a sprite:
             <img
                 ref={ringRef}
                 alt=""
+                data-office-ring=""
                 src={markUrl("ring", phase)}
                 className={cn("pointer-events-none absolute left-0 top-0 z-[7] [image-rendering:pixelated]", look.moving && "will-change-transform")}
                 style={{ width: 14 * PLAN_CELL, height: 5 * PLAN_CELL }}
@@ -1715,7 +1827,8 @@ function Bubble({ mark, left, top, phase }: { mark: PlanMark; left: number; top:
 
 placed, for a desk, at `left = (art(d.x) + 1) * PLAN_CELL`, `top = (art(d.y) - 22) * PLAN_CELL` (left of the head:
 an asking person's arm is up on its right); for a seat at `left = (art(s.x - 3) + 11) * PLAN_CELL`,
-`top = (art(s.bottom) - g - 5) * PLAN_CELL` with `g` the sprite's rows (19 near side, 17 far).
+`top = (art(s.bottom) - g - 5) * PLAN_CELL` with `g` 18 for a seat in `back` and 17 for any other pose (the
+prototype's `bubbleAt`, `scene.mjs`).
 
 In `Labels` (which takes `phase` and the theme epoch):
 
@@ -1749,7 +1862,8 @@ const plate = (night: boolean) => (night ? "" : "rounded-[3px] bg-office-plate p
 
 `PoseSheet` (takes `phase`) draws the Cast board: four rows, one per look in `SHEET_SHIRTS`, of `SHEET_POSES`, then
 the boss row of `BOSS_POSES` in `BOSS_OUTFIT`, each sprite at its size, bottoms aligned, with one header row of the
-pose names (`font-mono text-[10.5px] text-muted`):
+pose names (`font-mono text-[10.5px] text-muted`), on the phase's wood, as the Cast board draws each phase's cast on
+its floor so the outlines read as they will in the office:
 
 ```tsx
 function PoseSheet({ phase }: { phase: OfficePhase }) {
@@ -1767,7 +1881,13 @@ function PoseSheet({ phase }: { phase: OfficePhase }) {
         </div>
     );
     return (
-        <div data-office-sheet className="absolute left-2 top-2 z-[9] flex flex-col gap-2 rounded-md border border-edge-mid bg-surface-raised p-3">
+        <div
+            data-office-sheet
+            className={cn(
+                "absolute left-2 top-2 z-[9] flex flex-col gap-2 rounded-md border border-edge-mid p-3",
+                phase === "after" ? "bg-office-after-wood" : "bg-office-day-wood"
+            )}
+        >
             <div className="flex gap-2">
                 {SHEET_POSES.map((s) => (
                     <span key={s} className="w-[60px] text-center font-mono text-[10.5px] text-muted">
@@ -1783,7 +1903,7 @@ function PoseSheet({ phase }: { phase: OfficePhase }) {
 ```
 
 In the probe: `sceneryDraws: 0` and `phase: "day" as OfficePhase` in the `probe` object (set `probe.phase = phase`
-where the other fields are assigned); in `readOfficeProbe()` add `sheetSize: 4 * SHEET_POSES.length +
+where the other fields are assigned; `sceneryDraws` only by the scene effect of step 2); in `readOfficeProbe()` add `sheetSize: 4 * SHEET_POSES.length +
 BOSS_POSES.length`, `lounge: lastPlan?.lounge ?? null`, and `unresolved: [...PLAN_TOKENS, ...OFFICE_TOKENS].filter((t)
 => tokenRgb(t) == null)`.
 
@@ -1800,7 +1920,7 @@ and expect no hit outside `tailwindsetup.css` (the Run office uses none of them;
 
 Run: `NODE_OPTIONS=--max-old-space-size=4096 task check:ts` (about 2 minutes) → exit 0.
 Run: `npx vitest run frontend/app/view/office/ frontend/app/view/agents/` → PASS.
-Run: `npx eslint frontend/app/view/agents/cockpitoffice.tsx frontend/app/view/office/` → no new error.
+Run: `npx eslint frontend/app/view/agents/cockpitoffice.tsx frontend/app/view/agents/cockpitofficedevhooks.ts frontend/app/view/office/` → no new error.
 Then see it in the browser build on its own ports (this worktree's `public/cockpit-fixtures/active.json` is its own):
 
 ```bash
@@ -1809,14 +1929,15 @@ for i in $(seq 1 180); do grep -q "browser app ready" "$TMPDIR/arc-office-t4.log
 CDP_PORT=9231 node --experimental-websocket scripts/cdp/verify.mjs cockpit-office
 ```
 
-Expected: the scenario runs (steps that read `[data-office-hall]`, `[data-office-floor]` and the sheet's 18 fail
-until Task 5); open `cdp-shots/cockpit-office-main.png` and compare it with the canvas's `Main` board. Stop the
-browser app by its PID (`kill %1`).
+Expected: the scenario runs (steps 7 and 14b, which read `[data-office-hall]` and `[data-office-floor]`, and step 13,
+which counts 18 sprites, fail until Task 5 moves them; Task 5 adds steps 1b, 1c, 4c, 9b, 12b, 13b, 13c and 15b).
+Open `cdp-shots/cockpit-office-main.png`, `-night.png`, `-tired.png`, `-states.png` and `-lounge.png` and compare
+them with the canvas's `Main`, `Night` and `Cast` boards. Stop the browser app by its PID (`kill %1`).
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add frontend/app/view/agents/cockpitoffice.tsx frontend/tailwindsetup.css
+git add frontend/app/view/agents/cockpitoffice.tsx frontend/app/view/agents/cockpitofficedevhooks.ts frontend/tailwindsetup.css
 git commit -m "feat(cockpit): the office in pixel art on two canvases: floors, walls, furniture and lights drawn once per change, people between them, labels on plates by day"
 ```
 
@@ -1827,8 +1948,10 @@ git commit -m "feat(cockpit): the office in pixel art on two canvases: floors, w
 **Files:** `scripts/cdp/cockpitofficescenarios.mjs`, `docs/guide/cockpit.md`, `CHANGELOG.md`
 
 **Interfaces:**
-- Consumes: the probe's `sceneryDraws`, `phase`, `sheetSize`, `lounge`; `canvas[data-office-canvas]`;
-  `[data-office-plate]` (Task 4).
+- Consumes: the probe's `sceneryDraws` (one per scene), `phase`, `sheetSize`, `lounge`; `canvas[data-office-canvas]`
+  and its `data-office-drawn`; `[data-office-plate]`; `img[data-office-ring]`; `window.__cockpitOfficeTheme` (Task 4).
+
+**Shown by:** the steps this task adds, each named below with its shot.
 
 - [ ] **Step 1: Step 1b, the building on two canvases (after step 1's shot)**
 
@@ -1844,6 +1967,43 @@ git commit -m "feat(cockpit): the office in pixel art on two canvases: floors, w
                 "1b. the building draws on two canvases, the people and labels over it; labels on plates in work hours",
                 building.canvases === 2 && building.old === 0 && building.plates > 0 && p?.phase === "day",
                 JSON.stringify({ ...building, phase: p?.phase })
+            );
+```
+
+- [ ] **Step 1c: A near-side worker who asks (after step 1b)**
+
+Above the scenarios, beside `OFFICE_RUNS`:
+
+```js
+// Main's runs with Billing export's task 3, on its table's near side, asking (step 1c)
+const NEAR_ASK_RUNS = OFFICE_RUNS.map((r) =>
+    r.title !== "Billing export" ? r : { ...r, tasks: r.tasks.map((t) => (t.id === "t3" ? { ...t, asking: true } : t)) }
+);
+```
+
+and after step 1b (the boss stays at quill with its card open; `asks` gains a mozox seat after quill, and the runs go
+back before step 2):
+
+```js
+            // 1c. a near-side worker who asks raises its hand facing you over the table: over the over canvas (z 3),
+            // its ! bubble beside its head
+            await dev(h, { runs: NEAR_ASK_RUNS });
+            await sleep(400);
+            const nearAsk = await h.ev(`(() => {
+                const seat = document.querySelector('[data-office-seat="fx-office-run-2:t3"]');
+                seat?.scrollIntoView({ block: "center" });
+                const hands = [...document.querySelectorAll('[data-office-root] img[data-office-sprite^="hand"]')].filter((i) => getComputedStyle(i).zIndex === "3");
+                return { pose: seat?.dataset.officePose ?? null, nearHands: hands.length, asks: document.querySelectorAll('[data-office-bubble="!"]').length };
+            })()`);
+            await sleep(200);
+            await h.shot("cdp-shots/cockpit-office-near-ask.png");
+            await dev(h, { runs: OFFICE_RUNS });
+            await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-quill"))})?.scrollIntoView({ block: "center" })`);
+            await sleep(400);
+            rec(
+                "1c. a near-side worker who asks raises its hand facing you over the table, its bubble beside its head",
+                nearAsk?.pose === "hand" && nearAsk.nearHands >= 1 && nearAsk.asks >= 2,
+                JSON.stringify(nearAsk)
             );
 ```
 
@@ -1883,22 +2043,75 @@ and after its wait:
 - [ ] **Step 5: A desk at work going idle redraws once (step 12)**
 
 Step 12 sets `quiet` (every agent idle, the runs gone): read `const drawsBusy = (await probe(h))?.sceneryDraws;`
-before `dev(h, { quiet: true })`, and after the cheer's `rec`:
+before `dev(h, { quiet: true })`, and `const drawsQuiet = (await probe(h))?.sceneryDraws;` right after the cheer's
+shot, before `dev(h, { quiet: false, energy: 63 })` (which brings the runs back and redraws again). After the
+cheer's `rec`:
 
 ```js
-            p = await probe(h);
             rec(
                 "12b. the desks going idle redraw the scenery once",
-                p?.sceneryDraws === drawsBusy + 1,
-                JSON.stringify({ before: drawsBusy, after: p?.sceneryDraws })
+                drawsQuiet === drawsBusy + 1,
+                JSON.stringify({ before: drawsBusy, after: drawsQuiet })
             );
 ```
 
-- [ ] **Step 6: Step 13 counts the sheet from the probe; step 14b reads the lounge from it**
+- [ ] **Step 6: The Cast by day and after hours (13, 13b), a theme switch open (13c) and away (15b); 14b reads the lounge from the probe**
 
 Step 13: `sheet.length === p?.sheetSize && sheet.every((n) => n > 0) && p?.unresolved?.length === 0` (read `p`
 before the `sheet` count, or read it again), and its name becomes `"13. every sprite in every look draws, every
-colour token resolved"`.
+colour token resolved"`. Its query keeps the sources, not only their lengths, for 13b:
+`const daySrcs = await h.ev(`[...document.querySelectorAll("[data-office-sheet] img")].map((i) => i.getAttribute("src") ?? "")`);`
+and `sheet` becomes `daySrcs.map((s) => s.length)`.
+
+In place of step 13's closing `await dev(h, { sheet: false });`, the Cast after hours, then a theme switched with the
+office open:
+
+```js
+            // 13b. the Cast after hours, as the canvas's Cast board draws it on B's floor: the same sheet in the
+            // after-hours outline, shadow and chair
+            await dev(h, { afterHours: true });
+            await sleep(400);
+            const nightSrcs = await h.ev(`[...document.querySelectorAll("[data-office-sheet] img")].map((i) => i.getAttribute("src") ?? "")`);
+            p = await probe(h);
+            rec(
+                "13b. after hours, every sprite on the sheet draws again in the after-hours palette",
+                p?.phase === "after" &&
+                    nightSrcs.length === p.sheetSize &&
+                    nightSrcs.every((s) => s.length > 0) &&
+                    nightSrcs.every((s, i) => s !== daySrcs[i]),
+                JSON.stringify({ phase: p?.phase, sprites: nightSrcs.length, changed: nightSrcs.filter((s, i) => s !== daySrcs[i]).length })
+            );
+            await h.shot("cdp-shots/cockpit-office-states-night.png");
+            await dev(h, { sheet: false, afterHours: false });
+            await sleep(400);
+
+            // 13c. a theme switched with the office open: the building draws once more, and the boss's ring (the
+            // accent) is drawn again in the new theme's colours, no stale cached colour
+            const ring = () => h.ev(`document.querySelector("[data-office-ring]")?.getAttribute("src") ?? ""`);
+            const themeDraws = (await probe(h))?.sceneryDraws;
+            const claudeRing = await ring();
+            ctx.prevTheme = await h.ev(`window.__cockpitOfficeTheme("graphite")`);
+            await sleep(500);
+            p = await probe(h);
+            ctx.graphiteRing = await ring();
+            await h.shot("cdp-shots/cockpit-office-theme.png");
+            await h.ev(`window.__cockpitOfficeTheme(${JSON.stringify(ctx.prevTheme)})`);
+            await sleep(500);
+            rec(
+                "13c. a theme switched with the office open redraws the building once and the ring in the new accent",
+                ctx.prevTheme !== "graphite" &&
+                    p?.sceneryDraws === themeDraws + 1 &&
+                    claudeRing !== "" &&
+                    ctx.graphiteRing !== "" &&
+                    ctx.graphiteRing !== claudeRing &&
+                    p.unresolved?.length === 0,
+                JSON.stringify({ prevTheme: ctx.prevTheme, draws: [themeDraws, p?.sceneryDraws], ringChanged: ctx.graphiteRing !== claudeRing })
+            );
+```
+
+(Every sprite has an outline, `O`, which is the phase's ink, so every source changes after hours.) The scenario
+starts in the default theme, whose accent (clay) is not graphite's (blue): `prevTheme` is never `"graphite"` unless a
+run cut short left it so, and teardown puts it back (below).
 
 Step 14b: replace `document.querySelector('[data-office-floor="lounge"]')?.getBoundingClientRect()` with the lounge's
 box from the probe, in page coordinates:
@@ -1909,9 +2122,53 @@ box from the probe, in page coordinates:
                 const floor = L && { left: R.left + L.x, top: R.top + L.y, right: R.left + L.x + L.w, bottom: R.top + L.y + L.h };
 ```
 
-- [ ] **Step 7: The bench prints the office's own nodes**
+Step 15b, after step 15's `rec`: a theme switched while the office is in Cards, then the office opened again, draws
+in the new theme (Task 4 keeps the theme it last drew in at module level):
 
-In `cockpit-office-bench`, after `const open = await metrics(h);`:
+```js
+            // 15b. a theme switched while the office is away: opened again, its ring is the new theme's, not a stale
+            // cached colour
+            await toggleTo(h, "Cards");
+            await sleep(400);
+            const prevAway = await h.ev(`window.__cockpitOfficeTheme("graphite")`);
+            ctx.prevTheme ??= prevAway;
+            await sleep(400);
+            await toggleTo(h, "Office");
+            const backIn = (await waitForOffice(h)) == null;
+            await settleBoss(h);
+            const awayRing = await h.ev(`document.querySelector("[data-office-ring]")?.getAttribute("src") ?? ""`);
+            await h.shot("cdp-shots/cockpit-office-theme-away.png");
+            await h.ev(`window.__cockpitOfficeTheme(${JSON.stringify(prevAway)})`);
+            await sleep(500);
+            rec(
+                "15b. a theme switched while the office is in Cards: opened again, it draws in the new theme",
+                backIn && prevAway !== "graphite" && awayRing !== "" && awayRing === ctx.graphiteRing,
+                JSON.stringify({ backIn, prevAway, sameAsOpen: awayRing === ctx.graphiteRing })
+            );
+```
+
+(13c's graphite ring and 15b's are the same sprite in the same phase, so the same data URL.) In the scenario's
+teardown, before `window.__cockpitOffice?.(null)`:
+`if (ctx.prevTheme != null) await h.ev(`window.__cockpitOfficeTheme?.(${JSON.stringify(ctx.prevTheme)})`);`, so a run
+cut short between a switch and its restore leaves no graphite theme behind.
+
+- [ ] **Step 7: The bench times the building's draw and prints the office's own nodes**
+
+Row 8's open time stops at the first `[data-office-desk]`, before the canvases paint in a later passive effect. In
+`r.openMs`'s loop, wait for the desks and for every canvas to have painted:
+
+```js
+                    // drawn: the desks are in and each canvas has painted (a checkout from before the canvases has none)
+                    const drawn = () =>
+                        document.querySelector("[data-office-desk]") &&
+                        [...document.querySelectorAll("[data-office-root] canvas[data-office-canvas]")].every((c) => c.dataset.officeDrawn != null);
+                    for (let i = 0; i < 600 && !drawn(); i++) await new Promise((r) => requestAnimationFrame(r));
+```
+
+(The canvases mount in the same commit as the desks, so `every` never passes on an empty list once they exist; the
+before checkout of Task 6 has no canvas, and there it stops at the first desk, as today.)
+
+After `const open = await metrics(h);`:
 `r.officeNodes = await h.ev('document.querySelector("[data-office-root]")?.getElementsByTagName("*").length ?? 0');`
 and row 2's detail becomes `` `${r.nodesAdded} (the office ${r.officeNodes})` ``.
 
@@ -1927,8 +2184,10 @@ mỗi người nhận ra nhờ kiểu tóc, và sếp (bạn) đội mũ. Phòng
 `CHANGELOG.md`, top section, under `Changed`:
 
 ```markdown
-- The Office view is drawn in pixel art: a bright office in work hours and a dim one after hours, people you can tell apart by their hair, the boss in a cap. It also draws with about 250 fewer page elements.
+- The Office view is drawn in pixel art: a bright office in work hours and a dim one after hours, people you can tell apart by their hair, the boss in a cap.
 ```
+
+(No element count here: Task 6 measures it and adds it to this line.)
 
 - [ ] **Step 9: Run the scenario**
 
@@ -1938,8 +2197,10 @@ for i in $(seq 1 180); do grep -q "browser app ready" "$TMPDIR/arc-office-t5.log
 CDP_PORT=9232 node --experimental-websocket scripts/cdp/verify.mjs cockpit-office
 ```
 
-Expected: every row PASS. Compare `cdp-shots/cockpit-office-main.png`, `-night.png` and `-states.png` with the
-canvas's `Main`, `Night` and `Cast` boards. Stop the app by its PID.
+Expected: every row PASS. Compare `cdp-shots/cockpit-office-main.png`, `-night.png`, `-states.png` and
+`-states-night.png` with the canvas's `Main`, `Night` and `Cast` boards (its A and B casts), and look at
+`-near-ask.png` (a hand up facing you over Billing export's table, a `!` beside its head), `-theme.png` and
+`-theme-away.png` (the ring and the sign's frame in graphite's blue). Stop the app by its PID.
 
 - [ ] **Step 10: Commit**
 
@@ -1952,7 +2213,7 @@ git commit -m "test(cockpit): the office scenario checks the two canvases, draws
 
 ### Task 6: Measure before and after, into RAM watch
 **Depends on:** Task 5
-**Files:** `docs/open-issues.md`
+**Files:** `docs/open-issues.md`, `CHANGELOG.md`
 
 - [ ] **Step 1: A worktree at the run's base**
 
@@ -1995,16 +2256,34 @@ In `docs/open-issues.md`, under `### (arcterm) RAM watch`, after the "Cockpit of
 with the numbers measured, the canvas size from `W × H × 4` of the bench's plan, and every budget's verdict. A miss
 is written as a miss.
 
-- [ ] **Step 4: Clean up**
+- [ ] **Step 4: The changelog's number**
+
+Task 5's `CHANGELOG.md` line ("The Office view is drawn in pixel art: …") carries no element count. When the office's
+own nodes fell (N before, M after, both runs' mean), append ` It also draws with about K fewer page elements.` to
+that line, K = N − M rounded to the nearest ten. When they did not fall, leave the line as it is.
+
+- [ ] **Step 5: Clean up**
+
+`task worktree:cleanup` refuses a detached checkout (`worktree-junctions.mjs` exits 1 after it has unlinked the
+shared dirs), so unlink with the script, check the links are gone, then remove the checkout by hand:
 
 ```bash
-task worktree:cleanup -- "$TMPDIR/arc-office-before"
+# unlinks node_modules, src-tauri/target and dist/bin, then refuses the detached HEAD with exit 1: expected here
+node scripts/worktree-junctions.mjs cleanup "$TMPDIR/arc-office-before"
+# never remove the checkout while a link to the main checkout's dirs is left in it
+for d in node_modules src-tauri/target dist/bin; do
+    if [ -L "$TMPDIR/arc-office-before/$d" ]; then echo "still linked: $d"; exit 1; fi
+done
+# --force: the copied scenario file and the bench's fixture leave the checkout dirty
+git worktree remove --force "$TMPDIR/arc-office-before"
 rm -rf "$TMPDIR"/arc-office-4[12]
 ```
 
-- [ ] **Step 5: Commit**
+If a link is still there, stop and report it: do not remove the checkout.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add docs/open-issues.md
+git add docs/open-issues.md CHANGELOG.md
 git commit -m "docs(open-issues): RAM watch: the cockpit office in pixel art, nodes and busy before and after the canvases"
 ```
