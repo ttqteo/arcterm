@@ -5,6 +5,8 @@
 **Canvas:** `.superpowers/design/cockpit-office/project/` (gitignored; `Main`, `States`, `Night`, `Tired`,
 `NextAsk`, `RamPanel`). The look follows the person's reference, Game Office (Steam): a floor plan seen from above, drawn here in
 2D pixel art.
+**Revised 2026-10-15 (pixel art):** **Drawing**, **Files** and **Verify** redrawn for a GBA-style look on two canvases;
+canvas `.superpowers/design/cockpit-office-pixel/project/` (`Main`, `Night`, `Cast`).
 
 ## What it is
 
@@ -190,26 +192,74 @@ A person away from the desk walks back when the agent is working or asking again
 
 ## Drawing
 
-- **A new sprite set** for the plan, `view/office/plansprite.ts`: 12 columns, role codes, never colours. Seated
-  (12–14 rows): sit and its nod, raised hand (2 frames), cheer (2), doze, yawn, stretch, and the back. Standing
-  (19 rows): with a cup, walking down (2), walking up (2), the boss looking at a desk (its back); walking sideways (2)
-  is 14 columns. The Run office keeps its side-view set (`view/jarvis/officesprite.ts`) unchanged.
-- **Rasterised once, shared:** the Run office's rasteriser (`officesprites.ts`) moves to `view/office/spritecache.ts`
-  and takes any grid set. A pose in an outfit is drawn once to a software canvas (`willReadFrequently`, as the Run
-  office fix found: a GPU canvas made `toDataURL` cost 80–95 ms) and kept as a PNG data URL. A person is one `<img>`
-  at 3× with `image-rendering: pixelated`; a frame change swaps `src`. The cache is bounded: ≤ 600 entries.
-- **The building is DOM with tokens:** one node per floor area, its material a CSS pattern (planks, tiles, carpet,
-  the hall's concrete); a wall is its top and its face; a desk's top and face are pseudo-elements (as the Run office
-  keeps its node count down), the monitor and the tower one node each. A theme change restyles nothing in the plan:
-  the building is scenery, like the people.
-- **New tokens** in `@theme`, held at their defaults by every theme, with a why comment: people
-  (`--color-office-boss`, `--color-office-shirt-claude`, `-codex`, `-pi`, `-agy`, `-other`), scenery
-  (`--color-office-wall-top`, `-wall-face`, `-wood-1`, `-wood-2`, `-tile-1`, `-tile-2`, `-carpet`, `-hall`,
-  `-desk-top`, `-desk-face`, `-sofa`, `-brick`, `-mortar`, `-window-day`, `-window-night`, `-plant`), light
-  (`--color-office-night`, `-dark`, `-lamp`, `-cup`), and the sign's glow as a shadow token (`--shadow-office-sign`). The sign's
-  frame is the accent: it is the brand.
-- Desks and seats outside the view are `content-visibility: auto` (rooms are placed absolutely, so a band has no
-  box of its own to skip).
+Pixel art seen from above, in the manner of a GBA game (the person's reference is Pokémon FireRed's interiors; every
+person and object here is drawn for arcterm, nothing is copied). **Canvas:**
+`.superpowers/design/cockpit-office-pixel/project/` (`Main` in work hours, `Night` after hours, `Cast` every pose);
+the options not taken sit beside it in `options/`, and the script that drew it in `prototype/` (its `README.md` says
+what to port from where).
+
+- **One grid.** 1 art px = 3 CSS px (`PLAN_CELL`), tiles of 16 art px. Every place snaps to it
+  (`art(v) = Math.round(v / 3)`): the plan's layout does not change (desks 120 px apart, rooms where they are), and a
+  row 130 px down lands within 1 px of it.
+- **The look.** A dark outline of 1 art px around every person and object; a drop shadow of 1 art px on the floor at
+  the right and bottom edges of furniture; furniture shows its top and its front. A horizontal wall shows its cap and
+  a face of 6 rows (wallpaper, a wood trim, its shadow), 3 of them inside the room below; a vertical wall shows its cap
+  only; the outer top wall has windows in its face, and the lounge's TV hangs on it. Floors: planks with seams and
+  knots (agents' rooms, Home), 16 px tiles (the hall), a dithered carpet (meeting rooms), a rug in the lounge. Few
+  tones and little decor: the person looks at this for hours, and only Needs you and done stand out.
+- **Two palettes.** Work hours draw the bright one (`Main`); after hours (the evening, the night and the weekend, the
+  phase the office already reads from `officeHoursAtom`) draw the muted one (`Night`). Each is the full set of the
+  scenery's base roles, `--color-office-day-*` and `--color-office-after-*`; the switch is one redraw. Dark rooms, the
+  night tint and the lamps' pools work the same over both.
+- **People: a chibi set** in `view/office/plansprite.ts`, 14 columns: standing 23 rows (the boss, walkers, a cup),
+  seated 17 (its last two rows under the desk's top), raised arms 20 columns, placed 3 to the left. Poses: sit and its
+  nod, hand (2), cheer (2, the second a hop), doze, yawn, stretch, back (on the sofa), back at a table (its chair's
+  back in its last rows), cup, walking down, up and sideways (2 each), the boss at a desk. Role codes only: `O`
+  outline, `H`/`h` hair and its light, `S`/`s` skin and its shade, `E` eyes, `T`/`t` shirt and its shade, `P`/`p`
+  pants, `K` shoes, `C` cup, `B` the boss's cap, `W` badge and tie, `R`/`r` chair, `_` ground shadow; a shade or a
+  light is its role's colour times a fixed factor. Looks 1–4 differ by hair style (short, bob, a tuft, a bun) and
+  colour; the boss alone wears a cap. Outline, shadow and chair follow the phase, so a sprite's cache key carries the
+  phase, and a near-side seat's its shade (below). Rasterised once to a software canvas and kept as a data URL, as
+  today; the cache stays ≤ 600 entries. The Run office keeps its side-view set and its tokens unchanged.
+- **Bubbles** (`!`, `?`, `×`) and the boss's ring are pixel sprites from the same cache, still one `<img>` each.
+- **A desk** carries a laptop, its lid toward you; the logo on the lid glows working green or asking amber, or is
+  off (a monitor hid the person's face; the tower goes). When energy is tired, a cup stands on every working desk.
+- **The building is two canvases.** Floors, walls, furniture, the facade and every light are drawn at art resolution
+  (`ceil(width / 3) × ceil(height / 3)`, a 2D context with smoothing off) and scaled 3× by CSS with
+  `image-rendering: pixelated`. A canvas costs 4 × W × H bytes: 0.35 MB at the canvas's fixture, about 1.5 MB at the
+  bench (screen resolution would cost 9× that on a retina display). The DOM keeps what is read, clicked or moves; the
+  259 nodes of today's floors, walls, windows, dark layers, screens, sign and desk parts become the two canvases.
+
+  | z | Layer | Holds |
+  |---|---|---|
+  | 0 | under canvas | floors, wall faces and their windows, the TV, the chairs behind people (at a desk, on a table's far side), the sofa's seat and arms, the coffee machine, plants, each run's screen, the facade, every shadow |
+  | 1 | people (`<img>`) | at a desk, on a table's far side, in the lounge |
+  | 2 | over canvas | desk tops and laptops, the tables, the sofa's back, the near side's chairs; then each dark room and the night tint; then the lamps and their pools; last the wall caps and the sign, which no tint covers |
+  | 3 | near side (`<img>`) | a seat with its back to you, over the table. Its sprite ends with the chair back the over canvas draws in the same place, so the chair covers the person's back and an empty chair still shows. Being over the tints, its sprite is rasterised shaded (the dark layer, the night tint, or both) when its room is dark or it is after hours |
+  | 3 | buttons | one transparent button per desk, seat and meeting room: the click, `title`, `aria-label` and the focus ring, with no children |
+  | 6 | labels | room titles, names, the lounge's labels, `+N`, bubbles |
+  | 7 | movers | walkers, the boss and its ring, the path's dots |
+  | 8 | the card | the popup and the ↵ |
+
+- **Redraw only when `sceneryKey` changes:** the plan's geometry (rooms, walls, doors, desks, seats, tables), each
+  room's light, each desk's light, each run's screen, tired or not, the phase, and the theme (a run's screen and the
+  laptops' lights are status tokens). Never on the frame clock, a walk step or a pose: a pose, a walker or a label
+  changes no key. A theme change also clears the colours `tokenRgb` keeps and the plan's sprites. An away desk is no
+  longer faded: its empty chair and its dimmed name say it.
+- **Labels** cut at 116 px with an ellipsis, the full text in the title (desks are 120 px apart; 140 px labels
+  overlapped). In work hours the floor is light, so names, room titles and the lounge's labels sit on a plate
+  (`--color-office-plate`); after hours they don't. Room titles stay 10 px under the room's top, under the wall's face.
+- **Tokens** in `@theme`, held at their defaults by every theme, with a why comment: the two phase sets (`ink`,
+  `shadow`, `wood`, `seam`, `face`, `cap`, `trim`, `glass`, `tile`, `grout`, `carpet`, `rug`, `desk`, `desk-face`,
+  `chair`, `metal`, `laptop`, `screen`, `sofa`, `sofa-face`, `leaf`, `leaf-dark`, `pot`, `brick`, `mortar`), the plan's
+  hair (`--color-office-plan-hair-1..4`, lighter than the Run office's so an outline shows around it) and
+  `--color-office-plate`. They replace the plan's flat ones (`wall-top`, `wall-face`, `wood-1`, `wood-2`, `tile-1`,
+  `tile-2`, `carpet`, `hall`, `desk-top`, `desk-face`, `sofa`, `brick`, `mortar`, `window-day`, `window-night`,
+  `plant`, and the shadows `--shadow-office-sign`, `-sign-night`, `-lamp`). `--color-office-dark`, `-night`, `-lamp`,
+  `-cup`, the shirts and the boss stay. Values are the canvas's (`prototype/palette.mjs`); derived roles (a plank's
+  second tone, a knot, highlights) are fixed factors in `officepalette.ts`. The sign's frame is the accent: it is the
+  brand.
+- Desks and seats outside the view stay `content-visibility: auto` on their buttons.
 
 ## Motion
 
@@ -254,16 +304,18 @@ Office  ● animating · 2 walking · 6 typing
 
 | File | Holds |
 |---|---|
-| `view/office/plansprite.ts` (+ test) | the plan's pose grids and roles |
-| `view/office/spritecache.ts` (moved from `view/jarvis/officesprites.ts`) | rasteriser and data-URL cache for any grid set; entries and bytes for the meter |
+| `view/office/plansprite.ts` (+ test) | the plan's chibi grids and roles, the bubbles and the ring; a sprite in an outfit, a phase and a shade |
+| `view/office/officepalette.ts` (+ test) | the scenery's roles per phase, their token names spelled in full, the derived roles' factors |
+| `view/office/scenery.ts` (+ test) | plan, phase, tired → what each canvas draws, in order; the floors' materials; `sceneryKey` |
+| `view/office/spritecache.ts` (moved from `view/jarvis/officesprites.ts`) | rasteriser and data-URL cache for any grid set; entries and bytes for the meter; colours with alpha, cleared on a theme change |
 | `view/office/officeclock.ts` (+ test) | the frame and walk clocks, their run/stop rules, the meter counters (`officeMeterAtom`) |
 | `view/jarvis/office*.ts(x)` | import the cache from `view/office/`; nothing else changes in the Run office |
 | `view/agents/officeinputs.ts` (+ test) | the grid's cards and the Idle section's agents → the plan's input |
-| `view/agents/officeplanmodel.ts` (+ test) | cards and runs → bands, rooms, desks, seats, doors, labels, office order, poses, popup side |
+| `view/agents/officeplanmodel.ts` (+ test) | cards and runs → bands, rooms, desks, seats, doors, labels, office order, poses, popup side; the lounge's person sizes follow the chibi set |
 | `view/agents/officebehavior.ts` (+ test) | idle → coffee and sofa, the 3-walker queue, energy, day and night |
 | `view/agents/officeboss.ts` (+ test) | keys and clicks → boss position; walls and doors; paths through doors; desk at the boss |
 | `view/agents/officestore.ts` | `cockpitViewAtom`, `officeHoursAtom`, `officeAnimationAtom` |
-| `view/agents/cockpitoffice.tsx` | the plan, people, boss and popup |
+| `view/agents/cockpitoffice.tsx` | the two canvases (drawn from `scenery.ts` when `sceneryKey` changes), people, buttons, labels, boss and popup |
 | `view/agents/cockpitofficedevhooks.ts` | DEV-only `__cockpitOffice` / `__cockpitOfficeProbe` for the CDP scenarios |
 | `view/agents/cockpitsurface.tsx` | the toggle; Office in place of the grid |
 | `view/agents/usecockpitkeyboard.ts` | Office keys, office order for `j` `k` `n` |
@@ -274,6 +326,7 @@ Office  ● animating · 2 walking · 6 typing
 | `scripts/cockpit-fixtures/scenarios.mjs` | `office-bench`: 48 agents over 6 projects, every agent state |
 | `scripts/cdp/cockpitofficescenarios.mjs` | `cockpit-office` (visual) and `cockpit-office-bench` (budgets), listed in `scenarios.mjs` |
 | `docs/guide/cockpit.md`, `docs/keyboard-shortcuts.md`, `CHANGELOG.md` | the Office section, the keys, one `<!-- big -->` line |
+| `docs/open-issues.md` | RAM watch: nodes and busy before and after the canvases |
 
 ## Benchmark
 
@@ -333,8 +386,25 @@ plan's layout, and walking in two dimensions through doors.
   and the reset, day, evening, night and the weekend), `officeboss.test.ts` (walls stop, doors pass, `j` `k` `n`
   targets and their paths through doors, the dotted path's points, the desk at the boss, the cursor kept in the hall), `officeclock.test.ts`
   (each clock runs only when it should and stops when hidden, reduced or off), `plansprite.test.ts` (every grid is its
-  declared size and uses only known codes; a pose's frames are the same size).
+  declared size: 14 × 23 standing, 14 × 17 seated, 20 wide with raised arms; only known codes; a pose's frames are the
+  same size; the near-side seat's last rows are the chair the over canvas draws; the cache key carries the phase and
+  the shade), `officepalette.test.ts` (every role has a token in both phases, spelled in full; a derived role is its
+  base times its factor), `scenery.test.ts` (each object on its canvas: floors, faces, chairs behind people and
+  shadows under, desk tops, tables, the sofa's back and near chairs over; within the over canvas the tints after the
+  furniture and the caps after the tints; a dark room's tint covers its wall face; every position on the 3 px grid;
+  `sceneryKey` changes with a room's light, a desk's light, a run's screen, tired, the phase and the theme, and
+  not with a pose, a walker or a label), `spritecache.test.ts` (a colour's alpha is read; a theme change clears the
+  colours).
 - CDP `cockpit-office`: the `Main` board (day, the boss at quill with its card open, `1` answering from it), a click on
   a meeting room opening its `LeadCard`, the boss walking by arrow keys through a door, `n` showing its dotted path
   and crossing to the next Needs you (`NextAsk`), Home's booth with its lights off, the `Night` and `Tired` boards, every pose of the `States` board on its own small fixture, animation off,
   and the Office line in the RAM panel (`RamPanel`). `cockpit-office-bench` holds the budgets.
+- The pixel canvas (`cockpit-office-pixel`): `cockpit-office` shows its `Main` board in work hours (the building on two
+  `<canvas>` and no floor, wall or shade node; names on plates), its `Night` board after hours (the after-hours
+  palette, no plates, lamps), and its `Cast` on the pose sheet (every sprite, no unresolved token); a walk of the boss
+  and a frame-clock beat leave the scenery's draw count where it was, and a desk turning from working to idle redraws
+  it once.
+- Measured on `cockpit-office-bench` in a worktree of its own (its own `ARC_BROWSER_CDP_PORT`,
+  `ARC_BROWSER_VITE_PORT` and `ARC_DEV_DATA_DIR`, since the bench writes `public/cockpit-fixtures/active.json`, which
+  other sessions share): the office's DOM nodes and the three busy figures before (2026-10-15: 591 nodes) and after,
+  written under **RAM watch** in `docs/open-issues.md`. The aim: about 250 fewer nodes, busy no higher.
