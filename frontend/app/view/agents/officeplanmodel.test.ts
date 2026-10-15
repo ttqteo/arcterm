@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { PLAN_CELL, PLAN_SPRITES, spriteWidth } from "@/app/view/office/plansprite";
 import { describe, expect, it } from "vitest";
 import {
     agentLook,
@@ -8,8 +9,10 @@ import {
     cut,
     DOOR,
     HALL_W,
+    LOUNGE_PERSON_W,
     MEETING_H,
     MIN_W,
+    peopleDrawn,
     taskLook,
     WALL,
     type Box,
@@ -307,5 +310,141 @@ describe("officeplanmodel", () => {
             [run("r", { tasks: [task("a", "done"), task("b", "running"), task("c", "pending"), task("d", "failed")] })]
         );
         expect(p.rooms.find((r) => r.runId === "r")?.screen).toEqual(["done", "work", "wait", "fail"]);
+    });
+
+    describe("the lounge", () => {
+        // n idle people, the first half at the coffee machine and the rest on the sofa, the longest idle first by index
+        const crowd = (n: number, o: { longName?: boolean } = {}) => {
+            const agents = Array.from({ length: n }, (_, i) =>
+                ag(`a${String(i).padStart(2, "0")}`, {
+                    name: o.longName && i === 0 ? "a-name-of-twenty-four-ch" : `a${i}`,
+                    state: "idle",
+                    idleSince: NOW - (n - i) * 60_000 - 600_000,
+                })
+            );
+            const away = Object.fromEntries(agents.map((a, i) => [a.id, i % 2 === 0 ? "coffee" : "sofa"] as const));
+            return { agents, away };
+        };
+        const build = (n: number, o: { longName?: boolean } = {}) => {
+            const { agents, away } = crowd(n, o);
+            return plan(agents, [], { away });
+        };
+
+        it("draws a person as wide and as tall as the model says", () => {
+            expect(spriteWidth("cup") * PLAN_CELL).toBe(LOUNGE_PERSON_W);
+            expect(PLAN_SPRITES.cup.length * PLAN_CELL).toBe(57);
+            expect(PLAN_SPRITES.back.length * PLAN_CELL).toBe(36);
+        });
+
+        for (const n of [1, 4, 20]) {
+            it(`keeps ${n} people's sprites and labels inside the lounge and clear of each other`, () => {
+                const p = build(n, { longName: true });
+                const inLounge = (b: Box) =>
+                    b.x >= p.lounge.x &&
+                    b.y >= p.lounge.y &&
+                    b.x + b.w <= p.lounge.x + p.lounge.w &&
+                    b.y + b.h <= p.lounge.y + p.lounge.h;
+                for (const l of p.loungers) {
+                    expect(inLounge(l.box), `${l.agentId} sprite`).toBe(true);
+                    expect(inLounge(l.labelBox), `${l.agentId} label`).toBe(true);
+                    expect(l.box.x).toBe(l.x);
+                    expect(l.box.y + l.box.h).toBe(l.bottom);
+                }
+                for (const a of p.loungers) {
+                    for (const b of p.loungers) {
+                        if (a === b) {
+                            continue;
+                        }
+                        expect(overlaps(a.labelBox, b.labelBox), `${a.agentId} label over ${b.agentId} label`).toBe(
+                            false
+                        );
+                        expect(overlaps(a.labelBox, b.box), `${a.agentId} label over ${b.agentId}`).toBe(false);
+                        expect(overlaps(a.box, b.box), `${a.agentId} over ${b.agentId}`).toBe(false);
+                    }
+                    expect(overlaps(a.labelBox, a.box)).toBe(false);
+                }
+                expect(inLounge(p.loungeMore)).toBe(true);
+                for (const l of p.loungers) {
+                    expect(overlaps(l.labelBox, p.loungeMore) || overlaps(l.box, p.loungeMore)).toBe(false);
+                }
+            });
+        }
+
+        it("puts coffee people at the standing places and sofa people on the sofa", () => {
+            const p = build(20);
+            for (const l of p.loungers) {
+                const sofa = p.sofa.y === l.bottom;
+                expect(sofa).toBe(l.at === "sofa");
+            }
+        });
+
+        it("fills the spots longest idle first, and a newcomer moves no one", () => {
+            const { agents, away } = crowd(6);
+            const before = plan(agents, [], { away });
+            const spot = (p: ReturnType<typeof plan>) =>
+                Object.fromEntries(p.loungers.map((l) => [l.agentId, [l.x, l.bottom]]));
+            const newcomer = ag("zz", { state: "idle", idleSince: NOW - 599_000 });
+            for (const at of ["coffee", "sofa"] as const) {
+                const after = plan([...agents, newcomer], [], { away: { ...away, zz: at } });
+                expect(after.loungers.length + after.loungeOverflow.length).toBe(7);
+                for (const [id, xy] of Object.entries(spot(before))) {
+                    expect(spot(after)[id]).toEqual(xy);
+                }
+            }
+            // the longest idle takes the first spot: a00 is the longest idle coffee person
+            const coffee = before.loungers.filter((l) => l.at === "coffee");
+            expect(coffee[0].agentId).toBe("a00");
+            expect(coffee[0].x).toBeGreaterThan(coffee[1].x);
+        });
+
+        it("sends whoever finds no spot to the overflow, longest idle served first", () => {
+            const p = build(20);
+            expect(p.loungers.length + p.loungeOverflow.length).toBe(20);
+            expect(p.loungeOverflow.length).toBeGreaterThan(0);
+            const placed = new Set(p.loungers.map((l) => l.agentId));
+            expect(p.loungeOverflow.every((id) => !placed.has(id))).toBe(true);
+            // an overflow person keeps a dimmed empty desk that says where they are
+            const gone = p.desks.find((d) => d.key === p.loungeOverflow[0])!;
+            expect(gone).toMatchObject({ pose: "empty", dim: true });
+            expect(gone.tip).toMatch(/at the coffee machine|on the sofa/);
+            expect(build(1).loungeOverflow).toEqual([]);
+        });
+
+        it("moves no room when more of the same agents go to the lounge", () => {
+            const { agents, away } = crowd(20);
+            const some = Object.fromEntries(Object.entries(away).slice(0, 1));
+            const boxes = (a: typeof away) => plan(agents, [], { away: a }).rooms.map((r) => r.box);
+            expect(boxes(away)).toEqual(boxes(some));
+            expect(plan(agents, [], { away }).hall).toEqual(plan(agents, [], { away: some }).hall);
+        });
+
+        it("keeps the full label for the view to cut", () => {
+            const p = build(2, { longName: true });
+            expect(p.loungers.find((l) => l.agentId === "a00")?.label).toMatch(/^a-name-of-twenty-four-ch · idle /);
+        });
+    });
+
+    describe("peopleDrawn", () => {
+        it("counts desks and seats with a person, the lounge's, the walkers and the boss, never the overflow", () => {
+            const agents = Array.from({ length: 14 }, (_, i) =>
+                ag(`i${String(i).padStart(2, "0")}`, { state: "idle", idleSince: NOW - (20 + i) * 60_000 })
+            );
+            const away = Object.fromEntries(agents.map((a) => [a.id, "sofa"] as const));
+            const p = plan(
+                [ag("w"), ag("x", { state: "asking" }), ...agents],
+                [run("r", { tasks: [task("a", "running"), task("b", "pending")] })],
+                { away }
+            );
+            expect(p.loungeOverflow.length).toBeGreaterThan(0);
+            // 2 at a desk, the run's lead and its running task, the sofa's spots, and the boss
+            const sofaSpots = p.loungers.length;
+            expect(peopleDrawn(p, new Set(), true)).toBe(2 + 2 + sofaSpots + 1);
+            expect(peopleDrawn(p, new Set(), false)).toBe(2 + 2 + sofaSpots);
+            // a walker leaves its desk or its spot and is counted once
+            expect(peopleDrawn(p, new Set(["w"]), true)).toBe(2 + 2 + sofaSpots + 1);
+            expect(peopleDrawn(p, new Set([p.loungers[0].agentId]), true)).toBe(2 + 2 + sofaSpots + 1);
+            // an overflow person walking is drawn as a walker
+            expect(peopleDrawn(p, new Set([p.loungeOverflow[0]]), true)).toBe(2 + 2 + sofaSpots + 2);
+        });
     });
 });

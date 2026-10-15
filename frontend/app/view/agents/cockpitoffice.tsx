@@ -87,6 +87,7 @@ import {
 import {
     buildPlan,
     HWALL,
+    peopleDrawn,
     WALL,
     type Box,
     type Desk,
@@ -112,6 +113,7 @@ export interface OfficeDev {
     patrol?: boolean; // the boss walks desk to desk without end (the bench)
     walkers?: number; // this many people walk desk to coffee and back without end (the bench)
     sheet?: boolean; // every sprite on a sheet over the office (the States board)
+    crowd?: number; // this many more idle agents past the Finished window, to crowd the lounge
 }
 export const officeDevAtom = atom<OfficeDev | null>(null) as PrimitiveAtom<OfficeDev | null>;
 
@@ -171,7 +173,6 @@ const PATH_HINT_MS = 1000;
 
 // what the probe reads, kept up to date as the office draws
 const probe = {
-    people: 0,
     desks: 0,
     seats: 0,
     rooms: 0,
@@ -180,15 +181,19 @@ const probe = {
     lamps: 0,
     cups: 0,
     walking: 0,
+    loungeMore: 0,
     popup: "" as "" | "agent" | "run",
 };
 let lastPlan: Plan | null = null;
+let lastWalking: ReadonlySet<string> = new Set();
 
 /** What the office drew, for the DEV probe (cockpitofficedevhooks.ts). */
 export function readOfficeProbe() {
     const b = globalStore.get(bossAtom);
     return {
         ...probe,
+        // counted when read: the boss draws a render after the plan does
+        people: lastPlan ? peopleDrawn(lastPlan, lastWalking, b != null) : 0,
         boss:
             b && lastPlan
                 ? {
@@ -208,6 +213,19 @@ export function readOfficeProbe() {
         cache: spriteCacheStats("plan"),
         unresolved: PLAN_TOKENS.filter((t) => tokenRgb(t) == null),
     };
+}
+
+// DEV (the lounge board): idle agents past the Finished window, the first six at the coffee machine's age and the rest
+// from ten minutes on, the first with a name too long for its label
+function crowdOf(n: number, now: number): PlanAgent[] {
+    return Array.from({ length: n }, (_, i) => ({
+        id: `fx-crowd-${String(i).padStart(2, "0")}`,
+        name: i === 0 ? "crowd-member-with-a-long-name" : `crowd ${String(i).padStart(2, "0")}`,
+        project: "crowd",
+        state: "idle" as const,
+        idleSince: now - (i < 6 ? 6 + i * 0.5 : 10 + (i - 6) * 2.5) * 60_000,
+        finished: false,
+    }));
 }
 
 const box = (b: Box): CSSProperties => ({ left: b.x, top: b.y, width: b.w, height: b.h });
@@ -291,13 +309,12 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     const pct = dev?.energy ?? livePct;
     const energy = energyOf(pct);
     const night = dev?.afterHours ?? afterHours(new Date(now), hours);
-    const agents = useMemo(
-        () =>
-            dev?.quiet
-                ? props.agents.map((a) => ({ ...a, state: "idle" as const, finished: true, idleSince: now - 60_000 }))
-                : props.agents,
-        [props.agents, dev?.quiet, now]
-    );
+    const agents = useMemo(() => {
+        const base = dev?.quiet
+            ? props.agents.map((a) => ({ ...a, state: "idle" as const, finished: true, idleSince: now - 60_000 }))
+            : props.agents;
+        return dev?.crowd ? [...base, ...crowdOf(dev.crowd, now)] : base;
+    }, [props.agents, dev?.quiet, dev?.crowd, now]);
     const runs = useMemo(
         () => (dev?.quiet ? [] : [...props.runs, ...(dev?.runs ?? [])]),
         [props.runs, dev?.quiet, dev?.runs]
@@ -683,6 +700,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             globalStore.set(officeFiveHourAtom, undefined);
             setOfficeRoot(null);
             lastPlan = null;
+            lastWalking = new Set();
         },
         []
     );
@@ -734,17 +752,13 @@ export function CockpitOffice(props: CockpitOfficeProps) {
 
     useEffect(() => {
         setOfficeRoot(rootRef.current);
-        const seated =
-            plan.desks.filter((d) => d.pose !== "empty" && !walkingIds.has(d.key)).length +
-            plan.seats.filter((s) => s.pose !== "empty").length;
-        const lounging = plan.loungers.filter((l) => !walkingIds.has(l.agentId)).length;
-        const people = seated + lounging + walkingIds.size + 1;
+        lastWalking = walkingIds;
+        const people = peopleDrawn(plan, walkingIds, true);
         const prev = globalStore.get(officeMeterAtom);
         if (prev?.people !== people || prev.walking !== walkingIds.size || prev.animated !== animated) {
             globalStore.set(officeMeterAtom, { people, walking: walkingIds.size, animated });
         }
         Object.assign(probe, {
-            people,
             desks: plan.desks.length,
             seats: plan.seats.length,
             rooms: plan.rooms.length,
@@ -753,6 +767,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             lamps: night ? plan.desks.filter((d) => d.light !== "off").length : 0,
             cups: energy === "tired" ? plan.desks.filter((d) => d.light === "working").length : 0,
             walking: walkingIds.size,
+            loungeMore: plan.loungeOverflow.length,
         });
     });
 
@@ -862,11 +877,13 @@ function Person({
     outfit,
     left,
     bottom,
+    lounger,
 }: {
     sprite: PlanSprite;
     outfit: PlanOutfit;
     left: number;
     bottom: number;
+    lounger?: string;
 }) {
     const h = spriteH(sprite);
     return (
@@ -874,6 +891,7 @@ function Person({
             alt=""
             draggable={false}
             data-office-sprite={sprite}
+            data-office-lounger={lounger}
             src={planSpriteUrl(sprite, outfit)}
             className="pointer-events-none absolute z-[1] [image-rendering:pixelated]"
             style={{ left, top: bottom - h, width: spriteWidth(sprite) * PLAN_CELL, height: h }}
@@ -1028,7 +1046,15 @@ function LoungerView({ l }: { l: Lounger }) {
         () => ({ shirt: shirtOf(l.harness), look: lookOf(l.agentId) }),
         [l.harness, l.agentId]
     );
-    return <Person sprite={l.at === "sofa" ? "back" : "cup"} outfit={outfit} left={l.x} bottom={l.bottom} />;
+    return (
+        <Person
+            sprite={l.at === "sofa" ? "back" : "cup"}
+            outfit={outfit}
+            left={l.x}
+            bottom={l.bottom}
+            lounger={l.agentId}
+        />
+    );
 }
 
 function Screen({ r }: { r: Room }) {
@@ -1271,12 +1297,24 @@ function Labels({ plan, walking, night }: { plan: Plan; walking: Set<string>; ni
                 .map((l) => (
                     <span
                         key={l.agentId}
-                        className="pointer-events-none absolute z-[6] w-[120px] truncate text-center text-[11px] text-muted"
-                        style={{ left: l.x - 42, top: l.bottom + 4 }}
+                        data-office-lounge-label={l.agentId}
+                        title={l.label}
+                        className="absolute z-[6] flex justify-center overflow-hidden whitespace-pre text-[11px] leading-[14px] text-muted"
+                        style={box(l.labelBox)}
                     >
-                        {l.label}
+                        <span className="min-w-0 truncate">{l.name}</span>
+                        <span className="shrink-0">{` · ${l.age}`}</span>
                     </span>
                 ))}
+            {plan.loungeOverflow.length > 0 ? (
+                <span
+                    data-office-lounge-more
+                    className="pointer-events-none absolute z-[6] truncate text-center text-[11px] leading-[14px] text-muted"
+                    style={box(plan.loungeMore)}
+                >
+                    +{plan.loungeOverflow.length} in the lounge
+                </span>
+            ) : null}
         </>
     );
 }

@@ -733,10 +733,18 @@ Tracked in their own initiatives, not here:
   8 GB machine): heap −4.13 MB, −664 DOM nodes (the office replaces the Cards grid, so both read below Cards), busy
   −4.7 % over Cards while the boss and three walkers walk (22 % raw, baseline 26.7 %), −6.4 % under reduced motion,
   −15.2 % in a quiet office, 150 sprites, +2.16 MB after back to Cards, 65 ms to draw. Budgets: 5 MB, 2,000, 2 %,
-  0.5 %, 0.3 %, 600, 1 MB, 150 ms: all held but the heap after back to Cards, which read 0.94, 1.16, 1.09 and 2.16 MB in
-  four runs (budget 1 MB, left as is). A control run that never opened the office read +1.56 MB on the same step, so
-  most of it is the page's own growth, not the office. Busy is from React's dev build (a performance.measure per
+  0.5 %, 0.3 %, 600, 1 MB, 150 ms: every budget held. The earlier row 7, read from the first Cards read, read 0.94, 1.16,
+  1.09 and 2.16 MB in four runs and no longer holds; a control run that never opened the office read +1.56 MB on the
+  same step, so most of it is the page's own growth, not the office. Busy is from React's dev build (a performance.measure per
   render); the production-build reading is the effort chunk 'Re-measure: cockpit office busy on a production build'.
+  Row 7 now holds what a second Office round trip adds (2026-10-15, three runs, 76 people: 48 desks, 27 seats and the
+  boss): +0.01, −1.99 and −2.81 MB back in Cards, all within 1 MB (the first return over the first Cards read read
+  −0.6, +1.89 and +2.39 MB, printed for information). The first trip's figure is the dev page's own growth (+1.56 MB
+  with the office never opened), so a second trip is what shows whether the office keeps anything. Both reads come after
+  a forced GC (`metrics()`), yet the heap on the dev page still swings by up to about 3 MB between reads (−2.81 MB at
+  its lowest); the cause is not established. That swing is larger than the 1 MB budget, so a single read can mask a
+  small leak. Every other row held in all three runs (heap open −4.2 MB, −680 nodes, 143
+  to 145 sprites, 37 to 51 ms to draw).
 
 ---
 

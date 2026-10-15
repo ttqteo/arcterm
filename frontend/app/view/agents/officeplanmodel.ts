@@ -114,7 +114,11 @@ export interface Lounger {
     at: Away;
     x: number;
     bottom: number;
-    label: string;
+    box: Box; // the person's sprite
+    labelBox: Box; // where the view draws the label, its name cut with an ellipsis when it does not fit
+    name: string;
+    age: string; // "idle 6m"
+    label: string; // `name · age`, the person's title
     harness?: string;
 }
 export interface Plan {
@@ -132,6 +136,8 @@ export interface Plan {
     desks: Desk[];
     seats: Seat[];
     loungers: Lounger[];
+    loungeOverflow: string[]; // agent ids with no spot left: their desk is empty, the lounge draws only "+N"
+    loungeMore: Box; // where "+N in the lounge" goes
     order: string[];
     asks: string[];
 }
@@ -151,6 +157,8 @@ export const LOUNGE_H = 230;
 export const BOOTH_W = 152;
 export const FACADE_H = 40;
 export const DOOR = 50;
+export const LOUNGE_PERSON_W = 36; // a person's sprite: 12 cells of PLAN_CELL px
+export const LOUNGE_LABEL_H = 14;
 export const HOME = "Home";
 export const OTHER_RUNS = "Other runs";
 
@@ -158,6 +166,50 @@ const RUNNING = new Set(["running"]);
 const AT_WORK = new Set(["ready", "running", "reviewing", "verifying", "blocked-merge"]);
 const EMPTY = new Set(["pending", "cancelled", "skipped"]);
 const FAILED = new Set(["review-failed", "verify-failed", "failed"]);
+
+interface LoungeSpot {
+    at: Away;
+    x: number; // the person's left edge, from the lounge's left
+    bottom: number; // the person's feet, from the lounge's top
+    label: Box; // from the lounge's top left
+}
+// a seated person (back, 36 px) and a standing one with a cup (57 px) as plansprite.ts draws them
+const SEATED_H = 36;
+const STANDING_H = 57;
+const spot = (at: Away, x: number, bottom: number, lx: number, ly: number, lw: number): LoungeSpot => ({
+    at,
+    x,
+    bottom,
+    label: { x: lx, y: ly, w: lw, h: LOUNGE_LABEL_H },
+});
+// The lounge holds fixed spots, filled in this order, around the furniture Building draws (TV on the wall, coffee
+// machine at 168..198 x 104..150, sofa at 34..196 x 150..182, plant at 204..226 x 176..210). A label is 104 px, enough
+// for a short name and its age on one line, so the sofa's three labels sit one row each under the sofa and the two
+// standing places share a row above the machine, under a free line for "+N in the lounge". A spot's label and sprite
+// touch no other spot's, which a test pins.
+const LOUNGE_SPOTS: LoungeSpot[] = [
+    spot("sofa", 38, 168, 4, 186, 104),
+    spot("sofa", 82, 168, 48, 200, 104),
+    spot("sofa", 126, 168, 92, 214, 104),
+    spot("coffee", 170, 88, 126, 90, 104),
+    spot("coffee", 38, 88, 4, 90, 104),
+];
+
+const byIdle = (a: { idleSince?: number; agentId: string }, b: { idleSince?: number; agentId: string }) => {
+    // longest idle first; an unknown age goes last
+    const x = a.idleSince ?? Infinity;
+    const y = b.idleSince ?? Infinity;
+    return x === y ? a.agentId.localeCompare(b.agentId) : x < y ? -1 : 1;
+};
+
+/** The people drawn on the floor: everyone at a desk or a seat, the lounge's, the walkers, and the boss. */
+export function peopleDrawn(plan: Plan, walking: ReadonlySet<string>, boss: boolean): number {
+    const seated =
+        plan.desks.filter((d) => d.pose !== "empty" && !walking.has(d.key)).length +
+        plan.seats.filter((s) => s.pose !== "empty").length;
+    const lounging = plan.loungers.filter((l) => !walking.has(l.agentId)).length;
+    return seated + lounging + walking.size + (boss ? 1 : 0);
+}
 
 const byName = (a: PlanAgent, b: PlanAgent) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
 const byStart = (a: PlanRun, b: PlanRun) => (a.createdTs ?? 0) - (b.createdTs ?? 0) || a.id.localeCompare(b.id);
@@ -313,7 +365,7 @@ export function buildPlan(input: PlanInput): Plan {
     const walls: Box[] = [];
     const desks: Desk[] = [];
     const seats: Seat[] = [];
-    const loungers: Lounger[] = [];
+    const lounging: (Omit<Lounger, "x" | "bottom" | "box" | "labelBox"> & { idleSince?: number })[] = [];
     const order: string[] = [];
     const asks: string[] = [];
     const leftDoors: Box[] = [];
@@ -342,11 +394,12 @@ export function buildPlan(input: PlanInput): Plan {
             }
             if (away && !input.night && a.state === "idle") {
                 const age = a.idleSince != null ? `idle ${shortAge(input.now - a.idleSince)}` : "idle";
-                loungers.push({
+                lounging.push({
                     agentId: a.id,
                     at: away,
-                    x: 0,
-                    bottom: 0,
+                    idleSince: a.idleSince,
+                    name: a.name,
+                    age,
                     label: `${a.name} · ${age}`,
                     harness: a.harness,
                 });
@@ -515,21 +568,40 @@ export function buildPlan(input: PlanInput): Plan {
         ...cut({ x: rightX - WALL, y: top, w: WALL, h: bodyH }, rightDoors)
     );
 
-    // feet at the coffee machine and on the sofa; the lounge's people stand and sit beside each other
+    // feet at the coffee machine and on the sofa: where walkers head. The lounge's people take its fixed spots, longest
+    // idle first, so a newcomer never moves someone already there; whoever finds none is drawn only as "+N"
     const coffee = { x: hallX + 138, y: top + 150 };
     const sofa = { x: hallX + 96, y: top + 168 };
-    loungers
-        .filter((l) => l.at === "coffee")
-        .forEach((l, i) => {
-            l.x = coffee.x - 18 - i * 40;
-            l.bottom = coffee.y;
-        });
-    loungers
-        .filter((l) => l.at === "sofa")
-        .forEach((l, i) => {
-            l.x = sofa.x - 58 + (i % 3) * 40;
-            l.bottom = sofa.y;
-        });
+    const loungers: Lounger[] = [];
+    const loungeOverflow: string[] = [];
+    for (const at of ["sofa", "coffee"] as const) {
+        const free = LOUNGE_SPOTS.filter((s) => s.at === at);
+        lounging
+            .filter((l) => l.at === at)
+            .sort(byIdle)
+            .forEach((l, i) => {
+                const s = free[i];
+                if (s == null) {
+                    loungeOverflow.push(l.agentId);
+                    return;
+                }
+                const h = at === "sofa" ? SEATED_H : STANDING_H;
+                const x = lounge.x + s.x;
+                const bottom = lounge.y + s.bottom;
+                loungers.push({
+                    agentId: l.agentId,
+                    at,
+                    x,
+                    bottom,
+                    box: { x, y: bottom - h, w: LOUNGE_PERSON_W, h },
+                    labelBox: { ...s.label, x: lounge.x + s.label.x, y: lounge.y + s.label.y },
+                    name: l.name,
+                    age: l.age,
+                    label: l.label,
+                    harness: l.harness,
+                });
+            });
+    }
 
     return {
         width,
@@ -546,6 +618,8 @@ export function buildPlan(input: PlanInput): Plan {
         desks,
         seats,
         loungers,
+        loungeOverflow,
+        loungeMore: { x: lounge.x + 8, y: lounge.y + 16, w: 218, h: LOUNGE_LABEL_H },
         order,
         asks,
     };

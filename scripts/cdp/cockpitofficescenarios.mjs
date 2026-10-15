@@ -323,6 +323,48 @@ export function makeCockpitOfficeScenarios(fx) {
                 JSON.stringify({ off: off?.clock, on: on?.clock })
             );
 
+            // 14b. the crowded lounge: 14 more idle agents past the Finished window, several of them 10 min and more,
+            // with the animation off so everyone is there at once. The lounge holds its spots, nothing overlaps, and
+            // the rest read "+N in the lounge"
+            await h.ev("window.__cockpitOfficeAnimation(false)");
+            await dev(h, { crowd: 14 });
+            await sleep(700);
+            const lounge = await h.ev(`(() => {
+                const floor = document.querySelector('[data-office-floor="lounge"]')?.getBoundingClientRect();
+                const rect = (el) => { const r = el.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom }; };
+                const labels = [...document.querySelectorAll("[data-office-lounge-label]")].map(rect);
+                const people = [...document.querySelectorAll("[data-office-lounger]")].map(rect);
+                const inside = (q) => floor && q.l >= floor.left - 0.5 && q.t >= floor.top - 0.5 && q.r <= floor.right + 0.5 && q.b <= floor.bottom + 0.5;
+                const hit = (a, b) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+                let overlapping = 0;
+                for (let i = 0; i < labels.length; i++) for (let j = i + 1; j < labels.length; j++) if (hit(labels[i], labels[j])) overlapping++;
+                return {
+                    labels: labels.length,
+                    people: people.length,
+                    overlapping,
+                    outside: labels.filter((q) => !inside(q)).length + people.filter((q) => !inside(q)).length,
+                    more: document.querySelector("[data-office-lounge-more]")?.textContent ?? null,
+                    moreInside: (() => { const m = document.querySelector("[data-office-lounge-more]"); return m ? inside(rect(m)) : false; })(),
+                    images: document.querySelectorAll("[data-office-root] img[data-office-sprite]").length,
+                };
+            })()`);
+            p = await probe(h);
+            await h.shot("cdp-shots/cockpit-office-lounge.png");
+            await dev(h, { crowd: 0 });
+            await h.ev("window.__cockpitOfficeAnimation(true)");
+            rec(
+                "14b. a crowded lounge: no two labels touch, everyone stays inside it, the rest read +N in the lounge, and People counts the people drawn",
+                lounge?.labels > 0 &&
+                    lounge.labels === lounge.people &&
+                    lounge.overlapping === 0 &&
+                    lounge.outside === 0 &&
+                    p?.loungeMore > 0 &&
+                    lounge.more === `+${p.loungeMore} in the lounge` &&
+                    lounge.moreInside &&
+                    p.people === lounge.images,
+                JSON.stringify({ lounge, loungeMore: p?.loungeMore, people: p?.people })
+            );
+
             // 15. o and the Cards | Office toggle switch the view, and back
             await focusCockpit(h);
             await key(h, "o");
@@ -517,23 +559,37 @@ export function makeCockpitOfficeScenarios(fx) {
             await h.cdp("Emulation.setEmulatedMedia", { features: [] });
             await dev(h, { patrol: false, walkers: 0 });
 
-            // the people count leaves out whoever still waits to walk to the lounge (three go at once), so it reads
-            // low while that queue drains: poll for it to settle, up to 20 s, and keep the most seen
+            // the lounge holds 18 and reads +N past them, so the people drawn are not the roster: count the plan's desks
+            // and seats plus the boss, once the walkers who go to the lounge three at a time have arrived
             let p = await probe(h);
-            r.people = p?.people;
-            for (let t = 0; t < 20_000 && !(p?.walking === 0 && r.people >= 70); t += 250) {
+            for (let t = 0; t < 20_000 && p?.walking !== 0; t += 250) {
                 await sleep(250);
                 p = await probe(h);
-                r.people = Math.max(r.people ?? 0, p?.people ?? 0);
             }
+            r.roster = (p?.desks ?? 0) + (p?.seats ?? 0) + 1;
+            r.people = p?.people;
             r.cache = p?.cache?.entries;
 
-            await h.ev(`[...document.querySelectorAll("[data-cockpit-view-toggle] button")].find((b) => b.textContent.trim() === "Cards")?.click()`);
+            const toggle = (label) =>
+                h.ev(`[...document.querySelectorAll("[data-cockpit-view-toggle] button")].find((b) => b.textContent.trim() === ${JSON.stringify(label)})?.click()`);
+            await toggle("Cards");
             await sleep(2000);
             const closed = await metrics(h);
             r.heapAfterMB = mb(closed.heap - cardsHold.heap);
 
-            rec("0. the bench drew about 75 people", r.people >= 70, `${r.people} people`);
+            // a second round trip: the first one's figure carries the dev page's own growth (+1.56 MB with the office
+            // never opened), so what the office keeps is what a second open and close adds
+            await toggle("Office");
+            await h.ev(`(async () => {
+                for (let i = 0; i < 600 && !document.querySelector("[data-office-desk]"); i++) await new Promise((r) => requestAnimationFrame(r));
+            })()`);
+            await sleep(2000);
+            await toggle("Cards");
+            await sleep(2000);
+            const trip = await metrics(h);
+            r.heapTripMB = mb(trip.heap - closed.heap);
+
+            rec("0. the bench holds about 75 people (desks, seats and the boss)", r.roster >= 70, `${r.roster} (${p?.desks} desks, ${p?.seats} seats, ${p?.people} drawn)`);
             rec("1. JS heap, Office minus Cards <= 5 MB", r.heapOpenMB <= 5, `${r.heapOpenMB} MB`);
             rec("2. DOM nodes added <= 2,000", r.nodesAdded <= 2000, `${r.nodesAdded}`);
             rec("3. main thread busy walking, over the Cards baseline <= 2 %", r.busyPct <= 2, `${r.busyPct} % (${r.busyRawPct} % raw, baseline ${r.baseBusyPct} %)`);
@@ -544,7 +600,7 @@ export function makeCockpitOfficeScenarios(fx) {
                 `${r.busyQuietPct} %, settled in ${r.quietSettleMs} ms, ${r.walkingQuiet} walking, ${JSON.stringify(r.clockQuiet)}`
             );
             rec("6. sprite cache <= 600 entries", r.cache <= 600, `${r.cache}`);
-            rec("7. heap after switching back to Cards <= 1 MB over Cards", r.heapAfterMB <= 1, `${r.heapAfterMB} MB`);
+            rec("7. heap a second Office round trip adds, back in Cards <= 1 MB", r.heapTripMB <= 1, `${r.heapTripMB} MB (first return ${r.heapAfterMB} MB over the first Cards read)`);
             rec("8. toggle click to the office drawn <= 150 ms", r.openMs <= 150, `${r.openMs} ms`);
             console.log(`[cockpit-office-bench] ${JSON.stringify(r)}`);
             return steps;
