@@ -9,12 +9,14 @@ import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "./agents";
 import { officeDevAtom, readOfficeProbe, type OfficeDev } from "./cockpitoffice";
 import { officeAnimationAtom } from "./officestore";
+import { themePresetAtom } from "./themestore";
 
 declare global {
     interface Window {
         __cockpitOffice?: (o: OfficeDev | null) => void;
         __cockpitOfficeProbe?: () => unknown;
         __cockpitOfficeAnimation?: (on: boolean) => void;
+        __cockpitOfficeTheme?: (preset: string) => string;
     }
 }
 
@@ -22,6 +24,12 @@ export function installCockpitOfficeDevHooks(model: AgentsViewModel): void {
     window.__cockpitOffice = (o) =>
         globalStore.set(officeDevAtom, o == null ? null : { ...(globalStore.get(officeDevAtom) ?? {}), ...o });
     window.__cockpitOfficeAnimation = (on) => globalStore.set(officeAnimationAtom, on);
+    // sets the theme preset and returns the one it replaced (the cockpit-office scenario's theme steps)
+    window.__cockpitOfficeTheme = (preset) => {
+        const prev = globalStore.get(themePresetAtom);
+        globalStore.set(themePresetAtom, preset);
+        return prev;
+    };
     window.__cockpitOfficeProbe = () => {
         const cursor = globalStore.get(model.cursorIdAtom);
         const sel = cursor ? (globalStore.get(model.answerSelAtom)[cursor] ?? {}) : {};

@@ -121,6 +121,9 @@ Nút **Cards | Office** cạnh **Live only** (hoặc phím `o`) đổi lưới t
 phòng vẽ đúng các agent và run của lưới, theo cùng tab, project và **Live only**; chỉ khác cách vẽ. Agent idle quá
 Finished window (mục **Idle** dưới lưới) ngồi ở phòng chờ, nên trong Office mục Idle không hiện nữa.
 
+Văn phòng vẽ bằng pixel art nhìn từ trên xuống: trong giờ làm thì sáng, ngoài giờ (tối, đêm, cuối tuần) thì dịu lại;
+mỗi người nhận ra nhờ kiểu tóc, và sếp (bạn) đội mũ. Phòng không ai làm việc thì tắt đèn.
+
 - **Mỗi project là một dải**: bên trái là phòng của các agent (mỗi agent một bàn, quay mặt ra phía bạn), bên phải
   mỗi run một phòng họp, lead ngồi đầu bàn, worker ngồi quanh, màn hình trên tường là DAG của run. **Sảnh** ở giữa có
   phòng chờ (TV, sofa, máy cà phê): agent idle quá Finished window ra máy cà phê, sau 10 phút thì lên sofa. Phòng

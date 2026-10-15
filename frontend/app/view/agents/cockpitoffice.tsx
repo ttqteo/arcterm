@@ -6,10 +6,10 @@
 // plan is officeplanmodel.ts, who goes where officebehavior.ts, how the boss moves officeboss.ts, the pixels
 // plansprite.ts, the clocks officeclock.ts. This file owns the DOM, the walk state and the popup.
 //
-// Cost is the point of most choices (the spec's Benchmark): a person is one <img> from a cache; a desk's top and face
-// are pseudo-elements; a walk step renders nothing: it moves the boss's and the walkers' <img> on the DOM, and React
-// draws them again only when they turn, set off, stop or flip their walking frame; only animated people read the
-// frame clock; no clock runs while nothing moves.
+// Cost is the point of most choices (the spec's Benchmark): the static building is two canvases (scenery.ts), drawn at
+// art resolution only when sceneryKey changes; a person is one <img> from a cache; a walk step renders nothing: it
+// moves the boss's and the walkers' <img> on the DOM, and React draws them again only when they turn, set off, stop or
+// flip their walking frame; only animated people read the frame clock; no clock runs while nothing moves.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import {
@@ -20,24 +20,33 @@ import {
     useFrameClock,
     useWalkLoop,
 } from "@/app/view/office/officeclock";
+import { OFFICE_TOKENS, officeColors, type OfficePhase } from "@/app/view/office/officepalette";
 import {
+    BOSS_POSES,
     BOSS_SHIRT,
     LANE_SHIRTS,
     LEAD_SHIRT,
+    markUrl,
     mirrorOf,
     PLAN_CELL,
     PLAN_SPRITES,
     PLAN_TOKENS,
     planSpriteUrl,
     seatSprite,
+    SHEET_POSES,
+    SHEET_SHIRTS,
     shirtOf,
+    spriteLeft,
     spriteWidth,
     walkSprite,
+    type PlanMark,
     type PlanOutfit,
     type PlanSprite,
     type SeatPose,
+    type Shade,
 } from "@/app/view/office/plansprite";
-import { spriteCacheStats, tokenRgb } from "@/app/view/office/spritecache";
+import { art, rasterise, scenery, sceneryKey, type Op } from "@/app/view/office/scenery";
+import { clearSprites, clearTokenColors, spriteCacheStats, tokenRgb } from "@/app/view/office/spritecache";
 import { cn } from "@/util/util";
 import { atom, useAtom, useAtomValue, type Atom, type PrimitiveAtom } from "jotai";
 import { selectAtom } from "jotai/utils";
@@ -93,10 +102,8 @@ import {
 } from "./officeboss";
 import {
     buildPlan,
-    HWALL,
     peopleDrawn,
     popupBox,
-    WALL,
     type Box,
     type Desk,
     type Lounger,
@@ -105,11 +112,11 @@ import {
     type PlanRun,
     type Point,
     type Room,
-    type RoomKind,
     type Seat,
     type Tone,
 } from "./officeplanmodel";
 import { officeAnimation, officeAnimationAtom, officeBigCardAtom, officeHoursAtom } from "./officestore";
+import { themeOverridesAtom, themePresetAtom } from "./themestore";
 import { usePlanDonuts } from "./usagemeters";
 
 /** What the CDP scenarios set through cockpitofficedevhooks.ts; always null in a real session. */
@@ -206,6 +213,8 @@ const probe = {
     cups: 0,
     walking: 0,
     loungeMore: 0,
+    sceneryDraws: 0,
+    phase: "day" as OfficePhase,
     popup: "" as "" | "agent" | "run",
     prompt: "" as "" | "agent" | "run",
     big: false,
@@ -237,7 +246,9 @@ export function readOfficeProbe() {
             : {},
         clock: officeClocks(),
         cache: spriteCacheStats("plan"),
-        unresolved: PLAN_TOKENS.filter((t) => tokenRgb(t) == null),
+        sheetSize: 4 * SHEET_POSES.length + BOSS_POSES.length,
+        lounge: lastPlan?.lounge ?? null,
+        unresolved: [...PLAN_TOKENS, ...OFFICE_TOKENS].filter((t) => tokenRgb(t) == null),
     };
 }
 
@@ -285,41 +296,80 @@ function withAway(s: Record<string, Away>, id: string, to: Away | undefined): Re
     return next;
 }
 
-// the floors' materials: planks in the agents' rooms and Home, tiles in meeting rooms, carpet in the lounge
-const WOOD: CSSProperties = {
-    background:
-        "repeating-linear-gradient(90deg, var(--color-office-wood-1) 0 15px, var(--color-office-wood-2) 15px 16px)",
-};
-const FLOOR: Record<RoomKind, CSSProperties> = {
-    agents: WOOD,
-    home: WOOD,
-    meeting: {
-        background:
-            "repeating-conic-gradient(var(--color-office-tile-1) 0 25%, var(--color-office-tile-2) 0 50%) 0 0 / 24px 24px",
-    },
-    lounge: { background: "var(--color-office-carpet)" },
-};
-const BRICK: CSSProperties = {
-    backgroundColor: "var(--color-office-brick)",
-    backgroundImage: "repeating-linear-gradient(0deg, transparent 0 9px, var(--color-office-mortar) 9px 11px)",
-};
 const TONE: Record<Tone, string> = {
     plain: "text-muted",
     asking: "font-semibold text-asking",
     done: "font-semibold text-success",
     muted: "text-ink-faint",
 };
-const SCREEN: Record<string, string> = {
-    done: "bg-success/45",
-    work: "bg-working",
-    wait: "bg-edge-mid",
-    fail: "bg-error",
-};
-const BUBBLE: Record<string, string> = {
-    "!": "bg-asking text-on-warning",
-    "?": "bg-asking text-on-warning",
-    "×": "bg-error text-background",
-};
+// the theme the office's colours were last read in. Module level: tokenRgb's colours and the plan's sprites outlive
+// the office, and a theme can change while it is away (Cards, another surface)
+let drawnTheme: string | undefined;
+
+// a theme re-skins the status tokens a run's screen, the laptops, the bubbles and the ring use
+function useThemeEpoch(): string {
+    const key = `${useAtomValue(themePresetAtom)}|${JSON.stringify(useAtomValue(themeOverridesAtom))}`;
+    // mounting after the theme changed while the office was away: its vars are on <html> already, so the old colours
+    // are forgotten before anything here draws (idempotent, so strict mode's second call is harmless)
+    const [epoch, setEpoch] = useState(() => {
+        if (drawnTheme !== key) {
+            clearTokenColors();
+            clearSprites("plan");
+            drawnTheme = key;
+        }
+        return key;
+    });
+    // the theme changing while the office is open: the shell writes its vars in a layout effect that runs after this
+    // office's own, so the colours are forgotten in a passive effect, after every layout effect, and the epoch it
+    // returns redraws what used them
+    useEffect(() => {
+        if (epoch !== key) {
+            clearTokenColors();
+            clearSprites("plan");
+            drawnTheme = key;
+            setEpoch(key);
+        }
+    }, [key, epoch]);
+    return epoch;
+}
+
+// scenes drawn since the page loaded, for the probe: one per sceneryKey, counted in CockpitOffice, not per canvas
+let sceneryDraws = 0;
+
+// the building at art resolution, scaled 3x: drawn in a passive effect (after the theme's vars are on <html>) and
+// only when its ops change, which happens only when sceneryKey does (the phase and the theme are in it)
+const OfficeCanvas = memo(function OfficeCanvas(p: {
+    which: "under" | "over";
+    ops: Op[];
+    width: number;
+    height: number;
+    phase: OfficePhase;
+    z: number;
+}) {
+    const ref = useRef<HTMLCanvasElement>(null);
+    useEffect(() => {
+        const canvas = ref.current;
+        const ctx = canvas?.getContext("2d");
+        if (!canvas || !ctx) {
+            return;
+        }
+        const image = ctx.createImageData(p.width, p.height);
+        image.data.set(rasterise(p.ops, p.width, p.height, officeColors(p.phase)));
+        ctx.putImageData(image, 0, 0);
+        // the bench's open time stops once every canvas has painted
+        canvas.dataset.officeDrawn = "";
+    }, [p.ops, p.width, p.height, p.phase]);
+    return (
+        <canvas
+            ref={ref}
+            data-office-canvas={p.which}
+            width={p.width}
+            height={p.height}
+            className="pointer-events-none absolute left-0 top-0 [image-rendering:pixelated]"
+            style={{ width: p.width * PLAN_CELL, height: p.height * PLAN_CELL, zIndex: p.z }}
+        />
+    );
+});
 
 export function CockpitOffice(props: CockpitOfficeProps) {
     const { cursorId, onCursor, renderCard, handleRef } = props;
@@ -335,6 +385,9 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     const pct = dev?.energy ?? livePct;
     const energy = energyOf(pct);
     const night = dev?.afterHours ?? afterHours(new Date(now), hours);
+    const phase: OfficePhase = night ? "after" : "day";
+    const tired = energy === "tired";
+    const theme = useThemeEpoch();
     const agents = useMemo(() => {
         const base = dev?.quiet
             ? props.agents.map((a) => ({ ...a, state: "idle" as const, finished: true, idleSince: now - 60_000 }))
@@ -389,6 +442,14 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         [agents, runs, width, now, planAway, night]
     );
     lastPlan = plan;
+    const sceneKey = sceneryKey(plan, phase, tired, theme);
+    // the plan is rebuilt on every coarse tick with new objects; the ops only when what they draw has changed
+    const scene = useMemo(() => scenery(plan, phase, tired), [sceneKey]);
+    // one draw of the building per scene: both canvases paint in their own effects, which run before this one
+    useEffect(() => {
+        sceneryDraws++;
+        probe.sceneryDraws = sceneryDraws;
+    }, [scene]);
 
     const planRef = useRef(plan);
     planRef.current = plan;
@@ -816,6 +877,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             rooms: plan.rooms.length,
             dark: plan.rooms.filter((r) => !r.lit).map((r) => r.key),
             night,
+            phase,
             lamps: night ? plan.desks.filter((d) => d.light !== "off").length : 0,
             cups: energy === "tired" ? plan.desks.filter((d) => d.light === "working").length : 0,
             walking: walkingIds.size,
@@ -842,11 +904,19 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                         walkTo({ x: e.clientX - r.left, y: e.clientY - r.top });
                     }}
                 >
-                    <Building plan={plan} night={night} />
+                    <OfficeCanvas
+                        which="under"
+                        ops={scene.under}
+                        width={scene.width}
+                        height={scene.height}
+                        phase={phase}
+                        z={0}
+                    />
                     {plan.desks.map((d) => (
                         <DeskView
                             key={d.key}
                             d={d}
+                            phase={phase}
                             hidePerson={walkingIds.has(d.key)}
                             energy={energy}
                             stretching={stretching}
@@ -855,22 +925,38 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                         />
                     ))}
                     {plan.rooms.map((r) => (r.table ? <Table key={r.key} room={r} onPick={onPick} /> : null))}
-                    {plan.seats.map((s) => (
-                        <SeatView key={s.key} s={s} onPick={onPick} />
-                    ))}
+                    {plan.seats.map((s) => {
+                        const room = plan.rooms.find((r) => r.key === s.room);
+                        return (
+                            <SeatView
+                                key={s.key}
+                                s={s}
+                                phase={phase}
+                                lit={room?.lit ?? true}
+                                near={room?.table != null && s.bottom > room.table.y + 20}
+                                onPick={onPick}
+                            />
+                        );
+                    })}
                     {plan.loungers
                         .filter((l) => !walkingIds.has(l.agentId))
                         .map((l) => (
-                            <LoungerView key={l.agentId} l={l} />
+                            <LoungerView key={l.agentId} l={l} phase={phase} />
                         ))}
-                    <Shades plan={plan} night={night} />
-                    <Walls plan={plan} night={night} />
-                    <Labels plan={plan} walking={walkingIds} night={night} />
-                    <WalkersView />
-                    <BossView plan={plan} />
+                    <OfficeCanvas
+                        which="over"
+                        ops={scene.over}
+                        width={scene.width}
+                        height={scene.height}
+                        phase={phase}
+                        z={2}
+                    />
+                    <Labels plan={plan} walking={walkingIds} night={night} phase={phase} />
+                    <WalkersView phase={phase} />
+                    <BossView plan={plan} phase={phase} />
                     <PathDots />
                     <OfficePopup plan={plan} cursorId={cursorId} renderCard={renderCard} />
-                    {dev?.sheet ? <PoseSheet /> : null}
+                    {dev?.sheet ? <PoseSheet phase={phase} /> : null}
                 </div>
             ) : null}
         </div>
@@ -926,29 +1012,34 @@ function FiveHourLeaf({ model }: { model: AgentsViewModel }) {
     return null;
 }
 
-function Person({
-    sprite,
-    outfit,
-    left,
-    bottom,
-    lounger,
-}: {
+// a person stands on the art grid: `left` is a 14-wide person's left edge (a raised arm widens a sprite to the left),
+// `bottom` its feet, both CSS px
+function Person(p: {
     sprite: PlanSprite;
     outfit: PlanOutfit;
+    phase: OfficePhase;
+    shade?: Shade;
     left: number;
     bottom: number;
+    z?: number;
     lounger?: string;
 }) {
-    const h = spriteH(sprite);
+    const h = spriteH(p.sprite);
     return (
         <img
             alt=""
             draggable={false}
-            data-office-sprite={sprite}
-            data-office-lounger={lounger}
-            src={planSpriteUrl(sprite, outfit)}
-            className="pointer-events-none absolute z-[1] [image-rendering:pixelated]"
-            style={{ left, top: bottom - h, width: spriteWidth(sprite) * PLAN_CELL, height: h }}
+            data-office-sprite={p.sprite}
+            data-office-lounger={p.lounger}
+            src={planSpriteUrl(p.sprite, p.outfit, p.phase, p.shade ?? "")}
+            className="pointer-events-none absolute [image-rendering:pixelated]"
+            style={{
+                left: p.left + spriteLeft(p.sprite) * PLAN_CELL,
+                top: p.bottom - h,
+                width: spriteWidth(p.sprite) * PLAN_CELL,
+                height: h,
+                zIndex: p.z ?? 1,
+            }}
         />
     );
 }
@@ -959,6 +1050,9 @@ function TickPerson(p: {
     id: string;
     pose: SeatPose;
     outfit: PlanOutfit;
+    phase: OfficePhase;
+    left: number;
+    bottom: number;
     working: boolean;
     energy: Energy;
     stretching: boolean;
@@ -969,76 +1063,105 @@ function TickPerson(p: {
         : p.working && tick > 0 && yawnsNow(p.id, tick, p.energy)
           ? "yawn"
           : (seatSprite(p.pose, (tick % 2) as 0 | 1) ?? "doze");
-    return <Person sprite={sprite} outfit={p.outfit} left={26} bottom={56} />;
+    return <Person sprite={sprite} outfit={p.outfit} phase={p.phase} left={p.left} bottom={p.bottom} />;
 }
 
+// the desk's furniture is on the canvases: this is the person at it and a transparent button over everything
 const DESK_CLASS =
-    "absolute z-[1] isolate cursor-pointer border-0 bg-transparent p-0 [contain-intrinsic-size:88px_98px] [content-visibility:auto] " +
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent " +
-    // the desk's top and face are pseudo-elements, not nodes: the bench's 2,000-node budget
-    "before:absolute before:left-[4px] before:top-[50px] before:z-[2] before:h-[22px] before:w-[80px] before:bg-office-desk-top before:content-[''] " +
-    "after:absolute after:left-[4px] after:top-[72px] after:z-[2] after:h-[8px] after:w-[80px] after:bg-office-desk-face after:content-['']";
+    "absolute z-[3] cursor-pointer border-0 bg-transparent p-0 [contain-intrinsic-size:88px_98px] [content-visibility:auto] " +
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
 const DeskView = memo(function DeskView(p: {
     d: Desk;
+    phase: OfficePhase;
     hidePerson: boolean;
     energy: Energy;
     stretching: boolean;
     cheering: boolean;
     onPick: (key: string) => void;
 }) {
-    const { d, hidePerson, energy, stretching, cheering, onPick } = p;
+    const { d, phase, hidePerson, energy, stretching, cheering, onPick } = p;
     const outfit = useMemo<PlanOutfit>(() => ({ shirt: shirtOf(d.harness), look: lookOf(d.key) }), [d.harness, d.key]);
     const seated = !hidePerson && d.pose !== "empty";
     const working = d.light === "working";
     const pose: SeatPose = cheering ? "cheer" : d.pose;
     const ticks = d.animated || cheering || stretching || (working && energy !== "fresh");
+    const left = (art(d.x) + 6) * PLAN_CELL;
+    const bottom = (art(d.y) + 2) * PLAN_CELL;
     return (
-        <button
-            type="button"
-            data-office-desk={d.key}
-            data-office-pose={!seated ? "empty" : stretching ? "stretch" : pose}
-            title={d.tip}
-            aria-label={d.tip}
-            onClick={() => onPick(d.key)}
-            className={cn(DESK_CLASS, d.dim && "opacity-60")}
-            style={{ left: d.x - 4, top: d.y - 50, width: 88, height: 98 }}
-        >
+        <>
             {seated ? (
                 ticks ? (
                     <TickPerson
                         id={d.key}
                         pose={pose}
                         outfit={outfit}
+                        phase={phase}
+                        left={left}
+                        bottom={bottom}
                         working={working}
                         energy={energy}
                         stretching={stretching}
                     />
                 ) : (
-                    <Person sprite={seatSprite(pose, 0) ?? "doze"} outfit={outfit} left={26} bottom={56} />
+                    <Person
+                        sprite={seatSprite(pose, 0) ?? "doze"}
+                        outfit={outfit}
+                        phase={phase}
+                        left={left}
+                        bottom={bottom}
+                    />
                 )
             ) : null}
-            <span className="absolute left-[30px] top-[44px] z-[3] box-border h-[18px] w-[28px] border-2 border-solid border-surface-hover bg-surface-code" />
-            <span
-                className={cn(
-                    "absolute left-[42px] top-[54px] z-[4] h-[2px] w-[4px]",
-                    working ? "bg-working" : d.light === "asking" ? "bg-asking" : "bg-edge-mid"
-                )}
+            <button
+                type="button"
+                data-office-desk={d.key}
+                data-office-pose={!seated ? "empty" : stretching ? "stretch" : pose}
+                title={d.tip}
+                aria-label={d.tip}
+                onClick={() => onPick(d.key)}
+                className={DESK_CLASS}
+                style={{ left: d.x - 4, top: d.y - 50, width: 88, height: 98 }}
             />
-            <span className="absolute left-[66px] top-[42px] z-[3] box-border h-[22px] w-[12px] border border-solid border-surface-hover bg-surface-code" />
-            {energy === "tired" && working ? (
-                <span className="absolute left-[12px] top-[54px] z-[4] h-[9px] w-[7px] rounded-b-[2px] bg-office-cup" />
-            ) : null}
-        </button>
+        </>
     );
 }, sameValues);
 
-function TickSeat({ pose, outfit }: { pose: SeatPose; outfit: PlanOutfit }) {
+// a seat's person: the near side sits in front of the table, on the over canvas's layer (z 3), shaded with its room
+const seatShade = (lit: boolean, night: boolean): Shade =>
+    !lit && night ? "both" : !lit ? "dark" : night ? "night" : "";
+
+function TickSeat(p: {
+    pose: SeatPose;
+    outfit: PlanOutfit;
+    phase: OfficePhase;
+    left: number;
+    bottom: number;
+    z: number;
+    shade: Shade;
+}) {
     const tick = useAtomValue(officeTickAtom);
-    return <Person sprite={seatSprite(pose, (tick % 2) as 0 | 1) ?? "doze"} outfit={outfit} left={0} bottom={42} />;
+    return (
+        <Person
+            sprite={seatSprite(p.pose, (tick % 2) as 0 | 1) ?? "doze"}
+            outfit={p.outfit}
+            phase={p.phase}
+            shade={p.shade}
+            left={p.left}
+            bottom={p.bottom}
+            z={p.z}
+        />
+    );
 }
 
-const SeatView = memo(function SeatView({ s, onPick }: { s: Seat; onPick: (key: string) => void }) {
+const SeatView = memo(function SeatView(p: {
+    s: Seat;
+    phase: OfficePhase;
+    lit: boolean;
+    near: boolean;
+    onPick: (key: string) => void;
+}) {
+    const { s, phase, lit, near, onPick } = p;
     const outfit = useMemo<PlanOutfit>(
         () => ({
             shirt: s.lane === 0 ? LEAD_SHIRT : LANE_SHIRTS[(s.lane - 1) % LANE_SHIRTS.length],
@@ -1049,27 +1172,40 @@ const SeatView = memo(function SeatView({ s, onPick }: { s: Seat; onPick: (key: 
     if (s.pose === "empty") {
         return null;
     }
+    const left = art(s.x - 3) * PLAN_CELL;
+    const bottom = art(s.bottom) * PLAN_CELL;
+    const z = near ? 3 : 1;
+    const shade: Shade = near ? seatShade(lit, phase === "after") : "";
     return (
-        <button
-            type="button"
-            data-office-seat={s.key}
-            data-office-pose={s.pose}
-            title={s.tip}
-            aria-label={s.tip}
-            onClick={() => onPick(s.key)}
-            className="absolute cursor-pointer border-0 bg-transparent p-0 [contain-intrinsic-size:36px_42px] [content-visibility:auto] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            // the near side is in front of the table, the far side behind it
-            style={{ left: s.x, top: s.bottom - 42, width: 36, height: 42, zIndex: s.pose === "back" ? 3 : 1 }}
-        >
+        <>
             {s.animated ? (
-                <TickSeat pose={s.pose} outfit={outfit} />
+                <TickSeat pose={s.pose} outfit={outfit} phase={phase} left={left} bottom={bottom} z={z} shade={shade} />
             ) : (
-                <Person sprite={seatSprite(s.pose, 0) ?? "doze"} outfit={outfit} left={0} bottom={42} />
+                <Person
+                    sprite={s.pose === "back" ? "backseat" : (seatSprite(s.pose, 0) ?? "doze")}
+                    outfit={outfit}
+                    phase={phase}
+                    shade={shade}
+                    left={left}
+                    bottom={bottom}
+                    z={z}
+                />
             )}
-        </button>
+            <button
+                type="button"
+                data-office-seat={s.key}
+                data-office-pose={s.pose}
+                title={s.tip}
+                aria-label={s.tip}
+                onClick={() => onPick(s.key)}
+                className="absolute z-[3] cursor-pointer border-0 bg-transparent p-0 [contain-intrinsic-size:42px_51px] [content-visibility:auto] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                style={{ left, top: bottom - 51, width: 42, height: 51 }}
+            />
+        </>
     );
 }, sameValues);
 
+// the table is drawn on the over canvas: this is its button, and the +N of the tasks it has no seat for
 function Table({ room, onPick }: { room: Room; onPick: (key: string) => void }) {
     const t = room.table!;
     return (
@@ -1080,12 +1216,12 @@ function Table({ room, onPick }: { room: Room; onPick: (key: string) => void }) 
                 title={`${room.title} (Enter opens the run)`}
                 aria-label={`${room.title}, the run's card`}
                 onClick={() => room.runId && onPick(room.runId)}
-                className="absolute z-[2] box-border cursor-pointer rounded-md border-0 border-b-[7px] border-solid border-office-desk-face bg-office-desk-top p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="absolute z-[3] cursor-pointer border-0 bg-transparent p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 style={box(t)}
             />
             {room.more ? (
                 <span
-                    className="pointer-events-none absolute z-[2] text-[11px] font-semibold text-primary"
+                    className="pointer-events-none absolute z-[3] text-[11px] font-semibold text-primary"
                     style={{ left: t.x + t.w - 30, top: t.y + 6 }}
                 >
                     +{room.more}
@@ -1095,7 +1231,7 @@ function Table({ room, onPick }: { room: Room; onPick: (key: string) => void }) 
     );
 }
 
-function LoungerView({ l }: { l: Lounger }) {
+function LoungerView({ l, phase }: { l: Lounger; phase: OfficePhase }) {
     const outfit = useMemo<PlanOutfit>(
         () => ({ shirt: shirtOf(l.harness), look: lookOf(l.agentId) }),
         [l.harness, l.agentId]
@@ -1104,197 +1240,41 @@ function LoungerView({ l }: { l: Lounger }) {
         <Person
             sprite={l.at === "sofa" ? "back" : "cup"}
             outfit={outfit}
-            left={l.x}
-            bottom={l.bottom}
+            phase={phase}
+            left={art(l.x) * PLAN_CELL}
+            bottom={art(l.bottom) * PLAN_CELL}
             lounger={l.agentId}
         />
     );
 }
 
-function Screen({ r }: { r: Room }) {
-    const cells = r.screen ?? [];
-    const done = cells.filter((c) => c === "done").length;
+function Bubble({ mark, left, top, phase }: { mark: PlanMark; left: number; top: number; phase: OfficePhase }) {
     return (
-        <span
-            className="absolute z-[1] box-border flex flex-col justify-between border-[3px] border-solid border-edge-strong bg-surface-code p-[5px]"
-            style={{ left: r.box.x + r.box.w - 170, top: r.box.y + 8, width: 152, height: 36 }}
-        >
-            <span className="flex flex-wrap gap-[3px]">
-                {cells.map((c, i) => (
-                    <span key={i} className={cn("h-[8px] w-[10px]", SCREEN[c])} />
-                ))}
-            </span>
-            <span className="h-[3px] w-full bg-edge-mid">
-                <span
-                    className="block h-[3px] bg-working"
-                    style={{ width: cells.length ? `${(100 * done) / cells.length}%` : 0 }}
-                />
-            </span>
-        </span>
+        <img
+            alt=""
+            data-office-bubble={mark}
+            src={markUrl(mark, phase)}
+            className="pointer-events-none absolute z-[6] [image-rendering:pixelated]"
+            style={{ left, top, width: 9 * PLAN_CELL, height: 9 * PLAN_CELL }}
+        />
     );
 }
 
-function Building({ plan, night }: { plan: Plan; night: boolean }) {
-    const l = plan.lounge;
-    const e = plan.entrance;
-    const y = plan.body.y + plan.body.h;
-    const windows: number[] = [];
-    for (let x = 60; x < plan.width - 60; x += 140) {
-        if (x + 36 < e.x - 20 || x > e.x + e.w + 20) {
-            windows.push(x);
-        }
-    }
-    return (
-        <>
-            <span data-office-hall className="absolute z-0 bg-office-hall" style={box(plan.hall)} />
-            {plan.rooms.map((r) => (
-                <span
-                    key={r.key}
-                    data-office-floor={r.kind}
-                    className="absolute z-0"
-                    style={{ ...box(r.box), ...FLOOR[r.kind] }}
-                />
-            ))}
-            {/* the lounge: the TV on the wall, the sofa facing it, the coffee machine, a plant */}
-            <span
-                className="absolute z-[1] box-border border-2 border-solid border-surface-hover bg-surface-code"
-                style={{ left: l.x + 62, top: l.y, width: 110, height: 14 }}
-            />
-            <span
-                className="absolute z-[1] rounded-t-[4px] bg-edge-strong"
-                style={{ left: l.x + 168, top: l.y + 104, width: 30, height: 46 }}
-            />
-            <span
-                className="absolute z-[2] rounded-t-[8px] bg-office-sofa"
-                style={{ left: l.x + 40, top: l.y + 150, width: 150, height: 20 }}
-            />
-            <span
-                className="absolute z-[2] rounded-[6px] bg-office-sofa brightness-75"
-                style={{ left: l.x + 34, top: l.y + 166, width: 162, height: 16 }}
-            />
-            <span
-                className="absolute z-[1] rounded-b-[4px] rounded-t-[11px] bg-office-plant"
-                style={{ left: l.x + 204, top: l.y + 176, width: 22, height: 34 }}
-            />
-            {plan.rooms
-                .filter((r) => r.kind === "agents")
-                .map((r) => (
-                    <span
-                        key={`plant:${r.key}`}
-                        className="absolute z-[1] rounded-b-[4px] rounded-t-[11px] bg-office-plant"
-                        style={{ left: r.box.x + r.box.w - 40, top: r.box.y + r.box.h - 60, width: 22, height: 34 }}
-                    />
-                ))}
-            {plan.rooms
-                .filter((r) => r.kind === "meeting" && r.runId)
-                .map((r) => (
-                    <Screen key={`screen:${r.key}`} r={r} />
-                ))}
-            {/* the facade: brick, windows, the glass doors at the hall's foot, the sign over them */}
-            <span
-                className="absolute z-[1]"
-                style={{ left: 0, top: y, width: plan.width, height: plan.height - y, ...BRICK }}
-            />
-            {windows.map((x) => (
-                <span
-                    key={x}
-                    className={cn(
-                        "absolute z-[1] box-border border-[3px] border-solid border-office-wall-top",
-                        night ? "bg-office-window-night" : "bg-office-window-day"
-                    )}
-                    style={{ left: x, top: y + 8, width: 36, height: 20 }}
-                />
-            ))}
-            <span
-                className="absolute z-[1] box-border border-x-[3px] border-solid border-office-wall-top bg-white/15"
-                style={box(e)}
-            />
-            <span
-                data-office-sign
-                className={cn(
-                    "absolute z-[6] flex items-center justify-center rounded-[4px] border-2 border-solid border-accent bg-surface-code font-mono text-[14px] font-extrabold tracking-[0.18em] text-accent-50",
-                    night ? "shadow-office-sign-night" : "shadow-office-sign"
-                )}
-                style={{ left: e.x + e.w / 2 - 80, top: y - 16, width: 160, height: 26 }}
-            >
-                ARCTERM
-            </span>
-        </>
-    );
-}
+// in work hours the floor is light, so a label sits on a plate; after hours it is dark enough without
+const plate = (night: boolean) => (night ? "" : "rounded-[3px] bg-office-plate px-[5px]");
 
-function Shades({ plan, night }: { plan: Plan; night: boolean }) {
-    return (
-        <>
-            {plan.rooms
-                .filter((r) => !r.lit)
-                .map((r) => (
-                    <span
-                        key={r.key}
-                        data-office-dark={r.key}
-                        className="pointer-events-none absolute z-[4] bg-office-dark"
-                        style={box(r.box)}
-                    />
-                ))}
-            {night ? (
-                <span
-                    data-office-night
-                    className="pointer-events-none absolute z-[4] bg-office-night"
-                    style={box(plan.body)}
-                />
-            ) : null}
-        </>
-    );
-}
-
-function Walls({ plan, night }: { plan: Plan; night: boolean }) {
-    const windows: number[] = [];
-    for (let x = 60; x < plan.width - 60; x += 130) {
-        windows.push(x);
-    }
-    return (
-        <>
-            {plan.walls.map((w, i) => (
-                <span
-                    key={i}
-                    className={cn(
-                        "pointer-events-none absolute z-[5]",
-                        w.h === HWALL && w.w > WALL
-                            ? "box-border border-t-8 border-solid border-office-wall-top bg-office-wall-face"
-                            : "bg-office-wall-top"
-                    )}
-                    style={box(w)}
-                />
-            ))}
-            {windows.map((x) => (
-                <span
-                    key={`w${x}`}
-                    className={cn(
-                        "pointer-events-none absolute z-[5] h-[6px] w-[26px]",
-                        night ? "bg-office-window-night" : "bg-office-window-day"
-                    )}
-                    style={{ left: x, top: 10 }}
-                />
-            ))}
-        </>
-    );
-}
-
-function Bubble({ mark, left, top }: { mark: string; left: number; top: number }) {
-    return (
-        <span
-            className={cn(
-                "pointer-events-none absolute z-[6] flex size-5 items-center justify-center rounded-[6px] text-[13px] font-extrabold",
-                BUBBLE[mark]
-            )}
-            style={{ left, top }}
-        >
-            {mark}
-        </span>
-    );
-}
-
-function Labels({ plan, walking, night }: { plan: Plan; walking: Set<string>; night: boolean }) {
+function Labels({
+    plan,
+    walking,
+    night,
+    phase,
+}: {
+    plan: Plan;
+    walking: Set<string>;
+    night: boolean;
+    phase: OfficePhase;
+}) {
+    const mark = night ? undefined : "";
     return (
         <>
             {plan.rooms
@@ -1302,29 +1282,43 @@ function Labels({ plan, walking, night }: { plan: Plan; walking: Set<string>; ni
                 .map((r) => (
                     <span
                         key={r.key}
-                        className="pointer-events-none absolute z-[6] flex flex-col"
+                        className={cn(
+                            "pointer-events-none absolute z-[6] flex flex-col items-start",
+                            !night && "gap-[2px]"
+                        )}
                         style={{ left: r.box.x + 14, top: r.box.y + 10 }}
                     >
-                        <span className="text-[13px] font-bold text-primary">{r.title}</span>
-                        <span className="text-[11px] text-secondary">{r.sub}</span>
+                        <span
+                            data-office-plate={mark}
+                            className={cn("text-[13px] font-bold text-primary", plate(night))}
+                        >
+                            {r.title}
+                        </span>
+                        <span data-office-plate={mark} className={cn("text-[11px] text-secondary", plate(night))}>
+                            {r.sub}
+                        </span>
                     </span>
                 ))}
             {plan.desks.map((d) => (
                 <Fragment key={d.key}>
                     <span
+                        data-office-plate={mark}
                         className={cn(
-                            "pointer-events-none absolute z-[6] w-[140px] truncate text-center text-[11px]",
-                            TONE[d.tone]
+                            "pointer-events-none absolute z-[6] max-w-[116px] -translate-x-1/2 truncate text-center text-[11px] leading-[14px]",
+                            TONE[d.tone],
+                            plate(night)
                         )}
-                        style={{ left: d.x - 30, top: d.y + 34 }}
+                        style={{ left: d.x + 40, top: d.y + 34 }}
                     >
                         {d.word ? `${d.name} · ${d.word}` : d.name}
                     </span>
-                    {d.bubble && !walking.has(d.key) ? <Bubble mark={d.bubble} left={d.x + 56} top={d.y - 46} /> : null}
-                    {night && d.light !== "off" ? (
-                        <span
-                            className="pointer-events-none absolute z-[6] h-[6px] w-[12px] rounded-t-[3px] bg-office-lamp shadow-office-lamp"
-                            style={{ left: d.x + 4, top: d.y - 10 }}
+                    {d.bubble && !walking.has(d.key) ? (
+                        // left of the head: an asking person's arm is up on its right
+                        <Bubble
+                            mark={d.bubble}
+                            left={(art(d.x) + 1) * PLAN_CELL}
+                            top={(art(d.y) - 22) * PLAN_CELL}
+                            phase={phase}
                         />
                     ) : null}
                 </Fragment>
@@ -1332,28 +1326,27 @@ function Labels({ plan, walking, night }: { plan: Plan; walking: Set<string>; ni
             {plan.seats
                 .filter((s) => s.bubble)
                 .map((s) => (
-                    <Bubble key={s.key} mark={s.bubble!} left={s.x + 22} top={s.bottom - 58} />
+                    // beside the head, clear of the table and the person's own face
+                    <Bubble
+                        key={s.key}
+                        mark={s.bubble!}
+                        left={(art(s.x - 3) + 11) * PLAN_CELL}
+                        top={(art(s.bottom) - (s.pose === "back" ? 18 : 17) - 5) * PLAN_CELL}
+                        phase={phase}
+                    />
                 ))}
-            {/* after hours a meeting room with a running task lights its table */}
-            {night
-                ? plan.rooms
-                      .filter((r) => r.kind === "meeting" && r.lit && r.table)
-                      .map((r) => (
-                          <span
-                              key={`lamp:${r.key}`}
-                              className="pointer-events-none absolute z-[6] h-[6px] w-[12px] rounded-t-[3px] bg-office-lamp shadow-office-lamp"
-                              style={{ left: r.table!.x + r.table!.w / 2 - 6, top: r.table!.y - 8 }}
-                          />
-                      ))
-                : null}
             {plan.loungers
                 .filter((l) => !walking.has(l.agentId))
                 .map((l) => (
                     <span
                         key={l.agentId}
                         data-office-lounge-label={l.agentId}
+                        data-office-plate={mark}
                         title={l.label}
-                        className="absolute z-[6] flex justify-center overflow-hidden whitespace-pre text-[11px] leading-[14px] text-muted"
+                        className={cn(
+                            "absolute z-[6] flex justify-center overflow-hidden whitespace-pre text-[11px] leading-[14px] text-muted",
+                            plate(night)
+                        )}
                         style={box(l.labelBox)}
                     >
                         <span className="min-w-0 truncate">{l.name}</span>
@@ -1363,7 +1356,11 @@ function Labels({ plan, walking, night }: { plan: Plan; walking: Set<string>; ni
             {plan.loungeOverflow.length > 0 ? (
                 <span
                     data-office-lounge-more
-                    className="pointer-events-none absolute z-[6] truncate text-center text-[11px] leading-[14px] text-muted"
+                    data-office-plate={mark}
+                    className={cn(
+                        "pointer-events-none absolute z-[6] truncate text-center text-[11px] leading-[14px] text-muted",
+                        plate(night)
+                    )}
                     style={box(plan.loungeMore)}
                 >
                     +{plan.loungeOverflow.length} in the lounge
@@ -1396,16 +1393,19 @@ function Mover(p: {
     sprite: PlanSprite;
     mirror: boolean;
     outfit: PlanOutfit;
+    phase: OfficePhase;
     walking: boolean;
     boss?: boolean;
 }) {
     const ref = useRef<HTMLImageElement>(null);
     const w = spriteWidth(p.sprite) * PLAN_CELL;
     const h = spriteH(p.sprite);
+    // whole art cells on both axes: a person never sits between two pixels of the canvases
     useDomTransform(ref, p.on, () => {
         const at = p.at();
         return (
-            at && `translate(${Math.round(at.x - w / 2)}px, ${Math.round(at.y - h)}px)${p.mirror ? " scaleX(-1)" : ""}`
+            at &&
+            `translate(${Math.round((at.x - w / 2) / PLAN_CELL) * PLAN_CELL}px, ${Math.round((at.y - h) / PLAN_CELL) * PLAN_CELL}px)${p.mirror ? " scaleX(-1)" : ""}`
         );
     });
     return (
@@ -1415,7 +1415,7 @@ function Mover(p: {
             draggable={false}
             data-office-boss={p.boss ? "" : undefined}
             data-office-sprite={p.sprite}
-            src={planSpriteUrl(p.sprite, p.outfit)}
+            src={planSpriteUrl(p.sprite, p.outfit, p.phase)}
             className={cn(
                 "pointer-events-none absolute left-0 top-0 z-[7] [image-rendering:pixelated]",
                 p.walking && "will-change-transform"
@@ -1428,7 +1428,7 @@ function Mover(p: {
 const walkerAt = (id: string) => globalStore.get(walkersAtom).find((w) => w.id === id)?.at;
 const bossAt = () => globalStore.get(bossAtom)?.at;
 
-function WalkersView() {
+function WalkersView({ phase }: { phase: OfficePhase }) {
     const ws = useAtomValue(walkerLooksAtom);
     const frame = useAtomValue(walkFrameAtom);
     return (
@@ -1441,6 +1441,7 @@ function WalkersView() {
                     sprite={walkSprite(w.dir, frame)}
                     mirror={mirrorOf(w.dir)}
                     outfit={w.outfit}
+                    phase={phase}
                     walking
                 />
             ))}
@@ -1448,13 +1449,16 @@ function WalkersView() {
     );
 }
 
-function BossView({ plan }: { plan: Plan }) {
+function BossView({ plan, phase }: { plan: Plan; phase: OfficePhase }) {
     const look = useAtomValue(bossLookAtom);
     const frame = useAtomValue(walkFrameAtom);
-    const ringRef = useRef<HTMLSpanElement>(null);
+    const ringRef = useRef<HTMLImageElement>(null);
     useDomTransform(ringRef, bossAtom, () => {
         const at = bossAt();
-        return at && `translate(${Math.round(at.x - 22)}px, ${Math.round(at.y - 8)}px)`;
+        return (
+            at &&
+            `translate(${Math.round((at.x - 21) / PLAN_CELL) * PLAN_CELL}px, ${Math.round((at.y - 9) / PLAN_CELL) * PLAN_CELL}px)`
+        );
     });
     if (!look) {
         return null;
@@ -1463,15 +1467,19 @@ function BossView({ plan }: { plan: Plan }) {
         ? walkSprite(look.dir, frame)
         : look.rest && deskAt(plan, look.rest)
           ? "boss"
-          : "down1";
+          : "stand";
     return (
         <>
-            <span
+            <img
                 ref={ringRef}
+                alt=""
+                data-office-ring=""
+                src={markUrl("ring", phase)}
                 className={cn(
-                    "pointer-events-none absolute left-0 top-0 z-[7] h-3 w-11 rounded-full bg-accent/35",
+                    "pointer-events-none absolute left-0 top-0 z-[7] [image-rendering:pixelated]",
                     look.moving && "will-change-transform"
                 )}
+                style={{ width: 14 * PLAN_CELL, height: 5 * PLAN_CELL }}
             />
             <Mover
                 on={bossAtom}
@@ -1479,6 +1487,7 @@ function BossView({ plan }: { plan: Plan }) {
                 sprite={sprite}
                 mirror={look.moving && mirrorOf(look.dir)}
                 outfit={BOSS_OUTFIT}
+                phase={phase}
                 walking={look.moving}
                 boss
             />
@@ -1605,25 +1614,39 @@ function OfficePrompt({ kind, over, verb }: { kind: "agent" | "run"; over: Point
     );
 }
 
-// DEV (the States board): every sprite, to judge the set at a glance
-function PoseSheet() {
-    const outfit: PlanOutfit = { shirt: shirtOf("claude"), look: 1 };
+// DEV (the Cast board): every look's poses, then the boss's, on the phase's wood so the outlines read as they will in
+// the office
+function PoseSheet({ phase }: { phase: OfficePhase }) {
+    const row = (sprites: PlanSprite[], outfit: PlanOutfit, key: string) => (
+        <div key={key} className="flex items-end gap-2">
+            {sprites.map((s) => (
+                <img
+                    key={s}
+                    alt=""
+                    src={planSpriteUrl(s, outfit, phase)}
+                    className="[image-rendering:pixelated]"
+                    style={{ width: spriteWidth(s) * PLAN_CELL, height: spriteH(s) }}
+                />
+            ))}
+        </div>
+    );
     return (
         <div
             data-office-sheet
-            className="absolute left-2 top-2 z-[9] grid grid-cols-6 gap-3 rounded-md border border-edge-mid bg-surface-raised p-3"
+            className={cn(
+                "absolute left-2 top-2 z-[9] flex flex-col gap-2 rounded-md border border-edge-mid p-3",
+                phase === "after" ? "bg-office-after-wood" : "bg-office-day-wood"
+            )}
         >
-            {(Object.keys(PLAN_SPRITES) as PlanSprite[]).map((s) => (
-                <div key={s} className="flex flex-col items-center gap-1">
-                    <img
-                        alt=""
-                        src={planSpriteUrl(s, s.startsWith("down") || s === "boss" ? BOSS_OUTFIT : outfit)}
-                        className="[image-rendering:pixelated]"
-                        style={{ width: spriteWidth(s) * PLAN_CELL, height: spriteH(s) }}
-                    />
-                    <span className="font-mono text-[10.5px] text-muted">{s}</span>
-                </div>
-            ))}
+            <div className="flex gap-2">
+                {SHEET_POSES.map((s) => (
+                    <span key={s} className="w-[60px] text-center font-mono text-[10.5px] text-muted">
+                        {s}
+                    </span>
+                ))}
+            </div>
+            {SHEET_SHIRTS.map((shirt, i) => row(SHEET_POSES, { shirt, look: i + 1 }, shirt))}
+            {row(BOSS_POSES, BOSS_OUTFIT, "boss")}
         </div>
     );
 }

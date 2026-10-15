@@ -35,6 +35,10 @@ export const OFFICE_RUNS = devRuns("fx-office-run", [
     ["Canvas gallery", "arcterm", ["done", "reviewing", "running"]],
     ["Billing export", "mozox", ["done", "done", "running", "running", "stalled", "failed", "pending"]],
 ]);
+// Main's runs with Billing export's task 3, on its table's near side, asking (step 1c)
+const NEAR_ASK_RUNS = OFFICE_RUNS.map((r) =>
+    r.title !== "Billing export" ? r : { ...r, tasks: r.tasks.map((t) => (t.id === "t3" ? { ...t, asking: true } : t)) }
+);
 const BENCH_STATES = ["running", "running", "running", "done", "done", "reviewing", "pending", "stalled"];
 export const BENCH_RUNS = devRuns("fx-bench-run", [
     ["Bench run one", "arcterm", BENCH_STATES],
@@ -158,6 +162,40 @@ export function makeCockpitOfficeScenarios(fx) {
             );
             await h.shot("cdp-shots/cockpit-office-main.png");
 
+            // 1b. the building is two canvases: no floor, wall, shade or sign node; names sit on plates in work hours
+            const building = await h.ev(`({
+                canvases: document.querySelectorAll("[data-office-root] canvas[data-office-canvas]").length,
+                old: document.querySelectorAll("[data-office-floor], [data-office-hall], [data-office-dark], [data-office-night], [data-office-sign]").length,
+                plates: document.querySelectorAll("[data-office-root] [data-office-plate]").length,
+            })`);
+            p = await probe(h);
+            rec(
+                "1b. the building draws on two canvases, the people and labels over it; labels on plates in work hours",
+                building.canvases === 2 && building.old === 0 && building.plates > 0 && p?.phase === "day",
+                JSON.stringify({ ...building, phase: p?.phase })
+            );
+
+            // 1c. a near-side worker who asks raises its hand facing you over the table: over the over canvas (z 3),
+            // its ! bubble beside its head
+            await dev(h, { runs: NEAR_ASK_RUNS });
+            await sleep(400);
+            const nearAsk = await h.ev(`(() => {
+                const seat = document.querySelector('[data-office-seat="fx-office-run-2:t3"]');
+                seat?.scrollIntoView({ block: "center" });
+                const hands = [...document.querySelectorAll('[data-office-root] img[data-office-sprite^="hand"]')].filter((i) => getComputedStyle(i).zIndex === "3");
+                return { pose: seat?.dataset.officePose ?? null, nearHands: hands.length, asks: document.querySelectorAll('[data-office-bubble="!"]').length };
+            })()`);
+            await sleep(200);
+            await h.shot("cdp-shots/cockpit-office-near-ask.png");
+            await dev(h, { runs: OFFICE_RUNS });
+            await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-quill"))})?.scrollIntoView({ block: "center" })`);
+            await sleep(400);
+            rec(
+                "1c. a near-side worker who asks raises its hand facing you over the table, its bubble beside its head",
+                nearAsk?.pose === "hand" && nearAsk.nearHands >= 1 && nearAsk.asks >= 2,
+                JSON.stringify(nearAsk)
+            );
+
             // 2. 1 answers from that card
             await focusCockpit(h);
             await key(h, "1");
@@ -171,6 +209,8 @@ export function makeCockpitOfficeScenarios(fx) {
             const runText = await h.ev(`(document.querySelector('[data-office-popup="run"]')?.textContent ?? "").length`);
             rec("3. a click on a meeting room opens its run's card", p?.popup === "run" && runText > 0, JSON.stringify({ popup: p?.popup, cursor: p?.cursor, runText }));
             await h.shot("cdp-shots/cockpit-office-run.png");
+
+            const drawsBeforeWalk = (await probe(h))?.sceneryDraws;
 
             // 4. a wall stops the boss, a door lets it through. From loom's desk (below the door) the boss walks right
             // long enough to reach the room's wall at any office width, and must stop there; then up to the door's
@@ -224,6 +264,13 @@ export function makeCockpitOfficeScenarios(fx) {
                     aside.popup === "" &&
                     aside.cursor === "fx-office-loom",
                 JSON.stringify({ loom, front: [front?.boss, front?.cursor, front?.prompt], aside: [aside?.boss, aside?.cursor, aside?.prompt] })
+            );
+
+            p = await probe(h);
+            rec(
+                "4c. the boss walking and the frame clock draw the scenery no more",
+                p?.sceneryDraws === drawsBeforeWalk,
+                JSON.stringify({ before: drawsBeforeWalk, after: p?.sceneryDraws })
             );
 
             // 5. NextAsk: n shows the way, then the boss walks it
@@ -312,7 +359,7 @@ export function makeCockpitOfficeScenarios(fx) {
                 await h.ev(`(() => {
                     const root = document.querySelector("[data-office-root]");
                     const r = root.getBoundingClientRect();
-                    root.querySelector("[data-office-hall]").dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: r.left + ${spot.x}, clientY: r.top + ${spot.y} }));
+                    root.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: r.left + ${spot.x}, clientY: r.top + ${spot.y} }));
                 })()`);
             }
             p = await settleBoss(h, 5000);
@@ -337,11 +384,19 @@ export function makeCockpitOfficeScenarios(fx) {
             );
 
             // 9. Night
+            const drawsDay = (await probe(h))?.sceneryDraws;
             await dev(h, { afterHours: true });
             await sleep(400);
             p = await probe(h);
             const gone = await h.ev(`document.querySelectorAll('[data-office-desk][data-office-pose="empty"]').length`);
             rec("9. after hours: idle people have gone home, people at work have a lamp", p?.night && p.lamps > 0 && gone > 0, JSON.stringify({ night: p?.night, lamps: p?.lamps, gone }));
+            // a delta across the switch: sceneryDraws also counts a scene computed before the canvases mount
+            const platesAfter = await h.ev(`document.querySelectorAll("[data-office-root] [data-office-plate]").length`);
+            rec(
+                "9b. after hours: the after-hours palette in one redraw, and no plates",
+                p?.phase === "after" && p.sceneryDraws === drawsDay + 1 && platesAfter === 0,
+                JSON.stringify({ phase: p?.phase, draws: [drawsDay, p?.sceneryDraws], platesAfter })
+            );
             await h.shot("cdp-shots/cockpit-office-night.png");
 
             // 10. Tired: the boss stands at pike's desk with its card open; the working desks have coffee, the heading
@@ -376,29 +431,82 @@ export function makeCockpitOfficeScenarios(fx) {
             // 12. States, the cheer: quiet makes every agent just finished, so the desks that were at work cheer once
             // (after the stretch, which lasts 1.5 s and would draw over the cheer)
             await sleep(1600);
+            const rootW = () => h.ev(`document.querySelector("[data-office-root]")?.offsetWidth ?? 0`);
+            const drawsBusy = (await probe(h))?.sceneryDraws;
+            const widthBusy = await rootW();
             await dev(h, { quiet: true });
             const cheers = await waitForSprite(h, ["cheer1", "cheer2"], 1200);
             const cheerPoses = await h.ev(`document.querySelectorAll('[data-office-desk][data-office-pose="cheer"]').length`);
             await h.shot("cdp-shots/cockpit-office-cheer.png");
+            const drawsQuiet = (await probe(h))?.sceneryDraws;
+            const widthQuiet = await rootW();
             await dev(h, { quiet: false, energy: 63 });
             rec(
                 "12. a desk that turns done cheers once",
                 cheers > 0 && cheerPoses > 0,
                 JSON.stringify({ cheers, cheerPoses })
             );
+            // the quiet office is shorter, so the page can lose its scrollbar and the office (as wide as the Cockpit)
+            // grows by its width: that resize is a second, honest redraw
+            rec(
+                "12b. the desks going idle redraw the scenery once (once more if the page's width changed)",
+                drawsQuiet === drawsBusy + 1 + (widthQuiet !== widthBusy ? 1 : 0),
+                JSON.stringify({ draws: [drawsBusy, drawsQuiet], width: [widthBusy, widthQuiet] })
+            );
 
             // 13. States: every sprite
             await dev(h, { sheet: true });
             await sleep(400);
-            const sheet = await h.ev(`[...document.querySelectorAll("[data-office-sheet] img")].map((i) => (i.getAttribute("src") ?? "").length)`);
+            const daySrcs = await h.ev(`[...document.querySelectorAll("[data-office-sheet] img")].map((i) => i.getAttribute("src") ?? "")`);
+            const sheet = daySrcs.map((s) => s.length);
             p = await probe(h);
             rec(
-                "13. every sprite draws, every colour token resolved",
-                sheet.length === 18 && sheet.every((n) => n > 0) && p?.unresolved?.length === 0,
-                JSON.stringify({ sheet, unresolved: p?.unresolved })
+                "13. every sprite in every look draws, every colour token resolved",
+                sheet.length === p?.sheetSize && sheet.every((n) => n > 0) && p?.unresolved?.length === 0,
+                JSON.stringify({ sprites: sheet.length, sheetSize: p?.sheetSize, unresolved: p?.unresolved })
             );
             await h.shot("cdp-shots/cockpit-office-states.png");
-            await dev(h, { sheet: false });
+
+            // 13b. the Cast after hours, as the canvas's Cast board draws it on B's floor: the same sheet in the
+            // after-hours outline, shadow and chair
+            await dev(h, { afterHours: true });
+            await sleep(400);
+            const nightSrcs = await h.ev(`[...document.querySelectorAll("[data-office-sheet] img")].map((i) => i.getAttribute("src") ?? "")`);
+            p = await probe(h);
+            rec(
+                "13b. after hours, every sprite on the sheet draws again in the after-hours palette",
+                p?.phase === "after" &&
+                    nightSrcs.length === p.sheetSize &&
+                    nightSrcs.every((s) => s.length > 0) &&
+                    nightSrcs.every((s, i) => s !== daySrcs[i]),
+                JSON.stringify({ phase: p?.phase, sprites: nightSrcs.length, changed: nightSrcs.filter((s, i) => s !== daySrcs[i]).length })
+            );
+            await h.shot("cdp-shots/cockpit-office-states-night.png");
+            await dev(h, { sheet: false, afterHours: false });
+            await sleep(400);
+
+            // 13c. a theme switched with the office open: the building draws once more, and the boss's ring (the
+            // accent) is drawn again in the new theme's colours, no stale cached colour
+            const ring = () => h.ev(`document.querySelector("[data-office-ring]")?.getAttribute("src") ?? ""`);
+            const themeDraws = (await probe(h))?.sceneryDraws;
+            const claudeRing = await ring();
+            ctx.prevTheme = await h.ev(`window.__cockpitOfficeTheme("graphite")`);
+            await sleep(500);
+            p = await probe(h);
+            ctx.graphiteRing = await ring();
+            await h.shot("cdp-shots/cockpit-office-theme.png");
+            await h.ev(`window.__cockpitOfficeTheme(${JSON.stringify(ctx.prevTheme)})`);
+            await sleep(500);
+            rec(
+                "13c. a theme switched with the office open redraws the building once and the ring in the new accent",
+                ctx.prevTheme !== "graphite" &&
+                    p?.sceneryDraws === themeDraws + 1 &&
+                    claudeRing !== "" &&
+                    ctx.graphiteRing !== "" &&
+                    ctx.graphiteRing !== claudeRing &&
+                    p.unresolved?.length === 0,
+                JSON.stringify({ prevTheme: ctx.prevTheme, draws: [themeDraws, p?.sceneryDraws], ringChanged: ctx.graphiteRing !== claudeRing })
+            );
 
             // 14. animation off
             await h.ev("window.__cockpitOfficeAnimation(false)");
@@ -420,7 +528,9 @@ export function makeCockpitOfficeScenarios(fx) {
             await dev(h, { crowd: 14 });
             await sleep(700);
             const lounge = await h.ev(`(() => {
-                const floor = document.querySelector('[data-office-floor="lounge"]')?.getBoundingClientRect();
+                const L = window.__cockpitOfficeProbe().lounge;
+                const R = document.querySelector("[data-office-root]").getBoundingClientRect();
+                const floor = L && { left: R.left + L.x, top: R.top + L.y, right: R.left + L.x + L.w, bottom: R.top + L.y + L.h };
                 const rect = (el) => { const r = el.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom }; };
                 const labels = [...document.querySelectorAll("[data-office-lounge-label]")].map(rect);
                 const people = [...document.querySelectorAll("[data-office-lounger]")].map(rect);
@@ -473,6 +583,26 @@ export function makeCockpitOfficeScenarios(fx) {
                 "15. o switches to Cards and back to Office, and so does the toggle beside Live only",
                 cardsByKey && officeByKey && cardsByClick && officeByClick,
                 JSON.stringify({ cardsByKey, officeByKey, cardsByClick, officeByClick })
+            );
+
+            // 15b. a theme switched while the office is away: opened again, its ring is the new theme's, not a stale
+            // cached colour
+            await toggleTo(h, "Cards");
+            await sleep(400);
+            const prevAway = await h.ev(`window.__cockpitOfficeTheme("graphite")`);
+            ctx.prevTheme ??= prevAway;
+            await sleep(400);
+            await toggleTo(h, "Office");
+            const backIn = (await waitForOffice(h)) == null;
+            await settleBoss(h);
+            const awayRing = await h.ev(`document.querySelector("[data-office-ring]")?.getAttribute("src") ?? ""`);
+            await h.shot("cdp-shots/cockpit-office-theme-away.png");
+            await h.ev(`window.__cockpitOfficeTheme(${JSON.stringify(prevAway)})`);
+            await sleep(500);
+            rec(
+                "15b. a theme switched while the office is in Cards: opened again, it draws in the new theme",
+                backIn && prevAway !== "graphite" && awayRing !== "" && awayRing === ctx.graphiteRing,
+                JSON.stringify({ backIn, prevAway, sameAsOpen: awayRing === ctx.graphiteRing })
             );
 
             // 16. RamPanel: the office's cost, and its button
@@ -537,6 +667,8 @@ export function makeCockpitOfficeScenarios(fx) {
             await fx.teardownFixtureRun(h, ctx, "cockpit-office", {
                 what: "put back the view, the roster and the dev state",
                 fn: async () => {
+                    // a run cut short between a theme switch and its restore leaves no graphite theme behind
+                    if (ctx.prevTheme != null) await h.ev(`window.__cockpitOfficeTheme?.(${JSON.stringify(ctx.prevTheme)})`);
                     await h.ev("window.__cockpitOffice?.(null)");
                     await h.ev(
                         ctx.prevView == null
@@ -597,12 +729,17 @@ export function makeCockpitOfficeScenarios(fx) {
                 await h.ev(`(async () => {
                     const t0 = performance.now();
                     [...document.querySelectorAll("[data-cockpit-view-toggle] button")].find((b) => b.textContent.trim() === "Office")?.click();
-                    for (let i = 0; i < 600 && !document.querySelector("[data-office-desk]"); i++) await new Promise((r) => requestAnimationFrame(r));
+                    // drawn: the desks are in and each canvas has painted (a checkout from before the canvases has none)
+                    const drawn = () =>
+                        document.querySelector("[data-office-desk]") &&
+                        [...document.querySelectorAll("[data-office-root] canvas[data-office-canvas]")].every((c) => c.dataset.officeDrawn != null);
+                    for (let i = 0; i < 600 && !drawn(); i++) await new Promise((r) => requestAnimationFrame(r));
                     return performance.now() - t0;
                 })()`)
             );
             await sleep(2000);
             const open = await metrics(h);
+            r.officeNodes = await h.ev('document.querySelector("[data-office-root]")?.getElementsByTagName("*").length ?? 0');
             r.heapOpenMB = mb(open.heap - cardsHold.heap);
             r.nodesAdded = open.nodes - cardsHold.nodes;
 
@@ -681,7 +818,7 @@ export function makeCockpitOfficeScenarios(fx) {
 
             rec("0. the bench holds about 75 people (desks, seats and the boss)", r.roster >= 70, `${r.roster} (${p?.desks} desks, ${p?.seats} seats, ${p?.people} drawn)`);
             rec("1. JS heap, Office minus Cards <= 5 MB", r.heapOpenMB <= 5, `${r.heapOpenMB} MB`);
-            rec("2. DOM nodes added <= 2,000", r.nodesAdded <= 2000, `${r.nodesAdded}`);
+            rec("2. DOM nodes added <= 2,000", r.nodesAdded <= 2000, `${r.nodesAdded} (the office ${r.officeNodes})`);
             rec("3. main thread busy walking, over the Cards baseline <= 2 %", r.busyPct <= 2, `${r.busyPct} % (${r.busyRawPct} % raw, baseline ${r.baseBusyPct} %)`);
             rec("4. busy under reduced motion <= 0.5 %", r.busyReducedPct <= 0.5, `${r.busyReducedPct} %`);
             rec(
