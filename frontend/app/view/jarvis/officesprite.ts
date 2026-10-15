@@ -181,14 +181,5 @@ export function gridPixels(
     return out;
 }
 
-/** A computed custom property's value ("#rrggbb" or "rgb(r, g, b)") as bytes; anything else undefined. */
-export function parseColor(value: string): [number, number, number] | undefined {
-    const v = value.trim();
-    const hex = /^#([0-9a-f]{6})$/i.exec(v);
-    if (hex) {
-        const n = parseInt(hex[1], 16);
-        return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-    }
-    const rgb = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(v);
-    return rgb ? [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])] : undefined;
-}
+// one parser for both offices (view/office/spritecache.ts); re-exported for this module's own test
+export { parseColor } from "@/app/view/office/spritecache";
