@@ -34,7 +34,9 @@ const STORE_KEY = "highlightMarks";
 // how often the band learns whether the question has scrolled out of view: a render hook may not write state
 const ASK_POLL_MS = 250;
 
-const skim = atom({ plugin: "arc-view", key: "skim" } as const, false);
+// an explanation draws dimmed but for its highlighted sentences, until /skim turns that off for the session
+const isSkimOff = atom({ plugin: "arc-view", key: "isSkimOff" } as const, false);
+const SKIM_OFF_STATUS = "skim off";
 const ask = atom({ plugin: "arc-view", key: "ask" } as const, null);
 const isAskHidden = atom({ plugin: "arc-view", key: "isAskHidden" } as const, false);
 
@@ -77,10 +79,10 @@ export const register: Register = (on) => {
         byHash = new Map(kept);
         palette = paletteFor(await themeOf($));
         askNow = await read($, ask);
-        $.ui.status((await read($, skim)) ? "skim" : undefined);
+        $.ui.status((await read($, isSkimOff)) ? SKIM_OFF_STATUS : undefined);
         await $.command.register({
             name: "skim",
-            description: "Dim what a reply did not highlight, so its marked sentences read alone; again to undo",
+            description: "Draw explanations in full instead of dimmed around their highlighted sentences; again to undo",
         });
         $.clock.every(ASK_POLL_MS, () => {
             void read($, isAskHidden).then((isHidden) => {
@@ -152,9 +154,13 @@ export const register: Register = (on) => {
     });
 
     on("command.run", { command: "skim" }, async ($) => {
-        const isOn = await update($, skim, (was) => !was);
-        $.ui.status(isOn ? "skim" : undefined);
-        $.ui.toast(isOn ? "Skim on: only the highlighted sentences stay bright" : "Skim off");
+        const isOff = await update($, isSkimOff, (was) => !was);
+        $.ui.status(isOff ? SKIM_OFF_STATUS : undefined);
+        $.ui.toast(
+            isOff
+                ? "Skim off: explanations draw in full"
+                : "Skim on: an explanation dims all but its highlighted sentences"
+        );
         return {};
     });
 
@@ -166,11 +172,13 @@ export const register: Register = (on) => {
             const columns = (e.viewport?.columns ?? DEFAULT_COLUMNS) - REPLY_INDENT;
             isAskOutOfView = !isAskInView(e.props.onScreen, rowsFromAsk(clean, askNow.text, columns));
         }
-        const marks = shownMarks(written.length > 0 ? written : (byHash.get(hash) ?? []));
+        const all = written.length > 0 ? written : (byHash.get(hash) ?? []);
+        const marks = shownMarks(all);
         if (e.surface !== "terminal" || e.props.isSummary || marks.length === 0) {
             return written.length > 0 ? next({ ...e, props: { ...e.props, text: clean } }) : next(e);
         }
-        const isSkim = await read($, skim);
+        // a brainstorm turn, its last mark the question waiting on the person, draws in full: its options are to be read
+        const isSkim = askOf(all) === null && !(await read($, isSkimOff));
         return drawHighlighted($.ui.resolve(e), layout(clean, marks, isSkim), isSkim, palette, e.props.isFirstOfReply);
     });
 

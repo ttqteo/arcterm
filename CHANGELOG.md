@@ -27,9 +27,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Added
 
 - **Claude highlights what to read**: in a Claude session, a reply that explains something draws its 2–4 must-read
-  sentences on a tinted ground, and a brainstorm only the question waiting on you; `/skim` dims the rest. A copy, the
-  transcript and Conversation History get the reply without the marks. In the fullscreen terminal, a question that
-  scrolled out of view stays above the prompt until you answer.
+  sentences on a tinted ground and dims the rest (`/skim` turns the dimming off), and a brainstorm highlights only the
+  question waiting on you, its options left bright. A copy, the transcript and Conversation History get the reply
+  without the marks. In the fullscreen terminal, a question that scrolled out of view stays above the prompt until
+  you answer.
 
 ### Changed
 
