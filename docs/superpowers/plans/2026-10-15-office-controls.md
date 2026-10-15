@@ -30,7 +30,7 @@ its cards use, hands the office its HUD controls, and routes keys through `offic
 - Frontend only. `Verify` names `./pkg/wconfig` only because `scripts/verify.mjs` needs one Go pattern; this plan
   changes no Go, so at each merge it runs the vitest files the merge can reach.
 - Colours come only from `@theme` tokens (`frontend/tailwindsetup.css`): no hex or rgba in components. The footer's key
-  chip uses `bg-pill`.
+  chip uses `bg-pill`, and `bg-surface-selected` while the office menu is open (StartMenu).
 - Inter for all text; `font-mono` only on keycaps (`<kbd>`). Numbers carry `tabular-nums`.
 - Copy is verbatim from the canvas boards: `Talk`, `Answer`, `Send`, `Open`, `Open lead`, `Reply`, `Terminal`,
   `Background`, `Adjust`, `Full card`, `Next Needs you`, `Next desk`, `Previous desk`, `Events`, `Hide events`,
@@ -53,10 +53,14 @@ its cards use, hands the office its HUD controls, and routes keys through `offic
   type, not act. The hook's early return covers it; Task 6's controls scenario types `m` into the composer and checks
   the menu stays shut.
 - **A modifier chord in the office** (Cmd+F, Ctrl+M, Alt+J) passes through untouched: Task 1's `officeKey` test.
-- **A short view, the boss low in it**: the box moves to the head of the view and never covers the boss
-  (`dialogEdge` tests in Task 1; Task 6 step 7 checks the rects).
+- **A short view, the boss low in it**: the box takes the foot of the view unless a box there (its full 270 px and the
+  plate on its top edge) would cover the boss, then the head, so it never covers the boss while either edge is clear;
+  the edge is read again as the office scrolls (`dialogEdge` tests in Task 1; Task 6's controls step 7 checks the
+  rects).
 - **A question in several parts**: ← → and h l switch it inside the box, and the ▶ menu shows that question's answers
-  (Task 2's `dialogItems` test with `activeQuestion: 1`).
+  under ◀ its header ▶ and "1 of 2" (Task 2's `dialogItems` and `questionTabs` tests; Task 6's controls step 5c).
+- **Tell stays on the full card**: a worker's row offers Tell, which asks for words; the box leaves it out, so a worker
+  at work offers Open, Terminal and Full card, as the States board draws it (Task 2's `dialogItems` test).
 
 ---
 
@@ -68,8 +72,9 @@ its cards use, hands the office its HUD controls, and routes keys through `offic
 **Interfaces:**
 - Consumes: `Dir` from `./officeboss` (`"up" | "down" | "left" | "right"`).
 - Produces: `OfficeLayer`, `OfficeKeyAction`, `KeyMods`, `officeKey(layer, menuOpen, key, mods?)`, `backFrom(layer)`,
-  `stepSel(sel, delta, enabled)`, `firstSel(enabled)`, `dialogEdge(bossY, scrollTop, viewportH)`, `OfficeMenuId`,
-  `OfficeMenuItem`, `officeMenuItems(asks, newEvents, eventsOpen)`.
+  `stepSel(sel, delta, enabled)`, `firstSel(enabled)`, `dialogEdge(bossTop, bossBottom, viewH, boxH?)`, `HUD_SPACE_PX`,
+  `DIALOG_FOOT_PX`, `DIALOG_PLATE_PX`, `DIALOG_MAX_PX`, `OfficeMenuId`, `OfficeMenuItem`,
+  `officeMenuItems(asks, newEvents, eventsOpen)`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -128,10 +133,14 @@ describe("officeKey", () => {
         }
     });
 
-    it("lets a chord through: Cmd+F, Ctrl+M and Alt+J are not the office's", () => {
+    it("lets every chord through, the arrows, Enter and Esc too, and with the menu open", () => {
         expect(officeKey("walk", false, "f", { meta: true })).toEqual({ do: "pass" });
         expect(officeKey("dialog", false, "m", { ctrl: true })).toEqual({ do: "pass" });
         expect(officeKey("card", false, "j", { alt: true })).toEqual({ do: "pass" });
+        expect(officeKey("walk", false, "ArrowLeft", { meta: true })).toEqual({ do: "pass" });
+        expect(officeKey("dialog", false, "Enter", { alt: true })).toEqual({ do: "pass" });
+        expect(officeKey("card", false, "Escape", { ctrl: true })).toEqual({ do: "pass" });
+        expect(officeKey("walk", true, "ArrowDown", { meta: true })).toEqual({ do: "pass" });
     });
 
     it("gives every key to the open menu: ↑ ↓ move, Enter picks, Esc and m shut it, the rest do nothing", () => {
@@ -176,14 +185,26 @@ describe("stepSel and firstSel", () => {
 });
 
 describe("dialogEdge", () => {
-    it("takes the foot of the view while the boss stands in its upper half, the head once it stands lower", () => {
-        expect(dialogEdge(200, 0, 800)).toBe("bottom");
-        expect(dialogEdge(500, 0, 800)).toBe("top");
+    // an 800 px view: a box at the foot, its plate 15 px over it, reaches up to 800 - 12 - 270 - 15 = 503; a box at
+    // the head reaches down to 66 + 270 = 336
+    it("takes the foot while the boss stands clear above a box there", () => {
+        expect(dialogEdge(400, 469, 800)).toBe("bottom");
+        expect(dialogEdge(434, 503, 800)).toBe("bottom");
     });
 
-    it("reads the boss against what is scrolled into view", () => {
-        expect(dialogEdge(1300, 900, 800)).toBe("bottom");
-        expect(dialogEdge(1400, 900, 800)).toBe("top");
+    it("takes the head once a box at the foot would cover the boss", () => {
+        expect(dialogEdge(436, 505, 800)).toBe("top");
+        expect(dialogEdge(700, 769, 800)).toBe("top");
+    });
+
+    it("in a view too short for either, takes the edge farther from the boss", () => {
+        // 500 px: the foot's box reaches up to 203, the head's down to 336
+        expect(dialogEdge(150, 219, 500)).toBe("bottom");
+        expect(dialogEdge(260, 329, 500)).toBe("top");
+    });
+
+    it("reads a shorter box's own height", () => {
+        expect(dialogEdge(500, 569, 800, 150)).toBe("bottom");
     });
 });
 
@@ -257,10 +278,13 @@ export interface KeyMods {
 
 const ARROWS: Record<string, Dir> = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
 
-/** Pure: what a key does in the office. The open menu takes every key; then the layer decides. "pass" leaves the key
- *  to the Cockpit's own (1–9, t, r, b, Space, and Enter on the full card). */
+/** Pure: what a key does in the office. A chord (Cmd, Ctrl or Alt held) is never the office's; then the open menu
+ *  takes every key; then the layer decides. "pass" leaves the key to the Cockpit's own (1–9, t, r, b, Space, and Enter
+ *  on the full card). */
 export function officeKey(layer: OfficeLayer, menuOpen: boolean, key: string, mods: KeyMods = {}): OfficeKeyAction {
-    const plain = !mods.meta && !mods.ctrl && !mods.alt;
+    if (mods.meta || mods.ctrl || mods.alt) {
+        return { do: "pass" };
+    }
     const dir = ARROWS[key];
     if (menuOpen) {
         if (dir === "up" || dir === "down") {
@@ -269,7 +293,7 @@ export function officeKey(layer: OfficeLayer, menuOpen: boolean, key: string, mo
         if (key === "Enter") {
             return { do: "activate" };
         }
-        if (key === "Escape" || (plain && key === "m")) {
+        if (key === "Escape" || key === "m") {
             return { do: "menu" };
         }
         return { do: "none" };
@@ -277,19 +301,19 @@ export function officeKey(layer: OfficeLayer, menuOpen: boolean, key: string, mo
     if (key === "Escape") {
         return { do: "back" };
     }
-    if (plain && key === "m") {
+    if (key === "m") {
         return { do: "menu" };
     }
-    if (plain && (key === "j" || key === "k")) {
+    if (key === "j" || key === "k") {
         return { do: "desk", delta: key === "j" ? 1 : -1 };
     }
-    if (plain && key === "n") {
+    if (key === "n") {
         return { do: "nextAsk" };
     }
-    if (plain && key === "f") {
+    if (key === "f") {
         return { do: "card" };
     }
-    if (plain && (key === "h" || key === "l")) {
+    if (key === "h" || key === "l") {
         return { do: "tab", delta: key === "h" ? -1 : 1 };
     }
     if (layer === "dialog") {
@@ -328,10 +352,33 @@ export function firstSel(enabled: readonly boolean[]): number {
     return i < 0 ? 0 : i;
 }
 
-/** Pure: the dialog box sits at the foot of the office's view, and at its head once the boss stands in the view's
- *  lower half, so the box never hides the desk it talks about. bossY and scrollTop are in the scroller's content px. */
-export function dialogEdge(bossY: number, scrollTop: number, viewportH: number): "top" | "bottom" {
-    return bossY - scrollTop > viewportH / 2 ? "top" : "bottom";
+/** The HUD bar's space at the head of the office's view: 10 px from the top, 46 px tall, and a 10 px gap under it. A
+ *  dialog box at the head starts under it. */
+export const HUD_SPACE_PX = 66;
+/** A dialog box at the foot stands this far above the view's bottom. */
+export const DIALOG_FOOT_PX = 12;
+/** The plate on the box's top edge stands this far over it. */
+export const DIALOG_PLATE_PX = 15;
+/** The dialog box's full height: its 262 px inside, a 2 px border and a 2 px gap each side (officedialog.tsx). */
+export const DIALOG_MAX_PX = 270;
+
+/** Pure: which edge of the office's view the dialog box takes, so it never hides the desk it talks about: the foot
+ *  while the boss stands clear above a box there, else the head while it stands clear below one there; in a view too
+ *  short for either, the edge farther from the boss. bossTop and bossBottom are the boss's sprite, in px from the
+ *  view's top; boxH the box's height, its plate not counted. */
+export function dialogEdge(
+    bossTop: number,
+    bossBottom: number,
+    viewH: number,
+    boxH: number = DIALOG_MAX_PX
+): "top" | "bottom" {
+    if (bossBottom <= viewH - DIALOG_FOOT_PX - boxH - DIALOG_PLATE_PX) {
+        return "bottom";
+    }
+    if (bossTop >= HUD_SPACE_PX + boxH) {
+        return "top";
+    }
+    return (bossTop + bossBottom) / 2 > viewH / 2 ? "top" : "bottom";
 }
 
 export type OfficeMenuId = "nextAsk" | "nextDesk" | "prevDesk" | "events" | "cards" | "keys";
@@ -385,13 +432,14 @@ git commit -m "feat(office): the office's keys, menu and ▶ steps as a pure mod
 
 **Interfaces:**
 - Consumes: `firstSel(enabled)` from `./officecontrols` (Task 1); `canSubmitAsk`, `displayAgeMs`, `formatAgeShort`,
-  `latestMessageText`, `terminalAskNote`, `AgentEntry`, `AgentVM` from `./agentsviewmodel`; `REVIEW_ACTIONS`,
+  `formatTokens`, `latestMessageText`, `terminalAskNote`, `AgentEntry`, `AgentVM` from `./agentsviewmodel`; `REVIEW_ACTIONS`,
   `RowAction` from `./leadcardmodel`.
 - Produces: `ROW_ACTION_LABEL: Record<RowAction, string>` (moved from `leadcard.tsx` into `leadcardmodel.ts`);
   `DeskKind = "agent" | "lead" | "worker" | "leadless"`; `DialogItemId`; `DialogItem`; `DialogInput`;
   `rowActionLabel(id)`; `dialogItems(input): DialogItem[]`; `enabledOf(items): boolean[]`;
   `clampSel(items, sel): number`; `selAfterActivate(items, sel): number`; `DialogWords`;
-  `dialogWords(agent, entries, activeQuestion): DialogWords`; `agentMeta(agent, now): string`;
+  `dialogWords(agent, entries, activeQuestion): DialogWords`; `QuestionTabs`; `questionTabs(agent, activeQuestion)`;
+  `agentMeta(agent, now, tokens?): string`;
   `runTaskList<T>(rows, waiting, done, max): { heading: string; shown: T[]; more: number }`.
 
 - [ ] **Step 1: Move the row action labels into the model**
@@ -429,6 +477,7 @@ import {
     dialogItems,
     dialogWords,
     enabledOf,
+    questionTabs,
     rowActionLabel,
     runTaskList,
     selAfterActivate,
@@ -517,9 +566,15 @@ describe("dialogItems", () => {
     });
 
     it("gives an asking worker its answers, its row's actions after them with no number", () => {
-        const items = dialogItems(base({ kind: "worker", agent: quill, rowActions: ["tell"], canOpen: true }));
-        expect(items.map((i) => i.label)).toEqual(["Merge it", "Rebase on main first", "Not yet", "Send", "Tell", "Terminal", "Full card"]);
+        const items = dialogItems(base({ kind: "worker", agent: quill, rowActions: ["takeover"], canOpen: true }));
+        expect(items.map((i) => i.label)).toEqual(["Merge it", "Rebase on main first", "Not yet", "Send", "Take over", "Terminal", "Full card"]);
         expect(items[4].key).toBeUndefined();
+    });
+
+    it("leaves Tell to the full card, whose input takes the words: a worker at work offers Open and Terminal", () => {
+        const items = dialogItems(base({ kind: "worker", agent: agent({ id: "w1" }), rowActions: ["tell"], canOpen: true }));
+        expect(items.map((i) => i.label)).toEqual(["Open", "Terminal", "Full card"]);
+        expect(items[2].rule).toBe(true);
     });
 
     it("gives a seat with no worker, and a leadless run, only what they have", () => {
@@ -584,11 +639,32 @@ describe("dialogWords", () => {
     });
 });
 
+describe("questionTabs", () => {
+    it("names the question a several-part ask is on, and which of how many", () => {
+        expect(questionTabs(twoParts, 0)).toEqual({ head: "Branch?", at: 0, of: 2 });
+        expect(questionTabs(twoParts, 5)).toEqual({ head: "Tests?", at: 1, of: 2 });
+    });
+
+    it("prefers the question's short header", () => {
+        const headed = agent({
+            state: "asking",
+            ask: { questions: [{ header: "Branch", question: "Keep the branch name?", options: [] }, { question: "Tests?", options: [] }] },
+        });
+        expect(questionTabs(headed, 0)?.head).toBe("Branch");
+    });
+
+    it("is nothing for one question, or for an agent not asking", () => {
+        expect(questionTabs(quill, 0)).toBeUndefined();
+        expect(questionTabs({ ...twoParts, state: "working" }, 0)).toBeUndefined();
+    });
+});
+
 describe("agentMeta", () => {
-    it("joins the model, the context used and how long it has waited, worked or idled", () => {
+    it("joins the model, the session's tokens, the context used and how long it has waited, worked or idled", () => {
         expect(agentMeta({ ...quill, model: "opus 5.5", usage: { contextpct: 21.4 } }, 0)).toBe("opus 5.5 · 21% context · waiting 3m");
         expect(agentMeta(agent({ activeMs: 720_000 }), 0)).toBe("12m");
         expect(agentMeta(agent({ state: "idle", idleSince: 0 }), 360_000)).toBe("idle 6m");
+        expect(agentMeta(agent({ model: "sonnet", activeMs: 720_000 }), 0, 1_240_000)).toBe("sonnet · 1.2M tokens · 12m");
     });
 });
 
@@ -626,6 +702,7 @@ import {
     canSubmitAsk,
     displayAgeMs,
     formatAgeShort,
+    formatTokens,
     latestMessageText,
     terminalAskNote,
     type AgentEntry,
@@ -697,10 +774,14 @@ export function dialogItems(input: DialogInput): DialogItem[] {
         );
         answers.push({ id: "send", label: "Send", key: "↵", dim: !canSubmitAsk(qs, input.selections, input.texts) });
     }
-    // an asking worker's number keys answer it, so its row's actions take no number then
-    (input.rowActions ?? []).forEach((a, i) =>
-        answers.push({ id: `row:${i}`, label: rowActionLabel(a), key: qs.length > 0 ? undefined : String(i + 1) })
-    );
+    // an asking worker's number keys answer it, so its row's actions take no number then. Tell asks for words, which
+    // the full card's input takes, so the box leaves it out (States: a worker at work offers Open and Terminal); the
+    // others keep their index, the number key that runs them
+    (input.rowActions ?? []).forEach((a, i) => {
+        if (a !== "tell") {
+            answers.push({ id: `row:${i}`, label: rowActionLabel(a), key: qs.length > 0 ? undefined : String(i + 1) });
+        }
+    });
     const acts: DialogItem[] = [];
     if (agent && (kind !== "worker" || input.canOpen)) {
         if (qs.length === 0) {
@@ -765,14 +846,33 @@ export function dialogWords(agent: AgentVM, entries: AgentEntry[], activeQuestio
     return { said: said ?? (agent.state === "idle" ? agent.activity : undefined) };
 }
 
-/** Pure: the dialog box's foot line for an agent: its model, the context it has used, and how long it has waited,
- *  worked or idled. */
-export function agentMeta(agent: AgentVM, now: number): string {
+export interface QuestionTabs {
+    // the question the ▶ menu answers: its short header when it has one
+    head: string;
+    at: number;
+    of: number;
+}
+
+/** Pure: the tab over a several-part ask's answers (canvas States): the question it is on, and which of how many.
+ *  Nothing for one question. */
+export function questionTabs(agent: AgentVM, activeQuestion: number): QuestionTabs | undefined {
+    const qs = agent.state === "asking" ? (agent.ask?.questions ?? []) : [];
+    if (qs.length < 2) {
+        return undefined;
+    }
+    const at = Math.min(Math.max(activeQuestion, 0), qs.length - 1);
+    return { head: qs[at].header || qs[at].question, at, of: qs.length };
+}
+
+/** Pure: the dialog box's foot line for an agent: its model, its session's tokens when known (liveTokensAtom), the
+ *  context it has used, and how long it has waited, worked or idled. */
+export function agentMeta(agent: AgentVM, now: number, tokens?: number): string {
     const ctx = agent.usage?.contextpct;
     const age = displayAgeMs(agent, now);
     const verb = agent.state === "asking" ? "waiting " : agent.state === "idle" ? "idle " : "";
     return [
         agent.model,
+        tokens ? `${formatTokens(tokens)} tokens` : undefined,
         ctx != null ? `${Math.round(ctx)}% context` : undefined,
         age != null ? `${verb}${formatAgeShort(age)}` : undefined,
     ]
@@ -824,23 +924,26 @@ git commit -m "feat(office): the dialog box's ▶ menu at each kind of desk, and
 **Files:** `frontend/app/view/agents/officedialog.tsx`, `frontend/app/view/agents/leadcard.tsx`
 
 **Interfaces:**
-- Consumes: `OfficeMenuItem` (Task 1); `DeskKind`, `DialogItem`, `DialogItemId`, `dialogWords`, `agentMeta`,
-  `runTaskList` (Task 2); `LeadCardVM`, `TaskRowVM` from `./leadcardmodel`; `recentActions`, `AgentVM` from
-  `./agentsviewmodel`; `entriesToShow` from `./agentrowmodel`; `entriesAtomFor` from `./livetranscriptatoms`;
-  `diffStatsByIdAtom` from `./cardgitstore`; `cleanLabel` from `./answerbar`; `NarrationTimeline` from
-  `./narrationtimeline`; `StatusLine`, `ActivityLine` from `./statusline`; `SubLabel` from `./sectionlabel`.
+- Consumes: `OfficeMenuItem` (Task 1); `DeskKind`, `DialogItem`, `DialogItemId`, `QuestionTabs`, `dialogWords`,
+  `agentMeta`, `runTaskList` (Task 2); `LeadCardVM`, `TaskRowVM`, `leadMark`, `LEAD_MARK_CLASS` from `./leadcardmodel`;
+  `RunInfo` from `./runlineage` (a run card's `c.run`); `liveTokensAtom` from `./livetokensstore`; `recentActions`,
+  `AgentVM` from `./agentsviewmodel`; `entriesToShow` from `./agentrowmodel`; `entriesAtomFor` from
+  `./livetranscriptatoms`; `diffStatsByIdAtom` from `./cardgitstore`; `cleanLabel` from `./answerbar`;
+  `NarrationTimeline` from `./narrationtimeline`; `StatusLine`, `ActivityLine` from `./statusline`; `SubLabel` from
+  `./sectionlabel`.
 - Produces (from `officedialog.tsx`): `OfficeDialogVM { kind: DeskKind; label: string; plate: ReactNode; body: ReactNode;
-  items: DialogItem[]; run: (id: DialogItemId) => void }`; `PixelFrame`; `PixelArrow`; `PickList`;
+  items: DialogItem[]; tabs?: QuestionTabs; run: (id: DialogItemId) => void }`; `PixelFrame`; `PixelArrow`; `PickList`;
   `OfficeDialogBox({ vm, sel, onPick })`; `AgentPlate({ agent, nowAtom })`; `AgentDialogBody({ agent, nowAtom,
-  activeQuestion })`; `RunPlate({ lead, title, nowAtom })`; `RunDialogBody({ vm, lead, activeQuestion })`;
+  activeQuestion })`; `RunPlate({ run, lead })`; `RunDialogBody({ vm, lead, activeQuestion })`;
   `WorkerDialogBody({ row, worker, nowAtom, activeQuestion })`; `OfficeMenuBox({ items, sel, onPick })`;
   `OfficeHudBar({ children })`.
 - Produces (from `leadcard.tsx`): `export function LeadBar`, `export const TONE_DOT`, and `LeadCardProps.initialPanel?:
   "adjust"` (the full card opened by the dialog's Adjust starts with its Adjust panel open).
 
 The boxes are drawn by Task 6's scenario steps: `cockpit-office-controls` steps 0 (HUD bar, Main and Run boards), 1 and
-3 (the asking agent's box, Main and States), 5 (an agent at work, States), 6 (a run's lead, Run), 8 (the office menu,
-StartMenu).
+3 (the asking agent's box, Main and States), 5 (an agent at work, States), 5c (a several-part ask's question tabs,
+States), 6 (a run's plate, bar, counts and task column, Run), 6b (a worker's seat at work, States), 8 (the office
+menu, StartMenu). States' review-failed seat is Task 2's `dialogItems` test (Task 6 says why no step reaches it).
 
 - [ ] **Step 1: Export the lead card's bar, dot tones and an opening panel**
 
@@ -872,18 +975,28 @@ Create `frontend/app/view/agents/officedialog.tsx`:
 
 import { cn } from "@/util/util";
 import { useAtomValue, type Atom } from "jotai";
-import { Check } from "lucide-react";
+import { Check, Workflow } from "lucide-react";
 import { Fragment, type HTMLAttributes, type ReactNode } from "react";
 import { entriesToShow } from "./agentrowmodel";
 import { recentActions, type AgentVM } from "./agentsviewmodel";
 import { cleanLabel } from "./answerbar";
 import { diffStatsByIdAtom } from "./cardgitstore";
 import { LeadBar, TONE_DOT } from "./leadcard";
-import type { LeadCardVM, TaskRowVM } from "./leadcardmodel";
+import { LEAD_MARK_CLASS, leadMark, type LeadCardVM, type TaskRowVM } from "./leadcardmodel";
+import { liveTokensAtom } from "./livetokensstore";
 import { entriesAtomFor } from "./livetranscriptatoms";
 import { NarrationTimeline } from "./narrationtimeline";
 import type { OfficeMenuItem } from "./officecontrols";
-import { agentMeta, dialogWords, runTaskList, type DeskKind, type DialogItem, type DialogItemId } from "./officedialogmodel";
+import {
+    agentMeta,
+    dialogWords,
+    runTaskList,
+    type DeskKind,
+    type DialogItem,
+    type DialogItemId,
+    type QuestionTabs,
+} from "./officedialogmodel";
+import type { RunInfo } from "./runlineage";
 import { SubLabel } from "./sectionlabel";
 import { ActivityLine, StatusLine } from "./statusline";
 
@@ -894,6 +1007,8 @@ export interface OfficeDialogVM {
     plate: ReactNode;
     body: ReactNode;
     items: DialogItem[];
+    // a several-part ask: ◀ the question its answers belong to ▶, over the ▶ menu
+    tabs?: QuestionTabs;
     run: (id: DialogItemId) => void;
 }
 
@@ -1005,6 +1120,7 @@ export function OfficeDialogBox({ vm, sel, onPick }: { vm: OfficeDialogVM; sel: 
             </div>
             <div className="flex min-w-0 flex-1 flex-col gap-2 overflow-hidden">{vm.body}</div>
             <PixelFrame className="w-[268px] shrink-0 self-start shadow-none" innerClassName="px-3 py-2.5">
+                {vm.tabs ? <QuestionTabsHead tabs={vm.tabs} /> : null}
                 <PickList
                     label={vm.label}
                     keys="selected"
@@ -1014,6 +1130,20 @@ export function OfficeDialogBox({ vm, sel, onPick }: { vm: OfficeDialogVM; sel: 
                 />
             </PixelFrame>
         </PixelFrame>
+    );
+}
+
+/** Over a several-part ask's answers (States): ◀ the question ▶ and which of how many; an arrow fades at its end. */
+function QuestionTabsHead({ tabs }: { tabs: QuestionTabs }) {
+    return (
+        <div data-office-question-tabs="" className="flex items-center gap-1.5 px-1 pb-1 text-[12px] text-muted">
+            <PixelArrow dir="left" className={tabs.at > 0 ? "text-muted" : "text-ink-faint"} />
+            <span className="min-w-0 truncate font-semibold text-primary">{tabs.head}</span>
+            <PixelArrow className={tabs.at < tabs.of - 1 ? "text-muted" : "text-ink-faint"} />
+            <span className="ml-auto shrink-0 tabular-nums">
+                {tabs.at + 1} of {tabs.of}
+            </span>
+        </div>
     );
 }
 
@@ -1045,6 +1175,7 @@ export function AgentDialogBody({
     const entries = entriesToShow(live, agent.previousInfo);
     const now = useAtomValue(nowAtom);
     const diff = useAtomValue(diffStatsByIdAtom)[agent.id];
+    const tokens = useAtomValue(liveTokensAtom).get(agent.id);
     const words = dialogWords(agent, entries, activeQuestion);
     const steps = recentActions(entries, 3);
     return (
@@ -1065,20 +1196,23 @@ export function AgentDialogBody({
                     ) : null}
                 </div>
             ) : null}
-            <div className="mt-auto truncate text-[11.5px] tabular-nums text-muted">{agentMeta(agent, now)}</div>
+            <div className="mt-auto truncate text-[11.5px] tabular-nums text-muted">{agentMeta(agent, now, tokens)}</div>
         </>
     );
 }
 
-/** A run's plate: its lead's status line, or the run's title when it has no lead. */
-export function RunPlate({ lead, title, nowAtom }: { lead?: AgentVM; title: string; nowAtom: Atom<number> }) {
-    return lead ? (
+/** A run's plate (Run board): the run's mark in its lead's tone, its title, its project, and who leads it. */
+export function RunPlate({ run, lead }: { run: RunInfo; lead?: AgentVM }) {
+    const mark = leadMark(run, lead);
+    return (
         <>
-            <StatusLine agent={lead} nowAtom={nowAtom} className="min-w-0 shrink" />
-            <span className="shrink-0 text-[12px] text-muted">lead</span>
+            <Workflow size={13} aria-hidden className={cn("shrink-0", LEAD_MARK_CLASS[mark.tone])} />
+            <b className="min-w-0 truncate text-[13.5px] font-semibold text-primary">{run.title}</b>
+            {run.project ? (
+                <span className="shrink-0 rounded-[4px] bg-surface px-1.5 text-[11.5px] text-secondary">{run.project}</span>
+            ) : null}
+            <span className="shrink-0 text-[12px] text-muted">{lead ? "lead" : "no lead"}</span>
         </>
-    ) : (
-        <b className="min-w-0 truncate text-[13.5px] font-semibold text-primary">{title}</b>
     );
 }
 
@@ -1253,10 +1387,10 @@ git commit -m "feat(office): the game boxes: pixel frame, ▶ list, dialog box, 
   RailEvent; moreNew: number }` in `cockpitevents.ts`; `useRailEvents(lineage, runEvents): { all: RailEvent[]; fresh:
   RailEvent[]; old: RailEvent[] }` and `RAIL_KIND` (the rail's `KIND`, renamed and exported) in
   `cockpiteventsrail.tsx`; `OfficeFooter { event: FooterEvent | null; onMenu: () => void; onEvents: () => void }` and
-  `HintsBar`'s new optional `office?: OfficeFooter` prop in `cockpithelp.tsx`; `officeEventsOpenAtom` in
-  `officestore.ts`.
+  `HintsBar`'s new optional `office?: OfficeFooter` prop in `cockpithelp.tsx`; `officeEventsOpenAtom` and
+  `officeMenuOpenAtom` in `officestore.ts`.
 
-The footer is drawn by Task 6's `cockpit-office-controls` steps 0 and 10.
+The footer is drawn by Task 6's `cockpit-office-controls` steps 0 and 10, its `m` chip lit by step 8 (StartMenu).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1347,7 +1481,7 @@ export function useRailEvents(
   `const { all, fresh, old } = useRailEvents(lineage, runEvents);`. Keep `seenTsAtom` writes (the mark-all-read button)
   as they are.
 
-- [ ] **Step 6: Add the Office events atom**
+- [ ] **Step 6: Add the Office's events and menu atoms**
 
 Append to `frontend/app/view/agents/officestore.ts` (add `atom` to the jotai import):
 
@@ -1355,14 +1489,17 @@ Append to `frontend/app/view/agents/officestore.ts` (add `atom` to the jotai imp
 // the Events rail while the Cockpit shows Office: hidden there until the office menu's Events (or the footer's event
 // line) shows it; Esc while walking hides it again. Not kept: Office opens with the rail hidden.
 export const officeEventsOpenAtom = atom(false) as PrimitiveAtom<boolean>;
+
+// the office menu (m) is open: cockpitoffice.tsx opens and shuts it, and the footer's m chip lights while it is open
+export const officeMenuOpenAtom = atom(false) as PrimitiveAtom<boolean>;
 ```
 
 - [ ] **Step 7: Give the hints bar its Office line**
 
 In `frontend/app/view/agents/cockpithelp.tsx`, add the imports
 `import { useAtomValue } from "jotai";`, `import { cn } from "@/util/util";`,
-`import { formatAgeShort } from "./agentsviewmodel";`, `import type { FooterEvent } from "./cockpitevents";` and
-`import { RAIL_KIND } from "./cockpiteventsrail";`, then:
+`import { formatAgeShort } from "./agentsviewmodel";`, `import type { FooterEvent } from "./cockpitevents";`,
+`import { RAIL_KIND } from "./cockpiteventsrail";` and `import { officeMenuOpenAtom } from "./officestore";`, then:
 
 ```tsx
 /** What the hints bar shows while the Cockpit shows Office: the office menu's key and the newest event. */
@@ -1372,10 +1509,12 @@ export interface OfficeFooter {
     onEvents: () => void;
 }
 
-// in Office the bar teaches one key, m, as a game shows START; the office menu lists the rest. The newest event sits
-// beside it, so the hidden Events rail still says that something happened
+// in Office the bar teaches one key, m, as a game shows START; the office menu lists the rest, and the chip lights
+// while it is open (StartMenu). The newest event sits beside it, so the hidden Events rail still says that something
+// happened
 function OfficeFooterLine({ model, office }: { model: AgentsViewModel; office: OfficeFooter }) {
     const now = useAtomValue(model.structuralNowAtom);
+    const menuOpen = useAtomValue(officeMenuOpenAtom);
     const e = office.event?.event;
     const k = e ? RAIL_KIND[e.kind] : undefined;
     const more = office.event?.moreNew ?? 0;
@@ -1384,11 +1523,19 @@ function OfficeFooterLine({ model, office }: { model: AgentsViewModel; office: O
             <button
                 type="button"
                 data-office-footer-menu=""
+                aria-expanded={menuOpen}
                 onClick={office.onMenu}
                 title="Office menu (m)"
                 className="flex h-[22px] shrink-0 cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-[11px] text-muted hover:text-primary"
             >
-                <span className="rounded-[4px] bg-pill px-1.5 py-0.5 font-mono text-secondary">m</span>
+                <span
+                    className={cn(
+                        "rounded-[4px] px-1.5 py-0.5 font-mono",
+                        menuOpen ? "bg-surface-selected text-primary" : "bg-pill text-secondary"
+                    )}
+                >
+                    m
+                </span>
                 menu
             </button>
             {e && k ? (
@@ -1469,18 +1616,17 @@ In `frontend/app/view/agents/cockpitoffice.tsx`, replace `const cardOpenAtom = a
 
 ```ts
 // what is up over the office (officecontrols.ts): the desk's dialog box (↵, or a click on the desk), its full card (f,
-// or the box's Full card), or nothing; any walk shuts both. The office menu (m) opens over any of them
+// or the box's Full card), or nothing; any walk shuts both. The office menu (m, officeMenuOpenAtom in officestore.ts,
+// which the footer's m chip reads) opens over any of them
 const layerAtom = atom<OfficeLayer>("walk") as PrimitiveAtom<OfficeLayer>;
 const selAtom = atom(0) as PrimitiveAtom<number>;
-const menuOpenAtom = atom(false) as PrimitiveAtom<boolean>;
 const menuSelAtom = atom(0) as PrimitiveAtom<number>;
 // the full card the box's Adjust opened: a run's card with its Adjust panel open
 const cardAdjustAtom = atom(false) as PrimitiveAtom<boolean>;
-const HUD_SPACE_PX = 66; // the HUD bar (10 px from the top, 46 px tall) and a 10 px gap under it
 ```
 
-Add imports: `backFrom, dialogEdge, officeMenuItems, stepSel, type OfficeLayer, type OfficeMenuId` from
-`./officecontrols`; `clampSel, enabledOf, selAfterActivate, type DeskKind` from `./officedialogmodel`;
+Add imports: `backFrom, dialogEdge, DIALOG_FOOT_PX, HUD_SPACE_PX, officeMenuItems, stepSel, type OfficeLayer, type
+OfficeMenuId` from `./officecontrols`; `officeMenuOpenAtom` from `./officestore` (extend the existing import); `clampSel, enabledOf, selAfterActivate, type DeskKind` from `./officedialogmodel`;
 `OfficeDialogBox, OfficeHudBar, OfficeMenuBox, type OfficeDialogVM` from `./officedialog`.
 
 Every `globalStore.set(cardOpenAtom, false)` becomes `globalStore.set(layerAtom, "walk")` (in `goTo`, `walk`, `walkTo`,
@@ -1571,7 +1717,7 @@ then fill the handle (keep `walk`, `release`, `goTo`, `showPath`, `order`, `asks
 
 ```tsx
         layer: () => globalStore.get(layerAtom),
-        menuOpen: () => globalStore.get(menuOpenAtom),
+        menuOpen: () => globalStore.get(officeMenuOpenAtom),
         talk: () => {
             const key = deskAtBoss();
             return key != null && openDialog(key);
@@ -1591,7 +1737,7 @@ then fill the handle (keep `walk`, `release`, `goTo`, `showPath`, `order`, `asks
             return true;
         },
         move: (delta) => {
-            if (globalStore.get(menuOpenAtom)) {
+            if (globalStore.get(officeMenuOpenAtom)) {
                 const all = menuItemsRef.current.map(() => true);
                 globalStore.set(menuSelAtom, stepSel(globalStore.get(menuSelAtom), delta, all));
                 return;
@@ -1604,9 +1750,9 @@ then fill the handle (keep `walk`, `release`, `goTo`, `showPath`, `order`, `asks
             }
         },
         activate: () => {
-            if (globalStore.get(menuOpenAtom)) {
+            if (globalStore.get(officeMenuOpenAtom)) {
                 const it = menuItemsRef.current[globalStore.get(menuSelAtom)];
-                globalStore.set(menuOpenAtom, false);
+                globalStore.set(officeMenuOpenAtom, false);
                 if (it) {
                     onMenuRef.current(it.id);
                 }
@@ -1626,8 +1772,8 @@ then fill the handle (keep `walk`, `release`, `goTo`, `showPath`, `order`, `asks
             globalStore.set(selAtom, selAfterActivate(vm.items, sel));
         },
         back: () => {
-            if (globalStore.get(menuOpenAtom)) {
-                globalStore.set(menuOpenAtom, false);
+            if (globalStore.get(officeMenuOpenAtom)) {
+                globalStore.set(officeMenuOpenAtom, false);
                 return true;
             }
             const layer = globalStore.get(layerAtom);
@@ -1641,11 +1787,11 @@ then fill the handle (keep `walk`, `release`, `goTo`, `showPath`, `order`, `asks
             return true;
         },
         toggleMenu: () => {
-            const open = !globalStore.get(menuOpenAtom);
+            const open = !globalStore.get(officeMenuOpenAtom);
             if (open) {
                 globalStore.set(menuSelAtom, 0);
             }
-            globalStore.set(menuOpenAtom, open);
+            globalStore.set(officeMenuOpenAtom, open);
         },
 ```
 
@@ -1659,7 +1805,7 @@ A click on a desk opens its dialog box, not its card. Change the second `pickRef
     };
 ```
 
-In the unmount cleanup add `globalStore.set(selAtom, 0); globalStore.set(menuOpenAtom, false);
+In the unmount cleanup add `globalStore.set(selAtom, 0); globalStore.set(officeMenuOpenAtom, false);
 globalStore.set(menuSelAtom, 0); globalStore.set(cardAdjustAtom, false);` beside the layer reset.
 
 - [ ] **Step 4: The HUD bar replaces the heading; the office fills its scroller**
@@ -1817,11 +1963,22 @@ function OfficeDialogLayer({
     probe.items = vm ? vm.items.map((i) => i.label) : [];
     probe.dims = vm ? vm.items.flatMap((it, i) => (it.dim ? [i] : [])) : [];
     probe.sel = sel;
+    // the office can scroll under an open box (the wheel, the boss scrolled into view): read the edge again then
+    const [, setScrolled] = useState(0);
+    const shown = vm != null;
+    useEffect(() => {
+        const el = scrollRef.current;
+        if (!shown || !el) {
+            return;
+        }
+        const onScroll = () => setScrolled((n) => n + 1);
+        el.addEventListener("scroll", onScroll, { passive: true });
+        return () => el.removeEventListener("scroll", onScroll);
+    }, [shown, scrollRef]);
     const el = scrollRef.current;
-    const edge =
-        vm && look?.rest && el
-            ? dialogEdge((rootRef.current?.offsetTop ?? 0) + look.rest.y, el.scrollTop, el.clientHeight)
-            : undefined;
+    // the boss's feet in px from the view's top; at a desk it stands as the "boss" sprite, spriteH("boss") tall
+    const foot = look?.rest && el ? (rootRef.current?.offsetTop ?? 0) + look.rest.y - el.scrollTop : undefined;
+    const edge = vm && el && foot != null ? dialogEdge(foot - spriteH("boss"), foot, el.clientHeight) : undefined;
     probe.edge = edge ?? "";
     if (!vm || !edge) {
         return null;
@@ -1829,8 +1986,8 @@ function OfficeDialogLayer({
     return (
         <div
             data-office-dialog-edge={edge}
-            className={cn("pointer-events-none absolute inset-x-3 z-[9] mx-auto max-w-[1180px]", edge === "top" ? "" : "bottom-3")}
-            style={edge === "top" ? { top: HUD_SPACE_PX } : undefined}
+            className="pointer-events-none absolute inset-x-3 z-[9] mx-auto max-w-[1180px]"
+            style={edge === "top" ? { top: HUD_SPACE_PX } : { bottom: DIALOG_FOOT_PX }}
         >
             <OfficeDialogBox vm={vm} sel={sel} onPick={onPick} />
         </div>
@@ -1839,7 +1996,7 @@ function OfficeDialogLayer({
 
 // the office menu (m), under the HUD bar's right end
 function OfficeMenuLayer({ items, onPick }: { items: OfficeMenuItem[]; onPick: (i: number) => void }) {
-    const open = useAtomValue(menuOpenAtom);
+    const open = useAtomValue(officeMenuOpenAtom);
     const sel = useAtomValue(menuSelAtom);
     probe.menu = open;
     probe.menuItems = open ? items.map((i) => i.label) : [];
@@ -1862,7 +2019,8 @@ Import `RefObject` from react and `OfficeMenuItem` from `./officecontrols`.
 In `frontend/app/view/agents/cockpitsurface.tsx`:
 
 1. Imports: `officeEventsOpenAtom` from `./officestore`; `useRailEvents` from `./cockpiteventsrail`; `footerEvent` from
-   `./cockpitevents`; `dialogItems, type DeskKind, type DialogInput, type DialogItemId` from `./officedialogmodel`;
+   `./cockpitevents`; `dialogItems, questionTabs, type DeskKind, type DialogInput, type DialogItemId` from
+   `./officedialogmodel`;
    `AgentDialogBody, AgentPlate, RunDialogBody, RunPlate, WorkerDialogBody, type OfficeDialogVM` from
    `./officedialog`; `type OfficeMenuId` from `./officecontrols`; `runAdjustable, rowKeyActions` from
    `./leadcardmodel` (extend the existing import); `cheatsheetOpenAtom` from `@/app/cockpit/shortcuts-cheatsheet`;
@@ -1972,6 +2130,7 @@ In `frontend/app/view/agents/cockpitsurface.tsx`:
             kind: "agent",
             label: a.name,
             items: dialogItems(input),
+            tabs: questionTabs(a, input.activeQuestion),
             plate: <AgentPlate agent={a} nowAtom={model.nowAtom} />,
             body: <AgentDialogBody agent={a} nowAtom={model.nowAtom} activeQuestion={input.activeQuestion} />,
             run: (id) => runAgentItem(a, id, input.activeQuestion),
@@ -2007,22 +2166,19 @@ In `frontend/app/view/agents/cockpitsurface.tsx`:
                 kind: "worker",
                 label: row?.label ?? c.run.title,
                 items: dialogItems({ kind: "worker", agent: worker, rowActions: actions, canOpen: !!row?.openId, ...input }),
+                tabs: worker ? questionTabs(worker, input.activeQuestion) : undefined,
                 plate: worker ? (
                     <AgentPlate agent={worker} nowAtom={model.nowAtom} />
                 ) : (
-                    <RunPlate title={c.run.title} nowAtom={model.nowAtom} />
+                    <RunPlate run={c.run} lead={c.lead} />
                 ),
                 body: row ? (
                     <WorkerDialogBody row={row} worker={worker} nowAtom={model.nowAtom} activeQuestion={input.activeQuestion} />
                 ) : null,
                 run: (id) => {
+                    // a row action's index is its number key's (the box leaves Tell to the card's input)
                     if (id.startsWith("row:")) {
-                        const i = Number(id.slice(4));
-                        rowTargets[row!.key]?.actions[i]?.();
-                        // Tell asks for words: its input is on the card
-                        if (actions[i] === "tell") {
-                            officeRef.current?.card();
-                        }
+                        rowTargets[row!.key]?.actions[Number(id.slice(4))]?.();
                         return;
                     }
                     if (worker) {
@@ -2039,7 +2195,8 @@ In `frontend/app/view/agents/cockpitsurface.tsx`:
             kind: lead ? "lead" : "leadless",
             label: c.run.title,
             items: dialogItems({ kind: lead ? "lead" : "leadless", agent: lead, adjustable, ...input }),
-            plate: <RunPlate lead={lead} title={c.run.title} nowAtom={model.nowAtom} />,
+            tabs: lead ? questionTabs(lead, input.activeQuestion) : undefined,
+            plate: <RunPlate run={c.run} lead={lead} />,
             body: <RunDialogBody vm={vm} lead={lead} activeQuestion={input.activeQuestion} />,
             run: (id) => {
                 if (id === "adjust") {
@@ -2238,8 +2395,9 @@ and replace the whole `if (office) { … }` block with:
                     e.preventDefault();
                     return;
                 case "pass":
-                    // r's composer lives on the card: show the card first, then the reply below opens it
-                    if (e.key === "r" && office.layer() !== "card") {
+                    // r's composer lives on the card: show the card first, then the reply below opens it (a chord
+                    // passes as it is)
+                    if (e.key === "r" && !e.metaKey && !e.ctrlKey && !e.altKey && office.layer() !== "card") {
                         office.card();
                     }
                     break;
@@ -2257,9 +2415,11 @@ Expected: exit 0
 Run: `npx vitest run frontend/app/view/agents`
 Expected: PASS
 
-Run the existing office scenario (it still expects the card on a click; Task 6 updates it), to see the office load:
-`task dev:browser` in the background, then `node --experimental-websocket scripts/cdp/verify.mjs cockpit-office`.
-Expected: step 0 and 1b–1e PASS; steps that open the card on a click FAIL until Task 6 (note which in the report).
+Run the existing office scenario (it still expects the card on a click; Task 6 updates it) to see the office load, in
+an app of its own: `ARC_FINAL_OUT="$(mktemp -d)" node scripts/cdp/final-verify.mjs cockpit-office` (timeout 900000).
+It starts its own headless app on free ports with its own store and stops it after; never start `task dev:browser` by
+hand. Expected: exit nonzero, the failures only among the steps Task 6 rewrites (1, 3, 4, 4b, 5, 6, 7, 10); a failure
+elsewhere is this task's to fix. Name the failed steps in the report.
 
 - [ ] **Step 9: The changelog**
 
@@ -2275,8 +2435,8 @@ In `CHANGELOG.md`, under `## Unreleased` → `### Changed`, add at the top:
   which Office now hides).
 ```
 
-Run: `npx vitest run frontend/app/view/agents/whatsnew`
-Expected: PASS (`whatsnew.test.ts` allows at most 5 big lines in Unreleased; this adds the third)
+Run: `npx vitest run frontend/app/cockpit/whatsnew.test.ts`
+Expected: PASS (it allows at most 5 big lines in Unreleased; this adds the third)
 
 - [ ] **Step 10: Commit**
 
@@ -2290,18 +2450,26 @@ git commit -m "feat(office): dialog box, office menu, HUD bar and Game Boy keys 
 ### Task 6: Scenarios, keys docs, guide and spec
 
 **Depends on:** Task 5
-**Files:** `scripts/cdp/cockpitofficescenarios.mjs`, `scripts/cdp/scenarios.mjs`, `frontend/app/store/keybindings/bindings.ts`, `docs/keyboard-shortcuts.md`, `docs/guide/cockpit.md`, `docs/superpowers/specs/2026-10-15-cockpit-office-design.md`
+**Files:** `scripts/cdp/cockpitofficescenarios.mjs`, `scripts/cdp/scenarios.mjs`, `scripts/cockpit-fixtures/scenarios.mjs`, `frontend/app/store/keybindings/bindings.ts`, `docs/keyboard-shortcuts.md`, `docs/guide/cockpit.md`, `docs/superpowers/specs/2026-10-15-cockpit-office-design.md`
 
 **Interfaces:**
-- Consumes: the probe fields and DOM hooks Task 5 adds (`data-office-hud`, `data-office-dialog`,
-  `data-office-dialog-edge`, `data-office-menu`, `data-office-pick`, `data-office-footer-menu`,
-  `data-office-footer-event`, `data-office-boss`).
-- Produces: scenario `cockpit-office-controls`; `cockpit-office` updated to the dialog box.
+- Consumes: the probe fields and DOM hooks Tasks 3–5 add (`data-office-hud`, `data-office-dialog`,
+  `data-office-dialog-edge`, `data-office-menu`, `data-office-pick`, `data-office-question-tabs`, `data-office-task`,
+  `data-office-footer-menu` with its `aria-expanded`, `data-office-footer-event`), and the existing
+  `data-office-boss`, `data-office-prompt`, `data-office-seat`, `data-office-room`.
+- Produces: scenario `cockpit-office-controls` (its run has a six-task plan, and its roster `office-controls` adds kite,
+  who asks in two parts, and the worker on the run's t-1); `cockpit-office` updated to the dialog box.
 
 Board to step: **Main** → controls steps 1 and 3 (`cockpit-office-dialog.png`, `cockpit-office-dialog-picked.png`);
-**Run** → step 6 (`cockpit-office-dialog-run.png`); **StartMenu** → step 8 (`cockpit-office-menu.png`); **States** →
-step 4 (the ↵ chip, `cockpit-office-talk.png`), step 5 (an agent at work, `cockpit-office-dialog-working.png`), steps 1,
-3 and 6; the HUD bar and footer of every board → step 0 (`cockpit-office-hud.png`).
+**Run** → step 6 (`cockpit-office-dialog-run.png`: the run's plate, the task bar and counts, the task column and its
+"N more in the full card"); **StartMenu** → step 8 (`cockpit-office-menu.png`, the footer's `m` chip lit); **States** →
+step 4 (the ↵ Answer chip, `cockpit-office-talk.png`), step 5 (an agent at work, and the ↵ Talk chip,
+`cockpit-office-dialog-working.png`), step 5c (several questions, `cockpit-office-dialog-questions.png`), step 6b (a
+worker's seat at work, `cockpit-office-dialog-seat.png`), steps 1, 3 and 6; the HUD bar and footer of every board →
+steps 0 and 10 (`cockpit-office-hud.png`, `cockpit-office-footer.png`). States' review-failed seat is the one tile no
+step draws: only the engine reaches review-failed, a state the run's lead judges (`pkg/orchestrate/leadsteer.go`), so
+seeding it on the live plan hands the engine and the lead something to act on. Task 2's `dialogItems` test holds its
+items (the row's numbered actions, then Open and Terminal under a line), drawn by the same ▶ list steps 1 and 6b show.
 
 - [ ] **Step 1: Bring `cockpit-office` up to the dialog box**
 
@@ -2312,6 +2480,10 @@ In `scripts/cdp/cockpitofficescenarios.mjs`, inside `cockpitOffice.assert`:
 - Step 3: rename to `"3. a click on a meeting room opens its run's dialog box"`; read
   `document.querySelector('[data-office-dialog]')?.textContent` for `runText`; assert
   `(p?.dialog === "lead" || p?.dialog === "leadless") && runText > 0`.
+- Steps 4 and 4b: a desk click now opens the dialog box, where ↑ ↓ move the ▶ and ← → switch the question, so the held
+  arrows would not walk. Shut the box after each `desk("fx-office-loom")` click: in step 4 after
+  `const start = await settleBoss(h);`, in step 4b after its `await settleBoss(h);`, add
+  `await focusCockpit(h); await key(h, "Escape"); await sleep(150);`. Their assertions stay.
 - Step 5: the comment becomes `// quill holds the answer step 2 picked: Enter here opens the dialog box, it does not
   send the answer`; assert `… && atAsk.dialog === "" && atAsk.prompt === "agent" && p?.dialog === "agent"`; rename the
   step's "Enter opens it" to "Enter opens its dialog box".
@@ -2326,16 +2498,98 @@ In `scripts/cdp/cockpitofficescenarios.mjs`, inside `cockpitOffice.assert`:
 
 - [ ] **Step 2: Add `cockpit-office-controls`**
 
-Add `m: 77` to `KEY_CODES` at the top of the file. Then, in `makeCockpitOfficeScenarios`, after `cockpitOffice`, add
-(and return it beside the other two):
+In `scripts/cockpit-fixtures/scenarios.mjs`, after `office`, add the `office-controls` roster (the office's, and kite,
+who asks in two parts: the States board's several-questions tile) and the worker the controls run seats at its t-1
+(`said` is local to `office`, so these write their entries out), and list `"office-controls": officeControls,` in
+`SCENARIOS` after `office`:
+
+```js
+// the cockpit-office-controls scenario's roster: the office's, and kite, who asks in two parts
+function officeControls(now) {
+    return [
+        ...office(now),
+        {
+            id: "fx-office-kite", name: "kite", project: "mozox", task: "tray popover", state: "asking", agent: "claude", model: "sonnet", blockedMs: 90_000, blockId: "fx-blk-office-kite", previousInfo: [{ kind: "message", text: "Two things before I build the popover." }],
+            ask: {
+                askId: "fx-office-kite-ask",
+                oref: "block:fx-blk-office-kite",
+                questions: [
+                    { header: "Branch", question: "Keep the branch name, or rename it?", options: [{ label: "Keep feat/tray" }, { label: "Rename to feat/tray-popover" }] },
+                    { header: "Tests", question: "Which tests should it add?", multiSelect: true, options: [{ label: "Unit" }, { label: "CDP" }] },
+                ],
+            },
+        },
+    ];
+}
+
+// the worker cockpit-office-controls seats at its run's t-1 (scripts/cdp/cockpitofficescenarios.mjs): runId is the
+// task's child run, so the run's lineage seats it there
+export function officeRunWorker(now, runId) {
+    return { id: "fx-office-vole", name: "vole", project: "arcterm", task: "machine stats", state: "working", agent: "claude", model: "sonnet", activeMs: 300_000, activity: "reading the memory-pressure API", runId, blockId: "fx-blk-office-vole", previousInfo: [{ kind: "message", text: "Reading the memory-pressure API." }] };
+}
+```
+
+In `scripts/cdp/cockpitofficescenarios.mjs`:
+
+1. Add `m: 77` to `KEY_CODES`, and import the worker beside the rosters:
+   `import { officeRunWorker, SCENARIOS as ROSTERS } from "../cockpit-fixtures/scenarios.mjs";`.
+2. Above `makeCockpitOfficeScenarios`, the controls run's plan:
+
+```js
+// the cockpit-office-controls run's plan, a chain as the Run board draws it. Only t-1 dispatches, one real worker told
+// to do nothing, which teardownFixtureRun cancels and deletes (docs/reference/cdp-run-fixtures.md)
+const OFFICE_RUN_TASKS = [
+    "Machine stats, the memory-pressure event and the tray model",
+    "Each agent's heaviest command and a Free up action",
+    "The tray icon's pixels and the popover's shell",
+    "The job queue and what waits on you, in the popover",
+    "The tray's settings",
+    "Docs and the changelog",
+].map((label, i) => ({
+    id: `t-${i + 1}`,
+    label,
+    description: "do nothing, make no file changes, stop immediately",
+    deps: i === 0 ? [] : [`t-${i}`],
+    gate: false,
+    state: "",
+}));
+```
+
+3. Lift `cockpitOffice.arrange`'s body into `async function arrangeOffice(h, opts = {})` at the top of
+   `makeCockpitOfficeScenarios` (it uses `fx`), and give `cockpitOffice` `arrange: (h) => arrangeOffice(h)`.
+   `opts.roster` names the roster (default `"office"`), `opts.tasks` a plan for the run. In it, replace the lines from
+   `await fx.arrangeFixtureRun(…)` through `writeFileSync(FIXTURE, …)` with:
+
+```js
+        await fx.arrangeFixtureRun(h, ctx, "cockpit-office", "office lead", { project: "arcterm" });
+        // a plan gives the run's dialog box a task column and t-1 a worker's seat: wait for t-1's child run, the run id
+        // its worker's roster entry carries
+        if (opts.tasks) {
+            await h.rpc("dagsubmit", { channelid: ctx.channelId, runid: ctx.runId, title: "Menu Bar and Tray Popover", parallelism: 1, tasks: opts.tasks });
+            for (let waited = 0; waited < 60000 && !ctx.workerRunId; waited += 500) {
+                const group = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group;
+                ctx.workerRunId = group?.tasks?.find((t) => t.id === "t-1")?.runid;
+                if (!ctx.workerRunId) await sleep(500);
+            }
+        }
+        // arrangeFixtureRun wrote its own roster around the run's lead: keep the lead, draw the office's roster
+        const now = Date.now();
+        const lead = JSON.parse(readFileSync(FIXTURE, "utf8")).find((a) => a.runId === ctx.runId);
+        const worker = ctx.workerRunId ? [officeRunWorker(now, ctx.workerRunId)] : [];
+        mkdirSync(new URL(".", FIXTURE), { recursive: true });
+        writeFileSync(FIXTURE, JSON.stringify([...(lead ? [lead] : []), ...worker, ...ROSTERS[opts.roster ?? "office"](now)], null, 2));
+```
+
+4. After `cockpitOffice`, add (and return it beside the other two):
 
 ```js
     // the office controls canvas (.superpowers/design/office-controls): the HUD bar and footer, the dialog box and its
-    // ▶ menu, the full card and Esc's steps back, the box's edge, the office menu and the Events rail
+    // ▶ menu, a two-part ask, a run's room and a worker's seat, the full card and Esc's steps back, the box's edge, the
+    // office menu and the Events rail
     const cockpitOfficeControls = {
         name: "cockpit-office-controls",
         surface: "cockpit",
-        arrange: (h) => cockpitOffice.arrange(h),
+        arrange: (h) => arrangeOffice(h, { roster: "office-controls", tasks: OFFICE_RUN_TASKS }),
         teardown: (h, ctx) => cockpitOffice.teardown(h, ctx),
         async assert(h, ctx) {
             const steps = [];
@@ -2353,9 +2607,11 @@ Add `m: 77` to `KEY_CODES` at the top of the file. Then, in `makeCockpitOfficeSc
                 }
                 return probe(h);
             };
+            // the ↵ chip over the desk the boss stands at, while it walks
+            const chip = () => h.ev(`document.querySelector("[data-office-prompt]")?.textContent ?? ""`);
 
             // 0. the office fills the surface: no Cockpit title, the filters and switches in the HUD bar inside the
-            // view, m menu alone in the footer, no Events rail
+            // view, m menu alone in the footer and not lit, no Events rail
             const chrome = await h.ev(`(() => {
                 const s = document.querySelector("[data-cockpit-surface]");
                 const hud = s?.querySelector("[data-office-hud]");
@@ -2365,6 +2621,7 @@ Add `m: 77` to `KEY_CODES` at the top of the file. Then, in `makeCockpitOfficeSc
                     hud: hud?.textContent ?? "",
                     toggle: !!hud?.querySelector("[data-cockpit-view-toggle]"),
                     menu: !!foot?.querySelector("[data-office-footer-menu]"),
+                    lit: foot?.querySelector("[data-office-footer-menu]")?.getAttribute("aria-expanded") === "true",
                     foot: foot?.textContent ?? "",
                     rail: !!document.querySelector('[aria-label="Events"]'),
                 };
@@ -2377,11 +2634,13 @@ Add `m: 77` to `KEY_CODES` at the top of the file. Then, in `makeCockpitOfficeSc
                     chrome.hud.includes("Live only") &&
                     chrome.toggle &&
                     chrome.menu &&
+                    !chrome.lit &&
                     !chrome.foot.includes("column") &&
                     !chrome.rail,
                 JSON.stringify(chrome)
             );
             await h.shot("cdp-shots/cockpit-office-hud.png");
+            rec("0b. the run's t-1 dispatched its worker within 60 s", !!ctx.workerRunId, ctx.workerRunId ?? "no child run on t-1");
 
             // 1. quill's dialog box: its question and what it said, its answers as the ▶ menu, Send dim
             await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-quill"))})?.click()`);
@@ -2416,25 +2675,39 @@ Add `m: 77` to `KEY_CODES` at the top of the file. Then, in `makeCockpitOfficeSc
             );
             await h.shot("cdp-shots/cockpit-office-dialog-picked.png");
 
-            // 4. f opens the full card; Esc goes back to the box, Esc again to walking with the ↵ offered
+            // 4. f opens the full card; Esc goes back to the box, Esc again to walking, ↵ Answer offered (quill asks)
             const card = await press("f");
             const back1 = await press("Escape");
             const back2 = await press("Escape");
+            const answerChip = await chip();
             rec(
-                "4. f opens the full card over the box; Esc goes back to the box, a second Esc to walking, the ↵ offered",
-                card?.popup === "agent" && card.dialog === "" && back1?.dialog === "agent" && back1.popup === "" && back2?.dialog === "" && back2.prompt === "agent",
-                JSON.stringify({ card: [card?.popup, card?.dialog], back1: [back1?.dialog, back1?.popup], back2: [back2?.dialog, back2?.prompt] })
+                "4. f opens the full card over the box; Esc goes back to the box, a second Esc to walking, ↵ Answer offered at quill, who asks",
+                card?.popup === "agent" &&
+                    card.dialog === "" &&
+                    back1?.dialog === "agent" &&
+                    back1.popup === "" &&
+                    back2?.dialog === "" &&
+                    back2.prompt === "agent" &&
+                    answerChip.includes("Answer"),
+                JSON.stringify({ card: [card?.popup, card?.dialog], back1: [back1?.dialog, back1?.popup], back2: [back2?.dialog, back2?.prompt], chip: answerChip })
             );
             await h.shot("cdp-shots/cockpit-office-talk.png");
 
-            // 5. loom at work: Open, Reply, Terminal, Background, Full card; the ▶ stops at the last
+            // 5. loom at work: ↵ Talk offered once its box is shut; ↵ opens it again: Open, Reply, Terminal,
+            // Background, Full card, and the ▶ stops at the last
             await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-loom"))})?.click()`);
             await settleBoss(h);
+            await press("Escape");
+            const talkChip = await chip();
+            await press("Enter");
             p = await press("ArrowDown", 6);
             rec(
-                "5. an agent at work offers Open, Reply, Terminal, Background and Full card; the ▶ stops at the last",
-                p?.dialog === "agent" && JSON.stringify(p.items) === JSON.stringify(["Open", "Reply", "Terminal", "Background", "Full card"]) && p.sel === 4,
-                JSON.stringify({ items: p?.items, sel: p?.sel })
+                "5. an agent at work offers ↵ Talk, and its box Open, Reply, Terminal, Background and Full card; the ▶ stops at the last",
+                talkChip.includes("Talk") &&
+                    p?.dialog === "agent" &&
+                    JSON.stringify(p.items) === JSON.stringify(["Open", "Reply", "Terminal", "Background", "Full card"]) &&
+                    p.sel === 4,
+                JSON.stringify({ chip: talkChip, items: p?.items, sel: p?.sel })
             );
             await h.shot("cdp-shots/cockpit-office-dialog-working.png");
 
@@ -2454,17 +2727,73 @@ Add `m: 77` to `KEY_CODES` at the top of the file. Then, in `makeCockpitOfficeSc
             await key(h, "Escape");
             await press("Escape", 2);
 
-            // 6. the real run's meeting room: its lead's box, Open lead first, Full card last
-            await h.ev(`[...document.querySelectorAll("[data-office-room]")].find((b) => !b.dataset.officeRoom.includes("fx-office-run"))?.click()`);
-            p = await settleBoss(h);
+            // 5c. kite asks in two parts: ◀ Branch ▶ 1 of 2 over the first question's answers; → shows the second's,
+            // ← the first's again
+            await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-kite"))})?.click()`);
+            const first = await settleBoss(h);
+            const tabs = () => h.ev(`document.querySelector("[data-office-question-tabs]")?.textContent ?? ""`);
+            const tab1 = await tabs();
+            await h.shot("cdp-shots/cockpit-office-dialog-questions.png");
+            const second = await press("ArrowRight");
+            const tab2 = await tabs();
+            const again = await press("ArrowLeft");
             rec(
-                "6. a meeting room opens its run's box: Open lead first, Full card last",
-                p?.dialog === "lead" && p.items[0] === "Open lead" && p.items[p.items.length - 1] === "Full card",
-                JSON.stringify({ dialog: p?.dialog, items: p?.items })
+                "5c. a two-part ask shows ◀ Branch ▶ 1 of 2 over its first answers; → switches to the second question's, ← back",
+                first?.dialog === "agent" &&
+                    tab1.includes("Branch") &&
+                    tab1.includes("1 of 2") &&
+                    JSON.stringify(first.items.slice(0, 3)) === JSON.stringify(["Keep feat/tray", "Rename to feat/tray-popover", "Send"]) &&
+                    tab2.includes("Tests") &&
+                    tab2.includes("2 of 2") &&
+                    JSON.stringify(second?.items?.slice(0, 2)) === JSON.stringify(["Unit", "CDP"]) &&
+                    again?.items?.[0] === "Keep feat/tray",
+                JSON.stringify({ tab1, tab2, first: first?.items, second: second?.items, again: again?.items })
+            );
+            await press("Escape");
+
+            // 6. the real run's meeting room: the run's plate, its bar and counts, a column of its six tasks (four shown,
+            // the rest counted); Open lead first, Adjust (the run has a plan), Full card last
+            await h.ev(`[...document.querySelectorAll("[data-office-room]")].find((b) => !b.dataset.officeRoom.includes("fx-office-run"))?.click()`);
+            await settleBoss(h);
+            const run = await h.ev(`(async () => {
+                // the run's plan can load after the page: wait for its task column
+                for (let i = 0; i < 40 && !document.querySelector('[data-office-dialog="lead"] [data-office-task]'); i++) {
+                    await new Promise((r) => setTimeout(r, 250));
+                }
+                const box = document.querySelector('[data-office-dialog="lead"]');
+                return { text: box?.textContent ?? "", tasks: box?.querySelectorAll("[data-office-task]").length ?? 0 };
+            })()`);
+            p = await probe(h);
+            rec(
+                "6. a meeting room opens its run's box: N/6 in its counts, four task rows and N more in the full card; Open lead first, Adjust, Full card last",
+                p?.dialog === "lead" &&
+                    p.items[0] === "Open lead" &&
+                    p.items.includes("Adjust") &&
+                    p.items[p.items.length - 1] === "Full card" &&
+                    run.tasks === 4 &&
+                    /\d+ more in the full card/.test(run.text) &&
+                    run.text.includes("/6"),
+                JSON.stringify({ dialog: p?.dialog, items: p?.items, tasks: run.tasks, text: run.text.slice(0, 240) })
             );
             await h.shot("cdp-shots/cockpit-office-dialog-run.png");
 
-            // 7. a short view, the boss low in it: the box takes the head of the view and never covers the boss
+            // 6b. t-1's seat, its worker at work: the task's line and its worker's words; Open, Terminal and Full card
+            await press("Escape");
+            await h.ev(`document.querySelector('[data-office-seat$=":t-1"]')?.click()`);
+            p = await settleBoss(h);
+            const seat = await h.ev(`document.querySelector('[data-office-dialog="worker"]')?.textContent ?? ""`);
+            rec(
+                "6b. a worker's seat at work opens its box: the task and its worker, then Open, Terminal and Full card",
+                p?.dialog === "worker" &&
+                    JSON.stringify(p.items) === JSON.stringify(["Open", "Terminal", "Full card"]) &&
+                    seat.includes("Machine stats") &&
+                    seat.includes("vole"),
+                JSON.stringify({ dialog: p?.dialog, items: p?.items, seat: seat.slice(0, 200) })
+            );
+            await h.shot("cdp-shots/cockpit-office-dialog-seat.png");
+
+            // 7. a short view, the boss low in it: the box takes the head when one at the foot would cover the boss, and
+            // never covers it. Desks only: each is an agent's, which has a box (a fixture run's seat has none)
             const w = await h.ev("window.innerWidth");
             await h.cdp("Emulation.setDeviceMetricsOverride", { width: w, height: 760, deviceScaleFactor: 1, mobile: false });
             await sleep(500);
@@ -2473,12 +2802,12 @@ Add `m: 77` to `KEY_CODES` at the top of the file. Then, in `makeCockpitOfficeSc
                 const el = document.querySelector("[data-cockpit-office]");
                 el.scrollTop = el.scrollHeight;
                 const v = el.getBoundingClientRect();
-                const spots = [...document.querySelectorAll("[data-office-desk], [data-office-seat]")]
+                const desks = [...document.querySelectorAll("[data-office-desk]")]
                     .map((d) => ({ d, r: d.getBoundingClientRect() }))
                     .filter(({ r }) => r.top >= v.top && r.bottom <= v.bottom);
-                spots.sort((a, b) => b.r.bottom - a.r.bottom);
-                spots[0]?.d.click();
-                return spots.length;
+                desks.sort((a, b) => b.r.bottom - a.r.bottom);
+                desks[0]?.d.click();
+                return desks.length;
             })()`);
             p = await settleBoss(h, 5000);
             const geo = await h.ev(`(() => {
@@ -2486,31 +2815,37 @@ Add `m: 77` to `KEY_CODES` at the top of the file. Then, in `makeCockpitOfficeSc
                 const box = document.querySelector("[data-office-dialog]")?.getBoundingClientRect();
                 const boss = document.querySelector("[data-office-boss]")?.getBoundingClientRect();
                 if (!box || !boss) return { box: !!box, boss: !!boss };
-                const overlap = !(box.right <= boss.left || box.left >= boss.right || box.bottom <= boss.top || box.top >= boss.bottom);
-                return { overlap, bossMid: (boss.top + boss.bottom) / 2 - v.top, half: v.height / 2 };
+                // the plate stands 15 px over the box's top edge
+                const top = box.top - 15;
+                const overlap = !(box.right <= boss.left || box.left >= boss.right || box.bottom <= boss.top || top >= boss.bottom);
+                return { overlap, bossBottom: boss.bottom - v.top, viewH: v.height };
             })()`);
             await h.cdp("Emulation.clearDeviceMetricsOverride", {});
             await sleep(400);
+            // a box at the foot, 270 px and its plate 15 px over it, reaches up to viewH - 12 - 270 - 15
+            const footTop = geo.viewH - 297;
             rec(
-                "7. in a short view the box sits at the head when the boss stands in the lower half, the foot otherwise, and never covers the boss",
-                low > 0 && geo.overlap === false && p?.edge === (geo.bossMid > geo.half ? "top" : "bottom"),
-                JSON.stringify({ low, edge: p?.edge, geo })
+                "7. in a short view the box takes the head when one at the foot would cover the boss, the foot otherwise, and never covers the boss",
+                low > 0 && geo.overlap === false && p?.edge === (geo.bossBottom > footTop ? "top" : "bottom"),
+                JSON.stringify({ low, edge: p?.edge, footTop, geo })
             );
 
-            // 8. m opens the office menu over the box: START's items with their keys; ↓ moves; Esc shuts it
+            // 8. m opens the office menu, the footer's m chip lit: START's items with their keys; ↓ moves; Esc shuts it
             await press("Escape", 2);
             const menu = await press("m");
+            const lit = await h.ev(`document.querySelector("[data-office-footer-menu]")?.getAttribute("aria-expanded")`);
             await h.shot("cdp-shots/cockpit-office-menu.png");
             const moved = await press("ArrowDown");
             const shut = await press("Escape");
             rec(
-                "8. m opens the office menu: Next Needs you, Next desk, Previous desk, Events, Cards view, All keys; ↓ moves the ▶; Esc shuts it",
+                "8. m opens the office menu, the footer's m chip lit: Next Needs you, Next desk, Previous desk, Events, Cards view, All keys; ↓ moves the ▶; Esc shuts it",
                 menu?.menu === true &&
+                    lit === "true" &&
                     JSON.stringify(menu.menuItems) === JSON.stringify(["Next Needs you", "Next desk", "Previous desk", "Events", "Cards view", "All keys"]) &&
                     menu.menuSel === 0 &&
                     moved?.menuSel === 1 &&
                     shut?.menu === false,
-                JSON.stringify({ items: menu?.menuItems, sel: [menu?.menuSel, moved?.menuSel], shut: shut?.menu })
+                JSON.stringify({ items: menu?.menuItems, lit, sel: [menu?.menuSel, moved?.menuSel], shut: shut?.menu })
             );
 
             // 9. the menu's Events shows the rail; Esc while walking hides it again
@@ -2522,19 +2857,30 @@ Add `m: 77` to `KEY_CODES` at the top of the file. Then, in `makeCockpitOfficeSc
             const hidden = await h.ev(`!document.querySelector('[aria-label="Events"]')`);
             rec("9. the menu's Events shows the Events rail; Esc while walking hides it", shown && hidden, JSON.stringify({ shown, hidden }));
 
-            // 10. the footer's m opens and shuts the menu with the mouse
+            // 10. the footer: its m opens and shuts the office menu with the mouse, and its line shows the newest event.
+            // A fixture roster changes no state, so a run's task-done is published as the engine's would be; it is
+            // the newest, so the line names the run and "finished"
             await h.ev(`document.querySelector("[data-office-footer-menu]")?.click()`);
             await sleep(150);
             const opened = (await probe(h))?.menu;
             await h.ev(`document.querySelector("[data-office-footer-menu]")?.click()`);
             await sleep(150);
             const closed = (await probe(h))?.menu;
-            const line = await h.ev(`document.querySelector("[data-office-footer-event]")?.textContent ?? null`);
+            let line = null;
+            for (let i = 0; i < 2 && !line?.includes("finished"); i++) {
+                const event = { id: "fx-office-controls-done", runid: ctx.runId, channelid: ctx.channelId, ts: Date.now(), kind: "task-done" };
+                await h.rpc("eventpublish", { event: "run:event", scopes: [`run:${ctx.runId}`], data: { channelid: ctx.channelId, runid: ctx.runId, event } });
+                for (let t = 0; t < 3000 && !line?.includes("finished"); t += 200) {
+                    await sleep(200);
+                    line = await h.ev(`document.querySelector("[data-office-footer-event]")?.textContent ?? null`);
+                }
+            }
             rec(
-                "10. the footer's m opens and shuts the office menu; its event line, when there is one, names who and what",
-                opened === true && closed === false && (line === null || line.trim().length > 0),
+                "10. the footer's m opens and shuts the office menu; its line shows the newest event: who, finished, and when",
+                opened === true && closed === false && line != null && line.includes("finished"),
                 JSON.stringify({ opened, closed, line })
             );
+            await h.shot("cdp-shots/cockpit-office-footer.png");
 
             return steps;
         },
@@ -2544,16 +2890,15 @@ Add `m: 77` to `KEY_CODES` at the top of the file. Then, in `makeCockpitOfficeSc
 Return `{ cockpitOffice, cockpitOfficeControls, cockpitOfficeBench }`. In `scripts/cdp/scenarios.mjs`, destructure
 `cockpitOfficeControls` from `makeCockpitOfficeScenarios(…)` and list it after `cockpitOffice` in the scenarios array.
 
-If `data-office-boss` is not the boss sprite's attribute, use the one `afterStop`'s `scrollIntoView` queries
-(`[data-office-boss]` there), which Task 5 leaves unchanged.
-
 - [ ] **Step 3: Run both scenarios**
 
-Run: `task dev:browser` in the background (wait for its CDP line), then
-`node --experimental-websocket scripts/cdp/verify.mjs cockpit-office cockpit-office-controls`
-Expected: every step PASS; `cdp-shots/index.html` holds the shots named above. Look at `cockpit-office-dialog.png`,
-`cockpit-office-dialog-run.png` and `cockpit-office-menu.png` beside the canvas's Main, Run and StartMenu boards: the
-frame, the plate on the box's top edge, the ▶ menu on the right, the HUD bar inside the view.
+Run: `out="$(mktemp -d)"; ARC_FINAL_OUT="$out" node scripts/cdp/final-verify.mjs cockpit-office cockpit-office-controls`
+(timeout 900000). It starts its own headless app on free ports with its own store and stops it after; never start
+`task dev:browser` by hand. Expected: exit 0, every step PASS; `$out` holds the shots named above and the contact sheet.
+Look at `cockpit-office-dialog.png`, `cockpit-office-dialog-run.png`, `cockpit-office-dialog-questions.png`,
+`cockpit-office-dialog-seat.png` and `cockpit-office-menu.png` beside the canvas's Main, Run, States and StartMenu
+boards: the frame, the plate on the box's top edge, the ▶ menu on the right, the question tabs, the HUD bar inside the
+view.
 
 - [ ] **Step 4: The keys' docs**
 
@@ -2621,16 +2966,18 @@ In `docs/superpowers/specs/2026-10-15-cockpit-office-design.md`, replace the `- 
 and replace the body of `## The popup` with:
 
 ```markdown
-- **The dialog box** (↵ or a click on a desk) sits at the foot of the office's view, or at its head when the boss stands
-  in the view's lower half, so it never covers the desk. A plate on its top edge names who talks; the left holds what
-  they say (an agent's question under its last words and its last steps, its model, context and age; a run's lead's
-  last line, the task bar, the counts and a column of tasks; a seat's task row and its worker), the right a ▶ menu:
-  the answers then Send (dim until every question has one), or the row's own actions, then Open, Reply, Terminal,
-  Background (Open lead and Adjust at a run), and Full card. Only the item under the ▶ shows its key.
+- **The dialog box** (↵ or a click on a desk) sits at the foot of the office's view, or at its head when a box at the
+  foot would cover the boss, so it never covers the desk. A plate on its top edge names who talks (an agent's status
+  line; a run's mark, title, project and lead); the left holds what they say (an agent's question under its last words
+  and its last steps, its model, tokens, context and age; a run's lead's last line, the task bar, the counts and a
+  column of tasks; a seat's task row and its worker), the right a ▶ menu: the answers then Send (dim until every
+  question has one; a question in several parts under ◀ its header ▶ and "1 of 2"), or the row's own actions (Tell
+  stays on the full card, whose input takes the words), then Open, Reply, Terminal, Background (Open lead and Adjust at
+  a run), and Full card. Only the item under the ▶ shows its key.
 - **The full card** (Full card or `f`) is the grid's own `AgentRow` or `LeadCard` beside the desk, as before; Adjust
   opens a run's card with its Adjust panel. No card is rewritten for the office.
-- **The office menu** (`m`, or the footer's `m menu`) lists Next Needs you, Next desk, Previous desk, Events, Cards
-  view and All keys, each with its key.
+- **The office menu** (`m`, or the footer's `m menu`, whose chip lights while it is open) lists Next Needs you, Next
+  desk, Previous desk, Events, Cards view and All keys, each with its key.
 - **The office fills the Cockpit**: no title; the counts that filter, Cards | Office, the project switcher and Live only
   sit in a HUD bar inside the view, after the clock and energy. The footer holds `m menu` and the newest event; the
   Events rail is hidden in Office until the menu's Events shows it (Esc while walking hides it).
@@ -2644,6 +2991,6 @@ Expected: PASS
 - [ ] **Step 8: Commit**
 
 ```bash
-git add scripts/cdp/cockpitofficescenarios.mjs scripts/cdp/scenarios.mjs frontend/app/store/keybindings/bindings.ts docs/keyboard-shortcuts.md docs/guide/cockpit.md docs/superpowers/specs/2026-10-15-cockpit-office-design.md
+git add scripts/cdp/cockpitofficescenarios.mjs scripts/cdp/scenarios.mjs scripts/cockpit-fixtures/scenarios.mjs frontend/app/store/keybindings/bindings.ts docs/keyboard-shortcuts.md docs/guide/cockpit.md docs/superpowers/specs/2026-10-15-cockpit-office-design.md
 git commit -m "test(office): the controls scenario; keys docs, guide and spec for the Office's dialog box"
 ```
