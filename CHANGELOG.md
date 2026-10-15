@@ -61,6 +61,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- **An answered question no longer leaves its agent stuck on asking**: on a Claude Team or Enterprise account the
+  question's card could stay behind after you answered it, hidden while the agent worked and back as "asking" (with
+  a Waiting on you card) every time it finished a turn, until the app reloaded.
 - **Heavy jobs no longer pile up on a Mac short of memory**: under yellow memory pressure the Jobs queue runs one
   heavy command at a time, where it used to let in another every minute (three typechecks on an 8 GB Mac swapped
   for a quarter of an hour), and while one is still starting up the next joins it only when the free RAM fits both.

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -489,5 +490,77 @@ func TestRetireAskOnResumeRetiresAskTheTranscriptClosed(t *testing.T) {
 
 	if _, ok := agentask.GlobalRegistry.Get(oref); ok {
 		t.Fatal("an ask rejected in the terminal must still retire on the next working status")
+	}
+}
+
+// a Team org's Claude raises the mod's waited card and the settings hook's projection at once. Whatever order they
+// reach the registry in, the cockpit must end on the ask the registry holds: a clear names only that one, so an ask
+// left on screen past it reads as asking at every idle until a reload
+func TestAskCommandRaisesPublishInRegistryOrder(t *testing.T) {
+	ws := &WshServer{}
+	oref := waveobj.MakeORef(waveobj.OType_Block, uuid.NewString()).String()
+	agentask.GlobalRegistry = agentask.MakeRegistry()
+	waitCtx, stopWait := context.WithCancel(context.Background())
+	waitDone := make(chan struct{})
+	var mu sync.Mutex
+	var raised []string
+	waitPublished := make(chan struct{})
+	started := false
+	originalClient := wps.Broker.GetClient()
+	wps.Broker.SetClient(&askResolveClient{onEvent: func(event wps.WaveEvent) {
+		data, ok := event.Data.(baseds.AgentAskData)
+		if !ok || data.Cleared {
+			return
+		}
+		mu.Lock()
+		first := !started
+		started = true
+		mu.Unlock()
+		if first {
+			// the projection is in the registry but not yet sent: the waited ask arrives now, and gets its chance
+			// to be sent first
+			go func() {
+				_, _ = ws.AskCommand(waitCtx, askData(oref, true))
+				close(waitDone)
+			}()
+			select {
+			case <-waitPublished:
+			case <-time.After(300 * time.Millisecond):
+			}
+		}
+		mu.Lock()
+		raised = append(raised, data.AskId)
+		mu.Unlock()
+		if !first {
+			close(waitPublished)
+		}
+	}})
+	wps.Broker.Subscribe("ask-raise-order", wps.SubscriptionRequest{Event: wps.Event_AgentAsk, Scopes: []string{oref}})
+	t.Cleanup(func() {
+		stopWait()
+		<-waitDone
+		wps.Broker.UnsubscribeAll("ask-raise-order")
+		wps.Broker.SetClient(originalClient)
+	})
+
+	projection := askData(oref, false)
+	projection.Questions[0].Question = "A or B? (projected)"
+	if _, err := ws.AskCommand(context.Background(), projection); err != nil {
+		t.Fatalf("projection: %v", err)
+	}
+	select {
+	case <-waitPublished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the waited ask was never published")
+	}
+	pending, ok := agentask.GlobalRegistry.Get(oref)
+	if !ok {
+		t.Fatal("no ask pending")
+	}
+	mu.Lock()
+	last := raised[len(raised)-1]
+	mu.Unlock()
+	if last != pending.AskId {
+		t.Fatalf("the cockpit was last told of ask %s while the registry holds %s", last, pending.AskId)
 	}
 }

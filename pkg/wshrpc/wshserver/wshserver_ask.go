@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -33,45 +34,10 @@ func (ws *WshServer) AskCommand(ctx context.Context, data wshrpc.CommandAskData)
 	if err != nil {
 		return wshrpc.AskRtnData{}, fmt.Errorf("invalid oref %q: %w", data.ORef, err)
 	}
-	// a Claude session in an org that manages Claude Code (Team, Enterprise) runs its settings PreToolUse
-	// `wsh ask` even where the arc mod's card is already up for the same call: the org's security plugin
-	// skips the mod's classic.PreToolUse hook that would have stopped it. Replacing the waited-on ask would
-	// orphan the mod's waiter and swap its card for a keystroke-answered one, so the projection is a no-op
-	if !data.Wait {
-		if pending, ok := agentask.GlobalRegistry.Get(data.ORef); ok &&
-			agentask.GlobalRegistry.HasWaiter(pending.AskId) && agentask.SameQuestions(pending.Questions, data.Questions) {
-			return wshrpc.AskRtnData{AskId: pending.AskId}, nil
-		}
+	askId, waiter, raised := raiseAsk(data, oref.OID)
+	if !raised {
+		return wshrpc.AskRtnData{AskId: askId}, nil
 	}
-	askId := uuid.New().String()
-	// one raise time for both the registry entry and the published event: the attention list ages an ask
-	// off its registry Ts while the frontend ages it off the event's, and two time.Now() calls would let
-	// those two disagree by the width of this function.
-	ts := time.Now().UnixMilli()
-	// the waiter is registered before the ask is published, not after: publishAgentAsk runs the
-	// Gatekeeper and any synchronous subscriber, either of which can answer or clear this ask before
-	// this function reaches the select. Registering afterwards loses that resolve, and the caller
-	// blocks on an ask nothing will ever resolve again.
-	var waiter <-chan agentask.WaitResult
-	if data.Wait {
-		waiter = agentask.GlobalRegistry.RegisterWaiter(askId)
-	}
-	agentask.GlobalRegistry.Set(data.ORef, agentask.PendingAsk{
-		AskId:     askId,
-		BlockId:   oref.OID,
-		Questions: data.Questions,
-		Ts:        ts,
-		Prose:     data.Prose,
-		Hold:      data.Hold,
-	})
-	publishAgentAsk(baseds.AgentAskData{
-		ORef:      data.ORef,
-		AskId:     askId,
-		Questions: data.Questions,
-		Ts:        ts,
-		Prose:     data.Prose,
-		Hold:      data.Hold,
-	})
 	// a dag child raising an ask is a lead event: the child blocks on the question, so the lead must
 	// be able to see it (and answer it via `wsh jarvis dag answer`) — the child sessions are invisible
 	// to the human (the "child asks never reach anyone" flaw).
@@ -92,6 +58,58 @@ func (ws *WshServer) AskCommand(ctx context.Context, data wshrpc.CommandAskData)
 		publishAgentAsk(baseds.AgentAskData{ORef: data.ORef, AskId: askId, Cleared: true})
 		return wshrpc.AskRtnData{}, ctx.Err()
 	}
+}
+
+// askRaiseLock makes taking the registry and publishing the event one step. A Claude session in a Team org raises the
+// mod's waited card and the settings hook's projection at once, and two raises left to interleave could publish in
+// the other order from the one they took the registry in: the cockpit would show the ask the registry dropped, which
+// no clear names, so it read asking again at every idle until a reload.
+var askRaiseLock sync.Mutex
+
+// raiseAsk registers and publishes data's ask, or reports raised=false with the pending ask's id when the ask is a
+// projection of the card already up.
+func raiseAsk(data wshrpc.CommandAskData, blockId string) (askId string, waiter <-chan agentask.WaitResult, raised bool) {
+	askRaiseLock.Lock()
+	defer askRaiseLock.Unlock()
+	// a Claude session in an org that manages Claude Code (Team, Enterprise) runs its settings PreToolUse
+	// `wsh ask` even where the arc mod's card is already up for the same call: the org's security plugin
+	// skips the mod's classic.PreToolUse hook that would have stopped it. Replacing the waited-on ask would
+	// orphan the mod's waiter and swap its card for a keystroke-answered one, so the projection is a no-op
+	if !data.Wait {
+		if pending, ok := agentask.GlobalRegistry.Get(data.ORef); ok &&
+			agentask.GlobalRegistry.HasWaiter(pending.AskId) && agentask.SameQuestions(pending.Questions, data.Questions) {
+			return pending.AskId, nil, false
+		}
+	}
+	askId = uuid.New().String()
+	// one raise time for both the registry entry and the published event: the attention list ages an ask
+	// off its registry Ts while the frontend ages it off the event's, and two time.Now() calls would let
+	// those two disagree by the width of this function.
+	ts := time.Now().UnixMilli()
+	// the waiter is registered before the ask is published, not after: publishAgentAsk runs the
+	// Gatekeeper and any synchronous subscriber, either of which can answer or clear this ask before
+	// AskCommand reaches the select. Registering afterwards loses that resolve, and the caller
+	// blocks on an ask nothing will ever resolve again.
+	if data.Wait {
+		waiter = agentask.GlobalRegistry.RegisterWaiter(askId)
+	}
+	agentask.GlobalRegistry.Set(data.ORef, agentask.PendingAsk{
+		AskId:     askId,
+		BlockId:   blockId,
+		Questions: data.Questions,
+		Ts:        ts,
+		Prose:     data.Prose,
+		Hold:      data.Hold,
+	})
+	publishAgentAsk(baseds.AgentAskData{
+		ORef:      data.ORef,
+		AskId:     askId,
+		Questions: data.Questions,
+		Ts:        ts,
+		Prose:     data.Prose,
+		Hold:      data.Hold,
+	})
+	return askId, waiter, true
 }
 
 func (ws *WshServer) AnswerAgentCommand(ctx context.Context, data wshrpc.CommandAnswerAgentData) error {
