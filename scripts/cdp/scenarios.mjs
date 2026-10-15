@@ -42464,6 +42464,146 @@ const petBubbleDismiss = {
     },
 };
 
+// The tray popover's page in fixture mode (frontend/tauri/tray.tsx, trayfixtures.ts): this page goes to
+// tray.html?fixture=<name> on the cockpit's own origin, runs fn there, then comes back and waits for the cockpit.
+// The real popover is a second Tauri window CDP cannot reach on a Mac; its native parts are hand checks.
+async function onTrayPage(h, fixture, fn) {
+    const back = h.url;
+    await h.cdp("Page.navigate", { url: new URL(`tray.html?fixture=${fixture}`, back).href });
+    for (let i = 0; i < 60; i++) {
+        if (await h.ev(`!!document.querySelector('[data-tray-page]')`).catch(() => false)) break;
+        await new Promise((r) => setTimeout(r, 150));
+    }
+    try {
+        return await fn();
+    } finally {
+        await h.cdp("Page.navigate", { url: back });
+        for (let i = 0; i < 120; i++) {
+            if (await h.ev(`window.__arcBoot?.phase === "rendered"`).catch(() => false)) break;
+            await new Promise((r) => setTimeout(r, 250));
+        }
+        await new Promise((r) => setTimeout(r, 800));
+    }
+}
+
+const TRAY_READ = `(() => {
+    const p = document.querySelector('[data-tray-page]');
+    return { page: p?.getAttribute('data-tray-page') ?? null, width: p ? Math.round(p.getBoundingClientRect().width) : 0, text: p?.innerText ?? '' };
+})()`;
+
+function trayScenario(name, fixture, page, checks) {
+    return {
+        name,
+        surface: "agent",
+        async arrange() {
+            return {};
+        },
+        async assert(h) {
+            return onTrayPage(h, fixture, async () => {
+                const r = await h.ev(TRAY_READ);
+                const steps = [
+                    { step: `1. tray.html?fixture=${fixture} draws its ${page} page, 360 px wide`, ok: r.page === page && r.width === 360, detail: `page=${r.page} width=${r.width}` },
+                ];
+                checks.forEach(([label, want], i) =>
+                    steps.push({ step: `${i + 2}. ${label}`, ok: r.text.includes(want), detail: want })
+                );
+                await h.shot(`cdp-shots/${name}-popover.png`);
+                return steps;
+            });
+        },
+        async teardown() {},
+    };
+}
+
+const trayMain = trayScenario("tray-main", "main", "main", [
+    ["memory pressure reads High", "High"],
+    ["the queued job offers Run now and Skip", "Run now"],
+    ["Storage names the disk", "Macintosh HD"],
+    ["four items wait on you", "Waiting on you"],
+    ["the 5h chip shows its percent", "62%"],
+]);
+const trayFreeup = trayScenario("tray-freeup", "freeup", "freeup", [
+    ["the subpage is Free up memory", "Free up memory"],
+    ["an agent's heaviest command is offered", "heaviest: go test ./pkg/orchestrate"],
+    ["each agent row shows its kind", "Claude agent"],
+    ["other apps point to Activity Monitor", "Open Activity Monitor"],
+]);
+const trayStorage = trayScenario("tray-storage", "storage", "storage", [
+    ["the subpage is Clean up storage", "Clean up storage"],
+    ["run worktrees clean in place", "Clean all"],
+    ["the store is never cleaned", "Never cleaned"],
+    ["the last auto-clean is reported", "auto-clean took 1.1 GB"],
+]);
+const trayQuiet = trayScenario("tray-quiet", "quiet", "main", [
+    ["memory pressure reads Normal", "Normal"],
+    ["no heavy jobs", "No heavy jobs running."],
+    ["nothing waits", "Nothing is waiting on you."],
+]);
+const trayCritical = trayScenario("tray-critical", "critical", "main", [
+    ["memory pressure reads Critical", "Critical"],
+    ["the free figure reads in GB, not 307 MB", "0.3 GB"],
+    ["no heavy job starts", "No heavy job starts"],
+    ["queued jobs say why", "memory pressure critical"],
+]);
+const trayPaused = trayScenario("tray-paused", "paused", "main", [
+    ["the queue reads paused with time left", "Paused, 52m left"],
+    ["Resume is offered", "Resume"],
+    ["the 5h chip shows 91%", "91%"],
+]);
+const trayOffline = trayScenario("tray-offline", "offline", "offline", [
+    ["it says the server is not answering", "arcterm's server is not answering"],
+    ["Restart arcterm is offered", "Restart arcterm"],
+    ["it says when the server was last heard", "Last heard 14:29"],
+]);
+const trayWindows = trayScenario("tray-windows", "windows", "main", [
+    ["the disk is Local Disk (C:)", "Local Disk (C:)"],
+    ["memory is out of 32 GB", "free of 32 GB"],
+]);
+
+const trayActions = {
+    name: "tray-actions",
+    surface: "agent",
+    async arrange() {
+        return {};
+    },
+    async assert(h) {
+        return onTrayPage(h, "main", async () => {
+            const click = (sel) => h.ev(`document.querySelector(${JSON.stringify(sel)})?.click() ?? null`);
+            await click("[data-tray-run-now]");
+            await click("[data-tray-skip]");
+            await click("[data-tray-freeup]");
+            await new Promise((r) => setTimeout(r, 200));
+            await click("[data-tray-stop]");
+            const esc = () => h.ev(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+            await esc();
+            await new Promise((r) => setTimeout(r, 200));
+            const afterEsc = await h.ev(`document.querySelector('[data-tray-page]')?.getAttribute('data-tray-page') ?? null`);
+            await click("[data-tray-cleanup]");
+            await new Promise((r) => setTimeout(r, 200));
+            await click('[data-tray-clean="runworktrees"]');
+            await new Promise((r) => setTimeout(r, 100));
+            const armed = await h.ev(`document.querySelector('[data-tray-clean="runworktrees"]')?.textContent ?? ''`);
+            await click('[data-tray-clean="runworktrees"]');
+            await esc(); // storage -> main
+            await new Promise((r) => setTimeout(r, 200));
+            await esc(); // main -> close
+            await new Promise((r) => setTimeout(r, 100));
+            const acts = await h.ev(`JSON.stringify(window.__trayActs ?? [])`);
+            const kinds = JSON.parse(acts).map((a) => a.kind + (a.page ? `:${a.page}` : ""));
+            const want = ["run-now", "skip", "page:freeup", "stop", "page:main", "page:storage", "clean", "page:main", "close"];
+            await h.shot("cdp-shots/tray-actions-popover.png");
+            return [
+                { step: "1. a click sends each act, in order", ok: JSON.stringify(kinds) === JSON.stringify(want), detail: kinds.join(", ") },
+                { step: "2. the first click on Clean all only arms it", ok: armed === "Clean all 4.1 GB?", detail: armed },
+                { step: "3. Stop names the agent and the pid", ok: acts.includes('"blockId":"b1"') && acts.includes('"pid":4101'), detail: acts },
+                { step: "4. Esc on a subpage goes back to main", ok: afterEsc === "main", detail: `page=${afterEsc}` },
+                { step: "5. Esc on main sends close", ok: kinds[kinds.length - 1] === "close", detail: kinds.slice(-2).join(", ") },
+            ];
+        });
+    },
+    async teardown() {},
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -42618,4 +42758,13 @@ export const SCENARIOS = [
     initiativeReview,
     initiativeParents,
     landQueueScenario,
+    trayMain,
+    trayFreeup,
+    trayStorage,
+    trayQuiet,
+    trayCritical,
+    trayPaused,
+    trayOffline,
+    trayWindows,
+    trayActions,
 ];
