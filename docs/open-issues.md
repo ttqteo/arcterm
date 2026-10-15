@@ -758,6 +758,15 @@ Tracked in their own initiatives, not here:
   read +1.56 MB on that step: the dev page's own growth. Both reads come after a forced GC (`metrics()`), yet the dev
   page's heap still swings by up to about 3 MB between reads; the cause is not established, and a swing that size can
   hide a leak under the 1 MB budget.
+- **Cockpit office, walking off React** (2026-10-15, same bench and machine): a walk step moved the boss and the walkers
+  through their atoms, so React rendered each of them on every animation frame (~400 renders a second while the boss
+  and three walkers walk, `Mover` ~205 of them). A step now writes the transform on the DOM: ~176 renders a second
+  (`Mover` 26), JS while walking 8.1 to 10.6 % of a core against 9.6 to 19 % before (two 10 s holds each, read with
+  `Performance.getMetrics`). The bench: busy walking −9.5 % over Cards (14.2 % raw, baseline 23.7 %), −8.7 % reduced,
+  −14.8 % quiet; heap −4.96 MB, −775 nodes, 91 sprites, 74 ms to draw, +0.04 MB on the second round trip. A probe of
+  the same hold found paint and raster small: drawing the static scenery (floors, walls, desk parts, 259 of the
+  office's 591 nodes) as one pixel canvas, or giving the movers their own layer alone, moved busy by less than the
+  holds' own noise (±3 points), and cut only the off-main-thread raster (3.7–4.6 % to 0.7–1.6 %).
 
 ---
 

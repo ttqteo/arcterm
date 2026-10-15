@@ -7,8 +7,9 @@
 // plansprite.ts, the clocks officeclock.ts. This file owns the DOM, the walk state and the popup.
 //
 // Cost is the point of most choices (the spec's Benchmark): a person is one <img> from a cache; a desk's top and face
-// are pseudo-elements; the boss, the walkers and the path dots are small components on their own atoms, so a walk
-// step re-renders only them; only animated people read the frame clock; no clock runs while nothing moves.
+// are pseudo-elements; a walk step renders nothing: it moves the boss's and the walkers' <img> on the DOM, and React
+// draws them again only when they turn, set off, stop or flip their walking frame; only animated people read the
+// frame clock; no clock runs while nothing moves.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import {
@@ -38,7 +39,8 @@ import {
 } from "@/app/view/office/plansprite";
 import { spriteCacheStats, tokenRgb } from "@/app/view/office/spritecache";
 import { cn } from "@/util/util";
-import { atom, useAtom, useAtomValue, type PrimitiveAtom } from "jotai";
+import { atom, useAtom, useAtomValue, type Atom, type PrimitiveAtom } from "jotai";
+import { selectAtom } from "jotai/utils";
 import { Maximize2, Minimize2, Moon, Sun, Zap } from "lucide-react";
 import { useReducedMotion } from "motion/react";
 import {
@@ -46,12 +48,14 @@ import {
     memo,
     useCallback,
     useEffect,
+    useLayoutEffect,
     useMemo,
     useRef,
     useState,
     type CSSProperties,
     type MutableRefObject,
     type ReactNode,
+    type RefObject,
 } from "react";
 import type { AgentsViewModel } from "./agents";
 import {
@@ -71,6 +75,7 @@ import {
 import {
     advance,
     BOSS_SPEED,
+    bossLook,
     canWalk,
     cardAt,
     deskAt,
@@ -83,6 +88,7 @@ import {
     STEP_PX,
     stepToward,
     WALKER_SPEED,
+    type BossLook,
     type Dir,
 } from "./officeboss";
 import {
@@ -167,6 +173,16 @@ const bossAtom = atom<BossState | null>(null) as PrimitiveAtom<BossState | null>
 // changes only when a walk starts or ends
 const walkersAtom = atom<Walker[]>([]) as PrimitiveAtom<Walker[]>;
 const walkingAtom = atom<Record<string, Away | null>>({}) as PrimitiveAtom<Record<string, Away | null>>;
+// what React draws of the boss and the walkers: a walk step that only moves them changes neither, and each Mover
+// places its <img> from the atoms above, on the DOM
+const bossLookAtom = selectAtom<BossState | null, BossLook | null>(bossAtom, bossLook, sameValues);
+const walkerLooksAtom = selectAtom<Walker[], Pick<Walker, "id" | "dir" | "outfit">[]>(
+    walkersAtom,
+    (ws) => ws.map((w) => ({ id: w.id, dir: w.dir, outfit: w.outfit })),
+    sameValues
+);
+// the walking sprites' frame, flipped by the walk loop
+const walkFrameAtom = atom<0 | 1>(0) as PrimitiveAtom<0 | 1>;
 const dotsAtom = atom<Point[]>([]) as PrimitiveAtom<Point[]>;
 // the card beside the boss's desk: a click on a desk opens it, ↵ or Enter does at a desk the boss walked to, and any
 // move or Esc shuts it
@@ -408,6 +424,10 @@ export function CockpitOffice(props: CockpitOfficeProps) {
 
     const stepAll = (dt: number): boolean => {
         const plan = planRef.current;
+        const frame = walkFrame();
+        if (frame !== globalStore.get(walkFrameAtom)) {
+            globalStore.set(walkFrameAtom, frame);
+        }
         let bossBusy = false;
         const b = globalStore.get(bossAtom);
         if (b) {
@@ -1351,38 +1371,75 @@ function Labels({ plan, walking, night }: { plan: Plan; walking: Set<string>; ni
     );
 }
 
-function Mover(p: { at: Point; sprite: PlanSprite; mirror: boolean; outfit: PlanOutfit; boss?: boolean }) {
+// keeps an element where `transform` puts it, written on the DOM: after each render (its sprite may have changed
+// size or side) and on each change of `on`, a walk step. React never writes the transform, so a step renders nothing
+function useDomTransform(ref: RefObject<HTMLElement | null>, on: Atom<unknown>, transform: () => string | undefined) {
+    const fn = useRef(transform);
+    fn.current = transform;
+    const place = useCallback(() => {
+        const t = fn.current();
+        if (ref.current && t != null) {
+            ref.current.style.transform = t;
+        }
+    }, [ref]);
+    useLayoutEffect(place);
+    useLayoutEffect(() => globalStore.sub(on, place), [on, place]);
+}
+
+// a person on the move, its feet at the point `at` reads from `on`; on its own layer while it walks, so a step
+// repaints nothing under it
+function Mover(p: {
+    on: Atom<unknown>;
+    at: () => Point | undefined;
+    sprite: PlanSprite;
+    mirror: boolean;
+    outfit: PlanOutfit;
+    walking: boolean;
+    boss?: boolean;
+}) {
+    const ref = useRef<HTMLImageElement>(null);
     const w = spriteWidth(p.sprite) * PLAN_CELL;
     const h = spriteH(p.sprite);
+    useDomTransform(ref, p.on, () => {
+        const at = p.at();
+        return (
+            at && `translate(${Math.round(at.x - w / 2)}px, ${Math.round(at.y - h)}px)${p.mirror ? " scaleX(-1)" : ""}`
+        );
+    });
     return (
         <img
+            ref={ref}
             alt=""
             draggable={false}
             data-office-boss={p.boss ? "" : undefined}
             data-office-sprite={p.sprite}
             src={planSpriteUrl(p.sprite, p.outfit)}
-            className="pointer-events-none absolute left-0 top-0 z-[7] [image-rendering:pixelated]"
-            style={{
-                width: w,
-                height: h,
-                transform: `translate(${Math.round(p.at.x - w / 2)}px, ${Math.round(p.at.y - h)}px)${p.mirror ? " scaleX(-1)" : ""}`,
-            }}
+            className={cn(
+                "pointer-events-none absolute left-0 top-0 z-[7] [image-rendering:pixelated]",
+                p.walking && "will-change-transform"
+            )}
+            style={{ width: w, height: h }}
         />
     );
 }
 
+const walkerAt = (id: string) => globalStore.get(walkersAtom).find((w) => w.id === id)?.at;
+const bossAt = () => globalStore.get(bossAtom)?.at;
+
 function WalkersView() {
-    const ws = useAtomValue(walkersAtom);
-    const frame = walkFrame();
+    const ws = useAtomValue(walkerLooksAtom);
+    const frame = useAtomValue(walkFrameAtom);
     return (
         <>
             {ws.map((w) => (
                 <Mover
                     key={w.id}
-                    at={w.at}
+                    on={walkersAtom}
+                    at={() => walkerAt(w.id)}
                     sprite={walkSprite(w.dir, frame)}
                     mirror={mirrorOf(w.dir)}
                     outfit={w.outfit}
+                    walking
                 />
             ))}
         </>
@@ -1390,19 +1447,39 @@ function WalkersView() {
 }
 
 function BossView({ plan }: { plan: Plan }) {
-    const b = useAtomValue(bossAtom);
-    if (!b) {
+    const look = useAtomValue(bossLookAtom);
+    const frame = useAtomValue(walkFrameAtom);
+    const ringRef = useRef<HTMLSpanElement>(null);
+    useDomTransform(ringRef, bossAtom, () => {
+        const at = bossAt();
+        return at && `translate(${Math.round(at.x - 22)}px, ${Math.round(at.y - 8)}px)`;
+    });
+    if (!look) {
         return null;
     }
-    const moving = b.path.length > 1 || b.holding != null;
-    const sprite: PlanSprite = moving ? walkSprite(b.dir, walkFrame()) : deskAt(plan, b.at) ? "boss" : "down1";
+    const sprite: PlanSprite = look.moving
+        ? walkSprite(look.dir, frame)
+        : look.rest && deskAt(plan, look.rest)
+          ? "boss"
+          : "down1";
     return (
         <>
             <span
-                className="pointer-events-none absolute left-0 top-0 z-[7] h-3 w-11 rounded-full bg-accent/35"
-                style={{ transform: `translate(${Math.round(b.at.x - 22)}px, ${Math.round(b.at.y - 8)}px)` }}
+                ref={ringRef}
+                className={cn(
+                    "pointer-events-none absolute left-0 top-0 z-[7] h-3 w-11 rounded-full bg-accent/35",
+                    look.moving && "will-change-transform"
+                )}
             />
-            <Mover at={b.at} sprite={sprite} mirror={moving && mirrorOf(b.dir)} outfit={BOSS_OUTFIT} boss />
+            <Mover
+                on={bossAtom}
+                at={bossAt}
+                sprite={sprite}
+                mirror={look.moving && mirrorOf(look.dir)}
+                outfit={BOSS_OUTFIT}
+                walking={look.moving}
+                boss
+            />
         </>
     );
 }
@@ -1442,11 +1519,12 @@ function OfficePopup({
     cursorId?: string;
     renderCard: (key: string) => ReactNode;
 }) {
-    const b = useAtomValue(bossAtom);
+    // the boss's look, not its spot: a walk step does not re-render the card
+    const look = useAtomValue(bossLookAtom);
     const open = useAtomValue(cardOpenAtom);
     const [big, setBig] = useAtom(officeBigCardAtom);
     const boxRef = useRef<HTMLDivElement>(null);
-    const at = cardAt(plan, b, cursorId);
+    const at = cardAt(plan, look?.rest ? { at: look.rest, path: [] } : null, cursorId);
     const card = at != null && cursorId != null ? renderCard(cursorId) : null;
     const kind = at?.desk ? "agent" : "run";
     probe.popup = card && open ? kind : "";

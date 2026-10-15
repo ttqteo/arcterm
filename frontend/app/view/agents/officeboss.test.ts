@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
     advance,
+    bossLook,
     canStand,
     canWalk,
     cardAt,
@@ -227,6 +228,22 @@ describe("officeboss", () => {
         expect(cardAt(plan, null, "a1")).toBeUndefined();
         expect(cardAt(plan, { at: a1, path: [a1, spotOf(plan, "r1")!] }, "a1")).toBeUndefined();
         expect(cardAt(plan, { ...still, holding: "left" }, "a1")).toBeUndefined();
+    });
+
+    it("changes the boss's look only when it turns, sets off or stops, not on each step of a walk", () => {
+        const b = spotOf(plan, "r1")!;
+        const path = pathBetween(plan, a1, b);
+        const step1 = { at: a1, path, dir: "down" as const };
+        const r = advance(path, 30);
+        const step2 = { ...step1, at: r.at, path: r.rest };
+        expect(bossLook(step1)).toEqual({ moving: true, dir: "down" });
+        expect(bossLook(step2)).toEqual(bossLook(step1));
+        expect(bossLook({ ...step2, dir: "right" })).not.toEqual(bossLook(step1));
+        // standing still, the look holds the spot the card beside the desk is placed from
+        expect(bossLook({ at: a1, path: [], dir: "up" })).toEqual({ moving: false, dir: "up", rest: a1 });
+        // an arrow held down is walking, with or without a path
+        expect(bossLook({ at: a1, path: [], dir: "left", holding: "left" })).toEqual({ moving: true, dir: "left" });
+        expect(bossLook(null)).toBeNull();
     });
 
     it("orders j/k stops band by band: the agents' room by rows, then its meeting seats, Home last", () => {

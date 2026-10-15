@@ -216,7 +216,9 @@ A person away from the desk walks back when the agent is working or asking again
   (the nod, a raised hand, cheer, yawn, stretch); only those people subscribe to it.
 - **Walk clock** (`requestAnimationFrame`) runs only while the boss or a walker is moving, and moves them by
   `transform: translate(x, y)` in whole cells (3 px). The boss walks at ~160 px/s, ~400 px/s on `j` `k` `n` or a
-  click; a walker at ~60 px/s. It stops when everyone has arrived.
+  click; a walker at ~60 px/s. It stops when everyone has arrived. A step writes that transform on the DOM, not
+  through React: React draws a mover again only when it turns, sets off, stops or flips its walking frame (180 ms),
+  and a mover has its own layer (`will-change: transform`) while it walks, so a step repaints nothing under it.
 - Both clocks stop while `document.hidden`, under `prefers-reduced-motion`, and with **animation off**
   (`officeAnimationAtom`, `atomWithStorage("cockpit.office.animation")`, on by default): then every pose holds frame 0,
   and people and the boss stand where they are going. No CSS animation and no `motion/react` on people.

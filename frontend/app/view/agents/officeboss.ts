@@ -214,3 +214,19 @@ export function cardAt(
     const room = plan.rooms.find((r) => r.key === (desk?.room ?? seat?.room));
     return room ? { desk, seat, room } : undefined;
 }
+
+/** What the boss's sprite and the card beside its desk are drawn from. Its spot is in it only while it stands
+ * still: a walk step that only moves it gives an equal look, so the office re-renders nothing for it and moves the
+ * boss's <img> on the DOM instead. */
+export interface BossLook {
+    moving: boolean;
+    dir: Dir;
+    rest?: Point;
+}
+export function bossLook(boss: { at: Point; path: readonly Point[]; dir: Dir; holding?: Dir } | null): BossLook | null {
+    if (boss == null) {
+        return null;
+    }
+    const moving = boss.path.length > 1 || boss.holding != null;
+    return moving ? { moving, dir: boss.dir } : { moving, dir: boss.dir, rest: boss.at };
+}
