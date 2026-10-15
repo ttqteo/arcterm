@@ -15,6 +15,10 @@ export const BOSS_SPEED = 160;
 export const JUMP_SPEED = 400;
 export const WALKER_SPEED = 60;
 const DOOR_REACH = 14;
+// how far from a desk's or seat's spot the boss may stand and still be at it, like a game's interaction zone: the
+// desk's width, and from the spot up to the desk
+const REACH_X = 40;
+const REACH_Y = 30;
 // the hall's walking lane, clear of Home's booth at the hall's foot
 const LANE_FROM_RIGHT = 36;
 
@@ -34,13 +38,38 @@ export function canStand(plan: Plan, p: Point): boolean {
     );
 }
 
-/** Up to `dist` px toward dir, a cell at a time, stopping before the first spot no one may stand on. */
+const furnitureCache = new WeakMap<Plan, Box[]>();
+
+/** What the boss's feet stay off: each desk with the person at it and its name, and each meeting table with its
+ *  chairs. A desk's spot and a table's stay clear, so the boss stands in front of a desk, never on it. */
+function furniture(plan: Plan): Box[] {
+    let boxes = furnitureCache.get(plan);
+    if (boxes == null) {
+        boxes = [
+            ...plan.desks.map((d) => ({ x: d.x - 8, y: d.y - 20, w: 96, h: 100 })),
+            ...plan.rooms.flatMap((r) =>
+                r.table ? [{ x: r.table.x - 8, y: r.table.y - 20, w: r.table.w + 16, h: r.table.h + 53 }] : []
+            ),
+        ];
+        furnitureCache.set(plan, boxes);
+    }
+    return boxes;
+}
+
+/** Where the boss may walk and stop: the floor, less the furniture. A jump's path may still cross a desk. */
+export function canWalk(plan: Plan, p: Point): boolean {
+    return canStand(plan, p) && !furniture(plan).some((b) => inside(p, b));
+}
+
+/** Up to `dist` px toward dir, a cell at a time, stopping before the first spot the boss may not walk on; from on top
+ *  of furniture (a desk that came to where it stood), only walls stop it, so it can walk off. */
 export function stepToward(plan: Plan, from: Point, dir: Dir, dist: number): Point {
     const d = DELTA[dir];
+    const ok = canWalk(plan, from) ? canWalk : canStand;
     let at = from;
     for (let moved = STEP_PX; moved <= dist; moved += STEP_PX) {
         const next = { x: from.x + d.x * moved, y: from.y + d.y * moved };
-        if (!canStand(plan, next)) {
+        if (!ok(plan, next)) {
             break;
         }
         at = next;
@@ -144,7 +173,8 @@ export function spotOf(plan: Plan, key: string): Point | undefined {
     return plan.desks.find((d) => d.key === key)?.spot ?? plan.seats.find((s) => s.key === key)?.spot;
 }
 
-/** The desk or seat whose spot is nearest, in the room the boss stands in; undefined in the hall or the lounge. */
+/** The desk or seat the boss stands in front of: the nearest whose spot is within reach, in the room it stands in;
+ *  undefined anywhere else, in the hall and the lounge too. */
 export function deskAt(plan: Plan, p: Point): string | undefined {
     const room = roomAt(plan, p);
     if (room === "hall") {
@@ -153,10 +183,12 @@ export function deskAt(plan: Plan, p: Point): string | undefined {
     let best: string | undefined;
     let dist = Number.POSITIVE_INFINITY;
     for (const s of [...plan.desks, ...plan.seats]) {
-        if (s.room !== room) {
+        const dx = Math.abs(s.spot.x - p.x);
+        const dy = Math.abs(s.spot.y - p.y);
+        if (s.room !== room || dx > REACH_X || dy > REACH_Y) {
             continue;
         }
-        const d = Math.hypot(s.spot.x - p.x, s.spot.y - p.y);
+        const d = Math.hypot(dx, dy);
         if (d < dist) {
             dist = d;
             best = s.key;

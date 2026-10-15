@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
     advance,
     canStand,
+    canWalk,
     cardAt,
     deskAt,
     dotsAlong,
@@ -182,6 +183,38 @@ describe("officeboss", () => {
         expect(deskAt(plan, a1)).toBe("a1");
         expect(deskAt(plan, spotOf(plan, "r1")!)).toBe("r1");
         expect(deskAt(plan, { x: plan.hall.x + 100, y: plan.hall.y + 300 })).toBeUndefined();
+    });
+
+    it("is at a desk only in front of it, within reach of its spot", () => {
+        expect(deskAt(plan, { x: a1.x + 12, y: a1.y - 12 })).toBe("a1");
+        // in the same room, but well off any spot: at no desk, however near the nearest one is
+        expect(deskAt(plan, { x: a1.x, y: a1.y + 60 })).toBeUndefined();
+        expect(deskAt(plan, { x: a1.x + 60, y: a1.y })).toBeUndefined();
+    });
+
+    it("never lets the boss's feet onto a desk, the person at it, or a meeting table", () => {
+        const d = plan.desks.find((x) => x.key === "a1")!;
+        expect(canWalk(plan, a1)).toBe(true);
+        expect(canWalk(plan, { x: d.x + 40, y: d.y + 10 })).toBe(false); // the desk top
+        expect(canWalk(plan, { x: d.x + 40, y: d.y - 10 })).toBe(false); // the person at it
+        expect(canStand(plan, { x: d.x + 40, y: d.y + 10 })).toBe(true); // still floor, for a jump's path
+        const t = room(plan.seats.find((x) => x.key === "r1")!.room).table!;
+        expect(canWalk(plan, { x: t.x + t.w / 2, y: t.y + 10 })).toBe(false);
+        expect(canWalk(plan, spotOf(plan, "r1")!)).toBe(true);
+        for (const s of [...plan.desks, ...plan.seats]) {
+            expect(canWalk(plan, s.spot)).toBe(true);
+        }
+    });
+
+    it("stops the boss in front of a desk, and lets it walk off one it stands on", () => {
+        const d = plan.desks.find((x) => x.key === "a1")!;
+        const up = stepToward(plan, a1, "up", 200);
+        expect(up.y).toBeGreaterThan(d.y + 40);
+        expect(canWalk(plan, up)).toBe(true);
+        // walking up to the desk keeps the boss at it
+        expect(deskAt(plan, up)).toBe("a1");
+        const onDesk = { x: d.x + 40, y: d.y + 10 };
+        expect(stepToward(plan, onDesk, "down", 200).y).toBeGreaterThan(onDesk.y);
     });
 
     it("offers the cursor's card only while the boss stands still at it", () => {

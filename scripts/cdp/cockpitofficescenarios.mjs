@@ -195,6 +195,37 @@ export function makeCockpitOfficeScenarios(fx) {
                 JSON.stringify({ edge, doorMid, blocked: blocked?.boss, through: through?.boss })
             );
 
+            // 4b. desks are solid: from loom's spot the boss walks up and stops in front of the desk, still at it with ↵
+            // offering its card; walked off to the side, out of every desk's reach, nothing is offered and the cursor stays
+            await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-loom"))})?.click()`);
+            await settleBoss(h);
+            const loom = await h.ev(`(() => {
+                const root = document.querySelector("[data-office-root]").getBoundingClientRect();
+                const r = document.querySelector(${JSON.stringify(desk("fx-office-loom"))}).getBoundingClientRect();
+                return { x: r.left - root.left + 4, y: r.top - root.top + 50 };
+            })()`);
+            await focusCockpit(h);
+            await hold(h, "ArrowUp", 1500);
+            const front = await settleBoss(h, 1000);
+            await h.shot("cdp-shots/cockpit-office-front.png");
+            await focusCockpit(h);
+            await hold(h, "ArrowLeft", 400);
+            const aside = await settleBoss(h, 1000);
+            rec(
+                "4b. walking up to loom's desk the boss stops in front of it, still offered its card; walked aside, out of reach, nothing is offered",
+                front?.boss &&
+                    front.boss.y > loom.y + 80 &&
+                    front.boss.y < loom.y + 108 &&
+                    front.cursor === "fx-office-loom" &&
+                    front.prompt === "agent" &&
+                    aside?.boss &&
+                    aside.boss.x < loom.x + 40 - 40 &&
+                    aside.prompt === "" &&
+                    aside.popup === "" &&
+                    aside.cursor === "fx-office-loom",
+                JSON.stringify({ loom, front: [front?.boss, front?.cursor, front?.prompt], aside: [aside?.boss, aside?.cursor, aside?.prompt] })
+            );
+
             // 5. NextAsk: n shows the way, then the boss walks it
             await focusCockpit(h);
             await key(h, "n");

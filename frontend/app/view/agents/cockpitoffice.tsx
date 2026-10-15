@@ -71,7 +71,7 @@ import {
 import {
     advance,
     BOSS_SPEED,
-    canStand,
+    canWalk,
     cardAt,
     deskAt,
     dotsAlong,
@@ -537,7 +537,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     const walkTo = (p: Point) => {
         const b = globalStore.get(bossAtom);
         const at = { x: Math.round(p.x / STEP_PX) * STEP_PX, y: Math.round(p.y / STEP_PX) * STEP_PX };
-        if (!b || !canStand(planRef.current, at)) {
+        if (!b || !canWalk(planRef.current, at)) {
             return;
         }
         globalStore.set(cardOpenAtom, false);
