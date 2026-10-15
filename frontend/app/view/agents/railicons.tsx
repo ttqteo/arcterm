@@ -8,7 +8,7 @@ import {
     Bell,
     Coins,
     Diamond,
-    FileText,
+    FileDiff,
     Folder,
     GitBranch,
     Info,
@@ -30,7 +30,8 @@ export const RAIL_ICON: Record<string, ReactNode> = {
     context: <BarChart3 {...iconProps} />,
     subagents: <GitBranch {...iconProps} />,
     tools: <Wrench {...iconProps} />,
-    files: <FileText {...iconProps} />,
+    // the diff glyph the details rail's count strip uses for Files changed, so the count and its section match
+    files: <FileDiff {...iconProps} />,
     usage: <Coins {...iconProps} />,
     autonomy: <Diamond {...iconProps} />,
     gear: <Settings {...iconProps} />,

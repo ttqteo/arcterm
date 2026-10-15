@@ -26,7 +26,7 @@ import { Tooltip } from "./tooltip";
 
 export interface RailSection {
     id: string;
-    icon: ReactNode; // the first section's icon is the rail's collapsed glyph; others are unused for now
+    icon: ReactNode; // the first section's icon is the rail's collapsed glyph; a section with `header` also leads its header with it
     label: string; // in-content headings are caller-owned, unless `header` is set
     content: ReactNode;
     // when set, the rail draws the section's header row and owns open/closed; the caller's content then
@@ -54,6 +54,10 @@ function HeadedSection({ section, header }: { section: RailSection; header: Rail
                     expandable ? "cursor-pointer text-secondary hover:text-primary" : "cursor-default text-ink-faint"
                 )}
             >
+                {/* drawn at the count strip's size, so a section reads as the count above it that opens it */}
+                <span aria-hidden className="flex flex-none [&_svg]:h-[13px] [&_svg]:w-[13px]">
+                    {section.icon}
+                </span>
                 {section.label}
                 {header.count != null ? (
                     <span className={cn("text-[11px] tabular-nums", expandable ? "text-muted" : "text-ink-faint")}>

@@ -42,6 +42,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   longer sits under the ones already done.
 - **A clearer agent rail**: the session's context, spend and facts sit on their own tile, the list headers (Files
   changed, Servers…) read brighter, and a short rule sets the Overview and Files tabs apart from the counts after them.
+- **Rail lists carry their icons**: each list on the agent rail (Ideas, Files changed, Uploads, Servers, Background
+  tasks…) leads with the same icon as its count in the strip above.
 - **The Office offers a card instead of opening it**: when the boss stands at a desk, a ↵ over the person there
   offers its card, like a game's "press E"; press Enter or click it to open the card, and Esc to close it again.
   Walking with `j`/`k`, `n` or the arrows no longer opens cards by itself; a click on a desk still opens its card.
