@@ -191,8 +191,21 @@ func resolveSimpleId(id string) (*waveobj.ORef, error) {
 	return &oref, nil
 }
 
+// getTabIdFromEnv is WAVETERM_TABID, else the tab of WAVETERM_BLOCKID: a block starts without the tab id when
+// the server's tab lookup fails at launch. Callers have the rpc client set up.
 func getTabIdFromEnv() string {
-	return os.Getenv("WAVETERM_TABID")
+	if tabId := os.Getenv("WAVETERM_TABID"); tabId != "" {
+		return tabId
+	}
+	if os.Getenv("WAVETERM_BLOCKID") == "" {
+		return ""
+	}
+	oref, err := resolveSimpleId("tab")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "no WAVETERM_TABID, and finding this block's tab failed: %v\n", err)
+		return ""
+	}
+	return oref.OID
 }
 
 // Execute executes the root command.
