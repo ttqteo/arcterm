@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Settings > Agents: the Claude subscription new agents run on, when an idle agent sleeps, the route new runs
-// take, and the flags every launch starts with.
+// take, whether the Mac stays awake for them, and the flags every launch starts with.
 
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { getSettingsKeyAtom } from "@/app/store/global";
@@ -65,6 +65,7 @@ export function AgentsPage({
             </SettingCard>
             <SettingCard id="runs" label="Runs">
                 <RunRouteRow />
+                <KeepAwakeRow />
             </SettingCard>
             <SettingCard id="flags" label="Launch flags" header={<FlagTabs runtime={runtime} onRuntime={onRuntime} />}>
                 <LaunchFlagRows runtime={runtime} />
@@ -188,6 +189,15 @@ function RunRouteRow() {
                 </div>
             ) : null}
         </>
+    );
+}
+
+function KeepAwakeRow() {
+    const on = (useAtomValue(getSettingsKeyAtom("power:keepawake")) as boolean | undefined) ?? true;
+    return (
+        <SettingRow id="runs.keepawake">
+            <Toggle on={on} onToggle={() => writeConfig({ "power:keepawake": !on })} label="Keep the Mac awake" />
+        </SettingRow>
     );
 }
 

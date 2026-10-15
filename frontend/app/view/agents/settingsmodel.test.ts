@@ -213,6 +213,7 @@ describe("settingsSections", () => {
             "term:rightclickpaste",
             "agents:sleepidle",
             "agents:sleepaftermin",
+            "power:keepawake",
             "storage:autoclean",
             "storage:nudgegb",
             "storage:canvasonship",
@@ -334,7 +335,7 @@ describe("settings pages", () => {
         ]);
         expect(cards["agents/claudeaccount"]).toEqual([]);
         expect(cards["agents/sleep"]).toEqual(["agents.sleepidle", "agents.sleepaftermin"]);
-        expect(cards["agents/runs"]).toEqual(["run.route"]);
+        expect(cards["agents/runs"]).toEqual(["run.route", "runs.keepawake"]);
         expect(cards["agents/flags"].slice(0, 2)).toEqual(["newagent.remember", "newagent.runtime"]);
         expect(cards["storage/runworktrees"]).toEqual([]);
         expect(cards["storage/sessions"]).toEqual([]);
@@ -354,7 +355,7 @@ describe("settings pages", () => {
             .flatMap(sectionRows)
             .map((r) => r.id);
         expect(new Set(ids).size).toBe(ids.length);
-        expect(ids).toHaveLength(51 + RUNTIME_FLAGS.claude.length);
+        expect(ids).toHaveLength(52 + RUNTIME_FLAGS.claude.length);
     });
 
     it("leaves the backend-authoritative run route off the config path", () => {

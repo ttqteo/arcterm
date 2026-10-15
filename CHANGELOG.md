@@ -34,6 +34,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - **Resume a canvas's session**: a canvas opened from the Canvas gallery offers the session that drew it, beside its
   title: Resume puts that conversation back in a tab, or Jump goes to its agent if it is still running.
   <!-- try: go:canvases --> <!-- big --> <!-- shot: 0.15.14-canvas-resume.webp -->
+- **The Mac stays awake while work runs**: while an agent is working, a run is going or a heavy job runs, the Mac no
+  longer sleeps when left idle, so a run you walk away from keeps moving. The display still turns off, closing the lid
+  still sleeps it, and on battery it lets go under 20%. Turn it off in Settings → Agents → Runs.
 
 ### Changed
 

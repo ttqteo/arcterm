@@ -3452,6 +3452,8 @@ declare global {
         "jobs:pauseuntil"?: number;
         "runs:maxactive"?: number;
         "runs:wakeorigin"?: boolean;
+        "power:*"?: boolean;
+        "power:keepawake"?: boolean;
     };
 
     // wshrpc.ShippedItem
