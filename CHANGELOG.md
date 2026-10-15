@@ -76,6 +76,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- **The Office fills the Cockpit's height**: a quiet office no longer stops partway down with an empty strip below
+  it; the last room stretches to the bottom. An agent coming in or leaving no longer makes the office blink.
 - **arcterm's share of the RAM bar adds up when the Mac swaps**: the bar counts what arcterm and its agents hold in
   RAM now, so on a Mac short of memory it no longer fills the whole used part and shows other apps at 0 MB. What they
   come to with what macOS compressed or swapped out is named beside it, and the header shows the swap in use.

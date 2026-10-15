@@ -196,6 +196,50 @@ export function makeCockpitOfficeScenarios(fx) {
                 JSON.stringify(nearAsk)
             );
 
+            // 1d. a view taller than what the office holds: the building grows to the scroller's foot, no gap below
+            const fillW = await h.ev("window.innerWidth");
+            await h.cdp("Emulation.setDeviceMetricsOverride", { width: fillW, height: 2600, deviceScaleFactor: 1, mobile: false });
+            await sleep(600);
+            const fill = await h.ev(`(() => {
+                const el = document.querySelector("[data-cockpit-office]");
+                const root = el.querySelector("[data-office-root]");
+                const bottom = root.getBoundingClientRect().bottom - el.getBoundingClientRect().top + el.scrollTop;
+                return { bottom: Math.round(bottom), scrollH: el.scrollHeight, clientH: el.clientHeight };
+            })()`);
+            await h.shot("cdp-shots/cockpit-office-tall.png");
+            await h.cdp("Emulation.clearDeviceMetricsOverride", {});
+            await sleep(400);
+            rec(
+                "1d. in a view taller than what it holds, the office fills the view to its foot",
+                fill.scrollH <= fill.clientH && fill.bottom + 12 >= fill.clientH - 1,
+                JSON.stringify(fill)
+            );
+
+            // 1e. agents coming in grow the office: the canvas the commit resizes is drawn again before paint, never
+            // shown blank for a frame (a MutationObserver's microtask runs after the commit's layout effects, before a
+            // passive one)
+            const grow = await h.ev(`new Promise((done) => {
+                const c = document.querySelector('[data-office-canvas="under"]');
+                const was = c.height;
+                const mo = new MutationObserver(() => {
+                    mo.disconnect();
+                    const px = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+                    let opaque = 0;
+                    for (let i = 3; i < px.length; i += 4) if (px[i] > 0) opaque++;
+                    done({ was, now: c.height, opaque });
+                });
+                mo.observe(c, { attributes: true, attributeFilter: ["width", "height"] });
+                setTimeout(() => { mo.disconnect(); done({ was, now: c.height, opaque: null }); }, 3000);
+                window.__cockpitOffice({ crowd: 40 });
+            })`);
+            await dev(h, { crowd: 0 });
+            await sleep(400);
+            rec(
+                "1e. agents coming in grow the office without a blank frame: the resized canvas is drawn before paint",
+                grow.now > grow.was && grow.opaque > 0,
+                JSON.stringify(grow)
+            );
+
             // 2. 1 answers from that card
             await focusCockpit(h);
             await key(h, "1");

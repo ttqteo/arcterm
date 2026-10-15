@@ -93,6 +93,21 @@ describe("officeplanmodel", () => {
         expect(meet[1].box.y + meet[1].box.h).toBe(band.box.y + band.box.h);
     });
 
+    it("grows to the height it is given, stretching the last band and keeping Home's booth at the foot", () => {
+        const agents = [ag("a", { project: "alpha" }), ag("z", { project: "zeta" }), ag("h", { project: undefined })];
+        const short = plan(agents);
+        const p = plan(agents, [], { height: short.height + 300 });
+        expect(p.height).toBe(short.height + 300);
+        const [alpha, zeta] = p.rooms.filter((r) => r.kind === "agents");
+        expect(alpha.box.h).toBe(short.rooms.find((r) => r.title === "alpha")!.box.h);
+        expect(zeta.box.y + zeta.box.h).toBe(p.body.y + p.body.h);
+        const booth = p.rooms.find((r) => r.kind === "home")!;
+        expect(booth.box.y + booth.box.h).toBe(p.body.y + p.body.h);
+        // what it holds still sets the height when that is the taller
+        const full = Array.from({ length: 12 }, (_, i) => ag(`a${i}`));
+        expect(plan(full, [], { height: 200 }).height).toBeGreaterThan(200);
+    });
+
     it("stacks many runs without overlap and keeps every seat in its room", () => {
         const runs = Array.from({ length: 7 }, (_, i) =>
             run(`r${i}`, { createdTs: i, tasks: [task("t1"), task("t2")] })

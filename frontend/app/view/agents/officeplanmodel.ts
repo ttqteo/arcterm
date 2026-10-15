@@ -53,6 +53,8 @@ export interface PlanInput {
     agents: PlanAgent[];
     runs: PlanRun[];
     width: number;
+    // the height to fill, the view's: the building grows to it when what it holds is shorter
+    height?: number;
     now: number;
     away: Record<string, Away>;
     night: boolean;
@@ -381,7 +383,12 @@ export function buildPlan(input: PlanInput): Plan {
     // Home's booth sits at the hall's foot: its top wall must clear the last band's door (at most y + 200 down)
     const lastY = bandsH - (heights[heights.length - 1] ?? 0);
     const boothClear = boothH ? lastY + 150 + DOOR + 10 + boothH + HWALL : 0;
-    const bodyH = Math.max(bandsH, LOUNGE_H + (boothH ? boothH + HWALL : 0) + 80, boothClear);
+    const bodyH = Math.max(
+        bandsH,
+        LOUNGE_H + (boothH ? boothH + HWALL : 0) + 80,
+        boothClear,
+        Math.floor((input.height ?? 0) - top - FACADE_H)
+    );
     // the last band stretches to the hall when the hall is the taller
     if (heights.length > 0 && bodyH > bandsH) {
         heights[heights.length - 1] += bodyH - bandsH;

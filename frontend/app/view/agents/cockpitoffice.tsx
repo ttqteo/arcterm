@@ -336,8 +336,10 @@ function useThemeEpoch(): string {
 // scenes drawn since the page loaded, for the probe: one per sceneryKey, counted in CockpitOffice, not per canvas
 let sceneryDraws = 0;
 
-// the building at art resolution, scaled 3x: drawn in a passive effect (after the theme's vars are on <html>) and
-// only when its ops change, which happens only when sceneryKey does (the phase and the theme are in it)
+// the building at art resolution, scaled 3x: drawn only when its ops change, which happens only when sceneryKey does
+// (the phase and the theme are in it). The first draw is in a passive effect, after the shell's layout effect has put
+// the theme's vars on <html>; every later one in a layout effect, before paint: a new size clears the canvas at
+// commit, and a passive redraw would show the office blank for a frame each time an agent comes or goes
 const OfficeCanvas = memo(function OfficeCanvas(p: {
     which: "under" | "over";
     ops: Op[];
@@ -347,7 +349,8 @@ const OfficeCanvas = memo(function OfficeCanvas(p: {
     z: number;
 }) {
     const ref = useRef<HTMLCanvasElement>(null);
-    useEffect(() => {
+    const drawn = useRef(false);
+    const draw = () => {
         const canvas = ref.current;
         const ctx = canvas?.getContext("2d");
         if (!canvas || !ctx) {
@@ -356,8 +359,19 @@ const OfficeCanvas = memo(function OfficeCanvas(p: {
         const image = ctx.createImageData(p.width, p.height);
         image.data.set(rasterise(p.ops, p.width, p.height, officeColors(p.phase)));
         ctx.putImageData(image, 0, 0);
+        drawn.current = true;
         // the bench's open time stops once every canvas has painted
         canvas.dataset.officeDrawn = "";
+    };
+    useLayoutEffect(() => {
+        if (drawn.current) {
+            draw();
+        }
+    }, [p.ops, p.width, p.height, p.phase]);
+    useEffect(() => {
+        if (!drawn.current) {
+            draw();
+        }
     }, [p.ops, p.width, p.height, p.phase]);
     return (
         <canvas
@@ -402,15 +416,23 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     const scrollRef = useRef<HTMLDivElement>(null);
     const rootRef = useRef<HTMLDivElement>(null);
     const [width, setWidth] = useState(0);
+    const [height, setHeight] = useState(0);
     useEffect(() => {
         const el = scrollRef.current;
-        if (!el) {
+        const head = el?.querySelector<HTMLElement>("[data-office-heading]");
+        if (!el || !head) {
             return;
         }
-        // the content box: the scroller's 20 px gutters each side
-        const measure = () => setWidth(el.clientWidth - 40);
+        // the content box: the scroller's 20 px gutters each side; below the heading, the office's 8 px margin and
+        // the scroller's 12 px foot, so a short office still fills the view
+        const measure = () => {
+            setWidth(el.clientWidth - 40);
+            const headBottom = head.getBoundingClientRect().bottom - el.getBoundingClientRect().top + el.scrollTop;
+            setHeight(Math.floor(el.clientHeight - headBottom - 8 - 12));
+        };
         const ro = new ResizeObserver(measure);
         ro.observe(el);
+        ro.observe(head);
         measure();
         return () => ro.disconnect();
     }, []);
@@ -438,8 +460,8 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         return a;
     }, [settled, walking]);
     const plan = useMemo(
-        () => buildPlan({ agents, runs, width, now, away: planAway, night }),
-        [agents, runs, width, now, planAway, night]
+        () => buildPlan({ agents, runs, width, height, now, away: planAway, night }),
+        [agents, runs, width, height, now, planAway, night]
     );
     lastPlan = plan;
     const sceneKey = sceneryKey(plan, phase, tired, theme);
