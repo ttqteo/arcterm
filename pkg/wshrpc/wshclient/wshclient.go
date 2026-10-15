@@ -943,6 +943,12 @@ func ListCanvasesCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) ([]storage.Sto
 	return resp, err
 }
 
+// command "listcanvassessions", wshserver.ListCanvasSessionsCommand
+func ListCanvasSessionsCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) ([]wshrpc.SessionActivity, error) {
+	resp, err := sendRpcRequestCallHelper[[]wshrpc.SessionActivity](w, "listcanvassessions", data, opts)
+	return resp, err
+}
+
 // command "listdetachededges", wshserver.ListDetachedEdgesCommand
 func ListDetachedEdgesCommand(w *wshutil.WshRpc, data wshrpc.CommandListDetachedEdgesData, opts *wshrpc.RpcOpts) (*wshrpc.CommandListDetachedEdgesRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandListDetachedEdgesRtnData](w, "listdetachededges", data, opts)

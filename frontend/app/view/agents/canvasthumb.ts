@@ -59,7 +59,8 @@ export async function maybeCaptureThumb(
         await io.write(path, new Uint8Array(await png.arrayBuffer()));
         done.add(a.topicDir);
     } catch (e) {
-        // a Mac has no window capture; a minimised window has nothing to capture. Neither is the user's problem
+        // a Mac without the Screen Recording permission has no window capture; a minimised window has nothing to
+        // capture. Neither is the user's problem
         console.debug("canvas preview not taken", a.topicDir, e);
     } finally {
         busy.delete(a.topicDir);

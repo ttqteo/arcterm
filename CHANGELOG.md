@@ -31,6 +31,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   question waiting on you, its options left bright. A copy, the transcript and Conversation History get the reply
   without the marks. In the fullscreen terminal, a question that scrolled out of view stays above the prompt until
   you answer.
+- **Resume a canvas's session**: a canvas opened from the Canvas gallery offers the session that drew it, beside its
+  title: Resume puts that conversation back in a tab, or Jump goes to its agent if it is still running.
+  <!-- try: go:canvases -->
 
 ### Changed
 
@@ -57,6 +60,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- **Canvas previews and Send work on a Mac**: the Canvas gallery's cards now take their preview the first time you open
+  a canvas, and Send captures the board, instead of neither ever working on a Mac. They use the Screen Recording
+  permission arcterm already has; without it Send says so.
 - **An agent cut off by a restart carries on**: when arcterm quits, updates or crashes while a claude, pi, agy or
   codex agent is working, waiting on a permission or asking you something, it comes back with a note to pick up where
   it left off (and to ask again if it was waiting on you), instead of sitting at its prompt until you type "continue".

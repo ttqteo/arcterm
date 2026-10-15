@@ -948,6 +948,12 @@ export class RpcApiType {
         return client.wshRpcCall("listcanvases", null, opts);
     }
 
+    // command "listcanvassessions" [call]
+    ListCanvasSessionsCommand(client: WshClient, data: string, opts?: RpcOpts): Promise<SessionActivity[]> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "listcanvassessions", data, opts);
+        return client.wshRpcCall("listcanvassessions", data, opts);
+    }
+
     // command "listdetachededges" [call]
     ListDetachedEdgesCommand(client: WshClient, data: CommandListDetachedEdgesData, opts?: RpcOpts): Promise<CommandListDetachedEdgesRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "listdetachededges", data, opts);

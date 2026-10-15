@@ -50,8 +50,14 @@ Today a canvas reopens only from the palette, only for the selected agent's proj
 - Leaving the viewer unmounts the iframe; leaving the centre mode unmounts everything, like History. The open topic and
   board live in one jotai atom (`canvasGalleryAtom`: `{ view: "grid" | "viewer" | "cleanup", dir, board, query,
   cursor }`, `dir` the topic folder) so a surface switch comes back to the same place.
-- To keep editing a canvas with an agent, the palette's existing per-agent **Canvases** group does it. The viewer has no
-  Open on agent menu.
+- The header also offers the session that made the canvas (added 2026-10-15): **Resume → ‹its task›**, or **Jump →**
+  when an agent still runs it, through Conversation History's own primary action (`runSessionPrimary`). Which agent has
+  a canvas open lives only in memory, so the transcripts say who made it: `ListCanvasSessionsCommand(dir)`
+  (`agentsessions.CanvasSessions`) lists the claude and pi sessions that wrote or edited a file under the topic folder,
+  or ran `wsh ui reveal canvas:<topic>` from its project (design-local's step after each round, so boards drawn by a
+  script count), the latest first. It reads only transcripts touched since the canvas's oldest file, and keeps what it
+  found per transcript until that transcript changes. To attach a canvas to some other agent, the palette's per-agent
+  **Canvases** group still does it.
 
 ## Previews
 
@@ -61,7 +67,9 @@ Today a canvas reopens only from the palette, only for the selected agent's proj
   `FileWriteCommand`. 30–60 KB.
 - One file per topic, inside the topic folder: deleting the topic removes it, nothing orphans, no cache directory.
   Never captured in the background, never one per board.
-- On a Mac `capture_webview` is Windows-only, so a card keeps the board-names placeholder there.
+- On a Mac `capture_webview` runs `screencapture -l <window>` (added 2026-10-15; until then it was Windows-only and a
+  Mac card never had a preview). It needs the Screen Recording permission, checked first with
+  `CGPreflightScreenCaptureAccess`; without it the card keeps the board-names placeholder, and canvas Send says why.
 - The grid shows previews as `<img loading="lazy">` from the URL `CanvasServeCommand` already serves for the project's
   design folder, with `?v=<thumb mtime>` to bust the cache.
 

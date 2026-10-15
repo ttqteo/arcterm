@@ -9,6 +9,8 @@
 
 import { Skeleton, SkeletonLine } from "@/app/element/skeleton";
 import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
+import { RpcApi } from "@/app/store/wshclientapi";
+import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
@@ -59,6 +61,9 @@ import { BoardFrameView, CANVAS_TOP_PAD, EdgeState, Removed, ServerDown, StepBut
 import { pollCanvasOnce, tauriCanvasIO, type CanvasIO } from "./canvaspoller";
 import type { CanvasState } from "./canvasstore";
 import { maybeCaptureThumb, tauriThumbIO } from "./canvasthumb";
+import { overlayLive, type LiveSession } from "./sessionsarchivestore";
+import { runSessionPrimary } from "./sessionsdetail";
+import { sessionPrimary } from "./sessionsruns";
 import { formatSize } from "./storagemodel";
 import { SWAP_BTN, SWAP_PRIMARY_BTN } from "./swapbar";
 
@@ -606,10 +611,45 @@ function useViewerState(c: GalleryCanvas): CanvasState {
     return s;
 }
 
+// the session that made the canvas, the latest to write it that can be resumed or is still running: the transcripts
+// are the only record of it (agentsessions.CanvasSessions), read once when the viewer opens
+function useCanvasMaker(model: AgentsViewModel, dir: string): LiveSession | undefined {
+    const roster = useAtomValue(model.agentsAtom);
+    const [sessions, setSessions] = useState<SessionActivity[] | null>(null);
+    useEffect(() => {
+        let live = true;
+        setSessions(null);
+        RpcApi.ListCanvasSessionsCommand(TabRpcClient, dir)
+            .then((list) => live && setSessions(list ?? []))
+            .catch((e) => console.debug("canvas sessions not read", dir, e));
+        return () => {
+            live = false;
+        };
+    }, [dir]);
+    return sessions == null ? undefined : overlayLive(sessions, roster, 0).find((s) => sessionPrimary(s) != null);
+}
+
+function MakerButton({ model, session }: { model: AgentsViewModel; session: LiveSession }) {
+    const task = session.task || "(untitled session)";
+    return (
+        <button
+            type="button"
+            data-canvas-viewer-maker={session.live ? "jump" : "resume"}
+            title={`Made in “${task}”: ${session.live ? "go to its agent" : "resume it"}`}
+            onClick={() => runSessionPrimary(model, session)}
+            className="flex h-7 min-w-0 max-w-[300px] flex-initial cursor-pointer items-center gap-[6px] rounded-[7px] border border-edge-strong bg-surface-raised px-[10px] text-[12px] text-secondary hover:border-accent hover:text-accent-soft"
+        >
+            <span className="flex-none font-semibold">{session.live ? "Jump →" : "Resume →"}</span>
+            <span className="min-w-0 truncate text-muted">{task}</span>
+        </button>
+    );
+}
+
 function CanvasViewer({ model, canvas }: { model: AgentsViewModel; canvas: GalleryCanvas }) {
     const g = useAtomValue(canvasGalleryAtom);
     const now = useAtomValue(model.nowAtom);
     const s = useViewerState(canvas);
+    const maker = useCanvasMaker(model, canvas.dir);
     const [measureRef, scrollRef, rect] = useDimensionsWithCallbackRef<HTMLDivElement>();
     const tabsRef = useRef<HTMLDivElement>(null);
     const at = Math.min(Math.max(0, g.board), canvas.boards.length - 1);
@@ -654,6 +694,7 @@ function CanvasViewer({ model, canvas }: { model: AgentsViewModel; canvas: Galle
                     {canvas.topic}
                 </h1>
                 <span className="flex-none whitespace-nowrap text-[12px] text-muted">{changedLine(canvas, now)}</span>
+                {maker != null ? <MakerButton model={model} session={maker} /> : null}
                 <div className="flex-1" />
                 {canvas.boards.length > 0 ? (
                     <>

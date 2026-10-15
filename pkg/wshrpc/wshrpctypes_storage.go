@@ -19,6 +19,9 @@ type StorageCommands interface {
 	CleanStorageCommand(ctx context.Context, data CommandCleanStorageData) (*storage.StorageCleanResult, error)
 	// ListCanvasesCommand lists every registered project's design canvases, newest first (Agent → Canvases)
 	ListCanvasesCommand(ctx context.Context) ([]storage.StorageCanvas, error)
+	// ListCanvasSessionsCommand lists the sessions that made one canvas (its topic folder), the latest first: the
+	// canvas viewer's Resume
+	ListCanvasSessionsCommand(ctx context.Context, dir string) ([]SessionActivity, error)
 }
 
 type CommandCleanStorageData struct {

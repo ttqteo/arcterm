@@ -201,23 +201,29 @@ func (ws *WshServer) GetSessionsActivityCommand(ctx context.Context, data wshrpc
 	}
 	out := make([]wshrpc.SessionActivity, len(sessions))
 	for i, s := range sessions {
-		evs := make([]wshrpc.SessionEvent, len(s.Events))
-		for j, e := range s.Events {
-			evs[j] = wshrpc.SessionEvent{Type: e.Type, Ts: e.Ts, Text: e.Text}
-		}
-		out[i] = wshrpc.SessionActivity{
-			ID: s.ID, Runtime: s.Runtime, ProjectPath: s.ProjectPath, ProjectName: s.ProjectName,
-			Branch: s.Branch, Task: s.Task, Model: s.Model, TokensTotal: s.TokensTotal,
-			LastActiveTs: s.LastActiveTs, ResumeCommand: s.ResumeCommand, ResumeArgs: s.ResumeArgs,
-			TranscriptPath: s.TranscriptPath,
-			Status:         s.Status, StartedTs: s.StartedTs, DurationMs: s.DurationMs, Events: evs,
-		}
+		out[i] = sessionActivityToWire(s)
 	}
 	// unlinked sessions still list, just not under their run
 	if err := linkSessionsToRuns(ctx, out); err != nil {
 		log.Printf("sessions activity: %v", err)
 	}
 	return &wshrpc.CommandGetSessionsActivityRtnData{Sessions: out}, nil
+}
+
+// sessionActivityToWire is a scanned session with its events; Events is never nil, which the frontend would read as
+// null
+func sessionActivityToWire(s agentsessions.SessionInfo) wshrpc.SessionActivity {
+	evs := make([]wshrpc.SessionEvent, len(s.Events))
+	for j, e := range s.Events {
+		evs[j] = wshrpc.SessionEvent{Type: e.Type, Ts: e.Ts, Text: e.Text}
+	}
+	return wshrpc.SessionActivity{
+		ID: s.ID, Runtime: s.Runtime, ProjectPath: s.ProjectPath, ProjectName: s.ProjectName,
+		Branch: s.Branch, Task: s.Task, Model: s.Model, TokensTotal: s.TokensTotal,
+		LastActiveTs: s.LastActiveTs, ResumeCommand: s.ResumeCommand, ResumeArgs: s.ResumeArgs,
+		TranscriptPath: s.TranscriptPath,
+		Status:         s.Status, StartedTs: s.StartedTs, DurationMs: s.DurationMs, Events: evs,
+	}
 }
 
 func cutoffFromEpoch(sec int64) time.Time {

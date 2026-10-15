@@ -25855,6 +25855,85 @@ const canvasGalleryPreview = {
     teardown: (h, ctx) => cgTeardown(h, ctx, "canvas-gallery-preview", CG_PREVIEW_PROJECT),
 };
 
+// --- Agent → Canvas gallery: the viewer offers the session that made the canvas -----------------------------------------
+// The viewer reads the transcripts for the sessions that wrote into the canvas (agentsessions.CanvasSessions) and offers
+// the latest in its header: Resume, or Jump while an agent runs it. A temp project holds one topic; two Claude
+// transcripts this scenario writes under ~/.claude/projects touch it, one with a Write of its Main board, the other, a
+// minute later, with only a Read, which is not making it. The button is not clicked: a resume launches a real claude.
+const CGM_PROJECT = "verify-canvas-gallery-maker";
+const CGM_MAKER = "Draw the maker canvas";
+const CGM_READER = "Only looked at the maker canvas";
+
+function cgmTranscript(dir, cwd, task, at, tool) {
+    const ts = new Date(at).toISOString();
+    const lines = [
+        { type: "user", cwd, timestamp: ts, message: { role: "user", content: task } },
+        {
+            type: "assistant",
+            cwd,
+            timestamp: ts,
+            message: { role: "assistant", model: "claude-opus-5-5", content: [{ type: "tool_use", id: "t1", ...tool }] },
+        },
+    ];
+    writeFileSync(join(dir, `${randomUUID()}.jsonl`), lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+}
+
+const canvasGalleryMaker = {
+    name: "canvas-gallery-maker",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-canvas-gallery-maker-")), registered: false };
+        try {
+            const now = Date.now();
+            ctx.topicDir = cgWriteTopic(ctx.cwd, "maker-beta", { boards: ["Main"], at: now - 60_000 });
+            const board = join(ctx.topicDir, "project", "Main.dc.html");
+            ctx.sessionDir = join(homedir(), ".claude", "projects", `verify-canvas-maker-${randomUUID().slice(0, 8)}`);
+            mkdirSync(ctx.sessionDir, { recursive: true });
+            cgmTranscript(ctx.sessionDir, ctx.cwd, CGM_MAKER, now - 30_000, {
+                name: "Write",
+                input: { file_path: board, content: "<html>" },
+            });
+            cgmTranscript(ctx.sessionDir, ctx.cwd, CGM_READER, now, { name: "Read", input: { file_path: board } });
+            ctx.registered = true;
+            await h.rpc("createproject", { name: CGM_PROJECT, path: ctx.cwd });
+            await waitForProjectInConfig(h, CGM_PROJECT);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. the project, its topic and the transcripts were made", false, ctx.arrangeError);
+            return steps;
+        }
+        await h.ev(`document.querySelector("[data-agent-canvases-open]")?.click()`);
+        const carded = await polishWaitFor(h, `document.querySelector('[data-canvas-card="maker-beta"]') != null`, 10000);
+        await h.ev(`document.querySelector('[data-canvas-card="maker-beta"]')?.click()`);
+        const viewerUp = await polishWaitFor(h, `document.querySelector("[data-canvas-viewer]") != null`, 10000);
+        const offered = await polishWaitFor(h, `document.querySelector("[data-canvas-viewer-maker]") != null`, 15000);
+        const button = await h.ev(`(() => {
+            const b = document.querySelector("[data-canvas-viewer-maker]");
+            return b ? { kind: b.getAttribute("data-canvas-viewer-maker"), text: (b.textContent ?? "").trim() } : null;
+        })()`);
+        await h.shot("cdp-shots/canvas-gallery-maker.png");
+        rec(
+            "1. maker-beta's viewer offers Resume → on the session that wrote its board, not the later one that only read it",
+            carded && viewerUp && offered && button?.kind === "resume" && button.text.includes(CGM_MAKER),
+            JSON.stringify({ carded, viewerUp, offered, button })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await cgTeardown(h, ctx, "canvas-gallery-maker", CGM_PROJECT);
+        if (ctx.sessionDir != null) {
+            cgRemove(ctx.sessionDir);
+        }
+    },
+};
+
 // --- the details rail's sections: Artifacts and Uploads in the order the spec gives, and the tree's Terminals -------
 // docs/superpowers/specs/2026-10-05-agent-sessions-merge-design.md, decision 6. The roster is one dev fixture agent;
 // the terminals are two real plain tabs in two projects; the agent owns a temp canvas with two boards. Uploads is a
@@ -42384,6 +42463,7 @@ export const SCENARIOS = [
     canvasManyBoards,
     canvasGallery,
     canvasGalleryPreview,
+    canvasGalleryMaker,
     agentRailSections,
     railServers,
     agentGrid,

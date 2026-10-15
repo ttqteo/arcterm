@@ -11,6 +11,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/agentsessions"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/orchestrate"
@@ -179,4 +180,15 @@ func (ws *WshServer) CleanStorageCommand(ctx context.Context, data wshrpc.Comman
 // ListCanvasesCommand reads the disk on every call and needs no scanner: the gallery asks once when it opens
 func (ws *WshServer) ListCanvasesCommand(ctx context.Context) ([]storage.StorageCanvas, error) {
 	return storage.ListCanvases(configProjectPaths()), nil
+}
+
+// ListCanvasSessionsCommand reads the transcripts touched since the canvas's oldest file, once per change to each: the
+// viewer asks when it opens
+func (ws *WshServer) ListCanvasSessionsCommand(ctx context.Context, dir string) ([]wshrpc.SessionActivity, error) {
+	found := agentsessions.CanvasSessions(dir)
+	out := make([]wshrpc.SessionActivity, len(found))
+	for i, s := range found {
+		out[i] = sessionActivityToWire(s.SessionInfo)
+	}
+	return out, nil
 }

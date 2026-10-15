@@ -1118,6 +1118,11 @@ func walkCandidates(p provider, windowDays int) []candidate {
 	if windowDays > 0 {
 		cutoff = time.Now().AddDate(0, 0, -windowDays-1)
 	}
+	return walkSince(p, cutoff)
+}
+
+// walkSince collects a provider's candidate files modified at or after cutoff, newest first; a zero cutoff takes all.
+func walkSince(p provider, cutoff time.Time) []candidate {
 	var cands []candidate
 	headlessSlug := agentobserve.HeadlessAgentSlug()
 	_ = filepath.WalkDir(p.root, func(path string, d fs.DirEntry, err error) error {
