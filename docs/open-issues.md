@@ -27,6 +27,15 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-15 (arcterm stays on its own Desktop on a Mac)**
+
+- [ ] (arcterm) With **Fold when you leave** on and arcterm full on Desktop 1: switch to Desktop 2 (Ctrl+→) and wait
+  past the fold delay: arcterm does not fold; `⌘Tab` back takes the screen to Desktop 1, full. Fold with `⌘M`, go to
+  Desktop 2: no Sprout there; `⌘Tab` or the Dock icon takes you to Desktop 1, where it grows back. Make another app
+  full screen (green button) over arcterm: it folds and Sprout shows over that app (the one case `CGSSpaceGetType`
+  must answer 4, not checked by hand yet); click it: arcterm comes back on a Desktop (note which: AppKit picks it).
+  `foreground.rs` desktop_on_screen, `macwindow.rs` folded_behavior.
+
 **2026-10-14 (merge of the Mac's Setup → Skills edit work into main)**
 
 - [ ] (arcterm) Setup → Skills after the merge: a vault skill with accepted lines shows its `+N` chip and, while its
@@ -521,8 +530,8 @@ does not, say what you saw and it becomes a bug row under Actionable.
 
 **2026-10-12 (folded Sprout: a click restores, every Space)**
 
-- [ ] (arcterm) **Folded Sprout on a Mac.** Fold with `⌘M`, then: switch Desktop (Ctrl+→) and go into a full-screen
-  app: Sprout is there on each; click it there: the window comes back on that Space. Fold, `⌘Tab` away and back, press
+- [ ] (arcterm) **Folded Sprout on a Mac.** (Since 2026-10-15 a fold on arcterm's own Desktop stays there; Sprout
+  follows only a fold over a full-screen app, see that day's entry.) Fold, `⌘Tab` away and back, press
   `⌘M`: it comes back. Pass the cursor over Sprout: no card; rest on it: the card (agents, **Ask Jarvis**, **Restore**)
   shows, also while a bubble is up, and **Ask Jarvis** opens the chat. Restore, then make arcterm full screen (green
   button): it still works, nothing threw. `macwindow.rs` set_folded_chrome, `sprout-mini.tsx`, `minihit.ts` nextHover.

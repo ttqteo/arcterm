@@ -125,7 +125,7 @@ describe("startedRunsText", () => {
     });
 });
 
-// the `→` line under the session that started a run
+// the run chip on the session that started a run
 describe("originLinks", () => {
     const dag = (status: string, states: string[]) =>
         ({ status, tasks: states.map((state, i) => ({ id: `t${i}`, state })) }) as unknown as TaskGroup;
@@ -147,6 +147,8 @@ describe("originLinks", () => {
             data: { origintabid: tab },
             ...more,
         }) as RunQueueEntry;
+    const label = (agentId: string, runs: Record<string, OriginRun>, queue: RunQueueEntry[] = []) =>
+        originLinks(agentId, runs, queue)?.label;
 
     it("is nothing when the session started no run and queued no plan", () => {
         expect(originLinks("tab-a", {}, [])).toBeNull();
@@ -154,59 +156,68 @@ describe("originLinks", () => {
         expect(originLinks("tab-a", byId(run("r1", { originId: undefined })), [])).toBeNull();
     });
 
-    it("names a running run by its title and how many of its tasks are done", () => {
+    it("says how many of a running run's tasks are done, and leaves its title to the tooltip", () => {
         const runs = byId(run("r1", { dag: dag("executing", ["done", "skipped", "running", "pending", "pending"]) }));
         expect(originLinks("tab-a", runs, [])).toEqual({
-            text: "→ Title r1 · 2/5",
+            label: "2/5",
+            title: "Title r1 · 2/5",
             target: { kind: "run", runId: "r1" },
         });
     });
 
-    it("names a run with no plan yet by its title alone", () => {
-        expect(originLinks("tab-a", byId(run("r1", { status: "planning" })), [])?.text).toBe("→ Title r1");
+    it("has no words for a run with no plan yet, whose tooltip is its title alone", () => {
+        expect(originLinks("tab-a", byId(run("r1", { status: "planning" })), [])).toEqual({
+            label: "",
+            title: "Title r1",
+            target: { kind: "run", runId: "r1" },
+        });
     });
 
     it("says a queued entry's place among the waiting ones", () => {
         const queue = [entry("q0", {}, "tab-b"), entry("q1")];
         expect(originLinks("tab-a", {}, queue)).toEqual({
-            text: "→ Queued #2",
+            label: "queued #2",
+            title: "Plan q1 · queued #2",
             target: { kind: "queued", entryId: "q1" },
         });
     });
 
     it("says a blocked entry is blocked, which takes no place from the waiting ones", () => {
         const queue = [entry("q1", { state: "blocked", reason: "was held" }), entry("q2", {}, "tab-b")];
-        expect(originLinks("tab-a", {}, queue)?.text).toBe("→ Blocked");
-        expect(originLinks("tab-b", {}, queue)?.text).toBe("→ Queued #1");
+        expect(label("tab-a", {}, queue)).toBe("blocked");
+        expect(label("tab-b", {}, queue)).toBe("queued #1");
     });
 
     it("says merged once the run's branch has landed", () => {
         const runs = byId(run("r1", { status: "done", land: { state: "landed" }, dag: dag("done", ["done"]) }));
-        expect(originLinks("tab-a", runs, [])?.text).toBe("→ merged");
+        expect(originLinks("tab-a", runs, [])).toMatchObject({ label: "merged", title: "Title r1 · merged" });
     });
 
     it("says held when the run's branch is held back", () => {
         const runs = byId(
             run("r1", { status: "done", land: { state: "held", reason: "dirty" }, dag: dag("done", ["done"]) })
         );
-        expect(originLinks("tab-a", runs, [])?.text).toBe("→ held");
+        expect(label("tab-a", runs)).toBe("held");
     });
 
     it("reads a finished run that landed nothing, and a cancelled one, by what they are", () => {
-        expect(originLinks("tab-a", byId(run("r1", { status: "done" })), [])?.text).toBe("→ done");
-        expect(originLinks("tab-a", byId(run("r1", { status: "cancelled" })), [])?.text).toBe("→ cancelled");
+        expect(label("tab-a", byId(run("r1", { status: "done" })))).toBe("done");
+        expect(label("tab-a", byId(run("r1", { status: "cancelled" })))).toBe("cancelled");
         // a done run with a branch to land and no land yet is still on its way in
-        expect(originLinks("tab-a", byId(run("r1", { status: "done", landPath: "/w/wave-r1" })), [])?.text).toBe(
-            "→ Title r1"
-        );
+        expect(label("tab-a", byId(run("r1", { status: "done", landPath: "/w/wave-r1" })))).toBe("");
     });
 
     it("counts two or more as N runs and points at the newest", () => {
         const runs = byId(run("r1", { createdTs: 100 }), run("r2", { createdTs: 300 }));
-        expect(originLinks("tab-a", runs, [])).toEqual({ text: "→ 2 runs", target: { kind: "run", runId: "r2" } });
+        expect(originLinks("tab-a", runs, [])).toEqual({
+            label: "2 runs",
+            title: "2 runs · newest: Title r2",
+            target: { kind: "run", runId: "r2" },
+        });
         // a run and a queued entry are two links; the entry queued last is the newest
         expect(originLinks("tab-a", byId(run("r1", { createdTs: 100 })), [entry("q1", { queuedts: 500 })])).toEqual({
-            text: "→ 2 runs",
+            label: "2 runs",
+            title: "2 runs · newest: Plan q1 · queued #1",
             target: { kind: "queued", entryId: "q1" },
         });
     });

@@ -14,6 +14,9 @@ type AskCommands interface {
 	AskCommand(ctx context.Context, data CommandAskData) (AskRtnData, error)
 	AnswerAgentCommand(ctx context.Context, data CommandAnswerAgentData) error
 	AgentAskClearCommand(ctx context.Context, oref string) error
+	// AgentAskPendingCommand is the id of the ask pending on a block, "" when none: the cockpit checks the ask it
+	// shows against it when the agent goes idle
+	AgentAskPendingCommand(ctx context.Context, oref string) (string, error)
 }
 
 type CommandAskData struct {

@@ -45,11 +45,16 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- **The link between a session and its run is shorter**: under the session it is a small run chip on its second line
+  (`0/7`, `queued #2`, `merged`, `2 runs`) instead of a line with the run's name, and the run's row shows a ↰ instead
+  of `from <session>`. The names are in their tooltips, and a click still goes to the other.
 - **⌘R redraws the terminal** on a Mac: garbled text in an agent or terminal pane repaints and the TUI draws
   itself again, as the header menu's Redraw does, from inside the terminal too.
 - **A tidier Ideas list**: when a later decision replaces an earlier line, the agent drops or rewrites the old one, and
   it no longer records status (commits, estimates) as ideas, so the list shows where a brainstorm stands. Each line
   holds the gist in a few words, leaving the details to the spec, and the agent adds nothing when nothing new came up.
+- **An idea's Edit and Drop buttons sit at its bottom right**, beside the turn line, so hovering a line no longer
+  covers the end of its text.
 - **Wider side panels in Setup**: the file panel on Setup → Project takes about half the window, and the skill panel on
   Setup → Skills grows too, so a file reads at a comfortable width.
 - **Canvases is now the Canvas gallery**: the sidebar row, the gallery's title and the `Ctrl+G` `v` command use the new
@@ -62,6 +67,15 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- **On macOS arcterm stays on its own Desktop**: switching to another Desktop no longer folds it into Sprout, and a
+  folded Sprout stays on arcterm's Desktop, so opening it no longer moved arcterm to the Desktop you were on. Sprout
+  still follows you over a full-screen app.
+- **An answered question no longer leaves its agent stuck on asking**: a question's card could stay behind after you
+  answered it (most often on a Claude Team or Enterprise account), hidden while the agent worked and back as "asking"
+  (with a Waiting on you card) every time it finished a turn, until the app reloaded. An agent that finishes a turn
+  now drops any card the server no longer holds.
+- **A sleeping session never reads as asking**: a question card left behind on a session that has since gone to sleep
+  no longer marks it "asking" in the sidebar, where it stood above the agent that really was waiting on you.
 - **Heavy jobs no longer pile up on a Mac short of memory**: under yellow memory pressure the Jobs queue runs one
   heavy command at a time, where it used to let in another every minute (three typechecks on an 8 GB Mac swapped
   for a quarter of an hour), and while one is still starting up the next joins it only when the free RAM fits both.

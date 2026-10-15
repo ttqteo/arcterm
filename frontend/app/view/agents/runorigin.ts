@@ -70,7 +70,7 @@ export type OriginRun = Pick<
 >;
 
 // originRunInfo is a run the lineage has no agent for (held in planning, queued behind others, or over with its
-// sessions closed) as the tree reads it, so a session's `→` line still finds it.
+// sessions closed) as the tree reads it, so a session's run chip still finds it.
 export function originRunInfo(run: Run, dag: TaskGroup | undefined): OriginRun {
     return {
         runId: run.oid,
@@ -84,34 +84,36 @@ export function originRunInfo(run: Run, dag: TaskGroup | undefined): OriginRun {
     };
 }
 
-// where a click on a session's `→` line goes: a run (its row on the tree, or its sheet), or a queued entry's row
+// where a click on a session's run chip goes: a run (its row on the tree, or its sheet), or a queued entry's row
 export type OriginLinkTarget = { kind: "run"; runId: string } | { kind: "queued"; entryId: string };
-export type OriginLink = { text: string; target: OriginLinkTarget };
+// label is the chip's few words beside the run glyph (empty when the glyph says it all); title names the run in full
+export type OriginLink = { label: string; title: string; target: OriginLinkTarget };
 
-// how far a run is, in the words of the `→` line: merged or held once it has landed, else its title and the plan's
-// done tasks out of all of them
-function runLinkText(run: OriginRun): string {
+// how far a run is, in the chip's words: merged or held once it has landed, else the plan's done tasks out of all of
+// them. The run's title is only the tooltip's: the run's own row already says it
+function runLink(run: OriginRun): { label: string; title: string } {
+    const said = (label: string) => ({ label, title: label ? `${run.title} · ${label}` : run.title });
     if (run.land?.state === "landed") {
-        return "→ merged";
+        return said("merged");
     }
     if (run.land?.state === "held") {
-        return "→ held";
+        return said("held");
     }
     const status = run.dag?.status ?? run.status;
     if (status === "cancelled") {
-        return "→ cancelled";
+        return said("cancelled");
     }
     // done with no branch to land: nothing is still on its way in. With one, the land is what remains
     if (status === "done" && !run.land && !run.landPath) {
-        return "→ done";
+        return said("done");
     }
     const { done, total } = runProgress(run.dag);
-    return total > 0 ? `→ ${run.title} · ${done}/${total}` : `→ ${run.title}`;
+    return said(total > 0 ? `${done}/${total}` : "");
 }
 
-/** Pure: the `→` line under the session `agentId` (its tab id): where the runs it started with `wsh runs start` stand,
- *  and the plans it queued that have not started. One link reads as itself (`→ Setup · 3/5`, `→ Queued #2`,
- *  `→ merged`, `→ held`); two or more read `→ N runs` and point at the newest. Null when there is none. */
+/** Pure: the run chip on the session `agentId`'s (its tab id) meta line: where the runs it started with
+ *  `wsh runs start` stand, and the plans it queued that have not started. One link reads as itself (`3/5`,
+ *  `queued #2`, `merged`, `held`); two or more read `2 runs` and point at the newest. Null when there is none. */
 export function originLinks(
     agentId: string,
     runs: Readonly<Record<string, OriginRun>>,
@@ -120,13 +122,15 @@ export function originLinks(
     const links: (OriginLink & { ts: number })[] = [];
     for (const run of Object.values(runs)) {
         if (run.originId === agentId) {
-            links.push({ text: runLinkText(run), target: { kind: "run", runId: run.runId }, ts: run.createdTs ?? 0 });
+            links.push({ ...runLink(run), target: { kind: "run", runId: run.runId }, ts: run.createdTs ?? 0 });
         }
     }
     for (const row of queuedRows(queue, {})) {
         if (row.entry.data.origintabid === agentId) {
+            const label = row.place == null ? "blocked" : `queued #${row.place}`;
             links.push({
-                text: row.place == null ? "→ Blocked" : `→ Queued #${row.place}`,
+                label,
+                title: `${row.entry.title} · ${label}`,
                 target: { kind: "queued", entryId: row.entry.id },
                 ts: row.entry.queuedts,
             });
@@ -136,10 +140,15 @@ export function originLinks(
         return null;
     }
     if (links.length === 1) {
-        return { text: links[0].text, target: links[0].target };
+        const { label, title, target } = links[0];
+        return { label, title, target };
     }
     const newest = links.reduce((a, b) => (b.ts > a.ts ? b : a));
-    return { text: `→ ${links.length} runs`, target: newest.target };
+    return {
+        label: `${links.length} runs`,
+        title: `${links.length} runs · newest: ${newest.title}`,
+        target: newest.target,
+    };
 }
 
 /** Pure: the name a run's row says it came `from`: the session that started it, while its tab is in the roster. Null

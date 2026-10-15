@@ -31,6 +31,7 @@ import {
     isQuiet,
     isRecentlyIdle,
     latestMessageText,
+    liveAsk,
     liveWindowAgents,
     mergeOrder,
     mergePendingLaunches,
@@ -595,6 +596,20 @@ describe("isAskStale", () => {
         expect(isAskStale(1_000, 500, "working")).toBe(false);
         expect(isAskStale(undefined, 2_000, "working")).toBe(false);
         expect(isAskStale(1_000, undefined, "working")).toBe(false);
+    });
+});
+
+describe("liveAsk", () => {
+    const ask = { oref: "block:b", askid: "a1", ts: 1_000, questions: [] } as AgentAskData;
+    it("keeps a pending ask while the agent is awake", () => {
+        expect(liveAsk(ask, { ts: 2_000, state: "idle" }, false)).toBe(ask);
+    });
+    it("drops an ask a sleeping agent's block still holds: its process is gone, so nothing is waiting on you", () => {
+        expect(liveAsk(ask, { ts: 2_000, state: "idle" }, true)).toBeNull();
+    });
+    it("drops a stale ask, and passes no ask through", () => {
+        expect(liveAsk(ask, { ts: 5_000, state: "working" }, false)).toBeNull();
+        expect(liveAsk(null, { ts: 2_000, state: "idle" }, false)).toBeNull();
     });
 });
 

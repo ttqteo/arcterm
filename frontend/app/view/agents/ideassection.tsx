@@ -166,10 +166,11 @@ function IdeaRow({
                     ) : null}
                 </div>
             </div>
-            {/* over the row's top right, so a hidden set of actions takes no width from the text */}
+            {/* over the row's bottom right, on the meta line, so a hidden set of actions takes no width from the text
+                and a shown one covers none of it */}
             <div
                 className={cn(
-                    "absolute right-[6px] top-[3px] flex gap-px rounded-[6px]",
+                    "absolute bottom-[2px] right-[6px] flex gap-px rounded-[6px]",
                     checked ? "bg-surface-selected" : "bg-surface-hover",
                     onHover
                 )}

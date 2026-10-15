@@ -39,6 +39,7 @@ import {
     Columns2,
     Copy,
     CopyPlus,
+    CornerUpLeft,
     ExternalLink,
     FileDiff,
     Folder,
@@ -79,7 +80,7 @@ import { dockedTerminalAtom } from "./railstore";
 import { renamingRowAtom } from "./rowrenameatom";
 import { cancellingRunIdsAtom } from "./runactions";
 import { runEventsAtom } from "./runeventstore";
-import { originLinks } from "./runorigin";
+import { originLinks, type OriginLink } from "./runorigin";
 import { openOriginLink, openOriginSession, useOriginName, useOriginRuns } from "./runoriginstore";
 import { isBlockedEntry, queuedMeta, queuedTooltip, type QueuedRow } from "./runqueuemodel";
 import {
@@ -626,9 +627,9 @@ const PROGRESS_TEXT: Record<StageTone, string> = {
     done: "text-muted",
 };
 
-// `from <session>` on a run's second line: the session that started it with `wsh runs start`. A click focuses that
-// session (the row's own click is for the row). Rendered only while the session's tab is in the roster. It shrinks
-// before the status or progress it follows, which are the line's own words.
+// the ↰ on a run's second line: the session that started it with `wsh runs start`, named in its tooltip only, since
+// that session's own row says it. A click focuses that session (the row's own click is for the row). Rendered only
+// while the session's tab is in the roster.
 function OriginFrom({ model, run }: { model: AgentsViewModel; run: Pick<RunInfo, "originId"> }) {
     const name = useOriginName(model, run.originId);
     if (name == null || !run.originId) {
@@ -640,13 +641,37 @@ function OriginFrom({ model, run }: { model: AgentsViewModel; run: Pick<RunInfo,
             type="button"
             data-origin-from={tabId}
             title={`Started from ${name}`}
+            aria-label={`Started from ${name}`}
             onClick={(e) => {
                 e.stopPropagation();
                 openOriginSession(model, tabId);
             }}
-            className="min-w-0 shrink-[4] cursor-pointer truncate text-left text-ink-faint hover:text-primary"
+            className="flex flex-none cursor-pointer items-center text-ink-faint hover:text-primary"
         >
-            from {name}
+            <CornerUpLeft size={11} strokeWidth={2} aria-hidden />
+        </button>
+    );
+}
+
+// the runs and queued plans a session started, as one chip on its meta line: the run glyph and where they stand
+// (`3/5`, `queued #2`, `merged`, `2 runs`), the run named in full in its tooltip, since the run's own row says it. A
+// click goes to the run (or its queued row). Its own ink: a sleeping row's dimming leaves it be, as the person may
+// still be talking to that session.
+function OriginChip({ model, link }: { model: AgentsViewModel; link: OriginLink }) {
+    return (
+        <button
+            type="button"
+            data-origin-link
+            title={link.title}
+            aria-label={link.title}
+            onClick={(e) => {
+                e.stopPropagation();
+                openOriginLink(model, link.target);
+            }}
+            className="flex flex-none cursor-pointer items-center gap-[3px] text-muted hover:text-primary"
+        >
+            <Workflow size={11} strokeWidth={1.8} aria-hidden className="flex-none" />
+            {link.label ? <span>{link.label}</span> : null}
         </button>
     );
 }
@@ -782,9 +807,10 @@ function ParentRow({
     // (Servers and the rail's Background tasks list them), but Close waits for them, since closing the agent would end them
     const background = runningBackgroundTasks(useAtomValue(backgroundTasksByIdAtom)[agent.id]);
     const done = !agent.sleeping && doneSuggestion(agent, unreadCount, lineageRuns, background.length, queue);
-    // where the runs and queued plans it started stand: one `→` line under its name, which never moves the row
+    // where the runs and queued plans it started stand: one chip at the head of its meta line
     const originRuns = useOriginRuns(agent, lineageRuns);
     const originLink = originLinks(agent.id, originRuns, queue);
+    const originChip = originLink != null ? <OriginChip model={model} link={originLink} /> : null;
     // a sleeping row steps back to the faintest ink, so it reads apart from an idle one at a glance; being chosen or
     // holding unread turns brings its name back
     const dim = agent.sleeping != null && !selected;
@@ -999,30 +1025,25 @@ function ParentRow({
                         {lead ? subsChip : null}
                     </div>
                 )}
-                {/* the runs and queued plans this session started: one line, not dimmed with a sleeping row, since
-                    the person may still be talking to it. A click goes to the run (or its queued row) */}
-                {originLink != null && !renaming ? (
-                    <button
-                        type="button"
-                        data-origin-link
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            openOriginLink(model, originLink.target);
-                        }}
-                        className={cn(
-                            "mt-[2px] block min-w-0 max-w-full cursor-pointer truncate text-left text-[11px] text-muted hover:text-primary",
-                            UNDER_GLYPH
-                        )}
-                    >
-                        {originLink.text}
-                    </button>
-                ) : null}
                 {lead ? (
-                    <RunSubline model={model} run={lead.run} open={lead.open} live={lead.live} trailing={badges} />
+                    <RunSubline
+                        model={model}
+                        run={lead.run}
+                        open={lead.open}
+                        live={lead.live}
+                        trailing={
+                            <>
+                                {originChip}
+                                {badges}
+                            </>
+                        }
+                    />
                 ) : (
-                    // under the name: its model, a branch other than the default, its subagents chip and its badges
-                    // @container: the subagents chip drops its word when this line is narrow, and the model truncates
+                    // under the name: the runs it started, its model, a branch other than the default, its subagents
+                    // chip and its badges. @container: the subagents chip drops its word when this line is narrow, and
+                    // the model truncates
                     <div className={cn(CONVERSATION_META, "@container mt-[3px]", UNDER_GLYPH, dim && "text-ink-faint")}>
+                        {originChip}
                         {shownModel ? <span className="min-w-0 truncate">{shownModel}</span> : null}
                         {shownModel && shownBranch ? (
                             <span aria-hidden className="flex-none text-ink-faint">
