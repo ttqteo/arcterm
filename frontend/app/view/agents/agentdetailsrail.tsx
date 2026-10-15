@@ -1013,7 +1013,8 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         ),
         bgtasks: () => (
             <div className="flex flex-col gap-[7px]">
-                {bgTasks.map((t) => (
+                {/* newest first: the transcript gives them in the order they started */}
+                {[...bgTasks].reverse().map((t) => (
                     <BackgroundTaskRow
                         key={t.toolUseId}
                         task={t}
