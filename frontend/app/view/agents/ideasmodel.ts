@@ -128,6 +128,43 @@ export function ideaSections(groups: IdeaGroups): IdeaSection[] {
     return sections.filter((s) => s.items.length > 0);
 }
 
+// sectionFoldKey names a section the user can fold: a topic (by its key, so "RAM" and "ram" fold together) or Other.
+// Open and the three kind groups have none: what waits on the user, and a list too small to need folding, always show.
+export function sectionFoldKey(sec: IdeaSection): string | null {
+    if (sec.key === "topic") {
+        return `topic:${sec.label.trim().toLocaleLowerCase()}`;
+    }
+    return sec.key === "other" ? "other" : null;
+}
+
+// sectionOpen: a section with no fold key always shows; a foldable one is as the user last left it (`overrides`, by fold
+// key), else open only while it holds the newest of the foldable sections' ideas, so the part of the brainstorm under
+// way stays open and the ones it has moved on from fold
+export function sectionOpen(sec: IdeaSection, sections: IdeaSection[], overrides: Record<string, boolean>): boolean {
+    const key = sectionFoldKey(sec);
+    if (key == null) {
+        return true;
+    }
+    if (key in overrides) {
+        return overrides[key];
+    }
+    let newest: { key: string; idea: Idea } | null = null;
+    for (const s of sections) {
+        const k = sectionFoldKey(s);
+        for (const idea of k == null ? [] : s.items) {
+            if (newest == null || newestFirst(idea, newest.idea) < 0) {
+                newest = { key: k, idea };
+            }
+        }
+    }
+    return newest?.key === key;
+}
+
+// a row's hover tip: its whole text, which the row clamps to two lines, then its meta on a line of its own
+export function ideaTip(idea: Idea, withTopic: boolean, fresh: boolean): string {
+    return `${idea.text}\n${ideaMeta(idea, withTopic)}${fresh ? " · new" : ""}`;
+}
+
 // an idea is new while it is live and was added after the user last marked the list read
 export function isFresh(idea: Idea, seenAt: number): boolean {
     return !idea.dropped && idea.ts > seenAt;

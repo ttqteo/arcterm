@@ -26,6 +26,10 @@ export const ideasAtom = atomFamily(
     (_sessionId: string) => atom<SessionIdeas | null>(null) as PrimitiveAtom<SessionIdeas | null>
 );
 
+// the topics the user folded or opened by hand, per session (ideasmodel.sectionOpen reads them over its default): kept
+// here and not in the section, which unmounts each time the rail closes it or shows another agent
+export const ideasFoldAtom = atomFamily((_sessionId: string) => atom<Record<string, boolean>>({}));
+
 // the sessions whose atom has been read: an event only reloads those (atomFamily cannot be enumerated)
 const known = new Set<string>();
 // a reload that overtakes an earlier one must not be overwritten by the earlier one's late answer

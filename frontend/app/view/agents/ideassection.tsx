@@ -2,27 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The Ideas section of an agent session: what was decided, floated and left open in a brainstorm, from the agent's
-// `wsh idea add` and the user's own hand. Rows group as Decided / Ideas / Open, newest first; hovering one offers Edit,
-// Mark as decided and Drop, and a click on it (or its checkbox) picks rows to Merge or Drop together; Dropped folds at
-// the end with Restore;
-// Add an idea takes a line of the user's own. The rail draws the header row (IdeasHeaderExtra adds "N new" and Mark
-// read to it); the section marks the list read when it goes away (closed, another tab, another agent).
+// `wsh idea add` and the user's own hand. Rows group as Decided / Ideas / Open, or by topic once ideas carry one (the
+// topics other than the newest fold); newest first. A row is at most two lines, its kind told by its ink (an open
+// question brightest, a decision dimmest, with a small check); hovering one shows its whole text and meta in the tip at
+// its left and offers Edit, Mark as decided and Drop, and a click on it picks rows to Merge or Drop together; Dropped
+// folds at the end with Restore; Add an idea takes a line of the user's own. The rail draws the header row
+// (IdeasHeaderExtra adds "N new" and Mark read to it); the section marks the list read when it goes away (closed,
+// another tab, another agent).
 // Every control carries a data-ideas-* attribute for the CDP scenario `ideas-rail`.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
-import { useAtomValue } from "jotai";
-import {
-    Check,
-    ChevronRight,
-    CircleCheck,
-    CircleHelp,
-    Lightbulb,
-    Pencil,
-    Plus,
-    X,
-    type LucideIcon,
-} from "lucide-react";
+import { useAtom, useAtomValue } from "jotai";
+import { ChevronDown, ChevronRight, CircleCheck, Lightbulb, Pencil, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { inputRequestLive } from "./ideacapture";
 import {
@@ -34,19 +26,31 @@ import {
     ideaKindOf,
     ideaMeta,
     ideaSections,
+    ideaTip,
     isFresh,
     planEdit,
     pruneChecked,
+    sectionFoldKey,
+    sectionOpen,
     selectionLabel,
     toggleChecked,
     type IdeaKind,
 } from "./ideasmodel";
-import { addIdea, ideasAtom, ideasInputRequestAtom, markIdeasRead, updateIdeas, useSessionIdeas } from "./ideasstore";
+import {
+    addIdea,
+    ideasAtom,
+    ideasFoldAtom,
+    ideasInputRequestAtom,
+    markIdeasRead,
+    updateIdeas,
+    useSessionIdeas,
+} from "./ideasstore";
 
-const KIND_ICON: Record<IdeaKind, LucideIcon> = {
-    decision: CircleCheck,
-    idea: Lightbulb,
-    question: CircleHelp,
+// what the user acts on reads brightest: an open question, then an idea still weighed, then a settled decision
+const KIND_INK: Record<IdeaKind, string> = {
+    question: "text-primary",
+    idea: "text-secondary",
+    decision: "text-muted",
 };
 
 const ACTION =
@@ -77,31 +81,11 @@ export function IdeasHeaderExtra({ sessionId }: { sessionId: string }) {
     );
 }
 
-function Checkbox({ checked, label, onToggle }: { checked: boolean; label: string; onToggle: () => void }) {
-    return (
-        <button
-            type="button"
-            role="checkbox"
-            aria-checked={checked}
-            aria-label={label}
-            data-ideas-check
-            onClick={onToggle}
-            className={cn(
-                "flex h-[13px] w-[13px] cursor-pointer items-center justify-center rounded-[3px] p-0 outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                checked ? "border-0 bg-primary text-background" : "border border-muted bg-transparent"
-            )}
-        >
-            {checked ? <Check size={10} strokeWidth={3} aria-hidden /> : null}
-        </button>
-    );
-}
-
 function IdeaRow({
     idea,
     withTopic,
     fresh,
     checked,
-    selecting,
     onToggle,
     onEdit,
     onDecide,
@@ -111,16 +95,15 @@ function IdeaRow({
     withTopic: boolean; // the list is laid out by topic and this row sits outside its topic's section
     fresh: boolean;
     checked: boolean;
-    selecting: boolean; // some row is checked: every row offers its checkbox in place of its icon
     onToggle: () => void;
     onEdit: () => void;
     onDecide: () => void;
     onDrop: () => void;
 }) {
-    const Icon = KIND_ICON[ideaKindOf(idea)];
+    const kind = ideaKindOf(idea);
     const onHover = "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100";
-    // a click anywhere on the card picks it, as its checkbox does; not one on its own buttons (the checkbox among
-    // them), nor the end of a drag that selected some of its text
+    // a click anywhere on the card picks it; not one on its own buttons, nor the end of a drag that selected some of
+    // its text
     const onCardClick = (e: MouseEvent<HTMLDivElement>) => {
         if ((e.target as HTMLElement).closest("button") != null) {
             return;
@@ -131,60 +114,62 @@ function IdeaRow({
         }
         onToggle();
     };
+    const onTextKey = (e: KeyboardEvent<HTMLDivElement>) => {
+        if (e.key === " ") {
+            e.preventDefault();
+            onToggle();
+        }
+    };
     return (
         <div
             data-ideas-row={idea.id}
-            data-kind={ideaKindOf(idea)}
+            data-kind={kind}
             data-fresh={fresh ? "true" : "false"}
+            data-ideas-meta={ideaMeta(idea, withTopic)}
+            title={ideaTip(idea, withTopic, fresh)}
+            data-tip-placement="left-start"
             onClick={onCardClick}
             className={cn(
-                "group relative flex cursor-pointer items-start gap-[8px] rounded-[6px] py-[5px] pl-[8px] pr-[6px]",
-                checked ? "bg-surface-selected" : "hover:bg-surface-hover focus-within:bg-surface-hover"
+                "group relative flex cursor-pointer items-start gap-[6px] rounded-[6px] px-[8px] py-[3px]",
+                checked
+                    ? "bg-surface-selected ring-1 ring-edge-strong ring-inset"
+                    : "hover:bg-surface-hover focus-within:bg-surface-hover"
             )}
         >
-            <span className="relative mt-[2px] h-[13px] w-[13px] flex-none">
-                <Icon
-                    size={12}
-                    strokeWidth={1.8}
-                    aria-hidden
-                    className={cn(
-                        "absolute left-0 top-px text-muted",
-                        selecting ? "opacity-0" : "group-hover:opacity-0 group-focus-within:opacity-0"
-                    )}
-                />
-                <span
-                    className={cn(
-                        "absolute inset-0 flex items-center justify-center",
-                        selecting ? "opacity-100" : onHover
-                    )}
-                >
-                    <Checkbox checked={checked} label={`Select: ${idea.text}`} onToggle={onToggle} />
-                </span>
-            </span>
-            <div className="min-w-0 flex-1">
-                <div
-                    data-ideas-text
-                    className="whitespace-pre-wrap break-words text-[12.5px] leading-[1.45] text-ink-hi"
-                >
-                    {idea.text}
-                </div>
-                <div className="mt-px flex items-center gap-[6px] text-[10.5px] tabular-nums text-muted">
-                    <span data-ideas-meta>{ideaMeta(idea, withTopic)}</span>
-                    {fresh ? (
-                        <span
-                            data-ideas-newpill
-                            className="rounded-full bg-primary/5 px-[5px] font-medium text-secondary"
-                        >
-                            New
-                        </span>
-                    ) : null}
-                </div>
+            {/* the checkbox a keyboard and a screen reader reach; a pick shows as the card's fill and ring */}
+            <div
+                data-ideas-text
+                role="checkbox"
+                aria-checked={checked}
+                tabIndex={0}
+                onKeyDown={onTextKey}
+                className={cn(
+                    "line-clamp-2 min-w-0 flex-1 whitespace-pre-wrap break-words rounded-[3px] text-[12.5px] leading-[1.45] outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                    checked ? "text-primary" : KIND_INK[kind]
+                )}
+            >
+                {kind === "decision" ? (
+                    <CircleCheck
+                        size={11}
+                        strokeWidth={1.8}
+                        role="img"
+                        aria-label="Decided"
+                        className="mr-[5px] inline-block align-[-1.5px] text-ink-faint"
+                    />
+                ) : null}
+                {idea.text}
             </div>
-            {/* over the row's bottom right, on the meta line, so a hidden set of actions takes no width from the text
-                and a shown one covers none of it */}
+            {fresh ? (
+                <span
+                    data-ideas-newpill
+                    aria-label="New"
+                    className="mt-[7px] h-[5px] w-[5px] flex-none rounded-full bg-primary"
+                />
+            ) : null}
+            {/* over the row's bottom right, so a hidden set of actions takes no width from the text */}
             <div
                 className={cn(
-                    "absolute bottom-[2px] right-[6px] flex gap-px rounded-[6px]",
+                    "absolute bottom-px right-[6px] flex gap-px rounded-[6px]",
                     checked ? "bg-surface-selected" : "bg-surface-hover",
                     onHover
                 )}
@@ -444,11 +429,13 @@ function AddIdea({ sessionId }: { sessionId: string }) {
 export function IdeasSection({ sessionId, quiet }: { sessionId: string; quiet?: boolean }) {
     const ideas = useAtomValue(ideasAtom(sessionId));
     const groups = groupIdeas(ideas);
+    const sections = ideaSections(groups);
     const { fresh } = ideaCounts(ideas);
     const seenAt = ideas?.seenat ?? 0;
     const [checked, setChecked] = useState<string[]>([]);
     const [editing, setEditing] = useState<string | null>(null);
     const [droppedOpen, setDroppedOpen] = useState(false);
+    const [folds, setFolds] = useAtom(ideasFoldAtom(sessionId));
 
     // a checked idea that was dropped, merged away or deleted by an agent is no longer picked
     useEffect(() => {
@@ -509,7 +496,6 @@ export function IdeasSection({ sessionId, quiet }: { sessionId: string; quiet?: 
                 withTopic={withTopic}
                 fresh={!quiet && isFresh(idea, seenAt)}
                 checked={checked.includes(idea.id)}
-                selecting={checked.length > 0}
                 onToggle={() => setChecked((prev) => toggleChecked(prev, idea.id))}
                 onEdit={() => setEditing(idea.id)}
                 onDecide={() => void updateIdeas(sessionId, { op: "kind", ids: [idea.id], newkind: "decision" })}
@@ -533,21 +519,59 @@ export function IdeasSection({ sessionId, quiet }: { sessionId: string; quiet?: 
                     onClear={clear}
                 />
             ) : null}
-            {ideaSections(groups).map((sec) => (
-                <div
-                    key={sec.key === "topic" ? `topic:${sec.label}` : sec.key}
-                    data-ideas-group={sec.key}
-                    data-topic={sec.key === "topic" ? sec.label : undefined}
-                    data-count={sec.items.length}
-                    className="flex flex-col gap-px"
-                >
-                    <div className="flex min-w-0 items-center gap-[6px] pb-[2px] pl-[29px] pr-[8px] pt-[6px]">
+            {sections.map((sec) => {
+                const foldKey = sectionFoldKey(sec);
+                const open = sectionOpen(sec, sections, folds);
+                const heading = (
+                    <>
                         <span className="truncate text-[11px] font-medium text-muted">{sec.label}</span>
                         <span className="flex-none text-[10.5px] tabular-nums text-ink-faint">{sec.items.length}</span>
+                    </>
+                );
+                return (
+                    <div
+                        key={sec.key === "topic" ? `topic:${sec.label}` : sec.key}
+                        data-ideas-group={sec.key}
+                        data-topic={sec.key === "topic" ? sec.label : undefined}
+                        data-count={sec.items.length}
+                        data-open={open ? "true" : "false"}
+                        className="flex flex-col gap-px"
+                    >
+                        {foldKey == null ? (
+                            <div className="flex min-w-0 items-center gap-[6px] px-[8px] pb-[2px] pt-[6px]">
+                                {heading}
+                            </div>
+                        ) : (
+                            <button
+                                type="button"
+                                data-ideas-fold
+                                aria-expanded={open}
+                                onClick={() => setFolds((prev) => ({ ...prev, [foldKey]: !open }))}
+                                className="flex w-full min-w-0 cursor-pointer items-center gap-[6px] rounded-[6px] border-0 bg-transparent px-[8px] pb-[2px] pt-[6px] text-left outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            >
+                                {heading}
+                                <ChevronDown
+                                    size={11}
+                                    strokeWidth={2}
+                                    aria-hidden
+                                    className={cn(
+                                        "flex-none text-ink-faint transition-transform",
+                                        !open && "-rotate-90"
+                                    )}
+                                />
+                                {!open && !quiet && sec.items.some((i) => isFresh(i, seenAt)) ? (
+                                    <span
+                                        data-ideas-folddot
+                                        aria-label="Has new"
+                                        className="h-[5px] w-[5px] flex-none rounded-full bg-primary"
+                                    />
+                                ) : null}
+                            </button>
+                        )}
+                        {open ? sec.items.map((idea) => row(idea, sec.topical && sec.key === "question")) : null}
                     </div>
-                    {sec.items.map((idea) => row(idea, sec.topical && sec.key === "question"))}
-                </div>
-            ))}
+                );
+            })}
             {groups.dropped.length > 0 ? (
                 <div data-ideas-group="dropped" data-count={groups.dropped.length} className="flex flex-col gap-px">
                     <button
@@ -555,16 +579,19 @@ export function IdeasSection({ sessionId, quiet }: { sessionId: string; quiet?: 
                         data-ideas-dropped
                         aria-expanded={droppedOpen}
                         onClick={() => setDroppedOpen((v) => !v)}
-                        className="flex w-full cursor-pointer items-center gap-[6px] rounded-[6px] border-0 bg-transparent pb-[2px] pl-[8px] pr-[8px] pt-[8px] text-left outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        className="flex w-full cursor-pointer items-center gap-[6px] rounded-[6px] border-0 bg-transparent px-[8px] pb-[2px] pt-[8px] text-left outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
-                        <ChevronRight
+                        <span className="text-[11px] font-medium text-muted">Dropped</span>
+                        <span className="text-[10.5px] tabular-nums text-ink-faint">{groups.dropped.length}</span>
+                        <ChevronDown
                             size={11}
                             strokeWidth={2}
                             aria-hidden
-                            className={cn("flex-none text-ink-faint transition-transform", droppedOpen && "rotate-90")}
+                            className={cn(
+                                "flex-none text-ink-faint transition-transform",
+                                !droppedOpen && "-rotate-90"
+                            )}
                         />
-                        <span className="text-[11px] font-medium text-muted">Dropped</span>
-                        <span className="text-[10.5px] tabular-nums text-ink-faint">{groups.dropped.length}</span>
                     </button>
                     {droppedOpen
                         ? groups.dropped.map((idea) => (
@@ -572,7 +599,7 @@ export function IdeasSection({ sessionId, quiet }: { sessionId: string; quiet?: 
                                   key={idea.id}
                                   data-ideas-row={idea.id}
                                   data-dropped="true"
-                                  className="flex items-start gap-[8px] rounded-[6px] py-[5px] pl-[29px] pr-[6px]"
+                                  className="flex items-start gap-[8px] rounded-[6px] px-[8px] py-[5px]"
                               >
                                   <div className="min-w-0 flex-1">
                                       <div

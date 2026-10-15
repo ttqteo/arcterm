@@ -26,8 +26,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
-- **Pick an idea by clicking its card**: a click anywhere on a line in Ideas checks it for Merge or Drop, as its
-  checkbox does, and a checked box fills in bright. Editing an idea, the kind you chose stands out from the other two.
+- **A calmer Ideas list**: each idea takes at most two lines, an open question reads brightest and a decision dimmest,
+  and hovering one shows its whole text, turn and author beside the rail. Click an idea to pick it for Merge or Drop:
+  the card itself lights up, with no checkbox. Only the topic under way stays open; the others fold, with a dot when
+  they hold something new. Editing an idea, the kind you chose stands out from the other two.
 - **Background tasks, newest first**: the agent rail lists the task started last at the top, so a running one no
   longer sits under the ones already done.
 - **A clearer agent rail**: the session's context, spend and facts sit on their own tile, the list headers (Files

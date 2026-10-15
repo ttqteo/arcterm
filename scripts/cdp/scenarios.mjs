@@ -38922,11 +38922,11 @@ const ideasView = (h) =>
             id: r.dataset.ideasRow,
             group: r.closest("[data-ideas-group]")?.dataset.ideasGroup ?? null,
             text: r.querySelector("[data-ideas-text]")?.textContent ?? "",
-            meta: r.querySelector("[data-ideas-meta]")?.textContent ?? "",
+            meta: r.dataset.ideasMeta ?? r.querySelector("[data-ideas-meta]")?.textContent ?? "",
             fresh: r.dataset.fresh === "true",
             pill: r.querySelector("[data-ideas-newpill]") != null,
             dropped: r.dataset.dropped === "true",
-            checked: r.querySelector("[data-ideas-check]")?.getAttribute("aria-checked") === "true",
+            checked: r.querySelector('[role="checkbox"]')?.getAttribute("aria-checked") === "true",
             restore: r.querySelector('[data-ideas-action="restore"]') != null,
         }));
         return {
@@ -38937,6 +38937,9 @@ const ideasView = (h) =>
             newCount: aside?.querySelector("[data-ideas-newcount]")?.textContent?.trim() ?? null,
             markRead: aside?.querySelector("[data-ideas-markread]") != null,
             groups: [...(section?.querySelectorAll("[data-ideas-group]") ?? [])].map((g) => g.dataset.ideasGroup + ":" + g.dataset.count),
+            opens: [...(section?.querySelectorAll("[data-ideas-group]") ?? [])]
+                .filter((g) => g.dataset.open != null)
+                .map((g) => g.dataset.ideasGroup + ":" + g.dataset.open),
             groupLabels: [...(section?.querySelectorAll("[data-ideas-group]") ?? [])].map(
                 (g) => [...g.querySelectorAll("span")].slice(0, 2).map((s) => s.textContent).join(" ")
             ),
@@ -39267,7 +39270,7 @@ const ideasRail = {
             v = await ideasView(h);
             const metasOk = Object.entries(IDEAS_META).every(([k, meta]) => ideasRowOf(v, list, T[k])?.meta === meta);
             rec(
-                "3. ideas section open: Decided 3 / Ideas 4 / Open 2, `4 new`, four New pills, and each row's `turn N · agent|you`",
+                "3. ideas section open: Decided 3 / Ideas 4 / Open 2, `4 new`, four New dots, and each row's `turn N · agent|you`",
                 closedBefore &&
                     opened &&
                     JSON.stringify(liveGroups(v)) === JSON.stringify(["decision:3", "idea:4", "question:2"]) &&
@@ -39287,27 +39290,34 @@ const ideasRail = {
             const hov = await h.ev(`(() => {
                 const look = (row) => {
                     const edit = row?.querySelector('[data-ideas-action="edit"]');
-                    const check = row?.querySelector("[data-ideas-check]");
                     return {
                         hover: row?.matches(":hover") ?? false,
                         actions: edit ? getComputedStyle(edit.parentElement).opacity : null,
-                        check: check ? getComputedStyle(check.parentElement).opacity : null,
+                        meta: row?.dataset.ideasMeta ?? null,
+                        boxes: row?.querySelectorAll("[data-ideas-check]").length ?? -1,
                         edit: edit != null,
                         decide: row?.querySelector('[data-ideas-action="decide"]') != null,
                         drop: row?.querySelector('[data-ideas-action="drop"]') != null,
                     };
                 };
+                const over = document.querySelector(${JSON.stringify(ideasRow(i1.id))});
+                const chip = document.querySelector("[data-title-tip]");
                 return {
-                    over: look(document.querySelector(${JSON.stringify(ideasRow(i1.id))})),
+                    over: look(over),
                     decided: look(document.querySelector(${JSON.stringify(ideasRow(d1.id))})),
+                    tip: chip?.textContent ?? null,
+                    tipLeft: chip != null && over != null && chip.getBoundingClientRect().right <= over.getBoundingClientRect().left + 1,
                 };
             })()`);
             rec(
-                "4. hover actions: the row under the pointer shows Edit, Mark as decided, Drop and its checkbox; a row not hovered shows none, and a Decided row offers no Mark as decided",
+                "4. hover actions: the row under the pointer shows Edit, Mark as decided and Drop, and its whole text and meta in the tip at its left, with no checkbox drawn; a row not hovered shows none, and a Decided row offers no Mark as decided",
                 hovered &&
                     hov.over.hover &&
                     hov.over.actions === "1" &&
-                    hov.over.check === "1" &&
+                    hov.over.boxes === 0 &&
+                    hov.tip?.includes(i1.text) &&
+                    hov.tip.includes(hov.over.meta) &&
+                    hov.tipLeft &&
                     hov.over.edit &&
                     hov.over.decide &&
                     hov.over.drop &&
@@ -39387,8 +39397,8 @@ const ideasRail = {
             const b = ideaOf(list, T.i4);
             const third = ideaOf(list, T.i3);
             const droppedBefore = (list.ideas ?? []).filter((i) => i.dropped).length;
-            await ideasClick(h, `${ideasRow(a.id)} [data-ideas-check]`);
-            await ideasClick(h, `${ideasRow(b.id)} [data-ideas-check]`);
+            await ideasClick(h, `${ideasRow(a.id)} [data-ideas-text]`);
+            await ideasClick(h, `${ideasRow(b.id)} [data-ideas-text]`);
             const barUp = await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-selbar]") != null`, 4000);
             await ideasClick(h, `${ideasRow(third.id)} [data-ideas-action="edit"]`);
             await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-editbox]") != null`, 4000);
@@ -39442,8 +39452,8 @@ const ideasRail = {
                     (list.ideas ?? []).filter((i) => i.dropped).length === droppedBefore + 1,
                 { merged, live: ideasLive(list).length, stat: v.stat?.count, selbar: v.selbar, dropped: (list.ideas ?? []).filter((i) => i.dropped).length }
             );
-            // a checked row clears with Esc: the focus is on the checkbox, as a click leaves it
-            await h.ev(`(() => { const c = document.querySelector(${JSON.stringify(`${ideasRow(third.id)} [data-ideas-check]`)}); c?.focus(); c?.click(); })()`);
+            // a checked row clears with Esc: the focus is on the row's checkbox (its text), as a click leaves it
+            await h.ev(`(() => { const c = document.querySelector(${JSON.stringify(`${ideasRow(third.id)} [data-ideas-text]`)}); c?.focus(); c?.click(); })()`);
             const oneUp = await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-selbar]")?.textContent?.startsWith("1 selected")`, 4000);
             const oneBar = await ideasView(h);
             await railTabsKey(h, "Escape", "Escape", 27);
@@ -39454,26 +39464,43 @@ const ideasRail = {
                 oneUp && oneBar.mergeDisabled === true && v.selbar == null && v.rows.every((r) => !r.checked),
                 { oneUp, mergeDisabled: oneBar.mergeDisabled, selbar: v.selbar }
             );
-            // a click on the card itself (its text, not the checkbox) checks the row, its box filled in the primary ink
-            // (a pick is grey-family, never the accent); a second click unchecks it
+            // a click on the card checks it: no checkbox, the card itself fills with the selected grey inside an edge ring;
+            // a second click unchecks it
             await ideasClick(h, `${ideasRow(third.id)} [data-ideas-text]`);
             const cardUp = await polishWaitFor(h, `${IDEAS_SECTION}?.querySelector("[data-ideas-selbar]")?.textContent?.startsWith("1 selected")`, 4000);
             const cardBox = await h.ev(`(() => {
-                const c = document.querySelector(${JSON.stringify(`${ideasRow(third.id)} [data-ideas-check]`)});
-                const probe = document.createElement("span");
-                probe.style.color = "var(--color-primary)";
-                document.body.appendChild(probe);
-                const ink = getComputedStyle(probe).color;
-                probe.remove();
-                return { checked: c?.getAttribute("aria-checked") === "true", fill: c ? getComputedStyle(c).backgroundColor : null, ink };
+                const row = document.querySelector(${JSON.stringify(ideasRow(third.id))});
+                const ink = (v) => {
+                    const probe = document.createElement("span");
+                    probe.style.color = v;
+                    document.body.appendChild(probe);
+                    const c = getComputedStyle(probe).color;
+                    probe.remove();
+                    return c;
+                };
+                const cs = row ? getComputedStyle(row) : null;
+                return {
+                    checked: row?.querySelector('[role="checkbox"]')?.getAttribute("aria-checked") === "true",
+                    boxes: row?.querySelectorAll("[data-ideas-check]").length ?? -1,
+                    fill: cs?.backgroundColor ?? null,
+                    ring: cs?.boxShadow ?? null,
+                    selected: ink("var(--color-surface-selected)"),
+                    edge: ink("var(--color-edge-strong)"),
+                };
             })()`);
             await shot("card-check");
             await ideasClick(h, `${ideasRow(third.id)} [data-ideas-text]`);
             await polishNap(300);
             v = await ideasView(h);
             rec(
-                "7d. card click: a click on a row's text checks it (`1 selected`, its box filled in the primary ink) and a second click unchecks it",
-                cardUp && cardBox.checked && cardBox.fill === cardBox.ink && v.selbar == null && v.rows.every((r) => !r.checked),
+                "7d. card click: a click on a row's text checks it (`1 selected`): the card fills with the selected grey inside an edge ring, no checkbox drawn, and a second click unchecks it",
+                cardUp &&
+                    cardBox.checked &&
+                    cardBox.boxes === 0 &&
+                    cardBox.fill === cardBox.selected &&
+                    (cardBox.ring ?? "").includes(cardBox.edge) &&
+                    v.selbar == null &&
+                    v.rows.every((r) => !r.checked),
                 { cardUp, ...cardBox, selbar: v.selbar }
             );
 
@@ -39909,17 +39936,26 @@ droppedRows.length === droppedBefore8 + 1 &&
             v = await ideasView(h);
             const others = ideasLive(await ideasList(h, IDEAS_EMPTY)).filter((i) => !i.topic).map((i) => i.text);
             const question = v.rows.find((r) => r.text === "Có cần bench riêng cho Office?");
+            const byTopic = { opens: v.opens, rows: v.rows.map((r) => `${r.group}:${r.text}`) };
             await shot("topics");
+            // the folded topics open from their headers
+            await ideasClick(h, '[data-ideas-section] [data-ideas-group="topic"][data-topic="RAM"] [data-ideas-fold]');
+            await ideasClick(h, '[data-ideas-section] [data-ideas-group="other"] [data-ideas-fold]');
+            await polishNap(300);
+            const unfolded = (await ideasView(h)).rows.map((r) => `${r.group}:${r.text}`);
             rec(
-                "22. by topic: once ideas carry a topic the section reads Open, then each topic in the order it came up (its decisions before its ideas, `bố cục` folded into `Bố cục`), then Other for the ideas with none, and the open question's meta names its topic",
+                "22. by topic: once ideas carry a topic the section reads Open, then each topic in the order it came up (its decisions before its ideas, `bố cục` folded into `Bố cục`), then Other for the ideas with none, and the open question's meta names its topic; only Open and the topic with the newest idea are open, and a folded topic's header opens its rows",
                 topical &&
                     JSON.stringify(liveGroups(v)) === JSON.stringify(["question:1", "topic:2", "topic:1", `other:${others.length}`]) &&
                     JSON.stringify(liveLabels(v)) === JSON.stringify(["Open 1", "Bố cục 2", "RAM 1", `Other ${others.length}`]) &&
                     v.rows.filter((r) => r.group === "topic")[0]?.text === "Office nằm trong Cockpit, không thêm surface" &&
-                    v.rows.filter((r) => r.group === "other").some((r) => r.text === untopiced) &&
+                    JSON.stringify(byTopic.opens) === JSON.stringify(["question:true", "topic:true", "topic:false", "other:false"]) &&
+                    !byTopic.rows.some((r) => r.startsWith("other:") || r === "topic:Chỉ mount khi đang ở chế độ Office") &&
+                    unfolded.includes(`other:${untopiced}`) &&
+                    unfolded.includes("topic:Chỉ mount khi đang ở chế độ Office") &&
                     question?.group === "question" &&
                     question.meta.startsWith("RAM · "),
-                { topical, groups: liveGroups(v), labels: liveLabels(v), others, questionMeta: question?.meta, rows: v.rows.map((r) => `${r.group}:${r.text}`) }
+                { topical, groups: liveGroups(v), labels: liveLabels(v), others, questionMeta: question?.meta, byTopic, unfolded }
             );
         } catch (e) {
             rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));

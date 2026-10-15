@@ -9,9 +9,12 @@ import {
     ideaKindOf,
     ideaMeta,
     ideaSections,
+    ideaTip,
     isFresh,
     planEdit,
     pruneChecked,
+    sectionFoldKey,
+    sectionOpen,
     selectionLabel,
     sessionIdFromTranscript,
     toggleChecked,
@@ -209,6 +212,71 @@ describe("ideaSections", () => {
     it("ignores a dropped idea's topic", () => {
         const s = session([idea("i1", "decision", 100), idea("i2", "idea", 200, { topic: "RAM", dropped: true })]);
         expect(shape(s)).toEqual([["decision", "Decided", "i1", false]]);
+    });
+});
+
+describe("folding sections", () => {
+    const sections = (s: SessionIdeas) => ideaSections(groupIdeas(s));
+    const opens = (s: SessionIdeas, overrides: Record<string, boolean> = {}) => {
+        const all = sections(s);
+        return all.map((x) => [x.label, sectionFoldKey(x), sectionOpen(x, all, overrides)]);
+    };
+    const topical = session([
+        idea("i1", "idea", 100, { topic: "Layout" }),
+        idea("i2", "decision", 200, { topic: "RAM" }),
+        idea("i3", "question", 900, { topic: "Layout" }),
+        idea("i4", "idea", 300),
+        idea("i5", "idea", 400, { topic: " ram " }),
+    ]);
+
+    it("folds topics and Other only; Open and the kind groups always show", () => {
+        expect(opens(topical).map(([label, key]) => [label, key])).toEqual([
+            ["Open", null],
+            ["Layout", "topic:layout"],
+            ["RAM", "topic:ram"],
+            ["Other", "other"],
+        ]);
+        const plain = session([idea("i1", "decision", 100), idea("i2", "idea", 200), idea("i3", "question", 300)]);
+        expect(opens(plain).every(([, key, open]) => key == null && open)).toBe(true);
+    });
+
+    it("opens, by default, only the foldable section holding the newest idea (a question in Open does not count)", () => {
+        expect(opens(topical).map(([label, , open]) => [label, open])).toEqual([
+            ["Open", true],
+            ["Layout", false],
+            ["RAM", true],
+            ["Other", false],
+        ]);
+    });
+
+    it("breaks a tie on time by the newer id, as the rows sort", () => {
+        const tie = session([idea("i1", "idea", 100, { topic: "Layout" }), idea("i2", "idea", 100, { topic: "RAM" })]);
+        expect(opens(tie).map(([label, , open]) => [label, open])).toEqual([
+            ["Layout", false],
+            ["RAM", true],
+        ]);
+    });
+
+    it("lets the user's fold or unfold win over the default", () => {
+        const folded = opens(topical, { "topic:ram": false, other: true });
+        expect(folded.map(([label, , open]) => [label, open])).toEqual([
+            ["Open", true],
+            ["Layout", false],
+            ["RAM", false],
+            ["Other", true],
+        ]);
+    });
+});
+
+describe("ideaTip", () => {
+    it("is the whole text, then the meta on a line of its own", () => {
+        expect(ideaTip(idea("i1", "idea", 1, { turn: 4, text: "Một ý dài" }), false, false)).toBe(
+            "Một ý dài\nturn 4 · agent"
+        );
+    });
+    it("names the topic for a row outside its section, and says new while the idea is", () => {
+        const q = idea("i1", "question", 1, { turn: 6, topic: "Highlight", text: "Có cần không?" });
+        expect(ideaTip(q, true, true)).toBe("Có cần không?\nHighlight · turn 6 · agent · new");
     });
 });
 
