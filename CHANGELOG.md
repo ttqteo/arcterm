@@ -24,6 +24,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- **Claude highlights what to read**: in a Claude session, a reply that explains something draws its 2–4 must-read
+  sentences on a tinted ground, and a brainstorm only the question waiting on you; `/skim` dims the rest. A copy, the
+  transcript and Conversation History get the reply without the marks. In the fullscreen terminal, a question that
+  scrolled out of view stays above the prompt until you answer.
+
 ### Changed
 
 - **A calmer Ideas list**: each idea takes at most two lines, an open question reads brightest and a decision dimmest,
