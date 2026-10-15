@@ -182,6 +182,45 @@ func TestAskCommandWaitCancelCleansUp(t *testing.T) {
 	}
 }
 
+// the mod's waiter ending (wsh killed once claude's dialog answered) takes down only its own ask: a projection of
+// other questions that replaced it is still the one on screen, and still the one a clear or an answer must find
+func TestAskCommandWaitCancelKeepsANewerAsk(t *testing.T) {
+	ws := &WshServer{}
+	oref := waveobj.MakeORef("block", uuid.NewString()).String()
+	agentask.GlobalRegistry = agentask.MakeRegistry()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		_, _ = ws.AskCommand(ctx, askData(oref, true))
+		close(done)
+	}()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if p, ok := agentask.GlobalRegistry.Get(oref); ok && agentask.GlobalRegistry.HasWaiter(p.AskId) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("waited ask never registered")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	other := askData(oref, false)
+	other.Questions[0].Question = "C or D?"
+	newer, err := ws.AskCommand(context.Background(), other)
+	if err != nil {
+		t.Fatalf("projection: %v", err)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("wait RPC never returned after cancel")
+	}
+	if p, ok := agentask.GlobalRegistry.Get(oref); !ok || p.AskId != newer.AskId {
+		t.Fatalf("the waiter's end must leave the newer ask %s pending, got %#v (pending=%v)", newer.AskId, p, ok)
+	}
+}
+
 func TestAskCommandClearCancelsWaiter(t *testing.T) {
 	ws := &WshServer{}
 	oref := waveobj.MakeORef("block", uuid.NewString()).String()

@@ -53,9 +53,12 @@ func (ws *WshServer) AskCommand(ctx context.Context, data wshrpc.CommandAskData)
 		return wshrpc.AskRtnData{AskId: askId, Answers: res.Answers, Cancelled: res.Cancelled}, nil
 	case <-ctx.Done():
 		agentask.GlobalRegistry.RemoveWaiter(askId)
-		agentask.GlobalRegistry.Drop(data.ORef)
-		recordAskTransition(data.ORef, askId, waveobj.RunEventKindChildAskCleared, orchestrate.AskClearReasonWaiterEnded)
-		publishAgentAsk(baseds.AgentAskData{ORef: data.ORef, AskId: askId, Cleared: true})
+		// only this ask: a projection of other questions may have replaced it, and that one is still up. Dropping the
+		// block's entry took the newer ask out of the registry while the cockpit kept showing it
+		if _, claimed := agentask.GlobalRegistry.Claim(data.ORef, askId); claimed {
+			recordAskTransition(data.ORef, askId, waveobj.RunEventKindChildAskCleared, orchestrate.AskClearReasonWaiterEnded)
+			publishAgentAsk(baseds.AgentAskData{ORef: data.ORef, AskId: askId, Cleared: true})
+		}
 		return wshrpc.AskRtnData{}, ctx.Err()
 	}
 }
