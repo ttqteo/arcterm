@@ -4,7 +4,7 @@
 // - "covered": another app took it, and its window hides most of arcterm, so the fold keeps arcterm in sight as a
 //   picture-in-picture would. On Windows only a maximized or full-screen window on arcterm's screen counts.
 // - "beside": another app took it but arcterm still shows next to it (a small or merely big window, a dialog or popup, a
-//   window on another screen), or an overlay took it: the screenshot tool, the lock screen, Alt+Tab's switcher or the
+//   window on another screen, another desktop on a Mac), or an overlay took it: the screenshot tool, the lock screen, Alt+Tab's switcher or the
 //   Start menu cover the whole screen for a moment, which is no leaving arcterm. Folding would hide a cockpit you are
 //   coming back to, and a popup that steals the focus while you watch something must not fold it.
 // On Windows the foreground window's process is compared with ours and its frame with arcterm's. On macOS the app is
@@ -103,11 +103,13 @@ struct Listed {
 }
 
 // macOS's answer once another app is active. arcterm's window is its biggest normal one (only the full window folds), and
-// none on screen means a full-screen app's Space or another Space took the screen. Otherwise the frontmost normal window
-// of another app above it decides, as the foreground window does on Windows; none above it (an overlay took the focus)
-// leaves it beside.
+// none on screen means another Space took the screen: a full-screen app's folds, so Sprout shows over it, but another
+// desktop leaves arcterm beside, on its own desktop, where ⌘Tab takes the screen back to it. Folded there, Sprout would
+// follow you and grow back on the desktop you clicked it on, moving arcterm off its own. Otherwise the frontmost normal
+// window of another app above it decides, as the foreground window does on Windows; none above it (an overlay took the
+// focus) leaves it beside.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn from_window_list(list: &[Listed], our_pid: i64) -> Foreground {
+fn from_window_list(list: &[Listed], our_pid: i64, desktop_on_screen: bool) -> Foreground {
     let normal = |w: &&Listed| w.layer == 0 && w.alpha > 0.0;
     let Some(ours) = list
         .iter()
@@ -115,7 +117,11 @@ fn from_window_list(list: &[Listed], our_pid: i64) -> Foreground {
         .filter(|w| w.pid == our_pid)
         .max_by_key(|w| area(w.frame))
     else {
-        return Foreground::Covered;
+        return if desktop_on_screen {
+            Foreground::Beside
+        } else {
+            Foreground::Covered
+        };
     };
     for w in list.iter().filter(normal) {
         if std::ptr::eq(w, ours) {
@@ -221,7 +227,62 @@ fn foreground(_window: &WebviewWindow) -> Foreground {
             return Foreground::Ours;
         }
     }
-    from_window_list(&window_list(), i64::from(std::process::id()))
+    from_window_list(
+        &window_list(),
+        i64::from(std::process::id()),
+        desktop_on_screen(),
+    )
+}
+
+// Whether the Space on screen is a desktop rather than a full-screen app's. AppKit has no public answer, so this asks the
+// window server's own calls (CGSSpaceGetType: 0 a desktop, 4 a full-screen app's Space), looked up at run time: a macOS
+// without them reads as no desktop, the fold's answer from before, instead of keeping arcterm from launching.
+#[cfg(target_os = "macos")]
+fn desktop_on_screen() -> bool {
+    use std::ffi::{c_char, c_void, CStr};
+    use std::sync::OnceLock;
+
+    type MainConnectionId = unsafe extern "C" fn() -> i32;
+    type GetActiveSpace = unsafe extern "C" fn(i32) -> u64;
+    type SpaceGetType = unsafe extern "C" fn(i32, u64) -> i32;
+    extern "C" {
+        fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+    }
+    // RTLD_DEFAULT: every image loaded, CoreGraphics among them
+    const RTLD_DEFAULT: *mut c_void = -2isize as *mut c_void;
+    const DESKTOP: i32 = 0;
+
+    static CALLS: OnceLock<Option<(MainConnectionId, GetActiveSpace, SpaceGetType)>> =
+        OnceLock::new();
+    let calls = CALLS.get_or_init(|| {
+        // SAFETY: dlsym takes a NUL-terminated name and only reads it
+        let find = |name: &CStr| {
+            let ptr = unsafe { dlsym(RTLD_DEFAULT, name.as_ptr()) };
+            (!ptr.is_null()).then_some(ptr)
+        };
+        let (connection, active, kind) = (
+            find(c"CGSMainConnectionID")?,
+            find(c"CGSGetActiveSpace")?,
+            find(c"CGSSpaceGetType")?,
+        );
+        // SAFETY: the window server's exports with these C signatures, as yabai and Hammerspoon call them
+        Some(unsafe {
+            (
+                std::mem::transmute::<*mut c_void, MainConnectionId>(connection),
+                std::mem::transmute::<*mut c_void, GetActiveSpace>(active),
+                std::mem::transmute::<*mut c_void, SpaceGetType>(kind),
+            )
+        })
+    });
+    let Some((connection, active, kind)) = *calls else {
+        return false;
+    };
+    // SAFETY: plain values in and out; an unknown Space reads as no desktop
+    unsafe {
+        let cid = connection();
+        let space = active(cid);
+        space != 0 && kind(cid, space) == DESKTOP
+    }
 }
 
 // the windows on screen, front to back, with their frames in global points (top-left origin, as Frame takes them).
@@ -615,7 +676,7 @@ mod tests {
             listed(US, 0, f(159, 860, 439, 1028)),
             listed(US, 0, MAC_SCREEN),
         ];
-        assert_eq!(from_window_list(&list, US), Foreground::Covered);
+        assert_eq!(from_window_list(&list, US, true), Foreground::Covered);
     }
 
     #[test]
@@ -624,17 +685,24 @@ mod tests {
             listed(7, 0, f(400, 300, 1300, 900)),
             listed(US, 0, MAC_SCREEN),
         ];
-        assert_eq!(from_window_list(&list, US), Foreground::Beside);
+        assert_eq!(from_window_list(&list, US, true), Foreground::Beside);
     }
 
     #[test]
-    fn arcterm_on_no_screen_is_covered() {
-        // a full-screen app's Space, or another Space, took the screen
+    fn arcterm_under_a_full_screen_app_is_covered() {
+        // a full-screen app's Space took the screen
+        let list = [listed(7, 0, MAC_SCREEN)];
+        assert_eq!(from_window_list(&list, US, false), Foreground::Covered);
+    }
+
+    #[test]
+    fn arcterm_left_on_another_desktop_is_beside() {
+        // another desktop took the screen: arcterm stays on its own, unfolded
         let list = [
             listed(7, 0, MAC_SCREEN),
             listed(8, 0, f(100, 100, 900, 700)),
         ];
-        assert_eq!(from_window_list(&list, US), Foreground::Covered);
+        assert_eq!(from_window_list(&list, US, true), Foreground::Beside);
     }
 
     #[test]
@@ -645,13 +713,13 @@ mod tests {
             listed(US, 0, MAC_SCREEN),
             listed(7, 0, MAC_SCREEN),
         ];
-        assert_eq!(from_window_list(&list, US), Foreground::Beside);
+        assert_eq!(from_window_list(&list, US, true), Foreground::Beside);
     }
 
     #[test]
     fn only_a_window_above_arcterm_counts() {
         let list = [listed(US, 0, MAC_SCREEN), listed(7, 0, MAC_SCREEN)];
-        assert_eq!(from_window_list(&list, US), Foreground::Beside);
+        assert_eq!(from_window_list(&list, US, true), Foreground::Beside);
     }
 
     #[test]
@@ -661,7 +729,7 @@ mod tests {
             ..listed(7, 0, MAC_SCREEN)
         };
         let list = [clear, listed(US, 0, MAC_SCREEN)];
-        assert_eq!(from_window_list(&list, US), Foreground::Beside);
+        assert_eq!(from_window_list(&list, US, true), Foreground::Beside);
     }
 
     #[test]
@@ -672,7 +740,7 @@ mod tests {
             listed(8, 0, MAC_SCREEN),
             listed(US, 0, MAC_SCREEN),
         ];
-        assert_eq!(from_window_list(&list, US), Foreground::Beside);
+        assert_eq!(from_window_list(&list, US, true), Foreground::Beside);
     }
 
     #[test]
@@ -681,6 +749,6 @@ mod tests {
             listed(7, 0, f(1872, 0, 3792, 1080)),
             listed(US, 0, MAC_SCREEN),
         ];
-        assert_eq!(from_window_list(&list, US), Foreground::Beside);
+        assert_eq!(from_window_list(&list, US, true), Foreground::Beside);
     }
 }

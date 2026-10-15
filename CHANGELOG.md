@@ -63,6 +63,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- **On macOS arcterm stays on its own Desktop**: switching to another Desktop no longer folds it into Sprout, and a
+  folded Sprout stays on arcterm's Desktop, so opening it no longer moved arcterm to the Desktop you were on. Sprout
+  still follows you over a full-screen app.
 - **An answered question no longer leaves its agent stuck on asking**: a question's card could stay behind after you
   answered it (most often on a Claude Team or Enterprise account), hidden while the agent worked and back as "asking"
   (with a Waiting on you card) every time it finished a turn, until the app reloaded. An agent that finishes a turn

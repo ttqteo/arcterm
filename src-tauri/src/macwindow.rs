@@ -1,5 +1,5 @@
-// The window's macOS chrome (floatstore.ts): while the window is folded into Sprout, hide the traffic lights and put it
-// on every Space, beside a full-screen app's too, so Sprout follows you; and send the yellow button and ⌘M to Sprout
+// The window's macOS chrome (floatstore.ts): while the window is folded into Sprout, hide the traffic lights, and when it
+// folds over a full-screen app put it on every Space, so Sprout shows there; and send the yellow button and ⌘M to Sprout
 // instead of the Dock while window:minimize says so. Tauri can do none of the three, so this talks to AppKit. Commands that are not async run on the main thread, which AppKit requires; the marker check turns a
 // mistake there into an error instead of undefined behaviour. Both are no-ops on other platforms. It also takes ⌘W off
 // the menu's Close Window, so a reflex ⌘W never quits arcterm; the cockpit closes the focused agent on ⌘⇧W. And it
@@ -226,15 +226,19 @@ mod imp {
         }
     }
 
-    // The folded window's collection behavior, from its own: on every Space, and allowed beside a full-screen window.
-    // AppKit throws on a behavior that is both full-screen primary and auxiliary, or both joins all Spaces and moves to
-    // the active one, so those come off.
-    fn folded_behavior(was: NSWindowCollectionBehavior) -> NSWindowCollectionBehavior {
+    // The folded window's collection behavior, from its own. Folded on its desktop it stays there: a window on every
+    // Space lands, once it no longer is, on the Space on screen, so a Sprout clicked on another desktop grew arcterm back
+    // there and moved it off its own. Folded over a full-screen app (`follows`) it is on every Space and allowed beside a
+    // full-screen window, so Sprout shows over it. AppKit throws on a behavior that is both full-screen primary and
+    // auxiliary, or both joins all Spaces and moves to the active one, so those come off.
+    fn folded_behavior(was: NSWindowCollectionBehavior, follows: bool) -> NSWindowCollectionBehavior {
         let mut behavior = in_mission_control(was);
-        behavior &= !(NSWindowCollectionBehavior::MoveToActiveSpace
-            | NSWindowCollectionBehavior::FullScreenPrimary
-            | NSWindowCollectionBehavior::FullScreenNone);
-        behavior |= NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::FullScreenAuxiliary;
+        if follows {
+            behavior &= !(NSWindowCollectionBehavior::MoveToActiveSpace
+                | NSWindowCollectionBehavior::FullScreenPrimary
+                | NSWindowCollectionBehavior::FullScreenNone);
+            behavior |= NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::FullScreenAuxiliary;
+        }
         behavior
     }
 
@@ -250,7 +254,8 @@ mod imp {
         if folded {
             let was = ns.collectionBehavior();
             UNFOLDED_BEHAVIOR.with(|cell| cell.set(Some(cell.get().unwrap_or(was))));
-            ns.setCollectionBehavior(folded_behavior(was));
+            // off the Space on screen while it folds: a full-screen app's took it (foreground.rs folds for no other)
+            ns.setCollectionBehavior(folded_behavior(was, !ns.isOnActiveSpace()));
         } else if let Some(was) = UNFOLDED_BEHAVIOR.with(|cell| cell.take()) {
             ns.setCollectionBehavior(was);
             let _ = APP.set(window.app_handle().clone());
@@ -419,14 +424,22 @@ mod imp {
 
         #[test]
         fn the_folded_window_shows_in_mission_control() {
-            let folded = folded_behavior(B::Default);
-            assert!(folded.contains(B::Managed));
-            assert!(!folded.intersects(B::Transient | B::Stationary));
+            for follows in [false, true] {
+                let folded = folded_behavior(B::Default, follows);
+                assert!(folded.contains(B::Managed));
+                assert!(!folded.intersects(B::Transient | B::Stationary));
+            }
+        }
+
+        #[test]
+        fn folded_on_its_desktop_the_window_stays_there() {
+            let folded = folded_behavior(B::Managed | B::FullScreenPrimary, false);
+            assert_eq!(folded, B::Managed | B::FullScreenPrimary);
         }
 
         #[test]
         fn the_folded_window_drops_what_appkit_will_not_take_beside_its_own() {
-            let folded = folded_behavior(B::MoveToActiveSpace | B::FullScreenPrimary | B::Transient);
+            let folded = folded_behavior(B::MoveToActiveSpace | B::FullScreenPrimary | B::Transient, true);
             assert!(folded.contains(B::CanJoinAllSpaces | B::FullScreenAuxiliary | B::Managed));
             assert!(!folded.intersects(B::MoveToActiveSpace | B::FullScreenPrimary | B::Transient));
         }
