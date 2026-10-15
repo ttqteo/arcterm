@@ -277,6 +277,26 @@ export function makeCockpitOfficeScenarios(fx) {
             await focusCockpit(h);
             await key(h, "n");
             await sleep(150);
+            const dotGrid = await h.ev(`(() => {
+                const root = document.querySelector("[data-office-root]");
+                const R = root.getBoundingClientRect();
+                const on3 = (v) => Math.abs(v / 3 - Math.round(v / 3)) < 0.001;
+                const dots = [...root.querySelectorAll("[data-office-dot]")].map((d) => {
+                    const m = new DOMMatrixReadOnly(getComputedStyle(d).transform);
+                    const r = d.getBoundingClientRect();
+                    return { x: m.m41, y: m.m42, left: r.left - R.left, top: r.top - R.top };
+                });
+                const label = root.querySelector("[data-office-dot-label]");
+                const L = label ? label.getBoundingClientRect() : null;
+                const lbox = L ? { left: L.left - R.left, top: L.top - R.top } : null;
+                return {
+                    dots: dots.length,
+                    dotsOn: dots.every((d) => on3(d.x) && on3(d.y) && on3(d.left) && on3(d.top)),
+                    label: lbox,
+                    labelOn: !!lbox && on3(lbox.left) && on3(lbox.top),
+                    first: dots[0] ?? null,
+                };
+            })()`);
             const hint = await probe(h);
             await h.shot("cdp-shots/cockpit-office-next-ask.png");
             const atAsk = await settleBoss(h, 5000);
@@ -289,6 +309,12 @@ export function makeCockpitOfficeScenarios(fx) {
                 "5. n shows the way to the next Needs you for a second, then the boss walks there and ↵ offers its card; Enter opens it",
                 hint?.dots > 0 && atAsk?.cursor === "fx-office-quill" && atAsk.popup === "" && atAsk.prompt === "agent" && p?.popup === "agent",
                 JSON.stringify({ dots: hint?.dots, cursor: atAsk?.cursor, offered: [atAsk?.popup, atAsk?.prompt], opened: p?.popup })
+            );
+
+            rec(
+                "5b. the path's dots and their label sit on the 3 px grid",
+                dotGrid?.dots > 0 && dotGrid.dotsOn && dotGrid.labelOn,
+                JSON.stringify({ dots: dotGrid?.dots, dotsOn: dotGrid?.dotsOn, label: dotGrid?.label, first: dotGrid?.first })
             );
 
             // 6. Esc shuts the card and ↵ offers it again; j and k walk desk by desk in office order, offering each card
@@ -454,7 +480,8 @@ export function makeCockpitOfficeScenarios(fx) {
                 JSON.stringify({ draws: [drawsBusy, drawsQuiet], width: [widthBusy, widthQuiet] })
             );
 
-            // 13. States: every sprite
+            // 13. States: every sprite. The sheet is about 1,350 px wide: widen the viewport so it fits the scroller
+            await h.cdp("Emulation.setDeviceMetricsOverride", { width: 2000, height: 950, deviceScaleFactor: 1, mobile: false });
             await dev(h, { sheet: true });
             await sleep(400);
             const daySrcs = await h.ev(`[...document.querySelectorAll("[data-office-sheet] img")].map((i) => i.getAttribute("src") ?? "")`);
@@ -482,7 +509,44 @@ export function makeCockpitOfficeScenarios(fx) {
                 JSON.stringify({ phase: p?.phase, sprites: nightSrcs.length, changed: nightSrcs.filter((s, i) => s !== daySrcs[i]).length })
             );
             await h.shot("cdp-shots/cockpit-office-states-night.png");
+
+            // 13d. the Cast sheet in the board's cells (22 art px = 66 px a column): the labels sit over their sprites
+            const cast = await h.ev(`(() => {
+                const sheet = document.querySelector("[data-office-sheet]");
+                const area = sheet.querySelector("[data-office-sheet-area]").getBoundingClientRect();
+                const cols = [...sheet.querySelectorAll("[data-office-sheet-col]")].map((e) => e.getBoundingClientRect().left - area.left);
+                const boss = sheet.querySelectorAll("[data-office-sheet-boss]").length;
+                const imgs = [...sheet.querySelectorAll("[data-office-sheet-area] img")].slice(0, 18);
+                const sprites = imgs.map((img, c) => {
+                    const r = img.getBoundingClientRect();
+                    const want = (c * 22 + 4 + (Math.round(r.width) === 60 ? -3 : 0)) * 3;
+                    return Math.abs(r.left - area.left - want);
+                });
+                let scroller = sheet.parentElement;
+                while (scroller && scroller.scrollWidth <= scroller.clientWidth) scroller = scroller.parentElement;
+                return {
+                    right: sheet.getBoundingClientRect().right,
+                    vw: window.innerWidth,
+                    cols: cols.length,
+                    boss,
+                    colOff: cols.map((l, i) => Math.abs(l - i * 66)),
+                    spriteOff: sprites,
+                    scrolls: scroller && scroller !== document.documentElement ? scroller.scrollWidth - scroller.clientWidth : 0,
+                };
+            })()`);
+            rec(
+                "13d. the Cast sheet in the board's cells",
+                cast?.right <= cast?.vw &&
+                    cast.scrolls <= 0 &&
+                    cast.cols === 18 &&
+                    cast.boss === 8 &&
+                    cast.colOff.every((d) => d < 1) &&
+                    cast.spriteOff.length === 18 &&
+                    cast.spriteOff.every((d) => d <= 1),
+                JSON.stringify({ right: cast?.right, vw: cast?.vw, cols: cast?.cols, boss: cast?.boss, scrolls: cast?.scrolls, maxColOff: Math.max(...(cast?.colOff ?? [0])), maxSpriteOff: Math.max(...(cast?.spriteOff ?? [0])) })
+            );
             await dev(h, { sheet: false, afterHours: false });
+            await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false });
             await sleep(400);
 
             // 13c. a theme switched with the office open: the building draws once more, and the boss's ring (the

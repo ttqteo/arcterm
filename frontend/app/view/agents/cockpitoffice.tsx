@@ -1508,12 +1508,18 @@ function PathDots() {
                     key={i}
                     data-office-dot
                     className="pointer-events-none absolute left-0 top-0 z-[7] size-1.5 rounded-full bg-asking"
-                    style={{ transform: `translate(${Math.round(p.x - 3)}px, ${Math.round(p.y - 3)}px)` }}
+                    style={{
+                        transform: `translate(${Math.round((p.x - 3) / PLAN_CELL) * PLAN_CELL}px, ${Math.round((p.y - 3) / PLAN_CELL) * PLAN_CELL}px)`,
+                    }}
                 />
             ))}
             <span
+                data-office-dot-label
                 className="pointer-events-none absolute z-[7] w-[120px] text-center text-[11px] font-semibold text-asking"
-                style={{ left: end.x - 60, top: end.y + 8 }}
+                style={{
+                    left: Math.round((end.x - 60) / PLAN_CELL) * PLAN_CELL,
+                    top: Math.round((end.y + 8) / PLAN_CELL) * PLAN_CELL,
+                }}
             >
                 next Needs you
             </span>
@@ -1614,39 +1620,94 @@ function OfficePrompt({ kind, over, verb }: { kind: "agent" | "run"; over: Point
     );
 }
 
-// DEV (the Cast board): every look's poses, then the boss's, on the phase's wood so the outlines read as they will in
-// the office
+// DEV (the Cast board): every look's poses, then the boss's, in the board's cells (22 x 30 art px) on the phase's wood
+// so the outlines read as they will in the office
+const SHEET_CW = 22;
+const SHEET_CH = 30;
+const SHEET_COL_LABELS = [
+    "sit",
+    "nod",
+    "hand",
+    "hand, 2",
+    "cheer",
+    "cheer, 2",
+    "doze",
+    "yawn",
+    "stretch",
+    "sofa",
+    "near seat",
+    "cup",
+    "walk ↓",
+    "walk ↓ 2",
+    "walk ↑",
+    "walk ↑ 2",
+    "walk →",
+    "walk → 2",
+];
+const SHEET_BOSS_LABELS = ["standing", "at a desk", "walk ↓", "walk ↓ 2", "walk ↑", "walk ↑ 2", "walk →", "walk → 2"];
+const SHEET_ROW_LABELS = ["look 1 · claude", "look 2 · codex", "look 3 · pi", "look 4 · agy", "the boss · cap"];
+
 function PoseSheet({ phase }: { phase: OfficePhase }) {
-    const row = (sprites: PlanSprite[], outfit: PlanOutfit, key: string) => (
-        <div key={key} className="flex items-end gap-2">
-            {sprites.map((s) => (
-                <img
-                    key={s}
-                    alt=""
-                    src={planSpriteUrl(s, outfit, phase)}
-                    className="[image-rendering:pixelated]"
-                    style={{ width: spriteWidth(s) * PLAN_CELL, height: spriteH(s) }}
-                />
-            ))}
-        </div>
+    const cellW = SHEET_CW * PLAN_CELL;
+    const cellH = SHEET_CH * PLAN_CELL;
+    const sprite = (s: PlanSprite, outfit: PlanOutfit, c: number, r: number, key: string) => (
+        <img
+            key={key}
+            alt=""
+            src={planSpriteUrl(s, outfit, phase)}
+            className="absolute [image-rendering:pixelated]"
+            style={{
+                left: (c * SHEET_CW + 4 + spriteLeft(s)) * PLAN_CELL,
+                top: r * cellH + (SHEET_CH - 3 - PLAN_SPRITES[s].length) * PLAN_CELL,
+                width: spriteWidth(s) * PLAN_CELL,
+                height: spriteH(s),
+            }}
+        />
     );
+    const colLabel = (text: string, i: number, attr: string) => (
+        <span
+            key={i}
+            {...{ [attr]: "" }}
+            className="absolute text-center text-[10.5px] text-muted"
+            style={{ left: i * cellW, width: cellW }}
+        >
+            {text}
+        </span>
+    );
+    const sheetH = (SHEET_SHIRTS.length + 1) * cellH;
     return (
         <div
             data-office-sheet
             className={cn(
-                "absolute left-2 top-2 z-[9] flex flex-col gap-2 rounded-md border border-edge-mid p-3",
+                "absolute left-2 top-2 z-[9] flex gap-3 rounded-md border border-edge-mid p-3",
                 phase === "after" ? "bg-office-after-wood" : "bg-office-day-wood"
             )}
         >
-            <div className="flex gap-2">
-                {SHEET_POSES.map((s) => (
-                    <span key={s} className="w-[60px] text-center font-mono text-[10.5px] text-muted">
-                        {s}
+            <div className="relative w-[110px] shrink-0" style={{ height: sheetH }}>
+                {SHEET_ROW_LABELS.map((l, r) => (
+                    <span
+                        key={l}
+                        className="absolute left-0 whitespace-nowrap text-[11px] text-secondary"
+                        style={{ top: 16 + r * cellH + 52 }}
+                    >
+                        {l}
                     </span>
                 ))}
             </div>
-            {SHEET_SHIRTS.map((shirt, i) => row(SHEET_POSES, { shirt, look: i + 1 }, shirt))}
-            {row(BOSS_POSES, BOSS_OUTFIT, "boss")}
+            <div className="relative shrink-0" style={{ width: SHEET_POSES.length * cellW }}>
+                <div className="relative h-4">
+                    {SHEET_COL_LABELS.map((l, i) => colLabel(l, i, "data-office-sheet-col"))}
+                </div>
+                <div data-office-sheet-area className="relative" style={{ height: sheetH }}>
+                    {SHEET_SHIRTS.map((shirt, r) =>
+                        SHEET_POSES.map((s, c) => sprite(s, { shirt, look: r + 1 }, c, r, `${shirt}-${s}`))
+                    )}
+                    {BOSS_POSES.map((s, c) => sprite(s, BOSS_OUTFIT, c, SHEET_SHIRTS.length, `boss-${s}`))}
+                </div>
+                <div className="relative mt-1 h-4">
+                    {SHEET_BOSS_LABELS.map((l, i) => colLabel(l, i, "data-office-sheet-boss"))}
+                </div>
+            </div>
         </div>
     );
 }
