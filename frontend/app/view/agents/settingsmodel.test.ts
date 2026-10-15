@@ -318,6 +318,7 @@ describe("settings pages", () => {
             "appearance.petoutfit",
             "appearance.petquotes",
         ]);
+        expect(cards["appearance/office"]).toEqual(["appearance.officeanimation", "appearance.officehours"]);
         expect(cards["appearance/agentrows"]).toEqual([
             "appearance.rowmodel",
             "appearance.rowbranch",
@@ -353,7 +354,7 @@ describe("settings pages", () => {
             .flatMap(sectionRows)
             .map((r) => r.id);
         expect(new Set(ids).size).toBe(ids.length);
-        expect(ids).toHaveLength(49 + RUNTIME_FLAGS.claude.length);
+        expect(ids).toHaveLength(51 + RUNTIME_FLAGS.claude.length);
     });
 
     it("leaves the backend-authoritative run route off the config path", () => {

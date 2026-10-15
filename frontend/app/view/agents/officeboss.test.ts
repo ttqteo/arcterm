@@ -1,0 +1,224 @@
+// Copyright 2026, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+import { describe, expect, it } from "vitest";
+import { advance, canStand, deskAt, dotsAlong, facing, pathBetween, roomAt, spotOf, stepToward } from "./officeboss";
+import { buildPlan, type Plan, type PlanAgent, type Point } from "./officeplanmodel";
+
+const ag = (id: string, project?: string, state: PlanAgent["state"] = "working"): PlanAgent => ({
+    id,
+    name: id,
+    project,
+    state,
+    finished: false,
+});
+const run = (id: string, project: string) => ({
+    id,
+    title: id,
+    project,
+    done: false,
+    leadAsking: false,
+    tasks: [{ id: "t1", label: "t1", state: "running", asking: false }],
+});
+const plan = buildPlan({
+    agents: [ag("a1", "alpha"), ag("a2", "alpha"), ag("b1", "beta"), ag("h1")],
+    runs: [{ ...run("r1", "alpha") }],
+    width: 1050,
+    now: 0,
+    away: {},
+    night: false,
+});
+const room = (k: string) => plan.rooms.find((r) => r.key === k)!;
+const a1 = spotOf(plan, "a1")!;
+
+// every 3 px along every segment must be floor: a corner check alone would let a path cut through a wall
+function offFloor(p: Plan, path: Point[]): Point[] {
+    const bad: Point[] = [];
+    for (let i = 0; i < path.length - 1; i++) {
+        const a = path[i];
+        const b = path[i + 1];
+        const len = Math.hypot(b.x - a.x, b.y - a.y);
+        for (let d = 0; d <= len; d += 3) {
+            const q = { x: a.x + ((b.x - a.x) * d) / (len || 1), y: a.y + ((b.y - a.y) * d) / (len || 1) };
+            if (!canStand(p, q)) {
+                bad.push(q);
+            }
+        }
+        if (!canStand(p, b)) {
+            bad.push(b);
+        }
+    }
+    return bad;
+}
+const nearDoorMiddle = (path: Point[], r: { door?: { x: number; y: number; w: number; h: number } }) =>
+    dotsAlong(path, 2).some(
+        (p) => Math.hypot(p.x - (r.door!.x + r.door!.w / 2), p.y - (r.door!.y + r.door!.h / 2)) <= 14
+    );
+
+describe("officeboss", () => {
+    it("lets one stand in rooms, doors and the hall, never in a wall", () => {
+        expect(canStand(plan, a1)).toBe(true);
+        const door = room("room:alpha").door!;
+        expect(canStand(plan, { x: door.x + 4, y: door.y + 25 })).toBe(true);
+        expect(canStand(plan, { x: door.x + 4, y: door.y - 20 })).toBe(false);
+        expect(roomAt(plan, { x: plan.hall.x + 100, y: plan.hall.y + 300 })).toBe("hall");
+        expect(roomAt(plan, a1)).toBe("room:alpha");
+    });
+
+    it("stops at a wall and goes through a door", () => {
+        const r = room("room:alpha");
+        const blocked = stepToward(plan, a1, "right", 600);
+        expect(blocked.x).toBeLessThanOrEqual(r.box.x + r.box.w);
+        expect(roomAt(plan, blocked)).toBe("room:alpha");
+        const atDoor = { x: a1.x, y: r.door!.y + r.door!.h / 2 };
+        expect(roomAt(plan, stepToward(plan, atDoor, "right", 600))).toBe("hall");
+    });
+
+    it("does not tunnel through a wall on a long step", () => {
+        const r = room("room:alpha");
+        const nearWall = { x: r.box.x + r.box.w - 3, y: a1.y };
+        expect(stepToward(plan, nearWall, "right", 30).x).toBeLessThanOrEqual(r.box.x + r.box.w);
+        // a 100 ms hitch at the boss's speed is a 16 px step: still no wall crossed
+        expect(canStand(plan, stepToward(plan, nearWall, "right", 16))).toBe(true);
+    });
+
+    it("walks out of one room, along the hall and into another, on floor all the way", () => {
+        const b1 = spotOf(plan, "b1")!;
+        const path = pathBetween(plan, a1, b1);
+        expect(path[0]).toEqual(a1);
+        expect(path[path.length - 1]).toEqual(b1);
+        expect(path.some((p) => p.x === plan.hall.x + plan.hall.w - 36)).toBe(true);
+        for (const p of path) {
+            expect(canStand(plan, p), JSON.stringify(p)).toBe(true);
+        }
+        expect(offFloor(plan, path)).toEqual([]);
+        const a2 = spotOf(plan, "a2")!;
+        expect(pathBetween(plan, a1, a2)).toEqual([a1, a2]);
+        const h1 = spotOf(plan, "h1")!;
+        const home = pathBetween(plan, a1, h1);
+        expect(home.every((p) => canStand(plan, p))).toBe(true);
+        expect(offFloor(plan, home)).toEqual([]);
+        expect(offFloor(plan, pathBetween(plan, h1, spotOf(plan, "r1")!))).toEqual([]);
+    });
+
+    it("walks from every desk to every other desk and seat on a tall Home booth, never off the floor", () => {
+        const tall = buildPlan({
+            agents: [
+                ...["a", "b", "c", "d"].flatMap((p) => [ag(`${p}1`, p), ag(`${p}2`, p, "asking")]),
+                ...[1, 2, 3, 4, 5].map((i) => ag(`h${i}`)),
+            ],
+            runs: [run("r1", "a"), run("r2", "d")],
+            width: 900,
+            now: 0,
+            away: {},
+            night: false,
+        });
+        const keys = [...tall.desks.map((d) => d.key), ...tall.seats.map((s) => s.key)];
+        expect(tall.desks.filter((d) => d.room === "room:home")).toHaveLength(5);
+        for (const from of keys) {
+            for (const to of keys) {
+                const path = pathBetween(tall, spotOf(tall, from)!, spotOf(tall, to)!);
+                expect(offFloor(tall, path), `${from} -> ${to}`).toEqual([]);
+            }
+        }
+    });
+
+    it("lays dots every 14 px along a path, across its corners", () => {
+        expect(
+            dotsAlong([
+                { x: 0, y: 0 },
+                { x: 28, y: 0 },
+            ])
+        ).toEqual([
+            { x: 0, y: 0 },
+            { x: 14, y: 0 },
+        ]);
+        expect(
+            dotsAlong([
+                { x: 0, y: 0 },
+                { x: 10, y: 0 },
+                { x: 10, y: 10 },
+            ])
+        ).toEqual([
+            { x: 0, y: 0 },
+            { x: 10, y: 4 },
+        ]);
+    });
+
+    it("advances along a path and says what is left", () => {
+        const path = [
+            { x: 0, y: 0 },
+            { x: 10, y: 0 },
+            { x: 10, y: 10 },
+        ];
+        expect(advance(path, 15)).toEqual({
+            at: { x: 10, y: 5 },
+            rest: [
+                { x: 10, y: 5 },
+                { x: 10, y: 10 },
+            ],
+        });
+        expect(advance(path, 50)).toEqual({ at: { x: 10, y: 10 }, rest: [{ x: 10, y: 10 }] });
+    });
+
+    it("faces the way it moves most", () => {
+        expect(facing({ x: 0, y: 0 }, { x: -5, y: 1 })).toBe("left");
+        expect(facing({ x: 0, y: 0 }, { x: 1, y: 5 })).toBe("down");
+        expect(facing({ x: 0, y: 0 }, { x: 0, y: 0 }, "up")).toBe("up");
+    });
+
+    it("finds the desk or seat at the boss, and none in the hall", () => {
+        expect(deskAt(plan, a1)).toBe("a1");
+        expect(deskAt(plan, spotOf(plan, "r1")!)).toBe("r1");
+        expect(deskAt(plan, { x: plan.hall.x + 100, y: plan.hall.y + 300 })).toBeUndefined();
+    });
+
+    it("orders j/k stops band by band: the agents' room by rows, then its meeting seats, Home last", () => {
+        const p = buildPlan({
+            agents: [
+                ag("z9", "zeta"),
+                ag("a4", "alpha"),
+                ag("a2", "alpha"),
+                ag("a3", "alpha"),
+                ag("a1", "alpha"),
+                ag("h2"),
+                ag("h1"),
+            ],
+            runs: [
+                { ...run("rz", "zeta") },
+                {
+                    ...run("ra", "alpha"),
+                    tasks: [
+                        { id: "t1", label: "t1", state: "running", asking: false, key: "ra:t1" },
+                        { id: "t2", label: "t2", state: "running", asking: false, key: "ra:t2" },
+                    ],
+                },
+            ],
+            width: 1050,
+            now: 0,
+            away: {},
+            night: false,
+        });
+        // alpha's four agents run by rows of three, then its run's lead and tasks; zeta next; Home's agents last
+        expect(p.order).toEqual(["a1", "a2", "a3", "a4", "ra", "ra:t1", "ra:t2", "z9", "rz", "rz:t1", "h1", "h2"]);
+    });
+
+    it("walks n's target through both doors, on floor, with its dots starting at the boss", () => {
+        const p = buildPlan({
+            agents: [ag("a1", "alpha"), ag("b1", "beta"), ag("b2", "beta", "asking"), ag("c1", "gamma")],
+            runs: [run("r1", "alpha")],
+            width: 1050,
+            now: 0,
+            away: {},
+            night: false,
+        });
+        expect(p.asks).toEqual(["b2"]);
+        const from = spotOf(p, "a1")!;
+        const to = spotOf(p, p.asks[0])!;
+        const path = pathBetween(p, from, to);
+        expect(offFloor(p, path)).toEqual([]);
+        expect(nearDoorMiddle(path, p.rooms.find((r) => r.key === "room:alpha")!)).toBe(true);
+        expect(nearDoorMiddle(path, p.rooms.find((r) => r.key === "room:beta")!)).toBe(true);
+        expect(dotsAlong(path)[0]).toEqual(from);
+    });
+});

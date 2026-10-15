@@ -1,11 +1,13 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Draws a pose in an outfit once and keeps it (run office spec, "Drawing"). A desk shows an <img> of a 14-column
-// PNG scaled 3x, so a person costs one DOM node and a frame change is a src swap. The people's colours are identity
-// tokens no theme overrides, so an entry never goes stale; the cache is bounded by poses × shirts × looks (320).
+// Draws a pose in an outfit once and keeps it (run office spec, "Drawing"); the canvas and the cache are
+// view/office/spritecache.ts, namespace "run". A desk shows an <img> of a 14-column PNG scaled 3x, so a person costs
+// one DOM node and a frame change is a src swap. The people's colours are identity tokens no theme overrides, so an
+// entry never goes stale; the cache is bounded by poses × shirts × looks (320).
 
-import { gridPixels, parseColor, POSES, SPRITE_W, type CellRole, type SpritePose } from "./officesprite";
+import { cachedSprite, spriteCacheStats, tokenRgb } from "@/app/view/office/spritecache";
+import { POSES, SPRITE_W, type CellRole, type SpritePose } from "./officesprite";
 
 export interface Outfit {
     shirt: number; // graphlane 1..6, 0 the lead
@@ -35,16 +37,6 @@ const VISITOR = "--color-office-visitor";
 /** Every property the rasteriser can read, for the bench's `unresolved` check (jarvis-office). */
 export const OFFICE_TOKENS: string[] = [...HAIR, ...SKIN, ...SHIRT, PANTS, INK, PAPER, BOX, LEAD, VISITOR];
 
-const cache = new Map<string, string>();
-const colors = new Map<string, [number, number, number] | undefined>();
-
-function token(name: string): [number, number, number] | undefined {
-    if (!colors.has(name)) {
-        colors.set(name, parseColor(getComputedStyle(document.documentElement).getPropertyValue(name)));
-    }
-    return colors.get(name);
-}
-
 // a look or shirt out of range (a hand-built Outfit) falls back to the first rather than reading undefined
 function pick(list: string[], n: number): string {
     return list[n - 1] ?? list[0];
@@ -73,30 +65,10 @@ function roleToken(role: CellRole, o: Outfit): string {
 /** The pose drawn in the outfit, as a data URL; "" when the page cannot draw (no 2d context). */
 export function spriteUrl(pose: SpritePose, o: Outfit): string {
     const key = `${pose}|${o.visitor ? "v" : o.shirt}|${o.visitor ? 3 : o.look}`;
-    const hit = cache.get(key);
-    if (hit != null) {
-        return hit;
-    }
-    const grid = POSES[pose];
-    const canvas = document.createElement("canvas");
-    canvas.width = SPRITE_W;
-    canvas.height = grid.length;
-    // willReadFrequently keeps the canvas in software: a GPU-backed one made toDataURL ~1.2 ms a sprite (79 sprites
-    // were 80-95 ms of the first open), a software one ~0.07 ms
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    let url = "";
-    if (ctx != null) {
-        // createImageData rather than new ImageData(pixels, ...): the constructor's typing rejects a shared-buffer array
-        const image = ctx.createImageData(SPRITE_W, grid.length);
-        image.data.set(gridPixels(grid, (r) => token(roleToken(r, o))));
-        ctx.putImageData(image, 0, 0);
-        url = canvas.toDataURL("image/png");
-    }
-    cache.set(key, url);
-    return url;
+    return cachedSprite("run", key, POSES[pose], SPRITE_W, (r) => tokenRgb(roleToken(r as CellRole, o)));
 }
 
 /** How many drawn sprites are kept, for the bench (jarvis-office-bench). */
 export function spriteCacheSize(): number {
-    return cache.size;
+    return spriteCacheStats("run").entries;
 }

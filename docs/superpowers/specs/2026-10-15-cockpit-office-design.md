@@ -74,18 +74,26 @@ and the two columns share whatever width the hall leaves.
   the run's DAG: a square per task in its state's colour (as the Run office's wall board) and a done bar. Around the
   table, the lead sits at the head (the first seat), then the workers in task order, alternating the far side
   (facing you) and the near side (their backs). A room is 132 px tall; a run with more than 11 tasks shows 11 seats
-  and a `+N` on the table. Rooms are ordered by the run's start.
+  and a `+N` on the table. Rooms are ordered by the run's start. A band with no run keeps one empty meeting room,
+  dark, titled `Meeting room` with `no run` under it, so the band stays a closed building.
 - **The hall** runs between the columns, top to bottom (234 px wide). At its top, **the lounge**: a rug, a TV on the
   wall, the sofa facing it, the coffee machine and a plant, where idle people go. At its foot, by the entrance,
   **Home**: a booth holding the cards with no project, one desk per row; it grows up the hall, under the lounge.
-- **Doors:** every room has one door onto the hall, in the middle of its hall-side wall; the Home booth's is in its
-  top wall.
+- **The lounge holds a fixed set of spots:** the sofa's seats, and standing places by the coffee machine and the
+  plant, as many as fit with their labels: every label sits whole inside the lounge, over no other label or person
+  (a name too long for its room is cut with an ellipsis, the full text in the person's title). Spots fill by
+  `idleSince`, longest first, so a newcomer never moves someone already there. Whoever does not fit is not drawn: a
+  muted `+N in the lounge` line in the lounge counts them, and their desk stays empty and dimmed, its title saying
+  where they are. The lounge never grows, so a crowd moves no room.
+- **Doors:** every room has one door onto the hall, in the upper part of its hall-side wall (an agents' room's level
+  with its first row of desks, as the `Main` board draws it), so a stretched room keeps its door where it was; the
+  Home booth's is in its top wall. The plan grows so the booth sits below every door of the left column: no door opens
+  into it.
 - **The facade** closes the plan at the bottom: brick with windows, glass doors at the foot of the hall, and the
   **ARCTERM** sign over them. The outer walls carry small windows on their faces.
 - **Lights:** a room with no one at work (no agent working or asking, no task running) has its lights off: a dark
   layer (`--color-office-dark`) over its floor, furniture and people, under the walls and labels, so the eye goes to
-  the rooms where something happens. The hall, the lounge and Home's booth follow the same rule; the lounge is always
-  lit.
+  the rooms where something happens. Home's booth follows the same rule; the hall and the lounge stay lit.
 - **Stable places:** a state change never moves a desk, a seat or a room. Adding or removing a card or a run shifts
   only what comes after it. A plan taller than the office scrolls vertically, and follows the boss.
 - **Labels:** under each desk the agent's name. A state word shows only where it matters: **Needs you** (amber, bold)
@@ -149,7 +157,9 @@ A person away from the desk walks back when the agent is working or asking again
   the hall, with a pointer to the desk, kept inside the office's box. It hides while the boss walks and when `Esc` is
   pressed, until the boss moves again.
 - **Open terminal** leaves for the Agent surface through `openTarget`, as the card does today.
-- **Card streams:** in Office, `useCardStreams` is given only the popup's card, not one per agent.
+- **Card streams:** Office keeps the grid's streams, one per live agent. Stopping a stream drops that agent's live
+  entries, and the Cockpit hides an agent with nothing to show, so streaming only the popup's card would take agents out
+  of the office and the tab counts; trimming streams needs a fix of its own.
 
 ## Personality, day and night, energy
 
@@ -227,7 +237,8 @@ Office  ● animating · 2 walking · 6 typing
 ```
 
 - **Measured:** the office's own JS time (`performance.now()` around each frame-clock and walk-clock step, summed
-  over the last 10 s, shown as a share of one core), the people drawn, walking and animated, the sprite cache's
+  over the last 10 s, shown as a share of one core), the people drawn (people at a desk or a seat, in a lounge
+  spot, walking, and the boss; never the `+N`), walking and animated, the sprite cache's
   entries and bytes (the data URLs' lengths), and the office root's DOM nodes. The counters are read only while the
   panel is open.
 - **Not shown:** a heap figure for the office alone. WKWebView has no `performance.memory`, so a number there would be
@@ -251,7 +262,7 @@ Office  ● animating · 2 walking · 6 typing
 | `view/agents/officestore.ts` | `cockpitViewAtom`, `officeHoursAtom`, `officeAnimationAtom` |
 | `view/agents/cockpitoffice.tsx` | the plan, people, boss and popup |
 | `view/agents/cockpitofficedevhooks.ts` | DEV-only `__cockpitOffice` / `__cockpitOfficeProbe` for the CDP scenarios |
-| `view/agents/cockpitsurface.tsx` | the toggle; Office in place of the grid; card streams for the popup only |
+| `view/agents/cockpitsurface.tsx` | the toggle; Office in place of the grid |
 | `view/agents/usecockpitkeyboard.ts` | Office keys, office order for `j` `k` `n` |
 | `view/agents/consumers.ts`, `consumerspanel.tsx` | the Office line |
 | `store/keybindings/bindings.ts` | `cockpit:office` and the walk keys (documentation bindings, as the Cockpit's are) |
@@ -271,8 +282,12 @@ fixtures, plus 3 runs of 8 tasks through a DEV-only hook (`__cockpitOfficeRuns`)
 in Office, so the comparison overstates the office's cost, never understates it.
 
 **Scenario:** Cockpit in Cards, GC, read `Performance.getMetrics`; hold 30 s (the baseline); switch to Office, wait
-2 s, GC, read; hold 30 s with 3 walkers and the boss walking; hold 30 s quiet (every agent idle under 3 min, no
-walker); switch back to Cards, GC, read. Then repeat the walking hold under `prefers-reduced-motion: reduce`.
+2 s, GC, read; hold 30 s with 3 walkers and the boss walking; hold 30 s quiet (every agent idle inside the Finished
+window, the hold starting once everyone has settled at a desk and no clock runs); then repeat the walking hold under
+`prefers-reduced-motion: reduce`; switch back to Cards, GC, read; open Office and switch back to Cards again, GC,
+read. The second round trip is what row 7 holds: a leak grows on every trip, while the dev page's own growth over
+the bench's minutes (+1.6 MB with the office never opened, run a81096a1) drowns a 1 MB budget measured from the
+first Cards read. The first trip's figure is printed for information.
 
 | Measure | Budget |
 |---|---|
@@ -282,14 +297,15 @@ walker); switch back to Cards, GC, read. Then repeat the walking hold under `pre
 | Same, reduced motion | ≤ 0.5 % |
 | Same, quiet office | ≤ 0.3 % |
 | Sprite cache entries | ≤ 600 |
-| Heap after switching back to Cards (after GC), minus the Cards read before | ≤ 1 MB |
+| Heap a second Office round trip adds, back in Cards (after GC), minus the first return's read | ≤ 1 MB |
 | Toggle click to the office drawn | ≤ 150 ms |
 
 Estimated from the Run office's measured numbers (104 desks: +1.6 MB, ~1,500 nodes): about 900–1,200 nodes and
 +1–2 MB at this fixture. The scenario prints the numbers in its PASS/FAIL row and fails over budget. They go into
 `docs/open-issues.md` under **RAM watch**, dated. A miss is reported, not tuned away by raising the budget. React's dev
-build adds work per render (the Run office's busy miss), so the busy figures are read again by hand on a production
-build with the Office line in the RAM panel, and that reading goes into RAM watch too.
+build adds work per render (the Run office's busy miss), so the busy figures are read again on a production build with
+the Office line in the RAM panel once the run has landed. That reading is not the run's: it is the effort chunk
+`Re-measure: cockpit office busy on a production build`, and it goes into RAM watch too.
 
 ## Cost to build
 

@@ -26,6 +26,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- **The Cockpit as an office**: press `o`, or Office beside Live only, to see your agents as a floor plan: a room per
+  project, a glass meeting room per run, idle agents in the lounge, the lights off where no one works. Walk the boss
+  with the arrow keys; `n` shows the way to the next Needs you; the card of the desk you stand at opens beside it. Its
+  cost shows in the RAM panel, and Settings → Appearance → Office turns the animation off. <!-- big -->
 - **Ideas grouped by topic**: the agent names a topic for each line of a brainstorm, and the Ideas list on the agent's
   rail groups by it — open questions first, then each topic in the order it came up, then Other. A list with no
   topics reads Decided / Ideas / Open as before.

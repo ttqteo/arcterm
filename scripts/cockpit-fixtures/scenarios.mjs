@@ -389,7 +389,64 @@ function docReviewMode() {
     ];
 }
 
+// the cockpit office's canvas (docs/superpowers/specs/2026-10-15-cockpit-office-design.md): arcterm, mozox and Home,
+// every agent state the plan draws. Idle past the Finished window (5 min) is the lounge: tern at the coffee, wren on
+// the sofa, scratch out of Home's booth.
+function office(now) {
+    const said = (text) => [{ kind: "message", text }];
+    return [
+        { id: "fx-office-loom", name: "loom", project: "arcterm", task: "office plan model", state: "working", agent: "claude", model: "opus", activeMs: 720_000, activity: "running vitest", blockId: "fx-blk-office-loom", previousInfo: said("Laying out the bands.") },
+        {
+            id: "fx-office-quill", name: "quill", project: "arcterm", task: "merge the gallery", state: "asking", agent: "claude", model: "opus", blockedMs: 180_000, blockId: "fx-blk-office-quill", previousInfo: said("The branch is ready."),
+            ask: {
+                askId: "fx-office-quill-ask",
+                oref: "block:fx-blk-office-quill",
+                questions: [{ header: "Merge", question: "Merge wave/7c1e into main now, or wait for the Final shots?", options: [{ label: "Merge now" }, { label: "Wait for the Final shots" }, { label: "Show me the diff first" }] }],
+            },
+        },
+        { id: "fx-office-sable", name: "sable", project: "arcterm", task: "sprite cache", state: "idle", agent: "codex", model: "gpt", idleSince: now - 60_000, blockId: "fx-blk-office-sable", previousInfo: said("Moved the sprite cache into view/office.") },
+        { id: "fx-office-harbor", name: "harbor", project: "mozox", task: "invoice rounding", state: "working", agent: "pi", model: "pi", activeMs: 480_000, activity: "go test ./internal/billing", blockId: "fx-blk-office-harbor", previousInfo: said("Fixing the rounding.") },
+        { id: "fx-office-pike", name: "pike", project: "mozox", task: "orders lint", state: "working", agent: "claude", model: "sonnet", activeMs: 1_260_000, activity: "npm run lint", blockId: "fx-blk-office-pike", previousInfo: said("Linting the routes.") },
+        { id: "fx-office-tern", name: "tern", project: "mozox", task: "webhook retries", state: "idle", agent: "agy", model: "gemini", idleSince: now - 6 * 60_000, blockId: "fx-blk-office-tern", previousInfo: said("Added the retry budget.") },
+        { id: "fx-office-wren", name: "wren", project: "mozox", task: "onboarding copy", state: "idle", agent: "claude", model: "sonnet", idleSince: now - 14 * 60_000, blockId: "fx-blk-office-wren", previousInfo: said("Rewrote the onboarding copy.") },
+        { id: "fx-office-scratch", name: "scratch", task: "zshrc", state: "idle", agent: "claude", model: "haiku", idleSince: now - 7 * 60_000, blockId: "fx-blk-office-scratch", previousInfo: said("nvm loads lazily now.") },
+    ];
+}
+
+// the cockpit office's bench: 48 agents over 6 projects, every state, 2 asking
+const BENCH_PROJECTS = ["arcterm", "mozox", "thesis", "cuscofi", "notes", "infra"];
+function officeBench(now) {
+    const out = [];
+    for (let i = 0; i < 48; i++) {
+        const slot = Math.floor(i / 6);
+        const base = {
+            id: `fx-bench-${i}`,
+            name: `bench ${String(i).padStart(2, "0")}`,
+            project: BENCH_PROJECTS[i % 6],
+            task: `bench task ${i}`,
+            agent: ["claude", "codex", "pi", "agy"][i % 4],
+            model: "sonnet",
+            blockId: `fx-blk-bench-${i}`,
+            previousInfo: [{ kind: "message", text: `bench agent ${i}` }],
+        };
+        if (slot === 0 && i < 2) {
+            out.push({ ...base, state: "asking", blockedMs: 60_000, ask: { askId: `fx-bench-ask-${i}`, oref: `block:fx-blk-bench-${i}`, questions: [{ header: "Go", question: "Carry on?", options: [{ label: "Yes" }, { label: "No" }] }] } });
+        } else if (slot < 4) {
+            out.push({ ...base, state: "working", activeMs: 300_000, activity: "working" });
+        } else if (slot === 4) {
+            out.push({ ...base, state: "idle", idleSince: now - 60_000 });
+        } else if (slot < 7) {
+            out.push({ ...base, state: "idle", idleSince: now - 6 * 60_000 });
+        } else {
+            out.push({ ...base, state: "idle", idleSince: now - 12 * 60_000 });
+        }
+    }
+    return out;
+}
+
 export const SCENARIOS = {
+    office,
+    "office-bench": officeBench,
     mixed,
     "all-asking": allAsking,
     heavy,

@@ -311,6 +311,8 @@ setTimeout(() => fs.appendFileSync(${JSON.stringify(logFile)}, "end\\n"), ${hold
             ARC_FINAL_OUT: join(dir, name),
             ARC_FINAL_BOOT_MS: "10000",
             ARC_FINAL_DEV_CMD: `node "${fakeDev}"`,
+            // these stages read the tauri config, which only the tauri mode writes, and Final picks the browser app off Windows
+            ARC_FINAL_BROWSER: "0",
         };
     }
 

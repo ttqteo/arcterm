@@ -964,6 +964,8 @@ export function buildCockpitBindings(): Binding[] {
         doc("cockpit:reply", "r", "Reply inline to the agent"),
         doc("cockpit:terminal", "t", "Open the agent's terminal"),
         doc("cockpit:background", "b", "Background the agent (keeps running)"),
+        doc("cockpit:office", "o", "Switch the Cockpit between Cards and Office"),
+        doc("cockpit:office-walk", "ArrowRight", "Office: walk the boss (← ↑ ↓ →); j / k go desk by desk"),
     ];
 }
 

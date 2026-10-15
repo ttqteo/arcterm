@@ -28,8 +28,10 @@ import { modalsModel } from "@/app/store/modalmodel";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { openTarget } from "@/app/view/jarvis/openref";
+import { officeClocks, officeDomNodes, officeMeter, officeMeterAtom } from "@/app/view/office/officeclock";
+import { spriteCacheStats } from "@/app/view/office/spritecache";
 import { cn, fireAndForget } from "@/util/util";
-import { useAtomValue } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { ArrowRight, CircleAlert, Ellipsis, Moon, Square, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { closeSessions, confirmCloseSession } from "./agentactions";
@@ -60,6 +62,7 @@ import {
     type ConsumersView,
 } from "./consumers";
 import { consumersOpenAtom, consumersOpenerAtom, consumersReadingAtom, useConsumersPoll } from "./consumersstore";
+import { officeAnimation, officeAnimationAtom } from "./officestore";
 import { TickBox } from "./tickbox";
 import { usePlanDonuts } from "./usagemeters";
 import { fmt, usd } from "./usagestats";
@@ -416,6 +419,75 @@ function Stat({ label, bytes, ...rest }: { label: string; bytes?: number } & Rec
     );
 }
 
+// The office's own cost while the Cockpit shows Office (cockpit office spec, "Its cost in the RAM panel"): its JS
+// time, the people it draws, its sprite images and its DOM nodes, read once a second while the panel is open. No
+// heap figure: WKWebView has no performance.memory, and Interface above already holds the whole webview.
+const OFFICE_JS_TIP =
+    "The office's own JavaScript per second, as a share of one core. It leaves out the browser's layout and paint: for the whole webview, watch Interface where the panel reads its CPU, or arcterm's WebKit process in Activity Monitor with the animation on, then off.";
+
+function officeCost() {
+    const s = spriteCacheStats("plan");
+    const c = officeClocks();
+    return {
+        js: officeMeter.share(Date.now()),
+        entries: s.entries,
+        kb: Math.round(s.bytes / 1024),
+        nodes: officeDomNodes(),
+        running: c.frame || c.walk,
+    };
+}
+
+function Figure({ label, value, title }: { label: string; value: string; title?: string }) {
+    return (
+        <div title={title} className="flex min-w-0 flex-col">
+            <span className="text-[10.5px] text-ink-faint">{label}</span>
+            <span className="text-[12px] tabular-nums text-secondary">{value}</span>
+        </div>
+    );
+}
+
+function OfficeLine() {
+    const counts = useAtomValue(officeMeterAtom);
+    const [raw, setAnim] = useAtom(officeAnimationAtom);
+    const on = officeAnimation(raw);
+    const [cost, setCost] = useState(officeCost);
+    const mounted = counts != null;
+    useEffect(() => {
+        if (!mounted) {
+            return;
+        }
+        setCost(officeCost());
+        const id = window.setInterval(() => setCost(officeCost()), 1000);
+        return () => window.clearInterval(id);
+    }, [mounted]);
+    if (counts == null) {
+        return null;
+    }
+    const state = !on
+        ? "animation off · everyone holds still"
+        : cost.running
+          ? `animating · ${counts.walking} walking · ${counts.animated} at work`
+          : "still · nothing moves";
+    return (
+        <div data-consumers-office className="flex flex-col gap-1.5 border-t border-border pt-2">
+            <div className="flex items-center gap-2">
+                <span className="text-[10.5px] text-ink-faint">Office</span>
+                <span className={cn("size-1.5 rounded-full", on && cost.running ? "bg-working" : "bg-edge-strong")} />
+                <span className="min-w-0 flex-1 truncate text-[11.5px] text-secondary">{state}</span>
+                <button type="button" data-consumers-office-toggle onClick={() => setAnim(!on)} className={TEXT_ACTION}>
+                    {on ? "Turn animation off" : "Turn animation on"}
+                </button>
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+                <Figure label="Office JS" value={`${cost.js} %`} title={OFFICE_JS_TIP} />
+                <Figure label="People" value={String(counts.people)} />
+                <Figure label="Images" value={`${cost.entries} · ${cost.kb} KB`} />
+                <Figure label="DOM nodes" value={cost.nodes.toLocaleString()} />
+            </div>
+        </div>
+    );
+}
+
 const COL_CPU = "w-[40px] flex-none text-right";
 
 function askKill(row: ConsumerRow): void {
@@ -699,22 +771,27 @@ function CompactOwn({ view }: { view: ConsumersView | null }) {
     }
     const parts = [{ label: "Agents", bytes: view.agentsBytes, agents: true }, ...view.own];
     return (
-        <div
-            title="What the arcterm figure above is made of: every agent, the webview that draws the cockpit (Interface), wavesrv (Server), the Tauri host, and the plain terminals"
-            className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-t border-border bg-surface px-3 py-1.5 text-[11.5px] text-muted"
-        >
-            {parts.map((p) => (
-                <span
-                    key={p.label}
-                    {...("agents" in p ? { "data-consumers-agents": "" } : { "data-consumers-own": p.label })}
-                >
-                    {p.label}{" "}
-                    <span className="tabular-nums text-secondary">
-                        {p.bytes === undefined ? "—" : ramLabel(p.bytes)}
+        <>
+            <div
+                title="What the arcterm figure above is made of: every agent, the webview that draws the cockpit (Interface), wavesrv (Server), the Tauri host, and the plain terminals"
+                className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-t border-border bg-surface px-3 py-1.5 text-[11.5px] text-muted"
+            >
+                {parts.map((p) => (
+                    <span
+                        key={p.label}
+                        {...("agents" in p ? { "data-consumers-agents": "" } : { "data-consumers-own": p.label })}
+                    >
+                        {p.label}{" "}
+                        <span className="tabular-nums text-secondary">
+                            {p.bytes === undefined ? "—" : ramLabel(p.bytes)}
+                        </span>
                     </span>
-                </span>
-            ))}
-        </div>
+                ))}
+            </div>
+            <div className="px-3 pb-1.5">
+                <OfficeLine />
+            </div>
+        </>
     );
 }
 
@@ -997,6 +1074,7 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                                     <Stat key={o.label} data-consumers-own={o.label} label={o.label} bytes={o.bytes} />
                                 ))}
                             </div>
+                            <OfficeLine />
                         </div>
                     )}
                 </div>

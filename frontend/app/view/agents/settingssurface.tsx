@@ -25,6 +25,8 @@ import { DEFAULT_MONO, DEFAULT_SANS } from "./fonts";
 import { fontMonoAtom, fontSansAtom } from "./fontstore";
 import { RUNTIME_FLAGS, type Runtime } from "./launch";
 import { DEFAULT_REMEMBER_FLAGS, naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
+import { DEFAULT_HOURS, sanitizeHours } from "./officebehavior";
+import { DEFAULT_OFFICE_ANIMATION, officeAnimation, officeAnimationAtom, officeHoursAtom } from "./officestore";
 import { DEFAULT_RAIL_VISIBLE, railVisibleAtom } from "./railstore";
 import { DEFAULT_ROW_FIELDS, ROW_FIELD_ROWS } from "./rowfields";
 import { rowFieldsAtom } from "./rowfieldsstore";
@@ -83,6 +85,9 @@ function useRowBindings(sections: SettingSectionDef[], flagRuntime: Runtime) {
     const [character, setCharacter] = useAtom(petCharacterAtom);
     const [outfit, setOutfit] = useAtom(petOutfitChoiceAtom);
     const [quotes, setQuotes] = useAtom(petQuotesOnAtom);
+    const [officeAnim, setOfficeAnim] = useAtom(officeAnimationAtom);
+    const [officeHrs, setOfficeHrs] = useAtom(officeHoursAtom);
+    const hrs = sanitizeHours(officeHrs);
     const [flags, setFlags] = useAtom(naFlagsAtom);
     const [remember, setRemember] = useAtom(naRememberFlagsAtom);
     const [rowFields, setRowField] = useAtom(rowFieldsAtom);
@@ -108,6 +113,14 @@ function useRowBindings(sections: SettingSectionDef[], flagRuntime: Runtime) {
             revert: () => setOutfit(DEFAULT_PET_OUTFIT),
         },
         "appearance.petquotes": { changed: quotes !== DEFAULT_PET_QUOTES, revert: () => setQuotes(DEFAULT_PET_QUOTES) },
+        "appearance.officeanimation": {
+            changed: officeAnimation(officeAnim) !== DEFAULT_OFFICE_ANIMATION,
+            revert: () => setOfficeAnim(DEFAULT_OFFICE_ANIMATION),
+        },
+        "appearance.officehours": {
+            changed: hrs.start !== DEFAULT_HOURS.start || hrs.end !== DEFAULT_HOURS.end,
+            revert: () => setOfficeHrs(DEFAULT_HOURS),
+        },
         "newagent.remember": {
             changed: remember !== DEFAULT_REMEMBER_FLAGS,
             revert: () => setRemember(DEFAULT_REMEMBER_FLAGS),

@@ -212,6 +212,11 @@ A link inside an item view does a full open, even with `Mod` held.
 | `r` | Reply inline to the agent |
 | `t` | Open the agent's terminal |
 | `b` | Background the agent (keeps it running) |
+| `o` | Switch the Cockpit between Cards and Office |
+| `←` `↑` `↓` `→` (Office) | Walk the boss; walls stop it, doors let it through |
+| `j` / `k` (Office) | The boss walks to the next / previous desk or seat |
+| `n` (Office) | Show the way to the next Needs you for a second, then walk there |
+| `Esc` (Office) | Hide the card beside the desk until the boss moves |
 
 ### Agent
 
