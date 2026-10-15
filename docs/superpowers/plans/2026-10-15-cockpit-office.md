@@ -55,6 +55,11 @@ final stage runs vitest.
   empty or blank project goes to Home. Pinned in Task 3.
 - **A narrow window** (the Cockpit under 900 px wide): the plan keeps its minimum width and the office scrolls.
   Pinned in Task 3.
+- **A run of eleven or more tasks at the minimum width**: the table and every seat stay inside the meeting room; a
+  narrow room seats its people closer together. Pinned in Task 3.
+- **The Cockpit re-rendering** (a roster update, the coarse clock): the office gets the same arrays when nothing it
+  draws changed, a desk or seat re-renders only when a value it draws changed, and nothing in the Cockpit reads the
+  1 s clock for the office. Task 5.
 - **Work hours read back from storage as garbage** (strings, start ≥ end, out of range): the office falls back to
   9–18 instead of being dark all day. Pinned in Task 2.
 - **A frame hitch while an arrow is held** (a 100 ms step): the boss still cannot pass through a wall. Pinned in
@@ -717,7 +722,7 @@ git commit -m "feat(cockpit): office sprite set seen from above, a sprite cache 
   `isReset(prev?: number, next?: number): boolean`; `shortAge(ms: number): string`.
 - Produces (`officeclock.ts`): `FRAME_MS = 450`; `officeTickAtom: PrimitiveAtom<number>`;
   `interface OfficeCounts { people: number; walking: number; animated: number }`;
-  `officeCountsAtom: PrimitiveAtom<OfficeCounts | null>`; `clockShouldRun(o: { need: boolean; on: boolean; hidden: boolean; reduced: boolean }): boolean`;
+  `officeMeterAtom: PrimitiveAtom<OfficeCounts | null>`; `clockShouldRun(o: { need: boolean; on: boolean; hidden: boolean; reduced: boolean }): boolean`;
   `class OfficeMeter { record(at, ms); share(now): number }`; `officeMeter`; `officeClocks(): { frame: boolean; walk: boolean }`;
   `setOfficeRoot(el: HTMLElement | null)`; `officeDomNodes(): number`; `useFrameClock(need: boolean, on: boolean): void`;
   `useWalkLoop(step: (dtMs: number) => boolean): () => void` (returns a stable `kick`).
@@ -1034,7 +1039,7 @@ export interface OfficeCounts {
     animated: number;
 }
 /** What the office draws; null while it is not mounted, so the RAM panel has no Office line. */
-export const officeCountsAtom = atom<OfficeCounts | null>(null) as PrimitiveAtom<OfficeCounts | null>;
+export const officeMeterAtom = atom<OfficeCounts | null>(null) as PrimitiveAtom<OfficeCounts | null>;
 
 export function clockShouldRun(o: { need: boolean; on: boolean; hidden: boolean; reduced: boolean }): boolean {
     return o.need && o.on && !o.hidden && !o.reduced;
@@ -1230,7 +1235,7 @@ git commit -m "feat(cockpit): office behaviour, its two clocks and meter, and it
 - Produces (`officeplanmodel.ts`): the types `Box`, `Point`, `PlanAgent`, `PlanTask`, `PlanRun`, `PlanInput`,
   `RoomKind`, `DoorSide`, `ScreenCell`, `Room`, `Tone`, `Light`, `Bubble`, `Desk`, `Seat`, `Lounger`, `Plan` exactly as
   written below; constants `WALL = 8`, `HWALL = 18`, `HALL_W = 234`, `MIN_W = 900`, `DESK_DX = 120`, `DESK_DY = 130`,
-  `ROOM_TOP = 120`, `MEETING_H = 132`, `SEAT_DX = 56`, `MAX_SEATS = 12`, `LOUNGE_H = 230`, `BOOTH_W = 152`,
+  `ROOM_TOP = 120`, `MEETING_H = 132`, `SEAT_DX = 56` (the widest seat pitch), `MAX_SEATS = 12`, `LOUNGE_H = 230`, `BOOTH_W = 152`,
   `FACADE_H = 40`, `DOOR = 50`, `HOME = "Home"`, `OTHER_RUNS = "Other runs"`; functions `agentLook`, `taskLook`,
   `screenCell`, `runLit`, `cut`, `buildPlan(input: PlanInput): Plan`.
 - Produces (`officeinputs.ts`): `planAgent(a: AgentVM, finished: boolean): PlanAgent`;
@@ -1350,6 +1355,24 @@ describe("officeplanmodel", () => {
         expect(p.order.slice(0, 3)).toEqual(["r", "r:t1", "r:t2"]);
     });
 
+    it("fits a full table and its seats inside the meeting room, at the minimum width too", () => {
+        const tasks = Array.from({ length: 13 }, (_, i) => task(`t${i + 1}`));
+        for (const width of [MIN_W, 1050]) {
+            const p = plan([], [run("r", { tasks })], { width });
+            const room = p.rooms.find((r) => r.runId === "r")!;
+            const t = room.table!;
+            expect(t.x, `table at ${width}`).toBeGreaterThanOrEqual(room.box.x);
+            expect(t.x + t.w, `table at ${width}`).toBeLessThanOrEqual(room.box.x + room.box.w);
+            expect(p.seats).toHaveLength(12);
+            for (const s of p.seats) {
+                expect(s.x, `${s.key} at ${width}`).toBeGreaterThanOrEqual(room.box.x);
+                // a seated person is 12 cells of 3 px
+                expect(s.x + 36, `${s.key} at ${width}`).toBeLessThanOrEqual(room.box.x + room.box.w);
+                expect(s.spot.x, `${s.key} at ${width}`).toBeLessThanOrEqual(room.box.x + room.box.w);
+            }
+        }
+    });
+
     it("keys a task seat by its card row when it has one", () => {
         const p = plan([], [run("r", { tasks: [task("t1", "running", { key: "row:x" })] })]);
         expect(p.seats[1].key).toBe("row:x");
@@ -1387,12 +1410,22 @@ describe("officeplanmodel", () => {
         expect(p.desks[0].pose).toBe("empty");
     });
 
-    it("turns the lights off where no one is at work, and on when someone starts", () => {
-        const dark = plan([ag("a", { state: "idle", idleSince: NOW - 1000, finished: true })], [run("r", { tasks: [task("t", "done")] })]);
-        expect(dark.rooms.filter((r) => !r.lit).map((r) => r.kind).sort()).toEqual(["agents", "meeting"]);
-        const lit = plan([ag("a")], [run("r", { tasks: [task("t", "running")] })]);
+    it("turns the lights off where no one is at work, and on when someone starts; the hall and the lounge stay lit", () => {
+        const done = { state: "idle" as const, idleSince: NOW - 1000, finished: true };
+        const dark = plan([ag("a", done), ag("h", { ...done, project: undefined })], [run("r", { tasks: [task("t", "done")] })]);
+        expect(dark.rooms.filter((r) => !r.lit).map((r) => r.kind).sort()).toEqual(["agents", "home", "meeting"]);
+        expect(dark.rooms.find((r) => r.kind === "lounge")?.lit).toBe(true);
+        // the hall is floor, not a room: nothing in the plan can turn its lights off
+        expect(dark.rooms.some((r) => r.key === "hall")).toBe(false);
+        const lit = plan([ag("a"), ag("h", { project: undefined })], [run("r", { tasks: [task("t", "running")] })]);
         expect(lit.rooms.every((r) => r.lit)).toBe(true);
-        expect(lit.rooms.find((r) => r.kind === "lounge")?.lit).toBe(true);
+    });
+
+    it("keeps one empty, dark meeting room in a band with no run", () => {
+        const meet = plan([ag("a")]).rooms.filter((r) => r.kind === "meeting");
+        expect(meet).toHaveLength(1);
+        expect(meet[0]).toMatchObject({ title: "Meeting room", sub: "no run", lit: false });
+        expect(meet[0].runId).toBeUndefined();
     });
 
     it("opens a door from every room onto the hall, and leaves the hall's walls open there", () => {
@@ -1653,7 +1686,8 @@ export const DESK_DX = 120;
 export const DESK_DY = 130;
 export const ROOM_TOP = 120; // the first desk row's top below its room's top
 export const MEETING_H = 132;
-export const SEAT_DX = 56;
+export const SEAT_DX = 56; // the widest seat pitch; a narrow room seats closer
+const SEAT_PAD = 12;
 export const MAX_SEATS = 12; // the lead and eleven tasks
 export const LOUNGE_H = 230;
 export const BOOTH_W = 152;
@@ -1838,8 +1872,13 @@ export function buildPlan(input: PlanInput): Plan {
     const placeSeats = (r: PlanRun, room: Room) => {
         const shown = r.tasks.slice(0, MAX_SEATS - 1);
         const far = Math.ceil((shown.length + 1) / 2);
-        const tw = Math.max(170, far * SEAT_DX + 30);
-        const tx = room.box.x + Math.round((room.box.w - tw) / 2) - 20;
+        // the table and its chairs stay SEAT_PAD off the walls: a narrow room (eleven tasks at MIN_W) seats its
+        // people closer together rather than past its walls
+        const maxW = room.box.w - 2 * SEAT_PAD;
+        const dx = Math.min(SEAT_DX, Math.floor((maxW - 30) / far));
+        const tw = Math.min(maxW, Math.max(170, far * dx + 30));
+        const inner = room.box.x + SEAT_PAD;
+        const tx = Math.min(inner + maxW - tw, Math.max(inner, room.box.x + Math.round((room.box.w - tw) / 2) - 20));
         const ty = room.box.y + Math.round(room.box.h / 2) + 12;
         room.table = { x: tx, y: ty, w: tw, h: 33 };
         if (r.tasks.length > shown.length) {
@@ -1858,7 +1897,7 @@ export function buildPlan(input: PlanInput): Plan {
             const n = i + 1; // seat 0 is the lead
             const farSide = n % 2 === 0;
             const k = Math.floor(n / 2);
-            const x = farSide ? tx + 20 + k * SEAT_DX : tx + 46 + k * SEAT_DX;
+            const x = farSide ? tx + 20 + k * dx : tx + 46 + k * dx;
             const look = taskLook(t);
             // the near side shows its back, whatever it does
             const pose: SeatPose = look.pose === "empty" ? "empty" : farSide ? look.pose : "back";
@@ -2406,9 +2445,10 @@ git commit -m "feat(cockpit): office boss movement: walls, doors, paths through 
 **Files:** `frontend/app/view/agents/cockpitoffice.tsx`, `frontend/app/view/agents/cockpitofficedevhooks.ts`, `frontend/app/view/agents/cockpitsurface.tsx`, `frontend/app/view/agents/usecockpitkeyboard.ts`, `frontend/app/store/keybindings/bindings.ts`, `docs/keyboard-shortcuts.md`, `scripts/cockpit-fixtures/scenarios.mjs`, `scripts/cdp/cockpitofficescenarios.mjs`, `scripts/cdp/scenarios.mjs`
 
 **Interfaces:**
-- Consumes: everything Tasks 1–4 produce.
+- Consumes: everything Tasks 1–4 produce; `usePlanDonuts` (`usagemeters.tsx`), read only in the office's 5-hour leaf.
 - Produces (`cockpitoffice.tsx`): `CockpitOffice` (props `CockpitOfficeProps` below); `interface OfficeHandle`;
-  `interface OfficeDev`; `officeDevAtom`; `readOfficeProbe()`.
+  `interface OfficeDev`; `officeDevAtom`; `readOfficeProbe()` (what was drawn, plus `order`, `hall` and `boxes`, each
+  room's box and door, for the scenario's steps).
 - Produces (`usecockpitkeyboard.ts`): `ARROW_DIR: Record<string, Dir>`; `interface OfficeKeys`; new optional deps
   `office?: OfficeKeys` and `toggleView?: () => void`.
 - Produces (scenarios): `makeCockpitOfficeScenarios(fx: { arrangeFixtureRun, teardownFixtureRun })` returning
@@ -2434,7 +2474,7 @@ git commit -m "feat(cockpit): office boss movement: walls, doors, paths through 
 import { globalStore } from "@/app/store/jotaiStore";
 import {
     officeClocks,
-    officeCountsAtom,
+    officeMeterAtom,
     officeTickAtom,
     setOfficeRoot,
     useFrameClock,
@@ -2488,9 +2528,11 @@ import {
     type Away,
     type Energy,
 } from "./officebehavior";
+import type { AgentsViewModel } from "./agents";
 import {
     advance,
     BOSS_SPEED,
+    canStand,
     deskAt,
     dotsAlong,
     facing,
@@ -2520,6 +2562,7 @@ import {
     type Tone,
 } from "./officeplanmodel";
 import { officeAnimation, officeAnimationAtom, officeHoursAtom } from "./officestore";
+import { usePlanDonuts } from "./usagemeters";
 
 /** What the CDP scenarios set through cockpitofficedevhooks.ts; always null in a real session. */
 export interface OfficeDev {
@@ -2547,7 +2590,8 @@ export interface CockpitOfficeProps {
     agents: PlanAgent[];
     runs: PlanRun[];
     now: number;
-    fiveHourPct?: number;
+    // only FiveHourLeaf reads it: the 5-hour meter ticks every second
+    model: AgentsViewModel;
     cursorId?: string;
     onCursor: (key: string) => void;
     renderCard: (key: string) => ReactNode;
@@ -2578,6 +2622,8 @@ const walkersAtom = atom<Walker[]>([]) as PrimitiveAtom<Walker[]>;
 const walkingAtom = atom<Record<string, Away | null>>({}) as PrimitiveAtom<Record<string, Away | null>>;
 const dotsAtom = atom<Point[]>([]) as PrimitiveAtom<Point[]>;
 const popupHiddenAtom = atom(false) as PrimitiveAtom<boolean>;
+// the 5-hour window's use, rounded; FiveHourLeaf sets it, so the 1 s clock the meter reads re-renders that leaf only
+const officeFiveHourAtom = atom<number | undefined>(undefined) as PrimitiveAtom<number | undefined>;
 
 const BOSS_OUTFIT: PlanOutfit = { shirt: BOSS_SHIRT, look: 1, boss: true };
 const WALK_FRAME_MS = 180;
@@ -2614,6 +2660,9 @@ export function readOfficeProbe() {
                   }
                 : null,
         dots: globalStore.get(dotsAtom).length,
+        order: lastPlan?.order ?? [],
+        hall: lastPlan?.hall ?? null,
+        boxes: lastPlan ? Object.fromEntries(lastPlan.rooms.map((r) => [r.key, { ...r.box, door: r.door ?? null }])) : {},
         clock: officeClocks(),
         cache: spriteCacheStats("plan"),
         unresolved: PLAN_TOKENS.filter((t) => tokenRgb(t) == null),
@@ -2624,6 +2673,22 @@ const box = (b: Box): CSSProperties => ({ left: b.x, top: b.y, width: b.w, heigh
 const spriteH = (s: PlanSprite) => PLAN_SPRITES[s].length * PLAN_CELL;
 const walkFrame = () => (Math.floor(performance.now() / WALK_FRAME_MS) % 2) as 0 | 1;
 const sameSpot = (a: Point, b: Point) => Math.abs(a.x - b.x) < 1 && Math.abs(a.y - b.y) < 1;
+
+// the plan is rebuilt on every coarse tick and roster change, each time with new objects: a desk or a seat
+// re-renders only when a value it draws has changed (its memo compares props with this)
+function sameValues(a: unknown, b: unknown): boolean {
+    if (Object.is(a, b)) {
+        return true;
+    }
+    if (typeof a !== "object" || typeof b !== "object" || a == null || b == null) {
+        return false;
+    }
+    const ka = Object.keys(a);
+    return (
+        ka.length === Object.keys(b).length &&
+        ka.every((k) => sameValues((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]))
+    );
+}
 
 function withAway(s: Record<string, Away>, id: string, to: Away | undefined): Record<string, Away> {
     const next = { ...s };
@@ -2681,7 +2746,8 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     const moving = animationOn && !reduced;
 
     const now = props.now;
-    const pct = dev?.energy ?? props.fiveHourPct;
+    const livePct = useAtomValue(officeFiveHourAtom);
+    const pct = dev?.energy ?? livePct;
     const energy = energyOf(pct);
     const night = dev?.afterHours ?? afterHours(new Date(now), hours);
     const agents = useMemo(
@@ -2898,6 +2964,28 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             globalStore.set(bossAtom, { ...b, holding: undefined });
         }
     };
+    // a click on the floor walks the boss there at a click's speed, through the doors; on arriving, the desk at the
+    // boss (if any, in the room it stands in) becomes the cursor, and in the hall the cursor stays on the last desk
+    const walkTo = (p: Point) => {
+        const b = globalStore.get(bossAtom);
+        const at = { x: Math.round(p.x / STEP_PX) * STEP_PX, y: Math.round(p.y / STEP_PX) * STEP_PX };
+        if (!b || !canStand(planRef.current, at)) {
+            return;
+        }
+        globalStore.set(popupHiddenAtom, false);
+        if (!movingRef.current) {
+            globalStore.set(bossAtom, { ...b, at, path: [], holding: undefined });
+            afterStop();
+            return;
+        }
+        globalStore.set(bossAtom, {
+            ...b,
+            path: pathBetween(planRef.current, b.at, at),
+            speed: JUMP_SPEED,
+            holding: undefined,
+        });
+        kick();
+    };
     handleRef.current = {
         walk,
         release,
@@ -3049,15 +3137,18 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             globalStore.set(walkingAtom, {});
             globalStore.set(dotsAtom, []);
             globalStore.set(popupHiddenAtom, false);
-            globalStore.set(officeCountsAtom, null);
+            globalStore.set(officeMeterAtom, null);
+            globalStore.set(officeFiveHourAtom, undefined);
             setOfficeRoot(null);
             lastPlan = null;
         },
         []
     );
 
-    // the 5-hour window reset: everyone at a desk stretches once
+    // the 5-hour window reset: everyone at a desk stretches once. The timer is the office's, not the effect's: a
+    // reading that changes again within the stretch must not cancel its end
     const prevPct = useRef(pct);
+    const stretchTimer = useRef<number | undefined>(undefined);
     const [stretching, setStretching] = useState(false);
     useEffect(() => {
         const reset = isReset(prevPct.current, pct);
@@ -3066,13 +3157,37 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             return;
         }
         setStretching(true);
-        const t = window.setTimeout(() => setStretching(false), STRETCH_MS);
-        return () => window.clearTimeout(t);
+        window.clearTimeout(stretchTimer.current);
+        stretchTimer.current = window.setTimeout(() => setStretching(false), STRETCH_MS);
     }, [pct]);
+    useEffect(() => () => window.clearTimeout(stretchTimer.current), []);
 
+    // the cheer as a desk turns done: the plan's coarse clock would miss a 1.5 s pose, so the office times it here,
+    // where the frame clock can count it; the desks already done when the office opens do not cheer
+    const doneWas = useRef<Set<string> | null>(null);
+    const cheerTimers = useRef<number[]>([]);
+    const [cheering, setCheering] = useState<ReadonlySet<string>>(() => new Set());
+    useEffect(() => {
+        const done = new Set(plan.desks.filter((d) => d.word === "done").map((d) => d.key));
+        const was = doneWas.current;
+        doneWas.current = done;
+        const fresh = was ? [...done].filter((k) => !was.has(k)) : [];
+        if (fresh.length === 0) {
+            return;
+        }
+        setCheering((s) => new Set([...s, ...fresh]));
+        cheerTimers.current.push(
+            window.setTimeout(() => setCheering((s) => new Set([...s].filter((k) => !fresh.includes(k)))), CHEER_MS)
+        );
+    }, [plan]);
+    useEffect(() => () => cheerTimers.current.forEach((t) => window.clearTimeout(t)), []);
+
+    // the frame clock runs while some drawn person moves: the nod, a raised hand, a cheer, a stretch (a yawn is a
+    // working person's frame, so it rides on the nod)
     const animated =
         plan.desks.filter((d) => d.animated && !walkingIds.has(d.key)).length +
-        plan.seats.filter((s) => s.animated).length;
+        plan.seats.filter((s) => s.animated).length +
+        cheering.size;
     useFrameClock(animated > 0 || stretching, animationOn);
 
     useEffect(() => {
@@ -3082,9 +3197,9 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             plan.seats.filter((s) => s.pose !== "empty").length;
         const lounging = plan.loungers.filter((l) => !walkingIds.has(l.agentId)).length;
         const people = seated + lounging + walkingIds.size + 1;
-        const prev = globalStore.get(officeCountsAtom);
+        const prev = globalStore.get(officeMeterAtom);
         if (prev?.people !== people || prev.walking !== walkingIds.size || prev.animated !== animated) {
-            globalStore.set(officeCountsAtom, { people, walking: walkingIds.size, animated });
+            globalStore.set(officeMeterAtom, { people, walking: walkingIds.size, animated });
         }
         Object.assign(probe, {
             people,
@@ -3101,9 +3216,23 @@ export function CockpitOffice(props: CockpitOfficeProps) {
 
     return (
         <div ref={scrollRef} data-cockpit-office className="min-h-0 flex-1 overflow-auto px-5 pb-3 pt-2.5">
+            <FiveHourLeaf model={props.model} />
             <OfficeHeading now={now} night={night} pct={pct} />
             {width > 0 ? (
-                <div ref={rootRef} className="relative isolate mt-2" style={{ width: plan.width, height: plan.height }}>
+                <div
+                    ref={rootRef}
+                    data-office-root
+                    className="relative isolate mt-2"
+                    style={{ width: plan.width, height: plan.height }}
+                    onClick={(e) => {
+                        // desks, seats, tables and the card beside the desk handle their own clicks
+                        if ((e.target as HTMLElement).closest("button, [data-office-popup]")) {
+                            return;
+                        }
+                        const r = e.currentTarget.getBoundingClientRect();
+                        walkTo({ x: e.clientX - r.left, y: e.clientY - r.top });
+                    }}
+                >
                     <Building plan={plan} night={night} />
                     {plan.desks.map((d) => (
                         <DeskView
@@ -3112,6 +3241,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                             hidePerson={walkingIds.has(d.key)}
                             energy={energy}
                             stretching={stretching}
+                            cheering={cheering.has(d.key)}
                             onPick={onPick}
                         />
                     ))}
@@ -3174,12 +3304,24 @@ function OfficeHeading({ now, night, pct }: { now: number; night: boolean; pct?:
     );
 }
 
+// the 5-hour window where the app bar meter reads it (usePlanDonuts, which ticks every second): only this leaf
+// re-renders each second, and the office only when the rounded percent changes
+function FiveHourLeaf({ model }: { model: AgentsViewModel }) {
+    const pct = usePlanDonuts(model).find((d) => d.provider === "claude")?.fivehour.pct;
+    const rounded = pct == null || Number.isNaN(pct) ? undefined : Math.round(pct);
+    useEffect(() => {
+        globalStore.set(officeFiveHourAtom, rounded);
+    }, [rounded]);
+    return null;
+}
+
 function Person({ sprite, outfit, left, bottom }: { sprite: PlanSprite; outfit: PlanOutfit; left: number; bottom: number }) {
     const h = spriteH(sprite);
     return (
         <img
             alt=""
             draggable={false}
+            data-office-sprite={sprite}
             src={planSpriteUrl(sprite, outfit)}
             className="pointer-events-none absolute z-[1] [image-rendering:pixelated]"
             style={{ left, top: bottom - h, width: spriteWidth(sprite) * PLAN_CELL, height: h }}
@@ -3187,31 +3329,14 @@ function Person({ sprite, outfit, left, bottom }: { sprite: PlanSprite; outfit: 
     );
 }
 
-// the cheer as a desk turns done: the plan's coarse clock would miss a 1.5 s pose, so the view times it
-function useCheerOnce(done: boolean): boolean {
-    const [on, setOn] = useState(false);
-    const was = useRef(done);
-    useEffect(() => {
-        const fresh = done && !was.current;
-        was.current = done;
-        if (!fresh) {
-            return;
-        }
-        setOn(true);
-        const t = window.setTimeout(() => setOn(false), CHEER_MS);
-        return () => window.clearTimeout(t);
-    }, [done]);
-    return on;
-}
-
+// a person at a desk whose pose moves; the 5-hour reset stretches everyone at a desk, at work or not
 function TickPerson(p: { id: string; pose: SeatPose; outfit: PlanOutfit; working: boolean; energy: Energy; stretching: boolean }) {
     const tick = useAtomValue(officeTickAtom);
-    const sprite: PlanSprite =
-        p.working && p.stretching
-            ? "stretch"
-            : p.working && yawnsNow(p.id, tick, p.energy)
-              ? "yawn"
-              : (seatSprite(p.pose, (tick % 2) as 0 | 1) ?? "doze");
+    const sprite: PlanSprite = p.stretching
+        ? "stretch"
+        : p.working && yawnsNow(p.id, tick, p.energy)
+          ? "yawn"
+          : (seatSprite(p.pose, (tick % 2) as 0 | 1) ?? "doze");
     return <Person sprite={sprite} outfit={p.outfit} left={26} bottom={56} />;
 }
 
@@ -3222,19 +3347,25 @@ const DESK_CLASS =
     "before:absolute before:left-[4px] before:top-[50px] before:z-[2] before:h-[22px] before:w-[80px] before:bg-office-desk-top before:content-[''] " +
     "after:absolute after:left-[4px] after:top-[72px] after:z-[2] after:h-[8px] after:w-[80px] after:bg-office-desk-face after:content-['']";
 
-const DeskView = memo(function DeskView(p: { d: Desk; hidePerson: boolean; energy: Energy; stretching: boolean; onPick: (key: string) => void }) {
-    const { d, hidePerson, energy, stretching, onPick } = p;
+const DeskView = memo(function DeskView(p: {
+    d: Desk;
+    hidePerson: boolean;
+    energy: Energy;
+    stretching: boolean;
+    cheering: boolean;
+    onPick: (key: string) => void;
+}) {
+    const { d, hidePerson, energy, stretching, cheering, onPick } = p;
     const outfit = useMemo<PlanOutfit>(() => ({ shirt: shirtOf(d.harness), look: lookOf(d.key) }), [d.harness, d.key]);
-    const cheering = useCheerOnce(d.word === "done");
     const seated = !hidePerson && d.pose !== "empty";
     const working = d.light === "working";
     const pose: SeatPose = cheering ? "cheer" : d.pose;
-    const ticks = d.animated || cheering || (working && (energy !== "fresh" || stretching));
+    const ticks = d.animated || cheering || stretching || (working && energy !== "fresh");
     return (
         <button
             type="button"
             data-office-desk={d.key}
-            data-office-pose={seated ? pose : "empty"}
+            data-office-pose={!seated ? "empty" : stretching ? "stretch" : pose}
             title={d.tip}
             aria-label={d.tip}
             onClick={() => onPick(d.key)}
@@ -3261,7 +3392,7 @@ const DeskView = memo(function DeskView(p: { d: Desk; hidePerson: boolean; energ
             ) : null}
         </button>
     );
-});
+}, sameValues);
 
 function TickSeat({ pose, outfit }: { pose: SeatPose; outfit: PlanOutfit }) {
     const tick = useAtomValue(officeTickAtom);
@@ -3295,7 +3426,7 @@ const SeatView = memo(function SeatView({ s, onPick }: { s: Seat; onPick: (key: 
             )}
         </button>
     );
-});
+}, sameValues);
 
 function Table({ room, onPick }: { room: Room; onPick: (key: string) => void }) {
     const t = room.table!;
@@ -3359,7 +3490,7 @@ function Building({ plan, night }: { plan: Plan; night: boolean }) {
     }
     return (
         <>
-            <span className="absolute z-0 bg-office-hall" style={box(plan.hall)} />
+            <span data-office-hall className="absolute z-0 bg-office-hall" style={box(plan.hall)} />
             {plan.rooms.map((r) => (
                 <span key={r.key} data-office-floor={r.kind} className="absolute z-0" style={{ ...box(r.box), ...FLOOR[r.kind] }} />
             ))}
@@ -3518,6 +3649,7 @@ function Mover(p: { at: Point; sprite: PlanSprite; mirror: boolean; outfit: Plan
             alt=""
             draggable={false}
             data-office-boss={p.boss ? "" : undefined}
+            data-office-sprite={p.sprite}
             src={planSpriteUrl(p.sprite, p.outfit)}
             className="pointer-events-none absolute left-0 top-0 z-[7] [image-rendering:pixelated]"
             style={{
@@ -3768,27 +3900,18 @@ In `frontend/app/view/agents/usecockpitkeyboard.ts`:
    import { CockpitOffice, type OfficeHandle } from "./cockpitoffice";
    import { officeInputs } from "./officeinputs";
    import { cockpitView, cockpitViewAtom } from "./officestore";
-   import { usePlanDonuts } from "./usagemeters";
    ```
-3. Delete this block (it moves below the cards, step 6):
-   ```ts
-       // open a live transcript stream + git tracking per rendered active agent; keep recently-idle
-       // streams during the grace window so final transcript writes cannot race the stop event.
-       useCardStreams(
-           streamableTranscriptAgents([...asking, ...working, ...recentlyIdle], structuralNow)
-               .filter((a) => a.transcriptPath)
-               .map((a) => ({ id: a.id, path: a.transcriptPath!, agent: a.agent, blockId: a.blockId })),
-           { trackGit: true },
-       );
-   ```
-4. After `const setChip = (c: ChipFilter) => globalStore.set(model.chipFilterAtom, c);` add:
+   The card streams (`useCardStreams`) stay exactly as they are: Office keeps the grid's streams, one per live agent
+   (spec, "The popup"). Stopping a stream drops its agent's live entries, and `hiddenAgentIds` would then take that
+   agent out of the office and the tab counts. Nothing in this surface reads the 5-hour meter either: it ticks every
+   second, so the office reads it in its own leaf (`FiveHourLeaf`, step 1).
+3. After `const setChip = (c: ChipFilter) => globalStore.set(model.chipFilterAtom, c);` add:
    ```ts
        // the Cockpit is the card grid or the office (cockpit office spec); the office draws the same cards
        const view = cockpitView(useAtomValue(cockpitViewAtom));
        const officeRef = useRef<OfficeHandle | null>(null);
-       const fiveHour = usePlanDonuts(model).find((d) => d.provider === "claude")?.fivehour.pct;
    ```
-5. In the grid's ResizeObserver effect, change its closing
+4. In the grid's ResizeObserver effect, change its closing
    ```ts
            ro.observe(el);
            measure();
@@ -3796,28 +3919,16 @@ In `frontend/app/view/agents/usecockpitkeyboard.ts`:
        }, []);
    ```
    to `}, [view]);` (the grid's scroller mounts again when the Cockpit comes back from Office).
-6. After `const readyCount = shownCards.filter((c) => cardMatchesChip(c, "idle", cardNeedsYou(c))).length;` add:
+5. After `const shownBackgrounded = backgrounded.filter((a) => matchesProjectFilter(a, projectFilter));` add:
    ```ts
-       // open a live transcript stream + git tracking per rendered active agent; keep recently-idle
-       // streams during the grace window so final transcript writes cannot race the stop event. The office opens only
-       // the card beside the boss, so it streams that agent and the runs' leads, not one per card.
-       const streamable = streamableTranscriptAgents([...asking, ...working, ...recentlyIdle], structuralNow).filter(
-           (a) => a.transcriptPath
-       );
-       const officeLeads = new Set(cards.flatMap((c) => (c.kind === "run" && c.lead ? [c.lead.id] : [])));
-       useCardStreams(
-           (view === "office" ? streamable.filter((a) => a.id === cursorId || officeLeads.has(a.id)) : streamable).map(
-               (a) => ({ id: a.id, path: a.transcriptPath!, agent: a.agent, blockId: a.blockId })
-           ),
-           { trackGit: true },
-       );
+       // the office draws the cards and the Idle section's agents (cockpit office spec, "Where it lives"). This
+       // surface builds its cards anew on every render, so the office's input is kept by its content: a render that
+       // changes nothing the office draws hands it the same arrays, and its plan and memoized desks stay put
+       const officeFresh = view === "office" ? officeInputs(cards, shownParkedIdle, leadVMs, agents, lineage) : null;
+       const officeKey = officeFresh ? JSON.stringify(officeFresh) : "";
+       const officeIn = useMemo(() => officeFresh, [officeKey]);
    ```
-7. After `const shownBackgrounded = backgrounded.filter((a) => matchesProjectFilter(a, projectFilter));` add:
-   ```ts
-       // the office draws the cards and the Idle section's agents (cockpit office spec, "Where it lives")
-       const officeIn = view === "office" ? officeInputs(cards, shownParkedIdle, leadVMs, agents, lineage) : null;
-   ```
-8. Replace the cursor effect
+6. Replace the cursor effect
    ```ts
        useEffect(() => {
            const next = resolveCursor(cursorId, navigableIds, cursorAlias);
@@ -3837,7 +3948,7 @@ In `frontend/app/view/agents/usecockpitkeyboard.ts`:
            }
        }, [navigableIds.join(","), cursorId, view]);
    ```
-9. Replace the `useCockpitKeyboard({ ... })` call with:
+7. Replace the `useCockpitKeyboard({ ... })` call with:
    ```ts
        const officeKeys = useMemo<OfficeKeys>(
            () => ({
@@ -3859,7 +3970,7 @@ In `frontend/app/view/agents/usecockpitkeyboard.ts`:
            toggleView,
        });
    ```
-10. Right before `const phase = rosterLoadPhase(` add:
+8. Right before `const phase = rosterLoadPhase(` add:
     ```tsx
         // the card beside the desk the boss stands at: an agent's AgentRow, or for a seat or a meeting room its run's
         // LeadCard, the very ones the grid draws; an agent of the Idle section gets its row too
@@ -3876,7 +3987,7 @@ In `frontend/app/view/agents/usecockpitkeyboard.ts`:
             return parked ? renderAgent(parked, cardShare(false, false)) : null;
         };
     ```
-11. Right before `const gridScrollRef = useRef<HTMLDivElement>(null);` add:
+9. Right before `const gridScrollRef = useRef<HTMLDivElement>(null);` add:
     ```ts
         // DEV-only seams for the cockpit-office scenarios; never in a production build
         useEffect(() => {
@@ -3885,7 +3996,7 @@ In `frontend/app/view/agents/usecockpitkeyboard.ts`:
             }
         }, []);
     ```
-12. On the container `<div ref={containerRef} data-cockpit-surface ...>`, after `onKeyDown={onKeyDown}` add:
+10. On the container `<div ref={containerRef} data-cockpit-surface ...>`, after `onKeyDown={onKeyDown}` add:
     ```tsx
                 onKeyUp={(e) => {
                     const dir = ARROW_DIR[e.key];
@@ -3894,7 +4005,7 @@ In `frontend/app/view/agents/usecockpitkeyboard.ts`:
                     }
                 }}
     ```
-13. In the heading row, right before `<ProjectSwitcher model={model} variant="header" />`, add:
+11. In the heading row, right before `<ProjectSwitcher model={model} variant="header" />`, add:
     ```tsx
                             <div
                                 role="group"
@@ -3919,7 +4030,7 @@ In `frontend/app/view/agents/usecockpitkeyboard.ts`:
                                 ))}
                             </div>
     ```
-14. Replace the grid's scroller
+12. Replace the grid's scroller
     ```tsx
                         <div ref={gridScrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 pb-3 pt-2.5">
                             <div className="flex items-start gap-2.5">
@@ -3943,7 +4054,7 @@ In `frontend/app/view/agents/usecockpitkeyboard.ts`:
                                     agents={officeIn.agents}
                                     runs={officeIn.runs}
                                     now={structuralNow}
-                                    fiveHourPct={fiveHour}
+                                    model={model}
                                     cursorId={cursorId}
                                     onCursor={(key) => setCursorId(key)}
                                     renderCard={renderOfficeCard}
@@ -3966,7 +4077,7 @@ In `frontend/app/view/agents/usecockpitkeyboard.ts`:
                             </div>
                         )}
     ```
-15. Change `<IdleSection agents={shownParkedIdle} onOpen={(id) => model.openTerminal(id)} />` to
+13. Change `<IdleSection agents={shownParkedIdle} onOpen={(id) => model.openTerminal(id)} />` to
     `{view === "office" ? null : <IdleSection agents={shownParkedIdle} onOpen={(id) => model.openTerminal(id)} />}`
     (in Office those agents are in the lounge).
 
@@ -4077,7 +4188,9 @@ import { SCENARIOS as ROSTERS } from "../cockpit-fixtures/scenarios.mjs";
 
 export const FIXTURE = new URL("../../public/cockpit-fixtures/active.json", import.meta.url);
 export const VIEW_KEY = "cockpit.view";
-const KEY_CODES = { ArrowUp: 38, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39, n: 78, o: 79, 1: 49 };
+const KEY_CODES = { ArrowUp: 38, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39, Escape: 27, j: 74, k: 75, n: 78, o: 79, 1: 49 };
+// the boss's walking speed (officeboss.ts BOSS_SPEED), for how long to hold an arrow
+const BOSS_PX_PER_S = 160;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // fixture runs the office draws after the live ones
@@ -4142,6 +4255,20 @@ export async function settleBoss(h, ms = 4000) {
 }
 
 const desk = (id) => `[data-office-desk="${id}"]`;
+// how many drawn people show one of these sprites right now (data-office-sprite on each person's <img>)
+const spriteCount = (h, names) =>
+    h.ev(`[...document.querySelectorAll("[data-office-root] [data-office-sprite]")].filter((i) => ${JSON.stringify(names)}.includes(i.dataset.officeSprite)).length`);
+// polls for ms until some person shows one of these sprites; the count seen, 0 if none
+async function waitForSprite(h, names, ms) {
+    for (let t = 0; t <= ms; t += 100) {
+        const n = await spriteCount(h, names);
+        if (n > 0) return n;
+        await sleep(100);
+    }
+    return 0;
+}
+const toggleTo = (h, label) =>
+    h.ev(`[...document.querySelectorAll("[data-cockpit-view-toggle] button")].find((b) => b.textContent.trim() === ${JSON.stringify(label)})?.click()`);
 
 // fx: { arrangeFixtureRun, teardownFixtureRun } from scenarios.mjs
 export function makeCockpitOfficeScenarios(fx) {
@@ -4199,19 +4326,27 @@ export function makeCockpitOfficeScenarios(fx) {
             rec("3. a click on a meeting room opens its run's card", p?.popup === "run" && runText > 0, JSON.stringify({ popup: p?.popup, cursor: p?.cursor, runText }));
             await h.shot("cdp-shots/cockpit-office-run.png");
 
-            // 4. a wall stops the boss, a door lets it through
+            // 4. a wall stops the boss, a door lets it through. From loom's desk (below the door) the boss walks right
+            // long enough to reach the room's wall at any office width, and must stop there; then up to the door's
+            // middle and right again, into the hall
             await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-loom"))})?.click()`);
-            await settleBoss(h);
+            const start = await settleBoss(h);
+            const arc = start?.boxes?.["room:arcterm"];
+            const edge = arc ? arc.x + arc.w : NaN;
             await focusCockpit(h);
-            await hold(h, "ArrowRight", 1500);
+            await hold(h, "ArrowRight", arc && start?.boss ? Math.round(((edge - start.boss.x) / BOSS_PX_PER_S) * 1000) + 1500 : 4000);
             const blocked = await settleBoss(h, 1000);
-            await hold(h, "ArrowUp", 400);
+            const doorMid = arc?.door ? arc.door.y + arc.door.h / 2 : NaN;
+            await hold(h, "ArrowUp", blocked?.boss && arc?.door ? Math.max(0, Math.round(((blocked.boss.y - doorMid) / BOSS_PX_PER_S) * 1000)) : 400);
             await hold(h, "ArrowRight", 2500);
             const through = await settleBoss(h, 1000);
             rec(
-                "4. the arrows walk the boss: the room's wall stops it, its door lets it into the hall",
-                blocked?.boss?.room === "room:arcterm" && through?.boss?.room === "hall",
-                JSON.stringify({ blocked: blocked?.boss, through: through?.boss })
+                "4. the arrows walk the boss: it stops at the room's wall, and its door lets it into the hall",
+                blocked?.boss?.room === "room:arcterm" &&
+                    blocked.boss.x >= edge - 3 &&
+                    blocked.boss.x <= edge &&
+                    through?.boss?.room === "hall",
+                JSON.stringify({ edge, doorMid, blocked: blocked?.boss, through: through?.boss })
             );
 
             // 5. NextAsk: n shows the way, then the boss walks it
@@ -4227,44 +4362,113 @@ export function makeCockpitOfficeScenarios(fx) {
                 JSON.stringify({ dots: hint?.dots, cursor: p?.cursor, popup: p?.popup })
             );
 
-            // 6. lights
+            // 6. Esc hides the card until the boss moves; j and k walk desk by desk in office order
+            await focusCockpit(h);
+            await key(h, "Escape");
+            await sleep(200);
+            const hid = await probe(h);
+            const want = hid?.order?.[hid.order.indexOf(hid.cursor) + 1];
+            await focusCockpit(h);
+            await key(h, "j");
+            const next = await settleBoss(h, 5000);
+            await focusCockpit(h);
+            await key(h, "k");
+            const back = await settleBoss(h, 5000);
+            rec(
+                "6. Esc hides the card; j walks to the next desk in office order with its card open, k walks back",
+                hid?.popup === "" && want != null && next?.cursor === want && next.popup !== "" && back?.cursor === hid.cursor && back.popup !== "",
+                JSON.stringify({ hidden: hid?.popup, want, next: [next?.cursor, next?.popup], back: [back?.cursor, back?.popup] })
+            );
+
+            // 7. a click on the floor walks the boss there; in the hall the cursor stays on the last desk
+            const before = await probe(h);
+            const hall = before?.hall;
+            const spot = hall ? { x: hall.x + hall.w - 36, y: hall.y + Math.min(300, hall.h - 40) } : null;
+            if (spot) {
+                await h.ev(`(() => {
+                    const root = document.querySelector("[data-office-root]");
+                    const r = root.getBoundingClientRect();
+                    root.querySelector("[data-office-hall]").dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: r.left + ${spot.x}, clientY: r.top + ${spot.y} }));
+                })()`);
+            }
+            p = await settleBoss(h, 5000);
+            rec(
+                "7. a click on the hall's floor walks the boss there, and the cursor stays on the last desk",
+                spot != null &&
+                    p?.boss?.room === "hall" &&
+                    Math.abs(p.boss.x - spot.x) <= 3 &&
+                    Math.abs(p.boss.y - spot.y) <= 3 &&
+                    p.cursor === before.cursor &&
+                    p.popup === "",
+                JSON.stringify({ spot, boss: p?.boss, cursor: [before?.cursor, p?.cursor], popup: p?.popup })
+            );
+
+            // 8. lights
             p = await probe(h);
             rec(
-                "6. Home's booth, where no one works, has its lights off; arcterm's room is lit",
+                "8. Home's booth, where no one works, has its lights off; arcterm's room is lit",
                 p?.dark?.includes("room:home") && !p.dark.includes("room:arcterm"),
                 JSON.stringify(p?.dark)
             );
 
-            // 7. Night
+            // 9. Night
             await dev(h, { afterHours: true });
             await sleep(400);
             p = await probe(h);
             const gone = await h.ev(`document.querySelectorAll('[data-office-desk][data-office-pose="empty"]').length`);
-            rec("7. after hours: idle people have gone home, people at work have a lamp", p?.night && p.lamps > 0 && gone > 0, JSON.stringify({ night: p?.night, lamps: p?.lamps, gone }));
+            rec("9. after hours: idle people have gone home, people at work have a lamp", p?.night && p.lamps > 0 && gone > 0, JSON.stringify({ night: p?.night, lamps: p?.lamps, gone }));
             await h.shot("cdp-shots/cockpit-office-night.png");
 
-            // 8. Tired
+            // 10. Tired
             await dev(h, { afterHours: false, energy: 94 });
             await sleep(400);
             p = await probe(h);
             const heading = await h.ev(`document.querySelector("[data-office-heading]")?.textContent ?? ""`);
-            rec("8. the 5-hour window at 94 %: coffee on the working desks, the heading says 94 %", p?.cups > 0 && heading.includes("94"), JSON.stringify({ cups: p?.cups, heading }));
+            rec("10. the 5-hour window at 94 %: coffee on the working desks, the heading says 94 %", p?.cups > 0 && heading.includes("94"), JSON.stringify({ cups: p?.cups, heading }));
             await h.shot("cdp-shots/cockpit-office-tired.png");
 
-            // 9. States: every sprite
-            await dev(h, { energy: 63, sheet: true });
+            // 11. States, the yawn and the stretch: at 75 % a working person yawns; a drop from 75 % to 5 % (a reset)
+            // makes everyone at a desk stretch once
+            await dev(h, { energy: 75 });
+            const yawns = await waitForSprite(h, ["yawn"], 4000);
+            await dev(h, { energy: 5 });
+            const stretches = await waitForSprite(h, ["stretch"], 1000);
+            const stretchPoses = await h.ev(`document.querySelectorAll('[data-office-desk][data-office-pose="stretch"]').length`);
+            await h.shot("cdp-shots/cockpit-office-stretch.png");
+            rec(
+                "11. at 75 % a working person yawns; the reset to 5 % stretches everyone at a desk",
+                yawns > 0 && stretches > 0 && stretchPoses > 0,
+                JSON.stringify({ yawns, stretches, stretchPoses })
+            );
+
+            // 12. States, the cheer: quiet makes every agent just finished, so the desks that were at work cheer once
+            // (after the stretch, which lasts 1.5 s and would draw over the cheer)
+            await sleep(1600);
+            await dev(h, { quiet: true });
+            const cheers = await waitForSprite(h, ["cheer1", "cheer2"], 1200);
+            const cheerPoses = await h.ev(`document.querySelectorAll('[data-office-desk][data-office-pose="cheer"]').length`);
+            await h.shot("cdp-shots/cockpit-office-cheer.png");
+            await dev(h, { quiet: false, energy: 63 });
+            rec(
+                "12. a desk that turns done cheers once",
+                cheers > 0 && cheerPoses > 0,
+                JSON.stringify({ cheers, cheerPoses })
+            );
+
+            // 13. States: every sprite
+            await dev(h, { sheet: true });
             await sleep(400);
             const sheet = await h.ev(`[...document.querySelectorAll("[data-office-sheet] img")].map((i) => (i.getAttribute("src") ?? "").length)`);
             p = await probe(h);
             rec(
-                "9. every sprite draws, every colour token resolved",
+                "13. every sprite draws, every colour token resolved",
                 sheet.length === 18 && sheet.every((n) => n > 0) && p?.unresolved?.length === 0,
                 JSON.stringify({ sheet, unresolved: p?.unresolved })
             );
             await h.shot("cdp-shots/cockpit-office-states.png");
             await dev(h, { sheet: false });
 
-            // 10. animation off
+            // 14. animation off
             await h.ev("window.__cockpitOfficeAnimation(false)");
             await sleep(700);
             const off = await probe(h);
@@ -4272,9 +4476,29 @@ export function makeCockpitOfficeScenarios(fx) {
             await sleep(700);
             const on = await probe(h);
             rec(
-                "10. with the animation off no clock runs; on again, the frame clock runs",
+                "14. with the animation off no clock runs; on again, the frame clock runs",
                 off?.clock?.frame === false && off.clock.walk === false && on?.clock?.frame === true,
                 JSON.stringify({ off: off?.clock, on: on?.clock })
+            );
+
+            // 15. o and the Cards | Office toggle switch the view, and back
+            await focusCockpit(h);
+            await key(h, "o");
+            await sleep(400);
+            const cardsByKey = await h.ev(`!document.querySelector("[data-cockpit-office]")`);
+            await focusCockpit(h);
+            await key(h, "o");
+            const officeByKey = (await waitForOffice(h)) == null;
+            await toggleTo(h, "Cards");
+            await sleep(400);
+            const cardsByClick = await h.ev(`!document.querySelector("[data-cockpit-office]")`);
+            await toggleTo(h, "Office");
+            const officeByClick = (await waitForOffice(h)) == null;
+            await settleBoss(h);
+            rec(
+                "15. o switches to Cards and back to Office, and so does the toggle beside Live only",
+                cardsByKey && officeByKey && cardsByClick && officeByClick,
+                JSON.stringify({ cardsByKey, officeByKey, cardsByClick, officeByClick })
             );
 
             return steps;
@@ -4319,7 +4543,8 @@ Expected: PASS (a keybinding test that lists the Cockpit's ids may need the two 
 
 Run: `ARC_FINAL_OUT=$(mktemp -d) node scripts/cdp/final-verify.mjs cockpit-office`
 Expected: every step of `cockpit-office` PASS; open the shots under `cdp-shots/` and compare them with the canvas's
-`Main`, `NextAsk`, `Night`, `Tired` and `States` boards.
+`Main`, `NextAsk`, `Night`, `Tired` and `States` boards (`cockpit-office-stretch.png` and `cockpit-office-cheer.png` are
+the States board's stretch and cheer).
 
 - [ ] **Step 10: Commit**
 
@@ -4336,7 +4561,7 @@ git commit -m "feat(cockpit): Office view: the floor plan, the boss you walk, th
 **Files:** `frontend/app/view/agents/consumerspanel.tsx`, `frontend/app/view/agents/settingspages/appearance.tsx`, `frontend/app/view/agents/settingsmodel.ts`, `frontend/app/view/agents/settingsmodel.test.ts`, `frontend/app/view/agents/settingssurface.tsx`, `scripts/cdp/cockpitofficescenarios.mjs`
 
 **Interfaces:**
-- Consumes: `officeCountsAtom`, `officeMeter`, `officeClocks`, `officeDomNodes` (`officeclock.ts`);
+- Consumes: `officeMeterAtom`, `officeMeter`, `officeClocks`, `officeDomNodes` (`officeclock.ts`);
   `spriteCacheStats` (`spritecache.ts`); `officeAnimationAtom`, `officeHoursAtom`, `officeAnimation`,
   `DEFAULT_OFFICE_ANIMATION` (`officestore.ts`); `sanitizeHours`, `DEFAULT_HOURS`, `WorkHours` (`officebehavior.ts`).
 - Produces: `[data-consumers-office]` and `[data-consumers-office-toggle]` in the Consumers panel; settings rows
@@ -4476,7 +4701,7 @@ Run the test again. Expected: PASS (if another test enumerates Appearance's card
 1. Add imports (merge with existing `jotai` / `react` imports where they exist: `useAtom`, `useAtomValue`,
    `useEffect`, `useState`):
    ```ts
-   import { officeClocks, officeCountsAtom, officeDomNodes, officeMeter } from "@/app/view/office/officeclock";
+   import { officeClocks, officeMeterAtom, officeDomNodes, officeMeter } from "@/app/view/office/officeclock";
    import { spriteCacheStats } from "@/app/view/office/spritecache";
    import { officeAnimation, officeAnimationAtom } from "./officestore";
    ```
@@ -4510,7 +4735,7 @@ Run the test again. Expected: PASS (if another test enumerates Appearance's card
    }
 
    function OfficeLine() {
-       const counts = useAtomValue(officeCountsAtom);
+       const counts = useAtomValue(officeMeterAtom);
        const [raw, setAnim] = useAtom(officeAnimationAtom);
        const on = officeAnimation(raw);
        const [cost, setCost] = useState(officeCost);
@@ -4562,11 +4787,11 @@ Run the test again. Expected: PASS (if another test enumerates Appearance's card
 4. In `CompactOwn`, wrap what it returns in a fragment and add `<div className="px-3 pb-1.5"><OfficeLine /></div>`
    after the existing line.
 
-- [ ] **Step 6: The RamPanel step** — in `scripts/cdp/cockpitofficescenarios.mjs`, in `cockpitOffice.assert`, right
-before the final `return steps;`, add:
+- [ ] **Step 6: The RamPanel and Settings steps** — in `scripts/cdp/cockpitofficescenarios.mjs`, in
+`cockpitOffice.assert`, right before its final `return steps;` (after step 15), add:
 
 ```js
-            // 11. RamPanel: the office's cost, and its button
+            // 16. RamPanel: the office's cost, and its button
             await h.ev(`document.querySelector("[data-worker-capacity]")?.click()`);
             await sleep(1500);
             const line = await h.ev(`document.querySelector("[data-consumers-office]")?.textContent ?? ""`);
@@ -4578,11 +4803,48 @@ before the final `return steps;`, add:
             await h.ev(`document.querySelector("[data-consumers-office-toggle]")?.click()`);
             await h.ev(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
             rec(
-                "11. the RAM panel shows the office's JS, people, images and nodes, and its button stops every clock",
+                "16. the RAM panel shows the office's JS, people, images and nodes, and its button stops every clock",
                 ["Office JS", "People", "Images", "DOM nodes"].every((w) => line.includes(w)) &&
                     offLine.includes("animation off") &&
                     stopped?.clock?.frame === false,
                 JSON.stringify({ line, offLine, clock: stopped?.clock })
+            );
+
+            // 17. Settings → Appearance → Office: the office's animation switch and the work hours, and the switch is
+            // the one the office reads (last: it leaves the Cockpit)
+            await h.goto("settings");
+            await h.ev(`document.querySelector('button[data-section="appearance"]')?.click()`);
+            await h.ev(`(async () => {
+                for (let i = 0; i < 50 && !document.querySelector('[data-setting-card="office"]'); i++) await new Promise((r) => setTimeout(r, 100));
+            })()`);
+            const SWITCH = `document.querySelector('[data-setting-row="appearance.officeanimation"] [role="switch"]')`;
+            const card = await h.ev(`(() => {
+                const c = document.querySelector('[data-setting-card="office"]');
+                c?.scrollIntoView({ block: "center" });
+                return {
+                    found: !!c,
+                    on: ${SWITCH}?.getAttribute("aria-checked") ?? null,
+                    hours: c?.querySelector('[data-setting-row="appearance.officehours"]')?.textContent ?? "",
+                };
+            })()`);
+            await h.shot("cdp-shots/cockpit-office-settings.png");
+            await h.ev(`${SWITCH}?.click()`);
+            await sleep(300);
+            const stored = await h.ev(`localStorage.getItem("cockpit.office.animation")`);
+            const flipped = await h.ev(`${SWITCH}?.getAttribute("aria-checked") ?? null`);
+            await h.ev(`${SWITCH}?.click()`);
+            await sleep(300);
+            const restored = await h.ev(`localStorage.getItem("cockpit.office.animation")`);
+            rec(
+                "17. Settings → Appearance → Office holds the animation switch and the work hours (09:00 to 18:00), and the switch sets the office's animation",
+                card.found &&
+                    card.on === "true" &&
+                    card.hours.includes("09:00") &&
+                    card.hours.includes("18:00") &&
+                    flipped === "false" &&
+                    stored === "false" &&
+                    restored === "true",
+                JSON.stringify({ card, flipped, stored, restored })
             );
 ```
 
@@ -4595,7 +4857,8 @@ Run: `npx vitest run frontend/app/view/agents`
 Expected: PASS.
 
 Run: `ARC_FINAL_OUT=$(mktemp -d) node scripts/cdp/final-verify.mjs cockpit-office`
-Expected: every step PASS, step 11 included; compare `cdp-shots/cockpit-office-ram.png` with the `RamPanel` board.
+Expected: every step PASS, steps 16 and 17 included; compare `cdp-shots/cockpit-office-ram.png` with the `RamPanel`
+board, and check `cdp-shots/cockpit-office-settings.png` shows the Office card under Appearance.
 
 - [ ] **Step 8: Commit**
 
@@ -4680,13 +4943,30 @@ git commit -m "feat(cockpit): the office's cost in the RAM panel, and Settings �
             r.busyRawPct = round1(busyPct(walk0, walk1));
             r.busyPct = round1(r.busyRawPct - r.baseBusyPct);
 
-            await dev(h, { patrol: false, walkers: 0, quiet: true });
-            await sleep(1500);
+            // the quiet office (spec: every agent idle inside the Finished window, the hold starting once everyone has
+            // settled). Quiet brings the lounge's 18 people back to their desks; walking back three at a time would take
+            // a minute, so the animation goes off for a moment and they are there at once. The hold starts when no one
+            // walks and no clock runs (the cheers of the desks that just turned done last 1.5 s).
+            await dev(h, { patrol: false, walkers: 0 });
+            await h.ev("window.__cockpitOfficeAnimation(false)");
+            await dev(h, { quiet: true });
+            await sleep(300);
+            await h.ev("window.__cockpitOfficeAnimation(true)");
+            const settleT0 = Date.now();
+            let settled = null;
+            for (let t = 0; t < 10_000 && settled == null; t += 200) {
+                const q = await probe(h);
+                if (q?.walking === 0 && q.clock?.frame === false && q.clock?.walk === false) settled = q;
+                else await sleep(200);
+            }
+            r.quietSettleMs = settled ? Date.now() - settleT0 : null;
             const quiet0 = await metrics(h);
             await sleep(HOLD_MS);
             const quiet1 = await metrics(h);
             r.busyQuietPct = round1(busyPct(quiet0, quiet1) - r.baseBusyPct);
-            r.clockQuiet = (await probe(h))?.clock;
+            const quietEnd = await probe(h);
+            r.clockQuiet = quietEnd?.clock;
+            r.walkingQuiet = quietEnd?.walking;
 
             await h.cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
             await dev(h, { quiet: false, patrol: true, walkers: 3 });
@@ -4712,7 +4992,11 @@ git commit -m "feat(cockpit): the office's cost in the RAM panel, and Settings �
             rec("2. DOM nodes added <= 2,000", r.nodesAdded <= 2000, `${r.nodesAdded}`);
             rec("3. main thread busy walking, over the Cards baseline <= 2 %", r.busyPct <= 2, `${r.busyPct} % (${r.busyRawPct} % raw, baseline ${r.baseBusyPct} %)`);
             rec("4. busy under reduced motion <= 0.5 %", r.busyReducedPct <= 0.5, `${r.busyReducedPct} %`);
-            rec("5. busy in a quiet office <= 0.3 %, no clock running", r.busyQuietPct <= 0.3 && r.clockQuiet?.frame === false && r.clockQuiet?.walk === false, `${r.busyQuietPct} % ${JSON.stringify(r.clockQuiet)}`);
+            rec(
+                "5. busy in a quiet office (everyone settled at a desk) <= 0.3 %, no one walking and no clock running",
+                r.quietSettleMs != null && r.busyQuietPct <= 0.3 && r.walkingQuiet === 0 && r.clockQuiet?.frame === false && r.clockQuiet?.walk === false,
+                `${r.busyQuietPct} %, settled in ${r.quietSettleMs} ms, ${r.walkingQuiet} walking, ${JSON.stringify(r.clockQuiet)}`
+            );
             rec("6. sprite cache <= 600 entries", r.cache <= 600, `${r.cache}`);
             rec("7. heap after switching back to Cards <= 1 MB over Cards", r.heapAfterMB <= 1, `${r.heapAfterMB} MB`);
             rec("8. toggle click to the office drawn <= 150 ms", r.openMs <= 150, `${r.openMs} ms`);
