@@ -31,3 +31,30 @@ func TestRedactSecrets(t *testing.T) {
 		t.Fatal("plain text must be untouched")
 	}
 }
+
+func TestRedactKeepsCodeReferences(t *testing.T) {
+	cases := []string{
+		"The 2.5s sleep ends before the new page has set `window.__wavePetStore`.",
+		"`redirectTarget` and `resolvePath` in `frontend/app/view/agents/agentshellread.ts`: the tree applies",
+		"server validation in pkg/wshrpc/wshserver/wshserver-runsettings.go:58, :96 and :144",
+		"see frontend/app/view/jarvis/runsheet.tsx:992 (no guard)",
+		"the only caller is TranscriptTailCommandHandler() in the server",
+	}
+	for _, in := range cases {
+		if out := Redact(in); out != in {
+			t.Errorf("code reference redacted:\n in: %q\nout: %q", in, out)
+		}
+	}
+}
+
+func TestRedactStandaloneHighEntropyToken(t *testing.T) {
+	cases := []string{
+		"the value Xk9mQ2vL7pR4tW8zB3nF6hJ1cD5gY0aE was logged",  // base62 with digits
+		"token AbCdEfGh/IjKlMnOp+QrStUvWx0123456789== in a file", // base64 with / and =
+	}
+	for _, in := range cases {
+		if out := Redact(in); !strings.Contains(out, "[REDACTED]") {
+			t.Errorf("high-entropy token kept: %q -> %q", in, out)
+		}
+	}
+}
