@@ -426,6 +426,8 @@ func main() {
 	wshserver.StartAgentSleepLoop(context.Background(), func(n wshrpc.NotifyCommandData) { publishNotice(n.Title, n.Message, n.Level) })
 	// the Mac stays out of idle sleep while agents, runs or heavy jobs work (power:keepawake)
 	wshserver.StartKeepAwake(context.Background())
+	// the tray icon's red dot when memory pressure turns critical (spec 2026-10-15-tray-popover-design.md)
+	wshserver.StartMachineWatch(context.Background())
 	jarvisvolunteer.StartLooseEndSweep(context.Background())
 	err = wcore.InitBadgeStore()
 	if err != nil {

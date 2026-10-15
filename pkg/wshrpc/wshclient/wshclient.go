@@ -626,6 +626,12 @@ func GetLatestResumeCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.Co
 	return resp, err
 }
 
+// command "getmachinestats", wshserver.GetMachineStatsCommand
+func GetMachineStatsCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.MachineStatsData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.MachineStatsData](w, "getmachinestats", nil, opts)
+	return resp, err
+}
+
 // command "getmeta", wshserver.GetMetaCommand
 func GetMetaCommand(w *wshutil.WshRpc, data wshrpc.CommandGetMetaData, opts *wshrpc.RpcOpts) (waveobj.MetaMapType, error) {
 	resp, err := sendRpcRequestCallHelper[waveobj.MetaMapType](w, "getmeta", data, opts)
@@ -1329,6 +1335,12 @@ func StartRadarScanCommand(w *wshutil.WshRpc, data wshrpc.CommandStartRadarScanD
 // command "stopdevserver", wshserver.StopDevServerCommand
 func StopDevServerCommand(w *wshutil.WshRpc, data wshrpc.CommandStopDevServerData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "stopdevserver", data, opts)
+	return err
+}
+
+// command "stopprocess", wshserver.StopProcessCommand
+func StopProcessCommand(w *wshutil.WshRpc, data wshrpc.CommandStopProcessData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "stopprocess", data, opts)
 	return err
 }
 

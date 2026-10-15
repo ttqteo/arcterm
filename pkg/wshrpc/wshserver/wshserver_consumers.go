@@ -83,9 +83,11 @@ func (ws *WshServer) GetConsumersCommand(ctx context.Context) (*wshrpc.CommandGe
 		}
 	}
 	var bd memusage.Breakdown
-	if table, terr := consumerTable(); terr == nil {
+	table, terr := consumerTable()
+	sampler := consumerSampler()
+	if terr == nil {
 		// wavesrv's parent is the Tauri host, which spawned it
-		bd = memusage.Measure(table, consumerSampler(), roots, int32(os.Getpid()), int32(os.Getppid()), runtime.GOOS == "darwin")
+		bd = memusage.Measure(table, sampler, roots, int32(os.Getpid()), int32(os.Getppid()), runtime.GOOS == "darwin")
 	}
 	now := time.Now()
 	out := &wshrpc.CommandGetConsumersRtnData{
@@ -104,6 +106,12 @@ func (ws *WshServer) GetConsumersCommand(ctx context.Context) (*wshrpc.CommandGe
 		a := wshrpc.ConsumerAgent{TabId: r.TabId, BlockId: r.blockId, Dag: consumerDag(ctx, dags, ownerRun(facts.Runs, r.TabId))}
 		if n, ok := bd.Agents[r.blockId]; ok {
 			a.RamBytes = &n
+		}
+		if root, ok := roots[r.blockId]; ok && terr == nil {
+			agent := memusage.AgentPid(table, root, isShellProcess)
+			if pid, b, ok := memusage.Heaviest(table, agent, sampler.Footprint); ok {
+				a.Heaviest = &wshrpc.ConsumerProcess{Pid: pid, Command: commandOf(ctx, pid), Bytes: b}
+			}
 		}
 		if tpath, terr := agentTranscriptPath(ctx, r); terr == nil && tpath != "" {
 			if buckets, ok := consumersTokens.Window(tpath, now, ConsumersTokenWindow); ok {
