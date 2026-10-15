@@ -50,6 +50,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- **An agent cut off by a restart carries on**: when arcterm quits, updates or crashes while a claude, pi, agy or
+  codex agent is working, waiting on a permission or asking you something, it comes back with a note to pick up where
+  it left off (and to ask again if it was waiting on you), instead of sitting at its prompt until you type "continue".
+  An agent that had finished its turn comes back waiting, as before.
 - **Sprout's bubble no longer hides your prompt**: it has a × to close it, and typing puts it away at once instead of
   covering the bottom of the terminal for several seconds. What it said stays unread on Sprout; ⌘J reads it back.
 - **An agent's terminal fills its pane again**: a run's worker or lead opened after it started no longer stays

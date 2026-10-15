@@ -6,9 +6,12 @@ package blockcontroller
 import (
 	"context"
 	"log"
+	"slices"
 	"strconv"
+	"sync"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
@@ -23,10 +26,24 @@ import (
 // it exits on its own. The next boot relaunches each block still marked, through the session key resume-on-reopen
 // baked into its cmd:args (frontend agentresumestore.ts), so the agent reattaches to its session rather than
 // replaying its task. Tabs left by older restarts carry no mark and stay as they are.
+//
+// A restart also cuts off the turn an agent was in. agent:inturn records, as its status changes, that a tracked agent
+// is mid-turn; the boot relaunches such an agent with restoreNudge as its first turn, so it carries on with its work
+// instead of waiting at its prompt for someone to type "continue".
 
 // MetaKey_AgentLive holds a token unique to the process start that set it, so the exit of a replaced process
 // cannot clear the mark its successor set.
 const MetaKey_AgentLive = "agent:live"
+
+// MetaKey_AgentInTurn is true while a tracked agent is mid-turn: working, waiting on a permission, or asking.
+const MetaKey_AgentInTurn = "agent:inturn"
+
+// restoreNudge is the first turn of an agent the boot brings back mid-turn.
+const restoreNudge = "The app restarted while you were working, and your process stopped with it. Check the working tree and your last steps, then carry on where you left off. If you were waiting on the person, for a permission or an answer, ask again."
+
+// restoreNudgeTTL bounds how long after the boot queued a nudge a start still takes it: the restore's own start
+// comes within moments, and a start long after (a pane mounting once the restore's start failed) is not that turn.
+const restoreNudgeTTL = time.Minute
 
 // a run's worker: it comes back through its run's Resume or the engine, never here
 const metaKeyAgentRunId = "agent:runid"
@@ -109,6 +126,110 @@ func shouldClearAgentLive(current, token string, shuttingDown bool) bool {
 	return token != "" && current == token && !shuttingDown
 }
 
+// Pure: whether a reported state is mid-turn. ok is false for a report with no state (a usage snapshot), which says
+// nothing about the turn.
+func inTurnForState(state string) (inTurn, ok bool) {
+	switch state {
+	case baseds.AgentState_Working, baseds.AgentState_Waiting, baseds.AgentState_Asking:
+		return true, true
+	case baseds.AgentState_Idle:
+		return false, true
+	}
+	return false, false
+}
+
+// Pure: cmd:args with nudge as the harness's opening prompt, where a launch puts its task (launch.ts
+// buildLaunchMeta): last, behind -i for agy. False for a harness whose positional arg is no prompt (opencode's is a
+// project directory).
+func withRestoreNudge(harness string, args []string, nudge string) ([]string, bool) {
+	switch harness {
+	case "claude", "pi", "codex":
+		return append(slices.Clone(args), nudge), true
+	case "agy":
+		return append(slices.Clone(args), "-i", nudge), true
+	}
+	return args, false
+}
+
+// pendingNudges holds when the boot queued each block's nudge, which its next start takes once.
+var pendingNudges = struct {
+	sync.Mutex
+	at map[string]time.Time
+}{at: map[string]time.Time{}}
+
+func queueRestoreNudge(blockId string, now time.Time) {
+	pendingNudges.Lock()
+	defer pendingNudges.Unlock()
+	pendingNudges.at[blockId] = now
+}
+
+// takeRestoreNudge reports whether a block's start owes the nudge the boot queued for it, forgetting it either way.
+func takeRestoreNudge(blockId string, now time.Time) bool {
+	pendingNudges.Lock()
+	defer pendingNudges.Unlock()
+	at, ok := pendingNudges.at[blockId]
+	delete(pendingNudges.at, blockId)
+	return ok && now.Sub(at) < restoreNudgeTTL
+}
+
+// restoreStartArgs is the cmd:args a start runs: with the nudge when the boot queued one for this block. Only the
+// process gets it; the block keeps its plain resume, so a later relaunch does not repeat it.
+func restoreStartArgs(blockId string, meta waveobj.MetaMapType, args []string) []string {
+	if !takeRestoreNudge(blockId, time.Now()) {
+		return args
+	}
+	nudged, ok := withRestoreNudge(meta.GetString(waveobj.MetaKey_Cmd, ""), args, restoreNudge)
+	if !ok {
+		return args
+	}
+	return nudged
+}
+
+// inTurnNoted is the in-turn mark each block holds as far as this server knows, so a turn's stream of working
+// reports reads and writes the store once, not once a tool. Held across the store write so reports cannot land
+// their writes out of order.
+var inTurnNoted = struct {
+	sync.Mutex
+	m map[string]bool
+}{m: map[string]bool{}}
+
+// NoteAgentState keeps a tracked agent's in-turn mark in step with a state its reporter sent.
+func NoteAgentState(blockId, state string) {
+	inTurn, ok := inTurnForState(state)
+	if !ok || blockId == "" {
+		return
+	}
+	// a quit's last reports (a SessionEnd) must not clear the mark the next boot nudges from
+	if !inTurn && shuttingDown.Load() {
+		return
+	}
+	inTurnNoted.Lock()
+	defer inTurnNoted.Unlock()
+	if prev, seen := inTurnNoted.m[blockId]; seen && prev == inTurn {
+		return
+	}
+	ctx, cancelFn := context.WithTimeout(context.Background(), DefaultTimeout)
+	defer cancelFn()
+	block, err := wstore.DBGet[*waveobj.Block](ctx, blockId)
+	if err != nil || block == nil {
+		return
+	}
+	if !tracksAgentLive(block.Meta) || block.Meta.GetBool(MetaKey_AgentInTurn, false) == inTurn {
+		inTurnNoted.m[blockId] = inTurn
+		return
+	}
+	var value any // nil deletes the key
+	if inTurn {
+		value = true
+	}
+	oref := waveobj.MakeORef(waveobj.OType_Block, blockId)
+	if _, err := wstore.UpdateObjectMeta(ctx, oref, waveobj.MetaMapType{MetaKey_AgentInTurn: value}, false); err != nil {
+		log.Printf("marking agent block %s in turn %v: %v\n", blockId, inTurn, err)
+		return
+	}
+	inTurnNoted.m[blockId] = inTurn
+}
+
 // markAgentLive marks a just-started agent process and returns its token, "" when the block is not tracked.
 func markAgentLive(blockId string, meta waveobj.MetaMapType) string {
 	if !tracksAgentLive(meta) {
@@ -125,7 +246,8 @@ func markAgentLive(blockId string, meta waveobj.MetaMapType) string {
 	return token
 }
 
-// clearAgentLive removes the mark an agent process set, once that process has exited on its own.
+// clearAgentLive removes the marks an agent process set, once that process has exited on its own: live, and
+// in turn, since a turn ends with its process.
 func clearAgentLive(blockId, token string) {
 	if token == "" {
 		return
@@ -139,8 +261,11 @@ func clearAgentLive(blockId, token string) {
 	if !shouldClearAgentLive(block.Meta.GetString(MetaKey_AgentLive, ""), token, shuttingDown.Load()) {
 		return
 	}
+	inTurnNoted.Lock()
+	defer inTurnNoted.Unlock()
+	delete(inTurnNoted.m, blockId)
 	oref := waveobj.MakeORef(waveobj.OType_Block, blockId)
-	if _, err := wstore.UpdateObjectMeta(ctx, oref, waveobj.MetaMapType{MetaKey_AgentLive: nil}, false); err != nil {
+	if _, err := wstore.UpdateObjectMeta(ctx, oref, waveobj.MetaMapType{MetaKey_AgentLive: nil, MetaKey_AgentInTurn: nil}, false); err != nil {
 		log.Printf("clearing agent block %s live mark: %v\n", blockId, err)
 	}
 }
@@ -151,52 +276,72 @@ var restartAgentBlock = func(ctx context.Context, tabId, blockId string) error {
 	return ResyncController(ctx, tabId, blockId, nil, false)
 }
 
-// RestoreLiveAgents relaunches, one at a time, every agent the last server left running. Every mark is cleared
-// first: it belonged to the last server's processes, and a relaunch sets its own.
+// Pure: whether a restored agent's relaunch carries restoreNudge: the last server's process was mid-turn.
+func shouldNudgeRestore(meta waveobj.MetaMapType) bool {
+	return meta.GetBool(MetaKey_AgentInTurn, false)
+}
+
+type restoreAgent struct {
+	blockId string
+	nudge   bool
+}
+
+// RestoreLiveAgents relaunches, one at a time, every agent the last server left running, nudging those it left
+// mid-turn to carry on. Every mark is cleared first: it belonged to the last server's processes, and a relaunch sets
+// its own.
 func RestoreLiveAgents(ctx context.Context) {
 	blocks, err := wstore.DBGetAllObjsByType[*waveobj.Block](ctx, waveobj.OType_Block)
 	if err != nil {
 		log.Printf("listing blocks to restore agents: %v\n", err)
 		return
 	}
-	var restore []string
+	var restore []restoreAgent
+	nudged := 0
 	for _, block := range blocks {
-		if block.Meta.GetString(MetaKey_AgentLive, "") == "" {
+		if block.Meta.GetString(MetaKey_AgentLive, "") == "" && !block.Meta.GetBool(MetaKey_AgentInTurn, false) {
 			continue
 		}
 		oref := waveobj.MakeORef(waveobj.OType_Block, block.OID)
-		if _, err := wstore.UpdateObjectMeta(ctx, oref, waveobj.MetaMapType{MetaKey_AgentLive: nil}, false); err != nil {
+		if _, err := wstore.UpdateObjectMeta(ctx, oref, waveobj.MetaMapType{MetaKey_AgentLive: nil, MetaKey_AgentInTurn: nil}, false); err != nil {
 			log.Printf("clearing agent block %s live mark: %v\n", block.OID, err)
 		}
 		if shouldRestoreAgent(block.Meta) {
-			restore = append(restore, block.OID)
+			r := restoreAgent{blockId: block.OID, nudge: shouldNudgeRestore(block.Meta)}
+			if r.nudge {
+				nudged++
+			}
+			restore = append(restore, r)
 		}
 	}
 	if len(restore) == 0 {
 		return
 	}
-	log.Printf("restoring %d agents left running by the last server\n", len(restore))
+	log.Printf("restoring %d agents left running by the last server, nudging %d it left mid-turn\n", len(restore), nudged)
 	go func() {
 		defer func() {
 			panichandler.PanicHandler("blockcontroller:restore-live-agents", recover())
 		}()
-		for i, blockId := range restore {
+		for i, r := range restore {
 			if i > 0 {
 				time.Sleep(restoreAgentStagger)
 			}
-			restoreOne(blockId)
+			restoreOne(r)
 		}
 	}()
 }
 
-func restoreOne(blockId string) {
+func restoreOne(r restoreAgent) {
 	ctx, cancelFn := context.WithTimeout(context.Background(), DefaultTimeout)
 	defer cancelFn()
-	tabId, err := wstore.DBFindTabForBlockId(ctx, blockId)
+	tabId, err := wstore.DBFindTabForBlockId(ctx, r.blockId)
 	if err != nil {
 		return // its tab is gone
 	}
-	if err := restartAgentBlock(ctx, tabId, blockId); err != nil {
-		log.Printf("restoring agent block %s: %v\n", blockId, err)
+	if r.nudge {
+		queueRestoreNudge(r.blockId, time.Now())
+	}
+	if err := restartAgentBlock(ctx, tabId, r.blockId); err != nil {
+		takeRestoreNudge(r.blockId, time.Now())
+		log.Printf("restoring agent block %s: %v\n", r.blockId, err)
 	}
 }

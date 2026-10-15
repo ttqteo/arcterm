@@ -782,7 +782,7 @@ func createCmdStrAndOpts(blockId string, blockMeta waveobj.MetaMapType, connName
 		if strings.Contains(cmdStr, " ") {
 			return "", nil, fmt.Errorf("cmd should not have spaces if cmd:shell is false (use cmd:args)")
 		}
-		cmdArgs := blockMeta.GetStringList(waveobj.MetaKey_CmdArgs)
+		cmdArgs := restoreStartArgs(blockId, blockMeta, blockMeta.GetStringList(waveobj.MetaKey_CmdArgs))
 		// shell escape the args for the target shell
 		for _, arg := range cmdArgs {
 			cmdStr = cmdStr + " " + quoteCmdArg(arg, shellType, shellPath)

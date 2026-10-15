@@ -200,14 +200,25 @@ func liveMark(t *testing.T, blockId string) string {
 	return block.Meta.GetString(MetaKey_AgentLive, "")
 }
 
+func inTurnMark(t *testing.T, blockId string) bool {
+	t.Helper()
+	block, err := wstore.DBMustGet[*waveobj.Block](context.Background(), blockId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return block.Meta.GetBool(MetaKey_AgentInTurn, false)
+}
+
 func TestRestoreLiveAgents(t *testing.T) {
 	var mu sync.Mutex
 	started := map[string]string{} // blockId -> tabId
+	nudged := map[string]bool{}
 	done := make(chan struct{}, 8)
 	oldRestart, oldStagger := restartAgentBlock, restoreAgentStagger
 	restartAgentBlock = func(_ context.Context, tabId, blockId string) error {
 		mu.Lock()
 		started[blockId] = tabId
+		nudged[blockId] = takeRestoreNudge(blockId, time.Now())
 		mu.Unlock()
 		done <- struct{}{}
 		return nil
@@ -216,14 +227,18 @@ func TestRestoreLiveAgents(t *testing.T) {
 	t.Cleanup(func() { restartAgentBlock, restoreAgentStagger = oldRestart, oldStagger })
 
 	live := func(m waveobj.MetaMapType) waveobj.MetaMapType { return withMeta(m, MetaKey_AgentLive, "1") }
+	inTurn := func(m waveobj.MetaMapType) waveobj.MetaMapType { return withMeta(m, MetaKey_AgentInTurn, true) }
 	claude, claudeTab := insertAgentBlock(t, live(agentMeta("claude", "--resume", "abc")))
 	pi, piTab := insertAgentBlock(t, live(agentMeta("pi", "--session", "/s.jsonl")))
+	busy, busyTab := insertAgentBlock(t, inTurn(live(agentMeta("claude", "--resume", "mid"))))
 	unbaked, _ := insertAgentBlock(t, live(agentMeta("claude", "fix the bug")))
 	orphan, _ := insertAgentBlock(t, agentMeta("claude", "--resume", "old"))
+	// in turn when its process died on its own: never restored, and its mark is stale
+	died, _ := insertAgentBlock(t, inTurn(agentMeta("claude", "--resume", "gone")))
 	worker, _ := insertAgentBlock(t, withMeta(live(agentMeta("claude", "--resume", "w")), metaKeyAgentRunId, "r1"))
 
 	RestoreLiveAgents(context.Background())
-	for range 2 {
+	for range 3 {
 		select {
 		case <-done:
 		case <-time.After(5 * time.Second):
@@ -232,28 +247,141 @@ func TestRestoreLiveAgents(t *testing.T) {
 	}
 	select {
 	case <-done:
-		t.Fatal("started more than the two restorable agents")
+		t.Fatal("started more than the three restorable agents")
 	case <-time.After(50 * time.Millisecond):
 	}
 
 	mu.Lock()
 	defer mu.Unlock()
-	if started[claude] != claudeTab || started[pi] != piTab {
-		t.Errorf("started %v, want claude in %s and pi in %s", started, claudeTab, piTab)
+	if started[claude] != claudeTab || started[pi] != piTab || started[busy] != busyTab {
+		t.Errorf("started %v, want claude in %s, pi in %s and the busy claude in %s", started, claudeTab, piTab, busyTab)
 	}
 	var ids []string
 	for id := range started {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
-	if len(ids) != 2 {
-		t.Errorf("started %v, want only claude and pi", ids)
+	if len(ids) != 3 {
+		t.Errorf("started %v, want only claude, pi and the busy claude", ids)
+	}
+	// only the agent cut off mid-turn is nudged to carry on
+	if !nudged[busy] || nudged[claude] || nudged[pi] {
+		t.Errorf("nudged %v, want only the busy claude %s", nudged, busy)
 	}
 	// every mark the last server left is cleared; a relaunch sets its own
-	for _, id := range []string{claude, pi, unbaked, orphan, worker} {
+	for _, id := range []string{claude, pi, busy, unbaked, orphan, died, worker} {
 		if mark := liveMark(t, id); mark != "" {
 			t.Errorf("block %s still marked %q", id, mark)
 		}
+		if inTurnMark(t, id) {
+			t.Errorf("block %s still marked in turn", id)
+		}
+	}
+}
+
+func TestInTurnForState(t *testing.T) {
+	cases := []struct {
+		state        string
+		inTurn, isOk bool
+	}{
+		{"working", true, true},
+		{"waiting", true, true}, // a permission prompt, mid-turn
+		{"asking", true, true},
+		{"idle", false, true},
+		{"", false, false}, // a usage snapshot
+		{"bogus", false, false},
+	}
+	for _, c := range cases {
+		if inTurn, ok := inTurnForState(c.state); inTurn != c.inTurn || ok != c.isOk {
+			t.Errorf("inTurnForState(%q) = %v, %v, want %v, %v", c.state, inTurn, ok, c.inTurn, c.isOk)
+		}
+	}
+}
+
+func TestWithRestoreNudge(t *testing.T) {
+	cases := []struct {
+		harness string
+		args    []string
+		want    []string
+		ok      bool
+	}{
+		{"claude", []string{"--resume", "abc", "--model", "opus"}, []string{"--resume", "abc", "--model", "opus", "go on"}, true},
+		{"pi", []string{"--session", "/s.jsonl"}, []string{"--session", "/s.jsonl", "go on"}, true},
+		{"codex", []string{"resume", "abc"}, []string{"resume", "abc", "go on"}, true},
+		{"agy", []string{"--conversation", "abc"}, []string{"--conversation", "abc", "-i", "go on"}, true},
+		// opencode's positional arg is a project directory, not a prompt
+		{"opencode", []string{"-s", "abc"}, []string{"-s", "abc"}, false},
+	}
+	for _, c := range cases {
+		args := slices.Clone(c.args)
+		got, ok := withRestoreNudge(c.harness, args, "go on")
+		if ok != c.ok || !slices.Equal(got, c.want) {
+			t.Errorf("withRestoreNudge(%s) = %v, %v, want %v, %v", c.harness, got, ok, c.want, c.ok)
+		}
+		if !slices.Equal(args, c.args) {
+			t.Errorf("withRestoreNudge(%s) changed the args it was given: %v", c.harness, args)
+		}
+	}
+}
+
+func TestRestoreStartArgsTakesTheNudgeOnce(t *testing.T) {
+	blockId := uuid.NewString()
+	meta := agentMeta("claude", "--resume", "abc")
+	args := []string{"--resume", "abc"}
+	if got := restoreStartArgs(blockId, meta, args); !slices.Equal(got, args) {
+		t.Fatalf("a start with no nudge queued ran %v", got)
+	}
+	queueRestoreNudge(blockId, time.Now())
+	if got := restoreStartArgs(blockId, meta, args); !slices.Equal(got, []string{"--resume", "abc", restoreNudge}) {
+		t.Fatalf("the restore's start ran %v", got)
+	}
+	if got := restoreStartArgs(blockId, meta, args); !slices.Equal(got, args) {
+		t.Fatalf("a second start repeated the nudge: %v", got)
+	}
+	// a start long after the restore queued it is not the turn it was for
+	queueRestoreNudge(blockId, time.Now().Add(-2*restoreNudgeTTL))
+	if got := restoreStartArgs(blockId, meta, args); !slices.Equal(got, args) {
+		t.Fatalf("a late start took a stale nudge: %v", got)
+	}
+}
+
+func TestNoteAgentState(t *testing.T) {
+	blockId, _ := insertAgentBlock(t, agentMeta("claude", "--resume", "abc"))
+	steps := []struct {
+		state string
+		want  bool
+	}{
+		{"working", true},
+		{"", true}, // a usage snapshot leaves the mark as it is
+		{"waiting", true},
+		{"asking", true},
+		{"idle", false},
+		{"working", true},
+	}
+	for _, s := range steps {
+		NoteAgentState(blockId, s.state)
+		if got := inTurnMark(t, blockId); got != s.want {
+			t.Fatalf("after %q the block is in turn %v, want %v", s.state, got, s.want)
+		}
+	}
+
+	// a quit's last reports must not clear the mark the next boot nudges from
+	shuttingDown.Store(true)
+	NoteAgentState(blockId, "idle")
+	shuttingDown.Store(false)
+	if !inTurnMark(t, blockId) {
+		t.Fatal("an idle reported while quitting cleared the in-turn mark")
+	}
+
+	shell, _ := insertAgentBlock(t, waveobj.MetaMapType{waveobj.MetaKey_Controller: BlockController_Shell})
+	NoteAgentState(shell, "working")
+	if inTurnMark(t, shell) {
+		t.Error("a shell block was marked in turn")
+	}
+	worker, _ := insertAgentBlock(t, withMeta(agentMeta("claude", "--resume", "w"), metaKeyAgentRunId, "r1"))
+	NoteAgentState(worker, "working")
+	if inTurnMark(t, worker) {
+		t.Error("a run's worker was marked in turn: its run brings it back")
 	}
 }
 
@@ -286,9 +414,18 @@ func TestAgentLiveMarkLifecycle(t *testing.T) {
 	if liveMark(t, blockId) != second {
 		t.Fatalf("the replaced process's exit cleared its successor's mark")
 	}
+	NoteAgentState(blockId, "working")
 	clearAgentLive(blockId, second)
 	if mark := liveMark(t, blockId); mark != "" {
 		t.Fatalf("an exit on its own left the mark %q", mark)
+	}
+	if inTurnMark(t, blockId) {
+		t.Fatal("an exit on its own left the agent marked in turn")
+	}
+	// and the next process's turn marks it again
+	NoteAgentState(blockId, "working")
+	if !inTurnMark(t, blockId) {
+		t.Fatal("a turn after a relaunch did not mark the agent in turn")
 	}
 
 	shell, _ := insertAgentBlock(t, waveobj.MetaMapType{waveobj.MetaKey_Controller: BlockController_Shell})

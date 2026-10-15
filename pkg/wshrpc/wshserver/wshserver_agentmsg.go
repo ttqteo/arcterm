@@ -378,17 +378,35 @@ func noteAgentTurnEnded(ctx context.Context, ev *wps.WaveEvent) {
 	if data.State != baseds.AgentState_Idle && data.State != baseds.AgentState_Waiting {
 		return
 	}
-	oref, err := waveobj.ParseORef(data.ORef)
-	if err != nil {
+	if blockId := statusBlockId(ctx, data.ORef); blockId != "" {
+		agentmsg.TurnEnded(blockId)
+	}
+}
+
+// noteAgentInTurn keeps the reporting agent's in-turn mark, which the next boot's restore nudges from, in step
+// with its state.
+func noteAgentInTurn(ctx context.Context, ev *wps.WaveEvent) {
+	var data baseds.AgentStatusData
+	if utilfn.ReUnmarshal(&data, ev.Data) != nil || data.State == "" {
 		return
+	}
+	if blockId := statusBlockId(ctx, data.ORef); blockId != "" {
+		blockcontroller.NoteAgentState(blockId, data.State)
+	}
+}
+
+// statusBlockId is the block an agent:status report is about, "" when its oref names none.
+func statusBlockId(ctx context.Context, orefStr string) string {
+	oref, err := waveobj.ParseORef(orefStr)
+	if err != nil {
+		return ""
 	}
 	switch oref.OType {
 	case waveobj.OType_Block:
-		agentmsg.TurnEnded(oref.OID)
+		return oref.OID
 	case waveobj.OType_Tab:
-		// the lock knows an agent by its block, which a tab-scoped reporter never names
-		if blockId := tabAgentBlock(ctx, oref.OID); blockId != "" {
-			agentmsg.TurnEnded(blockId)
-		}
+		// a tab-scoped reporter never names its block
+		return tabAgentBlock(ctx, oref.OID)
 	}
+	return ""
 }

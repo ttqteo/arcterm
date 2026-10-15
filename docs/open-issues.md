@@ -27,6 +27,14 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-15 (an agent cut off by a restart carries on)**
+
+- [ ] (arcterm) Give a hand-launched claude agent a task that takes a while, and while it works quit arcterm (or let
+  `task install` close it). Reopen: the agent comes back on its session and starts a turn on its own with "The app
+  restarted while you were working…", and goes on with the task. An agent that was idle at the quit comes back at its
+  prompt with no new turn. Same for one waiting on a permission: it asks again. `agentrestore.go` NoteAgentState,
+  RestoreLiveAgents, restoreStartArgs.
+
 **2026-10-15 (arcterm stays on its own Desktop on a Mac)**
 
 - [ ] (arcterm) With **Fold when you leave** on and arcterm full on Desktop 1: switch to Desktop 2 (Ctrl+→) and wait

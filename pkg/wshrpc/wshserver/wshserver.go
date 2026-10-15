@@ -174,6 +174,7 @@ func publishEvent(ctx context.Context, data wps.WaveEvent) {
 		// an agy worker names its own conversation: its first report is where the run learns the id
 		orchestrate.NoteWorkerSession(ctx, &data)
 		noteAgentTurnEnded(ctx, &data)
+		noteAgentInTurn(ctx, &data)
 	}
 }
 

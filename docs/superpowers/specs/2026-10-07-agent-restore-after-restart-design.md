@@ -1,6 +1,11 @@
 # Agent restore after an app restart
 
-Status: design agreed 2026-10-07. Not built.
+Status: design agreed 2026-10-07. Built: the eager reattach (2026-10-07) and, on 2026-10-15, a simpler take on
+sections 1 and 2: the last state is the block meta `agent:inturn` (true from `working`, `waiting` or `asking`, cleared
+by `idle` and by an exit on its own; a plain key beside `agent:live`, not generated), and the boot relaunches an
+in-turn agent with a nudge as its first turn (`restoreNudge`, `pkg/blockcontroller/agentrestore.go`), so it carries on
+by itself. The `interrupted` state, its badge and the restore strip with Continue all (section 3) are not built: the
+person chose the agent carrying on without asking.
 
 ## Problem
 
