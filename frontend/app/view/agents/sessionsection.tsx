@@ -1,14 +1,16 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The session block that opens the Agent details rail, shown whole: the rail's status line (context and spend, passed
-// in as head), the session's total tokens before a tokens bar, its facts (the rail passes them in as children), the
-// agent's state and cache with Resume or Stop (state), then Compact/Clear when offered (actions), so the cache
-// countdown sits over the Compact/Clear it argues for. The figures (head and bar) are the breakdown's toggle, with a
-// chevron at the bar's end. The breakdown is the one part that folds: the insight, the per-class split (tokens + ≈
-// spend) and, for a session that used more than one model, the per-model breakdown, from the session's own transcript
-// (transcriptusagestore/sessionusage). The spend shows once, in the head; a single model's name is in the facts. Class
-// fills come from usagestats.ts's CLASS_FILL (theme tokens only). Spend is an estimate.
+// The session block that opens the Agent details rail, shown whole: the context line (passed in as head, and left out
+// while no live turn has reported it), the session's total tokens, its tokens bar and its spend on one row, its facts
+// (the rail passes them in as children), the agent's state and cache with Resume or Stop (state), then Compact/Clear
+// when offered (actions), so the cache countdown sits over the Compact/Clear it argues for. The tokens row comes from
+// the transcript and is there asleep too, so a missing context drops a row rather than leaving a hole. The figures
+// (head and tokens row) are the breakdown's toggle, with a chevron at the row's end. The breakdown is the one part that
+// folds: the insight, the per-class split (tokens + ≈ spend) and, for a session that used more than one model, the
+// per-model breakdown, from the session's own transcript (transcriptusagestore/sessionusage). The spend shows once, on
+// the tokens row; a single model's name is in the facts. Class fills come from usagestats.ts's CLASS_FILL (theme
+// tokens only). Spend is an estimate.
 
 import { StackedMeter } from "@/app/element/meter";
 import { paneReveal } from "@/app/element/motiontokens";
@@ -33,9 +35,17 @@ function pctStr(n: number): string {
     return +n.toFixed(1) + "%";
 }
 
-// UsageBar is the session's total tokens before the tokens bar, whose legend is the breakdown: the chevron at its end
-// says the figures open it
-function UsageBar({ usage, open }: { usage: SessionUsage; open: boolean }) {
+// UsageBar is the session's total tokens, the tokens bar whose legend is the breakdown, then the session's spend; the
+// chevron at its end says the figures open the breakdown
+function UsageBar({
+    usage,
+    spend,
+    open,
+}: {
+    usage: SessionUsage;
+    spend?: { text: string; title: string };
+    open: boolean;
+}) {
     return (
         <div title={`${fmt(usage.totalTokens)} tokens this session`} className="flex min-w-0 items-center gap-[8px]">
             <span className="flex-none text-[11.5px] font-semibold tabular-nums text-primary">
@@ -48,6 +58,11 @@ function UsageBar({ usage, open }: { usage: SessionUsage; open: boolean }) {
                 segs={usage.classes.map((c) => ({ key: c.cls, value: c.tokens, fill: CLASS_FILL[c.cls] }))}
                 total={usage.totalTokens}
             />
+            {spend ? (
+                <span title={spend.title} className="flex-none text-[12px] font-semibold tabular-nums text-success">
+                    {spend.text}
+                </span>
+            ) : null}
             {open ? (
                 <ChevronUp size={12} aria-hidden className="-ml-[2px] flex-none text-accent-soft" />
             ) : (
@@ -145,13 +160,15 @@ function UsageBreakdown({ usage }: { usage: SessionUsage }) {
 
 export function SessionSection({
     head,
+    spend,
     state,
     actions,
     children,
 }: {
-    head: ReactNode; // the status line: context on the left, spend on the right
+    head?: ReactNode; // the context line, left out while the context is unknown
+    spend?: { text: string; title: string }; // the session's spend, at the end of the tokens bar's row
     state?: ReactNode; // the agent's state and cache with Resume or Stop, under the facts
-    actions?: ReactNode; // Compact/Clear, on the Breakdown toggle's row
+    actions?: ReactNode; // Compact/Clear, on the last row
     children: ReactNode; // the session's facts
 }) {
     const usage = useAtomValue(sessionUsageAtom);
@@ -160,8 +177,8 @@ export function SessionSection({
 
     const figures = (
         <>
-            <div className="flex min-w-0 items-center py-[3px]">{head}</div>
-            <div className="mt-[6px]">
+            {head != null ? <div className="flex min-w-0 items-center py-[3px]">{head}</div> : null}
+            <div className={head != null ? "mt-[6px]" : "py-[3px]"}>
                 {usage == null ? (
                     <SkeletonLine className="h-[6px] w-full rounded-[3px]" />
                 ) : usage === UsageUnavailable ? (
@@ -169,7 +186,7 @@ export function SessionSection({
                 ) : loaded == null ? (
                     <div className="text-[11.5px] text-muted">No token usage recorded yet.</div>
                 ) : (
-                    <UsageBar usage={loaded} open={breakdown} />
+                    <UsageBar usage={loaded} spend={spend} open={breakdown} />
                 )}
             </div>
         </>

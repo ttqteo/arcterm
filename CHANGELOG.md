@@ -63,6 +63,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   foot of the agent rail into the session tile, under project · branch · model and over Compact and Clear.
 - **The session's figures open the breakdown**: click the context line or the token bar on the session tile (a ⌄ at
   the bar's end) to see where the tokens and spend went; the separate Breakdown button is gone.
+- **No empty context slot on a sleeping agent**: the spend now sits at the end of the token bar, and the context line
+  shows only while the agent runs, so an agent asleep or one waiting for its first turn after a restart shows no blank
+  row.
 
 ### Fixed
 

@@ -243,35 +243,24 @@ function FactsLine({
     );
 }
 
-// StatusLine is the session block's head row: the context window (ring, percent and the tokens in it) on the left, the
-// session's spend on the right. The tokens carry no "ctx": the tooltip names the context window, with its note. The
-// spend's caption and total tokens are its own tooltip.
-function StatusLine({ ctx, spend }: { ctx?: { pct: number; max?: number }; spend?: { text: string; title: string } }) {
-    const level = ctx ? contextLevel(ctx.pct, ctx.max) : "ok";
-    const tokens = ctx ? contextTokens(ctx.pct, ctx.max) : undefined;
-    const note = ctx ? contextNote(ctx.pct, ctx.max) : "";
+// ContextLine is the session block's head row: the context window (ring, percent and the tokens in it), with its note
+// in the tooltip. Only a live turn reports it, so the row is left out while it is unknown (asleep, or after a restart)
+// rather than drawn empty; the spend sits on the tokens bar's row, which the transcript always has.
+function ContextLine({ pct, max }: { pct: number; max?: number }) {
+    const level = contextLevel(pct, max);
+    const tokens = contextTokens(pct, max);
+    const note = contextNote(pct, max);
     return (
-        <span data-rail-status className="flex min-w-0 flex-1 items-center gap-[8px]">
-            {ctx ? (
-                <span
-                    title={`Context window ${Math.round(ctx.pct)}%${tokens ? ` (${tokens} tokens)` : ""}${note ? ` · ${note}` : ""}`}
-                    className="flex min-w-0 items-center gap-[7px]"
-                >
-                    <ContextRing pct={ctx.pct} level={level} />
-                    <span className={cn("text-[12px] font-semibold tabular-nums", GAUGE_TEXT[level])}>
-                        {Math.round(ctx.pct)}%
-                    </span>
-                    {tokens ? <span className="truncate text-[11px] tabular-nums text-muted">· {tokens}</span> : null}
-                </span>
-            ) : spend == null ? (
-                <span className="text-[12px] font-medium text-muted">Session</span>
-            ) : null}
-            <span className="flex-1" />
-            {spend ? (
-                <span title={spend.title} className="flex-none text-[12px] font-semibold tabular-nums text-success">
-                    {spend.text}
-                </span>
-            ) : null}
+        <span
+            data-rail-status
+            title={`Context window ${Math.round(pct)}%${tokens ? ` (${tokens} tokens)` : ""}${note ? ` · ${note}` : ""}`}
+            className="flex min-w-0 items-center gap-[7px]"
+        >
+            <ContextRing pct={pct} level={level} />
+            <span className={cn("text-[12px] font-semibold tabular-nums", GAUGE_TEXT[level])}>{Math.round(pct)}%</span>
+            <span className="truncate text-[11px] tabular-nums text-muted">
+                {tokens ? `· ${tokens} in context` : "of context"}
+            </span>
         </span>
     );
 }
@@ -815,12 +804,8 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         ),
         status: () => (
             <SessionSection
-                head={
-                    <StatusLine
-                        ctx={!sub && ctxPct != null ? { pct: ctxPct, max: usage?.contextmax } : undefined}
-                        spend={spend}
-                    />
-                }
+                head={!sub && ctxPct != null ? <ContextLine pct={ctxPct} max={usage?.contextmax} /> : undefined}
+                spend={spend}
                 state={
                     sub ? undefined : (
                         <div data-rail-state className="flex items-center gap-[8px]">

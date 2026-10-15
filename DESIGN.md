@@ -372,15 +372,16 @@ content is always fluid.
   Artifacts, Uploads, Servers, Background tasks), dimmed at 0, so the rail keeps one
   shape as work arrives; a count opens its section, an empty Uploads
   attaches. The body opens on the session block, shown whole on a `surface-raised`
-  tile that sets it apart from the lists under it: a one-line
-  status (a context ring with its percent and tokens, then the session's
-  spend), the session's total tokens before their bar, its facts (project ·
-  branch · model on one unlabelled line, then tools), the agent's state and
-  cache with Resume or Stop, then Compact and Clear when offered. The status
-  and the bar are the breakdown's toggle, a chevron at the bar's end; the
-  breakdown is the one part that folds. Then Needs you, the counted
-  sections that hold something, and Run/Task. The rail has no footer. Each
-  figure shows once.
+  tile that sets it apart from the lists under it: the context (a ring with
+  its percent and tokens, on a row of its own that only a live turn fills,
+  so it is left out asleep or after a restart rather than drawn empty), the
+  session's total tokens, their bar and its spend on one row, its facts
+  (project · branch · model on one unlabelled line, then tools), the agent's
+  state and cache with Resume or Stop, then Compact and Clear when offered.
+  The context and tokens rows are the breakdown's toggle, a chevron at the
+  tokens row's end; the breakdown is the one part that folds. Then Needs
+  you, the counted sections that hold something, and Run/Task. The rail has
+  no footer. Each figure shows once.
 - **Surfaces** — absolutely stacked (`absolute inset-0`) under a
   `relative min-w-0 flex-1` shell; each surface is `flex flex-col bg-background`.
   The Agent surface stays mounted-but-hidden across nav switches so its xterm

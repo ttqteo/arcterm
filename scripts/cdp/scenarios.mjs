@@ -13945,11 +13945,11 @@ const agentTreeRail = {
         );
         const session = await h.ev(`(() => {
             const b = ${RAIL}?.querySelector("[data-rail-session]");
-            return b ? { status: !!b.querySelector("[data-rail-status]"), breakdown: !!b.querySelector("[data-rail-breakdown]") } : null;
+            return b ? { state: !!b.querySelector("[data-rail-state]"), breakdown: !!b.querySelector("[data-rail-breakdown]") } : null;
         })()`);
         rec(
-            "11. the rail opens on the session block, its status line showing and its breakdown folded; the section header labels are 12px",
-            session != null && session.status && !session.breakdown && (sections ?? []).every((s) => s.size === "12px"),
+            "11. the rail opens on the session block, its state line showing and its breakdown folded; the section header labels are 12px",
+            session != null && session.state && !session.breakdown && (sections ?? []).every((s) => s.size === "12px"),
             JSON.stringify({ session, sections })
         );
         const theme = await h.ev(`(() => ({
