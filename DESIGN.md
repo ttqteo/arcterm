@@ -367,10 +367,12 @@ content is always fluid.
   (`bg-surface-selected`). Asking is a word in the row, not a filled row: an
   amber fill would make the list shout.
 - **Details rail** — the tab strip counts the agent's lists after its tabs,
-  an icon and a number each in one fixed order (Subagents, Files changed,
+  past a short `edge-strong` rule and in `muted`, so the tabs lead; an icon
+  and a number each in one fixed order (Subagents, Files changed,
   Artifacts, Uploads, Servers, Background tasks), dimmed at 0, so the rail keeps one
   shape as work arrives; a count opens its section, an empty Uploads
-  attaches. The body opens on the session block, shown whole: a one-line
+  attaches. The body opens on the session block, shown whole on a `surface-raised`
+  tile that sets it apart from the lists under it: a one-line
   status (a context ring with its percent and tokens, then the session's
   spend), the session's total tokens before their bar, its facts (project ·
   branch · model on one unlabelled line, then tools), then Compact and Clear

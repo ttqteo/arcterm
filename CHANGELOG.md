@@ -30,6 +30,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   checkbox does, and a checked box fills in bright. Editing an idea, the kind you chose stands out from the other two.
 - **Background tasks, newest first**: the agent rail lists the task started last at the top, so a running one no
   longer sits under the ones already done.
+- **A clearer agent rail**: the session's context, spend and facts sit on their own tile, the list headers (Files
+  changed, Servers…) read brighter, and a short rule sets the Overview and Files tabs apart from the counts after them.
 
 ### Fixed
 

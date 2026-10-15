@@ -51,12 +51,14 @@ function HeadedSection({ section, header }: { section: RailSection; header: Rail
                 onClick={() => setStored(toggleSection(stored, section.id, header))}
                 className={cn(
                     "group flex w-full items-center gap-[8px] rounded-[6px] py-[5px] text-left",
-                    expandable ? "cursor-pointer text-muted hover:text-secondary" : "cursor-default text-ink-faint"
+                    expandable ? "cursor-pointer text-secondary hover:text-primary" : "cursor-default text-ink-faint"
                 )}
             >
                 {section.label}
                 {header.count != null ? (
-                    <span className="text-[11px] tabular-nums text-ink-faint">{header.count}</span>
+                    <span className={cn("text-[11px] tabular-nums", expandable ? "text-muted" : "text-ink-faint")}>
+                        {header.count}
+                    </span>
                 ) : null}
                 {header.summary && !open ? (
                     <span className="min-w-0 truncate text-[11px] font-normal text-ink-faint">{header.summary}</span>
@@ -64,11 +66,7 @@ function HeadedSection({ section, header }: { section: RailSection; header: Rail
                 <ChevronRight
                     size={12}
                     aria-hidden
-                    className={cn(
-                        "text-ink-faint transition-transform",
-                        open && "rotate-90",
-                        !expandable && "invisible"
-                    )}
+                    className={cn("text-muted transition-transform", open && "rotate-90", !expandable && "invisible")}
                 />
             </button>
         </h3>

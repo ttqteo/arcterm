@@ -56,7 +56,7 @@ function UsageBreakdown({ usage }: { usage: SessionUsage }) {
     return (
         <>
             {insight ? (
-                <div className="mt-[8px] flex gap-[8px] rounded-[9px] border border-border bg-surface-raised px-[11px] py-[9px]">
+                <div className="mt-[8px] flex gap-[8px] rounded-[9px] border border-border bg-surface px-[11px] py-[9px]">
                     <Lightbulb size={13} aria-hidden className="mt-[1px] flex-none text-warning" />
                     <p className="text-[11.5px] leading-[1.5] text-secondary">
                         Cache reads are {pctStr(insight.readTokPct)} of tokens but {pctStr(insight.readCostPct)} of
@@ -150,7 +150,11 @@ export function SessionSection({
     const loaded = usage != null && usage !== UsageUnavailable && usage.totalTokens > 0 ? usage : null;
 
     return (
-        <div data-rail-session className="flex flex-col pt-[2px]">
+        // a raised tile, so the session's figures read apart from the lists under it
+        <div
+            data-rail-session
+            className="-mx-[8px] mb-[10px] flex flex-col rounded-[10px] bg-surface-raised px-[12px] pb-[6px] pt-[9px]"
+        >
             <div className="flex min-w-0 items-center py-[3px]">{head}</div>
             <div className="mt-[6px]">
                 {usage == null ? (

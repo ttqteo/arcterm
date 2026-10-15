@@ -169,7 +169,8 @@ function statTitle(s: AgentRailStat, canAttach: boolean): string {
     }
 }
 
-// RailStats counts the agent's lists after the tabs, one icon each in a fixed order, only those a click acts on: a count
+// RailStats counts the agent's lists after the tabs, past a short rule and a step dimmer than the tabs, so the tabs read
+// as the panel's views and the counts as what it holds; one icon each in a fixed order, only those a click acts on: a count
 // opens its section, or closes it when it is open on screen (railStatClick); an empty Uploads attaches (inert, with aria-disabled, where there is no terminal to attach to; not
 // disabled: a disabled button shows no tooltip). An empty list has no icon.
 // `hold`: on File, where the file tab's name gives way first (RailTabStrip), the counts keep their width.
@@ -194,8 +195,9 @@ export function RailStats({
             role="group"
             aria-label="Agent counts"
             data-owns-keys
-            className={cn("ml-1 flex min-w-0 items-center overflow-hidden", hold && "shrink-0")}
+            className={cn("ml-[8px] flex min-w-0 items-center overflow-hidden", hold && "shrink-0")}
         >
+            <span aria-hidden className="mr-[4px] h-[18px] w-px shrink-0 bg-edge-strong" />
             {stats.map((s) => {
                 const action = railStatAction(s);
                 const live = action === "open" || (action === "attach" && canAttach);
@@ -220,7 +222,7 @@ export function RailStats({
                         className={cn(
                             "relative flex h-[26px] shrink-0 items-center gap-[3px] rounded-[6px] px-[5px] text-[11px] font-medium tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
                             action === "open"
-                                ? "cursor-pointer text-secondary hover:bg-surface-hover hover:text-primary"
+                                ? "cursor-pointer text-muted hover:bg-surface-hover hover:text-primary"
                                 : live
                                   ? "cursor-pointer text-ink-faint hover:bg-surface-hover hover:text-secondary"
                                   : "cursor-default text-ink-faint"
