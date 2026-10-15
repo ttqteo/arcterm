@@ -411,6 +411,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
             showPath: (k) => officeRef.current?.showPath(k),
             dismiss: () => officeRef.current?.dismiss(),
             openCard: () => officeRef.current?.openCard() ?? false,
+            toggleBig: () => officeRef.current?.toggleBig() ?? false,
             order: () => officeRef.current?.order() ?? [],
             asks: () => officeRef.current?.asks() ?? [],
         }),

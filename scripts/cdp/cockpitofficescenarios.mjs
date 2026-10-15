@@ -14,7 +14,7 @@ import { busyPct, HOLD_MS, mb, metrics, round1 } from "./officescenarios.mjs";
 
 export const FIXTURE = new URL("../../public/cockpit-fixtures/active.json", import.meta.url);
 export const VIEW_KEY = "cockpit.view";
-const KEY_CODES = { ArrowUp: 38, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39, Escape: 27, Enter: 13, j: 74, k: 75, n: 78, o: 79, 1: 49 };
+const KEY_CODES = { ArrowUp: 38, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39, Escape: 27, Enter: 13, f: 70, j: 74, k: 75, n: 78, o: 79, 1: 49 };
 // the boss's walking speed (officeboss.ts BOSS_SPEED), for how long to hold an arrow
 const BOSS_PX_PER_S = 160;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -113,6 +113,8 @@ export function makeCockpitOfficeScenarios(fx) {
             writeFileSync(FIXTURE, JSON.stringify([...(lead ? [lead] : []), ...ROSTERS.office(Date.now())], null, 2));
             ctx.prevView = await h.ev(`localStorage.getItem(${JSON.stringify(VIEW_KEY)})`);
             await h.ev(`localStorage.setItem(${JSON.stringify(VIEW_KEY)}, JSON.stringify("office"))`);
+            // the card starts small, whatever an earlier run left
+            await h.ev(`localStorage.removeItem("cockpit.office.bigcard")`);
             try {
                 await h.ev("location.reload()");
             } catch {
@@ -246,6 +248,29 @@ export function makeCockpitOfficeScenarios(fx) {
                     opened: opened?.popup,
                     back: [back?.cursor, back?.popup, back?.prompt],
                 })
+            );
+
+            // 6b. f opens the offered card big; the corner button shrinks it, f grows it again, and f once more leaves it small
+            const popupW = () => h.ev(`document.querySelector("[data-office-popup]")?.offsetWidth ?? 0`);
+            await focusCockpit(h);
+            await key(h, "f");
+            await sleep(300);
+            const big = { ...(await probe(h)), w: await popupW() };
+            await h.shot("cdp-shots/cockpit-office-big.png");
+            await h.ev(`document.querySelector("[data-office-popup-size]")?.click()`);
+            await sleep(200);
+            const shrunk = { ...(await probe(h)), w: await popupW() };
+            await focusCockpit(h);
+            await key(h, "f");
+            await sleep(200);
+            const grown = await probe(h);
+            await focusCockpit(h);
+            await key(h, "f");
+            await sleep(200);
+            rec(
+                "6b. f opens the offered card big; its corner button shrinks it back to the small card, and f grows it again",
+                big.popup !== "" && big.big && big.w > 380 && shrunk.popup !== "" && !shrunk.big && shrunk.w === 380 && grown.big,
+                JSON.stringify({ big: [big.popup, big.big, big.w], shrunk: [shrunk.popup, shrunk.big, shrunk.w], grown: grown?.big })
             );
 
             // 7. a click on the floor walks the boss there; in the hall the cursor stays on the last desk

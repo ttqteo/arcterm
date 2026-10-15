@@ -13,6 +13,8 @@ import {
     MEETING_H,
     MIN_W,
     peopleDrawn,
+    POPUP_BIG_H,
+    POPUP_BIG_W,
     POPUP_H,
     POPUP_W,
     popupBox,
@@ -484,6 +486,24 @@ describe("officeplanmodel", () => {
                 expect(pointerTop).toBeGreaterThanOrEqual(8);
                 expect(pointerTop).toBeLessThanOrEqual(box.h - 20);
             }
+        });
+
+        it("grows big on the hall's side of the desk, into the room that side has, never under the small card", () => {
+            const size = { width: 1200, height: 700 };
+            expect(popupBox(size, { x: 100, y: 120 }, agents, true).box).toMatchObject({
+                x: 200,
+                w: POPUP_BIG_W,
+                h: POPUP_BIG_H,
+            });
+            // a desk near the office's right edge: the card takes what is left on that side
+            expect(popupBox(size, { x: 600, y: 120 }, agents, true).box).toMatchObject({ x: 700, w: 500 });
+            expect(popupBox(size, { x: 1000, y: 120 }, meeting, true).box).toMatchObject({
+                x: 900 - POPUP_BIG_W,
+                w: POPUP_BIG_W,
+            });
+            const small = popupBox({ width: 600, height: 300 }, { x: 100, y: 120 }, agents, true).box;
+            expect(small).toMatchObject({ x: 200, w: 400, y: 0, h: 300 });
+            expect(popupBox({ width: 1200, height: 700 }, { x: 900, y: 120 }, agents, true).box.w).toBe(POPUP_W);
         });
     });
 });

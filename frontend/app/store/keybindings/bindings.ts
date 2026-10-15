@@ -970,6 +970,7 @@ export function buildCockpitBindings(): Binding[] {
         doc("cockpit:background", "b", "Background the agent (keeps running)"),
         doc("cockpit:office", "o", "Switch the Cockpit between Cards and Office"),
         doc("cockpit:office-walk", "ArrowRight", "Office: walk the boss (← ↑ ↓ →); j / k go desk by desk"),
+        doc("cockpit:office-big", "f", "Office: a bigger or smaller card beside the desk"),
     ];
 }
 

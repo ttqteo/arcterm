@@ -38,8 +38,8 @@ import {
 } from "@/app/view/office/plansprite";
 import { spriteCacheStats, tokenRgb } from "@/app/view/office/spritecache";
 import { cn } from "@/util/util";
-import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
-import { Moon, Sun, Zap } from "lucide-react";
+import { atom, useAtom, useAtomValue, type PrimitiveAtom } from "jotai";
+import { Maximize2, Minimize2, Moon, Sun, Zap } from "lucide-react";
 import { useReducedMotion } from "motion/react";
 import {
     Fragment,
@@ -103,7 +103,7 @@ import {
     type Seat,
     type Tone,
 } from "./officeplanmodel";
-import { officeAnimation, officeAnimationAtom, officeHoursAtom } from "./officestore";
+import { officeAnimation, officeAnimationAtom, officeBigCardAtom, officeHoursAtom } from "./officestore";
 import { usePlanDonuts } from "./usagemeters";
 
 /** What the CDP scenarios set through cockpitofficedevhooks.ts; always null in a real session. */
@@ -127,6 +127,8 @@ export interface OfficeHandle {
     dismiss(): void;
     /** Opens the card the ↵ over the boss's desk offers; false when none is offered. */
     openCard(): boolean;
+    /** Grows or shrinks the open card (an offered one opens big); false when there is no card. */
+    toggleBig(): boolean;
     order(): string[];
     asks(): string[];
 }
@@ -190,6 +192,7 @@ const probe = {
     loungeMore: 0,
     popup: "" as "" | "agent" | "run",
     prompt: "" as "" | "agent" | "run",
+    big: false,
 };
 let lastPlan: Plan | null = null;
 let lastWalking: ReadonlySet<string> = new Set();
@@ -564,6 +567,17 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                 return false;
             }
             globalStore.set(cardOpenAtom, true);
+            return true;
+        },
+        toggleBig: () => {
+            if (globalStore.get(cardOpenAtom)) {
+                globalStore.set(officeBigCardAtom, !globalStore.get(officeBigCardAtom));
+                return true;
+            }
+            if (!handleRef.current?.openCard()) {
+                return false;
+            }
+            globalStore.set(officeBigCardAtom, true);
             return true;
         },
         order: () => planRef.current.order,
@@ -1430,11 +1444,21 @@ function OfficePopup({
 }) {
     const b = useAtomValue(bossAtom);
     const open = useAtomValue(cardOpenAtom);
+    const [big, setBig] = useAtom(officeBigCardAtom);
+    const boxRef = useRef<HTMLDivElement>(null);
     const at = cardAt(plan, b, cursorId);
     const card = at != null && cursorId != null ? renderCard(cursorId) : null;
     const kind = at?.desk ? "agent" : "run";
     probe.popup = card && open ? kind : "";
     probe.prompt = card && !open ? kind : "";
+    probe.big = !!card && open && big;
+    const shown = card != null && open;
+    // a card grown past the office's view scrolls into it
+    useEffect(() => {
+        if (shown && big) {
+            boxRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+        }
+    }, [shown, big, cursorId]);
     if (!card || !at) {
         return null;
     }
@@ -1447,10 +1471,12 @@ function OfficePopup({
     }
     const anchor = at.desk ? { x: at.desk.x, y: at.desk.y } : { x: at.seat!.x, y: at.seat!.bottom - 40 };
     // beside the desk, over the hall; the card fills the box's height and scrolls, as in its grid column
-    const { box, right, pointerTop } = popupBox(plan, anchor, at.room);
+    const { box, right, pointerTop } = popupBox(plan, anchor, at.room, big);
     return (
         <div
+            ref={boxRef}
             data-office-popup={kind}
+            data-office-popup-big={big ? "" : undefined}
             className="absolute z-[8] flex flex-col rounded-md border border-edge-mid bg-surface-raised shadow-popover"
             style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
         >
@@ -1462,6 +1488,20 @@ function OfficePopup({
                 style={{ top: pointerTop }}
             />
             {card}
+            {/* on the corner away from the pointer, clear of the card's own header buttons */}
+            <button
+                type="button"
+                data-office-popup-size
+                onClick={() => setBig(!big)}
+                title={big ? "Smaller card (F)" : "Bigger card (F)"}
+                aria-label={big ? "Smaller card" : "Bigger card"}
+                className={cn(
+                    "absolute -top-3 z-[1] flex size-6 cursor-pointer items-center justify-center rounded-full border border-edge-mid bg-surface-raised text-secondary shadow-popover hover:border-accent hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                    right ? "-right-3" : "-left-3"
+                )}
+            >
+                {big ? <Minimize2 size={12} aria-hidden /> : <Maximize2 size={12} aria-hidden />}
+            </button>
         </div>
     );
 }

@@ -22,6 +22,7 @@ export interface OfficeKeys {
     showPath(key: string): void;
     dismiss(): void;
     openCard(): boolean;
+    toggleBig(): boolean;
     order(): string[];
     asks(): string[];
 }
@@ -114,6 +115,10 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
             }
             if (e.key === "Enter" && office.openCard()) {
                 // the ↵ over the boss's desk; with its card open, Enter answers or opens the agent as below
+                e.preventDefault();
+                return;
+            }
+            if (e.key === "f" && !e.metaKey && !e.ctrlKey && !e.altKey && office.toggleBig()) {
                 e.preventDefault();
                 return;
             }

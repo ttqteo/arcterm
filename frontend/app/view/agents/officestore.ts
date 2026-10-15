@@ -20,6 +20,10 @@ export const cockpitViewAtom = atomWithStorage<CockpitView>("cockpit.view", DEFA
 export const officeHoursAtom = atomWithStorage<WorkHours>("cockpit.office.hours", DEFAULT_HOURS, undefined, {
     getOnInit: true,
 }) as PrimitiveAtom<WorkHours>;
+// the card beside the desk drawn big (⤢ or f), kept for the next card
+export const officeBigCardAtom = atomWithStorage<boolean>("cockpit.office.bigcard", false, undefined, {
+    getOnInit: true,
+}) as PrimitiveAtom<boolean>;
 export const officeAnimationAtom = atomWithStorage<boolean>(
     "cockpit.office.animation",
     DEFAULT_OFFICE_ANIMATION,

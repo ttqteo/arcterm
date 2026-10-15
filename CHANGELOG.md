@@ -44,6 +44,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - **The Office offers a card instead of opening it**: when the boss stands at a desk, a ↵ over the person there
   offers its card, like a game's "press E"; press Enter or click it to open the card, and Esc to close it again.
   Walking with `j`/`k`, `n` or the arrows no longer opens cards by itself; a click on a desk still opens its card.
+- **A bigger Office card**: ⤢ on the card's corner, or `f`, grows it to about half the office and most of its height,
+  so a long answer reads without scrolling; the size you pick stays for the next card.
 
 ### Fixed
 
