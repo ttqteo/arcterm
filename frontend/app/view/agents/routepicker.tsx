@@ -33,10 +33,10 @@ import type { PickerSection } from "./route";
 import {
     harnessesAtom,
     harnessesLoadingAtom,
-    loadHarnesses,
     loadRefusedRoutes,
     refreshHarnessCatalog,
     refusedRoutesAtom,
+    useEmptyCatalogRetry,
 } from "./harnessstore";
 import { SubLabel } from "./sectionlabel";
 
@@ -126,13 +126,9 @@ export function RoutePicker({
     useEffect(() => {
         void loadRefusedRoutes();
     }, [open]);
-    // the catalog is loaded once at boot and a failed load is not cached server-side, so an empty
-    // picker retries instead of saying "no routes" for the rest of the session
-    useEffect(() => {
-        if (open && catalog.length === 0 && !loading) {
-            void loadHarnesses();
-        }
-    }, [open]);
+    // a failed catalog load is not cached server-side, so an empty picker retries instead of saying
+    // "no routes" for the rest of the session
+    useEmptyCatalogRetry(open, catalog.length === 0);
     const { refs, floatingStyles, context } = useFloating({
         open,
         onOpenChange(next, _event, reason) {

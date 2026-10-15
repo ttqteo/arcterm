@@ -4,7 +4,8 @@
 // Shared preferred-route state. The route pin is authoritative for run-worker launches; the
 // compatibility harness setter keeps consult callers on the same persisted choice.
 
-import { atom } from "jotai";
+import { atom, useAtomValue } from "jotai";
+import { useEffect, useRef } from "react";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { globalStore } from "@/app/store/global";
@@ -133,6 +134,25 @@ async function fetchHarnesses(forceRefresh: boolean): Promise<void> {
         // to "Unknown: <runtime>" for a selection that is in fact valid
         console.error("loading harness catalog failed", e);
     }
+}
+
+// A picker retries an empty catalog once while active (open, or mounted). Once, not on every open:
+// it waits out a load already in flight, so a picker opened during a boot load that then fails still
+// asks again instead of saying "no routes" until reopened, and a catalog that is truly empty does not
+// re-spawn the CLIs in a loop.
+export function useEmptyCatalogRetry(active: boolean, empty: boolean): void {
+    const loading = useAtomValue(harnessesLoadingAtom);
+    const retried = useRef(false);
+    useEffect(() => {
+        if (!active) {
+            retried.current = false;
+            return;
+        }
+        if (empty && !loading && !retried.current) {
+            retried.current = true;
+            void loadHarnesses();
+        }
+    }, [active, empty, loading]);
 }
 
 // The catalog loads once at boot, but a run records refusals while it goes, so the picker reads them each time it

@@ -27,10 +27,9 @@ import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
     harnessesAtom,
-    harnessesLoadingAtom,
     harnessPreferenceAtom,
-    loadHarnesses,
     setPreferredHarness,
+    useEmptyCatalogRetry,
 } from "./harnessstore";
 import { RuntimeMark } from "./runtimemark";
 
@@ -115,16 +114,10 @@ export function HarnessPicker({
 }: HarnessPickerProps) {
     const pref = useAtomValue(harnessPreferenceAtom);
     const harnesses = useAtomValue(harnessesAtom);
-    const loading = useAtomValue(harnessesLoadingAtom);
     const [open, setOpen] = useState(false);
     useEffect(() => () => setOpen(false), []);
-    // the catalog loads once at boot and a failed load is never retried, so the face would read
-    // "Unknown: <runtime>" for the rest of the session; mounting with an empty catalog retries it
-    useEffect(() => {
-        if (harnesses.length === 0 && !loading) {
-            void loadHarnesses();
-        }
-    }, []);
+    // with an empty catalog the face would read "Unknown: <runtime>" for the rest of the session
+    useEmptyCatalogRetry(true, harnesses.length === 0);
     useEffect(() => {
         if (openRequest > 0) {
             setOpen(true);
