@@ -379,11 +379,31 @@ Một lệnh nặng (build, typecheck, cả bộ test, `npm install`) chờ đ�
 
 ## Duyệt tài liệu do agent yêu cầu
 
-Khi agent hỏi với header **Spec review**, **Plan review** hoặc **Doc review**, nó đang xin bạn duyệt một tài liệu:
+Agent xin bạn duyệt một tài liệu bằng một câu hỏi mang header riêng, và header quyết định nó hiện ra ở đâu:
 
-- **Spec review** và **Plan review** (từ lead của một run) mở thành hộp thoại phủ lên surface đang xem; nút màu cam ở header và nhãn `review` trên hàng sidebar mở lại hộp thoại khi bạn đã đóng.
-- **Doc review** (agent vừa sửa một bài `.tex` hoặc ghi chú `.md` và hỏi ý bạn) hiện **thay cho terminal** ở trung tâm: bản so sánh theo câu những gì agent đã đổi, comment ngay cạnh đoạn văn, và khay **Approve** / **Request changes** để gửi một câu trả lời duy nhất. Với file `.tex`, thêm tab **PDF** (dịch nền) bên cạnh **Changes**.
+| Header của câu hỏi | Hiện ra | Ai hỏi, khi nào |
+|---|---|---|
+| **Spec review** | Hộp phủ lên surface đang xem ([Jarvis → Hộp Spec review và Plan review](jarvis.md#hộp-spec-review-và-plan-review)) | Lead của run, một lần, để bạn duyệt spec trước khi nó viết plan |
+| **Plan review** | Hộp đó | Lead của run, khi plan hỏng review hai vòng ([Orchestrator → Review plan](orchestrator.md#review-plan)) |
+| **Doc review** | Tab **Review**, thay cho terminal ở trung tâm | Agent bất kỳ vừa sửa một file `.md`, `.tex` hoặc một board canvas, theo skill `doc-review` |
+| Header khác | Câu hỏi thường ([Trả lời câu hỏi của agent](#trả-lời-câu-hỏi-của-agent)) | |
+
+Câu hỏi chỉ thành review khi header là đúng một trong ba tên trên (không phân biệt hoa thường) **và** dòng đầu của câu hỏi là đường dẫn tới file. Khác đi thì nó là câu hỏi thường, dù nội dung nói về một tài liệu: ví dụ lead đặt header `Spec edits` để liệt kê những chỗ nó định sửa trong spec sau một plan review hỏng. File chưa đổi nên cũng chưa có gì để xem trong review; muốn xem các sửa đổi đó dưới dạng diff, chọn **Type something** và bảo nó sửa spec trước rồi xin **Doc review** file đó.
+
+Hộp và tab Review cho bạn xem hai thứ khác nhau. Hộp (Spec/Plan review) hiện **toàn bộ** tài liệu để bạn duyệt nó như một văn bản, không có diff. Tab Review (Doc review) hiện **những gì agent vừa đổi**.
+
+- Nút màu cam ở header và nhãn `review` trên hàng sidebar mở lại hộp khi bạn đã đóng; `Esc` chỉ ẩn hộp, câu hỏi vẫn chờ.
 - Review tự mở một lần cho mỗi câu hỏi, chỉ khi bạn đang ở agent đó và không đang gõ. Chuyển qua lại giữa Terminal và Review bằng nút chuyển ở header hoặc phím `r`.
+
+### Tab Review (Doc review)
+
+Tab Review hiện bản so sánh theo câu những gì agent đã đổi, comment ngay cạnh đoạn văn, và khay **Approve** / **Request changes** gửi một câu trả lời duy nhất. Với file `.tex`, thêm tab **PDF** (dịch nền) bên cạnh **Changes**.
+
+- **Đầu trang**: câu hỏi của agent, rồi mỗi mục nó liệt kê một chip. Chip có mũi tên ↓ dẫn tới một mục của tài liệu: bấm để cuộn tới đó. Chip khớp một mục khi nó mở đầu bằng số mục (`§5.2`, `5.`), khi chữ của nó chứa nguyên tên một heading, hoặc khi phần trước dấu `:` nằm trọn trong tên một heading (`New in Go: …` dẫn tới "What is new in Go"). Chip không có mũi tên thì không khớp mục nào.
+- **Sections** (cột phải, dưới **Your comments**): mọi heading của tài liệu, bấm để nhảy tới. Mục đang gộp trong một dòng `unchanged` thì Review mở cả file rồi mới cuộn. Ẩn khi khung Review quá hẹp.
+- **Màu xanh** là câu được thêm, chữ gạch là câu bị xóa, so với một bản gốc. Góc phải toolbar nói bản gốc là gì: `against <commit>, session start` (file lúc phiên agent bắt đầu), `against HEAD`, `new file`, hoặc `against what you reviewed at <giờ>`. File chưa có lúc phiên bắt đầu thì bản gốc rỗng, nên cả trang xanh. Sau **Request changes**, vòng sau so với bản bạn vừa xem, nên chỉ những gì agent sửa theo comment của bạn được tô. `+N` / `−N` đếm **câu**: trên toolbar cho cả file, cạnh heading cho mục đó.
+- **Unchanged**: các mục không đổi gộp thành một dòng; **Whole file** (hoặc **Show whole file**) hiện tất cả.
+- **Ảnh**: `![mô tả](đường dẫn)` trong file `.md` vẽ ngay trong Review, với đường dẫn tương đối (tính từ file) hoặc tuyệt đối tới một file png, jpg, gif, webp hoặc svg tới 5 MB. Ảnh mới có dòng `+ image · …` và viền xanh, ảnh bị xóa có `− image · …`. Ảnh từ web (`https://…`) không tải: Review hiện mô tả và đường dẫn thay cho ảnh. Board canvas là file `.dc.html`, không phải ảnh: muốn đưa một board vào tài liệu thì xuất nó thành PNG rồi link file đó (thư mục canvas có sẵn `thumb.png`, ảnh xem trước cả canvas). `.superpowers/` không được commit, nên ảnh để ở đó chỉ hiện trên máy này; ảnh cần đi cùng tài liệu thì để cạnh tài liệu và commit cùng nó.
 
 | Phím (trong Review) | Tác dụng |
 |---|---|
