@@ -108,3 +108,21 @@ describe("rpcResponseGenerator (via sendRpcCommand)", () => {
         });
     });
 });
+
+describe("WshClient.wshRpcCall without a timeout", () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    // a lost response (a dropped link, a stale queued command) must not leave the call pending forever:
+    // pollers gate on an in-flight flag and would never poll again
+    it("rejects once the client-side safety bound passes, without putting a timeout on the wire", async () => {
+        const { WshClient } = await import("./wshclient");
+        const client = new WshClient("tab:me");
+        const call = client.wshRpcCall("x", {}, undefined);
+        const settled = expect(call).rejects.toThrow(/EC-TIME/);
+        await vi.advanceTimersByTimeAsync(60000);
+        await settled;
+        expect(router.sent[0].timeout).toBeUndefined();
+        expect(client.openRpcs.size).toBe(0);
+    });
+});

@@ -77,16 +77,18 @@ function sendRpcResponse(msg: RpcMessage) {
     DefaultRouter.recvRpcMessage(msg);
 }
 
+// localTimeoutMs bounds the wait on this side only when msg carries no timeout; it is not sent on the wire
 function sendRpcCommand(
     openRpcs: Map<string, ClientRpcEntry>,
-    msg: RpcMessage
+    msg: RpcMessage,
+    localTimeoutMs?: number
 ): AsyncGenerator<RpcMessage, void, boolean> {
     DefaultRouter.recvRpcMessage(msg);
     if (msg.reqid == null) {
         return null;
     }
     const reqid = msg.reqid;
-    const rtnGen = rpcResponseGenerator(openRpcs, msg.command, reqid, msg.timeout);
+    const rtnGen = rpcResponseGenerator(openRpcs, msg.command, reqid, msg.timeout || localTimeoutMs);
     rtnGen.next();
     // Early teardown of a stream (a consumer calling gen.return() on card unmount) must reach the
     // server so its streaming goroutine + any fsnotify watcher unwind while the link is still up.

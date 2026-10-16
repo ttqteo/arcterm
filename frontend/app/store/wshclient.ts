@@ -9,6 +9,9 @@ const notFoundLogMap = new Map<string, boolean>();
 // safety net so an inbound handler that never settles rejects with a timeout instead of leaving the
 // remote caller hanging forever. generous: this bounds a stuck/hung handler, it is not an SLA.
 const RpcHandlerTimeoutMs = 30000;
+// the outbound twin: a call with no timeout whose response is lost (a dropped link, a stale queued command)
+// would otherwise never settle. wavesrv already gives such a call a 5s handler context, so this only fires on loss
+const RpcCallSafetyTimeoutMs = 30000;
 
 class RpcResponseHelper {
     client: WshClient;
@@ -66,7 +69,7 @@ class WshClient {
         if (opts?.route) {
             msg.route = opts.route;
         }
-        const rpcGen = sendRpcCommand(this.openRpcs, msg);
+        const rpcGen = sendRpcCommand(this.openRpcs, msg, RpcCallSafetyTimeoutMs);
         if (rpcGen == null) {
             return null;
         }
