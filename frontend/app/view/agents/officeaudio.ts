@@ -3,8 +3,8 @@
 //
 // The office's sound player (office sounds spec, "Architecture"): one AudioContext made on the first sound, a short-
 // lived oscillator per note (pulse waves from their harmonics, a triangle, a shared noise buffer), a master gain for
-// the volume and a music bus that ducks under a jingle. With the office off nothing here exists. The DEV log sink
-// stands in for it in the CDP scenarios (cockpitofficedevhooks.ts).
+// the volume through a low-pass that takes the pulse waves' glare off, and a music bus that ducks under a jingle. With
+// the office off nothing here exists. The DEV log sink stands in for it in the CDP scenarios (cockpitofficedevhooks.ts).
 
 // no import of @/app/store/global here: officeaudio.test.ts loads this module under vitest
 import { globalStore } from "@/app/store/jotaiStore";
@@ -32,7 +32,10 @@ import {
 } from "./officestore";
 
 // volume 1 is this share of full scale: pulse waves are loud
-const MASTER = 0.4;
+const MASTER = 0.3;
+// the master's low-pass: a pulse wave's upper harmonics sound shrill through laptop speakers, so they roll off above
+// this (Hz)
+const LOWPASS_HZ = 2800;
 // the music under a jingle
 const DUCK = 0.3;
 // how early the next loop of the music is scheduled
@@ -88,7 +91,12 @@ class ChipPlayer implements OfficeSink {
             this.ctx = new AudioContext();
             this.master = this.ctx.createGain();
             this.master.gain.value = this.vol * MASTER;
-            this.master.connect(this.ctx.destination);
+            const lowpass = this.ctx.createBiquadFilter();
+            lowpass.type = "lowpass";
+            lowpass.frequency.value = LOWPASS_HZ;
+            lowpass.Q.value = 0.5;
+            this.master.connect(lowpass);
+            lowpass.connect(this.ctx.destination);
         }
         if (this.ctx.state === "suspended") {
             // a context made before the person's first key or click starts suspended; it resumes on the next sound

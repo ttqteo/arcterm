@@ -22,6 +22,7 @@ const KEY_CODES = {
     ArrowRight: 39,
     Escape: 27,
     Enter: 13,
+    " ": 32,
     PageUp: 33,
     PageDown: 34,
     f: 70,
@@ -37,7 +38,7 @@ const KEY_CODES = {
     1: 49,
 };
 // the boss's walking speed (officeboss.ts BOSS_SPEED), for how long to hold an arrow
-const BOSS_PX_PER_S = 160;
+const BOSS_PX_PER_S = 240;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const HOLD_MS = 30000;
 // main thread busy as a percent of a window: a TaskDuration delta (seconds) over its length, to 0.1
@@ -126,7 +127,7 @@ export const OFFICE_FLOORS_FOURTH_RUN = floorsRun(6, "Office floors", "arcterm",
 
 // a real key on the page: keyDown, keyUp, or both
 export async function key(h, k, type = "both") {
-    const code = k.length === 1 ? (/\d/.test(k) ? `Digit${k}` : `Key${k.toUpperCase()}`) : k;
+    const code = k === " " ? "Space" : k.length === 1 ? (/\d/.test(k) ? `Digit${k}` : `Key${k.toUpperCase()}`) : k;
     const base = { key: k, code, windowsVirtualKeyCode: KEY_CODES[k] };
     if (type !== "up") await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", ...base, ...(k.length === 1 ? { text: k } : {}) });
     if (type !== "down") await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...base });
@@ -1372,8 +1373,8 @@ export function makeCockpitOfficeScenarios(fx) {
                 JSON.stringify({ acts, dialog: talked?.dialog })
             );
 
-            // 4. walking: Peter's walk is front-on, so left or right he is never mirrored. From the hall's middle, a key held
-            // for a moment; the frames read while it is down
+            // 4. walking: the boss turns the way it walks, its side grid going right and the same mirrored going left. From
+            // the hall's middle, a key held for a moment; the frames read while it is down
             const hallNow = (await probe(h))?.hall;
             if (hallNow) {
                 await clickFloor(hallNow.x + hallNow.w / 2, hallNow.y + Math.min(300, hallNow.h - 40));
@@ -1394,8 +1395,11 @@ export function makeCockpitOfficeScenarios(fx) {
                 await settleBoss(h, 2000);
             }
             rec(
-                "4. walking left and right the boss shows its walk frames, front-on, never mirrored",
-                hallNow != null && walked.every((w) => w.poses.every((p) => p === "walk1" || p === "walk2") && w.flips.every((f) => f === false)),
+                "4. walking left and right the boss shows its walk frames, mirrored going left and not going right",
+                hallNow != null &&
+                    walked.every(
+                        (w) => w.poses.every((p) => p === "walk1" || p === "walk2") && w.flips.every((f) => f === (w.dir === "ArrowLeft"))
+                    ),
                 JSON.stringify(walked)
             );
 
@@ -1532,7 +1536,7 @@ export function makeCockpitOfficeScenarios(fx) {
                 }
                 return probe(h);
             };
-            // the ↵ chip over the desk the boss stands at, while it walks
+            // the Space chip over the desk the boss stands at, while it walks
             const chip = () => h.ev(`document.querySelector("[data-office-prompt]")?.textContent ?? ""`);
 
             // 0. the office fills the surface: no Cockpit title, the filters and switches in the HUD bar inside the
@@ -1590,11 +1594,12 @@ export function makeCockpitOfficeScenarios(fx) {
             sels.push((await press("ArrowUp"))?.sel);
             rec("2. ↓ ↓ ↓ steps the ▶ 1, 2, then over the dim Send to Terminal; ↑ goes back to 2", JSON.stringify(sels) === "[1,2,4,2]", JSON.stringify(sels));
 
-            // 3. ↵ on an answer picks it and moves the ▶ to Send, which lights (no second ↵: it would send)
+            // 3. Space, the A button, on an answer picks it and moves the ▶ to Send, which lights (no second Space: it
+            // would send)
             await press("ArrowUp", 2);
-            p = await press("Enter");
+            p = await press(" ");
             rec(
-                "3. ↵ on the first answer picks it and moves the ▶ to Send, now lit",
+                "3. Space on the first answer picks it and moves the ▶ to Send, now lit",
                 JSON.stringify(p?.answerSel?.["0"]) === "[0]" && p.sel === 3 && JSON.stringify(p.dims) === "[]",
                 JSON.stringify({ answerSel: p?.answerSel, sel: p?.sel, dims: p?.dims })
             );
@@ -1617,6 +1622,29 @@ export function makeCockpitOfficeScenarios(fx) {
                 JSON.stringify({ card: [card?.popup, card?.dialog], back1: [back1?.dialog, back1?.popup], back2: [back2?.dialog, back2?.prompt], chip: answerChip })
             );
             await h.shot("cdp-shots/cockpit-office-talk.png");
+
+            // 4b. Space at quill's desk opens the box again; Esc shuts it, and an Esc while walking is the office's too:
+            // every Esc is consumed, so none goes on to the window (where macOS can take it out of full screen)
+            await h.ev(`(() => {
+                window.__officeEsc = [];
+                if (!window.__officeEscHooked) {
+                    window.__officeEscHooked = true;
+                    window.addEventListener("keydown", (e) => e.key === "Escape" && window.__officeEsc.push(e.defaultPrevented));
+                }
+            })()`);
+            const spaced = await press(" ");
+            const shutEsc = await press("Escape");
+            const walkEsc = await press("Escape");
+            const escs = await h.ev(`window.__officeEsc`);
+            rec(
+                "4b. Space at quill opens its dialog box; Esc shuts it and an Esc while walking keeps walking, both consumed",
+                spaced?.dialog === "agent" &&
+                    shutEsc?.dialog === "" &&
+                    walkEsc?.dialog === "" &&
+                    walkEsc.prompt === "agent" &&
+                    JSON.stringify(escs) === "[true,true]",
+                JSON.stringify({ spaced: spaced?.dialog, shut: shutEsc?.dialog, walk: [walkEsc?.dialog, walkEsc?.prompt], prevented: escs })
+            );
 
             // 5. loom at work: ↵ Talk offered once its box is shut; ↵ opens it again: Open, Reply, Terminal,
             // Background, Full card, and the ▶ stops at the last

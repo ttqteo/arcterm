@@ -99,7 +99,12 @@ export function dialogItems(input: DialogInput): DialogItem[] {
                 multi: !!q.multiSelect,
             })
         );
-        answers.push({ id: "send", label: "Send", key: "↵", dim: !canSubmitAsk(qs, input.selections, input.texts) });
+        answers.push({
+            id: "send",
+            label: "Send",
+            key: "Space",
+            dim: !canSubmitAsk(qs, input.selections, input.texts),
+        });
     }
     // an asking worker's number keys answer it, so its row's actions take no number then. Tell asks for words, which
     // the full card's input takes, so the box leaves it out (States: a worker at work offers Open and Terminal); the
@@ -112,7 +117,7 @@ export function dialogItems(input: DialogInput): DialogItem[] {
     const acts: DialogItem[] = [];
     if (agent && (kind !== "worker" || input.canOpen)) {
         if (qs.length === 0) {
-            acts.push({ id: "open", label: kind === "lead" ? "Open lead" : "Open", key: "↵" });
+            acts.push({ id: "open", label: kind === "lead" ? "Open lead" : "Open", key: "Space" });
             if (kind !== "worker") {
                 acts.push({ id: "reply", label: "Reply", key: "r" });
             }
@@ -255,7 +260,11 @@ export function carryWords(input: {
                     : over === "floor"
                       ? `Put it on ${floor}`
                       : "Back where it was";
-        return { head: `Moving ${project}`, line, keys: "← ↑ ↓ → slot · PgUp PgDn floor · ↵ put down · Esc cancel" };
+        return {
+            head: `Moving ${project}`,
+            line,
+            keys: "← ↑ ↓ → slot · PgUp PgDn floor · Space put down · Esc cancel",
+        };
     }
     const line =
         over === "swap"

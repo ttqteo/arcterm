@@ -88,7 +88,7 @@ export const SCORES: Record<CueId | UiCue | Track, Score> = {
     ),
     taskDone: score(150, false, line("sq1", "E6/1 B6/3", { vol: 0.35, duty: 0.25 })),
     // a trainer spots you: a rising "!"
-    needsYou: score(160, false, line("sq1", "G5/1 D6/1 G6/4", { vol: 0.45, duty: 0.125 })),
+    needsYou: score(160, false, line("sq1", "G5/1 D6/1 G6/4", { vol: 0.4, duty: 0.25 })),
     setback: score(
         120,
         false,

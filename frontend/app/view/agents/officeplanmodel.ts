@@ -598,7 +598,7 @@ export function buildPlan(input: PlanInput): Plan {
                 spot: { x: x + 40, y: y + DESK_SPOT_DY },
                 ...look,
                 name: a.name,
-                tip: `${a.name} · ${state} (Enter opens the card)`,
+                tip: `${a.name} · ${state} (Space opens the card)`,
                 harness: a.harness,
             });
             if (away && !input.night && a.state === "idle") {
@@ -644,7 +644,7 @@ export function buildPlan(input: PlanInput): Plan {
             spot: { x: tx + 38, y: spotY },
             ...lead,
             lane: 0,
-            tip: `${r.title} · lead (Enter opens the run)`,
+            tip: `${r.title} · lead (Space opens the run)`,
         });
         shownTasks.forEach((t, i) => {
             const n = i + 1; // seat 0 is the lead

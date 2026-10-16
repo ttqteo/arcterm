@@ -252,7 +252,7 @@ function LiftPanel({ vm, sel, onPick }: { vm: OfficeDialogVM; sel: number; onPic
                     </>
                 ) : (
                     <>
-                        <LiftKey>↑ ↓</LiftKey> choose · <LiftKey>↵</LiftKey> ride · <LiftKey>Esc</LiftKey> stay
+                        <LiftKey>↑ ↓</LiftKey> choose · <LiftKey>Space</LiftKey> ride · <LiftKey>Esc</LiftKey> stay
                     </>
                 )}
             </span>
@@ -535,13 +535,13 @@ export function ChipPlate({ title, ask }: { title: string; ask: boolean }) {
     );
 }
 
-/** What a room's chip says: how many did not fit, and what ↵ does on one. */
+/** What a room's chip says: how many did not fit, and what Space does on one. */
 export function ChipBody({ text }: { text: string }) {
     return (
         <>
             <p className="m-0 text-[17px] font-semibold leading-6 text-primary">{text}</p>
             <p className="m-0 text-[14.5px] leading-[22px] text-secondary">
-                No desk or table is left for them in this room. ↵ opens one's card beside the chip.
+                No desk or table is left for them in this room. Space opens one's card beside the chip.
             </p>
         </>
     );

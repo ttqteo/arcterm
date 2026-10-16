@@ -12,7 +12,7 @@ import { answerDigitTarget, canSubmitAsk, hasAnswerableAsk, moveCursor, nextAskI
 import { askerAt, columnJump, type RowTarget } from "./cardgridlayout";
 import { isRowKey, rowCardId } from "./leadcardmodel";
 import type { Dir } from "./officeboss";
-import { officeKey, type OfficeLayer } from "./officecontrols";
+import { officeKey, officeKeyName, type OfficeLayer } from "./officecontrols";
 import { toggleOfficeMute } from "./officestore";
 import { BOARD_KEY, LIFT_KEY } from "./officeplanmodel";
 
@@ -39,7 +39,8 @@ export interface OfficeKeys {
     floor(delta: -1 | 1): void;
     // g: pick up the room the boss stands in; nothing when it stands in none
     grab(): void;
-    // the carry's keys: the arrows move the target to a slot of the floor, ↵ puts the room down, Esc and g put it back
+    // the carry's keys: the arrows move the target to a slot of the floor, Space or ↵ puts the room down, Esc and g put
+    // it back
     slot(dir: Dir): void;
     drop(): void;
     cancel(): void;
@@ -100,14 +101,16 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
         if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable) {
             return; // typing — let the input own its keys
         }
+        // in Office, Space is the A button: it does what Enter does, the Cockpit's own Enter below too
+        const key = office ? officeKeyName(e.key) : e.key;
         // a room carried takes every key until it is put down (officecontrols.ts), the view switch too
-        if (e.key === "o" && !e.metaKey && !e.ctrlKey && !e.altKey && toggleView && office?.layer() !== "carry") {
+        if (key === "o" && !e.metaKey && !e.ctrlKey && !e.altKey && toggleView && office?.layer() !== "carry") {
             e.preventDefault();
             toggleView();
             return;
         }
         if (office) {
-            const act = officeKey(office.layer(), office.menuOpen(), e.key, {
+            const act = officeKey(office.layer(), office.menuOpen(), key, {
                 meta: e.metaKey,
                 ctrl: e.ctrlKey,
                 alt: e.altKey,
@@ -126,7 +129,7 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
                     office.activate();
                     return;
                 case "talk":
-                    // the ↵ over the boss's desk; at no desk, Enter opens the cursor's agent as below
+                    // Space or ↵ over the boss's desk; at no desk, it opens the cursor's agent as Enter does below
                     if (office.talk()) {
                         e.preventDefault();
                         return;
@@ -142,6 +145,9 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
                     toggleOfficeMute();
                     return;
                 case "back":
+                    // consumed even when walking, where it has nothing to step back from: an Escape the page lets
+                    // through goes on to the window, where macOS can take it out of full screen
+                    e.preventDefault();
                     office.back();
                     return;
                 case "menu":
@@ -205,7 +211,7 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
                 case "pass":
                     // r's composer lives on the card: show the card first, then the reply below opens it (a chord
                     // passes as it is)
-                    if (e.key === "r" && !e.metaKey && !e.ctrlKey && !e.altKey && office.layer() !== "card") {
+                    if (key === "r" && !e.metaKey && !e.ctrlKey && !e.altKey && office.layer() !== "card") {
                         office.card();
                     }
                     break;
@@ -216,19 +222,19 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
         // a run card can hold a lead the live list parked, so look the card up in the whole roster
         const cur = roster.find((a) => a.id === cursorId);
         const row = cursorId != null && isRowKey(cursorId) ? rowTargets[cursorId] : undefined;
-        if (row && (/^[1-9]$/.test(e.key) || e.key === "Enter" || e.key === "t")) {
+        if (row && (/^[1-9]$/.test(key) || key === "Enter" || key === "t")) {
             e.preventDefault();
             // a worker is not a grid card, so look it up in the whole roster
             const asker = askerAt(cursorId, roster, rowTargets);
-            if (/^[1-9]$/.test(e.key)) {
-                const d = parseInt(e.key, 10);
+            if (/^[1-9]$/.test(key)) {
+                const d = parseInt(key, 10);
                 const target = asker ? answerDigitTarget(asker, answerTab[asker.id] ?? 0, d) : null;
                 if (asker && target) {
                     toggleAnswer(asker.id, target.qi, target.oi);
                 } else {
                     row.actions[d - 1]?.();
                 }
-            } else if (e.key === "Enter") {
+            } else if (key === "Enter") {
                 if (asker && canSubmitAsk(asker.ask?.questions ?? [], answerSel[asker.id] ?? {})) {
                     submitAnswer(asker.id);
                 } else if (row.openId) {
@@ -239,14 +245,14 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
             }
             return;
         }
-        if (e.key === "ArrowDown" || e.key === "j") {
+        if (key === "ArrowDown" || key === "j") {
             e.preventDefault();
             setCursorId((c) => moveCursor(navigableIds, c, 1));
-        } else if (e.key === "ArrowUp" || e.key === "k") {
+        } else if (key === "ArrowUp" || key === "k") {
             e.preventDefault();
             setCursorId((c) => moveCursor(navigableIds, c, -1));
-        } else if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "h" || e.key === "l") {
-            const back = e.key === "ArrowLeft" || e.key === "h";
+        } else if (key === "ArrowLeft" || key === "ArrowRight" || key === "h" || key === "l") {
+            const back = key === "ArrowLeft" || key === "h";
             // a question with several parts keeps h/l for its tabs, on its own card or on its worker's task row
             const asker = askerAt(cursorId, roster, rowTargets);
             const n = asker?.ask?.questions?.length ?? 0;
@@ -261,7 +267,7 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
                 e.preventDefault();
                 setCursorId(target);
             }
-        } else if (e.key === "n") {
+        } else if (key === "n") {
             e.preventDefault();
             const target = nextAskId(askTargets, lastJumpRef.current);
             if (target) {
@@ -269,7 +275,7 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
                 setCursorId(target);
                 scrollToPulse(target);
             }
-        } else if (e.key === "Enter") {
+        } else if (key === "Enter") {
             e.preventDefault();
             if (!cur) return;
             if (cur.state === "asking" && canSubmitAsk(cur.ask?.questions ?? [], answerSel[cur.id] ?? {})) {
@@ -277,30 +283,30 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
             } else {
                 openFocus(cur.id, false);
             }
-        } else if (e.key === " ") {
+        } else if (key === " ") {
             if (cur) {
                 e.preventDefault();
                 void peekTarget(model, { kind: "agent", tabId: cur.id });
             }
-        } else if (e.key === "r") {
+        } else if (key === "r") {
             e.preventDefault();
             if (cur && !hasAnswerableAsk(cur)) {
                 setOpenComposerId(cur.id);
                 requestAnimationFrame(() => focusRowComposer(cur.id));
             }
-        } else if (e.key === "t") {
+        } else if (key === "t") {
             e.preventDefault();
             if (cur) {
                 model.openTerminal(cur.id);
             }
-        } else if (e.key === "b") {
+        } else if (key === "b") {
             e.preventDefault();
             if (cur && cur.state !== "asking") {
                 toggleBackground(cur.id);
             }
-        } else if (/^[1-9]$/.test(e.key)) {
+        } else if (/^[1-9]$/.test(key)) {
             if (cur) {
-                const target = answerDigitTarget(cur, answerTab[cur.id] ?? 0, parseInt(e.key, 10));
+                const target = answerDigitTarget(cur, answerTab[cur.id] ?? 0, parseInt(key, 10));
                 if (target) {
                     e.preventDefault();
                     toggleAnswer(cur.id, target.qi, target.oi);

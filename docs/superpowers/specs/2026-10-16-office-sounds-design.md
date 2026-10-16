@@ -76,7 +76,8 @@ Pure logic with a test beside it, consumed by thin wiring, as everywhere in `fro
   score, written as lines of `name/length` tokens (`C5/2 r/1 N/1`).
 - **`officeaudio.ts`**, the player. One `AudioContext`, made on the first sound the person's own action allows
   (browsers block audio before a gesture); a short-lived `OscillatorNode` per note; one shared 1 s noise
-  `AudioBuffer`; a master `GainNode` for the volume and a music `GainNode` for the duck; `close()` on unmount.
+  `AudioBuffer`; a master `GainNode` for the volume, through a low-pass at 2.8 kHz (the pulse waves' upper harmonics
+  sound shrill through laptop speakers), and a music `GainNode` for the duck; `close()` on unmount.
 - **`officesound.tsx`**, renders nothing, mounted inside `CockpitOffice`. It keeps the previous snapshot, plays what
   `pickCue` returns, follows the window's focus, and switches the loop with `officeHoursAtom`.
 - **Boss sounds** are called where the boss moves in `cockpitoffice.tsx`: a `step` every 24 px the arrows walk it (a

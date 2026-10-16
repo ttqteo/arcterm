@@ -1,10 +1,9 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { PET_PX } from "@/app/view/jarvis/petsprite";
 import { PLAN_CELL, PLAN_SPRITES, spriteWidth } from "@/app/view/office/plansprite";
 import { describe, expect, it } from "vitest";
-import { canStand, canWalk } from "./officeboss";
+import { BOSS_PX, canStand, canWalk } from "./officeboss";
 import { EMPTY_LAYOUT, placeRooms, type Placements } from "./officelayout";
 import {
     agentLook,
@@ -580,8 +579,8 @@ describe("officeplanmodel", () => {
         it("stands the boss clear of the dial and the strip over it that holds `Floor n`", () => {
             const { dial, spot } = p.lift;
             const label = { x: dial.x, y: dial.y - 24, w: dial.w, h: 24 };
-            // the boss is the pet: its svg stands on its feet at the spot, PET_PX wide and tall
-            const body = { x: spot.x - PET_PX / 2, y: spot.y - PET_PX, w: PET_PX, h: PET_PX };
+            // the boss is the pet: its svg stands on its feet at the spot, BOSS_PX wide and tall
+            const body = { x: spot.x - BOSS_PX / 2, y: spot.y - BOSS_PX, w: BOSS_PX, h: BOSS_PX };
             expect(overlaps(body, dial)).toBe(false);
             expect(overlaps(body, label)).toBe(false);
             // and it stays under the notice board's spot (the shortest view is the tight one)

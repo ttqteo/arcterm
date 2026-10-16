@@ -20,8 +20,6 @@ import { cornerFor } from "@/app/view/jarvis/petledge";
 import { petOutfit, petOutfitChoice } from "@/app/view/jarvis/petoutfit";
 import {
     bossSprite,
-    PET_CELL_PX,
-    PET_PX,
     SPIDEY_POSES,
     SPIDEY_PUFF,
     SPIDEY_SWING,
@@ -119,6 +117,8 @@ import {
 import { boardPage } from "./officeboardmodel";
 import {
     advance,
+    BOSS_CELL_PX,
+    BOSS_PX,
     BOSS_RUN,
     BOSS_SPEED,
     bossLook,
@@ -2310,7 +2310,7 @@ function Table({ room, onPick }: { room: Room; onPick: (key: string) => void }) 
             <button
                 type="button"
                 data-office-room={room.key}
-                title={`${room.title} (Enter opens the run)`}
+                title={`${room.title} (Space opens the run)`}
                 aria-label={`${room.title}, the run's card`}
                 onClick={() => room.runId && onPick(room.runId)}
                 className="absolute z-[3] cursor-pointer border-0 bg-transparent p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
@@ -2391,7 +2391,7 @@ const NoticeBoard = memo(function NoticeBoard(p: {
             <button
                 type="button"
                 data-office-board=""
-                title={rows > 0 ? `${label} (Enter reads it)` : label}
+                title={rows > 0 ? `${label} (Space reads it)` : label}
                 aria-label={label}
                 onClick={() => onPick(BOARD_KEY)}
                 className="absolute z-[3] cursor-pointer border-0 bg-transparent p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
@@ -2542,7 +2542,7 @@ function Labels({
                         key={r.chip.key}
                         type="button"
                         data-office-chip={r.key}
-                        title={`${r.chip.text} (Enter shows who they are)`}
+                        title={`${r.chip.text} (Space shows who they are)`}
                         aria-label={`${r.title}: ${r.chip.text}${r.chip.ask ? ", someone needs you" : ""}`}
                         onClick={() => onPick(r.chip!.key)}
                         // over the boss, who stands right under it (its spot is 22 px under the chip): the words stay readable
@@ -2788,10 +2788,10 @@ const petCells = (cells: readonly PetCell[]) =>
     cells.map((c, i) => (
         <rect
             key={i}
-            x={c.x * PET_CELL_PX}
-            y={c.y * PET_CELL_PX}
-            width={PET_CELL_PX}
-            height={PET_CELL_PX}
+            x={c.x * BOSS_CELL_PX}
+            y={c.y * BOSS_CELL_PX}
+            width={BOSS_CELL_PX}
+            height={BOSS_CELL_PX}
             fill={`var(${c.token})`}
         />
     ));
@@ -2953,7 +2953,7 @@ function BossPet({
             const p = swingRef.current ?? bossAt();
             return (
                 p &&
-                `translate(${Math.round((p.x - PET_PX / 2) / PLAN_CELL) * PLAN_CELL}px, ${Math.round((p.y - PET_PX) / PLAN_CELL) * PLAN_CELL}px)`
+                `translate(${Math.round((p.x - BOSS_PX / 2) / PLAN_CELL) * PLAN_CELL}px, ${Math.round((p.y - BOSS_PX) / PLAN_CELL) * PLAN_CELL}px)`
             );
         },
         placeCorner
@@ -3066,7 +3066,7 @@ function BossPet({
             <PetTeleportLayers
                 run={run}
                 sprite={bossSprite("stand", [], outfit, character)}
-                cellPx={PET_CELL_PX}
+                cellPx={BOSS_CELL_PX}
                 character={character}
                 at={held ?? undefined}
             />
@@ -3076,10 +3076,10 @@ function BossPet({
         // the strand from the window to his raised hand, in this svg's coordinates (the button is where the swing has him)
         const strand = swing ? (
             <line
-                x1={swing.pane.x - Math.round((swing.at.x - PET_PX / 2) / PLAN_CELL) * PLAN_CELL}
-                y1={swing.pane.y - Math.round((swing.at.y - PET_PX) / PLAN_CELL) * PLAN_CELL}
-                x2={HANDS.x * PET_CELL_PX + PET_CELL_PX / 2}
-                y2={HANDS.y * PET_CELL_PX + PET_CELL_PX / 2}
+                x1={swing.pane.x - Math.round((swing.at.x - BOSS_PX / 2) / PLAN_CELL) * PLAN_CELL}
+                y1={swing.pane.y - Math.round((swing.at.y - BOSS_PX) / PLAN_CELL) * PLAN_CELL}
+                x2={HANDS.x * BOSS_CELL_PX + BOSS_CELL_PX / 2}
+                y2={HANDS.y * BOSS_CELL_PX + BOSS_CELL_PX / 2}
                 stroke="var(--color-spidey-web)"
                 strokeWidth={3}
             />
@@ -3096,7 +3096,7 @@ function BossPet({
                 {/* under the body and never mirrored, like the marks: the flag stays at its left either way */}
                 {petCells(sprite.back)}
                 {/* only the body turns to face left; marks drawn inside would read backwards */}
-                <g transform={out.flip ? `matrix(-1 0 0 1 ${PET_PX} 0)` : undefined}>{petCells(sprite.body)}</g>
+                <g transform={out.flip ? `matrix(-1 0 0 1 ${BOSS_PX} 0)` : undefined}>{petCells(sprite.body)}</g>
                 {petCells(sprite.overlay)}
             </>
         );
@@ -3127,12 +3127,12 @@ function BossPet({
                 // after hours the office's people are shaded; the pet does not glow in a dark room
                 phase === "after" && "[filter:brightness(0.7)]"
             )}
-            style={{ width: PET_PX, height: PET_PX }}
+            style={{ width: BOSS_PX, height: BOSS_PX }}
         >
             <svg
-                width={PET_PX}
-                height={PET_PX}
-                viewBox={`0 0 ${PET_PX} ${PET_PX}`}
+                width={BOSS_PX}
+                height={BOSS_PX}
+                viewBox={`0 0 ${BOSS_PX} ${BOSS_PX}`}
                 shapeRendering="crispEdges"
                 // the flag in hand rises above the sprite's box, the teleport's ring and sparks and the strand draw past it
                 overflow="visible"
@@ -3247,9 +3247,9 @@ function OfficeDialogLayer({
               )
             : null;
     }
-    // the boss's feet in px from the view's top; the pet stands PET_PX tall
+    // the boss's feet in px from the view's top; the boss stands BOSS_PX tall
     const foot = look?.rest && el ? (root?.offsetTop ?? 0) + look.rest.y - el.scrollTop : undefined;
-    const edge = vm && el && foot != null ? dialogEdge(foot - PET_PX, foot, el.clientHeight) : undefined;
+    const edge = vm && el && foot != null ? dialogEdge(foot - BOSS_PX, foot, el.clientHeight) : undefined;
     probe.edge = edge ?? "";
     shownRef.current = vm != null && edge != null;
     if (!vm || !edge) {
@@ -3290,7 +3290,7 @@ function LiftDoors({ doors, onPick }: { doors: Box; onPick: (key: string) => voi
         <button
             type="button"
             data-office-lift=""
-            title="Lift (Enter at the doors)"
+            title="Lift (Space at the doors)"
             aria-label="Lift: ride to another floor"
             onClick={() => onPick(LIFT_KEY)}
             className="absolute z-[3] cursor-pointer border-0 bg-transparent p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
@@ -3383,7 +3383,7 @@ function OfficePopup({
     const boxRef = useRef<HTMLDivElement>(null);
     const chipCard = useAtomValue(chipCardAtom);
     const found = cardAt(plan, look?.rest ? { at: look.rest, path: [] } : null, cursorId);
-    // the notice board, the lift and a room's chip have no card and no "↵ Talk" prompt: their dialog boxes are
+    // the notice board, the lift and a room's chip have no card and no "Space Talk" prompt: their dialog boxes are
     // OfficeDialogLayer's. A chip's dialog opens the card of one of the agents or runs it lists, beside the chip
     const at = found?.board || found?.lift || found?.chip ? undefined : found;
     const chip = open && found?.chip && chipCard ? found : undefined;
@@ -3394,10 +3394,10 @@ function OfficePopup({
               ? renderCard(chipCard.id, { adjust })
               : null;
     const kind = at ? (at.desk ? "agent" : "run") : (chipCard?.kind ?? "run");
-    // the board offers "↵ Read" while the boss stands still at it and rows wait
+    // the board offers "Space Read" while the boss stands still at it and rows wait
     const readBoard = found?.board === true && boardRows > 0 && layer === "walk";
     probe.popup = card && open ? kind : "";
-    // the ↵ prompt shows only while walking: the dialog box hides it
+    // the Space prompt shows only while walking: the dialog box hides it
     probe.prompt = readBoard ? "board" : at && card && layer === "walk" ? kind : "";
     probe.big = !!card && open && big;
     const shown = card != null && open;
@@ -3412,7 +3412,7 @@ function OfficePopup({
         return (
             <OfficePrompt
                 kind="board"
-                over={{ x: look.rest.x, y: look.rest.y - PET_PX - 4 }}
+                over={{ x: look.rest.x, y: look.rest.y - BOSS_PX - 4 }}
                 verb="Read"
                 onTalk={onTalk}
             />
@@ -3586,7 +3586,7 @@ function CarryLayer({ plan }: { plan: Plan }) {
     );
 }
 
-// the ↵ over the desk the boss stands at; it bobs on the frame clock, so it holds still when the office does
+// the Space prompt over the desk the boss stands at; it bobs on the frame clock, so it holds still when the office does
 function OfficePrompt({
     kind,
     over,
@@ -3608,7 +3608,7 @@ function OfficePrompt({
             style={{ left: over.x, top: over.y - (tick % 2) * 2 }}
         >
             <kbd className="rounded border border-edge-mid bg-surface-code px-1 font-mono text-[10.5px] text-secondary">
-                ↵
+                Space
             </kbd>
             {verb}
         </button>

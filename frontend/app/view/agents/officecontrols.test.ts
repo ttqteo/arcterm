@@ -11,6 +11,7 @@ import {
     dialogEdge,
     firstSel,
     officeKey,
+    officeKeyName,
     officeMenuItems,
     stepSel,
 } from "./officecontrols";
@@ -51,6 +52,18 @@ describe("officeKey", () => {
             expect(officeKey(layer, false, "l")).toEqual({ do: "tab", delta: 1 });
             expect(officeKey(layer, false, "m")).toEqual({ do: "menu" });
         }
+    });
+
+    it("reads Space as ↵, the A button, in every layer", () => {
+        expect(officeKeyName(" ")).toBe("Enter");
+        expect(officeKeyName("Enter")).toBe("Enter");
+        expect(officeKeyName("Escape")).toBe("Escape");
+        expect(officeKey("walk", false, officeKeyName(" "))).toEqual({ do: "talk" });
+        expect(officeKey("dialog", false, officeKeyName(" "))).toEqual({ do: "activate" });
+        expect(officeKey("dialog", true, officeKeyName(" "))).toEqual({ do: "activate" });
+        expect(officeKey("carry", false, officeKeyName(" "))).toEqual({ do: "drop" });
+        // the full card leaves it to the Cockpit's Enter
+        expect(officeKey("card", false, officeKeyName(" "))).toEqual({ do: "pass" });
     });
 
     it("leaves the Cockpit's own keys to it", () => {

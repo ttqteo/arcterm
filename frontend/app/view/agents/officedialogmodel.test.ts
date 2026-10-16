@@ -66,7 +66,7 @@ describe("dialogItems", () => {
     it("gives an agent at work Open, Reply, Terminal, Background, then the full card under a line", () => {
         const items = dialogItems(base({ agent: agent() }));
         expect(items.map((i) => i.label)).toEqual(["Open", "Reply", "Terminal", "Background", "Full card"]);
-        expect(items.map((i) => i.key)).toEqual(["↵", "r", "t", "b", "f"]);
+        expect(items.map((i) => i.key)).toEqual(["Space", "r", "t", "b", "f"]);
         expect(items.map((i) => !!i.rule)).toEqual([false, false, false, false, true]);
     });
 
@@ -80,7 +80,7 @@ describe("dialogItems", () => {
             "Terminal",
             "Full card",
         ]);
-        expect(items.map((i) => i.key)).toEqual(["1", "2", "3", "↵", "t", "f"]);
+        expect(items.map((i) => i.key)).toEqual(["1", "2", "3", "Space", "t", "f"]);
         expect(items[3].dim).toBe(true);
         expect(items[4].rule).toBe(true);
         expect(items[5].rule).toBeFalsy();
@@ -452,7 +452,7 @@ describe("carryWords", () => {
         expect(w).toEqual({
             head: "Moving cuscofi-app",
             line: "Swap with mit-thesis",
-            keys: "← ↑ ↓ → slot · PgUp PgDn floor · ↵ put down · Esc cancel",
+            keys: "← ↑ ↓ → slot · PgUp PgDn floor · Space put down · Esc cancel",
         });
         expect(carryWords({ project: "a", by: "key", over: "empty" }).line).toBe("Put it here");
         expect(carryWords({ project: "a", by: "key", over: "new" }).line).toBe("Put it on a new floor");

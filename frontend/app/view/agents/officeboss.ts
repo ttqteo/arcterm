@@ -7,6 +7,7 @@
 // rooms one walks between; the chip of what did not fit, the notice board and the lift are places to stand like a desk.
 // Walkers to the lounge take the same paths. Pure: no React, no DOM.
 
+import { PET_GRID } from "@/app/view/jarvis/petsprite";
 import type { WalkDir } from "@/app/view/office/plansprite";
 import {
     BOARD_KEY,
@@ -22,6 +23,10 @@ import {
 export type Dir = WalkDir;
 
 export const STEP_PX = 3; // one pixel-art cell: moves happen in whole cells
+// the boss is the pet, drawn here with art cells this big: at the footer's 3 px its 16-cell grid stands about 40 px,
+// well under a person's 23 cells at the plan's 3 px (69 px); at 5 px it stands as tall as they do
+export const BOSS_CELL_PX = 5;
+export const BOSS_PX = PET_GRID * BOSS_CELL_PX;
 export const BOSS_SPEED = 240;
 // Shift held: the arrows walk the boss this many times as fast
 export const BOSS_RUN = 2;

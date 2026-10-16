@@ -33,8 +33,9 @@ on the boss's spot).
   colours are theme tokens, so a change of theme or pet shows at once; it does not go through the sprite cache. Its
   place is still written on the DOM by `useDomTransform`, so a walk step renders nothing. The selection ring under its
   feet stays.
-- The pet's cell is 3 px, like the office's (`PLAN_CELL`), so it is 48 px tall against the chibi's 66: smaller, the
-  same pixel.
+- The pet's cell is 5 px in the office (`BOSS_CELL_PX`, `officeboss.ts`), so its 16-cell grid is 80 px and the figure
+  in it 65 to 70 px, as tall as a standing person (23 cells at the plan's 3 px, 69 px). At first it took the office's
+  3 px cell, the same pixel but 40 px of figure, and it read as smaller than the workers (2026-10-16).
 - At night and after hours the office's people are shaded by phase; the pet takes a `filter: brightness()` for the
   `after` phase (after work hours) so it does not glow in a dark room.
 - The chibi boss poses (`BOSS_POSES`, `BOSS_OUTFIT` in `plansprite.ts`) go once nothing draws them.

@@ -1,10 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Office's controls, a Game Boy's: the arrows, ↵ as A and Esc as B, with m opening the office menu as START does
-// (canvas .superpowers/design/office-controls), plus the lift's PageUp / PageDown and g to carry a room (canvas
-// .superpowers/design/office-floors). Pure: what a key does over the layer that is up, the office menu's items, how the
-// ▶ steps, and which edge the dialog box takes. No React, no Wave runtime imports.
+// The Office's controls, a Game Boy's: the arrows, Space (or ↵) as A and Esc as B, with m opening the office menu as
+// START does (canvas .superpowers/design/office-controls), plus the lift's PageUp / PageDown and g to carry a room
+// (canvas .superpowers/design/office-floors). Pure: what a key does over the layer that is up, the office menu's items,
+// how the ▶ steps, and which edge the dialog box takes. No React, no Wave runtime imports.
 
 import type { Dir } from "./officeboss";
 import { newFloor, stepSlot, type Placements, type RoomPlace } from "./officelayout";
@@ -40,6 +40,12 @@ export interface KeyMods {
 }
 
 const ARROWS: Record<string, Dir> = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
+
+/** Pure: the key as the office reads it. Space is the A button, so in Office it does all that ↵ does: talk, the ▶ item,
+ *  put a room down, and the Cockpit's own Enter on the full card. ↵ still works. */
+export function officeKeyName(key: string): string {
+    return key === " " ? "Enter" : key;
+}
 
 /** Pure: what a key does in the office. A chord (Cmd, Ctrl or Alt held) is never the office's; then a carried room
  *  takes every key (arrows to a neighbouring slot, PageUp / PageDown to another floor, ↵ drops, Esc and g put it back,

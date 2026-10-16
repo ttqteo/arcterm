@@ -962,9 +962,13 @@ export function buildCockpitBindings(): Binding[] {
         doc(
             "cockpit:open",
             "Enter",
-            "Confirm answer, else open focus; on a task row, open its worker; in Office, first open the dialog box ↵ offers"
+            "Confirm answer, else open focus; on a task row, open its worker; in Office, first open the dialog box Space offers"
         ),
-        doc("cockpit:peek", "Space", `Peek the agent in the avatar popup (${peekClickLabel()} a link peeks it too)`),
+        doc(
+            "cockpit:peek",
+            "Space",
+            `Peek the agent in the avatar popup (${peekClickLabel()} a link peeks it too); in Office, Space does what Enter does`
+        ),
         doc("cockpit:reply", "r", "Reply inline to the agent"),
         doc("cockpit:terminal", "t", "Open the agent's terminal"),
         doc("cockpit:background", "b", "Background the agent (keeps running)"),
@@ -978,12 +982,12 @@ export function buildCockpitBindings(): Binding[] {
         doc(
             "cockpit:office-floor",
             "PageUp",
-            "Office: ride the lift a floor up (PageDown: down); ↵ at the lift opens its panel"
+            "Office: ride the lift a floor up (PageDown: down); Space at the lift opens its panel"
         ),
         doc(
             "cockpit:office-move",
             "g",
-            "Office: pick up the room you are in to move it (← ↑ ↓ → a slot, PgUp PgDn a floor, ↵ put down, Esc cancel)"
+            "Office: pick up the room you are in to move it (← ↑ ↓ → a slot, PgUp PgDn a floor, Space put down, Esc cancel)"
         ),
         doc(
             "cockpit:office-menu",

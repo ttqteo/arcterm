@@ -47,6 +47,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The Office's boss turns the way it walks again: its back going up, its side going left or right, its front going
   down, and it stays turned when it stops.
 - The Office's boss walks faster, and runs while you hold `Shift` with the arrows.
+- `Space` is the Office's action key: it talks at a desk, picks the ▶ item in a dialog box, rides the lift and puts a
+  carried room down. `Enter` still works.
+- The Office's boss is as tall as the people working there; it was drawn smaller than them.
+- The Office's sounds are softer: the shrill top of the chiptune is filtered off and the whole mix is a little quieter.
 - The agent header no longer shows a bare `i` key beside the initiative; `i` still opens it, and the link's tooltip
   says so.
 
@@ -54,6 +58,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Highlighted sentences in Claude's replies now show on Team accounts too. Claude Code's security plugin there kept
   the instructions out of the system prompt, so Claude never marked anything; they now ride with your prompt instead.
+- `Esc` in the Office stays in the Office: it only steps back, and no longer reaches the window behind it, where on a
+  Mac it could take arcterm out of full screen.
 - On a Mac, clicking arcterm's menu bar icon opens the popover with memory, CPU and what waits on you, instead of only
   Open / Quit (now on a right click), and the icon is the size of the icons beside it.
 
