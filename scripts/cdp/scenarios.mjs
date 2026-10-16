@@ -39986,6 +39986,578 @@ const runQueueScenario = {
     },
 };
 
+// --- brief-run-queue: the run queue among the Brief's Runs, and the sheet a queued row opens --------------------------
+// (docs/superpowers/specs/2026-10-16-brief-run-queue-design.md.) The same real queue as run-queue, read on Jarvis: `runs:
+// maxactive` is 1 and a quick run held by deferstart fills it, so no entry has room and the loop starts none by itself.
+// A (plan) and E (quick) wait on that run, B (plan) on A, C (quick) on room only and D (plan, its file then deleted) is
+// blocked. Never Start now a plan entry whose plan exists: its start spawns a plan reviewer, a real agent; the one
+// entry started, E, has a goal and no plan, so deferstart holds its run and nothing spawns. C names an origin session:
+// run-origin's roStageAgent (a terminal in a tab of its own that reports as a Claude agent), so the roster knows it.
+// The queue sheet is a modal: its scrim covers the Brief, so a row is clicked only with no sheet open.
+const BQ_RPC = { timeout: 30000 };
+const BQ_FILL_GOAL = "verify brief-run-queue: the run that fills the cap";
+const BQ_PLANS = { a: "Brief queue plan A", b: "Brief queue plan B", d: "Brief queue plan D" };
+const BQ_GOALS = { c: "Brief queue goal C, room only", e: "Brief queue goal E, after the run" };
+const BQ_ORIGIN = "verify-brief-queue-origin";
+const BQ_ROWS = `[...document.querySelectorAll('[data-jarvis-brief-region="sessions"] [data-jarvis-brief-row]')]`;
+// the fill run's row in Runs: it carries no id, so it is found by its goal
+const BQ_FILL_ROW = `${BQ_ROWS}.find((r) => r.dataset.jarvisBriefRow === "session" && (r.innerText ?? "").includes(${JSON.stringify(BQ_FILL_GOAL)}))`;
+const BQ_SHEET = `document.querySelector("[data-jarvis-brief-sheet]")`;
+// the title the open sheet's header names (the queued face's is the entry's, the run face's is its project's)
+const BQ_SHEET_TITLE = `(document.querySelector("[data-jarvis-brief-sheet] header span[title]")?.textContent ?? null)`;
+// the run the open run sheet shows, from the id chip under its header
+const BQ_SHEET_RUN = `(document.querySelector("[data-jarvis-brief-sheet] header [data-run-id]")?.dataset.runId ?? null)`;
+// the confirm dialog the Remove button raises: the queue sheet is itself a role=dialog, so the dialog is the one with no sheet in it
+const BQ_CONFIRM = `[...document.querySelectorAll('[role="dialog"]')].find((d) => d.querySelector("[data-jarvis-brief-sheet]") == null)`;
+const bqKindBtn = (kind) => `[...document.querySelectorAll("[data-jarvis-run-kind] button")].find((b) => b.textContent.trim() === ${JSON.stringify(kind)})`;
+
+// every row of the Runs region in the order it is drawn, as the steps read them
+const bqRows = (h) =>
+    h.ev(`${BQ_ROWS}.map((r) => {
+        const state = r.querySelector("[data-brief-queued-state]");
+        return {
+            row: r.dataset.jarvisBriefRow,
+            queued: r.dataset.briefQueued ?? null,
+            depth: r.dataset.briefQueuedDepth != null ? Number(r.dataset.briefQueuedDepth) : null,
+            text: (r.innerText ?? "").replace(/\\s+/g, " ").trim(),
+            meta: r.querySelector("[data-brief-queued-meta]")?.textContent ?? "",
+            state: state?.textContent.trim() ?? "",
+            // the tooltip host lifts a hovered element's title into data-arc-title (element/titletiphost.tsx)
+            stateTitle: state?.getAttribute("title") ?? state?.getAttribute("data-arc-title") ?? "",
+        };
+    })`);
+const bqQueuedIds = async (h, mine) => (await bqRows(h)).filter((r) => r.queued != null && mine.includes(r.queued)).map((r) => r.queued);
+
+// a real click on the element `elExpr` evaluates to, scrolled into view first
+async function bqClickExpr(h, elExpr) {
+    const at = await h.ev(`(() => {
+        const el = ${elExpr};
+        if (!el) return null;
+        el.scrollIntoView({ block: "nearest" });
+        const r = el.getBoundingClientRect();
+        return r.width > 0 ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null;
+    })()`);
+    if (at == null) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+    for (const type of ["mousePressed", "mouseReleased"]) {
+        await h.cdp("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: 1 });
+    }
+    await polishNap(250);
+    return true;
+}
+const bqClick = (h, sel) => bqClickExpr(h, `document.querySelector(${JSON.stringify(sel)})`);
+
+async function bqKey(h, key, code, keyCode) {
+    for (const type of ["keyDown", "keyUp"]) {
+        const text = type === "keyDown" ? (key.length === 1 ? { text: key } : key === "Enter" ? { text: "\r" } : {}) : {};
+        await h.cdp("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode: keyCode, ...text });
+    }
+    await polishNap(150);
+}
+
+// closes the sheet, if one is open, by the Close button or by Escape; true once none is in the page. Escape with no
+// sheet open would go home to the Cockpit, so it is only sent while one is up
+async function bqCloseSheet(h, how = "button") {
+    if (!(await h.ev(`${BQ_SHEET} != null`))) return true;
+    if (how === "escape") {
+        await bqKey(h, "Escape", "Escape", 27);
+    } else {
+        await bqClick(h, '[aria-label="Close detail sheet"]');
+    }
+    return polishWaitFor(h, `${BQ_SHEET} == null`, 4000);
+}
+
+// the first truthy value `expr` gives within `ms`, or null
+async function bqPoll(h, expr, ms) {
+    for (let waited = 0; waited < ms; waited += 150) {
+        const v = await h.ev(expr).catch(() => null);
+        if (v) return v;
+        await polishNap(150);
+    }
+    return null;
+}
+// the queue's entries, polled until `pred` holds of them
+async function bqWaitList(h, pred, ms) {
+    for (let waited = 0; waited < ms; waited += 250) {
+        const entries = await rqList(h);
+        if (pred(entries)) return true;
+        await polishNap(250);
+    }
+    return false;
+}
+
+// what the open queue sheet reads: each line's value (the labelled lines' value is their last child), and its acts
+const bqSheetFacts = (h) =>
+    h.ev(`(() => {
+        const q = (s) => document.querySelector(s);
+        const val = (s) => q(s)?.lastElementChild?.textContent ?? null;
+        const origin = q("[data-queue-sheet-origin]");
+        return {
+            face: q("[data-jarvis-brief-sheet]")?.dataset.jarvisBriefSheet ?? null,
+            title: ${BQ_SHEET_TITLE},
+            chip: q("[data-queue-sheet-chip]")?.textContent.trim() ?? null,
+            waits: val("[data-queue-sheet-waits]"),
+            waitsLink: q("[data-queue-sheet-waits] button") != null,
+            plan: val("[data-queue-sheet-plan]"),
+            goal: val("[data-queue-sheet-goal]"),
+            route: val("[data-queue-sheet-route]"),
+            queued: q("[data-queue-sheet-queued]")?.textContent.trim() ?? null,
+            origin: origin?.textContent.trim() ?? null,
+            originTab: origin?.dataset.queueSheetOrigin ?? null,
+            acts: [...document.querySelectorAll("[data-queue-sheet-act]")].map((b) => b.dataset.queueSheetAct),
+        };
+    })()`);
+
+const briefRunQueueScenario = {
+    name: "brief-run-queue",
+    surface: "jarvis",
+    async arrange(h) {
+        if (existsSync(TREE_RAIL_FIXTURE)) {
+            return {
+                skip: "a cockpit fixture roster is active, so the origin session this scenario stages never reaches the roster: run `npm run cockpit:fixtures -- --clear` and reload",
+            };
+        }
+        const ctx = {
+            cwd: mkdtempSync(join(tmpdir(), "verify-brief-run-queue-")),
+            ids: {},
+            titles: {},
+            tabIds: [],
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+        };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            ctx.prevMax = (await h.rpc("getfullconfig", null))?.settings?.["runs:maxactive"] ?? null;
+            await h.rpc("setconfig", { "runs:maxactive": 1 });
+            // the origin session, in the roster; it also finds the workspace the page's own tab is in
+            ctx.originTabId = await roStageAgent(h, ctx, BQ_ORIGIN, "idle");
+            const ch = await h.rpc("createchannel", { name: "verify-brief-run-queue", projectpath: ctx.cwd });
+            ctx.channelId = ch.oid;
+            // active, so the cap of 1 is full; held by deferstart, so it spawns nothing. A fresh store's first run pays for
+            // the harness probes, which can outlast the default call budget
+            const fill = await h.rpc(
+                "createrun",
+                {
+                    channelid: ctx.channelId,
+                    workspaceid: ctx.workspaceId,
+                    goal: BQ_FILL_GOAL,
+                    runtime: "claude",
+                    mode: "quick",
+                    deferstart: true,
+                },
+                BQ_RPC
+            );
+            ctx.fillId = fill.run.id ?? fill.run.oid;
+            const plan = (key, title) => {
+                const path = join(ctx.cwd, `${key}.md`);
+                writeFileSync(path, `# ${title}\n\n### Task 1: Do nothing\n\nMake no change.\n`);
+                return path;
+            };
+            const forPlan = { channelid: ctx.channelId, workspaceid: ctx.workspaceId, runtime: "claude", mode: "orchestrator", deferstart: true };
+            const forGoal = { channelid: ctx.channelId, workspaceid: ctx.workspaceId, runtime: "claude", mode: "quick", deferstart: true };
+            const add = async (key, data, after) => {
+                const entry = await h.rpc("runqueueadd", { data, ...(after ? { after } : {}) }, BQ_RPC);
+                ctx.ids[key] = entry.id;
+                ctx.titles[key] = entry.title;
+                return entry;
+            };
+            const a = await add("a", { ...forPlan, planpath: plan("a", BQ_PLANS.a), workerroute: { runtime: "codex", model: "gpt-5" } }, ctx.fillId);
+            await add("b", { ...forPlan, planpath: plan("b", BQ_PLANS.b) }, a.id);
+            await add("c", { ...forGoal, goal: BQ_GOALS.c, origintabid: ctx.originTabId });
+            const planD = plan("d", BQ_PLANS.d);
+            const d = await add("d", { ...forPlan, planpath: planD });
+            // its plan gone, D's start fails reading it, which blocks the entry. The loop may be mid-evaluation, and a
+            // Start now then answers "another queued run is starting" and blocks nothing: try again until D is blocked
+            rmSync(planD);
+            for (let i = 0; i < 8 && !ctx.dBlocked; i++) {
+                try {
+                    await h.rpc("runqueuestartnow", { id: d.id }, BQ_RPC);
+                } catch (e) {
+                    ctx.dStartError = String(e?.message ?? e);
+                }
+                ctx.dBlocked = (await rqList(h)).find((x) => x.id === d.id)?.state === "blocked";
+                if (!ctx.dBlocked) await polishNap(500);
+            }
+            await add("e", { ...forGoal, goal: BQ_GOALS.e }, ctx.fillId);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.skip) return [skipStep("brief-run-queue", ctx.skip)];
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        const arranged = ctx.arrangeError == null && ctx.dBlocked === true;
+        rec(
+            "0. the queue holds A and E waiting on a run, B on A, C on room only and D blocked, under a cap of 1",
+            arranged,
+            ctx.arrangeError ?? JSON.stringify({ ids: ctx.ids, fillId: ctx.fillId, originTabId: ctx.originTabId, dStartError: ctx.dStartError ?? null })
+        );
+        if (!arranged) return steps;
+        const { a, b, c, d, e } = ctx.ids;
+        const T = ctx.titles;
+        const mine = [a, b, c, d, e];
+        const entryOf = async (id) => (await rqList(h)).find((x) => x.id === id);
+        // closes whatever sheet is up, clicks the entry's row, and waits for its queue sheet
+        const openQueued = async (id, key) => {
+            const closed = await bqCloseSheet(h);
+            const clicked = await bqClick(h, `[data-brief-queued="${id}"]`);
+            const up = await polishWaitFor(
+                h,
+                `${BQ_SHEET_TITLE} === ${JSON.stringify(T[key])} && document.querySelector('[data-jarvis-brief-sheet="queued"] [data-queue-sheet-act]') != null`,
+                8000
+            );
+            return closed && clicked && up;
+        };
+        const runSheetUp = (runId, ms) =>
+            polishWaitFor(
+                h,
+                `document.querySelector('[data-jarvis-brief-sheet="channel"] [data-run-sheet]') != null && ${BQ_SHEET_RUN} === ${JSON.stringify(runId)}`,
+                ms
+            );
+        const queuedRowSelected = `${BQ_ROWS}.some((r) => r.dataset.briefQueued != null && r.className.includes("bg-surface-selected"))`;
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
+        try {
+            // 1. the queue sits among the runs: under the run it waits on, a chain one level deeper, room-only ones at the end.
+            // The Brief's runs come from the briefing it reads when it mounts, and a scenario before this one (run-queue
+            // ends on Jarvis) leaves it mounted on a read that predates the fill run: so it leaves and comes back
+            await h.goto("cockpit");
+            await h.goto("jarvis");
+            // brief-surface leaves a briefing fixture on, which hides the live runs, and only a reload clears it
+            const fixtureOn = await h.ev(
+                `[...document.querySelectorAll('[data-briefing-fixture]')].some((b) => b.className.includes('bg-accentbg'))`
+            );
+            if (fixtureOn) await polishReload(h);
+            const up = await polishWaitFor(
+                h,
+                `(() => {
+                    const rows = ${BQ_ROWS};
+                    const queued = new Set(rows.map((r) => r.dataset.briefQueued).filter(Boolean));
+                    return ${BQ_FILL_ROW} != null && ${JSON.stringify(mine)}.every((id) => queued.has(id));
+                })()`,
+                30000
+            );
+            // the scenario before this one may have left its own sheet open over the rows
+            await bqCloseSheet(h);
+            await h.ev(`document.querySelector('[data-brief-queued="${a}"]')?.scrollIntoView({ block: "center" })`);
+            const rows1 = await bqRows(h);
+            const at = (id) => rows1.findIndex((r) => r.queued === id);
+            const fillAt = rows1.findIndex((r) => r.row === "session" && r.text.includes(BQ_FILL_GOAL));
+            const lastRun = rows1.reduce((n, r, i) => (r.row === "session" ? i : n), -1);
+            const dReason = (await entryOf(d))?.reason ?? "";
+            await h.shot("cdp-shots/brief-run-queue-1-rows.png");
+            rec(
+                "1. Runs draws A right under the fill run (after it lands), B under A one level deeper, E under the fill run again, then C (waiting for room) and D (blocked, its reason as the state's tooltip) after every run",
+                up &&
+                    fillAt >= 0 &&
+                    at(a) === fillAt + 1 &&
+                    rows1[at(a)]?.depth === 1 &&
+                    rows1[at(a)]?.meta.startsWith("after it lands") &&
+                    at(b) === at(a) + 1 &&
+                    rows1[at(b)]?.depth === 2 &&
+                    at(e) === at(b) + 1 &&
+                    rows1[at(e)]?.depth === 1 &&
+                    at(c) > lastRun &&
+                    at(d) > at(c) &&
+                    rows1[at(c)]?.depth === 0 &&
+                    rows1[at(d)]?.depth === 0 &&
+                    rows1[at(c)]?.meta.startsWith("waiting for room") &&
+                    rows1[at(d)]?.state === "blocked" &&
+                    dReason !== "" &&
+                    rows1[at(d)]?.stateTitle === dReason,
+                JSON.stringify({ up, fillAt, lastRun, dReason, rows: rows1.map((r) => ({ ...r, text: r.text.slice(0, 60) })) })
+            );
+
+            // 2. A's row opens the queue sheet, and the run it waits on is a link to that run's sheet
+            const open2 = await openQueued(a, "a");
+            const f2 = await bqSheetFacts(h);
+            await h.shot("cdp-shots/brief-run-queue-2-sheet.png");
+            const linked2 = await bqClick(h, "[data-queue-sheet-waits] button");
+            const runOpened = await runSheetUp(ctx.fillId, 15000);
+            const after2 = await h.ev(`({ queuedSheet: document.querySelector('[data-jarvis-brief-sheet="queued"]') != null, selected: ${queuedRowSelected} })`);
+            await h.shot("cdp-shots/brief-run-queue-2-link.png");
+            rec(
+                "2. A's row opens its queue sheet (waits on the fill run, plan a.md, Lead claude, queued ago, Start now and Remove but no Run next); its waits-on link opens the fill run's sheet and leaves no queue sheet or selected queued row",
+                open2 &&
+                    f2.face === "queued" &&
+                    f2.waits?.includes(BQ_FILL_GOAL) &&
+                    f2.plan?.endsWith("a.md") &&
+                    f2.route?.startsWith("Lead claude") &&
+                    f2.queued?.startsWith("queued ") &&
+                    f2.acts.includes("start") &&
+                    f2.acts.includes("remove") &&
+                    !f2.acts.includes("next") &&
+                    linked2 &&
+                    runOpened &&
+                    after2.queuedSheet === false &&
+                    after2.selected === false,
+                JSON.stringify({ open2, f2, linked2, runOpened, after2 })
+            );
+
+            // 3. B's sheet waits on A, and A's name is a link to A's sheet
+            const open3 = await openQueued(b, "b");
+            const f3 = await bqSheetFacts(h);
+            await h.shot("cdp-shots/brief-run-queue-3-sheet.png");
+            const linked3 = await bqClick(h, "[data-queue-sheet-waits] button");
+            const onA = await polishWaitFor(h, `${BQ_SHEET_TITLE} === ${JSON.stringify(T.a)} && document.querySelector('[data-jarvis-brief-sheet="queued"]') != null`, 8000);
+            await h.shot("cdp-shots/brief-run-queue-3-link.png");
+            rec(
+                "3. B's queue sheet names A's title as what it waits on and has Run next (B is #2); that link moves the sheet onto A",
+                open3 && f3.waits?.includes(T.a) && f3.acts.includes("next") && linked3 && onA,
+                JSON.stringify({ open3, f3, linked3, onA })
+            );
+
+            // 4. a run opened from the Brief takes the queue face off the sheet. The sheet is modal (its scrim takes a click
+            // on a row behind it), so B's sheet is opened, closed, and then the run's row is clicked
+            await openQueued(b, "b");
+            await bqCloseSheet(h);
+            const clicked4 = await bqClickExpr(h, BQ_FILL_ROW);
+            const runUp = await runSheetUp(ctx.fillId, 15000);
+            const f4 = await h.ev(`({
+                channel: document.querySelector('[data-jarvis-brief-sheet="channel"] [data-run-sheet]') != null,
+                queuedSheet: document.querySelector('[data-jarvis-brief-sheet="queued"]') != null,
+                selected: ${queuedRowSelected},
+            })`);
+            await h.shot("cdp-shots/brief-run-queue-4-run-sheet.png");
+            rec(
+                "4. clicking the fill run's Runs row opens its run sheet (channel face), with no queue sheet in the page and no queued row selected",
+                clicked4 && runUp && f4.channel && !f4.queuedSheet && !f4.selected,
+                JSON.stringify({ clicked4, runUp, ...f4 })
+            );
+
+            // 5. j / k walk the cursor onto A's row and Enter opens its sheet. k first, since the cursor outlives a scenario
+            const closed5 = await bqCloseSheet(h, "escape");
+            await h.ev("document.activeElement instanceof HTMLElement && document.activeElement.blur()");
+            for (let i = 0; i < 40; i++) await bqKey(h, "k", "KeyK", 75);
+            const cursorOnA = `document.querySelector('[data-brief-queued="${a}"]')?.dataset.jarvisBriefCursor === "true"`;
+            let presses = 0;
+            let onRow = false;
+            for (; ; presses++) {
+                onRow = await h.ev(cursorOnA);
+                if (onRow || presses === 30) break;
+                await bqKey(h, "j", "KeyJ", 74);
+            }
+            await h.shot("cdp-shots/brief-run-queue-5-cursor.png");
+            await bqKey(h, "Enter", "Enter", 13);
+            const enterOpened = await polishWaitFor(
+                h,
+                `${BQ_SHEET_TITLE} === ${JSON.stringify(T.a)} && document.querySelector('[data-jarvis-brief-sheet="queued"]') != null`,
+                8000
+            );
+            await h.shot("cdp-shots/brief-run-queue-5-enter.png");
+            rec(
+                "5. Escape closes the run sheet; j walks the cursor onto A's queued row (within 30 presses) and Enter opens the queue sheet on A",
+                closed5 && onRow && enterOpened,
+                JSON.stringify({ closed5, onRow, presses, enterOpened })
+            );
+
+            // 6. a blocked entry: the chip, and its reason whole
+            const open6 = await openQueued(d, "d");
+            const f6 = await bqSheetFacts(h);
+            const reason6 = await h.ev(`(() => {
+                const p = document.querySelector("[data-queue-sheet-reason]");
+                return p == null ? null : { text: p.textContent, whole: p.scrollWidth <= p.clientWidth && !p.textContent.includes("…") };
+            })()`);
+            await h.shot("cdp-shots/brief-run-queue-6-blocked.png");
+            const dEntry = await entryOf(d);
+            rec(
+                "6. D's queue sheet reads Blocked, and its reason is the entry's reason whole (not clipped)",
+                open6 && f6.chip === "Blocked" && (dEntry?.reason ?? "") !== "" && reason6?.text === dEntry.reason && reason6.whole === true,
+                JSON.stringify({ open6, chip: f6.chip, reason6, want: dEntry?.reason })
+            );
+
+            // 7. a room-only entry reads the free slots, shows its goal, and names the session that queued it, which a click focuses
+            const open7 = await openQueued(c, "c");
+            const f7 = await bqSheetFacts(h);
+            await h.shot("cdp-shots/brief-run-queue-7-room-only.png");
+            const originClicked = await bqClick(h, "[data-queue-sheet-origin]");
+            const originFocused = await polishWaitFor(h, roSelected(ctx.originTabId), 8000);
+            const surface7 = await h.activeSurfaceLabel();
+            await h.shot("cdp-shots/brief-run-queue-7-origin.png");
+            rec(
+                "7. C's queue sheet waits on a free slot (1 of 1 running), has a goal and no plan, Run next (C is #3), and `from <the origin session>`, which a click selects on the Agent surface",
+                open7 &&
+                    f7.waits === "a free slot (1 of 1 running)" &&
+                    f7.plan == null &&
+                    f7.goal?.includes(BQ_GOALS.c) &&
+                    f7.acts.includes("next") &&
+                    f7.origin === `from ${BQ_ORIGIN}` &&
+                    f7.originTab === ctx.originTabId &&
+                    originClicked &&
+                    originFocused &&
+                    surface7 === SURFACE_LABEL.agent,
+                JSON.stringify({ open7, f7, originClicked, originFocused, surface7 })
+            );
+
+            // 8. the run-kind toggle thins the queued rows as it thins the runs
+            await h.goto("jarvis");
+            await polishWaitFor(h, `${JSON.stringify(mine)}.every((id) => document.querySelector('[data-brief-queued="' + id + '"]') != null)`, 20000);
+            await bqCloseSheet(h);
+            const kindIs = async (kind, want) => {
+                const clicked = await bqClickExpr(h, bqKindBtn(kind));
+                const ok = await polishWaitFor(
+                    h,
+                    `JSON.stringify(${BQ_ROWS}.map((r) => r.dataset.briefQueued).filter((id) => ${JSON.stringify(mine)}.includes(id)).sort()) === ${JSON.stringify(JSON.stringify([...want].sort()))}`,
+                    4000
+                );
+                return { kind, clicked, ok, got: await bqQueuedIds(h, mine) };
+            };
+            const orch = await kindIs("orchestrator", [a, b, d]);
+            await h.shot("cdp-shots/brief-run-queue-8-orchestrator.png");
+            const quick = await kindIs("quick", [c, e]);
+            await h.shot("cdp-shots/brief-run-queue-8-quick.png");
+            const all = await kindIs("all", mine);
+            rec(
+                "8. the run-kind toggle: orchestrator leaves the queued rows A, B and D, quick leaves C and E, all brings back A to E",
+                orch.clicked && orch.ok && quick.clicked && quick.ok && all.clicked && all.ok,
+                JSON.stringify({ orch, quick, all })
+            );
+
+            // 8b. Run next on C puts it first: its row reads #1, and its sheet, still open on it, offers no Run next
+            const open8b = await openQueued(c, "c");
+            const nextClicked = await bqClick(h, '[data-queue-sheet-act="next"]');
+            const first = await bqWaitList(h, (entries) => entries[0]?.id === c, 8000);
+            const placed = await polishWaitFor(
+                h,
+                `(document.querySelector('[data-brief-queued="${c}"] [data-brief-queued-state]')?.textContent.trim() ?? "") === "#1" && document.querySelector('[data-jarvis-brief-sheet="queued"] [data-queue-sheet-act="next"]') == null`,
+                8000
+            );
+            const f8b = await bqSheetFacts(h);
+            const roomOnly = (await bqRows(h)).find((r) => r.queued === c);
+            await h.shot("cdp-shots/brief-run-queue-8b-run-next.png");
+            rec(
+                "8b. Run next on C's sheet puts C first in the queue: its row reads #1, the sheet stays on C with no Run next, and C still waits for room",
+                open8b && nextClicked && first && placed && f8b.title === T.c && roomOnly?.meta.startsWith("waiting for room"),
+                JSON.stringify({ open8b, nextClicked, first, placed, f8b, roomOnly })
+            );
+
+            // 9. Start now on E: the sheet follows it into its run, which remembers what it was queued after
+            const open9 = await openQueued(e, "e");
+            const startClicked = await bqClick(h, '[data-queue-sheet-act="start"]');
+            const queuedAfter = await bqPoll(
+                h,
+                `(() => {
+                    const el = document.querySelector('[data-jarvis-brief-sheet="channel"] [data-run-sheet] [data-run-queued-after]');
+                    return el ? { id: el.dataset.runQueuedAfter, text: el.textContent } : null;
+                })()`,
+                15000
+            );
+            ctx.eRunId = await h.ev(BQ_SHEET_RUN);
+            const queuedSheet9 = await h.ev(`document.querySelector('[data-jarvis-brief-sheet="queued"]') != null`);
+            await h.shot("cdp-shots/brief-run-queue-9-started.png");
+            const afterClicked = queuedAfter != null && (await bqClick(h, "[data-run-queued-after]"));
+            const backOnFill = await polishWaitFor(h, `${BQ_SHEET_RUN} === ${JSON.stringify(ctx.fillId)} && document.querySelector("[data-run-queued-after]") == null`, 15000);
+            await h.shot("cdp-shots/brief-run-queue-9-after.png");
+            rec(
+                "9. Start now on E turns its sheet into its run's sheet, which reads queued after the fill run (its id and goal); a click on that opens the fill run's sheet",
+                open9 &&
+                    startClicked &&
+                    queuedAfter?.id === ctx.fillId &&
+                    queuedAfter.text.includes(BQ_FILL_GOAL) &&
+                    ctx.eRunId != null &&
+                    ctx.eRunId !== ctx.fillId &&
+                    !queuedSheet9 &&
+                    afterClicked &&
+                    backOnFill,
+                JSON.stringify({ open9, startClicked, queuedAfter, eRunId: ctx.eRunId, queuedSheet9, afterClicked, backOnFill })
+            );
+
+            // 10. Escape closes the sheet; E's queued row is gone, with its entry
+            const closed10 = await bqCloseSheet(h, "escape");
+            const eGone = await polishWaitFor(h, `document.querySelector('[data-brief-queued="${e}"]') == null`, 8000);
+            const eListed = (await rqList(h)).some((x) => x.id === e);
+            await h.shot("cdp-shots/brief-run-queue-10-closed.png");
+            rec("10. Escape closes the sheet, and E has no queued row in Runs and no queue entry", closed10 && eGone && !eListed, JSON.stringify({ closed10, eGone, eListed }));
+
+            // 11. Remove asks first; confirming takes C's entry and row, closes the sheet and says so
+            const open11 = await openQueued(c, "c");
+            const removeClicked = await bqClick(h, '[data-queue-sheet-act="remove"]');
+            const asked = await polishWaitFor(h, `${BQ_CONFIRM} != null`, 3000);
+            const listedBefore = (await rqList(h)).some((x) => x.id === c);
+            await h.shot("cdp-shots/brief-run-queue-11-confirm.png");
+            await h.ev(`[...(${BQ_CONFIRM}?.querySelectorAll("button") ?? [])].find((x) => x.textContent.includes("Remove"))?.click()`);
+            const toast = await bqPoll(
+                h,
+                `[...document.querySelectorAll("[data-jarvis-brief-toast]")].map((t) => t.textContent).find((t) => t.includes(${JSON.stringify(`${T.c} left the queue`)})) ?? null`,
+                15000
+            );
+            await h.shot("cdp-shots/brief-run-queue-11-removed.png");
+            const settled = await polishWaitFor(
+                h,
+                `document.querySelector('[data-jarvis-brief-sheet="queued"]') == null && document.querySelector('[data-brief-queued="${c}"]') == null`,
+                15000
+            );
+            const listedAfter = (await rqList(h)).some((x) => x.id === c);
+            rec(
+                "11. Remove on C's sheet asks first (removing nothing yet); confirming closes the queue sheet, toasts `<C> left the queue`, and drops C's row and entry",
+                open11 && removeClicked && asked && listedBefore && toast != null && settled && !listedAfter,
+                JSON.stringify({ open11, removeClicked, asked, listedBefore, toast, settled, listedAfter })
+            );
+        } catch (err) {
+            rec("the scenario stopped early: a page call failed", false, String(err?.message ?? err));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        if (ctx.skip) return;
+        const failures = [];
+        const attempt = async (what, fn) => {
+            try {
+                await fn();
+            } catch (err) {
+                failures.push(`${what}: ${String(err?.message ?? err)}`);
+            }
+        };
+        // page state first: an open sheet and a run-kind other than all outlive the scenario
+        await attempt("close the sheet and show every kind", () =>
+            h.ev(`(() => {
+                [...document.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "Close detail sheet")?.click();
+                ${bqKindBtn("all")}?.click();
+                return true;
+            })()`)
+        );
+        // the entries go first, so restoring the cap below cannot start one (a plan entry would spawn a plan reviewer)
+        const mine = Object.values(ctx.ids ?? {});
+        await attempt("remove the entries", async () => {
+            for (const entry of await rqList(h)) {
+                if (mine.includes(entry.id)) await h.rpc("runqueueremove", { id: entry.id });
+            }
+        });
+        if (ctx.channelId) {
+            await attempt("cancel the runs", async () => {
+                for (const run of await rqChannelRuns(h, ctx.channelId)) {
+                    if (run.status !== "cancelled") await h.rpc("cancelrun", { channelid: ctx.channelId, runid: run.id });
+                }
+            });
+        }
+        for (const tabId of ctx.tabIds ?? []) {
+            await attempt("close a tab", () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, tabId, false]));
+        }
+        // the Agent surface prunes a closed agent out of the saved grid as the roster catches up (the origin click focused it);
+        // the user's grid goes back only after that has been written, or the prune would write over it
+        await attempt("wait for the surface to prune the origin from the saved grid", () =>
+            polishWaitFor(
+                h,
+                `(() => {
+                    try {
+                        const ids = JSON.parse(localStorage.getItem(${JSON.stringify(GRID_KEY)}) ?? "null")?.ids ?? [];
+                        return !${JSON.stringify(ctx.tabIds ?? [])}.some((id) => ids.includes(id));
+                    } catch {
+                        return true;
+                    }
+                })()`,
+                8000
+            )
+        );
+        await attempt("restore the saved grid", () => h.ev(restoreStorageKey(GRID_KEY, ctx.prevGrid)));
+        if (ctx.channelId) await attempt("delete the channel", () => h.rpc("deletechannel", { channelid: ctx.channelId }));
+        if ("prevMax" in ctx) await attempt("restore runs:maxactive", () => h.rpc("setconfig", { "runs:maxactive": ctx.prevMax }));
+        await attempt("remove the temp dir", () => rmSync(ctx.cwd, { recursive: true, force: true }));
+        await attempt("go home", () => h.goto("cockpit"));
+        if (failures.length > 0) throw new Error(failures.join("; "));
+    },
+};
+
 // --- run-origin: a session and the runs it started point at each other on the Agent tree ------------------------------
 // (docs/superpowers/specs/2026-10-14-run-handoff-lifecycle-design.md, decision 5.) A real queue and a real run in wavesrv;
 // the only fakes are two agents, each a shell terminal in a tab of its own that reports as a Claude agent (agent-uploads
@@ -44438,6 +45010,7 @@ export const SCENARIOS = [
     cockpitOfficeNeedsYouBoard,
     cockpitOfficeBench,
     runQueueScenario,
+    briefRunQueueScenario,
     runOriginScenario,
     ideasRail,
     needsYouLearnCard,

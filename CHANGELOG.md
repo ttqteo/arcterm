@@ -26,6 +26,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- **The run queue in Jarvis**: a plan queued with `--after` sits in the Brief's Runs right under the run it waits on
+  (a chain nests one level per link), a plan waiting for room at the end. Click one for what it waits on, its plan
+  and route, and Start now, Run next or Remove; a run started from the queue says what it was queued after.
 - **Initiatives by project**: the Brief's Initiatives head has a project filter (all, each project, no project) when
   the initiatives name more than one; it narrows before the list is cut, and the paused count and archived ones follow
   it.

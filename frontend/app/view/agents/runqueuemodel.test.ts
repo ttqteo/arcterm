@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { queuedMeta, queuedRows, queuedTooltip, queueProject, runLanded } from "./runqueuemodel";
+import { queuedMeta, queuedRoute, queuedRows, queuedTooltip, queueProject, runLanded } from "./runqueuemodel";
 
 const NOW = 1_800_000_000_000;
 const MIN = 60_000;
@@ -182,6 +182,21 @@ describe("queuedMeta", () => {
             )
         ).toBe("Blocked · Setup was cancelled");
         expect(queuedMeta(row(entry("q-b", { state: "blocked" })))).toBe("Blocked");
+    });
+});
+
+describe("queuedRoute", () => {
+    it("words the lead and the worker route, the workers the same as the lead when none is set", () => {
+        expect(queuedRoute(entry("q-a", {}, { runtime: "pi" }))).toBe("Lead pi · Workers same as lead");
+        expect(
+            queuedRoute(
+                entry(
+                    "q-a",
+                    {},
+                    { runtime: "claude", model: "opus", workerroute: { runtime: "codex", model: "gpt-5" } }
+                )
+            )
+        ).toBe("Lead claude · opus · Workers codex · gpt-5");
     });
 });
 

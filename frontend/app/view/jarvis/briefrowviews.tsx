@@ -7,7 +7,7 @@
 // Behind you is two lines under a wording column.
 
 import { cn } from "@/util/util";
-import { ArrowLeft, ArrowRight, CornerDownRight, Ellipsis, Lightbulb } from "lucide-react";
+import { ArrowLeft, ArrowRight, Clock, CornerDownRight, Ellipsis, Lightbulb } from "lucide-react";
 import type { ReactNode } from "react";
 import type { QueueAct } from "./briefingmodel";
 import { initiativeLine, type BriefLine, type RunRowFace } from "./briefrows";
@@ -850,6 +850,68 @@ export function RunRowView({
                     </button>
                 ) : null}
             </div>
+        </div>
+    );
+}
+
+// A plan waiting in the run queue (briefqueue.ts), drawn among the Runs: under the run or the queued plan it waits on,
+// one NEST_INDENT per link, a room-only one at the end. No buttons: Start now, Run next and Remove live in the sheet
+// the row opens, as every Brief row's actions do. It carries no data-peek: the sheet is all it opens, so a held Ctrl
+// has nothing to turn into a peek.
+export function QueuedRunRowView({
+    line,
+    focused,
+    selected,
+    onOpen,
+}: {
+    line: BriefLine;
+    focused: boolean;
+    selected: boolean;
+    onOpen: () => void;
+}) {
+    const q = line.queued!;
+    const depth = line.depth ?? 0;
+    return (
+        <div
+            data-jarvis-brief-row="queued"
+            data-brief-queued={q.entryId}
+            data-brief-queued-depth={depth}
+            {...cursorAttrs(focused)}
+            onClick={onOpen}
+            style={depth > 0 ? { marginLeft: depth * NEST_INDENT } : undefined}
+            className={cn(
+                "flex cursor-pointer items-center gap-3 py-[7px] hover:bg-surface-hover",
+                ROW_BORDER,
+                selected && "bg-surface-selected",
+                focused && CURSOR_RING
+            )}
+        >
+            <Clock size={11} aria-hidden className={cn("flex-none", q.blocked ? "text-warning" : "text-muted")} />
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <div className="flex min-w-0 items-center gap-2">
+                    <span className="flex-none rounded-[5px] border border-edge-mid px-1.5 text-[10.5px] leading-[17px] text-ink-mid">
+                        queued
+                    </span>
+                    <span title={line.title} className="min-w-0 truncate text-[13px] text-ink-mid">
+                        {line.title}
+                    </span>
+                </div>
+                <div className={cn("flex min-w-0 items-center gap-2", FAINT_TEXT)}>
+                    <span data-brief-queued-meta className="min-w-0 truncate">
+                        {line.meta} · {line.age}
+                    </span>
+                </div>
+            </div>
+            <span
+                data-brief-queued-state
+                title={q.blocked && q.reason ? q.reason : undefined}
+                className={cn(
+                    "w-[62px] flex-none text-right text-[11px] font-semibold tabular-nums",
+                    q.blocked ? "text-warning" : "text-muted"
+                )}
+            >
+                {line.state}
+            </span>
         </div>
     );
 }

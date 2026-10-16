@@ -85,16 +85,19 @@ export function queuedMeta(row: QueuedRow): string {
     return `Queued #${row.place}`;
 }
 
-/** Pure: the row's tooltip, three lines: the plan, the lead and the worker route it will run with, and when it was
- *  queued. The route was fixed at queue time, so these are the models the person approved. */
-export function queuedTooltip(entry: RunQueueEntry, now: number): string {
+/** Pure: the lead and worker route a queued entry will run with, fixed at queue time: the models the person approved. */
+export function queuedRoute(entry: RunQueueEntry): string {
     const { data } = entry;
     const lead = [data.runtime, data.model].filter(Boolean).join(" · ");
     const route = data.workerroute;
     const workers = route ? [route.runtime, route.model].filter(Boolean).join(" · ") : "same as lead";
-    return [
-        data.planpath || entry.title,
-        `Lead ${lead} · Workers ${workers}`,
-        `Queued ${formatAgo(now - entry.queuedts)}`,
-    ].join("\n");
+    return `Lead ${lead} · Workers ${workers}`;
+}
+
+/** Pure: the row's tooltip, three lines: the plan, the lead and the worker route it will run with, and when it was
+ *  queued. The route was fixed at queue time, so these are the models the person approved. */
+export function queuedTooltip(entry: RunQueueEntry, now: number): string {
+    return [entry.data.planpath || entry.title, queuedRoute(entry), `Queued ${formatAgo(now - entry.queuedts)}`].join(
+        "\n"
+    );
 }

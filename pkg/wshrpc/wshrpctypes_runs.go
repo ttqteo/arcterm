@@ -58,6 +58,9 @@ type CommandCreateRunData struct {
 	Prototype string `json:"prototype,omitempty"`
 	// OriginTabId is the tab of the session that ran `wsh runs start`; empty from the cockpit.
 	OriginTabId string `json:"origintabid,omitempty"`
+	// AfterRunId is the run a queued start waited After, set by the run queue when it starts the entry; the run
+	// keeps it (Run.AfterRunId). Empty for every other start.
+	AfterRunId string `json:"afterrunid,omitempty"`
 	// Autonomous is the Approvals setting; nil = the resolved profile's. An orchestrator run only: an explicit
 	// true on a quick run is refused.
 	Autonomous *bool `json:"autonomous,omitempty"`

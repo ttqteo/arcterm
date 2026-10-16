@@ -185,6 +185,10 @@ Lệnh kiểm plan ngay (plan hỏng hoặc không đọc được bị từ ch�
 
 **Trên cây Agent.** Mục đang chờ là một hàng trong folder project của nó, ngay dưới các run của project, theo thứ tự hàng: biểu tượng đồng hồ, tên plan và dòng phụ `Queued #2` (vị trí trong cả hàng, không riêng project), `Queued · after <tên>` hoặc `Blocked · <lý do>` ở màu cảnh báo. Rê chuột lên hàng để có **Start now** và **Remove** (Remove hỏi lại); menu chuột phải thêm **Run next**, trừ ở mục đầu hàng. Bấm vào không mở gì ở giữa vì chưa có gì để xem; tooltip nói đường dẫn plan, route của lead và worker, và mục được xếp từ bao giờ. Khi mục chạy, hàng của nó thành hàng run ở đúng chỗ đó. Đừng nhầm với `queued #N` của một agent đang chờ lệnh nặng ([Usage](usage.md#hàng-đợi-lệnh-nặng)): đó là chờ RAM, không phải chờ chỗ cho run.
 
+**Trong Brief của Jarvis.** Mục đang chờ nằm trong Runs, ngay dưới run nó chờ (`--after` nối nhiều mục thì mỗi mục lùi
+thêm một bậc), mục chỉ chờ chỗ trống nằm cuối Runs. Bấm vào để mở sheet của mục: nó chờ gì, plan, route, và **Start
+now**, **Run next**, **Remove**. Khi mục chạy, sheet chuyển thành sheet của run; run đó ghi `queued after <run>`.
+
 **Session và run của nó trỏ vào nhau.** Trên dòng phụ của session đã bắt đầu hoặc xếp hàng run bằng `wsh runs start`, một chip nhỏ (icon run cùng vài chữ) nói run đang ở đâu: `3/5` khi đang chạy (chỉ icon khi run chưa có plan), `queued #2` (hoặc `blocked`) khi còn trong hàng, `merged` hoặc `held` sau khi land, `N runs` khi có nhiều run. Tên run nằm trong tooltip, vì hàng của run đã ghi nó. Bấm vào chip đi tới run: hàng của run nếu có agent đang làm việc cho nó, sheet của run nếu chưa có agent nào, hoặc cuộn tới hàng đang chờ trong hàng đợi. Ngược lại, hàng của run có icon ↰ ở dòng phụ, tooltip ghi tên session, bấm vào để chọn session ấy; icon mất khi tab của session đã đóng. Chip không bị làm mờ cùng hàng session đang ngủ. Nút ✓ Close của session (ở hàng và ở header) cũng chờ khi một plan nó xếp hàng còn đang chờ hoặc bị chặn, vì đóng session lúc đó thì không còn ai để báo khi run land.
 
 | Nút | Lệnh | Làm gì |

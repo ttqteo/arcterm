@@ -52,6 +52,15 @@ type CommandRunQueueListRtnData struct {
 }
 
 // RunQueueChangedData is the runqueue:changed event: the whole list, after every change the server makes to it.
+// Started names the run each entry this change started became, so a view open on that entry can follow it; it is
+// empty for every other change.
 type RunQueueChangedData struct {
-	Entries []RunQueueEntry `json:"entries"`
+	Entries []RunQueueEntry   `json:"entries"`
+	Started []RunQueueStarted `json:"started,omitempty"`
+}
+
+// RunQueueStarted pairs a queue entry with the run its start created.
+type RunQueueStarted struct {
+	EntryId string `json:"entryid"`
+	RunId   string `json:"runid"`
 }

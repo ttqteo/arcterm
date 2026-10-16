@@ -765,6 +765,7 @@ declare global {
         planpath?: string;
         prototype?: string;
         origintabid?: string;
+        afterrunid?: string;
         autonomous?: boolean;
     };
 
@@ -3362,6 +3363,7 @@ declare global {
         parentleadoref?: string;
         origintabid?: string;
         origintranscript?: string;
+        afterrunid?: string;
         originnotify?: boolean;
         originnotifiedts?: number;
         effortref?: RunEffortRef;
@@ -3462,6 +3464,7 @@ declare global {
     // wshrpc.RunQueueChangedData
     type RunQueueChangedData = {
         entries: RunQueueEntry[];
+        started?: RunQueueStarted[];
     };
 
     // wshrpc.RunQueueEntry
@@ -3475,6 +3478,12 @@ declare global {
         state: string;
         reason?: string;
         blockedon?: string;
+    };
+
+    // wshrpc.RunQueueStarted
+    type RunQueueStarted = {
+        entryid: string;
+        runid: string;
     };
 
     // waveobj.RunRadarOrigin
