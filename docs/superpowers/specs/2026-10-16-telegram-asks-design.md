@@ -191,6 +191,37 @@ to "Paired" without a reload.
 One goroutine long-polling one HTTP connection, one ticker, a small map of open asks. Measure wavesrv RAM with it on
 and add a "RAM watch" line in `docs/open-issues.md`.
 
+## When it connects (added 2026-10-16)
+
+A steady long-poll to `api.telegram.org` from a work machine reads as a command-and-control channel to corporate
+network monitoring. So the bot connects only when there is something to do, and only inside a time the person
+allowed. Effort chunk "Decide: when Telegram may connect" holds the decision.
+
+**Allowed time.** `telegram:enabled` stays the master switch. Inside it, `telegram:mode` picks when the bot may connect:
+
+- `manual` (unset reads as this): only until `telegram:onuntil` (UnixMilli), set from the row's **On for 1h / 2h / 4h**
+  or a typed number of hours; **Turn off now** clears it.
+- `schedule`: inside `telegram:schedule`, a string `"<days> <HH:MM>-<HH:MM>"` in local time, days a comma list of
+  `mon`…`sun`. Unset reads as office hours, `"mon,tue,wed,thu,fri 08:00-17:30"`. An end at or before the start runs
+  past midnight, and the days name the day a window starts (`"mon,tue,wed,thu,fri 17:30-08:00"` is outside office
+  hours). A live `telegram:onuntil` also allows it outside the schedule.
+- `always`: whenever it is switched on.
+
+**Connect on demand.** Inside an allowed time the bot holds a session (getMe, backlog drop, long poll) only while it
+has something to do: a question waiting past the grace or still open in Telegram, or a live pairing code. With
+neither, it disconnects after 30 s, and no request leaves the machine until the next question. Switching it on or
+storing a new token makes one `getMe`, to show the bot's name and catch a wrong token, and nothing more. The
+tracker of sent questions lives on the bot, not the session, so a reconnect does not resend them. The 2 s tick that
+decides all this reads only the local ask registry and the clock.
+
+**When the allowed time ends** with a question open in Telegram, its message is edited to
+`— Telegram is off until Mon 08:00` (or `— Telegram is off; answer in arcterm` when nothing will turn it back on), it is
+forgotten, and the bot disconnects. If the question is still waiting when the time comes back, it is sent again.
+
+**Status** adds `allowed`, `alloweduntil` (UnixMilli, 0 = no end), `nextallowed` (UnixMilli, 0 = none), `connected` and
+`open` (questions open in Telegram). The row says: `Off until Mon 08:00`, `On until 15:40 · Turn off`, `Paired with
+<chat> · connects only when an agent asks`, or `Connected · 1 question open`.
+
 ## Out of scope
 
 Sending prompts, starting or stopping anything, other notifications (run done/failed, Needs you items other than
