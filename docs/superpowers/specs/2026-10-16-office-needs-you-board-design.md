@@ -21,11 +21,23 @@ strip as it is.
 - With rows waiting, an `!` bubble with the count sits over it, in the `asking` tone (the mark an asking agent's
   bubble uses). With none, it is a quiet fixture.
 
+### With floors (the Office layout redesign)
+
+The Office layout redesign (floors of 2×2 project rooms around the central hall, an elevator strip, runs as meeting
+tables inside a project's room; brainstormed 2026-10-16 in another session) keeps the hall and its lounge, so the board
+keeps this place. Whichever of the two is built second adapts to the other:
+
+- every floor draws the board at the same place in its hall;
+- the board lists the Needs you rows of every floor, not only the floor in view, so an ask on another floor (or one
+  folded into a full room's `+N` chip) is answered without taking the elevator;
+- `deskAt` and `order()` treat the board the same on every floor.
+
 ## Opening it
 
 - **Walk:** the boss stands at the board and presses ↵, as at a desk; the "press ↵" hint shows over its head.
 - **Click:** the boss walks there (`showPath`) and the dialog box opens.
-- **Office menu (`m`):** a "Needs you (n)" item walks the boss to the board and opens it.
+- **Office menu (`m`):** a "Notice board" item, with the count in the asking colour, walks the boss to the board and
+  opens it (not "Needs you": the menu already has "Next Needs you" on `n`, which jumps between asking desks).
 - **Cursor:** while rows wait, the board is a stop in the office's `order()`, so ↑↓ and next-ask reach it.
 
 ## The dialog box
