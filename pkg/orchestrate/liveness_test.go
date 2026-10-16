@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -728,5 +729,95 @@ func TestBusyWorkerIsNotReadForARefusal(t *testing.T) {
 		if task := tick(t, ctx, g); task.State != TaskState_Running || len(f.sends) != 0 {
 			t.Fatalf("tick %d: a busy worker stays running, got %s, %q", i+1, task.State, f.sends)
 		}
+	}
+}
+
+// stallQuietChild stalls a quiet pi child under a live lead and returns its fake lead, which has the stall's wake.
+func stallQuietChild(t *testing.T, name string) (context.Context, *waveobj.TaskGroup, *fakeLead) {
+	t.Helper()
+	ctx, g, f := seedChildWrittenAt(t, name, time.Now().Add(-StallThreshold-time.Minute))
+	noCPUThrottle(t)
+	stubChildCPU(t, func(int) (int64, bool) { return 0, false })
+	if task := tick(t, ctx, g); task.State != TaskState_Stalled || len(wakeLines(f)) != 1 {
+		t.Fatalf("a quiet child stalls and wakes the lead once, got %s and wakes %q", task.State, f.sends)
+	}
+	return ctx, g, f
+}
+
+// wakeLines leaves out what the fake lead saw typed into a worker.
+func wakeLines(f *fakeLead) []string {
+	var out []string
+	for _, s := range f.sends {
+		if strings.HasPrefix(s, "wake:") {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// tellAndWrite is the lead's `dag tell` reaching the worker, which writes its transcript as it resumes.
+func tellAndWrite(t *testing.T, ctx context.Context, g *waveobj.TaskGroup, written time.Time) {
+	t.Helper()
+	prev := runBlockORefs
+	runBlockORefs = func(context.Context, *waveobj.Run) []string {
+		return []string{waveobj.MakeORef(waveobj.OType_Block, wakeLeadBlock).String()}
+	}
+	t.Cleanup(func() { runBlockORefs = prev })
+	if err := TellTask(ctx, g.OID, "t-0", "the fixture moved to testdata/"); err != nil {
+		t.Fatal(err)
+	}
+	writePiSession(t, sessionsRootFor("pi"), liveSession, written)
+}
+
+// t-9 and t-15 read "stalled · running a command" after the lead's tell revived them
+func TestStalledTaskRunsAgainWhenItsWorkerWritesAfterATell(t *testing.T) {
+	ctx, g, f := stallQuietChild(t, "revived-by-tell")
+	tellAndWrite(t, ctx, g, time.Now())
+	if task := tick(t, ctx, g); task.State != TaskState_Running {
+		t.Fatalf("a stalled worker that writes after a tell is running, got %s", task.State)
+	}
+	if got := wakeLines(f); len(got) != 1 {
+		t.Fatalf("a revival wakes nobody, got wakes %q", got)
+	}
+}
+
+// the stall wake fires on running -> stalled, so a revived worker that never left stalled could not wake the lead again
+func TestRevivedTaskThatGoesQuietAgainStallsAndWakesTheLeadAgain(t *testing.T) {
+	ctx, g, f := stallQuietChild(t, "revived-then-quiet")
+	written := time.Now().Add(-StallThreshold + time.Minute)
+	tellAndWrite(t, ctx, g, written)
+	if task := tick(t, ctx, g); task.State != TaskState_Running {
+		t.Fatalf("a stalled worker that writes after a tell is running, got %s", task.State)
+	}
+	// the worker goes quiet past StallThreshold from its resumed write
+	quiet := written.Add(-2 * time.Minute)
+	writePiSession(t, sessionsRootFor("pi"), liveSession, quiet)
+	if err := wstore.UpdateDag(ctx, g.OID, func(cur *waveobj.TaskGroup) error {
+		cur.Tasks[0].LastActivity = quiet.UnixMilli()
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// the lead took the first wake and is back at its prompt
+	NoteLeadStatus(ctx, f.status(baseds.AgentState_Working))
+	NoteLeadStatus(ctx, f.status(baseds.AgentState_Idle))
+	if task := tick(t, ctx, g); task.State != TaskState_Stalled {
+		t.Fatalf("a revived worker quiet past StallThreshold stalls again, got %s", task.State)
+	}
+	if got := wakeLines(f); len(got) != 2 {
+		t.Fatalf("the second stall wakes the lead again, got wakes %q", got)
+	}
+}
+
+// a write cannot bring back a worker whose controller is gone: nothing runs it
+func TestStalledTaskWhoseControllerIsGoneStaysStalled(t *testing.T) {
+	ctx, g, f := stallQuietChild(t, "revived-controller-gone")
+	t.Cleanup(SetWorkerGoneForTest(func(context.Context, *waveobj.Run) bool { return true }))
+	tellAndWrite(t, ctx, g, time.Now())
+	if task := tick(t, ctx, g); task.State != TaskState_Stalled {
+		t.Fatalf("a worker whose controller is gone stays stalled, got %s", task.State)
+	}
+	if got := wakeLines(f); len(got) != 1 {
+		t.Fatalf("no second wake for a task that never ran again, got %q", got)
 	}
 }

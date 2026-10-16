@@ -414,10 +414,29 @@ var workerTurnEndedAt = func(ctx context.Context, run *waveobj.Run) int64 {
 	return st.Ts
 }
 
-// turnEndedPast reports a worker idle at its prompt for longer than TurnEndedGrace.
-func turnEndedPast(ctx context.Context, run *waveobj.Run, now int64) bool {
+// turnEndedPast reports a worker idle at its prompt for longer than TurnEndedGrace, and as long since it last waited
+// on an ask.
+func turnEndedPast(ctx context.Context, t *waveobj.TaskNode, run *waveobj.Run, now int64) bool {
+	if now-t.AskTs <= TurnEndedGrace.Milliseconds() {
+		return false
+	}
 	ended := workerTurnEndedAt(ctx, run)
 	return ended > 0 && now-ended > TurnEndedGrace.Milliseconds()
+}
+
+// revived reports a stalled task whose worker is working again: its transcript moved since the last tick (a lead's
+// `dag tell` lands there as typed input) or its process tree sampled busy. Only the stall's state is undone; every
+// stall clock already runs from the newest activity, so a revived worker that goes quiet stalls and wakes the lead
+// again. A worker that cannot be running, one whose route still refuses it, and one still idle at its prompt stay
+// stalled; the last also keeps the turn-ended check from stalling a revived task again in the same tick.
+func revived(ctx context.Context, t *waveobj.TaskNode, run *waveobj.Run, wrote bool, verdict cpuVerdict, now int64) bool {
+	if t.State != TaskState_Stalled || (!wrote && verdict != cpuBusy) {
+		return false
+	}
+	if workerControllerGone(ctx, run) || workerStuckStarting(ctx, run) || sessionFailure(run).Refused() {
+		return false
+	}
+	return !turnEndedPast(ctx, t, run, now)
 }
 
 // workerStuckStarting reports whether a child's worker block has a controller whose shell never came up.

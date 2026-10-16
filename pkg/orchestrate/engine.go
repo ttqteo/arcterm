@@ -479,8 +479,8 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 	DeriveTaskStates(g, runs)
 	// liveness + stall detection: refresh each running task's last-activity from its child's own
 	// transcript writes; a running task silent past StallThreshold is flagged stalled (nothing else ever
-	// notices a headless child that stopped progressing). A stalled task whose child later completes
-	// still derives done (DeriveTaskStates).
+	// notices a headless child that stopped progressing). A stalled task whose worker works again goes back to
+	// running (revived); one whose child later completes still derives done (DeriveTaskStates).
 	now := time.Now().UnixMilli()
 	for i := range g.Tasks {
 		t := &g.Tasks[i]
@@ -499,8 +499,12 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 			t.LatestTool = workerLatestTool(ctx, runs[t.RunID])
 		}
 		activity, tracked := lastActivityForRun(runs[t.RunID])
-		if activity > t.LastActivity {
+		wrote := activity > t.LastActivity
+		if wrote {
 			t.LastActivity = activity
+		}
+		if revived(ctx, t, runs[t.RunID], wrote, verdict, now) {
+			t.State = TaskState_Running
 		}
 		// first-activity boundary: stamped once, from the first tick that can read the child's
 		// transcript at all. Spawn stamps LastActivity, so the transition to "has written something"
@@ -573,7 +577,7 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 		// silence is the transcript's and the CPU's together: a busy sample restarts it as a write would. Only a
 		// fresh idle sample, or none at all, lets a quiet task stall; a skipped or first reading defers a tick
 		quiet := t.LastActivity > 0 && now-max(t.LastActivity, t.BusyTs, t.AskTs) > StallThreshold.Milliseconds()
-		turnEnded := now-t.AskTs > TurnEndedGrace.Milliseconds() && turnEndedPast(ctx, runs[t.RunID], now)
+		turnEnded := turnEndedPast(ctx, t, runs[t.RunID], now)
 		if t.State == TaskState_Running && (quiet || turnEnded) &&
 			(verdict == cpuIdle || verdict == cpuNone) {
 			t.State = TaskState_Stalled
