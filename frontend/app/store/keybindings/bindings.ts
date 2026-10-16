@@ -990,6 +990,7 @@ export function buildCockpitBindings(): Binding[] {
             "m",
             "Office: the office menu (next Needs you, desks, Events, Cards view, all keys)"
         ),
+        doc("cockpit:office-sound", "s", "Office: mute or unmute its sound (jingles, boss sounds, music)"),
     ];
 }
 

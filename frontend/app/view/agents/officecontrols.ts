@@ -20,6 +20,7 @@ export type OfficeKeyAction =
     | { do: "activate" }
     | { do: "talk" }
     | { do: "card" }
+    | { do: "sound" }
     | { do: "back" }
     | { do: "menu" }
     | { do: "desk"; delta: -1 | 1 }
@@ -87,6 +88,9 @@ export function officeKey(layer: OfficeLayer, menuOpen: boolean, key: string, mo
     }
     if (key === "f") {
         return { do: "card" };
+    }
+    if (key === "s") {
+        return { do: "sound" };
     }
     if (key === "h" || key === "l") {
         return { do: "tab", delta: key === "h" ? -1 : 1 };
@@ -183,6 +187,7 @@ export type OfficeMenuId =
     | "arrange"
     | "events"
     | "background"
+    | "sound"
     | "cards"
     | "keys";
 
@@ -202,7 +207,8 @@ export interface OfficeMenuItem {
 /** Pure: the office menu (m), START's list. It names each item's own key, so it is where the keys are learnt. `inRoom`
  *  is whether the boss stands in a project room: Move this room picks that room up, so it is disabled anywhere else.
  *  `background` is the agents no room draws (backgrounded ones and detached `claude --bg` sessions): Background shows
- *  them under the office, and is left out while there are none and they are hidden. */
+ *  them under the office, and is left out while there are none and they are hidden. `muted` is whether the office's
+ *  sound is muted: the sound item names what it will do, Mute sound or Sound on. */
 export function officeMenuItems(
     asks: number,
     newEvents: number,
@@ -210,7 +216,8 @@ export function officeMenuItems(
     boardRows: number,
     inRoom: boolean,
     background = 0,
-    backgroundOpen = false
+    backgroundOpen = false,
+    muted = false
 ): OfficeMenuItem[] {
     return [
         { id: "nextAsk", label: "Next Needs you", key: "n", count: asks > 0 ? String(asks) : undefined, ask: true },
@@ -240,6 +247,7 @@ export function officeMenuItems(
                   },
               ]
             : []),
+        { id: "sound", label: muted ? "Sound on" : "Mute sound", key: "s" },
         { id: "cards", label: "Cards view", key: "o" },
         { id: "keys", label: "All keys", key: "?" },
     ];

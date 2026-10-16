@@ -84,6 +84,7 @@ import {
     officeBackgroundOpenAtom,
     officeEventsOpenAtom,
     officeLayoutAtom,
+    toggleOfficeMute,
 } from "./officestore";
 import { EMPTY_LAYOUT } from "./officelayout";
 import {
@@ -220,6 +221,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     // An escalation's Open goes through focusAgentCard, which is defined further down
     const focusAgentRef = useRef<(agentId: string) => void>(() => undefined);
     const ny = useNeedsYou(model, (agentId) => focusAgentRef.current(agentId));
+    const boardCues = useMemo(() => ny.rows.map((r) => ({ key: r.key, kind: r.run.wireKind })), [ny.rows]);
     const boardPageAt = useAtomValue(officeBoardPageAtom);
     const boardWhyOpen = useAtomValue(officeBoardWhyAtom);
     // a page's Why is that page's: it shuts when another row comes into view, whether by a page turn or by the row in
@@ -592,6 +594,9 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                 return;
             case "background":
                 globalStore.set(officeBackgroundOpenAtom, !globalStore.get(officeBackgroundOpenAtom));
+                return;
+            case "sound":
+                toggleOfficeMute();
                 return;
             case "cards":
                 toggleView();
@@ -1090,6 +1095,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                                 backgroundOpen={backgroundOpen}
                                 onMenu={onOfficeMenu}
                                 boardRows={ny.rows.length}
+                                boardCues={boardCues}
                                 handleRef={officeRef}
                             />
                         )
