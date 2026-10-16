@@ -26,6 +26,8 @@ const quick: RunConfig = {
     planPath: "",
     reviewerPicks: false,
     reviewerRoute: null,
+    lightReviewerRoute: null,
+    autonomous: false,
 };
 const route = { runtime: "claude", model: "opus" } as RoutePin;
 const run = { id: "run-1" } as Run;

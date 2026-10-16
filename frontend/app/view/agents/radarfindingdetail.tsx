@@ -6,7 +6,6 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { openInCode } from "@/app/view/code/codestore";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { openOrPeek } from "@/app/view/jarvis/openref";
-import { AVATAR_SURFACE_REACH_PX } from "@/app/view/jarvis/petview";
 import { landOn } from "@/app/view/jarvis/returnsurface";
 import { cn, fireAndForget } from "@/util/util";
 import { ArrowRight, ChevronDown } from "lucide-react";
@@ -184,11 +183,7 @@ export function RadarFindingDetail({
         >
             {/* @container, not a media query: the list column eats window width, so only the pane's own
                 width says whether a side column fits */}
-            {/* the end clears the avatar by one gap, or it covers the closing line at full scroll */}
-            <div
-                className="flex max-w-[880px] flex-col gap-[22px] px-[34px] pt-[22px] @min-[1300px]:max-w-[1440px]"
-                style={{ paddingBottom: AVATAR_SURFACE_REACH_PX + 22 }}
-            >
+            <div className="flex max-w-[880px] flex-col gap-[22px] px-[34px] pb-10 pt-[22px] @min-[1300px]:max-w-[1440px]">
                 <div className="flex flex-col gap-3">
                     <div className="flex min-w-0 flex-wrap items-center gap-2.5">
                         <span className={cn(REGION_LABEL, "flex items-center gap-1.5", LIST_TONE_TEXT[meta.tone])}>

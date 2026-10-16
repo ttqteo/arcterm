@@ -1318,8 +1318,10 @@ function WorkerRow({
 }
 
 // A session the engine started to judge the whole run, under the run like a task's worker and named by its stage.
-// a finished stage's dot, by verdict. passed draws a check instead, like a landed worker
+// a finished stage's dot, by verdict: accepted means the review failed and the lead proceeded anyway. passed
+// draws a check instead, like a landed worker
 const STAGE_OUTCOME_DOT: Record<Exclude<StageOutcome, "passed">, string> = {
+    accepted: "bg-warning",
     unverified: "bg-warning",
     failed: "bg-error",
 };
@@ -1377,12 +1379,10 @@ function StageRow({
                 </DigitHint>
             </Slot>
             <div className="min-w-0 flex-1">
-                <div className="truncate text-[12.5px] font-medium text-ink-hi">{stageLabel(stageRole)}</div>
-                <div className="mt-[3px] truncate text-[10.5px] tabular-nums text-muted">
                 <div className="truncate text-[12.5px] font-medium text-ink-hi">
                     {lens ? `${stageLabel(stageRole)} · ${planReviewLensTitle(lens)}` : stageLabel(stageRole)}
                 </div>
-                <div className="mt-[3px] truncate font-mono text-[10.5px] text-muted">
+                <div className="mt-[3px] truncate text-[10.5px] tabular-nums text-muted">
                     {stageSubline(outcome, formatAgeShort(displayAgeMs(agent, now)))}
                 </div>
             </div>
@@ -2665,134 +2665,6 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                     <ElsewhereRow model={model} agents={elsewhere.agents} asking={elsewhere.asking} />
                 ) : null}
                 <ConversationsSection model={model} />
-                        }
-                        // an agent's row keeps the agent's key wherever it moves (a worker folding into done, an
-                        // agent nesting once its run loads), so the move animates instead of remounting
-                        let key: string;
-                        let body: React.ReactNode;
-                        switch (r.kind) {
-                            case "parent":
-                                key = r.agent.id;
-                                body = <ParentRow model={model} agent={r.agent} />;
-                                break;
-                            case "lead":
-                                key = r.agent.id;
-                                body = (
-                                    <ParentRow
-                                        model={model}
-                                        agent={r.agent}
-                                        lead={{ run: r.run, open: r.open, live: r.live }}
-                                    />
-                                );
-                                break;
-                            case "run":
-                                key = `run-${r.run.runId}`;
-                                body = <RunRow model={model} run={r.run} open={r.open} live={r.live} />;
-                                break;
-                            case "worker":
-                                key = r.agent?.id ?? `task-${r.run.runId}-${r.task.id}`;
-                                body = (
-                                    <WorkerRow
-                                        model={model}
-                                        run={r.run}
-                                        task={r.task}
-                                        agent={r.agent}
-                                        nested={r.nested}
-                                        extras={
-                                            r.nested ? undefined : { count: r.extras ?? 0, open: r.extrasOpen ?? false }
-                                        }
-                                    />
-                                );
-                                break;
-                            case "stage":
-                                key = r.agent.id;
-                                body = (
-                                    <StageRow
-                                        model={model}
-                                        agent={r.agent}
-                                        stageRole={r.stageRole}
-                                        outcome={r.outcome}
-                                        lens={r.lens}
-                                    />
-                                );
-                                break;
-                            case "final":
-                                // the stage's own key before a verifier stands for it, then the session's
-                                key = r.agent?.id ?? `final-${r.run.runId}`;
-                                body = <FinalRow model={model} run={r.run} agent={r.agent} />;
-                                break;
-                            case "done":
-                                key = `done-${r.run.runId}`;
-                                body = (
-                                    <FoldRow
-                                        glyph={<Check size={11} aria-hidden className="text-success" />}
-                                        label={[
-                                            r.count > 0 ? `${r.count} done` : "",
-                                            r.stages > 0 ? `${r.stages} ${r.stages === 1 ? "review" : "reviews"}` : "",
-                                        ]
-                                            .filter(Boolean)
-                                            .join(" · ")}
-                                        open={r.open}
-                                        onToggle={() => toggleRunDoneOpen(r.run.runId, r.open, r.count)}
-                                    />
-                                );
-                                break;
-                            case "queued":
-                                key = `queued-${r.run.runId}`;
-                                body = (
-                                    <FoldRow
-                                        glyph={
-                                            <span className="h-[7px] w-[7px] shrink-0 rounded-full border border-muted" />
-                                        }
-                                        label={`${r.count} queued`}
-                                        open={r.open}
-                                        onToggle={() => toggleRunQueuedOpen(r.run.runId)}
-                                    />
-                                );
-                                break;
-                        }
-                        // layout="position" so a subagent expand doesn't scale-distort the row — only its
-                        // position animates on reflow. Must be the direct AnimatePresence child: popLayout
-                        // measures it via ref to pop an exiting row out of flow (else its space lingers).
-                        return (
-                            <motion.div
-                                key={key}
-                                layout="position"
-                                variants={cardVariants}
-                                initial={entranceIds.has(key) ? "initial" : false}
-                                animate="animate"
-                                exit="exit"
-                            >
-                                {body}
-                            </motion.div>
-                        );
-                    })}
-                    {terminals.length > 0 ? (
-                        <motion.div
-                            key="terminals-header"
-                            layout="position"
-                            className="flex items-center gap-[8px] px-[11px] pb-[6px] pt-[14px]"
-                        >
-                            <span className="truncate font-mono text-[10.5px] font-bold uppercase tracking-[.1em] text-muted">
-                                Terminals
-                            </span>
-                            <div className="h-px flex-1 bg-edge-mid" />
-                            <span className="font-mono text-[10.5px] font-semibold text-muted">{terminals.length}</span>
-                        </motion.div>
-                    ) : null}
-                    {terminals.map((t) => (
-                        <motion.div
-                            key={t.id}
-                            layout="position"
-                            variants={cardVariants}
-                            initial={entranceIds.has(t.id) ? "initial" : false}
-                            animate="animate"
-                            exit="exit"
-                        >
-                            <TerminalRow model={model} terminal={t} />
-                        </motion.div>
-                    ))}
-                </AnimatePresence>
             </div>
         </div>
     );
