@@ -14,9 +14,18 @@ import type { ActiveSubject } from "./jarvissubjectstore";
 export type SheetFace =
     | { kind: "none" }
     | { kind: "channel"; channelId: string; body: "run" | "launcher" }
-    | { kind: "effort"; effortId: string };
+    | { kind: "effort"; effortId: string }
+    | { kind: "queued"; entryId: string };
 
-export function sheetFace(subject: ActiveSubject | null, run: Run | null): SheetFace {
+export function sheetFace(
+    subject: ActiveSubject | null,
+    run: Run | null,
+    queuedEntryId: string | null = null
+): SheetFace {
+    // a queue entry is no subject (briefqueuestore.ts); opening one clears the subject, and opening a subject clears it
+    if (queuedEntryId != null) {
+        return { kind: "queued", entryId: queuedEntryId };
+    }
     if (subject == null) {
         return { kind: "none" };
     }

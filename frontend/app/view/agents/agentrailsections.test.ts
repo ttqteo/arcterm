@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
     bgTaskStatusLabel,
+    bgTaskStopNote,
+    bgTaskStoppable,
     planAgentRail,
     planRailStats,
     railStatAction,
@@ -222,5 +224,28 @@ describe("bgTaskStatusLabel", () => {
         expect(bgTaskStatusLabel("running", true)).toBe("running");
         expect(bgTaskStatusLabel("running", false)).toBe("unknown");
         expect(bgTaskStatusLabel("completed", false)).toBe("completed");
+    });
+});
+
+describe("bgTaskStoppable", () => {
+    it("offers Stop only on a running task of a live session that has a command", () => {
+        expect(bgTaskStoppable({ status: "running", command: "task dev" }, true)).toBe(true);
+        expect(bgTaskStoppable({ status: "running", command: "task dev" }, false)).toBe(false);
+        expect(bgTaskStoppable({ status: "completed", command: "task dev" }, true)).toBe(false);
+        expect(bgTaskStoppable({ status: "running" }, true)).toBe(false);
+    });
+});
+
+describe("bgTaskStopNote", () => {
+    it("says nothing for a stop, since the row turning stopped says it", () => {
+        expect(bgTaskStopNote({ outcome: "killed" }, "Run the dev app")).toBeNull();
+    });
+
+    it("names the task for every other outcome, with the OS text on a failure", () => {
+        expect(bgTaskStopNote({ outcome: "gone" }, "Run the dev app")).toBe('"Run the dev app" had already ended.');
+        expect(bgTaskStopNote({ outcome: "failed", error: "Access is denied." }, "Run the dev app")).toBe(
+            'Could not stop "Run the dev app": Access is denied.'
+        );
+        expect(bgTaskStopNote({ outcome: "refused" }, "Run the dev app")).toMatch(/^Not stopped: /);
     });
 });

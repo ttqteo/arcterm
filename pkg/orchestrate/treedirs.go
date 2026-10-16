@@ -16,6 +16,9 @@ import (
 // ErrTreeBusy is returned when the engine already holds a tree's removal lock.
 var ErrTreeBusy = errors.New("the engine is removing it")
 
+// WorktreeRoot is the engine's shared tree root (<user cache dir>/arc-wt), "" when trees stay under each project.
+func WorktreeRoot() string { return worktreeRoot() }
+
 // RunKeyForTreeDir maps a folder name under the worktree root to its engine key: a full key as is, a
 // <8-char prefix><suffix> name through the prefix's .run marker. ok=false: no marker, or not an engine name.
 func RunKeyForTreeDir(root, name string) (string, bool) {

@@ -765,6 +765,7 @@ declare global {
         planpath?: string;
         prototype?: string;
         origintabid?: string;
+        afterrunid?: string;
         autonomous?: boolean;
     };
 
@@ -1794,6 +1795,14 @@ declare global {
         ownerid: string;
         pid: number;
         tree: boolean;
+    };
+
+    // wshrpc.CommandResMonKillShellTaskData
+    type CommandResMonKillShellTaskData = {
+        ownerid: string;
+        taskid: string;
+        command: string;
+        startedts: number;
     };
 
     // wshrpc.CommandResMonSnapshotData
@@ -3354,6 +3363,7 @@ declare global {
         parentleadoref?: string;
         origintabid?: string;
         origintranscript?: string;
+        afterrunid?: string;
         originnotify?: boolean;
         originnotifiedts?: number;
         effortref?: RunEffortRef;
@@ -3454,6 +3464,7 @@ declare global {
     // wshrpc.RunQueueChangedData
     type RunQueueChangedData = {
         entries: RunQueueEntry[];
+        started?: RunQueueStarted[];
     };
 
     // wshrpc.RunQueueEntry
@@ -3467,6 +3478,12 @@ declare global {
         state: string;
         reason?: string;
         blockedon?: string;
+    };
+
+    // wshrpc.RunQueueStarted
+    type RunQueueStarted = {
+        entryid: string;
+        runid: string;
     };
 
     // waveobj.RunRadarOrigin
@@ -3542,6 +3559,7 @@ declare global {
         taskid?: string;
         role?: string;
         stagerunid?: string;
+        projectroot?: string;
     };
 
     // wshrpc.SessionEvent

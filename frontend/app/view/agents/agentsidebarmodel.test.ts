@@ -281,6 +281,29 @@ describe("endedConversationsByProject project keys", () => {
         expect([...ended.keys()]).toEqual(["Arc"]);
     });
 
+    it("files a run in the shared tree root under the checkout wavesrv names, not the tree's key", () => {
+        // <cache>/arc-wt/<key>: the path names no project, so wavesrv sends the run's checkout as projectroot
+        const shared = (id: string, key: string, over: Partial<SessionActivity> = {}) =>
+            session(id, {
+                projectpath: `C:\\Users\\me\\AppData\\Local\\arc-wt\\${key}`,
+                projectname: key,
+                projectroot: "D:\\projects\\arcterm\\",
+                ...over,
+            });
+        const runs = [
+            shared("lead", "75a28a71", { runid: "r1", role: "lead" }),
+            shared("w1", "75a28a71-t-1", { runid: "r1", taskid: "t-1" }),
+        ];
+        expect([...endedOf(runs).keys()]).toEqual(["arcterm"]);
+        const ended = endedConversationsByProject(runs, [], { Arc: { path: "d:/projects/arcterm" } });
+        expect([...ended.keys()]).toEqual(["Arc"]);
+        expect(ended.get("Arc")!.map(entryId)).toEqual(["run:r1"]);
+        // with no projectroot (a run this store never saw) it keeps the tree's key, as before
+        expect([...endedOf([shared("x", "9f00aa11-t-2", { projectroot: undefined })]).keys()]).toEqual([
+            "9f00aa11-t-2",
+        ]);
+    });
+
     it("files a leadless run under its workers' project, not their worktree's name", () => {
         const ended = endedConversationsByProject(
             [worker("w1", { runid: "r1", taskid: "t-1" }), worker("w2", { runid: "r1", taskid: "t-2" })],

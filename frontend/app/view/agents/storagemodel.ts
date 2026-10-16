@@ -20,7 +20,7 @@ export const CARD_ORDER = ["runworktrees", "sessions", "housekeeping", "buildout
 export const CARD_COPY: Record<(typeof CARD_ORDER)[number], { title: string; blurb: string; action: string | null }> = {
     runworktrees: {
         title: "Run worktrees",
-        blurb: "Trees that finished orchestrator runs left in .waveterm/worktrees. Their branches stay.",
+        blurb: "Trees that finished orchestrator runs left in arc-wt or .waveterm/worktrees. Their branches stay.",
         action: "Clean all",
     },
     sessions: {

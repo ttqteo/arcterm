@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { queuedMeta, queuedRows, queuedTooltip, queueProject, runLanded } from "./runqueuemodel";
+import { queuedMeta, queuedRoute, queuedRows, queuedTooltip, queueProject, runLanded } from "./runqueuemodel";
 
 const NOW = 1_800_000_000_000;
 const MIN = 60_000;
@@ -131,12 +131,12 @@ describe("queuedMeta", () => {
         expect(queuedMeta(row(entry("q-b"), {}, [entry("q-a")]))).toBe("Queued #2");
     });
 
-    it("reads After <title> for an entry whose After is unmet", () => {
+    it("reads Queued · after <title> for an entry whose After is unmet", () => {
         expect(queuedMeta(row(entry("q-b", { after: "run-1" }), { "run-1": "Learned additions" }))).toBe(
-            "After Learned additions"
+            "Queued · after Learned additions"
         );
         expect(queuedMeta(row(entry("q-b", { after: "q-a" }), {}, [entry("q-a", { title: "Brainstorm ideas" })]))).toBe(
-            "After Brainstorm ideas"
+            "Queued · after Brainstorm ideas"
         );
     });
 
@@ -147,27 +147,27 @@ describe("queuedMeta", () => {
         expect(queuedMeta(second)).toBe("Queued #2");
     });
 
-    it("reads After <title> for an entry whose After run is still going, held or not landed", () => {
+    it("reads Queued · after <title> for an entry whose After run is still going, held or not landed", () => {
         const e = entry("q-b", { after: "run-1" });
         expect(queuedMeta(queuedRows([e], { "run-1": "Learned additions" }, new Set())[0])).toBe(
-            "After Learned additions"
+            "Queued · after Learned additions"
         );
         expect(queuedMeta(queuedRows([e], { "run-1": "Learned additions" }, new Set(["run-2"]))[0])).toBe(
-            "After Learned additions"
+            "Queued · after Learned additions"
         );
     });
 
-    it("reads After <title> for an entry that waits on a queued entry, whatever the landed set holds", () => {
+    it("reads Queued · after <title> for an entry that waits on a queued entry, whatever the landed set holds", () => {
         const rows = queuedRows(
             [entry("q-a", { title: "Brainstorm ideas" }), entry("q-b", { after: "q-a" })],
             {},
             new Set(["q-a"])
         );
-        expect(queuedMeta(rows[1])).toBe("After Brainstorm ideas");
+        expect(queuedMeta(rows[1])).toBe("Queued · after Brainstorm ideas");
     });
 
     it("falls back to a short id when the title of what it waits on is not known", () => {
-        expect(queuedMeta(row(entry("q-b", { after: "4f2a9c1e-7b3d-4e5a-8c6f-1a2b3c4d5e6f" })))).toBe("After 4f2a9c1e");
+        expect(queuedMeta(row(entry("q-b", { after: "4f2a9c1e-7b3d-4e5a-8c6f-1a2b3c4d5e6f" })))).toBe("Queued · after 4f2a9c1e");
     });
 
     it("reads Blocked · <reason> for a blocked entry, even one that has an After", () => {
@@ -182,6 +182,21 @@ describe("queuedMeta", () => {
             )
         ).toBe("Blocked · Setup was cancelled");
         expect(queuedMeta(row(entry("q-b", { state: "blocked" })))).toBe("Blocked");
+    });
+});
+
+describe("queuedRoute", () => {
+    it("words the lead and the worker route, the workers the same as the lead when none is set", () => {
+        expect(queuedRoute(entry("q-a", {}, { runtime: "pi" }))).toBe("Lead pi · Workers same as lead");
+        expect(
+            queuedRoute(
+                entry(
+                    "q-a",
+                    {},
+                    { runtime: "claude", model: "opus", workerroute: { runtime: "codex", model: "gpt-5" } }
+                )
+            )
+        ).toBe("Lead claude · opus · Workers codex · gpt-5");
     });
 });
 

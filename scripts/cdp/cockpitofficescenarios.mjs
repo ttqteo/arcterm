@@ -1130,8 +1130,8 @@ export function makeCockpitOfficeScenarios(fx) {
                             ? `localStorage.removeItem(${JSON.stringify(LAYOUT_KEY)})`
                             : `localStorage.setItem(${JSON.stringify(LAYOUT_KEY)}, ${JSON.stringify(ctx.prevLayout)})`
                     );
+                    // the temp dir is the run's cwd: teardownFixtureRun removes it once the run is cancelled
                     if (ctx.prevFixture != null) writeFileSync(FIXTURE, ctx.prevFixture);
-                    rmSync(ctx.cwd, { recursive: true, force: true });
                 },
             });
         },
@@ -1413,8 +1413,9 @@ export function makeCockpitOfficeScenarios(fx) {
 
             // 9b. a HUD filter that hides the open box's desk: the box goes and the keys walk. probe.layer is the raw
             // layer atom, so the box's absence is read from probe.dialog
+            // the boss may start across the office: the walk to quill's desk can outlast settleBoss's default 4 s
             await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-quill"))})?.click()`);
-            const inBox = await settleBoss(h);
+            const inBox = await settleBoss(h, 12000);
             const chipSel = `[...document.querySelectorAll('[data-office-hud] [aria-label="Show"] button')].find((b) => b.textContent.includes("working"))`;
             await h.ev(`${chipSel}?.click()`);
             await sleep(300);
@@ -1575,12 +1576,14 @@ export function makeCockpitOfficeScenarios(fx) {
             await showBoard();
             await sleep(200);
             const one = await drawn();
+            // the HUD's need you counts the asking agents and the board's rows; step 9 reads the Cards tab's asking count
+            const officeNeed = await h.ev(`parseInt(document.querySelector('[data-office-chip="asking"]')?.textContent ?? "", 10)`);
             const bubblesWaiting = await bubbles();
             await h.shot("cdp-shots/office-needs-you-board-1-main.png");
             rec(
                 "1. in Office there is no Needs you strip; the notice board is drawn with two slips and the count 2 over it",
                 one.strip === false && one.board && one.slips === 2 && one.count === "2",
-                JSON.stringify(one)
+                JSON.stringify({ ...one, officeNeed })
             );
 
             // 2. the cursor reaches the board: j steps along the office order to it (the last stop); n from the asking
@@ -1829,15 +1832,18 @@ export function makeCockpitOfficeScenarios(fx) {
                 rows: [...document.querySelectorAll("[data-cockpit-needs-you] [data-needs-you-row]")].map((r) => r.dataset.needsYouRow),
                 office: !!document.querySelector("[data-cockpit-office]"),
                 board: !!document.querySelector("[data-office-board]"),
+                need: parseInt([...document.querySelectorAll("button")].find((b) => /need you$/.test(b.textContent.trim()))?.textContent ?? "", 10),
             })`);
             await h.shot("cdp-shots/office-needs-you-board-9-cards.png");
             rec(
-                "9. Cards shows the strip with the same two rows and no board",
+                "9. Cards shows the strip with the same two rows and no board; Office's HUD counted those rows on top of the Cards tab's asking agents",
                 strip &&
                     JSON.stringify(cards.rows) === JSON.stringify([BOARD_PLAN_KEY, BOARD_LEARN_KEY]) &&
                     !cards.office &&
-                    !cards.board,
-                JSON.stringify(cards)
+                    !cards.board &&
+                    Number.isFinite(cards.need) &&
+                    officeNeed === cards.need + 2,
+                JSON.stringify({ ...cards, officeNeed })
             );
             return steps;
         },

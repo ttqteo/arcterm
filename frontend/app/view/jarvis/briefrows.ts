@@ -30,7 +30,9 @@ import { headline, noteBody } from "./effortfeed";
 import type { ChunkTone, EffortCardModel } from "./effortmodel";
 
 export type LineTone = "ok" | "active" | "running" | "asking" | "error" | "muted" | "faint";
-export type LineTarget = { queue: QueueOpenTarget } | { oref: string } | null;
+export type LineTarget = { queue: QueueOpenTarget } | { oref: string } | { runQueue: string } | null;
+
+export type QueuedFace = { entryId: string; blocked: boolean; reason: string };
 
 export type BriefLine = {
     // region-prefixed: one object can sit in two regions, and j/k has to see both rows
@@ -65,6 +67,8 @@ export type BriefLine = {
     parentOref?: string;
     // direct sub-initiatives under this one, for the title's "+N sub"
     subCount?: number;
+    // a run-queue entry drawn among the Runs (briefqueue.ts): its id, whether it is blocked and why
+    queued?: QueuedFace;
 };
 
 // What nestInitiatives adds to a card: its depth under the top-level initiatives (0 at the top), the sub-initiatives
@@ -87,6 +91,9 @@ export function sinceEmptyLine(firstVisit: boolean): string {
 // the router cannot open (a click on that row still says why).
 export function lineOpenTarget(target: LineTarget): OpenTarget | null {
     if (target == null) {
+        return null;
+    }
+    if ("runQueue" in target) {
         return null;
     }
     let address = "oref" in target ? target.oref : "";
@@ -486,6 +493,17 @@ export function runKindLegs(
         return legs;
     }
     return { activeRuns: legs.activeRuns.filter((r) => keepsRunKind(filter, r.mode)), directAgents: [] };
+}
+
+// The Initiatives filter: null is every project, and "" picks the initiatives that name none. The options
+// sort by name rather than by count, so a chip does not move while you reach for it.
+export function initiativeProjects(cards: { project?: string }[]): string[] {
+    const names = [...new Set(cards.map((c) => c.project ?? ""))];
+    return names.sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b)));
+}
+
+export function keepsProject(filter: string | null, project: string | undefined): boolean {
+    return filter == null || (project ?? "") === filter;
 }
 
 const CHUNK_EVENTS = new Set(["effort-note", "chunk-status", "chunk-done", "chunk-added"]);

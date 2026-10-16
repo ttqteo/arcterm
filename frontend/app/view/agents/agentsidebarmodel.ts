@@ -154,7 +154,8 @@ function claudeTranscriptFolder(path: string | undefined): string {
  *  project is registered under another name or its folder has a hyphen. In order: the project of a live agent writing
  *  into the session's own transcript folder (the agent's folder is where the eye is, though its name is the lossy one);
  *  the registered project at the session's path; the scan's own name. A path inside an engine worktree reads as the
- *  project checkout the tree was made from (engineWorktreeRoot), for the last two as for the first. */
+ *  project checkout the tree was made from (projectroot, which wavesrv sets for a tree under the shared root, else
+ *  engineWorktreeRoot), for the last two as for the first. */
 function projectKeyResolver(roster: AgentVM[], registered: ProjectRegistry): (s: SessionActivity) => string {
     const byFolder = new Map<string, string>();
     for (const a of roster) {
@@ -171,11 +172,12 @@ function projectKeyResolver(roster: AgentVM[], registered: ProjectRegistry): (s:
         }
     }
     return (s) => {
-        const root = engineWorktreeRoot(s.projectpath ?? "");
+        // wavesrv names the checkout of a tree under the shared root (<cache>/arc-wt/<key>), whose path names none
+        const root = s.projectroot ? s.projectroot.replace(/\\/g, "/") : engineWorktreeRoot(s.projectpath ?? "");
         return (
             byFolder.get(claudeTranscriptFolder(s.transcriptpath)) ??
             byPath.get(normPath(root ?? s.projectpath ?? "")) ??
-            ((root != null ? root.split("/").pop() : s.projectname) || UNGROUPED_PROJECT)
+            ((root != null ? root.replace(/\/+$/, "").split("/").pop() : s.projectname) || UNGROUPED_PROJECT)
         );
     };
 }

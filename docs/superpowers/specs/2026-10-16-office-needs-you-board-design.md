@@ -13,6 +13,9 @@ toolbar's "need you" chip, which counts only asking agents: the strip says 1 whi
 In Office, Needs you becomes a **notice board** in the hall, a place the boss walks to like a desk. Cards keeps the
 strip as it is.
 
+Decided after the build (2026-10-16): the Office HUD's "need you" chip counts everything that waits on you, the asking
+agents plus the board's rows; its filter still shows only the asking desks. The Cards tab keeps counting asking agents.
+
 ## Placement and look
 
 - Office hides the strip; Cards renders it unchanged.

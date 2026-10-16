@@ -7,6 +7,8 @@ import {
     behindGroups,
     filterLines,
     initiativeLine,
+    initiativeProjects,
+    keepsProject,
     keepsRunKind,
     lineOpenTarget,
     linkedUnder,
@@ -845,5 +847,39 @@ describe("sinceEmptyLine", () => {
 describe("SHIPPED_EMPTY", () => {
     it("says the window it looked at", () => {
         expect(SHIPPED_EMPTY).toBe("Nothing shipped in the last seven days.");
+    });
+});
+
+describe("initiativeProjects", () => {
+    it("names each project once, alphabetically, with the no-project bucket last", () => {
+        expect(
+            initiativeProjects([
+                { project: "waveterm" },
+                {},
+                { project: "opal" },
+                { project: "waveterm" },
+                { project: "" },
+            ])
+        ).toEqual(["opal", "waveterm", ""]);
+    });
+
+    it("is empty when there are no initiatives", () => {
+        expect(initiativeProjects([])).toEqual([]);
+    });
+});
+
+describe("keepsProject", () => {
+    it("keeps every initiative under all, and only the picked project's otherwise", () => {
+        expect(keepsProject(null, "opal")).toBe(true);
+        expect(keepsProject(null, undefined)).toBe(true);
+        expect(keepsProject("opal", "opal")).toBe(true);
+        expect(keepsProject("opal", "waveterm")).toBe(false);
+        expect(keepsProject("opal", undefined)).toBe(false);
+    });
+
+    it("picks the initiatives without a project with the empty name", () => {
+        expect(keepsProject("", undefined)).toBe(true);
+        expect(keepsProject("", "")).toBe(true);
+        expect(keepsProject("", "opal")).toBe(false);
     });
 });

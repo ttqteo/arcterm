@@ -94,7 +94,10 @@ func runsBySession(ctx context.Context, ids []string) (map[string]*waveobj.Run, 
 // recorded under its session id (its current one or an earlier lead session), else from what its transcript says
 // (orchestrate.LaunchOriginOf), which places it in the run with no channel when this store never saw the run.
 func linkSessionsToRuns(ctx context.Context, sessions []wshrpc.SessionActivity) error {
-	defer linkSessionsByOrigin(sessions)
+	defer func() {
+		linkSessionsByOrigin(sessions)
+		fillEngineTreeRoots(ctx, sessions)
+	}()
 	ids := make([]string, 0, len(sessions))
 	for _, s := range sessions {
 		ids = append(ids, s.ID)
@@ -128,6 +131,43 @@ func linkSessionsToRuns(ctx context.Context, sessions []wshrpc.SessionActivity) 
 		sessions[i].TaskId, sessions[i].Role, sessions[i].StageRunId = link.TaskId, link.Role, link.StageRunId
 	}
 	return nil
+}
+
+// fillEngineTreeRoots gives each run session that ran in one of the engine's trees its run's project checkout. A tree
+// under the shared root (<user cache>/arc-wt/<key>) names no project, so without this the session files under the
+// tree's key. The path comes from the linked channel, else from the run itself; a run this store never saw keeps none.
+func fillEngineTreeRoots(ctx context.Context, sessions []wshrpc.SessionActivity) {
+	paths := map[string]string{} // channel id -> project path, "" when it cannot be read
+	channelPath := func(id string) string {
+		if p, ok := paths[id]; ok {
+			return p
+		}
+		ch, err := wstore.DBGet[*waveobj.Channel](ctx, id)
+		if err != nil {
+			log.Printf("sessions: loading channel %s: %v", id, err)
+		}
+		p := ""
+		if ch != nil {
+			p = ch.ProjectPath
+		}
+		paths[id] = p
+		return p
+	}
+	for i := range sessions {
+		s := &sessions[i]
+		if s.RunId == "" || s.ProjectRoot != "" {
+			continue
+		}
+		if _, ok := orchestrate.RunOfWorktree(s.ProjectPath); !ok {
+			continue
+		}
+		if s.ChannelId != "" {
+			s.ProjectRoot = channelPath(s.ChannelId)
+		} else if run, err := wstore.DBGet[*waveobj.Run](ctx, s.RunId); err == nil && run != nil {
+			// a run copies its channel's project path when it is made
+			s.ProjectRoot = run.ProjectPath
+		}
+	}
 }
 
 // linkSessionsByOrigin places the sessions no recorded run claimed by their own transcript. It also runs when the

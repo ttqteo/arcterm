@@ -70,30 +70,34 @@ export function queuedRows(
     });
 }
 
-/** Pure: the row's second line. `Blocked · <reason>`, `After <title>` while what it waits on has not landed, else
- *  `Queued #<place>` (an After that has landed leaves only room to wait for). An After whose title is not known yet
- *  reads as the first 8 characters of its id. */
+/** Pure: the row's second line. `Blocked · <reason>`, `Queued · after <title>` while what it waits on has not landed,
+ *  else `Queued #<place>` (an After that has landed leaves only room to wait for). An After whose title is not known yet
+ *  reads as the first 8 characters of its id. A waiting row leads with `Queued`, so the word survives the truncation of a
+ *  long title. */
 export function queuedMeta(row: QueuedRow): string {
     const { entry } = row;
     if (isBlockedEntry(entry)) {
         return entry.reason ? `Blocked · ${entry.reason}` : "Blocked";
     }
     if (entry.after && !row.afterMet) {
-        return `After ${row.afterTitle ?? entry.after.slice(0, 8)}`;
+        return `Queued · after ${row.afterTitle ?? entry.after.slice(0, 8)}`;
     }
     return `Queued #${row.place}`;
+}
+
+/** Pure: the lead and worker route a queued entry will run with, fixed at queue time: the models the person approved. */
+export function queuedRoute(entry: RunQueueEntry): string {
+    const { data } = entry;
+    const lead = [data.runtime, data.model].filter(Boolean).join(" · ");
+    const route = data.workerroute;
+    const workers = route ? [route.runtime, route.model].filter(Boolean).join(" · ") : "same as lead";
+    return `Lead ${lead} · Workers ${workers}`;
 }
 
 /** Pure: the row's tooltip, three lines: the plan, the lead and the worker route it will run with, and when it was
  *  queued. The route was fixed at queue time, so these are the models the person approved. */
 export function queuedTooltip(entry: RunQueueEntry, now: number): string {
-    const { data } = entry;
-    const lead = [data.runtime, data.model].filter(Boolean).join(" · ");
-    const route = data.workerroute;
-    const workers = route ? [route.runtime, route.model].filter(Boolean).join(" · ") : "same as lead";
-    return [
-        data.planpath || entry.title,
-        `Lead ${lead} · Workers ${workers}`,
-        `Queued ${formatAgo(now - entry.queuedts)}`,
-    ].join("\n");
+    return [entry.data.planpath || entry.title, queuedRoute(entry), `Queued ${formatAgo(now - entry.queuedts)}`].join(
+        "\n"
+    );
 }

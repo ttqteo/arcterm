@@ -40,6 +40,15 @@ describe("sheetFace", () => {
         expect(sheetFace(subject("effort", "e1"), null)).toEqual({ kind: "effort", effortId: "e1" });
     });
 
+    it("draws a queue entry when one is open, whatever the subject", () => {
+        expect(sheetFace(null, null, "q-a")).toEqual({ kind: "queued", entryId: "q-a" });
+        expect(sheetFace(subject("effort", "e1"), null, "q-a")).toEqual({ kind: "queued", entryId: "q-a" });
+    });
+
+    it("draws the subject when no queue entry is open", () => {
+        expect(sheetFace(subject("effort", "e1"), null, null)).toEqual({ kind: "effort", effortId: "e1" });
+    });
+
     // the sheet must not become a second renderer for a subject that already has one
     it.each(["dossier", "briefing"] as const)("leaves %s to its own Brief destination", (kind) => {
         expect(sheetFace(subject(kind), run)).toEqual({ kind: "none" });

@@ -1158,6 +1158,12 @@ func ResMonKillChildrenCommand(w *wshutil.WshRpc, data wshrpc.CommandResMonKillC
 	return resp, err
 }
 
+// command "resmonkillshelltask", wshserver.ResMonKillShellTaskCommand
+func ResMonKillShellTaskCommand(w *wshutil.WshRpc, data wshrpc.CommandResMonKillShellTaskData, opts *wshrpc.RpcOpts) (*wshrpc.ResMonKillRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.ResMonKillRtnData](w, "resmonkillshelltask", data, opts)
+	return resp, err
+}
+
 // command "resmonsnapshot", wshserver.ResMonSnapshotCommand
 func ResMonSnapshotCommand(w *wshutil.WshRpc, data wshrpc.CommandResMonSnapshotData, opts *wshrpc.RpcOpts) (*wshrpc.ResMonSnapshotData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.ResMonSnapshotData](w, "resmonsnapshot", data, opts)
