@@ -61,7 +61,7 @@ The sheet, in the run sheet's frame, top to bottom:
   entry it names, that entry's title, a link to its queue sheet. A room-only entry reads `a free slot (3 of 3
   running)`, from `runs:maxactive` and the active runs.
 - **Blocked:** the whole reason, unclipped.
-- **Plan:** the plan path, opening the file; a quick entry shows its goal instead.
+- **Plan:** the plan path, as selectable text (the Brief has no panel to open a file in); a quick entry shows its goal instead.
 - **Route:** lead and workers, as `queuedTooltip` words them: the models approved at queue time.
 - **Queued:** its age, and the session that queued it when that tab is known.
 - **Actions:** **Start now**, **Run next** (not at #1), **Remove** (the Agent tree's confirm), each the existing
