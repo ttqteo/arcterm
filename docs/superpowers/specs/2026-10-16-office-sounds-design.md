@@ -54,10 +54,11 @@ night are. While a jingle plays the music ducks and comes back after. Losing foc
 | Music | `cockpit.office.sound.music` | off |
 | Volume, 0–1, shared | `cockpit.office.sound.volume` | 0.5 |
 
-All four are in Settings → Appearance → Office and under a **Sound** item of the office menu (`m`). In the office,
-`s` mutes and unmutes all of it at once (Cockpit binding `cockpit:office-sound`, documented in
-`docs/keyboard-shortcuts.md`); the mute is a fifth stored choice, `cockpit.office.sound.muted`, off by default, so the
-three switches keep their values under it.
+All four are in Settings → Appearance → Office; the volume is a pick of 25, 50, 75 or 100 %. In the office, `s`
+mutes and unmutes all of it at once (Cockpit binding `cockpit:office-sound`, documented in
+`docs/keyboard-shortcuts.md`), and so does the office menu's (`m`) item **Mute sound** / **Sound on**, which names
+`s`. The mute is a fifth stored choice, `cockpit.office.sound.muted`, off by default, so the three switches keep
+their values under it.
 
 ## Architecture
 
@@ -76,8 +77,10 @@ Pure logic with a test beside it, consumed by thin wiring, as everywhere in `fro
   `AudioBuffer`; a master `GainNode` for the volume and a music `GainNode` for the duck; `close()` on unmount.
 - **`officesound.tsx`**, renders nothing, mounted inside `CockpitOffice`. It keeps the previous snapshot, plays what
   `pickCue` returns, follows the window's focus, and switches the loop with `officeHoursAtom`.
-- **Boss sounds** are called where the boss moves in `cockpitoffice.tsx`: a step per walk step, `bump` where a step
-  is refused (`canWalk` false), `blip` where a card or the office menu opens.
+- **Boss sounds** are called where the boss moves in `cockpitoffice.tsx`: a `step` every 24 px the arrows walk it (a
+  click's jump across the floor is silent), one `bump` when an arrow's step goes nowhere (`stepToward` returns where
+  the boss stands) until it moves or the arrow is let go, and a `blip` when the dialog box, the full card or the
+  office menu opens.
 - **Stored choices** in `officestore.ts`, `atomWithStorage` with a reader that turns anything unexpected into the
   default, as the existing office choices do.
 
@@ -97,7 +100,8 @@ their notes. Music playing is expected at 1–3 MB and next to no CPU; the measu
   It swaps the player for a log through `cockpitofficedevhooks.ts` (no real sound), injects a fixture, turns a task
   done and asserts `taskDone` in the log, presses `s` and asserts nothing more is logged, then shoots the office menu
   with its Sound item and Settings → Office with the four new rows.
-- **Bench:** `cockpit-office-bench` runs once more with music on, for the RAM figure.
+- **RAM:** WebAudio's buffers live outside the JS heap the bench reads, so the figure is taken by hand: arcterm's
+  WebView2 processes in Task Manager with Office open, music off and then on for a minute.
 - **Hand check** (`docs/open-issues.md`, "0 · Waiting on a hand check"): listen in the real app. Are the jingles
   pleasant, is the default volume right, does the music duck under a jingle, does losing focus silence it.
 
