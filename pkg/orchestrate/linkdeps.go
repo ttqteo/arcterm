@@ -117,3 +117,23 @@ func linkDir(ctx context.Context, link, target string) error {
 	}
 	return nil
 }
+
+// unlinkDependencyDir removes a linked node_modules and leaves its target intact; on a real directory with files it fails
+const unlinkDependencyDir = "node -e \"require('fs').rmdirSync('node_modules')\""
+
+// sharedDependencyRule is in every worker's contract: a project's .arc/setup can link node_modules too, not only the default
+const sharedDependencyRule = "A `node_modules` that is a link into the main checkout is shared with it: run the project's tools in it, but never install into it, delete it, or `rm -r` through it. A task that must change a dependency manifest in such a dir first unlinks it, in that dir, with `" + unlinkDependencyDir + "` (it removes only the link), then installs with the project's package manager."
+
+// notLinkedNote tells a worker which dirs the link step left without node_modules, so it installs there before running
+// their tools instead of reading a missing module as its own bug.
+func notLinkedNote(notLinked []string) string {
+	if len(notLinked) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("These dirs of your tree have no `node_modules`, because what they ask for differs from what the main checkout installed; before running a tool in one, install there with the project's package manager (the folder is the tree's own, so the install touches nothing shared):")
+	for _, d := range notLinked {
+		fmt.Fprintf(&b, "\n- %s", d)
+	}
+	return b.String()
+}

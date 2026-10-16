@@ -82,6 +82,9 @@ type planReviewItem struct{ lens, text string }
 // planReviewBoardItem applies only with a Prototype; %s is the canvas path.
 const planReviewBoardItem = "every `.dc.html` board in the folder of %s has a step in a scenario Final runs that renders what the board shows; each board without one is a finding."
 
+// planReviewManifestItem applies only to a plan on the default task environment: no Setup line and no .arc/setup.
+const planReviewManifestItem = "the plan has no Setup, so each tree the engine makes gets the main checkout's installed `node_modules` linked in wherever its manifests match main's: a task that changes a `package.json` or lockfile needs a Setup line that installs, or the merged trees that Verify and Final run in get main's stale `node_modules`;"
+
 // planReviewSpecGap closes the checklist as a sentence of its own, not a bullet.
 const planReviewSpecGap = "Also report gaps in the spec, and places where the spec and the plan contradict each other."
 
@@ -94,6 +97,9 @@ var planReviewChecklist = []planReviewItem{
 	{PlanReviewLens_Order, "no task waits for another's long implementation when it needs only that task's interface (a type, a wire field, a table, a function's signature): the interface can land first as its own small task, so the implementation and the tasks that use it run beside each other;"},
 	{PlanReviewLens_Tests, "each task states its acceptance criteria and names the tests that prove them;"},
 	{PlanReviewLens_Tests, "the commands the plan names (its Verify, Setup, Check and Final lines, and those in its tasks) exist;"},
+	// SIEM's leads wrapped every vitest call in a fresh worktree plus pnpm install: 109 s a call against vitest's 11 s (run 313fb392)
+	{PlanReviewLens_Tests, "no Verify, Check or Final command, and no task step, rebuilds the environment on every call (a scratch worktree, or a package install per call): the engine already prepares each tree, with the plan's Setup or, with none, the main checkout's linked `node_modules`;"},
+	{PlanReviewLens_Tests, planReviewManifestItem},
 	{PlanReviewLens_Final, "the Final command checks the running app: every task that adds or changes a rendered view, a visual state (loading, empty, error, gone) or an interaction names in its acceptance the scenario step that shows that view or performs that interaction, and Final runs that scenario. A scenario that only opens the surface or panel the view sits in does not count. A check left to a person has no owner in a run, so a plan that leaves one is a finding."},
 	// the final verifier judges only screenshots, so a board no scenario renders ends the run unverified
 	{PlanReviewLens_Final, planReviewBoardItem},
@@ -112,6 +118,10 @@ func writeChecklist(b *strings.Builder, g *waveobj.TaskGroup, tree string, keep 
 		case it.text == planReviewBoardItem:
 			if g.Prototype != "" {
 				fmt.Fprintf(b, "- "+planReviewBoardItem+"\n", DocPath(g, tree, g.Prototype))
+			}
+		case it.text == planReviewManifestItem:
+			if g.Setup == "" {
+				b.WriteString("- " + it.text + "\n")
 			}
 		default:
 			b.WriteString("- " + it.text + "\n")

@@ -18,7 +18,10 @@ import (
 // PlanFormat states the plan shape ParsePlan accepts, for whoever writes the plan. Its example is
 // parsed by TestPlanFormatParses, so the prose and the parser cannot drift apart.
 const PlanFormat = "Plan format. Verify, Setup and Check are optional, go before the first task, and each hold one command in backticks. " +
-	"Left out, Setup is the project's checked-in .arc/setup command, if it has one. " +
+	"Left out, Setup is the project's checked-in .arc/setup command, if it has one. With neither, each tree gets the main " +
+	"checkout's installed node_modules linked in wherever its manifests match main's, so the project's tools run in a task's " +
+	"tree as they are: no Setup, scratch worktree or install wrapper is needed for them. A task that changes a package.json " +
+	"or lockfile then needs a Setup line that installs. " +
 	"All three commands run in a POSIX shell (sh, or Git Bash on Windows). Verify runs after each task merges, with " +
 	"ARC_VERIFY_CHANGED naming a file that lists the paths the merge changed, one per line: a Verify that reads it " +
 	"should test only what those paths can break, so the merge queue waits on those tests, not the whole suite. The " +

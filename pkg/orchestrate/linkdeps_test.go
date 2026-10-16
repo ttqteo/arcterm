@@ -8,8 +8,14 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/runroute"
+	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
 // linkDepsFixture is a repo whose package dirs each hold one case, and an engine tree of it. Every main-side
@@ -151,5 +157,83 @@ func TestRemovingALinkedTreeLeavesMainsNodeModules(t *testing.T) {
 		if b, err := os.ReadFile(filepath.Join(main, d, "node_modules", "marker.txt")); err != nil || string(b) != d {
 			t.Errorf("%s: main's node_modules must survive the tree's removal, read %q err %v", d, b, err)
 		}
+	}
+}
+
+// the dispatch links the task's tree and tells its worker about the dirs it could not link
+func TestScheduleOnceLinksATaskTreeAndNamesWhatItLeftUnlinked(t *testing.T) {
+	allowWorkerHarnessForTest(t)
+	ctx := context.Background()
+	main, _ := linkDepsFixture(t)
+	ch, err := wstore.CreateChannel(ctx, "linkdeps-dispatch", main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := jarvis.NewRun("owner goal", "ws-1", ch.ProjectPath, nil, jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 1)
+	owner.BaseCommit = gitCmd(t, main, "rev-parse", "HEAD")
+	if err := wstore.AppendRun(ctx, ch.OID, owner); err != nil {
+		t.Fatal(err)
+	}
+	g, err := NewTaskGroup(owner.ID, ch.OID, "g", 1, true, []waveobj.TaskNode{{ID: "t-0", Label: "a"}}, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wstore.AppendDag(ctx, &g); err != nil {
+		t.Fatal(err)
+	}
+	var cwd, prompt string
+	old := spawnWorker
+	spawnWorker = func(_ context.Context, _ runroute.Capability, _, _, dir, p string, _ jarvis.RunWorkerOptions) (string, error) {
+		cwd, prompt = dir, p
+		return "tab:worker", nil
+	}
+	restoreAfterStages(t, func() { spawnWorker = old })
+
+	if err := ScheduleOnce(ctx, &g); err != nil {
+		t.Fatal(err)
+	}
+	if cwd == "" || strings.EqualFold(filepath.Clean(cwd), filepath.Clean(main)) {
+		t.Fatalf("the task must run in its own tree, got cwd %q", cwd)
+	}
+	if !isLinkAt(t, filepath.Join(cwd, "same", "node_modules")) {
+		t.Fatal("the task's tree must get main's node_modules linked in")
+	}
+	for _, want := range []string{notLinkedNote([]string{"pkgdiff (package.json differs from the main checkout's)"})[:40], "- pkgdiff (package.json differs from the main checkout's)", "- wsdiff (pnpm-workspace.yaml differs from the main checkout's)"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("the worker's prompt must hold %q:\n%s", want, prompt)
+		}
+	}
+}
+
+func TestTaskPromptNamesUnlinkedDirsOnlyWhenThereAreSome(t *testing.T) {
+	owner := waveobj.Run{Goal: "g"}
+	task := &waveobj.TaskNode{ID: "t-1", Label: "a"}
+	if p := taskPrompt(&waveobj.TaskGroup{}, task, &owner, "claude", "", "", nil); strings.Contains(p, "have no `node_modules`") {
+		t.Fatalf("a tree with nothing left unlinked gets no install note:\n%s", p)
+	}
+	p := taskPrompt(&waveobj.TaskGroup{}, task, &owner, "claude", "", "", []string{"web (package.json differs from the main checkout's)"})
+	if !strings.Contains(p, "have no `node_modules`") || !strings.Contains(p, "\n- web (package.json differs from the main checkout's)") {
+		t.Fatalf("the prompt must name each unlinked dir and say to install there:\n%s", p)
+	}
+}
+
+func TestWorkerContractSaysALinkedNodeModulesIsShared(t *testing.T) {
+	c := workerContract(&waveobj.TaskGroup{}, &waveobj.TaskNode{ID: "t-1"}, "claude", "")
+	for _, want := range []string{"never install into it, delete it, or `rm -r` through it", unlinkDependencyDir} {
+		if !strings.Contains(c, want) {
+			t.Errorf("the contract must hold %q:\n%s", want, c)
+		}
+	}
+}
+
+func TestPlanReviewAsksForAnInstallingSetupOnlyOnTheDefault(t *testing.T) {
+	rebuild := "rebuilds the environment on every call"
+	onDefault := planReviewPrompt(&waveobj.TaskGroup{PlanPath: "p.md"}, "tree")
+	if !strings.Contains(onDefault, planReviewManifestItem) || !strings.Contains(onDefault, rebuild) {
+		t.Fatalf("a plan with no Setup is checked for manifest changes and per-call rebuilds:\n%s", onDefault)
+	}
+	withSetup := planReviewPrompt(&waveobj.TaskGroup{PlanPath: "p.md", Setup: "pnpm install"}, "tree")
+	if strings.Contains(withSetup, planReviewManifestItem) || !strings.Contains(withSetup, rebuild) {
+		t.Fatalf("a plan with a Setup is not asked for an installing one, but still for per-call rebuilds:\n%s", withSetup)
 	}
 }

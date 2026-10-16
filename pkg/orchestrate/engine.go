@@ -705,6 +705,7 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 		taskBase := spawnBase
 		var branch string
 		var worktreeMs, setupMs int64
+		var notLinked []string
 		if IsGitRepo(owner.ProjectPath) {
 			// a lane's tasks share one tree, so each starts from the commits of the task before it
 			key := LaneWorktreeKey(g, taskID)
@@ -722,7 +723,8 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 				// no progress sink: Setup runs under the dag mutation lock, so nothing can read a
 				// partial tail while it holds the lock anyway
 				setupCtx := jobqueue.WithSource(context.WithoutCancel(ctx), jobqueue.Source{RunId: owner.ID, Label: taskStepLabel("Setup", g, taskID)})
-				_, _, serr := PrepareTree(withRunCmdOwner(setupCtx, owner.ID, PlanCmd_Setup, ""), wt, g.Setup)
+				var serr error
+				_, notLinked, serr = PrepareTree(withRunCmdOwner(setupCtx, owner.ID, PlanCmd_Setup, ""), wt, g.Setup)
 				setupMs = time.Since(setupStart).Milliseconds()
 				if serr != nil {
 					// only a new tree is set up, so a retry must not reuse this half-prepared one. The branch
@@ -749,7 +751,7 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 		if err := os.Remove(reportPath); err != nil && !os.IsNotExist(err) {
 			log.Printf("schedule dag %s task %s: removing a stale report: %v", g.OID, taskID, err)
 		}
-		prompt := taskPrompt(g, task, owner, pin.Runtime, cwd, predecessorHandoff(task, g, runs))
+		prompt := taskPrompt(g, task, owner, pin.Runtime, cwd, predecessorHandoff(task, g, runs), notLinked)
 		// a new session per dispatch: its transcript is named by the id, so liveness and evidence never
 		// read a previous attempt's file as this one's. "" for a runtime that names its own session (agy):
 		// NoteWorkerSession binds the id from its first status report.
@@ -946,6 +948,7 @@ func workerContract(g *waveobj.TaskGroup, task *waveobj.TaskNode, runtime, tree 
 	fmt.Fprintf(&b, "The plan is approved: don't re-plan or pause for design approval. If a consequential decision isn't pinned, or the plan and the code disagree, ask once with %s and concrete options, then wait; the lead or the human answers.\n", jarvis.AskTool(runtime))
 	b.WriteString("A reviewer checks your commit against this task and the spec before it lands, and the lead reads your report.\n")
 	b.WriteString("Edit files with your edit tool; don't script multi-kilobyte replacements through the shell.\n")
+	b.WriteString(sharedDependencyRule + "\n")
 	b.WriteString("Run the tests your task names")
 	if g.Check != "" {
 		fmt.Fprintf(&b, ", and `%s`,", g.Check)
@@ -1101,12 +1104,17 @@ func truncateNote(s string, max int) string {
 	return cut + "..."
 }
 
-// taskPrompt is the child's goal: the worker contract, then the task's text (its RunSpec goal, else its
-// label, with the plan description and its decision pins), then the handoff from landed dependencies.
-func taskPrompt(g *waveobj.TaskGroup, task *waveobj.TaskNode, owner *waveobj.Run, runtime, tree, handoff string) string {
+// taskPrompt is the child's goal: the worker contract and the dirs the tree's link step left unlinked, then the
+// task's text (its RunSpec goal, else its label, with the plan description and its decision pins), then the handoff
+// from landed dependencies.
+func taskPrompt(g *waveobj.TaskGroup, task *waveobj.TaskNode, owner *waveobj.Run, runtime, tree, handoff string, notLinked []string) string {
 	var b strings.Builder
 	b.WriteString(workerContract(g, task, runtime, tree))
 	b.WriteString("\n\n")
+	if note := notLinkedNote(notLinked); note != "" {
+		b.WriteString(note)
+		b.WriteString("\n\n")
+	}
 	if g.Preamble != "" {
 		b.WriteString("The plan's header applies to every task:\n")
 		b.WriteString(g.Preamble)

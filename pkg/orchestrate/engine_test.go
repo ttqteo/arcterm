@@ -81,7 +81,7 @@ func TestTaskPromptCarriesDescriptionAndContract(t *testing.T) {
 	g := &waveobj.TaskGroup{}
 	desc := "pin: date-only format (Aug 16)"
 	task := &waveobj.TaskNode{ID: "t-1", Label: "add fmtDate", Description: desc}
-	p := taskPrompt(g, task, &owner, "claude", "", "")
+	p := taskPrompt(g, task, &owner, "claude", "", "", nil)
 	for _, want := range []string{"add fmtDate", desc, workerContract(g, task, "claude", "")} {
 		if !strings.Contains(p, want) {
 			t.Fatalf("prompt missing %q: %q", want, p)
@@ -93,7 +93,7 @@ func TestTaskPromptLabelOnlyStillHasContract(t *testing.T) {
 	owner := jarvis.NewRun("owner", "ws-1", "/p", nil, jarvis.RunMode_Orchestrator, nil, 1)
 	g := &waveobj.TaskGroup{}
 	task := &waveobj.TaskNode{ID: "t-1", Label: "plain"}
-	p := taskPrompt(g, task, &owner, "claude", "", "")
+	p := taskPrompt(g, task, &owner, "claude", "", "", nil)
 	if !strings.HasPrefix(p, workerContract(g, task, "claude", "")) {
 		t.Fatalf("contract must open the prompt: %q", p)
 	}
@@ -108,7 +108,7 @@ func TestTaskPromptOrdersContractTaskHandoff(t *testing.T) {
 	owner := jarvis.NewRun("owner", "ws-1", "/p", nil, jarvis.RunMode_Orchestrator, nil, 1)
 	g := &waveobj.TaskGroup{}
 	task := &waveobj.TaskNode{ID: "t-2", Label: "use fmtDate"}
-	p := taskPrompt(g, task, &owner, "claude", "", "landed as commit abc1234")
+	p := taskPrompt(g, task, &owner, "claude", "", "landed as commit abc1234", nil)
 	ci := strings.Index(p, workerContract(g, task, "claude", ""))
 	ti := strings.Index(p, "use fmtDate")
 	hi := strings.Index(p, "landed as commit abc1234")
@@ -123,7 +123,7 @@ func TestTaskPromptCarriesThePlanHeader(t *testing.T) {
 	owner := jarvis.NewRun("owner", "ws-1", "/p", nil, jarvis.RunMode_Orchestrator, nil, 1)
 	g := &waveobj.TaskGroup{Preamble: "Never edit docs/."}
 	task := &waveobj.TaskNode{ID: "t-1", Label: "add fmtDate"}
-	p := taskPrompt(g, task, &owner, "claude", "", "")
+	p := taskPrompt(g, task, &owner, "claude", "", "", nil)
 	ci := strings.Index(p, workerContract(g, task, "claude", ""))
 	hi := strings.Index(p, "The plan's header applies to every task:\nNever edit docs/.")
 	ti := strings.Index(p, "add fmtDate")
@@ -136,7 +136,7 @@ func TestTaskPromptWithoutPlanHeader(t *testing.T) {
 	owner := jarvis.NewRun("owner", "ws-1", "/p", nil, jarvis.RunMode_Orchestrator, nil, 1)
 	g := &waveobj.TaskGroup{}
 	task := &waveobj.TaskNode{ID: "t-1", Label: "add fmtDate"}
-	p := taskPrompt(g, task, &owner, "claude", "", "")
+	p := taskPrompt(g, task, &owner, "claude", "", "", nil)
 	if strings.Contains(p, "header applies to every task") {
 		t.Fatalf("no preamble means no header line: %q", p)
 	}
@@ -371,7 +371,7 @@ func TestTruncateNoteBoundsAndCollapses(t *testing.T) {
 
 func TestTaskPromptRunSpecGoalWins(t *testing.T) {
 	owner := jarvis.NewRun("owner", "ws-1", "/p", nil, jarvis.RunMode_Orchestrator, nil, 1)
-	p := taskPrompt(&waveobj.TaskGroup{}, &waveobj.TaskNode{ID: "t-1", Label: "label", RunSpec: waveobj.RunSpec{Goal: "explicit goal"}}, &owner, "claude", "", "")
+	p := taskPrompt(&waveobj.TaskGroup{}, &waveobj.TaskNode{ID: "t-1", Label: "label", RunSpec: waveobj.RunSpec{Goal: "explicit goal"}}, &owner, "claude", "", "", nil)
 	if !strings.Contains(p, "explicit goal") {
 		t.Fatalf("runspec goal missing from prompt: %q", p)
 	}
@@ -1786,7 +1786,7 @@ func TestTaskPromptCarriesReviewFindingsAndGuidance(t *testing.T) {
 		ReviewVerdict: ReviewVerdict_Fail, ReviewCommit: "work111", ReviewNote: "misses the empty-input case",
 		LeadGuidance: "reuse parseDate",
 	}
-	p := taskPrompt(&waveobj.TaskGroup{}, task, &owner, "claude", "", "")
+	p := taskPrompt(&waveobj.TaskGroup{}, task, &owner, "claude", "", "", nil)
 	for _, want := range []string{
 		"A reviewer rejected the previous attempt (commit work111): misses the empty-input case",
 		"Fix these on top of that commit; don't restart.",
@@ -1797,7 +1797,7 @@ func TestTaskPromptCarriesReviewFindingsAndGuidance(t *testing.T) {
 		}
 	}
 	passed := &waveobj.TaskNode{ID: "t-2", Label: "x", ReviewVerdict: ReviewVerdict_Pass, ReviewNote: "fine", ReviewCommit: "c"}
-	if strings.Contains(taskPrompt(&waveobj.TaskGroup{}, passed, &owner, "claude", "", ""), "rejected") {
+	if strings.Contains(taskPrompt(&waveobj.TaskGroup{}, passed, &owner, "claude", "", "", nil), "rejected") {
 		t.Fatal("a passed review carries no findings")
 	}
 }

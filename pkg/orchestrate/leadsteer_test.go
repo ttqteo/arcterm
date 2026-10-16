@@ -232,7 +232,7 @@ func TestTakeLeadToldConsumesTheLeadsText(t *testing.T) {
 func TestTaskPromptCarriesLeadNotes(t *testing.T) {
 	owner := jarvis.NewRun("owner", "ws-1", "/p", nil, jarvis.RunMode_Orchestrator, nil, 1)
 	task := &waveobj.TaskNode{ID: "t-2", Label: "use fmtDate", LeadNotes: []string{"fmtDate moved to util/date.go"}}
-	p := taskPrompt(&waveobj.TaskGroup{}, task, &owner, "claude", "", "")
+	p := taskPrompt(&waveobj.TaskGroup{}, task, &owner, "claude", "", "", nil)
 	if !strings.Contains(p, "The lead added after earlier tasks landed:\n- fmtDate moved to util/date.go") {
 		t.Fatalf("prompt missing the lead's note: %q", p)
 	}
