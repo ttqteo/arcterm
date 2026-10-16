@@ -18,6 +18,10 @@ export const attentionAtom = atom<AttentionItem[]>([]) as PrimitiveAtom<Attentio
 // false until the first poll lands: the list it brings is what was already waiting, not news (notifyevents.ts)
 export const attentionLoadedAtom = atom(false) as PrimitiveAtom<boolean>;
 
+// DEV only (the office-needs-you-board scenario): Needs you rows to show in place of the live list. null is live.
+// The poll never writes it, so a scenario's rows survive the next loadAttention.
+export const attentionFixtureAtom = atom<AttentionItem[] | null>(null) as PrimitiveAtom<AttentionItem[] | null>;
+
 // loadAttention is now fired by events (ask cleared, block closed) as well as the poll, so two loads
 // can be in flight at once. Only the newest one may write: an in-flight poll that started before the
 // ask was answered would otherwise land after it and restore the count that was just cleared.
