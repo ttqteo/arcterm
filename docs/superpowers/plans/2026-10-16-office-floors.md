@@ -49,7 +49,9 @@ machinery, kind `"lift"`), the ride, carrying and dragging rooms, and the chip's
 
 **Depends on:** none
 
-**Files:**
+**Files:** `frontend/app/view/agents/officelayout.ts`, `frontend/app/view/agents/officelayout.test.ts`
+
+What each file is for:
 - Create: `frontend/app/view/agents/officelayout.ts`
 - Create: `frontend/app/view/agents/officelayout.test.ts`
 
@@ -305,7 +307,9 @@ git commit -m "feat(office): the floors' arrangement model" -- frontend/app/view
 
 **Depends on:** none
 
-**Files:**
+**Files:** `frontend/app/view/agents/officecontrols.ts`, `frontend/app/view/agents/officecontrols.test.ts`
+
+What each file is for:
 - Modify: `frontend/app/view/agents/officecontrols.ts`
 - Test: `frontend/app/view/agents/officecontrols.test.ts`
 
@@ -354,9 +358,12 @@ git commit -m "feat(office): keys for the lift and for carrying a room" -- front
 
 **Depends on:** Task 1
 
-**Files:**
+**Files:** `frontend/app/view/agents/officeplanmodel.ts`, `frontend/app/view/agents/officeplanmodel.test.ts`, `docs/superpowers/specs/2026-10-16-office-floors-design.md`
+
+What each file is for:
 - Modify: `frontend/app/view/agents/officeplanmodel.ts`
 - Test: `frontend/app/view/agents/officeplanmodel.test.ts`
+- Modify (only if the pitches change, see Global Constraints): `docs/superpowers/specs/2026-10-16-office-floors-design.md`
 
 The plan builds one floor. Read `officeplanmodel.ts` whole first: `placeDesks`, `placeSeats`, the lounge spots and
 `popupBox` stay; the band loop, the Home booth, `OTHER_RUNS` and the empty meeting room go.
@@ -443,7 +450,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git commit -m "feat(office): the plan builds one floor of four project rooms" -- frontend/app/view/agents/officeplanmodel.ts frontend/app/view/agents/officeplanmodel.test.ts
+git commit -m "feat(office): the plan builds one floor of four project rooms" -- frontend/app/view/agents/officeplanmodel.ts frontend/app/view/agents/officeplanmodel.test.ts docs/superpowers/specs/2026-10-16-office-floors-design.md
 ```
 
 ---
@@ -452,7 +459,9 @@ git commit -m "feat(office): the plan builds one floor of four project rooms" --
 
 **Depends on:** Task 3
 
-**Files:**
+**Files:** `frontend/app/view/agents/officeboss.ts`, `frontend/app/view/agents/officeboss.test.ts`
+
+What each file is for:
 - Modify: `frontend/app/view/agents/officeboss.ts`
 - Test: `frontend/app/view/agents/officeboss.test.ts`
 
@@ -502,7 +511,9 @@ git commit -m "feat(office): the boss walks a floor: table zones, the chip and t
 
 **Depends on:** Task 3
 
-**Files:**
+**Files:** `frontend/app/view/office/scenery.ts`, `frontend/app/view/office/scenery.test.ts`
+
+What each file is for:
 - Modify: `frontend/app/view/office/scenery.ts`
 - Test: `frontend/app/view/office/scenery.test.ts`
 
@@ -551,7 +562,9 @@ git commit -m "feat(office): draw a floor: project rooms, table zones, the lift 
 
 **Depends on:** Task 2, Task 4, Task 5
 
-**Files:**
+**Files:** `frontend/app/view/agents/officestore.ts`, `frontend/app/view/agents/cockpitoffice.tsx`, `frontend/app/view/agents/cockpitsurface.tsx`, `frontend/app/view/agents/usecockpitkeyboard.ts`, `frontend/app/view/agents/officedialogmodel.ts`, `frontend/app/view/agents/officedialogmodel.test.ts`, `frontend/app/view/agents/cockpitofficedevhooks.ts`, `frontend/app/store/keybindings/bindings.ts`, `docs/keyboard-shortcuts.md`
+
+What each file is for:
 - Modify: `frontend/app/view/agents/officestore.ts`
 - Modify: `frontend/app/view/agents/cockpitoffice.tsx`
 - Modify: `frontend/app/view/agents/cockpitsurface.tsx`
@@ -639,7 +652,9 @@ git commit -m "feat(office): floors and the lift: the panel, the ride, PageUp / 
 
 **Depends on:** Task 6
 
-**Files:**
+**Files:** `frontend/app/view/agents/cockpitoffice.tsx`, `frontend/app/view/agents/cockpitsurface.tsx`, `frontend/app/view/agents/usecockpitkeyboard.ts`, `frontend/app/view/agents/officedialogmodel.ts`, `frontend/app/view/agents/officedialogmodel.test.ts`, `frontend/app/view/agents/officestore.ts`, `frontend/app/store/keybindings/bindings.ts`, `docs/keyboard-shortcuts.md`
+
+What each file is for:
 - Modify: `frontend/app/view/agents/cockpitoffice.tsx`
 - Modify: `frontend/app/view/agents/cockpitsurface.tsx`
 - Modify: `frontend/app/view/agents/usecockpitkeyboard.ts`
@@ -703,7 +718,9 @@ git commit -m "feat(office): arrange the rooms with g or by dragging, and the ch
 
 **Depends on:** Task 7
 
-**Files:**
+**Files:** `scripts/cockpit-fixtures/scenarios.mjs`, `scripts/cdp/cockpitofficescenarios.mjs`, `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/guide/cockpit.md`, `docs/open-issues.md`
+
+What each file is for:
 - Modify: `scripts/cockpit-fixtures/scenarios.mjs`
 - Modify: `scripts/cdp/cockpitofficescenarios.mjs`, `scripts/cdp/scenarios.mjs`
 - Modify: `CHANGELOG.md`, `docs/guide/cockpit.md`, `docs/open-issues.md`
