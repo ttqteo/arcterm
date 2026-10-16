@@ -327,7 +327,7 @@ const run = (id: string, states: string[], o: Partial<PlanRun> = {}): PlanRun =>
     tasks: states.map((state, i) => ({ id: `t${i + 1}`, label: `t${i + 1}`, state, asking: false })),
     ...o,
 });
-const snap = (agents: PlanAgent[], runs: PlanRun[], board: { key: string; kind: string }[] = []) =>
+const snap = (agents: PlanAgent[], runs: PlanRun[], board: { key: string; kind: string }[] | null = []) =>
     cueSnapshot(agents, runs, board);
 
 describe("diffCues", () => {
@@ -367,12 +367,37 @@ describe("diffCues", () => {
         const a = snap([], []);
         expect(diffCues(a, snap([agent("a", "asking")], [run("r", ["done"], { landed: true })]))).toEqual([]);
     });
+
+    it("takes the Needs you list's first load as a baseline too", () => {
+        const loading = snap([], [], null);
+        const loaded = snap([], [], [{ key: "k1", kind: "plan-review" }]);
+        expect(diffCues(loading, loaded)).toEqual([]);
+        expect(diffCues(loaded, snap([], [], [{ key: "k1", kind: "plan-review" }, { key: "k2", kind: "lead-ask" }]))).toEqual([
+            "needsYou",
+        ]);
+    });
+
+    it("gives one cue for five tasks done at once", () => {
+        const a = snap([], [run("r", ["running", "running", "running", "running", "running"])]);
+        expect(diffCues(a, snap([], [run("r", ["done", "done", "done", "done", "done"])]))).toEqual(["taskDone"]);
+    });
+
+    it("lists every cue of a mixed burst in rank order", () => {
+        const a = snap([agent("a")], [run("r", ["running", "running"])]);
+        expect(diffCues(a, snap([agent("a", "asking")], [run("r", ["done", "failed"])]))).toEqual([
+            "needsYou",
+            "setback",
+            "taskDone",
+        ]);
+    });
 });
 
 describe("pickCue", () => {
     it("plays the highest ranked of a burst, once", () => {
         expect(pickCue(["taskDone", "landed", "setback"], null, 0)).toBe("setback");
         expect(pickCue(["taskDone", "needsYou"], null, 0)).toBe("needsYou");
+        expect(pickCue(["setback", "needsYou"], null, 0)).toBe("needsYou");
+        expect(pickCue(["landed", "taskDone"], null, 0)).toBe("landed");
         expect(pickCue([], null, 0)).toBeNull();
     });
 
@@ -432,7 +457,8 @@ export interface CueSnapshot {
     // `${run}/${task}` to its state
     tasks: Map<string, string>;
     taskAsking: Set<string>;
-    board: Map<string, string>;
+    // null until the Needs you list's first load (attentionLoadedAtom): that load is a baseline, not news
+    board: Map<string, string> | null;
 }
 
 const FAILED = new Set(["review-failed", "verify-failed", "failed"]);
@@ -441,7 +467,11 @@ export const CUE_RANK: readonly CueId[] = ["needsYou", "setback", "landed", "tas
 export const CUE_GAP_MS = 1500;
 export const STEP_SOUND_PX = 24;
 
-export function cueSnapshot(agents: readonly PlanAgent[], runs: readonly PlanRun[], board: readonly BoardCue[]): CueSnapshot {
+export function cueSnapshot(
+    agents: readonly PlanAgent[],
+    runs: readonly PlanRun[],
+    board: readonly BoardCue[] | null
+): CueSnapshot {
     const s: CueSnapshot = {
         agents: new Set(agents.map((a) => a.id)),
         asking: new Set(agents.filter((a) => a.state === "asking").map((a) => a.id)),
@@ -450,7 +480,7 @@ export function cueSnapshot(agents: readonly PlanAgent[], runs: readonly PlanRun
         leadAsking: new Set(runs.filter((r) => r.leadAsking).map((r) => r.id)),
         tasks: new Map(),
         taskAsking: new Set(),
-        board: new Map(board.map((b) => [b.key, b.kind])),
+        board: board == null ? null : new Map(board.map((b) => [b.key, b.kind])),
     };
     for (const r of runs) {
         for (const t of r.tasks) {
@@ -480,8 +510,9 @@ export function diffCues(prev: CueSnapshot | null, next: CueSnapshot): CueId[] {
     ) {
         out.add("needsYou");
     }
-    for (const [key, kind] of next.board) {
-        if (!prev.board.has(key)) {
+    // the list's first load (prev.board null) only sets the baseline
+    for (const [key, kind] of prev.board && next.board ? next.board : []) {
+        if (!prev.board!.has(key)) {
             out.add(SETBACK_KINDS.has(kind) ? "setback" : "needsYou");
         }
     }
@@ -880,6 +911,7 @@ export function playOfficeUi(id: UiCue): void {
 import { atoms } from "@/app/store/global";
 import { useAtomValue } from "jotai";
 import { useEffect, useRef } from "react";
+import { attentionFixtureAtom, attentionLoadedAtom } from "./attentionstore";
 import { closeOfficeSink, officeSink, soundLogging } from "./officeaudio";
 import type { PlanAgent, PlanRun } from "./officeplanmodel";
 import { cueSnapshot, diffCues, pickCue, soundGate, type BoardCue, type CueSnapshot, type SoundGate } from "./officesoundcues";
@@ -905,7 +937,12 @@ function useSoundGate(): SoundGate {
 }
 
 export function OfficeSound(props: { agents: PlanAgent[]; runs: PlanRun[]; board: BoardCue[]; night: boolean }) {
-    const { agents, runs, board, night } = props;
+    const { agents, runs, night } = props;
+    // the Needs you list can land after the office mounts: until its first load (or a DEV fixture) it is not there,
+    // so that load is a baseline and does not chime (officesoundcues.ts, CueSnapshot.board)
+    const loaded = useAtomValue(attentionLoadedAtom);
+    const fixture = useAtomValue(attentionFixtureAtom);
+    const board = loaded || fixture != null ? props.board : null;
     const gate = useSoundGate();
     const gateRef = useRef(gate);
     gateRef.current = gate;
@@ -932,7 +969,7 @@ export function OfficeSound(props: { agents: PlanAgent[]; runs: PlanRun[]; board
         officeSink().volume(gate.volume);
     }, [gate.volume]);
 
-    // unfocused, muted or switched off, the music stops; back on, its loop starts again
+    // unfocused, muted or switched off, the music stops; back on, its loop starts again from the top (spec, "Music")
     useEffect(() => {
         officeSink().music(gate.music ? (night ? "night" : "day") : null);
     }, [gate.music, night]);
@@ -997,19 +1034,20 @@ override), so the scenario's fixture runs sound too.
   `const to = stepToward(plan, b.at, b.holding, dist); bossSound(b.at, to);` then set `at: to` in the
   `globalStore.set(bossAtom, …)` that follows.
 - In `walk`'s `if (!movingRef.current)` branch the same: `const to = stepToward(planRef.current, b.at, dir, ARROW_STEP_PX); bossSound(b.at, to);` and `at: to`.
-- In `release`, after the `holding` check: `bumped.current = false;`.
+- In `release`, as its first line, before the `holding` check: `bumped.current = false;`. With reduced motion or the
+  animation off `holding` is never set, so a reset inside or after that check would leave the bump latched.
 - A click's walk (`walkTo`, the `advance` branch of `stepAll`) stays silent.
 
 Then the blip, as an effect in `CockpitOffice`:
 
 ```ts
-    // a blip when the dialog box, the full card or the office menu opens
+    // a blip when the dialog box, the full card or the office menu opens; carrying a room (g, layer "carry") is silent
     useEffect(() => {
         let layer = globalStore.get(layerAtom);
         let menu = globalStore.get(officeMenuOpenAtom);
         const offLayer = globalStore.sub(layerAtom, () => {
             const next = globalStore.get(layerAtom);
-            if (next !== layer && next !== "walk") {
+            if (next !== layer && (next === "dialog" || next === "card")) {
                 playOfficeUi("blip");
             }
             layer = next;
@@ -1031,9 +1069,11 @@ Then the blip, as an effect in `CockpitOffice`:
 Imports: `OfficeSound` from `./officesound`, `playOfficeUi` from `./officeaudio`, `stepSound` and `type BoardCue` from
 `./officesoundcues`; `Point` is already imported for `BossState`.
 
-**Step 5:** Run `npx vitest run frontend/app/view/agents` and the Check command. Both must pass. Then, with
-`task dev` running (or a CDP shot if this is an engine worktree), open Cockpit → Office and confirm the office still
-draws and walks; the sound itself is the hand check of Task 8.
+**Step 5:** Run `npx vitest run frontend/app/view/agents` and the Check command. Both must pass.
+
+**Acceptance:** Task 8's `office-sound` scenario shows this task's work: steps 1–4 (the jingles from what the office
+draws), step 8 (the boss's `step`, one `bump` at a wall, `blip` on `m`, and the boss walking at all) and step 9 (the
+music, day and night, and `s` stopping it). Final runs them; the sound itself is the hand check of Task 8.
 
 **Step 6:** Commit: `git commit -m "feat(office): the office plays its jingles, music and the boss's sounds" -- frontend/app/view/agents/officesound.tsx frontend/app/view/agents/cockpitoffice.tsx frontend/app/view/agents/cockpitsurface.tsx`
 
@@ -1081,7 +1121,7 @@ Run `npx vitest run frontend/app/view/agents/settingsmodel.test.ts`. Expected: F
 {
     id: "appearance.officesoundmusic",
     title: "Office music",
-    desc: "A chiptune loop while the Office is in view, one for work hours and one for after. It pauses when arcterm loses focus.",
+    desc: "A chiptune loop while the Office is in view, one for work hours and one for after. It stops when arcterm loses focus and starts again on focus.",
     key: "cockpit.office.sound.music",
     scope: "local",
 },
@@ -1145,6 +1185,9 @@ differs from `DEFAULT_SOUND.<field>`; revert sets the default).
 
 **Step 5:** Run `npx vitest run frontend/app/view/agents/settingsmodel.test.ts` and the Check command. Both pass.
 
+**Acceptance:** shown by Task 8's `office-sound` step 7 (the four rows on Settings → Appearance, a switch and a volume
+picked there landing in their `localStorage` keys).
+
 **Step 6:** Commit: `git commit -m "feat(settings): the Office's jingles, boss sounds, music and volume in Appearance" -- frontend/app/view/agents/settingsmodel.ts frontend/app/view/agents/settingsmodel.test.ts frontend/app/view/agents/settingspages/appearance.tsx frontend/app/view/agents/settingssurface.tsx`
 
 ---
@@ -1168,13 +1211,19 @@ it("mutes on s, except while the menu takes every key", () => {
 });
 ```
 
-- `officeMenuItems` takes a last argument `muted: boolean`. Pass `false` at each existing call; the label list of the
-  first test gains `"Mute sound"` after `"Events"` and the key list gains `"s"` after the Events `undefined`. Add:
+- `officeMenuItems(asks, newEvents, eventsOpen, boardRows, inRoom, background = 0, backgroundOpen = false)` gains an
+  eighth parameter, `muted = false`, after `backgroundOpen`. Leave every existing call as it is. The sound item goes
+  after the Background entry (when it shows) and before `Cards view`, so `events` stays at index 7 and the Background
+  tests' `items[at - 1].id === "events"` still holds. In the first test ("lists START's items…") the label list gains
+  `"Mute sound"` after `"Events"` and the key list gains `"s"` after the Events `undefined`. Fix any other
+  index-based assertion in `officecontrols.test.ts` the new item moves (one past `events`). Add:
 
 ```ts
-it("names the sound item by what it will do", () => {
-    expect(officeMenuItems(0, 0, false, 0, false).find((i) => i.id === "sound")?.label).toBe("Mute sound");
-    expect(officeMenuItems(0, 0, false, 0, true).find((i) => i.id === "sound")?.label).toBe("Sound on");
+it("names the sound item by what it will do, after Background and before Cards view", () => {
+    expect(officeMenuItems(0, 0, false, 0, true, 0, false, false).find((i) => i.id === "sound")?.label).toBe("Mute sound");
+    expect(officeMenuItems(0, 0, false, 0, true, 0, false, true).find((i) => i.id === "sound")?.label).toBe("Sound on");
+    const ids = officeMenuItems(0, 0, false, 0, true, 2, false).map((i) => i.id);
+    expect(ids.slice(ids.indexOf("events"))).toEqual(["events", "background", "sound", "cards", "keys"]);
 });
 ```
 
@@ -1182,14 +1231,15 @@ Run `npx vitest run frontend/app/view/agents/officecontrols.test.ts`. Expected: 
 
 **Step 2: Implement** in `officecontrols.ts`: `OfficeKeyAction` gains `| { do: "sound" }`; in `officeKey`, after the
 `f` check, `if (key === "s") { return { do: "sound" }; }`. `OfficeMenuId` gains `"sound"`; `officeMenuItems` gains
-the parameter `muted: boolean` and, after the `events` item, `{ id: "sound", label: muted ? "Sound on" : "Mute sound", key: "s" },`.
+the parameter `muted = false` after `backgroundOpen` and, after the Background spread and before the `cards` item,
+`{ id: "sound", label: muted ? "Sound on" : "Mute sound", key: "s" },`. Add `muted` to its doc comment.
 
 **Step 3: Wire it.**
 - `usecockpitkeyboard.ts`, in the `switch (act.do)`: `case "sound": e.preventDefault(); toggleOfficeMute(); return;`
   (import `toggleOfficeMute` from `./officestore`).
 - `cockpitsurface.tsx`, in `onOfficeMenu`: `case "sound": toggleOfficeMute(); return;`.
 - `cockpitoffice.tsx`: `const muted = soundSwitch(useAtomValue(officeSoundMutedAtom), DEFAULT_SOUND.muted);` and pass
-  it as the last argument of `officeMenuItems(...)`.
+  it to `officeMenuItems(...)` after `props.backgroundOpen`.
 - `bindings.ts`, in `buildCockpitBindings` after `cockpit:office-menu`:
   `doc("cockpit:office-sound", "s", "Office: mute or unmute its sound (jingles, boss sounds, music)"),`.
 - `docs/keyboard-shortcuts.md`, after the `m (Office)` row:
@@ -1198,6 +1248,10 @@ the parameter `muted: boolean` and, after the `events` item, `{ id: "sound", lab
 
 **Step 4:** Run `npx vitest run frontend/app/view/agents frontend/app/store/keybindings` and the Check command. Both
 pass (a keybindings test that checks for duplicate keys per surface must still pass: `s` is free on the Cockpit).
+
+**Acceptance:** shown by Task 8's `office-sound` steps 5 (`s` mutes: the key is stored and nothing more plays) and 6
+(the office menu's Mute sound row with its `s`), and by `cockpit-office-controls` step 8, whose menu list Task 8
+updates.
 
 **Step 5:** Commit: `git commit -m "feat(office): s and the office menu mute the office's sound" -- frontend/app/view/agents/officecontrols.ts frontend/app/view/agents/officecontrols.test.ts frontend/app/view/agents/usecockpitkeyboard.ts frontend/app/view/agents/cockpitoffice.tsx frontend/app/view/agents/cockpitsurface.tsx frontend/app/store/keybindings/bindings.ts docs/keyboard-shortcuts.md`
 
@@ -1210,18 +1264,31 @@ pass (a keybindings test that checks for duplicate keys per surface must still p
 **Files:** `frontend/app/view/agents/cockpitofficedevhooks.ts`, `scripts/cdp/cockpitofficescenarios.mjs`, `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/open-issues.md`, `docs/superpowers/specs/2026-10-16-office-sounds-design.md`
 
 **Step 1: DEV hooks.** In `cockpitofficedevhooks.ts` declare on `Window`
-`__cockpitOfficeSound?: (on: boolean) => void;` and `__cockpitOfficeSoundLog?: () => string[] | null;`, and in
-`installCockpitOfficeDevHooks`:
+`__cockpitOfficeSound?: (on: boolean) => void;`, `__cockpitOfficeSoundLog?: () => string[] | null;` and
+`__cockpitOfficeSoundSet?: (o: { ui?: boolean; music?: boolean }) => void;`, and in `installCockpitOfficeDevHooks`:
 
 ```ts
     // the office-sound scenario: what the office would play, logged instead of played
     window.__cockpitOfficeSound = (on) => setOfficeSoundLog(on);
     window.__cockpitOfficeSoundLog = () => officeSoundLog();
+    // turns the boss sounds or the music on or off as the Settings switch does (a localStorage write alone does not
+    // reach the atoms)
+    window.__cockpitOfficeSoundSet = (o) => {
+        if (o.ui != null) {
+            globalStore.set(officeSoundUiAtom, o.ui);
+        }
+        if (o.music != null) {
+            globalStore.set(officeSoundMusicAtom, o.music);
+        }
+    };
 ```
 
 **Step 2: The scenario** `office-sound` in `cockpitofficescenarios.mjs`, inside `makeCockpitOfficeScenarios`, added
 to its returned object as `cockpitOfficeSound` and registered in `scripts/cdp/scenarios.mjs` beside
-`cockpitOfficeBench` (both the destructuring and the scenario list). Add `s: 83` to `KEY_CODES`. It needs no real run:
+`cockpitOfficeBench` (both the destructuring and the scenario list). Add `s: 83` to `KEY_CODES`. `spOpen` and `spRow`
+are module constants of `scenarios.mjs` (beside `spPane`): add them to the object it passes to
+`makeCockpitOfficeScenarios({ arrangeFixtureRun, teardownFixtureRun })` and use them as `fx.spOpen` / `fx.spRow`. It
+needs no real run:
 arrange it like `cockpit-office-bench` (write `ROSTERS["office"](Date.now())` to `FIXTURE`, keep `prevFixture` and
 `prevView`) but set `VIEW_KEY` to `"office"`, reload, `h.goto("cockpit")`, then `ctx.missing = await waitForOffice(h)`.
 Also remove the five `cockpit.office.sound.*` localStorage keys before the reload so the defaults hold, and turn the
@@ -1231,27 +1298,48 @@ The steps, each with `rec(step, ok, detail)` as the other office scenarios do:
 
 1. `__cockpitOfficeSound(true)`; `dev(h, { runs: soundRuns(["running", "running"]) })` where
    `const soundRuns = (states, o = {}) => devRuns("fx-sound-run", [["Sound run", "arcterm", states]]).map((r) => ({ ...r, ...o }))`;
-   wait 500 ms. The log holds no cue (filter out `music:` entries): a run that only came into view is silent.
+   wait 500 ms. The log holds none of the four jingles (`landed`, `taskDone`, `needsYou`, `setback`): a run that
+   only came into view is silent.
 2. `dev(h, { runs: soundRuns(["done", "running"]) })`, wait 500 ms: the log ends with `taskDone`.
 3. Wait 1600 ms; `soundRuns(["done", "review-failed"])`: the log ends with `setback`.
 4. Wait 1600 ms; `soundRuns(["done", "done"], { done: true, landed: true })`: the log ends with `landed` (one entry for
    the burst, not `taskDone` too).
 5. `focusCockpit(h)`, `key(h, "s")`: `localStorage.getItem("cockpit.office.sound.muted")` is `"true"`. Wait 1600 ms;
    `soundRuns(["running", "running"])` then `soundRuns(["done", "running"])`: the log gained nothing.
-6. `key(h, "s")` again (unmuted). `key(h, "m")`: the open office menu's text contains `Mute sound` and `s`;
-   `h.shot("cdp-shots/office-sound-menu.png")`; `key(h, "Escape")`.
-7. Open Settings → Appearance the way the existing Settings scenarios do (grep `scripts/cdp/scenarios.mjs` for
-   `appearance.officeanimation`, or for how they open the Appearance page), scroll the row
-   `appearance.officesoundevents` into view, assert the four new row titles are on the page, and
+6. `key(h, "s")` again: `cockpit.office.sound.muted` is `"false"`. `key(h, "m")`: the probe's `menuItems` has
+   `Mute sound` right before `Cards view`, and the `[data-office-menu]` row whose label is `Mute sound` also shows its
+   key `s`; `h.shot("cdp-shots/office-sound-menu.png")`; `key(h, "Escape")`.
+7. `h.goto("settings")`, `fx.spOpen(h, "appearance")`, scroll `fx.spRow("appearance.officesoundevents")` into view.
+   Assert the four rows `appearance.officesoundevents`, `.officesoundui`, `.officesoundmusic` and `.officesoundvolume`
+   are there with their titles (Office jingles, Boss sounds, Office music, Office volume). Click the `[role="switch"]`
+   in the `appearance.officesoundmusic` row: `localStorage` `cockpit.office.sound.music` is `"true"`; click it again:
+   `"false"`. Open the `appearance.officesoundvolume` row's Select and pick `75 %` the way the Settings scenarios
+   pick a Select item (grep `spClick` in `scenarios.mjs`): `cockpit.office.sound.volume` is `"0.75"`.
    `h.shot("cdp-shots/office-sound-settings.png")`.
+8. The boss's sounds. `h.goto("cockpit")`, `ctx.missing = await waitForOffice(h)`,
+   `__cockpitOfficeSoundSet({ ui: true })`, `__cockpitOfficeAnimation(true)`, `focusCockpit(h)`. Note the log's
+   length and the probe's boss; `hold(h, "ArrowRight", 700)` (ArrowLeft if the boss's x did not change): the log
+   gained at least one `step` and the boss's x changed. Then `hold(h, "ArrowUp", 1000)` again and again (at most 8
+   times) until the probe's boss x and y stop changing: it stands at a wall. Note the log's length;
+   `hold(h, "ArrowUp", 1000)`: the log gained exactly one `bump` and no `step`. Note it again; `key(h, "m")`: the log
+   gained `blip`; `key(h, "Escape")`. Then `__cockpitOfficeAnimation(false)` and `__cockpitOfficeSoundSet({ ui: false })`.
+9. The music. `dev(h, { afterHours: false })`, `__cockpitOfficeSoundSet({ music: true })`, wait 300 ms: the log ends
+   with `music:day`. `dev(h, { afterHours: true })`, wait 300 ms: it ends with `music:night`. `focusCockpit(h)`,
+   `key(h, "s")`, wait 300 ms: it ends with `music:off`. `key(h, "s")` (unmuted), then
+   `__cockpitOfficeSoundSet({ music: false })`.
 
 Teardown: `__cockpitOfficeSound(false)`, `__cockpitOffice(null)`, restore the animation, the view and the fixture as
 `cockpit-office-bench`'s teardown does, remove the `cockpit.office.sound.*` keys, reload.
 
-**Step 3:** With `task dev` running, `task verify:ui -- office-sound`. Expected: every step PASS. (In an engine
-worktree, Final runs it.)
+**Step 3: The controls scenario's menu.** In `cockpit-office-controls` step 8 (`cockpitofficescenarios.mjs`, the
+`rec("8. m opens the office menu…"` call), add `Mute sound` after `Events` in both the step's title and the expected
+`menuItems` list. `cockpit-office-background` step 2 (`menuItems[at - 1] === "Events"`) needs no change: the sound
+item comes after Background.
 
-**Step 4: Docs.**
+**Step 4:** With `task dev` running, `task verify:ui -- office-sound cockpit-office-controls`. Expected: every step
+PASS. (In an engine worktree, Final runs `office-sound`.)
+
+**Step 5: Docs.**
 - `CHANGELOG.md`, under `## Unreleased` → `### Added` (open the heading if missing):
   `- Office sounds: chiptune jingles when a task finishes, a run lands or someone needs you, with optional footsteps and day and night music (\`s\` mutes). <!-- try: cockpit:office -->`
 - `docs/open-issues.md`, under "0 · Waiting on a hand check", a `- [ ] (arcterm)` line: in the real app, Cockpit →
@@ -1262,4 +1350,4 @@ worktree, Final runs it.)
   WebView2 processes in Task Manager, Office open, music off then on for a minute (spec estimate 1–3 MB)".
 - The spec's `**Status:**` becomes `built`.
 
-**Step 5:** Commit: `git commit -m "test(cdp): office-sound scenario; changelog and hand check for the office's sound" -- frontend/app/view/agents/cockpitofficedevhooks.ts scripts/cdp/cockpitofficescenarios.mjs scripts/cdp/scenarios.mjs CHANGELOG.md docs/open-issues.md docs/superpowers/specs/2026-10-16-office-sounds-design.md`
+**Step 6:** Commit: `git commit -m "test(cdp): office-sound scenario; changelog and hand check for the office's sound" -- frontend/app/view/agents/cockpitofficedevhooks.ts scripts/cdp/cockpitofficescenarios.mjs scripts/cdp/scenarios.mjs CHANGELOG.md docs/open-issues.md docs/superpowers/specs/2026-10-16-office-sounds-design.md`
