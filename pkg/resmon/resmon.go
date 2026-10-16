@@ -25,6 +25,9 @@ const (
 	// count, not with the jobs.
 	sampleInterval = 2 * time.Second
 	idleStop       = 10 * time.Second // the sampler stops when no Snapshot call came for this long
+	// resolving an agent tab scans every run row (~85 ms on a 1,500-run store), so a snapshot reuses an owner's
+	// info for this long; a job never changes owner, only a tab rename waits on it
+	ownerInfoTTL = 30 * time.Second
 )
 
 // OwnerInfo is what the server knows about an owner that the registry does not.
@@ -239,6 +242,43 @@ func latestSample() *sample {
 	return sampler.latest
 }
 
+type ownerEntry struct {
+	info OwnerInfo
+	at   time.Time
+}
+
+type ownerCache struct {
+	mu      sync.Mutex
+	entries map[jobobject.Owner]ownerEntry
+}
+
+func newOwnerCache() *ownerCache {
+	return &ownerCache{entries: map[jobobject.Owner]ownerEntry{}}
+}
+
+var snapshotOwners = newOwnerCache()
+
+// resolveAll resolves each job's owner at most once per ownerInfoTTL and forgets owners whose jobs have ended.
+func (c *ownerCache) resolveAll(ctx context.Context, resolve Resolver, jobs []jobobject.LiveJob, now time.Time) map[jobobject.Owner]OwnerInfo {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	next := make(map[jobobject.Owner]ownerEntry, len(jobs))
+	rtn := make(map[jobobject.Owner]OwnerInfo, len(jobs))
+	for _, j := range jobs {
+		if _, done := next[j.Owner]; done {
+			continue
+		}
+		e, ok := c.entries[j.Owner]
+		if !ok || now.Sub(e.at) >= ownerInfoTTL {
+			e = ownerEntry{info: resolve(ctx, j.Owner), at: now}
+		}
+		next[j.Owner] = e
+		rtn[j.Owner] = e.info
+	}
+	c.entries = next
+	return rtn
+}
+
 // Snapshot returns the latest sample grouped by owner; Ready is false until a second tick gives CPU deltas.
 func Snapshot(ctx context.Context, resolve Resolver) wshrpc.ResMonSnapshotData {
 	if !supported {
@@ -248,7 +288,8 @@ func Snapshot(ctx context.Context, resolve Resolver) wshrpc.ResMonSnapshotData {
 	if s == nil {
 		return wshrpc.ResMonSnapshotData{Supported: true, Ts: time.Now().UnixMilli(), Groups: []wshrpc.ResMonGroup{}}
 	}
-	groups := buildGroups(s.procs, s.arcRows, s.jobViews(func(o jobobject.Owner) OwnerInfo { return resolve(ctx, o) }), s.hostPid, s.selfPid)
+	owners := snapshotOwners.resolveAll(ctx, resolve, s.jobs, time.Now())
+	groups := buildGroups(s.procs, s.arcRows, s.jobViews(func(o jobobject.Owner) OwnerInfo { return owners[o] }), s.hostPid, s.selfPid)
 	cpu, memUsed := sumTotals(groups)
 	return wshrpc.ResMonSnapshotData{
 		Supported: true,
