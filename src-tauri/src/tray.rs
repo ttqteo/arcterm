@@ -252,15 +252,24 @@ fn place(app: &AppHandle, win: &WebviewWindow) {
     let _ = win.set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32));
 }
 
-// `why` is logged on either side of the destroy: on the Mac an Objective-C exception aborted the app 2 s after the
-// popover opened, as it lost focus (2026-10-16), and a line before the destroy with none after puts it inside destroy
+// `why` is logged on either side of the destroy, which on the Mac once aborted the app (macwindow::unpanel)
 fn close(app: &AppHandle, why: &str) {
     if let Some(win) = app.get_webview_window(TRAY_LABEL) {
         log_line(&format!("[tray] closing the popover: {why}"));
+        // the panel's window gets its own class back first, or WebKit cannot take its observers off it
+        crate::macwindow::unpanel(&win);
         let _ = win.destroy();
         log_line("[tray] popover closed");
         state().lock().unwrap().closed_at = Some(Instant::now());
         let _ = app.emit("tray:closed", ());
+    }
+}
+
+/// The app is exiting with the popover open (⌘Q): its window gets its own class back, as close gives it, before Tauri
+/// drops the windows.
+pub fn before_exit(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window(TRAY_LABEL) {
+        crate::macwindow::unpanel(&win);
     }
 }
 
@@ -281,8 +290,14 @@ fn on_act(app: &AppHandle, payload: &str) {
             }
         }
         "close" => close(app, "the page asked"),
-        "restart" => app.restart(),
-        "quit" => app.exit(0),
+        "restart" => {
+            close(app, "Restart arcterm");
+            app.restart();
+        }
+        "quit" => {
+            close(app, "Quit arcterm");
+            app.exit(0);
+        }
         "showlog" => {
             close(app, "Show log");
             if let Some(path) = crate::applog::log_path() {

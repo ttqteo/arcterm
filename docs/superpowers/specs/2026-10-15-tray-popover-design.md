@@ -74,6 +74,9 @@ is a state the built popover reaches:
 - **It must not raise the main window.** On macOS, showing a normal window activates the app, which brings the
   cockpit forward too. The popover becomes a non-activating panel through AppKit: `macwindow.rs` swaps its window's
   class to `ArcTrayPanel`. The popover is only worth having if the cockpit stays where it was.
+  - The swap replaces the `NSKVONotifying_` class KVO gave the window when WebKit began observing it, so the close
+    puts that class back before the destroy (`unpanel`, also at exit). Without it, WebKit's removal of its observer
+    threw `NSRangeException` and aborted the app each time the popover closed (2026-10-16).
 - **Its own Vite entry:** `frontend/tauri/tray.html` + `tray.tsx`. It is a small React page with the same
   `tailwindsetup.css` and theme: the theme preset sits in the shared `localStorage`, and `themestore.ts` applies it
   the same way. It does not boot the cockpit, the wsh client or WOS.

@@ -467,6 +467,7 @@ fn main() {
         .run(|app_handle, event| {
             // Kill wavesrv when the app exits so it doesn't orphan and hold wave.lock + its exe.
             if let tauri::RunEvent::Exit = event {
+                tray::before_exit(app_handle);
                 winframe::save(app_handle);
                 if let Some(mut child) = app_handle.state::<WavesrvChild>().0.lock().unwrap().take() {
                     let _ = child.kill();

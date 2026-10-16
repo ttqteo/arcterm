@@ -57,10 +57,10 @@ fn brings_to_front(u: Unfolded) -> bool {
 mod imp {
     use std::cell::{Cell, RefCell};
     use std::sync::atomic::{AtomicU32, Ordering};
-    use std::sync::OnceLock;
+    use std::sync::{Mutex, OnceLock};
 
     use objc2::rc::Retained;
-    use objc2::runtime::{AnyObject, NSObject, Sel};
+    use objc2::runtime::{AnyClass, AnyObject, NSObject, Sel};
     use objc2::{define_class, msg_send, sel, ClassType, MainThreadMarker, MainThreadOnly};
     use objc2_app_kit::{
         NSApplication, NSApplicationDidBecomeActiveNotification, NSColor, NSFontAttributeName,
@@ -242,11 +242,10 @@ mod imp {
         let Ok(ns) = ns_window(window, mtm) else {
             return;
         };
+        let obj: *mut AnyObject = (ns as *const NSWindow).cast_mut().cast();
         unsafe {
-            objc2::ffi::object_setClass(
-                (ns as *const NSWindow).cast_mut().cast(),
-                ArcTrayPanel::class() as *const _ as *const _,
-            );
+            *PANEL_WAS.lock().unwrap_or_else(|p| p.into_inner()) = objc2::ffi::object_getClass(obj).as_ref();
+            objc2::ffi::object_setClass(obj, ArcTrayPanel::class() as *const _ as *const _);
         }
         ns.setStyleMask(ns.styleMask() | objc2_app_kit::NSWindowStyleMask::NonactivatingPanel);
         ns.setCollectionBehavior(
@@ -256,6 +255,38 @@ mod imp {
         );
         ns.orderFrontRegardless();
         ns.makeKeyWindow();
+    }
+
+    // The class show_as_panel replaced. WebKit observes the window (contentLayoutRect) once its webview is in, and KVO
+    // keeps those observers on an NSKVONotifying_ subclass it swaps in as the window's class; the panel class drops it,
+    // so taking the webview out on destroy threw NSRangeException ("Cannot remove an observer") and aborted the app
+    // (2026-10-16). unpanel puts it back first.
+    static PANEL_WAS: Mutex<Option<&'static AnyClass>> = Mutex::new(None);
+
+    // Runs from the tray's close before the destroy, and at exit, on the main thread.
+    pub fn unpanel(window: &WebviewWindow) {
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let Ok(ns) = ns_window(window, mtm) else {
+            return;
+        };
+        let Some(was) = PANEL_WAS.lock().unwrap_or_else(|p| p.into_inner()).take() else {
+            return;
+        };
+        let obj: *mut AnyObject = (ns as *const NSWindow).cast_mut().cast();
+        let now = unsafe { objc2::ffi::object_getClass(obj) };
+        if !std::ptr::eq(now, ArcTrayPanel::class()) {
+            // KVO swapped in a subclass of the panel for an observer added since: putting the old class back would
+            // drop that one instead
+            let name = unsafe { now.as_ref() }.map(|c| c.name().to_string_lossy().into_owned()).unwrap_or_default();
+            applog::log_line(&format!("[tray] the popover's window is a {name}, not the panel: its class stays"));
+            return;
+        }
+        ns.setStyleMask(ns.styleMask() & !objc2_app_kit::NSWindowStyleMask::NonactivatingPanel);
+        unsafe {
+            objc2::ffi::object_setClass(obj, was);
+        }
     }
 
     // An exception AppKit throws inside a tao callback cannot unwind into Rust, so the process aborts and the crash
@@ -595,6 +626,14 @@ pub fn show_in_mission_control(window: &WebviewWindow) {
 pub fn show_as_panel(window: &WebviewWindow) {
     #[cfg(target_os = "macos")]
     imp::show_as_panel(window);
+    #[cfg(not(target_os = "macos"))]
+    let _ = window;
+}
+
+// Runs from the tray's close before the destroy, and at exit, on the main thread.
+pub fn unpanel(window: &WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    imp::unpanel(window);
     #[cfg(not(target_os = "macos"))]
     let _ = window;
 }
