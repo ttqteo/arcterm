@@ -36,7 +36,7 @@ on the boss's spot).
 - The pet's cell is 3 px, like the office's (`PLAN_CELL`), so it is 48 px tall against the chibi's 66: smaller, the
   same pixel.
 - At night and after hours the office's people are shaded by phase; the pet takes a `filter: brightness()` for the
-  `night` and `dark` phases so it does not glow in a dark room.
+  `after` phase (after work hours) so it does not glow in a dark room.
 - The chibi boss poses (`BOSS_POSES`, `BOSS_OUTFIT` in `plansprite.ts`) go once nothing draws them.
 
 ## Poses
@@ -93,8 +93,9 @@ A pure `frontend/app/view/agents/officeentrance.ts`, with `officeentrance.test.t
   the cursor. ⌘J is unchanged.
 - Leaving the Office clears the atom and the footer creature fades in as it does at boot. There is no exit scene: the
   Office unmounts at once.
-- A fold from the Office starts its teleport from the boss: `floatstore.ts` reads the boss's box where it now reads
-  `[data-pet-sprite]`.
+- A fold from the Office plays no departure: `floatstore.ts` waits for the walking pet's departure only while
+  `[data-pet-sprite]` is drawn (`walkingPetShown`), and in the Office it is not, so the window folds at once and the
+  folded Sprout arrives as usual. Nothing in `floatstore.ts` changes.
 
 ## Cost
 
@@ -122,7 +123,6 @@ tuned away by raising the budget.
 | `frontend/tailwindsetup.css` | `--color-peter-tie` |
 | `view/jarvis/petstore.ts` | `petOfficeBossAtom` |
 | `view/jarvis/petview.tsx` | gives way to the boss; bubble and peek anchor to it |
-| `view/agents/floatstore.ts` | a fold from the Office starts at the boss |
 | `view/office/plansprite.ts` | drop the chibi boss poses |
 | `scripts/cdp/cockpitofficescenarios.mjs` | the steps under Verify |
 | `CHANGELOG.md` | one `Added` line |
