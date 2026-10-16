@@ -14,6 +14,7 @@ import {
     parseMarks,
     rowsFromAsk,
     shownMarks,
+    submitContext,
 } from "./highlight-core";
 import { drawAskLine, drawHighlighted, paletteFor } from "./highlight-row";
 import type { Palette } from "./highlight-row";
@@ -43,6 +44,10 @@ let palette: Palette = paletteFor(undefined);
 let askNow: Ask | null = null;
 // what the ask's row last reported about its rows; the timer carries it into state
 let isAskOutOfView = false;
+// whether this load's prompt.compose hook ran on an interactive prompt, and whether a prompt already carried the ask
+let isComposed = false;
+let hasTold = false;
+let isInteractive = true;
 
 function isKept(value: unknown): value is [string, string[]][] {
     return (
@@ -64,6 +69,7 @@ async function setAsk($: EngineInterface, next: Ask | null) {
 
 export const register: Register = (on) => {
     on("session.start", async ($, e, next) => {
+        isInteractive = e.isInteractive;
         const stored = await $.store.get(STORE_KEY);
         kept = isKept(stored) ? stored : [];
         byHash = new Map(kept);
@@ -97,6 +103,7 @@ export const register: Register = (on) => {
         if (e.traits.includes("print") || e.traits.includes("bare")) {
             return composed;
         }
+        isComposed = true;
         return {
             sections: [
                 ...composed.sections,
@@ -135,12 +142,17 @@ export const register: Register = (on) => {
         return isChanged ? next({ ...e, message: { ...e.message, content } }) : next(e);
     });
 
-    // the person answered, or moved on
+    // the person answered, or moved on; and the ask rides with the prompt where the system prompt never took it
     on("prompt.submit", async ($, e, next) => {
         if (askNow) {
             await setAsk($, null);
         }
-        return next(e);
+        const context = submitContext({ isInteractive, isCommand: !!e.command, isComposed, hasTold });
+        if (!context) {
+            return next(e);
+        }
+        hasTold = true;
+        return next({ ...e, context: [...(e.context ?? []), context] });
     });
 
     on("command.run", { command: "skim" }, async ($) => {

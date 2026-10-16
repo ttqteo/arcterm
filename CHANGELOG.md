@@ -29,6 +29,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The agent header no longer shows a bare `i` key beside the initiative; `i` still opens it, and the link's tooltip
   says so.
 
+### Fixed
+
+- Highlighted sentences in Claude's replies now show on Team accounts too. Claude Code's security plugin there kept
+  the instructions out of the system prompt, so Claude never marked anything; they now ride with your prompt instead.
+
 ## 0.15.14 — 2026-10-16
 
 ### Added
