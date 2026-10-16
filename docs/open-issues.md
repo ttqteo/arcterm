@@ -27,6 +27,15 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-16 (the Office's Needs you notice board, run 0e23de6a)**
+
+- [ ] (arcterm) With real Needs you rows (a plan to review, a run to land, a learned rule): Cockpit → Office. The
+  board below the lounge pins up to three slips with the `!n` count over it; ↑↓ / `j` `k` and `n` stop at it only
+  while rows wait. ↵ there (or a click, or `m` → Notice board) opens the box: ← → page the rows, and Approve, Land,
+  Accept, Dismiss act as the strip's buttons do, toasting on failure with the page kept; Open on an agent, initiative
+  or channel row lands there. After work hours the slips dim with the office. The CDP scenario
+  `office-needs-you-board` ran on a fixture only and pressed no act that calls the server.
+
 **2026-10-16 (the Office plays like a pixel game, run 25462413)**
 
 - [ ] (arcterm) In the installed Mac app (Final ran the scenarios in headless Chrome, not WKWebView): Cockpit → Office.

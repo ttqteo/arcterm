@@ -53,8 +53,9 @@ No part calls a model. Every rule reads data arcterm already holds: agent and ta
 - The Cockpit's heading row gets a **Cards | Office** segmented toggle beside **Live only**, and `o` toggles it
   (Cockpit binding `cockpit:office`, documented in `docs/keyboard-shortcuts.md`). The choice is `cockpitViewAtom`
   (`atomWithStorage("cockpit.view")`, `"cards"` by default; storage read in try/catch, falls back to cards).
-- Office replaces **only the card grid**. The status tabs, the project switcher, Live only, the Needs you strip, the
-  folded sections under the grid (Backgrounded, Idle, Background), the Events rail and the HintsBar stay as they are.
+- Office replaces **only the card grid**. The status tabs, the project switcher, Live only, the Needs you strip (in Office
+  the hall's notice board since 2026-10-16), the folded sections under the grid (Backgrounded, Idle, Background), the
+  Events rail and the HintsBar stay as they are.
 - The office draws exactly the cards the grid would draw after the tab, project and Live only filters, and the
   agents of the Idle section (an agent idle past the Finished window, which the grid parks there), so a filter
   narrows the office as it narrows the grid. In Office the Idle section is not drawn under it: its agents are in the

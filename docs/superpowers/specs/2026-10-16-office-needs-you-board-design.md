@@ -1,6 +1,6 @@
 # Office Needs you board — design
 
-Date: 2026-10-16. Status: agreed, not built.
+Date: 2026-10-16. Status: built (run 0e23de6a).
 
 ## Problem
 
