@@ -1,7 +1,7 @@
 # Office pet boss — design
 
 **Date:** 2026-10-16
-**Status:** design agreed, not built
+**Status:** built (run 0e916f02, 2026-10-16); hand check pending (open-issues.md section 0)
 **Canvas:** `.superpowers/design/office-pet-boss/project/` (gitignored; `Main` the eight Peter poses, `Entrance` the six
 frames of Spider-Man's entrance, `Floor` the boss pet on the floor beside Sprout and the Minion)
 **Changes:** "The boss" and the out-of-scope line "The pet in the office: it keeps walking the footer" of

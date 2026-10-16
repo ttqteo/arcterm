@@ -13,6 +13,38 @@
 
 import { MOTION } from "@/app/element/motiontokens";
 import { globalStore } from "@/app/store/jotaiStore";
+import { closePeek } from "@/app/view/jarvis/peekstore";
+import { petCharacter } from "@/app/view/jarvis/petcharacter";
+import { expressionFor, postureFor, type PetExpression, type PetPosture } from "@/app/view/jarvis/petcondition";
+import { cornerFor } from "@/app/view/jarvis/petledge";
+import { petOutfit, petOutfitChoice } from "@/app/view/jarvis/petoutfit";
+import {
+    bossSprite,
+    PET_CELL_PX,
+    PET_PX,
+    SPIDEY_POSES,
+    SPIDEY_PUFF,
+    SPIDEY_SWING,
+    SPIDEY_UNMASK,
+    spriteOfRows,
+    type PetCell,
+    type PetSprite,
+} from "@/app/view/jarvis/petsprite";
+import {
+    petBubbleAtom,
+    petCharacterAtom,
+    petOfficeBossAtom,
+    petOfficeCornerAtom,
+    petOfficeEnteringAtom,
+    petOutfitChoiceAtom,
+    petPeekOpenAtom,
+    petUnreadAtom,
+} from "@/app/view/jarvis/petstore";
+import { PetTeleportLayers } from "@/app/view/jarvis/petteleportsvg";
+import { openPetBubble, usePetSignals } from "@/app/view/jarvis/petview";
+import { PASTIMES, SLEEP_AFTER_MS } from "@/app/view/jarvis/petwalk";
+import { HANDS } from "@/app/view/jarvis/petwebswing";
+import type { TeleportRun } from "@/app/view/jarvis/teleportstore";
 import {
     officeClocks,
     officeMeterAtom,
@@ -23,8 +55,6 @@ import {
 } from "@/app/view/office/officeclock";
 import { OFFICE_TOKENS, officeColors, type OfficePhase } from "@/app/view/office/officepalette";
 import {
-    BOSS_POSES,
-    BOSS_SHIRT,
     LANE_SHIRTS,
     LEAD_SHIRT,
     markUrl,
@@ -46,7 +76,7 @@ import {
     type SeatPose,
     type Shade,
 } from "@/app/view/office/plansprite";
-import { art, boardArt, rasterise, scenery, sceneryKey, type Op } from "@/app/view/office/scenery";
+import { art, boardArt, outerWindows, rasterise, scenery, sceneryKey, type Op } from "@/app/view/office/scenery";
 import { clearSprites, clearTokenColors, spriteCacheStats, tokenRgb } from "@/app/view/office/spritecache";
 import { cn } from "@/util/util";
 import { atom, useAtom, useAtomValue, type Atom, type PrimitiveAtom } from "jotai";
@@ -60,6 +90,7 @@ import {
     useEffect,
     useLayoutEffect,
     useMemo,
+    useReducer,
     useRef,
     useState,
     type CSSProperties,
@@ -131,7 +162,17 @@ import {
     selAfterActivate,
     type DeskKind,
 } from "./officedialogmodel";
+import {
+    entranceLength,
+    entrancePhase,
+    markOfficeLeft,
+    nearestWindow,
+    shouldPlayEntrance,
+    swingPoint,
+    type EntrancePhase,
+} from "./officeentrance";
 import { floorLabel, moveToFloor, parseLayout, placeRooms, swapRooms } from "./officelayout";
+import { bossPet, pickRest, REST_AFTER_MS, type BossRest } from "./officepet";
 import {
     BOARD_KEY,
     buildPlan,
@@ -179,6 +220,20 @@ export interface OfficeDev {
     crowd?: number; // this many more idle agents past the Finished window, to crowd the lounge
     floor?: number; // the floor to show at once: cockpitofficedevhooks.ts writes it to officeFloorAtom, not to this atom
     rideHold?: boolean; // the next ride keeps its doors shut after the dial has ticked, until this is false (the Ride board)
+    // The seams below are merged into what is set by cockpitofficedevhooks.ts, so one is cleared by passing null, never
+    // by leaving it out; each treats null as unset.
+    // a number forces the current pet's entrance and holds it still at that many ms, whatever the cooldown, a skip, or
+    // that this mount's entrance already ended or never played; "skip" ends a playing entrance at once and keeps a later
+    // mount from playing one while it is set; null is live (the cooldown, as in a real session)
+    entrance?: "skip" | number | null;
+    // each new value plays the current pet's entrance live from its start, whatever the cooldown; a walk key, a click
+    // on the floor or ↵ ends it as in a real session. A number entrance wins over it. (The pet scenario's skip steps.)
+    replayEntrance?: number | null;
+    // the rest the boss takes in place of pickRest's: setting it starts that rest at once (as if the boss had stood
+    // still REST_AFTER_MS), and the boss keeps it each time it stops; null picks at random again
+    bossRest?: BossRest | null;
+    // in place of the condition's expression (tired, …); null is the live condition
+    bossExpression?: PetExpression["kind"] | null;
 }
 export const officeDevAtom = atom<OfficeDev | null>(null) as PrimitiveAtom<OfficeDev | null>;
 
@@ -255,6 +310,9 @@ export interface CockpitOfficeProps {
     // the office menu's Events count and label, and what its items do
     newEvents: number;
     eventsOpen: boolean;
+    // the office menu's Background: the agents no room draws, and whether their sections show under the office
+    background: number;
+    backgroundOpen: boolean;
     onMenu: (id: OfficeMenuId) => void;
     // the Needs you rows that wait: the notice board's bubble and slips, its place among the cursor's stops, and the
     // office menu's count. The rows themselves are the dialog's (dialogFor)
@@ -294,6 +352,50 @@ const walkerLooksAtom = selectAtom<Walker[], Pick<Walker, "id" | "dir" | "outfit
 );
 // the walking sprites' frame, flipped by the walk loop
 const walkFrameAtom = atom<0 | 1>(0) as PrimitiveAtom<0 | 1>;
+// the pet's condition as the footer reads it (usePetSignals ticks every second): BossMoodLeaf writes it when it changes,
+// so the boss pet re-renders on a change of mood and not on the clock
+interface BossMood {
+    expression: PetExpression["kind"];
+    posture: PetPosture;
+}
+const bossMoodAtom = atom<BossMood>({ expression: "at-rest", posture: "none" }) as PrimitiveAtom<BossMood>;
+// the person's last act in the office (a walk, a key, a click): the boss pet wakes and an entrance ends. The BossPet
+// drawn registers it; nothing happens while none is
+let onBossInput: (() => void) | null = null;
+const bumpBossInput = () => onBossInput?.();
+// what the person does through the handle (a key, a pick); the handle's reads and a key's release are not acts
+const ACTS: readonly (keyof OfficeHandle)[] = [
+    "walk",
+    "goTo",
+    "showPath",
+    "talk",
+    "card",
+    "move",
+    "activate",
+    "back",
+    "toggleMenu",
+    "pageBoard",
+    "openBoard",
+    "openLift",
+    "ride",
+    "grab",
+    "slot",
+    "carryFloor",
+    "drop",
+    "cancel",
+    "openChipCard",
+];
+function withInput(handle: OfficeHandle): OfficeHandle {
+    const out: Record<string, unknown> = { ...handle };
+    for (const name of ACTS) {
+        const act = handle[name] as (...args: unknown[]) => unknown;
+        out[name] = (...args: unknown[]) => {
+            bumpBossInput();
+            return act(...args);
+        };
+    }
+    return out as unknown as OfficeHandle;
+}
 const dotsAtom = atom<Point[]>([]) as PrimitiveAtom<Point[]>;
 // what is up over the office (officecontrols.ts): the desk's dialog box (↵, or a click on the desk), its full card (f,
 // or the box's Full card), or nothing; any walk shuts both. The office menu (m, officeMenuOpenAtom in officestore.ts,
@@ -324,7 +426,6 @@ const menuInRoomAtom = atom(false) as PrimitiveAtom<boolean>;
 // the 5-hour window's use, rounded; FiveHourLeaf sets it, so the 1 s clock the meter reads re-renders that leaf only
 const officeFiveHourAtom = atom<number | undefined>(undefined) as PrimitiveAtom<number | undefined>;
 
-const BOSS_OUTFIT: PlanOutfit = { shirt: BOSS_SHIRT, look: 1, boss: true };
 const WALK_FRAME_MS = 180;
 const ARROW_STEP_PX = 24; // one arrow press when people do not walk (reduced motion, animation off)
 const PATH_HINT_MS = 1000;
@@ -359,6 +460,16 @@ const probe = {
 let lastPlan: Plan | null = null;
 let lastWalking: ReadonlySet<string> = new Set();
 let lastRoot: HTMLElement | null = null;
+// what the boss pet was last drawn as, for the probe
+interface BossPetProbe {
+    character: string;
+    pose: string;
+    flip: boolean;
+    marks: string[];
+    entrance: EntrancePhase | null;
+    played: boolean;
+}
+let lastBossPet: BossPetProbe | null = null;
 
 // a room's title label as the page drew it, in plan coordinates; the plan's guess at its place before it is drawn
 function titleBoxOf(r: Room): Box {
@@ -440,7 +551,10 @@ export function readOfficeProbe() {
             : {},
         clock: officeClocks(),
         cache: spriteCacheStats("plan"),
-        sheetSize: 4 * SHEET_POSES.length + BOSS_POSES.length,
+        sheetSize: 4 * SHEET_POSES.length,
+        // the boss pet as last drawn: whose, its pose and facing, the marks over it, the entrance phase while one plays
+        // (held or live; null once done, skipped or none played) and whether this mount's entrance played at all
+        bossPet: lastBossPet,
         lounge: lastPlan?.lounge ?? null,
         unresolved: [...PLAN_TOKENS, ...OFFICE_TOKENS].filter((t) => tokenRgb(t) == null),
     };
@@ -587,6 +701,9 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     const reduced = useReducedMotion() ?? false;
     // people walk only with the animation on and no reduced motion; otherwise they are at once where they go
     const moving = animationOn && !reduced;
+    // whether this visit opens with the boss pet's entrance (officeentrance.ts): decided as the office mounts, once. With
+    // reduced motion or the animation off nothing is drawn moving, the entrance included
+    const [entrancePlays] = useState(() => shouldPlayEntrance(Date.now(), !moving));
 
     const now = props.now;
     const livePct = useAtomValue(officeFiveHourAtom);
@@ -1269,7 +1386,15 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     onMenuRef.current = props.onMenu;
     // read when the menu opens (a walk step renders nothing): the boss in a project room can pick it up
     const menuInRoom = useAtomValue(menuInRoomAtom);
-    const menuItems = officeMenuItems(plan.asks.length, props.newEvents, props.eventsOpen, props.boardRows, menuInRoom);
+    const menuItems = officeMenuItems(
+        plan.asks.length,
+        props.newEvents,
+        props.eventsOpen,
+        props.boardRows,
+        menuInRoom,
+        props.background,
+        props.backgroundOpen
+    );
     const menuItemsRef = useRef(menuItems);
     menuItemsRef.current = menuItems;
     // whether OfficeDialogLayer draws a box now: with none at the boss's desk the dialog layer is walking, and the keys
@@ -1310,7 +1435,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         vm.run(it.id);
         globalStore.set(selAtom, selAfterActivate(vm.items, sel));
     };
-    handleRef.current = {
+    handleRef.current = withInput({
         walk,
         release,
         goTo,
@@ -1457,7 +1582,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             globalStore.set(officeBigCardAtom, true);
             globalStore.set(layerAtom, "card");
         },
-    };
+    });
 
     // the last row gone while the board's box is up: dialogFor has no page then, so the box is not drawn; the layer goes
     // back to walking so the next ↵ is a fresh talk
@@ -1472,6 +1597,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         onCursor(key);
     });
     pickRef.current = (key: string) => {
+        bumpBossInput();
         goTo(key);
         openDialog(key);
         onCursor(key);
@@ -1633,6 +1759,10 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             lastPlan = null;
             lastRoot = null;
             lastWalking = new Set();
+            lastBossPet = null;
+            // leaving starts the entrance's cooldown, and the footer's bubble stops waiting for an entrance that is gone
+            markOfficeLeft(Date.now());
+            globalStore.set(petOfficeEnteringAtom, false);
         },
         []
     );
@@ -1717,6 +1847,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                 style={{ paddingTop: HUD_SPACE_PX }}
             >
                 <FiveHourLeaf model={props.model} />
+                <BossMoodLeaf model={props.model} />
                 {width > 0 ? (
                     <div
                         ref={rootRef}
@@ -1728,6 +1859,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                             if ((e.target as HTMLElement).closest("button, [data-office-popup]")) {
                                 return;
                             }
+                            bumpBossInput();
                             const r = e.currentTarget.getBoundingClientRect();
                             walkTo({ x: e.clientX - r.left, y: e.clientY - r.top });
                         }}
@@ -1792,7 +1924,13 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                         <NoticeBoard box={plan.board.box} rows={props.boardRows} phase={phase} onPick={onPick} />
                         <LiftDoors doors={plan.lift.doors} onPick={onPick} />
                         <WalkersView phase={phase} />
-                        <BossView plan={plan} phase={phase} />
+                        <BossView
+                            plan={plan}
+                            phase={phase}
+                            model={props.model}
+                            entrancePlays={entrancePlays}
+                            still={!moving}
+                        />
                         <PathDots />
                         <OfficePopup
                             plan={plan}
@@ -1870,6 +2008,21 @@ function FiveHourLeaf({ model }: { model: AgentsViewModel }) {
     useEffect(() => {
         globalStore.set(officeFiveHourAtom, rounded);
     }, [rounded]);
+    return null;
+}
+
+// the pet's condition, as the footer reads it, written where the boss pet reads it (bossMoodAtom): only this leaf
+// re-renders on usePetSignals' clock. A layout effect, so the boss is never drawn in a stale mood for a frame
+function BossMoodLeaf({ model }: { model: AgentsViewModel }) {
+    const signals = usePetSignals(model);
+    const expression = expressionFor(signals).kind;
+    const posture = postureFor(signals);
+    useLayoutEffect(() => {
+        const was = globalStore.get(bossMoodAtom);
+        if (was.expression !== expression || was.posture !== posture) {
+            globalStore.set(bossMoodAtom, { expression, posture });
+        }
+    }, [expression, posture]);
     return null;
 }
 
@@ -2418,14 +2571,23 @@ function Labels({
 }
 
 // keeps an element where `transform` puts it, written on the DOM: after each render (its sprite may have changed
-// size or side) and on each change of `on`, a walk step. React never writes the transform, so a step renders nothing
-function useDomTransform(ref: RefObject<HTMLElement | null>, on: Atom<unknown>, transform: () => string | undefined) {
+// size or side) and on each change of `on`, a walk step. React never writes the transform, so a step renders nothing.
+// `after` runs once the element has been placed
+function useDomTransform(
+    ref: RefObject<HTMLElement | null>,
+    on: Atom<unknown>,
+    transform: () => string | undefined,
+    after?: () => void
+) {
     const fn = useRef(transform);
     fn.current = transform;
+    const then = useRef(after);
+    then.current = after;
     const place = useCallback(() => {
         const t = fn.current();
         if (ref.current && t != null) {
             ref.current.style.transform = t;
+            then.current?.();
         }
     }, [ref]);
     useLayoutEffect(place);
@@ -2442,7 +2604,6 @@ function Mover(p: {
     outfit: PlanOutfit;
     phase: OfficePhase;
     walking: boolean;
-    boss?: boolean;
 }) {
     const ref = useRef<HTMLImageElement>(null);
     const w = spriteWidth(p.sprite) * PLAN_CELL;
@@ -2460,7 +2621,6 @@ function Mover(p: {
             ref={ref}
             alt=""
             draggable={false}
-            data-office-boss={p.boss ? "" : undefined}
             data-office-sprite={p.sprite}
             src={planSpriteUrl(p.sprite, p.outfit, p.phase)}
             className={cn(
@@ -2496,9 +2656,20 @@ function WalkersView({ phase }: { phase: OfficePhase }) {
     );
 }
 
-function BossView({ plan, phase }: { plan: Plan; phase: OfficePhase }) {
+function BossView({
+    plan,
+    phase,
+    model,
+    entrancePlays,
+    still,
+}: {
+    plan: Plan;
+    phase: OfficePhase;
+    model: AgentsViewModel;
+    entrancePlays: boolean;
+    still: boolean;
+}) {
     const look = useAtomValue(bossLookAtom);
-    const frame = useAtomValue(walkFrameAtom);
     const ringRef = useRef<HTMLImageElement>(null);
     useDomTransform(ringRef, bossAtom, () => {
         const at = bossAt();
@@ -2510,10 +2681,6 @@ function BossView({ plan, phase }: { plan: Plan; phase: OfficePhase }) {
     if (!look) {
         return null;
     }
-    // at a desk or a chip the boss shows its back, looking up at it; at the lift it faces the doors below it, so it stands
-    // turned to you
-    const at = look.moving || !look.rest ? undefined : deskAt(plan, look.rest);
-    const sprite: PlanSprite = look.moving ? walkSprite(look.dir, frame) : at && at !== LIFT_KEY ? "boss" : "stand";
     return (
         <>
             <img
@@ -2527,17 +2694,371 @@ function BossView({ plan, phase }: { plan: Plan; phase: OfficePhase }) {
                 )}
                 style={{ width: 14 * PLAN_CELL, height: 5 * PLAN_CELL }}
             />
-            <Mover
-                on={bossAtom}
-                at={bossAt}
-                sprite={sprite}
-                mirror={look.moving && mirrorOf(look.dir)}
-                outfit={BOSS_OUTFIT}
-                phase={phase}
-                walking={look.moving}
-                boss
-            />
+            <BossPet plan={plan} phase={phase} model={model} look={look} entrancePlays={entrancePlays} still={still} />
         </>
+    );
+}
+
+// the pet's cells as svg rects, the footer's way (petview.tsx cellRect): each fills with a theme token, so a change of
+// theme or pet shows at once, and nothing goes through the sprite cache
+const petCells = (cells: readonly PetCell[]) =>
+    cells.map((c, i) => (
+        <rect
+            key={i}
+            x={c.x * PET_CELL_PX}
+            y={c.y * PET_CELL_PX}
+            width={PET_CELL_PX}
+            height={PET_CELL_PX}
+            fill={`var(${c.token})`}
+        />
+    ));
+
+// Spider-Man's entrance after the swing: the suit sits, stands, unmasks, and the puff turns it into Peter
+const ENTRANCE_SPRITES: Record<"swing" | "land" | "stand" | "unmask" | "puff", PetSprite> = {
+    swing: spriteOfRows(SPIDEY_SWING, []),
+    land: spriteOfRows(SPIDEY_POSES.sit, []),
+    stand: spriteOfRows(SPIDEY_POSES.stand, []),
+    unmask: spriteOfRows(SPIDEY_UNMASK, []),
+    puff: spriteOfRows(SPIDEY_PUFF, []),
+};
+// the entrance redraws at 12 frames a second, and the swing takes this long
+const ENTRANCE_FRAME_MS = 83;
+const SWING_MS = 700;
+
+// The office's boss, drawn as the person's pet (office pet boss spec): its pose and facing from officepet.ts, its cells
+// from petsprite.ts, an entrance each time the office opens (officeentrance.ts), and the creature the footer gives way to
+// (petOfficeBossAtom), so the bubble and the peek hang off it. Its place is written on the DOM, so a walk step renders
+// nothing; it renders when the boss turns, stops or sets off, on the walk frame while walking, on a mood change, and on
+// a timer while it rests (the next pastime frame, the pastime itself, the doze).
+function BossPet({
+    plan,
+    phase,
+    model,
+    look,
+    entrancePlays,
+    still,
+}: {
+    plan: Plan;
+    phase: OfficePhase;
+    model: AgentsViewModel;
+    look: BossLook;
+    entrancePlays: boolean;
+    still: boolean;
+}) {
+    const frame = useAtomValue(walkFrameAtom);
+    const character = petCharacter(useAtomValue(petCharacterAtom));
+    // read per render, so a flag day dresses it as the footer's creature is dressed
+    const outfit = petOutfit(petOutfitChoice(useAtomValue(petOutfitChoiceAtom)), new Date());
+    const bubble = useAtomValue(petBubbleAtom);
+    const unread = useAtomValue(petUnreadAtom);
+    const mood = useAtomValue(bossMoodAtom);
+    const dev = useAtomValue(officeDevAtom);
+    const [, redraw] = useReducer((n: number) => n + 1, 0);
+    const btnRef = useRef<HTMLButtonElement | null>(null);
+    // set once, on the first render: what the pose is picked from. stillSince is when it last stopped (or an entrance
+    // ended), lastInputAt when the person last did anything in the office, rest the pastime it takes when still
+    const state = useRef<{
+        stillSince: number;
+        lastInputAt: number;
+        flip: boolean;
+        rest: BossRest;
+        wasMoving: boolean;
+        wasEntering: boolean;
+    } | null>(null);
+    // the entrance playing live: when it began (performance.now()), or null
+    const [live, setLive] = useState<number | null>(() =>
+        entrancePlays && dev?.entrance !== "skip" ? performance.now() : null
+    );
+    const liveRef = useRef(live);
+    liveRef.current = live;
+    const held = typeof dev?.entrance === "number" ? dev.entrance : null;
+    const entering = live != null || held != null;
+    if (state.current == null) {
+        const at = Date.now();
+        state.current = {
+            stillSince: at,
+            lastInputAt: at,
+            flip: false,
+            rest: dev?.bossRest ?? pickRest(Math.random),
+            wasMoving: look.moving,
+            wasEntering: entering,
+        };
+    }
+    const s = state.current;
+    // it stops: it stands for a while, then takes a pastime. An entrance that ends is an arrival, so it stands too
+    if ((s.wasMoving && !look.moving) || (s.wasEntering && !entering)) {
+        s.stillSince = Date.now();
+        s.rest = dev?.bossRest ?? pickRest(Math.random);
+    }
+    s.wasMoving = look.moving;
+    s.wasEntering = entering;
+
+    const clock = Date.now();
+    const asleep = clock - s.lastInputAt >= SLEEP_AFTER_MS;
+    const out = bossPet({
+        moving: look.moving,
+        dir: look.dir,
+        frame,
+        flip: s.flip,
+        stillSince: s.stillSince,
+        lastInputAt: s.lastInputAt,
+        // with no motion a rest shows its first frame and holds it
+        now: still && !asleep ? Math.min(clock, s.stillSince + REST_AFTER_MS) : clock,
+        rest: s.rest,
+        character,
+        expression: dev?.bossExpression ?? mood.expression,
+        posture: mood.posture,
+        speaking: bubble != null,
+        unread,
+    });
+    s.flip = out.flip;
+    const sprite = bossSprite(out.pose, out.marks, outfit, character);
+
+    // the entrance: held by a DEV seam at that many ms, or live
+    const t = held ?? (live != null ? performance.now() - live : null);
+    const entrancePhaseNow = t == null ? null : entrancePhase(character, t);
+    const entrance = entrancePhaseNow == null || entrancePhaseNow === "done" ? null : entrancePhaseNow;
+    const spot = bossAt();
+    // the swing: where he is on the way from the window nearest the boss's spot, and that window
+    let swing: { at: Point; pane: Point } | null = null;
+    if (entrance === "swing" && t != null && spot) {
+        const pane = nearestWindow(outerWindows(plan), spot) ?? { x: spot.x - 36, y: spot.y - 90 };
+        swing = { at: swingPoint(pane, spot, t / SWING_MS), pane };
+    }
+    const swingRef = useRef<Point | null>(null);
+    swingRef.current = swing?.at ?? null;
+    // a beam's own clock starts where the entrance did
+    const run = useMemo<TeleportRun>(() => ({ kind: "arrive", at: live ?? 0 }), [live]);
+    lastBossPet = {
+        character,
+        pose: out.pose,
+        flip: out.flip,
+        marks: out.marks,
+        entrance,
+        played: entrancePlays,
+    };
+
+    // the footer's creature gives way while this is drawn, and its bubble waits out the entrance
+    const setBtn = useCallback((el: HTMLButtonElement | null) => {
+        btnRef.current = el;
+        globalStore.set(petOfficeBossAtom, el);
+    }, []);
+    useLayoutEffect(() => {
+        globalStore.set(petOfficeEnteringAtom, entering);
+    }, [entering]);
+    useLayoutEffect(
+        () => () => {
+            globalStore.set(petOfficeEnteringAtom, false);
+        },
+        []
+    );
+    // which half of the window it is in, so the bubble and the peek open the right way
+    const placeCorner = () => {
+        const el = btnRef.current;
+        if (el) {
+            const corner = cornerFor(el.getBoundingClientRect().left, window.innerWidth);
+            if (globalStore.get(petOfficeCornerAtom) !== corner) {
+                globalStore.set(petOfficeCornerAtom, corner);
+            }
+        }
+    };
+    // its feet at the boss's spot (or where the swing has it), in whole art cells
+    useDomTransform(
+        btnRef,
+        bossAtom,
+        () => {
+            const p = swingRef.current ?? bossAt();
+            return (
+                p &&
+                `translate(${Math.round((p.x - PET_PX / 2) / PLAN_CELL) * PLAN_CELL}px, ${Math.round((p.y - PET_PX) / PLAN_CELL) * PLAN_CELL}px)`
+            );
+        },
+        placeCorner
+    );
+
+    // the person's acts: a walk, a key, a click. It wakes at once, and an entrance ends with it in place
+    useEffect(() => {
+        const act = () => {
+            const wasAsleep = Date.now() - s.lastInputAt >= SLEEP_AFTER_MS;
+            s.lastInputAt = Date.now();
+            if (liveRef.current != null) {
+                setLive(null);
+            }
+            if (wasAsleep) {
+                redraw();
+            }
+        };
+        onBossInput = act;
+        return () => {
+            if (onBossInput === act) {
+                onBossInput = null;
+            }
+        };
+    }, [s]);
+    // setting off ends it too, the cursor walking it to a desk included
+    useEffect(() => {
+        if (look.moving) {
+            setLive(null);
+        }
+    }, [look.moving]);
+
+    // the entrance, live: 12 frames a second until it has played
+    useEffect(() => {
+        if (live == null) {
+            return;
+        }
+        const length = entranceLength(character);
+        let raf = 0;
+        let last = -1;
+        const tick = () => {
+            const ms = performance.now() - live;
+            if (ms >= length) {
+                setLive(null);
+                return;
+            }
+            const f = Math.floor(ms / ENTRANCE_FRAME_MS);
+            if (f !== last) {
+                last = f;
+                redraw();
+            }
+            raf = requestAnimationFrame(tick);
+        };
+        raf = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(raf);
+    }, [live, character]);
+
+    // the DEV seams: "skip" ends a live entrance (a held number is read above), a new replay value plays one
+    useEffect(() => {
+        if (dev?.entrance === "skip") {
+            setLive(null);
+        }
+    }, [dev?.entrance]);
+    const replayed = useRef(dev?.replayEntrance ?? null);
+    useEffect(() => {
+        const v = dev?.replayEntrance ?? null;
+        if (v != null && v !== replayed.current) {
+            setLive(performance.now());
+        }
+        replayed.current = v;
+    }, [dev?.replayEntrance]);
+    // a rest set by hand starts at once, as if the boss had stood still that long
+    const devRest = dev?.bossRest ?? null;
+    useEffect(() => {
+        if (devRest != null) {
+            s.rest = devRest;
+            s.stillSince = Date.now() - REST_AFTER_MS;
+            redraw();
+        }
+    }, [devRest, s]);
+
+    // while it rests, a timer to the next change: the pastime's next frame, the pastime itself, the doze. None while it
+    // walks (the walk frame draws it), asleep, or, with no motion, past the rest's first frame
+    useEffect(() => {
+        if (look.moving) {
+            return;
+        }
+        const now = Date.now();
+        const restAt = s.stillSince + REST_AFTER_MS;
+        const sleepAt = s.lastInputAt + SLEEP_AFTER_MS;
+        if (now >= sleepAt) {
+            return;
+        }
+        let next = sleepAt;
+        if (now < restAt) {
+            next = Math.min(next, restAt);
+        } else if (!still) {
+            const pastime = PASTIMES[s.rest];
+            if (pastime) {
+                next = Math.min(next, restAt + (Math.floor((now - restAt) / pastime.frameMs) + 1) * pastime.frameMs);
+            }
+        }
+        const id = window.setTimeout(redraw, next - now + 1);
+        return () => window.clearTimeout(id);
+    });
+
+    let art: ReactNode;
+    if (entrance === "beam") {
+        // Sprout's and the Minion's: the teleport's arrival on the spot; a held ms holds the beam still
+        art = (
+            <PetTeleportLayers
+                run={run}
+                sprite={bossSprite("stand", [], outfit, character)}
+                cellPx={PET_CELL_PX}
+                character={character}
+                at={held ?? undefined}
+            />
+        );
+    } else if (entrance != null) {
+        const body = ENTRANCE_SPRITES[entrance].body;
+        // the strand from the window to his raised hand, in this svg's coordinates (the button is where the swing has him)
+        const strand = swing ? (
+            <line
+                x1={swing.pane.x - Math.round((swing.at.x - PET_PX / 2) / PLAN_CELL) * PLAN_CELL}
+                y1={swing.pane.y - Math.round((swing.at.y - PET_PX) / PLAN_CELL) * PLAN_CELL}
+                x2={HANDS.x * PET_CELL_PX + PET_CELL_PX / 2}
+                y2={HANDS.y * PET_CELL_PX + PET_CELL_PX / 2}
+                stroke="var(--color-spidey-web)"
+                strokeWidth={3}
+            />
+        ) : null;
+        art = (
+            <>
+                {strand}
+                {petCells(body)}
+            </>
+        );
+    } else {
+        art = (
+            <>
+                {/* under the body and never mirrored, like the marks: the flag stays at its left either way */}
+                {petCells(sprite.back)}
+                {/* only the body turns to face left; marks drawn inside would read backwards */}
+                <g transform={out.flip ? `matrix(-1 0 0 1 ${PET_PX} 0)` : undefined}>{petCells(sprite.body)}</g>
+                {petCells(sprite.overlay)}
+            </>
+        );
+    }
+    return (
+        <button
+            ref={setBtn}
+            type="button"
+            // a click opens the peek; the keys stay the office's: it takes no focus, so ↵ is never its click
+            tabIndex={-1}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={(e) => {
+                e.stopPropagation();
+                bumpBossInput();
+                if (globalStore.get(petPeekOpenAtom)) {
+                    closePeek();
+                } else {
+                    openPetBubble(model);
+                }
+            }}
+            data-office-boss=""
+            data-office-boss-pet={character}
+            data-office-entrance={entrance ?? undefined}
+            aria-label="Jarvis condition"
+            className={cn(
+                "pointer-events-auto absolute left-0 top-0 z-[7] block cursor-pointer border-0 bg-transparent p-0 outline-none",
+                look.moving && "will-change-transform",
+                // after hours the office's people are shaded; the pet does not glow in a dark room
+                phase === "after" && "[filter:brightness(0.7)]"
+            )}
+            style={{ width: PET_PX, height: PET_PX }}
+        >
+            <svg
+                width={PET_PX}
+                height={PET_PX}
+                viewBox={`0 0 ${PET_PX} ${PET_PX}`}
+                shapeRendering="crispEdges"
+                // the flag in hand rises above the sprite's box, the teleport's ring and sparks and the strand draw past it
+                overflow="visible"
+                aria-hidden="true"
+                className="block"
+            >
+                {art}
+            </svg>
+        </button>
     );
 }
 
@@ -2643,9 +3164,9 @@ function OfficeDialogLayer({
               )
             : null;
     }
-    // the boss's feet in px from the view's top; at a desk it stands as the "boss" sprite, spriteH("boss") tall
+    // the boss's feet in px from the view's top; the pet stands PET_PX tall
     const foot = look?.rest && el ? (root?.offsetTop ?? 0) + look.rest.y - el.scrollTop : undefined;
-    const edge = vm && el && foot != null ? dialogEdge(foot - spriteH("boss"), foot, el.clientHeight) : undefined;
+    const edge = vm && el && foot != null ? dialogEdge(foot - PET_PX, foot, el.clientHeight) : undefined;
     probe.edge = edge ?? "";
     shownRef.current = vm != null && edge != null;
     if (!vm || !edge) {
@@ -2808,7 +3329,7 @@ function OfficePopup({
         return (
             <OfficePrompt
                 kind="board"
-                over={{ x: look.rest.x, y: look.rest.y - spriteH("boss") - 4 }}
+                over={{ x: look.rest.x, y: look.rest.y - PET_PX - 4 }}
                 verb="Read"
                 onTalk={onTalk}
             />
@@ -3035,8 +3556,7 @@ const SHEET_COL_LABELS = [
     "walk →",
     "walk → 2",
 ];
-const SHEET_BOSS_LABELS = ["standing", "at a desk", "walk ↓", "walk ↓ 2", "walk ↑", "walk ↑ 2", "walk →", "walk → 2"];
-const SHEET_ROW_LABELS = ["look 1 · claude", "look 2 · codex", "look 3 · pi", "look 4 · agy", "the boss · cap"];
+const SHEET_ROW_LABELS = ["look 1 · claude", "look 2 · codex", "look 3 · pi", "look 4 · agy"];
 
 function PoseSheet({ phase }: { phase: OfficePhase }) {
     const cellW = SHEET_CW * PLAN_CELL;
@@ -3065,7 +3585,7 @@ function PoseSheet({ phase }: { phase: OfficePhase }) {
             {text}
         </span>
     );
-    const sheetH = (SHEET_SHIRTS.length + 1) * cellH;
+    const sheetH = SHEET_SHIRTS.length * cellH;
     return (
         <div
             data-office-sheet
@@ -3093,10 +3613,6 @@ function PoseSheet({ phase }: { phase: OfficePhase }) {
                     {SHEET_SHIRTS.map((shirt, r) =>
                         SHEET_POSES.map((s, c) => sprite(s, { shirt, look: r + 1 }, c, r, `${shirt}-${s}`))
                     )}
-                    {BOSS_POSES.map((s, c) => sprite(s, BOSS_OUTFIT, c, SHEET_SHIRTS.length, `boss-${s}`))}
-                </div>
-                <div className="relative mt-1 h-4">
-                    {SHEET_BOSS_LABELS.map((l, i) => colLabel(l, i, "data-office-sheet-boss"))}
                 </div>
             </div>
         </div>

@@ -3,9 +3,9 @@
 //
 // The Cockpit office's people, seen from above (cockpit office spec, "Drawing"): the chibi set, 14 columns (20 with a
 // raised arm), a role code per cell, never a colour. O outline, H hair, h hair light, S skin, s skin shade, E eyes,
-// T shirt, t shirt shade, P pants, p pants shade, K shoes, C cup, B the boss's cap, W cap badge or tie, R chair,
-// r chair shade, _ ground shadow. planSpriteUrl draws one in an outfit, a phase and a shade once, through the shared
-// cache (namespace "plan", capped at 600).
+// T shirt, t shirt shade, P pants, p pants shade, K shoes, C cup, R chair, r chair shade, _ ground shadow. planSpriteUrl
+// draws one in an outfit, a phase and a shade once, through the shared cache (namespace "plan", capped at 600). The boss
+// is not among them: it is the person's pet (jarvis/petsprite.ts), drawn by cockpitoffice.tsx.
 // The grids are the prototype's (prototype/sprites.mjs): when they disagree, it wins.
 
 import { NEAR_CHAIR } from "./officegrids";
@@ -31,9 +31,8 @@ export type PlanSprite =
     | "up1"
     | "up2"
     | "side1"
-    | "side2"
-    | "boss";
-export type PlanLook = 1 | 2 | 3 | 4 | "boss";
+    | "side2";
+export type PlanLook = 1 | 2 | 3 | 4;
 export type Shade = "" | "dark" | "night" | "both";
 export type SeatPose = "sit" | "hand" | "cheer" | "doze" | "back" | "empty";
 export type WalkDir = "up" | "down" | "left" | "right";
@@ -98,19 +97,6 @@ const FRONT: Record<PlanLook, string[]> = {
         ".OsSSSSSSSSsO.",
         "..OOssssssOO..",
     ],
-    boss: [
-        "...OOOOOOOO...",
-        "..OBBBBBBBBO..",
-        ".OBBBWWBBBBBO.",
-        ".OBBBBBBBBBBO.",
-        "OBBBBBBBBBBBBO",
-        "OOOOOOOOOOOOOO",
-        "OHSSSSSSSSSSHO",
-        "OSSSESSSSESSSO",
-        "OSSSESSSSESSSO",
-        ".OsSSSSSSSSsO.",
-        "..OOssssssOO..",
-    ],
 };
 
 const BACK: Record<PlanLook, string[]> = {
@@ -166,19 +152,6 @@ const BACK: Record<PlanLook, string[]> = {
         ".OHHHHHHHHHHO.",
         "..OOssssssOO..",
     ],
-    boss: [
-        "...OOOOOOOO...",
-        "..OBBBBBBBBO..",
-        ".OBBBBBBBBBBO.",
-        ".OBBBBBBBBBBO.",
-        "OBBBBBBBBBBBBO",
-        "OOOOOOOOOOOOOO",
-        "OHHHHHHHHHHHHO",
-        "OSHHHHHHHHHHSO",
-        "OSHHHHHHHHHHSO",
-        ".OHHHHHHHHHHO.",
-        "..OOssssssOO..",
-    ],
 };
 
 const SIDE: Record<PlanLook, string[]> = {
@@ -228,19 +201,6 @@ const SIDE: Record<PlanLook, string[]> = {
         ".OHHhHHHHHHHO.",
         "OHHHHHHHHHHHHO",
         "OHHHHHHHHSSSHO",
-        "OHHHHHSSSSSSSO",
-        "OHHHSSSSSSESSO",
-        "OHHHSSSSSSESSO",
-        ".OHHsSSSSSSsO.",
-        "..OOOssssOOO..",
-    ],
-    boss: [
-        "...OOOOOOO....",
-        "..OBBBBBBBO...",
-        ".OBBBBBBWWBO..",
-        ".OBBBBBBBBBO..",
-        "OBBBBBBBBBBBO.",
-        "OOOOOOOOOOOOOO",
         "OHHHHHSSSSSSSO",
         "OHHHSSSSSSESSO",
         "OHHHSSSSSSESSO",
@@ -324,14 +284,6 @@ const STAND = [
     "OSSOTTTTTtOSSO",
     ".OOOTTTTTtOOO.",
 ];
-const STAND_TIE = [
-    "..OOTWWWWTOO..",
-    ".OTTTTWWTTTtO.",
-    "OTTOTTWWTtOTtO",
-    "OTTOTTWWTtOTtO",
-    "OSSOTTTTTtOSSO",
-    ".OOOTTTTTtOOO.",
-];
 const STAND_CUP = [
     "..OOTTTTTTOO..",
     ".OTTTTTTTTTtO.",
@@ -412,7 +364,6 @@ function build(look: PlanLook): Record<PlanSprite, string[]> {
     const F = FRONT[look];
     const B = BACK[look];
     const Sd = SIDE[look];
-    const torso = look === "boss" ? STAND_TIE : STAND;
     return {
         sit: [...F, ...SIT],
         nod: [...blank, ...F, ...SIT.slice(0, 5)],
@@ -427,14 +378,13 @@ function build(look: PlanLook): Record<PlanSprite, string[]> {
         back: [...B, ...BACK_TORSO],
         backseat: [...B, ...BACK_TORSO.slice(0, 2), ...NEAR_CHAIR],
         cup: [...F, ...STAND_CUP, ...LEGS],
-        stand: [...F, ...torso, ...LEGS],
-        down1: [...F, ...torso, ...LEGS_A],
-        down2: [...F, ...torso, ...LEGS_B],
+        stand: [...F, ...STAND, ...LEGS],
+        down1: [...F, ...STAND, ...LEGS_A],
+        down2: [...F, ...STAND, ...LEGS_B],
         up1: [...B, ...STAND_BACK, ...LEGS_A],
         up2: [...B, ...STAND_BACK, ...LEGS_B],
         side1: [...Sd, ...SIDE_BODY, ...SIDE_LEGS_A],
         side2: [...Sd, ...SIDE_BODY_B, ...SIDE_LEGS_B],
-        boss: [...B, ...STAND_BACK, ...LEGS],
     };
 }
 const built = new Map<PlanLook, Record<PlanSprite, string[]>>();
@@ -496,7 +446,7 @@ export const MARKS: Record<PlanMark, string[]> = {
     ring: ["..AAAAAAAAAA..", ".A..........A.", "A............A", ".A..........A.", "..AAAAAAAAAA.."],
 };
 
-// the canvas's Cast board: its columns, and its boss row as prototype/boards.mjs castSheet draws it
+// the canvas's Cast board: its columns, as prototype/boards.mjs castSheet draws them
 export const SHEET_POSES: PlanSprite[] = [
     "sit",
     "nod",
@@ -517,7 +467,6 @@ export const SHEET_POSES: PlanSprite[] = [
     "side1",
     "side2",
 ];
-export const BOSS_POSES: PlanSprite[] = ["stand", "boss", "down1", "down2", "up1", "up2", "side1", "side2"];
 export const SHEET_SHIRTS = [
     "--color-office-shirt-claude",
     "--color-office-shirt-codex",
@@ -568,7 +517,6 @@ export const HARNESS_SHIRT: Record<string, string> = {
 };
 export const OTHER_SHIRT = "--color-office-shirt-other";
 export const LEAD_SHIRT = "--color-office-lead";
-export const BOSS_SHIRT = "--color-office-boss";
 export const LANE_SHIRTS = [
     "--color-graphlane-1",
     "--color-graphlane-2",
@@ -585,7 +533,6 @@ const HAIR = [
 ];
 const SKIN = ["--color-office-skin-1", "--color-office-skin-2", "--color-office-skin-3", "--color-office-skin-4"];
 const PANTS = "--color-office-pants";
-const PAPER = "--color-office-paper";
 const CUP = "--color-office-cup";
 const DARK = "--color-office-dark";
 const NIGHT = "--color-office-night";
@@ -593,7 +540,6 @@ const NIGHT = "--color-office-night";
 export interface PlanOutfit {
     shirt: string; // a --color-* token name
     look: number; // 1..4, skin and hair
-    boss?: boolean;
 }
 
 export function shirtOf(harness: string | undefined): string {
@@ -640,10 +586,6 @@ export function planColor(
             return shade(PANTS, 0.78);
         case "C":
             return read(CUP);
-        case "B":
-            return read(BOSS_SHIRT);
-        case "W":
-            return read(PAPER);
         case "R":
             return read(t.chair);
         case "r":
@@ -675,10 +617,9 @@ function tinted(c: Rgb | undefined, tints: (Rgb | undefined)[]): Rgb | undefined
 
 /** The sprite in the outfit and the phase, drawn once; a near-side seat in a dark room or after hours is shaded. */
 export function planSpriteUrl(s: PlanSprite, o: PlanOutfit, phase: OfficePhase = "day", shade: Shade = ""): string {
-    const look: PlanLook = o.boss ? "boss" : (clampLook(o.look) as PlanLook);
-    const grid = planGrid(s, look);
+    const grid = planGrid(s, clampLook(o.look) as PlanLook);
     const tints = shade === "both" ? [DARK, NIGHT] : shade === "dark" ? [DARK] : shade === "night" ? [NIGHT] : [];
-    const key = `${s}|${o.shirt}|${o.look}|${o.boss ? 1 : 0}|${phase}|${shade}`;
+    const key = `${s}|${o.shirt}|${o.look}|${phase}|${shade}`;
     return cachedSprite(
         "plan",
         key,
@@ -722,10 +663,8 @@ export const PLAN_TOKENS: string[] = [
     ...Object.values(HARNESS_SHIRT),
     OTHER_SHIRT,
     LEAD_SHIRT,
-    BOSS_SHIRT,
     ...LANE_SHIRTS,
     PANTS,
-    PAPER,
     CUP,
     DARK,
     NIGHT,

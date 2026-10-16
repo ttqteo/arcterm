@@ -79,6 +79,9 @@ import {
     petCharacterAtom,
     petEventsAtom,
     petHomeAtom,
+    petOfficeBossAtom,
+    petOfficeCornerAtom,
+    petOfficeEnteringAtom,
     petOutfitChoiceAtom,
     petPeekOpenAtom,
     petQuotesOnAtom,
@@ -302,6 +305,13 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
     // set by the sprite only when it crosses the window's middle, so the walk does not re-render the peek
     const [corner, setCorner] = useState<PetCorner>("bottom-right");
+    const officeBoss = useAtomValue(petOfficeBossAtom);
+    const officeCorner = useAtomValue(petOfficeCornerAtom);
+    const entering = useAtomValue(petOfficeEnteringAtom);
+    // one Jarvis: in the office the boss is the creature; folded, the folded Sprout is its own (sprout-mini.tsx)
+    const inOffice = officeBoss != null && !folded;
+    const shownAnchor = inOffice ? officeBoss : anchor;
+    const shownCorner = inOffice ? officeCorner : corner;
 
     // Push once per event (pet spec §4 decision 8). Advancing the watermark re-runs this effect, which then
     // finds nothing new — so the loop settles after one push rather than repeating it.
@@ -365,33 +375,37 @@ export function PetView({ model }: { model: AgentsViewModel }) {
 
     return (
         <>
-            <PetSprite
-                expression={expression.kind}
-                posture={posture}
-                utterance={bubble?.id ?? null}
-                peekOpen={peekOpen}
-                unread={unread}
-                reduce={reduce}
-                surface={surface}
-                setAnchor={setAnchor}
-                onCorner={setCorner}
-                openPeek={openPeek}
-                chip={floating && waiting > 0 ? waiting : null}
-                working={floating && working > 0 ? working : null}
-            />
-            {folded ? null : (
+            {/* in the office the boss is the creature, so no footer sprite; this component stays mounted for its voice */}
+            {inOffice ? null : (
+                <PetSprite
+                    expression={expression.kind}
+                    posture={posture}
+                    utterance={bubble?.id ?? null}
+                    peekOpen={peekOpen}
+                    unread={unread}
+                    reduce={reduce}
+                    surface={surface}
+                    setAnchor={setAnchor}
+                    onCorner={setCorner}
+                    openPeek={openPeek}
+                    chip={floating && waiting > 0 ? waiting : null}
+                    working={floating && working > 0 ? working : null}
+                />
+            )}
+            {/* the bubble waits out the boss's entrance */}
+            {folded || (inOffice && entering) ? null : (
                 <PetBubble
                     event={bubble}
                     agents={agents}
-                    anchor={anchor}
-                    corner={corner}
+                    anchor={shownAnchor}
+                    corner={shownCorner}
                     onOpen={openPeek}
                     onDismiss={dismissPetBubble}
                 />
             )}
             {/* the peek derives its own ranked condition LIST from the same signals — expressionFor is
                 the creature's single face, and passing it here would cap the panel at one condition */}
-            {folded ? null : <PetPeek model={model} anchor={anchor} corner={corner} signals={signals} />}
+            {folded ? null : <PetPeek model={model} anchor={shownAnchor} corner={shownCorner} signals={signals} />}
         </>
     );
 }

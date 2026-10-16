@@ -24,6 +24,7 @@ import {
     applyAgentOrder,
     streamableTranscriptAgents,
     matchesProjectFilter,
+    dedupBackgroundAgents,
     partitionBackgrounded,
     syncCardOrder,
     type AgentVM,
@@ -45,6 +46,7 @@ import {
 } from "./cardgridlayout";
 import { hiddenAgentIds, rosterLoadPhase, splitRecentlyIdle } from "./cockpitsurfacemodel";
 import { BackgroundAgentsStrip } from "./backgroundagentsstrip";
+import { backgroundAgentVMsAtom } from "./backgroundagentsstore";
 import { BackgroundedSection } from "./backgroundedsection";
 import { channelMessagesAtom } from "./channelsstore";
 import { answeredAskIdsAcross, needsHuman } from "./jarvisderive";
@@ -79,6 +81,7 @@ import {
     cockpitViewAtom,
     officeBoardPageAtom,
     officeBoardWhyAtom,
+    officeBackgroundOpenAtom,
     officeEventsOpenAtom,
     officeLayoutAtom,
 } from "./officestore";
@@ -360,6 +363,13 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     // idle/backgrounded sections share the project scope; live-only hides the parked-idle section
     const shownParkedIdle = liveOnly ? [] : parkedIdle.filter((a) => matchesProjectFilter(a, projectFilter));
     const shownBackgrounded = backgrounded.filter((a) => matchesProjectFilter(a, projectFilter));
+    // detached `claude --bg` sessions, counted as the background-agents strip shows them
+    const shownBgSessions = dedupBackgroundAgents(useAtomValue(backgroundAgentVMsAtom), agents).filter((a) =>
+        matchesProjectFilter(a, projectFilter)
+    );
+    // in Office the two sections stay hidden until the office menu's Background shows them (no room draws them)
+    const backgroundOpen = useAtomValue(officeBackgroundOpenAtom);
+    const showBackground = view !== "office" || backgroundOpen;
     // the office draws the cards and the Idle section's agents (cockpit office spec, "Where it lives"). This
     // surface builds its cards anew on every render, so the office's input is kept by its content: a render that
     // changes nothing the office draws hands it the same arrays, and its plan and memoized desks stay put
@@ -579,6 +589,9 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                 return;
             case "events":
                 setOfficeEvents(!globalStore.get(officeEventsOpenAtom));
+                return;
+            case "background":
+                globalStore.set(officeBackgroundOpenAtom, !globalStore.get(officeBackgroundOpenAtom));
                 return;
             case "cards":
                 toggleView();
@@ -1073,6 +1086,8 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                                 hud={officeHud}
                                 newEvents={railEvents.fresh.length}
                                 eventsOpen={eventsOpen}
+                                background={shownBackgrounded.length + shownBgSessions.length}
+                                backgroundOpen={backgroundOpen}
                                 onMenu={onOfficeMenu}
                                 boardRows={ny.rows.length}
                                 handleRef={officeRef}
@@ -1097,9 +1112,11 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                     )}
 
                     <div className="shrink-0 px-5">
-                        <BackgroundedSection agents={shownBackgrounded} onRestore={(id) => toggleBackground(id)} />
+                        {showBackground ? (
+                            <BackgroundedSection agents={shownBackgrounded} onRestore={(id) => toggleBackground(id)} />
+                        ) : null}
                         {view === "office" ? null : <IdleSection agents={shownParkedIdle} onOpen={(id) => model.openTerminal(id)} />}
-                        <BackgroundAgentsStrip model={model} />
+                        {showBackground ? <BackgroundAgentsStrip model={model} /> : null}
                     </div>
                 </div>
 

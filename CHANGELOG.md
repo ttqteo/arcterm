@@ -27,6 +27,23 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Added
 
 - Answer an agent's question from Telegram: pair a bot in Settings → General → Notifications, then tap an option or reply in your own words. <!-- big -->
+- In the Cockpit's Office your pet is the boss you walk around: Sprout, the Minion, or Spider-Man, who swings in
+  through a window and turns into Peter Parker in a shirt and tie. Its speech bubble and the condition panel open over
+  it, and the footer pet comes back when you leave. <!-- big -->
+
+### Changed
+
+- **Background tucked away in the Office**: the Backgrounded and Background lists no longer sit under the building,
+  so the office fills the Cockpit. The office menu (`m`) lists **Background** with how many agents are there; pick
+  it to show both lists under the office, and **Hide background** to tuck them away again. Cards still shows them.
+  <!-- big --> <!-- shot: 0.15.15-office-background.webp -->
+- The agent header no longer shows a bare `i` key beside the initiative; `i` still opens it, and the link's tooltip
+  says so.
+
+### Fixed
+
+- Highlighted sentences in Claude's replies now show on Team accounts too. Claude Code's security plugin there kept
+  the instructions out of the system prompt, so Claude never marked anything; they now ride with your prompt instead.
 
 ## 0.15.14 — 2026-10-16
 

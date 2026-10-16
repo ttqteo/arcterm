@@ -327,7 +327,7 @@ async function reloadOffice(h, floor) {
     await h.reload();
     await h.goto("cockpit");
     const missing = await waitForOffice(h);
-    if (!missing) await dev(h, { runs: OFFICE_FLOORS_RUNS, afterHours: false, energy: 63, ...(floor != null ? { floor } : {}) });
+    if (!missing) await dev(h, { runs: OFFICE_FLOORS_RUNS, afterHours: false, energy: 63, entrance: "skip", ...(floor != null ? { floor } : {}) });
     return missing;
 }
 
@@ -376,7 +376,9 @@ export function makeCockpitOfficeScenarios(fx) {
         }
         await h.goto("cockpit");
         ctx.missing = await waitForOffice(h);
-        if (!ctx.missing) await dev(h, { runs: OFFICE_RUNS, afterHours: false, energy: 63 });
+        // the boss pet's entrance (a reload opens the first office of a launch) would play under the first steps' shots:
+        // skip it, unless the scenario is about the entrance (cockpit-office-pet passes opts.entrance)
+        if (!ctx.missing) await dev(h, { runs: OFFICE_RUNS, afterHours: false, energy: 63, ...(opts.entrance ? {} : { entrance: "skip" }) });
         return ctx;
     }
     const cockpitOffice = {
@@ -884,6 +886,7 @@ export function makeCockpitOfficeScenarios(fx) {
                 const sheet = document.querySelector("[data-office-sheet]");
                 const area = sheet.querySelector("[data-office-sheet-area]").getBoundingClientRect();
                 const cols = [...sheet.querySelectorAll("[data-office-sheet-col]")].map((e) => e.getBoundingClientRect().left - area.left);
+                // the States sheet has no boss row: the boss is the pet, drawn on the floor
                 const boss = sheet.querySelectorAll("[data-office-sheet-boss]").length;
                 const imgs = [...sheet.querySelectorAll("[data-office-sheet-area] img")].slice(0, 18);
                 const sprites = imgs.map((img, c) => {
@@ -910,7 +913,7 @@ export function makeCockpitOfficeScenarios(fx) {
                     cast.scrolls != null &&
                     cast.scrolls <= 0 &&
                     cast.cols === 18 &&
-                    cast.boss === 8 &&
+                    cast.boss === 0 &&
                     cast.colOff.every((d) => d < 1) &&
                     cast.spriteOff.length === 18 &&
                     cast.spriteOff.every((d) => d <= 1),
@@ -992,7 +995,8 @@ export function makeCockpitOfficeScenarios(fx) {
                     outside: labels.filter((q) => !inside(q)).length + people.filter((q) => !inside(q)).length,
                     more: document.querySelector("[data-office-lounge-more]")?.textContent ?? null,
                     moreInside: (() => { const m = document.querySelector("[data-office-lounge-more]"); return m ? inside(rect(m)) : false; })(),
-                    images: document.querySelectorAll("[data-office-root] img[data-office-sprite]").length,
+                    // the people drawn: each an <img>, but the boss, an svg of the pet in a button
+                    images: document.querySelectorAll("[data-office-root] img[data-office-sprite], [data-office-root] [data-office-boss]").length,
                 };
             })()`);
             p = await probe(h);
@@ -1134,6 +1138,373 @@ export function makeCockpitOfficeScenarios(fx) {
                     if (ctx.prevFixture != null) writeFileSync(FIXTURE, ctx.prevFixture);
                 },
             });
+        },
+    };
+    // the boss as the person's pet (docs/superpowers/specs/2026-10-16-office-pet-boss-design.md; canvas
+    // .superpowers/design/office-pet-boss: Main, Entrance, Floor): the entrance each pet makes as the office opens (the
+    // teleport's beam for Sprout and the Minion; Spider-Man's swing, unmasking and puff), the poses of the Main board, the
+    // footer's creature giving way, and the bubble and the peek hanging off the boss. What the boss drew is read from the
+    // probe's bossPet. The DEV seams (cockpitoffice.tsx OfficeDev) show what a live run passes through in a moment:
+    // entrance: <ms> holds one frame of the entrance still, replayEntrance plays one live, bossRest and bossExpression take
+    // a pose. __cockpitOffice merges each call into what is set, so a seam is cleared with null.
+    const cockpitOfficePet = {
+        name: "cockpit-office-pet",
+        surface: "cockpit",
+        async arrange(h) {
+            // the entrance stays live: the first office after the reload is the one that plays it
+            const ctx = await arrangeOffice(h, { entrance: true });
+            if (!ctx.missing) {
+                // a real 5-hour window past 60 % makes the boss tired and a bubble makes it speak, and each outranks the stand
+                // and the pastimes the steps look for
+                await dev(h, { bossExpression: "at-rest" });
+                await h.ev("window.__cockpitOfficeBubble(false)");
+            }
+            return ctx;
+        },
+        async teardown(h, ctx) {
+            // the pet the scenario found is the person's own choice, kept in localStorage: put it back before the reload
+            try {
+                if (ctx.prevPet != null) await h.ev(`window.__cockpitOfficePet?.(${JSON.stringify(ctx.prevPet)})`);
+                await h.ev("window.__cockpitOfficeBubble?.(false)");
+                await h.ev("window.__cockpitOffice?.(null)");
+            } catch (e) {
+                console.error(`cockpit-office-pet teardown: put back the pet and the dev state failed: ${e?.message ?? e}`);
+            }
+            await cockpitOffice.teardown(h, ctx);
+        },
+        async assert(h, ctx) {
+            const steps = [];
+            const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+            if (ctx.missing) {
+                rec("0. the office loads", false, ctx.missing);
+                return steps;
+            }
+            const shot = (name) => h.shot(`cdp-shots/cockpit-office-pet-${name}.png`);
+            const bp = () => h.ev("window.__cockpitOfficeProbe?.()?.bossPet ?? null");
+            // polls the boss pet until test holds, up to ms; the last reading either way
+            const waitPet = async (test, ms = 3000) => {
+                let q = null;
+                for (let t = 0; t <= ms; t += 50) {
+                    q = await bp();
+                    if (q && test(q)) return q;
+                    await sleep(50);
+                }
+                return q;
+            };
+            // polls an expression in the page for up to ms; true once it holds
+            const until = async (expr, ms = 3000) => {
+                for (let t = 0; t <= ms; t += 100) {
+                    if (await h.ev(expr).catch(() => false)) return true;
+                    await sleep(100);
+                }
+                return false;
+            };
+            // sets the pet the boss is drawn as; the first call keeps the one it found, for the teardown to put back
+            const setPet = async (name) => {
+                const prev = await h.ev(`window.__cockpitOfficePet(${JSON.stringify(name)})`);
+                ctx.prevPet ??= prev;
+            };
+            // the boss's button as drawn: its entrance attribute, its cells (and how many are the suit's red), the strand of
+            // a swing, and its box in the plan (the Office root's top left is the origin)
+            const bossDom = () =>
+                h.ev(`(() => {
+                    const el = document.querySelector("[data-office-boss]");
+                    const root = document.querySelector("[data-office-root]").getBoundingClientRect();
+                    const r = el?.getBoundingClientRect();
+                    return {
+                        entrance: el?.dataset.officeEntrance ?? null,
+                        cells: el?.querySelectorAll("svg rect").length ?? 0,
+                        suit: el?.querySelectorAll('svg rect[fill="var(--color-spidey-red)"]').length ?? 0,
+                        strand: el?.querySelector("svg line")?.getAttribute("stroke") ?? null,
+                        box: r ? { x: Math.round(r.left - root.left), y: Math.round(r.top - root.top), w: Math.round(r.width), h: Math.round(r.height) } : null,
+                    };
+                })()`);
+            // how far the button's feet are from where the boss stands: about 0 when it is on its spot, the swing's distance
+            // while it is on the way
+            const awayFromSpot = async (dom) => {
+                const spot = (await probe(h))?.boss;
+                return spot && dom.box ? Math.round(Math.hypot(dom.box.x + dom.box.w / 2 - spot.x, dom.box.y + dom.box.h - spot.y)) : null;
+            };
+            const clickFloor = (x, y) =>
+                h.ev(`(() => {
+                    const root = document.querySelector("[data-office-root]");
+                    const r = root.getBoundingClientRect();
+                    root.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: r.left + ${x}, clientY: r.top + ${y} }));
+                })()`);
+            // the poses a boss has right after an act: standing, or already walking
+            const afterAct = ["stand", "walk1", "walk2"];
+
+            // 0. the office mounted with the entrance (the first office after the reload) and the footer's creature gave way
+            const opened = await waitPet(() => true, 5000);
+            const given = await h.ev(`({
+                footer: document.querySelectorAll("[data-pet-sprite]").length,
+                cells: document.querySelectorAll("[data-office-boss] svg rect").length,
+            })`);
+            rec(
+                "0. the office opens with the pet's entrance, the footer's creature gives way, and the boss is drawn as an svg of cells",
+                opened?.played === true && given.footer === 0 && given.cells > 0,
+                JSON.stringify({ played: opened?.played, character: opened?.character, ...given })
+            );
+
+            // 0b, 0c. Sprout and the Minion arrive by the teleport's beam, then stand on the floor (the Floor board)
+            for (const [id, name] of [
+                ["0b", "sprout"],
+                ["0c", "minion"],
+            ]) {
+                await setPet(name);
+                await dev(h, { entrance: 200 });
+                const beam = await waitPet((b) => b.entrance === "beam" && b.character === name);
+                const dom = await bossDom();
+                const beamCells = await h.ev(`document.querySelectorAll('[data-office-boss][data-office-entrance="beam"] svg rect').length`);
+                await sleep(150);
+                await shot(`beam-${name}`);
+                await dev(h, { entrance: "skip" });
+                const stands = await waitPet((b) => b.entrance == null && b.pose === "stand" && b.character === name);
+                const floorDom = await bossDom();
+                await sleep(100);
+                await shot(`floor-${name}`);
+                rec(
+                    `${id}. ${name === "sprout" ? "Sprout" : "The Minion"} arrives by the teleport's beam, then stands on the floor`,
+                    beam?.entrance === "beam" &&
+                        beam.character === name &&
+                        dom.entrance === "beam" &&
+                        beamCells > 0 &&
+                        stands?.entrance == null &&
+                        stands.character === name &&
+                        stands.pose === "stand" &&
+                        floorDom.cells > 0,
+                    JSON.stringify({ beam: [beam?.entrance, beam?.character], beamCells, stands: [stands?.entrance, stands?.character, stands?.pose], floorCells: floorDom.cells })
+                );
+            }
+
+            // 1. Spider-Man's entrance, one shot per phase: a strand from the window to a boss on the swing, then the suit sits,
+            // stands, unmasks, and the puff turns it into Peter
+            await setPet("spidey");
+            const seen = [];
+            for (const [ms, want] of [
+                [350, "swing"],
+                [850, "land"],
+                [1150, "stand"],
+                [1550, "unmask"],
+                [2000, "puff"],
+            ]) {
+                await dev(h, { entrance: ms });
+                const q = await waitPet((b) => b.entrance === want && b.character === "spidey");
+                await sleep(200);
+                const dom = await bossDom();
+                seen.push({ ms, want, entrance: q?.entrance, attr: dom.entrance, strand: dom.strand, suit: dom.suit, away: await awayFromSpot(dom) });
+                await shot(`entrance-${want}`);
+            }
+            const swingAt = seen[0];
+            const landed = seen.slice(1);
+            rec(
+                "1. Spider-Man swings in, lands, stands, unmasks and puffs: a web strand and a button off the boss's spot on the swing, on the spot after it",
+                seen.every((s) => s.entrance === s.want && s.attr === s.want) &&
+                    swingAt.strand === "var(--color-spidey-web)" &&
+                    swingAt.away > 12 &&
+                    landed.every((s) => s.strand == null && s.away != null && s.away <= 4) &&
+                    // the suit is what the unmasking takes off: the stand phase shows it, so the next step's count is a real test
+                    landed[1].suit > 0,
+                JSON.stringify(seen)
+            );
+
+            // 2. skipped, Peter stands in his shirt and tie on the boss's spot, with no suit
+            await dev(h, { entrance: "skip" });
+            const peter = await waitPet((b) => b.entrance == null && b.pose === "stand" && b.character === "spidey");
+            const peterDom = await bossDom();
+            const peterAway = await awayFromSpot(peterDom);
+            await sleep(100);
+            await shot("peter");
+            rec(
+                "2. with the entrance skipped Peter stands in his shirt and tie on the boss's spot, with no red of the suit in his cells",
+                peter?.entrance == null &&
+                    peter.character === "spidey" &&
+                    peter.pose === "stand" &&
+                    peterDom.cells > 0 &&
+                    peterDom.suit === 0 &&
+                    peterAway != null &&
+                    peterAway <= 4,
+                JSON.stringify({ peter: [peter?.entrance, peter?.character, peter?.pose], cells: peterDom.cells, suit: peterDom.suit, away: peterAway })
+            );
+
+            // 3. a live entrance ends with the person's first act: a walk key, a click on the floor, ↵. Each time it is played
+            // from its start and seen live, then the act; the pose after it is the boss's own (it stands, or has set off)
+            const plays = async () => {
+                await dev(h, { entrance: null, replayEntrance: Date.now() });
+                return waitPet((b) => b.entrance === "swing", 600);
+            };
+            const ends = () => waitPet((b) => b.entrance == null, 300);
+            const acts = [];
+            const note = (act, live, after) => acts.push({ act, live: live?.entrance, after: [after?.entrance, after?.pose] });
+            await focusCockpit(h);
+            let live = await plays();
+            await key(h, "ArrowRight");
+            note("→", live, await ends());
+
+            const hall = (await probe(h))?.hall;
+            if (hall) {
+                live = await plays();
+                await clickFloor(hall.x + hall.w - 36, hall.y + Math.min(300, hall.h - 40));
+                note("click", live, await ends());
+                await settleBoss(h, 5000);
+            }
+
+            // ↵ at a desk opens its dialog box (the boss in the hall with the cursor on a desk elsewhere would walk ↵ to the
+            // Agent surface): the click walks the boss to quill's desk, Esc shuts the box it opens, and ↵ offers it again
+            await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-quill"))})?.click()`);
+            await settleBoss(h, 5000);
+            await focusCockpit(h);
+            await key(h, "Escape");
+            await sleep(200);
+            live = await plays();
+            await focusCockpit(h);
+            await key(h, "Enter");
+            note("↵", live, await ends());
+            const talked = await probe(h);
+            await shot("skip-enter");
+            await focusCockpit(h);
+            await key(h, "Escape");
+            await dev(h, { entrance: "skip" });
+            rec(
+                "3. a live entrance ends at once with a walk key, a click on the floor and ↵, the boss in place",
+                acts.length === 3 && acts.every((a) => a.live === "swing" && a.after[0] == null && afterAct.includes(a.after[1])),
+                JSON.stringify({ acts, dialog: talked?.dialog })
+            );
+
+            // 4. walking: Peter's walk is front-on, so left or right he is never mirrored. From the hall's middle, a key held
+            // for a moment; the frames read while it is down
+            const hallNow = (await probe(h))?.hall;
+            if (hallNow) {
+                await clickFloor(hallNow.x + hallNow.w / 2, hallNow.y + Math.min(300, hallNow.h - 40));
+            }
+            await settleBoss(h, 5000);
+            const walked = [];
+            for (const dir of ["ArrowLeft", "ArrowRight"]) {
+                await focusCockpit(h);
+                await key(h, dir, "down");
+                const sampled = [];
+                for (let i = 0; i < 3; i++) {
+                    await sleep(60);
+                    sampled.push(await bp());
+                }
+                if (dir === "ArrowLeft") await shot("walk");
+                await key(h, dir, "up");
+                walked.push({ dir, poses: sampled.map((b) => b?.pose), flips: sampled.map((b) => b?.flip) });
+                await settleBoss(h, 2000);
+            }
+            rec(
+                "4. walking left and right the boss shows its walk frames, front-on, never mirrored",
+                hallNow != null && walked.every((w) => w.poses.every((p) => p === "walk1" || p === "walk2") && w.flips.every((f) => f === false)),
+                JSON.stringify(walked)
+            );
+
+            // 5. every pose of the Main board: a rest the boss takes at once, read until each of its frames has shown
+            const restPoses = { sit: ["sit"], read: ["read1", "read2"], music: ["music1", "music2"], work: ["work1", "work2"], ball: ["ball1", "ball2"], stand: ["stand"] };
+            const rested = {};
+            for (const [rest, want] of Object.entries(restPoses)) {
+                await dev(h, { bossRest: rest });
+                const got = [];
+                for (let t = 0; t <= 3000 && got.length < want.length; t += 40) {
+                    const b = await bp();
+                    if (b && want.includes(b.pose) && !got.includes(b.pose)) {
+                        got.push(b.pose);
+                        await shot(`pose-${b.pose}`);
+                    }
+                    await sleep(40);
+                }
+                rested[rest] = got;
+            }
+            rec(
+                "5. each rest of the Main board shows its pose: sit and stand, and a pastime's two frames in turn",
+                Object.entries(restPoses).every(([rest, want]) => want.every((p) => rested[rest].includes(p))),
+                JSON.stringify(rested)
+            );
+
+            await dev(h, { bossRest: null, bossExpression: "tired" });
+            const tired = await waitPet((b) => b.pose === "tired");
+            await sleep(150);
+            await shot("tired");
+            await dev(h, { bossExpression: "at-rest" });
+            rec("5b. a tired boss shows the tired pose and the sweat drop", tired?.pose === "tired" && tired.marks.includes("drop"), JSON.stringify({ pose: tired?.pose, marks: tired?.marks }));
+
+            // 6. after hours the office's people are shaded: so is the boss, and it comes back with the day
+            const filter = `getComputedStyle(document.querySelector("[data-office-boss]")).filter`;
+            await dev(h, { afterHours: true });
+            const shaded = await until(`${filter}.includes("brightness(0.7)")`);
+            const nightFilter = await h.ev(filter);
+            await shot("after-hours");
+            await dev(h, { afterHours: false });
+            const lit = await until(`${filter} === "none"`);
+            const dayFilter = await h.ev(filter);
+            rec("6. after hours the boss is shaded to brightness(0.7), and by day it is not", shaded && lit, JSON.stringify({ night: nightFilter, day: dayFilter }));
+
+            // 7. the bubble opens over the boss, and waits out an entrance
+            await h.ev(`document.querySelector("[data-office-boss]")?.scrollIntoView({ block: "center" })`);
+            await h.ev("window.__cockpitOfficeBubble(true)");
+            const bubbled = await until(`!!document.querySelector("[data-pet-bubble]")`);
+            await sleep(500);
+            const boxes = await h.ev(`(() => {
+                const box = (s) => {
+                    const b = document.querySelector(s)?.getBoundingClientRect();
+                    return b ? { left: Math.round(b.left), top: Math.round(b.top), right: Math.round(b.right), bottom: Math.round(b.bottom) } : null;
+                };
+                return { bubble: box("[data-pet-bubble]"), boss: box("[data-office-boss]") };
+            })()`);
+            const speaks = await waitPet((b) => b.pose === "speak");
+            await shot("bubble");
+            await h.ev("window.__cockpitOfficeBubble(false)");
+            await dev(h, { entrance: 350 });
+            await h.ev("window.__cockpitOfficeBubble(true)");
+            await sleep(700);
+            const heldBubble = await h.ev(`document.querySelectorAll("[data-pet-bubble]").length`);
+            await dev(h, { entrance: "skip" });
+            const afterEntrance = await until(`!!document.querySelector("[data-pet-bubble]")`);
+            await h.ev("window.__cockpitOfficeBubble(false)");
+            rec(
+                "7. the bubble opens above the boss and the boss speaks; while an entrance holds there is no bubble, and it shows once the entrance is over",
+                bubbled &&
+                    boxes.bubble != null &&
+                    boxes.boss != null &&
+                    boxes.bubble.bottom <= boxes.boss.top + 4 &&
+                    speaks?.pose === "speak" &&
+                    heldBubble === 0 &&
+                    afterEntrance,
+                JSON.stringify({ boxes, pose: speaks?.pose, heldBubble, afterEntrance })
+            );
+
+            // 8. a click on the boss opens the condition panel over it; a click on the backdrop shuts it
+            await h.ev(`document.querySelector("[data-office-boss]")?.scrollIntoView({ block: "center" })`);
+            await sleep(200);
+            const centre = await h.ev(`(() => {
+                const b = document.querySelector("[data-office-boss]").getBoundingClientRect();
+                return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) };
+            })()`);
+            await mousePage(h, "mousePressed", centre.x, centre.y);
+            await mousePage(h, "mouseReleased", centre.x, centre.y);
+            const peeked = await until(`!!document.querySelector("[data-pet-peek]")`);
+            await sleep(400);
+            await shot("peek");
+            await h.ev(`document.querySelector("[data-pet-peek-backdrop]")?.click()`);
+            const peekShut = await until(`!document.querySelector("[data-pet-peek]")`);
+            rec("8. a click on the boss opens the condition panel, and a click on its backdrop shuts it", peeked && peekShut, JSON.stringify({ peeked, peekShut }));
+
+            // 9. leaving gives the footer's creature back, and coming back inside the cooldown plays no entrance. The skip the
+            // steps above set is cleared first, so the cooldown is what decides
+            await dev(h, { entrance: null });
+            await toggleTo(h, "Cards");
+            // the footer's creature fades in: wait until it has
+            const footer = await until(`(() => { const el = document.querySelector("[data-pet-sprite]"); return !!el && parseFloat(getComputedStyle(el).opacity) >= 0.39; })()`, 5000);
+            await shot("footer");
+            await toggleTo(h, "Office");
+            // the first reading of the new mount (the probe's bossPet is null until the boss has drawn)
+            const back = await waitPet(() => true, 5000);
+            rec(
+                "9. back in Cards the footer's creature is drawn again; back in the Office inside two minutes the boss plays no entrance",
+                footer && back?.played === false && back.entrance == null,
+                JSON.stringify({ footer, played: back?.played, entrance: back?.entrance })
+            );
+
+            return steps;
         },
     };
     // the office controls canvas (.superpowers/design/office-controls): the HUD bar and footer, the dialog box and its
@@ -1895,7 +2266,8 @@ export function makeCockpitOfficeScenarios(fx) {
             const cardsHold = await metrics(h);
             r.baseBusyPct = round1(busyPct(cards, cardsHold));
 
-            await dev(h, { runs: BENCH_RUNS });
+            // the boss pet's entrance is a one-off 0.5 to 2.2 s as the office first opens: not what the bench measures
+            await dev(h, { runs: BENCH_RUNS, entrance: "skip" });
             r.openMs = Math.round(
                 await h.ev(`(async () => {
                     const t0 = performance.now();
@@ -2706,5 +3078,101 @@ export function makeCockpitOfficeScenarios(fx) {
         },
     };
 
-    return { cockpitOffice, cockpitOfficeControls, cockpitOfficeNeedsYouBoard, cockpitOfficeBench, cockpitOfficeFloors };
+    // the Office hides the Backgrounded section and the background-agents strip, which no room draws, until the office
+    // menu's Background shows them (cockpit office spec, "The office fills the Cockpit"): the floors roster with one agent
+    // moved to the background and two detached `claude --bg` sessions
+    const BG_BACKGROUNDED = "fx-floors-arcterm-land-queue-review";
+    const BG_SESSIONS = [
+        { sessionid: "fx-bg-nightly-deps", cwd: "D:\\fx\\arcterm", kind: "background", name: "Nightly dependency bump", state: "working", startedts: 0 },
+        { sessionid: "fx-bg-flaky-tests", cwd: "D:\\fx\\arcterm", kind: "background", name: "Hunt the flaky orchestrate test", state: "blocked", startedts: 0 },
+    ];
+    const cockpitOfficeBackground = {
+        name: "cockpit-office-background",
+        surface: "cockpit",
+        async arrange(h) {
+            const ctx = await cockpitOfficeFloors.arrange(h);
+            if (!ctx.missing) {
+                const now = Date.now();
+                const sessions = BG_SESSIONS.map((s, i) => ({ ...s, startedts: now - (i + 1) * 47 * 60_000 }));
+                await h.ev(`window.__cockpitOfficeBackground(${JSON.stringify({ sessions, backgrounded: [BG_BACKGROUNDED] })})`);
+                await h.ev(`localStorage.removeItem("cockpit.office.animation")`);
+            }
+            return ctx;
+        },
+        async teardown(h, ctx) {
+            try {
+                await h.ev("window.__cockpitOfficeBackground?.(null)");
+            } catch (e) {
+                console.error(`cockpit-office-background teardown: clear the background failed: ${e?.message ?? e}`);
+            }
+            await cockpitOfficeFloors.teardown(h, ctx);
+        },
+        async assert(h, ctx) {
+            const steps = [];
+            const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+            if (ctx.missing) {
+                rec("0. the office loads", false, ctx.missing);
+                return steps;
+            }
+            const press = async (k, n = 1) => {
+                for (let i = 0; i < n; i++) {
+                    await focusCockpit(h);
+                    await key(h, k);
+                    await sleep(150);
+                }
+                return probe(h);
+            };
+            const lists = () =>
+                h.ev(`({
+                    backgrounded: !!document.querySelector("[data-cockpit-backgrounded]"),
+                    sessions: !!document.querySelector("[data-cockpit-background-agents]"),
+                })`);
+            await settleBoss(h, 15000);
+
+            // 1. the office opens with neither list under the building
+            const hidden = await lists();
+            await h.shot("cdp-shots/cockpit-office-background-hidden.png");
+            rec("1. Office opens with no Backgrounded section and no Background strip under the building", !hidden.backgrounded && !hidden.sessions, JSON.stringify(hidden));
+
+            // 2. m lists Background after Events with the three agents no room draws
+            const menu = await press("m");
+            const at = menu?.menuItems?.indexOf("Background") ?? -1;
+            await h.shot("cdp-shots/cockpit-office-background-menu.png");
+            rec(
+                "2. m lists Background right after Events, its count 3 (one backgrounded agent, two detached sessions)",
+                at > 0 && menu.menuItems[at - 1] === "Events" && (await h.ev(`/Background\\s*3/.test(document.querySelector("[data-office-menu]")?.textContent ?? "")`)),
+                JSON.stringify({ items: menu?.menuItems })
+            );
+
+            // 3. ↵ on Background shows both lists under the office and shuts the menu
+            await press("ArrowDown", at - (menu?.menuSel ?? 0));
+            const shut = await press("Enter");
+            await sleep(400);
+            // open the strip's fold so the shot shows the sessions themselves
+            await h.ev(`document.querySelector("[data-cockpit-background-agents] button")?.click()`);
+            await sleep(400);
+            const shown = await lists();
+            await h.shot("cdp-shots/cockpit-office-background-shown.png");
+            rec("3. ↵ on Background shuts the menu and shows the Backgrounded section and the Background strip", shut?.menu === false && shown.backgrounded && shown.sessions, JSON.stringify({ menu: shut?.menu, ...shown }));
+
+            // 4. the menu now names it Hide background, which hides both again
+            const again = await press("m");
+            const hideAt = again?.menuItems?.indexOf("Hide background") ?? -1;
+            await press("ArrowDown", hideAt - (again?.menuSel ?? 0));
+            await press("Enter");
+            await sleep(400);
+            const back = await lists();
+            rec("4. the menu names it Hide background, and ↵ hides both lists again", hideAt > 0 && !back.backgrounded && !back.sessions, JSON.stringify({ hideAt, ...back }));
+
+            // 5. Cards still shows both
+            await toggleTo(h, "Cards");
+            await sleep(600);
+            const cards = await lists();
+            await toggleTo(h, "Office");
+            rec("5. Cards still shows the Backgrounded section and the Background strip", cards.backgrounded && cards.sessions, JSON.stringify(cards));
+            return steps;
+        },
+    };
+
+    return { cockpitOffice, cockpitOfficePet, cockpitOfficeControls, cockpitOfficeNeedsYouBoard, cockpitOfficeBench, cockpitOfficeFloors, cockpitOfficeBackground };
 }
