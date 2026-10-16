@@ -419,6 +419,22 @@ func TestEnsureWorkersLabelsALeadAndAMovedPromptWithTheRunTitle(t *testing.T) {
 	}
 }
 
+// a one-sentence goal names its tab by its first clause, and a long line is cut on a word.
+func TestRunLabelKeepsTheGoalsHeadline(t *testing.T) {
+	cases := map[string]string{
+		"Ship the auth rework\nwith the details below": "Ship the auth rework",
+		"Streamline brainstorming in Arc: start a brainstorm from Arc at any level with its context already loaded, and more": "Streamline brainstorming in Arc",
+		"Fix: the parser drops trailing commas": "Fix: the parser drops trailing commas",
+		"Add a retry button to the failed task row so the user can rerun it without opening the run sheet": "Add a retry button to the failed task row so the user can…",
+		"  \n": "",
+	}
+	for goal, want := range cases {
+		if got := runLabel(goal); got != want {
+			t.Errorf("runLabel(%q) = %q, want %q", goal, got, want)
+		}
+	}
+}
+
 // engine workers carry no frontend launcher, so the backend stores what resume-on-reopen and the dead-run
 // guard read: the launch flags before the prompt, and the owning run and task.
 func TestSpawnRunWorkerStoresBaseArgs(t *testing.T) {

@@ -71,14 +71,15 @@ Worker Codex khác các worker còn lại ở ba điểm:
 - **Hỏi bằng `wsh ask --wait`.** Codex không có tool hỏi mà cockpit thấy được, nên worker hỏi bằng lệnh shell `wsh ask --wait --questions-json '<json>'`: lệnh chặn cho tới khi lead hoặc bạn trả lời (tối đa 30 phút) rồi in câu trả lời dạng JSON. Câu hỏi đi qua cùng đường với câu hỏi của worker khác: lead trước, rồi tới bạn.
 - **Lệnh nặng không xếp hàng.** Build hay test nặng của worker Codex không chờ trong [hàng đợi lệnh nặng](usage.md#hàng-đợi-lệnh-nặng); chỉ **Workers at once** giới hạn số build Codex chạy song song.
 
-Một run orchestrator có ba route, chọn ở hộp New (**Lead**, **Workers**, **Reviewers**) và điền sẵn từ [profile](jarvis.md#profile-mặc-định-của-run-và-nguyên-tắc):
+Một run orchestrator có bốn route, chọn ở hộp New (**Lead**, **Workers**, **Reviewers**, **Light reviewers**) và điền sẵn từ [profile](jarvis.md#profile-mặc-định-của-run-và-nguyên-tắc):
 
 - **Lead**: brainstorm, viết spec và plan, và về sau xét các wake. Đây là model mà nếu xét sai thì chạy lại không cứu được.
 - **Workers**, một trong ba:
   - **Same as lead** (mặc định): mọi task chạy trên route của lead.
   - **một route**: mọi task chạy trên route đó.
   - **Reviewer picks**: mỗi task chạy trên dòng `**Model:**` của plan nếu có (dòng này có thể nêu cả harness, như `codex:gpt-5.5`: xem [Plan file](plan-format.md#các-dòng-đầu-task)), nếu không thì trên model plan reviewer chọn cho nó, `sonnet` hoặc model của lead ([Model picks](#model-picks)). Reviewer picks và một route là **một** cài đặt, nên run không bao giờ có cả hai; server từ chối request gửi cả hai.
-- **Reviewers**: nơi các session xét của engine chạy: reviewer từng task, plan reviewer, final verifier. Mặc định là route của lead. Chỉ bạn đặt (hộp New, profile, `wsh runs start`, hoặc **Adjust** trên run đang chạy); lead không có lệnh nào ghi nó.
+- **Reviewers**: nơi các session xét của engine chạy: reviewer từng task, reviewer **Full review** của plan review, final verifier. Mặc định là route của lead. Chỉ bạn đặt (hộp New, profile, `wsh runs start`, hoặc **Adjust** trên run đang chạy); lead không có lệnh nào ghi nó.
+- **Light reviewers**: bốn reviewer theo lens của plan review vòng 1 và reviewer follow-up của vòng 2 ([Review plan](#review-plan)). Không đặt thì là Claude Code · `sonnet` trên mọi runtime. Đặt ở hộp New, profile hoặc run sheet; `wsh runs start` không có cờ cho nó.
 
 Engine tìm route của từng task bằng một quy tắc (`effectiveTaskRoute`, `pkg/orchestrate/modelroute.go`), lấy nấc đầu tiên áp dụng được:
 
@@ -205,7 +206,7 @@ Lệnh kiểm plan ngay (plan hỏng hoặc không đọc được bị từ ch�
 
 Cả hai flow đều submit một plan file và **engine review plan trước khi worker nào chạy**. Trạng thái dag là `plan-review`, và scheduler không dispatch gì cho tới khi review qua hoặc lead chấp nhận nó. Dag submit không qua file (JSON) và một fix round bỏ qua bước này.
 
-Engine mở một session **plan reviewer** mới trong cây nơi lane đáp xuống, trên route reviewer. Nó đọc spec (hoặc, không có spec, canvas Prototype của plan), plan và các file chúng nêu, rồi kiểm:
+Mỗi reviewer là một session mới trong cây nơi lane đáp xuống. Nó đọc spec (hoặc, không có spec, canvas Prototype của plan), plan và các file chúng nêu. Checklist đầy đủ là:
 
 - mọi yêu cầu trong spec có một task;
 - không hai task sửa cùng file mà thiếu `Depends` giữa chúng (submit đã chặn các cặp cùng liệt kê `Files`, nên reviewer tìm task không có dòng `Files` hoặc file bị bỏ sót);
@@ -214,18 +215,31 @@ Engine mở một session **plan reviewer** mới trong cây nơi lane đáp xu�
 - các lệnh plan nêu (Verify, Setup, Check, Final) tồn tại;
 - mỗi task thêm hoặc đổi một view, một trạng thái hiển thị hay một tương tác nêu **bước của scenario Final** cho thấy nó (một scenario chỉ mở surface thì không tính); có Prototype thì mỗi board `.dc.html` trong thư mục canvas cần một bước.
 
-Nó cũng báo các lỗ hổng trong spec và chỗ spec với plan mâu thuẫn nhau. Nó chỉ đọc, và kết thúc bằng `wsh jarvis dag planreview pass "<tóm tắt>"` hoặc `wsh jarvis dag planreview fail "<phát hiện>"`. Reviewer kết thúc không có kết luận, hoặc chạy quá 20 phút, được thay **một lần**; mất hai lần thì review hỏng kèm lý do, và cùng plan đó có thể submit lại.
+Reviewer cũng báo các lỗ hổng trong spec và chỗ spec với plan mâu thuẫn nhau. Nó chỉ đọc, và kết thúc bằng `wsh jarvis dag planreview pass "<tóm tắt>"` hoặc `wsh jarvis dag planreview fail "<phát hiện>"`. Reviewer kết thúc không có kết luận, hoặc chạy quá 20 phút, được thay **một lần**; mất hai lần thì nó **lost**.
 
-- **Pass:** worker bắt đầu, lead nhận một dòng yên lặng `plan review passed; workers are starting: …`.
-- **Fail:** lead được đánh thức với các phát hiện. Nó sửa plan, đưa thay đổi spec cho bạn quyết, rồi chạy lại `wsh jarvis dag submit`. Khi chưa task nào được dispatch, lần submit lại thay thế plan hỏng và mở **vòng review 2**. Run bắt đầu từ plan file mà chưa có lead thì được mở một lead bởi lần đánh thức này.
+**Vòng 1 chạy năm reviewer cùng lúc.** **Full review** chạy cả checklist trên route reviewer và là reviewer duy nhất chọn model ([Model picks](#model-picks)). Bốn reviewer theo lens chạy trên route Light reviewers, mỗi cái chỉ kiểm phần của nó:
+
+| Lens | Kiểm |
+|---|---|
+| **Spec coverage** | mọi yêu cầu có một task; lỗ hổng spec và chỗ spec/plan mâu thuẫn |
+| **Task order and files** | chồng lấn Files/Depends; tên nhất quán giữa các task |
+| **Tests and commands** | tiêu chí chấp nhận và test được nêu; các lệnh được nêu tồn tại |
+| **Final coverage** | mỗi thay đổi UI có một bước scenario Final; có Prototype thì mỗi board có một bước |
+
+Vòng chốt khi không còn reviewer nào đang review: một sự kiện `plan-reviewed`, một wake. Vòng qua khi Full review qua và mọi lens qua hoặc lost. Lens lost không làm hỏng vòng (Full review đã phủ phần của nó); text của vòng ghi `Did not finish: <lens> (<lý do>).` Full review lost thì vòng hỏng; nếu không gì hỏng mà chỉ Full review lost, lead được dặn submit lại đúng plan đó. **Phát hiện gộp** là text của mọi reviewer hỏng, nguyên văn và ghi tên (`[Full review] …`, `[Tests and commands] …`), theo thứ tự bảng, rồi dòng `Passed: …`; engine không gộp trùng giữa các reviewer, lead làm việc đó.
+
+- **Pass:** worker bắt đầu, lead nhận một dòng yên lặng `plan review passed; workers are starting: …`. Một reviewer qua trong khi các reviewer khác còn đang review thì chưa làm gì.
+- **Fail:** lead được đánh thức với các phát hiện gộp. Nó sửa plan, đưa thay đổi spec cho bạn quyết, rồi chạy lại `wsh jarvis dag submit`. Khi chưa task nào được dispatch, lần submit lại thay thế plan hỏng và mở **vòng review 2**. Run bắt đầu từ plan file mà chưa có lead thì được mở một lead bởi lần đánh thức này.
 - **Vòng 2 cũng hỏng** (tối đa hai vòng): lead bắt buộc đưa cho bạn một câu hỏi **Plan review**: đường dẫn plan và mỗi phát hiện một dòng, mở thành [hộp review](jarvis.md#hộp-spec-review-và-plan-review). Nếu bạn nói cứ tiếp tục, nó đưa từng phát hiện đã chấp nhận vào các task chờ bị ảnh hưởng bằng `dag amend` (mọi task vẫn đang chờ), rồi chạy `wsh jarvis dag planreview accept "<lý do của bạn>"`, và việc dispatch bắt đầu trên plan như hiện có. `accept` chỉ dùng được khi review đang ở trạng thái hỏng.
-- **Đọc trạng thái:** status của dag đọc `plan-review` cả khi reviewer đang làm lẫn khi review đã hỏng, nên `wsh jarvis dag status` in một dòng `plan review <state> round=N`: `reviewing` kèm tuổi, hoặc `failed` kèm phần đầu các phát hiện và nó đang chờ ai. `dag submit` in đúng dòng đó cho vòng nó vừa mở. Lần submit không nhận được trả lời kịp thì đọc lại dag và nói plan đã vào, chưa vào (gửi lại an toàn), hay không xác định được.
+- **Đọc trạng thái:** status của dag đọc `plan-review` cả khi reviewer đang làm lẫn khi review đã hỏng, nên `wsh jarvis dag status` in một dòng `plan review <state> round=N`: `reviewing` kèm tuổi và trạng thái từng reviewer, hoặc `failed` kèm phần đầu các phát hiện và nó đang chờ ai. `dag submit` in đúng dòng đó cho vòng nó vừa mở. Lần submit không nhận được trả lời kịp thì đọc lại dag và nói plan đã vào, chưa vào (gửi lại an toàn), hay không xác định được. DAG view hiện một chip cho mỗi reviewer, và dòng **Plan reviewed** của timeline có một dòng cho mỗi reviewer.
 
-Lần submit lại của lead thay plan, **không** thay cài đặt của bạn: cài đặt workers và route reviewer vẫn giữ, kể cả thay đổi bạn làm trong run sheet trước đó. Dòng Check hoặc Setup mới trong plan sửa đặt lại bước kiểm Check nền.
+**Vòng 2 là một reviewer follow-up** (**Round-2 follow-up**) trên route Light reviewers. Nó không review lại plan từ đầu: nó nhận phát hiện gộp của vòng 1 cùng thay đổi của plan dưới dạng diff so với plan vòng 1 đã đọc (và diff của spec, hoặc "The spec did not change."), xác nhận từng phát hiện vòng 1 đã được sửa hoặc được từ chối có lý, và chỉ kiểm các dòng đổi theo checklist đầy đủ. Kết luận của nó có một dòng cho mỗi phát hiện vòng 1, rồi các phát hiện mới. Trên run Reviewer picks nó cũng chọn model, với pick vòng 1 của từng task liệt kê bên cạnh. Follow-up lost thì vòng hỏng.
+
+Lần submit lại của lead thay plan, **không** thay cài đặt của bạn: cài đặt workers và cả hai route reviewer vẫn giữ, kể cả thay đổi bạn làm trong run sheet trước đó. Dòng Check hoặc Setup mới trong plan sửa đặt lại bước kiểm Check nền.
 
 ### Model picks
 
-Khi cài đặt workers của run là **Reviewer picks**, plan reviewer còn chọn model cho mọi task mà plan không cho dòng Model. Brief của nó liệt kê các task đó và quy tắc: `sonnet` chỉ cho task cơ học và được tả kỹ (sao một mẫu có sẵn, thêm một trường, văn xuôi theo code đã viết), `lead` cho mọi thứ có lựa chọn thiết kế, kèm một dòng lý do. Lệnh pass mang một `--pick` cho mỗi task được liệt kê:
+Khi cài đặt workers của run là **Reviewer picks**, reviewer Full review (vòng 2: reviewer follow-up) còn chọn model cho mọi task mà plan không cho dòng Model. Brief của nó liệt kê các task đó và quy tắc: `sonnet` chỉ cho task cơ học và được tả kỹ (sao một mẫu có sẵn, thêm một trường, văn xuôi theo code đã viết), `lead` cho mọi thứ có lựa chọn thiết kế, kèm một dòng lý do. Lệnh pass mang một `--pick` cho mỗi task được liệt kê:
 
 ```bash
 wsh jarvis dag planreview pass "<tóm tắt>" --pick "t-2=sonnet: sao lại mẫu hàng có sẵn" --pick "t-3=lead: chọn luật ưu tiên"
@@ -309,7 +323,7 @@ Engine đánh thức lead bằng cách gõ vào terminal của nó một dòng t
 | **Verify hỏng** sau merge | sửa, commit, `dag merge <task> --continue` (chạy lại Verify tại HEAD) | như trên |
 | **Review hỏng** hai lần, hoặc reviewer không làm được việc | đọc phát hiện trong `dag status`; `dag sendback <task> "<hướng dẫn>"`, `dag approve <task>`, retry, escalate, skip hoặc forward | các lần review hỏng được chuyển lên |
 | **Task qua review kèm ghi chú cho task sau** mà engine không chuyển được (không còn task chưa xong nào theo sau, hoặc task được nêu đã xong hay không còn terminal sống) | `dag amend` các task chờ bị ảnh hưởng, hoặc `dag tell` một task đang chạy | không gì |
-| **Câu hỏi của worker** | trả lời từ spec, plan và code, hoặc chuyển một quyết định sản phẩm kèm ghi chú | câu hỏi được chuyển và mọi câu lead không trả lời trong **10 phút** |
+| **Câu hỏi của worker** | trả lời từ spec, plan và code; một quyết định sản phẩm hay phạm vi thì lead tự hỏi bạn, kèm những gì nó đã kiểm và đề xuất của nó, rồi chuyển lựa chọn của bạn bằng `dag answer` (nó xem `dag asks` trước, phòng khi bạn đã trả lời trên run sheet) | câu hỏi của chính lead, và mọi câu lead chưa trả lời trong **10 phút**: câu đó chuyển sang bạn và `dag answer` của lead bị từ chối từ lúc đó |
 | **Task fail** hết lượt retry | `dag retry`, `dag escalate --model`, `dag skip`, hoặc chuyển lên | lỗi được chuyển |
 | **Worker treo** | như một lần fail | như vậy |
 | **Worker có thể đang kẹt** | `dag tell`, `dag retry`, `dag escalate`, hoặc để nó chạy | như vậy |
@@ -324,6 +338,20 @@ Chi tiết các sự kiện "worker":
 - **Không bao giờ bắt đầu**: shell của terminal worker không lên nổi sau 5 phút kể từ lúc spawn (pi, agy và codex còn bị canh bằng "chưa có transcript nào").
 
 `dag status` hiện worker không ghi gì gần đây là `idle Nm`, hoặc `running a command Nm · <tool>` khi tiến trình của nó đang bận (một lần test dài không ghi transcript); worker bị cờ đọc `stuck? <lý do>`. Mỗi task xong có một dòng báo cáo nêu các mục không rỗng và lệnh kéo, ví dụ `t-3 report: differs, not verified, found not fixed (wsh jarvis dag report t-3)`; báo cáo đời cũ đọc `t-3 report: unstructured (…)`.
+
+### Run tự chủ (Approvals)
+
+Cài đặt **Approvals** của một run orchestrator là **Ask me** (mọi thứ ở trên) hoặc **Autonomous** (đặt ở run defaults của profile, hộp New, hoặc `wsh runs start --autonomous`). Trên run tự chủ, lead tự trả lời những gì lẽ ra đến tay bạn, chọn phương án nó sẽ đề xuất, và ghi từng quyết định cùng lý do vào báo cáo:
+
+- **Đường đi và spec.** Goal bounded hay spike chạy luôn không chờ bạn đồng ý; goal architectural ghi các quyết định vào spec và submit mà không hỏi spec review.
+- **Plan review hỏng sau vòng cuối, hoặc mất reviewer.** Lead đưa các phát hiện vào các task chờ bằng `dag amend`, rồi chạy `dag planreview accept "autonomous run"`; submit lại quá vòng cuối bị từ chối kèm đúng chỉ dẫn đó. Thay đổi spec trong lúc sửa plan được làm và ghi lại.
+- **Câu hỏi, lỗi, treo, conflict của worker.** `dag forward` bị từ chối: lead tự quyết (trả lời, retry, escalate, skip hoặc sendback). Câu hỏi của worker quá 10 phút vẫn ở với lead, và lead được đánh thức lại.
+- **Final stage hỏng sau vòng cuối.** Lead kết thúc bằng `wsh jarvis complete` thường, không bao giờ `--force-land`; land bị giữ và báo cáo nói rõ vì sao.
+- **Lead chết sau `dag submit`.** Engine tự mở lại lead, tối đa 3 lần mỗi run, và câu hỏi của lead chờ lead thay thế.
+
+Những gì vẫn đến tay bạn: dòng **Engine stuck**, lead chết trước `dag submit`, và lead chết mà engine không mở lại được hoặc đã mở lại đủ 3 lần; khi đó câu hỏi của nó đến bạn như trên run Ask me. Gatekeeper vẫn đứng ngoài run orchestrator, plan reviewer của engine vẫn review plan, và **Take over** trên câu hỏi của worker vẫn dùng được.
+
+Có thể đổi cài đặt giữa chừng, ở panel **Adjust** của run sheet hoặc lệnh palette **Go autonomous** / **Ask me again**. Bật lên thì câu hỏi đang chờ của chính lead (spec review, plan review, câu hỏi land) được trả lời bằng một dòng bảo nó tự quyết, lead được đánh thức với luật tự chủ, và các câu hỏi worker bạn đang giữ được trả về cho lead; câu hỏi chờ mà bộ chọn không nhận câu trả lời gõ tay thì vẫn ở với bạn, và lần lưu nói rõ điều đó. Tắt đi thì lead được đánh thức để hỏi lại bạn từ quyết định kế tiếp; những quyết định đã làm vẫn giữ. Run chưa có lead thì không được đánh thức: lead đọc cài đặt khi nó khởi động.
 
 ### Review của một task
 
@@ -427,7 +455,7 @@ Trước khi merge, engine làm các bước:
 
 - Nếu base có thêm commit từ lúc run rẽ ra, nó merge base vào `wave/<runId>` trong cây đáp xuống: một commit `Merge <base> into wave/<runId> before landing` mang trailer `Arc-Run:`, nên không cần ai merge tay base vào branch trước khi bấm Land again. Nếu branch đã đi quá commit mà final stage đã verify (kể cả vì merge đó), nó chạy lại Check rồi Verify trên commit ấy với `ARC_VERIFY_CHANGED` liệt kê những gì khác commit đã verify. Nếu mọi path khác commit đã verify đều là Markdown, nó bỏ Check (không scope được); Verify vẫn chạy. Run không có Check/Verify thì không chạy lại gì, nhưng base vẫn được merge vào branch.
 - Conflict khi merge base vào branch có hai lối. Các file project liệt kê trong `.arc/union-merge` (commit trên branch base; mỗi dòng một path, `#` mở comment) mà cả hai bên chỉ **thêm** dòng, như `CHANGELOG.md` hay một danh sách scenario, do engine tự giải: dòng của base đứng trước (nó land trước), rồi dòng của run. Không có `merge=union` trong `.gitattributes`, nên merge tay của bạn không đổi. Mọi conflict khác (một bên sửa hoặc xóa dòng, hoặc file không được liệt kê) là conflict thật: engine hủy merge, land chuyển sang `resolving`, và **một** session resolver (session giai đoạn như final verifier, mở trong cây đáp xuống) merge base vào `wave/<runId>`, giải từng conflict, commit rồi viết báo cáo. Hàng cây Agent đọc `Landing · resolving conflicts`. Mỗi land có đúng một lần thử resolver, và land `resolving` không giữ lượt của project nên land khác đi tiếp. Resolver xong thì land vào lại hàng, chạy lại Check và Verify trên commit của nó, rồi merge. Resolver không merge được base, bị mất, hoặc run không có dag thì land bị **giữ**, lý do nêu các file conflict.
-- Nó xóa một file untracked trong checkout giống hệt file run thêm vào, ví dụ spec hay plan mà lead viết ở đó trước lúc submit.
+- Nó xóa một file untracked trong checkout là một phiên bản của file run thêm vào, ví dụ spec hay plan mà lead viết hoặc nhận về ở đó trước lúc submit: bản run thêm vào, hoặc bất kỳ bản nào branch của run từng giữ, kể cả một snapshot tài liệu mà lần submit lại đã amend đi (reflog còn giữ), nên một spec mà run đã sửa vẫn thay được bản gốc của nó.
 - Nó ghi chú các commit của base đến sau lần kiểm đó: "merged onto N commits that landed on <base> during the run; the combination was not verified".
 
 Nó **giữ** land, kèm lý do, và để checkout nguyên như cũ, khi:
@@ -437,7 +465,7 @@ Nó **giữ** land, kèm lý do, và để checkout nguyên như cũ, khi:
 - checkout đang ở branch khác với base;
 - checkout đang dừng giữa merge, rebase hoặc cherry-pick;
 - checkout có thay đổi đã staged;
-- một file untracked trong checkout khác với file run thêm vào ("move it aside");
+- một file untracked trong checkout khác với mọi phiên bản run từng giữ của file nó thêm vào ("move it aside");
 - Check hoặc Verify của lần land hỏng (Check đã hỏng ở base lúc submit chỉ thêm một ghi chú), hoặc cây đáp xuống đang dừng giữa merge, không merge được base vào đó, hoặc không chạy lại kiểm tra được;
 - run conflict thật với base mà resolver không giải được (đã thử một lần, không khởi động được, hoặc run không có dag), lý do nêu các file;
 - merge conflict (nó bị hủy, và lý do nêu các file);

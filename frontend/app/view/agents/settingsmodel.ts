@@ -75,6 +75,7 @@ export const OPENROUTER_SECRET_NAME = "jarvis_embedapikey";
 // them; the empty-key defaults mirror pkg/reporadar's.
 export const RADAR_AUDIT_RUNTIME_KEY = "radar:auditruntime";
 export const RADAR_AUDIT_MODEL_KEY = "radar:auditmodel";
+export const RADAR_CLASSIFY_MODEL_KEY = "radar:classifymodel";
 export const RADAR_AUDIT_RUNTIMES: readonly string[] = ["claude", "pi"];
 const RADAR_AUDIT_DEFAULT_RUNTIME = "claude";
 const RADAR_AUDIT_DEFAULT_CLAUDE_MODEL = "sonnet";
@@ -92,6 +93,11 @@ export const SLEEP_AFTER_MIN = { step: 5, min: 5, max: 240, default: 30 };
 
 export function stepSleepAfter(current: number, dir: -1 | 1): number {
     return Math.min(SLEEP_AFTER_MIN.max, Math.max(SLEEP_AFTER_MIN.min, current + dir * SLEEP_AFTER_MIN.step));
+}
+
+// What an unset radar:classifymodel runs on the audit runtime; pi takes no bare model id, so it keeps its own.
+export function radarClassifyDefault(runtime: string): string {
+    return (runtime || RADAR_AUDIT_DEFAULT_RUNTIME) === RADAR_AUDIT_DEFAULT_RUNTIME ? "haiku" : "pi default";
 }
 
 const THEME_OVERRIDE_KEY = "cockpit.theme.overrides";
@@ -583,7 +589,7 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                         {
                             id: "headless.cheap",
                             title: "Cheap model",
-                            desc: "The OpenRouter model for session classify, continuity, the volunteer judge and pi titles.",
+                            desc: "The OpenRouter model for session classify, continuity, the volunteer judge and pi titles. Used only when the runtime is OpenRouter.",
                             key: "headless:openroutercheapmodel",
                             scope: "synced",
                             config: true,
@@ -597,9 +603,17 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                         {
                             id: "headless.radaraudit",
                             title: "Radar audit",
-                            desc: "Each scan runs one read-only session per fix commit on this route. OpenRouter cannot be used: it has no tools.",
+                            desc: "Each scan runs up to 8 sibling, 3 introduced and 2 hotspot read-only sessions on this route. OpenRouter cannot be used: it has no tools.",
                             key: RADAR_AUDIT_RUNTIME_KEY,
                             morekeys: [RADAR_AUDIT_MODEL_KEY],
+                            scope: "synced",
+                            config: true,
+                        },
+                        {
+                            id: "headless.radarclassify",
+                            title: "Commit classifier",
+                            desc: "One call per scan sorts commits that lack a conventional prefix, on the audit runtime. Empty means haiku on claude, pi's default on pi.",
+                            key: RADAR_CLASSIFY_MODEL_KEY,
                             scope: "synced",
                             config: true,
                         },

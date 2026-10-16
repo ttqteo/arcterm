@@ -313,6 +313,81 @@ func TestForwardTaskMovesPendingQuestionToUser(t *testing.T) {
 	}
 }
 
+func setDagAutonomous(t *testing.T, ctx context.Context, dagID string, on bool) {
+	t.Helper()
+	if err := wstore.UpdateDag(ctx, dagID, func(g *waveobj.TaskGroup) error {
+		g.Autonomous = on
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestForwardTaskRefusedWhenAutonomous(t *testing.T) {
+	f := newFakeLead(t)
+	h := newChildOutcomeHarness(t, 1)
+	child, err := wstore.GetRun(h.ctx, h.channel, h.loadDag(t).Tasks[0].RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocks := RunBlockORefs(h.ctx, child)
+	if len(blocks) != 1 {
+		t.Fatalf("setup: want the child's one worker block, got %q", blocks)
+	}
+	agentask.GlobalRegistry.Set(blocks[0], agentask.PendingAsk{
+		AskId: "a1", Questions: []baseds.AgentAskQuestion{{Question: "which schema?"}}, Owner: agentask.AskOwner_Lead,
+	})
+	setDagAutonomous(t, h.ctx, h.dagID, true)
+
+	err = ForwardTask(h.ctx, h.dagID, "t-0", "picking a schema is a product call")
+	if err == nil || !strings.Contains(err.Error(), "autonomous") || !strings.Contains(err.Error(), "answer, retry, escalate, skip or send back") || !strings.Contains(err.Error(), "record the call and why in your report") {
+		t.Fatalf("an autonomous run's lead decides itself, got %v", err)
+	}
+	if p, _ := agentask.GlobalRegistry.Get(blocks[0]); p.Owner != agentask.AskOwner_Lead {
+		t.Fatalf("a refused forward moves no question, got %+v", p)
+	}
+	if n := f.countKind(waveobj.RunEventKindTaskForwarded); n != 0 {
+		t.Fatalf("a refused forward records nothing, got %d task-forwarded rows", n)
+	}
+
+	setDagAutonomous(t, h.ctx, h.dagID, false)
+	if err := ForwardTask(h.ctx, h.dagID, "t-0", "picking a schema is a product call"); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := agentask.GlobalRegistry.Get(blocks[0]); p.Owner != agentask.AskOwner_User || f.countKind(waveobj.RunEventKindTaskForwarded) != 1 {
+		t.Fatalf("off, the question is forwarded as before, got %+v rows %+v", p, f.rows)
+	}
+}
+
+func TestSweepAsksKeepsAnExpiredQuestionWithTheLeadWhenAutonomous(t *testing.T) {
+	f := newFakeLead(t)
+	ctx, dag := seedPendingDag(t)
+	setDagAutonomous(t, ctx, dag.OID, true)
+	agentask.GlobalRegistry.Set("block:child-1", agentask.PendingAsk{
+		AskId: "a1", BlockId: "child", Questions: []baseds.AgentAskQuestion{{Question: "which way?"}},
+	})
+	g := &waveobj.TaskGroup{OID: dag.OID, ChannelId: wakeChannel, RunID: wakeRun}
+	RaiseChildAsk(ctx, g, AskTarget{ChannelId: wakeChannel, RunID: wakeRun, TaskId: "t-0", AskId: "a1"}, "block:child-1", "which way?")
+	if len(f.sends) != 1 {
+		t.Fatalf("setup: the raise wakes the lead, got %q", f.sends)
+	}
+	f.settle(ctx)
+
+	f.now += LeadAskDeadline.Milliseconds()
+	sweepAsks(ctx)
+
+	p, _ := agentask.GlobalRegistry.Get("block:child-1")
+	if p.Owner != agentask.AskOwner_Lead || p.Deadline != f.now+LeadAskDeadline.Milliseconds() {
+		t.Fatalf("an autonomous run's question stays with the lead with a fresh deadline, got %+v", p)
+	}
+	if len(f.sends) != 2 || f.sends[1] != oneQuestionWake {
+		t.Fatalf("the lead is woken for the question again, got %q", f.sends)
+	}
+	if n := f.countKind(waveobj.RunEventKindTaskForwarded); n != 0 {
+		t.Fatalf("nothing moves to the human, got %d task-forwarded rows", n)
+	}
+}
+
 func TestTakeOverAskHandsLeadQuestionToHumanWithoutWakingLead(t *testing.T) {
 	f := newFakeLead(t)
 	h := newChildOutcomeHarness(t, 1)

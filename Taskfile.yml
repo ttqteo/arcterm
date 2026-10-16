@@ -442,7 +442,9 @@ tasks:
         sources:
             - package-lock.json
             - package.json
-        cmd: npm install
+        # a worktree's node_modules is a junction to the main checkout's (worktree:prepare, an engine run's
+        # .arc/setup), which that checkout installs; npm install here would replace the link with a full copy
+        cmd: node scripts/worktree-junctions.mjs is-linked node_modules || npm install
 
     go:mod:tidy:
         desc: Runs `go mod tidy`

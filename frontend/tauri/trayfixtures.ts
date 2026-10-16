@@ -224,8 +224,9 @@ const windows: TraySnapshot = {
     platform: "win",
     machine: {
         ...main.machine!,
-        memTotal: 32 * GB,
-        memAvailable: 2.4 * GB,
+        // what a 32 GB PC reports: the figure that once ran past the Memory card's edge
+        memTotal: 31.8 * GB,
+        memAvailable: 12.4 * GB,
         diskName: "Local Disk (C:)",
         diskTotal: 476 * GB,
         diskFree: 312 * GB,

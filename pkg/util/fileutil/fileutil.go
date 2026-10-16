@@ -13,7 +13,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
+	"time"
 )
 
 type ByteRangeType struct {
@@ -140,13 +142,31 @@ func AtomicWriteFile(fileName string, data []byte, perm os.FileMode) error {
 		}
 		return err
 	}
-	if err := os.Rename(tmpFileName, fileName); err != nil {
+	if err := renameReplacing(tmpFileName, fileName); err != nil {
 		if removeErr := os.Remove(tmpFileName); removeErr != nil && !os.IsNotExist(removeErr) {
 			return fmt.Errorf("failed to rename temp file %q to %q: %w (also failed to remove temp file: %v)", tmpFileName, fileName, err, removeErr)
 		}
 		return err
 	}
 	return nil
+}
+
+// windows refuses to rename over a file another handle holds open, which a reader such as wavesrv's config watcher
+// does for a few milliseconds at a time, so the replace retries briefly before giving up
+const (
+	renameRetryFor      = time.Second
+	renameRetryMaxDelay = 50 * time.Millisecond
+)
+
+func renameReplacing(from, to string) error {
+	deadline := time.Now().Add(renameRetryFor)
+	for delay := time.Millisecond; ; delay = min(delay*2, renameRetryMaxDelay) {
+		err := os.Rename(from, to)
+		if err == nil || runtime.GOOS != "windows" || !errors.Is(err, fs.ErrPermission) || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(delay)
+	}
 }
 
 var (

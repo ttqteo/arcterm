@@ -320,6 +320,23 @@ export function stageLabel(stageRole: string): string {
     return STAGE_LABELS[stageRole] ?? stageRole;
 }
 
+// a plan reviewer's own verdict: a lost one finished without passing, and one still reviewing has none
+const PLAN_REVIEWER_VERDICT: Record<string, "passed" | "failed"> = {
+    passed: "passed",
+    failed: "failed",
+    lost: "failed",
+};
+
+// planReviewerOf finds the plan review's current-round reviewer that a session is, by the session's own run id, and
+// reads its verdict. A session from an earlier round is not in the list.
+export function planReviewerOf(
+    review: PlanReviewStage | undefined,
+    runId: string | undefined
+): { lens: string; verdict?: "passed" | "failed" } | undefined {
+    const reviewer = runId ? review?.reviewers?.find((r) => r.runid === runId) : undefined;
+    return reviewer && { lens: reviewer.lens, verdict: PLAN_REVIEWER_VERDICT[reviewer.state] };
+}
+
 const NOT_STARTED = new Set(["pending", "ready"]);
 
 // unmetDeps is what a not-started task still waits on, or undefined once it has started.

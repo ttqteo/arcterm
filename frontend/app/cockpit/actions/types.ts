@@ -1,5 +1,6 @@
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import type { Getter } from "jotai";
+import type { StatusTone } from "../palette-rows";
 
 export type ThingKind = "run" | "agent" | "session" | "record" | "effort" | "channel"; // matches GroupKind names
 export type ActionGroup = "open" | "steer" | "stop"; // the action list's sections, in this order
@@ -22,6 +23,11 @@ export interface ThingAction<T> {
     input?: ActionInput<T>; // present: Enter opens a second level that collects `value`
     run: (thing: T, deps: ActionDeps, value?: string) => void | Promise<void>;
     destructive?: boolean; // red; the handler owns its confirm
+    // a toggle reads differently per thing; `label` stays its search and Not-now text
+    title?: (thing: T) => string;
+    verb?: (thing: T) => string; // what Enter does, in place of the label's first word
+    status?: (thing: T) => { label: string; tone: StatusTone };
+    echo?: (thing: T) => string;
 }
 
 // one listable thing; key MUST equal the palette row key command-palette.tsx gives the same thing today

@@ -93,7 +93,7 @@ describe("buildAgentTree with run lineage", () => {
                 case "parent":
                     return `parent:${r.agent.id}`;
                 case "stage":
-                    return `stage:${r.stageRole}:${r.agent.id}${r.outcome ? `:${r.outcome}` : ""}`;
+                    return `stage:${r.stageRole}:${r.agent.id}${r.lens ? `@${r.lens}` : ""}${r.outcome ? `:${r.outcome}` : ""}`;
                 case "final":
                     return `final:${r.agent?.id ?? "-"}`;
                 default:
@@ -156,10 +156,14 @@ describe("buildAgentTree with run lineage", () => {
 
     describe("a stage session with a verdict", () => {
         const stageAgent = (id: string, runId: string) => ({ ...agent(id, "idle", ""), runId });
-        // run 6c7652be's shape: round 1's plan review failed, round 2's was accepted, the final verifier is judging
+        // run 6c7652be's shape: round 1's plan review failed, round 2's follow-up passed, the final verifier is judging
         const finishing = () => {
             const r = run("run-1", [task("t-1", "done"), task("t-2", "done")]);
-            r.dag.planreview = { state: "accepted", round: 2, runid: "rv2" };
+            r.dag.planreview = {
+                state: "passed",
+                round: 2,
+                reviewers: [{ lens: "followup", state: "passed", runid: "rv2" }],
+            };
             r.dag.final = { state: "final", round: 1, verifierrunid: "ver" };
             const roles: Lineage["roles"] = {
                 lead: { kind: "lead", runId: "run-1" },
@@ -197,7 +201,7 @@ describe("buildAgentTree with run lineage", () => {
                 "lead:run-1:0",
                 "done:2+3:true",
                 "stage:plan-reviewer:rev1:failed",
-                "stage:plan-reviewer:rev2:accepted",
+                "stage:plan-reviewer:rev2@followup:passed",
                 "worker:t-1:-",
                 "worker:t-2:-",
                 "final:ver",
@@ -220,7 +224,11 @@ describe("buildAgentTree with run lineage", () => {
 
         it("marks the done fold failed while a failed plan review has no later round", () => {
             const r = run("run-1", [task("t-1", "pending")]);
-            r.dag.planreview = { state: "failed", round: 1, runid: "rv1" };
+            r.dag.planreview = {
+                state: "failed",
+                round: 1,
+                reviewers: [{ lens: "full", state: "failed", runid: "rv1" }],
+            };
             const roles: Lineage["roles"] = {
                 lead: { kind: "lead", runId: "run-1" },
                 rev1: { kind: "stage", leadRunId: "run-1", stageRole: "plan-reviewer" },
@@ -233,7 +241,11 @@ describe("buildAgentTree with run lineage", () => {
                 "queued:1:false",
             ]);
             // the next round replaces it, so the fold no longer counts it failed
-            r.dag.planreview = { state: "reviewing", round: 2, runid: "rv2" };
+            r.dag.planreview = {
+                state: "reviewing",
+                round: 2,
+                reviewers: [{ lens: "followup", state: "reviewing", runid: "rv2" }],
+            };
             const next = [...agents, stageAgent("rev2", "rv2")];
             roles.rev2 = { kind: "stage", leadRunId: "run-1", stageRole: "plan-reviewer" };
             expect(shape(buildAgentTree(next, ["lead", "rev1", "rev2"], lineage([r], roles)))).toContain(
@@ -241,9 +253,65 @@ describe("buildAgentTree with run lineage", () => {
             );
         });
 
+        describe("a plan reviewer", () => {
+            const reviewing = (round: number, reviewers: PlanReviewer[]) => {
+                const r = run("run-1", [task("t-1", "pending")]);
+                r.dag.planreview = { state: "reviewing", round, reviewers };
+                return r;
+            };
+            const roundOne: PlanReviewer[] = [
+                { lens: "full", state: "passed", runid: "rv-full" },
+                { lens: "spec", state: "failed", runid: "rv-spec" },
+                { lens: "order", state: "lost", runid: "rv-order" },
+                { lens: "tests", state: "reviewing", runid: "rv-tests" },
+                { lens: "final", state: "passed", runid: "rv-final" },
+            ];
+
+            it("reads its own verdict, a lost one as failed and one still reviewing as none", () => {
+                const r = reviewing(1, roundOne);
+                expect(roundOne.map((rv) => stageOutcome(r, "plan-reviewer", rv.runid))).toEqual([
+                    "passed",
+                    "failed",
+                    "failed",
+                    undefined,
+                    "passed",
+                ]);
+            });
+
+            it("reads a round-1 reviewer as failed in round 2, whatever its own verdict was", () => {
+                const r = reviewing(2, [{ lens: "followup", state: "reviewing", runid: "rv-followup" }]);
+                expect(stageOutcome(r, "plan-reviewer", "rv-full")).toBe("failed");
+                expect(stageOutcome(r, "plan-reviewer", "rv-followup")).toBeUndefined();
+            });
+
+            it("names its lens on its row", () => {
+                const r = reviewing(1, roundOne);
+                const ids = ["lead", "full", "spec"];
+                const rows = buildAgentTree(
+                    [agent("lead", "idle"), stageAgent("full", "rv-full"), stageAgent("spec", "rv-spec")],
+                    ids,
+                    lineage([r], {
+                        lead: { kind: "lead", runId: "run-1" },
+                        full: { kind: "stage", leadRunId: "run-1", stageRole: "plan-reviewer" },
+                        spec: { kind: "stage", leadRunId: "run-1", stageRole: "plan-reviewer" },
+                    }),
+                    {
+                        collapsed: new Set<string>(),
+                        doneOpen: new Map([["run-1", 0]]),
+                        queuedOpen: new Set<string>(),
+                        extrasOpen: new Set<string>(),
+                    }
+                );
+                expect(shape(rows).filter((s) => s.startsWith("stage:"))).toEqual([
+                    "stage:plan-reviewer:spec@spec:failed",
+                    "stage:plan-reviewer:full@full:passed",
+                ]);
+            });
+        });
+
         it("stays live while the dag has no verdict for it", () => {
             const r = run("run-1", [task("t-1", "pending")]);
-            r.dag.planreview = { state: "reviewing", round: 1, runid: "rv1" };
+            r.dag.planreview = { state: "reviewing", round: 1 };
             const rows = buildAgentTree(
                 [agent("lead", "idle"), stageAgent("rev1", "rv1")],
                 ["lead", "rev1"],
@@ -351,7 +419,11 @@ describe("buildAgentTree with run lineage", () => {
 
         it("leaves a plan reviewer and a verifier reading the dag, whatever the land says", () => {
             const r = landing({ state: "queued", resolvertried: true });
-            r.dag.planreview = { state: "failed", round: 1, runid: "rv1" };
+            r.dag.planreview = {
+                state: "failed",
+                round: 1,
+                reviewers: [{ lens: "full", state: "failed", runid: "rv1" }],
+            };
             r.dag.final = { state: "passed", round: 1, verifierrunid: "ver" };
             expect(stageOutcome(r, "plan-reviewer", "rv1")).toBe("failed");
             expect(stageOutcome(r, "verifier", "ver")).toBe("passed");

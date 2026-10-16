@@ -25,7 +25,7 @@ import { adoptKeep, type SkillKeep } from "./skillsmatrix";
 import type { ToolForm } from "./toolslibrarymodel";
 import { failedAtom, installingAtom } from "./toolsstore";
 
-export type SetupTab = "instructions" | "skills" | "tools" | "learned" | "project";
+export type SetupTab = "instructions" | "skills" | "tools" | "learned" | "memory" | "project";
 
 // local filesystem reads behind an rpc with no default timeout: a stalled backend must reject rather
 // than leave the pane on "Reading…" forever

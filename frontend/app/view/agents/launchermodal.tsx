@@ -118,7 +118,9 @@ import { leadRouteSeed } from "./route";
 import { cancelRun, channelOverrideAtom, loadResolvedProfile, resolvedProfileAtom } from "./runactions";
 import { launchBlocker, type RunShape } from "./runconfig";
 import {
+    autonomousAtom,
     hydrateRunConfigFromProfile,
+    lightReviewerRouteAtom,
     parallelismAtom,
     planPathAtom,
     planPreviewAtom,
@@ -206,6 +208,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const parallelism = useAtomValue(parallelismAtom);
     const workerRoute = useAtomValue(workerRouteAtom);
     const reviewerPicks = useAtomValue(reviewerPicksAtom);
+    const autonomous = useAtomValue(autonomousAtom);
+    const lightReviewerRoute = useAtomValue(lightReviewerRouteAtom);
     const reviewerRoute = useAtomValue(reviewerRouteAtom);
     const runRoute = useAtomValue(runRouteAtom);
     const routeTouched = useAtomValue(routeTouchedAtom);
@@ -297,7 +301,9 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         planPath,
         reviewerPicks,
         reviewerRoute,
+        lightReviewerRoute,
         prototype,
+        autonomous,
     };
     // the project's own channel is where its profile lives; null while the channel list is still loading
     const target = isRun && project != null ? resolveChannelTarget(channels, project.name, project.path) : null;

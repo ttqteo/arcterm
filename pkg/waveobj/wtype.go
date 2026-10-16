@@ -303,6 +303,12 @@ type Run struct {
 	// ReviewerRoute is the route task reviewers and stage sessions run on (nil = the lead's route). Only the
 	// human sets it; a submit carries it onto the group.
 	ReviewerRoute *RoutePin `json:"reviewerroute,omitempty"`
+	// LightReviewerRoute is the route the plan review's lens and follow-up reviewers run on (nil = claude/sonnet).
+	// Only the human sets it; a submit carries it onto the group.
+	LightReviewerRoute *RoutePin `json:"lightreviewerroute,omitempty"`
+	// Autonomous is the Approvals setting: the lead answers what would otherwise reach the human. Pending
+	// here before a dag exists; a submit carries it onto the group, which owns it after.
+	Autonomous bool `json:"autonomous,omitempty"`
 	// Orchestration selects which machine an orchestrator lead drives: "engine" publishes a TaskGroup
 	// that pkg/orchestrate schedules; "adaptive" dispatches the lead's own subagents with no TaskGroup.
 	// Empty preserves the pre-2026-09 fork, where runtime alone decided (pi engine, others adaptive).
@@ -493,23 +499,26 @@ type RunSpec struct {
 
 // TaskGroup is the persisted DAG attached to an orchestrator run (oref dag:<id>).
 type TaskGroup struct {
-	OID           string      `json:"oid"`
-	Version       int         `json:"version"`
-	ID            string      `json:"id"`        // == OID
-	RunID         string      `json:"runid"`     // owning orchestrator run
-	ChannelId     string      `json:"channelid"` // owning run's channel (run lookups are channel-scoped)
-	Title         string      `json:"title,omitempty"`
-	Parallelism   int         `json:"parallelism"`
-	Tasks         []TaskNode  `json:"tasks"`
-	Status        string      `json:"status"`                  // awaiting-plan|running|awaiting-review|blocked|done|cancelled (derived)
-	Failures      int         `json:"failures"`                // consecutive task failures; circuit-break at 3
-	WorkerRoute   *RoutePin   `json:"workerroute,omitempty"`   // default worker route (nil = inherit owner); task RunSpec wins
-	ReviewerPicks bool        `json:"reviewerpicks,omitempty"` // the plan reviewer picks task models (false = the WorkerRoute rule stands)
-	ReviewerRoute *RoutePin   `json:"reviewerroute,omitempty"` // route for task reviewers and stage sessions (nil = the lead's route)
-	MergeRequired bool        `json:"mergerequired,omitempty"`
-	CreatedTs     int64       `json:"createdts"`
-	UpdatedTs     int64       `json:"updatedts"`
-	Meta          MetaMapType `json:"meta"`
+	OID           string     `json:"oid"`
+	Version       int        `json:"version"`
+	ID            string     `json:"id"`        // == OID
+	RunID         string     `json:"runid"`     // owning orchestrator run
+	ChannelId     string     `json:"channelid"` // owning run's channel (run lookups are channel-scoped)
+	Title         string     `json:"title,omitempty"`
+	Parallelism   int        `json:"parallelism"`
+	Tasks         []TaskNode `json:"tasks"`
+	Status        string     `json:"status"`                  // awaiting-plan|running|awaiting-review|blocked|done|cancelled (derived)
+	Failures      int        `json:"failures"`                // consecutive task failures; circuit-break at 3
+	WorkerRoute   *RoutePin  `json:"workerroute,omitempty"`   // default worker route (nil = inherit owner); task RunSpec wins
+	ReviewerPicks bool       `json:"reviewerpicks,omitempty"` // the plan reviewer picks task models (false = the WorkerRoute rule stands)
+	ReviewerRoute *RoutePin  `json:"reviewerroute,omitempty"` // route for task reviewers and stage sessions (nil = the lead's route)
+	// route for the plan review's lens and follow-up reviewers (nil = claude/sonnet)
+	LightReviewerRoute *RoutePin   `json:"lightreviewerroute,omitempty"`
+	Autonomous         bool        `json:"autonomous,omitempty"` // the lead answers what would otherwise reach the human
+	MergeRequired      bool        `json:"mergerequired,omitempty"`
+	CreatedTs          int64       `json:"createdts"`
+	UpdatedTs          int64       `json:"updatedts"`
+	Meta               MetaMapType `json:"meta"`
 
 	// historical: slice 5c removed the plan gate; kept so a stored dag still decodes as it was written.
 	PlanGate       bool  `json:"plangate,omitempty"`
@@ -573,14 +582,41 @@ type TaskGroup struct {
 	PastFinals []FinalStage `json:"pastfinals,omitempty"`
 }
 
-// PlanReviewStage is one dag's plan review: its round, the reviewer session judging it, and the verdict's text.
+// PlanReviewStage is one dag's plan review: its round, the reviewer sessions judging it, and the round's merged text.
 type PlanReviewStage struct {
-	State     string `json:"state"` // reviewing | passed | failed | accepted
-	Round     int    `json:"round"`
-	RunID     string `json:"runid,omitempty"`    // the reviewer session's child run
-	Findings  string `json:"findings,omitempty"` // fail findings or pass summary, whole
-	Respawns  int    `json:"respawns,omitempty"`
+	State     string           `json:"state"` // reviewing | passed | failed | accepted
+	Round     int              `json:"round"`
+	Findings  string           `json:"findings,omitempty"`  // the round's merged text: findings on a fail, summary on a pass, whole
+	Reviewers []PlanReviewer   `json:"reviewers,omitempty"` // this round's sessions; empty until the round's first tick
+	PlanText  string           `json:"plantext,omitempty"`  // the plan as this round's reviewers read it
+	SpecText  string           `json:"spectext,omitempty"`  // the spec likewise (empty with no spec file)
+	Prior     *PlanReviewPrior `json:"prior,omitempty"`     // round 2: what round 1 found, read and picked
+}
+
+// PlanReviewer is one reviewer session of a plan review round.
+type PlanReviewer struct {
+	Lens      string `json:"lens"`           // full | spec | order | tests | final | followup
+	State     string `json:"state"`          // reviewing | passed | failed | lost
+	Text      string `json:"text,omitempty"` // its verdict text, or why it was lost
+	RunID     string `json:"runid,omitempty"`
 	StartedTs int64  `json:"startedts,omitempty"`
+	Respawns  int    `json:"respawns,omitempty"`
+}
+
+// PlanReviewPrior is what round 1 of a plan review found, read and picked, carried into round 2.
+type PlanReviewPrior struct {
+	Findings string                `json:"findings"` // round 1's merged findings
+	PlanText string                `json:"plantext,omitempty"`
+	SpecText string                `json:"spectext,omitempty"`
+	Picks    []PlanReviewPriorPick `json:"picks,omitempty"` // round 1's picks, by task id and title
+}
+
+// PlanReviewPriorPick is one round-1 model pick (not PlanReviewPick: runtimeline.ts exports that name).
+type PlanReviewPriorPick struct {
+	TaskId string `json:"taskid"`
+	Title  string `json:"title"`
+	Model  string `json:"model"`
+	Reason string `json:"reason"`
 }
 
 // BaseCheck is one dag's Check on its base commit.
@@ -813,8 +849,12 @@ type JarvisProfile struct {
 	ReviewerPicks bool `json:"reviewerpicks,omitempty"`
 	// ReviewerRoute is the default route for a new run's task reviewers and stage sessions (nil = the lead's route).
 	ReviewerRoute *RoutePin `json:"reviewerroute,omitempty"`
+	// LightReviewerRoute is the default route for a new run's plan review lens and follow-up reviewers (nil = claude/sonnet).
+	LightReviewerRoute *RoutePin `json:"lightreviewerroute,omitempty"`
 	// Landing is where an engine run's lanes land: checkout | branch (empty = branch).
 	Landing string `json:"landing,omitempty"`
+	// Autonomous defaults a new orchestrator run's Approvals to Autonomous (false = Ask me).
+	Autonomous bool `json:"autonomous,omitempty"`
 }
 
 // ProfileOverride is a channel's per-project override, stored as JSON on channel meta. Pointer fields:
@@ -829,7 +869,10 @@ type ProfileOverride struct {
 	// nil here then reads as false.
 	ReviewerPicks *bool     `json:"reviewerpicks,omitempty"`
 	ReviewerRoute *RoutePin `json:"reviewerroute,omitempty"`
-	Landing       *string   `json:"landing,omitempty"`
+	// LightReviewerRoute: nil = inherit the global section (whose nil = claude/sonnet).
+	LightReviewerRoute *RoutePin `json:"lightreviewerroute,omitempty"`
+	Landing            *string   `json:"landing,omitempty"`
+	Autonomous         *bool     `json:"autonomous,omitempty"`
 }
 
 type Channel struct {
@@ -895,6 +938,7 @@ type RadarFinding struct {
 	SourceSubject string              `json:"sourcesubject,omitempty"`
 	RootCause     string              `json:"rootcause,omitempty"`
 	Sites         []RadarSite         `json:"sites,omitempty"`
+	FixSubjects   []string            `json:"fixsubjects,omitempty"`
 }
 
 // RadarSite is one place a fix-audit found the same bug as the source fix commit.
@@ -906,8 +950,10 @@ type RadarSite struct {
 	WhyNotCovered string `json:"whynotcovered"`
 }
 
-// RadarAudit is one fix commit's audit session within a scan.
+// RadarAudit is one audit session within a scan. For a hotspot audit, Commit, Subject and CommitTs are the
+// reviewed revision's and Files is the one file.
 type RadarAudit struct {
+	Kind            string   `json:"kind,omitempty"` // sibling|introduced|hotspot; empty reads as sibling
 	Commit          string   `json:"commit"`
 	Subject         string   `json:"subject"`
 	CommitTs        int64    `json:"committs"`
@@ -922,6 +968,13 @@ type RadarAudit struct {
 	CacheReadTokens int      `json:"cachereadtokens,omitempty"`
 	DurationMs      int64    `json:"durationms,omitempty"`
 	RawResponse     string   `json:"rawresponse,omitempty"`
+	FixSubjects     []string `json:"fixsubjects,omitempty"` // hotspot
+}
+
+// RadarCommitClass is the classifier's label for one window commit.
+type RadarCommitClass struct {
+	Fix      bool `json:"fix"`
+	Behavior bool `json:"behavior"`
 }
 
 // RadarInvestigation is the latest Run outcome recorded against a finding (by fingerprint). It closes the
@@ -944,33 +997,37 @@ type RadarInvestigation struct {
 }
 
 type RadarReport struct {
-	OID              string         `json:"oid"`
-	Version          int            `json:"version"`
-	ProjectName      string         `json:"projectname"`
-	ProjectPath      string         `json:"projectpath"`
-	Status           string         `json:"status"` // collecting|clustering|completed|partial|failed|cancelled
-	Phase            string         `json:"phase,omitempty"`
-	StartHead        string         `json:"starthead,omitempty"`
-	EndHead          string         `json:"endhead,omitempty"`
-	StartDirty       string         `json:"startdirty,omitempty"`
-	EndDirty         string         `json:"enddirty,omitempty"`
-	PrevReportId     string         `json:"prevreportid,omitempty"`
-	PrevHead         string         `json:"prevhead,omitempty"`
-	WindowStartTs    int64          `json:"windowstartts,omitempty"`
-	WindowEndTs      int64          `json:"windowendts,omitempty"`
-	StartedTs        int64          `json:"startedts"`
-	CompletedTs      int64          `json:"completedts,omitempty"`
-	FatalError       string         `json:"fatalerror,omitempty"`
-	ClusterError     string         `json:"clustererror,omitempty"`
-	ConfiguredModel  string         `json:"configuredmodel,omitempty"`
-	ResolvedModel    string         `json:"resolvedmodel,omitempty"`
-	TotalTokens      int            `json:"totaltokens,omitempty"`
-	Candidates       []RadarSignal  `json:"candidates,omitempty"` // retained while clustering is retryable
-	Signals          []RadarSignal  `json:"signals,omitempty"`    // referenced-by-findings after prune
-	Findings         []RadarFinding `json:"findings,omitempty"`
-	ClusterStartedTs int64          `json:"clusterstartedts,omitempty"`
-	Audits           []RadarAudit   `json:"audits,omitempty"`
-	Meta             MetaMapType    `json:"meta"`
+	OID              string                      `json:"oid"`
+	Version          int                         `json:"version"`
+	ProjectName      string                      `json:"projectname"`
+	ProjectPath      string                      `json:"projectpath"`
+	Status           string                      `json:"status"` // collecting|clustering|completed|partial|failed|cancelled
+	Phase            string                      `json:"phase,omitempty"`
+	StartHead        string                      `json:"starthead,omitempty"`
+	EndHead          string                      `json:"endhead,omitempty"`
+	StartDirty       string                      `json:"startdirty,omitempty"`
+	EndDirty         string                      `json:"enddirty,omitempty"`
+	PrevReportId     string                      `json:"prevreportid,omitempty"`
+	PrevHead         string                      `json:"prevhead,omitempty"`
+	WindowStartTs    int64                       `json:"windowstartts,omitempty"`
+	WindowEndTs      int64                       `json:"windowendts,omitempty"`
+	StartedTs        int64                       `json:"startedts"`
+	CompletedTs      int64                       `json:"completedts,omitempty"`
+	FatalError       string                      `json:"fatalerror,omitempty"`
+	ClusterError     string                      `json:"clustererror,omitempty"`
+	ConfiguredModel  string                      `json:"configuredmodel,omitempty"`
+	ResolvedModel    string                      `json:"resolvedmodel,omitempty"`
+	TotalTokens      int                         `json:"totaltokens,omitempty"`
+	Candidates       []RadarSignal               `json:"candidates,omitempty"` // retained while clustering is retryable
+	Signals          []RadarSignal               `json:"signals,omitempty"`    // referenced-by-findings after prune
+	Findings         []RadarFinding              `json:"findings,omitempty"`
+	ClusterStartedTs int64                       `json:"clusterstartedts,omitempty"`
+	Audits           []RadarAudit                `json:"audits,omitempty"`
+	CommitClasses    map[string]RadarCommitClass `json:"commitclasses,omitempty"` // full hash -> label
+	ClassifyCount    int                         `json:"classifycount,omitempty"`
+	ClassifyError    string                      `json:"classifyerror,omitempty"`
+	ClassifyTokens   int                         `json:"classifytokens,omitempty"`
+	Meta             MetaMapType                 `json:"meta"`
 }
 
 func (*RadarReport) GetOType() string {

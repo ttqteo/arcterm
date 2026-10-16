@@ -9,6 +9,7 @@ import {
     reviewStateText,
     routeSourceLabel,
     stageEntries,
+    stageTone,
     taskRoute,
     workersChip,
     workersRoute,
@@ -356,19 +357,74 @@ describe("stageEntries", () => {
         } as unknown as TaskGroup;
         expect(stageEntries(g, lead)).toEqual([]);
     });
-    it("holds only the plan review once one ran, on the reviewer route's model", () => {
+    it("holds only the plan review once one ran, with its state and round", () => {
         const g = {
             tasks: [],
             planreview: { state: "passed", round: 1 },
             final: { state: "failed", round: 1 },
         } as unknown as TaskGroup;
         expect(stageEntries(g, lead)).toEqual([
-            { key: "planreview", text: "plan review · passed · opus-5-5", tone: "done" },
+            { key: "planreview", text: "plan review · passed · round 1", tone: "done", reviewers: [] },
         ]);
-        const routed = { ...g, reviewerroute: { model: "sonnet" }, planreview: { state: "failed", round: 2 } };
-        expect(stageEntries(routed as unknown as TaskGroup, lead)).toEqual([
-            { key: "planreview", text: "plan review · failed · sonnet", tone: "failed" },
+        const failed = { ...g, planreview: { state: "failed", round: 2 } };
+        expect(stageEntries(failed as unknown as TaskGroup, lead)).toEqual([
+            { key: "planreview", text: "plan review · failed · round 2", tone: "failed", reviewers: [] },
         ]);
+    });
+
+    const roundOne = {
+        state: "reviewing",
+        round: 1,
+        reviewers: [
+            { lens: "full", state: "passed", runid: "a" },
+            { lens: "spec", state: "failed", runid: "b" },
+            { lens: "order", state: "lost", runid: "c" },
+            { lens: "tests", state: "reviewing", runid: "d" },
+            { lens: "final", state: "passed", runid: "e" },
+        ],
+    };
+    const chips = (g: object) =>
+        stageEntries(g as unknown as TaskGroup, lead)[0].reviewers.map((r) => `${r.title} · ${r.state} · ${r.model}`);
+
+    it("lists five reviewers, full on the reviewer route and the lenses on sonnet with no Light reviewers route", () => {
+        expect(chips({ tasks: [], planreview: roundOne })).toEqual([
+            "Full review · passed · opus-5-5",
+            "Spec coverage · failed · sonnet",
+            "Task order and files · lost · sonnet",
+            "Tests and commands · reviewing · sonnet",
+            "Final coverage · passed · sonnet",
+        ]);
+        const [entry] = stageEntries({ tasks: [], planreview: roundOne } as unknown as TaskGroup, lead);
+        expect(entry.reviewers.map((r) => r.lens)).toEqual(["full", "spec", "order", "tests", "final"]);
+        expect(entry.text).toBe("plan review · reviewing · round 1");
+    });
+
+    it("puts the lenses on the Light reviewers route and full on the reviewer route when the group names them", () => {
+        const g = {
+            tasks: [],
+            planreview: roundOne,
+            reviewerroute: { model: "sonnet" },
+            lightreviewerroute: { runtime: "claude", model: "claude-haiku-5-5" },
+        };
+        expect(chips(g)).toEqual([
+            "Full review · passed · sonnet",
+            "Spec coverage · failed · haiku-5-5",
+            "Task order and files · lost · haiku-5-5",
+            "Tests and commands · reviewing · haiku-5-5",
+            "Final coverage · passed · haiku-5-5",
+        ]);
+    });
+
+    it("shows round 2's one follow-up on the Light reviewers route", () => {
+        const g = {
+            tasks: [],
+            planreview: { state: "reviewing", round: 2, reviewers: [{ lens: "followup", state: "reviewing" }] },
+        };
+        expect(chips(g)).toEqual(["Round-2 follow-up · reviewing · sonnet"]);
+    });
+
+    it("tones a reviewer by its own state, a lost one as failed", () => {
+        expect(["passed", "failed", "lost", "reviewing"].map(stageTone)).toEqual(["done", "failed", "failed", "open"]);
     });
 });
 

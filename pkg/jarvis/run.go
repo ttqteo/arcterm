@@ -282,11 +282,11 @@ func BuildQuickPrompt(goal string, principles waveobj.PrincipleList, runtime str
 
 // BuildOrchestratePrompt is the lead's initial prompt for an orchestrator run: it brainstorms the goal
 // with the human and hands pkg/orchestrate a plan file. Runtime names the ask tool.
-func BuildOrchestratePrompt(goal string, principles waveobj.PrincipleList, runtime string) string {
+func BuildOrchestratePrompt(goal string, principles waveobj.PrincipleList, runtime string, autonomous bool) string {
 	var b strings.Builder
 	if rendered := RenderPrinciples(principles); rendered != "" {
 		fmt.Fprintf(&b, "Work by these principles, and propagate them into every subagent you dispatch:\n%s\n%s\n\n", rendered, ContractWinsLine)
 	}
-	writeLaunchPrompt(&b, goal, runtime)
+	writeLaunchPrompt(&b, goal, runtime, autonomous)
 	return strings.TrimRight(b.String(), "\n")
 }

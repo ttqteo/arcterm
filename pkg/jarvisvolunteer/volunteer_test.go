@@ -227,7 +227,7 @@ func TestProducersForSelectsByTriggerKind(t *testing.T) {
 	}{
 		{TriggerRunCreated, []string{ClassLedger}},
 		{TriggerRunRest, []string{ClassConnection, ClassLedger}},
-		{TriggerSweep, []string{ClassLooseEnd}},
+		{TriggerSweep, []string{ClassLooseEnd, ClassMemoryHygiene}},
 	}
 	for _, c := range cases {
 		ps := producersFor(&Trigger{Kind: c.kind})

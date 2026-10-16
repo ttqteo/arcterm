@@ -26,12 +26,15 @@ import {
     MAX_PARALLELISM,
     SHAPE_CARDS,
     START_OPTIONS,
+    approvalsNote,
     runLauncherFace,
     startNote,
     type PlanPreview,
     type StartFrom,
 } from "./runconfig";
 import {
+    autonomousAtom,
+    lightReviewerRouteAtom,
     parallelismAtom,
     planPathAtom,
     planPreviewAtom,
@@ -40,6 +43,8 @@ import {
     routeOpenRequestAtom,
     runRouteAtom,
     runShapeAtom,
+    setAutonomous,
+    setLightReviewerRoute,
     setPlanPath,
     setReviewerPicks,
     setReviewerRoute,
@@ -281,6 +286,7 @@ function RoutingSection({ showWorkerRoute }: { showWorkerRoute: boolean }) {
     const workerRoute = useAtomValue(workerRouteAtom);
     const reviewerPicks = useAtomValue(reviewerPicksAtom);
     const reviewerRoute = useAtomValue(reviewerRouteAtom);
+    const lightReviewerRoute = useAtomValue(lightReviewerRouteAtom);
     const openRequest = useAtomValue(routeOpenRequestAtom);
     const leadRuntimes = useAtomValue(leadRuntimesAtom);
     return (
@@ -318,9 +324,56 @@ function RoutingSection({ showWorkerRoute }: { showWorkerRoute: boolean }) {
                             inheritedLabel="Same as lead"
                             runtimes={leadRuntimes}
                         />
+                        <span data-light-reviewers-row className="contents">
+                            <RoutePicker
+                                value={lightReviewerRoute}
+                                onChange={setLightReviewerRoute}
+                                placement="bottom-start"
+                                title="Light reviewers model"
+                                canInherit
+                                inheritedLabel="Sonnet (default)"
+                            />
+                        </span>
                     </>
                 ) : null}
             </div>
+        </Section>
+    );
+}
+
+const APPROVALS: { autonomous: boolean; label: string }[] = [
+    { autonomous: false, label: "Ask me" },
+    { autonomous: true, label: "Autonomous" },
+];
+
+// Approvals, shared with the New run window (NewRun.dc.html): who answers the run's questions.
+export function ApprovalsSection() {
+    const autonomous = useAtomValue(autonomousAtom);
+    return (
+        <Section label="Approvals">
+            <div
+                role="group"
+                aria-label="Approvals"
+                className="flex w-fit gap-0.5 rounded-[8px] border border-border bg-surface p-0.5"
+            >
+                {APPROVALS.map((option) => (
+                    <button
+                        key={option.label}
+                        type="button"
+                        aria-pressed={autonomous === option.autonomous}
+                        onClick={() => setAutonomous(option.autonomous)}
+                        className={cn(
+                            "cursor-pointer rounded-[6px] px-3 py-1 text-[11.5px] font-semibold",
+                            autonomous === option.autonomous
+                                ? "bg-accentbg text-accent-soft"
+                                : "text-ink-mid hover:text-secondary"
+                        )}
+                    >
+                        {option.label}
+                    </button>
+                ))}
+            </div>
+            <span className="text-[11px] leading-[1.45] text-muted">{approvalsNote(autonomous)}</span>
         </Section>
     );
 }
@@ -335,6 +388,7 @@ export function RunLauncherSections({ projectPath }: { projectPath: string }) {
             <ShapeCards showParallelism={face.showParallelism} />
             {face.showStart ? <StartSection projectPath={projectPath} /> : null}
             <RoutingSection showWorkerRoute={face.showWorkerRoute} />
+            {face.showApprovals ? <ApprovalsSection /> : null}
         </>
     );
 }

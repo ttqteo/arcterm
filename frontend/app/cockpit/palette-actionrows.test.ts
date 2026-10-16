@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { ThingAction, ThingEntry, ThingKindDef } from "./actions/types";
-import { actionListGroups, verbGroupLabel, verbLeads } from "./palette-actionrows";
+import { actionListGroups, resolveActionRow, verbGroupLabel, verbLeads } from "./palette-actionrows";
 
 interface Job {
     live: boolean;
@@ -63,6 +63,65 @@ describe("actionListGroups", () => {
         const r = actionListGroups(JOB_KIND, entry(true), "resume");
         expect(r.groups).toEqual([]);
         expect(r.notNow).toBe("Not now: Resume, End final stage");
+    });
+});
+
+describe("resolveActionRow", () => {
+    const plain = action("job:cancel", "Cancel run", "stop", () => true);
+
+    it("names a plain action by its label, Enter by the label's first word", () => {
+        expect(resolveActionRow(plain, entry(true))).toEqual({
+            title: "Cancel run",
+            verb: "Cancel",
+            status: undefined,
+            echo: "Cancel run: “fix flaky verify”",
+        });
+    });
+
+    it("writes or picks first when the action takes a value", () => {
+        const text: ThingAction<Job> = {
+            ...plain,
+            label: "Message the lead",
+            input: { kind: "text", placeholder: "" },
+        };
+        expect(resolveActionRow(text, entry(true))).toMatchObject({
+            title: "Message the lead…",
+            verb: "Write",
+            echo: "Takes the text here, for “fix flaky verify”",
+        });
+        const pick: ThingAction<Job> = {
+            ...plain,
+            label: "Stop a worker…",
+            input: { kind: "pick", placeholder: "", options: () => [] },
+        };
+        expect(resolveActionRow(pick, entry(true))).toMatchObject({
+            title: "Stop a worker…",
+            verb: "Pick",
+            echo: "Lists the choices, for “fix flaky verify”",
+        });
+    });
+
+    it("lets a toggle read by the thing's current value", () => {
+        const toggle: ThingAction<Job> = {
+            ...plain,
+            label: "Go autonomous",
+            title: (j) => (j.live ? "Ask me again" : "Go autonomous"),
+            verb: (j) => (j.live ? "Ask me" : "Go"),
+            status: (j) => (j.live ? { label: "autonomous", tone: "accent" } : { label: "asks you", tone: "muted" }),
+            echo: (j) => (j.live ? "asks again" : "answers everything"),
+        };
+        expect(resolveActionRow(toggle, entry(false))).toEqual({
+            title: "Go autonomous",
+            verb: "Go",
+            status: { label: "asks you", tone: "muted" },
+            echo: "answers everything",
+        });
+        expect(resolveActionRow(toggle, entry(true))).toEqual({
+            title: "Ask me again",
+            verb: "Ask me",
+            status: { label: "autonomous", tone: "accent" },
+            echo: "asks again",
+        });
     });
 });
 

@@ -20,7 +20,7 @@
 // The user's packaged arcterm shares the dev app's image names, so only the PID this script spawned is ever killed.
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, cpSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { connect, createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -45,6 +45,8 @@ const FINAL_BASE = join(process.env.LOCALAPPDATA || join(homedir(), ".cache"), "
 export const BUILD_SLOTS = 3;
 // keeps the port scans of stages on different slots apart: they pick ports long before anything binds them
 const SLOT_PORT_STRIDE = 20;
+// the exe `cargo tauri dev` builds into a slot's target dir and runs from there
+const DEV_EXE = "wave-tauri.exe";
 const STORE_ID_LEN = 8;
 // a store's files can stay held for seconds after its dev app is killed; up to 10s before leaving it to the sweep
 const STORE_DROP_RETRIES = 20;
@@ -52,8 +54,8 @@ const STORE_DROP_RETRY_MS = 500;
 
 // slot 0 keeps the names a checkout's older copy of this script uses, so that copy and this one still exclude each
 // other there
-function slotPath(name, slot) {
-    return join(FINAL_BASE, slot ? `${name}-${slot}` : name);
+function slotPath(name, slot, base = FINAL_BASE) {
+    return join(base, slot ? `${name}-${slot}` : name);
 }
 // where verify.mjs writes its shots, contact sheet and shots.json, relative to the tree it runs in
 const SHOTS_DIR = "cdp-shots";
@@ -142,6 +144,19 @@ async function dropStaleSocket(path) {
     if (!live) rmSync(path, { force: true });
 }
 
+// a dev app nobody locked the slot for, one started by hand with the slot's target dir (run dca34385) or one that
+// outlived its stage, still runs the slot's exe, and cargo fails (exit 201) when it cannot replace it. windows refuses
+// to open a running image for writing
+function slotExeRunning(base, slot) {
+    if (process.platform !== "win32") return false;
+    try {
+        closeSync(openSync(join(slotPath("target", slot, base), "debug", DEV_EXE), "r+"));
+        return false;
+    } catch (e) {
+        return e.code === "EBUSY";
+    }
+}
+
 // resolves the first free slot and its held lock (close it to release), or null when other stages kept every slot
 // past waitMs
 export async function acquireBuildSlot(base, waitMs, slots = BUILD_SLOTS) {
@@ -150,7 +165,12 @@ export async function acquireBuildSlot(base, waitMs, slots = BUILD_SLOTS) {
         for (let slot = 0; slot < slots; slot++) {
             const path = buildLockPath(base, slot);
             const lock = await listenOn(path);
-            if (lock) return { slot, lock };
+            if (lock && !slotExeRunning(base, slot)) return { slot, lock };
+            if (lock) {
+                if (!waited) console.log(`slot ${slot}'s ${DEV_EXE} is running without a final stage; trying the next slot`);
+                await new Promise((r) => lock.close(r));
+                continue;
+            }
             await dropStaleSocket(path);
         }
         if (Date.now() >= deadline) return null;

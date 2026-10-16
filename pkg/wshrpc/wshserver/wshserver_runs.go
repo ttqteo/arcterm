@@ -47,6 +47,10 @@ const ErrWorkerReportRequired = "a task worker completes with --report <file>"
 // can't hold the response past the caller's client timeout. A var so tests can run it inline.
 var sealAsync = func(fn func()) { go fn() }
 
+// stopStageSession stops a finished plan reviewer's or final verifier's worker off the handler's goroutine:
+// its process is the caller of the complete being handled. A var so tests see what was stopped.
+var stopStageSession = func(run waveobj.Run) { go stopRunWorkers(context.Background(), &run) }
+
 // landRun is the land a completed run gets. A var so a test can read what it was asked for.
 var landRun = orchestrate.LandRun
 
@@ -426,6 +430,9 @@ func (ws *WshServer) CreateRunCommand(ctx context.Context, data wshrpc.CommandCr
 	if data.Prototype != "" && !engineLaunch {
 		return nil, fmt.Errorf("prototype needs an orchestrator run: only the engine's final verifier reads it")
 	}
+	if data.Autonomous != nil && *data.Autonomous && !engineLaunch {
+		return nil, fmt.Errorf("autonomous needs an orchestrator run: only its lead answers for you")
+	}
 	orchestration := ""
 	if engineLaunch {
 		orchestration = jarvis.Orchestration_Engine
@@ -444,6 +451,12 @@ func (ws *WshServer) CreateRunCommand(ctx context.Context, data wshrpc.CommandCr
 		if data.ReviewerRoute == nil {
 			data.ReviewerRoute = resolved.ReviewerRoute
 		}
+		if data.LightReviewerRoute == nil {
+			data.LightReviewerRoute = resolved.LightReviewerRoute
+		}
+		if data.Autonomous == nil {
+			data.Autonomous = &resolved.Autonomous
+		}
 	}
 	reviewerPicks := data.ReviewerPicks != nil && *data.ReviewerPicks
 	if err := validateWorkersSetting(data.WorkerRoute, reviewerPicks); err != nil {
@@ -455,6 +468,9 @@ func (ws *WshServer) CreateRunCommand(ctx context.Context, data wshrpc.CommandCr
 	if err := validateRoute("reviewerRoute", harness.OperationLead, data.ReviewerRoute, true); err != nil {
 		return nil, err
 	}
+	if err := validateRoute("lightReviewerRoute", harness.OperationLead, data.LightReviewerRoute, true); err != nil {
+		return nil, err
+	}
 	run := jarvis.NewRun(data.Goal, data.WorkspaceId, ch.ProjectPath, resolved.Principles, mode, playbook, time.Now().UnixMilli())
 	if data.DeferStart {
 		run.Status = jarvis.RunStatus_Planning
@@ -464,6 +480,8 @@ func (ws *WshServer) CreateRunCommand(ctx context.Context, data wshrpc.CommandCr
 	run.WorkerRoute = data.WorkerRoute
 	run.ReviewerPicks = reviewerPicks
 	run.ReviewerRoute = data.ReviewerRoute
+	run.LightReviewerRoute = data.LightReviewerRoute
+	run.Autonomous = data.Autonomous != nil && *data.Autonomous
 	run.Orchestration = orchestration // prompt-shaping only; DagSubmit stays open to either choice
 	// out-of-band widths are rejected rather than clamped: a caller asking for 40 workers has a wrong
 	// model of the engine, and silently running 8 would hide that.
@@ -582,7 +600,7 @@ func handSetupToLead(ctx context.Context, channelId string, run waveobj.Run, pla
 		return false
 	}
 	wake := setupRepairWake(planPath, failed)
-	if lerr := LaunchPlanLead(ctx, channelId, run.ID, jarvis.PlanLeadPrompt(run.Principles, run.ID, "", planPath, runEffortOID(&run), wake)); lerr != nil {
+	if lerr := LaunchPlanLead(ctx, channelId, run.ID, jarvis.PlanLeadPrompt(run.Principles, run.ID, "", planPath, runEffortOID(&run), run.Autonomous, wake)); lerr != nil {
 		log.Printf("CreateRun: no lead to take run %s's failed setup: %v", run.ID, lerr)
 		return false
 	}
@@ -697,70 +715,6 @@ func ownsDag(ctx context.Context, run *waveobj.Run) bool {
 	return err == nil && g.RunID == run.ID
 }
 
-// resumeRefusal is why a run's failed phase cannot be resumed, or "" when it can. The worker's tab is
-// checked by the restart itself.
-func resumeRefusal(run *waveobj.Run, phaseIdx int) string {
-	switch {
-	case run.DagORef != "":
-		return "a run with a submitted plan is the engine's to restart"
-	case phaseIdx < 0 || phaseIdx >= len(run.Phases):
-		return fmt.Sprintf("phase index %d out of range", phaseIdx)
-	case run.Phases[phaseIdx].State != jarvis.PhaseState_Failed:
-		return fmt.Sprintf("phase %d is %q, not failed", phaseIdx, run.Phases[phaseIdx].State)
-	case len(run.Phases[phaseIdx].WorkerOrefs) == 0:
-		return "the phase never had a worker"
-	case run.SessionId == "":
-		return "the run has no session to resume"
-	}
-	if _, ok := jarvis.ResumeWorkerArgs(run.Runtime, run.SessionId, nil, jarvis.ResumeNudge); !ok {
-		return fmt.Sprintf("runtime %q cannot resume a session", run.Runtime)
-	}
-	return ""
-}
-
-// resumeRun puts a failed phase back to running and restarts its worker in its own session and tab. The phase
-// is running before the worker starts, so a worker that exits at once, or never starts, fails it again through
-// the exit hook like any other exit; a restart that errors outright is rolled back to failed.
-func resumeRun(ctx context.Context, channelId, runId string, phaseIdx int) error {
-	var worker, runtime, sessionId string
-	err := wstore.UpdateRun(ctx, channelId, runId, func(r *waveobj.Run) error {
-		if reason := resumeRefusal(r, phaseIdx); reason != "" {
-			return errors.New(reason)
-		}
-		workers := r.Phases[phaseIdx].WorkerOrefs
-		worker, runtime, sessionId = workers[len(workers)-1], r.Runtime, r.SessionId
-		next, e := jarvis.ResumePhase(*r, phaseIdx)
-		if e != nil {
-			return e
-		}
-		*r = next
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("cannot resume run %s: %w", runId, err)
-	}
-	if rerr := jarvis.ResumeRunWorker(ctx, worker, runtime, sessionId, jarvis.ResumeNudge); rerr != nil {
-		if err := wstore.UpdateRun(ctx, channelId, runId, func(r *waveobj.Run) error {
-			if r.Phases[phaseIdx].State != jarvis.PhaseState_Running {
-				return nil // the exit hook already failed it
-			}
-			next, e := jarvis.FailPhase(*r, phaseIdx, time.Now().UnixMilli())
-			if e != nil {
-				return e
-			}
-			*r = next
-			return nil
-		}); err != nil {
-			log.Printf("resume: rolling back run %s phase %d: %v", runId, phaseIdx, err)
-		}
-		publishRunUpdate(channelId, runId)
-		return fmt.Errorf("resuming run %s: %w", runId, rerr)
-	}
-	appendRunEvent(ctx, channelId, runId, waveobj.RunEventKindWorkerResumed, phaseIdxOf(phaseIdx), map[string]any{})
-	publishRunUpdate(channelId, runId)
-	return nil
-}
-
 func (ws *WshServer) AdvanceRunCommand(ctx context.Context, data wshrpc.CommandAdvanceRunData) error {
 	sealDue, err := advanceRun(ctx, data)
 	if sealDue {
@@ -777,7 +731,7 @@ func advanceRun(ctx context.Context, data wshrpc.CommandAdvanceRunData) (sealDue
 		return false, fmt.Errorf("channelid and runid are required")
 	}
 	if data.Action == jarvis.RunAction_Resume {
-		return false, resumeRun(ctx, data.ChannelId, data.RunId, data.PhaseIdx)
+		return false, orchestrate.ResumeRun(ctx, data.ChannelId, data.RunId, data.PhaseIdx)
 	}
 	preStatus := ""
 	var preRun *waveobj.Run
@@ -879,6 +833,11 @@ func advanceRun(ctx context.Context, data wshrpc.CommandAdvanceRunData) (sealDue
 			// the transition is durable; the tick it pokes can merge, run Setup and spawn, which outlasts the
 			// child's RPC budget and reads to the child as a failed complete (run 28caa81f's t-4)
 			scheduleDag(grp.OID)
+		}
+		// a stage session completes right after its verdict, then idles at its prompt in the landing tree,
+		// which no lane cleanup reaps: without this it lives until the app quits
+		if run.StageRole != "" {
+			stopStageSession(*run)
 		}
 	}
 	// continuity (sub-project E): on entering a rest state (awaiting-review | blocked | done), write the

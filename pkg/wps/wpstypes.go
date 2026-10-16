@@ -43,6 +43,8 @@ const (
 	Event_RunEvent      = "run:event"        // type: wshrpc.RunEventData
 	// the run queue (pkg/runqueue): the whole list, after every change the server makes to it
 	Event_RunQueueChanged = "runqueue:changed" // type: wshrpc.RunQueueChangedData
+
+	Event_MemHygieneUpdate = "memhygiene:update" // type: none (the setup memory tab re-lists on it)
 )
 
 var AllEvents []string = []string{
@@ -72,6 +74,7 @@ var AllEvents []string = []string{
 	DagEventTaskRetried,
 	Event_RunEvent,
 	Event_RunQueueChanged,
+	Event_MemHygieneUpdate,
 }
 
 type WaveEvent struct {

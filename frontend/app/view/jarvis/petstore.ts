@@ -188,10 +188,6 @@ export function rememberSaid(event: PetEvent): void {
 // the peek also ejects the user to the Cockpit.
 export const petPeekOpenAtom = atom(false);
 
-// Jarvis's seat on the Brief's office floor (officeview.tsx JarvisOfficeFloor), while the office draws it. The creature
-// sits there instead of walking the footer, so there is one Jarvis, and its bubble and peek hang off the seat.
-export const petOfficeSeatAtom = atom<HTMLElement | null>(null) as PrimitiveAtom<HTMLElement | null>;
-
 // The decision a volunteered utterance pointed at, for decisionlog.tsx to scroll to and flash. A
 // decision has no surface of its own — decisionlog renders it inside its parent record's thread — so
 // navigation lands on the record and this names the card. Cleared by the consumer once honoured.

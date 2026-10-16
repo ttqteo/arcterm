@@ -363,9 +363,37 @@ func initialWorkerStatusEvent(blockId, runtime string, ts int64) wps.WaveEvent {
 // prompt, every other shape the bare worker prompt.
 func phasePrompt(run *waveobj.Run) string {
 	if run.Mode == RunMode_Orchestrator {
-		return BuildOrchestratePrompt(run.Goal, run.Principles, run.Runtime)
+		return BuildOrchestratePrompt(run.Goal, run.Principles, run.Runtime, run.Autonomous)
 	}
 	return BuildQuickPrompt(run.Goal, run.Principles, run.Runtime)
+}
+
+const (
+	runLabelMaxRunes     = 60
+	runLabelMinHeadWords = 3 // "Fix: the parser" keeps the whole line, "Fix" alone names nothing
+)
+
+// runLabelBreaks end a goal's headline clause: a one-sentence goal reads "<what>: <how>", and the tab
+// only has room for the what.
+var runLabelBreaks = []string{": ", ". ", " — ", " - "}
+
+// runLabel names a run's tab: the first clause of its goal's first line, cut on a word to runLabelMaxRunes.
+func runLabel(goal string) string {
+	label := strings.TrimSpace(firstLine(strings.TrimSpace(goal)))
+	for _, sep := range runLabelBreaks {
+		if head, _, ok := strings.Cut(label, sep); ok && len(strings.Fields(head)) >= runLabelMinHeadWords {
+			label = strings.TrimSpace(head)
+		}
+	}
+	r := []rune(label)
+	if len(r) <= runLabelMaxRunes {
+		return label
+	}
+	cut := string(r[:runLabelMaxRunes-1])
+	if i := strings.LastIndex(cut, " "); i > len(cut)/2 {
+		cut = cut[:i]
+	}
+	return strings.TrimRight(cut, " ,;:") + "…"
 }
 
 // SpawnedWorker is one worker EnsureWorkers launched: its tab oref and the session id its transcript is
@@ -399,7 +427,7 @@ func EnsureWorkers(ctx context.Context, run *waveobj.Run, cap runroute.Capabilit
 		if run.Mode == RunMode_Orchestrator || len(workerPrompt) > maxInlinePromptBytes {
 			// named after its run: its ai-title would come from its first prompt, which on a plan run is a wake,
 			// and for a prompt too long for a command line is the pointer to the file holding it
-			opts.Label = strings.TrimSpace(strings.SplitN(run.Goal, "\n", 2)[0])
+			opts.Label = runLabel(run.Goal)
 		}
 		oref, err := SpawnRunWorker(ctx, cap, run.WorkspaceId, projectName, LandPath(run), workerPrompt, opts)
 		if err != nil {

@@ -13,6 +13,7 @@ import type { TrayAct, TrayPage, TraySnapshot } from "@/app/cockpit/traytypes";
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import { useApplyCockpitTheme } from "@/app/view/agents/themestore";
 import { loadFonts } from "@/util/fontutil";
+import { cn } from "@/util/util";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { useEffect, useRef, useState } from "react";
@@ -28,6 +29,9 @@ declare global {
 
 const fixtureName = new URLSearchParams(location.search).get("fixture");
 const fixture = fixtureName != null ? TRAY_FIXTURES[fixtureName] : undefined;
+// Windows 11 draws the real window's rounded border itself (shadow on an undecorated window); a CSS one inside it
+// shows as a second edge at the corners. The fixture page has no window frame, so it keeps its own.
+const osFrame = fixtureName == null && /Windows/.test(navigator.userAgent);
 
 function send(act: TrayAct): void {
     if (fixtureName != null) {
@@ -104,7 +108,7 @@ function TrayRoot() {
             <PopoverReveal
                 open
                 origin={snap?.platform === "win" ? "bottom center" : "top center"}
-                className="rounded-lg border border-edge-strong bg-surface p-2.5 font-sans"
+                className={cn("bg-surface p-2.5 font-sans", !osFrame && "rounded-lg border border-edge-strong")}
             >
                 {state === "offline" ? (
                     <OfflinePage lastHeard={lastHeard} send={send} />
@@ -126,5 +130,14 @@ loadFonts();
 if (fixtureName != null) {
     // a backdrop for the CDP shots; the real window is transparent around the popover
     document.body.classList.add("bg-background", "p-4");
+} else {
+    // The real window never scrolls: the host sizes it to the popover, and a scrollbar holds itself up once shown. It
+    // narrows the 360 px page, the page then scrolls sideways, and that second bar keeps the height short.
+    document.body.classList.add("overflow-hidden");
+    if (osFrame) {
+        // fills the frame while the window catches up with the page's height, not the page's own height (the host
+        // sizes the window from it, so the window could never shrink)
+        document.body.classList.add("bg-surface");
+    }
 }
 createRoot(document.getElementById("tray")!).render(<TrayRoot />);

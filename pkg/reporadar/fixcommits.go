@@ -6,16 +6,20 @@ package reporadar
 import (
 	"context"
 	"fmt"
-	"regexp"
+	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 )
 
-var fixSubjectRe = regexp.MustCompile(`(?i)^fix(\([^)]*\))?!?:`)
-
 var docExts = []string{".md", ".mdx", ".txt", ".rst"}
+
+// generated or data files, never worth classifying or auditing
+var dataExts = []string{".lock", ".json", ".snap"}
+var dataDirs = []string{"locale", "locales", "i18n"}
+var generatedNames = []string{"gotypes.d.ts", "wshclientapi.ts", "wshclient.go", "metaconsts.go"}
 
 type gitFile struct {
 	path string
@@ -71,8 +75,30 @@ func parseGitLog(out string) []gitCommit {
 
 func isTestPath(p string) bool {
 	p = strings.ToLower(p)
+	base := path.Base(p)
 	return strings.Contains(p, "_test.") || strings.Contains(p, ".test.") ||
-		strings.Contains(p, ".spec.") || strings.Contains(p, "/tests/") || strings.Contains(p, "/test/")
+		strings.Contains(p, ".spec.") || strings.Contains(p, "/tests/") || strings.Contains(p, "/test/") ||
+		strings.HasPrefix(p, "test/") || strings.HasPrefix(p, "tests/") ||
+		(strings.HasPrefix(base, "test_") && strings.HasSuffix(base, ".py"))
+}
+
+func isDataPath(p string) bool {
+	p = strings.ToLower(p)
+	base := path.Base(p)
+	if slices.Contains(generatedNames, base) {
+		return true
+	}
+	for _, ext := range dataExts {
+		if strings.HasSuffix(base, ext) {
+			return true
+		}
+	}
+	for _, seg := range strings.Split(path.Dir(p), "/") {
+		if slices.Contains(dataDirs, seg) {
+			return true
+		}
+	}
+	return false
 }
 
 // clip bounds untrusted text to n bytes without splitting a rune.
@@ -95,6 +121,8 @@ func listWindowCommits(ctx context.Context, projectPath string, sinceTs int64) (
 	} else {
 		args = append(args, "--since", "30 days ago")
 	}
+	// scoped to the project: a subfolder project sees only its commits, with project-relative paths
+	args = append(args, "--relative", "--", ".")
 	out, err := git(ctx, projectPath, args...)
 	if err != nil {
 		return nil, fmt.Errorf("git log: %w", err)
@@ -115,10 +143,14 @@ func isDocPath(p string) bool {
 	return false
 }
 
+func isCodePath(p string) bool {
+	return !isDocPath(p) && !isTestPath(p) && !isDataPath(p)
+}
+
 func codeFiles(c gitCommit) []string {
 	var files []string
 	for _, f := range c.files {
-		if !isDocPath(f.path) && !isTestPath(f.path) {
+		if isCodePath(f.path) {
 			files = append(files, f.path)
 		}
 	}
@@ -126,48 +158,13 @@ func codeFiles(c gitCommit) []string {
 	return files
 }
 
-// selectFixCommits applies the spec's trigger: fix subjects, code files only, ranked, audited ones removed, capped.
-func selectFixCommits(commits []gitCommit, audited map[string]bool, limit int) []fixCommit {
-	var fixes []fixCommit
-	fileFixes := map[string]int{}
-	for _, c := range commits {
-		if !fixSubjectRe.MatchString(c.subject) {
-			continue
-		}
-		files := codeFiles(c)
-		if len(files) == 0 {
-			continue
-		}
-		for _, f := range files {
-			fileFixes[f]++
-		}
-		fixes = append(fixes, fixCommit{Hash: c.hash, Subject: c.subject, Ts: c.ts * 1000, Files: files})
-	}
-	score := func(fc fixCommit) int {
-		best := 0
-		for _, f := range fc.Files {
-			best = max(best, fileFixes[f])
-		}
-		return best
-	}
-	var kept []fixCommit
-	for _, fc := range fixes {
-		if !audited[fc.Hash] {
-			kept = append(kept, fc)
+// codeChurn is adds plus dels over the commit's code files.
+func codeChurn(c gitCommit) int {
+	churn := 0
+	for _, f := range c.files {
+		if isCodePath(f.path) {
+			churn += f.adds + f.dels
 		}
 	}
-	sort.SliceStable(kept, func(i, j int) bool {
-		a, b := kept[i], kept[j]
-		if sa, sb := score(a), score(b); sa != sb {
-			return sa > sb
-		}
-		if a.Ts != b.Ts {
-			return a.Ts > b.Ts
-		}
-		return a.Hash < b.Hash
-	})
-	if limit >= 0 && len(kept) > limit {
-		kept = kept[:limit]
-	}
-	return kept
+	return churn
 }

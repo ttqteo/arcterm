@@ -23,11 +23,19 @@ import {
 import { clampParallelism, MAX_PARALLELISM } from "@/app/view/agents/runconfig";
 import { runEventsAtom } from "@/app/view/agents/runeventstore";
 import type { Lineage, RunInfo } from "@/app/view/agents/runlineage";
-import { cancelSurvivors, canResume, currentPhaseIndex, isTerminal, runLiveWorkers } from "@/app/view/agents/runmodel";
+import {
+    cancelSurvivors,
+    canResume,
+    currentPhaseIndex,
+    isTerminal,
+    leadAsker,
+    runLiveWorkers,
+} from "@/app/view/agents/runmodel";
 import { openRunDag } from "@/app/view/agents/runrailsections";
 import { runSteerLead } from "@/app/view/jarvis/briefcomposertarget";
 import { openTarget } from "@/app/view/jarvis/openref";
-import { doneBodyHasDiff, finalStageEndable, sheetLead } from "@/app/view/jarvis/runsheetmodel";
+import { runAutonomous, settingsChangePayload, sheetFace } from "@/app/view/jarvis/runsettings";
+import { approvalsWord, doneBodyHasDiff, finalStageEndable, sheetLead } from "@/app/view/jarvis/runsheetmodel";
 import { allRunsAtom, type ProjectRun } from "../palette-data";
 import type { ThingAction, ThingKindDef } from "./types";
 
@@ -84,6 +92,8 @@ function endFinal(outcome: FinalEndOutcome, label: string): ThingAction<RunThing
         },
     };
 }
+
+const isAutonomous = (t: RunThing) => runAutonomous(t.run, t.info?.dag ?? null);
 
 const RUN_ACTIONS: ThingAction<RunThing>[] = [
     {
@@ -155,6 +165,36 @@ const RUN_ACTIONS: ThingAction<RunThing>[] = [
         // straight to the RPC, not runCardAction: that parks a refusal on the lead card, which only grid runs
         // show, while a rejection here is shown by the palette
         run: (t, _deps, value) => setRunParallelism(t.info, clampParallelism(Number(value))),
+    },
+    {
+        id: "run:autonomous",
+        label: "Go autonomous",
+        group: "steer",
+        // a run whose dag has not loaded would send the launch snapshot's routes over the group's
+        applies: (t) => sheetFace(t.run).kind === "editable" && (!t.run.dagoref || t.info?.dag != null),
+        title: (t) => (isAutonomous(t) ? "Ask me again" : "Go autonomous"),
+        verb: (t) => (isAutonomous(t) ? "Ask me" : "Go"),
+        status: (t) =>
+            isAutonomous(t)
+                ? { label: approvalsWord(true), tone: "accent" }
+                : { label: approvalsWord(false), tone: "muted" },
+        echo: (t) => {
+            if (isAutonomous(t)) {
+                return "The lead asks you again from its next decision. Calls it already made stand.";
+            }
+            const asker = leadAsker(t.run, t.agents);
+            return asker == null
+                ? "The lead answers everything from now on."
+                : `The lead answers everything from now on, starting with the ${asker.ask?.questions?.[0]?.header || "question"} it is waiting on.`;
+        },
+        // the payload carries the routes as they stand: the server applies every route field it is sent
+        run: (t) =>
+            RpcApi.SetRunSettingsCommand(
+                TabRpcClient,
+                settingsChangePayload(t.channelId, t.run.id, t.run, t.info?.dag ?? null, {
+                    autonomous: !isAutonomous(t),
+                })
+            ),
     },
     {
         id: "run:relaunch",

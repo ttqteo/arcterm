@@ -134,3 +134,77 @@ func TestEngineSettingsBlockerRejectsAStoredAdaptiveRun(t *testing.T) {
 		t.Errorf("a pre-control pi orchestrator drove the engine: blocker = %q, want none", got)
 	}
 }
+
+// Autonomous is applied only when sent, on either carrier. That each apply leaves the other carrier alone is
+// checked end to end by TestSetRunSettingsAutonomousCarrier.
+func TestApplyEngineSettingsAutonomous(t *testing.T) {
+	r := engineRun()
+	r.Autonomous = true
+	if got := ApplyPendingEngineSettings(r, PendingEngineSettings{}); !got.Autonomous {
+		t.Error("pending: a nil value cleared the run's autonomous")
+	}
+	if got := ApplyPendingEngineSettings(r, PendingEngineSettings{Autonomous: boolPtr(false)}); got.Autonomous {
+		t.Error("pending: false did not turn the run's autonomous off")
+	}
+	off := engineRun()
+	if got := ApplyPendingEngineSettings(off, PendingEngineSettings{Autonomous: boolPtr(true)}); !got.Autonomous {
+		t.Error("pending: true did not turn the run's autonomous on")
+	}
+
+	g := waveobj.TaskGroup{OID: "d1", RunID: "r1", Autonomous: true}
+	if got := ApplyLiveEngineSettings(g, PendingEngineSettings{}); !got.Autonomous {
+		t.Error("live: a nil value cleared the group's autonomous")
+	}
+	if got := ApplyLiveEngineSettings(g, PendingEngineSettings{Autonomous: boolPtr(false)}); got.Autonomous {
+		t.Error("live: false did not turn the group's autonomous off")
+	}
+	if got := ApplyLiveEngineSettings(waveobj.TaskGroup{OID: "d1"}, PendingEngineSettings{Autonomous: boolPtr(true)}); !got.Autonomous {
+		t.Error("live: true did not turn the group's autonomous on")
+	}
+}
+
+func TestEffectiveAutonomous(t *testing.T) {
+	r := engineRun()
+	r.Autonomous = true
+	if !EffectiveAutonomous(&r, nil) {
+		t.Error("no group: the run's value should stand")
+	}
+	owned := &waveobj.TaskGroup{RunID: r.ID, Autonomous: false}
+	if EffectiveAutonomous(&r, owned) {
+		t.Error("an owning group's value should win over the run's")
+	}
+	owned.Autonomous = true
+	r.Autonomous = false
+	if !EffectiveAutonomous(&r, owned) {
+		t.Error("an owning group's true should win over the run's false")
+	}
+	foreign := &waveobj.TaskGroup{RunID: "parent", Autonomous: true}
+	if EffectiveAutonomous(&r, foreign) {
+		t.Error("a group another run owns must be ignored")
+	}
+	if EffectiveAutonomous(nil, nil) {
+		t.Error("no run is not autonomous")
+	}
+}
+
+func TestRunSettingsLightReviewerRoutePending(t *testing.T) {
+	route := &waveobj.RoutePin{Runtime: "claude", Model: "haiku"}
+	r := ApplyPendingEngineSettings(engineRun(), PendingEngineSettings{LightReviewerRoute: route})
+	if r.LightReviewerRoute == nil || *r.LightReviewerRoute != *route {
+		t.Fatalf("pending: light reviewer route = %+v, want %+v", r.LightReviewerRoute, route)
+	}
+	if got := ApplyPendingEngineSettings(r, PendingEngineSettings{}); got.LightReviewerRoute != nil {
+		t.Fatalf("a nil value must clear the run's: %+v", got.LightReviewerRoute)
+	}
+}
+
+func TestRunSettingsLightReviewerRouteLive(t *testing.T) {
+	route := &waveobj.RoutePin{Runtime: "claude", Model: "haiku"}
+	g := ApplyLiveEngineSettings(waveobj.TaskGroup{OID: "d1"}, PendingEngineSettings{LightReviewerRoute: route})
+	if g.LightReviewerRoute == nil || *g.LightReviewerRoute != *route {
+		t.Fatalf("live: light reviewer route = %+v, want %+v", g.LightReviewerRoute, route)
+	}
+	if got := ApplyLiveEngineSettings(g, PendingEngineSettings{}); got.LightReviewerRoute != nil {
+		t.Fatalf("a nil value must clear the group's: %+v", got.LightReviewerRoute)
+	}
+}

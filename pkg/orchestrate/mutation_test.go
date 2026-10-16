@@ -996,7 +996,7 @@ func TestStopRefusesATaskWithNoWorker(t *testing.T) {
 }
 
 func TestTheLeadIsToldToLeaveAStoppedTask(t *testing.T) {
-	if !strings.Contains(jarvis.OrchestrationRules("r1", "", "", ""), FailureKindStopped) {
+	if !strings.Contains(jarvis.OrchestrationRules("r1", "", "", "", false), FailureKindStopped) {
 		t.Fatalf("the lead's rules must name %q", FailureKindStopped)
 	}
 }

@@ -38,7 +38,7 @@ export function eventFromResume(rtn: CommandGetLatestResumeRtnData | null | unde
     };
 }
 
-const VOLUNTEER_KINDS = ["connection", "loose-end", "ledger"] as const;
+const VOLUNTEER_KINDS = ["connection", "loose-end", "ledger", "memory-hygiene"] as const;
 type VolunteerKind = (typeof VOLUNTEER_KINDS)[number];
 
 // The backend stamps id and at from the FACT, not from emission time, so an unchanged fact re-emitted

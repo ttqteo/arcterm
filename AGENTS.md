@@ -94,9 +94,10 @@ Other useful commands:
 - CGO backend builds use the **zig** compiler for cross/static linking (required dependency, see `Taskfile.yml` `build:server:*`).
 - **Worktrees (Windows):** `task worktree:prepare` (run inside the worktree) junctions `node_modules`,
   `src-tauri/target`, `dist/bin` from the main checkout so `task dev` there is fast instead of a cold
-  npm+cargo install. It does not copy `.task/checksum/npm-install`, so the first `task dev` in a worktree
-  runs a real `npm install` that replaces the `node_modules` junction — copy that checksum file from the
-  main checkout first. Remove with `task worktree:cleanup -- <path>` — it deletes the junction links
+  npm+cargo install. `npm:install` (behind `task dev` and `task check:ts`) skips the install when
+  `node_modules` is a link, so both are safe in a junctioned worktree, an engine run's included; a real
+  `npm install` there would replace the junction with a full copy.
+  Remove with `task worktree:cleanup -- <path>` — it deletes the junction links
   first, never a real directory (a recursive delete can follow a junction into the main checkout and
   wipe its `node_modules`), then runs `git worktree remove` and `git branch -d`. To run a worktree dev app beside the main one it needs its own everything:
   CDP port and WebView2 profile (`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9223"`,

@@ -3,7 +3,11 @@
 
 package jarvisvolunteer
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
 
 func cand(id string, at int64) Candidate {
 	return Candidate{Class: ClassLooseEnd, ID: id, At: at, Title: "t", Snippet: "s"}
@@ -50,5 +54,25 @@ func TestPrefilterDropsUnstampedCandidate(t *testing.T) {
 	got := prefilter([]Candidate{{Class: ClassLedger, ID: "no-at", At: 0}, cand("ok", 5)})
 	if len(got) != 1 || got[0].ID != "ok" {
 		t.Fatalf("a candidate with no At can never advance the watermark and must be dropped, got %+v", got)
+	}
+}
+
+func TestPrefilterTakesClassesInTurn(t *testing.T) {
+	resetGateForTest()
+	var in []Candidate
+	for i := 1; i <= 6; i++ {
+		in = append(in, cand(fmt.Sprintf("le-%d", i), int64(i)))
+	}
+	in = append(in,
+		Candidate{Class: ClassMemoryHygiene, ID: "mh-1", At: 100},
+		Candidate{Class: ClassMemoryHygiene, ID: "mh-2", At: 200},
+	)
+	var ids []string
+	for _, c := range prefilter(in) {
+		ids = append(ids, c.ID)
+	}
+	// one producer's backlog must not fill the shortlist; each class keeps its own order
+	if want := "le-1 mh-1 le-2 mh-2 le-3"; strings.Join(ids, " ") != want {
+		t.Fatalf("shortlist = %v, want %s", ids, want)
 	}
 }

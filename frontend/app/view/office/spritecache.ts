@@ -1,10 +1,9 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Draws a pixel grid once and keeps it as a PNG data URL, for both offices: the Run office's side view
-// (view/jarvis/officesprites.ts, namespace "run") and the Cockpit office's floor plan (plansprite.ts, "plan").
-// A namespace keeps each office's entries apart, so each bench counts only its own; a cap bounds a namespace, the
-// oldest entry going first.
+// Draws a pixel grid once and keeps it as a PNG data URL, for the Cockpit office's floor plan (plansprite.ts,
+// namespace "plan"). A namespace keeps a sprite set's entries apart, so its bench counts only its own; a cap bounds a
+// namespace, the oldest entry going first.
 
 // alpha 0..1 as the 4th, absent when opaque: the office's shadows and tints are translucent tokens
 export type Rgb = [number, number, number, number?];

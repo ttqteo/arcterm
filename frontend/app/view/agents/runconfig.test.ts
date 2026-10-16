@@ -7,6 +7,7 @@ import {
     DEFAULT_PARALLELISM,
     MAX_PARALLELISM,
     SHAPE_CARDS,
+    approvalsNote,
     clampParallelism,
     launchBlocker,
     profileRunDefaults,
@@ -69,12 +70,19 @@ describe("runLauncherFace", () => {
             showStart: true,
             showParallelism: true,
             showWorkerRoute: true,
+            showApprovals: true,
         });
     });
 
-    // a quick run has no plan to start from and no dag children to route or widen
+    // a quick run has no plan to start from and no dag children to route or widen, and the server refuses an
+    // autonomous one
     it("gives quick none of them", () => {
-        expect(runLauncherFace("quick")).toEqual({ showStart: false, showParallelism: false, showWorkerRoute: false });
+        expect(runLauncherFace("quick")).toEqual({
+            showStart: false,
+            showParallelism: false,
+            showWorkerRoute: false,
+            showApprovals: false,
+        });
     });
 });
 
@@ -83,6 +91,15 @@ describe("startNote", () => {
     it("tells a plan start when a lead appears", () => {
         expect(startNote("plan")).toMatch(/judgment/);
         expect(startNote("goal")).toMatch(/lead/);
+    });
+});
+
+describe("approvalsNote", () => {
+    it("says each choice in the board's words", () => {
+        expect(approvalsNote(true)).toBe(
+            "No questions: the lead decides the spec, plan review and product calls itself, and records why. You can switch this on the run sheet."
+        );
+        expect(approvalsNote(false)).toBe("The lead waits for you at the spec review and whenever a call is yours.");
     });
 });
 
@@ -146,6 +163,8 @@ describe("profileRunDefaults", () => {
             workerRoute: route,
             reviewerPicks: false,
             reviewerRoute: null,
+            lightReviewerRoute: null,
+            autonomous: false,
         });
     });
 
@@ -156,6 +175,8 @@ describe("profileRunDefaults", () => {
             workerRoute: null,
             reviewerPicks: false,
             reviewerRoute: null,
+            lightReviewerRoute: null,
+            autonomous: false,
         });
         expect(profileRunDefaults(null)).toEqual({
             shape: null,
@@ -163,12 +184,19 @@ describe("profileRunDefaults", () => {
             workerRoute: null,
             reviewerPicks: false,
             reviewerRoute: null,
+            lightReviewerRoute: null,
+            autonomous: false,
         });
     });
 
     // + Run no longer offers pipeline, so a stored pipeline default has no card to land on
     it("leaves a pipeline default to the launcher's baseline", () => {
         expect(profileRunDefaults({ playbook: [], defaultmode: "pipeline" } as JarvisProfile).shape).toBeNull();
+    });
+
+    it("reads the profile's Approvals", () => {
+        expect(profileRunDefaults({ playbook: [], autonomous: true } as JarvisProfile).autonomous).toBe(true);
+        expect(profileRunDefaults({ playbook: [], autonomous: false } as JarvisProfile).autonomous).toBe(false);
     });
 
     it("ignores a nonsensical stored width rather than clamping it into a dispatch", () => {

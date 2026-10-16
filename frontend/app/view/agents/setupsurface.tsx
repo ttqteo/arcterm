@@ -28,6 +28,7 @@ import { LearnedLine, LearnedTab } from "./learnedtab";
 import { ProjectContextHeader, ProjectContextTab } from "./projectcontexttab";
 import { RuntimeMark } from "./runtimemark";
 import { runtimeMeta } from "./runtimemeta";
+import { MemoryHeader, MemoryTab } from "./setupmemory";
 import {
     changedLineCount,
     harnessRowLabel,
@@ -110,6 +111,7 @@ const TABS: { key: SetupTab; label: string }[] = [
     { key: "skills", label: "Skills" },
     { key: "tools", label: "Tools" },
     { key: "learned", label: "Learned" },
+    { key: "memory", label: "Memory" },
     { key: "project", label: "Project" },
 ];
 
@@ -1132,7 +1134,9 @@ export function SetupSurface({ model }: { model: AgentsViewModel }) {
                         <SkillsHeader />
                     ) : tab === "tools" ? (
                         <ToolsHeader />
-                    ) : tab === "learned" ? null : (
+                    ) : tab === "learned" ? null : tab === "memory" ? (
+                        <MemoryHeader />
+                    ) : (
                         <ProjectContextHeader />
                     )}
                 </div>
@@ -1152,6 +1156,8 @@ export function SetupSurface({ model }: { model: AgentsViewModel }) {
                         <ToolsLibrary model={model} />
                     ) : tab === "learned" ? (
                         <LearnedPane />
+                    ) : tab === "memory" ? (
+                        <MemoryTab />
                     ) : (
                         <ProjectContextTab model={model} />
                     )}

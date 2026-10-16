@@ -2,6 +2,7 @@
 
 Date: 2026-10-06. Effort: `effort:1557171a-e61d-4b29-83fd-fc7f818e6131`, chunks 4, 5 and 6.
 Supersedes the pipeline in `2026-07-10-repo-radar-design.md` and `2026-07-21-radar-multi-mode-design.md`.
+Sections 1-3 and section 4's audited-set rule are superseded by `2026-10-13-radar-audit-kinds-design.md`.
 
 ## Why
 

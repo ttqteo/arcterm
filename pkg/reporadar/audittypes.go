@@ -6,10 +6,18 @@ package reporadar
 import "time"
 
 const (
-	FixAuditsPerScan = 8
 	AuditConcurrency = 3
 	AuditTimeout     = 10 * time.Minute
 	MaxFixDiffBytes  = 60 * 1024
+
+	SiblingAuditsPerScan    = 8
+	IntroducedAuditsPerScan = 3
+	HotspotAuditsPerScan    = 2
+
+	IntroducedMinLines = 50   // below this a change rarely carries a defect worth a session
+	IntroducedMaxLines = 1500 // above this the diff passes MaxFixDiffBytes and the session reads instead of reviewing
+	HotspotMinFixes    = 2
+	HotspotMaxLines    = 1500 // the probe's 1101-line file already cost 123k tokens
 
 	AuditQueued  = "queued"
 	AuditRunning = "running"
@@ -22,14 +30,6 @@ const (
 	AuditRuntimePi     = "pi"
 	DefaultAuditModel  = "sonnet" // claude only; pi with no model runs its own default
 )
-
-// fixCommit is one selected fix commit. Files are its code files (no docs, no tests), sorted.
-type fixCommit struct {
-	Hash    string
-	Subject string
-	Ts      int64 // unix millis
-	Files   []string
-}
 
 // auditHit and auditReply are the session's JSON reply contract.
 type auditHit struct {
@@ -46,11 +46,13 @@ type auditHit struct {
 type auditReply struct {
 	RootCause string     `json:"rootcause"`
 	Siblings  []string   `json:"siblings"`
+	Checked   []string   `json:"checked"`
 	Hits      []auditHit `json:"hits"`
 }
 
-// auditRoute is the runtime and model an audit session runs on.
-type auditRoute struct{ Runtime, Model string }
+// auditRoute is the runtime and model an audit session runs on. ClassifyModel is the scan's commit
+// classifier model on the same runtime; empty takes classifyRoute's default.
+type auditRoute struct{ Runtime, Model, ClassifyModel string }
 
 // auditSessionResult is what one session returned: its final assistant message and what the runtime reported.
 type auditSessionResult struct {

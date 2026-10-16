@@ -246,9 +246,25 @@ const STAGE_ROLE_TITLE: Record<string, string> = {
     "land-resolver": "Conflict resolver started",
 };
 
+// PLAN_REVIEW_LENS_TITLE names each plan reviewer by its lens: the one map the graph, timeline and tree read.
+export const PLAN_REVIEW_LENS_TITLE: Record<string, string> = {
+    full: "Full review",
+    spec: "Spec coverage",
+    order: "Task order and files",
+    tests: "Tests and commands",
+    final: "Final coverage",
+    followup: "Round-2 follow-up",
+};
+
+export function planReviewLensTitle(lens: string): string {
+    return PLAN_REVIEW_LENS_TITLE[lens] ?? lens;
+}
+
 export function eventTitle(event: RunEvent): string {
     if (event.kind === "stage-session-started") {
-        return STAGE_ROLE_TITLE[detailOf<{ role?: string }>(event)?.role ?? ""] ?? eventKindTitle(event.kind);
+        const d = detailOf<{ role?: string; lens?: string }>(event);
+        const title = STAGE_ROLE_TITLE[d?.role ?? ""] ?? eventKindTitle(event.kind);
+        return d?.lens ? `${title} · ${planReviewLensTitle(d.lens)}` : title;
     }
     return eventKindTitle(event.kind);
 }
@@ -322,6 +338,24 @@ export function planReviewPicks(detail: unknown): PlanReviewPick[] {
     for (const p of d.picks as { taskid?: unknown; model?: unknown; reason?: unknown }[]) {
         if (typeof p?.taskid === "string" && typeof p.model === "string") {
             out.push({ taskid: p.taskid, model: p.model, reason: typeof p.reason === "string" ? p.reason : "" });
+        }
+    }
+    return out;
+}
+
+export type PlanReviewReviewerRow = { lens: string; state: string; text: string };
+
+// planReviewReviewers reads each reviewer's verdict from a plan review's timeline row; a malformed entry is dropped
+// rather than shown half-read.
+export function planReviewReviewers(detail: unknown): PlanReviewReviewerRow[] {
+    const d = detailOf<{ reviewers?: unknown }>({ detail } as RunEvent);
+    if (!Array.isArray(d?.reviewers)) {
+        return [];
+    }
+    const out: PlanReviewReviewerRow[] = [];
+    for (const r of d.reviewers as { lens?: unknown; state?: unknown; text?: unknown }[]) {
+        if (typeof r?.lens === "string" && typeof r.state === "string") {
+            out.push({ lens: r.lens, state: r.state, text: typeof r.text === "string" ? r.text : "" });
         }
     }
     return out;

@@ -22,10 +22,11 @@ const (
 )
 
 type sessionRunLink struct {
-	RunId     string
-	ChannelId string
-	TaskId    string
-	Role      string
+	RunId      string
+	ChannelId  string
+	TaskId     string
+	Role       string
+	StageRunId string
 }
 
 // runLinkOf places a run launched under a session: the lead of an orchestrator run, or a child working one of
@@ -38,7 +39,7 @@ func runLinkOf(run *waveobj.Run, dag *waveobj.TaskGroup) (sessionRunLink, bool) 
 		link := sessionRunLink{RunId: dag.RunID, ChannelId: dag.ChannelId, TaskId: run.TaskId, Role: sessionRole_Worker}
 		if run.StageRole != "" {
 			// a plan reviewer or final verifier works no task: its stage is its place in the run
-			link.Role = run.StageRole
+			link.Role, link.StageRunId = run.StageRole, run.OID
 			return link, true
 		}
 		if run.Review {
@@ -124,7 +125,7 @@ func linkSessionsToRuns(ctx context.Context, sessions []wshrpc.SessionActivity) 
 			continue
 		}
 		sessions[i].RunId, sessions[i].ChannelId = link.RunId, link.ChannelId
-		sessions[i].TaskId, sessions[i].Role = link.TaskId, link.Role
+		sessions[i].TaskId, sessions[i].Role, sessions[i].StageRunId = link.TaskId, link.Role, link.StageRunId
 	}
 	return nil
 }

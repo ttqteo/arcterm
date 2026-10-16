@@ -28,8 +28,8 @@ const fixRoundPrefix = "Fix round "
 // caller holds the dag mutation lock.
 func tendVerifier(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owner *waveobj.Run, now int64, afterCommit *[]func()) {
 	f := g.Final
-	session := func() StageSession {
-		return StageSession{Role: jarvis.UsageRole_Verifier, Label: "final verifier", Tree: f.Tree, Prompt: verifierPrompt(ctx, g, owner)}
+	session := func() (StageSession, error) {
+		return StageSession{Role: jarvis.UsageRole_Verifier, Label: "final verifier", Tree: f.Tree, Prompt: verifierPrompt(ctx, g, owner)}, nil
 	}
 	reason := tendStageSession(ctx, spawnCtx, g, owner, session, &f.VerifierRunID, &f.StartedTs, &f.Respawns, now, afterCommit)
 	if reason == "" {

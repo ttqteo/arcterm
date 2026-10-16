@@ -23,7 +23,9 @@ import { attachCanvas, canvasOwner, getCanvas, selectCanvasBoard } from "../agen
 import { jumpToAgent } from "../agents/channelsprimitives";
 import { selectChannel } from "../agents/channelsstore";
 import { currentSize, restoreFromSprout } from "../agents/floatstore";
+import { selectMemoryProject } from "../agents/memorystore";
 import { initRadarScope, radarScopeAtom, radarSelectedIdAtom, scopeOfReport, selectReport } from "../agents/radarstore";
+import { setupTabAtom } from "../agents/setupstore";
 import { afterOpen } from "../agents/windowsize";
 import { isCanvasSegment, parseAddress, type AddressHint, type OpenTarget } from "./address";
 import { effortDetailAtom, loadEffortDetail } from "./effortstore";
@@ -51,6 +53,7 @@ type RecordTarget = Extract<OpenTarget, { kind: "record" }>;
 type RadarTarget = Extract<OpenTarget, { kind: "radar" }>;
 type CanvasTarget = Extract<OpenTarget, { kind: "canvas" }>;
 type NoteTarget = Extract<OpenTarget, { kind: "note" }>;
+type MemHygieneTarget = Extract<OpenTarget, { kind: "memhygiene" }>;
 type Caller = AddressHint["caller"];
 
 const OK: OpenResult = { ok: true };
@@ -86,6 +89,8 @@ function targetName(target: OpenTarget): string {
             return `canvas ${target.topic}`;
         case "note":
             return `note ${target.noteId}`;
+        case "memhygiene":
+            return `memory of ${target.project}`;
     }
 }
 
@@ -143,7 +148,7 @@ export async function openAddress(
 }
 
 export function isPeekable(target: OpenTarget): boolean {
-    return target.kind !== "canvas";
+    return target.kind !== "canvas" && target.kind !== "memhygiene";
 }
 
 // an address that does not parse still peeks, so the refusal is the peek's own toast
@@ -159,7 +164,7 @@ export async function peekTarget(
     target: OpenTarget,
     report: ReportOpen = toast
 ): Promise<OpenResult> {
-    if (target.kind === "canvas") {
+    if (target.kind === "canvas" || target.kind === "memhygiene") {
         return openTarget(model, target, report);
     }
     const current = nextOpen();
@@ -261,6 +266,8 @@ async function land(
             return select(await loadRadar(target, current), (r) => selectRadar(model, r, current));
         case "canvas":
             return select(await loadCanvas(model, target, current, caller), (c) => selectCanvas(model, target, c));
+        case "memhygiene":
+            return select(await loadMemHygiene(target, current), () => selectMemHygiene(model, target.project));
     }
 }
 
@@ -274,7 +281,7 @@ async function select<T>(load: Loaded<T>, write: (facts: T) => OpenResult | Prom
 
 async function peek(
     model: AgentsViewModel,
-    target: Exclude<OpenTarget, CanvasTarget>,
+    target: Exclude<OpenTarget, CanvasTarget | MemHygieneTarget>,
     current: () => boolean
 ): Promise<OpenResult> {
     const resolved = target.kind === "channel" ? await channelRun(target, current) : loaded<PeekTarget>(target);
@@ -572,6 +579,30 @@ async function loadNote(noteId: string, current: () => boolean): Promise<Loaded>
         return current() ? unavailable(NOTE_GONE) : SUPERSEDED;
     }
     return current() ? loaded() : SUPERSEDED;
+}
+
+// The Memory tab shows only registered projects, so an unregistered one has nothing to land on. A failed list is
+// reported as such rather than as a missing project.
+async function loadMemHygiene(target: MemHygieneTarget, current: () => boolean): Promise<Loaded> {
+    let projects: MemHygieneProject[];
+    try {
+        projects = (await RpcApi.ListMemoryHygieneCommand(TabRpcClient))?.projects ?? [];
+    } catch (e) {
+        return current() ? failed(target, errorText(e)) : SUPERSEDED;
+    }
+    if (!current()) {
+        return SUPERSEDED;
+    }
+    return projects.some((p) => p.project === target.project)
+        ? loaded()
+        : unavailable(`${target.project} is not a registered project`);
+}
+
+function selectMemHygiene(model: AgentsViewModel, project: string): OpenResult {
+    globalStore.set(setupTabAtom, "memory");
+    selectMemoryProject(project);
+    landOn(model.surfaceAtom, "setup");
+    return OK;
 }
 
 // The Brief's detail sheet, opened on a channel. Selecting the channel is what LOADS it: the sheet's body

@@ -238,6 +238,31 @@ describe("stage sessions", () => {
         expect(verify.status).toEqual({ key: "failed", text: "failed" });
     });
 
+    it("reads a plan reviewer of the current round by its own verdict, and an earlier one by the round's", () => {
+        const statusOf = (stagerunid: string, review: PlanReviewStage) => {
+            const group = groupRunSessions([
+                mk({ id: "lead", runid: "r1", role: "lead" }),
+                mk({ id: "pr", runid: "r1", role: "plan-reviewer", stagerunid }),
+            ]).runs[0];
+            const v = runView({ group, dag: { ...dag, planreview: review }, now: 0 });
+            return v.members.find((m) => m.key === "plan-reviewer")?.status;
+        };
+        const failedRound: PlanReviewStage = {
+            state: "failed",
+            round: 1,
+            reviewers: [
+                { lens: "full", state: "passed", runid: "rv-full" },
+                { lens: "spec", state: "failed", runid: "rv-spec" },
+                { lens: "order", state: "lost", runid: "rv-order" },
+            ],
+        };
+        expect(statusOf("rv-full", failedRound)).toEqual({ key: "done", text: "passed" });
+        expect(statusOf("rv-spec", failedRound)).toEqual({ key: "failed", text: "failed" });
+        expect(statusOf("rv-order", failedRound)).toEqual({ key: "failed", text: "failed" });
+        // not in this round: the round's own state, as before
+        expect(statusOf("rv-gone", { ...failedRound, state: "passed" })).toEqual({ key: "done", text: "passed" });
+    });
+
     it("leaves the run's task counts and needs-you rows to its tasks", () => {
         const v = runView({ group: groupRunSessions(sessions).runs[0], dag, now: 0 });
         expect(v.total).toBe(1);

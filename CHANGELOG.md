@@ -28,6 +28,19 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - The Office has a notice board in the hall: what needs you waits there as pinned slips, and ↵ at the board pages
   through them with the same buttons the Cards view shows.
+- **Memory hygiene**: Setup → Memory checks each project's Claude Code memory every week, or when you ask, and
+  proposes changes with their evidence (files a memory names that are gone, a rule already in AGENTS.md, how often
+  sessions open it): drop, merge, or move a shared memory into the project's own. Nothing changes until you accept a
+  change, and an applied one can be undone for 30 days. <!-- big -->
+- **Autonomous runs**: an orchestrator run's **Approvals** can be Autonomous (the New dialog, the profile, the run
+  sheet, `wsh runs start --autonomous`). Its lead makes the calls it would otherwise ask you and records each one with
+  why in its report; **Go autonomous** / **Ask me again** in the palette switch a run that is going.
+- **A wider plan review**: round 1 runs four lens reviewers (spec coverage, task order and files, tests and commands,
+  final coverage) beside the full review, and round 2 is one follow-up that checks only what the lead changed. The
+  lens reviewers run on the new **Light reviewers** route, Sonnet unless you pick one.
+- **Radar audits more kinds**: besides a fix's siblings it audits bugs a change introduced and hotspot files, sorts
+  commits that have no `fix:` prefix (pick its model under Settings → Background AI → Commit classifier), and keeps
+  git to a project that is a subfolder of its repository.
 - arcterm in the menu bar (the tray on Windows): see memory, CPU and disk, free them up, run or skip a queued job, and open what waits on you, without bringing the window forward. <!-- big -->
 - A Doc review lists the document's headings under Sections, beside the agent's ask: click one to jump there. The ask's
   items that lead to a section now show an arrow, and one the agent wrote short ("New in Go" for "What is new in Go")
@@ -46,6 +59,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- **The office lives in the Cockpit only**: Jarvis's Runs list no longer has an **office** chip, and Jarvis stays on
+  the footer instead of taking a desk under the runs.
 - **The Office plays like a pixel game**: ↵ at a desk opens a dialog box at the edge of the office with what the agent
   says, its question and its numbers, and a ▶ menu of what you can do there: ↑ ↓ pick, ↵ does it, Esc steps back, and
   Full card (f) shows the whole card. A run's room offers Open lead and Adjust, a worker's seat its task's own buttons.
@@ -86,6 +101,17 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- **A GPU reset no longer leaves a terminal white**: it switches to the plain renderer at once and goes back to WebGL
+  two seconds later.
+- **arcterm starts even when a window opens before its server**: boot no longer fails with "wavesrv did not report
+  its ports".
+- **A run stopped by an app restart carries on**: a quick run, or a lead that had not submitted its plan, resumes
+  instead of waiting Blocked for you to press Resume.
+- **Finished plan reviewers and final verifiers close**, instead of idling at their prompt until arcterm quits, and the
+  worktree folders of finished runs are swept up.
+- **A lead's wake is no longer held** by a tool hook that reported after its turn ended, or while you type an answer
+  to its question.
+- **A spec the run revised no longer holds its land.**
 - **"The Mac slept for…" counts the whole sleep**: it counts from when the Mac fell asleep, not from the last few
   seconds macOS woke it in the night for maintenance, so a night's sleep no longer reads as nine minutes. The pet now
   says it two minutes after the Mac wakes.

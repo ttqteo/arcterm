@@ -10,6 +10,7 @@ import {
     eventText,
     eventTitle,
     joinWorkspacePath,
+    planReviewLensTitle,
     toneFor,
 } from "./runtimeline";
 
@@ -147,6 +148,39 @@ describe("eventKindTitle", () => {
 
     it("says a run started from the queue as a sentence", () => {
         expect(eventKindTitle("queued-start")).toBe("Started from the queue");
+    });
+});
+
+describe("eventTitle", () => {
+    const started = (detail: object): RunEvent =>
+        ({ id: "1", ts: 1, kind: "stage-session-started", detail: JSON.stringify(detail) }) as RunEvent;
+
+    it("names a plan reviewer's lens in its started row", () => {
+        expect(eventTitle(started({ role: "plan-reviewer", lens: "spec" }))).toBe(
+            "Plan reviewer started · Spec coverage"
+        );
+        expect(eventTitle(started({ role: "plan-reviewer", lens: "followup" }))).toBe(
+            "Plan reviewer started · Round-2 follow-up"
+        );
+    });
+
+    it("says only the role when the detail names no lens", () => {
+        expect(eventTitle(started({ role: "plan-reviewer" }))).toBe("Plan reviewer started");
+        expect(eventTitle(started({ role: "verifier" }))).toBe("Final verifier started");
+    });
+});
+
+describe("planReviewLensTitle", () => {
+    it("titles every lens, and falls back to the key for one it does not know", () => {
+        expect(["full", "spec", "order", "tests", "final", "followup"].map(planReviewLensTitle)).toEqual([
+            "Full review",
+            "Spec coverage",
+            "Task order and files",
+            "Tests and commands",
+            "Final coverage",
+            "Round-2 follow-up",
+        ]);
+        expect(planReviewLensTitle("style")).toBe("style");
     });
 });
 

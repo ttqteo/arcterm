@@ -114,8 +114,9 @@ type SettingsType struct {
 	AgentsSleepIdle     *bool  `json:"agents:sleepidle,omitempty"`
 	AgentsSleepAfterMin *int64 `json:"agents:sleepaftermin,omitempty"`
 
-	RadarAuditRuntime string `json:"radar:auditruntime,omitempty"`
-	RadarAuditModel   string `json:"radar:auditmodel,omitempty"`
+	RadarAuditRuntime  string `json:"radar:auditruntime,omitempty"`
+	RadarAuditModel    string `json:"radar:auditmodel,omitempty"`
+	RadarClassifyModel string `json:"radar:classifymodel,omitempty"`
 
 	UsageInsightsLang string `json:"usage:insightslang,omitempty"` // language the usage analysis answers in; empty is English
 

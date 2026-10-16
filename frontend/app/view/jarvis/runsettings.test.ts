@@ -6,9 +6,11 @@ import {
     draftIsDirty,
     draftSeedKey,
     parallelismInvalid,
+    runAutonomous,
     runMachine,
     runSettingsDraft,
     runSettingsPanelState,
+    settingsChangePayload,
     settingsPayload,
     sheetFace,
 } from "./runsettings";
@@ -103,6 +105,8 @@ describe("runSettingsDraft", () => {
             workerRoute: route,
             reviewerPicks: false,
             reviewerRoute: null,
+            lightReviewerRoute: null,
+            autonomous: false,
         });
     });
 
@@ -116,16 +120,47 @@ describe("runSettingsDraft", () => {
             workerRoute: route,
             reviewerPicks: false,
             reviewerRoute: null,
+            lightReviewerRoute: null,
+            autonomous: false,
         });
+    });
+
+    it("seeds Approvals from the owning group over the run, and from the run before a dag", () => {
+        const group = (autonomous: boolean) => submittedGroup({ autonomous });
+        expect(runSettingsDraft(engineRun({ autonomous: false }), group(true)).autonomous).toBe(true);
+        expect(runSettingsDraft(engineRun({ autonomous: true }), group(false)).autonomous).toBe(false);
+        expect(runSettingsDraft(engineRun({ autonomous: true }), null).autonomous).toBe(true);
+        expect(runSettingsDraft(engineRun(), null).autonomous).toBe(false);
+    });
+});
+
+describe("runAutonomous", () => {
+    // a child run carries its parent's dag oref; the parent's group says nothing about the child
+    it("ignores a group another run owns", () => {
+        const child = engineRun({ id: "r2", autonomous: false });
+        expect(runAutonomous(child, submittedGroup({ autonomous: true }))).toBe(false);
+    });
+
+    it("reads the group alone when the caller has no run", () => {
+        expect(runAutonomous(null, submittedGroup({ autonomous: true }))).toBe(true);
+        expect(runAutonomous(null, null)).toBe(false);
     });
 });
 
 describe("draftIsDirty", () => {
     it("compares the effective values", () => {
-        const base = { parallelism: 2, workerRoute: null, reviewerPicks: false, reviewerRoute: null };
+        const base = {
+            parallelism: 2,
+            workerRoute: null,
+            reviewerPicks: false,
+            reviewerRoute: null,
+            lightReviewerRoute: null,
+            autonomous: false,
+        };
         expect(draftIsDirty(base, { ...base })).toBe(false);
         expect(draftIsDirty(base, { ...base, parallelism: 3 })).toBe(true);
         expect(draftIsDirty(base, { ...base, workerRoute: { runtime: "pi" } as RoutePin })).toBe(true);
+        expect(draftIsDirty(base, { ...base, autonomous: true })).toBe(true);
     });
 });
 
@@ -136,14 +171,66 @@ describe("settingsPayload", () => {
             workerRoute: { runtime: "pi" } as RoutePin,
             reviewerPicks: false,
             reviewerRoute: null,
+            lightReviewerRoute: null,
+            autonomous: false,
         };
-        expect(settingsPayload("c1", "r1", draft)).toEqual({
+        expect(settingsPayload("c1", "r1", draft, { ...draft, parallelism: 2 })).toEqual({
             channelid: "c1",
             runid: "r1",
             parallelism: 3,
             workerroute: { runtime: "pi" },
             reviewerpicks: false,
         });
+    });
+
+    it("sends the width only when the draft changes it", () => {
+        const saved = {
+            parallelism: 0,
+            workerRoute: null,
+            reviewerPicks: false,
+            reviewerRoute: null,
+            lightReviewerRoute: null,
+            autonomous: false,
+        };
+        // a stored 0 means no width yet: the server refuses 0, so an Approvals-only save must leave it out
+        const approvalsOnly = settingsPayload("c1", "r1", { ...saved, autonomous: true }, saved);
+        expect(approvalsOnly).not.toHaveProperty("parallelism");
+        expect(approvalsOnly.autonomous).toBe(true);
+        expect(settingsPayload("c1", "r1", { ...saved, parallelism: 4 }, saved).parallelism).toBe(4);
+    });
+
+    it("sends Approvals only when the draft changes it", () => {
+        const draft = {
+            parallelism: 3,
+            workerRoute: null,
+            reviewerPicks: false,
+            reviewerRoute: null,
+            lightReviewerRoute: null,
+            autonomous: true,
+        };
+        const off = { ...draft, autonomous: false };
+        expect(settingsPayload("c1", "r1", draft, off).autonomous).toBe(true);
+        expect(settingsPayload("c1", "r1", off, draft).autonomous).toBe(false);
+        // a save about the other dials never writes back a value the palette may since have flipped
+        expect(settingsPayload("c1", "r1", draft, draft)).not.toHaveProperty("autonomous");
+    });
+});
+
+describe("settingsChangePayload and Approvals", () => {
+    it("sends Approvals only when the change sets it", () => {
+        const group = submittedGroup({ autonomous: true });
+        expect(settingsChangePayload("c1", "r1", null, group, { parallelism: 4 })).not.toHaveProperty("autonomous");
+        expect(settingsChangePayload("c1", "r1", null, group, { autonomous: false }).autonomous).toBe(false);
+        expect(settingsChangePayload("c1", "r1", engineRun(), null, { autonomous: true }).autonomous).toBe(true);
+    });
+
+    it("sends the width only when the change sets it", () => {
+        // the palette toggle over a run stored with no width yet: a 0 here would make the server refuse the save
+        const palette = settingsChangePayload("c1", "r1", engineRun({ parallelism: 0 }), null, { autonomous: true });
+        expect(palette).not.toHaveProperty("parallelism");
+        expect(palette.autonomous).toBe(true);
+        // the lead card's width control
+        expect(settingsChangePayload("c1", "r1", null, submittedGroup(), { parallelism: 3 }).parallelism).toBe(3);
     });
 });
 
@@ -209,12 +296,18 @@ describe("draftSeedKey", () => {
         expect(after).not.toBe(before);
     });
 
+    it("changes when Approvals flips, before a dag and after", () => {
+        const linked = engineRun({ dagoref: "d1" });
+        expect(draftSeedKey(linked, submittedGroup({ autonomous: true }))).not.toBe(
+            draftSeedKey(linked, submittedGroup())
+        );
+        expect(draftSeedKey(engineRun({ autonomous: true }), null)).not.toBe(draftSeedKey(engineRun(), null));
+    });
+
     it("changes on a pre-dag width or worker route", () => {
         const base = draftSeedKey(engineRun(), null);
         expect(draftSeedKey(engineRun({ parallelism: 6 }), null)).not.toBe(base);
-        expect(draftSeedKey(engineRun({ workerroute: { runtime: "pi" } as RoutePin }), null)).not.toBe(
-            base
-        );
+        expect(draftSeedKey(engineRun({ workerroute: { runtime: "pi" } as RoutePin }), null)).not.toBe(base);
     });
 
     it("ignores an update that leaves the effective settings alone", () => {

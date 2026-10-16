@@ -66,6 +66,8 @@ const TermCacheFileName = "cache:term:full";
 const MinDataProcessedForCache = 100 * 1024;
 export const SupportsImageInput = true;
 const MaxRepaintTransactionMs = 2000;
+const WebglRetryDelayMs = 2000;
+const WebglLossWindowMs = 30_000;
 // how long a pane stays hidden before it gives its WebGL context back (see handleResize): long enough that flipping
 // between agents does not rebuild a context each time
 const WebGLParkDelayMs = 30_000;
@@ -195,7 +197,6 @@ export class TermWrap {
     onSearchResultsDidChange?: (result: { resultIndex: number; resultCount: number }) => void;
     toDispose: TermTypes.IDisposable[] = [];
     webglAddon: WebglAddon | null = null;
-    webglContextLossDisposable: TermTypes.IDisposable | null = null;
     webglEnabledAtom: jotai.PrimitiveAtom<boolean>;
     // the renderer asked for (settings, the toggle, a lost context); a hidden pane may park WebGL without changing it
     wantWebGl = false;
@@ -430,6 +431,43 @@ export class TermWrap {
             },
         });
         this.logFit("mount");
+        // a gpu reset paints a lost webgl canvas white (with a sad face) while the addon waits up to 3s
+        // for a restore; drop to the dom renderer at once instead. the event doesn't bubble, so capture it.
+        // webgl is retried once the gpu is back, unless losses keep coming, so a flaky gpu can't loop.
+        let lastLossTs = 0;
+        let retryTimer: ReturnType<typeof setTimeout> = null;
+        const contextLostHandler = () => {
+            const now = Date.now();
+            const repeated = now - lastLossTs < WebglLossWindowMs;
+            lastLossTs = now;
+            this.fitDiag.contextLosses++;
+            this.logFit("context-lost");
+            this.setTermRenderer("dom");
+            clearTimeout(retryTimer);
+            if (!repeated) {
+                retryTimer = setTimeout(() => {
+                    if (this.isHidden()) {
+                        // a hidden pane loads WebGL again when it shows (unparkWebGl)
+                        this.wantWebGl = WebGLSupported;
+                        this.webglParked = true;
+                        return;
+                    }
+                    try {
+                        this.setTermRenderer("webgl");
+                    } catch (e) {
+                        // chromium turns webgl off after repeated gpu crashes; the addon then throws
+                        console.log("[termwrap] webgl retry failed, staying on dom", this.blockId, e);
+                    }
+                }, WebglRetryDelayMs);
+            }
+        };
+        this.connectElem.addEventListener("webglcontextlost", contextLostHandler, true);
+        this.toDispose.push({
+            dispose: () => {
+                clearTimeout(retryTimer);
+                this.connectElem.removeEventListener("webglcontextlost", contextLostHandler, true);
+            },
+        });
         this.handleResize();
         startFitAudit();
         const pasteHandler = this.pasteHandler.bind(this);
@@ -538,19 +576,12 @@ export class TermWrap {
             }
         }
         if (this.webglAddon != null) {
-            this.webglContextLossDisposable?.dispose();
-            this.webglContextLossDisposable = null;
             this.webglAddon.dispose();
             this.webglAddon = null;
             globalStore.set(this.webglEnabledAtom, false);
         }
         if (renderer === "webgl") {
             const addon = new WebglAddon();
-            this.webglContextLossDisposable = addon.onContextLoss(() => {
-                this.fitDiag.contextLosses++;
-                this.logFit("context-lost");
-                this.setTermRenderer("dom");
-            });
             this.terminal.loadAddon(addon);
             this.webglAddon = addon;
             globalStore.set(this.webglEnabledAtom, true);
@@ -667,8 +698,6 @@ export class TermWrap {
             clearTimeout(this.webglParkTimer);
             this.webglParkTimer = null;
         }
-        this.webglContextLossDisposable?.dispose();
-        this.webglContextLossDisposable = null;
         this.terminal.dispose();
         this.toDispose.forEach((d) => {
             try {

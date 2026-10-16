@@ -27,6 +27,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/jarvisvolunteer"
 	"github.com/wavetermdev/waveterm/pkg/jobqueue"
+	"github.com/wavetermdev/waveterm/pkg/memhygiene"
 	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 	"github.com/wavetermdev/waveterm/pkg/remote/fileshare/wshfs"
@@ -115,8 +116,8 @@ func startConfigWatcher() error {
 	return nil
 }
 
-// sweeps stale channel-composer attachment temp dirs, canvas feedback pictures, final-stage screenshots and the
-// output of terminals idle for a month. First iteration runs
+// sweeps stale channel-composer attachment temp dirs, canvas feedback pictures, final-stage screenshots, finished
+// runs' worktree leftovers and the output of terminals idle for a month. First iteration runs
 // immediately (startup sweep of files left by prior sessions), then periodically for very long-running sessions.
 func tempAttachmentCleanupLoop() {
 	defer func() {
@@ -126,6 +127,7 @@ func tempAttachmentCleanupLoop() {
 		wshserver.SweepTempAttachments()
 		wshserver.SweepCanvasFeedback()
 		orchestrate.SweepFinalShots(time.Now())
+		orchestrate.SweepWorktreeRoot(context.Background())
 		blockcontroller.SweepIdleTerminalOutput()
 		time.Sleep(TempAttachmentSweepInterval)
 	}
@@ -429,6 +431,7 @@ func main() {
 	// the tray icon's red dot when memory pressure turns critical (spec 2026-10-15-tray-popover-design.md)
 	wshserver.StartMachineWatch(context.Background())
 	jarvisvolunteer.StartLooseEndSweep(context.Background())
+	memhygiene.StartSweep(context.Background())
 	err = wcore.InitBadgeStore()
 	if err != nil {
 		log.Printf("error initializing badge store: %v\n", err)

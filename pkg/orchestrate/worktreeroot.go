@@ -4,6 +4,7 @@
 package orchestrate
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -14,6 +15,9 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
 // engine trees live under one short root outside the project: nested under <project>\.waveterm\worktrees\<run id>-t-N
@@ -151,8 +155,9 @@ func shortWorktreeDir(root, key string) string {
 	return filepath.Join(root, key)
 }
 
-// claimRunPrefix writes the prefix marker naming runID unless one exists. The marker is never deleted: a run's
-// leftover trees can outlive it, and a later run taking the freed prefix would resolve, and remove, them.
+// claimRunPrefix writes the prefix marker naming runID unless one exists. Only SweepWorktreeRoot deletes one, once
+// no folder is left under the prefix: a run's leftover trees can outlive it, and a later run taking the freed
+// prefix would resolve, and remove, them.
 func claimRunPrefix(root, runID string) error {
 	marker := runMarkerPath(root, runID)
 	runMarkerMu.Lock()
@@ -173,4 +178,97 @@ func claimRunPrefix(root, runID string) error {
 		return fmt.Errorf("writing worktree prefix marker %s: %w", marker, werr)
 	}
 	return nil
+}
+
+// SweepWorktreeRoot deletes what finished runs left under the worktree root. A land or cancel can fail to delete a
+// tree a process still holds, on Windows most often the lead, whose session stays in its landing tree after it
+// completes; git has already unregistered that tree, so its folder has no .git and nothing in it is kept. Each
+// finished run's folder with no .git goes, then each finished run's marker with no folder left under its prefix.
+// A folder still held is logged and left for the next sweep.
+func SweepWorktreeRoot(ctx context.Context) {
+	root := worktreeRoot()
+	if root == "" {
+		return
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			log.Printf("sweeping worktrees: %v", err)
+		}
+		return
+	}
+	finished := finishedRuns(ctx)
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		key, ok := RunKeyForTreeDir(root, e.Name())
+		if !ok {
+			continue
+		}
+		runID, _, _ := splitRunKey(key)
+		dir := filepath.Join(root, e.Name())
+		if _, err := os.Lstat(filepath.Join(dir, ".git")); !errors.Is(err, fs.ErrNotExist) || !finished(runID) {
+			continue
+		}
+		if err := RemoveDirExclusive(dir); err != nil {
+			log.Printf("sweeping worktrees: run %s: %v", runID, err)
+		}
+	}
+	sweepRunMarkers(root, finished)
+}
+
+// finishedRuns reports whether a run is done or cancelled, reading each run once. A run it cannot read, or that
+// is not stored, is not finished.
+func finishedRuns(ctx context.Context) func(runID string) bool {
+	seen := map[string]bool{}
+	return func(runID string) bool {
+		if done, ok := seen[runID]; ok {
+			return done
+		}
+		run, err := wstore.DBGet[*waveobj.Run](ctx, runID)
+		if err != nil {
+			log.Printf("sweeping worktrees: reading run %s: %v", runID, err)
+		}
+		done := err == nil && run != nil && (run.Status == jarvis.RunStatus_Done || run.Status == jarvis.RunStatus_Cancelled)
+		seen[runID] = done
+		return done
+	}
+}
+
+// sweepRunMarkers deletes the marker of each finished run with no folder under its prefix, its own or another
+// run's full-key one: a marker decides where every key with its prefix resolves.
+func sweepRunMarkers(root string, finished func(runID string) bool) {
+	// held across the listing and the deletes, so no claim lands between them
+	runMarkerMu.Lock()
+	defer runMarkerMu.Unlock()
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		log.Printf("sweeping worktree markers: %v", err)
+		return
+	}
+	inUse := map[string]bool{}
+	for _, e := range entries {
+		if e.IsDir() && len(e.Name()) >= runPrefixLen {
+			inUse[e.Name()[:runPrefixLen]] = true
+		}
+	}
+	for _, e := range entries {
+		prefix, ok := strings.CutSuffix(e.Name(), runMarkerExt)
+		if e.IsDir() || !ok || inUse[prefix] {
+			continue
+		}
+		marker := filepath.Join(root, e.Name())
+		owner, err := os.ReadFile(marker)
+		if err != nil {
+			log.Printf("sweeping worktree markers: %v", err)
+			continue
+		}
+		if !finished(string(owner)) {
+			continue
+		}
+		if err := os.Remove(marker); err != nil {
+			log.Printf("sweeping worktree markers: %v", err)
+		}
+	}
 }

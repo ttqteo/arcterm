@@ -16,7 +16,7 @@ import { atom, useAtom, useAtomValue } from "jotai";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import { retryRunEvents, useRunEventsState } from "../agents/runeventstore";
-import { eventTitle, toneFor, tsLabel } from "../agents/runtimeline";
+import { eventTitle, planReviewLensTitle, planReviewReviewers, toneFor, tsLabel } from "../agents/runtimeline";
 import { setActiveRunId } from "../jarvis/jarvissubjectstore";
 import { selectedTaskOf } from "./dagfinal";
 import { dagModalAgentsContextAtom } from "./dagmodalstate";
@@ -563,6 +563,16 @@ function GroupDetail({
                                 {detail.pre}
                             </pre>
                         )}
+                        {e.kind === "plan-reviewed" &&
+                            planReviewReviewers(e.detail).map((r) => (
+                                <div
+                                    key={r.lens}
+                                    data-plan-review-reviewer={r.lens}
+                                    className="truncate font-mono text-[10.5px] text-ink-mid"
+                                >
+                                    {`${planReviewLensTitle(r.lens)} · ${r.state}`}
+                                </div>
+                            ))}
                     </div>
                 );
             })}

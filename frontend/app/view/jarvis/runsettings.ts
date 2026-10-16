@@ -21,6 +21,9 @@ export type RunSettingsDraft = {
     // never true beside a worker route: the server refuses the pair
     reviewerPicks: boolean;
     reviewerRoute: RoutePin | null;
+    // null is the server's claude/sonnet default for the plan review's lens and follow-up reviewers
+    lightReviewerRoute: RoutePin | null;
+    autonomous: boolean;
 };
 
 export type RunSettingsPanelState =
@@ -94,7 +97,18 @@ export function runSettingsDraft(run: Run | null, group: TaskGroup | null): RunS
         workerRoute: from?.workerroute ?? null,
         reviewerPicks: from?.reviewerpicks ?? false,
         reviewerRoute: from?.reviewerroute ?? null,
+        lightReviewerRoute: from?.lightreviewerroute ?? null,
+        autonomous: runAutonomous(run, group),
     };
+}
+
+// The Approvals setting in force, as pkg/jarvis.EffectiveAutonomous reads it: a child run carries its parent's
+// dag oref, so the group counts only when it is this run's. A caller with no run (the lead card) has only the group.
+export function runAutonomous(run: Run | null, group: TaskGroup | null): boolean {
+    if (group != null && (run == null || group.runid === run.id)) {
+        return group.autonomous ?? false;
+    }
+    return run?.autonomous ?? false;
 }
 
 export function draftIsDirty(a: RunSettingsDraft, b: RunSettingsDraft): boolean {
@@ -102,7 +116,9 @@ export function draftIsDirty(a: RunSettingsDraft, b: RunSettingsDraft): boolean 
         a.parallelism !== b.parallelism ||
         !sameRoute(a.workerRoute, b.workerRoute) ||
         a.reviewerPicks !== b.reviewerPicks ||
-        !sameRoute(a.reviewerRoute, b.reviewerRoute)
+        !sameRoute(a.reviewerRoute, b.reviewerRoute) ||
+        !sameRoute(a.lightReviewerRoute, b.lightReviewerRoute) ||
+        a.autonomous !== b.autonomous
     );
 }
 
@@ -122,6 +138,7 @@ export function draftSeedKey(run: Run, group: TaskGroup | null): string {
     const draft = runSettingsDraft(run, group);
     const route = draft.workerRoute;
     const reviewer = draft.reviewerRoute;
+    const light = draft.lightReviewerRoute;
     return [
         draft.parallelism,
         route?.runtime ?? "",
@@ -129,6 +146,9 @@ export function draftSeedKey(run: Run, group: TaskGroup | null): string {
         draft.reviewerPicks,
         reviewer?.runtime ?? "",
         reviewer?.model ?? "",
+        light?.runtime ?? "",
+        light?.model ?? "",
+        draft.autonomous,
     ].join("|");
 }
 
@@ -144,11 +164,29 @@ export function parallelismInvalid(n: number): boolean {
     return !Number.isInteger(n) || n < 1 || n > MAX_PARALLELISM;
 }
 
-export function settingsPayload(channelId: string, runId: string, draft: RunSettingsDraft): CommandSetRunSettingsData {
+// The width and Approvals are left out unless the save changes them: the server leaves an omitted value alone,
+// so a save about one dial never writes back an Approvals value the palette has since flipped, nor a stored
+// width of 0 (no width yet; the engine picks one at submit) that the server would refuse.
+export function settingsPayload(
+    channelId: string,
+    runId: string,
+    draft: RunSettingsDraft,
+    saved: RunSettingsDraft
+): CommandSetRunSettingsData {
+    const payload = dialsPayload(channelId, runId, draft);
+    if (draft.parallelism !== saved.parallelism) {
+        payload.parallelism = draft.parallelism;
+    }
+    if (draft.autonomous !== saved.autonomous) {
+        payload.autonomous = draft.autonomous;
+    }
+    return payload;
+}
+
+function dialsPayload(channelId: string, runId: string, draft: RunSettingsDraft): CommandSetRunSettingsData {
     const payload: CommandSetRunSettingsData = {
         channelid: channelId,
         runid: runId,
-        parallelism: draft.parallelism,
         reviewerpicks: draft.reviewerPicks,
     };
     if (draft.workerRoute != null) {
@@ -157,11 +195,15 @@ export function settingsPayload(channelId: string, runId: string, draft: RunSett
     if (draft.reviewerRoute != null) {
         payload.reviewerroute = draft.reviewerRoute;
     }
+    if (draft.lightReviewerRoute != null) {
+        payload.lightreviewerroute = draft.lightReviewerRoute;
+    }
     return payload;
 }
 
-// SetRunSettings applies every field it is sent, so a control that changes one dial sends the rest as they
-// stand: from the group once a dag exists, else from the run.
+// SetRunSettings applies every route field it is sent, so a control that changes one dial sends the rest as
+// they stand: from the group once a dag exists, else from the run. The width and Autonomous go only when the
+// change sets them.
 export function settingsChangePayload(
     channelId: string,
     runId: string,
@@ -169,7 +211,14 @@ export function settingsChangePayload(
     group: TaskGroup | null,
     change: Partial<RunSettingsDraft>
 ): CommandSetRunSettingsData {
-    return settingsPayload(channelId, runId, { ...runSettingsDraft(run, group), ...change });
+    const payload = dialsPayload(channelId, runId, { ...runSettingsDraft(run, group), ...change });
+    if (change.parallelism != null) {
+        payload.parallelism = change.parallelism;
+    }
+    if (change.autonomous != null) {
+        payload.autonomous = change.autonomous;
+    }
+    return payload;
 }
 
 export function routeLabel(route: RoutePin | null | undefined): string {

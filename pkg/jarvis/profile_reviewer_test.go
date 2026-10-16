@@ -157,3 +157,33 @@ func TestMigrateReviewerRoutePins(t *testing.T) {
 		t.Fatalf("dag reviewer route = %+v", storedDag.ReviewerRoute)
 	}
 }
+
+func TestProfileLightReviewerRouteOverrideWins(t *testing.T) {
+	globalRoute := &waveobj.RoutePin{Runtime: "claude", Model: "haiku"}
+	overrideRoute := &waveobj.RoutePin{Runtime: "pi"}
+	global := waveobj.JarvisProfile{LightReviewerRoute: globalRoute}
+	if got := ResolveProfile(global, &waveobj.ProfileOverride{LightReviewerRoute: overrideRoute}); !routeEq(got.LightReviewerRoute, overrideRoute) {
+		t.Errorf("light reviewer route = %+v, want the override's", got.LightReviewerRoute)
+	}
+}
+
+func TestProfileLightReviewerRouteNilInherits(t *testing.T) {
+	globalRoute := &waveobj.RoutePin{Runtime: "claude", Model: "haiku"}
+	global := waveobj.JarvisProfile{LightReviewerRoute: globalRoute}
+	if got := ResolveProfile(global, nil); !routeEq(got.LightReviewerRoute, globalRoute) {
+		t.Errorf("no override: light reviewer route = %+v, want the global's", got.LightReviewerRoute)
+	}
+	// its own section: the reviewer route beside it does not touch it
+	if got := ResolveProfile(global, &waveobj.ProfileOverride{ReviewerRoute: &waveobj.RoutePin{Runtime: "pi"}}); !routeEq(got.LightReviewerRoute, globalRoute) {
+		t.Errorf("reviewer override: light reviewer route = %+v, want the global's", got.LightReviewerRoute)
+	}
+	if got := ResolveProfile(waveobj.JarvisProfile{}, &waveobj.ProfileOverride{Parallelism: intPtr(2)}); got.LightReviewerRoute != nil {
+		t.Errorf("light reviewer route = %+v, want nil (claude/sonnet)", got.LightReviewerRoute)
+	}
+}
+
+func TestProfileLightReviewerRouteCountsInEmptyCheck(t *testing.T) {
+	if ProfileOverrideIsEmpty(&waveobj.ProfileOverride{LightReviewerRoute: &waveobj.RoutePin{Runtime: "pi"}}) {
+		t.Error("an override naming only the light reviewer route read as empty")
+	}
+}

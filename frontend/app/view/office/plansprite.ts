@@ -5,7 +5,7 @@
 // raised arm), a role code per cell, never a colour. O outline, H hair, h hair light, S skin, s skin shade, E eyes,
 // T shirt, t shirt shade, P pants, p pants shade, K shoes, C cup, B the boss's cap, W cap badge or tie, R chair,
 // r chair shade, _ ground shadow. planSpriteUrl draws one in an outfit, a phase and a shade once, through the shared
-// cache (namespace "plan", capped at 600). The Run office keeps its side-view set (view/jarvis/officesprite.ts).
+// cache (namespace "plan", capped at 600).
 // The grids are the prototype's (prototype/sprites.mjs): when they disagree, it wins.
 
 import { NEAR_CHAIR } from "./officegrids";

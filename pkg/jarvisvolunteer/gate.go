@@ -46,12 +46,15 @@ func markEmitted(id string) {
 	emitted[id] = true
 }
 
-// prefilter drops already-emitted and unstampable candidates and caps the shortlist. Deterministic,
-// no model, no I/O.
+// prefilter drops already-emitted and unstampable candidates and caps the shortlist, taking the
+// classes in turn: a declined candidate is never emitted, so one producer's backlog would otherwise
+// fill every shortlist and keep the other classes from the judge for good. Each class keeps its
+// producer's order. Deterministic, no model, no I/O.
 func prefilter(cands []Candidate) []Candidate {
 	gateMu.Lock()
 	defer gateMu.Unlock()
-	var out []Candidate
+	var classes []string
+	byClass := map[string][]Candidate{}
 	seen := map[string]bool{}
 	for _, c := range cands {
 		if c.ID == "" || c.At == 0 {
@@ -61,9 +64,17 @@ func prefilter(cands []Candidate) []Candidate {
 			continue
 		}
 		seen[c.ID] = true
-		out = append(out, c)
-		if len(out) == shortlistMax {
-			break
+		if _, ok := byClass[c.Class]; !ok {
+			classes = append(classes, c.Class)
+		}
+		byClass[c.Class] = append(byClass[c.Class], c)
+	}
+	var out []Candidate
+	for turn := 0; len(out) < shortlistMax && len(out) < len(seen); turn++ {
+		for _, class := range classes {
+			if turn < len(byClass[class]) && len(out) < shortlistMax {
+				out = append(out, byClass[class][turn])
+			}
 		}
 	}
 	return out

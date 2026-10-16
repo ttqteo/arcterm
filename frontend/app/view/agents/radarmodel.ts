@@ -1,8 +1,9 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// Pure model for the Repo Radar sibling-audit surface: the body view, audit rows and tally, finding list
-// groups and sites, investigation and dismiss state, selection fallback, and Run-draft construction.
+// Pure model for the Repo Radar audit surface: the body view, each audit kind's wording, audit rows, groups
+// and tally, finding list groups and sites, investigation and dismiss state, selection fallback, and Run-draft
+// construction.
 // No jotai / RPC / React here.
 
 import { formatAgo } from "./agentsviewmodel";
@@ -259,6 +260,66 @@ export function findingSite(f: RadarFinding): FindingSite | null {
     return { dir: path.slice(0, cut), file: path.slice(cut), line: sites[0].line, path, more: sites.length - 1 };
 }
 
+export type RadarKind = "sibling" | "introduced" | "hotspot";
+
+// table order: the audit list's groups follow it
+export const RADAR_KINDS: RadarKind[] = ["sibling", "introduced", "hotspot"];
+
+export interface KindWords {
+    label: string;
+    siteHeading: (n: number) => string;
+    siteWhyLabel: string;
+    rootCauseHeading: string;
+    sourceHeading: string;
+    auditGroup: string;
+}
+
+const siteWord = (n: number): string => (n === 1 ? "Site" : "Sites");
+
+export const KIND_WORDS: Record<RadarKind, KindWords> = {
+    sibling: {
+        label: "Sibling bug",
+        siteHeading: (n) => (n === 1 ? "Sibling site" : "Sibling sites"),
+        siteWhyLabel: "Fix gap",
+        rootCauseHeading: "Root cause",
+        sourceHeading: "Found by auditing this fix",
+        auditGroup: "Fix commits",
+    },
+    introduced: {
+        label: "Introduced bug",
+        siteHeading: siteWord,
+        siteWhyLabel: "Introduced",
+        rootCauseHeading: "Intent of the change",
+        sourceHeading: "Found by reviewing this change",
+        auditGroup: "Behavior changes",
+    },
+    hotspot: {
+        label: "Hotspot",
+        siteHeading: siteWord,
+        siteWhyLabel: "Missed by fixes",
+        rootCauseHeading: "Fragility",
+        sourceHeading: "Found by reviewing this file",
+        auditGroup: "Hot files",
+    },
+};
+
+// a finding with an empty or unknown riskkind was written by the sibling audit
+export function findingKind(f: RadarFinding): RadarKind {
+    switch (f.riskkind) {
+        case "introduced-bug":
+            return "introduced";
+        case "hotspot-bug":
+            return "hotspot";
+        default:
+            return "sibling";
+    }
+}
+
+// an audit stored before kinds existed has no kind, and was a sibling audit
+export function auditKind(a: RadarAudit): RadarKind {
+    return a.kind === "introduced" || a.kind === "hotspot" ? a.kind : "sibling";
+}
+
 const SHORT_SHA_LEN = 8;
 
 export function shortSha(commit: string): string {
@@ -269,24 +330,47 @@ export interface SourceFix {
     sha: string;
     subject: string;
     ts?: number;
+    fixSubjects: string[];
 }
 
-// sourceFix is the fix commit whose audit found this finding. The backend keeps one git signal per source
-// commit, so the commit's date is that signal's observedts.
+// sourceFix is the commit whose audit found this finding: the fix, the change, or for a hotspot the file's
+// reviewed revision. The backend keeps one git signal per source commit, so the commit's date is that signal's
+// observedts.
 export function sourceFix(f: RadarFinding, report: RadarReport): SourceFix | null {
     if (!f.sourcecommit) {
         return null;
     }
     const ids = new Set(f.signalids ?? []);
     const cited = (report.signals ?? []).find((s) => ids.has(s.id));
-    return { sha: shortSha(f.sourcecommit), subject: f.sourcesubject ?? "", ts: cited?.observedts };
+    return {
+        sha: shortSha(f.sourcecommit),
+        subject: f.sourcesubject ?? "",
+        ts: cited?.observedts,
+        fixSubjects: f.fixsubjects ?? [],
+    };
+}
+
+// the finding row's mono source line: which kind of audit found it, and from what
+export function findingSourceLine(f: RadarFinding): string {
+    const kind = findingKind(f);
+    if (kind === "hotspot") {
+        return `${KIND_WORDS.hotspot.label} · ${plural((f.fixsubjects ?? []).length, "fix", "fixes")}`;
+    }
+    return `${KIND_WORDS[kind].label} · ${shortSha(f.sourcecommit)}`;
 }
 
 export type AuditState = "queued" | "running" | "clean" | "hits" | "failed";
 
 export interface AuditRow {
+    // kind + commit + file: two hotspot targets can share a revision
+    key: string;
+    kind: RadarKind;
     commit: string;
     sha: string;
+    // what names the audit in prose: its sha, or a hotspot's file
+    label: string;
+    file?: string;
+    fixes?: number;
     subject: string;
     state: AuditState;
     hits: number;
@@ -310,15 +394,45 @@ function auditState(a: RadarAudit): AuditState {
 export function auditRows(report: RadarReport | null): AuditRow[] {
     return (report?.audits ?? []).map((a) => {
         const state = auditState(a);
-        return {
+        const kind = auditKind(a);
+        const sha = shortSha(a.commit);
+        const common = {
+            kind,
             commit: a.commit,
-            sha: shortSha(a.commit),
-            subject: a.subject,
+            sha,
             state,
             hits: a.keptcount ?? 0,
             detail: (state === "failed" ? a.error : a.rootcause) ?? "",
         };
+        if (kind !== "hotspot") {
+            return { ...common, key: `${kind}:${a.commit}`, label: sha, subject: a.subject };
+        }
+        const file = a.files?.[0] ?? "";
+        const fixes = (a.fixsubjects ?? []).length;
+        return {
+            ...common,
+            key: `${kind}:${a.commit}:${file}`,
+            label: file || sha,
+            file,
+            fixes,
+            subject: `${file} · ${plural(fixes, "fix", "fixes")}`,
+        };
     });
+}
+
+export interface AuditGroup {
+    kind: RadarKind;
+    label: string;
+    rows: AuditRow[];
+}
+
+// auditGroups puts the rows under their kind in table order; a kind with no rows has no group
+export function auditGroups(rows: AuditRow[]): AuditGroup[] {
+    return RADAR_KINDS.map((kind) => ({
+        kind,
+        label: KIND_WORDS[kind].auditGroup,
+        rows: rows.filter((r) => r.kind === kind),
+    })).filter((g) => g.rows.length > 0);
 }
 
 export interface AuditTally {
@@ -345,12 +459,14 @@ export function auditTally(rows: AuditRow[]): AuditTally {
     };
 }
 
+const NOTHING_TO_AUDIT = "Nothing new to audit";
+
 export function auditSummary(t: AuditTally): string {
     if (t.total === 0) {
-        return "no new fix commits";
+        return NOTHING_TO_AUDIT;
     }
     const failed = t.failed > 0 ? `, ${t.failed} failed` : "";
-    return `${plural(t.total, "fix commit")} audited, ${t.clean} clean${failed}`;
+    return `${plural(t.total, "audit")}, ${t.clean} clean${failed}`;
 }
 
 export function auditTallyText(t: AuditTally): string {
@@ -361,10 +477,11 @@ export function auditTallyText(t: AuditTally): string {
     return parts.join(" · ");
 }
 
-export function failedAuditShas(report: RadarReport): string[] {
+// each failed audit by its label: a commit kind's sha, a hotspot's file
+export function failedAuditLabels(report: RadarReport): string[] {
     return auditRows(report)
         .filter((r) => r.state === "failed")
-        .map((r) => r.sha);
+        .map((r) => r.label);
 }
 
 export function auditStateText(r: AuditRow): string {
@@ -380,22 +497,36 @@ export function auditStateText(r: AuditRow): string {
 
 export interface SentencePart {
     text: string;
-    sha?: boolean;
+    mono?: boolean;
 }
 
-// failedAuditsSentence is the warning strip's text, in parts so the component can set each sha in mono.
-export function failedAuditsSentence(shas: string[]): SentencePart[] {
-    const n = shas.length;
-    const fixes = n === 1 ? "that fix" : n === 2 ? "those two fixes" : `those ${n} fixes`;
+// failedAuditsSentence is the warning strip's text, in parts so the component can set each sha or file in mono.
+export function failedAuditsSentence(labels: string[]): SentencePart[] {
+    const n = labels.length;
     const parts: SentencePart[] = [{ text: n === 1 ? "The audit of " : "The audits of " }];
-    shas.forEach((sha, i) => {
+    labels.forEach((label, i) => {
         if (i > 0) {
             parts.push({ text: i === n - 1 ? " and " : ", " });
         }
-        parts.push({ text: sha, sha: true });
+        parts.push({ text: label, mono: true });
     });
-    parts.push({ text: ` failed. Sibling bugs of ${fixes} may be missing.` });
+    parts.push({ text: " failed. Bugs they target may be missing." });
     return parts;
+}
+
+// classifyWarning is the line a failed commit classification leaves: those commits took no part in the scan
+export function classifyWarning(report: RadarReport): string | null {
+    if (!report.classifyerror) {
+        return null;
+    }
+    const n = report.classifycount ?? 0;
+    const commits = `${plural(n, "unprefixed commit")} ${n === 1 ? "was" : "were"}`;
+    return `Commit classification failed, so ${commits} not considered. Re-scan tries them again.`;
+}
+
+// the scan panel's tally before any audit row exists
+export function selectingText(report: RadarReport | null): string {
+    return report?.phase === "classifying" ? "classifying commits" : "selecting targets";
 }
 
 export interface AuditsPanel {
@@ -405,17 +536,17 @@ export interface AuditsPanel {
 }
 
 // auditsPanel is the finished scan with no findings: nothing new to audit, every audit clean, or some
-// failed, in which case "no sibling bugs" holds only for the commits that were read.
+// failed, in which case "no bugs" holds only for the targets that were read.
 export function auditsPanel(t: AuditTally, duration: string): AuditsPanel {
     if (t.total === 0) {
-        return { kind: "empty", title: "No new fix commits to audit", tally: "" };
+        return { kind: "empty", title: NOTHING_TO_AUDIT, tally: "" };
     }
     if (t.failed > 0) {
-        return { kind: "failed", title: "No sibling bugs found", tally: auditTallyText(t) };
+        return { kind: "failed", title: "No bugs found", tally: auditTallyText(t) };
     }
     return {
         kind: "clean",
-        title: `No sibling bugs in ${plural(t.total, "fix commit")}`,
+        title: `No bugs found in ${plural(t.total, "audit")}`,
         tally: [`${t.clean} of ${t.total} clean`, duration].filter(Boolean).join(" · "),
     };
 }

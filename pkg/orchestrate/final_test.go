@@ -533,14 +533,14 @@ func TestAFinishedRunWithNoLeadLaunchesNoneUnlessTheFinalStageFailed(t *testing.
 		t.Fatalf("a passed or unverified finish launches no lead, got %q", *launched)
 	}
 
-	PostWake(ctx, wakeChannel, wakeRun, finalFailedWake(1, wakeRun, "Check failed", false))
+	PostWake(ctx, wakeChannel, wakeRun, finalFailedWake(1, wakeRun, "Check failed", false, false))
 	if len(*launched) != 1 || !strings.Contains((*launched)[0], "the final stage failed") {
 		t.Fatalf("a failed final stage launches the lead, got %q", *launched)
 	}
 }
 
 func TestFinalFailedWakeAfterTheLastRoundGoesToTheHuman(t *testing.T) {
-	w := finalFailedWake(MaxFinalRounds, "run-1", "Final failed (exit 1):\nFAIL board", true)
+	w := finalFailedWake(MaxFinalRounds, "run-1", "Final failed (exit 1):\nFAIL board", true, false)
 	if !strings.Contains(w, "the last") || !strings.Contains(w, "Put it to the human") || strings.Contains(w, "--round") {
 		t.Fatalf("after the last round the lead forwards, got %q", w)
 	}
@@ -550,6 +550,31 @@ func TestFinalFailedWakeAfterTheLastRoundGoesToTheHuman(t *testing.T) {
 	}
 	if !strings.HasSuffix(w, "Final failed (exit 1):\nFAIL board") {
 		t.Fatalf("the detail is carried whole, got %q", w)
+	}
+}
+
+func TestFinalFailedWakeAutonomous(t *testing.T) {
+	const detail = "Final failed (exit 1):\nFAIL board"
+	w := finalFailedWake(MaxFinalRounds, "run-1", detail, true, true)
+	for _, want := range []string{"the last", "the plain `wsh jarvis complete --report <file>`", "never `--force-land`", "say in your report that the land is held and why"} {
+		if !strings.Contains(w, want) {
+			t.Fatalf("an autonomous last round completes with the land held, missing %q in %q", want, w)
+		}
+	}
+	if strings.Contains(strings.ToLower(w), "put it to the human") || !strings.HasSuffix(w, detail) {
+		t.Fatalf("an autonomous last round never goes to the human and carries the detail whole, got %q", w)
+	}
+	w = finalFailedWake(1, "run-1", detail, false, true)
+	if !strings.Contains(w, "--round") || strings.Contains(strings.ToLower(w), "put it to the human") || !strings.HasSuffix(w, detail) {
+		t.Fatalf("an autonomous earlier round writes a fix plan and decides product calls itself, got %q", w)
+	}
+
+	// off, the texts are what they were before the setting existed
+	if got, want := finalFailedWake(1, "run-1", detail, false, false), "wake: the final stage failed on the merged result in round 1. Write a fix plan and run `wsh jarvis dag submit --round --plan <fix plan>`, or put it to the human if the fix is a product call:\n"+detail; got != want {
+		t.Fatalf("off, round 1:\n got %q\nwant %q", got, want)
+	}
+	if got, want := finalFailedWake(2, "run-1", detail, true, false), "wake: the final stage failed on the merged result in round 2, the last. Put it to the human, and say that completing will not merge the branch: a failed final stage holds the land, and only `wsh runs land run-1 --force`, the human's call once the run is done, lands it:\n"+detail; got != want {
+		t.Fatalf("off, last round:\n got %q\nwant %q", got, want)
 	}
 }
 

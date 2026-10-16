@@ -29,6 +29,9 @@ const (
 	LeadAskDeadline = 10 * time.Minute
 	// WakeConfirmTimeout is how long a typed wake may go without the lead turning working.
 	WakeConfirmTimeout = 30 * time.Second
+	// MaxAutoRelaunches is how many times the engine brings back an autonomous run's dead lead by itself before
+	// its questions go to the human: a lead that keeps dying is not a flake.
+	MaxAutoRelaunches = 3
 )
 
 // why a lead stopped getting wakes; each lands on the lead-wake-failed row and on every ask it hands over.
@@ -52,6 +55,8 @@ type leadState struct {
 	TabId   string
 	Alive   bool
 	State   string
+	// Hook is the Claude Code hook behind State, for the held-wake log line
+	Hook string
 	// NoLead is a dag-holding run that has never had a lead worker, as opposed to one whose lead exited.
 	NoLead bool
 	// Starting is a lead whose process has not run yet: its controller is absent or still initializing.
@@ -83,6 +88,14 @@ var launchLeadFn = func(ctx context.Context, channelId, runId, wake string) {
 		lctx := context.WithoutCancel(ctx)
 		leadLaunched(lctx, channelId, runId, startLead(lctx, channelId, runId, wake))
 	}()
+}
+
+// relaunchLeadFn brings back an autonomous run's dead lead. A var for tests, set in init: RelaunchLead reaches
+// leadDiedLocked, which calls it, and a package-level initializer may not refer back to itself.
+var relaunchLeadFn func(ctx context.Context, channelId, runId string) error
+
+func init() {
+	relaunchLeadFn = RelaunchLead
 }
 
 // SetLaunchLeadForTest replaces the lead launch for tests in other packages and returns the restore.
@@ -118,6 +131,11 @@ type runWake struct {
 	launchedAt int64
 	// missed is the judgment a dead lead left unread, kept so a relaunched lead can be told what it missed.
 	missed []string
+	// autoRelaunches counts the engine's own relaunches of an autonomous run's lead; autoRelaunching is one in flight.
+	autoRelaunches  int
+	autoRelaunching bool
+	// held is why a wake is held for a lead not at its prompt, as last logged; "" once the lead can take one.
+	held string
 }
 
 type waker struct {
@@ -203,12 +221,22 @@ func PokeWake(ctx context.Context, channelId, runId string) {
 	defer wakes.lock.Unlock()
 	rw := wakes.runLocked(channelId, runId)
 	if rw.dead {
+		if wakes.autoRelaunchLocked(ctx, runId, rw) {
+			return
+		}
 		for oref, p := range leadAsks(runId) {
 			forwardAskToUser(ctx, oref, p, leadDeadNote)
 		}
 		return
 	}
 	wakes.flushLocked(ctx, runId, rw)
+}
+
+// reannounceAsk makes a question the lead was already told about news again, so the next flush wakes the lead for it.
+func reannounceAsk(p agentask.PendingAsk) {
+	wakes.lock.Lock()
+	defer wakes.lock.Unlock()
+	delete(wakes.runLocked(p.ChannelId, p.RunId).told, askTold(p))
 }
 
 // PostHandoff queues runId's handoff compaction, typed the next time the lead is at its prompt. It is
@@ -305,10 +333,12 @@ func atPrompt(state string) bool {
 // leadAsking reports the lead's own question still open in its terminal. Claude Code fires a Notification
 // a few seconds into the dialog, and agent-hook reports it as waiting over asking; a wake typed then has
 // its Enter pick the dialog's preselected option. The registry entry lasts until the ask is cleared or the
-// lead resumes work, whatever order the hook statuses arrive in.
+// lead resumes work, whatever order the hook statuses arrive in. An answer claimed for the question is still
+// asking: it is typed key by key into the open picker, which stays open until the lead clears the ask.
 func leadAsking(blockId string) bool {
-	_, asking := agentask.GlobalRegistry.Get(waveobj.MakeORef(waveobj.OType_Block, blockId).String())
-	return asking
+	oref := waveobj.MakeORef(waveobj.OType_Block, blockId).String()
+	_, asking := agentask.GlobalRegistry.Get(oref)
+	return asking || agentask.GlobalRegistry.AnswerInFlight(oref)
 }
 
 func (w *waker) flushLocked(ctx context.Context, runId string, rw *runWake) {
@@ -340,9 +370,12 @@ func (w *waker) flushLocked(ctx context.Context, runId string, rw *runWake) {
 		w.leadDiedLocked(ctx, runId, rw, leadNotRunningNote)
 		return
 	}
-	if !atPrompt(st.State) || leadAsking(st.BlockId) {
+	asking := leadAsking(st.BlockId)
+	if !atPrompt(st.State) || asking {
+		rw.logHeld(runId, st, asking)
 		return
 	}
+	rw.held = ""
 	if rw.handoff {
 		// alone and first: a wake joined to it would be summarized away before the lead read it, so held
 		// lines wait for the idle report that ends the compaction
@@ -362,6 +395,21 @@ func (w *waker) flushLocked(ctx context.Context, runId string, rw *runWake) {
 		rw.told[askTold(p)] = true
 	}
 	appendRunEvent(ctx, rw.channelId, runId, waveobj.RunEventKindLeadWoken, nil, map[string]any{"text": text})
+}
+
+// logHeld says once what holds runId's wakes, again only when that changes: the state is in-memory only,
+// so this line is all waveapp.log keeps of why a wake waited.
+func (rw *runWake) logHeld(runId string, st leadState, asking bool) {
+	hook := st.Hook
+	if hook == "" {
+		hook = "no hook"
+	}
+	why := fmt.Sprintf("state %q from %s, asking %v", st.State, hook, asking)
+	if why == rw.held {
+		return
+	}
+	rw.held = why
+	log.Printf("wake: run %s holds its lead's wake: %s", runId, why)
 }
 
 // reviveLocked takes back a lead given up on: what it missed is its next wake, and the row tells the
@@ -448,7 +496,7 @@ func startLead(ctx context.Context, channelId, runId, wake string) error {
 	}
 	// the lead reads its own live copy in the landing tree, not a snapshot in some lane
 	land := jarvis.LandPath(run)
-	return LaunchLeadHook(ctx, channelId, runId, jarvis.PlanLeadPrompt(run.Principles, runId, DocPath(g, land, g.SpecPath), DocPath(g, land, g.PlanPath), g.EffortOID, wake))
+	return LaunchLeadHook(ctx, channelId, runId, jarvis.PlanLeadPrompt(run.Principles, runId, DocPath(g, land, g.SpecPath), DocPath(g, land, g.PlanPath), g.EffortOID, g.Autonomous, wake))
 }
 
 // RelaunchLead brings back a lead that died after its plan was submitted. The replacement is told the
@@ -548,9 +596,57 @@ func (w *waker) leadDiedLocked(ctx context.Context, runId string, rw *runWake, r
 	rw.missed = append(rw.missed, lines...)
 	rw.lines, rw.sentAt, rw.retried, rw.dead, rw.handoff = nil, 0, false, true, false
 	appendRunEvent(ctx, rw.channelId, runId, waveobj.RunEventKindLeadWakeFailed, nil, map[string]any{"reason": reason, "lines": lines})
+	if w.autoRelaunchLocked(ctx, runId, rw) {
+		return
+	}
 	for oref, p := range leadAsks(runId) {
 		forwardAskToUser(ctx, oref, p, reason)
 	}
+}
+
+// autoRelaunchLocked brings back an autonomous run's dead lead on the engine's own call, since nobody is at the
+// cockpit to relaunch it, and reports whether the lead keeps its questions meanwhile. A lead that dies before its
+// plan is submitted, or past MaxAutoRelaunches, is the human's as before. The relaunch takes the waker lock, so it
+// runs on its own goroutine.
+func (w *waker) autoRelaunchLocked(ctx context.Context, runId string, rw *runWake) bool {
+	if rw.autoRelaunching {
+		return true
+	}
+	if rw.autoRelaunches >= MaxAutoRelaunches || !runAutonomousWithDag(ctx, rw.channelId, runId) {
+		return false
+	}
+	rw.autoRelaunches++
+	rw.autoRelaunching = true
+	channelId := rw.channelId
+	goStage("lead relaunch "+runId, func() {
+		lctx := context.WithoutCancel(ctx)
+		w.autoRelaunched(lctx, channelId, runId, relaunchLeadFn(lctx, channelId, runId))
+	})
+	return true
+}
+
+// autoRelaunched settles an automatic relaunch. One that failed hands the lead's questions to the human (G8).
+func (w *waker) autoRelaunched(ctx context.Context, channelId, runId string, err error) {
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	w.runLocked(channelId, runId).autoRelaunching = false
+	if err == nil {
+		return
+	}
+	log.Printf("run %s: automatic lead relaunch failed: %v", runId, err)
+	for oref, p := range leadAsks(runId) {
+		forwardAskToUser(ctx, oref, p, leadLaunchFailedNote+": "+err.Error())
+	}
+}
+
+// runAutonomousWithDag reports a run whose plan is submitted and whose Approvals are autonomous.
+func runAutonomousWithDag(ctx context.Context, channelId, runId string) bool {
+	run, err := wstore.GetRun(ctx, channelId, runId)
+	if err != nil || run.DagORef == "" {
+		return false
+	}
+	g, err := wstore.GetDag(ctx, run.DagORef)
+	return err == nil && jarvis.EffectiveAutonomous(run, g)
 }
 
 // leadAsks is runId's lead-owned questions, keyed by the oref each child waits on.
@@ -636,7 +732,8 @@ func readLeadState(ctx context.Context, channelId, runId string) leadState {
 	rs := blockcontroller.GetBlockControllerRuntimeStatus(st.BlockId)
 	st.Starting = rs == nil || rs.ShellProcStatus == blockcontroller.Status_Init
 	st.Alive = blockRunning(st.BlockId)
-	st.State = latestAgentState(st.BlockId, tabId)
+	latest := LatestAgentStatus(st.BlockId, tabId)
+	st.State, st.Hook = latest.State, latest.Hook
 	return st
 }
 

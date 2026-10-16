@@ -79,7 +79,6 @@ import {
     petCharacterAtom,
     petEventsAtom,
     petHomeAtom,
-    petOfficeSeatAtom,
     petOutfitChoiceAtom,
     petPeekOpenAtom,
     petQuotesOnAtom,
@@ -296,10 +295,6 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     const folded = useAtomValue(floatMiniAtom);
     // in Float the nav badge is gone: the count of what waits rides beside Sprout
     const floating = useAtomValue(floatModeAtom);
-    // the Brief's office draws Jarvis at its desk (officeview.tsx): it sits there rather than walking the footer, so
-    // there is one Jarvis, and the bubble and the peek hang off the seat
-    const seat = useAtomValue(petOfficeSeatAtom);
-    const seated = seat != null && !folded;
     const waiting = useWaitingCount(model);
     const working = useWorkingCount(model);
     const reduce = useReducedMotion() === true;
@@ -370,44 +365,33 @@ export function PetView({ model }: { model: AgentsViewModel }) {
 
     return (
         <>
-            {seated ? null : (
-                <PetSprite
-                    expression={expression.kind}
-                    posture={posture}
-                    utterance={bubble?.id ?? null}
-                    peekOpen={peekOpen}
-                    unread={unread}
-                    reduce={reduce}
-                    surface={surface}
-                    setAnchor={setAnchor}
-                    onCorner={setCorner}
-                    openPeek={openPeek}
-                    chip={floating && waiting > 0 ? waiting : null}
-                    working={floating && working > 0 ? working : null}
-                />
-            )}
+            <PetSprite
+                expression={expression.kind}
+                posture={posture}
+                utterance={bubble?.id ?? null}
+                peekOpen={peekOpen}
+                unread={unread}
+                reduce={reduce}
+                surface={surface}
+                setAnchor={setAnchor}
+                onCorner={setCorner}
+                openPeek={openPeek}
+                chip={floating && waiting > 0 ? waiting : null}
+                working={floating && working > 0 ? working : null}
+            />
             {folded ? null : (
                 <PetBubble
                     event={bubble}
                     agents={agents}
-                    anchor={seated ? seat : anchor}
-                    corner={seated ? "bottom-left" : corner}
+                    anchor={anchor}
+                    corner={corner}
                     onOpen={openPeek}
                     onDismiss={dismissPetBubble}
                 />
             )}
             {/* the peek derives its own ranked condition LIST from the same signals — expressionFor is
                 the creature's single face, and passing it here would cap the panel at one condition */}
-            {folded ? null : (
-                <PetPeek
-                    model={model}
-                    anchor={seated ? seat : anchor}
-                    corner={seated ? "bottom-left" : corner}
-                    // the seat is mid-page, with no room above it for the panel: it opens beside Jarvis, not over it
-                    placement={seated ? "right-end" : undefined}
-                    signals={signals}
-                />
-            )}
+            {folded ? null : <PetPeek model={model} anchor={anchor} corner={corner} signals={signals} />}
         </>
     );
 }

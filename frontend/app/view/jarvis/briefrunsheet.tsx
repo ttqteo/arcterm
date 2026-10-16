@@ -6,9 +6,10 @@
 // specific to a run's configuration.
 //
 // Two rules decide what is a control and what is a fact. Shape, machine and the lead route are immutable
-// after launch, so they are printed, not offered. Parallelism, the workers setting and the reviewer route are
-// genuinely mutable, so they carry real controls — but only once asked for: until then the configuration is
-// one printed line, and a run with nothing to reconfigure states its reason in the slot where the dials would be.
+// after launch, so they are printed, not offered. Parallelism, the workers setting, the reviewer route and
+// Approvals are genuinely mutable, so they carry real controls — but only once asked for: until then the
+// configuration is one printed line, and a run with nothing to reconfigure states its reason in the slot where
+// the dials would be.
 //
 // A third rule decides *when* any of it is offered. A run that links a DAG has mutable settings, but never
 // from the launch snapshot: until the linked TaskGroup is here the sheet cannot know what the scheduler is
@@ -41,10 +42,18 @@ import {
     type LinkedGroupRead,
     type RunSettingsDraft,
 } from "./runsettings";
-import { configLine, configNote } from "./runsheetmodel";
+import { approvalsWord, autonomousResolvedNote, configLine, configNote } from "./runsheetmodel";
 
 const META_ROW = "flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[10.5px] tabular-nums";
 const FIELD = "rounded-[7px] border border-border bg-background px-2 py-1 text-[11.5px] text-ink-hi";
+const SEGMENTS = "flex w-fit gap-0.5 rounded-[8px] border border-border bg-background p-0.5";
+const SEGMENT =
+    "cursor-pointer whitespace-nowrap rounded-[6px] px-3 py-1 text-[11.5px] font-semibold disabled:cursor-default disabled:opacity-40";
+const segmentTone = (on: boolean) => (on ? "bg-accentbg text-accent-soft" : "text-ink-mid hover:text-secondary");
+const APPROVALS: [boolean, string][] = [
+    [false, "Ask me"],
+    [true, "Autonomous"],
+];
 export const SHEET_BTN =
     "cursor-pointer rounded-[7px] border border-border bg-surface-raised px-2.5 py-1 text-[11px] font-semibold text-secondary hover:border-edge-strong hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40";
 
@@ -138,7 +147,30 @@ type ConfigProps = {
     inline?: boolean;
     // inline only: what the reading prints ahead of the configuration on the same row
     meta?: ReactNode;
+    waiting?: WaitingQuestion | null;
 };
+
+// The question the run's status says is waiting on the human, which saving Approvals on hands back to the
+// lead: the lead's own (`lead`), named by its header, else a worker's, named "question".
+export type WaitingQuestion = { header: string; lead: boolean };
+
+// A waiting lead question the human handed back by saving Approvals on (the RunSheet board's resolved note).
+function ResolvedNote({ header }: { header: string }) {
+    const note = autonomousResolvedNote(header);
+    return (
+        <div
+            data-jarvis-brief-sheet-resolved
+            className="flex flex-col gap-1.5 rounded-[9px] border border-edge-mid bg-surface px-[13px] py-[11px]"
+        >
+            <div className="flex items-center gap-2">
+                <span className="h-[7px] w-[7px] flex-none rounded-full bg-success" />
+                <span className="text-[12.5px] font-semibold text-secondary">{note.title}</span>
+                <span className="ml-auto font-mono text-[10.5px] text-muted">just now</span>
+            </div>
+            <span className="text-[11.5px] leading-[1.5] text-ink-mid">{note.body}</span>
+        </div>
+    );
+}
 
 function LoadedConfig({
     run,
@@ -146,6 +178,7 @@ function LoadedConfig({
     groupRead,
     inline,
     meta,
+    waiting,
 }: ConfigProps & { group: TaskGroup | null; groupRead: LinkedGroupRead }) {
     const leadRuntimes = useAtomValue(leadRuntimesAtom);
     const [open, setOpen] = useState(false);
@@ -154,6 +187,8 @@ function LoadedConfig({
     const [saving, setSaving] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
+    // keyed by run, so stepping to another run in the sheet drops it
+    const [resolved, setResolved] = useState<{ runId: string; header: string } | null>(null);
 
     const channelId = run.channeloid ?? "";
     const state = runSettingsPanelState(run, group, groupRead);
@@ -214,7 +249,10 @@ function LoadedConfig({
 
     const busy = saving != null;
     const dirty = draftIsDirty(draft, baseline);
-    const invalid = parallelismInvalid(draft.parallelism);
+    // an untouched stored 0 (no width yet; the engine picks one at submit) is never sent, so it blocks no save
+    const invalid = draft.parallelism !== baseline.parallelism && parallelismInvalid(draft.parallelism);
+    // "Use for new runs" copies the width into the profile, where a 0 is refused whether or not it was touched
+    const defaultsInvalid = parallelismInvalid(draft.parallelism);
     // the scheduler runs at the baseline until a save lands, so a draft it refused (or never received) is
     // printed as not saved rather than as the configuration in force
     const notSaved = dirty && (invalid || error != null);
@@ -235,22 +273,36 @@ function LoadedConfig({
             }
         });
     };
-    const save = () =>
+    const turningOn = draft.autonomous && !baseline.autonomous;
+    const turningOff = !draft.autonomous && baseline.autonomous;
+    const resolvedHeader = resolved?.runId === run.id ? resolved.header : null;
+    const save = () => {
+        // read at save time: once the lead has its answer, the question leaves the status
+        const handedBack = turningOn && waiting?.lead ? waiting.header : null;
+        const saved = turningOn
+            ? "Saved. The run is autonomous from now on."
+            : turningOff
+              ? "Saved. The lead asks you from its next decision."
+              : "Saved. Applies to future dispatches.";
         submit(
             "settings",
-            () => RpcApi.SetRunSettingsCommand(TabRpcClient, settingsPayload(channelId, run.id, draft)),
+            () => RpcApi.SetRunSettingsCommand(TabRpcClient, settingsPayload(channelId, run.id, draft, baseline)),
             () => {
                 // only a successful write re-seeds: a refused save must leave the user's draft alone.
                 setBaseline(draft);
-                setNotice("Saved. Applies to future dispatches.");
+                setNotice(saved);
+                if (handedBack != null) {
+                    setResolved({ runId: run.id, header: handedBack });
+                }
             }
         );
+    };
 
     const dials = (
         <>
             <p className="text-[11.5px] leading-[1.5] text-muted">
-                Shape, machine and the lead route are fixed after launch. These apply to workers and reviewers
-                dispatched from now on. Nothing already running changes.
+                Shape, machine and the lead route are fixed after launch. Parallelism and routes apply to workers and
+                reviewers dispatched from now on. Approvals apply to the lead's next decision.
             </p>
             <div className="flex items-start gap-4">
                 <label className="flex flex-col gap-[5px]">
@@ -292,6 +344,44 @@ function LoadedConfig({
                         runtimes={leadRuntimes}
                     />
                 </div>
+                <div data-light-reviewers-row className="flex min-w-0 flex-1 flex-col gap-[5px]">
+                    <span className="text-[11.5px] font-semibold text-secondary">Light reviewers</span>
+                    <RoutePicker
+                        value={draft.lightReviewerRoute}
+                        canInherit
+                        inheritedLabel="Sonnet (default)"
+                        disabled={busy}
+                        onChange={(route) => setDraft({ ...draft, lightReviewerRoute: route })}
+                    />
+                </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+                <span className="text-[11.5px] font-semibold text-secondary">Approvals</span>
+                <div role="group" aria-label="Approvals" className={SEGMENTS}>
+                    {APPROVALS.map(([on, label]) => (
+                        <button
+                            key={label}
+                            type="button"
+                            aria-pressed={draft.autonomous === on}
+                            disabled={busy}
+                            onClick={() => setDraft({ ...draft, autonomous: on })}
+                            className={cn(SEGMENT, segmentTone(draft.autonomous === on))}
+                        >
+                            {label}
+                        </button>
+                    ))}
+                </div>
+                {turningOn && waiting != null ? (
+                    <span className="text-[11.5px] leading-[1.5] text-warning-soft">
+                        Saving hands the waiting {waiting.header} back to the lead, and it answers everything from then
+                        on.
+                    </span>
+                ) : null}
+                {turningOff ? (
+                    <span className="text-[11.5px] leading-[1.5] text-muted">
+                        The lead asks you again from its next decision. Calls it already made stand.
+                    </span>
+                ) : null}
             </div>
             {invalid ? (
                 <p data-jarvis-brief-sheet-state="error" className="text-[11.5px] text-error">
@@ -304,7 +394,7 @@ function LoadedConfig({
                     {error}
                 </p>
             ) : null}
-            {notice != null ? (
+            {notice != null && !dirty ? (
                 <p data-jarvis-brief-sheet-state="saved" className="text-[11.5px] text-success">
                     {notice}
                 </p>
@@ -340,6 +430,15 @@ function LoadedConfig({
                     {shown.reviewerRoute != null ? (
                         <span className={tone}>reviewers on {routeLabel(shown.reviewerRoute)}</span>
                     ) : null}
+                    {shown.lightReviewerRoute != null ? (
+                        <span className={tone}>light reviewers on {routeLabel(shown.lightReviewerRoute)}</span>
+                    ) : null}
+                    <span
+                        data-jarvis-brief-sheet-approvals
+                        className={shown.autonomous && !notSaved ? "text-accent-soft" : tone}
+                    >
+                        {approvalsWord(shown.autonomous)}
+                    </span>
                     {notSaved ? <span className="text-error">not saved</span> : null}
                     <button
                         type="button"
@@ -350,6 +449,7 @@ function LoadedConfig({
                         {open ? "done" : "adjust"}
                     </button>
                 </div>
+                {resolvedHeader != null ? <ResolvedNote header={resolvedHeader} /> : null}
                 <PaneReveal open={open}>
                     <div className="flex flex-col gap-3 rounded-[9px] border border-border bg-surface px-[13px] pb-[13px] pt-[11px]">
                         {dials}
@@ -380,6 +480,11 @@ function LoadedConfig({
                     {open ? "Done" : "Adjust"}
                 </button>
             </div>
+            {resolvedHeader != null ? (
+                <div className="px-4 pb-[11px]">
+                    <ResolvedNote header={resolvedHeader} />
+                </div>
+            ) : null}
             <PaneReveal open={open}>
                 <div className="flex flex-col gap-3 border-t border-edge-faint px-4 pb-3.5 pt-[11px]">{dials}</div>
             </PaneReveal>

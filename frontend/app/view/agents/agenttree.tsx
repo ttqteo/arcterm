@@ -169,6 +169,7 @@ import {
     workerSubtext,
     type RunInfo,
 } from "./runlineage";
+import { planReviewLensTitle } from "./runtimeline";
 import {
     openRunFold,
     toggleRunCollapsed,
@@ -1331,12 +1332,14 @@ function StageRow({
     stageRole,
     outcome,
     navDigit,
+    lens,
 }: {
     model: AgentsViewModel;
     agent: AgentVM;
     stageRole: string;
     outcome?: StageOutcome;
     navDigit?: number; // its Alt+1..9 digit
+    lens?: string;
 }) {
     const focusId = useSelectedRowId(model);
     const now = useAtomValue(model.nowAtom);
@@ -1376,7 +1379,9 @@ function StageRow({
                 </DigitHint>
             </Slot>
             <div className="min-w-0 flex-1">
-                <div className="truncate text-[12.5px] font-medium text-ink-hi">{stageLabel(stageRole)}</div>
+                <div className="truncate text-[12.5px] font-medium text-ink-hi">
+                    {lens ? `${stageLabel(stageRole)} · ${planReviewLensTitle(lens)}` : stageLabel(stageRole)}
+                </div>
                 <div className="mt-[3px] truncate text-[10.5px] tabular-nums text-muted">
                     {stageSubline(outcome, formatAgeShort(displayAgeMs(agent, now)))}
                 </div>
@@ -2584,6 +2589,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                             stageRole={r.stageRole}
                                             outcome={r.outcome}
                                             navDigit={digits.get(r.agent.id)}
+                                            lens={r.lens}
                                         />
                                     );
                                     break;

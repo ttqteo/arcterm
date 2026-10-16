@@ -24,6 +24,21 @@ export const SURFACE_LABEL = {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// a reloaded cockpit took ~2.6s to render its nav in run 5d24e7b8's Final, past the fixed 2.5s a teardown waited
+const NAV_WAIT_MS = 30_000;
+const NAV_POLL_MS = 250;
+const NAV_RENDERED = `!!document.querySelector("nav button")`;
+
+// polls expr until it is truthy, false past ms. An evaluate that throws counts as not yet: a reload destroys the
+// execution context mid-boot.
+export async function waitFor(ev, expr, ms, pollMs = NAV_POLL_MS) {
+    for (const start = Date.now(); ; ) {
+        if (await ev(expr).catch(() => false)) return true;
+        if (Date.now() - start >= ms) return false;
+        await sleep(pollMs);
+    }
+}
+
 // A single CDP command must never hang the whole run: if the socket drops mid-command (dev app HMR
 // teardown / exit), the reply never arrives and a bare `await` would block forever. Bound every
 // command so a drop surfaces as an error. 30s is far above any real CDP round-trip.
@@ -146,9 +161,18 @@ export async function attach(port = 9222) {
             ev(
                 `window.TabRpcClient.wshRpcCall(${JSON.stringify(command)}, ${JSON.stringify(data ?? null)}, ${JSON.stringify(opts ?? {})})`
             ),
+        // reloads the page and resolves once the new one has booted: the old window's marker is gone with it, and
+        // the nav has rendered. Polling the nav alone could read the old page before the reload commits.
+        async reload() {
+            await ev("window.__cdpReloading = true; location.reload()");
+            const booted = await waitFor(ev, `!window.__cdpReloading && ${NAV_RENDERED}`, NAV_WAIT_MS);
+            if (!booted) throw new Error(`the page did not render its nav within ${NAV_WAIT_MS / 1000}s of a reload`);
+        },
         async goto(surface) {
             const label = SURFACE_LABEL[surface];
             if (!label) throw new Error(`unknown surface "${surface}"`);
+            // a page still booting from a reload has no nav yet; a missing label on a rendered nav still fails at once
+            await waitFor(ev, NAV_RENDERED, NAV_WAIT_MS);
             // aria-label first: the nav rail drops its visible labels below a narrow window
             // (view/agents/navrailwidth.ts), so matching on text alone cannot navigate a narrow app.
             const clicked = await ev(`(() => {

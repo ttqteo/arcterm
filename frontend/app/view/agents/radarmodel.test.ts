@@ -4,6 +4,8 @@
 import { describe, expect, it } from "vitest";
 import {
     auditDuration,
+    auditGroups,
+    auditKind,
     auditRows,
     auditsPanel,
     auditStateText,
@@ -11,25 +13,31 @@ import {
     auditTally,
     auditTallyText,
     buildRunDraft,
+    classifyWarning,
     composeRunGoal,
     DEFAULT_OPEN_LIST_GROUPS,
     dismissReasons,
     dispositionLabel,
-    failedAuditShas,
+    failedAuditLabels,
     failedAuditsSentence,
+    findingKind,
     findingSite,
+    findingSourceLine,
     groupForList,
     investigationView,
     isNewFinding,
     isOldFormatReport,
+    KIND_WORDS,
     LIST_GROUP_ORDER,
     listGroupMeta,
     listGroupOf,
     primaryAction,
+    RADAR_KINDS,
     radarLoadPhase,
     radarView,
     reportMetaAge,
     resolveSelection,
+    selectingText,
     shortSha,
     sourceFix,
     subsystemLabel,
@@ -95,7 +103,12 @@ describe("resolveSelection", () => {
 describe("buildRunDraft", () => {
     it("keeps report, finding, and fingerprint ids distinct", () => {
         const r = report({ oid: "report-1" });
-        const f = finding("finding-1", "new", { fingerprint: "fp-9", mission: "add tests", files: ["a.ts"], signalids: ["s1"] });
+        const f = finding("finding-1", "new", {
+            fingerprint: "fp-9",
+            mission: "add tests",
+            files: ["a.ts"],
+            signalids: ["s1"],
+        });
         const draft = buildRunDraft(r, f);
         expect(draft.reportId).toBe("report-1");
         expect(draft.findingId).toBe("finding-1");
@@ -374,6 +387,7 @@ describe("sourceFix", () => {
             sha: "34f60b82",
             subject: "fix(x): y",
             ts: 1234,
+            fixSubjects: [],
         });
         expect(shortSha(SHA)).toHaveLength(8);
     });
@@ -438,26 +452,26 @@ describe("audit tally and its text", () => {
     });
     it("summarises a scan with no failure", () => {
         const t = tallyOf(...clean(6), ...hits(2));
-        expect(auditSummary(t)).toBe("8 fix commits audited, 6 clean");
+        expect(auditSummary(t)).toBe("8 audits, 6 clean");
         expect(auditTallyText(t)).toBe("6 clean · 2 with hits");
     });
     it("names the failures when there are some", () => {
         const t = tallyOf(...clean(4), ...hits(2), ...failed(2));
-        expect(auditSummary(t)).toBe("8 fix commits audited, 4 clean, 2 failed");
+        expect(auditSummary(t)).toBe("8 audits, 4 clean, 2 failed");
         expect(auditTallyText(t)).toBe("4 clean · 2 with hits · 2 failed");
     });
-    it("uses the singular for one commit", () => {
-        expect(auditSummary(tallyOf(...clean(1)))).toBe("1 fix commit audited, 1 clean");
+    it("uses the singular for one audit", () => {
+        expect(auditSummary(tallyOf(...clean(1)))).toBe("1 audit, 1 clean");
     });
-    it("says there were no new fix commits at zero", () => {
-        expect(auditSummary(tallyOf())).toBe("no new fix commits");
+    it("says there was nothing new to audit at zero", () => {
+        expect(auditSummary(tallyOf())).toBe("Nothing new to audit");
     });
     it("lists the failed audits by short sha, in audit order", () => {
         const r = report({
             audits: [audit("7927fb68aaaa", "failed"), audit("ok1", "ok"), audit("9caee0d3bbbb", "failed")],
         });
-        expect(failedAuditShas(r)).toEqual(["7927fb68", "9caee0d3"]);
-        expect(failedAuditShas(report())).toEqual([]);
+        expect(failedAuditLabels(r)).toEqual(["7927fb68", "9caee0d3"]);
+        expect(failedAuditLabels(report())).toEqual([]);
     });
     it("words each row's state, with the hit count in place of the state", () => {
         const rows = auditRows(
@@ -474,42 +488,185 @@ describe("audit tally and its text", () => {
         );
         expect(rows.map(auditStateText)).toEqual(["clean", "1 hit", "2 hits", "failed", "auditing", "queued"]);
     });
-    it("names the failed commits in the strip, each sha its own part", () => {
-        const text = (shas: string[]) =>
-            failedAuditsSentence(shas)
+    it("names a failed hotspot audit by its file", () => {
+        const r = report({
+            audits: [
+                audit("7927fb68aaaa", "failed"),
+                audit("5be0d7a1cccc", "failed", { kind: "hotspot", files: ["pkg/orchestrate/land.go"] }),
+            ],
+        });
+        expect(failedAuditLabels(r)).toEqual(["7927fb68", "pkg/orchestrate/land.go"]);
+    });
+    it("names the failed audits in the strip, each sha or file its own part", () => {
+        const text = (labels: string[]) =>
+            failedAuditsSentence(labels)
                 .map((p) => p.text)
                 .join("");
-        expect(text(["7927fb68"])).toBe("The audit of 7927fb68 failed. Sibling bugs of that fix may be missing.");
-        expect(text(["7927fb68", "9caee0d3"])).toBe(
-            "The audits of 7927fb68 and 9caee0d3 failed. Sibling bugs of those two fixes may be missing."
+        expect(text(["7927fb68"])).toBe("The audit of 7927fb68 failed. Bugs they target may be missing.");
+        expect(text(["7927fb68", "pkg/orchestrate/land.go"])).toBe(
+            "The audits of 7927fb68 and pkg/orchestrate/land.go failed. Bugs they target may be missing."
         );
-        expect(text(["a", "b", "c"])).toBe(
-            "The audits of a, b and c failed. Sibling bugs of those 3 fixes may be missing."
-        );
+        expect(text(["a", "b", "c"])).toBe("The audits of a, b and c failed. Bugs they target may be missing.");
         expect(
-            failedAuditsSentence(["a", "b"])
-                .filter((p) => p.sha)
+            failedAuditsSentence(["a", "pkg/x.go"])
+                .filter((p) => p.mono)
                 .map((p) => p.text)
-        ).toEqual(["a", "b"]);
+        ).toEqual(["a", "pkg/x.go"]);
     });
     it("titles the no-findings panel by what the audits did", () => {
         expect(auditsPanel(tallyOf(...clean(5)), "4m 36s")).toEqual({
             kind: "clean",
-            title: "No sibling bugs in 5 fix commits",
+            title: "No bugs found in 5 audits",
             tally: "5 of 5 clean · 4m 36s",
         });
         expect(auditsPanel(tallyOf(...clean(1)), "")).toEqual({
             kind: "clean",
-            title: "No sibling bugs in 1 fix commit",
+            title: "No bugs found in 1 audit",
             tally: "1 of 1 clean",
         });
-        expect(auditsPanel(tallyOf(), "")).toEqual({ kind: "empty", title: "No new fix commits to audit", tally: "" });
-        // a failed audit read nothing, so the title cannot count it among the commits with no sibling bugs
+        expect(auditsPanel(tallyOf(), "")).toEqual({ kind: "empty", title: "Nothing new to audit", tally: "" });
+        // a failed audit read nothing, so the title cannot count it among the audits that found no bug
         expect(auditsPanel(tallyOf(...clean(2), ...failed(2)), "4m 00s")).toEqual({
             kind: "failed",
-            title: "No sibling bugs found",
+            title: "No bugs found",
             tally: "2 clean · 0 with hits · 2 failed",
         });
+    });
+    it("counts audits of every kind in the summary", () => {
+        const t = tallyOf(
+            ...clean(2),
+            audit("i1", "ok", { kind: "introduced" }),
+            audit("h1", "ok", { kind: "hotspot", files: ["a.go"], keptcount: 1 }),
+            audit("h2", "failed", { kind: "hotspot", files: ["b.go"] })
+        );
+        expect(auditSummary(t)).toBe("5 audits, 3 clean, 1 failed");
+    });
+});
+
+describe("audit kinds", () => {
+    const withKind = (riskkind: string) => finding("a", "new", { riskkind, sourcecommit: SHA });
+
+    it("reads a finding's kind from its riskkind, an empty or unknown one as sibling", () => {
+        expect(findingKind(withKind("introduced-bug"))).toBe("introduced");
+        expect(findingKind(withKind("hotspot-bug"))).toBe("hotspot");
+        expect(findingKind(withKind("sibling-bug"))).toBe("sibling");
+        expect(findingKind(withKind(""))).toBe("sibling");
+        expect(findingKind(withKind("security-bug"))).toBe("sibling");
+    });
+    it("reads an audit's kind, one with no kind as sibling", () => {
+        expect(auditKind(audit("a", "ok", { kind: "introduced" }))).toBe("introduced");
+        expect(auditKind(audit("a", "ok", { kind: "hotspot" }))).toBe("hotspot");
+        expect(auditKind(audit("a", "ok", { kind: "sibling" }))).toBe("sibling");
+        expect(auditKind(audit("a", "ok"))).toBe("sibling");
+        expect(auditKind(audit("a", "ok", { kind: "bogus" }))).toBe("sibling");
+    });
+    it("words each kind as the spec's table does", () => {
+        const table = RADAR_KINDS.map((k) => {
+            const w = KIND_WORDS[k];
+            return [
+                w.label,
+                w.siteHeading(1),
+                w.siteHeading(2),
+                w.siteWhyLabel,
+                w.rootCauseHeading,
+                w.sourceHeading,
+                w.auditGroup,
+            ];
+        });
+        expect(table).toEqual([
+            [
+                "Sibling bug",
+                "Sibling site",
+                "Sibling sites",
+                "Fix gap",
+                "Root cause",
+                "Found by auditing this fix",
+                "Fix commits",
+            ],
+            [
+                "Introduced bug",
+                "Site",
+                "Sites",
+                "Introduced",
+                "Intent of the change",
+                "Found by reviewing this change",
+                "Behavior changes",
+            ],
+            ["Hotspot", "Site", "Sites", "Missed by fixes", "Fragility", "Found by reviewing this file", "Hot files"],
+        ]);
+    });
+    it("names each finding row's source by its kind", () => {
+        expect(findingSourceLine(withKind("sibling-bug"))).toBe("Sibling bug · 34f60b82");
+        expect(findingSourceLine(withKind(""))).toBe("Sibling bug · 34f60b82");
+        expect(findingSourceLine(withKind("introduced-bug"))).toBe("Introduced bug · 34f60b82");
+        expect(findingSourceLine(finding("a", "new", { riskkind: "hotspot-bug", fixsubjects: ["a", "b", "c"] }))).toBe(
+            "Hotspot · 3 fixes"
+        );
+        expect(findingSourceLine(finding("a", "new", { riskkind: "hotspot-bug", fixsubjects: ["a"] }))).toBe(
+            "Hotspot · 1 fix"
+        );
+    });
+    it("passes a hotspot's fix subjects through its source", () => {
+        const f = finding("a", "new", { riskkind: "hotspot-bug", sourcecommit: SHA, fixsubjects: ["fix: a"] });
+        expect(sourceFix(f, report())?.fixSubjects).toEqual(["fix: a"]);
+        expect(sourceFix(withKind("sibling-bug"), report())?.fixSubjects).toEqual([]);
+    });
+});
+
+describe("audit groups", () => {
+    const hot = (file: string, extra: Partial<RadarAudit> = {}) =>
+        audit("5be0d7a1cccc", "ok", { kind: "hotspot", files: [file], fixsubjects: ["fix: a", "fix: b"], ...extra });
+
+    it("groups rows by kind in table order and drops an empty kind", () => {
+        const rows = auditRows(report({ audits: [hot("a.go"), audit("s1", "ok"), audit("s2", "ok", { kind: "" })] }));
+        expect(auditGroups(rows).map((g) => [g.kind, g.label, g.rows.map((r) => r.commit)])).toEqual([
+            ["sibling", "Fix commits", ["s1", "s2"]],
+            ["hotspot", "Hot files", ["5be0d7a1cccc"]],
+        ]);
+        const all = auditRows(
+            report({ audits: [hot("a.go"), audit("i1", "ok", { kind: "introduced" }), audit("s1", "ok")] })
+        );
+        expect(auditGroups(all).map((g) => g.label)).toEqual(["Fix commits", "Behavior changes", "Hot files"]);
+        expect(auditGroups([])).toEqual([]);
+    });
+    it("keys two hotspot rows that share a revision apart, and a commit audited by two kinds apart", () => {
+        const rows = auditRows(
+            report({
+                audits: [hot("a.go"), hot("b.go"), audit("c1", "ok"), audit("c1", "ok", { kind: "introduced" })],
+            })
+        );
+        expect(new Set(rows.map((r) => r.key)).size).toBe(4);
+        expect(rows[0].sha).toBe(rows[1].sha);
+    });
+    it("shows a hotspot row's file and fix count as its subject, and labels it by the file", () => {
+        const [row] = auditRows(report({ audits: [hot("pkg/orchestrate/engine.go")] }));
+        expect(row).toMatchObject({
+            kind: "hotspot",
+            sha: "5be0d7a1",
+            label: "pkg/orchestrate/engine.go",
+            file: "pkg/orchestrate/engine.go",
+            fixes: 2,
+            subject: "pkg/orchestrate/engine.go · 2 fixes",
+        });
+        const [sib] = auditRows(report({ audits: [audit(SHA, "ok")] }));
+        expect(sib).toMatchObject({ kind: "sibling", label: "34f60b82", subject: `fix ${SHA}` });
+    });
+});
+
+describe("scan copy", () => {
+    it("words the classifier failure with the count it sent", () => {
+        expect(classifyWarning(report())).toBeNull();
+        expect(classifyWarning(report({ classifyerror: "boom", classifycount: 14 }))).toBe(
+            "Commit classification failed, so 14 unprefixed commits were not considered. Re-scan tries them again."
+        );
+        expect(classifyWarning(report({ classifyerror: "boom", classifycount: 1 }))).toBe(
+            "Commit classification failed, so 1 unprefixed commit was not considered. Re-scan tries them again."
+        );
+    });
+    it("reads classifying commits while the classifier runs, selecting targets otherwise", () => {
+        expect(selectingText(report({ status: "collecting", phase: "classifying" }))).toBe("classifying commits");
+        expect(selectingText(report({ status: "collecting", phase: "collecting" }))).toBe("selecting targets");
+        expect(selectingText(null)).toBe("selecting targets");
     });
 });
 

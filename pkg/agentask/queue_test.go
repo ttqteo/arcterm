@@ -4,6 +4,7 @@
 package agentask
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -140,5 +141,92 @@ func TestOnlyWaiterAnswersSkipAwaitingClear(t *testing.T) {
 	}
 	if GlobalRegistry.ConfirmClear("block:pi") {
 		t.Fatal("a resolved waiter is the delivery; there is no clear to wait for")
+	}
+}
+
+func TestAnswerInFlightFromClaimToClear(t *testing.T) {
+	GlobalRegistry = MakeRegistry()
+	GlobalRegistry.Set("block:b1", dagPending("a1"))
+	var midTyping []bool
+	later := time.Now().Add(AnswerClearTimeout + time.Second).UnixMilli()
+	orig := sendInput
+	sendInput = func(string, []byte) error {
+		midTyping = append(midTyping, GlobalRegistry.AnswerInFlight("block:b1"))
+		if got := GlobalRegistry.ExpireClears(later, AnswerClearTimeout); len(got) != 0 {
+			t.Errorf("an answer still being typed has no clear timeout running, got %+v", got)
+		}
+		return nil
+	}
+	t.Cleanup(func() { sendInput = orig })
+
+	if ok, err := DeliverAnswer("block:b1", "", answerFirst()); err != nil || !ok {
+		t.Fatalf("want delivered, got (%v, %v)", ok, err)
+	}
+	for i, inFlight := range midTyping {
+		if !inFlight {
+			t.Fatalf("keystroke %d: a claimed answer is in flight while it is typed", i)
+		}
+	}
+	if !GlobalRegistry.AnswerInFlight("block:b1") {
+		t.Fatal("a typed answer is in flight until the agent clears the ask")
+	}
+	GlobalRegistry.ConfirmClear("block:b1")
+	if GlobalRegistry.AnswerInFlight("block:b1") {
+		t.Fatal("the clear ends the answer")
+	}
+}
+
+// a clear that arrives before the last key leaves nothing to confirm: the ask is gone, so no timeout may
+// put it back
+func TestClearMidTypingIsNotRestored(t *testing.T) {
+	GlobalRegistry = MakeRegistry()
+	GlobalRegistry.Set("block:b1", dagPending("a1"))
+	orig := sendInput
+	sendInput = func(string, []byte) error { GlobalRegistry.ConfirmClear("block:b1"); return nil }
+	t.Cleanup(func() { sendInput = orig })
+
+	if ok, _ := DeliverAnswer("block:b1", "", answerFirst()); !ok {
+		t.Fatal("want delivered")
+	}
+	if GlobalRegistry.AnswerInFlight("block:b1") {
+		t.Fatal("an answer already cleared does not wait for another clear")
+	}
+	later := time.Now().Add(AnswerClearTimeout + time.Second).UnixMilli()
+	if got := GlobalRegistry.ExpireClears(later, AnswerClearTimeout); len(got) != 0 {
+		t.Fatalf("a cleared ask must not come back, got %+v", got)
+	}
+}
+
+func TestFailedDeliveryEndsAnswerInFlight(t *testing.T) {
+	GlobalRegistry = MakeRegistry()
+	GlobalRegistry.Set("block:enc", dagPending("a1"))
+	if ok, _ := DeliverAnswer("block:enc", "", []baseds.AgentAnswerItem{{SelectedIndexes: []int{5}}}); ok {
+		t.Fatal("an out-of-range answer is refused")
+	}
+	if GlobalRegistry.AnswerInFlight("block:enc") {
+		t.Fatal("a refused answer sent nothing, so nothing is in flight")
+	}
+	if _, ok := GlobalRegistry.Get("block:enc"); !ok {
+		t.Fatal("the refused ask is pending again")
+	}
+
+	GlobalRegistry.Set("block:pty", dagPending("a2"))
+	orig := sendInput
+	sendInput = func(string, []byte) error { return errors.New("pty gone") }
+	t.Cleanup(func() { sendInput = orig })
+	if ok, _ := DeliverAnswer("block:pty", "", answerFirst()); ok {
+		t.Fatal("a failed keystroke is not a delivery")
+	}
+	if GlobalRegistry.AnswerInFlight("block:pty") {
+		t.Fatal("a delivery that failed mid-typing is no longer in flight")
+	}
+
+	GlobalRegistry.Set("block:pi", dagPending("a3"))
+	GlobalRegistry.RegisterWaiter("a3")
+	if ok, _ := DeliverAnswer("block:pi", "", answerFirst()); !ok {
+		t.Fatal("want delivered")
+	}
+	if GlobalRegistry.AnswerInFlight("block:pi") {
+		t.Fatal("a resolved waiter is the delivery; nothing stays in flight")
 	}
 }

@@ -70,9 +70,20 @@ var startWorker = func(ctx context.Context, workerORef string) error {
 	return jarvis.StartRunWorker(ctx, workerORef)
 }
 
+// cleanupContext is ctx while it is live, else a detached one bounded by scheduleCleanupTimeout: undoing a spawn must
+// not fail on the deadline that failed the spawn, or the run it recorded reads as working with nothing to reap it.
+func cleanupContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx.Err() == nil {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(context.WithoutCancel(ctx), scheduleCleanupTimeout)
+}
+
 // abandonUnstartedWorker cancels the run recorded for a worker whose process would not start and disarms
 // its tab, so nothing reads the run as working.
 func abandonUnstartedWorker(ctx context.Context, channelId, runID, workerORef string) {
+	ctx, cancel := cleanupContext(ctx)
+	defer cancel()
 	if err := wstore.UpdateRun(ctx, channelId, runID, func(r *waveobj.Run) error {
 		*r = jarvis.CancelRun(*r)
 		return nil
@@ -85,16 +96,26 @@ func abandonUnstartedWorker(ctx context.Context, channelId, runID, workerORef st
 	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Run, runID))
 }
 
+// stopUnrecordedWorker stops a spawned worker whose run could not be recorded, on a live context: the record often
+// failed on the spawn's spent deadline.
+func stopUnrecordedWorker(ctx context.Context, workerORef string) error {
+	ctx, cancel := cleanupContext(ctx)
+	defer cancel()
+	return stopSpawnedWorker(ctx, workerORef)
+}
+
 var appendChildRun = wstore.AppendRun
 var stopSpawnedWorker = jarvis.StopRunWorker
 var stampSpawnedWorker = wstore.StampWorkerOwner
 
 const scheduleCleanupTimeout = 10 * time.Second
 
-// scheduleTickTimeout bounds one detached tick. A tick dispatches up to MaxParallelism workers in
-// sequence, each bounded by jarvis.RunWorkerSpawnTimeout, so the bound is that worst case with room to
-// spare — it exists to stop a wedged tick living forever, not to pace a healthy one.
-const scheduleTickTimeout = 10 * time.Minute
+// scheduleTickTimeout bounds one detached tick. It exists to stop a wedged tick living forever, not to pace a
+// healthy one, so it is the healthy worst case: a tick that reaches it mid-batch fails its commit, and that rolls
+// back every worker the batch started. A tick dispatches up to MaxParallelism tasks in sequence, and each spends up
+// to a spawn budget on its tree, SetupTimeout on a new tree's Setup and another spawn budget on the spawn; the rest
+// is the merge before the tick, the judging sessions, the final stage and the commit.
+const scheduleTickTimeout = MaxParallelism*(2*jarvis.RunWorkerSpawnTimeout+SetupTimeout) + 10*time.Minute
 
 // spawnBudget hands each step of a tick its own jarvis.RunWorkerSpawnTimeout. One deadline for the whole tick
 // is spent by the first slow dispatch (a large checkout, a long Setup), and every task after it fails on arrival.
@@ -136,18 +157,48 @@ func publishSpawnedRunUpdates(channelID string, spawned []spawnedWorkerInfo) {
 	}
 }
 
-func cleanupScheduleFailure(ctx, workerCtx context.Context, g *waveobj.TaskGroup, spawned []spawnedWorkerInfo, cause error) error {
-	cleanupCtx := ctx
-	cancel := func() {}
-	if cleanupCtx.Err() != nil {
-		cleanupCtx, cancel = context.WithTimeout(context.WithoutCancel(ctx), scheduleCleanupTimeout)
+// sessionRunIDs is the run of every judging session g records: the task reviewers, the plan reviewers and the final
+// verifier.
+func sessionRunIDs(g *waveobj.TaskGroup) []string {
+	var ids []string
+	for _, t := range g.Tasks {
+		if t.ReviewRunID != "" {
+			ids = append(ids, t.ReviewRunID)
+		}
 	}
+	if g.PlanReview != nil {
+		for _, r := range g.PlanReview.Reviewers {
+			if r.RunID != "" {
+				ids = append(ids, r.RunID)
+			}
+		}
+	}
+	if g.Final != nil && g.Final.VerifierRunID != "" {
+		ids = append(ids, g.Final.VerifierRunID)
+	}
+	return ids
+}
+
+// cleanupScheduleFailure undoes a tick that cannot commit. It stops the workers the tick dispatched and fails their
+// tasks, and stops every judging session g names that recorded (the sessions of the dag the tick loaded) does not: the
+// tick started it, and left running it is a process no dag row names, which the next tick replaces with another.
+func cleanupScheduleFailure(ctx, workerCtx context.Context, g *waveobj.TaskGroup, recorded []string, spawned []spawnedWorkerInfo, cause error) error {
+	cleanupCtx, cancel := cleanupContext(ctx)
 	defer cancel()
 	if workerCtx.Err() != nil {
 		workerCtx = cleanupCtx
 	}
 
 	errs := []error{cause}
+	for _, runID := range sessionRunIDs(g) {
+		if slices.Contains(recorded, runID) {
+			continue
+		}
+		if err := stopSession(cleanupCtx, g.ChannelId, runID); err != nil {
+			errs = append(errs, fmt.Errorf("stop session run %s: %w", runID, err))
+		}
+		wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Run, runID))
+	}
 	for _, sp := range spawned {
 		if err := stopSpawnedWorker(workerCtx, sp.oref); err != nil {
 			errs = append(errs, fmt.Errorf("stop worker %s for task %s: %w", sp.oref, sp.taskID, err))
@@ -243,8 +294,23 @@ func autoRetryStalled(ctx context.Context, dagID string, s stalledTask) bool {
 			moved = task == nil
 			return err
 		}
-		run, err = cancelTaskRun(ctx, g, task)
-		return err
+		// the dag still says stalled for a worker that completed since the tick read its run: the next tick derives
+		// it done with its commit and report, which cancelling the finished run would throw away
+		open := false
+		if err := wstore.UpdateRun(ctx, g.ChannelId, task.RunID, func(r *waveobj.Run) error {
+			open = cancelOpenRun(r)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("cancelling run %s: %w", task.RunID, err)
+		}
+		if !open {
+			moved = true
+			return nil
+		}
+		if run, err = wstore.GetRun(ctx, g.ChannelId, task.RunID); err != nil {
+			return fmt.Errorf("loading run %s after cancellation: %w", task.RunID, err)
+		}
+		return nil
 	})
 	if err == nil && run != nil {
 		err = stopRunWorkers(ctx, run)
@@ -380,14 +446,24 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 	if g.Status == DagStatus_Cancelled {
 		return nil
 	}
+	// the sessions the dag records before this tick starts any: a tick that cannot commit stops the rest
+	recorded := sessionRunIDs(g)
 	var afterCommit []func()
 	budget := spawnBudget{parent: context.WithoutCancel(ctx)}
 	defer budget.release()
-	spawnCtx := budget.next()
 	owner, err := wstore.GetRun(ctx, g.ChannelId, g.RunID)
 	if err != nil {
 		return fmt.Errorf("loading owning run: %w", err)
 	}
+	// before any session spawns, so a tick that cannot read the head returns having started nothing
+	spawnBase := owner.BaseCommit
+	if g.MergeRequired {
+		spawnBase, err = landingHead(budget.next(), owner)
+		if err != nil {
+			return fmt.Errorf("resolving project head for dag %s: %w", g.ID, err)
+		}
+	}
+	spawnCtx := budget.next()
 	runs := map[string]*waveobj.Run{}
 	prevStates := map[string]string{}
 	for i := range g.Tasks {
@@ -605,13 +681,6 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 		}
 	}
 	var spawned []spawnedWorkerInfo
-	spawnBase := owner.BaseCommit
-	if g.MergeRequired {
-		spawnBase, err = landingHead(spawnCtx, owner)
-		if err != nil {
-			return fmt.Errorf("resolving project head for dag %s: %w", g.ID, err)
-		}
-	}
 	for _, taskID := range NextToSpawn(g) {
 		task := taskByID(g, taskID)
 		pin := effectiveTaskRoute(task, owner, g)
@@ -636,13 +705,14 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 			// a lane's tasks share one tree, so each starts from the commits of the task before it
 			key := LaneWorktreeKey(g, taskID)
 			wtStart := time.Now()
-			wt, head, created, werr := EnsureRunWorktree(spawnCtx, owner.ProjectPath, key, spawnBase)
+			wt, head, _, werr := EnsureRunWorktree(spawnCtx, owner.ProjectPath, key, spawnBase)
 			worktreeMs = time.Since(wtStart).Milliseconds()
 			if werr != nil {
 				failDispatch(ctx, g, taskID, FailureKindWorktree, werr, &afterCommit)
 				continue
 			}
-			if created && g.Setup != "" {
+			// not "created by this call": a failed add or a server that died during Setup leaves a clean tree the retry reuses
+			if g.Setup != "" && !treeSetUp(spawnCtx, wt) {
 				setupStart := time.Now()
 				// no progress sink: Setup runs under the dag mutation lock, so nothing can read a
 				// partial tail while it holds the lock anyway
@@ -658,6 +728,7 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 					failDispatch(ctx, g, taskID, FailureKindSetup, serr, &afterCommit)
 					continue
 				}
+				markTreeSetUp(context.WithoutCancel(ctx), wt)
 				// Setup ran on its own SetupTimeout, and its wall clock is not the spawn's to pay
 				spawnCtx = budget.next()
 			}
@@ -706,13 +777,13 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 		}
 		spawned = append(spawned, spawnedWorkerInfo{childRun: childRun, oref: oref, taskID: taskID})
 		if !attached {
-			return cleanupScheduleFailure(ctx, spawnCtx, g, spawned, fmt.Errorf("child run for task %s has no running phase", taskID))
+			return cleanupScheduleFailure(ctx, spawnCtx, g, recorded, spawned, fmt.Errorf("child run for task %s has no running phase", taskID))
 		}
 		// spawnCtx, not ctx: the row that records a spawned worker must outlive exactly as long as the
 		// spawn it records. Persisting on the caller's budget is what leaves a live process with no run
 		// row, and the task's RunID is cleared on this failure, so nothing can ever reap it.
 		if err := appendChildRun(spawnCtx, g.ChannelId, childRun); err != nil {
-			return cleanupScheduleFailure(ctx, spawnCtx, g, spawned, fmt.Errorf("persisting child run for task %s: %w", taskID, err))
+			return cleanupScheduleFailure(ctx, spawnCtx, g, recorded, spawned, fmt.Errorf("persisting child run for task %s: %w", taskID, err))
 		}
 		spawned[len(spawned)-1].persisted = true
 		runORef := waveobj.MakeORef(waveobj.OType_Run, childRun.ID).String()
@@ -733,7 +804,7 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 		// before the dag commit names the run.
 		wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Run, childRun.ID))
 		if err := MarkRunning(g, taskID, childRun.ID); err != nil {
-			return cleanupScheduleFailure(ctx, spawnCtx, g, spawned, err)
+			return cleanupScheduleFailure(ctx, spawnCtx, g, recorded, spawned, err)
 		}
 		g.Tasks[taskIdx(g, taskID)].LastActivity = now
 		spawnedTaskID := taskID
@@ -791,7 +862,7 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 		*cur = *g
 		return nil
 	}); err != nil {
-		return cleanupScheduleFailure(ctx, spawnCtx, g, spawned, err)
+		return cleanupScheduleFailure(ctx, spawnCtx, g, recorded, spawned, err)
 	}
 	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Dag, g.OID))
 	publishSpawnedRunUpdates(g.ChannelId, spawned)

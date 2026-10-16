@@ -192,12 +192,12 @@ func HandleRunWorkerExit(ctx context.Context, workerORef string, exit jarvis.Wor
 	if run.DagORef != "" {
 		return nil
 	}
-	failed, mode, err := failRunningPhase(ctx, channelId, runId, func(workers []string) bool {
+	phaseIdx, mode, err := failRunningPhase(ctx, channelId, runId, func(workers []string) bool {
 		// a worker that exited belongs to an earlier or later phase's roster; only the phase actually
 		// running when it exited is this exit's to fail
 		return slices.Contains(workers, workerORef)
 	})
-	if err != nil || !failed {
+	if err != nil || phaseIdx < 0 {
 		return err
 	}
 	kind, reason := waveobj.RunEventKindWorkerExited, workerExitedNote
@@ -223,12 +223,13 @@ func recordWorkerOutput(ctx context.Context, run *waveobj.Run, workerORef string
 }
 
 // failRunningPhase fails a non-dag run's running phase when owns accepts that phase's workers, returning
-// whether it did and the run's mode. Decided under the update: a submit or a completion that lands first wins.
-func failRunningPhase(ctx context.Context, channelId, runId string, owns func(workers []string) bool) (bool, string, error) {
-	failed := false
+// the phase it failed (-1 when it did not) and the run's mode. Decided under the update: a submit or a
+// completion that lands first wins.
+func failRunningPhase(ctx context.Context, channelId, runId string, owns func(workers []string) bool) (int, string, error) {
+	failed := -1
 	var mode string
 	err := wstore.UpdateRun(ctx, channelId, runId, func(cur *waveobj.Run) error {
-		failed = false
+		failed = -1
 		mode = cur.Mode
 		if cur.DagORef != "" {
 			return nil
@@ -245,7 +246,7 @@ func failRunningPhase(ctx context.Context, channelId, runId string, owns func(wo
 			return ferr
 		}
 		*cur = updated
-		failed = true
+		failed = i
 		return nil
 	})
 	return failed, mode, err

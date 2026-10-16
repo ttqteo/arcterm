@@ -487,3 +487,32 @@ func TestSaveGlobalProfileRejectsUnknownLanding(t *testing.T) {
 		t.Fatalf("landing not persisted: %q", got.Landing)
 	}
 }
+
+// Autonomous resolves like landing: the global value stands until an override replaces it either way.
+func TestResolveProfileAutonomous(t *testing.T) {
+	cases := []struct {
+		name     string
+		global   bool
+		override *waveobj.ProfileOverride
+		want     bool
+	}{
+		{"override true over global false", false, &waveobj.ProfileOverride{Autonomous: boolPtr(true)}, true},
+		{"override false over global true", true, &waveobj.ProfileOverride{Autonomous: boolPtr(false)}, false},
+		{"nil override inherits global true", true, nil, true},
+		{"an unrelated override inherits global true", true, &waveobj.ProfileOverride{Parallelism: intPtr(2)}, true},
+		{"nil override inherits global false", false, nil, false},
+	}
+	for _, tc := range cases {
+		if got := ResolveProfile(waveobj.JarvisProfile{Autonomous: tc.global}, tc.override); got.Autonomous != tc.want {
+			t.Errorf("%s: autonomous = %v, want %v", tc.name, got.Autonomous, tc.want)
+		}
+	}
+}
+
+func TestProfileOverrideIsEmptyAutonomous(t *testing.T) {
+	for _, v := range []bool{true, false} {
+		if ProfileOverrideIsEmpty(&waveobj.ProfileOverride{Autonomous: boolPtr(v)}) {
+			t.Errorf("an override carrying only autonomous=%v must not read as empty", v)
+		}
+	}
+}

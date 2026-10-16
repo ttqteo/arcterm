@@ -30,7 +30,7 @@ func StartScan(scanCtx context.Context, reportId string) {
 	}()
 }
 
-// StartRetry re-audits a report's failed commits in a background goroutine under the manager-owned
+// StartRetry re-audits a report's failed targets in a background goroutine under the manager-owned
 // context. Call only after mgr.register(reportId) succeeded.
 func StartRetry(scanCtx context.Context, reportId string, route auditRoute) {
 	go func() {
@@ -40,8 +40,8 @@ func StartRetry(scanCtx context.Context, reportId string, route auditRoute) {
 	}()
 }
 
-// publish pushes a RadarReport update to the frontend.
-func publish(reportId string) {
+// publish pushes a RadarReport update to the frontend. Tests replace it to watch each update.
+var publish = func(reportId string) {
 	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_RadarReport, reportId))
 }
 
@@ -56,42 +56,37 @@ func setStatus(ctx context.Context, reportId, status, phase string) {
 	publish(reportId)
 }
 
-func auditFor(c fixCommit, status string) waveobj.RadarAudit {
-	return waveobj.RadarAudit{Commit: c.Hash, Subject: c.Subject, CommitTs: c.Ts, Files: c.Files, Status: status}
-}
-
-func commitOf(a waveobj.RadarAudit) fixCommit {
-	return fixCommit{Hash: a.Commit, Subject: a.Subject, Ts: a.CommitTs, Files: a.Files}
-}
-
-// writeAudit replaces one commit's audit in the stored report and publishes it. The match by commit
-// happens inside the update, so two audits finishing together cannot overwrite each other.
+// writeAudit replaces one target's audit in the stored report and publishes it. The match by target key
+// happens inside the update, so two audits finishing together cannot overwrite each other, and one commit
+// audited by two kinds keeps both rows.
 func writeAudit(ctx context.Context, reportId string, audit waveobj.RadarAudit) {
+	t := targetOfAudit(audit)
+	key := t.Key()
 	if err := wstore.UpdateRadarReport(ctx, reportId, func(r *waveobj.RadarReport) {
 		for i := range r.Audits {
-			if r.Audits[i].Commit == audit.Commit {
+			if targetOfAudit(r.Audits[i]).Key() == key {
 				r.Audits[i] = audit
 				return
 			}
 		}
 	}); err != nil {
-		log.Printf("reporadar: writing audit of %s to report %s: %v", shortCommit(audit.Commit), reportId, err)
+		log.Printf("reporadar: writing %s audit of %s to report %s: %v", t.Kind, kindOf(t.Kind).label(t), reportId, err)
 		return
 	}
 	publish(reportId)
 }
 
-// runAudits audits the commits, at most AuditConcurrency at a time, streaming each one's running and
-// finished state to the report. It returns the findings of the audits that came back ok. When ctx is
-// cancelled it returns early and the caller discards the result.
-func runAudits(ctx context.Context, reportId string, route auditRoute, projectPath string, commits []fixCommit) []waveobj.RadarFinding {
+// runAudits audits the targets, at most AuditConcurrency at a time, streaming each one's running and
+// finished state to the report. known holds the already-reported sites by file. It returns the findings
+// of the audits that came back ok. When ctx is cancelled it returns early and the caller discards the result.
+func runAudits(ctx context.Context, reportId string, route auditRoute, projectPath string, targets []auditTarget, known map[string][]knownSite) []waveobj.RadarFinding {
 	var (
-		wg       sync.WaitGroup
-		mu       sync.Mutex
-		byCommit = map[string][]waveobj.RadarFinding{}
-		slots    = make(chan struct{}, AuditConcurrency)
+		wg    sync.WaitGroup
+		mu    sync.Mutex
+		byKey = map[string][]waveobj.RadarFinding{}
+		slots = make(chan struct{}, AuditConcurrency)
 	)
-	for _, c := range commits {
+	for _, t := range targets {
 		wg.Add(1)
 		go func() {
 			defer func() { panichandler.PanicHandler("reporadar.runAudits", recover()) }()
@@ -102,28 +97,28 @@ func runAudits(ctx context.Context, reportId string, route auditRoute, projectPa
 				return
 			}
 			defer func() { <-slots }()
-			if findings, ok := runAudit(ctx, reportId, route, projectPath, c); ok {
+			if findings, ok := runAudit(ctx, reportId, route, projectPath, t, known[targetFile(t)]); ok {
 				mu.Lock()
-				byCommit[c.Hash] = findings
+				byKey[t.Key()] = findings
 				mu.Unlock()
 			}
 		}()
 	}
 	wg.Wait()
 	var fresh []waveobj.RadarFinding
-	for _, c := range commits { // commit order, not finish order, so finding ids are deterministic
-		fresh = append(fresh, byCommit[c.Hash]...)
+	for _, t := range targets { // target order, not finish order, so finding ids are deterministic
+		fresh = append(fresh, byKey[t.Key()]...)
 	}
 	return fresh
 }
 
-// runAudit runs one commit's audit and writes its outcome. ok is false when the audit failed or the
+// runAudit runs one target's audit and writes its outcome. ok is false when the audit failed or the
 // scan was cancelled under it.
-func runAudit(ctx context.Context, reportId string, route auditRoute, projectPath string, c fixCommit) ([]waveobj.RadarFinding, bool) {
-	audit := auditFor(c, AuditRunning)
+func runAudit(ctx context.Context, reportId string, route auditRoute, projectPath string, t auditTarget, known []knownSite) ([]waveobj.RadarFinding, bool) {
+	audit := auditRow(t, AuditRunning)
 	writeAudit(ctx, reportId, audit)
 	start := time.Now()
-	reply, res, err := auditCommit(ctx, route, projectPath, c.Hash)
+	reply, res, err := runTargetAudit(ctx, route, projectPath, t, known)
 	// the scan's own context, not the error: a real session's cancel error does not wrap context.Canceled
 	if ctx.Err() != nil {
 		return nil, false
@@ -139,7 +134,7 @@ func runAudit(ctx context.Context, reportId string, route auditRoute, projectPat
 		writeAudit(ctx, reportId, audit)
 		return nil, false
 	}
-	findings, kept := findingsFromAudit(projectPath, c, reply)
+	findings, kept := targetFindings(projectPath, t, reply)
 	audit.Status = AuditOK
 	audit.RootCause = Redact(reply.RootCause)
 	audit.HitCount = len(reply.Hits)
@@ -148,33 +143,74 @@ func runAudit(ctx context.Context, reportId string, route auditRoute, projectPat
 	return findings, true
 }
 
-// auditedCommits is the set a scan must not audit again: every commit with an ok audit in a completed
-// or partial report, plus the source commits of the baseline's findings. reports are newest-first.
-func auditedCommits(reports []*waveobj.RadarReport, exceptId string) map[string]bool {
+// baselineOf is the newest completed or partial report other than exceptId. reports are newest-first.
+func baselineOf(reports []*waveobj.RadarReport, exceptId string) *waveobj.RadarReport {
+	for _, r := range reports {
+		if r.OID != exceptId && (r.Status == StatusCompleted || r.Status == StatusPartial) {
+			return r
+		}
+	}
+	return nil
+}
+
+// findingTarget is the keyed part of the target a finding came from: kind, source commit or revision and,
+// for hotspot, the file.
+func findingTarget(f waveobj.RadarFinding) auditTarget {
+	return auditTarget{Kind: kindOfRisk(f.RiskKind), Commit: f.SourceCommit, Files: f.Files}
+}
+
+// auditedTargets is the set of target keys a scan must not audit again: every ok audit in a completed or
+// partial report, plus the targets of the baseline's findings. reports are newest-first.
+func auditedTargets(reports []*waveobj.RadarReport, exceptId string) map[string]bool {
 	audited := map[string]bool{}
-	baselineSeen := false
 	for _, r := range reports {
 		if r.OID == exceptId || (r.Status != StatusCompleted && r.Status != StatusPartial) {
 			continue
 		}
 		for _, a := range r.Audits {
 			if a.Status == AuditOK {
-				audited[a.Commit] = true
+				audited[targetOfAudit(a).Key()] = true
 			}
 		}
-		if !baselineSeen {
-			baselineSeen = true
-			for _, f := range r.Findings {
-				if f.SourceCommit != "" {
-					audited[f.SourceCommit] = true
-				}
+	}
+	if baseline := baselineOf(reports, exceptId); baseline != nil {
+		for _, f := range baseline.Findings {
+			if f.SourceCommit != "" {
+				audited[findingTarget(f).Key()] = true
 			}
 		}
 	}
 	return audited
 }
 
-// runScan is the scan sequence: select the fix commits, audit each, then reconcile and finalize.
+// carriedCommitClasses is the classifier cache of the project's newest other report that has one, whatever
+// its status: a label does not depend on the audits. reports are newest-first.
+func carriedCommitClasses(reports []*waveobj.RadarReport, exceptId string) map[string]waveobj.RadarCommitClass {
+	for _, r := range reports {
+		if r.OID != exceptId && len(r.CommitClasses) > 0 {
+			return r.CommitClasses
+		}
+	}
+	return nil
+}
+
+// knownSitesByFile lists a report's findings, any kind and any group, as already-reported sites by file.
+func knownSitesByFile(rpt *waveobj.RadarReport) map[string][]knownSite {
+	known := map[string][]knownSite{}
+	if rpt == nil {
+		return known
+	}
+	for _, f := range rpt.Findings {
+		if len(f.Files) == 0 || len(f.Sites) == 0 {
+			continue
+		}
+		known[f.Files[0]] = append(known[f.Files[0]], knownSite{Line: f.Sites[0].Line, Risk: f.Risk})
+	}
+	return known
+}
+
+// runScan is the scan sequence: list the window, classify it, select every kind's targets, audit each, then
+// reconcile and finalize.
 func runScan(ctx context.Context, reportId string) {
 	rpt, err := wstore.GetRadarReport(ctx, reportId)
 	if err != nil {
@@ -207,19 +243,38 @@ func runScan(ctx context.Context, reportId string) {
 	}
 	reports, err := wstore.GetRadarReports(ctx, rpt.ProjectPath)
 	if err != nil {
-		// without the earlier reports every commit would be audited again
+		// without the earlier reports every target would be audited again
 		finishFatal(reportId, fmt.Sprintf("reading earlier reports: %v", err))
 		return
 	}
-	selected := selectFixCommits(commits, auditedCommits(reports, reportId), FixAuditsPerScan)
-	audits := make([]waveobj.RadarAudit, 0, len(selected))
-	for _, c := range selected {
-		audits = append(audits, auditFor(c, AuditQueued))
+	classified, cls := classifyWindow(ctx, route, rpt.ProjectPath, commits, carriedCommitClasses(reports, reportId), func() {
+		setStatus(ctx, reportId, StatusCollecting, "classifying")
+	})
+	if ctx.Err() != nil {
+		finishCancelled(reportId)
+		return
+	}
+	targets := selectAuditTargets(ctx, rpt.ProjectPath, classified, auditedTargets(reports, reportId))
+	if ctx.Err() != nil {
+		finishCancelled(reportId)
+		return
+	}
+	audits := make([]waveobj.RadarAudit, 0, len(targets))
+	for _, t := range targets {
+		audits = append(audits, auditRow(t, AuditQueued))
+	}
+	classifyErr := ""
+	if cls.Err != nil {
+		classifyErr = cls.Err.Error()
 	}
 	if err := wstore.UpdateRadarReport(ctx, reportId, func(r *waveobj.RadarReport) {
 		r.StartHead = startHead
 		r.StartDirty = startDirty
 		r.WindowStartTs = sinceTs
+		r.CommitClasses = cls.Cache
+		r.ClassifyCount = cls.Sent
+		r.ClassifyError = classifyErr
+		r.ClassifyTokens = cls.Tokens
 		r.Audits = audits
 		r.Status = StatusClustering
 		r.Phase = "clustering"
@@ -229,7 +284,7 @@ func runScan(ctx context.Context, reportId string) {
 	}
 	publish(reportId)
 
-	fresh := runAudits(ctx, reportId, route, rpt.ProjectPath, selected)
+	fresh := runAudits(ctx, reportId, route, rpt.ProjectPath, targets, knownSitesByFile(baselineOf(reports, reportId)))
 	if ctx.Err() != nil {
 		finishCancelled(reportId)
 		return
@@ -293,9 +348,10 @@ func sealReport(r *waveobj.RadarReport, route auditRoute, priorSignals []waveobj
 	var scanSignals, candidates []waveobj.RadarSignal
 	failed := 0
 	r.ResolvedModel = ""
-	r.TotalTokens = 0
+	r.TotalTokens = r.ClassifyTokens
 	for _, a := range r.Audits {
-		sig := commitSignal(commitOf(a))
+		t := targetOfAudit(a)
+		sig := targetSignal(t)
 		scanSignals = append(scanSignals, sig)
 		r.TotalTokens += a.TotalTokens
 		if r.ResolvedModel == "" {
@@ -304,7 +360,7 @@ func sealReport(r *waveobj.RadarReport, route auditRoute, priorSignals []waveobj
 		if a.Status == AuditFailed {
 			failed++
 			candidates = append(candidates, sig)
-			errs = append(errs, shortCommit(a.Commit)+": "+a.Error)
+			errs = append(errs, kindOf(t.Kind).label(t)+": "+a.Error)
 		}
 	}
 	switch {
@@ -326,36 +382,38 @@ func sealReport(r *waveobj.RadarReport, route auditRoute, priorSignals []waveobj
 	}
 }
 
-func failedAuditCommits(rpt *waveobj.RadarReport) []fixCommit {
-	var commits []fixCommit
+// failedAuditTargets rebuilds the targets of the report's failed audits from their stored rows.
+func failedAuditTargets(rpt *waveobj.RadarReport) []auditTarget {
+	var targets []auditTarget
 	for _, a := range rpt.Audits {
 		if a.Status == AuditFailed {
-			commits = append(commits, commitOf(a))
+			targets = append(targets, targetOfAudit(a))
 		}
 	}
-	return commits
+	return targets
 }
 
-// runRetry re-audits the commits whose audit failed in this report, without reselecting, and adds
-// their findings as New. The report's other audits and findings stay as they are.
+// runRetry re-audits the targets whose audit failed in this report, without reselecting, and adds
+// their findings as New. The report's other audits and findings stay as they are. Its own findings are
+// the known sites: they are what the retried findings land beside.
 func runRetry(ctx context.Context, reportId string, route auditRoute) {
 	rpt, err := wstore.GetRadarReport(ctx, reportId)
 	if err != nil {
 		log.Printf("reporadar: runRetry load %s: %v", reportId, err)
 		return
 	}
-	commits := failedAuditCommits(rpt)
+	targets := failedAuditTargets(rpt)
 	retried := map[string]bool{}
-	for _, c := range commits {
-		retried[c.Hash] = true
+	for _, t := range targets {
+		retried[t.Key()] = true
 	}
 	if err := wstore.UpdateRadarReport(ctx, reportId, func(r *waveobj.RadarReport) {
 		r.Status = StatusClustering
 		r.Phase = "clustering"
 		r.ClusterStartedTs = nowMilli()
 		for i, a := range r.Audits {
-			if retried[a.Commit] {
-				r.Audits[i] = auditFor(commitOf(a), AuditQueued)
+			if t := targetOfAudit(a); retried[t.Key()] {
+				r.Audits[i] = auditRow(t, AuditQueued)
 			}
 		}
 	}); err != nil {
@@ -363,7 +421,7 @@ func runRetry(ctx context.Context, reportId string, route auditRoute) {
 	}
 	publish(reportId)
 
-	fresh := runAudits(ctx, reportId, route, rpt.ProjectPath, commits)
+	fresh := runAudits(ctx, reportId, route, rpt.ProjectPath, targets, knownSitesByFile(rpt))
 	if ctx.Err() != nil {
 		// a cancelled retry leaves the report as it was, so a partial report stays the reconcile
 		// baseline and its failed audits stay retryable
@@ -450,15 +508,7 @@ func RecoverInterruptedScans(ctx context.Context) {
 // exceptId — the baseline the current scan reconciles against.
 func latestSuccessfulExcluding(ctx context.Context, projectPath, exceptId string) *waveobj.RadarReport {
 	reports, _ := wstore.GetRadarReports(ctx, projectPath)
-	for _, r := range reports {
-		if r.OID == exceptId {
-			continue
-		}
-		if r.Status == StatusCompleted || r.Status == StatusPartial {
-			return r
-		}
-	}
-	return nil
+	return baselineOf(reports, exceptId)
 }
 
 // pruneReports deletes a project's reports beyond the newest ReportsKeptPerProject. It keeps, whatever

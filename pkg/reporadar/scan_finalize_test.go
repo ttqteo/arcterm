@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -144,5 +145,65 @@ func TestPruneReportsKeepsNewestAndBaseline(t *testing.T) {
 	if len(got) != ReportsKeptPerProject+2 || !kept[ids[0]] || !kept[ids[1]] || kept[ids[2]] {
 		t.Fatalf("want the newest %d plus the baseline and the finalized report, got %d (baseline=%v finalized=%v pruned-kept=%v)",
 			ReportsKeptPerProject, len(got), kept[ids[0]], kept[ids[1]], kept[ids[2]])
+	}
+}
+
+func TestSealReportClassifyTokensAndHotspotError(t *testing.T) {
+	const sha = "0123456789abcdef0123456789abcdef01234567"
+	r := &waveobj.RadarReport{
+		ClassifyTokens: 50,
+		Audits: []waveobj.RadarAudit{
+			{Kind: KindSibling, Commit: "feedbeef", Status: AuditOK, TotalTokens: 100, ResolvedModel: "claude-sonnet-5-5"},
+			{Kind: KindIntroduced, Commit: sha, Status: AuditFailed, TotalTokens: 20, Error: "bad reply"},
+			{Kind: KindHotspot, Commit: sha, Files: []string{"src/hot.go"}, Status: AuditFailed, TotalTokens: 3, Error: "boom"},
+		},
+	}
+	sealReport(r, testRoute, nil)
+	if r.Status != StatusPartial || r.TotalTokens != 50+100+20+3 || r.ResolvedModel != "claude-sonnet-5-5" {
+		t.Errorf("status %q tokens %d model %q", r.Status, r.TotalTokens, r.ResolvedModel)
+	}
+	if want := shortCommit(sha) + ": bad reply; src/hot.go: boom"; r.ClusterError != want {
+		t.Errorf("clustererror = %q, want %q", r.ClusterError, want)
+	}
+	if len(r.Candidates) != 2 || r.Candidates[0].SourceRef != "introduced:"+sha || r.Candidates[1].SourceRef != "hotspot:"+sha+":src/hot.go" {
+		t.Errorf("candidates = %+v", r.Candidates)
+	}
+
+	r.Audits = r.Audits[:1]
+	r.ClassifyError = "commit classification: rate limited"
+	sealReport(r, testRoute, nil)
+	if r.Status != StatusCompleted || r.ClusterError != "" {
+		t.Errorf("status comes from the audits alone: %q %q", r.Status, r.ClusterError)
+	}
+}
+
+func TestHotspotKnownSitesFromBaseline(t *testing.T) {
+	dir, _ := hotRepo(t)
+	known := func(fp, group, riskKind, risk, file string, line int) waveobj.RadarFinding {
+		return waveobj.RadarFinding{Fingerprint: fp, Group: group, RiskKind: riskKind, Risk: risk, Files: []string{file},
+			SourceCommit: "feedbeef" + fp, Sites: []waveobj.RadarSite{{Line: line, Trigger: "x"}}}
+	}
+	seedBaseline(t, dir, nil,
+		known("RAD-k1", GroupDismissed, RiskSiblingBug, "a dismissed risk", "src/hot.go", 2),
+		known("RAD-k2", GroupNew, RiskIntroducedBug, "an open risk", "src/hot.go", 3),
+		known("RAD-k3", GroupNew, RiskSiblingBug, "elsewhere", siblingFile, 3),
+	)
+	var prompt string
+	fakeKindSessions(t, func(_ context.Context, kind, _, p string) (auditSessionResult, error) {
+		if kind == KindHotspot {
+			prompt = p
+		}
+		return cleanReply(), nil
+	})
+	if got := scan(t, dir); got.Status != StatusCompleted {
+		t.Fatalf("status %q", got.Status)
+	}
+	for _, want := range []string{knownSitesBegin, "- line 2: a dismissed risk", "- line 3: an open risk"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("hotspot prompt lacks %q:\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, "elsewhere") {
+		t.Error("a finding in another file is not a known site of this one")
 	}
 }

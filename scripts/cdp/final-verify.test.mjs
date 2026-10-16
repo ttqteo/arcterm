@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -408,6 +408,28 @@ setTimeout(() => fs.appendFileSync(${JSON.stringify(logFile)}, "end\\n"), ${hold
 
         const held = await acquireBuildSlot(base, 5000, 1);
         expect(held).toEqual({ slot: 0, lock: expect.anything() });
+        await close(held.lock);
+    });
+
+    // run dca34385: a worker started its own dev app with slot 0's target dir, so the next stage on slot 0 got the lock
+    // and cargo then could not replace the exe that app ran
+    it.skipIf(process.platform !== "win32")("skips a slot whose exe a dev app started without the lock is running", async () => {
+        const base = makeBase();
+        const exe = join(base, "target", "debug", "wave-tauri.exe");
+        mkdirSync(dirname(exe), { recursive: true });
+        copyFileSync(process.execPath, exe);
+        const app = spawn(exe, ["-e", `console.log("up"); setTimeout(() => {}, 30000);`]);
+        await new Promise((resolve) => app.stdout.once("data", resolve));
+        try {
+            const held = await acquireBuildSlot(base, 0);
+            expect(held.slot).toBe(1);
+            await close(held.lock);
+        } finally {
+            app.kill("SIGKILL");
+            await new Promise((resolve) => app.once("exit", resolve));
+        }
+        const held = await acquireBuildSlot(base, 0);
+        expect(held.slot).toBe(0);
         await close(held.lock);
     });
 });

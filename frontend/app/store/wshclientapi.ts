@@ -216,6 +216,12 @@ export class RpcApiType {
         return client.wshRpcCall("canvasserve", data, opts);
     }
 
+    // command "checkmemoryhygiene" [call]
+    CheckMemoryHygieneCommand(client: WshClient, data: CommandCheckMemoryHygieneData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "checkmemoryhygiene", data, opts);
+        return client.wshRpcCall("checkmemoryhygiene", data, opts);
+    }
+
     // command "claudeaccountadd" [call]
     ClaudeAccountAddCommand(client: WshClient, data: CommandClaudeAccountAddData, opts?: RpcOpts): Promise<ClaudeAccountData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "claudeaccountadd", data, opts);
@@ -376,6 +382,12 @@ export class RpcApiType {
     DagSubmitCommand(client: WshClient, data: CommandDagSubmitData, opts?: RpcOpts): Promise<TaskGroup> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "dagsubmit", data, opts);
         return client.wshRpcCall("dagsubmit", data, opts);
+    }
+
+    // command "decidememorychange" [call]
+    DecideMemoryChangeCommand(client: WshClient, data: CommandDecideMemoryChangeData, opts?: RpcOpts): Promise<MemHygieneProject> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "decidememorychange", data, opts);
+        return client.wshRpcCall("decidememorychange", data, opts);
     }
 
     // command "deleteagentsession" [call]
@@ -976,6 +988,12 @@ export class RpcApiType {
     ListHarnessesCommand(client: WshClient, opts?: RpcOpts): Promise<CommandListHarnessesRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "listharnesses", null, opts);
         return client.wshRpcCall("listharnesses", null, opts);
+    }
+
+    // command "listmemoryhygiene" [call]
+    ListMemoryHygieneCommand(client: WshClient, opts?: RpcOpts): Promise<CommandListMemoryHygieneRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "listmemoryhygiene", null, opts);
+        return client.wshRpcCall("listmemoryhygiene", null, opts);
     }
 
     // command "listradarreports" [call]

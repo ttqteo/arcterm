@@ -1,7 +1,8 @@
 # Run office — design
 
 **Date:** 2026-10-14
-**Status:** design agreed, not built
+**Status:** built, then removed on 2026-10-16: the office lives in the Cockpit
+(`2026-10-15-cockpit-office-design.md`), and Jarvis's Brief draws none.
 **Canvas:** `.superpowers/design/run-office/project/` (gitignored; `Main`, `States`, `Empty`, `Desk`)
 
 ## What it is

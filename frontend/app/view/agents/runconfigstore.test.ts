@@ -5,6 +5,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { beforeEach, describe, expect, it } from "vitest";
 import { DEFAULT_PARALLELISM, MAX_PARALLELISM } from "./runconfig";
 import {
+    autonomousAtom,
     configTouchedAtom,
     endRunConfigDraft,
     forgetConfiguredChannel,
@@ -19,6 +20,7 @@ import {
     routeTouchedAtom,
     runRouteAtom,
     runShapeAtom,
+    setAutonomous,
     setParallelism,
     setPlanPath,
     setRunRoute,
@@ -309,6 +311,36 @@ describe("hydrateRunConfigFromProfile", () => {
         hydrateRunConfigFromProfile({ playbook: [], defaultmode: "orchestrator", parallelism: 4 } as JarvisProfile);
         expect(globalStore.get(runShapeAtom)).toBe("orchestrator");
         expect(globalStore.get(parallelismAtom)).toBe(4);
+    });
+});
+
+describe("autonomous", () => {
+    it("seeds from the profile's Approvals and back to Ask me where the profile is silent", () => {
+        hydrateRunConfigFromProfile({ playbook: [], autonomous: true } as JarvisProfile);
+        expect(globalStore.get(autonomousAtom)).toBe(true);
+
+        hydrateRunConfigFromProfile({ playbook: [] } as JarvisProfile);
+        expect(globalStore.get(autonomousAtom)).toBe(false);
+    });
+
+    it("is a hand-made choice a profile arriving does not replace", () => {
+        setAutonomous(true);
+        expect(globalStore.get(configTouchedAtom)).toBe(true);
+
+        hydrateRunConfigFromProfile({ playbook: [], autonomous: false } as JarvisProfile);
+        expect(globalStore.get(autonomousAtom)).toBe(true);
+    });
+
+    it("ends with the draft, back to the channel's saved Approvals", () => {
+        setAutonomous(true);
+        endRunConfigDraft({ playbook: [] } as JarvisProfile);
+        expect(globalStore.get(autonomousAtom)).toBe(false);
+    });
+
+    it("resets with the rest of the configuration", () => {
+        setAutonomous(true);
+        resetRunConfig();
+        expect(globalStore.get(autonomousAtom)).toBe(false);
     });
 });
 

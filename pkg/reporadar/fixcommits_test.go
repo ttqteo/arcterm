@@ -5,8 +5,9 @@ package reporadar
 
 import (
 	"context"
-	"fmt"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -18,87 +19,16 @@ func gc(hash string, ts int64, subject string, paths ...string) gitCommit {
 	return c
 }
 
-func hashes(fcs []fixCommit) []string {
-	var out []string
-	for _, f := range fcs {
-		out = append(out, f.Hash)
+func TestSelectSiblingAuditedStillHeatsFile(t *testing.T) {
+	commits := []classifiedCommit{
+		cc("solo", 3, true, false, 1, "pkg/solo.go"),
+		cc("new", 2, true, false, 1, "pkg/hot.go"),
+		cc("old", 1, true, false, 1, "pkg/hot.go"),
 	}
-	return out
-}
-
-func TestSelectFixCommitsSubjects(t *testing.T) {
-	for _, s := range []string{"fix: x", "fix(radar): x", "fix(radar)!: x", "Fix: x"} {
-		if got := selectFixCommits([]gitCommit{gc("a", 1, s, "pkg/a.go")}, nil, 10); len(got) != 1 {
-			t.Errorf("%q should be selected", s)
-		}
-	}
-	for _, s := range []string{"feat: fix x", "fixup: x", "prefix: x"} {
-		if got := selectFixCommits([]gitCommit{gc("a", 1, s, "pkg/a.go")}, nil, 10); len(got) != 0 {
-			t.Errorf("%q should not be selected", s)
-		}
-	}
-}
-
-func TestSelectFixCommitsCodeFilesOnly(t *testing.T) {
-	if got := selectFixCommits([]gitCommit{gc("a", 1, "fix: x", "docs/a.md", "README.md")}, nil, 10); len(got) != 0 {
-		t.Errorf("docs-only commit selected: %v", got)
-	}
-	if got := selectFixCommits([]gitCommit{gc("a", 1, "fix: x", "pkg/x/a_test.go", "frontend/a.test.ts")}, nil, 10); len(got) != 0 {
-		t.Errorf("test-only commit selected: %v", got)
-	}
-	got := selectFixCommits([]gitCommit{gc("a", 1, "fix: x", "pkg/x/a.go", "pkg/x/a_test.go")}, nil, 10)
-	if len(got) != 1 || !reflect.DeepEqual(got[0].Files, []string{"pkg/x/a.go"}) {
-		t.Errorf("got %+v", got)
-	}
-}
-
-func TestSelectFixCommitsRanking(t *testing.T) {
-	var wide []string
-	for i := 0; i < 10; i++ {
-		wide = append(wide, fmt.Sprintf("pkg/w/f%d.go", i))
-	}
-	commits := []gitCommit{
-		gc("wide", 100, "fix: sweep", wide...),
-		gc("h1", 10, "fix: a", "pkg/hot.go"),
-		gc("h2", 20, "fix: b", "pkg/hot.go"),
-		gc("h3", 30, "fix: c", "pkg/hot.go"),
-	}
-	if got := hashes(selectFixCommits(commits, nil, 10)); !reflect.DeepEqual(got, []string{"h3", "h2", "h1", "wide"}) {
-		t.Errorf("hot file should outrank sweep: %v", got)
-	}
-	ties := []gitCommit{
-		gc("b", 5, "fix: x", "pkg/b.go"),
-		gc("a", 5, "fix: x", "pkg/a.go"),
-		gc("c", 9, "fix: x", "pkg/c.go"),
-	}
-	if got := hashes(selectFixCommits(ties, nil, 10)); !reflect.DeepEqual(got, []string{"c", "a", "b"}) {
-		t.Errorf("tie order: %v", got)
-	}
-}
-
-func TestSelectFixCommitsLimitAndAudited(t *testing.T) {
-	var commits []gitCommit
-	for i := 1; i <= 5; i++ {
-		commits = append(commits, gc(fmt.Sprintf("h%d", i), int64(i), "fix: x", fmt.Sprintf("pkg/f%d.go", i)))
-	}
-	if got := hashes(selectFixCommits(commits, nil, 2)); !reflect.DeepEqual(got, []string{"h5", "h4"}) {
-		t.Errorf("limit: %v", got)
-	}
-	got := hashes(selectFixCommits(commits, map[string]bool{"h5": true}, 2))
-	if !reflect.DeepEqual(got, []string{"h4", "h3"}) {
-		t.Errorf("audited should not use a slot: %v", got)
-	}
-}
-
-func TestSelectFixCommitsAuditedStillHeatsFile(t *testing.T) {
-	commits := []gitCommit{
-		gc("old", 1, "fix: a", "pkg/hot.go"),
-		gc("new", 2, "fix: b", "pkg/hot.go"),
-		gc("solo", 3, "fix: c", "pkg/solo.go"),
-	}
-	got := hashes(selectFixCommits(commits, map[string]bool{"old": true}, 10))
+	audited := map[string]bool{auditTarget{Kind: KindSibling, Commit: "old"}.Key(): true}
+	got := targetCommits(targetsOfKind(selectAuditTargets(context.Background(), "", commits, audited), KindSibling))
 	if !reflect.DeepEqual(got, []string{"new", "solo"}) {
-		t.Errorf("got %v", got)
+		t.Errorf("an audited fix must still heat its file: got %v", got)
 	}
 }
 
@@ -137,6 +67,84 @@ func TestListWindowCommits(t *testing.T) {
 	for _, s := range subjects {
 		if s != "fix: side" && s != "fix: main" {
 			t.Errorf("unexpected commit %q", s)
+		}
+	}
+}
+
+// monorepo builds a repo with a project subfolder "proj" and a sibling folder "other".
+func monorepo(t *testing.T) string {
+	dir := t.TempDir()
+	gitCmd(t, dir, "init", "-q", "-b", "main")
+	writeFile(t, dir, "proj/a.go", "package a\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-q", "-m", "feat: proj only")
+	writeFile(t, dir, "other/b.go", "package b\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-q", "-m", "fix: other only")
+	writeFile(t, dir, "proj/a.go", "package a\n\nfunc A() {}\n")
+	writeFile(t, dir, "other/b.go", "package b\n\nfunc B() {}\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-q", "-m", "fix: both")
+	return dir
+}
+
+// commitFiles renders each commit as "subject: path, path" for comparison.
+func commitFiles(commits []gitCommit) []string {
+	var out []string
+	for _, c := range commits {
+		var paths []string
+		for _, f := range c.files {
+			paths = append(paths, f.path)
+		}
+		out = append(out, c.subject+": "+strings.Join(paths, ", "))
+	}
+	return out
+}
+
+func TestListWindowCommitsScopedToSubfolder(t *testing.T) {
+	dir := monorepo(t)
+	got, err := listWindowCommits(context.Background(), filepath.Join(dir, "proj"), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"fix: both: a.go", "feat: proj only: a.go"}
+	if !reflect.DeepEqual(commitFiles(got), want) {
+		t.Errorf("got %q, want %q", commitFiles(got), want)
+	}
+}
+
+func TestListWindowCommitsAtRepoRoot(t *testing.T) {
+	dir := monorepo(t)
+	got, err := listWindowCommits(context.Background(), dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"fix: both: other/b.go, proj/a.go", "fix: other only: other/b.go", "feat: proj only: proj/a.go"}
+	if !reflect.DeepEqual(commitFiles(got), want) {
+		t.Errorf("got %q, want %q", commitFiles(got), want)
+	}
+}
+
+func TestCodeFilesExcludesGeneratedAndData(t *testing.T) {
+	c := gc("a", 1, "x",
+		"pkg/a.go", "package-lock.json", "yarn.lock", "src-tauri/Cargo.lock", "config/app.json", "ui/__snapshots__/x.snap",
+		"src/locale/en.ts", "web/locales/fr/app.js", "app/i18n/de.ts", "frontend/types/gotypes.d.ts",
+		"frontend/app/store/wshclientapi.ts", "pkg/wshrpc/wshclient/wshclient.go", "pkg/waveobj/metaconsts.go",
+		"src/localeutil.ts", "docs/a.go", "README.md")
+	if got, want := codeFiles(c), []string{"pkg/a.go", "src/localeutil.ts"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestIsTestPathNewPatterns(t *testing.T) {
+	for _, p := range []string{"test/helpers.go", "tests/conftest.py", "app/test_engine.py", "Tests/X.go", "pkg/a_test.go", "src/test/a.ts"} {
+		if !isTestPath(p) {
+			t.Errorf("%q should be a test path", p)
+		}
+	}
+	for _, p := range []string{"pkg/testutil.go", "app/test_engine.go", "src/latest/a.py", "contest/a.go", "app/mytest_x.py"} {
+		if isTestPath(p) {
+			t.Errorf("%q should not be a test path", p)
 		}
 	}
 }

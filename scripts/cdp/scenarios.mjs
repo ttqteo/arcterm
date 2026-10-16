@@ -26,8 +26,17 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SURFACE_LABEL } from "./attach.mjs";
 import { narrationFeed } from "./narrationfeed.mjs";
+import {
+    MEMORY_FAILED_ERROR,
+    MEMORY_PROJECTS,
+    MEMORY_SHARED_REPO,
+    buildMemoryFixture,
+    memoryBackupDir,
+    memoryStatePath,
+    settleMemoryStates,
+    writeMemoryStates,
+} from "./memory-fixtures.mjs";
 import { notesWsh, vaultRemote, vaultRoot } from "./notes-wsh.mjs";
-import { makeOfficeScenarios } from "./officescenarios.mjs";
 import { makeCockpitOfficeScenarios } from "./cockpitofficescenarios.mjs";
 import {
     arrangeSetupFixture,
@@ -2444,6 +2453,14 @@ const PEEK_ITEMS_LEAD = "peek-items lead";
 const PEEK_ITEMS_EFFORT = "Peek item views initiative";
 const PEEK_ITEMS_RISK = "Peek fixture: the retry loop swallows a cancelled context";
 const PEEK_ITEMS_FINDING = "f-peek-items";
+const PEEK_ITEMS_HOTSPOT = "f-peek-items-hotspot";
+const PEEK_ITEMS_HOTSPOT_RISK = "Peek fixture: a retried lane reuses its half-made worktree";
+// a peek check reading `body`: each heading is a whole label. CSS uppercases the labels, so they read as textContent
+const peekRadarHeadings = (headings) =>
+    `(() => {
+        const labels = [...body.querySelectorAll('span')].map((s) => (s.textContent || '').trim());
+        return ${JSON.stringify(headings)}.every((h) => labels.includes(h));
+    })()`;
 
 const RADAR_FIXTURE_COMMIT = "c0ffee5a".padEnd(40, "0");
 const RADAR_FIXTURE_SUBJECT = "fix(orchestrate): the dispatch loop stops when its context is cancelled";
@@ -2512,13 +2529,43 @@ function radarFixtureReport(oid, projectname, projectpath, now, finding) {
     };
 }
 
+// the peek report also holds a hotspot finding, so a peek shows a second kind's own words
 function peekItemsReport(oid, cwd, now) {
-    return radarFixtureReport(oid, "peek-fixture", cwd, now, {
+    const report = radarFixtureReport(oid, "peek-fixture", cwd, now, {
         id: PEEK_ITEMS_FINDING,
         risk: PEEK_ITEMS_RISK,
         file: "pkg/orchestrate/retry.go",
         lines: [41, 67],
     });
+    const file = "pkg/orchestrate/engine.go";
+    report.findings.push({
+        id: PEEK_ITEMS_HOTSPOT,
+        fingerprint: `RAD-${PEEK_ITEMS_HOTSPOT}`,
+        group: "new",
+        riskkind: "hotspot-bug",
+        subsystem: "pkg/orchestrate",
+        risk: PEEK_ITEMS_HOTSPOT_RISK,
+        severity: "medium",
+        signalids: [report.signals[0].id],
+        files: [file],
+        mission: "Check whether a retried lane can start from a half-made worktree.",
+        sourcecommit: RADAR_FIXTURE_COMMIT,
+        sourcesubject: RADAR_FIXTURE_SUBJECT,
+        rootcause: "Each fix made one step of a lane's tree lifecycle safe; none covers a retry from a half-made tree.",
+        fixsubjects: [
+            "fix(orchestrate): resume a dag run's lead at boot",
+            "fix(orchestrate): serialize the engine's worktree registry and branch changes",
+            "fix(orchestrate): check out run trees past MAX_PATH on Windows",
+        ],
+        sites: [412, 468].map((line) => ({
+            line,
+            trigger: `A lane retried after its setup failed at line ${line}.`,
+            actual: "The retry reuses the tree with no branch checked out.",
+            expected: "The retry starts from a clean tree.",
+            whynotcovered: "The fixes cover add, list and long paths, not a retry after a failed setup.",
+        })),
+    });
+    return report;
 }
 
 async function peekItemsDb(h) {
@@ -2714,10 +2761,20 @@ const peekItemViews = {
             `text.includes(${JSON.stringify(PEEK_ITEMS_RISK)}) &&
                 [...body.querySelectorAll('[data-peek-radar-sites] div')].filter(
                     (d) => d.children.length === 0 && /:\\d+$/.test((d.textContent || '').trim())
-                ).length === 2`,
+                ).length === 2 &&
+                ${peekRadarHeadings(["Root cause", "Sibling sites"])}`,
             "cdp-shots/peek-item-radar.png"
         );
         rec("4. a radar finding peeks as its item view", radar.ready === true, JSON.stringify(radar));
+
+        const hotspot = await peek(
+            `radarreport:${ctx.radarReportId}`,
+            { sourceType: "radar", anchor: PEEK_ITEMS_HOTSPOT },
+            "radar",
+            `text.includes(${JSON.stringify(PEEK_ITEMS_HOTSPOT_RISK)}) && ${peekRadarHeadings(["Fragility", "Sites"])}`,
+            "cdp-shots/peek-item-radar-hotspot.png"
+        );
+        rec("5. a hotspot radar finding peeks with its own headings", hotspot.ready === true, JSON.stringify(hotspot));
 
         const note = await peek(
             `memnote:${ctx.note.id}`,
@@ -2726,7 +2783,7 @@ const peekItemViews = {
             `text.includes(${JSON.stringify(ctx.note.label)})`,
             "cdp-shots/peek-item-note.png"
         );
-        rec("5. a memory note peeks as its item view", note.ready === true, JSON.stringify(note));
+        rec("6. a memory note peeks as its item view", note.ready === true, JSON.stringify(note));
 
         // an orchestrator run reads Plan, Review, Tasks and Final; a quick run has no strip
         const run = await peek(
@@ -2736,7 +2793,7 @@ const peekItemViews = {
             `body.querySelectorAll('[data-peek-run-phase]').length === 4`,
             "cdp-shots/peek-item-run.png"
         );
-        rec("6. an orchestrator run peeks with its four-phase strip", run.ready === true, JSON.stringify(run));
+        rec("7. an orchestrator run peeks with its four-phase strip", run.ready === true, JSON.stringify(run));
 
         await closePopup();
         await h.ev(`window.__peekLoading({ kind: "effort", effortId: ${JSON.stringify(ctx.effortId)} })`);
@@ -2751,7 +2808,7 @@ const peekItemViews = {
         );
         await settle(600);
         await h.shot("cdp-shots/peek-item-loading.png");
-        rec("7. a loading peek shows the skeleton under its kind", loading === true, String(loading));
+        rec("8. a loading peek shows the skeleton under its kind", loading === true, String(loading));
 
         await closePopup();
         await h.rpc("effortdelete", { effortoid: ctx.effortId });
@@ -2767,7 +2824,7 @@ const peekItemViews = {
         );
         await settle(600);
         await h.shot("cdp-shots/peek-item-gone.png");
-        rec("8. a deleted target's peek says it no longer exists", gone === true, String(gone));
+        rec("9. a deleted target's peek says it no longer exists", gone === true, String(gone));
         await closePopup();
         return steps;
     },
@@ -12237,108 +12294,176 @@ const briefRestore = {
     },
 };
 
-// --- brief-profile: both scopes of the profile modal, and the playbook override -----------------
-// F4's re-home. The playbook editor and the global face lost their mount when B5 deleted profilepanel.tsx,
-// which left a custom playbook and the global principles reachable only over the RPC. Read-only on purpose:
-// it never presses Save, so it asserts the editors exist and the override toggles without writing a
-// profile into whatever config dir the dev app is pointed at.
+// --- brief-profile: both scopes of the profile modal -------------------------------------------
+// Read-only on purpose: it never presses Save, so nothing is written into whatever config dir the dev app is
+// pointed at. A store with no projects opens the modal on Global only, so the scenario registers one of its own.
+const BRIEF_PROFILE_PROJECT = "verify-brief-profile";
+const PROFILE_MODAL = `document.querySelector('[data-jarvis-brief-modal="profile"]')`;
+
+// Opens the Brief's profile modal on a project's Project scope. The modal opens on the first project, so a store
+// holding others needs this one picked, through the search box once there are more than the chips show.
+async function openProfileOn(h, name) {
+    if (!(await h.ev(`!!${PROFILE_MODAL}`))) {
+        await h.ev(`document.querySelector('[data-jarvis-brief-profile]')?.click()`);
+        if (!(await polishWaitFor(h, `!!${PROFILE_MODAL}`, 5000))) return false;
+    }
+    await h.ev(`${PROFILE_MODAL}?.querySelector('[data-jarvis-profile-tab="project"]')?.click()`);
+    const chip = `${PROFILE_MODAL}?.querySelector('button[title="${name}"]')`;
+    if (!(await polishWaitFor(h, `!!${chip}`, 3000))) {
+        await h.ev(setInputExpr(`${PROFILE_MODAL}?.querySelector('input[aria-label="Search projects"]')`, name));
+        if (!(await polishWaitFor(h, `!!${chip}`, 3000))) return false;
+    }
+    await h.ev(`${chip}?.click()`);
+    // a pick reloads that project's profile, so the rows are read only once they are back
+    await polishNap(300);
+    return polishWaitFor(
+        h,
+        `${chip}?.getAttribute('aria-pressed') === 'true' && !!${PROFILE_MODAL}?.querySelector('[role="group"][aria-label="Approvals"]')`,
+        5000
+    );
+}
+
+async function closeProfile(h) {
+    await h.ev(`[...(${PROFILE_MODAL}?.querySelectorAll('footer button') ?? [])].find((b) => b.textContent.trim() === 'Cancel')?.click()`);
+    return polishWaitFor(h, `!${PROFILE_MODAL}`, 3000);
+}
+
+// the run-defaults rows: a row is the grid holding a label, its control and the source or reach cell
+const PROFILE_STATE = `(() => {
+    const m = ${PROFILE_MODAL};
+    if (!m) return null;
+    const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+    const footer = m.querySelector('footer');
+    const save = [...(footer?.querySelectorAll('button') ?? [])].at(-1);
+    return {
+        scope: m.dataset.jarvisProfileScope,
+        subtitle: flat(m.querySelector('header span:nth-child(2)')),
+        tabs: [...m.querySelectorAll('[data-jarvis-profile-tab]')].map((b) => ({ tab: b.dataset.jarvisProfileTab, disabled: b.disabled })),
+        sections: [...m.querySelectorAll('section h2')].map(flat),
+        rows: [...(m.querySelector('section')?.querySelectorAll(':scope > div > .grid') ?? [])].map((r) => ({
+            label: flat(r.firstElementChild?.firstElementChild),
+            aside: flat(r.lastElementChild),
+        })),
+        globalPrinciples: !!m.querySelector('[data-jarvis-global-principles="editor"]'),
+        status: flat(footer?.firstElementChild),
+        save: flat(save),
+        saveDisabled: save?.disabled ?? null,
+    };
+})()`;
+
+// the Light reviewers route row: its label, the picker's face and the source cell
+const PROFILE_LIGHT_ROW = `(() => {
+    const row = ${PROFILE_MODAL}?.querySelector('[data-light-reviewers-row]');
+    if (!row) return null;
+    const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+    return {
+        label: flat(row.firstElementChild?.firstElementChild),
+        face: flat(row.querySelector('[data-testid="route-picker"]')),
+        aside: flat(row.lastElementChild),
+    };
+})()`;
+
 const briefProfile = {
     name: "brief-profile",
     surface: "jarvis",
-    async arrange() {
-        return {};
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-brief-profile-"));
+        const ctx = { cwd };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            await h.rpc("createproject", { name: BRIEF_PROFILE_PROJECT, path: cwd });
+            ctx.project = BRIEF_PROFILE_PROJECT;
+            await waitForProjectInConfig(h, BRIEF_PROFILE_PROJECT);
+            const ch = await h.rpc("createchannel", { name: BRIEF_PROFILE_PROJECT, projectpath: cwd });
+            ctx.channelId = ch.oid;
+            // the modal lists projects from the boot-primed channel list
+            await polishReload(h);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
     },
-    async assert(h) {
+    async assert(h, ctx) {
         const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. a project with its channel was made", false, ctx.arrangeError);
+            return steps;
+        }
+        await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
         await h.goto("jarvis");
-        await h.ev(`document.querySelector('[data-jarvis-brief-profile]')?.click()`);
-        await h.ev("new Promise((r) => setTimeout(r, 1200))");
-
-        const STATE = `(() => {
-            // the hook is now INSIDE ModalShell's panel, which is itself the [role="dialog"] — the
-            // profile stopped hand-rolling its own scrim and dialog when it moved onto the shell.
-            const dlg = document.querySelector('[data-jarvis-brief-modal="profile"]');
-            const txt = (el) => (el?.innerText || "").replace(/\\s+/g, " ").trim();
-            return {
-                scope: dlg ? dlg.dataset.jarvisProfileScope : null,
-                title: txt(dlg?.querySelector("header")),
-                tabs: [...document.querySelectorAll('[data-jarvis-profile-tab]')].map((b) => b.dataset.jarvisProfileTab),
-                sections: [...(dlg?.querySelectorAll("section") ?? [])].map((s) => txt(s).slice(0, 14)),
-                editors: document.querySelectorAll('[data-jarvis-playbook="editor"]').length,
-                summary: document.querySelectorAll('[data-jarvis-playbook="summary"]').length,
-                phases: document.querySelectorAll('[data-jarvis-playbook="phase"]').length,
-                globalPrinciples: document.querySelectorAll('[data-jarvis-global-principles="editor"] textarea').length,
-                save: txt([...(dlg?.querySelectorAll("footer button") ?? [])][0]),
-                saveDisabled: [...(dlg?.querySelectorAll("footer button") ?? [])][0]?.disabled ?? null,
-            };
-        })()`;
-
-        const project = await h.ev(STATE);
-        steps.push({
-            step: "1. the modal opens on this project, with both scopes offered",
-            ok:
-                project.scope === "project" &&
-                project.tabs.join(",") === "project,global" &&
-                project.sections.length === 3 &&
+        const opened = await openProfileOn(h, BRIEF_PROFILE_PROJECT);
+        const project = await h.ev(PROFILE_STATE);
+        rec(
+            "1. the modal opens on the project's Project scope, both scopes offered, with nothing to save",
+            opened &&
+                project?.scope === "project" &&
+                project.tabs.map((t) => `${t.tab}:${t.disabled}`).join(",") === "project:false,global:false" &&
+                project.subtitle === "Defaults Jarvis uses for future runs" &&
+                project.sections.join(",") === "Run defaults,Principles" &&
+                project.status === "No changes" &&
+                project.save === "Save profile" &&
                 project.saveDisabled === true,
-            detail: JSON.stringify(project),
-        });
-
-        // an inherited playbook is stated, not editable: the project has not said anything different yet
-        steps.push({
-            step: "2. the inherited playbook reads as a summary, with no editor under it",
-            ok: project.summary === 1 && project.editors === 0 && project.phases === 0,
-            detail: JSON.stringify({ summary: project.summary, editors: project.editors, phases: project.phases }),
-        });
-
-        await h.ev(
-            `[...document.querySelectorAll('[data-jarvis-brief-modal="profile"] button')].find((b) => b.innerText.trim() === 'customize')?.click()`
+            JSON.stringify({ opened, ...project, rows: undefined })
         );
-        await h.ev("new Promise((r) => setTimeout(r, 400))");
-        const customized = await h.ev(STATE);
-        steps.push({
-            step: "3. customize copies the inherited phases into an editable override",
-            ok:
-                customized.editors === 1 &&
-                customized.summary === 0 &&
-                customized.phases > 0 &&
-                customized.saveDisabled === false,
-            detail: JSON.stringify(customized),
-        });
 
-        await h.ev(
-            `[...document.querySelectorAll('[data-jarvis-brief-modal="profile"] section button')].find((b) => b.innerText.trim() === 'reset')?.click()`
+        // a project that never said anything inherits every row
+        const labels = project?.rows.map((r) => r.label) ?? [];
+        rec(
+            "2. the run defaults list Lead route and Approvals among their rows, every one inheriting Global",
+            labels.includes("Lead route") &&
+                labels.includes("Approvals") &&
+                project.rows.every((r) => r.aside === "Global"),
+            JSON.stringify(project?.rows)
         );
-        await h.ev("new Promise((r) => setTimeout(r, 400))");
-        const resetted = await h.ev(STATE);
-        steps.push({
-            step: "4. reset drops the override, so the draft is clean again",
-            ok: resetted.summary === 1 && resetted.editors === 0 && resetted.saveDisabled === true,
-            detail: JSON.stringify(resetted),
-        });
+        await h.shot("cdp-shots/brief-profile-project.png");
+        const projectLight = await h.ev(PROFILE_LIGHT_ROW);
 
-        await h.ev(`document.querySelector('[data-jarvis-profile-tab="global"]')?.click()`);
-        await h.ev("new Promise((r) => setTimeout(r, 600))");
-        const global = await h.ev(STATE);
-        steps.push({
-            step: "5. the global face edits the playbook and the principles every project inherits",
-            ok:
-                global.scope === "global" &&
-                global.title.toLowerCase().includes("global defaults") &&
-                global.editors === 1 &&
-                global.globalPrinciples > 0 &&
-                global.save.toLowerCase() === "save global defaults" &&
+        await h.ev(`${PROFILE_MODAL}?.querySelector('[data-jarvis-profile-tab="global"]')?.click()`);
+        await polishWaitFor(h, `${PROFILE_MODAL}?.dataset.jarvisProfileScope === 'global' && !!${PROFILE_MODAL}?.querySelector('[data-jarvis-global-principles="editor"]')`, 5000);
+        const global = await h.ev(PROFILE_STATE);
+        const globalLabels = global?.rows.map((r) => r.label) ?? [];
+        rec(
+            "3. the global face edits the run defaults and the principles every project inherits, with no lead route",
+            global?.scope === "global" &&
+                global.subtitle === "The base every project inherits" &&
+                global.sections.join(",") === "Run defaults,Principles" &&
+                globalLabels.includes("Approvals") &&
+                !globalLabels.includes("Lead route") &&
+                global.globalPrinciples === true &&
+                global.status === "No changes" &&
+                global.save === "Save global profile" &&
                 global.saveDisabled === true,
-            detail: JSON.stringify(global),
-        });
-
+            JSON.stringify(global)
+        );
         await h.shot("cdp-shots/brief-profile.png");
+
+        const globalLight = await h.ev(PROFILE_LIGHT_ROW);
+        rec(
+            "4. profile shows the Light reviewers route row on both scopes, unset on Global",
+            projectLight?.label === "Light reviewers route" &&
+                projectLight.aside === "Global" &&
+                ["Sonnet (default)", "Same as global"].includes(projectLight.face) &&
+                globalLight?.label === "Light reviewers route" &&
+                globalLight.face !== "",
+            JSON.stringify({ project: projectLight, global: globalLight })
+        );
         return steps;
     },
-    async teardown(h) {
-        await h.ev(
-            `[...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Close profile')?.click()`
-        );
+    async teardown(h, ctx) {
+        const undo = [
+            ["close the profile", () => closeProfile(h)],
+            ["delete the channel", () => ctx.channelId && h.rpc("deletechannel", { channelid: ctx.channelId })],
+            ["delete the project", () => ctx.project && h.rpc("deleteproject", { name: ctx.project })],
+            ["remove the temp dir", () => rmSync(ctx.cwd, { recursive: true, force: true })],
+        ];
+        for (const [what, fn] of undo) {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`brief-profile teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        }
         await h.goto("cockpit");
     },
 };
@@ -21344,6 +21469,8 @@ const flatText = (elExpr) => `(${elExpr}?.textContent ?? '').replace(/\\s+/g, ' 
 const NEW_RUN = `document.querySelector('[data-launcher]')`;
 const NEW_RUN_WORKERS = `${NEW_RUN}?.querySelector('[data-testid="route-picker"][aria-label="Workers model"]')`;
 const NEW_RUN_PROJECT = "verify-new-run-window";
+const NEW_RUN_LIGHT_GOAL =
+    "verify new-run-window: a UI check drives this run; do nothing, make no file changes, submit no plan, and wait idle";
 const RECENT_PROJECTS_KEY = "agent.launch.recentprojects";
 
 // a row's first cell is its task id; the needs cell can also read t-N, so only a first child counts
@@ -21379,6 +21506,137 @@ async function channelRunCount(h, channelId) {
     return (await channelRuns(h, channelId)).length;
 }
 
+// Opens a route picker on its claude rows and picks model: its catalog row, or the custom model id when the catalog
+// has none (the claude catalog lists no haiku). Returns the model, or null when the picker never offered claude.
+// The rows are portaled out of their dialog, but only one picker is open at a time.
+async function pickClaudeRoute(h, pickerExpr, model) {
+    const anyClaude = `document.querySelector('[data-testid^="route-option-claude-"]')`;
+    const row = `document.querySelector('[data-testid="route-option-claude-${model}"]')`;
+    // a section is the header, its rows and its custom id entry
+    const section = `${anyClaude}?.parentElement`;
+    await h.ev(`${pickerExpr}?.click()`);
+    await polishWaitFor(h, `!!document.querySelector('[data-testid="route-picker-scroll"]')`, 3000);
+    // the picker opens scoped to the route it holds, which can be another harness
+    await h.ev(`document.querySelector('[data-testid="route-harness-all"]')?.click()`);
+    if (!(await polishWaitFor(h, `!!${anyClaude}`, 5000))) {
+        await h.ev(`${pickerExpr}?.click()`);
+        return null;
+    }
+    if (await h.ev(`!!${row}`)) {
+        await h.ev(`${row}.click()`);
+    } else {
+        await h.ev(clickByText(section, "button", "custom model id…"));
+        await polishWaitFor(h, `!!${section}?.querySelector('input[aria-label^="Custom model id for"]')`, 2000);
+        await h.ev(setInputExpr(`${section}?.querySelector('input[aria-label^="Custom model id for"]')`, model));
+        await polishNap(100);
+        await h.ev(`${section}?.querySelector('button[aria-label="Use custom model"]')?.click()`);
+    }
+    await polishNap(300);
+    return model;
+}
+
+const openAddressExpr = (address) => `(async () => {
+    for (let i = 0; i < 20 && typeof window.__openAddress !== "function"; i++) {
+        await new Promise((r) => setTimeout(r, 250));
+    }
+    if (typeof window.__openAddress !== "function") return { ok: false, why: "no __openAddress hook" };
+    return window.__openAddress(${JSON.stringify(address)});
+})()`;
+
+// Starts an orchestrator run from a goal in the window, lead and Light reviewers on a haiku route. The goal keeps
+// the lead idle, so the run has no dag when the run sheet step edits it.
+async function newRunWithLightReviewers(h, ctx) {
+    const out = { row: null, picked: null, lead: null, run: null };
+    await h.ev(`document.querySelector('[data-new-run]')?.click()`);
+    if (!(await polishWaitFor(h, `!!${NEW_RUN}`, 5000))) return { ...out, why: "the window did not open" };
+    await h.ev(`${NEW_RUN_FIELD}?.click()`);
+    await polishWaitFor(h, `!!${NEW_RUN_LIST}`, 3000);
+    await h.ev(setInputExpr(`${NEW_RUN}?.querySelector('input[aria-label="Search projects"]')`, NEW_RUN_PROJECT));
+    await polishNap(300);
+    await h.ev(`${NEW_RUN_LIST}?.querySelector('[data-project-option="${NEW_RUN_PROJECT}"]')?.click()`);
+    await polishNap(300);
+    await h.ev(
+        `[...(${NEW_RUN}?.querySelectorAll('button[aria-pressed]') ?? [])].find((b) => b.firstElementChild?.textContent.trim() === 'orchestrator')?.click()`
+    );
+    await polishNap(200);
+    await h.ev(clickByText(`${NEW_RUN}?.querySelector('[role="group"][aria-label="Start from"]')`, "button", "Goal"));
+    await h.ev(`(() => {
+        const el = ${NEW_RUN_GOAL};
+        if (!el) return false;
+        Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(el, ${JSON.stringify(NEW_RUN_LIGHT_GOAL)});
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
+    })()`);
+    out.lead = await pickClaudeRoute(h, `${NEW_RUN}?.querySelector('[data-testid="route-picker"][aria-label="Lead model"]')`, "haiku");
+    out.picked = await pickClaudeRoute(h, `${NEW_RUN}?.querySelector('[data-light-reviewers-row] [data-testid="route-picker"]')`, "haiku");
+    out.row = await h.ev(`(() => {
+        const row = ${NEW_RUN}?.querySelector('[data-light-reviewers-row]');
+        return row ? { label: ${flatText("row.firstElementChild")}, face: ${flatText(`row.querySelector('[data-testid="route-picker"]')`)} } : null;
+    })()`);
+    await h.shot("cdp-shots/new-run-window-3-light-reviewers.png");
+    const before = new Set((await channelRuns(h, ctx.channelId)).map((r) => r.id));
+    await h.ev(`${NEW_RUN_START}?.click()`);
+    for (let waited = 0; waited < 20000 && out.run == null; waited += 500) {
+        out.run = (await channelRuns(h, ctx.channelId)).find((r) => !before.has(r.id)) ?? null;
+        if (out.run == null) await polishNap(500);
+    }
+    if (out.run == null) {
+        out.why = await h.ev(flatText(NEW_RUN));
+        await h.ev(clickByText(NEW_RUN, "button", "Cancel"));
+    }
+    ctx.createdRunId = out.run?.id;
+    ctx.createdLandPath = out.run?.landpath;
+    return out;
+}
+
+// On the window's run, before it has a dag: reads the run sheet's config line, opens adjust, moves Light reviewers
+// to a sonnet route and saves.
+async function editSheetLightReviewers(h, ctx) {
+    const config = `${RUN_SHEET}?.querySelector('[data-jarvis-brief-sheet-config="editable"]')`;
+    const row = `${RUN_SHEET}?.querySelector('[data-light-reviewers-row]')`;
+    const runNow = async () => (await channelRuns(h, ctx.channelId)).find((r) => r.id === ctx.createdRunId) ?? null;
+    const out = { dag: (await runNow())?.dagoref ?? "", summary: "", row: false, picked: null, saved: false, after: null };
+    await h.goto("jarvis");
+    await h.ev(openAddressExpr(`run:${ctx.createdRunId}`));
+    if (!(await polishWaitFor(h, `!!${config}`, 10000))) return { ...out, why: "no editable config line on the run sheet" };
+    out.summary = await h.ev(flatText(config));
+    await h.ev(clickByText(config, "button", "adjust"));
+    out.row = await polishWaitFor(h, `!!${row}`, 3000);
+    out.picked = await pickClaudeRoute(h, `${row}?.querySelector('[data-testid="route-picker"]')`, "sonnet");
+    await h.shot("cdp-shots/new-run-window-4-run-sheet.png");
+    await h.ev(clickByText(RUN_SHEET, "button", "Save settings"));
+    out.saved = await polishWaitFor(h, `!!${RUN_SHEET}?.querySelector('[data-jarvis-brief-sheet-state="saved"]')`, 8000);
+    for (let waited = 0; waited < 5000; waited += 250) {
+        out.after = (await runNow())?.lightreviewerroute ?? null;
+        if (out.after?.model === out.picked) break;
+        await polishNap(250);
+    }
+    await h.ev(PEEKS_ESC);
+    return out;
+}
+
+// A channel with no run: its brief sheet is the launcher, whose orchestrator shape shows the routing pickers.
+async function launcherLightReviewers(h, ctx) {
+    const sheet = `document.querySelector('[data-jarvis-brief-sheet]')`;
+    const row = `${sheet}?.querySelector('[data-light-reviewers-row]')`;
+    await h.ev(openAddressExpr(`channel:${ctx.launcherChannelId}`));
+    const out = { sheet: await polishWaitFor(h, `!!${sheet}?.querySelector('button[aria-pressed]')`, 8000) };
+    await h.ev(
+        `[...(${sheet}?.querySelectorAll('button[aria-pressed]') ?? [])].find((b) => b.firstElementChild?.textContent.trim() === 'orchestrator')?.click()`
+    );
+    out.row = await polishWaitFor(h, `!!${row}`, 3000);
+    Object.assign(
+        out,
+        await h.ev(`({
+            besideReviewers: !!${row}?.previousElementSibling?.querySelector('[data-testid="route-picker"][aria-label="Reviewers model"]'),
+            face: ${flatText(`${row}?.querySelector('[data-testid="route-picker"][aria-label="Light reviewers model"]')`)},
+        })`)
+    );
+    await h.shot("cdp-shots/new-run-window-5-launcher.png");
+    await h.ev(PEEKS_ESC);
+    return out;
+}
+
 const newRunWindow = {
     name: "new-run-window",
     surface: "jarvis",
@@ -21403,6 +21661,11 @@ const newRunWindow = {
                 deferstart: true,
             });
             ctx.runId = created.run.id;
+            // a channel with no run, on a project of its own so the window's run cannot land in it: its brief sheet
+            // is the launcher
+            ctx.launcherCwd = mkdtempSync(join(tmpdir(), "verify-new-run-launcher-"));
+            const launcher = await h.rpc("createchannel", { name: "verify-new-run-launcher", projectpath: ctx.launcherCwd });
+            ctx.launcherChannelId = launcher.oid;
             // recent is the shared recent-projects list (projectsstore's recentProjectsAtom), which a launch
             // writes; seed it rather than launch, and put the developer's own list back in teardown
             ctx.prevRecent = await h.ev(`localStorage.getItem(${JSON.stringify(RECENT_PROJECTS_KEY)})`);
@@ -21516,10 +21779,64 @@ const newRunWindow = {
             closed && runsAfter === runsBefore,
             JSON.stringify({ closed, runsBefore, runsAfter })
         );
+
+        const created = await newRunWithLightReviewers(h, ctx);
+        rec(
+            "8. Light reviewers row picks a route the created run carries",
+            created.row?.label === "Light reviewers" &&
+                created.picked != null &&
+                created.row.face.includes(created.picked) &&
+                created.run?.lightreviewerroute?.runtime === "claude" &&
+                created.run.lightreviewerroute.model === created.picked,
+            JSON.stringify({ ...created, run: created.run && { id: created.run.id, lightreviewerroute: created.run.lightreviewerroute } })
+        );
+        if (created.run == null) return steps;
+
+        const edited = await editSheetLightReviewers(h, ctx);
+        rec(
+            "9. the run sheet shows and edits the Light reviewers row",
+            edited.dag === "" &&
+                edited.summary.includes("light reviewers on claude") &&
+                edited.row === true &&
+                edited.picked != null &&
+                edited.saved === true &&
+                edited.after?.runtime === "claude" &&
+                edited.after.model === edited.picked &&
+                edited.after.model !== created.picked,
+            JSON.stringify(edited)
+        );
+
+        const launcher = await launcherLightReviewers(h, ctx);
+        rec(
+            "10. the brief sheet's launcher shows the Light reviewers row beside Reviewers",
+            launcher.sheet === true && launcher.row === true && launcher.besideReviewers === true && launcher.face !== "",
+            JSON.stringify(launcher)
+        );
         return steps;
     },
     async teardown(h, ctx) {
         await h.ev(PEEKS_ESC).catch(() => {});
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`new-run-window teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        if (ctx.createdRunId) {
+            await step("cancel the window's run", () => h.rpc("cancelrun", { channelid: ctx.channelId, runid: ctx.createdRunId }));
+        }
+        if (ctx.launcherChannelId) {
+            await step("delete the launcher channel", () => h.rpc("deletechannel", { channelid: ctx.launcherChannelId }));
+        }
+        if (ctx.launcherCwd) {
+            await step("remove the launcher dir", () => rmSync(ctx.launcherCwd, { recursive: true, force: true }));
+        }
+        if (ctx.createdLandPath) {
+            await step("remove the window run's tree", () =>
+                rmSync(ctx.createdLandPath, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 })
+            );
+        }
         if (ctx.prevRecent !== undefined) {
             const key = JSON.stringify(RECENT_PROJECTS_KEY);
             await h.ev(
@@ -22861,9 +23178,9 @@ async function paletteStateWhen(h, ok, ms) {
     return state;
 }
 
-// A run held in planning by deferstart is only a record: no worker spawns, so no lead joins the roster and none
-// of Steer's actions (message, focus, workers, relaunch, resume) applies. Its list is Open and Stop, and Steer's
-// actions are named on the Not now line instead.
+// A run held in planning by deferstart is only a record: no worker spawns, so no lead joins the roster and of
+// Steer's actions only Go autonomous applies, the run sheet being editable. The rest (message, focus, workers,
+// relaunch, resume) are named on the Not now line instead.
 const paletteActions = {
     name: "palette-actions",
     surface: "jarvis",
@@ -22929,14 +23246,15 @@ const paletteActions = {
         const labels = acts?.groups.map((g) => g.label) ?? [];
         const rows = acts?.groups.flatMap((g) => g.rows) ?? [];
         rec(
-            "4. → opens the run's actions: Open then Stop, Cancel run among them, Steer's under Not now",
+            "4. → opens the run's actions: Open, Steer, Stop, Go autonomous and Cancel run among them, the rest of Steer's under Not now",
             acts != null &&
                 acts.token == null &&
                 acts.drill.startsWith("Run") &&
                 acts.drill.includes(ctx.stamp) &&
                 acts.placeholder === "Filter Run actions…" &&
-                labels.join(",") === "Open,Stop" &&
+                labels.join(",") === "Open,Steer,Stop" &&
                 rows.some((r) => r.startsWith("Open in Jarvis")) &&
+                rows.some((r) => r.startsWith("Go autonomous")) &&
                 rows.some((r) => r.startsWith("Cancel run")) &&
                 /Not now: .*Message the lead/.test(acts.text),
             JSON.stringify({ drill: acts?.drill, placeholder: acts?.placeholder, groups: acts?.groups })
@@ -22958,6 +23276,405 @@ const paletteActions = {
     async teardown(h, ctx) {
         await h.ev(PEEKS_ESC).catch(() => {});
         await teardownFixtureRun(h, ctx, "palette-actions");
+    },
+};
+
+// --- autonomous-runs: the Approvals setting on each of its boards (docs/orchestrator-guide.md, Autonomous runs)
+// One project with one orchestrator run held by deferstart. Its lead is a seeded tab, linked as the lead by a tab oref
+// on the running phase, whose block runs a stdin sink: the server's switch finds the lead's Spec review question
+// there deterministically, and the answer it types lands somewhere harmless. The fixture roster names that tab as the
+// lead asking Spec review, which is how the sheet and the palette learn of the question; no live agent runs.
+const AUTONOMOUS_PROJECT = "verify-autonomous-runs";
+const AUTONOMOUS_SPEC_ASK = {
+    header: "Spec review",
+    question: "The spec is written. Approve it so I can write the plan?",
+    options: [{ label: "Approve" }, { label: "Revise" }],
+};
+const AUTONOMOUS_PROFILE_NOTE =
+    "The lead takes the option it would recommend at each of those points and records why in its report. If the final stage still fails after the last round, the land stays held for you.";
+const AUTONOMOUS_RESOLVED =
+    "The lead approved its spec and is writing the plan. It answers everything from here on; each call it makes goes in its report.";
+const AUTONOMOUS_BACK_TO_ASK = "The lead asks you again from its next decision. Calls it already made stand.";
+// typing the ON answer takes 60ms a rune, so the question leaves the registry well inside this
+const AUTONOMOUS_ANSWER_WAIT_MS = 20_000;
+const RUN_SHEET = `document.querySelector('[data-run-sheet]')`;
+const SHEET_APPROVALS = `${RUN_SHEET}?.querySelector('[role="group"][aria-label="Approvals"]')`;
+const flatOf = (elExpr) => `((${elExpr})?.textContent ?? '').replace(/\\s+/g, ' ').trim()`;
+const clickByText = (scopeExpr, selector, text) =>
+    `[...((${scopeExpr})?.querySelectorAll(${JSON.stringify(selector)}) ?? [])].find((b) => b.textContent.trim() === ${JSON.stringify(text)})?.click()`;
+
+// the Approvals row of the open profile: what is pressed, its source cell and the note under the control
+const PROFILE_APPROVALS = `(() => {
+    const group = ${PROFILE_MODAL}?.querySelector('[role="group"][aria-label="Approvals"]');
+    const row = group?.closest('.grid');
+    if (!row) return null;
+    const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+    return {
+        pressed: [...group.querySelectorAll('button[aria-pressed="true"]')].map(flat),
+        source: flat(row.lastElementChild),
+        reset: !!row.querySelector('button[aria-label="Reset approvals to global"]'),
+        note: flat(group.nextElementSibling),
+    };
+})()`;
+
+// the run sheet's Approvals: the dial, the line under it, the saved line, the resolved note and the config word
+const SHEET_STATE = `(() => {
+    const s = ${RUN_SHEET};
+    if (!s) return null;
+    const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+    const group = s.querySelector('[role="group"][aria-label="Approvals"]');
+    return {
+        pressed: [...(group?.querySelectorAll('button[aria-pressed="true"]') ?? [])].map(flat),
+        line: [...(group?.parentElement.querySelectorAll(':scope > span') ?? [])].map(flat).slice(1).join(' '),
+        saved: flat(s.querySelector('[data-jarvis-brief-sheet-state="saved"]')),
+        error: flat(s.querySelector('[data-jarvis-brief-sheet-state="error"]')),
+        resolved: flat(s.querySelector('[data-jarvis-brief-sheet-resolved]')),
+        word: flat(s.querySelector('[data-jarvis-brief-sheet-approvals]')),
+    };
+})()`;
+
+// the lead's own pending question, as the server holds it
+async function autonomousLeadAsk(h, ctx) {
+    return (await h.rpc("runasks", { channelid: ctx.channelId, runid: ctx.runId }))?.asks?.[0] ?? null;
+}
+
+async function raiseSpecReview(h, ctx) {
+    await h.rpc("ask", { oref: `block:${ctx.leadBlockId}`, questions: [AUTONOMOUS_SPEC_ASK] });
+    ctx.askRaised = true;
+}
+
+// the fixture lead's face: asking Spec review, or working once its question is answered
+const patchFixtureLead = (h, ctx, asking) =>
+    h.ev(
+        `window.__cockpitRosterFixture?.patch(${JSON.stringify(ctx.leadTabId)}, ${
+            asking
+                ? JSON.stringify({ state: "asking", ask: { questions: [AUTONOMOUS_SPEC_ASK], oref: `block:${ctx.leadBlockId}` } })
+                : "{ state: 'working', ask: undefined }"
+        })`
+    );
+
+// The lead's tab, in the page's own workspace. Its block runs a node process that reads and drops stdin: a shell
+// would run the typed answer, and the picker's arrow keys would recall its history first.
+async function seedAutonomousLead(h, ctx) {
+    const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+    const wslist = await h.rpc("workspacelist", null);
+    const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+    ctx.workspaceId = ws.workspacedata.oid;
+    ctx.leadTabId = await waveService(h, "workspace", "CreateTab", [ctx.workspaceId, "verify-autonomous-lead", false]);
+    const tab = await waveService(h, "object", "GetObject", [`tab:${ctx.leadTabId}`]);
+    ctx.leadBlockId = tab?.blockids?.[0];
+    if (!ctx.leadBlockId) throw new Error("the lead's tab has no block");
+    const sink = join(ctx.cwd, "lead-sink.mjs");
+    writeFileSync(sink, "process.stdin.resume();\n");
+    // the cwd is ~, not the temp dir, which the process would keep locked past teardown
+    await h.rpc("setmeta", {
+        oref: `block:${ctx.leadBlockId}`,
+        meta: { view: "term", controller: "cmd", cmd: `node '${sink}'`, "cmd:cwd": "~" },
+    });
+    await h.rpc("controllerresync", { tabid: ctx.leadTabId, blockid: ctx.leadBlockId, forcerestart: true });
+    // readLeadState takes the lead from the first tab oref on the run's phases
+    await fstWriteRun(h, ctx.runId, (run) => ({
+        ...run,
+        phases: run.phases.map((p, i) => (i === 0 ? { ...p, workerorefs: [`tab:${ctx.leadTabId}`] } : p)),
+    }));
+    mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+    writeFileSync(
+        TREE_RAIL_FIXTURE,
+        JSON.stringify(
+            [
+                {
+                    id: ctx.leadTabId,
+                    name: "autonomous lead",
+                    project: AUTONOMOUS_PROJECT,
+                    task: "verify autonomous-runs",
+                    state: "asking",
+                    agent: "claude",
+                    model: "opus",
+                    blockedMs: 60_000,
+                    runId: ctx.runId,
+                    blockId: ctx.leadBlockId,
+                    ask: { questions: [AUTONOMOUS_SPEC_ASK], oref: `block:${ctx.leadBlockId}` },
+                },
+            ],
+            null,
+            2
+        )
+    );
+    ctx.wroteFixture = true;
+}
+
+// the Run actions of ctx's run, with the toggle row selected
+async function openRunToggle(h, ctx, title) {
+    if (!(await openPalette(h))) return { opened: false };
+    await h.ev(setInputExpr(PALETTE_INPUT, "r:"));
+    await paletteStateWhen(h, (s) => s.token === "Runs", 2000);
+    await h.ev(setInputExpr(PALETTE_INPUT, ctx.stamp));
+    await paletteStateWhen(h, (s) => (s.selected ?? "").includes(ctx.stamp) && s.chip, 8000);
+    await h.ev(paletteKey("ArrowRight"));
+    let state = await paletteStateWhen(h, (s) => s.drill != null && s.groups.some((g) => g.rows.some((r) => r.startsWith(title))), 8000);
+    for (let i = 0; i < 20 && state != null && !(state.selected ?? "").startsWith(title); i++) {
+        await h.ev(paletteKey("ArrowDown"));
+        state = await h.ev(PALETTE_STATE);
+    }
+    return { opened: true, state };
+}
+
+const autonomousRuns = {
+    name: "autonomous-runs",
+    surface: "jarvis",
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-autonomous-runs-"));
+        const stamp = `autoruns${Date.now() % 100000}`;
+        const ctx = { cwd, stamp };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            await h.rpc("createproject", { name: AUTONOMOUS_PROJECT, path: cwd });
+            ctx.project = AUTONOMOUS_PROJECT;
+            await waitForProjectInConfig(h, AUTONOMOUS_PROJECT);
+            const wslist = await h.rpc("workspacelist", null);
+            const ch = await h.rpc("createchannel", { name: AUTONOMOUS_PROJECT, projectpath: cwd });
+            ctx.channelId = ch.oid;
+            // made before the profile turns autonomous, so the run starts on Ask me
+            const created = await h.rpc("createrun", {
+                channelid: ctx.channelId,
+                workspaceid: wslist[0].workspacedata.oid,
+                goal: `verify ${stamp}: do nothing, make no file changes, stop immediately`,
+                runtime: "claude",
+                mode: "orchestrator",
+                // a width, as the launcher always sends: a run stored at 0 cannot save its settings until submit
+                parallelism: 2,
+                deferstart: true,
+            });
+            ctx.runId = created.run.id;
+            ctx.landPath = created.run.landpath;
+            await seedAutonomousLead(h, ctx);
+            // the fixture roster and the channel list are both read at boot
+            await polishReload(h);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. a project, its channel, a planning run and its seeded lead were made", false, ctx.arrangeError);
+            return steps;
+        }
+        await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
+        await h.goto("jarvis");
+
+        // --- profile (Main board)
+        const opened = await openProfileOn(h, AUTONOMOUS_PROJECT);
+        await h.ev(clickByText(`${PROFILE_MODAL}?.querySelector('[role="group"][aria-label="Approvals"]')`, "button", "Autonomous"));
+        await polishNap(200);
+        await h.ev(clickByText(`${PROFILE_MODAL}?.querySelector('footer')`, "button", "Save profile"));
+        const savedClosed = await polishWaitFor(h, `!${PROFILE_MODAL}`, 5000);
+        const override = (await h.rpc("getjarvisprofile", { channelid: ctx.channelId }))?.override ?? {};
+        ctx.profileSaved = override.autonomous === true;
+        const reopened = await openProfileOn(h, AUTONOMOUS_PROJECT);
+        const projectRow = await h.ev(PROFILE_APPROVALS);
+        await h.shot("cdp-shots/autonomous-runs-1-profile.png");
+        await h.ev(`${PROFILE_MODAL}?.querySelector('button[aria-label="Reset approvals to global"]')?.click()`);
+        await polishNap(300);
+        const resetRow = await h.ev(PROFILE_APPROVALS);
+        // Cancel, not Save: the new-run step reads the saved Autonomous
+        await closeProfile(h);
+        rec(
+            "profile 1. picking Autonomous and saving stores it on the project, and the row reads Project with Reset and the autonomous note",
+            opened &&
+                savedClosed &&
+                ctx.profileSaved &&
+                reopened &&
+                projectRow?.pressed.join(",") === "Autonomous" &&
+                projectRow.source.startsWith("Project") &&
+                projectRow.reset === true &&
+                projectRow.note === AUTONOMOUS_PROFILE_NOTE,
+            JSON.stringify({ opened, savedClosed, override, reopened, row: projectRow })
+        );
+        rec(
+            "profile 2. Reset puts the row back on Global",
+            resetRow?.source === "Global" && resetRow.reset === false,
+            JSON.stringify(resetRow)
+        );
+
+        // --- new-run (NewRun board)
+        await h.ev(`document.querySelector('[data-new-run]')?.click()`);
+        const windowOpen = await polishWaitFor(h, `!!${NEW_RUN}`, 5000);
+        await h.ev(`${NEW_RUN_FIELD}?.click()`);
+        await polishWaitFor(h, `!!${NEW_RUN_LIST}`, 3000);
+        await h.ev(setInputExpr(`${NEW_RUN}?.querySelector('input[aria-label="Search projects"]')`, AUTONOMOUS_PROJECT));
+        await polishNap(300);
+        await h.ev(`${NEW_RUN_LIST}?.querySelector('[data-project-option="${AUTONOMOUS_PROJECT}"]')?.click()`);
+        await polishNap(300);
+        await h.ev(
+            `[...(${NEW_RUN}?.querySelectorAll('button[aria-pressed]') ?? [])].find((b) => b.firstElementChild?.textContent.trim() === 'orchestrator')?.click()`
+        );
+        await polishNap(200);
+        await h.ev(clickByText(`${NEW_RUN}?.querySelector('[role="group"][aria-label="Start from"]')`, "button", "Goal"));
+        await h.ev(`(() => {
+            const el = ${NEW_RUN_GOAL};
+            if (!el) return false;
+            Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(el, ${JSON.stringify(`verify ${ctx.stamp}: do nothing`)});
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            return true;
+        })()`);
+        const NEW_RUN_APPROVALS = `${NEW_RUN}?.querySelector('[role="group"][aria-label="Approvals"]')`;
+        await polishWaitFor(h, `${NEW_RUN_APPROVALS}?.querySelector('button[aria-pressed="true"]')?.textContent.trim() === 'Autonomous'`, 5000);
+        const NEW_RUN_FOOTER = `${NEW_RUN}?.querySelector('[data-new-run-footer] > span')`;
+        await polishWaitFor(h, `${flatOf(NEW_RUN_FOOTER)}.endsWith(' · autonomous')`, 3000);
+        const orch = await h.ev(`(() => {
+            const group = ${NEW_RUN_APPROVALS};
+            const models = [...(${NEW_RUN}?.querySelectorAll('span') ?? [])].find((s) => s.textContent.trim() === 'Models')?.parentElement;
+            return {
+                pressed: [...(group?.querySelectorAll('button[aria-pressed="true"]') ?? [])].map((b) => b.textContent.trim()),
+                underModels: models != null && models.nextElementSibling === group?.parentElement,
+                footer: ${flatOf(NEW_RUN_FOOTER)},
+            };
+        })()`);
+        await h.shot("cdp-shots/autonomous-runs-2-new-run.png");
+        rec(
+            "new-run 1. on orchestrator the Approvals field sits under Models with the profile's Autonomous selected, and the footer ends · autonomous",
+            windowOpen && orch.pressed.join(",") === "Autonomous" && orch.underModels && orch.footer.endsWith(" · autonomous"),
+            JSON.stringify({ windowOpen, ...orch })
+        );
+        await h.ev(
+            `[...(${NEW_RUN}?.querySelectorAll('button[aria-pressed]') ?? [])].find((b) => b.firstElementChild?.textContent.trim() === 'quick')?.click()`
+        );
+        const gone = await polishWaitFor(h, `!${NEW_RUN_APPROVALS}`, 3000);
+        const quickFooter = await h.ev(flatOf(NEW_RUN_FOOTER));
+        rec(
+            "new-run 2. on quick the Approvals field is gone, and so is the footer's autonomous",
+            gone && quickFooter.startsWith("quick") && !quickFooter.endsWith(" · autonomous"),
+            JSON.stringify({ gone, footer: quickFooter })
+        );
+        await h.ev(clickByText(NEW_RUN, "button", "Cancel"));
+        await polishWaitFor(h, `!${NEW_RUN}`, 3000);
+
+        // --- run-sheet (RunSheet board)
+        await raiseSpecReview(h, ctx);
+        const askBefore = await autonomousLeadAsk(h, ctx);
+        const sheetOpen = await h.ev(`(async () => {
+            for (let i = 0; i < 20 && typeof window.__openAddress !== "function"; i++) {
+                await new Promise((r) => setTimeout(r, 250));
+            }
+            return window.__openAddress(${JSON.stringify(`run:${ctx.runId}`)});
+        })()`);
+        await polishWaitFor(h, `!!${RUN_SHEET}?.querySelector('[data-jarvis-brief-sheet-approvals]')`, 8000);
+        await h.ev(clickByText(`${RUN_SHEET}?.querySelector('[data-jarvis-brief-sheet-config="editable"]')`, "button", "adjust"));
+        await polishWaitFor(h, `!!${SHEET_APPROVALS}`, 3000);
+        await h.ev(clickByText(SHEET_APPROVALS, "button", "Autonomous"));
+        await polishNap(200);
+        const warned = await h.ev(SHEET_STATE);
+        rec(
+            "run-sheet 1. picking Autonomous while the lead waits on Spec review warns that saving hands it back",
+            askBefore?.questions?.[0]?.header === "Spec review" &&
+                warned?.pressed.join(",") === "Autonomous" &&
+                warned.line === "Saving hands the waiting Spec review back to the lead, and it answers everything from then on.",
+            JSON.stringify({ opened: sheetOpen, ask: askBefore?.questions?.[0]?.header ?? null, ...warned })
+        );
+
+        await h.ev(clickByText(RUN_SHEET, "button", "Save settings"));
+        await polishWaitFor(h, `${flatOf(`${RUN_SHEET}?.querySelector('[data-jarvis-brief-sheet-state="saved"]')`)} === 'Saved. The run is autonomous from now on.'`, 8000);
+        const on = await h.ev(SHEET_STATE);
+        rec(
+            "run-sheet 2. Save: the saved line, the Spec review note that the lead decided, and the config reading autonomous",
+            on?.saved === "Saved. The run is autonomous from now on." &&
+                on.resolved.startsWith("Spec review: the lead decided") &&
+                on.resolved.endsWith(AUTONOMOUS_RESOLVED) &&
+                on.word === "autonomous",
+            JSON.stringify(on)
+        );
+        // the answer is typed in the background, and the server takes the question out of its registry as it starts
+        let askAfter = askBefore;
+        for (const until = Date.now() + AUTONOMOUS_ANSWER_WAIT_MS; askAfter != null && Date.now() < until; ) {
+            await polishNap(500);
+            askAfter = await autonomousLeadAsk(h, ctx);
+        }
+        const runOn = (await channelRuns(h, ctx.channelId)).find((r) => r.id === ctx.runId);
+        rec(
+            "run-sheet 3. the lead's Spec review is answered, and the run is stored autonomous",
+            askBefore != null && askAfter == null && runOn?.autonomous === true,
+            JSON.stringify({ pending: askAfter?.questions?.[0]?.header ?? null, autonomous: runOn?.autonomous ?? null })
+        );
+        // the lead has its answer, so it is working again
+        await patchFixtureLead(h, ctx, false);
+        await polishNap(300);
+        await h.shot("cdp-shots/autonomous-runs-3-run-sheet.png");
+
+        await h.ev(clickByText(SHEET_APPROVALS, "button", "Ask me"));
+        await polishNap(200);
+        const backToAsk = await h.ev(SHEET_STATE);
+        await h.ev(clickByText(RUN_SHEET, "button", "Save settings"));
+        await polishWaitFor(h, `${flatOf(`${RUN_SHEET}?.querySelector('[data-jarvis-brief-sheet-state="saved"]')`)} === 'Saved. The lead asks you from its next decision.'`, 8000);
+        const off = await h.ev(SHEET_STATE);
+        rec(
+            "run-sheet 4. picking Ask me says the lead asks again and hides the saved line, and Save reads asks you",
+            backToAsk?.pressed.join(",") === "Ask me" &&
+                backToAsk.line === AUTONOMOUS_BACK_TO_ASK &&
+                backToAsk.saved === "" &&
+                off?.saved === "Saved. The lead asks you from its next decision." &&
+                off.word === "asks you",
+            JSON.stringify({ backToAsk, off })
+        );
+
+        // --- palette (RunActions board): the lead asks Spec review again, now that it asks the human
+        await raiseSpecReview(h, ctx);
+        await patchFixtureLead(h, ctx, true);
+        const offToggle = await openRunToggle(h, ctx, "Go autonomous");
+        const offState = offToggle.state;
+        await h.shot("cdp-shots/autonomous-runs-4-palette.png");
+        const steer = offState?.groups.find((g) => g.label === "Steer");
+        rec(
+            "palette 1. the Steer group's toggle reads Go autonomous, asks you, Enter Go, and the off echo",
+            offToggle.opened &&
+                (steer?.rows ?? []).some((r) => r.startsWith("Go autonomous")) &&
+                (offState.selected ?? "").startsWith("Go autonomousasks you") &&
+                (offState.selected ?? "").includes("Go ⏎") &&
+                offState.text.includes("The lead answers everything from now on, starting with the Spec review it is waiting on."),
+            JSON.stringify({ opened: offToggle.opened, selected: offState?.selected, steer, footer: offState?.text.slice(-200) })
+        );
+
+        await h.ev(paletteKey("Enter"));
+        let runAuto = null;
+        for (let i = 0; i < 20 && runAuto !== true; i++) {
+            await polishNap(250);
+            runAuto = (await channelRuns(h, ctx.channelId)).find((r) => r.id === ctx.runId)?.autonomous ?? null;
+        }
+        const onToggle = await openRunToggle(h, ctx, "Ask me again");
+        const onState = onToggle.state;
+        await h.shot("cdp-shots/autonomous-runs-5-palette-on.png");
+        rec(
+            "palette 2. Enter turns the run autonomous, and its actions then read Ask me again, autonomous, Enter Ask me, and the on echo",
+            runAuto === true &&
+                onToggle.opened &&
+                (onState?.selected ?? "").startsWith("Ask me againautonomous") &&
+                (onState.selected ?? "").includes("Ask me ⏎") &&
+                onState.text.includes(AUTONOMOUS_BACK_TO_ASK),
+            JSON.stringify({ autonomous: runAuto, selected: onState?.selected, footer: onState?.text.slice(-200) })
+        );
+        await h.ev(PEEKS_ESC);
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const undo = [
+            ["close the palette", () => h.ev(PEEKS_ESC)],
+            ["clear the lead's question", () => ctx.askRaised && h.rpc("agentaskclear", `block:${ctx.leadBlockId}`)],
+        ];
+        for (const [what, fn] of undo) {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`autonomous-runs teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        }
+        // the lead's tab is a worker oref on the run, so this deletes its block and the tab with it; the channel
+        // holds the profile override
+        await teardownFixtureRun(h, ctx, "autonomous-runs", {
+            what: "delete the project",
+            fn: () => (ctx.project ? h.rpc("deleteproject", { name: ctx.project }) : null),
+        });
     },
 };
 
@@ -23686,6 +24403,90 @@ async function waitDagTask(h, ctx, id, ok) {
 const taskFacts = (t) =>
     t && { state: t.state, modelsource: t.modelsource ?? "", runtime: t.runspec?.runtime ?? "", model: t.runspec?.model ?? "" };
 
+// the plan review's reviewers are real sessions; haiku keeps the five of a round cheap
+const HAIKU_ROUTE = { runtime: "claude", model: "haiku" };
+const ROUND_ONE_LENSES = ["full", "spec", "order", "tests", "final"];
+const LENS_TITLE = {
+    full: "Full review",
+    spec: "Spec coverage",
+    order: "Task order and files",
+    tests: "Tests and commands",
+    final: "Final coverage",
+    followup: "Round-2 follow-up",
+};
+const PLAN_REVIEWER_WAIT_MS = 90000;
+
+const planReviewOf = async (h, ctx) =>
+    (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group?.planreview ?? null;
+
+// Waits for the round's reviewers to start, then records each one's verdict in its own name before it can send
+// one, the reviewer that picks models last, so the round settles on it. verdicts maps a lens to
+// { verdict, notes, picks? }, in the order they are sent.
+async function recordPlanReviewRound(h, ctx, round, verdicts) {
+    const lenses = Object.keys(verdicts);
+    let pr = null;
+    const started = () =>
+        pr?.round === round &&
+        (pr.reviewers ?? []).length === lenses.length &&
+        pr.reviewers.every((r) => r.runid && lenses.includes(r.lens));
+    for (let waited = 0; waited < PLAN_REVIEWER_WAIT_MS && !started(); waited += 1000) {
+        pr = await planReviewOf(h, ctx);
+        if (!started()) await polishNap(1000);
+    }
+    if (!started()) {
+        throw new Error(`round ${round}: want reviewers ${lenses.join(", ")} with run ids, got ${JSON.stringify(pr?.reviewers ?? null)}`);
+    }
+    for (const lens of lenses) {
+        const r = pr.reviewers.find((x) => x.lens === lens);
+        if (r.state !== "reviewing") {
+            throw new Error(`round ${round}: the ${lens} reviewer sent its own verdict (${r.state}) before the scenario could`);
+        }
+        const v = verdicts[lens];
+        await h.rpc(
+            "dagaction",
+            {
+                channelid: ctx.channelId,
+                runid: r.runid,
+                taskid: "",
+                action: `planreview-${v.verdict}`,
+                notes: v.notes,
+                ...(v.picks ? { picks: v.picks } : {}),
+            },
+            MODELS_RPC
+        );
+    }
+}
+
+const PLAN_REVIEWER_CHIPS = `[...document.querySelectorAll('[data-dag-modal-kind] [data-plan-reviewer]')].map((c) => ({
+    lens: c.getAttribute('data-plan-reviewer'),
+    state: c.getAttribute('data-plan-reviewer-state'),
+    line: (c.parentElement?.textContent ?? '').replace(/\\s+/g, ' ').trim(),
+}))`;
+const DAG_RAIL = `document.querySelector('[data-dag-modal-kind] [data-timeline-rail]')`;
+
+// Opens the timeline rail's group whose title starts with prefix, and reads the titles of its events and the
+// plan reviewer sub-rows under them. One group is open at a time, so opening it closes any other.
+const railGroupExpr = (prefix) => `(async () => {
+    const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+    const rows = () => [...(${DAG_RAIL}?.querySelectorAll('[data-timeline-row]') ?? [])];
+    const row = () => rows().find((b) => flat(b.querySelector('span > span')).startsWith(${JSON.stringify(prefix)}));
+    for (let i = 0; i < 40 && !row(); i++) await new Promise((r) => setTimeout(r, 250));
+    if (!row()) return { found: false, rows: rows().map((b) => flat(b.querySelector('span > span'))) };
+    if (row().getAttribute('aria-expanded') !== 'true') row().click();
+    for (let i = 0; i < 20 && !row().nextElementSibling; i++) await new Promise((r) => setTimeout(r, 100));
+    const detail = row().nextElementSibling;
+    return {
+        found: true,
+        titles: [...(detail?.querySelectorAll(':scope > div > div:first-child > span:nth-child(2)') ?? [])].map(flat),
+        reviewers: [...(detail?.querySelectorAll('[data-plan-review-reviewer]') ?? [])].map((r) => ({
+            lens: r.getAttribute('data-plan-review-reviewer'),
+            text: flat(r),
+        })),
+    };
+})()`;
+
+const sameSet = (a, b) => a.length === b.length && [...a].sort().join() === [...b].sort().join();
+
 const modelPicks = {
     name: "model-picks",
     surface: "jarvis",
@@ -23705,6 +24506,8 @@ const modelPicks = {
                 mode: "orchestrator",
                 deferstart: true,
                 reviewerpicks: true,
+                reviewerroute: HAIKU_ROUTE,
+                lightreviewerroute: HAIKU_ROUTE,
                 parallelism: 1,
             });
             ctx.runId = created.run.id;
@@ -23713,27 +24516,16 @@ const modelPicks = {
                 { channelid: ctx.channelId, runid: ctx.runId, parallelism: 1, planpath: MODELS_PLAN },
                 MODELS_RPC
             );
-            // the plan reviewer is a real session, spawned after the submit returns; its verdict is recorded
-            // here, in its name, before it can send one
-            let reviewer = null;
-            for (let waited = 0; waited < 90000 && reviewer == null; waited += 1000) {
-                const pr = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group?.planreview;
-                reviewer = pr?.state === "reviewing" && pr.runid ? pr.runid : null;
-                if (reviewer == null) await polishNap(1000);
-            }
-            if (reviewer == null) throw new Error("the plan reviewer never started");
-            await h.rpc(
-                "dagaction",
-                {
-                    channelid: ctx.channelId,
-                    runid: reviewer,
-                    taskid: "",
-                    action: "planreview-pass",
-                    notes: "verify model-picks: three noops",
-                    picks: MODEL_PICKS,
-                },
-                MODELS_RPC
-            );
+            // the five reviewers are real sessions, spawned after the submit returns: a pass from each lens, then
+            // the full reviewer's with the picks
+            const pass = { verdict: "pass", notes: "verify model-picks: three noops" };
+            await recordPlanReviewRound(h, ctx, 1, {
+                spec: pass,
+                order: pass,
+                tests: pass,
+                final: pass,
+                full: { ...pass, picks: MODEL_PICKS },
+            });
             // the Brief reads a boot-primed snapshot, so the RPC-created channel needs a reload
             await polishReload(h);
             ctx.opened = await h.ev(`(async () => {
@@ -23837,6 +24629,30 @@ const modelPicks = {
                 yours.rail.route === "owner:claude:sonnet" &&
                 yours.rail.text.includes("worker · your pick"),
             JSON.stringify({ task: taskFacts(onSonnet), ...yours })
+        );
+
+        const chips = await h.ev(PLAN_REVIEWER_CHIPS);
+        await h.shot("cdp-shots/model-picks-3-reviewers.png");
+        rec(
+            "6. the graph's stage line shows five plan reviewers, each passed",
+            sameSet(
+                chips.map((c) => c.lens),
+                ROUND_ONE_LENSES
+            ) && chips.every((c) => c.state === "passed"),
+            JSON.stringify(chips)
+        );
+
+        const reviewed = await h.ev(railGroupExpr("Plan reviewed"));
+        await h.shot("cdp-shots/model-picks-4-plan-reviewed.png");
+        rec(
+            "7. the timeline's Plan reviewed row lists five reviewers",
+            reviewed.found &&
+                sameSet(
+                    reviewed.reviewers.map((r) => r.lens),
+                    ROUND_ONE_LENSES
+                ) &&
+                reviewed.reviewers.every((r) => r.text === `${LENS_TITLE[r.lens]} · passed`),
+            JSON.stringify(reviewed)
         );
         return steps;
     },
@@ -24125,6 +24941,219 @@ const codexWorkerRoute = {
     },
 };
 
+// --- plan-review-rounds: round 1's five reviewers, one failing, then round 2's follow-up on a resubmit
+// (docs/superpowers/specs/2026-10-14-wider-plan-review-design.md). The failed round launches a real lead: its run
+// is on haiku, and the finding it is woken with tells it to leave the plan alone, so the scenario's resubmit is the
+// only one.
+const ROUNDS_FINDING =
+    "verify plan-review-rounds: a UI check drives this review; leave the plan as it is, do not resubmit it, and stop";
+const ROUNDS_GOAL =
+    "verify plan-review-rounds: a UI check drives this run; do nothing, make no file changes, submit no plan, and stop";
+const PLAN_REVIEW_TITLE = "Plan review · ";
+
+// the agent tree's plan-reviewer rows, with the run's finished reviews unfolded first: a stage with a verdict
+// folds under "N reviews"
+const PLAN_REVIEW_TREE_ROWS = `(async () => {
+    const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+    const tree = () => document.querySelector('[data-agent-tree]');
+    const folds = () => [...(tree()?.querySelectorAll('div.cursor-pointer') ?? [])].filter(
+        (d) => /\\d+ reviews?$/.test(flat(d)) && d.querySelector('.lucide-chevron-right')
+    );
+    const titles = () => [...(tree()?.querySelectorAll('div') ?? [])].filter(
+        (d) => d.children.length === 0 && flat(d).startsWith(${JSON.stringify(PLAN_REVIEW_TITLE)})
+    );
+    for (let i = 0; i < 40 && folds().length === 0 && titles().length < 5; i++) {
+        await new Promise((r) => setTimeout(r, 250));
+    }
+    folds().forEach((f) => f.click());
+    for (let i = 0; i < 20 && titles().length < 5; i++) await new Promise((r) => setTimeout(r, 250));
+    return {
+        tree: tree() != null,
+        rows: titles().map((t) => ({ title: flat(t), sub: flat(t.nextElementSibling) })),
+    };
+})()`;
+
+async function openRunGraph(h, ctx) {
+    await polishReload(h);
+    await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
+    const opened = await h.ev(`(async () => {
+        for (let i = 0; i < 20 && typeof window.__openAddress !== "function"; i++) {
+            await new Promise((r) => setTimeout(r, 250));
+        }
+        if (typeof window.__openAddress !== "function") return { ok: false, why: "no __openAddress hook" };
+        return window.__openAddress(${JSON.stringify(`run:${ctx.runId}`)});
+    })()`);
+    const openDag = `[...(document.querySelector('[data-jarvis-brief-sheet]')?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim() === 'Open DAG')`;
+    const sheet = await polishWaitFor(h, `!!${openDag}`, 15000);
+    if (sheet) await h.ev(`${openDag}.click()`);
+    const graph = await polishWaitFor(
+        h,
+        `!!document.querySelector('[data-dag-modal-kind="live"]') && document.querySelectorAll('[data-dag-modal-kind] [data-dag-node]:not([data-dag-node="final"])').length === 3`,
+        10000
+    );
+    return { ok: opened?.ok === true && sheet && graph, opened, sheet, graph };
+}
+
+const planReviewRounds = {
+    name: "plan-review-rounds",
+    surface: "jarvis",
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-plan-review-rounds-"));
+        const ctx = { cwd };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            // the lead the failed round launches works in cwd, so it reads this copy rather than the repo's fixture
+            ctx.planPath = join(cwd, "plan.md");
+            writeFileSync(ctx.planPath, readFileSync(MODELS_PLAN));
+            const wslist = await h.rpc("workspacelist", null);
+            const ch = await h.rpc("createchannel", { name: "verify-plan-review-rounds", projectpath: cwd });
+            ctx.channelId = ch.oid;
+            const created = await h.rpc("createrun", {
+                channelid: ctx.channelId,
+                workspaceid: wslist[0].workspacedata.oid,
+                goal: ROUNDS_GOAL,
+                runtime: "claude",
+                model: "haiku",
+                mode: "orchestrator",
+                deferstart: true,
+                // owned here, so the profile cannot make the full reviewer's pass need picks
+                reviewerpicks: false,
+                reviewerroute: HAIKU_ROUTE,
+                lightreviewerroute: HAIKU_ROUTE,
+                parallelism: 1,
+            });
+            ctx.runId = created.run.id;
+            ctx.landPath = created.run.landpath;
+            await h.rpc(
+                "dagsubmit",
+                { channelid: ctx.channelId, runid: ctx.runId, parallelism: 1, planpath: ctx.planPath },
+                MODELS_RPC
+            );
+            const pass = { verdict: "pass", notes: "verify plan-review-rounds: three noops" };
+            await recordPlanReviewRound(h, ctx, 1, {
+                spec: pass,
+                order: pass,
+                final: pass,
+                tests: { verdict: "fail", notes: ROUNDS_FINDING },
+                full: pass,
+            });
+            ctx.graph = await openRunGraph(h, ctx);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. round 1's five reviewers recorded their verdicts, tests failing", false, ctx.arrangeError);
+            return steps;
+        }
+        rec("0. the run's graph opened with its 3 tasks", ctx.graph.ok, JSON.stringify({ runId: ctx.runId, ...ctx.graph }));
+        if (!ctx.graph.ok) return steps;
+
+        await polishWaitFor(h, `${PLAN_REVIEWER_CHIPS}.filter((c) => c.state !== 'reviewing').length === 5`, 5000);
+        const chips = await h.ev(PLAN_REVIEWER_CHIPS);
+        await h.shot("cdp-shots/plan-review-rounds-1-chips.png");
+        rec(
+            "1. round 1: five chips, four passed and tests failed",
+            sameSet(
+                chips.map((c) => c.lens),
+                ROUND_ONE_LENSES
+            ) && chips.every((c) => c.state === (c.lens === "tests" ? "failed" : "passed")),
+            JSON.stringify(chips)
+        );
+
+        const reviewed = await h.ev(railGroupExpr("Plan reviewed"));
+        const findings = (await planReviewOf(h, ctx))?.findings ?? "";
+        await h.shot("cdp-shots/plan-review-rounds-2-plan-reviewed.png");
+        rec(
+            "2. the Plan reviewed row lists five reviewers, and the findings begin with [Tests and commands]",
+            reviewed.found &&
+                sameSet(
+                    reviewed.reviewers.map((r) => r.lens),
+                    ROUND_ONE_LENSES
+                ) &&
+                reviewed.reviewers.every((r) => r.text === `${LENS_TITLE[r.lens]} · ${r.lens === "tests" ? "failed" : "passed"}`) &&
+                findings.startsWith("[Tests and commands]"),
+            JSON.stringify({ ...reviewed, findings: findings.slice(0, 200) })
+        );
+
+        const started = await h.ev(railGroupExpr("Plan reviewer started"));
+        const want = ROUND_ONE_LENSES.map((l) => `Plan reviewer started · ${LENS_TITLE[l]}`);
+        await h.shot("cdp-shots/plan-review-rounds-3-started.png");
+        rec(
+            "3. the timeline names each reviewer's lens in its started row",
+            started.found && sameSet(started.titles, want),
+            JSON.stringify(started)
+        );
+
+        await h.goto("agent");
+        const tree = await h.ev(PLAN_REVIEW_TREE_ROWS);
+        await h.shot("cdp-shots/plan-review-rounds-4-tree.png");
+        const wantRows = ROUND_ONE_LENSES.map((l) => ({
+            title: `${PLAN_REVIEW_TITLE}${LENS_TITLE[l]}`,
+            verdict: l === "tests" ? "failed" : "passed",
+        }));
+        rec(
+            "4. the agent tree's plan-reviewer rows name their lens and verdict",
+            tree.rows.length === 5 &&
+                wantRows.every((w) => tree.rows.some((r) => r.title === w.title && r.sub.split(" · ")[0] === w.verdict)),
+            tree.rows.length === 0
+                ? `no plan-reviewer rows in the tree: the run's reviewer tabs were reaped or never joined the roster (${JSON.stringify(tree)})`
+                : JSON.stringify(tree)
+        );
+
+        // the same plan again: the review failed and nothing dispatched, so it replaces the proposal and opens round 2
+        await h.rpc(
+            "dagsubmit",
+            { channelid: ctx.channelId, runid: ctx.runId, parallelism: 1, planpath: ctx.planPath },
+            MODELS_RPC
+        );
+        let round2 = null;
+        for (let waited = 0; waited < PLAN_REVIEWER_WAIT_MS; waited += 1000) {
+            round2 = await planReviewOf(h, ctx);
+            if (round2?.round === 2 && round2.reviewers?.length === 1 && round2.reviewers[0].runid) break;
+            await polishNap(1000);
+        }
+        const graph2 = await openRunGraph(h, ctx);
+        await polishWaitFor(h, `${PLAN_REVIEWER_CHIPS}.length === 1`, 5000);
+        const reviewing = await h.ev(PLAN_REVIEWER_CHIPS);
+        await h.shot("cdp-shots/plan-review-rounds-5-round-2.png");
+        rec(
+            "5. round 2 shows one follow-up chip",
+            graph2.ok &&
+                reviewing.length === 1 &&
+                reviewing[0].lens === "followup" &&
+                reviewing[0].state === "reviewing" &&
+                reviewing[0].line.includes("round 2"),
+            JSON.stringify({ graph: graph2, chips: reviewing, reviewers: round2?.reviewers ?? null })
+        );
+        if (reviewing.length !== 1) return steps;
+
+        let recorded = "ok";
+        try {
+            await recordPlanReviewRound(h, ctx, 2, { followup: { verdict: "pass", notes: "verify plan-review-rounds: the plan is unchanged" } });
+        } catch (e) {
+            recorded = String(e?.message ?? e);
+        }
+        await polishWaitFor(h, `${PLAN_REVIEWER_CHIPS}[0]?.state === 'passed'`, 5000);
+        const passed = await h.ev(PLAN_REVIEWER_CHIPS);
+        await h.shot("cdp-shots/plan-review-rounds-6-round-2-passed.png");
+        rec(
+            "6. the follow-up chip reads passed",
+            recorded === "ok" && passed.length === 1 && passed[0].lens === "followup" && passed[0].state === "passed",
+            JSON.stringify({ recorded, chips: passed })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await h.ev(PEEKS_ESC).catch(() => {});
+        await teardownFixtureRun(h, ctx, "plan-review-rounds");
+    },
+};
+
 // --- radar-start-investigation: the draft lands on the launcher, not on a past run -----------------
 // Start investigation hands the finding to its project's channel sheet. With a run selected in that channel
 // (one the user had looked at, or a live one) the sheet opened on that run's report and the launcher holding
@@ -24205,8 +25234,16 @@ const RADAR_SEED_FINDING = "f-radar-report";
 const RADAR_SEED_FILE = "pkg/reporadar/scan.go";
 const RADAR_SEED_LINE = 122;
 const RADAR_DISMISS_REASONS = ["False positive", "Low priority", "Resolved elsewhere", "Intentional"];
-const RADAR_DISMISS_FOOTNOTE =
-    "Closes this finding. Its fix commit is audited once, so it stays closed until you reopen it from Dismissed.";
+const RADAR_DISMISS_FOOTNOTE = "Closes this finding. It stays closed until you reopen it from Dismissed.";
+const RADAR_AUDIT_GROUPS = ["Fix commits", "Behavior changes", "Hot files"];
+// radardevmock.ts: the introduced and hotspot findings of the results fixture, and the hot file partial fails
+const RADAR_INTRODUCED_FINDING = "g";
+const RADAR_HOTSPOT_FINDING = "h";
+const RADAR_HOT_FAILED = "pkg/orchestrate/land.go";
+const RADAR_CLASSIFY_WARNING =
+    "Commit classification failed, so 14 unprefixed commits were not considered. Re-scan tries them again.";
+const RADAR_AUDIT_ONCE =
+    "A target is audited once. The next scan picks up commits and file changes made after these.";
 const RADAR_REMOVED_TEXT = [
     "collectors",
     "Suppress pattern",
@@ -24258,6 +25295,18 @@ const radarFacts = (h) =>
                 state: r.getAttribute('data-audit-state'),
                 text: text(r),
             })),
+            auditGroups: all('[data-radar-audit-group]', body).map((g) => ({
+                kind: g.getAttribute('data-radar-audit-group'),
+                label: text(g.querySelector('[data-radar-audit-group-label]')),
+                rows: all('[data-radar-audit-row]', g).map((r) => ({
+                    sha: r.getAttribute('data-radar-audit-row'),
+                    state: r.getAttribute('data-audit-state'),
+                })),
+            })),
+            classify: (() => {
+                const w = root.querySelector('[data-radar-classify-warning]');
+                return w ? { text: text(w), buttons: w.querySelectorAll('button').length } : null;
+            })(),
             strip: strip ? text(strip) : null,
             retry: retry ? !retry.disabled : null,
             toggle: toggle ? text(toggle) : null,
@@ -24285,10 +25334,14 @@ const radarDetail = (h) =>
         const text = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
         return {
             id: d.getAttribute('data-radar-finding-detail'),
+            kind: d.querySelector('[data-radar-kind]')?.getAttribute('data-radar-kind') ?? null,
+            kindLabel: text(d.querySelector('[data-radar-kind]')),
             siteLink: text(d.querySelector('[data-radar-site-link]')),
             cards: [...d.querySelectorAll('[data-radar-site-card]')].map(text),
+            whyLabels: [...d.querySelectorAll('[data-radar-site-why-label]')].map(text),
             headings: [...d.querySelectorAll('h3')].map(text),
             sourceFix: text(d.querySelector('[data-radar-source-fix]')),
+            fixSubjects: [...d.querySelectorAll('[data-radar-fix-subjects] li')].map(text),
             text: text(d),
         };
     })()`);
@@ -24313,7 +25366,9 @@ const radarDetailButton = (h, label) =>
 
 const radarHas = (selector) => `!!${RADAR_ROOT}?.querySelector(${JSON.stringify(selector)})`;
 const radarStates = (facts) => facts?.audits.map((a) => a.state) ?? [];
-const fixSha = (rowText) => /fix ([0-9a-f]{8})/.exec(rowText ?? "")?.[1] ?? null;
+// a commit kind's row reads "<kind label> · <sha>"; a hotspot's "Hotspot · <n> fixes" has no sha
+const fixSha = (rowText) => /· ([0-9a-f]{8})/.exec(rowText ?? "")?.[1] ?? null;
+const radarGroupLabels = (groups) => (groups ?? []).map((g) => g.label);
 const hasAll = (text, words) => words.every((w) => (text ?? "").includes(w));
 
 async function radarOpenDismissMenu(h) {
@@ -24383,16 +25438,21 @@ const radarReport = {
             const row = [...open, ...dismissed].find((r) => r.id === d?.id);
             const sha = fixSha(row?.text);
             rec(
-                "2. the detail shows the site link, site cards, root cause and source fix",
+                "2. the detail shows the kind, site link, site cards, root cause and source fix",
                 d != null &&
+                    d.kind === "sibling" &&
+                    d.kindLabel === "Sibling bug" &&
                     /:\d+$/.test(d.siteLink) &&
                     d.cards.length > 0 &&
                     d.cards.every((c) => hasAll(c, ["Actual", "Expected", "Fix gap"])) &&
                     d.headings.includes("Root cause") &&
+                    d.headings.includes("Found by auditing this fix") &&
                     sha != null &&
                     d.sourceFix.includes(sha),
                 JSON.stringify({
                     finding: d?.id ?? null,
+                    kind: d?.kind ?? null,
+                    kindLabel: d?.kindLabel ?? null,
                     siteLink: d?.siteLink ?? null,
                     cards: d?.cards.length ?? 0,
                     headings: d?.headings ?? null,
@@ -24400,23 +25460,104 @@ const radarReport = {
                     sourceFix: d?.sourceFix.slice(0, 120) ?? null,
                 })
             );
+
+            // the introduced and hotspot findings of the fixture, each opened from its row
+            const openFinding = async (id, shot) => {
+                const clicked = await radarClick(h, `[data-radar-finding-row="${id}"]`);
+                const shown = clicked && (await polishWaitFor(h, radarHas(`[data-radar-finding-detail="${id}"]`), 3000));
+                await polishNap(300);
+                await h.shot(shot);
+                const row = [...open, ...dismissed].find((r) => r.id === id);
+                return { shown, row: row?.text ?? null, d: await radarDetail(h) };
+            };
+
+            const intro = await openFinding(RADAR_INTRODUCED_FINDING, "cdp-shots/radar-introduced.png");
+            const introSha = fixSha(intro.row);
+            rec(
+                "3. an introduced finding names its kind, site label, intent heading and the change it reviewed",
+                intro.shown &&
+                    intro.d?.kind === "introduced" &&
+                    intro.d.kindLabel === "Introduced bug" &&
+                    intro.d.whyLabels.length > 0 &&
+                    intro.d.whyLabels.every((l) => l === "Introduced") &&
+                    intro.d.headings.includes("Intent of the change") &&
+                    intro.d.headings.includes("Found by reviewing this change") &&
+                    /Introduced bug · [0-9a-f]{8}/.test(intro.row ?? "") &&
+                    introSha != null &&
+                    intro.d.sourceFix.includes(introSha),
+                JSON.stringify({
+                    shown: intro.shown,
+                    row: intro.row,
+                    kind: intro.d?.kind ?? null,
+                    kindLabel: intro.d?.kindLabel ?? null,
+                    whyLabels: intro.d?.whyLabels ?? null,
+                    headings: intro.d?.headings ?? null,
+                    sourceFix: intro.d?.sourceFix.slice(0, 120) ?? null,
+                })
+            );
+
+            const hot = await openFinding(RADAR_HOTSPOT_FINDING, "cdp-shots/radar-hotspot.png");
+            const fixCount = hot.d?.fixSubjects.length ?? 0;
+            rec(
+                "4. a hotspot finding names its kind, site label, fragility heading and the fixes that sent Radar to the file",
+                hot.shown &&
+                    hot.d?.kind === "hotspot" &&
+                    hot.d.kindLabel === "Hotspot" &&
+                    hot.d.whyLabels.length > 0 &&
+                    hot.d.whyLabels.every((l) => l === "Missed by fixes") &&
+                    hot.d.headings.includes("Fragility") &&
+                    hot.d.headings.includes("Found by reviewing this file") &&
+                    fixCount >= 3 &&
+                    hot.d.fixSubjects.every((s) => s.length > 0) &&
+                    (hot.row ?? "").includes(`Hotspot · ${fixCount} fixes`) &&
+                    fixSha(hot.row) == null,
+                JSON.stringify({
+                    shown: hot.shown,
+                    row: hot.row,
+                    kind: hot.d?.kind ?? null,
+                    kindLabel: hot.d?.kindLabel ?? null,
+                    whyLabels: hot.d?.whyLabels ?? null,
+                    headings: hot.d?.headings ?? null,
+                    fixSubjects: hot.d?.fixSubjects ?? null,
+                })
+            );
         }
 
         {
+            const summary = (await radarFacts(h))?.toggle ?? null;
             const clicked = await radarClick(h, "[data-radar-audits-toggle]");
             const opened = clicked && (await polishWaitFor(h, radarHas("[data-radar-audits-popover]"), 3000));
             await polishNap(300);
-            const rows = await h.ev(
-                `[...(${RADAR_ROOT}?.querySelectorAll('[data-radar-audits-popover] [data-radar-audit-row]') ?? [])]
-                    .map((r) => r.getAttribute('data-audit-state'))`
-            );
+            const popover = await h.ev(`(() => {
+                const p = ${RADAR_ROOT}?.querySelector('[data-radar-audits-popover]');
+                if (!p) return null;
+                const text = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+                return {
+                    rows: [...p.querySelectorAll('[data-radar-audit-row]')].map((r) => r.getAttribute('data-audit-state')),
+                    groups: [...p.querySelectorAll('[data-radar-audit-group]')].map((g) => ({
+                        kind: g.getAttribute('data-radar-audit-group'),
+                        label: text(g.querySelector('[data-radar-audit-group-label]')),
+                        rows: [...g.querySelectorAll('[data-radar-audit-row]')].map((r) => r.getAttribute('data-radar-audit-row')),
+                    })),
+                };
+            })()`);
             await h.shot("cdp-shots/radar-audits.png");
             await radarClick(h, "[data-radar-audits-toggle]");
             const closed = await polishWaitFor(h, `!(${radarHas("[data-radar-audits-popover]")})`, 3000);
+            const rows = popover?.rows ?? [];
+            const hotFiles = popover?.groups.find((g) => g.label === "Hot files")?.rows ?? [];
             rec(
-                "3. the header's audit summary opens the audited-commit list",
-                opened && rows.length === 8 && rows.filter((s) => s === "hits").length === 2 && closed,
-                JSON.stringify({ clicked, opened, rows, closed })
+                "5. the header's audit summary counts every kind and opens the audits grouped by kind",
+                summary === "12 audits, 8 clean" &&
+                    opened &&
+                    rows.length === 12 &&
+                    rows.filter((s) => s === "hits").length === 4 &&
+                    JSON.stringify(radarGroupLabels(popover?.groups)) === JSON.stringify(RADAR_AUDIT_GROUPS) &&
+                    // the two hot files share one revision: two rows, one sha
+                    hotFiles.length === 2 &&
+                    hotFiles[0] === hotFiles[1] &&
+                    closed,
+                JSON.stringify({ summary, clicked, opened, rows, groups: popover?.groups ?? null, closed })
             );
         }
 
@@ -24435,7 +25576,7 @@ const radarReport = {
             await radarDetailButton(h, "Dismiss");
             const closed = await polishWaitFor(h, `!(${radarHas("[data-radar-dismiss-menu]")})`, 3000);
             rec(
-                "4. the Dismiss menu offers four reasons and the reworded footnote",
+                "6. the Dismiss menu offers four reasons and the reworded footnote",
                 opened &&
                     JSON.stringify(menu?.reasons) === JSON.stringify(RADAR_DISMISS_REASONS) &&
                     menu.text.includes(RADAR_DISMISS_FOOTNOTE) &&
@@ -24460,14 +25601,14 @@ const radarReport = {
             await polishNap(1500);
             const after = await radarFacts(h);
             rec(
-                "5. a partial scan names the failed commits and offers Retry failed audits",
+                "7. a partial scan names the failed audits, a hot file by its path, and offers Retry failed audits",
                 shown &&
-                    hasAll(f?.strip, RADAR_PARTIAL_FAILED) &&
+                    hasAll(f?.strip, [...RADAR_PARTIAL_FAILED, RADAR_HOT_FAILED]) &&
                     f.retry === true &&
-                    (f.toggle ?? "").endsWith("2 failed") &&
+                    (f.toggle ?? "").endsWith("3 failed") &&
                     dispatched &&
                     after?.view === "report" &&
-                    hasAll(after.strip, RADAR_PARTIAL_FAILED),
+                    hasAll(after.strip, [...RADAR_PARTIAL_FAILED, RADAR_HOT_FAILED]),
                 JSON.stringify({
                     strip: f?.strip ?? null,
                     retryEnabled: f?.retry ?? null,
@@ -24503,7 +25644,7 @@ const radarReport = {
                 radarHas(`[data-radar-finding-row="${RADAR_SEED_FINDING}"] [data-radar-new]`)
             );
             rec(
-                "6. Intentional closes a finding into Dismissed, and Reopen finding returns it",
+                "8. Intentional closes a finding into Dismissed, and Reopen finding returns it",
                 dismissed === true && label && backOpen === true && newChip === false,
                 JSON.stringify({
                     arrangeError: ctx.arrangeError ?? null,
@@ -24531,7 +25672,7 @@ const radarReport = {
             await polishNap(800);
             await h.shot("cdp-shots/radar-site-in-code.png");
             rec(
-                "7. the site link opens Code at the line",
+                "9. the site link opens Code at the line",
                 opened === true && surface === SURFACE_LABEL.code,
                 JSON.stringify({ clicked, surface, file: await h.ev(openFile), line: RADAR_SEED_LINE })
             );
@@ -24561,7 +25702,7 @@ const radarReport = {
             const lens = views.some((v) => v?.lens);
             const evidenceTitles = views.flatMap((v) => v?.evidenceTitles ?? []);
             rec(
-                "8. nothing the Removed board marks is on the surface",
+                "10. nothing the Removed board marks is on the surface",
                 shown &&
                     suppressed &&
                     views.every((v) => v != null) &&
@@ -24576,11 +25717,11 @@ const radarReport = {
             const shown = await radarMock(h, "carried", "report");
             const f = await radarFacts(h);
             rec(
-                "9. carried findings with nothing new to audit",
-                shown && f.rootText.includes("no new fix commits") && f.toggle == null && f.strip == null,
+                "11. carried findings with nothing new to audit",
+                shown && f.rootText.includes("Nothing new to audit") && f.toggle == null && f.strip == null,
                 JSON.stringify({
                     view: f?.view ?? null,
-                    metaLine: f?.rootText.includes("no new fix commits") ?? null,
+                    metaLine: f?.rootText.includes("Nothing new to audit") ?? null,
                     toggle: f?.toggle ?? null,
                     strip: f?.strip ?? null,
                     findings: f?.findingRows ?? null,
@@ -24627,46 +25768,72 @@ const radarScanStates = {
             return { shown: hook && shown && f != null, f };
         };
         const states = (f) => JSON.stringify(radarStates(f));
+        // the body copy, not a group heading, names the three kinds: the headings are capitalized
+        const NAMES_KINDS = ["fix commits", "behavior changes", "hot files"];
+        const groupsOk = (f) => JSON.stringify(radarGroupLabels(f?.auditGroups)) === JSON.stringify(RADAR_AUDIT_GROUPS);
 
         {
             const { shown, f } = await draw("scanning", "scanning", "radar-scanning");
             const seen = radarStates(f);
+            const hot = f?.auditGroups.find((g) => g.kind === "hotspot")?.rows ?? [];
             rec(
-                "1. a scan in progress lists each commit as audited, auditing or queued, with hits",
+                "1. a scan in progress lists each kind's targets as audited, auditing or queued, with hits",
                 shown &&
-                    seen.length === 8 &&
+                    seen.length === 12 &&
                     ["queued", "running", "hits"].every((s) => seen.includes(s)) &&
-                    hasAll(f.bodyText, ["3 of 8 audited", "2 hits"]) &&
+                    groupsOk(f) &&
+                    f.auditGroups.every((g) => g.rows.some((r) => r.state === "running")) &&
+                    // the two hot files share one revision: both rows, one sha
+                    hot.length === 2 &&
+                    hot[0].sha === hot[1].sha &&
+                    hasAll(f.bodyText, ["3 of 12 audited", "2 hits", ...NAMES_KINDS]) &&
                     f.buttons.includes("Cancel scan"),
-                JSON.stringify({ hook, view: f?.view ?? null, states: seen, buttons: f?.buttons ?? null })
+                JSON.stringify({
+                    hook,
+                    view: f?.view ?? null,
+                    states: seen,
+                    groups: f?.auditGroups ?? null,
+                    buttons: f?.buttons ?? null,
+                    text: f?.bodyText.slice(0, 320) ?? null,
+                })
             );
         }
         {
             const { shown, f } = await draw("selecting", "scanning", "radar-selecting");
             rec(
-                "2. selecting commits shows the scan panel with no rows",
-                shown && f.audits.length === 0 && f.bodyText.includes("selecting fix commits"),
+                "2. selecting targets shows the scan panel with no rows",
+                shown && f.audits.length === 0 && f.bodyText.includes("selecting targets"),
+                `rows=${f?.audits.length ?? null} text="${f?.bodyText.slice(0, 200) ?? ""}"`
+            );
+        }
+        {
+            const { shown, f } = await draw("classifying", "scanning", "radar-classifying");
+            rec(
+                "3. classifying commits shows the scan panel with no rows",
+                shown && f.audits.length === 0 && f.bodyText.includes("classifying commits"),
                 `rows=${f?.audits.length ?? null} text="${f?.bodyText.slice(0, 200) ?? ""}"`
             );
         }
         {
             const { shown, f } = await draw("clean", "audits", "radar-clean");
             rec(
-                "3. a clean scan says no sibling bugs and lists the audited commits",
+                "4. a clean scan says no bugs and lists the audits grouped by kind",
                 shown &&
-                    f.title === "No sibling bugs in 5 fix commits" &&
-                    f.audits.length === 5 &&
+                    f.title === "No bugs found in 7 audits" &&
+                    f.audits.length === 7 &&
                     f.audits.every((a) => a.state === "clean") &&
+                    groupsOk(f) &&
+                    f.bodyText.includes(RADAR_AUDIT_ONCE) &&
                     f.strip == null &&
                     f.project === "Scanned project: waveterm" &&
                     f.rescan,
-                `title="${f?.title ?? ""}" states=${states(f)} strip=${f?.strip ?? null} project="${f?.project ?? ""}" rescan=${f?.rescan ?? null}`
+                `title="${f?.title ?? ""}" states=${states(f)} groups=${JSON.stringify(radarGroupLabels(f?.auditGroups))} once=${f?.bodyText.includes(RADAR_AUDIT_ONCE) ?? null} strip=${f?.strip ?? null} project="${f?.project ?? ""}" rescan=${f?.rescan ?? null}`
             );
         }
         {
             const { shown, f } = await draw("failed", "audits", "radar-failed");
             rec(
-                "4. a fully failed scan shows the strip and each commit's error",
+                "5. a fully failed scan shows the strip and each audit's error",
                 shown &&
                     f.strip != null &&
                     f.retry === true &&
@@ -24678,27 +25845,27 @@ const radarScanStates = {
         {
             const { shown, f } = await draw("no-commits", "audits", "radar-no-commits");
             rec(
-                "5. no new fix commits",
-                shown && f.title === "No new fix commits to audit" && !f.auditList,
+                "6. nothing new to audit",
+                shown && f.title === "Nothing new to audit" && !f.auditList,
                 `title="${f?.title ?? ""}" auditList=${f?.auditList ?? null}`
             );
         }
         {
             const { shown, f } = await draw("fatal", "fatal", "radar-fatal");
             rec(
-                "6. a fatal failure shows the error",
+                "7. a fatal failure shows the error",
                 shown && f.bodyText.includes("not a readable git repository") && f.buttons.includes("Scan again"),
                 `title="${f?.title ?? ""}" text="${f?.bodyText.slice(0, 200) ?? ""}" buttons=${JSON.stringify(f?.buttons ?? null)}`
             );
         }
         {
             const { shown, f } = await draw("cancelled", "cancelled", "radar-cancelled");
-            rec("7. a cancelled scan", shown, `view=${f?.view ?? null} title="${f?.title ?? ""}"`);
+            rec("8. a cancelled scan", shown, `view=${f?.view ?? null} title="${f?.title ?? ""}"`);
         }
         {
             const { shown, f } = await draw("old-format", "old-format", "radar-old-format");
             rec(
-                "8. an old-format report asks for a re-scan",
+                "9. an old-format report asks for a re-scan",
                 shown &&
                     f.title === "This report was written by an older Radar" &&
                     f.buttons.includes("Re-scan") &&
@@ -24709,12 +25876,29 @@ const radarScanStates = {
         {
             const { shown, f } = await draw("never-scanned", "never-scanned", "radar-never-scanned");
             rec(
-                "9. a project never scanned",
+                "10. a project never scanned names the three kinds",
                 shown &&
                     f.title.endsWith("hasn't been scanned") &&
                     f.buttons.includes("Scan repository") &&
+                    hasAll(f.bodyText, NAMES_KINDS) &&
                     !/collector/i.test(f.bodyText),
                 `title="${f?.title ?? ""}" buttons=${JSON.stringify(f?.buttons ?? null)} text="${f?.bodyText.slice(0, 240) ?? ""}"`
+            );
+        }
+        {
+            const { shown, f } = await draw("classify-failed", "report", "radar-classify-failed");
+            rec(
+                "11. a failed classification leaves a warning line with no Retry",
+                shown && f.classify?.text === RADAR_CLASSIFY_WARNING && f.classify.buttons === 0,
+                JSON.stringify({ view: f?.view ?? null, classify: f?.classify ?? null })
+            );
+        }
+        {
+            const { shown, f } = await draw("partial", "report", "radar-scan-partial");
+            rec(
+                "12. a partial scan's failed strip names the hot file by its path",
+                shown && hasAll(f.strip, [RADAR_HOT_FAILED, "Bugs they target may be missing."]) && f.classify == null,
+                JSON.stringify({ strip: f?.strip ?? null, classify: f?.classify ?? null })
             );
         }
         return steps;
@@ -33842,9 +35026,9 @@ const notifyToast = {
 
 // --- settings-radar-audit: the Radar audit route row in Settings > Headless AI ------------------------
 // The row's picker offers claude and pi only (an audit session needs tools) and writes radar:auditruntime
-// and radar:auditmodel. The picker panel is portalled to the body, so its options are scoped to the panel
-// and everything else to the section pane.
-const RADAR_AUDIT_KEYS = ["radar:auditruntime", "radar:auditmodel"];
+// and radar:auditmodel; its classifier field writes radar:classifymodel. The picker panel is portalled to
+// the body, so its options are scoped to the panel and everything else to the section pane.
+const RADAR_AUDIT_KEYS = ["radar:auditruntime", "radar:auditmodel", "radar:classifymodel"];
 const RADAR_AUDIT_PANE = `document.querySelector('[data-settings-section="headless"]')`;
 const RADAR_AUDIT_ROW = `${RADAR_AUDIT_PANE}?.querySelector('[data-setting-row="headless.radaraudit"]')`;
 const RADAR_AUDIT_TRIGGER = `${RADAR_AUDIT_ROW}?.querySelector('[data-testid="route-picker"]')`;
@@ -33853,7 +35037,10 @@ const RADAR_AUDIT_PANEL = `document.querySelector('[aria-label="Available routes
 // or row until ListHarnessesCommand answers; twice its client timeout (CATALOG_RPC_TIMEOUT_MS, harnessstore.ts)
 const RADAR_AUDIT_CATALOG_WAIT_MS = 60_000;
 const RADAR_AUDIT_CATALOG_UP = `${RADAR_AUDIT_PANEL}?.querySelector('[data-testid^="route-harness-"], [data-testid^="route-option-"]') != null`;
+const RADAR_CLASSIFY_INPUT = `${RADAR_AUDIT_ROW}?.querySelector('input[type="text"]')`;
 const radarAuditFace = (h) => h.ev(`(${RADAR_AUDIT_TRIGGER}?.textContent || "").trim()`);
+const radarClassifyField = (h) =>
+    h.ev(`(() => { const i = ${RADAR_CLASSIFY_INPUT}; return i ? { value: i.value, placeholder: i.placeholder } : null; })()`);
 
 const settingsRadarAudit = {
     name: "settings-radar-audit",
@@ -33881,6 +35068,12 @@ const settingsRadarAudit = {
             title === true && /claude/i.test(unsetFace) && unsetFace.includes("sonnet"),
             `row=${title} face="${unsetFace}"`
         );
+        const unsetClassify = await radarClassifyField(h);
+        rec(
+            "3. the classifier field reads haiku when radar:classifymodel is unset on claude",
+            unsetClassify?.value === "" && unsetClassify?.placeholder === "haiku",
+            JSON.stringify(unsetClassify)
+        );
         await h.ev(`${RADAR_AUDIT_ROW}?.scrollIntoView({ block: "center" })`);
         await polishNap(200);
         await h.shot("cdp-shots/settings-radar-audit-closed.png");
@@ -33903,7 +35096,7 @@ const settingsRadarAudit = {
                 .sort();
         })()`);
         rec(
-            "3. the picker offers claude and pi and no other runtime",
+            "4. the picker offers claude and pi and no other runtime",
             JSON.stringify(offered) === JSON.stringify(["claude", "pi"]),
             catalogUp
                 ? `offered=${JSON.stringify(offered)} catalog=${catalogMs}ms`
@@ -33927,13 +35120,38 @@ const settingsRadarAudit = {
         await polishWaitFor(h, `(${RADAR_AUDIT_TRIGGER}?.textContent || "").includes(${JSON.stringify(picked ?? "\u0000")})`, 5000);
         const piFace = await radarAuditFace(h);
         rec(
-            "4. picking a pi route stores radar:auditruntime as pi and the row shows it",
+            "5. picking a pi route stores radar:auditruntime as pi and the row shows it",
             picked != null &&
                 stored["radar:auditruntime"] === "pi" &&
                 stored["radar:auditmodel"] === picked &&
                 /^pi\b/i.test(piFace) &&
                 piFace.includes(picked),
             `picked=${picked} runtime=${stored["radar:auditruntime"]} model=${stored["radar:auditmodel"]} face="${piFace}"`
+        );
+
+        await polishWaitFor(h, `${RADAR_CLASSIFY_INPUT}?.placeholder === "pi default"`, 3000);
+        const piClassify = await radarClassifyField(h);
+        const typed = "opencode/deepseek-v4-flash";
+        await h.ev(`(() => {
+            const i = ${RADAR_CLASSIFY_INPUT};
+            if (!i) return;
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(i, ${JSON.stringify(typed)});
+            i.dispatchEvent(new Event("input", { bubbles: true }));
+        })()`);
+        // Enter, not blur: the WebView rarely has OS focus under CDP, so focus()/blur() fire no events
+        await h.ev(`${RADAR_CLASSIFY_INPUT}?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))`);
+        let classifyStored;
+        for (let waited = 0; waited < 5000 && classifyStored !== typed; waited += 250) {
+            await polishNap(250);
+            classifyStored = ((await h.rpc("getfullconfig", null))?.settings ?? {})["radar:classifymodel"];
+        }
+        await h.ev(`${RADAR_AUDIT_ROW}?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-radar-audit-classifier.png");
+        rec(
+            "6. on pi the classifier field reads pi default, and a typed model is stored as radar:classifymodel",
+            piClassify?.placeholder === "pi default" && classifyStored === typed,
+            `field=${JSON.stringify(piClassify)} stored=${classifyStored}`
         );
 
         const mid = await h.ev(`(() => {
@@ -33946,7 +35164,7 @@ const settingsRadarAudit = {
             };
         })()`);
         rec(
-            "5. the section has no Mid model row",
+            "7. the section has no Mid model row",
             mid != null && mid.row === false && mid.text === false && mid.rows.includes("headless.cheap"),
             JSON.stringify(mid)
         );
@@ -38357,15 +39575,6 @@ const whatsNew = {
     },
 };
 
-// the run office's scenarios take the run-fixture helpers (docs/reference/cdp-run-fixtures.md) from here
-const { jarvisOffice, jarvisOfficeBench, jarvisOfficeFloor } = makeOfficeScenarios({
-    arrangeFixtureRun,
-    waitForDispatch,
-    briefReload,
-    teardownFixtureRun,
-    tasks: RUN_SHEET_POLISH_TASKS,
-    leadId: TREE_RAIL_LEAD_ID,
-});
 const { cockpitOffice, cockpitOfficeControls, cockpitOfficeNeedsYouBoard, cockpitOfficeBench } = makeCockpitOfficeScenarios({ arrangeFixtureRun, teardownFixtureRun });
 
 // --- run-queue: plans queued to start are rows on the Agent tree, with Start now, Run next and Remove ---------------------
@@ -42493,7 +43702,8 @@ async function onTrayPage(h, fixture, fn) {
 
 const TRAY_READ = `(() => {
     const p = document.querySelector('[data-tray-page]');
-    return { page: p?.getAttribute('data-tray-page') ?? null, width: p ? Math.round(p.getBoundingClientRect().width) : 0, text: p?.innerText ?? '' };
+    const spill = [...document.querySelectorAll('[data-tray-card]')].filter((c) => c.scrollWidth > c.clientWidth).map((c) => c.getAttribute('data-tray-card'));
+    return { page: p?.getAttribute('data-tray-page') ?? null, width: p ? Math.round(p.getBoundingClientRect().width) : 0, text: p?.innerText ?? '', spill };
 })()`;
 
 function trayScenario(name, fixture, page, checks) {
@@ -42508,9 +43718,10 @@ function trayScenario(name, fixture, page, checks) {
                 const r = await h.ev(TRAY_READ);
                 const steps = [
                     { step: `1. tray.html?fixture=${fixture} draws its ${page} page, 360 px wide`, ok: r.page === page && r.width === 360, detail: `page=${r.page} width=${r.width}` },
+                    { step: "2. no card's text runs past its edge", ok: r.spill.length === 0, detail: `spill=${r.spill.join(",") || "none"}` },
                 ];
                 checks.forEach(([label, want], i) =>
-                    steps.push({ step: `${i + 2}. ${label}`, ok: r.text.includes(want), detail: want })
+                    steps.push({ step: `${i + 3}. ${label}`, ok: r.text.includes(want), detail: want })
                 );
                 await h.shot(`cdp-shots/${name}-popover.png`);
                 return steps;
@@ -42562,7 +43773,7 @@ const trayOffline = trayScenario("tray-offline", "offline", "offline", [
 ]);
 const trayWindows = trayScenario("tray-windows", "windows", "main", [
     ["the disk is Local Disk (C:)", "Local Disk (C:)"],
-    ["memory is out of 32 GB", "free of 32 GB"],
+    ["memory is out of 31.8 GB, a total wider than the half card", "free of 31.8 GB"],
 ]);
 
 const trayActions = {
@@ -42640,6 +43851,448 @@ const traySettingsRow = {
     async teardown() {},
 };
 
+// --- setup memory: the Memory tab over fixture states in temp folders -----------------------------
+// Arranged for real, with no test hook: createproject registers the fixture projects on temp git repos,
+// and memory-fixtures.mjs writes their state files into the dev store with real hashes, naming memory
+// folders under the same temp root. Apply and undo then touch only those folders. It never clicks Check now
+// (or Check again), which would run a model check. Copy and layout are the memory-hygiene mockup's boards.
+const MEMORY_FIXTURE_NAMES = Object.values(MEMORY_PROJECTS);
+
+async function setupMemoryArrange(h) {
+    const ctx = { root: mkdtempSync(join(tmpdir(), "verify-setup-memory-")), registered: [], applyIds: [] };
+    try {
+        ctx.fx = buildMemoryFixture(ctx.root);
+        ctx.dataDir = (await h.rpc("waveinfo", null)).datadir;
+        for (const { name, path } of ctx.fx.projects) {
+            await h.rpc("createproject", { name, path });
+            ctx.registered.push({ name, path });
+        }
+        for (const { name } of ctx.fx.projects) await waitForProjectInConfig(h, name);
+        writeMemoryStates(ctx.dataDir, ctx.fx.states);
+        await polishReload(h);
+    } catch (e) {
+        await setupMemoryTeardown(h, ctx).catch(() => {});
+        throw e;
+    }
+    return ctx;
+}
+
+async function setupMemoryAssert(h, ctx) {
+    const steps = [];
+    const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+    const { fx } = ctx;
+    const own = fx.ownChanges;
+    const split = fx.splitChanges;
+    const q = (sel) => JSON.stringify(sel);
+    const projectSel = (name) => `[data-memory-project=${q(name)}]`;
+    const changeSel = (id) => `[data-memory-change=${q(id)}]`;
+    const text = (sel) => h.ev(`(document.querySelector(${q(sel)})?.textContent ?? "").trim()`);
+    const disabled = (sel) => h.ev(`document.querySelector(${q(sel)})?.disabled ?? null`);
+    const click = async (sel) => {
+        if (
+            !(await h.ev(
+                `(() => { const b = document.querySelector(${q(sel)}); if (!b) return false; b.click(); return true; })()`
+            ))
+        ) {
+            throw new Error(`nothing to click at ${sel}`);
+        }
+    };
+    const toolbarStatus = () =>
+        h.ev(
+            `(document.getElementById("setup-tab-memory")?.closest("[data-surface-toolbar]")?.lastElementChild?.textContent ?? "").trim()`
+        );
+    // the check line sits under the project name, beside Check now
+    const checkLine = () =>
+        h.ev(
+            `(document.querySelector("[data-memory-check]")?.parentElement?.firstElementChild?.lastElementChild?.textContent ?? "").trim()`
+        );
+    const railStatus = (name) =>
+        h.ev(`(document.querySelector(${q(projectSel(name))})?.lastElementChild?.textContent ?? "").trim()`);
+    const rowStatus = (id) =>
+        h.ev(`(document.querySelector(${q(changeSel(id))})?.lastElementChild?.textContent ?? "").trim()`);
+    const selectProject = async (name) => {
+        if (!(await polishWaitFor(h, `!!document.querySelector(${q(projectSel(name))})`, 10000))) {
+            throw new Error(`${name} is not in the Memory tab's project rail`);
+        }
+        await click(projectSel(name));
+        await polishWaitFor(
+            h,
+            `document.querySelector(${q(projectSel(name))})?.getAttribute("aria-pressed") === "true"`,
+            5000
+        );
+    };
+    const selectChange = async (id) => {
+        await click(changeSel(id));
+        await polishWaitFor(
+            h,
+            `document.querySelector(${q(changeSel(id))})?.getAttribute("aria-selected") === "true"`,
+            5000
+        );
+    };
+    // teardown removes each apply's backup by its id
+    const recordApplyId = async (changeId) => {
+        const listed = await h.rpc("listmemoryhygiene", null);
+        const id = listed.projects
+            .find((p) => p.project === MEMORY_PROJECTS.own)
+            ?.changes.find((c) => c.id === changeId)?.applyid;
+        if (id) ctx.applyIds.push(id);
+        return id;
+    };
+    const bytes = (path) => (existsSync(path) ? readFileSync(path) : null);
+    const same = (a, b) => a != null && b != null && Buffer.compare(a, b) === 0;
+    const run = async (step, fn) => {
+        try {
+            const { ok, detail } = await fn();
+            rec(step, ok, detail);
+        } catch (e) {
+            rec(step, false, String(e?.message ?? e));
+        }
+    };
+
+    await h.cdp("Emulation.setDeviceMetricsOverride", {
+        width: 1600,
+        height: 950,
+        deviceScaleFactor: 1,
+        mobile: false,
+    });
+    await h.goto("setup");
+    await click("#setup-tab-memory");
+    await polishWaitFor(h, `!!document.querySelector("[data-memory-project]")`, 10000);
+
+    await run(
+        "1. Main: the own project with the toolbar status, a meter, one index card, five rows and a trim's detail",
+        async () => {
+            await selectProject(MEMORY_PROJECTS.own);
+            await selectChange(own.trim.id);
+            const ix = fx.states[MEMORY_PROJECTS.own].index;
+            const meter = `${ix.lines} lines · ${(ix.bytes / 1000).toFixed(1)} of 25 KB`;
+            const got = {
+                toolbar: await toolbarStatus(),
+                rail: await text(projectSel(MEMORY_PROJECTS.own)),
+                cards: await h.ev(`document.querySelectorAll("[data-memory-card]").length`),
+                rows: await h.ev(`document.querySelectorAll("[data-memory-change]").length`),
+                detail: await text("[data-memory-detail]"),
+                keep: await disabled("[data-memory-keep]"),
+                apply: await disabled("[data-memory-apply]"),
+                applyLabel: await text("[data-memory-apply]"),
+            };
+            await h.shot("cdp-shots/setup-memory-main.png");
+            const toReview = Number(/^(\d+) projects? to review$/.exec(got.toolbar)?.[1] ?? 0);
+            return {
+                ok:
+                    toReview >= 3 &&
+                    got.rail.includes(meter) &&
+                    got.cards === 1 &&
+                    got.rows === 5 &&
+                    got.detail.includes("Why") &&
+                    got.detail.includes("Change") &&
+                    got.detail.includes(own.trim.title) &&
+                    got.keep === false &&
+                    got.apply === false &&
+                    got.applyLabel === "Apply trim",
+                detail: JSON.stringify({ ...got, detail: got.detail.slice(0, 160), meter }),
+            };
+        }
+    );
+
+    await run(
+        "2. Split: split-a shows the split text, two index cards, three labelled groups and a move-here",
+        async () => {
+            await selectProject(MEMORY_PROJECTS.splitA);
+            await selectChange(split.moveBuild.id);
+            const got = {
+                rail: await text(projectSel(MEMORY_PROJECTS.splitA)),
+                body: await h.ev(`(document.querySelector("[data-memory-check]")?.closest("main")?.textContent ?? "")`),
+                cards: await h.ev(`document.querySelectorAll("[data-memory-card]").length`),
+                groups: await h.ev(
+                    `[...document.querySelectorAll('[role="rowgroup"][aria-label]')].map((g) => g.getAttribute("aria-label"))`
+                ),
+                detail: await text("[data-memory-detail]"),
+            };
+            await h.shot("cdp-shots/setup-memory-split.png");
+            const repo = MEMORY_SHARED_REPO;
+            return {
+                ok:
+                    got.rail.includes(`Shares ${repo}’s memory`) &&
+                    got.body.includes(
+                        `Claude Code gives a git repo one memory, so ${MEMORY_PROJECTS.splitA} sessions load ${repo}’s MEMORY.md`
+                    ) &&
+                    got.cards === 2 &&
+                    JSON.stringify(got.groups) ===
+                        JSON.stringify([`From ${repo}’s memory`, "Already in its own folder", "Switch over"]) &&
+                    got.detail.startsWith("Move here"),
+                detail: JSON.stringify({ ...got, body: got.body.slice(0, 200), detail: got.detail.slice(0, 120) }),
+            };
+        }
+    );
+
+    await run("3. SplitGate: the settings change is held while shared changes are still to review", async () => {
+        await selectChange(split.settings.id);
+        const got = {
+            apply: await disabled("[data-memory-apply]"),
+            applyLabel: await text("[data-memory-apply]"),
+            gate: await text("[data-memory-gate]"),
+        };
+        await h.shot("cdp-shots/setup-memory-split-gate.png");
+        return {
+            ok:
+                got.apply === true &&
+                got.applyLabel === "Switch memory" &&
+                got.gate ===
+                    `Review the 3 changes from ${MEMORY_SHARED_REPO}’s memory first. Switching now would drop those memories from ${MEMORY_PROJECTS.splitA} sessions.`,
+            detail: JSON.stringify(got),
+        };
+    });
+
+    await run(
+        "4. Applied with Undo: the trim writes the trimmed bytes, reads Applied, and Undo restores the original",
+        async () => {
+            const original = bytes(fx.paths.trim);
+            const trimmed = Buffer.from(original.toString("utf8").replace(fx.trim.old, fx.trim.new), "utf8");
+            await selectProject(MEMORY_PROJECTS.own);
+            await selectChange(own.trim.id);
+            await click("[data-memory-apply]");
+            const appliedShown = await polishWaitFor(h, `!!document.querySelector("[data-memory-undo]")`, 10000);
+            await recordApplyId(own.trim.id);
+            const applied = {
+                file: same(bytes(fx.paths.trim), trimmed),
+                detail: await text("[data-memory-detail]"),
+                undo: await text("[data-memory-undo]"),
+                row: await rowStatus(own.trim.id),
+            };
+            await h.shot("cdp-shots/setup-memory-applied.png");
+            await click("[data-memory-undo]");
+            const reopened = await polishWaitFor(h, `!!document.querySelector("[data-memory-apply]")`, 10000);
+            const restored = same(bytes(fx.paths.trim), original);
+            const row = await rowStatus(own.trim.id);
+            return {
+                ok:
+                    appliedShown &&
+                    applied.file &&
+                    /Applied at \d/.test(applied.detail) &&
+                    applied.undo === "Undo" &&
+                    applied.row === "Applied" &&
+                    reopened &&
+                    restored &&
+                    row === "To review",
+                detail: JSON.stringify({
+                    ...applied,
+                    detail: applied.detail.slice(-160),
+                    reopened,
+                    restored,
+                    rowAfterUndo: row,
+                }),
+            };
+        }
+    );
+
+    await run("5. ChangedOnDisk: a file edited after the check stops the apply with the conflict alert", async () => {
+        const edited = Buffer.from(`${readFileSync(fx.paths.delete, "utf8")}Edited after the check.\n`, "utf8");
+        writeFileSync(fx.paths.delete, edited);
+        const index = bytes(fx.paths.ownIndex);
+        await selectChange(own.delete.id);
+        await click("[data-memory-apply]");
+        const shown = await polishWaitFor(h, `!!document.querySelector("[data-memory-conflict]")`, 10000);
+        const got = {
+            alert: await text("[data-memory-conflict]"),
+            checkAgain: await text("[data-memory-conflict] button"),
+            apply: await disabled("[data-memory-apply]"),
+            row: await rowStatus(own.delete.id),
+            file: same(bytes(fx.paths.delete), edited),
+            index: same(bytes(fx.paths.ownIndex), index),
+        };
+        await h.shot("cdp-shots/setup-memory-changed-on-disk.png");
+        return {
+            ok:
+                shown &&
+                got.alert.includes("Changed on disk since the check.") &&
+                got.alert.includes("flaky-retry-test.md") &&
+                got.checkAgain === "Check again" &&
+                got.apply === true &&
+                got.row === "Changed on disk" &&
+                got.file &&
+                got.index,
+            detail: JSON.stringify({ ...got, alert: got.alert.slice(0, 160) }),
+        };
+    });
+
+    await run("6. Keep / Review again: a kept change reads Kept as is, and Review again opens it again", async () => {
+        await selectChange(own.merge.id);
+        await click("[data-memory-keep]");
+        const kept = await polishWaitFor(h, `!!document.querySelector("[data-memory-undo]")`, 10000);
+        const got = {
+            detail: await text("[data-memory-detail]"),
+            button: await text("[data-memory-undo]"),
+            row: await rowStatus(own.merge.id),
+        };
+        await h.shot("cdp-shots/setup-memory-kept.png");
+        await click("[data-memory-undo]");
+        const reopened = await polishWaitFor(h, `!!document.querySelector("[data-memory-apply]")`, 10000);
+        const row = await rowStatus(own.merge.id);
+        return {
+            ok:
+                kept &&
+                got.detail.includes("Kept as is. The next check skips it unless the memory changes.") &&
+                got.button === "Review again" &&
+                got.row === "Kept" &&
+                reopened &&
+                row === "To review",
+            detail: JSON.stringify({ ...got, detail: got.detail.slice(-120), reopened, rowAfter: row }),
+        };
+    });
+
+    await run("7. Check states: never checked, a failed check over its last result, and a check running", async () => {
+        const got = {};
+        for (const [key, name] of [
+            ["fresh", MEMORY_PROJECTS.fresh],
+            ["failed", MEMORY_PROJECTS.failed],
+            ["checking", MEMORY_PROJECTS.checking],
+        ]) {
+            await selectProject(name);
+            got[key] = {
+                rail: await railStatus(name),
+                line: await checkLine(),
+                rows: await h.ev(`document.querySelectorAll("[data-memory-change]").length`),
+                checkNow: await disabled("[data-memory-check]"),
+            };
+            await h.shot(`cdp-shots/setup-memory-${key}.png`);
+        }
+        return {
+            ok:
+                got.fresh.rail === "Not checked yet" &&
+                got.fresh.line === "Not checked yet" &&
+                got.failed.rail === "Last check failed" &&
+                got.failed.line.endsWith(`Last check failed: ${MEMORY_FAILED_ERROR}`) &&
+                got.failed.rows === 1 &&
+                got.checking.rail === "Checking…" &&
+                got.checking.line === "Checking…" &&
+                got.checking.checkNow === true,
+            detail: JSON.stringify(got),
+        };
+    });
+
+    await run(
+        "8. Error alert: an undo whose backup is gone shows the backend's message and writes nothing",
+        async () => {
+            const before = { index: bytes(fx.paths.ownIndex), note: bytes(fx.paths.harvested) };
+            await selectProject(MEMORY_PROJECTS.own);
+            await selectChange(own.addToIndex.id);
+            await click("[data-memory-apply]");
+            if (!(await polishWaitFor(h, `!!document.querySelector("[data-memory-undo]")`, 10000))) {
+                return { ok: false, detail: `the add-to-index did not apply: ${await text("[data-memory-error]")}` };
+            }
+            const applied = { index: bytes(fx.paths.ownIndex), note: bytes(fx.paths.harvested) };
+            const applyId = await recordApplyId(own.addToIndex.id);
+            if (!applyId) return { ok: false, detail: "the applied change has no apply id" };
+            rmSync(memoryBackupDir(ctx.dataDir, applyId), { recursive: true, force: true });
+            await click("[data-memory-undo]");
+            const shown = await polishWaitFor(h, `!!document.querySelector("[data-memory-error]")`, 10000);
+            const got = {
+                alert: await text("[data-memory-error]"),
+                row: await rowStatus(own.addToIndex.id),
+                changed: !same(applied.index, before.index) && !same(applied.note, before.note),
+                kept: same(bytes(fx.paths.ownIndex), applied.index) && same(bytes(fx.paths.harvested), applied.note),
+            };
+            await h.shot("cdp-shots/setup-memory-error.png");
+            return {
+                ok:
+                    shown &&
+                    got.alert.startsWith(`Could not undo the change in ${MEMORY_PROJECTS.own}: `) &&
+                    got.alert.includes("backup manifest") &&
+                    got.row === "Applied" &&
+                    got.changed &&
+                    got.kept,
+                detail: JSON.stringify(got),
+            };
+        }
+    );
+
+    await run("9. Every project checked: with no change left open the toolbar says so", async () => {
+        writeMemoryStates(ctx.dataDir, settleMemoryStates(fx.states));
+        await polishReload(h);
+        await h.goto("setup");
+        await click("#setup-tab-memory");
+        await polishWaitFor(h, `!!document.querySelector("[data-memory-project]")`, 10000);
+        // a dev store with real projects may have changes of its own to review, which the fixture can't settle
+        const listed = await h.rpc("listmemoryhygiene", null);
+        const others = listed.projects
+            .filter((p) => !MEMORY_FIXTURE_NAMES.includes(p.project))
+            .filter((p) => p.changes.some((c) => c.status !== "applied" && c.status !== "kept"))
+            .map((p) => p.project);
+        const toolbar = await toolbarStatus();
+        await h.shot("cdp-shots/setup-memory-all-checked.png");
+        if (others.length > 0) {
+            return {
+                ok: toolbar === `${others.length} project${others.length === 1 ? "" : "s"} to review`,
+                detail: `toolbar="${toolbar}"; this store's own projects to review: ${others.join(", ")}`,
+            };
+        }
+        return { ok: toolbar === "Every project checked", detail: `toolbar="${toolbar}"` };
+    });
+
+    await run("10. Landing: memhygiene:<project> opens Setup → Memory with the project selected", async () => {
+        await h.goto("cockpit");
+        await polishWaitFor(h, `typeof window.__openAddress === "function"`, 5000);
+        await h.ev(`window.__openAddress(${q(`memhygiene:${MEMORY_PROJECTS.splitA}`)})`);
+        const landed = await polishWaitFor(
+            h,
+            `document.querySelector(${q(projectSel(MEMORY_PROJECTS.splitA))})?.getAttribute("aria-pressed") === "true"`,
+            10000
+        );
+        const got = {
+            surface: await h.activeSurfaceLabel(),
+            tab: await h.ev(`document.getElementById("setup-tab-memory")?.getAttribute("aria-selected")`),
+            pressed: landed,
+        };
+        await h.shot("cdp-shots/setup-memory-landing.png");
+        return { ok: got.surface === SURFACE_LABEL.setup && got.tab === "true" && landed, detail: JSON.stringify(got) };
+    });
+    return steps;
+}
+
+async function setupMemoryTeardown(h, ctx) {
+    const failed = [];
+    const step = async (what, fn) => {
+        try {
+            await fn();
+        } catch (e) {
+            failed.push(`${what}: ${e?.message ?? e}`);
+        }
+    };
+    const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+    const paths = new Set(ctx.registered.map((r) => norm(r.path)));
+    for (const { name } of ctx.registered) await step(`delete project ${name}`, () => h.rpc("deleteproject", { name }));
+    // createproject made a channel at each path, which deleteproject leaves
+    await step("delete the projects' channels", async () => {
+        const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+        for (const c of channels.filter((c) => paths.has(norm(c.projectpath)))) {
+            await h.rpc("deletechannel", { channelid: c.oid });
+        }
+    });
+    if (ctx.dataDir) {
+        for (const name of MEMORY_FIXTURE_NAMES) {
+            await step(`remove the state of ${name}`, () =>
+                rmSync(memoryStatePath(ctx.dataDir, name), { force: true })
+            );
+        }
+        // undo keeps a backup until the sweep prunes it, so the applies' backups go here
+        await step("remove the fixture's backups", () => {
+            for (const id of ctx.applyIds) rmSync(memoryBackupDir(ctx.dataDir, id), { recursive: true, force: true });
+        });
+    }
+    await step("remove the temp root", () => rmSync(ctx.root, { recursive: true, force: true, maxRetries: 3 }));
+    await step("reload", () => polishReload(h));
+    await step("return to the cockpit", () => h.goto("cockpit"));
+    if (failed.length > 0) throw new Error(`setup-memory teardown: ${failed.join("; ")}`);
+}
+
+const setupMemory = {
+    name: "setup-memory",
+    surface: "setup",
+    arrange: setupMemoryArrange,
+    assert: setupMemoryAssert,
+    teardown: setupMemoryTeardown,
+};
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -42735,9 +44388,11 @@ export const SCENARIOS = [
     launcherResume,
     launcherImages,
     paletteActions,
+    autonomousRuns,
     paletteGoal,
     paletteNotes,
     modelPicks,
+    planReviewRounds,
     codexWorkerRoute,
     canvasSwap,
     canvasTabsScenario,
@@ -42777,9 +44432,6 @@ export const SCENARIOS = [
     setupProject,
     setupSkillEdit,
     whatsNew,
-    jarvisOffice,
-    jarvisOfficeBench,
-    jarvisOfficeFloor,
     cockpitOffice,
     cockpitOfficeControls,
     cockpitOfficeNeedsYouBoard,

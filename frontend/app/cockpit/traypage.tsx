@@ -85,7 +85,8 @@ function MemoryCard({ s, onFreeUp }: { s: TraySnapshot; onFreeUp: () => void }) 
                 <span className="flex-1 text-[12px] font-semibold text-secondary">Memory</span>
                 <PressureWord level={level} platform={s.platform} />
             </div>
-            <div className="flex items-baseline gap-1.5">
+            {/* wraps: "12.4 GB free of 31.8 GB" is wider than the half-width card */}
+            <div className="flex flex-wrap items-baseline gap-x-1.5">
                 <span className="whitespace-nowrap text-[20px] font-semibold tabular-nums text-primary">
                     {m ? fmtSize(m.memAvailable) : "—"}
                 </span>

@@ -86,6 +86,7 @@ declare global {
         transcriptpath?: string;
         ts: number;
         usage?: AgentUsage;
+        hook?: string;
     };
 
     // wshrpc.AgentSyncAction
@@ -624,6 +625,11 @@ declare global {
         runid: string;
     };
 
+    // wshrpc.CommandCheckMemoryHygieneData
+    type CommandCheckMemoryHygieneData = {
+        project: string;
+    };
+
     // wshrpc.CommandClaudeAccountAddData
     type CommandClaudeAccountAddData = {
         label: string;
@@ -746,6 +752,7 @@ declare global {
         workerroute?: RoutePin;
         reviewerpicks?: boolean;
         reviewerroute?: RoutePin;
+        lightreviewerroute?: RoutePin;
         orchestration?: string;
         parallelism?: number;
         playbookid?: string;
@@ -758,6 +765,7 @@ declare global {
         planpath?: string;
         prototype?: string;
         origintabid?: string;
+        autonomous?: boolean;
     };
 
     // wshrpc.CommandCreateRunRtnData
@@ -851,6 +859,13 @@ declare global {
         planpath?: string;
         specpath?: string;
         round?: boolean;
+    };
+
+    // wshrpc.CommandDecideMemoryChangeData
+    type CommandDecideMemoryChangeData = {
+        project: string;
+        changeid: string;
+        verdict: string;
     };
 
     // wshrpc.CommandDeleteAgentSessionData
@@ -1655,6 +1670,11 @@ declare global {
         harnesses: HarnessInfo[];
     };
 
+    // wshrpc.CommandListMemoryHygieneRtnData
+    type CommandListMemoryHygieneRtnData = {
+        projects: MemHygieneProject[];
+    };
+
     // wshrpc.CommandListRadarReportsData
     type CommandListRadarReportsData = {
         projectpath?: string;
@@ -1945,6 +1965,8 @@ declare global {
         workerroute?: RoutePin;
         reviewerpicks?: boolean;
         reviewerroute?: RoutePin;
+        lightreviewerroute?: RoutePin;
+        autonomous?: boolean;
     };
 
     // wshrpc.CommandStartRadarScanData
@@ -2642,7 +2664,9 @@ declare global {
         workerroute?: RoutePin;
         reviewerpicks?: boolean;
         reviewerroute?: RoutePin;
+        lightreviewerroute?: RoutePin;
         landing?: string;
+        autonomous?: boolean;
     };
 
     // wshrpc.JobQueueData
@@ -2724,6 +2748,107 @@ declare global {
         diskname: string;
         disktotal: number;
         diskfree: number;
+    };
+
+    // wshrpc.MemChange
+    type MemChange = {
+        id: string;
+        kind: string;
+        group: string;
+        title: string;
+        note: string;
+        applylabel: string;
+        effect: string;
+        files: MemFileRef[];
+        evidence: MemEvidence[];
+        diffs: MemDiff[];
+        indexdelta: MemIndexDelta;
+        ownindexdelta: MemIndexDelta;
+        op: MemOp;
+        status: string;
+        conflictfile: string;
+        decidedat: number;
+        backupuntil: number;
+        applyid: string;
+    };
+
+    // wshrpc.MemDiff
+    type MemDiff = {
+        path: string;
+        note: string;
+        lines: MemDiffLine[];
+    };
+
+    // wshrpc.MemDiffLine
+    type MemDiffLine = {
+        sign: string;
+        text: string;
+    };
+
+    // wshrpc.MemEvidence
+    type MemEvidence = {
+        tone: string;
+        text: string;
+        code: string;
+    };
+
+    // wshrpc.MemFileRef
+    type MemFileRef = {
+        path: string;
+        sha256: string;
+    };
+
+    // wshrpc.MemHygieneProject
+    type MemHygieneProject = {
+        project: string;
+        path: string;
+        checkedat: number;
+        nextcheckat: number;
+        checking: boolean;
+        lasterror: string;
+        memories: number;
+        sessions: number;
+        folder: string;
+        sharedwith: string[];
+        ownfolder: string;
+        formershared: string;
+        switchedat: number;
+        index: MemIndexStats;
+        ownindex?: MemIndexStats;
+        changes: MemChange[];
+    };
+
+    // wshrpc.MemIndexDelta
+    type MemIndexDelta = {
+        lines: number;
+        bytes: number;
+    };
+
+    // wshrpc.MemIndexStats
+    type MemIndexStats = {
+        exists: boolean;
+        lines: number;
+        bytes: number;
+    };
+
+    // wshrpc.MemOp
+    type MemOp = {
+        folder: string;
+        memories: string[];
+        old: string;
+        new: string;
+        indexremove: string[];
+        indexadd: string;
+        indexfolder: string;
+        writename: string;
+        writebody: string;
+        docpath: string;
+        docsection: string;
+        docpassage: string;
+        tofolder: string;
+        settingspath: string;
+        settingsvalue: string;
+        stripharvester: boolean;
     };
 
     // wshrpc.MemoryPressureData
@@ -2854,14 +2979,41 @@ declare global {
         note?: string;
     };
 
+    // waveobj.PlanReviewPrior
+    type PlanReviewPrior = {
+        findings: string;
+        plantext?: string;
+        spectext?: string;
+        picks?: PlanReviewPriorPick[];
+    };
+
+    // waveobj.PlanReviewPriorPick
+    type PlanReviewPriorPick = {
+        taskid: string;
+        title: string;
+        model: string;
+        reason: string;
+    };
+
     // waveobj.PlanReviewStage
     type PlanReviewStage = {
         state: string;
         round: number;
-        runid?: string;
         findings?: string;
-        respawns?: number;
+        reviewers?: PlanReviewer[];
+        plantext?: string;
+        spectext?: string;
+        prior?: PlanReviewPrior;
+    };
+
+    // waveobj.PlanReviewer
+    type PlanReviewer = {
+        lens: string;
+        state: string;
+        text?: string;
+        runid?: string;
         startedts?: number;
+        respawns?: number;
     };
 
     // waveobj.Point
@@ -2917,7 +3069,9 @@ declare global {
         workerroute?: RoutePin;
         reviewerpicks?: boolean;
         reviewerroute?: RoutePin;
+        lightreviewerroute?: RoutePin;
         landing?: string;
+        autonomous?: boolean;
     };
 
     // wconfig.ProjectKeywords
@@ -2936,6 +3090,7 @@ declare global {
 
     // waveobj.RadarAudit
     type RadarAudit = {
+        kind?: string;
         commit: string;
         subject: string;
         committs: number;
@@ -2950,6 +3105,13 @@ declare global {
         cachereadtokens?: number;
         durationms?: number;
         rawresponse?: string;
+        fixsubjects?: string[];
+    };
+
+    // waveobj.RadarCommitClass
+    type RadarCommitClass = {
+        fix: boolean;
+        behavior: boolean;
     };
 
     // waveobj.RadarDisposition
@@ -2982,6 +3144,7 @@ declare global {
         sourcesubject?: string;
         rootcause?: string;
         sites?: RadarSite[];
+        fixsubjects?: string[];
     };
 
     // waveobj.RadarInvestigation
@@ -3025,6 +3188,10 @@ declare global {
         findings?: RadarFinding[];
         clusterstartedts?: number;
         audits?: RadarAudit[];
+        commitclasses?: {[key: string]: RadarCommitClass};
+        classifycount?: number;
+        classifyerror?: string;
+        classifytokens?: number;
     };
 
     // waveobj.RadarSignal
@@ -3200,6 +3367,8 @@ declare global {
         workerroute?: RoutePin;
         reviewerpicks?: boolean;
         reviewerroute?: RoutePin;
+        lightreviewerroute?: RoutePin;
+        autonomous?: boolean;
         orchestration?: string;
         parallelism?: number;
         prototype?: string;
@@ -3372,6 +3541,7 @@ declare global {
         channelid?: string;
         taskid?: string;
         role?: string;
+        stagerunid?: string;
     };
 
     // wshrpc.SessionEvent
@@ -3473,6 +3643,7 @@ declare global {
         "agents:sleepaftermin"?: number;
         "radar:auditruntime"?: string;
         "radar:auditmodel"?: string;
+        "radar:classifymodel"?: string;
         "usage:insightslang"?: string;
         "tokengate:*"?: boolean;
         "tokengate:enabled"?: boolean;
@@ -3677,6 +3848,8 @@ declare global {
         workerroute?: RoutePin;
         reviewerpicks?: boolean;
         reviewerroute?: RoutePin;
+        lightreviewerroute?: RoutePin;
+        autonomous?: boolean;
         mergerequired?: boolean;
         createdts: number;
         updatedts: number;

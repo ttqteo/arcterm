@@ -130,7 +130,9 @@ export function profileOverrideIsEmpty(o: ProfileOverride | null | undefined): b
         o.parallelism == null &&
         o.workerroute == null &&
         o.reviewerpicks == null &&
-        o.reviewerroute == null
+        o.reviewerroute == null &&
+        o.lightreviewerroute == null &&
+        o.autonomous == null
     );
 }
 
@@ -213,8 +215,24 @@ export function globalProfileIsDirty(a: JarvisProfile, b: JarvisProfile): boolea
 }
 
 // the run defaults a project can set for itself, in the order the modal lists them
-const OVERRIDE_FIELDS = ["defaultmode", "parallelism", "route", "workerroute", "reviewerroute", "landing"] as const;
-export type GlobalDefaultKey = "defaultmode" | "parallelism" | "workerroute" | "reviewerroute" | "landing";
+const OVERRIDE_FIELDS = [
+    "defaultmode",
+    "parallelism",
+    "route",
+    "workerroute",
+    "reviewerroute",
+    "lightreviewerroute",
+    "landing",
+    "autonomous",
+] as const;
+export type GlobalDefaultKey =
+    | "defaultmode"
+    | "parallelism"
+    | "workerroute"
+    | "reviewerroute"
+    | "lightreviewerroute"
+    | "landing"
+    | "autonomous";
 // the fields both scopes share. ProfileOverride and JarvisProfile agree on all of them; `route` is the one
 // that does not exist globally, which is why the modal passes its lead-route row in.
 export type ProfileDefaults = Pick<ProfileOverride, GlobalDefaultKey | "reviewerpicks">;
@@ -274,6 +292,37 @@ export function applyWorkersChoice<T extends ProfileDefaults>(
     return next;
 }
 
+export type ApprovalsRow = { autonomous: boolean; inherited: boolean };
+
+// The Approvals row. A project's Ask me is a stated false, so it holds over a global Autonomous; Reset is the
+// way back to inheriting.
+export function approvalsRow(draft: ProfileDefaults, base: JarvisProfile, inheritable: boolean): ApprovalsRow {
+    const inherited = inheritable && !overridesRow(draft, "autonomous");
+    return { autonomous: (inherited ? base.autonomous : draft.autonomous) ?? false, inherited };
+}
+
+// Global scope unsets rather than stores false, so Ask me there reads clean against a profile that never had
+// the key; a project stores the false, since unset would inherit.
+export function applyApprovals<T extends ProfileDefaults>(draft: T, autonomous: boolean, inheritable: boolean): T {
+    const next = { ...draft };
+    if (autonomous || inheritable) {
+        next.autonomous = autonomous;
+    } else {
+        delete next.autonomous;
+    }
+    return next;
+}
+
+// A row's Reset: drop the project's value so the row inherits again. The workers row is a pair, so both halves go.
+export function resetRow(o: ProfileOverride, key: GlobalDefaultKey | "route"): ProfileOverride {
+    if (key === "workerroute") {
+        return applyWorkersChoice(o, { kind: "reset" }, true);
+    }
+    const next = { ...o };
+    delete next[key];
+    return next;
+}
+
 export type ReviewerRow = { value: RoutePin | null; inheritedLabel: string };
 
 // The Reviewer route row. Unlike the workers pair, a project override has no way to say Same as lead over a
@@ -282,6 +331,15 @@ export function reviewerRow(draft: ProfileDefaults, base: JarvisProfile, inherit
     return {
         value: draft.reviewerroute ?? null,
         inheritedLabel: inheritable && base.reviewerroute != null ? "Same as global" : "Same as lead",
+    };
+}
+
+// The Light reviewers route row: the plan review's lens and follow-up reviewers. Unset is the server's
+// claude/sonnet default rather than the lead's route, so that is what the unset answer names.
+export function lightReviewerRow(draft: ProfileDefaults, base: JarvisProfile, inheritable: boolean): ReviewerRow {
+    return {
+        value: draft.lightreviewerroute ?? null,
+        inheritedLabel: inheritable && base.lightreviewerroute != null ? "Same as global" : "Sonnet (default)",
     };
 }
 

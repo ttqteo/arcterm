@@ -12,7 +12,9 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
 // useRoot points the test at a fresh worktree root and returns it.
@@ -364,4 +366,107 @@ func TestWorktreeDirWithoutARootIsLegacy(t *testing.T) {
 		t.Fatalf("no marker is written anywhere, the last root holds %d entries", len(entries))
 	}
 	assertNoMarker(t, filepath.Join(project, ".waveterm", "worktrees"), id)
+}
+
+// storedRun stores a run with status and returns its id.
+func storedRun(t *testing.T, status string) string {
+	t.Helper()
+	ch, err := wstore.CreateChannel(context.Background(), "sweep", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := jarvis.NewRun("goal", "ws-1", ch.ProjectPath, nil, jarvis.RunMode_Quick, jarvis.QuickPlaybook(), 1)
+	run.Status = status
+	if err := wstore.AppendRun(context.Background(), ch.OID, run); err != nil {
+		t.Fatal(err)
+	}
+	return run.ID
+}
+
+// leftTree claims key's prefix and makes its folder under root, with a .git file when withGit.
+func leftTree(t *testing.T, root, key string, withGit bool) string {
+	t.Helper()
+	runID, _, _ := splitRunKey(key)
+	if err := claimRunPrefix(root, runID); err != nil {
+		t.Fatal(err)
+	}
+	dir := shortWorktreeDir(root, key)
+	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if withGit {
+		if err := os.WriteFile(filepath.Join(dir, ".git"), []byte("gitdir: x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+func exists(path string) bool {
+	_, err := os.Lstat(path)
+	return err == nil
+}
+
+func TestSweepWorktreeRootClearsAFinishedRunsUnregisteredFolders(t *testing.T) {
+	root := useRoot(t)
+	for _, status := range []string{jarvis.RunStatus_Done, jarvis.RunStatus_Cancelled} {
+		id := storedRun(t, status)
+		landing, lane := leftTree(t, root, id, false), leftTree(t, root, id+"-t-2", false)
+		SweepWorktreeRoot(context.Background())
+		if exists(landing) || exists(lane) {
+			t.Fatalf("%s run: its folders with no .git should be gone", status)
+		}
+		assertNoMarker(t, root, id)
+	}
+}
+
+func TestSweepWorktreeRootKeeps(t *testing.T) {
+	cases := map[string]func(t *testing.T, root string) (dir, id string){
+		"a live run's folder": func(t *testing.T, root string) (string, string) {
+			id := storedRun(t, jarvis.RunStatus_Executing)
+			return leftTree(t, root, id, false), id
+		},
+		"a finished run's folder that still has a .git": func(t *testing.T, root string) (string, string) {
+			id := storedRun(t, jarvis.RunStatus_Done)
+			return leftTree(t, root, id+"-t-1", true), id
+		},
+		"a folder whose run is not stored": func(t *testing.T, root string) (string, string) {
+			id := uuid.NewString()
+			return leftTree(t, root, id, false), id
+		},
+	}
+	for name, arrange := range cases {
+		t.Run(name, func(t *testing.T) {
+			root := useRoot(t)
+			dir, id := arrange(t, root)
+			SweepWorktreeRoot(context.Background())
+			if !exists(dir) {
+				t.Fatalf("%s was removed", dir)
+			}
+			if got := readMarker(t, root, id); got != id {
+				t.Fatalf("marker = %q, want %q", got, id)
+			}
+		})
+	}
+}
+
+func TestSweepWorktreeRootKeepsAMarkerAnotherRunsFolderSharesThePrefixOf(t *testing.T) {
+	root := useRoot(t)
+	id := storedRun(t, jarvis.RunStatus_Done)
+	if err := claimRunPrefix(root, id); err != nil {
+		t.Fatal(err)
+	}
+	// a live run sharing the prefix got a full-key folder; dropping the marker would move where its key resolves
+	other := samePrefixRunID(id)
+	otherDir := filepath.Join(root, other+"-t-1")
+	if err := os.MkdirAll(otherDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	SweepWorktreeRoot(context.Background())
+	if !exists(otherDir) {
+		t.Fatal("the other run's folder was removed")
+	}
+	if got := readMarker(t, root, id); got != id {
+		t.Fatalf("marker = %q, want %q", got, id)
+	}
 }

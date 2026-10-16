@@ -1,9 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn } from "@/util/util";
 import { Check, Loader2, X } from "lucide-react";
-import { auditStateText, type AuditRow, type AuditState } from "./radarmodel";
+import { auditGroups, auditStateText, type AuditRow, type AuditState } from "./radarmodel";
 import { AUDIT_STATE_TEXT } from "./radarstyles";
 import { SubLabel } from "./sectionlabel";
 
@@ -76,7 +77,7 @@ function AuditRowView({ row, live, framed }: { row: AuditRow; live: boolean; fra
     );
 }
 
-// The audited-commit list: the live scan, the finished scan with no findings, and the header popover.
+// The audit list, grouped by kind: the live scan, the finished scan with no findings, and the header popover.
 // framed draws its own table border; the popover is already a panel, so it leaves that off.
 export function RadarAuditList({
     rows,
@@ -103,8 +104,23 @@ export function RadarAuditList({
                 <SubLabel className="flex-1">{title}</SubLabel>
                 <span className="text-[11px] tabular-nums text-ink-mid">{tally}</span>
             </div>
-            {rows.map((row) => (
-                <AuditRowView key={row.commit} row={row} live={live} framed={framed} />
+            {auditGroups(rows).map((g) => (
+                <div key={g.kind} data-radar-audit-group={g.kind} className={cn("flex flex-col", framed && "gap-px")}>
+                    <div
+                        className={cn(
+                            "flex items-baseline gap-2",
+                            framed ? "bg-surface px-3.5 pb-1.5 pt-2" : "px-2 pb-1 pt-2.5"
+                        )}
+                    >
+                        <span data-radar-audit-group-label className={cn(REGION_LABEL, "text-ink-mid")}>
+                            {g.label}
+                        </span>
+                        <span className="font-mono text-[10.5px] text-muted">{g.rows.length}</span>
+                    </div>
+                    {g.rows.map((row) => (
+                        <AuditRowView key={row.key} row={row} live={live} framed={framed} />
+                    ))}
+                </div>
             ))}
         </div>
     );

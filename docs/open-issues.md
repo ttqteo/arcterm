@@ -36,6 +36,29 @@ does not, say what you saw and it becomes a bug row under Actionable.
   or channel row lands there. After work hours the slips dim with the office. The CDP scenario
   `office-needs-you-board` ran on a fixture only and pressed no act that calls the server.
 
+**2026-10-16 (Jarvis without the office)**
+
+- [ ] Open Jarvis's Brief: the Runs list's header shows the run-kind toggle and no **office** chip, and no floor draws
+  under the runs. Sprout walks the footer as before; its bubble and its peek open from it (not from a desk). The
+  Cockpit's Office is unchanged. `briefsurface.tsx`, `petview.tsx`; the commit that deleted `view/jarvis/office*`.
+
+**2026-10-16 (kael sync: memory hygiene, autonomous runs, wider plan review, radar kinds)**
+
+- [ ] (arcterm) Setup → Memory: the tab sits between Learned and Project; a project row shows its index size and
+  "Not checked yet" until a check runs; **Check now** proposes changes with their evidence, Accept applies one and
+  Undo puts it back. `setupmemory.tsx`, `setupsurface.tsx`.
+- [ ] (arcterm) New → Orchestrate: the Models block is a 2×2 grid (Lead, Workers, Reviewers, Light reviewers) and an
+  **Approvals** row (Ask me | Autonomous) with its note sits under it; a run started on Autonomous shows the word on
+  its run sheet's config line. `launcherrunfields.tsx`, `launchermodal.tsx`.
+- [ ] (arcterm) A run's sheet → Adjust: the Approvals dial saves, turning it on with a lead question waiting hands that
+  question back; the palette offers **Go autonomous** / **Ask me again** on the run. `briefrunsheet.tsx`.
+- [ ] (arcterm) A run's plan review: five reviewer rows in the Agent tree, each titled `Plan review · <lens>`, and one
+  chip per reviewer in the DAG view; a round-2 resubmit shows one `Round-2 follow-up`. `agenttree.tsx`.
+- [ ] (arcterm) Settings → Background AI → Radar: a **Commit classifier** row under Radar audit, its placeholder
+  `haiku` on claude and `pi default` on pi. `settingspages/backgroundai.tsx`.
+- [ ] (arcterm) A terminal after a GPU reset (or a WebGL context loss): it goes on drawing with the DOM renderer at
+  once, no white sad-face canvas, and WebGL comes back about 2 s later. `termwrap.ts`.
+
 **2026-10-16 (the Office plays like a pixel game, run 25462413)**
 
 - [ ] (arcterm) In the installed Mac app (Final ran the scenarios in headless Chrome, not WKWebView): Cockpit → Office.
@@ -70,6 +93,9 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   15 s of the kill, Restart arcterm brings it back. With Settings → General's toggle off, the icon stays hidden
   through the kill.
 - [ ] (arcterm) Settings → General's toggle hides and shows the icon; the popover's gear opens Settings → General.
+- [ ] (arcterm) On Windows, open the popover a few times while what waits on you changes: no scrollbar on either
+  edge, the footer whole, one rounded edge at each corner (the system's, no CSS border inside it), and "free of
+  31.8 GB" inside the Memory card on its own line.
 
 **2026-10-15 (an agent cut off by a restart carries on)**
 
@@ -767,29 +793,6 @@ Tracked in their own initiatives, not here:
 
 ### (arcterm) RAM watch
 
-- **Run office** (2026-10-14, `jarvis-office-bench`, 104 desks, dev app, run alone with no other Final or dev app
-  open; the user's own WSL, Docker and arcterm kept the CPU at 33–100 %): heap +1.6 MB open, +1501 DOM nodes, busy
-  1.1 % over the office-off baseline (6.7 % raw, baseline 5.6 %) and −1.7 % under reduced motion (3.9 % raw), 79
-  sprites, +0.68 MB after off, 87 ms to draw. Budgets: 5 MB, 2,000, 2 %, 0.5 %, 320, 1 MB, 150 ms: all held in
-  that run. The run's own Final (round 2, same day) missed one: busy 3.4 % over the office-off baseline (7.3 % raw,
-  baseline 3.9 %), with the rest held (heap +1.6 MB, +1480 nodes, −1 % reduced, +0.8 MB after off, 91 ms). It landed
-  on the person's call; re-measure busy on a production build, since React's dev build adds a `performance.measure`
-  per render. Mounted only while the office is on. The first round missed four (busy, busy under reduced motion, heap after
-  off, time to draw). What moved them: the sprite canvas ran on the GPU, so `toDataURL` cost 80–95 ms of the first
-  open (a software canvas: ~5 ms); the DEV fixture floors passed a new `onOpen` each render, so every re-render
-  of the Brief (every few seconds) redrew all 104 desks; a tick re-rendered whole desks, now only each animated
-  desk's person and screen; floors below the fold are `content-visibility: auto`. What stays after off is V8
-  compiled code (~0.5 MB) and the sprite images in Blink's cache; DOM nodes and listeners return to baseline, so it
-  is not a leak. The page also grows ~1.5 MB by itself in its first 30 s, so the heap budgets read against the
-  closed state just before the open (+2.21 MB after off against the first read). The busy numbers are inside the
-  baseline's own noise (10 s windows of the same state read 2–7 %): interleaved office-off/on/reduced windows read
-  4.8 / 5.0 / 4.9 %.
-- **Run office with Jarvis's floor** (2026-10-14, `jarvis-office-bench` on the Mac in headless Chrome, `dev:browser`
-  on its own ports, an 8 GB machine with other agents running; the page's own busy read 30 % with the office off):
-  108 desks, heap +2.43 MB, +1648 DOM nodes, busy −2.8 % over the baseline (−16.9 % reduced), 85 sprites, +0.23 MB
-  after off. One budget missed: 1228 ms to draw on the first open (budget 150 ms). Not Jarvis's floor: reloaded
-  first opens read 235–506 ms with it and 327–652 ms with it taken out (warm opens 107–140 against 85–158 ms), so it is
-  this machine and the dev build. Re-measure the open on a production build or a quiet machine.
 - **Cockpit office** (2026-10-15, `cockpit-office-bench`, 76 people: 48 desks, 27 seats and the boss; dev app in
   headless Chrome on the Mac, a loaded 8 GB machine): every budget held. Heap −4.13 MB and −664 DOM nodes (the office
   replaces the Cards grid, so both read below Cards); busy −4.7 % over Cards while the boss and three walkers walk (22 %
@@ -939,6 +942,15 @@ Radar:
 
 - **Metadata collectors and the clustering pipeline** (retired 2026-10-06) — revive when chunk 8 of
   `effort:1557171a-e61d-4b29-83fd-fc7f818e6131` measures the fix-sibling audit as not worth keeping.
+- **Security review audits** (held 2026-10-13) — revive with a classifier flag for trust-boundary commits
+  and a fresh probe; `docs/deferred.md` keeps the probe's prompt.
+- **Missing test coverage audits** (held 2026-10-13) — revive if Radar is to report test gaps as their own
+  finding type; `docs/deferred.md` keeps the probe's prompt.
+
+Memory hygiene:
+
+- **Pi and Codex memory, merges across batches, a retention score / LRU ordering** (2026-10-14) — each
+  with its own revive condition in `docs/deferred.md`.
 
 Jarvis (what survived the 2026-09-22/23 memory and recall-arm removals):
 

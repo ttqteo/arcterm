@@ -63,6 +63,7 @@ type WshRpcInterface interface {
 	StreamCommands
 	DocCommands
 	ResMonCommands
+	MemHygieneCommands
 	WshRpcRemoteFileInterface
 	WshRpcFileInterface
 }
@@ -279,11 +280,13 @@ type SessionActivity struct {
 	DurationMs     int64          `json:"durationms"`
 	Events         []SessionEvent `json:"events"`
 	// set for a session an orchestrator run launched: the lead's run and channel, and for a child the task
-	// it works. Role is lead | worker | review, or a stage session's plan-reviewer | verifier | land-resolver.
-	RunId     string `json:"runid,omitempty"`
-	ChannelId string `json:"channelid,omitempty"`
-	TaskId    string `json:"taskid,omitempty"`
-	Role      string `json:"role,omitempty"`
+	// it works. Role is lead | worker | review, or a stage session's plan-reviewer | verifier | land-resolver, and a
+	// stage session's StageRunId is its own run, which the dag's stage names its sessions by.
+	RunId      string `json:"runid,omitempty"`
+	ChannelId  string `json:"channelid,omitempty"`
+	TaskId     string `json:"taskid,omitempty"`
+	Role       string `json:"role,omitempty"`
+	StageRunId string `json:"stagerunid,omitempty"`
 }
 
 type PathCommandData struct {

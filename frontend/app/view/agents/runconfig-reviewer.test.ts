@@ -9,9 +9,11 @@ import {
     endRunConfigDraft,
     forgetConfiguredChannel,
     hydrateRunConfigFromProfile,
+    lightReviewerRouteAtom,
     resetRunConfig,
     reviewerPicksAtom,
     reviewerRouteAtom,
+    setLightReviewerRoute,
     setReviewerPicks,
     setReviewerRoute,
     setWorkerRoute,
@@ -108,5 +110,31 @@ describe("hydration of the reviewer fields", () => {
         resetRunConfig();
         expect(globalStore.get(reviewerPicksAtom)).toBe(false);
         expect(globalStore.get(reviewerRouteAtom)).toBeNull();
+    });
+});
+
+describe("the Light reviewers route", () => {
+    it("reads the profile's route, and null for a profile that says nothing", () => {
+        expect(profileRunDefaults({ lightreviewerroute: pin("haiku") } as JarvisProfile).lightReviewerRoute).toEqual(
+            pin("haiku")
+        );
+        expect(profileRunDefaults({} as JarvisProfile).lightReviewerRoute).toBeNull();
+        expect(profileRunDefaults(null).lightReviewerRoute).toBeNull();
+    });
+
+    it("hydrates from the profile and reverts when the profile stops stating it", () => {
+        hydrateRunConfigFromProfile({ lightreviewerroute: pin("haiku") } as JarvisProfile);
+        expect(globalStore.get(lightReviewerRouteAtom)).toEqual(pin("haiku"));
+        hydrateRunConfigFromProfile({} as JarvisProfile);
+        expect(globalStore.get(lightReviewerRouteAtom)).toBeNull();
+    });
+
+    it("a choice by hand marks the config touched, survives hydration, and a reset clears it", () => {
+        setLightReviewerRoute(pin("opus"));
+        expect(globalStore.get(configTouchedAtom)).toBe(true);
+        hydrateRunConfigFromProfile({ lightreviewerroute: pin("haiku") } as JarvisProfile);
+        expect(globalStore.get(lightReviewerRouteAtom)).toEqual(pin("opus"));
+        resetRunConfig();
+        expect(globalStore.get(lightReviewerRouteAtom)).toBeNull();
     });
 });

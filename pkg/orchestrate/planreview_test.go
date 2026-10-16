@@ -54,18 +54,44 @@ func loadDag(t *testing.T, ctx context.Context, dagID string) *waveobj.TaskGroup
 	return g
 }
 
-// startPlanReview runs the first tick, which spawns the plan reviewer, and returns its run id.
+// reviewerOf is the round's reviewer with lens.
+func reviewerOf(t *testing.T, ctx context.Context, dagID, lens string) waveobj.PlanReviewer {
+	t.Helper()
+	for _, r := range loadDag(t, ctx, dagID).PlanReview.Reviewers {
+		if r.Lens == lens {
+			return r
+		}
+	}
+	t.Fatalf("the round has no %s reviewer", lens)
+	return waveobj.PlanReviewer{}
+}
+
+// passLenses records a pass from every reviewer still reviewing but the full one.
+func passLenses(t *testing.T, ctx context.Context, dagID string) {
+	t.Helper()
+	for _, r := range loadDag(t, ctx, dagID).PlanReview.Reviewers {
+		if r.Lens != PlanReviewLens_Full && r.State == PlanReviewerState_Reviewing {
+			if err := RecordPlanReviewVerdict(ctx, dagID, r.RunID, ReviewVerdict_Pass, r.Lens+" is fine", nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
+
+// startPlanReview runs the first tick, which spawns the round's reviewers, passes the four lenses, and returns the
+// full reviewer's run id: the round then settles on its verdict alone.
 func startPlanReview(t *testing.T, ctx context.Context, dagID string) string {
 	t.Helper()
 	schedule(t, ctx, dagID)
-	runID := loadDag(t, ctx, dagID).PlanReview.RunID
+	passLenses(t, ctx, dagID)
+	runID := reviewerOf(t, ctx, dagID, PlanReviewLens_Full).RunID
 	if runID == "" {
 		t.Fatal("the first tick must spawn the plan reviewer")
 	}
 	return runID
 }
 
-func TestPlanReviewHoldsDispatchAndSpawnsOneReviewerInTheLandingTree(t *testing.T) {
+func TestPlanReviewHoldsDispatchAndSpawnsTheReviewersInTheLandingTree(t *testing.T) {
 	ctx, dag := seedPlanReviewDag(t)
 	calls := captureSpawns(t)
 	newFakeLead(t)
@@ -75,12 +101,17 @@ func TestPlanReviewHoldsDispatchAndSpawnsOneReviewerInTheLandingTree(t *testing.
 	if g.Status != DagStatus_PlanReview || g.Tasks[0].State != TaskState_Pending || g.Tasks[0].RunID != "" {
 		t.Fatalf("nothing may dispatch during plan review, got status %s task %s run %q", g.Status, g.Tasks[0].State, g.Tasks[0].RunID)
 	}
-	if len(*calls) != 1 {
-		t.Fatalf("want one plan reviewer across two ticks, got %d spawns", len(*calls))
+	if len(*calls) != len(planRoundOneLenses) {
+		t.Fatalf("want the round's %d reviewers across two ticks, got %d spawns", len(planRoundOneLenses), len(*calls))
 	}
 	owner, err := wstore.GetRun(ctx, g.ChannelId, g.RunID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, c := range *calls {
+		if c.cwd != owner.ProjectPath || c.opts.TaskId != "" {
+			t.Fatalf("every reviewer runs in the landing tree with no task, got cwd %q task %q", c.cwd, c.opts.TaskId)
+		}
 	}
 	c := (*calls)[0]
 	if c.cwd != owner.ProjectPath || c.opts.TaskId != "" {
@@ -103,7 +134,7 @@ func TestPlanReviewHoldsDispatchAndSpawnsOneReviewerInTheLandingTree(t *testing.
 			t.Errorf("the brief must contain %q:\n%s", want, c.prompt)
 		}
 	}
-	reviewer, err := wstore.GetRun(ctx, g.ChannelId, g.PlanReview.RunID)
+	reviewer, err := wstore.GetRun(ctx, g.ChannelId, reviewerOf(t, ctx, dag.OID, PlanReviewLens_Full).RunID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +156,7 @@ func TestPlanReviewPassStartsDispatch(t *testing.T) {
 	}
 	schedule(t, ctx, dag.OID)
 	g := loadDag(t, ctx, dag.OID)
-	if g.Tasks[0].State != TaskState_Running || len(*calls) != 2 || (*calls)[1].opts.TaskId != "t-0" {
+	if n := len(*calls); g.Tasks[0].State != TaskState_Running || n != len(planRoundOneLenses)+1 || (*calls)[n-1].opts.TaskId != "t-0" {
 		t.Fatalf("a pass dispatches the first layer, got task %s after %d spawns", g.Tasks[0].State, len(*calls))
 	}
 	if g.Status != DagStatus_Running {
@@ -144,7 +175,7 @@ func TestPlanReviewFailWakesTheLeadWithTheFindingsWhole(t *testing.T) {
 		t.Fatal(err)
 	}
 	pr := loadDag(t, ctx, dag.OID).PlanReview
-	if pr.State != PlanReviewState_Failed || pr.Findings != strings.TrimSpace(findings) {
+	if pr.State != PlanReviewState_Failed || !strings.HasPrefix(pr.Findings, "[Full review] "+strings.TrimSpace(findings)+"\n\nPassed: ") {
 		t.Fatalf("want failed with the findings whole, got %+v", pr)
 	}
 	joined := strings.Join(f.sends, "\n")
@@ -152,7 +183,7 @@ func TestPlanReviewFailWakesTheLeadWithTheFindingsWhole(t *testing.T) {
 		t.Fatalf("the wake must carry the findings whole and the resubmit, got %q", f.sends)
 	}
 	schedule(t, ctx, dag.OID)
-	if g := loadDag(t, ctx, dag.OID); g.Status != DagStatus_PlanReview || g.Tasks[0].RunID != "" || len(*calls) != 1 {
+	if g := loadDag(t, ctx, dag.OID); g.Status != DagStatus_PlanReview || g.Tasks[0].RunID != "" || len(*calls) != len(planRoundOneLenses) {
 		t.Fatalf("a failed review dispatches nothing, got status %s after %d spawns", g.Status, len(*calls))
 	}
 }
@@ -193,7 +224,7 @@ func TestPlanReviewAfterTheLastRoundGoesToTheHuman(t *testing.T) {
 	}
 	schedule(t, ctx, dag.OID)
 	g := loadDag(t, ctx, dag.OID)
-	if g.PlanReview.State != PlanReviewState_Accepted || g.Tasks[0].State != TaskState_Running || len(*calls) != 2 {
+	if g.PlanReview.State != PlanReviewState_Accepted || g.Tasks[0].State != TaskState_Running || len(*calls) != len(planRoundOneLenses)+1 {
 		t.Fatalf("accept starts dispatch, got review %s task %s after %d spawns", g.PlanReview.State, g.Tasks[0].State, len(*calls))
 	}
 	if len(g.Tasks[0].LeadNotes) != 1 || g.Tasks[0].LeadNotes[0] != "also cover 4.1" {
@@ -201,6 +232,63 @@ func TestPlanReviewAfterTheLastRoundGoesToTheHuman(t *testing.T) {
 	}
 	if err := AcceptPlanReview(ctx, dag.OID, "again"); err == nil {
 		t.Fatal("an accepted review cannot be accepted again")
+	}
+}
+
+const autonomousAccept = "`wsh jarvis dag planreview accept \"autonomous run\"`"
+
+func TestPlanReviewWakesAutonomous(t *testing.T) {
+	for _, w := range []string{planReviewFailedWake(2, "no task for 4.1", true, true), planReviewLostWake(2, "exited", true, true)} {
+		if !strings.Contains(w, "`wsh jarvis dag amend <task> \"<note>\"`") || !strings.Contains(w, autonomousAccept) || !strings.Contains(w, "record in your report") {
+			t.Fatalf("an autonomous last round amends, accepts and records, got %q", w)
+		}
+		if strings.Contains(strings.ToLower(w), "put it to the human") {
+			t.Fatalf("an autonomous last round never goes to the human, got %q", w)
+		}
+	}
+	if w := planReviewFailedWake(1, "no task for 4.1", false, true); strings.Contains(w, "to the human") || !strings.Contains(w, "run `wsh jarvis dag submit` again") {
+		t.Fatalf("an autonomous earlier round revises and makes spec changes itself, got %q", w)
+	}
+	if planReviewLostWake(1, "exited", false, true) != planReviewLostWake(1, "exited", false, false) {
+		t.Fatal("a lost reviewer before the last round is resubmitted either way")
+	}
+
+	// off, the texts are what they were before the setting existed
+	for _, c := range []struct{ got, want string }{
+		{planReviewFailedWake(2, "no task for 4.1", true, false), "wake: plan review failed in round 2, the last: no task for 4.1. Put it to the human; " + proceedPastPlanReview + "."},
+		{planReviewFailedWake(1, "no task for 4.1", false, false), "wake: plan review failed in round 1: no task for 4.1. Revise the plan (put spec changes to the human) and run `wsh jarvis dag submit` again."},
+		{planReviewLostWake(2, "exited", true, false), "wake: the plan reviewer did not finish in round 2, the last (exited). Put it to the human; " + proceedPastPlanReview + "."},
+		{planReviewLostWake(1, "exited", false, false), "wake: the plan reviewer did not finish in round 1 (exited). Run `wsh jarvis dag submit` again to review the plan once more."},
+	} {
+		if c.got != c.want {
+			t.Fatalf("off:\n got %q\nwant %q", c.got, c.want)
+		}
+	}
+}
+
+// the verdict's caller reads the group's setting: an autonomous last round never reaches the human, and the refusal
+// of a resubmit past it names the accept
+func TestPlanReviewLastRoundAutonomous(t *testing.T) {
+	ctx, dag := seedPlanReviewDag(t)
+	if err := wstore.UpdateDag(ctx, dag.OID, func(g *waveobj.TaskGroup) error {
+		g.PlanReview.Round, g.Autonomous = MaxPlanReviewRounds, true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	captureSpawns(t)
+	f := newFakeLead(t)
+	reviewer := startPlanReview(t, ctx, dag.OID)
+	if err := RecordPlanReviewVerdict(ctx, dag.OID, reviewer, ReviewVerdict_Fail, "still no task for 4.1", nil); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(f.sends, "\n")
+	if !strings.Contains(joined, autonomousPastPlanReview) || strings.Contains(joined, "Put it to the human") {
+		t.Fatalf("an autonomous last round wakes the lead to amend and accept, got %q", f.sends)
+	}
+	_, err := ReplacePlanReviewProposal(ctx, dag.OID, &waveobj.TaskGroup{PlanPath: "p.md", Tasks: []waveobj.TaskNode{{ID: "t-0", Label: "a", State: TaskState_Pending}}})
+	if err == nil || !strings.Contains(err.Error(), autonomousAccept) || strings.Contains(err.Error(), "put it to the human") {
+		t.Fatalf("a resubmit past the last round on an autonomous run is refused with the accept, got %v", err)
 	}
 }
 
@@ -230,8 +318,11 @@ func TestResubmitReplacesAFailedPlanAndOpensTheNextRound(t *testing.T) {
 	if g.Title != "revised" || len(g.Tasks) != 2 || g.PlanPath != revised.PlanPath || g.Verify != "go test ./..." {
 		t.Fatalf("the revision must replace the proposal, got %+v", g)
 	}
-	if pr := g.PlanReview; pr.State != PlanReviewState_Reviewing || pr.Round != 2 || pr.RunID != "" || pr.Findings != "" {
+	if pr := g.PlanReview; pr.State != PlanReviewState_Reviewing || pr.Round != 2 || len(pr.Reviewers) != 0 || pr.Findings != "" {
 		t.Fatalf("want round 2 reviewing afresh, got %+v", pr)
+	}
+	if prior := g.PlanReview.Prior; prior == nil || !strings.HasPrefix(prior.Findings, "[Full review] no task for 4.1") {
+		t.Fatalf("round 2 carries round 1's findings, got %+v", prior)
 	}
 	if stored := loadDag(t, ctx, dag.OID); stored.Status != DagStatus_PlanReview || len(stored.Tasks) != 2 {
 		t.Fatalf("the replacement must be stored, got status %s with %d tasks", stored.Status, len(stored.Tasks))
@@ -246,20 +337,21 @@ func TestPlanReviewerThatEndsWithoutAVerdictIsReplacedOnceThenFails(t *testing.T
 	first := startPlanReview(t, ctx, dag.OID)
 	endRun(t, ctx, dag.ChannelId, first)
 	schedule(t, ctx, dag.OID)
-	pr := loadDag(t, ctx, dag.OID).PlanReview
-	if len(*calls) != 2 || pr.RunID == "" || pr.RunID == first || pr.Respawns != 1 || pr.State != PlanReviewState_Reviewing {
+	spawned := len(planRoundOneLenses) + 1
+	full := reviewerOf(t, ctx, dag.OID, PlanReviewLens_Full)
+	if pr := loadDag(t, ctx, dag.OID).PlanReview; len(*calls) != spawned || full.RunID == "" || full.RunID == first || full.Respawns != 1 || pr.State != PlanReviewState_Reviewing {
 		t.Fatalf("want one replacement reviewer, got %d spawns and %+v", len(*calls), pr)
 	}
 	// the second one goes silent past the timeout
 	if err := wstore.UpdateDag(ctx, dag.OID, func(g *waveobj.TaskGroup) error {
-		g.PlanReview.StartedTs = time.Now().Add(-ReviewTimeout - time.Minute).UnixMilli()
+		g.PlanReview.Reviewers[0].StartedTs = time.Now().Add(-ReviewTimeout - time.Minute).UnixMilli()
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
 	schedule(t, ctx, dag.OID)
-	pr = loadDag(t, ctx, dag.OID).PlanReview
-	if len(*calls) != 2 || pr.State != PlanReviewState_Failed || !strings.Contains(pr.Findings, "the plan reviewer did not finish") {
+	pr := loadDag(t, ctx, dag.OID).PlanReview
+	if len(*calls) != spawned || pr.State != PlanReviewState_Failed || !strings.Contains(pr.Findings, "[Full review] did not finish: it gave no verdict") {
 		t.Fatalf("the second loss fails the review, got %d spawns and %+v", len(*calls), pr)
 	}
 	if !strings.Contains(strings.Join(f.sends, "\n"), "wake: the plan reviewer did not finish in round 1 (it gave no verdict within") {
@@ -294,12 +386,13 @@ func TestPlanReviewVerdictsAreRefusedWhenTheyCannotApply(t *testing.T) {
 	}
 }
 
-// the watchdog never ticks a cancelled dag, so cancel itself must stop a live plan reviewer
-func TestCancelStopsTheLivePlanReviewer(t *testing.T) {
+// the watchdog never ticks a cancelled dag, so cancel itself must stop every live plan reviewer
+func TestCancelStopsEveryPlanReviewer(t *testing.T) {
 	ctx, dag := seedPlanReviewDag(t)
 	captureSpawns(t)
 	newFakeLead(t)
-	reviewer := startPlanReview(t, ctx, dag.OID)
+	schedule(t, ctx, dag.OID)
+	reviewers := loadDag(t, ctx, dag.OID).PlanReview.Reviewers
 	var stopped []string
 	old := stopRunWorkers
 	stopRunWorkers = func(_ context.Context, r *waveobj.Run) error {
@@ -310,15 +403,20 @@ func TestCancelStopsTheLivePlanReviewer(t *testing.T) {
 	if err := Cancel(ctx, dag.OID); err != nil {
 		t.Fatal(err)
 	}
-	run, err := wstore.GetRun(ctx, dag.ChannelId, reviewer)
-	if err != nil {
-		t.Fatal(err)
+	if len(reviewers) != len(planRoundOneLenses) {
+		t.Fatalf("want the round's reviewers running, got %+v", reviewers)
 	}
-	if run.Status != jarvis.RunStatus_Cancelled {
-		t.Fatalf("the plan reviewer's run must be cancelled, got %q", run.Status)
-	}
-	if !strings.Contains(strings.Join(stopped, ","), reviewer) {
-		t.Fatalf("the plan reviewer's session must be stopped, stopped %q", stopped)
+	for _, r := range reviewers {
+		run, err := wstore.GetRun(ctx, dag.ChannelId, r.RunID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if run.Status != jarvis.RunStatus_Cancelled {
+			t.Fatalf("the %s reviewer's run must be cancelled, got %q", r.Lens, run.Status)
+		}
+		if !strings.Contains(strings.Join(stopped, ","), r.RunID) {
+			t.Fatalf("the %s reviewer's session must be stopped, stopped %q", r.Lens, stopped)
+		}
 	}
 }
 

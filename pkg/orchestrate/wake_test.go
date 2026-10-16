@@ -4,9 +4,13 @@
 package orchestrate
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log"
+	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/wavetermdev/waveterm/pkg/agentask"
@@ -130,6 +134,40 @@ func TestWakeTreatsWaitingAsAtPrompt(t *testing.T) {
 	}
 }
 
+// run dca34385: a lead read working after its turn ended held the run-finished wake for 15 minutes, and
+// waveapp.log said nothing of what the engine saw
+func TestHeldWakeLogsWhatHoldsItOnce(t *testing.T) {
+	f := newFakeLead(t)
+	ctx := context.Background()
+	var logged bytes.Buffer
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	f.state.State, f.state.Hook = baseds.AgentState_Working, baseds.AgentHook_PostToolUse
+	PostWake(ctx, wakeChannel, wakeRun, finishedLine)
+	tickWakes(ctx)
+	tickWakes(ctx)
+	if len(f.sends) != 0 {
+		t.Fatalf("a lead reading working is not at its prompt, got %q", f.sends)
+	}
+	if n := strings.Count(logged.String(), "holds its lead's wake"); n != 1 {
+		t.Fatalf("held-wake lines = %d, want 1:\n%s", n, logged.String())
+	}
+	if !strings.Contains(logged.String(), `state "working" from PostToolUse, asking false`) {
+		t.Fatalf("the line must name the state, the hook that reported it and the ask, got:\n%s", logged.String())
+	}
+	NoteLeadStatus(ctx, f.status(baseds.AgentState_Idle))
+	if len(f.sends) != 1 || f.sends[0] != finishedLine {
+		t.Fatalf("the held wake goes out at the idle, got %q", f.sends)
+	}
+	// a later hold is a new case, and is logged again
+	f.state.State, f.state.Hook = baseds.AgentState_Working, baseds.AgentHook_PreToolUse
+	NoteLeadStatus(ctx, f.status(baseds.AgentState_Working))
+	PostWake(ctx, wakeChannel, wakeRun, failedLine)
+	if n := strings.Count(logged.String(), "holds its lead's wake"); n != 2 {
+		t.Fatalf("held-wake lines = %d after a second hold, want 2:\n%s", n, logged.String())
+	}
+}
+
 func TestWakeHeldWhileLeadsOwnQuestionIsOpen(t *testing.T) {
 	f := newFakeLead(t)
 	ctx := context.Background()
@@ -146,6 +184,48 @@ func TestWakeHeldWhileLeadsOwnQuestionIsOpen(t *testing.T) {
 	tickWakes(ctx)
 	if len(f.sends) != 1 || f.sends[0] != finishedLine {
 		t.Fatalf("the held wake goes out once the question is answered, got %q", f.sends)
+	}
+}
+
+// DeliverAnswer claims the ask before its first key, so a wake held for the question must keep waiting
+// through the typing and on until the lead clears the ask, or it is typed into the open picker.
+func TestWakeHeldWhileAnswerIsTypedUntilClear(t *testing.T) {
+	f := newFakeLead(t)
+	ctx := context.Background()
+	leadOref := waveobj.MakeORef(waveobj.OType_Block, wakeLeadBlock).String()
+	agentask.GlobalRegistry.Set(leadOref, agentask.PendingAsk{AskId: "lead-ask", BlockId: wakeLeadBlock, Questions: []baseds.AgentAskQuestion{singleSelect()}})
+	f.state.State = baseds.AgentState_Waiting
+	PostWake(ctx, wakeChannel, wakeRun, finishedLine)
+
+	typing, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	t.Cleanup(agentask.SetSendInputForTest(func(string, []byte) error {
+		once.Do(func() { close(typing); <-release })
+		return nil
+	}))
+	delivered := make(chan error, 1)
+	go func() {
+		_, err := agentask.DeliverAnswer(leadOref, "lead-ask", []baseds.AgentAnswerItem{{SelectedIndexes: []int{1}}})
+		delivered <- err
+	}()
+	<-typing
+	tickWakes(ctx)
+	NoteLeadStatus(ctx, f.status(baseds.AgentState_Waiting))
+	if len(f.sends) != 0 {
+		t.Fatalf("a wake typed while the answer is typed corrupts it, got %q", f.sends)
+	}
+	close(release)
+	if err := <-delivered; err != nil {
+		t.Fatalf("deliver: %v", err)
+	}
+	tickWakes(ctx)
+	if len(f.sends) != 0 {
+		t.Fatalf("the picker is open until the lead clears the ask, got %q", f.sends)
+	}
+	agentask.GlobalRegistry.ConfirmClear(leadOref)
+	tickWakes(ctx)
+	if len(f.sends) != 1 || f.sends[0] != finishedLine {
+		t.Fatalf("the held wake goes out once the lead clears the ask, got %q", f.sends)
 	}
 }
 
@@ -462,6 +542,142 @@ func TestFailedLaunchHandsJudgmentToTheUser(t *testing.T) {
 	}
 	if f.countKind(waveobj.RunEventKindLeadWakeFailed) != 1 {
 		t.Fatalf("want one lead-wake-failed row, got %+v", f.rows)
+	}
+}
+
+// seedDeadLeadRun is a stored owner run with a submitted dag, its lead not running, and one question its lead owns.
+func seedDeadLeadRun(t *testing.T, autonomous bool) (*fakeLead, context.Context, *waveobj.TaskGroup) {
+	t.Helper()
+	f := newFakeLead(t)
+	f.state.Alive = false
+	ctx, dag := seedPendingDag(t)
+	if err := wstore.UpdateRun(ctx, dag.ChannelId, dag.RunID, func(r *waveobj.Run) error {
+		r.DagORef = dag.OID
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wstore.UpdateDag(ctx, dag.OID, func(g *waveobj.TaskGroup) error {
+		g.Autonomous = autonomous
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	seedRunAsk(dag, "block:child-1", "a1")
+	return f, ctx, dag
+}
+
+func seedRunAsk(dag *waveobj.TaskGroup, oref, askId string) {
+	agentask.GlobalRegistry.Set(oref, agentask.PendingAsk{
+		AskId: askId, BlockId: "child", Questions: []baseds.AgentAskQuestion{{Question: "which way?"}},
+		Owner: agentask.AskOwner_Lead, ChannelId: dag.ChannelId, RunId: dag.RunID, TaskId: "t-0", DagOID: dag.OID,
+	})
+}
+
+// stubRelaunch records the engine's automatic relaunches and answers each with fn's error.
+func stubRelaunch(t *testing.T, fn func() error) *int {
+	t.Helper()
+	calls := 0
+	old := relaunchLeadFn
+	relaunchLeadFn = func(context.Context, string, string) error {
+		calls++
+		return fn()
+	}
+	restoreAfterStages(t, func() { relaunchLeadFn = old })
+	return &calls
+}
+
+func killLead(ctx context.Context, dag *waveobj.TaskGroup) {
+	wakes.lock.Lock()
+	defer wakes.lock.Unlock()
+	wakes.leadDiedLocked(ctx, dag.RunID, wakes.runLocked(dag.ChannelId, dag.RunID), leadNotRunningNote)
+}
+
+func TestLeadDiedRelaunchesAnAutonomousLead(t *testing.T) {
+	_, ctx, dag := seedDeadLeadRun(t, true)
+	calls := stubRelaunch(t, func() error { return nil })
+
+	PokeWake(ctx, dag.ChannelId, dag.RunID)
+	waitStages(t)
+
+	if *calls != 1 {
+		t.Fatalf("a dead autonomous lead is relaunched once, got %d", *calls)
+	}
+	if p, _ := agentask.GlobalRegistry.Get("block:child-1"); p.Owner != agentask.AskOwner_Lead {
+		t.Fatalf("its question stays with the lead, got %+v", p)
+	}
+}
+
+func TestLeadDiedAutonomousRelaunchFailureMovesQuestionsToTheHuman(t *testing.T) {
+	f, ctx, dag := seedDeadLeadRun(t, true)
+	release := make(chan struct{})
+	calls := stubRelaunch(t, func() error {
+		<-release
+		return errors.New("no route for pi")
+	})
+
+	killLead(ctx, dag)
+	seedRunAsk(dag, "block:child-2", "a2")
+	PokeWake(ctx, dag.ChannelId, dag.RunID)
+	for _, oref := range []string{"block:child-1", "block:child-2"} {
+		if p, _ := agentask.GlobalRegistry.Get(oref); p.Owner != agentask.AskOwner_Lead {
+			t.Fatalf("while the relaunch runs, questions stay with the lead, got %+v", p)
+		}
+	}
+	close(release)
+	waitStages(t)
+
+	if *calls != 1 {
+		t.Fatalf("want one relaunch, got %d", *calls)
+	}
+	for _, oref := range []string{"block:child-1", "block:child-2"} {
+		p, _ := agentask.GlobalRegistry.Get(oref)
+		if p.Owner != agentask.AskOwner_User || !strings.Contains(p.Note, leadLaunchFailedNote) || !strings.Contains(p.Note, "no route for pi") {
+			t.Fatalf("a failed relaunch moves the questions to the human with why, got %+v", p)
+		}
+	}
+	if n := f.countKind(waveobj.RunEventKindTaskForwarded); n != 2 {
+		t.Fatalf("want two task-forwarded rows, got %d", n)
+	}
+}
+
+func TestLeadDiedPastTheRelaunchCapAutonomous(t *testing.T) {
+	_, ctx, dag := seedDeadLeadRun(t, true)
+	calls := stubRelaunch(t, func() error { return nil })
+
+	for i := 1; i <= MaxAutoRelaunches; i++ {
+		killLead(ctx, dag)
+		waitStages(t)
+		if p, _ := agentask.GlobalRegistry.Get("block:child-1"); *calls != i || p.Owner != agentask.AskOwner_Lead {
+			t.Fatalf("death %d: want %d relaunches and the question with the lead, got %d, %+v", i, i, *calls, p)
+		}
+	}
+	killLead(ctx, dag)
+	waitStages(t)
+
+	if *calls != MaxAutoRelaunches {
+		t.Fatalf("a death past the cap relaunches nothing, got %d relaunches", *calls)
+	}
+	if p, _ := agentask.GlobalRegistry.Get("block:child-1"); p.Owner != agentask.AskOwner_User || p.Note != leadNotRunningNote {
+		t.Fatalf("past the cap the question goes to the human as before, got %+v", p)
+	}
+}
+
+func TestLeadDiedNonAutonomousIsUnchanged(t *testing.T) {
+	f, ctx, dag := seedDeadLeadRun(t, false)
+	calls := stubRelaunch(t, func() error { return nil })
+
+	PokeWake(ctx, dag.ChannelId, dag.RunID)
+	waitStages(t)
+
+	if *calls != 0 {
+		t.Fatalf("a run that asks the human is never relaunched by the engine, got %d", *calls)
+	}
+	if p, _ := agentask.GlobalRegistry.Get("block:child-1"); p.Owner != agentask.AskOwner_User || p.Note != leadNotRunningNote {
+		t.Fatalf("its question goes to the human as before, got %+v", p)
+	}
+	if f.countKind(waveobj.RunEventKindTaskForwarded) != 1 || f.countKind(waveobj.RunEventKindLeadWakeFailed) != 1 {
+		t.Fatalf("want one task-forwarded and one lead-wake-failed row, got %+v", f.rows)
 	}
 }
 
