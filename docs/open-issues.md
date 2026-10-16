@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-16 (initiative `i` keycap dropped)**
+
+- [ ] (arcterm) An agent with an initiative: the header shows `◇ <initiative> ⌄` with no `i` keycap after it; hovering
+  it names `(i)`, and `i` (focus outside the TUI) still opens the popover. `agentheader.tsx`.
+
 **2026-10-16 (skim split out of arc-view)**
 
 - [ ] (arcterm) After a dev build relaunches arcterm: `~/.arc/claude-skim-mod` exists, `~/.arc/claude-view-mod/hooks`
