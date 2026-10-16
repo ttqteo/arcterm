@@ -516,6 +516,25 @@ func TestAnsweredInAppEditsMessage(t *testing.T) {
 	}
 }
 
+func TestFinishedInAppKeepsEarlierTick(t *testing.T) {
+	r := newRig(t)
+	r.add("block:a", old("a1", single("First?", "x", "y"), single("Second?", "p", "q")))
+	r.start()
+	first := r.waitSent(1)[0]
+	r.tg.push(tap(r.set.ChatID, first.MsgID, first.buttons()[0][0]))
+	second := r.waitSent(2)[1]
+
+	r.remove("block:a")
+	r.waitFor("the second question's edit", func() bool { return len(r.tg.editsOf(second.MsgID)) > 0 })
+	if got := r.tg.editsOf(second.MsgID)[0]; got != "✓ Answered in arcterm" {
+		t.Errorf("the open question was edited to %q, want %q", got, "✓ Answered in arcterm")
+	}
+	time.Sleep(50 * time.Millisecond)
+	if edits := r.tg.editsOf(first.MsgID); len(edits) != 1 || edits[0] != "✓ x" {
+		t.Errorf("the first question's edits = %q, want only its ✓ x", edits)
+	}
+}
+
 func TestOtherChatIgnored(t *testing.T) {
 	r := newRig(t)
 	r.add("block:a", old("a1", single("Which?", "x", "y")))
@@ -603,6 +622,43 @@ func TestPairingGuessesAreLimited(t *testing.T) {
 	}
 	if n := len(r.tg.callsOf("sendMessage")); n != 0 {
 		t.Errorf("sendMessage calls = %d, want none to an unpaired chat", n)
+	}
+}
+
+func TestPairingGuessesBlockOnlyTheGuessingChat(t *testing.T) {
+	r := newRig(t)
+	r.set.ChatID = 0
+	r.start()
+	r.ready()
+	code, _ := r.bot.Pair()
+	wrong := "/start " + code[:5] + string('0'+(code[5]-'0'+1)%10)
+
+	for i := range pairMissLimit + 3 {
+		r.tg.push(say(otherChat, 20+i, wrong))
+	}
+	last := r.tg.push(say(42, 40, "/start "+code))
+	r.waitHandled(last)
+
+	if s := r.saves(); len(s) != 1 || s[0].Chat != 42 {
+		t.Errorf("a stranger's wrong codes kept chat 42 from pairing: saves %+v", s)
+	}
+}
+
+func TestPairingGuessesCappedAcrossChats(t *testing.T) {
+	b := New(Deps{})
+	now := time.Now()
+	for i := range pairMissGlobalLimit {
+		chat := int64(1000 + i/(pairMissLimit-1)) // each chat stays under its own limit
+		if b.pairBlocked(chat, now) {
+			t.Fatalf("blocked after %d guesses, before the global limit", i)
+		}
+		b.notePairMiss(chat, now)
+	}
+	if !b.pairBlocked(42, now) {
+		t.Errorf("a fresh chat could still guess past %d guesses from all chats inside the window", pairMissGlobalLimit)
+	}
+	if b.pairBlocked(42, now.Add(pairMissWindow)) {
+		t.Errorf("still blocked once the window passed")
 	}
 }
 

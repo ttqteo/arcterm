@@ -24,10 +24,13 @@ const (
 	pollTimeoutSecs = 50
 	defaultTick     = 2 * time.Second
 
-	// A wrong /start code counts as a guess; past pairMissLimit of them inside pairMissWindow the bot ignores every
-	// /start until the window has room again, so a 6-digit code cannot be brute-forced while it is live.
-	pairMissLimit  = 5
-	pairMissWindow = time.Minute
+	// A wrong /start code counts as a guess. Past pairMissLimit of them from one chat inside pairMissWindow the bot
+	// ignores that chat's /start until the window has room again, so a stranger who knows the bot's name blocks only
+	// their own chat, never the person's. pairMissGlobalLimit caps the guesses from every chat together, so many chats
+	// still cannot brute-force a live 6-digit code: at most ~600 guesses over its 10 minutes, a 0.06% chance.
+	pairMissLimit       = 5
+	pairMissGlobalLimit = 60
+	pairMissWindow      = time.Minute
 
 	errTokenRejected = "Token rejected by Telegram"
 	errAnotherPoller = "Another app is polling this bot"
@@ -82,7 +85,7 @@ type Bot struct {
 	sendErr string // the last failed send or edit; "" once one succeeds
 
 	pairMu     sync.Mutex
-	pairMisses []time.Time
+	pairMisses map[int64][]time.Time // chat id -> its wrong codes inside pairMissWindow
 }
 
 func New(d Deps) *Bot {
@@ -152,17 +155,30 @@ func (b *Bot) resetStatus() {
 	b.smu.Unlock()
 }
 
-func (b *Bot) pairBlocked(now time.Time) bool {
+// pairBlocked reports a chat that has used up its guesses, or every chat when all of them together have.
+func (b *Bot) pairBlocked(chat int64, now time.Time) bool {
 	b.pairMu.Lock()
 	defer b.pairMu.Unlock()
-	b.pairMisses = slices.DeleteFunc(b.pairMisses, func(t time.Time) bool { return now.Sub(t) >= pairMissWindow })
-	return len(b.pairMisses) >= pairMissLimit
+	total := 0
+	for id, misses := range b.pairMisses {
+		misses = slices.DeleteFunc(misses, func(t time.Time) bool { return now.Sub(t) >= pairMissWindow })
+		if len(misses) == 0 {
+			delete(b.pairMisses, id)
+			continue
+		}
+		b.pairMisses[id] = misses
+		total += len(misses)
+	}
+	return len(b.pairMisses[chat]) >= pairMissLimit || total >= pairMissGlobalLimit
 }
 
-func (b *Bot) notePairMiss(now time.Time) {
+func (b *Bot) notePairMiss(chat int64, now time.Time) {
 	b.pairMu.Lock()
-	b.pairMisses = append(b.pairMisses, now)
-	b.pairMu.Unlock()
+	defer b.pairMu.Unlock()
+	if b.pairMisses == nil {
+		b.pairMisses = map[int64][]time.Time{}
+	}
+	b.pairMisses[chat] = append(b.pairMisses[chat], now)
 }
 
 // session is one run of the bot on one token: a getMe, a backlog drop, then the poll and reconcile loops. It ends when
@@ -373,7 +389,8 @@ func (s *session) reconcile(ctx context.Context) {
 	s.mu.Unlock()
 
 	for _, a := range gone {
-		for _, id := range a.msgIDs {
+		// only the question still open: an earlier one of a multi-question ask was answered here and keeps its "✓ <label>"
+		for _, id := range a.msgIDs[min(a.q, len(a.msgIDs)):] {
 			s.edit(ctx, chat, id, editAnsweredInApp, nil)
 		}
 	}
@@ -508,12 +525,12 @@ func (s *session) onMessage(ctx context.Context, m *Message) {
 // paired chat as from a stranger.
 func (s *session) onStart(ctx context.Context, m *Message, hasCode bool) {
 	now := time.Now()
-	if s.b.pairBlocked(now) {
+	if s.b.pairBlocked(m.Chat.ID, now) {
 		return
 	}
 	if !s.b.pair.Match(m.Text, now) {
 		if hasCode {
-			s.b.notePairMiss(now)
+			s.b.notePairMiss(m.Chat.ID, now)
 		}
 		return
 	}

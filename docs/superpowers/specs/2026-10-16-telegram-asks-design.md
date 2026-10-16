@@ -88,8 +88,9 @@ one is ignored without a reply. A paired chat's message that is neither `/start`
 gets one fixed reply: "I only answer agent questions. Reply to a question message to answer it." A reply to a
 message whose ask is gone gets "Already answered." instead.
 
-After 5 wrong `/start <code>` messages inside a minute, every `/start` is ignored until the minute clears, which caps
-guesses at about 50 per code against a space of 10^6.
+After 5 wrong `/start <code>` messages from one chat inside a minute, that chat's `/start` is ignored until the minute
+clears; a stranger who knows the bot's name blocks only their own chat. 60 wrong codes a minute from all chats together
+stop every `/start` for the rest of the minute, which caps guesses at about 600 per code (0.06% of 10^6).
 
 ### Reconcile loop (`pkg/telebot/state.go`, run by `bot.go`)
 
@@ -104,8 +105,8 @@ nothing):
   reaches the phone.
 - **New:** send the first question's message; remember `askId → {oref, chat, message ids, question index, partial
   answers, multi-select picks}` in memory.
-- **Gone or replaced** (oref missing, or a different `AskId`): edit every message of the old ask to "✓ Answered in
-  arcterm" and forget it. An ask the bot itself delivered is forgotten when it delivers, so its `✓ <label>` stays.
+- **Gone or replaced** (oref missing, or a different `AskId`): edit the old ask's open question to "✓ Answered in
+  arcterm" and forget it; an earlier question of the same ask answered in Telegram keeps its `✓ <label>`. An ask the bot itself delivered is forgotten when it delivers, so its `✓ <label>` stays.
 
 State is memory only. After a restart the still-pending asks are sent again as new messages; that is acceptable for v1.
 
