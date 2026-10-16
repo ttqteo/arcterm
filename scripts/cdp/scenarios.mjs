@@ -39576,7 +39576,7 @@ const whatsNew = {
     },
 };
 
-const { cockpitOffice, cockpitOfficeControls, cockpitOfficeNeedsYouBoard, cockpitOfficeBench, cockpitOfficeFloors } = makeCockpitOfficeScenarios({
+const { cockpitOffice, cockpitOfficeControls, cockpitOfficeNeedsYouBoard, cockpitOfficeBench, cockpitOfficeFloors, cockpitOfficeBackground } = makeCockpitOfficeScenarios({
     arrangeFixtureRun,
     teardownFixtureRun,
 });
@@ -45012,6 +45012,7 @@ export const SCENARIOS = [
     cockpitOfficeControls,
     cockpitOfficeNeedsYouBoard,
     cockpitOfficeFloors,
+    cockpitOfficeBackground,
     cockpitOfficeBench,
     runQueueScenario,
     briefRunQueueScenario,

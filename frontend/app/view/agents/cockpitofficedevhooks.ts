@@ -8,6 +8,7 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "./agents";
 import { attentionFixtureAtom } from "./attentionstore";
+import { backgroundAgentsFixtureAtom } from "./backgroundagentsstore";
 import { officeDevAtom, readOfficeProbe, type OfficeDev } from "./cockpitoffice";
 import { officeAnimationAtom, officeFloorAtom } from "./officestore";
 import { themePresetAtom } from "./themestore";
@@ -16,6 +17,7 @@ declare global {
     interface Window {
         __cockpitOffice?: (o: OfficeDev | null) => void;
         __cockpitOfficeAttention?: (items: AttentionItem[] | null) => void;
+        __cockpitOfficeBackground?: (o: { sessions: BackgroundAgentData[]; backgrounded: string[] } | null) => void;
         __cockpitOfficeProbe?: () => unknown;
         __cockpitOfficeAnimation?: (on: boolean) => void;
         __cockpitOfficeTheme?: (preset: string) => string;
@@ -33,6 +35,12 @@ export function installCockpitOfficeDevHooks(model: AgentsViewModel): void {
     };
     // the Needs you rows the strip and the notice board show in place of the live list; null is live again
     window.__cockpitOfficeAttention = (items) => globalStore.set(attentionFixtureAtom, items);
+    // the detached sessions the Background section shows and the agents moved to the background, in place of the live
+    // ones; null is the live sessions again and nothing backgrounded
+    window.__cockpitOfficeBackground = (o) => {
+        globalStore.set(backgroundAgentsFixtureAtom, o?.sessions ?? null);
+        globalStore.set(model.backgroundedIdsAtom, new Set(o?.backgrounded ?? []));
+    };
     window.__cockpitOfficeAnimation = (on) => globalStore.set(officeAnimationAtom, on);
     // sets the theme preset and returns the one it replaced (the cockpit-office scenario's theme steps)
     window.__cockpitOfficeTheme = (preset) => {

@@ -26,6 +26,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- **Background tucked away in the Office**: the Backgrounded and Background lists no longer sit under the building,
+  so the office fills the Cockpit. The office menu (`m`) lists **Background** with how many agents are there; pick
+  it to show both lists under the office, and **Hide background** to tuck them away again. Cards still shows them.
+  <!-- big --> <!-- shot: 0.15.15-office-background.webp -->
 - The agent header no longer shows a bare `i` key beside the initiative; `i` still opens it, and the link's tooltip
   says so.
 

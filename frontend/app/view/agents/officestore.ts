@@ -52,6 +52,10 @@ export function officeAnimation(v: unknown): boolean {
 // line) shows it; Esc while walking hides it again. Not kept: Office opens with the rail hidden.
 export const officeEventsOpenAtom = atom(false) as PrimitiveAtom<boolean>;
 
+// the Backgrounded section and the background-agents strip while the Cockpit shows Office: no room draws them, so they
+// are hidden under the office until the office menu's Background shows them. Not kept: Office opens with them hidden.
+export const officeBackgroundOpenAtom = atom(false) as PrimitiveAtom<boolean>;
+
 // the office menu (m) is open: cockpitoffice.tsx opens and shuts it, and the footer's m chip lights while it is open
 export const officeMenuOpenAtom = atom(false) as PrimitiveAtom<boolean>;
 

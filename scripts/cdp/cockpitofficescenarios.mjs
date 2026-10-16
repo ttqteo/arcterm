@@ -2706,5 +2706,101 @@ export function makeCockpitOfficeScenarios(fx) {
         },
     };
 
-    return { cockpitOffice, cockpitOfficeControls, cockpitOfficeNeedsYouBoard, cockpitOfficeBench, cockpitOfficeFloors };
+    // the Office hides the Backgrounded section and the background-agents strip, which no room draws, until the office
+    // menu's Background shows them (cockpit office spec, "The office fills the Cockpit"): the floors roster with one agent
+    // moved to the background and two detached `claude --bg` sessions
+    const BG_BACKGROUNDED = "fx-floors-arcterm-land-queue-review";
+    const BG_SESSIONS = [
+        { sessionid: "fx-bg-nightly-deps", cwd: "D:\\fx\\arcterm", kind: "background", name: "Nightly dependency bump", state: "working", startedts: 0 },
+        { sessionid: "fx-bg-flaky-tests", cwd: "D:\\fx\\arcterm", kind: "background", name: "Hunt the flaky orchestrate test", state: "blocked", startedts: 0 },
+    ];
+    const cockpitOfficeBackground = {
+        name: "cockpit-office-background",
+        surface: "cockpit",
+        async arrange(h) {
+            const ctx = await cockpitOfficeFloors.arrange(h);
+            if (!ctx.missing) {
+                const now = Date.now();
+                const sessions = BG_SESSIONS.map((s, i) => ({ ...s, startedts: now - (i + 1) * 47 * 60_000 }));
+                await h.ev(`window.__cockpitOfficeBackground(${JSON.stringify({ sessions, backgrounded: [BG_BACKGROUNDED] })})`);
+                await h.ev(`localStorage.removeItem("cockpit.office.animation")`);
+            }
+            return ctx;
+        },
+        async teardown(h, ctx) {
+            try {
+                await h.ev("window.__cockpitOfficeBackground?.(null)");
+            } catch (e) {
+                console.error(`cockpit-office-background teardown: clear the background failed: ${e?.message ?? e}`);
+            }
+            await cockpitOfficeFloors.teardown(h, ctx);
+        },
+        async assert(h, ctx) {
+            const steps = [];
+            const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+            if (ctx.missing) {
+                rec("0. the office loads", false, ctx.missing);
+                return steps;
+            }
+            const press = async (k, n = 1) => {
+                for (let i = 0; i < n; i++) {
+                    await focusCockpit(h);
+                    await key(h, k);
+                    await sleep(150);
+                }
+                return probe(h);
+            };
+            const lists = () =>
+                h.ev(`({
+                    backgrounded: !!document.querySelector("[data-cockpit-backgrounded]"),
+                    sessions: !!document.querySelector("[data-cockpit-background-agents]"),
+                })`);
+            await settleBoss(h, 15000);
+
+            // 1. the office opens with neither list under the building
+            const hidden = await lists();
+            await h.shot("cdp-shots/cockpit-office-background-hidden.png");
+            rec("1. Office opens with no Backgrounded section and no Background strip under the building", !hidden.backgrounded && !hidden.sessions, JSON.stringify(hidden));
+
+            // 2. m lists Background after Events with the three agents no room draws
+            const menu = await press("m");
+            const at = menu?.menuItems?.indexOf("Background") ?? -1;
+            await h.shot("cdp-shots/cockpit-office-background-menu.png");
+            rec(
+                "2. m lists Background right after Events, its count 3 (one backgrounded agent, two detached sessions)",
+                at > 0 && menu.menuItems[at - 1] === "Events" && (await h.ev(`/Background\\s*3/.test(document.querySelector("[data-office-menu]")?.textContent ?? "")`)),
+                JSON.stringify({ items: menu?.menuItems })
+            );
+
+            // 3. ↵ on Background shows both lists under the office and shuts the menu
+            await press("ArrowDown", at - (menu?.menuSel ?? 0));
+            const shut = await press("Enter");
+            await sleep(400);
+            // open the strip's fold so the shot shows the sessions themselves
+            await h.ev(`document.querySelector("[data-cockpit-background-agents] button")?.click()`);
+            await sleep(400);
+            const shown = await lists();
+            await h.shot("cdp-shots/cockpit-office-background-shown.png");
+            rec("3. ↵ on Background shuts the menu and shows the Backgrounded section and the Background strip", shut?.menu === false && shown.backgrounded && shown.sessions, JSON.stringify({ menu: shut?.menu, ...shown }));
+
+            // 4. the menu now names it Hide background, which hides both again
+            const again = await press("m");
+            const hideAt = again?.menuItems?.indexOf("Hide background") ?? -1;
+            await press("ArrowDown", hideAt - (again?.menuSel ?? 0));
+            await press("Enter");
+            await sleep(400);
+            const back = await lists();
+            rec("4. the menu names it Hide background, and ↵ hides both lists again", hideAt > 0 && !back.backgrounded && !back.sessions, JSON.stringify({ hideAt, ...back }));
+
+            // 5. Cards still shows both
+            await toggleTo(h, "Cards");
+            await sleep(600);
+            const cards = await lists();
+            await toggleTo(h, "Office");
+            rec("5. Cards still shows the Backgrounded section and the Background strip", cards.backgrounded && cards.sessions, JSON.stringify(cards));
+            return steps;
+        },
+    };
+
+    return { cockpitOffice, cockpitOfficeControls, cockpitOfficeNeedsYouBoard, cockpitOfficeBench, cockpitOfficeFloors, cockpitOfficeBackground };
 }

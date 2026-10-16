@@ -255,6 +255,31 @@ describe("officeMenuItems", () => {
     });
 });
 
+describe("officeMenuItems' Background", () => {
+    it("leaves Background out while no agent is in the background and it is hidden", () => {
+        expect(officeMenuItems(0, 0, false, 0, true).some((i) => i.id === "background")).toBe(false);
+    });
+
+    it("lists Background with its count after Events, and Hide background while shown", () => {
+        const items = officeMenuItems(0, 0, false, 0, true, 2, false);
+        const at = items.findIndex((i) => i.id === "background");
+        expect(items[at - 1].id).toBe("events");
+        expect(items[at]).toEqual({ id: "background", label: "Background", count: "2" });
+        const open = officeMenuItems(0, 0, false, 0, true, 2, true);
+        expect(open.find((i) => i.id === "background")).toEqual({
+            id: "background",
+            label: "Hide background",
+            count: undefined,
+        });
+    });
+
+    it("keeps Hide background while shown after the last one left", () => {
+        expect(officeMenuItems(0, 0, false, 0, true, 0, true).find((i) => i.id === "background")?.label).toBe(
+            "Hide background"
+        );
+    });
+});
+
 describe("officeMenuItems outside a room", () => {
     it("disables Move this room, and only it, when the boss is in no project room", () => {
         const items = officeMenuItems(0, 0, false, 0, false);

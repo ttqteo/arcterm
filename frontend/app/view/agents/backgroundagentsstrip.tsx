@@ -38,7 +38,7 @@ export function BackgroundAgentsStrip({ model }: { model: AgentsViewModel }) {
     const dismiss = (a: AgentVM) => fireAndForget(() => dismissBackgroundAgent(a.id));
 
     return (
-        <div className="shrink-0">
+        <div className="shrink-0" data-cockpit-background-agents>
             <SectionHeader
                 className="mb-2 py-1.5"
                 label="Background"
