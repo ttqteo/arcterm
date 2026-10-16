@@ -21,14 +21,14 @@ machinery, kind `"lift"`), the ride, carrying and dragging rooms, and the chip's
 
 **Verify:** `node scripts/verify.mjs ./pkg/wconfig`
 **Check:** `NODE_OPTIONS=--max-old-space-size=4096 task check:ts`
-**Final:** `node scripts/cdp/final-verify.mjs cockpit-office cockpit-office-controls cockpit-office-board cockpit-office-floors`
+**Final:** `node scripts/cdp/final-verify.mjs cockpit-office cockpit-office-controls office-needs-you-board cockpit-office-floors`
 **Prototype:** <repo>/.superpowers/design/office-floors/project/
 
 ## Global Constraints
 
 - Frontend only. `Verify` names `./pkg/wconfig` only because `scripts/verify.mjs` needs one Go pattern; no Go changes.
-- This plan starts after the Office Needs you board run (`0e23de6a`) has landed: `plan.board` (box and spot, key
-  `BOARD_KEY`), the board's dialog (`kind: "board"`) and the `cockpit-office-board` scenario exist. Keep the board
+- The Office Needs you board run (`0e23de6a`, `wave/0e23de6a…` at `5466611`) is in this run's base: `plan.board` (box
+  and spot, key `BOARD_KEY`), the board's dialog (`kind: "board"`) and the `office-needs-you-board` scenario exist. Keep the board
   where that plan put it (`{ x: hallX + 8, y: top + LOUNGE_H + 16 }`), now on every floor; its rows stay global.
 - Colours come from `@theme` tokens (`frontend/tailwindsetup.css`): the scenery uses the existing `--color-office-*`
   tokens through `officepalette.ts`, the ask marks the `asking` token, selection and drop targets grey (never the
@@ -358,15 +358,23 @@ git commit -m "feat(office): keys for the lift and for carrying a room" -- front
 
 **Depends on:** Task 1
 
-**Files:** `frontend/app/view/agents/officeplanmodel.ts`, `frontend/app/view/agents/officeplanmodel.test.ts`, `docs/superpowers/specs/2026-10-16-office-floors-design.md`
+**Files:** `frontend/app/view/agents/officeplanmodel.ts`, `frontend/app/view/agents/officeplanmodel.test.ts`, `frontend/app/view/office/scenery.ts`, `docs/superpowers/specs/2026-10-16-office-floors-design.md`
 
 What each file is for:
 - Modify: `frontend/app/view/agents/officeplanmodel.ts`
 - Test: `frontend/app/view/agents/officeplanmodel.test.ts`
+- Modify (compile only): `frontend/app/view/office/scenery.ts` — drop the `r.kind === "home"` comparison (~line 171)
+  so it still typechecks once `"home"` leaves `RoomKind`. Nothing else there; the drawing is Task 5's.
 - Modify (only if the pitches change, see Global Constraints): `docs/superpowers/specs/2026-10-16-office-floors-design.md`
 
 The plan builds one floor. Read `officeplanmodel.ts` whole first: `placeDesks`, `placeSeats`, the lounge spots and
 `popupBox` stay; the band loop, the Home booth, `OTHER_RUNS` and the empty meeting room go.
+
+The other `buildPlan` callers (`cockpitoffice.tsx` ~line 536, `officeboss.test.ts`, `scenery.test.ts`) are Tasks 4–6's
+and must still typecheck after this task (Check runs `task check:ts` at every task): so `floor` and `at` are optional
+with defaults, `entrance` stays a `Box` on every floor, and every other existing `Plan` / `Room` / `Seat` field keeps
+its name and type (new fields only). Their behaviour (and their vitest asserts on bands or the booth) is updated by the
+task that owns the file.
 
 - [ ] **Step 1: Rewrite the plan's tests for the floor** (`officeplanmodel.test.ts`)
 
@@ -379,11 +387,15 @@ Replace the band, booth and meeting-room tests; keep the lounge, poses (`agentLo
   `"agents"` at the four slots; slot 0 and 2 in the left column (door on the right, `doorSide: "right"`), 1 and 3 in
   the right column (`doorSide: "left"`); each door 60 px under its room's top. On floor 1 the three empty slots are
   rooms of kind `"empty"` titled `Empty room`, sub `Drag a room here`, `lit: false`.
-- **Size:** at `width: 1050, height: 650` a room is about 390 × 300 (± the walls); at `1600 × 1000` about 660 × 480;
-  at `900 × 400` a room is 317 wide and 300 tall (the minimum; the plan is taller than the view).
+- **Size** (from the geometry formulas in Step 3): at `width: 1050, height: 650` a room is 392 × 300 (± the walls); at
+  `1600 × 1000` 667 × 453 (the spec's "about 660 × 480" is the canvas's; the capacity is the same); at `1424 × 800`
+  579 × 353 (the `Main` board's room); at `900 × 400` a room is 317 wide and 300 tall (the minimum; the plan is taller
+  than the view).
 - **Capacity:** with 7 agents and 3 runs (one done): at 1050 × 650 the room seats 3 desks and 2 tables, the 2 tables
-  the two runs at work, `room.chip` is `{ text: "+4 agents · +1 run", ask, key: "chip:<room key>" }`; at 1600 × 1000
-  10 desks, 3 tables, chip `+1 run`. `ask` is true when a hidden agent asks or a hidden run's lead or task asks.
+  the two runs at work, `room.chip` is `{ text: "+4 agents · +1 run", ask, key: "chip:<room key>" }`; at 1424 × 800
+  4 desks, 2 tables, chip `+3 agents · +1 run`. The same 7 agents with a fourth run at work (the `Capacity` board's
+  "Office floors") at 1600 × 1000: 10 desks, 3 tables (the three at work), chip `+1 run` (the done one). `ask` is true
+  when a hidden agent asks or a hidden run's lead or task asks.
 - **Stable places:** the same input with every working agent turned idle (and back) gives the same desks (key, x, y)
   and the same chip text.
 - **Tables:** each run on a table is a room of kind `"meeting"` (key `meet:<run id>`, `runId`, `parent: <room key>`,
@@ -399,7 +411,10 @@ Replace the band, booth and meeting-room tests; keep the lounge, poses (`agentLo
 - **Asks elsewhere:** `plan.asks` holds this floor's asks (desks, seats, chips whose hidden ask makes them a stop);
   `plan.otherAsks` lists `{ key, floor }` for every ask on other floors, in floor order then office order.
 - **Order:** `plan.order` walks the rooms by slot, each room's desks then its tables' seats then its chip.
-- **G and above:** `plan.ground` is true only on floor 0, and `plan.entrance` is defined only then.
+- **G and above:** `plan.ground` is true only on floor 0 (`plan.entrance` stays set on every floor; the scenery draws
+  it only on `ground`, Task 5).
+- **Defaults:** `buildPlan` with no `floor` and no `at` builds G with the rooms arranged automatically
+  (`placeRooms(EMPTY_LAYOUT, projectsOf(agents, runs)).at`).
 - **Popup side:** `popupBox` opens right of a left-column room and left of a right-column one (`doorSide`).
 
 - [ ] **Step 2: Run to see them fail**
@@ -409,7 +424,8 @@ Expected: FAIL.
 
 - [ ] **Step 3: Implement**
 
-- `PlanInput` gains `floor: number` and `at: Placements` (from `officelayout.ts`, `import type`).
+- `PlanInput` gains `floor?: number` (default 0) and `at?: Placements` (from `officelayout.ts`; default the automatic
+  arrangement, `placeRooms(EMPTY_LAYOUT, projectsOf(agents, runs)).at`), so today's callers still typecheck.
 - Export `projectsOf(agents, runs): string[]` (Home first, then names) — `cockpitoffice.tsx` passes it to
   `placeRooms`. Agents and runs with no project go to `HOME`; drop `OTHER_RUNS`.
 - `RoomKind` becomes `"agents" | "meeting" | "lounge" | "empty"`; `Room` gains `parent?: string`, `chip?: { box: Box;
@@ -437,8 +453,9 @@ Expected: FAIL.
   x: hallX + 55, y: top + bodyH − 84 } }` — adjust the spot so `canStand` holds for it (Task 4 tests it).
 - `floors`, `floor`, `otherAsks`: build the per-floor summary from the cards and `input.at` without building the
   other floors' geometry (asks per room: asking agents + asking leads + asking tasks; lit as the room rule).
-- `ground = input.floor === 0`; `entrance` only on G. `height = top + bodyH + FACADE_H` (the facade strip is drawn on
-  every floor: brick on G, a plain wall above).
+- `ground = floor === 0`; `entrance` computed as today on every floor (drawn only on G by Task 5). `height = top +
+  bodyH + FACADE_H` (the facade strip is drawn on every floor: brick on G, a plain wall above).
+- In `scenery.ts`, only drop the `"home"` comparison so the file typechecks.
 - `popupBox`: `right = room.doorSide !== "left"`.
 - Update the file's header comment (one floor of four project rooms; see the floors spec).
 
@@ -449,8 +466,10 @@ Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
+Also run `NODE_OPTIONS=--max-old-space-size=4096 task check:ts` (5-minute timeout): exit 0.
+
 ```bash
-git commit -m "feat(office): the plan builds one floor of four project rooms" -- frontend/app/view/agents/officeplanmodel.ts frontend/app/view/agents/officeplanmodel.test.ts docs/superpowers/specs/2026-10-16-office-floors-design.md
+git commit -m "feat(office): the plan builds one floor of four project rooms" -- frontend/app/view/agents/officeplanmodel.ts frontend/app/view/agents/officeplanmodel.test.ts frontend/app/view/office/scenery.ts docs/superpowers/specs/2026-10-16-office-floors-design.md
 ```
 
 ---
@@ -573,7 +592,8 @@ What each file is for:
 - Modify: `frontend/app/view/agents/cockpitofficedevhooks.ts`
 - Modify: `frontend/app/store/keybindings/bindings.ts`, `docs/keyboard-shortcuts.md`
 
-Shows in: the `cockpit-office-floors` scenario's steps 1–4 (Task 8), boards `Main`, `LiftPanel`, `Ride`.
+Shows in: the `cockpit-office-floors` scenario's steps 1–4, 10 and 12 (Task 8), boards `Main`, `LiftPanel`,
+`Ride`, `Room`, `NoticeBoard`.
 
 - [ ] **Step 1: The atoms** (`officestore.ts`)
 
@@ -594,6 +614,14 @@ Read the layout through `parseLayout` wherever it is used (atomWithStorage hands
 atom, clamped by the plan to the floors shown) and `placed.at` to `buildPlan`. In an effect, write `placed.layout` back
 to `officeLayoutAtom` when it differs (`sameValues`), so a newcomer's place is saved.
 
+- [ ] **Step 2b: The room's labels and its chip** (`cockpitoffice.tsx`, `Labels`; board `Room`)
+
+Each `"agents"` room draws its title (bold) and `sub` at its top as today; an `"empty"` room draws `Empty room` and
+`Drag a room here` under it, dimmed. The chip is drawn here, in `Labels`, at `room.chip.box`: its `text`, prefixed
+`! ` and in the `asking` token's colour (text and edge) when `chip.ask`, the muted label tone otherwise; it carries
+`data-office-chip={room.key}`, and a click on it calls `onPick(chip.key)` (as a desk's label does). With the cursor on
+the chip it shows the selection ring desks use. Tables in a room are drawn by the existing `Table` at their zone.
+
 - [ ] **Step 3: The lift panel's dialog** (`officedialogmodel.ts` + test, then `cockpitsurface.tsx`'s `dialogFor`)
 
 Test first: `liftDialog(plan.floors, plan.floor)` gives `{ kind: "lift", title: "Lift", items }` with one item per
@@ -602,6 +630,10 @@ floor from the top down (`label: "Floor 2"` or `"Ground"`, `count` the floor's a
 Implement; `DeskKind` gains `"lift"`. In `dialogFor(LIFT_KEY)` return it. `OfficeDialogBox` draws a `"lift"` box as
 the `LiftPanel` board: a round button per floor with its label (the current one lit), `! N` in the asking tone, the
 projects' names under, and the keys line `PgUp PgDn ride · Esc stay`. Activating an item rides to it (Step 4).
+
+A click on the lift doors (a hit box over `plan.lift.doors`, `data-office-lift`) calls `onPick(LIFT_KEY)`: the boss
+walks there and the panel opens on arrival, as a click on the notice board opens the board's dialog (spec, "The
+panel").
 
 - [ ] **Step 4: Ride** (`cockpitoffice.tsx`)
 
@@ -632,7 +664,9 @@ lift opens its panel")`. `docs/keyboard-shortcuts.md`: the same line in the Offi
 
 `__cockpitOffice({ floor: n })` sets the floor at once; `__cockpitOffice({ rideHold: true })` holds the next ride with
 its doors shut until `{ rideHold: false }` (for the `Ride` board's shot). The probe gains `floor`, `floors` (labels),
-`rooms` (each `{ key, kind, title, chip }`), `riding`.
+`rooms` (each `{ key, kind, title, slot, box, titleBox, chip: { text, ask, box } | null, desks, tables, plant }`:
+`desks` and `tables` the counts drawn in it, `plant` whether it has one, boxes in plan coordinates like the probe's
+other boxes), `lift` (`{ doors, spot }`), `liftAsks` (the `▲ 1 on 2` lines drawn by the doors) and `riding`.
 
 - [ ] **Step 9: Typecheck, tests, try it**
 
@@ -662,7 +696,7 @@ What each file is for:
 - Modify: `frontend/app/view/agents/officestore.ts`
 - Modify: `frontend/app/store/keybindings/bindings.ts`, `docs/keyboard-shortcuts.md`
 
-Shows in: the `cockpit-office-floors` scenario's steps 5–7 (Task 8), board `Drag`.
+Shows in: the `cockpit-office-floors` scenario's steps 5–9 and 11 (Task 8), board `Drag`.
 
 - [ ] **Step 1: The chip's dialog** (test first in `officedialogmodel.test.ts`)
 
@@ -688,7 +722,10 @@ in it the card `Moving <room>` / `Swap with <room>` (or `Put it here`) with the 
 
 Pointer down on a room's title label (in `Labels`), with a 4 px threshold, starts the same carry; the target follows
 the slot under the pointer; the lift's dialog opens as drop targets (one row per floor, a full floor's row says
-`Floor full` and takes no drop, `+ New floor` at the top); pointer up drops, Esc cancels. The card follows the pointer.
+`Floor full` and takes no drop, `+ New floor` at the top); pointer up drops, Esc cancels. The card follows the pointer:
+the room's name, its counts, and `Drop to swap with <room>` (or `Drop here` over an empty slot). The title label
+carries `data-office-room-title={room.key}`. The probe gains `carry` (`{ project, target, by: "key" | "pointer" }` or
+null) so a scenario can check the target mid-drag.
 
 - [ ] **Step 4: Menu**
 
@@ -704,7 +741,7 @@ automatically). The menu item `Move this room` is disabled outside a project roo
 
 Run: `npx vitest run frontend/app/view/agents/` and `NODE_OPTIONS=--max-old-space-size=4096 task check:ts`.
 Expected: PASS and exit 0. In the dev app: `g` in a room, ↓, ↵ swaps it; reload and the arrangement is still there;
-`m` → Arrange automatically puts it back.
+`m` → Arrange automatically arranges the rooms by name again (Home first).
 
 - [ ] **Step 7: Commit**
 
@@ -727,33 +764,73 @@ What each file is for:
 
 - [ ] **Step 1: The `office-floors` fixture** (`scripts/cockpit-fixtures/scenarios.mjs`)
 
-Nine projects over three floors as the canvas's `Main` board: Home, portfolio-journal, vnstock-js, vnstock-js-docs
-(G); arcterm (7 agents, two asking, one of them past the desks), cuscofi-app (a lead asking, a task failed),
-mit-thesis (one idle agent, no run), cuscofi-production (1); chotkeo (one asking) on floor 2. Runs through the office
-runs hook the existing `OFFICE_RUNS` uses. Add it to the fixtures' scenario list; `npm run cockpit:fixtures` lists it.
+Nine projects as the canvas's `Main` board (`Main.dc.html`, its `FLOORS` list): Home (2 agents), portfolio-journal (1
+idle), vnstock-js (2 agents, one run), vnstock-js-docs (1 idle); arcterm (7 agents, two asking, named so that one asking
+agent sorts past the first four by name, as the board's "Tray popover"; 3 runs: "Land queue" at work with 7 tasks,
+"Canvas gallery" at work with a task asking, "Tray popover" done), cuscofi-app (2 agents, a run whose lead asks and
+one task failed), mit-thesis (one idle agent, no run), cuscofi-production (1 working); chotkeo (one asking, one
+working). Runs through the office runs hook the existing `OFFICE_RUNS` uses. Add it to the fixtures' scenario list;
+`npm run cockpit:fixtures` lists it. Which floor a project is on is not the fixture's: it comes from the arrangement.
+Export from the scenario file the `Main` board's arrangement, `OFFICE_FLOORS_LAYOUT`:
+
+```js
+{ v: 1, rooms: {
+    Home: { floor: 0, slot: 0 }, "portfolio-journal": { floor: 0, slot: 1 }, "vnstock-js": { floor: 0, slot: 2 }, "vnstock-js-docs": { floor: 0, slot: 3 },
+    arcterm: { floor: 1, slot: 0 }, "cuscofi-app": { floor: 1, slot: 1 }, "mit-thesis": { floor: 1, slot: 2 }, "cuscofi-production": { floor: 1, slot: 3 },
+    chotkeo: { floor: 2, slot: 0 },
+} }
+```
 
 - [ ] **Step 2: Update the existing office scenarios**
 
-`cockpit-office`, `cockpit-office-controls`, `cockpit-office-bench` and `cockpit-office-board`
+`cockpit-office`, `cockpit-office-controls`, `cockpit-office-bench` and `office-needs-you-board`
 (`cockpitofficescenarios.mjs`) assert bands, meeting rooms and the Home booth today: rewrite those asserts for the
 floor (rooms by slot, tables in rooms, Home a room). Clear `cockpit.office.layout` in each arrange step so every run
-starts arranged automatically.
+starts arranged automatically. Keep each scenario's other steps as they are.
 
-- [ ] **Step 3: The `cockpit-office-floors` scenario**, driven by keys (`Input.dispatchKeyEvent`), a shot per step:
+- [ ] **Step 3: The `cockpit-office-floors` scenario**, driven by keys (`Input.dispatchKeyEvent`) and, where a step
+says so, the mouse (`Input.dispatchMouseEvent`, plan coordinates from the probe mapped to the page as the existing
+click steps do), a shot per step.
 
-1. Floor 1 at 1,440 × 900: four rooms; arcterm's chip `! +3 agents · +1 run`; `▲ 1 on 2` by the lift (board `Main`).
-2. Walk to the lift, ↵: the lift's dialog with G, 1, 2 and `! 1` on 2 (board `LiftPanel`).
-3. `rideHold`, ↓ then ↵ toward 2: the doors shut with the dial label (board `Ride`); release; floor 2 shows
-   chotkeo and three empty rooms.
-4. PageDown back to 1; `n` until the cursor is on chotkeo's ask: the office rides to 2.
-5. In arcterm's room `g`, ↓, ↵: arcterm and mit-thesis swap (probe `rooms`); the shot taken before ↵ (board `Drag`).
-6. Reload: the swap is still there; `m` → Arrange automatically puts it back.
-7. The chip: walk to arcterm's chip, ↵: its dialog lists the hidden agents, the asking one first.
-8. Capacity: `Emulation.setDeviceMetricsOverride` to 1,050 × 650 and to 1,600 × 1,000, one shot each (board
-   `Capacity`): 3 desks + 2 tables, then 10 desks + 3 tables in arcterm's room.
+Arrange: load the `office-floors` fixture, write `OFFICE_FLOORS_LAYOUT` to localStorage `cockpit.office.layout` and
+reload (the atom reads it on init), open the Office, `__cockpitOffice({ floor: 1 })`. **Sizing the Office box:** read
+the Office box (`[data-office-root]`'s rect) at the current window, then `Emulation.setDeviceMetricsOverride` to the
+target box plus the chrome around it (window − box), and assert the box is the target within 2 px. Steps 1–12 run
+with the Office box at **1,424 × 800** (the `Main` board's room size, 579 × 353); step 13 sets its own. Teardown clears
+the override, the layout key and the fixture.
+
+1. Floor 1: probe `floor` 1, four rooms by slot arcterm, cuscofi-app, mit-thesis, cuscofi-production; arcterm's room
+   has 4 desks and 2 tables, its chip `+3 agents · +1 run` with `ask` (drawn `! +3 agents · +1 run`); `liftAsks` is
+   `["▲ 1 on 2"]` (board `Main`).
+2. Walk to the lift (arrows, or `goTo(LIFT_KEY)` then the boss at `lift.spot`), ↵: the lift's dialog, items Floor 2,
+   Floor 1 (current), Ground, `! 1` on Floor 2, ▶ on Floor 2 (board `LiftPanel`).
+3. `rideHold: true`, ↵ (the ▶ is on Floor 2): shot with `riding` true and the doors shut, the dial label `Floor 2`
+   (board `Ride`); `rideHold: false`: probe `floor` 2, rooms chotkeo and three of kind `"empty"`.
+4. PageDown: `floor` 1; PageUp: `floor` 2; PageDown: `floor` 1. `n` until the cursor is on chotkeo's asking agent: `floor` is 2 when the ride ends.
+5. PageDown to 1. Walk into arcterm's room, `g`, ↓: shot before ↵, `carry.target` slot 2, the card `Swap with
+   mit-thesis` (board `Drag`); ↵: probe rooms slot 0 mit-thesis, slot 2 arcterm.
+6. Reload (`__cockpitOffice({ floor: 1 })` again): the swap is still there.
+7. **By pointer:** mouse pressed on mit-thesis's title label (`titleBox`, slot 0), moved in steps past 4 px to the
+   centre of slot 2's box: shot mid-drag (`carry.by` `"pointer"`, target slot 2, the card `Drop to swap with
+   arcterm`); released: arcterm back in slot 0, mit-thesis in slot 2.
+8. `m` → Arrange automatically: the rooms in name order from G (G: Home, arcterm, chotkeo, cuscofi-app; floor 1:
+   cuscofi-production, mit-thesis, portfolio-journal, vnstock-js; floor 2: vnstock-js-docs). Then write
+   `OFFICE_FLOORS_LAYOUT` again, reload, `floor: 1`.
+9. Esc after `g` puts the room back: `g` in arcterm's room, →, Esc: probe rooms unchanged, `carry` null.
+10. **The full room** (board `Room`): shot clipped to arcterm's room box: 4 desks, 2 tables with their screens, the
+    chip; mit-thesis's room (no run) has 0 tables and `plant` true.
+11. **The chip:** the cursor on arcterm's chip (`goTo` its key, or `n` until it is: the chip asks), ↵: the chip's dialog lists the hidden agents and
+    run, the asking one first; a click on the chip (mouse) opens the same dialog.
+12. **The notice board on floor 2** (board `NoticeBoard`): `__cockpitOfficeAttention` hands in two rows naming
+    arcterm's two asking agents (floor 1), as `office-needs-you-board` does; ride to 2: probe `board.count` 2 there,
+    shot clipped to the board; then the lift doors by mouse: a click on `lift.doors` walks the boss to `lift.spot`
+    and opens the lift's dialog (probe `dialog` `"lift"`).
+13. **Capacity** (board `Capacity`), back on floor 1: the Office box at 1,050 × 650, then 1,600 × 1,000, one shot each
+    clipped to arcterm's room: 3 desks + 2 tables, then 7 desks (all of them) + 3 tables, the chip gone at
+    1,600 × 1,000 (10 desk places, three runs, all seated).
 
 Register it in `scripts/cdp/scenarios.mjs`. Run: `task verify:ui -- cockpit-office cockpit-office-controls
-cockpit-office-board cockpit-office-floors` on the dev app; expected PASS.
+office-needs-you-board cockpit-office-floors` on the dev app; expected PASS.
 
 - [ ] **Step 4: Bench and RAM watch**
 
