@@ -19,6 +19,9 @@ const (
 	ConfigKey_TelegramEnabled                = "telegram:enabled"
 	ConfigKey_TelegramChatID                 = "telegram:chatid"
 	ConfigKey_TelegramChatName               = "telegram:chatname"
+	ConfigKey_TelegramMode                   = "telegram:mode"
+	ConfigKey_TelegramSchedule               = "telegram:schedule"
+	ConfigKey_TelegramOnUntil                = "telegram:onuntil"
 
 	ConfigKey_StorageClear                   = "storage:*"
 	ConfigKey_StorageAutoClean               = "storage:autoclean"

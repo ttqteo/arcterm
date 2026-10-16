@@ -30,6 +30,8 @@ does not, say what you saw and it becomes a bug row under Actionable.
 **2026-10-16 (Telegram asks)**
 
 - [ ] (arcterm) Telegram asks: pair a real bot, answer by button, by reply, and in the app (message edits)
+- [ ] (arcterm) Telegram on demand with a real bot: no requests while no question is open; an ask connects and sends;
+  the end of a schedule window edits the message
 
 **2026-10-16 (the Office's pet boss)**
 

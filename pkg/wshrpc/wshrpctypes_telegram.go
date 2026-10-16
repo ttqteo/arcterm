@@ -8,7 +8,7 @@ import "context"
 // TelegramCommands back the Telegram row under Settings → General → Notifications (pkg/telebot): the bot's state,
 // a fresh pairing code, and unpairing the chat.
 type TelegramCommands interface {
-	TelegramStatusCommand(ctx context.Context) (TelegramStatusData, error) // enabled, token, polling, bot, paired chat, pair code
+	TelegramStatusCommand(ctx context.Context) (TelegramStatusData, error) // enabled, token, connected, allowed time, bot, paired chat, pair code
 	TelegramPairCommand(ctx context.Context) (TelegramPairData, error)     // a fresh pairing code for /start
 	TelegramUnpairCommand(ctx context.Context) error                       // forget the paired chat
 }
@@ -17,7 +17,11 @@ type TelegramCommands interface {
 type TelegramStatusData struct {
 	Enabled         bool   `json:"enabled"`
 	HasToken        bool   `json:"hastoken"`
-	Polling         bool   `json:"polling"`
+	Connected       bool   `json:"connected,omitempty"`
+	Allowed         bool   `json:"allowed,omitempty"`
+	AllowedUntil    int64  `json:"alloweduntil,omitempty"` // UnixMilli, 0 = no end
+	NextAllowed     int64  `json:"nextallowed,omitempty"`  // UnixMilli, 0 = none
+	Open            int    `json:"open,omitempty"`         // questions open in Telegram
 	BotName         string `json:"botname,omitempty"`
 	ChatName        string `json:"chatname,omitempty"`
 	PairCode        string `json:"paircode,omitempty"`

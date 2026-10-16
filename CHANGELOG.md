@@ -33,6 +33,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Telegram connects only while an agent's question is open, and only when you allow it: for a while (1h, 2h, 4h or
+  your own), on a schedule such as office hours, or always.
 - **Background tucked away in the Office**: the Backgrounded and Background lists no longer sit under the building,
   so the office fills the Cockpit. The office menu (`m`) lists **Background** with how many agents are there; pick
   it to show both lists under the office, and **Hide background** to tuck them away again. Cards still shows them.

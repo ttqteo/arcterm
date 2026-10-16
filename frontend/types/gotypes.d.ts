@@ -3609,6 +3609,9 @@ declare global {
         "telegram:enabled"?: boolean;
         "telegram:chatid"?: string;
         "telegram:chatname"?: string;
+        "telegram:mode"?: string;
+        "telegram:schedule"?: string;
+        "telegram:onuntil"?: number;
         "storage:*"?: boolean;
         "storage:autoclean"?: boolean;
         "storage:nudgegb"?: number;
@@ -3961,7 +3964,11 @@ declare global {
     type TelegramStatusData = {
         enabled: boolean;
         hastoken: boolean;
-        polling: boolean;
+        connected?: boolean;
+        allowed?: boolean;
+        alloweduntil?: number;
+        nextallowed?: number;
+        open?: number;
         botname?: string;
         chatname?: string;
         paircode?: string;

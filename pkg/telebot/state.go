@@ -84,18 +84,43 @@ type dueAsk struct {
 	agentask.PendingAsk
 }
 
+// isDue is the test due applies to each pending ask.
+func (t *tracker) isDue(p agentask.PendingAsk, now int64) bool {
+	if p.Owner == agentask.AskOwner_Lead || now-p.Ts < GraceMs || len(p.Questions) == 0 {
+		return false
+	}
+	return t.byAsk[p.AskId] == nil && !t.delivered[p.AskId]
+}
+
+// hasDue reports whether due would return an ask, without tracking anything: the supervisor asks it every tick to
+// decide whether a session is needed.
+func (t *tracker) hasDue(pending map[string]agentask.PendingAsk, now int64) bool {
+	for _, p := range pending {
+		if t.isDue(p, now) {
+			return true
+		}
+	}
+	return false
+}
+
+// all returns every tracked ask, oldest first.
+func (t *tracker) all() []*askMsg {
+	out := make([]*askMsg, 0, len(t.byAsk))
+	for _, a := range t.byAsk {
+		out = append(out, a)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].n < out[j].n })
+	return out
+}
+
 // due returns the pending asks to send now, oldest first: not owned by a dag lead, pending at least GraceMs, with
 // at least one question, and not already tracked or just answered here.
 func (t *tracker) due(pending map[string]agentask.PendingAsk, now int64) []dueAsk {
 	var out []dueAsk
 	for oref, p := range pending {
-		if p.Owner == agentask.AskOwner_Lead || now-p.Ts < GraceMs || len(p.Questions) == 0 {
-			continue
+		if t.isDue(p, now) {
+			out = append(out, dueAsk{Oref: oref, PendingAsk: p})
 		}
-		if t.byAsk[p.AskId] != nil || t.delivered[p.AskId] {
-			continue
-		}
-		out = append(out, dueAsk{Oref: oref, PendingAsk: p})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Ts != out[j].Ts {

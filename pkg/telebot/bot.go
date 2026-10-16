@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/agentask"
@@ -38,33 +39,67 @@ const (
 	replyPaired        = "Paired. Agent questions will arrive here."
 	replyPairFailed    = "Could not pair. Try again from arcterm."
 	editCouldNotAnswer = "Could not answer — open arcterm"
+
+	// The edit of a question left open when the allowed time ends; the first is followed by the next start, "Mon 08:00".
+	editOffUntil  = "— Telegram is off until "
+	editOffNoNext = "— Telegram is off; answer in arcterm"
 )
 
 // backoffMin and backoffMax bound the wait after a failed call; a var, not a const, so a test can shrink them.
 var backoffMin, backoffMax = time.Second, 60 * time.Second
+
+// idleLinger is how long a session stays up with nothing to do before it disconnects, and how long a session held
+// by a pairing code outlives the code, so the "Paired." reply is never cut off; a var so a test can shrink it.
+var idleLinger = 30 * time.Second
+
+// validateTimeout bounds the one getMe a new token or a switch-on makes outside any session.
+const validateTimeout = 20 * time.Second
 
 // Deps is everything the bot takes from wavesrv, as funcs so the test drives it with fakes.
 type Deps struct {
 	Pending  func(ctx context.Context) map[string]agentask.PendingAsk // live, non-dead asks
 	Deliver  func(oref, askID string, answers []baseds.AgentAnswerItem) (bool, error)
 	Who      func(ctx context.Context, oref string) string // "api-refactor · arcterm", or "agent"
-	Settings func() Settings                               // Enabled, ChatID (int64, 0 = unpaired)
+	Settings func() Settings                               // Enabled, ChatID (int64, 0 = unpaired), When
 	Token    func() string                                 // "" = none stored
 	SavePair func(chatID int64, chatName string) error
 	APIBase  string        // "" = defaultAPIBase; a fake Bot API in tests and the CDP scenario
 	Tick     time.Duration // 2 s in production
+	// Now is the clock When.Allowed and the allowed-time-end edit read; nil is time.Now. The grace and the pairing
+	// keep time.Now.
+	Now func() time.Time
 }
 
 type Settings struct {
 	Enabled bool
 	ChatID  int64
+	When    When // when it may connect
 }
 
-// Status is what the Settings row shows. BotName is the bot's username without the "@"; PairCodeExpires is UnixMilli.
+// NewWhen reads the telegram:mode, telegram:schedule and telegram:onuntil settings. A schedule that does not parse
+// reads as office hours (the error says why, for the caller to log); onUntil is UnixMilli, and nil or 0 is none.
+func NewWhen(mode, schedule string, onUntil *int64) (When, error) {
+	sc, err := ParseSchedule(schedule)
+	if err != nil {
+		sc, _ = ParseSchedule("")
+	}
+	w := When{Mode: mode, Schedule: sc}
+	if onUntil != nil && *onUntil > 0 {
+		w.OnUntil = time.UnixMilli(*onUntil)
+	}
+	return w, err
+}
+
+// Status is what the Settings row shows. BotName is the bot's username without the "@"; the times are UnixMilli
+// (0 = none). Connected is a session that is up and polling; Open counts the questions open in Telegram.
 type Status struct {
 	Enabled         bool   `json:"enabled"`
 	HasToken        bool   `json:"hastoken"`
-	Polling         bool   `json:"polling"`
+	Connected       bool   `json:"connected"`
+	Allowed         bool   `json:"allowed"`
+	AllowedUntil    int64  `json:"alloweduntil,omitempty"`
+	NextAllowed     int64  `json:"nextallowed,omitempty"`
+	Open            int    `json:"open,omitempty"`
 	BotName         string `json:"botname,omitempty"`
 	PairCode        string `json:"paircode,omitempty"`
 	PairCodeExpires int64  `json:"paircodeexpires,omitempty"`
@@ -78,11 +113,20 @@ type Bot struct {
 	poke chan struct{}
 	pair Pairer
 
-	smu     sync.Mutex // guards the fields below
-	polling bool
-	botName string
-	pollErr string // the poll loop's last failure; "" once a call succeeds
-	sendErr string // the last failed send or edit; "" once one succeeds
+	smu       sync.Mutex // guards the fields below
+	connected bool
+	botName   string
+	pollErr   string // the poll loop's last failure; "" once a call succeeds
+	sendErr   string // the last failed send or edit; "" once one succeeds
+
+	// The tracker of what was sent lives here, not on a session, so a reconnect keeps it and a tap on a question sent
+	// before the reconnect still delivers. It is replaced only with no session up (or by the reconcile pass itself).
+	tmu       sync.Mutex // guards tr and its chat
+	tr        *tracker
+	trChat    int64 // the chat tr's messages went to
+	trChatSet bool
+	// work serialises the passes that send and edit for the tracker: reconcile and the allowed-time-end edit.
+	work sync.Mutex
 
 	pairMu     sync.Mutex
 	pairMisses map[int64][]time.Time // chat id -> its wrong codes inside pairMissWindow
@@ -92,9 +136,17 @@ func New(d Deps) *Bot {
 	if d.Tick <= 0 {
 		d.Tick = defaultTick
 	}
-	b := &Bot{d: d, poke: make(chan struct{}, 1)}
+	b := &Bot{d: d, poke: make(chan struct{}, 1), tr: newSessionTracker()}
 	b.poke <- struct{}{} // the first pass reads the settings as they stand, so Run needs no poke to start
 	return b
+}
+
+// now is the clock the allowed time reads.
+func (b *Bot) now() time.Time {
+	if b.d.Now != nil {
+		return b.d.Now()
+	}
+	return time.Now()
 }
 
 // Poke tells Run the settings or the token changed: it re-reads them and starts, restarts or stops the session.
@@ -105,28 +157,79 @@ func (b *Bot) Poke() {
 	}
 }
 
-// Pair makes a fresh pairing code, valid for PairTTL.
-func (b *Bot) Pair() (code string, expires time.Time) { return b.pair.New(time.Now()) }
+// Pair makes a fresh pairing code, valid for PairTTL, and pokes Run: a live code connects in any mode, so it need not
+// wait for the next tick.
+func (b *Bot) Pair() (code string, expires time.Time) {
+	code, expires = b.pair.New(time.Now())
+	b.Poke()
+	return code, expires
+}
 
 func (b *Bot) Status() Status {
 	set := b.d.Settings()
 	st := Status{Enabled: set.Enabled, HasToken: b.d.Token() != ""}
+	if set.Enabled {
+		allowed, until, next := set.When.Allowed(b.now())
+		st.Allowed, st.AllowedUntil, st.NextAllowed = allowed, millis(until), millis(next)
+	}
 	b.smu.Lock()
-	st.Polling, st.BotName = b.polling, b.botName
+	st.Connected, st.BotName = b.connected, b.botName
 	st.LastError = b.pollErr
 	if st.LastError == "" {
 		st.LastError = b.sendErr
 	}
 	b.smu.Unlock()
+	st.Open = b.openAsks()
 	if code, exp := b.pair.Pending(time.Now()); code != "" {
 		st.PairCode, st.PairCodeExpires = code, exp.UnixMilli()
 	}
 	return st
 }
 
-func (b *Bot) setPolling(v bool) {
+// millis is t as UnixMilli, 0 for the zero time.
+func millis(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.UnixMilli()
+}
+
+// hasDue reports a pending ask that reconcile would send now.
+func (b *Bot) hasDue(pending map[string]agentask.PendingAsk, now int64) bool {
+	b.tmu.Lock()
+	defer b.tmu.Unlock()
+	return b.tr.hasDue(pending, now)
+}
+
+// openAsks counts the asks being answered in Telegram.
+func (b *Bot) openAsks() int {
+	b.tmu.Lock()
+	defer b.tmu.Unlock()
+	return len(b.tr.byAsk)
+}
+
+// syncChat replaces the tracker when the paired chat changed: message ids are per chat, so the old chat's ids mean
+// nothing in the new one. The caller makes sure no reconcile pass is running, or is that pass.
+func (b *Bot) syncChat(chat int64) {
+	b.tmu.Lock()
+	defer b.tmu.Unlock()
+	if b.trChatSet && b.trChat != chat {
+		b.tr = newSessionTracker()
+	}
+	b.trChat, b.trChatSet = chat, true
+}
+
+// resetTracker forgets every sent question, for a new token: the messages went through another bot. The caller makes
+// sure no session is up.
+func (b *Bot) resetTracker() {
+	b.tmu.Lock()
+	b.tr = newSessionTracker()
+	b.tmu.Unlock()
+}
+
+func (b *Bot) setConnected(v bool) {
 	b.smu.Lock()
-	b.polling = v
+	b.connected = v
 	b.smu.Unlock()
 }
 
@@ -151,7 +254,7 @@ func (b *Bot) setErr(slot *string, msg string) {
 // resetStatus is what the row shows with nothing running: no bot, no error.
 func (b *Bot) resetStatus() {
 	b.smu.Lock()
-	b.polling, b.botName, b.pollErr, b.sendErr = false, "", "", ""
+	b.connected, b.botName, b.pollErr, b.sendErr = false, "", "", ""
 	b.smu.Unlock()
 }
 
@@ -182,17 +285,14 @@ func (b *Bot) notePairMiss(chat int64, now time.Time) {
 }
 
 // session is one run of the bot on one token: a getMe, a backlog drop, then the poll and reconcile loops. It ends when
-// its context does or when Telegram rejects the token.
+// its context does or when Telegram rejects the token. What it has sent lives on the Bot.
 type session struct {
-	b      *Bot
-	api    *Client
-	token  string
-	cancel context.CancelFunc
-	done   chan struct{} // closed once every goroutine of the session has returned
-
-	chat int64      // the chat tr's messages went to; only the reconcile goroutine touches it
-	mu   sync.Mutex // guards tr: the poll goroutine and the reconcile ticker both use it
-	tr   *tracker
+	b        *Bot
+	api      *Client
+	token    string
+	cancel   context.CancelFunc
+	done     chan struct{} // closed once every goroutine of the session has returned
+	rejected atomic.Bool   // Telegram answered 401: the session is ending, and the token is not retried until a poke
 }
 
 func (s *session) ended() bool {
@@ -204,46 +304,166 @@ func (s *session) ended() bool {
 	}
 }
 
-// Run starts, restarts and stops the session as pokes arrive, and returns when ctx ends. The first pass runs without
-// a poke.
+// Run decides on every tick and every poke whether a session should be up, starts and stops it, and returns when ctx
+// ends. The first pass runs without a poke.
 func (b *Bot) Run(ctx context.Context) {
-	var cur *session
-	stop := func() {
-		if cur != nil {
-			cur.cancel()
-			<-cur.done
-			cur = nil
-		}
-	}
-	defer stop()
+	sv := &supervisor{b: b, ctx: ctx}
+	defer sv.stop()
+	t := time.NewTicker(b.d.Tick)
+	defer t.Stop()
 	for {
+		poked := false
 		select {
 		case <-ctx.Done():
 			return
 		case <-b.poke:
+			poked = true
+		case <-t.C:
 		}
-		set, tok := b.d.Settings(), b.d.Token()
-		if !set.Enabled || tok == "" {
-			stop()
-			b.resetStatus()
-			continue
+		sv.step(poked)
+	}
+}
+
+// supervisor is Run's state. It reads only the settings, the local ask registry and the clock to decide, so an idle
+// bot makes no request.
+type supervisor struct {
+	b   *Bot
+	ctx context.Context
+	cur *session
+
+	rejectedTok string    // the token Telegram answered 401, until a poke
+	knownTok    string    // the token the last getMe ran on, a session's or the validation's
+	trackedTok  string    // the token the tracker's messages went through
+	lastWanted  time.Time // the last pass that wanted a session
+	lastPairing time.Time // the last pass that saw a live pairing code
+}
+
+func (sv *supervisor) stop() {
+	if sv.cur != nil {
+		sv.cur.cancel()
+		<-sv.cur.done
+		sv.cur = nil
+	}
+}
+
+// step is one pass. poked says a settings or token change (or a Pair) woke it, rather than the tick.
+func (sv *supervisor) step(poked bool) {
+	defer func() { _ = panichandler.PanicHandler("telebot.step", recover()) }()
+	b := sv.b
+	set, tok := b.d.Settings(), b.d.Token()
+
+	// A session that ended on a 401 is not restarted by a tick; a poke, the same token too, tries again.
+	if sv.cur != nil && sv.cur.rejected.Load() {
+		sv.stop()
+		sv.rejectedTok = tok
+	}
+	if sv.cur != nil && sv.cur.ended() {
+		sv.cur = nil
+	}
+	wasRejected := false
+	if poked && sv.rejectedTok != "" {
+		wasRejected, sv.rejectedTok = true, ""
+	}
+	if !set.Enabled || tok == "" {
+		sv.stop()
+		b.resetStatus()
+		sv.knownTok, sv.rejectedTok = "", ""
+		return
+	}
+	rejected := sv.rejectedTok == tok
+
+	if sv.cur != nil && sv.cur.token != tok {
+		sv.stop()
+	}
+	if sv.cur == nil {
+		// No session means no reconcile pass is running: the tracker may be replaced.
+		if sv.trackedTok != "" && sv.trackedTok != tok {
+			b.resetTracker()
 		}
-		// A session that ended on a rejected token is retried on the next poke, even with the same token.
-		if cur != nil && cur.token == tok && !cur.ended() {
-			continue
+		b.syncChat(set.ChatID)
+	}
+	sv.trackedTok = tok
+
+	wall := time.Now()
+	allowed, _, next := set.When.Allowed(b.now())
+	pairing := false
+	if code, _ := b.pair.Pending(wall); code != "" {
+		pairing = true
+		sv.lastPairing = wall
+	}
+	// need: a question is open in Telegram or waits past the grace. With no paired chat there is nowhere to send one.
+	open := b.openAsks()
+	need := false
+	if set.ChatID != 0 && !rejected && (open > 0 || allowed) {
+		need = open > 0 || b.hasDue(b.d.Pending(sv.ctx), wall.UnixMilli())
+	}
+	want := !rejected && ((allowed && need) || pairing)
+
+	if want {
+		sv.lastWanted = wall
+		if sv.cur == nil {
+			sv.start(tok)
 		}
-		stop()
-		sctx, cancel := context.WithCancel(ctx)
-		cur = &session{
-			b:      b,
-			api:    &Client{Base: b.d.APIBase, Token: tok},
-			token:  tok,
-			cancel: cancel,
-			done:   make(chan struct{}),
-			chat:   set.ChatID,
-			tr:     newSessionTracker(),
-		}
-		go cur.run(sctx)
+		return
+	}
+	if sv.cur != nil {
+		sv.wind(allowed, pairing, next, wall)
+		return
+	}
+	// Nothing to do, so nothing is connected. Switching on or a new token (and a poke after a rejection) makes one
+	// getMe to show the bot's name and catch a wrong token, in every mode, and then nothing more.
+	if tok != sv.knownTok || wasRejected {
+		sv.validate(tok)
+	}
+}
+
+// wind ends the session that has nothing to do: at once when the allowed time ended (no code in play), else once it
+// has been idle for idleLinger. A code that was used or ran out counts as idle time, so the "Paired." reply goes out.
+func (sv *supervisor) wind(allowed, pairing bool, next, wall time.Time) {
+	b := sv.b
+	if !allowed && !pairing && b.openAsks() > 0 {
+		sv.cur.endAllowed(sv.ctx, next)
+	}
+	recentPairing := !sv.lastPairing.IsZero() && wall.Sub(sv.lastPairing) < idleLinger
+	if (!allowed && !recentPairing) || wall.Sub(sv.lastWanted) >= idleLinger {
+		sv.stop()
+	}
+}
+
+func (sv *supervisor) start(tok string) {
+	sctx, cancel := context.WithCancel(sv.ctx)
+	sv.cur = &session{
+		b:      sv.b,
+		api:    &Client{Base: sv.b.d.APIBase, Token: tok},
+		token:  tok,
+		cancel: cancel,
+		done:   make(chan struct{}),
+	}
+	sv.knownTok = tok
+	go sv.cur.run(sctx)
+}
+
+// validate is the one getMe a bot with nothing to do makes: the name for the row, or the 401.
+func (sv *supervisor) validate(tok string) {
+	b := sv.b
+	sv.knownTok = tok
+	ctx, cancel := context.WithTimeout(sv.ctx, validateTimeout)
+	defer cancel()
+	api := &Client{Base: b.d.APIBase, Token: tok}
+	me, err := api.GetMe(ctx)
+	if sv.ctx.Err() != nil {
+		return
+	}
+	var ae *APIError
+	switch {
+	case err == nil:
+		b.setBotName(me.Username)
+		b.setErr(&b.pollErr, "")
+	case errors.As(err, &ae) && ae.Code == 401:
+		b.setErr(&b.pollErr, errTokenRejected)
+		sv.rejectedTok = tok
+	default:
+		b.setErr(&b.pollErr, err.Error())
 	}
 }
 
@@ -258,7 +478,7 @@ func newSessionTracker() *tracker {
 func (s *session) run(ctx context.Context) {
 	defer close(s.done)
 	defer s.cancel()
-	defer s.b.setPolling(false)
+	defer s.b.setConnected(false)
 
 	var me User
 	if !s.call(ctx, func() (err error) { me, err = s.api.GetMe(ctx); return }) {
@@ -275,7 +495,7 @@ func (s *session) run(ctx context.Context) {
 	if n := len(last); n > 0 {
 		offset = last[n-1].UpdateID + 1
 	}
-	s.b.setPolling(true)
+	s.b.setConnected(true)
 
 	var wg sync.WaitGroup
 	wg.Go(func() { s.reconcileLoop(ctx) })
@@ -300,6 +520,7 @@ func (s *session) call(ctx context.Context, fn func() error) bool {
 		var ae *APIError
 		switch {
 		case errors.As(err, &ae) && ae.Code == 401:
+			s.rejected.Store(true) // before the message: whoever sees the message finds the flag set
 			s.b.setErr(&s.b.pollErr, errTokenRejected)
 			return false
 		case errors.As(err, &ae) && ae.Code == 409:
@@ -361,32 +582,34 @@ type sendJob struct {
 	kb   [][]Button
 }
 
-// reconcile compares the registry with what the session has sent: an ask that left it is edited to say so, and one
-// that has waited out the grace goes out. It does nothing until a chat is paired.
+// reconcile compares the registry with what the bot has sent: an ask that left it is edited to say so, and one that has
+// waited out the grace goes out, but only while the time is allowed (a session held by a pairing code outside it sends
+// nothing but its "Paired." reply). It does nothing until a chat is paired.
 func (s *session) reconcile(ctx context.Context) {
 	defer func() { _ = panichandler.PanicHandler("telebot.reconcile", recover()) }()
-	chat := s.b.d.Settings().ChatID
-	if chat != s.chat {
-		// Message ids are per chat: the old chat's ids mean nothing in the new one.
-		s.mu.Lock()
-		s.tr = newSessionTracker()
-		s.mu.Unlock()
-		s.chat = chat
-	}
+	b := s.b
+	b.work.Lock()
+	defer b.work.Unlock()
+	set := b.d.Settings()
+	b.syncChat(set.ChatID)
+	chat := set.ChatID
 	if chat == 0 {
 		return
 	}
-	pending := s.b.d.Pending(ctx)
+	allowed, _, _ := set.When.Allowed(b.now())
+	pending := b.d.Pending(ctx)
 	now := time.Now().UnixMilli()
 
-	s.mu.Lock()
-	gone := s.tr.gone(pending)
+	b.tmu.Lock()
+	gone := b.tr.gone(pending)
 	var jobs []sendJob
-	for _, d := range s.tr.due(pending, now) {
-		a := s.tr.track(d)
-		jobs = append(jobs, sendJob{a: a, oref: d.Oref, q: d.Questions[0], kb: keyboard(a)})
+	if allowed {
+		for _, d := range b.tr.due(pending, now) {
+			a := b.tr.track(d)
+			jobs = append(jobs, sendJob{a: a, oref: d.Oref, q: d.Questions[0], kb: keyboard(a)})
+		}
 	}
-	s.mu.Unlock()
+	b.tmu.Unlock()
 
 	for _, a := range gone {
 		// only the question still open: an earlier one of a multi-question ask was answered here and keeps its "✓ <label>"
@@ -396,18 +619,51 @@ func (s *session) reconcile(ctx context.Context) {
 	}
 	for i, j := range jobs {
 		id, ok := s.send(ctx, chat, questionText(s.who(ctx, j.oref), j.q), j.kb)
-		s.mu.Lock()
+		b.tmu.Lock()
 		if ok {
-			s.tr.sent(j.a, id)
+			b.tr.sent(j.a, id)
 		} else {
 			// Untracked, the ask is due again next tick; the rest wait with it.
 			for _, rest := range jobs[i:] {
-				s.tr.drop(rest.a)
+				b.tr.drop(rest.a)
 			}
 		}
-		s.mu.Unlock()
+		b.tmu.Unlock()
 		if !ok {
 			return
+		}
+	}
+}
+
+// editTimeout bounds the edits the end of the allowed time makes: the session is stopped right after them.
+const editTimeout = 15 * time.Second
+
+// endAllowed runs when the allowed time ended with questions open in Telegram: each one's open message is edited to
+// say Telegram is off (until next, or "answer in arcterm" when nothing will turn it back on), and the ask is forgotten
+// without a tombstone, so one that is still pending is sent again as a new message when the time comes back.
+func (s *session) endAllowed(ctx context.Context, next time.Time) {
+	defer func() { _ = panichandler.PanicHandler("telebot.endAllowed", recover()) }()
+	ctx, cancel := context.WithTimeout(ctx, editTimeout)
+	defer cancel()
+	b := s.b
+	b.work.Lock()
+	defer b.work.Unlock()
+	text := editOffNoNext
+	if !next.IsZero() {
+		text = editOffUntil + next.Format("Mon 15:04")
+	}
+
+	b.tmu.Lock()
+	chat := b.trChat
+	open := b.tr.all()
+	for _, a := range open {
+		b.tr.drop(a)
+	}
+	b.tmu.Unlock()
+
+	for _, a := range open {
+		for _, id := range a.msgIDs[min(a.q, len(a.msgIDs)):] {
+			s.edit(ctx, chat, id, text, nil)
 		}
 	}
 }
@@ -471,7 +727,7 @@ type result struct {
 	kb      [][]Button               // its keyboard
 }
 
-// resolve reads what the step's follow-up needs; the caller holds s.mu.
+// resolve reads what the step's follow-up needs; the caller holds the bot's tracker lock.
 func (s *session) resolve(a *askMsg, st step) result {
 	r := result{st: st, a: a}
 	if a == nil {
@@ -513,10 +769,10 @@ func (s *session) onMessage(ctx context.Context, m *Message) {
 	r, replied := result{st: step{Reply: FixedReply}}, 0
 	if m.ReplyTo != nil {
 		replied = m.ReplyTo.MessageID
-		s.mu.Lock()
-		a, st := s.tr.onReply(replied, m.Text)
+		s.b.tmu.Lock()
+		a, st := s.b.tr.onReply(replied, m.Text)
 		r = s.resolve(a, st)
-		s.mu.Unlock()
+		s.b.tmu.Unlock()
 	}
 	s.finish(ctx, m.Chat.ID, replied, r)
 }
@@ -546,10 +802,10 @@ func (s *session) onCallback(ctx context.Context, cb *CallbackQuery) {
 	if cb.Message == nil || !s.paired(cb.Message.Chat.ID) {
 		return
 	}
-	s.mu.Lock()
-	a, st := s.tr.onCallback(cb.Data)
+	s.b.tmu.Lock()
+	a, st := s.b.tr.onCallback(cb.Data)
 	r := s.resolve(a, st)
-	s.mu.Unlock()
+	s.b.tmu.Unlock()
 	// Clears the spinner on the button. A failure here is a token that expired, which says nothing about the bot.
 	_ = s.api.AnswerCallback(ctx, cb.ID, st.Toast)
 	s.finish(ctx, cb.Message.Chat.ID, cb.Message.MessageID, r)
@@ -577,14 +833,14 @@ func (s *session) finish(ctx context.Context, chat int64, msgID int, r result) {
 	}
 	if st.Next {
 		id, ok := s.send(ctx, chat, questionText(who, r.q), r.kb)
-		s.mu.Lock()
+		s.b.tmu.Lock()
 		if ok {
-			s.tr.sent(r.a, id)
+			s.b.tr.sent(r.a, id)
 		} else {
 			// Untracked, the ask is due again and goes out from its first question.
-			s.tr.drop(r.a)
+			s.b.tr.drop(r.a)
 		}
-		s.mu.Unlock()
+		s.b.tmu.Unlock()
 	}
 	if st.Deliver {
 		s.deliver(ctx, chat, msgID, r)

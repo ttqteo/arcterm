@@ -62,6 +62,53 @@ func TestDueSkipsLeadOwnedGraceAndTracked(t *testing.T) {
 	}
 }
 
+func TestHasDue(t *testing.T) {
+	const now = int64(100_000)
+	tr := newTracker()
+	q := single("which?", "a", "b")
+	lead := ask("lead", now-20_000, q)
+	lead.Owner = agentask.AskOwner_Lead
+	pending := map[string]agentask.PendingAsk{
+		"block:lead":  lead,
+		"block:young": ask("young", now-3_000, q),
+		"block:empty": ask("empty", now-20_000),
+	}
+	if tr.hasDue(nil, now) || tr.hasDue(pending, now) {
+		t.Errorf("hasDue = true with nothing past the grace, none owned by the user and every one with a question")
+	}
+
+	pending["block:ready"] = ask("ready", now-GraceMs, q)
+	if !tr.hasDue(pending, now) {
+		t.Fatalf("hasDue = false with an ask past the grace")
+	}
+	if len(tr.byAsk) != 0 {
+		t.Errorf("hasDue tracked an ask: %v", tr.byAsk)
+	}
+
+	a := tracked(t, tr, "block:ready", pending["block:ready"])
+	if tr.hasDue(pending, now) {
+		t.Errorf("hasDue = true for an ask already tracked")
+	}
+	tr.forget(a) // delivered: the registry still holds it until the delivery claims it
+	if tr.hasDue(pending, now) {
+		t.Errorf("hasDue = true for an ask just answered here")
+	}
+}
+
+func TestAllListsTrackedAsksOldestFirst(t *testing.T) {
+	tr := newTracker()
+	q := single("which?", "a")
+	tracked(t, tr, "block:b", ask("b", 1, q))
+	tracked(t, tr, "block:a", ask("a", 1, q))
+	var ids []string
+	for _, a := range tr.all() {
+		ids = append(ids, a.askID)
+	}
+	if !reflect.DeepEqual(ids, []string{"b", "a"}) {
+		t.Errorf("all = %v, want [b a] in tracking order", ids)
+	}
+}
+
 func TestDueOldestFirst(t *testing.T) {
 	const now = int64(100_000)
 	tr := newTracker()

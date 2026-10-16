@@ -41,10 +41,14 @@ var machineLocalKeys = map[string]bool{
 	ConfigKey_ClaudeActiveAccount: true,
 	// the bot token they go with lives only in this machine's secretstore (as claude:activeaccount's does); a second
 	// machine that synced enabled + chatid through the vault would poll the same bot with no token, or with its own
-	// (a 409 loop between the two pollers)
+	// (a 409 loop between the two pollers). The allowed time is per machine too: a personal machine's "always" or "on
+	// for 4h" synced to a work machine would let that one connect around the clock.
 	ConfigKey_TelegramEnabled:  true,
 	ConfigKey_TelegramChatID:   true,
 	ConfigKey_TelegramChatName: true,
+	ConfigKey_TelegramMode:     true,
+	ConfigKey_TelegramSchedule: true,
+	ConfigKey_TelegramOnUntil:  true,
 }
 
 func IsMachineLocalKey(key string) bool {

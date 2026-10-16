@@ -24,7 +24,11 @@ func (ws *WshServer) TelegramStatusCommand(ctx context.Context) (wshrpc.Telegram
 	return wshrpc.TelegramStatusData{
 		Enabled:         st.Enabled,
 		HasToken:        st.HasToken,
-		Polling:         st.Polling,
+		Connected:       st.Connected,
+		Allowed:         st.Allowed,
+		AllowedUntil:    st.AllowedUntil,
+		NextAllowed:     st.NextAllowed,
+		Open:            st.Open,
 		BotName:         st.BotName,
 		ChatName:        wconfig.GetWatcher().GetFullConfig().Settings.TelegramChatName,
 		PairCode:        st.PairCode,

@@ -38,6 +38,15 @@
         "telegram:chatname": {
           "type": "string"
         },
+        "telegram:mode": {
+          "type": "string"
+        },
+        "telegram:schedule": {
+          "type": "string"
+        },
+        "telegram:onuntil": {
+          "type": "integer"
+        },
         "storage:*": {
           "type": "boolean"
         },

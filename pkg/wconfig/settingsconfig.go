@@ -53,6 +53,9 @@ type SettingsType struct {
 	TelegramEnabled  *bool  `json:"telegram:enabled,omitempty"`  // send pending asks to the paired Telegram chat; unset is off
 	TelegramChatID   string `json:"telegram:chatid,omitempty"`   // the paired chat's id, as a string (it can pass 2^53)
 	TelegramChatName string `json:"telegram:chatname,omitempty"` // shown in Settings
+	TelegramMode     string `json:"telegram:mode,omitempty"`     // when the bot may connect: "manual" (unset), "schedule", "always"
+	TelegramSchedule string `json:"telegram:schedule,omitempty"` // "<days> <HH:MM>-<HH:MM>", local time; unset is office hours
+	TelegramOnUntil  *int64 `json:"telegram:onuntil,omitempty"`  // manual "on for" ends at this UnixMilli; 0 or past is off
 
 	StorageClear        bool     `json:"storage:*,omitempty"`
 	StorageAutoClean    *bool    `json:"storage:autoclean,omitempty"`

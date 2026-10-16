@@ -273,6 +273,7 @@ type rig struct {
 	pending   map[string]agentask.PendingAsk
 	set       Settings
 	token     string
+	clock     time.Time // the clock the allowed time reads; zero is the real one
 	delivered []delivery
 	saved     []savedPair
 	// deliver, when set, replaces the default delivery, which records the answer and then clears the ask the way
@@ -286,7 +287,7 @@ func newRig(t *testing.T) *rig {
 		t:       t,
 		tg:      newFakeTelegram(t),
 		pending: map[string]agentask.PendingAsk{},
-		set:     Settings{Enabled: true, ChatID: pairedChat},
+		set:     Settings{Enabled: true, ChatID: pairedChat, When: When{Mode: ModeAlways}},
 		token:   "TKN",
 	}
 }
@@ -331,7 +332,32 @@ func (r *rig) deps() Deps {
 		},
 		APIBase: r.tg.srv.URL,
 		Tick:    10 * time.Millisecond,
+		Now:     r.now,
 	}
+}
+
+// now is Deps.Now: the fake clock once setClock has set one.
+func (r *rig) now() time.Time {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.clock.IsZero() {
+		return time.Now()
+	}
+	return r.clock
+}
+
+// setClock freezes the allowed time's clock at t.
+func (r *rig) setClock(t time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.clock = t
+}
+
+// setWhen changes the allowed-time settings only.
+func (r *rig) setWhen(w When) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.set.When = w
 }
 
 // start runs the bot until the test ends.
@@ -357,7 +383,7 @@ func (r *rig) start() {
 // ready waits until the bot has dropped the backlog and polls: an update pushed before that is backlog, and is dropped.
 func (r *rig) ready() {
 	r.t.Helper()
-	r.waitFor("the bot to poll", func() bool { return r.bot.Status().Polling })
+	r.waitFor("the bot to poll", func() bool { return r.bot.Status().Connected })
 }
 
 func (r *rig) recordDelivery(oref, askID string, answers []baseds.AgentAnswerItem) {
@@ -563,8 +589,8 @@ func TestPairingSavesChat(t *testing.T) {
 	r := newRig(t)
 	r.set.ChatID = 0
 	r.start()
+	code, _ := r.bot.Pair() // a live code is what holds the session
 	r.ready()
-	code, _ := r.bot.Pair()
 	wrong := code[:5] + string('0'+(code[5]-'0'+1)%10)
 
 	bad := r.tg.push(say(42, 10, "/start "+wrong))
@@ -607,8 +633,8 @@ func TestPairingGuessesAreLimited(t *testing.T) {
 	r := newRig(t)
 	r.set.ChatID = 0
 	r.start()
-	r.ready()
 	code, _ := r.bot.Pair()
+	r.ready()
 	wrong := "/start " + code[:5] + string('0'+(code[5]-'0'+1)%10)
 
 	for i := range pairMissLimit {
@@ -629,8 +655,8 @@ func TestPairingGuessesBlockOnlyTheGuessingChat(t *testing.T) {
 	r := newRig(t)
 	r.set.ChatID = 0
 	r.start()
-	r.ready()
 	code, _ := r.bot.Pair()
+	r.ready()
 	wrong := "/start " + code[:5] + string('0'+(code[5]-'0'+1)%10)
 
 	for i := range pairMissLimit + 3 {
@@ -665,11 +691,12 @@ func TestPairingGuessesCappedAcrossChats(t *testing.T) {
 func TestUnauthorizedStops(t *testing.T) {
 	r := newRig(t)
 	r.tg.getMeCode = 401
+	r.add("block:a", old("a1", single("Which?", "x", "y"))) // a question is what starts the session
 	r.start()
 
 	r.waitFor("the rejected token", func() bool { return r.bot.Status().LastError == "Token rejected by Telegram" })
 	time.Sleep(50 * time.Millisecond)
-	if st := r.bot.Status(); st.Polling {
+	if st := r.bot.Status(); st.Connected {
 		t.Errorf("Polling = true after a rejected token")
 	}
 	if n := len(r.tg.callsOf("getUpdates")); n != 0 {
@@ -688,11 +715,12 @@ func TestUnauthorizedOnUpdatesStops(t *testing.T) {
 		}
 		return 0
 	}
+	r.add("block:a", old("a1", single("Which?", "x", "y"))) // a question is what holds the session
 	r.start()
 
 	r.waitFor("the rejected token and the session's end", func() bool {
 		st := r.bot.Status()
-		return st.LastError == "Token rejected by Telegram" && !st.Polling
+		return st.LastError == "Token rejected by Telegram" && !st.Connected
 	})
 	calls := len(r.tg.callsOf("getUpdates"))
 	time.Sleep(300 * time.Millisecond)
@@ -709,10 +737,11 @@ func TestConflictReportsAnotherApp(t *testing.T) {
 		}
 		return 0
 	}
+	r.add("block:a", old("a1", single("Which?", "x", "y"))) // a question is what holds the session
 	r.start()
 
 	r.waitFor("the conflict", func() bool { return r.bot.Status().LastError == "Another app is polling this bot" })
-	if st := r.bot.Status(); !st.Polling {
+	if st := r.bot.Status(); !st.Connected {
 		t.Errorf("Polling = false on a 409: the bot keeps backing off, it does not stop")
 	}
 }
@@ -729,6 +758,7 @@ func TestLastErrorClearsOnSuccess(t *testing.T) {
 		}
 		return 0
 	}
+	r.add("block:a", old("a1", single("Which?", "x", "y"))) // a question is what holds the session
 	r.start()
 
 	r.waitFor("the conflict", func() bool { return r.bot.Status().LastError == "Another app is polling this bot" })
@@ -759,13 +789,14 @@ func TestBacklogDroppedFirst(t *testing.T) {
 
 func TestNonReplyGetsFixedLine(t *testing.T) {
 	r := newRig(t)
+	r.add("block:a", old("a1", single("Which?", "x", "y"))) // a question is what holds the session
 	r.start()
-	r.ready()
+	r.waitSent(1)
 
 	r.tg.push(say(pairedChat, 5, "hello there"))
-	sent := r.waitSent(1)
-	if sent[0].num("chat_id") != int(pairedChat) || sent[0].str("text") != FixedReply {
-		t.Errorf("reply = chat %v %q, want FixedReply to the paired chat", sent[0].Body["chat_id"], sent[0].str("text"))
+	sent := r.waitSent(2)
+	if sent[1].num("chat_id") != int(pairedChat) || sent[1].str("text") != FixedReply {
+		t.Errorf("reply = chat %v %q, want FixedReply to the paired chat", sent[1].Body["chat_id"], sent[1].str("text"))
 	}
 }
 
@@ -820,6 +851,7 @@ func TestSlowDeliverSendsOnce(t *testing.T) {
 
 func TestStaleTapEditsTappedMessage(t *testing.T) {
 	r := newRig(t)
+	r.add("block:a", old("a1", single("Which?", "x", "y"))) // a question is what holds the session
 	r.start()
 	r.ready()
 
@@ -880,30 +912,30 @@ func TestOffOrNoTokenDoesNothing(t *testing.T) {
 	if n := r.tg.total(); n != 0 {
 		t.Fatalf("%d requests reached the API with the bot switched off", n)
 	}
-	if st := r.bot.Status(); st.Enabled || !st.HasToken || st.Polling {
+	if st := r.bot.Status(); st.Enabled || !st.HasToken || st.Connected {
 		t.Errorf("Status = %+v, want off with a token and not polling", st)
 	}
 
-	r.setSettings(Settings{Enabled: true, ChatID: pairedChat}, "")
+	r.setSettings(Settings{Enabled: true, ChatID: pairedChat, When: When{Mode: ModeAlways}}, "")
 	r.bot.Poke()
 	time.Sleep(100 * time.Millisecond)
 	if n := r.tg.total(); n != 0 {
 		t.Fatalf("%d requests reached the API with no token", n)
 	}
-	if st := r.bot.Status(); !st.Enabled || st.HasToken || st.Polling {
+	if st := r.bot.Status(); !st.Enabled || st.HasToken || st.Connected {
 		t.Errorf("Status = %+v, want on with no token and not polling", st)
 	}
 
-	r.setSettings(Settings{Enabled: true, ChatID: pairedChat}, "TKN")
+	r.setSettings(Settings{Enabled: true, ChatID: pairedChat, When: When{Mode: ModeAlways}}, "TKN")
 	r.bot.Poke()
 	r.waitSent(1) // switched on with a token, the pending ask goes out
-	if st := r.bot.Status(); !st.Polling || st.BotName != "arc_test_bot" {
+	if st := r.bot.Status(); !st.Connected || st.BotName != "arc_test_bot" {
 		t.Errorf("Status = %+v, want polling as arc_test_bot", st)
 	}
 
-	r.setSettings(Settings{Enabled: false, ChatID: pairedChat}, "TKN")
+	r.setSettings(Settings{Enabled: false, ChatID: pairedChat, When: When{Mode: ModeAlways}}, "TKN")
 	r.bot.Poke()
-	r.waitFor("polling to stop", func() bool { return !r.bot.Status().Polling })
+	r.waitFor("polling to stop", func() bool { return !r.bot.Status().Connected })
 	calls := r.tg.total()
 	time.Sleep(100 * time.Millisecond)
 	if got := r.tg.total(); got != calls {
@@ -913,10 +945,11 @@ func TestOffOrNoTokenDoesNothing(t *testing.T) {
 
 func TestTokenChangeRestartsSession(t *testing.T) {
 	r := newRig(t)
+	r.add("block:a", old("a1", single("Which?", "x", "y"))) // a question is what holds the session
 	r.start()
-	r.waitFor("polling", func() bool { return r.bot.Status().Polling })
+	r.waitFor("polling", func() bool { return r.bot.Status().Connected })
 
-	r.setSettings(Settings{Enabled: true, ChatID: pairedChat}, "NEW")
+	r.setSettings(Settings{Enabled: true, ChatID: pairedChat, When: When{Mode: ModeAlways}}, "NEW")
 	r.bot.Poke()
 	r.waitFor("a poll on the new token", func() bool {
 		for _, c := range r.tg.callsOf("getUpdates") {
@@ -946,6 +979,7 @@ func TestTokenChangeRestartsSession(t *testing.T) {
 func TestRejectedTokenIsRetriedOnPoke(t *testing.T) {
 	r := newRig(t)
 	r.tg.getMeCode = 401
+	r.add("block:a", old("a1", single("Which?", "x", "y"))) // a question is what holds the session
 	r.start()
 	r.waitFor("the rejected token", func() bool { return r.bot.Status().LastError == "Token rejected by Telegram" })
 
@@ -953,7 +987,7 @@ func TestRejectedTokenIsRetriedOnPoke(t *testing.T) {
 	r.tg.getMeCode = 0
 	r.tg.mu.Unlock()
 	r.bot.Poke() // same token: the user fixed it on BotFather's side
-	r.waitFor("polling", func() bool { return r.bot.Status().Polling })
+	r.waitFor("polling", func() bool { return r.bot.Status().Connected })
 	if st := r.bot.Status(); st.LastError != "" {
 		t.Errorf("LastError = %q after a good getMe, want none", st.LastError)
 	}
@@ -1083,7 +1117,7 @@ func TestRepairingToAnotherChatForgetsOldMessages(t *testing.T) {
 	r.start()
 	r.waitSent(1)
 
-	r.setSettings(Settings{Enabled: true, ChatID: otherChat}, "TKN")
+	r.setSettings(Settings{Enabled: true, ChatID: otherChat, When: When{Mode: ModeAlways}}, "TKN")
 	sent := r.waitSent(2)
 	if got := sent[1].num("chat_id"); got != int(otherChat) {
 		t.Errorf("the ask went to chat %d after re-pairing, want %d", got, otherChat)
@@ -1094,5 +1128,373 @@ func TestRepairingToAnotherChatForgetsOldMessages(t *testing.T) {
 		if c.num("chat_id") == int(otherChat) && c.num("message_id") == sent[0].MsgID {
 			t.Errorf("an old chat's message id was edited in the new chat: %+v", c.Body)
 		}
+	}
+}
+
+// withLinger shrinks idleLinger for the test. Call it before r.start(): the start's cleanup then runs first, with Run
+// returned before the old value comes back.
+func withLinger(t *testing.T, d time.Duration) {
+	t.Helper()
+	was := idleLinger
+	idleLinger = d
+	t.Cleanup(func() { idleLinger = was })
+}
+
+// wed returns h:m on Wednesday 2026-10-14 in the local zone; thu is the day after.
+func wed(h, m int) time.Time { return time.Date(2026, 10, 14, h, m, 0, 0, time.Local) }
+
+func thu(h, m int) time.Time { return time.Date(2026, 10, 15, h, m, 0, 0, time.Local) }
+
+func officeHours(t *testing.T) When {
+	t.Helper()
+	sc, err := ParseSchedule("")
+	if err != nil {
+		t.Fatalf("ParseSchedule(\"\"): %v", err)
+	}
+	return When{Mode: ModeSchedule, Schedule: sc}
+}
+
+// waitName waits for the bot to learn its name, which the idle bot's one getMe does.
+func (r *rig) waitName() {
+	r.t.Helper()
+	r.waitFor("the bot's name", func() bool { return r.bot.Status().BotName == "arc_test_bot" })
+}
+
+func TestNewWhenReadsSettings(t *testing.T) {
+	until := int64(1_800_000_000_000)
+	w, err := NewWhen("schedule", "mon,wed 09:00-12:00", &until)
+	if err != nil {
+		t.Fatalf("NewWhen: %v", err)
+	}
+	if w.Mode != ModeSchedule || !w.OnUntil.Equal(time.UnixMilli(until)) || !w.Schedule.Days[time.Monday] ||
+		w.Schedule.Days[time.Tuesday] || w.Schedule.Start != 9*60 || w.Schedule.End != 12*60 {
+		t.Errorf("When = %+v, want schedule mon,wed 09:00-12:00 until %d", w, until)
+	}
+
+	office, _ := ParseSchedule("")
+	w, err = NewWhen("", "", nil)
+	if err != nil || w.Mode != "" || w.Schedule != office || !w.OnUntil.IsZero() {
+		t.Errorf("NewWhen of nothing = %+v, %v; want manual, office hours, no OnUntil", w, err)
+	}
+
+	zero := int64(0)
+	w, _ = NewWhen("", "", &zero)
+	if !w.OnUntil.IsZero() {
+		t.Errorf("OnUntil 0 = %v, want none", w.OnUntil)
+	}
+
+	w, err = NewWhen("schedule", "funday 9-5", nil)
+	if err == nil || w.Schedule != office {
+		t.Errorf("a bad schedule = %+v, %v; want office hours and the parse error", w, err)
+	}
+}
+
+func TestIdleWithoutQuestionsMakesNoRequests(t *testing.T) {
+	r := newRig(t)
+	r.start()
+	r.waitName()
+
+	time.Sleep(100 * time.Millisecond) // ten ticks
+	if n := len(r.tg.callsOf("getMe")); n != 1 {
+		t.Errorf("getMe calls = %d, want 1 (the validation)", n)
+	}
+	if n := len(r.tg.callsOf("getUpdates")); n != 0 {
+		t.Errorf("getUpdates calls = %d, want none with no question open", n)
+	}
+	if st := r.bot.Status(); st.Connected || !st.Allowed || st.Open != 0 {
+		t.Errorf("Status = %+v, want allowed, not connected, nothing open", st)
+	}
+}
+
+func TestValidationRejectsOnce(t *testing.T) {
+	r := newRig(t)
+	r.set.When = When{Mode: ModeManual}
+	r.tg.getMeCode = 401
+	r.start()
+	r.waitFor("the rejected token", func() bool { return r.bot.Status().LastError == "Token rejected by Telegram" })
+
+	time.Sleep(100 * time.Millisecond)
+	if n := len(r.tg.callsOf("getMe")); n != 1 {
+		t.Errorf("getMe calls = %d after ten ticks, want 1", n)
+	}
+
+	r.bot.Poke() // the same token: the person fixed it on BotFather's side
+	r.waitFor("a second getMe", func() bool { return len(r.tg.callsOf("getMe")) == 2 })
+	time.Sleep(50 * time.Millisecond)
+	if n := len(r.tg.callsOf("getMe")); n != 2 {
+		t.Errorf("getMe calls = %d, want 2 (one per poke)", n)
+	}
+	if n := len(r.tg.callsOf("getUpdates")); n != 0 {
+		t.Errorf("getUpdates calls = %d, want none", n)
+	}
+}
+
+func TestValidationNamesTheBotOnSwitchOn(t *testing.T) {
+	r := newRig(t)
+	r.set.Enabled = false
+	r.start()
+	time.Sleep(50 * time.Millisecond)
+	if n := r.tg.total(); n != 0 {
+		t.Fatalf("%d requests with the bot off", n)
+	}
+
+	r.setSettings(Settings{Enabled: true, ChatID: pairedChat, When: When{Mode: ModeManual}}, "TKN")
+	r.bot.Poke()
+	r.waitName()
+	time.Sleep(50 * time.Millisecond)
+	if n := r.tg.total(); n != 1 {
+		t.Errorf("requests = %d, want 1 getMe outside the allowed time", n)
+	}
+}
+
+func TestQuestionConnectsThenDisconnects(t *testing.T) {
+	withLinger(t, 150*time.Millisecond)
+	r := newRig(t)
+	r.add("block:a", old("a1", single("Which?", "x", "y")))
+	r.start()
+	msg := r.waitSent(1)[0]
+	if n := len(r.tg.callsOf("getMe")); n != 1 {
+		t.Errorf("getMe calls = %d, want 1", n)
+	}
+	if n := len(r.tg.callsOf("getUpdates")); n == 0 {
+		t.Errorf("no getUpdates: the session never polled")
+	}
+	r.waitFor("one question open", func() bool { return r.bot.Status().Open == 1 })
+
+	r.remove("block:a")
+	r.waitFor("the edit", func() bool { return len(r.tg.editsOf(msg.MsgID)) > 0 })
+	r.waitFor("the disconnect", func() bool { return !r.bot.Status().Connected })
+	if st := r.bot.Status(); st.Open != 0 {
+		t.Errorf("Open = %d after the ask left, want 0", st.Open)
+	}
+	calls := r.tg.total()
+	time.Sleep(100 * time.Millisecond)
+	if got := r.tg.total(); got != calls {
+		t.Errorf("%d requests after the disconnect, want none", got-calls)
+	}
+
+	r.add("block:b", old("b1", single("Again?", "x", "y")))
+	r.waitSent(2) // a new question connects again
+	if n := len(r.tg.callsOf("getMe")); n != 2 {
+		t.Errorf("getMe calls = %d, want 2 (one per session)", n)
+	}
+}
+
+func TestNotAllowedNeverConnects(t *testing.T) {
+	r := newRig(t)
+	r.set.When = When{Mode: ModeManual}
+	r.add("block:a", old("a1", single("Which?", "x", "y")))
+	r.start()
+	r.waitName()
+
+	time.Sleep(100 * time.Millisecond)
+	for _, m := range []string{"getUpdates", "sendMessage"} {
+		if n := len(r.tg.callsOf(m)); n != 0 {
+			t.Errorf("%s calls = %d outside the allowed time, want none", m, n)
+		}
+	}
+	if st := r.bot.Status(); st.Allowed || st.Connected {
+		t.Errorf("Status = %+v, want not allowed and not connected", st)
+	}
+}
+
+func TestUnpairedAskDoesNotConnect(t *testing.T) {
+	r := newRig(t)
+	r.set.ChatID = 0
+	r.add("block:a", old("a1", single("Which?", "x", "y")))
+	r.start()
+	r.waitName()
+
+	time.Sleep(100 * time.Millisecond)
+	if n := len(r.tg.callsOf("getUpdates")); n != 0 {
+		t.Errorf("getUpdates calls = %d with no paired chat to send to, want none", n)
+	}
+}
+
+func TestManualOnUntilAllowsThenEnds(t *testing.T) {
+	r := newRig(t)
+	r.set.When = When{Mode: ModeManual, OnUntil: time.Now().Add(500 * time.Millisecond)}
+	r.add("block:a", old("a1", single("Which?", "x", "y")))
+	r.start()
+	msg := r.waitSent(1)[0]
+	if st := r.bot.Status(); !st.Allowed || st.AllowedUntil == 0 {
+		t.Errorf("Status = %+v, want allowed with an end", st)
+	}
+
+	r.waitFor("the closing edit", func() bool { return len(r.tg.editsOf(msg.MsgID)) > 0 })
+	if got := r.tg.editsOf(msg.MsgID)[0]; got != "— Telegram is off; answer in arcterm" {
+		t.Errorf("edit = %q, want the off line with no next start", got)
+	}
+	r.waitFor("the disconnect", func() bool { return !r.bot.Status().Connected })
+	if st := r.bot.Status(); st.Allowed || st.Open != 0 {
+		t.Errorf("Status = %+v, want not allowed and nothing open", st)
+	}
+	calls := r.tg.total()
+	time.Sleep(100 * time.Millisecond)
+	if got := r.tg.total(); got != calls {
+		t.Errorf("%d requests after the allowed time ended, want none", got-calls)
+	}
+}
+
+func TestScheduleEndEditsWithNextStart(t *testing.T) {
+	r := newRig(t)
+	r.set.When = officeHours(t)
+	r.setClock(wed(17, 29))
+	r.add("block:a", old("a1", single("Which?", "x", "y")))
+	r.start()
+	msg := r.waitSent(1)[0]
+
+	r.setClock(wed(17, 31))
+	r.waitFor("the closing edit", func() bool { return len(r.tg.editsOf(msg.MsgID)) > 0 })
+	if got := r.tg.editsOf(msg.MsgID)[0]; got != "— Telegram is off until Thu 08:00" {
+		t.Errorf("edit = %q, want the off line with Thursday's start", got)
+	}
+	r.waitFor("the disconnect", func() bool { return !r.bot.Status().Connected })
+	st := r.bot.Status()
+	if st.Allowed || st.NextAllowed != thu(8, 0).UnixMilli() || st.Open != 0 {
+		t.Errorf("Status = %+v, want not allowed, next Thu 08:00 (%d), nothing open", st, thu(8, 0).UnixMilli())
+	}
+	if n := len(r.tg.callsOf("sendMessage")); n != 1 {
+		t.Fatalf("sendMessage calls = %d while off, want 1", n)
+	}
+
+	r.setClock(thu(8, 1)) // the ask is still pending: it goes out again, as a new message
+	again := r.waitSent(2)[1]
+	if again.MsgID == msg.MsgID || !strings.Contains(again.str("text"), "Which?") {
+		t.Errorf("second send = %+v, want a new message with the question", again)
+	}
+	r.waitFor("the reconnect", func() bool { return r.bot.Status().Connected })
+}
+
+func TestStatusReportsAllowedTime(t *testing.T) {
+	r := newRig(t)
+	r.set.When = officeHours(t)
+	r.setClock(wed(10, 0))
+	r.start()
+
+	st := r.bot.Status()
+	if !st.Allowed || st.AllowedUntil != wed(17, 30).UnixMilli() || st.NextAllowed != 0 {
+		t.Errorf("Status = %+v, want allowed until Wed 17:30 (%d) with no next start", st, wed(17, 30).UnixMilli())
+	}
+
+	r.setClock(wed(18, 0))
+	st = r.bot.Status()
+	if st.Allowed || st.AllowedUntil != 0 || st.NextAllowed != thu(8, 0).UnixMilli() {
+		t.Errorf("Status = %+v, want not allowed, next Thu 08:00 (%d)", st, thu(8, 0).UnixMilli())
+	}
+
+	r.setSettings(Settings{Enabled: false, ChatID: pairedChat, When: officeHours(t)}, "TKN")
+	if st := r.bot.Status(); st.Allowed || st.NextAllowed != 0 {
+		t.Errorf("Status = %+v with the bot off, want no allowed time", st)
+	}
+}
+
+func TestPairCodeConnectsOutsideAllowedTime(t *testing.T) {
+	withLinger(t, 150*time.Millisecond)
+	r := newRig(t)
+	r.set.ChatID = 0
+	r.set.When = When{Mode: ModeManual}
+	r.start()
+	r.waitName()
+	if n := len(r.tg.callsOf("getUpdates")); n != 0 {
+		t.Fatalf("getUpdates calls = %d before a code, want none", n)
+	}
+
+	code, _ := r.bot.Pair()
+	r.ready()
+	r.tg.push(say(pairedChat, 10, "/start "+code))
+	r.waitFor("the pairing", func() bool { return len(r.saves()) == 1 })
+	if sent := r.waitSent(1); sent[0].str("text") != replyPaired {
+		t.Errorf("reply = %q, want the pairing line", sent[0].str("text"))
+	}
+
+	r.waitFor("the session to stop once the code was used", func() bool { return !r.bot.Status().Connected })
+	calls := r.tg.total()
+	time.Sleep(100 * time.Millisecond)
+	if got := r.tg.total(); got != calls {
+		t.Errorf("%d requests after the pairing, want none", got-calls)
+	}
+}
+
+func TestPairingOutsideAllowedTimeSendsNoQuestions(t *testing.T) {
+	withLinger(t, 150*time.Millisecond)
+	r := newRig(t)
+	r.set.ChatID = 0
+	r.set.When = When{Mode: ModeManual}
+	r.add("block:a", old("a1", single("Which?", "x", "y")))
+	r.start()
+	r.waitName()
+
+	code, _ := r.bot.Pair()
+	r.ready()
+	r.tg.push(say(pairedChat, 10, "/start "+code))
+	r.waitFor("the pairing", func() bool { return len(r.saves()) == 1 })
+	r.waitSent(1)
+
+	time.Sleep(100 * time.Millisecond) // the chat is paired now: several ticks must still send no question
+	sent := r.tg.callsOf("sendMessage")
+	if len(sent) != 1 || sent[0].str("text") != replyPaired {
+		t.Errorf("sendMessage calls = %+v, want only the pairing reply", sent)
+	}
+	if st := r.bot.Status(); st.Open != 0 {
+		t.Errorf("Open = %d, want 0 outside the allowed time", st.Open)
+	}
+}
+
+func TestReconnectDoesNotResend(t *testing.T) {
+	r := newRig(t)
+	failing := false // read by the fake under its lock
+	r.tg.updatesCode = func(n int) int {
+		if failing {
+			return 401
+		}
+		return 0
+	}
+	r.add("block:a", old("a1", single("Which?", "x", "y")))
+	r.start()
+	msg := r.waitSent(1)[0]
+	time.Sleep(20 * time.Millisecond) // the bot records a message's id just after Telegram answers
+
+	r.tg.mu.Lock()
+	failing = true
+	r.tg.mu.Unlock()
+	r.waitFor("the session to end on the 401", func() bool {
+		st := r.bot.Status()
+		return st.LastError == "Token rejected by Telegram" && !st.Connected
+	})
+	if st := r.bot.Status(); st.Open != 1 {
+		t.Errorf("Open = %d after the session ended, want the question kept", st.Open)
+	}
+
+	r.tg.mu.Lock()
+	failing = false
+	r.tg.mu.Unlock()
+	polls := len(r.tg.callsOf("getUpdates"))
+	r.bot.Poke() // the same token
+	r.waitFor("a new session", func() bool { return r.bot.Status().Connected && len(r.tg.callsOf("getUpdates")) > polls })
+	time.Sleep(60 * time.Millisecond)
+	if n := len(r.tg.callsOf("sendMessage")); n != 1 {
+		t.Errorf("sendMessage calls = %d after the reconnect, want 1 (the question was not sent again)", n)
+	}
+
+	r.tg.push(tap(pairedChat, msg.MsgID, msg.buttons()[0][0]))
+	r.waitFor("the delivery", func() bool { return len(r.deliveries()) == 1 })
+	want := delivery{"block:a", "a1", []baseds.AgentAnswerItem{answerItems(0)}}
+	if got := r.deliveries()[0]; !reflect.DeepEqual(got, want) {
+		t.Errorf("Deliver got %+v, want %+v", got, want)
+	}
+}
+
+func TestNewTokenSendsOpenQuestionsAgain(t *testing.T) {
+	r := newRig(t)
+	r.add("block:a", old("a1", single("Which?", "x", "y")))
+	r.start()
+	r.waitSent(1)
+
+	r.setSettings(Settings{Enabled: true, ChatID: pairedChat, When: When{Mode: ModeAlways}}, "NEW")
+	r.bot.Poke()
+	sent := r.waitSent(2) // another bot never saw the first message
+	if sent[1].Token != "NEW" {
+		t.Errorf("second send used token %q, want the new one", sent[1].Token)
 	}
 }
