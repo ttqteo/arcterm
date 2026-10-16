@@ -3,12 +3,14 @@
 
 import { PLAN_CELL, PLAN_SPRITES, spriteWidth } from "@/app/view/office/plansprite";
 import { describe, expect, it } from "vitest";
+import { canStand } from "./officeboss";
 import {
     agentLook,
     buildPlan,
     cut,
     DOOR,
     HALL_W,
+    HWALL,
     LOUNGE_PERSON_W,
     MEETING_H,
     MIN_W,
@@ -322,6 +324,62 @@ describe("officeplanmodel", () => {
 
     it("keeps its minimum width in a narrow Cockpit", () => {
         expect(plan([ag("a")], [], { width: 600 }).width).toBe(MIN_W);
+    });
+
+    describe("the notice board", () => {
+        const homeAgents = (n: number) => Array.from({ length: n }, (_, i) => ag(`h${i}`, { project: undefined }));
+        // the fewest bands, a Home booth, and many bands with runs, Home's tall booth and people in the lounge
+        const idle = ag("i1", { state: "idle", idleSince: NOW - 700_000 });
+        const plans: [string, ReturnType<typeof plan>][] = [
+            ["one project, one agent", plan([ag("a")])],
+            ["a Home booth", plan([ag("a"), ...homeAgents(1)])],
+            [
+                "several bands, runs, a tall booth and a lounger",
+                plan(
+                    [...["a", "b", "c", "d"].map((x) => ag(`${x}1`, { project: x })), ...homeAgents(5), idle],
+                    [run("r1", { project: "a", tasks: [task("t1"), task("t2")] }), run("r2", { project: "d" })],
+                    { away: { i1: "sofa" } }
+                ),
+            ],
+        ];
+
+        it.each(plans)("stands in the hall below the lounge, against its left wall: %s", (_, p) => {
+            const b = p.board.box;
+            expect(b.x).toBe(p.hall.x + 8);
+            expect(b.y).toBeGreaterThanOrEqual(p.lounge.y + p.lounge.h);
+            expect(b.x + b.w).toBeLessThanOrEqual(p.hall.x + p.hall.w);
+            expect(b.y + b.h).toBeLessThanOrEqual(p.hall.y + p.hall.h);
+        });
+
+        it.each(plans)("overlaps no room, desk or lounger: %s", (_, p) => {
+            const b = p.board.box;
+            for (const r of p.rooms) {
+                expect(overlaps(b, r.box), r.key).toBe(false);
+            }
+            for (const d of p.desks) {
+                expect(overlaps(b, { x: d.x - 8, y: d.y - 20, w: 96, h: 100 }), d.key).toBe(false);
+            }
+            for (const l of p.loungers) {
+                expect(overlaps(b, l.box), l.agentId).toBe(false);
+            }
+        });
+
+        it.each(plans)("has its spot under it, on the hall's floor, above Home's booth wall: %s", (_, p) => {
+            const { box, spot } = p.board;
+            expect(spot).toEqual({ x: box.x + box.w / 2, y: box.y + box.h + 22 });
+            expect(canStand(p, spot)).toBe(true);
+            const booth = p.rooms.find((r) => r.kind === "home");
+            if (booth) {
+                expect(spot.y).toBeLessThan(p.body.y + p.body.h - booth.box.h - HWALL);
+            }
+        });
+
+        it("keeps its place when only a state changes", () => {
+            const agents = [ag("a"), ag("h", { project: undefined })];
+            const a = plan(agents).board;
+            const b = plan([{ ...agents[0], state: "asking" }, agents[1]]).board;
+            expect(b).toEqual(a);
+        });
     });
 
     it("shows each task on its run's screen", () => {

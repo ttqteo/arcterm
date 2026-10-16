@@ -140,6 +140,7 @@ export interface Plan {
     loungers: Lounger[];
     loungeOverflow: string[]; // agent ids with no spot left: their desk is empty, the lounge draws only "+N"
     loungeMore: Box; // where "+N in the lounge" goes
+    board: { box: Box; spot: Point }; // the Needs you notice board in the hall, and where the boss stands at it
     order: string[];
     asks: string[];
 }
@@ -156,6 +157,12 @@ export const SEAT_DX = 56; // the widest seat pitch; a narrow room seats closer
 const SEAT_PAD = 12;
 export const MAX_SEATS = 12; // the lead and eleven tasks
 export const LOUNGE_H = 230;
+export const BOARD_KEY = "board:needs-you"; // the notice board's cursor key, like a desk's
+export const BOARD_W = 96;
+export const BOARD_H = 96;
+const BOARD_GAP = 16; // the board's top below the lounge's foot
+const BOARD_SPOT_DY = 22; // the boss's feet below the board's foot
+const BOARD_FOOT = 40; // the hall under the board: its spot, and clear of Home's booth wall
 export const BOOTH_W = 152;
 export const FACADE_H = 40;
 export const DOOR = 50;
@@ -386,6 +393,8 @@ export function buildPlan(input: PlanInput): Plan {
     const bodyH = Math.max(
         bandsH,
         LOUNGE_H + (boothH ? boothH + HWALL : 0) + 80,
+        // the notice board under the lounge, its spot clear of Home's booth wall
+        LOUNGE_H + BOARD_GAP + BOARD_H + BOARD_FOOT + (boothH ? boothH + HWALL : 0),
         boothClear,
         Math.floor((input.height ?? 0) - top - FACADE_H)
     );
@@ -605,6 +614,13 @@ export function buildPlan(input: PlanInput): Plan {
     // idle first, so a newcomer never moves someone already there; whoever finds none is drawn only as "+N"
     const coffee = { x: hallX + 138, y: top + 150 };
     const sofa = { x: hallX + 96, y: top + 168 };
+    // the notice board against the hall's left wall under the lounge, clear of the hall's lane on its right; the boss
+    // stands under it
+    const boardBox: Box = { x: hallX + 8, y: top + LOUNGE_H + BOARD_GAP, w: BOARD_W, h: BOARD_H };
+    const board = {
+        box: boardBox,
+        spot: { x: boardBox.x + boardBox.w / 2, y: boardBox.y + boardBox.h + BOARD_SPOT_DY },
+    };
     const loungers: Lounger[] = [];
     const loungeOverflow: string[] = [];
     for (const at of ["sofa", "coffee"] as const) {
@@ -653,6 +669,7 @@ export function buildPlan(input: PlanInput): Plan {
         loungers,
         loungeOverflow,
         loungeMore: { x: lounge.x + 8, y: lounge.y + 106, w: 150, h: LOUNGE_LABEL_H },
+        board,
         order,
         asks,
     };

@@ -1123,10 +1123,10 @@ export function makeCockpitOfficeScenarios(fx) {
             const moved = await press("ArrowDown");
             const shut = await press("Escape");
             rec(
-                "8. m opens the office menu, the footer's m chip lit: Next Needs you, Next desk, Previous desk, Events, Cards view, All keys; ↓ moves the ▶; Esc shuts it",
+                "8. m opens the office menu, the footer's m chip lit: Next Needs you, Notice board, Next desk, Previous desk, Events, Cards view, All keys; ↓ moves the ▶; Esc shuts it",
                 menu?.menu === true &&
                     lit === "true" &&
-                    JSON.stringify(menu.menuItems) === JSON.stringify(["Next Needs you", "Next desk", "Previous desk", "Events", "Cards view", "All keys"]) &&
+                    JSON.stringify(menu.menuItems) === JSON.stringify(["Next Needs you", "Notice board", "Next desk", "Previous desk", "Events", "Cards view", "All keys"]) &&
                     menu.menuSel === 0 &&
                     moved?.menuSel === 1 &&
                     shut?.menu === false,
@@ -1135,7 +1135,7 @@ export function makeCockpitOfficeScenarios(fx) {
 
             // 9. the menu's Events shows the rail; Esc while walking hides it again
             await press("m");
-            await press("ArrowDown", 3);
+            await press("ArrowDown", 4);
             await press("Enter");
             const shown = await h.ev(`!!document.querySelector('[aria-label="Events"]')`);
             await press("Escape");

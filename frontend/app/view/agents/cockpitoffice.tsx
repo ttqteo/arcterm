@@ -709,7 +709,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     dialogRef.current = props.dialogFor;
     const onMenuRef = useRef(props.onMenu);
     onMenuRef.current = props.onMenu;
-    const menuItems = officeMenuItems(plan.asks.length, props.newEvents, props.eventsOpen);
+    const menuItems = officeMenuItems(plan.asks.length, props.newEvents, props.eventsOpen, 0);
     const menuItemsRef = useRef(menuItems);
     menuItemsRef.current = menuItems;
     // whether OfficeDialogLayer draws a box now: with none at the boss's desk the dialog layer is walking, and the keys
@@ -1815,7 +1815,9 @@ function OfficePopup({
     const open = layer === "card";
     const [big, setBig] = useAtom(officeBigCardAtom);
     const boxRef = useRef<HTMLDivElement>(null);
-    const at = cardAt(plan, look?.rest ? { at: look.rest, path: [] } : null, cursorId);
+    const found = cardAt(plan, look?.rest ? { at: look.rest, path: [] } : null, cursorId);
+    // the notice board has no card and no "↵ Talk" prompt: its dialog box is OfficeDialogLayer's
+    const at = found?.board ? undefined : found;
     const card = at != null && cursorId != null ? renderCard(cursorId, { adjust }) : null;
     const kind = at?.desk ? "agent" : "run";
     probe.popup = card && open ? kind : "";
