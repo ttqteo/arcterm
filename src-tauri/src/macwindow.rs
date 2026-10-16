@@ -57,14 +57,15 @@ fn brings_to_front(u: Unfolded) -> bool {
 mod imp {
     use std::cell::{Cell, RefCell};
     use std::sync::atomic::{AtomicU32, Ordering};
-    use std::sync::{Mutex, OnceLock};
+    use std::sync::OnceLock;
 
     use objc2::rc::Retained;
     use objc2::runtime::{AnyClass, AnyObject, NSObject, Sel};
-    use objc2::{define_class, msg_send, sel, ClassType, MainThreadMarker, MainThreadOnly};
+    use objc2::{define_class, msg_send, sel, MainThreadMarker, MainThreadOnly, Message};
     use objc2_app_kit::{
-        NSApplication, NSApplicationDidBecomeActiveNotification, NSColor, NSFontAttributeName,
-        NSForegroundColorAttributeName, NSMenuItem, NSPanel, NSWindow, NSWindowButton, NSWindowCollectionBehavior,
+        NSApplication, NSApplicationDidBecomeActiveNotification, NSAutoresizingMaskOptions, NSBackingStoreType, NSColor,
+        NSFontAttributeName, NSForegroundColorAttributeName, NSMenuItem, NSPanel, NSView, NSWindow, NSWindowButton,
+        NSWindowCollectionBehavior, NSWindowStyleMask,
     };
     use objc2_foundation::{ns_string, NSMutableAttributedString, NSNotificationCenter, NSRange, NSString};
     use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
@@ -218,8 +219,11 @@ mod imp {
     }
 
     define_class!(
-        // a panel takes key without making arcterm the active app, so opening the tray popover leaves the cockpit
-        // where it is (spec 2026-10-15-tray-popover-design.md); canBecomeKeyWindow lets its webview take keys
+        // A non-activating panel made from scratch, which hosts the tray popover's webview while it shows: a panel
+        // takes key without making arcterm the active app, so opening the popover leaves the cockpit where it is (spec
+        // 2026-10-15-tray-popover-design.md). canBecomeKeyWindow lets the webview take keys; losing the key closes
+        // the popover, as the blur does on Windows.
+        // SAFETY: NSPanel has no subclassing requirements, and this class does not implement Drop.
         #[unsafe(super(NSPanel))]
         #[thread_kind = MainThreadOnly]
         #[name = "ArcTrayPanel"]
@@ -230,63 +234,132 @@ mod imp {
             fn can_become_key_window(&self) -> bool {
                 true
             }
+
+            #[unsafe(method(resignKeyWindow))]
+            fn resign_key_window(&self) {
+                // SAFETY: NSWindow's resignKeyWindow takes nothing and returns nothing
+                let _: () = unsafe { msg_send![super(self), resignKeyWindow] };
+                if let Some(blurred) = PANEL_BLURRED.get() {
+                    blurred();
+                }
+            }
         }
     );
 
-    // Runs from the tray's open, on the main thread: the popover's window becomes a non-activating panel and takes the
-    // key without Tauri's show or set_focus, which would activate arcterm.
-    pub fn show_as_panel(window: &WebviewWindow) {
+    static PANEL_BLURRED: OnceLock<fn()> = OnceLock::new();
+
+    // The popover's panel, its webview, and the view in tao's window the webview came from and goes back to
+    struct Hosted {
+        panel: Retained<ArcTrayPanel>,
+        web: Retained<NSView>,
+        home: Retained<NSView>,
+    }
+
+    thread_local! {
+        static HOSTED: RefCell<Option<Hosted>> = const { RefCell::new(None) };
+    }
+
+    // The WKWebView wry put in tao's window, searched for under its content view
+    fn find_webview(view: &NSView) -> Option<Retained<NSView>> {
+        let class = AnyClass::get(c"WKWebView")?;
+        // SAFETY: isKindOfClass:, subviews, count and objectAtIndex: are NSObject's, NSView's and NSArray's own
+        unsafe {
+            let is_web: bool = msg_send![view, isKindOfClass: class];
+            if is_web {
+                return Some(view.retain());
+            }
+            let subviews: Retained<AnyObject> = msg_send![view, subviews];
+            let count: usize = msg_send![&*subviews, count];
+            for i in 0..count {
+                let sub: Retained<NSView> = msg_send![&*subviews, objectAtIndex: i];
+                if let Some(web) = find_webview(&sub) {
+                    return Some(web);
+                }
+            }
+        }
+        None
+    }
+
+    // Runs from the tray's open, on the main thread: the popover's webview moves out of tao's window, which stays
+    // hidden, into a fresh ArcTrayPanel, which shows and takes the key without Tauri's show or set_focus, which would
+    // activate arcterm. Tao's window keeps its class: swapping it for a panel class once the webview was in lost the
+    // observers KVO keeps on it, so the destroy threw NSRangeException and aborted the app (2026-10-16).
+    pub fn show_in_panel(window: &WebviewWindow, blurred: fn()) {
         let Some(mtm) = MainThreadMarker::new() else {
             return;
         };
         let Ok(ns) = ns_window(window, mtm) else {
             return;
         };
-        let obj: *mut AnyObject = (ns as *const NSWindow).cast_mut().cast();
-        unsafe {
-            *PANEL_WAS.lock().unwrap_or_else(|p| p.into_inner()) = objc2::ffi::object_getClass(obj).as_ref();
-            objc2::ffi::object_setClass(obj, ArcTrayPanel::class() as *const _ as *const _);
-        }
-        ns.setStyleMask(ns.styleMask() | objc2_app_kit::NSWindowStyleMask::NonactivatingPanel);
-        ns.setCollectionBehavior(
+        let _ = PANEL_BLURRED.set(blurred);
+        let Some(home) = ns.contentView() else {
+            return;
+        };
+        let Some(web) = find_webview(&home) else {
+            applog::log_line("[tray] no webview in the popover's window: it stays hidden");
+            return;
+        };
+        let style = NSWindowStyleMask::Borderless | NSWindowStyleMask::NonactivatingPanel;
+        // SAFETY: NSPanel's designated initializer, on the main thread
+        let panel: Retained<ArcTrayPanel> = unsafe {
+            msg_send![
+                ArcTrayPanel::alloc(mtm),
+                initWithContentRect: ns.frame(),
+                styleMask: style,
+                backing: NSBackingStoreType::Buffered,
+                defer: false
+            ]
+        };
+        // SAFETY: the panel is kept in HOSTED until close_panel closes it, so AppKit must not release it on close
+        unsafe { panel.setReleasedWhenClosed(false) };
+        panel.setHidesOnDeactivate(false);
+        panel.setOpaque(false);
+        panel.setBackgroundColor(Some(&NSColor::clearColor()));
+        panel.setHasShadow(true);
+        panel.setLevel(ns.level());
+        panel.setCollectionBehavior(
             NSWindowCollectionBehavior::CanJoinAllSpaces
                 | NSWindowCollectionBehavior::FullScreenAuxiliary
                 | NSWindowCollectionBehavior::Transient,
         );
-        ns.orderFrontRegardless();
-        ns.makeKeyWindow();
+        let Some(content) = panel.contentView() else {
+            return;
+        };
+        web.setFrame(content.bounds());
+        web.setAutoresizingMask(NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable);
+        content.addSubview(&web);
+        panel.orderFrontRegardless();
+        panel.makeKeyWindow();
+        panel.makeFirstResponder(Some(&web));
+        HOSTED.with(|h| *h.borrow_mut() = Some(Hosted { panel, web, home }));
     }
 
-    // The class show_as_panel replaced. WebKit observes the window (contentLayoutRect) once its webview is in, and KVO
-    // keeps those observers on an NSKVONotifying_ subclass it swaps in as the window's class; the panel class drops it,
-    // so taking the webview out on destroy threw NSRangeException ("Cannot remove an observer") and aborted the app
-    // (2026-10-16). unpanel puts it back first.
-    static PANEL_WAS: Mutex<Option<&'static AnyClass>> = Mutex::new(None);
-
-    // Runs from the tray's close before the destroy, and at exit, on the main thread.
-    pub fn unpanel(window: &WebviewWindow) {
+    // Runs from the tray's place, on the main thread, once tao's hidden window has the popover's size and place
+    pub fn panel_follow(window: &WebviewWindow) {
         let Some(mtm) = MainThreadMarker::new() else {
             return;
         };
         let Ok(ns) = ns_window(window, mtm) else {
             return;
         };
-        let Some(was) = PANEL_WAS.lock().unwrap_or_else(|p| p.into_inner()).take() else {
+        HOSTED.with(|h| {
+            if let Some(hosted) = &*h.borrow() {
+                hosted.panel.setFrame_display(ns.frame(), true);
+            }
+        });
+    }
+
+    // Runs from the tray's close before the destroy, and at exit, on the main thread: the webview goes back into tao's
+    // window, where wry takes it out on destroy, and the panel goes. The panel's resignKeyWindow on the way out finds
+    // the popover already closing.
+    pub fn close_panel() {
+        let Some(hosted) = HOSTED.with(|h| h.borrow_mut().take()) else {
             return;
         };
-        let obj: *mut AnyObject = (ns as *const NSWindow).cast_mut().cast();
-        let now = unsafe { objc2::ffi::object_getClass(obj) };
-        if !std::ptr::eq(now, ArcTrayPanel::class()) {
-            // KVO swapped in a subclass of the panel for an observer added since: putting the old class back would
-            // drop that one instead
-            let name = unsafe { now.as_ref() }.map(|c| c.name().to_string_lossy().into_owned()).unwrap_or_default();
-            applog::log_line(&format!("[tray] the popover's window is a {name}, not the panel: its class stays"));
-            return;
-        }
-        ns.setStyleMask(ns.styleMask() & !objc2_app_kit::NSWindowStyleMask::NonactivatingPanel);
-        unsafe {
-            objc2::ffi::object_setClass(obj, was);
-        }
+        hosted.web.setFrame(hosted.home.bounds());
+        hosted.home.addSubview(&hosted.web);
+        hosted.panel.orderOut(None);
+        hosted.panel.close();
     }
 
     // An exception AppKit throws inside a tao callback cannot unwind into Rust, so the process aborts and the crash
@@ -623,19 +696,25 @@ pub fn show_in_mission_control(window: &WebviewWindow) {
 }
 
 // Runs from the tray's open, on the main thread.
-pub fn show_as_panel(window: &WebviewWindow) {
+pub fn show_in_panel(window: &WebviewWindow, blurred: fn()) {
     #[cfg(target_os = "macos")]
-    imp::show_as_panel(window);
+    imp::show_in_panel(window, blurred);
+    #[cfg(not(target_os = "macos"))]
+    let _ = (window, blurred);
+}
+
+// Runs from the tray's place, on the main thread.
+pub fn panel_follow(window: &WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    imp::panel_follow(window);
     #[cfg(not(target_os = "macos"))]
     let _ = window;
 }
 
 // Runs from the tray's close before the destroy, and at exit, on the main thread.
-pub fn unpanel(window: &WebviewWindow) {
+pub fn close_panel() {
     #[cfg(target_os = "macos")]
-    imp::unpanel(window);
-    #[cfg(not(target_os = "macos"))]
-    let _ = window;
+    imp::close_panel();
 }
 
 // Runs from the tray's apply, on the main thread, after set_title.

@@ -214,12 +214,23 @@ fn open(app: &AppHandle) -> tauri::Result<()> {
         }
     });
     if cfg!(target_os = "macos") {
-        crate::macwindow::show_as_panel(&win);
+        // the window stays hidden and its webview shows in a panel, whose losing the key is the blur
+        crate::macwindow::show_in_panel(&win, panel_blurred);
     } else {
         win.show()?;
         win.set_focus()?;
     }
     Ok(())
+}
+
+fn panel_blurred() {
+    let Some(app) = APP.get() else {
+        return;
+    };
+    log_line("[tray] the popover lost focus");
+    let app2 = app.clone();
+    // not inside AppKit's resignKeyWindow: destroying the panel there tears down what is dispatching
+    let _ = app.run_on_main_thread(move || close(&app2, "it lost focus"));
 }
 
 fn place(app: &AppHandle, win: &WebviewWindow) {
@@ -250,14 +261,15 @@ fn place(app: &AppHandle, win: &WebviewWindow) {
     let (x, y) = trayicon::popover_origin(icon, size, work);
     let _ = win.set_size(PhysicalSize::new(size.0.round() as u32, size.1.round() as u32));
     let _ = win.set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32));
+    crate::macwindow::panel_follow(win);
 }
 
-// `why` is logged on either side of the destroy, which on the Mac once aborted the app (macwindow::unpanel)
+// `why` is logged on either side of the destroy, which on the Mac once aborted the app (macwindow::show_in_panel)
 fn close(app: &AppHandle, why: &str) {
     if let Some(win) = app.get_webview_window(TRAY_LABEL) {
         log_line(&format!("[tray] closing the popover: {why}"));
-        // the panel's window gets its own class back first, or WebKit cannot take its observers off it
-        crate::macwindow::unpanel(&win);
+        // on the Mac the webview goes back into its own window first, where wry takes it out on destroy
+        crate::macwindow::close_panel();
         let _ = win.destroy();
         log_line("[tray] popover closed");
         state().lock().unwrap().closed_at = Some(Instant::now());
@@ -265,11 +277,11 @@ fn close(app: &AppHandle, why: &str) {
     }
 }
 
-/// The app is exiting with the popover open (⌘Q): its window gets its own class back, as close gives it, before Tauri
-/// drops the windows.
+/// The app is exiting with the popover open (⌘Q): its webview goes back into its own window, as close puts it, before
+/// Tauri drops the windows.
 pub fn before_exit(app: &AppHandle) {
-    if let Some(win) = app.get_webview_window(TRAY_LABEL) {
-        crate::macwindow::unpanel(&win);
+    if app.get_webview_window(TRAY_LABEL).is_some() {
+        crate::macwindow::close_panel();
     }
 }
 

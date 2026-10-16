@@ -72,11 +72,14 @@ is a state the built popover reaches:
     window's native one, since a CSS shadow would be clipped at the edge of a window sized to the page.
   - Always on top, never in the taskbar or Mission Control, and shown on every Space and over full-screen apps.
 - **It must not raise the main window.** On macOS, showing a normal window activates the app, which brings the
-  cockpit forward too. The popover becomes a non-activating panel through AppKit: `macwindow.rs` swaps its window's
-  class to `ArcTrayPanel`. The popover is only worth having if the cockpit stays where it was.
-  - The swap replaces the `NSKVONotifying_` class KVO gave the window when WebKit began observing it, so the close
-    puts that class back before the destroy (`unpanel`, also at exit). Without it, WebKit's removal of its observer
-    threw `NSRangeException` and aborted the app each time the popover closed (2026-10-16).
+  cockpit forward too. The popover shows in a non-activating panel through AppKit: `macwindow.rs` moves its
+  webview out of Tauri's window, which stays hidden, into an `ArcTrayPanel` made from scratch (`show_in_panel`), and
+  back before the destroy (`close_panel`, also at exit). The panel losing the key is the blur. The popover is only
+  worth having if the cockpit stays where it was.
+  - Swapping the window's own class for the panel class instead (the first build) aborted the app at every close
+    (2026-10-16): the swap drops the `NSKVONotifying_` class KVO gives a window it observes (AppKit's
+    `_windowLayerContext` at creation, WebKit's `contentLayoutRect` once the webview is in), so removing those
+    observers threw `NSRangeException`. Swapping it back cannot help once anything observes the panel class too.
 - **Its own Vite entry:** `frontend/tauri/tray.html` + `tray.tsx`. It is a small React page with the same
   `tailwindsetup.css` and theme: the theme preset sits in the shared `localStorage`, and `themestore.ts` applies it
   the same way. It does not boot the cockpit, the wsh client or WOS.
