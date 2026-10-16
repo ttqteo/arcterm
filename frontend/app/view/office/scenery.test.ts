@@ -5,7 +5,7 @@ import { buildPlan, MEET_H, type Box, type Plan, type PlanInput } from "@/app/vi
 import { describe, expect, it } from "vitest";
 import { NEAR_CHAIR } from "./officegrids";
 import type { OfficeColors } from "./officepalette";
-import { art, boardArt, materialAt, rasterise, scenery, sceneryKey, type Op } from "./scenery";
+import { art, boardArt, CELL, materialAt, outerWindows, rasterise, scenery, sceneryKey, type Op } from "./scenery";
 
 const NOW = Date.parse("2026-10-15T14:20:00");
 function input(width = 1050, over: Partial<PlanInput> = {}): PlanInput {
@@ -698,5 +698,45 @@ describe("sceneryKey", () => {
             loungeOverflow: ["a", "b"],
         };
         expect(key(moved)).toBe(key(p));
+    });
+});
+
+describe("outerWindows", () => {
+    it("lists the outer wall's windows left to right, inside the wall", () => {
+        const p = plan();
+        const ws = outerWindows(p);
+        expect(ws.length).toBeGreaterThan(0);
+        const xs = ws.map((w) => w.x);
+        expect(xs).toEqual([...xs].sort((a, b) => a - b));
+        for (const w of ws) {
+            expect(w.x).toBeGreaterThan(0);
+            expect(w.x).toBeLessThan(p.width);
+        }
+    });
+
+    it("sits on the wall's 130 px steps, the TV's step left out", () => {
+        const p = plan(1400);
+        const xs = outerWindows(p).map((w) => w.x);
+        const steps: number[] = [];
+        for (let s = 60; s < p.width - 80; s += 130) {
+            steps.push((art(s) + 6) * CELL);
+        }
+        // every window is on a step; the TV's steps are left out (one or two: the TV is 38 cells, a step ~43)
+        for (const x of xs) {
+            expect(steps).toContain(x);
+        }
+        expect(new Set(xs).size).toBeLessThan(steps.length);
+    });
+
+    it("hangs at the wall face's top, where the panes are drawn", () => {
+        const p = plan();
+        const s = scenery(p, "day", false);
+        const ws = outerWindows(p);
+        for (const w of ws) {
+            // a pane is a 12-cell box (an ink frame round 10 cells of glass) whose top row is the face's top
+            expect(
+                rects(s.under, "glass").some((g) => g.x === art(w.x) - 5 && g.y === art(w.y) + 1 && g.w === 10)
+            ).toBe(true);
+        }
     });
 });

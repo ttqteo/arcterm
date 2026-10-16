@@ -27,6 +27,14 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-16 (the Office's pet boss)**
+
+- [ ] (arcterm) In the installed app: Cockpit → Office with Spider-Man picked. He swings in through a window, unmasks
+  and stands as Peter in a shirt and tie (the shirt is red with the default `vn-shirt` outfit, pale with none); walk
+  with the arrows (front-on, no mirroring); stand still 4 s for a pastime; click him for the condition panel. Switch
+  to Cards and back within 2 minutes: no entrance. Pick Sprout, reopen after 2 minutes: the beam. The footer pet is
+  gone in the Office and back outside it.
+
 **2026-10-16 (initiative `i` keycap dropped)**
 
 - [ ] (arcterm) An agent with an initiative: the header shows `◇ <initiative> ⌄` with no `i` keycap after it; hovering
@@ -903,6 +911,20 @@ Tracked in their own initiatives, not here:
   which drew in 76 ms: the same noise as the pixel-art entry's miss, so re-measure the open on a production build or a
   quiet machine. The bench's roster check (step 0) now asks for a full floor of about 30 people and a second floor,
   not 75 people.
+- **Cockpit office pet boss** (2026-10-16, `cockpit-office-bench`, one run through `final-verify.mjs` in the Windows dev
+  app (WebView2), the same 31 people on two floors as the floors entry above, which is the before: it was measured on
+  this run's base commit, where the boss was still the chibi `<img>`; the Cards baseline read 28 %, as in that entry's
+  first run): every budget held. The boss is now an `<svg>` of the pet's cells (Sprout's 99 at rest, the Minion's 115)
+  in a button, so the office's own DOM nodes 113 → 214 (+101) and nodes added over Cards −1,345 / −1,347 → −1,244; heap
+  −5.67 / −5.16 → −5.12 MB (+0.55 / +0.04); sprite cache 81 → 74 (the boss no longer goes through it); a second round
+  trip −0.73 / −0.66 → −0.73 MB; time to draw 76 / 155 → 104 ms. Busy: walking −13.5 / −20.8 → −6.5 % over Cards (raw
+  14.9 / 22 → 21.5 %, baseline 28.4 / 42.8 → 28 %), reduced motion −15.2 / −28.5 → −7.5 %, quiet −18.4 / −32.3 → −22.5
+  % with no clock running. Walking is the one figure that moved against the pet: with a baseline close to the first
+  before run's, the raw reading is 6.6 points higher, though inside the 14.9–22 % spread the two before runs had. The
+  likely cost is the boss redrawing its ~100 rects on each walk frame (8 a second); one run cannot tell that from noise,
+  so it joins the production-build re-measure already open. Budgets: 5 MB, 2,000, 2 %, 0.5 %, 0.3 %, 600, 1 MB, 150 ms.
+  The pet's entrance is a one-off 0.5 to 2.2 s as the office opens and is skipped in the bench (`entrance: "skip"`), so
+  none of these include it.
 
 ---
 

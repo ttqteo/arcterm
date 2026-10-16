@@ -21,7 +21,7 @@ import { WEB_TOKEN, webSwingFrame } from "./petwebswing";
 import type { TeleportRun } from "./teleportstore";
 
 // at: a fixed ms into the run in place of its clock — the DEV contract's force({ swing }) (petview.tsx), so a CDP step
-// can show the swing mid-fold
+// can show the swing mid-fold; the office boss's held entrance (cockpitoffice.tsx) holds a beam still the same way
 type LayerProps = { run: TeleportRun; sprite: PetSprite; cellPx: number; flip?: boolean; at?: number };
 
 // the swing's body, the same whatever the pose he left or will land in
@@ -54,8 +54,9 @@ function about(x: number, y: number, sx: number, sy: number): string {
     return `translate(${x} ${y}) scale(${sx} ${sy}) translate(${-x} ${-y})`;
 }
 
-function BeamLayers({ run, sprite, cellPx, flip = false }: LayerProps) {
-    const t = useTeleportClock(run);
+function BeamLayers({ run, sprite, cellPx, flip = false, at }: LayerProps) {
+    const clock = useTeleportClock(run);
+    const t = at ?? clock;
     if (run.kind === "gone") {
         return null;
     }

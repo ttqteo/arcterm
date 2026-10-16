@@ -24,6 +24,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- In the Cockpit's Office your pet is the boss you walk around: Sprout, the Minion, or Spider-Man, who swings in
+  through a window and turns into Peter Parker in a shirt and tie. Its speech bubble and the condition panel open over
+  it, and the footer pet comes back when you leave. <!-- big -->
+
 ### Changed
 
 - **Background tucked away in the Office**: the Backgrounded and Background lists no longer sit under the building,

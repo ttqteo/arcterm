@@ -4,6 +4,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+    bossRows,
+    bossSprite,
     MARKS,
     MINION_POSES,
     outfitRows,
@@ -12,13 +14,16 @@ import {
     PET_GRID,
     PET_PX,
     PET_TOKENS,
+    PETER_BOSS_POSES,
     POSES,
     SPIDEY_CRAWL,
     SPIDEY_HANG,
     SPIDEY_LOOK,
     SPIDEY_POSES,
+    SPIDEY_PUFF,
     SPIDEY_SENSE,
     SPIDEY_SWING,
+    SPIDEY_UNMASK,
     spideyFold,
     spriteFor,
     spriteOfRows,
@@ -148,6 +153,7 @@ describe("tokens", () => {
             H: "--color-peter-hair",
             g: "--color-peter-glasses",
             v: "--color-peter-shirt",
+            t: "--color-peter-tie",
             c: "--color-city-cornice",
             C: "--color-city-cornice-shade",
             M: "--color-city-brick",
@@ -658,5 +664,62 @@ describe("the fold's rooftop", () => {
         for (const { x, y } of SPIDEY_SENSE) {
             expect(rows[y][x], `${x},${y}`).toBe(".");
         }
+    });
+});
+
+describe("Peter the boss", () => {
+    const grids: [string, readonly string[]][] = [
+        ...Object.entries(PETER_BOSS_POSES),
+        ["unmask", SPIDEY_UNMASK],
+        ["puff", SPIDEY_PUFF],
+    ];
+
+    it("has a grid for every pose", () => {
+        expect(Object.keys(PETER_BOSS_POSES).sort()).toEqual([...POSE_NAMES].sort());
+    });
+
+    it.each(grids)("%s is 16x16 and uses only known codes", (_name, rows) => {
+        expect(rows).toHaveLength(PET_GRID);
+        for (const row of rows) {
+            expect(row).toHaveLength(PET_GRID);
+            for (const c of row) {
+                expect(c === "." || c in PET_TOKENS).toBe(true);
+            }
+        }
+    });
+
+    it.each(Object.entries(PETER_BOSS_POSES))("%s shows no suit", (_pose, rows) => {
+        expect(rows.join("")).not.toMatch(/[SD]/);
+    });
+
+    it("draws the tie in its own token", () => {
+        expect(PET_TOKENS.t).toBe("--color-peter-tie");
+        expect(PETER_BOSS_POSES.stand.join("")).toContain("t");
+    });
+
+    it("draws Spider-Man in the office from the boss grids, the others from their own", () => {
+        expect(bossRows("stand", null, "spidey")).toBe(PETER_BOSS_POSES.stand);
+        expect(bossRows("stand", null, "sprout")).toBe(POSES.stand);
+        expect(bossRows("walk1", null, "minion")).toBe(MINION_POSES.walk1);
+    });
+
+    it("keeps the picked outfit: the VN shirt over Peter's shirt, the tie still on it", () => {
+        const dressed = bossRows("stand", "vn-shirt", "spidey").join("");
+        expect(dressed).not.toContain("v");
+        expect(dressed).toContain("R");
+        expect(dressed).toContain("t");
+        expect(bossRows("stand", "vn-shirt", "sprout")).toEqual(outfitRows("stand", "vn-shirt", "sprout"));
+    });
+
+    it("draws Sprout and the Minion as the footer does, and holds the flag behind Peter", () => {
+        expect(bossSprite("walk1", ["unread"], "vn-flag", "minion")).toEqual(
+            spriteFor("walk1", ["unread"], "vn-flag", "minion")
+        );
+        expect(bossSprite("stand", [], "vn-flag", "spidey").back.length).toBeGreaterThan(0);
+        expect(bossSprite("stand", [], null, "spidey").back).toEqual([]);
+    });
+
+    it("defines the tie's token in the theme", () => {
+        expect(THEME_BLOCK).toMatch(/--color-peter-tie:\s*#[0-9a-f]{6};/i);
     });
 });

@@ -15,6 +15,7 @@ import { atom, type PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import type { PetActState } from "./petacts";
 import { DEFAULT_PET_CHARACTER } from "./petcharacter";
+import type { PetCorner } from "./petledge";
 import { DEFAULT_PET_OUTFIT, type PetOutfitChoice } from "./petoutfit";
 import { pruneSaid } from "./petquota";
 import type { PetCharacter } from "./petsprite";
@@ -187,6 +188,14 @@ export function rememberSaid(event: PetEvent): void {
 // CAPTURE, so floating-ui's own Escape handling can never pre-empt it. Without the guard there, dismissing
 // the peek also ejects the user to the Cockpit.
 export const petPeekOpenAtom = atom(false);
+
+// The Cockpit office's boss, drawn as the pet (office pet boss spec, "One Jarvis"): while it is set the footer creature
+// is not drawn, and the bubble and the peek hang off it. cockpitoffice.tsx sets it on mount and clears it on unmount.
+export const petOfficeBossAtom = atom<HTMLElement | null>(null) as PrimitiveAtom<HTMLElement | null>;
+// which half of the window the boss is in, so the bubble and the peek open the right way
+export const petOfficeCornerAtom = atom<PetCorner>("bottom-right") as PrimitiveAtom<PetCorner>;
+// true while the boss's entrance plays: the bubble waits for it
+export const petOfficeEnteringAtom = atom(false) as PrimitiveAtom<boolean>;
 
 // The decision a volunteered utterance pointed at, for decisionlog.tsx to scroll to and flash. A
 // decision has no surface of its own — decisionlog renders it inside its parent record's thread — so

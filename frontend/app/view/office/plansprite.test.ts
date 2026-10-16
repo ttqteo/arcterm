@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from "vitest";
 import { NEAR_CHAIR } from "./officegrids";
 import {
     ARM_PAD,
-    BOSS_POSES,
     MARKS,
     markUrl,
     mirrorOf,
@@ -25,7 +24,7 @@ import {
 import { clearSprites, spriteCacheStats } from "./spritecache";
 
 const ALL = Object.keys(PLAN_SPRITES) as PlanSprite[];
-const LOOKS: PlanLook[] = [1, 2, 3, 4, "boss"];
+const LOOKS: PlanLook[] = [1, 2, 3, 4];
 const ARMS: PlanSprite[] = ["hand1", "hand2", "cheer1", "cheer2", "stretch"];
 const HEIGHT: Record<PlanSprite, number> = {
     sit: 17,
@@ -47,14 +46,12 @@ const HEIGHT: Record<PlanSprite, number> = {
     up2: 23,
     side1: 23,
     side2: 23,
-    boss: 23,
 };
 
 describe("plansprite", () => {
-    it("has the twenty sprites the canvas's Cast board draws", () => {
+    it("has the nineteen sprites the canvas's Cast board draws", () => {
         expect([...ALL].sort()).toEqual((Object.keys(HEIGHT) as PlanSprite[]).sort());
         expect(SHEET_POSES).toHaveLength(18);
-        expect(BOSS_POSES).toHaveLength(8);
     });
 
     it("draws every sprite in every look at its size, with known codes only", () => {
@@ -64,7 +61,7 @@ describe("plansprite", () => {
                 expect(g.length, `${s} ${look}`).toBe(HEIGHT[s]);
                 for (const row of g) {
                     expect(row.length, `${s} ${look}`).toBe(spriteWidth(s));
-                    expect(row, `${s} ${look}`).toMatch(/^[OHhSsETtPpKCBWRr_.]+$/);
+                    expect(row, `${s} ${look}`).toMatch(/^[OHhSsETtPpKCRr_.]+$/);
                 }
             }
         }
@@ -83,13 +80,9 @@ describe("plansprite", () => {
         }
     });
 
-    it("tells the looks apart by the head, and gives the boss alone a cap", () => {
+    it("tells the looks apart by the head", () => {
         const heads = LOOKS.map((l) => planGrid("sit", l).slice(0, 11).join("\n"));
-        expect(new Set(heads).size).toBe(5);
-        for (const l of [1, 2, 3, 4] as PlanLook[]) {
-            expect(planGrid("stand", l).join("")).not.toContain("B");
-        }
-        expect(planGrid("boss", "boss").join("")).toContain("B");
+        expect(new Set(heads).size).toBe(4);
     });
 
     it("draws the bubbles and the ring", () => {
