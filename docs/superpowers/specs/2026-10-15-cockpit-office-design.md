@@ -7,6 +7,9 @@
 2D pixel art.
 **Revised 2026-10-15 (pixel art):** **Drawing**, **Files** and **Verify** redrawn for a GBA-style look on two canvases;
 canvas `.superpowers/design/cockpit-office-pixel/project/` (`Main`, `Night`, `Cast`).
+**Revised 2026-10-16 (floors):** **The plan** is replaced by `2026-10-16-office-floors-design.md` (floors of four
+project rooms, a run as a table, a lift); the side view's elevator listed under **Out of scope** comes back there, seen
+from above.
 
 ## What it is
 
