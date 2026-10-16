@@ -62,8 +62,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   the instructions out of the system prompt, so Claude never marked anything; they now ride with your prompt instead.
 - `Esc` in the Office stays in the Office: it only steps back, and no longer reaches the window behind it, where on a
   Mac it could take arcterm out of full screen.
-- On a Mac, clicking arcterm's menu bar icon opens the popover with memory, CPU and what waits on you, instead of only
-  Open / Quit (now on a right click), and the icon is the size of the icons beside it.
+- On a Mac, clicking arcterm's menu bar icon, with either button, opens the popover with memory, CPU and what waits on
+  you, instead of only Open / Quit, and the icon is the size of the icons beside it.
 
 ## 0.15.14 — 2026-10-16
 

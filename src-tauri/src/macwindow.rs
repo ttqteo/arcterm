@@ -59,7 +59,8 @@ mod imp {
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::OnceLock;
 
-    use objc2::rc::Retained;
+    use dispatch2::{DispatchQueue, DispatchTime};
+    use objc2::rc::{Retained, Weak};
     use objc2::runtime::{AnyClass, AnyObject, NSObject, Sel};
     use objc2::{define_class, msg_send, sel, MainThreadMarker, MainThreadOnly, Message};
     use objc2_app_kit::{
@@ -347,6 +348,85 @@ mod imp {
                 hosted.panel.setFrame_display(ns.frame(), true);
             }
         });
+    }
+
+    // tao 0.35.3 never frees a window it made: it keeps the alloc of the NSWindow on top of its own reference, and one
+    // more reference to the window's delegate, whose state holds the window. The tray popover is a new window on every
+    // open, so each close left its window, view and delegate behind (2026-10-16). Just before the destroy the popover's
+    // window and delegate are watched weakly; a second after it, the delegate is taken off the theme notifications it
+    // never leaves and released if tao's one reference is all it has, then the window likewise. A tao that frees them
+    // itself leaves nothing to release, and any other count is logged and left alone.
+    const LEFT_BEHIND_CHECK_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+
+    thread_local! {
+        static LEFT_BEHIND: RefCell<Vec<(Weak<AnyObject>, Weak<AnyObject>)>> = const { RefCell::new(Vec::new()) };
+    }
+
+    pub fn free_when_destroyed(window: &WebviewWindow) {
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let Ok(ns) = ns_window(window, mtm) else {
+            return;
+        };
+        // SAFETY: NSWindow's delegate getter
+        let delegate: Option<Retained<AnyObject>> = unsafe { msg_send![ns, delegate] };
+        let Some(delegate) = delegate else {
+            return;
+        };
+        let as_object: &AnyObject = ns;
+        LEFT_BEHIND.with(|l| l.borrow_mut().push((Weak::from(as_object), Weak::from_retained(&delegate))));
+        let when = DispatchTime::try_from(LEFT_BEHIND_CHECK_DELAY).unwrap_or(DispatchTime::NOW);
+        let _ = DispatchQueue::main().after(when, free_left_behind);
+    }
+
+    // The object's retain count, counting the reference load just took, is 2 when tao's leaked one is all that is left
+    fn only_tao_holds(obj: &AnyObject) -> Result<(), usize> {
+        // SAFETY: retainCount is NSObject's, and the object is held for the call
+        let count: usize = unsafe { msg_send![obj, retainCount] };
+        if count == 2 {
+            Ok(())
+        } else {
+            Err(count)
+        }
+    }
+
+    // SAFETY (callers): only_tao_holds just passed for obj, and the caller has dropped its own reference to it
+    unsafe fn release(obj: *mut AnyObject) {
+        let _: () = unsafe { msg_send![obj, release] };
+    }
+
+    fn free_left_behind() {
+        let left = LEFT_BEHIND.with(|l| std::mem::take(&mut *l.borrow_mut()));
+        for (window, delegate) in left {
+            if let Some(d) = delegate.load() {
+                if let Err(count) = only_tao_holds(&d) {
+                    applog::log_line(&format!("[tray] the closed popover's delegate has {count} references: it stays"));
+                    continue;
+                }
+                // SAFETY: NSDistributedNotificationCenter's own methods; the delegate is held for the call
+                unsafe {
+                    let center: Retained<AnyObject> =
+                        msg_send![objc2::class!(NSDistributedNotificationCenter), defaultCenter];
+                    let _: () = msg_send![&*center, removeObserver: &*d];
+                }
+                let ptr = Retained::as_ptr(&d) as *mut AnyObject;
+                drop(d);
+                // SAFETY: only tao's leaked reference is left, and ours is dropped
+                unsafe { release(ptr) };
+            }
+            if let Some(w) = window.load() {
+                if let Err(count) = only_tao_holds(&w) {
+                    applog::log_line(&format!("[tray] the closed popover's window has {count} references: it stays"));
+                    continue;
+                }
+                let ptr = Retained::as_ptr(&w) as *mut AnyObject;
+                drop(w);
+                // SAFETY: only tao's leaked reference is left, and ours is dropped
+                unsafe { release(ptr) };
+                applog::log_line("[tray] freed the closed popover's window, which tao leaves behind");
+            }
+        }
     }
 
     // Runs from the tray's close before the destroy, and at exit, on the main thread: the webview goes back into tao's
@@ -717,6 +797,14 @@ pub fn after_tao_frame(f: impl FnOnce() + Send + 'static) {
 pub fn panel_follow(window: &WebviewWindow) {
     #[cfg(target_os = "macos")]
     imp::panel_follow(window);
+    #[cfg(not(target_os = "macos"))]
+    let _ = window;
+}
+
+// Runs from the tray's close, on the main thread, just before the destroy.
+pub fn free_when_destroyed(window: &WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    imp::free_when_destroyed(window);
     #[cfg(not(target_os = "macos"))]
     let _ = window;
 }

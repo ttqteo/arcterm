@@ -1,17 +1,18 @@
 //! The menu bar / tray icon and its popover (spec 2026-10-15-tray-popover-design.md). The icon shows what waits on
-//! you, from the cockpit (set_tray_status); a left click opens the popover, a second webview window ("tray",
-//! tray.html) that lives only while open, since a webview costs 50-100 MB and the popover is an occasional glance; a
-//! right click opens Open / Quit. wavesrv's exit dims the icon here, since then no frontend can.
+//! you, from the cockpit (set_tray_status); a left click, and on a Mac a right click too, opens the popover, a second
+//! webview window ("tray", tray.html) that lives only while open, since a webview costs 50-100 MB and the popover is an
+//! occasional glance; on Windows a right click opens Open / Quit. wavesrv's exit dims the icon here, since then no
+//! frontend can.
 
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
-use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{
     AppHandle, Emitter, Listener, Manager, PhysicalPosition, PhysicalSize, Rect, WebviewUrl, WebviewWindow,
-    WebviewWindowBuilder, WindowEvent, Wry,
+    WebviewWindowBuilder, WindowEvent,
 };
 
 use crate::applog::log_line;
@@ -56,7 +57,6 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         .icon_as_template(cfg!(target_os = "macos"))
         .tooltip("arcterm")
         .show_menu_on_left_click(false)
-        // a tray's menu handler hears every menu event, so it hears Open / Quit while pop_menu has them attached
         .on_menu_event(|app, ev| match ev.id().as_ref() {
             "tray-open" => {
                 let _ = app.emit("tray:act", serde_json::json!({ "kind": "open-arcterm" }));
@@ -64,16 +64,16 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
             "tray-quit" => app.exit(0),
             _ => {}
         });
-    // macOS 27 opens a status item's attached menu itself on a left click, and the click never reaches the app, so
-    // the popover could not open: on a Mac the menu is attached only for the right click that opens it (pop_menu)
+    // On a Mac both clicks open the popover and there is no menu: macOS 27 opens a status item's attached menu itself
+    // on a left click and never passes the click on, and the popover's footer has Open arcterm. Windows keeps Open /
+    // Quit on a right click.
     let builder = if cfg!(target_os = "macos") { builder } else { builder.menu(&menu) };
     let tray = builder
-        .on_tray_icon_event(move |tray, ev| {
-            if let TrayIconEvent::Click { button, button_state, rect, .. } = ev {
-                match (button, button_state) {
-                    (MouseButton::Left, MouseButtonState::Up) => toggle(tray.app_handle(), rect),
-                    (MouseButton::Right, MouseButtonState::Down) if cfg!(target_os = "macos") => pop_menu(tray, &menu),
-                    _ => {}
+        .on_tray_icon_event(|tray, ev| {
+            if let TrayIconEvent::Click { button, button_state: MouseButtonState::Up, rect, .. } = ev {
+                let opens = button == MouseButton::Left || (cfg!(target_os = "macos") && button == MouseButton::Right);
+                if opens {
+                    toggle(tray.app_handle(), rect);
                 }
             }
         })
@@ -87,15 +87,6 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         let _ = handle.run_on_main_thread(move || on_act(&app, &payload));
     });
     Ok(())
-}
-
-// macOS: attach the menu, click the button, which tracks the menu until it closes, then take the menu off again so the
-// next left click reaches the popover
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn pop_menu(tray: &TrayIcon, menu: &Menu<Wry>) {
-    let _ = tray.set_menu(Some(menu.clone()));
-    let _ = tray.with_inner_tray_icon(|inner| inner.show_menu());
-    let _ = tray.set_menu(None::<Menu<Wry>>);
 }
 
 fn icon_image(app: &AppHandle, st: &State) -> Image<'static> {
@@ -271,8 +262,10 @@ fn place(app: &AppHandle, win: &WebviewWindow) {
 fn close(app: &AppHandle, why: &str) {
     if let Some(win) = app.get_webview_window(TRAY_LABEL) {
         log_line(&format!("[tray] closing the popover: {why}"));
-        // on the Mac the webview goes back into its own window first, where wry takes it out on destroy
+        // on the Mac the webview goes back into its own window first, where wry takes it out on destroy, and the
+        // window and delegate tao would leave behind are freed a moment after
         crate::macwindow::close_panel();
+        crate::macwindow::free_when_destroyed(&win);
         let _ = win.destroy();
         log_line("[tray] popover closed");
         state().lock().unwrap().closed_at = Some(Instant::now());

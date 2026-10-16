@@ -25,10 +25,10 @@ is a state the built popover reaches:
 - **One icon on both platforms**, built with Tauri's tray API (the `tray-icon` feature of the `tauri` crate, built
   in `.setup` from a new `src-tauri/src/tray.rs`).
   - A left click opens or closes the popover.
-  - A right click opens a native menu: **Open arcterm** and **Quit arcterm**.
-    - On macOS the menu is attached to the status item only for the right click that opens it (`pop_menu`): macOS 27
-      opens an attached menu itself on a left click and never passes the click to the app, so the popover never
-      opened (2026-10-16).
+  - On Windows a right click opens a native menu: **Open arcterm** and **Quit arcterm**.
+  - On macOS a right click opens the popover too, and there is no menu (2026-10-16). macOS 27 opens a status item's
+    attached menu itself on a left click and never passes the click to the app, so with the menu attached the
+    popover never opened; the popover's footer has **Open arcterm**, and ⌘Q quits.
   - Linux has no packaging here and gets no tray.
 - **The glyph is the "t>" mark**, drawn pixel-exact at runtime from its 12×9 grid by `src-tauri/src/trayicon.rs`
   (cells mirrored from `scripts/gen-app-icon.mjs`), so the badge, the dot and the dimming compose onto it without a

@@ -170,17 +170,19 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 - [ ] (arcterm) The menu bar icon on a light and a dark menu bar: a count when something waits on you, none at 0, a
   red `●` before the count at critical memory pressure (`! 4` if the attributed title failed), the dimmed glyph
   with no count once wavesrv has gone.
-- [ ] (arcterm) On macOS 27 a left click on the icon opens the popover, not Open / Quit, and a right click opens
-  Open / Quit, whose Open brings the cockpit forward (2026-10-16 fix: the menu is attached only for the right click).
+- [ ] (arcterm) On macOS 27 a left click and a right click on the icon both open the popover, and a second click of
+  either closes it (2026-10-16: no menu on a Mac).
 - [ ] (arcterm) Click the icon with the cockpit behind another app, and again on a full-screen Space: the popover
   opens under the icon and the cockpit stays where it was (its webview shows in an `ArcTrayPanel`,
   `macwindow::show_in_panel`); nothing crashes.
 - [ ] (arcterm) The popover is as tall as its page, not its loading page's 62 pt: the panel takes the hidden window's
   frame after tao applies it (`macwindow::after_tao_frame`, 2026-10-16). Clicking Storage, clicking outside it and Esc
   close it without a crash.
-- [ ] (arcterm) Closed popovers leave their windows registered: after a few opens on 2026-10-16 the window list held
-  six hidden 360 pt tao windows and one closed panel at layer 5, with no webview process left behind them. Find what
-  keeps them alive (tao's window after `destroy`, the panel after `close`) before they pile up over days.
+- [ ] (arcterm) Closed popovers no longer leave their windows behind: tao 0.35.3 keeps one reference to every
+  NSWindow it makes and one to its delegate, which holds the window, so no destroyed window was ever freed;
+  `macwindow::free_when_destroyed` releases the two a second after the popover's destroy (2026-10-16). Check that
+  `heap <arcterm pid> | grep TaoWindow` stays at 1 after a few opens, that `waveapp.log` says "freed the closed
+  popover's window", and that switching light and dark mode afterwards crashes nothing. Report the leak to tao.
 - [ ] (arcterm) The cold open: `[tray] popover ready N ms after the click` in `waveapp.log` stays under 500 ms. Past
   it, the popover needs a hidden window made at launch.
 - [ ] (arcterm) A click outside closes the popover; a second click on the icon closes it and does not reopen it.
