@@ -107,6 +107,33 @@ func TestStageSessionLost(t *testing.T) {
 	}
 }
 
+// run b4e4a19d: a reviewer that ends its turn with no verdict is lost once the grace passes, not at the timeout
+func TestJudgeIdleAtItsPromptIsLostAfterTheGrace(t *testing.T) {
+	ctx, dag := seedPendingDag(t)
+	captureSpawns(t)
+	newFakeLead(t)
+	runID, err := spawnStageSession(ctx, ctx, dag, dagOwner(t, ctx, dag), StageSession{Role: jarvis.UsageRole_PlanReviewer, Tree: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UnixMilli()
+	review := &waveobj.TaskNode{ReviewRunID: runID, ReviewSpawnedTs: now}
+	stubTurnEnded(t, now-TurnEndedGrace.Milliseconds()+1000)
+	if reason, _ := stageSessionLost(ctx, dag, runID, now, now); reason != "" {
+		t.Fatalf("stage session within the grace is working, got %q", reason)
+	}
+	if reason, _ := reviewerLost(ctx, dag, review, now); reason != "" {
+		t.Fatalf("reviewer within the grace is working, got %q", reason)
+	}
+	stubTurnEnded(t, now-TurnEndedGrace.Milliseconds()-1)
+	if reason, want := lostReason(stageSessionLost(ctx, dag, runID, now, now)), "it ended its turn without a verdict"; reason != want {
+		t.Fatalf("stage session: got %q, want %q", reason, want)
+	}
+	if reason, want := lostReason(reviewerLost(ctx, dag, review, now)), "reviewer ended its turn without a verdict"; reason != want {
+		t.Fatalf("reviewer: got %q, want %q", reason, want)
+	}
+}
+
 // a session that cannot start is retried on the next tick, once
 func TestTendStageSessionGivesUpAfterOneRespawn(t *testing.T) {
 	ctx, dag := seedPendingDag(t)

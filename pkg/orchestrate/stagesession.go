@@ -125,6 +125,10 @@ func stageSessionLost(ctx context.Context, g *waveobj.TaskGroup, runID string, s
 	if workerControllerGone(ctx, run) {
 		return withSessionFailure("it exited without a verdict", run), false
 	}
+	// run b4e4a19d's Final coverage reviewer wrote its verdict command as text and sat at its prompt until the timeout
+	if idlePastGrace(ctx, run, now) {
+		return withSessionFailure("it ended its turn without a verdict", run), false
+	}
 	return "", false
 }
 

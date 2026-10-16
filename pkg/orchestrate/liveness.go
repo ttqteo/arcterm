@@ -420,6 +420,11 @@ func turnEndedPast(ctx context.Context, t *waveobj.TaskNode, run *waveobj.Run, n
 	if now-t.AskTs <= TurnEndedGrace.Milliseconds() {
 		return false
 	}
+	return idlePastGrace(ctx, run, now)
+}
+
+// idlePastGrace reports a session idle at its prompt for longer than TurnEndedGrace.
+func idlePastGrace(ctx context.Context, run *waveobj.Run, now int64) bool {
 	ended := workerTurnEndedAt(ctx, run)
 	return ended > 0 && now-ended > TurnEndedGrace.Milliseconds()
 }

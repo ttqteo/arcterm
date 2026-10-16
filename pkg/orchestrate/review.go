@@ -187,6 +187,9 @@ func reviewerLost(ctx context.Context, g *waveobj.TaskGroup, t *waveobj.TaskNode
 	if workerControllerGone(ctx, run) {
 		return withSessionFailure("reviewer exited without a verdict", run), false
 	}
+	if idlePastGrace(ctx, run, now) {
+		return withSessionFailure("reviewer ended its turn without a verdict", run), false
+	}
 	return "", false
 }
 
