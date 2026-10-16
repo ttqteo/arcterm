@@ -319,9 +319,13 @@ tasks:
 
     sync:claudemod:
         desc: Copy the authored Claude mods (claude/arc-mod, claude/arc-view-mod, claude/skim-mod) into their go:embed locations cmd/wsh/cmd/claude-mod, claude-view-mod and claude-skim-mod (generated, never hand-edited), without their tests or engine-written types.
+        # once: tauri:dev and dev:browser reach it three ways at the same time (directly, and through the wavesrv and wsh
+        # builds), and two copies racing left cmd/wsh/cmd/claude-mod/arc-mod nested inside the one before. Copying the
+        # contents (src/.) into a fresh directory keeps a copy from nesting even so.
+        run: once
         cmds:
             - for: [{ src: arc-mod, dst: claude-mod }, { src: arc-view-mod, dst: claude-view-mod }, { src: skim-mod, dst: claude-skim-mod }]
-              cmd: rm -rf cmd/wsh/cmd/{{.ITEM.dst}} && cp -r claude/{{.ITEM.src}} cmd/wsh/cmd/{{.ITEM.dst}} && rm -rf cmd/wsh/cmd/{{.ITEM.dst}}/.claude-plugin/types && rm -f cmd/wsh/cmd/{{.ITEM.dst}}/hooks/*.test.ts
+              cmd: rm -rf cmd/wsh/cmd/{{.ITEM.dst}} && mkdir -p cmd/wsh/cmd/{{.ITEM.dst}} && cp -r claude/{{.ITEM.src}}/. cmd/wsh/cmd/{{.ITEM.dst}}/ && rm -rf cmd/wsh/cmd/{{.ITEM.dst}}/.claude-plugin/types && rm -f cmd/wsh/cmd/{{.ITEM.dst}}/hooks/*.test.ts
         sources:
             - claude/arc-mod/**/*
             - claude/arc-view-mod/**/*

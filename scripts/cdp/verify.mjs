@@ -82,7 +82,9 @@ for (const scenario of chosen) {
     try {
         ctx = await scenario.arrange(h);
         await h.goto(scenario.surface);
-        await h.shot(`cdp-shots/${scenario.name}.png`);
+        // gotoShot: false is a scenario whose surface opens on a state its own shots replace (Settings reopens the page
+        // last used), so the shot here would only show what an earlier scenario left
+        if (scenario.gotoShot !== false) await h.shot(`cdp-shots/${scenario.name}.png`);
         const steps = await scenario.assert(h, ctx);
         results.push({ name: scenario.name, steps });
     } catch (e) {

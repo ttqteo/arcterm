@@ -34,10 +34,14 @@ does not, say what you saw and it becomes a bug row under Actionable.
   focus; do the footsteps and the wall bump feel right with Boss sounds on. The `office-sound` scenario logged the cues
   only and played no sound. `officeaudio.ts`, `officescores.ts`, `officesound.tsx`.
 
+**2026-10-16 (Telegram asks)**
+
+- [ ] (arcterm) Telegram asks: pair a real bot, answer by button, by reply, and in the app (message edits)
+
 **2026-10-16 (the Office's pet boss)**
 
 - [ ] (arcterm) In the installed app: Cockpit → Office with Spider-Man picked. He swings in through a window, unmasks
-  and stands as Peter in a shirt and tie (the shirt is red with the default `vn-shirt` outfit, pale with none); walk
+  and stands as Peter in a shirt and tie (white, whatever the outfit setting); walk
   with the arrows (front-on, no mirroring); stand still 4 s for a pastime; click him for the condition panel. Switch
   to Cards and back within 2 minutes: no entrance. Pick Sprout, reopen after 2 minutes: the beam. The footer pet is
   gone in the Office and back outside it.
@@ -918,6 +922,7 @@ Tracked in their own initiatives, not here:
   which drew in 76 ms: the same noise as the pixel-art entry's miss, so re-measure the open on a production build or a
   quiet machine. The bench's roster check (step 0) now asks for a full floor of about 30 people and a second floor,
   not 75 people.
+- (arcterm) telebot (2026-10-16): one long-poll goroutine + 2 s ticker; measure wavesrv RSS on/off.
 - **Cockpit office pet boss** (2026-10-16, `cockpit-office-bench`, one run through `final-verify.mjs` in the Windows dev
   app (WebView2), the same 31 people on two floors as the floors entry above, which is the before: it was measured on
   this run's base commit, where the boss was still the chibi `<img>`; the Cards baseline read 28 %, as in that entry's

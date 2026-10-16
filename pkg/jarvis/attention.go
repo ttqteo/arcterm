@@ -911,7 +911,7 @@ func GatherAttention(ctx context.Context) ([]wshrpc.AttentionItem, error) {
 // GatherAttentionFromLedger builds the attention list from channel/run rows the caller already holds,
 // skipping the second full channels+runs read. Callers without them should use GatherAttention.
 func GatherAttentionFromLedger(ctx context.Context, chans []*waveobj.Channel, runsByChannel map[string][]*waveobj.Run) ([]wshrpc.AttentionItem, error) {
-	pendingAsks, err := livePendingAsks(ctx)
+	pendingAsks, err := LivePendingAsks(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -984,7 +984,7 @@ func GatherAttentionFromLedger(ctx context.Context, chans []*waveobj.Channel, ru
 	return BuildAttention(in), nil
 }
 
-// livePendingAsks is the registry's pending asks minus the ones whose agent is gone. Closing an
+// LivePendingAsks is the registry's pending asks minus the ones whose agent is gone. Closing an
 // agent's terminal deletes the block but nothing tells the ask registry, so the ask outlived the
 // thing that raised it and the attention badge kept counting a question nobody could answer. Pruning
 // here rather than off the blockclose event also survives a missed event: every poll re-checks.
@@ -993,7 +993,7 @@ func GatherAttentionFromLedger(ctx context.Context, chans []*waveobj.Channel, ru
 //
 // Two ways to be gone: the block object is deleted, or the block is a kept shell whose process ended
 // without a clear ever coming.
-func livePendingAsks(ctx context.Context) (map[string]agentask.PendingAsk, error) {
+func LivePendingAsks(ctx context.Context) (map[string]agentask.PendingAsk, error) {
 	pendingAsks := agentask.GlobalRegistry.List()
 	for oref, pending := range pendingAsks {
 		parsed, err := waveobj.ParseORef(oref)

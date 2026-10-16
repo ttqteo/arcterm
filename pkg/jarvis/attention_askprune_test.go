@@ -46,9 +46,9 @@ func pruneCase(t *testing.T, absent bool) (inList bool, inRegistry bool) {
 	defer func() { agentask.GlobalRegistry = old }()
 	agentask.GlobalRegistry.Set(oref, agentask.PendingAsk{AskId: "a-1", BlockId: uuid.NewString(), Ts: 1})
 
-	live, err := livePendingAsks(context.Background())
+	live, err := LivePendingAsks(context.Background())
 	if err != nil {
-		t.Fatalf("livePendingAsks: %v", err)
+		t.Fatalf("LivePendingAsks: %v", err)
 	}
 	_, inList = live[oref]
 	_, inRegistry = agentask.GlobalRegistry.Get(oref)
