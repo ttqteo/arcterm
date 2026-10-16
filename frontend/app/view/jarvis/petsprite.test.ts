@@ -703,11 +703,8 @@ describe("Peter the boss", () => {
         expect(bossRows("walk1", null, "minion")).toBe(MINION_POSES.walk1);
     });
 
-    it("keeps the picked outfit: the VN shirt over Peter's shirt, the tie still on it", () => {
-        const dressed = bossRows("stand", "vn-shirt", "spidey").join("");
-        expect(dressed).not.toContain("v");
-        expect(dressed).toContain("R");
-        expect(dressed).toContain("t");
+    it("always dresses Peter the boss in his white shirt and tie, whatever the outfit; the others wear theirs", () => {
+        expect(bossRows("stand", "vn-shirt", "spidey")).toBe(PETER_BOSS_POSES.stand);
         expect(bossRows("stand", "vn-shirt", "sprout")).toEqual(outfitRows("stand", "vn-shirt", "sprout"));
     });
 

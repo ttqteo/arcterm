@@ -1559,12 +1559,10 @@ function dressSpideyInFlag(rows: readonly string[]): readonly string[] {
 const DRESSED = {} as Record<PetPose, readonly string[]>;
 const MINION_DRESSED = {} as Record<PetPose, readonly string[]>;
 const SPIDEY_DRESSED = {} as Record<PetPose, readonly string[]>;
-const PETER_BOSS_DRESSED = {} as Record<PetPose, readonly string[]>;
 for (const pose of Object.keys(POSES) as PetPose[]) {
     DRESSED[pose] = dressInFlag(POSES[pose]);
     MINION_DRESSED[pose] = dressMinionInFlag(MINION_POSES[pose]);
     SPIDEY_DRESSED[pose] = dressSpideyInFlag(SPIDEY_POSES[pose]);
-    PETER_BOSS_DRESSED[pose] = dressSpideyInFlag(PETER_BOSS_POSES[pose]);
 }
 
 /** A pose's grid in an outfit: dressed in the shirt, else the pose itself (the flag is held, not worn). */
@@ -1664,12 +1662,10 @@ export function spriteOfRows(rows: readonly string[], marks: readonly PetMark[])
     return { back: [], body, overlay };
 }
 
-/** A pose's grid for the office's boss in an outfit: Spider-Man is Peter the boss there, the others are themselves. */
+/** A pose's grid for the office's boss in an outfit: Spider-Man is Peter the boss there, always in his white shirt and
+ *  tie (the VN shirt is not put over it; the flag in hand still is, in bossSprite); the others wear their outfit. */
 export function bossRows(pose: PetPose, outfit: PetOutfit | null, character: PetCharacter): readonly string[] {
-    if (character !== "spidey") {
-        return outfitRows(pose, outfit, character);
-    }
-    return outfit === "vn-shirt" ? PETER_BOSS_DRESSED[pose] : PETER_BOSS_POSES[pose];
+    return character === "spidey" ? PETER_BOSS_POSES[pose] : outfitRows(pose, outfit, character);
 }
 
 /** The office boss's cells, as spriteFor draws the footer's: body, marks, and the flag in hand behind it. */

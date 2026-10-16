@@ -34,7 +34,7 @@ does not, say what you saw and it becomes a bug row under Actionable.
 **2026-10-16 (the Office's pet boss)**
 
 - [ ] (arcterm) In the installed app: Cockpit → Office with Spider-Man picked. He swings in through a window, unmasks
-  and stands as Peter in a shirt and tie (the shirt is red with the default `vn-shirt` outfit, pale with none); walk
+  and stands as Peter in a shirt and tie (white, whatever the outfit setting); walk
   with the arrows (front-on, no mirroring); stand still 4 s for a pastime; click him for the condition panel. Switch
   to Cards and back within 2 minutes: no entrance. Pick Sprout, reopen after 2 minutes: the beam. The footer pet is
   gone in the Office and back outside it.

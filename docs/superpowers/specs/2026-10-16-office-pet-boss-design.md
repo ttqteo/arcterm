@@ -64,7 +64,8 @@ on the 16-cell grid read as a long face, so it was dropped. `PETER_BOSS_POSES` i
 other poses (`sleep`, `read1/2`, `music1/2`, `ball1/2`, `dangle`) are the existing Peter grids with the open shirt
 buttoned over the suit (the suit cells under it become shirt, the chest's spider the tie), the mapping the canvas
 uses, so the boss never shows the suit after the entrance. The footer keeps `SPIDEY_POSES` and `SPIDEY_LOOK` as they
-are.
+are. Peter the boss always wears the white shirt and tie: the pet's outfit setting (the VN shirt) is not put over it,
+though the flag in hand still shows; Sprout and the Minion wear their outfit in the office as on the footer.
 
 ## Entrance
 
