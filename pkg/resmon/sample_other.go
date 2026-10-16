@@ -19,3 +19,7 @@ func readStat(pid int) procStat {
 func readCmdline(pid int) string {
 	return ""
 }
+
+func splitCmdline(cmdline string) []string {
+	return nil
+}

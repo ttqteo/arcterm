@@ -39,6 +39,8 @@ func TestHelperProcess(t *testing.T) {
 		helperTree()
 	case "locked":
 		helperLocked()
+	case "claude":
+		helperClaude()
 	}
 }
 

@@ -36,6 +36,11 @@ func (ws *WshServer) ResMonKillChildrenCommand(ctx context.Context, data wshrpc.
 	return &rtn, nil
 }
 
+func (ws *WshServer) ResMonKillShellTaskCommand(ctx context.Context, data wshrpc.CommandResMonKillShellTaskData) (*wshrpc.ResMonKillRtnData, error) {
+	rtn := resmon.KillShellTask(ctx, resolveResMonOwner, data)
+	return &rtn, nil
+}
+
 // resolveResMonOwner names a job's owner from the store; an owner it cannot resolve still gets a group.
 func resolveResMonOwner(ctx context.Context, o jobobject.Owner) resmon.OwnerInfo {
 	if o.Kind == jobobject.OwnerKind_RunCmd {
