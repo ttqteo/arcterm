@@ -51,6 +51,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   carried room down. `Enter` still works.
 - The Office's boss is as tall as the people working there; it was drawn smaller than them.
 - The Office's sounds are softer: the shrill top of the chiptune is filtered off and the whole mix is a little quieter.
+- An Office dialog box no longer shows a key beside the item under the ▶: as in a game, ↑ ↓ move the ▶ and `Space`
+  or `Enter` picks. The letter and number keys still work.
 - The agent header no longer shows a bare `i` key beside the initiative; `i` still opens it, and the link's tooltip
   says so.
 

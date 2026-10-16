@@ -85,7 +85,7 @@ export interface PickRow {
     count?: ReactNode;
 }
 
-/** A ▶ list: the item under the ▶ is bright; keys show on that item only, or on every item for the office menu. */
+/** A ▶ list: the item under the ▶ is bright; keys show on every item for the office menu, on none in a dialog box. */
 export function PickList({
     rows,
     sel,
@@ -98,7 +98,7 @@ export function PickList({
     sel: number;
     onPick: (i: number) => void;
     label: string;
-    keys: "selected" | "all";
+    keys: "none" | "all";
     // inside a box that scrolls: the row under the ▶ stays in view
     follow?: boolean;
 }) {
@@ -144,7 +144,7 @@ export function PickList({
                         ) : null}
                         <span className="min-w-0 truncate">{r.label}</span>
                         {r.count}
-                        {r.key && (keys === "all" || i === sel) ? (
+                        {r.key && keys === "all" ? (
                             <kbd className="ml-auto shrink-0 font-mono text-[10.5px] font-normal text-ink-faint">
                                 {r.key}
                             </kbd>
@@ -295,7 +295,7 @@ export function OfficeDialogBox({ vm, sel, onPick }: { vm: OfficeDialogVM; sel: 
                 <div className={cn(vm.kind === "chip" && "max-h-[196px] overflow-y-auto")}>
                     <PickList
                         label={vm.label}
-                        keys="selected"
+                        keys="none"
                         sel={sel}
                         onPick={onPick}
                         follow={vm.kind === "chip"}

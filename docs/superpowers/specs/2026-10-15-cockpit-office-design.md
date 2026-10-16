@@ -168,9 +168,10 @@ A person away from the desk walks back when the agent is working or asking again
   model, tokens, context and age; a run's lead's last line, the task bar, the counts and a column of tasks; a seat's
   task row and its worker), the right a ▶ menu: the answers then Send (dim until every question has one; a question in
   several parts under ◀ its header ▶ and "1 of 2"), or the row's own actions (Tell stays on the full card, whose input
-  takes the words), then Open, Reply, Terminal, Background (Open lead and Adjust at a run), and Full card. Only the item
-  under the ▶ shows its key. A several-question box keeps Terminal under its answers (the States tile leaves it out for
-  room). A run's ▶ menu is 220 px wide, 268 px elsewhere.
+  takes the words), then Open, Reply, Terminal, Background (Open lead and Adjust at a run), and Full card. No item shows
+  its key, as on a Game Boy: ↑ ↓ move the ▶ and Space or ↵ runs the item under it (the letter and number keys still
+  work). A several-question box keeps Terminal under its answers (the States tile leaves it out for room). A run's ▶
+  menu is 220 px wide, 268 px elsewhere.
 - **The full card** (Full card or `f`) is the grid's own `AgentRow` or `LeadCard` beside the desk, as before; Adjust
   opens a run's card with its Adjust panel. No card is rewritten for the office.
 - **The office menu** (`m`, or the footer's `m menu`, whose chip lights while it is open) lists Next Needs you, Next
