@@ -42493,7 +42493,8 @@ async function onTrayPage(h, fixture, fn) {
 
 const TRAY_READ = `(() => {
     const p = document.querySelector('[data-tray-page]');
-    return { page: p?.getAttribute('data-tray-page') ?? null, width: p ? Math.round(p.getBoundingClientRect().width) : 0, text: p?.innerText ?? '' };
+    const spill = [...document.querySelectorAll('[data-tray-card]')].filter((c) => c.scrollWidth > c.clientWidth).map((c) => c.getAttribute('data-tray-card'));
+    return { page: p?.getAttribute('data-tray-page') ?? null, width: p ? Math.round(p.getBoundingClientRect().width) : 0, text: p?.innerText ?? '', spill };
 })()`;
 
 function trayScenario(name, fixture, page, checks) {
@@ -42508,9 +42509,10 @@ function trayScenario(name, fixture, page, checks) {
                 const r = await h.ev(TRAY_READ);
                 const steps = [
                     { step: `1. tray.html?fixture=${fixture} draws its ${page} page, 360 px wide`, ok: r.page === page && r.width === 360, detail: `page=${r.page} width=${r.width}` },
+                    { step: "2. no card's text runs past its edge", ok: r.spill.length === 0, detail: `spill=${r.spill.join(",") || "none"}` },
                 ];
                 checks.forEach(([label, want], i) =>
-                    steps.push({ step: `${i + 2}. ${label}`, ok: r.text.includes(want), detail: want })
+                    steps.push({ step: `${i + 3}. ${label}`, ok: r.text.includes(want), detail: want })
                 );
                 await h.shot(`cdp-shots/${name}-popover.png`);
                 return steps;
@@ -42562,7 +42564,7 @@ const trayOffline = trayScenario("tray-offline", "offline", "offline", [
 ]);
 const trayWindows = trayScenario("tray-windows", "windows", "main", [
     ["the disk is Local Disk (C:)", "Local Disk (C:)"],
-    ["memory is out of 32 GB", "free of 32 GB"],
+    ["memory is out of 31.8 GB, a total wider than the half card", "free of 31.8 GB"],
 ]);
 
 const trayActions = {

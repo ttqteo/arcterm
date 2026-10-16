@@ -61,6 +61,9 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   15 s of the kill, Restart arcterm brings it back. With Settings → General's toggle off, the icon stays hidden
   through the kill.
 - [ ] (arcterm) Settings → General's toggle hides and shows the icon; the popover's gear opens Settings → General.
+- [ ] (arcterm) On Windows, open the popover a few times while what waits on you changes: no scrollbar on either
+  edge, the footer whole, one rounded edge at each corner (the system's, no CSS border inside it), and "free of
+  31.8 GB" inside the Memory card on its own line.
 
 **2026-10-15 (an agent cut off by a restart carries on)**
 
