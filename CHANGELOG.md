@@ -54,6 +54,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Highlighted sentences in Claude's replies now show on Team accounts too. Claude Code's security plugin there kept
   the instructions out of the system prompt, so Claude never marked anything; they now ride with your prompt instead.
+- On a Mac, clicking arcterm's menu bar icon opens the popover with memory, CPU and what waits on you, instead of only
+  Open / Quit (now on a right click), and the icon is the size of the icons beside it.
 
 ## 0.15.14 — 2026-10-16
 

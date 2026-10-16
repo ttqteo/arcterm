@@ -170,6 +170,8 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 - [ ] (arcterm) The menu bar icon on a light and a dark menu bar: a count when something waits on you, none at 0, a
   red `●` before the count at critical memory pressure (`! 4` if the attributed title failed), the dimmed glyph
   with no count once wavesrv has gone.
+- [ ] (arcterm) On macOS 27 a left click on the icon opens the popover, not Open / Quit, and a right click opens
+  Open / Quit, whose Open brings the cockpit forward (2026-10-16 fix: the menu is attached only for the right click).
 - [ ] (arcterm) Click the icon with the cockpit behind another app, and again on a full-screen Space: the popover
   opens under the icon and the cockpit stays where it was (the `ArcTrayPanel` class swap); nothing crashes.
 - [ ] (arcterm) The cold open: `[tray] popover ready N ms after the click` in `waveapp.log` stays under 500 ms. Past

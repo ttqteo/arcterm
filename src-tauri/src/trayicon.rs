@@ -102,13 +102,16 @@ pub fn glyph(step: u32, color: [u8; 4]) -> Rgba {
     g
 }
 
-/// macOS: the template image, 4 px a cell, which the menu bar shows 18 pt high on a Retina screen.
+/// macOS: the template image, a 36 px square the menu bar shows 18 pt high, with the mark 3 px a cell across its middle:
+/// 13.5 pt tall on a Retina screen, the size of the icons beside it (4 px a cell filled all 18 pt and stood out).
 pub fn mac_icon(dim: bool) -> Rgba {
-    let mut g = glyph(4, BLACK);
+    let g = glyph(3, BLACK);
+    let mut out = Rgba::blank(36, 36);
+    out.blit(&g, 0, (36 - g.height) / 2);
     if dim {
-        g.fade(DIM);
+        out.fade(DIM);
     }
-    g
+    out
 }
 
 /// Windows: the white mark centred in a size x size square, the needs-you badge bottom right with the count, and the
@@ -257,9 +260,14 @@ mod tests {
     }
 
     #[test]
-    fn mac_icon_is_a_48_by_36_black_template() {
+    fn mac_icon_is_a_36_px_black_template_with_the_mark_at_3_px_a_cell() {
         let m = mac_icon(false);
-        assert_eq!((m.width, m.height), (48, 36));
+        assert_eq!((m.width, m.height), (36, 36));
+        // 27 px of mark between 4 px of air above and 5 below
+        assert!((0..36).all(|x| (0..4).chain(31..36).all(|y| alpha(&m, x, y) == 0)));
+        assert_eq!(alpha(&m, 3, 7), 255); // the t's stem, cell (1, 1)
+        assert_eq!(alpha(&m, 35, 16), 255); // the chevron's point, cell (11, 4)
+        assert_eq!(alpha(&m, 2, 7), 0);
         assert!(m.px.chunks(4).all(|p| p[3] == 0 || (p[0], p[1], p[2]) == (0, 0, 0)));
         assert!(mac_icon(true).px.chunks(4).all(|p| p[3] <= 115)); // dimmed to 45%
     }

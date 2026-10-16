@@ -26,11 +26,16 @@ is a state the built popover reaches:
   in `.setup` from a new `src-tauri/src/tray.rs`).
   - A left click opens or closes the popover.
   - A right click opens a native menu: **Open arcterm** and **Quit arcterm**.
+    - On macOS the menu is attached to the status item only for the right click that opens it (`pop_menu`): macOS 27
+      opens an attached menu itself on a left click and never passes the click to the app, so the popover never
+      opened (2026-10-16).
   - Linux has no packaging here and gets no tray.
 - **The glyph is the "t>" mark**, drawn pixel-exact at runtime from its 12×9 grid by `src-tauri/src/trayicon.rs`
   (cells mirrored from `scripts/gen-app-icon.mjs`), so the badge, the dot and the dimming compose onto it without a
   PNG per state. Never downscale `public/logos/arcterm.png`.
-  - macOS: a template image 18 pt high (4 px per cell, 48×36), so the system tints it for light and dark menu bars.
+  - macOS: a template image 18 pt high (a 36 px square, the mark 3 px per cell across its middle, so 13.5 pt tall
+    like the icons beside it), so the system tints it for light and dark menu bars. 4 px per cell filled all 18 pt
+    and stood out (2026-10-16).
   - Windows: a white glyph on transparent, square at the tray's size for the monitor's scale (16, 20, 24 or 32 px).
 - **The count is what waits on you:** `queueRows(attentionAtom, agents, channelMessages).length`, the number Sprout
   wears (`useWaitingCount`, `view/jarvis/petview.tsx`).
