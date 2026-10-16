@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
     askOf,
     hashText,
+    HIGHLIGHT_REMINDER,
+    HIGHLIGHT_SECTION,
     inlineRuns,
     isAskInView,
     keepMarks,
@@ -10,7 +12,26 @@ import {
     parseMarks,
     rowsFromAsk,
     shownMarks,
+    submitContext,
 } from "./highlight-core";
+
+describe("submitContext", () => {
+    const base = { isInteractive: true, isCommand: false, isComposed: false, hasTold: false };
+
+    it("carries the whole ask on the first prompt while the system prompt has not taken it", () => {
+        expect(submitContext(base)).toBe(HIGHLIGHT_SECTION);
+    });
+
+    it("carries the reminder on later prompts", () => {
+        expect(submitContext({ ...base, hasTold: true })).toBe(HIGHLIGHT_REMINDER);
+    });
+
+    it("carries nothing once the section was composed, for a command, or headless", () => {
+        expect(submitContext({ ...base, isComposed: true })).toBeNull();
+        expect(submitContext({ ...base, isCommand: true })).toBeNull();
+        expect(submitContext({ ...base, isInteractive: false })).toBeNull();
+    });
+});
 
 describe("parseMarks", () => {
     it("strips the marks and keeps what they marked, in order", () => {

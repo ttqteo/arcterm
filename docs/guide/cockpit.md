@@ -163,7 +163,9 @@ mỗi người nhận ra nhờ kiểu tóc, và sếp (bạn) đội mũ. Phòng
 - **Văn phòng chiếm hết màn**: không còn tiêu đề Cockpit; số đếm (need you, working…), Cards | Office, project và
   **Live only** nằm trong thanh HUD trong văn phòng. Footer chỉ còn `m menu` và event mới nhất; rail Events ẩn trong
   Office. `m` mở **menu văn phòng** (như START): next Needs you, bảng tin, bàn kế / trước, **Lift**, **Move this room**,
-  **Arrange automatically**, **Events** (hiện rail), Cards view, và danh sách phím.
+  **Arrange automatically**, **Events** (hiện rail), **Background** (khi có agent ở nền), Cards view, và danh sách phím.
+  Hai mục **Backgrounded** và **Background** không phòng nào vẽ, nên trong Office chúng ẩn dưới tòa nhà; `m` →
+  **Background** (kèm số) hiện chúng lại, **Hide background** ẩn đi.
 - **Giờ làm và năng lượng**: ngoài giờ làm (mặc định 9–18, và cả cuối tuần) văn phòng tối lại, ai idle đã về nhà, ai
   còn làm có đèn bàn. Quota 5 giờ từ 70 % thì có người ngáp, từ 90 % thì có cà phê trên bàn; quota reset thì mọi
   người vươn vai. `⚡` trên thanh HUD là năng lượng còn lại: 100 % trừ phần quota đã dùng (dùng 4 % thì hiện

@@ -13,6 +13,22 @@ export const HIGHLIGHT_SECTION = [
     "- Marks go in your reply text only: never in files, code, commands, commit messages or tool inputs, and never inside code spans or blocks.",
 ].join("\n");
 
+// the same ask in one line, for the prompts after the first where the system prompt never got the section
+export const HIGHLIGHT_REMINDER =
+    "Highlighting: in a long explanation wrap the 2-4 sentences the person must read in ==…== (whole sentences, never in code); in a brainstorming turn mark only the question you wait on.";
+
+export type SubmitState = { isInteractive: boolean; isCommand: boolean; isComposed: boolean; hasTold: boolean };
+
+// what a submitted prompt carries for the model, beside it and unseen. an organization's security plugin can keep a
+// user plugin out of the system prompt (prompt.compose is passed by), so until the section is seen composed the ask
+// rides with the prompts instead: whole on the first, as a reminder after. a headless run and a command get none
+export function submitContext(s: SubmitState): string | null {
+    if (!s.isInteractive || s.isCommand || s.isComposed) {
+        return null;
+    }
+    return s.hasTold ? HIGHLIGHT_REMINDER : HIGHLIGHT_SECTION;
+}
+
 // past these a mark is still stripped but drawn as plain text: a highlight that covers everything shows nothing
 export const MAX_MARKS = 4;
 export const MAX_MARK_LENGTH = 300;

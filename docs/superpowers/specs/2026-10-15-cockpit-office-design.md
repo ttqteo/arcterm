@@ -178,7 +178,9 @@ A person away from the desk walks back when the agent is working or asking again
 - **The office fills the Cockpit**: no title; the counts that filter, Cards | Office, the project switcher and Live only
   sit in a HUD bar inside the view, after the clock and energy. The footer holds `m menu` and the newest event; the
   Events rail is hidden in Office until the menu's Events shows it (Esc while walking hides it). The Needs-you strip,
-  the Backgrounded section and the background-agents strip stay under the office as in Cards (no board draws them).
+  the Backgrounded section and the background-agents strip stay under the office as in Cards (no board draws them),
+  hidden until the office menu's **Background** (with their count; listed only while they have agents) shows them
+  (`officeBackgroundOpenAtom`, not kept; amended 2026-10-16).
 - **Open terminal** leaves for the Agent surface through `openTarget`, as the card does today.
 - **Card streams:** Office keeps the grid's streams, one per live agent. Stopping a stream drops that agent's live
   entries, and the Cockpit hides an agent with nothing to show, so streaming only the full card would take agents out

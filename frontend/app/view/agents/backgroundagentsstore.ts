@@ -17,6 +17,11 @@ import { projectLabel } from "./projectlabel";
 
 export const backgroundAgentsAtom = atom<BackgroundAgentData[]>([]) as PrimitiveAtom<BackgroundAgentData[]>;
 export const backgroundAgentsErrorAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
+// the sessions the Background section shows in place of the polled list (the cockpit-office-background scenario's
+// dev hook, cockpitofficedevhooks.ts); null is the polled list
+export const backgroundAgentsFixtureAtom = atom<BackgroundAgentData[] | null>(null) as PrimitiveAtom<
+    BackgroundAgentData[] | null
+>;
 
 let loadSeq = 0;
 
@@ -66,7 +71,7 @@ export async function loadBackgroundAgents(): Promise<void> {
 // Wave terminals or foreign shells, owned by the hook roster). Project name is resolved with the same
 // projectLabel the rest of the cockpit uses, so the existing project switcher scopes these too.
 export const backgroundAgentVMsAtom: Atom<AgentVM[]> = atom((get) => {
-    const raw = get(backgroundAgentsAtom).filter((a) => a.kind === "background");
+    const raw = (get(backgroundAgentsFixtureAtom) ?? get(backgroundAgentsAtom)).filter((a) => a.kind === "background");
     const config = get(atoms.fullConfigAtom);
     const now = Date.now();
     return raw.map((a) => backgroundAgentToVM(a, projectLabel(a.cwd, config?.projects ?? {}), now));

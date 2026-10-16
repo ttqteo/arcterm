@@ -182,6 +182,7 @@ export type OfficeMenuId =
     | "move"
     | "arrange"
     | "events"
+    | "background"
     | "cards"
     | "keys";
 
@@ -199,13 +200,17 @@ export interface OfficeMenuItem {
 }
 
 /** Pure: the office menu (m), START's list. It names each item's own key, so it is where the keys are learnt. `inRoom`
- *  is whether the boss stands in a project room: Move this room picks that room up, so it is disabled anywhere else. */
+ *  is whether the boss stands in a project room: Move this room picks that room up, so it is disabled anywhere else.
+ *  `background` is the agents no room draws (backgrounded ones and detached `claude --bg` sessions): Background shows
+ *  them under the office, and is left out while there are none and they are hidden. */
 export function officeMenuItems(
     asks: number,
     newEvents: number,
     eventsOpen: boolean,
     boardRows: number,
-    inRoom: boolean
+    inRoom: boolean,
+    background = 0,
+    backgroundOpen = false
 ): OfficeMenuItem[] {
     return [
         { id: "nextAsk", label: "Next Needs you", key: "n", count: asks > 0 ? String(asks) : undefined, ask: true },
@@ -226,6 +231,15 @@ export function officeMenuItems(
             count: !eventsOpen && newEvents > 0 ? `${newEvents} new` : undefined,
             rule: true,
         },
+        ...(background > 0 || backgroundOpen
+            ? [
+                  {
+                      id: "background" as const,
+                      label: backgroundOpen ? "Hide background" : "Background",
+                      count: !backgroundOpen && background > 0 ? String(background) : undefined,
+                  },
+              ]
+            : []),
         { id: "cards", label: "Cards view", key: "o" },
         { id: "keys", label: "All keys", key: "?" },
     ];

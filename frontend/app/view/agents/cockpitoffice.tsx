@@ -310,6 +310,9 @@ export interface CockpitOfficeProps {
     // the office menu's Events count and label, and what its items do
     newEvents: number;
     eventsOpen: boolean;
+    // the office menu's Background: the agents no room draws, and whether their sections show under the office
+    background: number;
+    backgroundOpen: boolean;
     onMenu: (id: OfficeMenuId) => void;
     // the Needs you rows that wait: the notice board's bubble and slips, its place among the cursor's stops, and the
     // office menu's count. The rows themselves are the dialog's (dialogFor)
@@ -1383,7 +1386,15 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     onMenuRef.current = props.onMenu;
     // read when the menu opens (a walk step renders nothing): the boss in a project room can pick it up
     const menuInRoom = useAtomValue(menuInRoomAtom);
-    const menuItems = officeMenuItems(plan.asks.length, props.newEvents, props.eventsOpen, props.boardRows, menuInRoom);
+    const menuItems = officeMenuItems(
+        plan.asks.length,
+        props.newEvents,
+        props.eventsOpen,
+        props.boardRows,
+        menuInRoom,
+        props.background,
+        props.backgroundOpen
+    );
     const menuItemsRef = useRef(menuItems);
     menuItemsRef.current = menuItems;
     // whether OfficeDialogLayer draws a box now: with none at the boss's desk the dialog layer is walking, and the keys
