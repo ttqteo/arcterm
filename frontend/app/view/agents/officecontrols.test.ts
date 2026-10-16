@@ -2,7 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { backFrom, boxLayer, dialogEdge, firstSel, officeKey, officeMenuItems, stepSel } from "./officecontrols";
+import {
+    backFrom,
+    boxLayer,
+    canBuildFloor,
+    carryPlace,
+    carryTarget,
+    dialogEdge,
+    firstSel,
+    officeKey,
+    officeMenuItems,
+    stepSel,
+} from "./officecontrols";
 
 describe("officeKey", () => {
     it("walks on the arrows and talks on Enter when nothing is up", () => {
@@ -66,9 +77,61 @@ describe("officeKey", () => {
         expect(officeKey("walk", true, "Enter")).toEqual({ do: "activate" });
         expect(officeKey("card", true, "Escape")).toEqual({ do: "menu" });
         expect(officeKey("walk", true, "m")).toEqual({ do: "menu" });
-        for (const k of ["ArrowLeft", "ArrowRight", "1", "j", "f", "t"]) {
+        for (const k of ["ArrowLeft", "ArrowRight", "1", "j", "f", "t", "g", "PageUp", "PageDown"]) {
             expect(officeKey("walk", true, k)).toEqual({ do: "none" });
         }
+    });
+
+    it("rides the lift on PageUp and PageDown, and carries a room on g, while walking", () => {
+        expect(officeKey("walk", false, "PageUp")).toEqual({ do: "floor", delta: 1 });
+        expect(officeKey("walk", false, "PageDown")).toEqual({ do: "floor", delta: -1 });
+        expect(officeKey("walk", false, "g")).toEqual({ do: "grab" });
+    });
+
+    it("leaves PageUp, PageDown and g alone over the dialog box and the full card", () => {
+        for (const layer of ["dialog", "card"] as const) {
+            for (const k of ["PageUp", "PageDown", "g"]) {
+                expect(officeKey(layer, false, k)).toEqual({ do: "pass" });
+            }
+        }
+    });
+
+    it("lets a chord through on the lift and carry keys", () => {
+        expect(officeKey("walk", false, "PageUp", { ctrl: true })).toEqual({ do: "pass" });
+        expect(officeKey("walk", false, "g", { meta: true })).toEqual({ do: "pass" });
+        expect(officeKey("carry", false, "Enter", { alt: true })).toEqual({ do: "pass" });
+        expect(officeKey("carry", false, "ArrowLeft", { ctrl: true })).toEqual({ do: "pass" });
+    });
+});
+
+describe("officeKey while a room is carried", () => {
+    it("moves the room to a neighbouring slot on the arrows", () => {
+        expect(officeKey("carry", false, "ArrowUp")).toEqual({ do: "slot", dir: "up" });
+        expect(officeKey("carry", false, "ArrowDown")).toEqual({ do: "slot", dir: "down" });
+        expect(officeKey("carry", false, "ArrowLeft")).toEqual({ do: "slot", dir: "left" });
+        expect(officeKey("carry", false, "ArrowRight")).toEqual({ do: "slot", dir: "right" });
+    });
+
+    it("rides the lift with the room on PageUp and PageDown", () => {
+        expect(officeKey("carry", false, "PageUp")).toEqual({ do: "floor", delta: 1 });
+        expect(officeKey("carry", false, "PageDown")).toEqual({ do: "floor", delta: -1 });
+    });
+
+    it("drops the room on Enter and cancels on Esc and g", () => {
+        expect(officeKey("carry", false, "Enter")).toEqual({ do: "drop" });
+        expect(officeKey("carry", false, "Escape")).toEqual({ do: "cancel" });
+        expect(officeKey("carry", false, "g")).toEqual({ do: "cancel" });
+    });
+
+    it("does nothing on any other key, the office's own and the Cockpit's included", () => {
+        for (const k of ["m", "j", "k", "n", "f", "h", "l", "1", "t", "r", " "]) {
+            expect(officeKey("carry", false, k)).toEqual({ do: "none" });
+        }
+    });
+
+    it("takes its keys before the menu, which cannot be open over a carried room", () => {
+        expect(officeKey("carry", true, "Enter")).toEqual({ do: "drop" });
+        expect(officeKey("carry", true, "m")).toEqual({ do: "none" });
     });
 });
 
@@ -77,6 +140,10 @@ describe("backFrom", () => {
         expect(backFrom("card")).toBe("dialog");
         expect(backFrom("dialog")).toBe("walk");
         expect(backFrom("walk")).toBe("walk");
+    });
+
+    it("sets a carried room down and walks on", () => {
+        expect(backFrom("carry")).toBe("walk");
     });
 });
 
@@ -89,6 +156,7 @@ describe("boxLayer", () => {
         expect(boxLayer("dialog", true)).toBe("dialog");
         expect(boxLayer("card", false)).toBe("card");
         expect(boxLayer("walk", true)).toBe("walk");
+        expect(boxLayer("carry", false)).toBe("carry");
     });
 });
 
@@ -139,28 +207,119 @@ describe("dialogEdge", () => {
 
 describe("officeMenuItems", () => {
     it("lists START's items with their keys, the desks asking, the board's rows and the events not seen", () => {
-        const items = officeMenuItems(2, 3, false, 3);
+        const items = officeMenuItems(2, 3, false, 3, true);
         expect(items.map((i) => i.label)).toEqual([
             "Next Needs you",
             "Notice board",
             "Next desk",
             "Previous desk",
+            "Lift",
+            "Move this room",
+            "Arrange automatically",
             "Events",
             "Cards view",
             "All keys",
         ]);
-        expect(items.map((i) => i.key)).toEqual(["n", undefined, "j", "k", undefined, "o", "?"]);
+        expect(items.map((i) => i.key)).toEqual([
+            "n",
+            undefined,
+            "j",
+            "k",
+            "PgUp PgDn",
+            "g",
+            undefined,
+            undefined,
+            "o",
+            "?",
+        ]);
         expect(items[0]).toMatchObject({ count: "2", ask: true });
         expect(items[1]).toEqual({ id: "needsYou", label: "Notice board", count: "3", ask: true });
-        expect(items[4]).toMatchObject({ count: "3 new", rule: true });
+        expect(items[7]).toMatchObject({ count: "3 new", rule: true });
+    });
+
+    it("puts the lift, the room carry and the automatic arrangement after the desk items", () => {
+        const items = officeMenuItems(0, 0, false, 0, true);
+        expect(items.slice(2, 7).map((i) => i.id)).toEqual(["nextDesk", "prevDesk", "lift", "move", "arrange"]);
+        expect(items[4]).toEqual({ id: "lift", label: "Lift", key: "PgUp PgDn" });
+        expect(items[5]).toEqual({ id: "move", label: "Move this room", key: "g" });
+        expect(items[6]).toEqual({ id: "arrange", label: "Arrange automatically" });
     });
 
     it("drops a zero count, and names Events Hide events while the rail is open", () => {
-        const items = officeMenuItems(0, 0, false, 0);
+        const items = officeMenuItems(0, 0, false, 0, true);
         expect(items[0].count).toBeUndefined();
         expect(items[1]).toMatchObject({ id: "needsYou", count: undefined });
-        expect(items[4].count).toBeUndefined();
-        const open = officeMenuItems(1, 4, true, 1);
-        expect(open[4]).toMatchObject({ id: "events", label: "Hide events", count: undefined });
+        expect(items[7].count).toBeUndefined();
+        const open = officeMenuItems(1, 4, true, 1, true);
+        expect(open[7]).toMatchObject({ id: "events", label: "Hide events", count: undefined });
+    });
+});
+
+describe("officeMenuItems outside a room", () => {
+    it("disables Move this room, and only it, when the boss is in no project room", () => {
+        const items = officeMenuItems(0, 0, false, 0, false);
+        expect(items.filter((i) => i.disabled).map((i) => i.id)).toEqual(["move"]);
+        expect(items[5]).toEqual({ id: "move", label: "Move this room", key: "g", disabled: true });
+    });
+
+    it("leaves every item enabled in a project room", () => {
+        expect(officeMenuItems(0, 0, false, 0, true).some((i) => i.disabled)).toBe(false);
+    });
+});
+
+describe("carrying a room", () => {
+    // floor 0 holds four rooms, floor 1 two, floor 2 one
+    const floors = [
+        { floor: 0, rooms: ["a", "b", "c", "d"] },
+        { floor: 1, rooms: ["e", "f"] },
+        { floor: 2, rooms: ["g"] },
+    ];
+    const ctx = { floors, project: "e", fromSlot: 1 };
+    const slot = (dir: "up" | "down" | "left" | "right") => ({ do: "slot", dir }) as const;
+    const floor = (delta: -1 | 1) => ({ do: "floor", delta }) as const;
+
+    it("steps the target over the slots of the floor shown, and stops at an edge", () => {
+        expect(carryTarget({ floor: 1, slot: 1 }, slot("down"), ctx)).toEqual({ floor: 1, slot: 3 });
+        expect(carryTarget({ floor: 1, slot: 1 }, slot("left"), ctx)).toEqual({ floor: 1, slot: 0 });
+        expect(carryTarget({ floor: 1, slot: 1 }, slot("right"), ctx)).toEqual({ floor: 1, slot: 1 });
+        expect(carryTarget({ floor: 1, slot: 1 }, slot("up"), ctx)).toEqual({ floor: 1, slot: 1 });
+    });
+
+    it("keeps the slot when it rides to the next floor that holds a room", () => {
+        expect(carryTarget({ floor: 1, slot: 3 }, floor(1), ctx)).toEqual({ floor: 2, slot: 3 });
+        expect(carryTarget({ floor: 1, slot: 3 }, floor(-1), ctx)).toEqual({ floor: 0, slot: 3 });
+    });
+
+    it("skips a floor that holds no room", () => {
+        const gap = { ...ctx, floors: [floors[0], floors[2]] };
+        expect(carryTarget({ floor: 0, slot: 0 }, floor(1), gap)).toEqual({ floor: 2, slot: 0 });
+        expect(carryTarget({ floor: 2, slot: 0 }, floor(-1), gap)).toEqual({ floor: 0, slot: 0 });
+    });
+
+    it("stays on the ground floor on PageDown", () => {
+        expect(carryTarget({ floor: 0, slot: 2 }, floor(-1), ctx)).toEqual({ floor: 0, slot: 2 });
+    });
+
+    it("targets a new floor past the top one, and comes back to the top floor in the slot it left", () => {
+        expect(carryTarget({ floor: 2, slot: 3 }, floor(1), ctx)).toBe("new");
+        expect(carryTarget("new", floor(1), ctx)).toBe("new");
+        expect(carryTarget("new", floor(-1), ctx)).toEqual({ floor: 2, slot: 1 });
+    });
+
+    it("leaves the arrows without effect on a new floor", () => {
+        expect(carryTarget("new", slot("down"), ctx)).toBe("new");
+    });
+
+    it("builds no new floor for the only room of the top floor", () => {
+        expect(canBuildFloor(floors, "g")).toBe(false);
+        expect(canBuildFloor(floors, "e")).toBe(true);
+        expect(canBuildFloor([], "e")).toBe(false);
+        expect(carryTarget({ floor: 2, slot: 0 }, floor(1), { ...ctx, project: "g" })).toEqual({ floor: 2, slot: 0 });
+    });
+
+    it("drops on the target, or for a new floor on the first slot of the floor above the top", () => {
+        const at = { a: { floor: 0, slot: 0 }, e: { floor: 1, slot: 1 }, g: { floor: 2, slot: 0 } };
+        expect(carryPlace({ floor: 1, slot: 3 }, at)).toEqual({ floor: 1, slot: 3 });
+        expect(carryPlace("new", at)).toEqual({ floor: 3, slot: 0 });
     });
 });

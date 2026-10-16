@@ -1,12 +1,23 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// How the boss moves through the Cockpit office (cockpit office spec, "The boss"): walls stop it, doors let it
-// through, a jump to a desk walks out of its room, along the hall and in through the other door, and the desk the
-// boss stands at is the selected card. Walkers to the lounge take the same paths. Pure: no React, no DOM.
+// How the boss moves through one floor of the Cockpit office (cockpit office spec, "The boss"; office floors spec):
+// walls stop it, doors let it through, a jump to a desk walks out of its room, along the hall and in through the other
+// door, and the desk the boss stands at is the selected card. A project's room is one room, its table zones are not
+// rooms one walks between; the chip of what did not fit, the notice board and the lift are places to stand like a desk.
+// Walkers to the lounge take the same paths. Pure: no React, no DOM.
 
 import type { WalkDir } from "@/app/view/office/plansprite";
-import { BOARD_KEY, type Box, type Desk, type Plan, type Point, type Room, type Seat } from "./officeplanmodel";
+import {
+    BOARD_KEY,
+    LIFT_KEY,
+    type Box,
+    type Desk,
+    type Plan,
+    type Point,
+    type Room,
+    type Seat,
+} from "./officeplanmodel";
 
 export type Dir = WalkDir;
 
@@ -19,7 +30,7 @@ const DOOR_REACH = 14;
 // desk's width, and from the spot up to the desk
 const REACH_X = 40;
 const REACH_Y = 30;
-// the hall's walking lane, clear of Home's booth at the hall's foot
+// the hall's walking lane, clear of the board and the lift
 const LANE_FROM_RIGHT = 36;
 
 const DELTA: Record<Dir, Point> = {
@@ -30,7 +41,7 @@ const DELTA: Record<Dir, Point> = {
 };
 const inside = (p: Point, b: Box) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h;
 
-/** Where anyone may stand: every room, every door, and the hall's floor. */
+/** Where anyone may stand: every room (an empty one too), every door, and the hall's floor. */
 export function canStand(plan: Plan, p: Point): boolean {
     return (
         plan.hallFloor.some((b) => inside(p, b)) ||
@@ -45,15 +56,18 @@ const pot = (x: number, y: number): Box => ({ x: x + 6, y: y + 26, w: 22, h: 18 
 
 /** What the boss's feet stay off: each desk with the person at it and its name, each meeting table with its chairs,
  *  and what scenery.ts draws on the floor: the lounge's sofa with the people on it, its coffee machine, and the
- *  plants, and the Needs you notice board in the hall. A desk's spot and a table's stay clear, so the boss stands in
- *  front of a desk, never on it; so does the board's. */
+ *  plants (each room's, where it has them), and the Needs you notice board and the lift in the hall. A desk's spot and a
+ *  table's stay clear, so the boss stands in front of a desk, never on it; so do the board's and the lift's, above
+ *  the lift's dial and the strip over it that holds `Floor n`. */
 function furniture(plan: Plan): Box[] {
     let boxes = furnitureCache.get(plan);
     if (boxes == null) {
         const l = plan.lounge;
         const b = plan.board.box;
+        const { doors, dial } = plan.lift;
         boxes = [
             { x: b.x - 8, y: b.y - 8, w: b.w + 16, h: b.h + 16 },
+            { x: doors.x - 8, y: dial.y - 18, w: doors.w + 16, h: doors.y + doors.h - (dial.y - 18) },
             ...plan.desks.map((d) => ({ x: d.x - 8, y: d.y - 20, w: 96, h: 100 })),
             ...plan.rooms.flatMap((r) =>
                 r.table ? [{ x: r.table.x - 8, y: r.table.y - 20, w: r.table.w + 16, h: r.table.h + 53 }] : []
@@ -61,9 +75,7 @@ function furniture(plan: Plan): Box[] {
             { x: l.x + 34, y: l.y + 122, w: 162, h: 66 },
             { x: l.x + 166, y: l.y + 93, w: 36, h: 60 },
             pot(l.x + 200, l.y + 172),
-            ...plan.rooms
-                .filter((r) => r.kind === "agents")
-                .map((r) => pot(r.box.x + r.box.w - 44, r.box.y + r.box.h - 64)),
+            ...plan.rooms.flatMap((r) => (r.plants ?? []).map((p) => pot(p.x, p.y))),
         ];
         furnitureCache.set(plan, boxes);
     }
@@ -91,9 +103,10 @@ export function stepToward(plan: Plan, from: Point, dir: Dir, dist: number): Poi
     return at;
 }
 
-/** The room a point is in, or "hall" (the lounge is part of the hall). */
+/** The room a point is in, or "hall" (the lounge is part of the hall). A table zone is no room: a point in one is in
+ *  its project's room. */
 export function roomAt(plan: Plan, p: Point): string {
-    return plan.rooms.find((r) => r.kind !== "lounge" && inside(p, r.box))?.key ?? "hall";
+    return plan.rooms.find((r) => r.kind !== "lounge" && r.kind !== "meeting" && inside(p, r.box))?.key ?? "hall";
 }
 
 function doorPoints(r: Room): { inner: Point; outer: Point } {
@@ -182,46 +195,67 @@ export function facing(a: Point, b: Point, was: Dir = "down"): Dir {
     return Math.abs(dx) >= Math.abs(dy) ? (dx < 0 ? "left" : "right") : dy < 0 ? "up" : "down";
 }
 
-/** Where the boss stands for a desk or seat key, or the notice board's. */
+/** Where the boss stands for a desk, seat or chip key, or the notice board's, or the lift's. */
 export function spotOf(plan: Plan, key: string): Point | undefined {
     if (key === BOARD_KEY) {
         return plan.board.spot;
     }
-    return plan.desks.find((d) => d.key === key)?.spot ?? plan.seats.find((s) => s.key === key)?.spot;
+    if (key === LIFT_KEY) {
+        return plan.lift.spot;
+    }
+    return (
+        plan.desks.find((d) => d.key === key)?.spot ??
+        plan.seats.find((s) => s.key === key)?.spot ??
+        plan.rooms.find((r) => r.chip?.key === key)?.chip?.spot
+    );
 }
 
-/** The desk or seat the boss stands in front of: the nearest whose spot is within reach, in the room it stands in; the
- *  notice board's key in the hall, within reach of the board's spot; undefined anywhere else, in the lounge too. */
+/** The desk, seat or chip the boss stands in front of: the nearest whose spot is within reach, in the room it stands
+ *  in (a seat is in its project's room, not its table zone); the notice board's or the lift's key in the hall, within
+ *  reach of its spot; undefined anywhere else, in the lounge too. */
 export function deskAt(plan: Plan, p: Point): string | undefined {
     const room = roomAt(plan, p);
-    if (room === "hall") {
-        const s = plan.board.spot;
-        return Math.abs(s.x - p.x) <= REACH_X && Math.abs(s.y - p.y) <= REACH_Y ? BOARD_KEY : undefined;
-    }
     let best: string | undefined;
     let dist = Number.POSITIVE_INFINITY;
-    for (const s of [...plan.desks, ...plan.seats]) {
-        const dx = Math.abs(s.spot.x - p.x);
-        const dy = Math.abs(s.spot.y - p.y);
-        if (s.room !== room || dx > REACH_X || dy > REACH_Y) {
-            continue;
-        }
+    const consider = (key: string, spot: Point) => {
+        const dx = Math.abs(spot.x - p.x);
+        const dy = Math.abs(spot.y - p.y);
         const d = Math.hypot(dx, dy);
-        if (d < dist) {
+        if (dx <= REACH_X && dy <= REACH_Y && d < dist) {
             dist = d;
-            best = s.key;
+            best = key;
         }
+    };
+    if (room === "hall") {
+        consider(BOARD_KEY, plan.board.spot);
+        consider(LIFT_KEY, plan.lift.spot);
+        return best;
+    }
+    for (const s of plan.desks) {
+        if (s.room === room) {
+            consider(s.key, s.spot);
+        }
+    }
+    for (const s of plan.seats) {
+        if (s.room === room) {
+            consider(s.key, s.spot);
+        }
+    }
+    const chip = plan.rooms.find((r) => r.key === room)?.chip;
+    if (chip) {
+        consider(chip.key, chip.spot);
     }
     return best;
 }
 
-/** The desk or seat whose card the boss can open: the cursor's, while the boss stands still at it. The notice board has
- *  no card: it answers `{ board: true }`, which opens its dialog box and nothing else. */
+/** The desk, seat or chip whose card or dialog the boss can open: the cursor's, while the boss stands still at it. The
+ *  notice board and the lift have no card: they answer `{ board: true }` and `{ lift: true }`, which open their dialog
+ *  boxes and nothing else; a chip answers `{ room, chip: true }`, its dialog box lists what did not fit the room. */
 export function cardAt(
     plan: Plan,
     boss: { at: Point; path: readonly Point[]; holding?: Dir } | null,
     cursorId: string | undefined
-): { desk?: Desk; seat?: Seat; room?: Room; board?: boolean } | undefined {
+): { desk?: Desk; seat?: Seat; room?: Room; board?: boolean; chip?: boolean; lift?: boolean } | undefined {
     if (boss == null || cursorId == null || boss.path.length > 1 || boss.holding != null) {
         return undefined;
     }
@@ -231,10 +265,31 @@ export function cardAt(
     if (cursorId === BOARD_KEY) {
         return { board: true };
     }
+    if (cursorId === LIFT_KEY) {
+        return { lift: true };
+    }
+    const chipRoom = plan.rooms.find((r) => r.chip?.key === cursorId);
+    if (chipRoom) {
+        return { room: chipRoom, chip: true };
+    }
     const desk = plan.desks.find((d) => d.key === cursorId);
     const seat = desk ? undefined : plan.seats.find((s) => s.key === cursorId);
     const room = plan.rooms.find((r) => r.key === (desk?.room ?? seat?.room));
     return room ? { desk, seat, room } : undefined;
+}
+
+/** The stop the boss goes to with a room it carried to its new slot: the cursor's, when it is a desk, seat or chip of that
+ *  room, else the room's first desk, seat or chip; none when the room holds no one. */
+export function carriedStop(plan: Plan, roomKey: string, cursor: string | undefined): string | undefined {
+    const chip = plan.rooms.find((r) => r.key === roomKey)?.chip?.key;
+    const inRoom = (key: string) =>
+        key === chip ||
+        plan.desks.some((d) => d.key === key && d.room === roomKey) ||
+        plan.seats.some((s) => s.key === key && s.room === roomKey);
+    if (cursor != null && inRoom(cursor)) {
+        return cursor;
+    }
+    return plan.desks.find((d) => d.room === roomKey)?.key ?? plan.seats.find((s) => s.room === roomKey)?.key ?? chip;
 }
 
 /** What the boss's sprite and the card beside its desk are drawn from. Its spot is in it only while it stands

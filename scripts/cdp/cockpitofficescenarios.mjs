@@ -3,8 +3,10 @@
 //
 // The Cockpit office's scenarios (docs/superpowers/specs/2026-10-15-cockpit-office-design.md). cockpit-office draws
 // the canvas's boards (Main, NextAsk, Night, Tired, States, RamPanel) on a fixture roster, one real run held in
-// planning (its meeting room opens a real LeadCard) and fixture runs handed in through the DEV-only hooks
+// planning (its table opens a real LeadCard) and fixture runs handed in through the DEV-only hooks
 // (frontend/app/view/agents/cockpitofficedevhooks.ts), and drives the boss with real keys.
+// cockpit-office-floors (docs/superpowers/specs/2026-10-16-office-floors-design.md) drives the building of floors: the lift, the
+// ride, carrying a room by keys and by mouse, the chip, and what a room holds at three window sizes.
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,7 +15,26 @@ import { officeRunWorker, SCENARIOS as ROSTERS } from "../cockpit-fixtures/scena
 
 export const FIXTURE = new URL("../../public/cockpit-fixtures/active.json", import.meta.url);
 export const VIEW_KEY = "cockpit.view";
-const KEY_CODES = { ArrowUp: 38, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39, Escape: 27, Enter: 13, f: 70, h: 72, j: 74, k: 75, l: 76, m: 77, n: 78, o: 79, 1: 49 };
+const KEY_CODES = {
+    ArrowUp: 38,
+    ArrowDown: 40,
+    ArrowLeft: 37,
+    ArrowRight: 39,
+    Escape: 27,
+    Enter: 13,
+    PageUp: 33,
+    PageDown: 34,
+    f: 70,
+    g: 71,
+    h: 72,
+    j: 74,
+    k: 75,
+    l: 76,
+    m: 77,
+    n: 78,
+    o: 79,
+    1: 49,
+};
 // the boss's walking speed (officeboss.ts BOSS_SPEED), for how long to hold an arrow
 const BOSS_PX_PER_S = 160;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -60,6 +81,48 @@ export const BENCH_RUNS = devRuns("fx-bench-run", [
     ["Bench run three", "thesis", BENCH_STATES],
 ]);
 
+// the floors canvas's Main board (docs/superpowers/specs/2026-10-16-office-floors-design.md): nine projects over three
+// floors. Its roster is the office-floors fixture's (scripts/cockpit-fixtures/scenarios.mjs); which floor and slot a
+// project has is the viewer's arrangement, which the office keeps in localStorage under LAYOUT_KEY
+export const OFFICE_FLOORS_LAYOUT = {
+    v: 1,
+    rooms: {
+        Home: { floor: 0, slot: 0 },
+        "portfolio-journal": { floor: 0, slot: 1 },
+        "vnstock-js": { floor: 0, slot: 2 },
+        "vnstock-js-docs": { floor: 0, slot: 3 },
+        arcterm: { floor: 1, slot: 0 },
+        "cuscofi-app": { floor: 1, slot: 1 },
+        "mit-thesis": { floor: 1, slot: 2 },
+        "cuscofi-production": { floor: 1, slot: 3 },
+        chotkeo: { floor: 2, slot: 0 },
+    },
+};
+export const LAYOUT_KEY = "cockpit.office.layout";
+// a run as the office plan reads it: a task is its state in the canvas's words, "ask" a running one that asks
+const FLOORS_TASK_STATE = { done: "done", work: "running", wait: "pending", ask: "running", fail: "failed" };
+function floorsRun(n, title, project, { done = false, lead = "sit", tasks }) {
+    return {
+        id: `fx-floors-run-${n}`,
+        title,
+        project,
+        createdTs: n,
+        done,
+        leadAsking: lead === "hand",
+        tasks: tasks.map((t, i) => ({ id: `t${i + 1}`, label: `${title} task ${i + 1}`, state: FLOORS_TASK_STATE[t], asking: t === "ask" })),
+    };
+}
+export const OFFICE_FLOORS_RUNS = [
+    floorsRun(1, "Price feed retry", "vnstock-js", { tasks: ["done", "work", "wait"] }),
+    floorsRun(2, "Land queue", "arcterm", { tasks: ["done", "done", "work", "work", "wait", "wait", "wait"] }),
+    floorsRun(3, "Canvas gallery", "arcterm", { tasks: ["done", "ask", "work"] }),
+    floorsRun(4, "Tray popover", "arcterm", { done: true, tasks: ["done", "done"] }),
+    floorsRun(5, "Menu sync", "cuscofi-app", { lead: "hand", tasks: ["done", "work", "work", "fail"] }),
+];
+// the Capacity board's fourth run, at work: with it arcterm's 1,600 x 1,000 room has three tables for the three at work
+// and the done one in its chip
+export const OFFICE_FLOORS_FOURTH_RUN = floorsRun(6, "Office floors", "arcterm", { tasks: ["work", "wait", "wait", "wait", "wait"] });
+
 // a real key on the page: keyDown, keyUp, or both
 export async function key(h, k, type = "both") {
     const code = k.length === 1 ? (/\d/.test(k) ? `Digit${k}` : `Key${k.toUpperCase()}`) : k;
@@ -99,6 +162,77 @@ export async function settleBoss(h, ms = 4000) {
 }
 
 const desk = (id) => `[data-office-desk="${id}"]`;
+
+// the Office's box as the plan reads it: the scroller's content box, under its gutters, the HUD bar's space and its foot
+// (cockpitoffice.tsx), plus the window around it
+const readBox = (h) =>
+    h.ev(`(() => {
+        const el = document.querySelector("[data-cockpit-office]");
+        const s = getComputedStyle(el);
+        const px = (v) => parseFloat(v) || 0;
+        return {
+            w: el.clientWidth - px(s.paddingLeft) - px(s.paddingRight),
+            h: Math.floor(el.clientHeight - px(s.paddingTop) - px(s.paddingBottom)),
+            vw: window.innerWidth,
+            vh: window.innerHeight,
+        };
+    })()`);
+
+// sets the window so the Office's box is w x h, within 2 px: the chrome around the box is what the window has over it,
+// and a scrollbar a taller floor brings takes some of the width, so it is read again until the box is the one asked for
+export async function sizeOfficeBox(h, w, hgt) {
+    let box = await readBox(h);
+    for (let i = 0; i < 5; i++) {
+        await h.cdp("Emulation.setDeviceMetricsOverride", {
+            width: Math.round(w + box.vw - box.w),
+            height: Math.round(hgt + box.vh - box.h),
+            deviceScaleFactor: 1,
+            mobile: false,
+        });
+        await sleep(500);
+        box = await readBox(h);
+        if (Math.abs(box.w - w) <= 2 && Math.abs(box.h - hgt) <= 2) break;
+    }
+    return box;
+}
+
+// the page's pixel for a point of the plan (the Office root's top left is its origin), the root scrolled into view first
+export const pagePoint = (h, x, y) =>
+    h.ev(`(() => {
+        const r = document.querySelector("[data-office-root]").getBoundingClientRect();
+        return { x: Math.round(r.left + ${x}), y: Math.round(r.top + ${y}) };
+    })()`);
+
+// a real mouse event at a pixel of the page
+export const mousePage = (h, type, x, y) =>
+    h.cdp("Input.dispatchMouseEvent", {
+        type,
+        x: Math.round(x),
+        y: Math.round(y),
+        button: type === "mouseMoved" ? "none" : "left",
+        buttons: type === "mouseReleased" ? 0 : 1,
+        clickCount: type === "mouseMoved" ? 0 : 1,
+    });
+
+// a real mouse event at a point of the plan
+export async function mouse(h, type, x, y) {
+    const p = await pagePoint(h, x, y);
+    await mousePage(h, type, p.x, p.y);
+    return p;
+}
+
+// a shot of one box of the plan, recorded as h.shot records a shot
+export async function clipShot(h, name, box, pad = 6) {
+    const a = await pagePoint(h, box.x - pad, box.y - pad);
+    const { data } = await h.cdp("Page.captureScreenshot", {
+        format: "png",
+        clip: { x: Math.max(0, a.x), y: Math.max(0, a.y), width: box.w + 2 * pad, height: box.h + 2 * pad, scale: 1 },
+    });
+    const path = `cdp-shots/${name}.png`;
+    mkdirSync("cdp-shots", { recursive: true });
+    writeFileSync(path, Buffer.from(data, "base64"));
+    h.shots.push({ name, png: `${name}.png`, path });
+}
 
 // the notice board scenario's cursor key (officeplanmodel.ts BOARD_KEY), its initiative, and the localStorage key of the
 // office's animation switch (officestore.ts)
@@ -187,6 +321,16 @@ const OFFICE_RUN_TASKS = [
     state: "",
 }));
 
+// reloads the page and opens the Office again on the floors fixture's runs, on a floor; null when it is there, else what
+// is missing. The dev state (the runs, the floor) is in memory, so a reload loses it
+async function reloadOffice(h, floor) {
+    await h.reload();
+    await h.goto("cockpit");
+    const missing = await waitForOffice(h);
+    if (!missing) await dev(h, { runs: OFFICE_FLOORS_RUNS, afterHours: false, energy: 63, ...(floor != null ? { floor } : {}) });
+    return missing;
+}
+
 // fx: { arrangeFixtureRun, teardownFixtureRun } from scenarios.mjs
 export function makeCockpitOfficeScenarios(fx) {
     // opts.roster names the roster (default "office"), opts.tasks a plan for the run
@@ -216,6 +360,9 @@ export function makeCockpitOfficeScenarios(fx) {
         await h.ev(`localStorage.setItem(${JSON.stringify(VIEW_KEY)}, JSON.stringify("office"))`);
         // the card starts small, whatever an earlier run left
         await h.ev(`localStorage.removeItem("cockpit.office.bigcard")`);
+        // and the rooms start arranged automatically, not as an earlier run or the viewer left them
+        ctx.prevLayout = await h.ev(`localStorage.getItem(${JSON.stringify(LAYOUT_KEY)})`);
+        await h.ev(`localStorage.removeItem(${JSON.stringify(LAYOUT_KEY)})`);
         try {
             await h.ev("location.reload()");
         } catch {
@@ -276,6 +423,25 @@ export function makeCockpitOfficeScenarios(fx) {
                 JSON.stringify({ ...building, phase: p?.phase })
             );
 
+            // 1f. the Office is one floor: four rooms by slot, Home first and then the projects by name, each project's runs at
+            // tables inside its own room (the real run's project, arcterm's Canvas gallery, mozox's Billing export)
+            p = await probe(h);
+            const home = p?.rooms?.find((r) => r.key === "room:Home");
+            const arcRoom = p?.rooms?.find((r) => r.key === "room:arcterm");
+            const mozoxRoom = p?.rooms?.find((r) => r.key === "room:mozox");
+            rec(
+                "1f. the office is one floor of four rooms by slot, Home the first of them; each project's run is a table in its own room",
+                p?.floor === 0 &&
+                    p.rooms.length === 4 &&
+                    p.rooms[0].key === "room:Home" &&
+                    home?.kind === "agents" &&
+                    home.desks === 1 &&
+                    arcRoom?.tables === 1 &&
+                    mozoxRoom?.tables === 1 &&
+                    p.rooms.reduce((n, r) => n + r.tables, 0) === 3,
+                JSON.stringify({ floor: p?.floor, rooms: p?.rooms?.map((r) => ({ key: r.key, slot: r.slot, desks: r.desks, tables: r.tables })) })
+            );
+
             // 1c. a near-side worker who asks raises its hand facing you over the table: over the over canvas (z 3),
             // its ! bubble beside its head
             await dev(h, { runs: NEAR_ASK_RUNS });
@@ -316,28 +482,38 @@ export function makeCockpitOfficeScenarios(fx) {
                 JSON.stringify(fill)
             );
 
-            // 1e. agents coming in grow the office: the canvas the commit resizes is drawn again before paint, never
-            // shown blank for a frame (a MutationObserver's microtask runs after the commit's layout effects, before a
-            // passive one)
-            const grow = await h.ev(`new Promise((done) => {
+            // 1e. the office's size changing (a floor fills the Office's box, so a window resized is what resizes it): the
+            // canvas the commit resizes is drawn again before paint, never shown blank for a frame (a MutationObserver's
+            // microtask runs after the commit's layout effects, before a passive one)
+            const win1e = await h.ev("({ w: window.innerWidth, h: window.innerHeight })");
+            await h.ev(`(() => {
+                window.__grow = null;
                 const c = document.querySelector('[data-office-canvas="under"]');
-                const was = c.height;
+                const was = c.width;
                 const mo = new MutationObserver(() => {
                     mo.disconnect();
                     const px = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
                     let opaque = 0;
                     for (let i = 3; i < px.length; i += 4) if (px[i] > 0) opaque++;
-                    done({ was, now: c.height, opaque });
+                    window.__grow = { was, now: c.width, opaque };
                 });
                 mo.observe(c, { attributes: true, attributeFilter: ["width", "height"] });
-                setTimeout(() => { mo.disconnect(); done({ was, now: c.height, opaque: null }); }, 3000);
-                window.__cockpitOffice({ crowd: 40 });
-            })`);
-            await dev(h, { crowd: 0 });
+                setTimeout(() => {
+                    mo.disconnect();
+                    window.__grow ??= { was, now: c.width, opaque: null };
+                }, 4000);
+            })()`);
+            await h.cdp("Emulation.setDeviceMetricsOverride", { width: win1e.w - 200, height: win1e.h, deviceScaleFactor: 1, mobile: false });
+            let grow = null;
+            for (let t = 0; t < 4000 && grow == null; t += 100) {
+                grow = await h.ev("window.__grow");
+                if (grow == null) await sleep(100);
+            }
+            await h.cdp("Emulation.clearDeviceMetricsOverride", {});
             await sleep(400);
             rec(
-                "1e. agents coming in grow the office without a blank frame: the resized canvas is drawn before paint",
-                grow.now > grow.was && grow.opaque > 0,
+                "1e. the office resized with the window draws its new canvas before paint, never blank for a frame",
+                grow != null && grow.now !== grow.was && grow.opaque > 0,
                 JSON.stringify(grow)
             );
 
@@ -348,12 +524,12 @@ export function makeCockpitOfficeScenarios(fx) {
             p = await probe(h);
             rec("2. 1 picks quill's first answer from the card beside the desk", JSON.stringify(p?.answerSel?.["0"]) === "[0]", JSON.stringify(p?.answerSel));
 
-            // 3. the real run's meeting room opens its LeadCard
+            // 3. the real run's table, in its project's room, opens its LeadCard
             await h.ev(`[...document.querySelectorAll("[data-office-room]")].find((b) => !b.dataset.officeRoom.includes("fx-office-run"))?.click()`);
             p = await settleBoss(h);
             const runText = await h.ev(`(document.querySelector('[data-office-dialog]')?.textContent ?? "").length`);
             rec(
-                "3. a click on a meeting room opens its run's dialog box",
+                "3. a click on a run's table opens its run's dialog box",
                 (p?.dialog === "lead" || p?.dialog === "leadless") && runText > 0,
                 JSON.stringify({ dialog: p?.dialog, cursor: p?.cursor, runText })
             );
@@ -361,10 +537,9 @@ export function makeCockpitOfficeScenarios(fx) {
 
             const drawsBeforeWalk = (await probe(h))?.sceneryDraws;
 
-            // 4. a wall stops the boss, a door lets it through. From loom's desk (below the door) the boss walks right
-            // until the room's plant pot by the door stops it (officeboss.ts furniture), then up past the door's top
-            // and right again, long enough to reach the room's wall at any office width, and must stop there; then
-            // down to the door's middle and right again, into the hall
+            // 4. a wall stops the boss, a door lets it through. From loom's desk (below the door) the boss walks toward the
+            // room's hall side, the door's, long enough to reach the wall at any office width, and must stop there; then up
+            // to the door's middle and on, into the hall
             await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-loom"))})?.click()`);
             const start = await settleBoss(h);
             // the desk click opened its dialog box, where the arrows move the ▶: shut it so they walk
@@ -372,25 +547,23 @@ export function makeCockpitOfficeScenarios(fx) {
             await key(h, "Escape");
             await sleep(150);
             const arc = start?.boxes?.["room:arcterm"];
-            const edge = arc ? arc.x + arc.w : NaN;
-            const walkMs = (from, to) => Math.max(0, Math.round((Math.abs(to - from) / BOSS_PX_PER_S) * 1000));
+            // a room in the left column has its door on its right wall, one in the right column on its left
+            const doorLeft = !!arc?.door && arc.door.x < arc.x;
+            const toHall = doorLeft ? "ArrowLeft" : "ArrowRight";
+            const edge = arc ? (doorLeft ? arc.x : arc.x + arc.w) : NaN;
             await focusCockpit(h);
-            await hold(h, "ArrowRight", arc && start?.boss ? walkMs(start.boss.x, edge) + 1500 : 4000);
-            const atPot = await settleBoss(h, 1000);
-            await hold(h, "ArrowUp", atPot?.boss && arc?.door ? walkMs(atPot.boss.y, arc.door.y - 16) : 400);
-            await hold(h, "ArrowRight", 1500);
+            await hold(h, toHall, arc && start?.boss ? Math.round((Math.abs(edge - start.boss.x) / BOSS_PX_PER_S) * 1000) + 1500 : 4000);
             const blocked = await settleBoss(h, 1000);
             const doorMid = arc?.door ? arc.door.y + arc.door.h / 2 : NaN;
-            await hold(h, "ArrowDown", blocked?.boss && arc?.door ? walkMs(blocked.boss.y, doorMid) : 400);
-            await hold(h, "ArrowRight", 2500);
+            await hold(h, "ArrowUp", blocked?.boss && arc?.door ? Math.max(0, Math.round(((blocked.boss.y - doorMid) / BOSS_PX_PER_S) * 1000)) : 400);
+            await hold(h, toHall, 700);
             const through = await settleBoss(h, 1000);
             rec(
                 "4. the arrows walk the boss: it stops at the room's wall, and its door lets it into the hall",
                 blocked?.boss?.room === "room:arcterm" &&
-                    blocked.boss.x >= edge - 3 &&
-                    blocked.boss.x <= edge &&
+                    (doorLeft ? blocked.boss.x >= edge && blocked.boss.x <= edge + 3 : blocked.boss.x >= edge - 3 && blocked.boss.x <= edge) &&
                     through?.boss?.room === "hall",
-                JSON.stringify({ edge, doorMid, atPot: atPot?.boss, blocked: blocked?.boss, through: through?.boss })
+                JSON.stringify({ doorLeft, edge, doorMid, blocked: blocked?.boss, through: through?.boss })
             );
 
             // 4b. desks are solid: from loom's spot the boss walks up and stops in front of the desk, still at it with ↵
@@ -600,8 +773,8 @@ export function makeCockpitOfficeScenarios(fx) {
             // 8. lights
             p = await probe(h);
             rec(
-                "8. Home's booth, where no one works, has its lights off; arcterm's room is lit",
-                p?.dark?.includes("room:home") && !p.dark.includes("room:arcterm"),
+                "8. Home's room, where no one works, has its lights off; arcterm's room is lit",
+                p?.dark?.includes("room:Home") && !p.dark.includes("room:arcterm"),
                 JSON.stringify(p?.dark)
             );
 
@@ -718,8 +891,9 @@ export function makeCockpitOfficeScenarios(fx) {
                     const want = (c * 22 + 4 + (Math.round(r.width) === 60 ? -3 : 0)) * 3;
                     return Math.abs(r.left - area.left - want);
                 });
-                let scroller = sheet.parentElement;
-                while (scroller && scroller.scrollWidth <= scroller.clientWidth) scroller = scroller.parentElement;
+                // the Office's scroller: its canvases are drawn a whole number of art px wide, so the root they sit in
+                // can overflow by a pixel or two inside the scroller's gutter, which is no scrollbar
+                const scroller = sheet.closest("[data-cockpit-office]");
                 return {
                     right: sheet.getBoundingClientRect().right,
                     vw: window.innerWidth,
@@ -727,12 +901,13 @@ export function makeCockpitOfficeScenarios(fx) {
                     boss,
                     colOff: cols.map((l, i) => Math.abs(l - i * 66)),
                     spriteOff: sprites,
-                    scrolls: scroller && scroller !== document.documentElement ? scroller.scrollWidth - scroller.clientWidth : 0,
+                    scrolls: scroller ? scroller.scrollWidth - scroller.clientWidth : null,
                 };
             })()`);
             rec(
                 "13d. the Cast sheet in the board's cells",
                 cast?.right <= cast?.vw &&
+                    cast.scrolls != null &&
                     cast.scrolls <= 0 &&
                     cast.cols === 18 &&
                     cast.boss === 8 &&
@@ -782,11 +957,23 @@ export function makeCockpitOfficeScenarios(fx) {
             );
 
             // 14b. the crowded lounge: 14 more idle agents past the Finished window, several of them 10 min and more,
-            // with the animation off so everyone is there at once. The lounge holds its spots, nothing overlaps, and
-            // the rest read "+N in the lounge"
+            // with the animation off so everyone is there at once. A floor's lounge holds the idle people of that floor's
+            // rooms who have a desk (not the ones in a room's chip), so the Office is made big enough for the crowd's room
+            // to seat ten of them, and the floor that holds that room is shown. The lounge holds its spots, nothing
+            // overlaps, and the rest read "+N in the lounge"
             await h.ev("window.__cockpitOfficeAnimation(false)");
+            await sizeOfficeBox(h, 1600, 1000);
             await dev(h, { crowd: 14 });
             await sleep(700);
+            let crowdFloor = null;
+            for (const f of [0, 1, 2]) {
+                await dev(h, { floor: f });
+                await sleep(500);
+                if ((await probe(h))?.rooms?.some((r) => r.key === "room:crowd")) {
+                    crowdFloor = f;
+                    break;
+                }
+            }
             const lounge = await h.ev(`(() => {
                 const L = window.__cockpitOfficeProbe().lounge;
                 const R = document.querySelector("[data-office-root]").getBoundingClientRect();
@@ -810,11 +997,14 @@ export function makeCockpitOfficeScenarios(fx) {
             })()`);
             p = await probe(h);
             await h.shot("cdp-shots/cockpit-office-lounge.png");
-            await dev(h, { crowd: 0 });
+            await dev(h, { crowd: 0, floor: 0 });
             await h.ev("window.__cockpitOfficeAnimation(true)");
+            await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false });
+            await sleep(400);
             rec(
                 "14b. a crowded lounge: no two labels touch, everyone stays inside it, the rest read +N in the lounge, and People counts the people drawn",
-                lounge?.labels > 0 &&
+                crowdFloor != null &&
+                    lounge?.labels > 0 &&
                     lounge.labels === lounge.people &&
                     lounge.overlapping === 0 &&
                     lounge.outside === 0 &&
@@ -822,7 +1012,7 @@ export function makeCockpitOfficeScenarios(fx) {
                     lounge.more === `+${p.loungeMore} in the lounge` &&
                     lounge.moreInside &&
                     p.people === lounge.images,
-                JSON.stringify({ lounge, loungeMore: p?.loungeMore, people: p?.people })
+                JSON.stringify({ crowdFloor, lounge, loungeMore: p?.loungeMore, people: p?.people })
             );
 
             // 15. o and the Cards | Office toggle switch the view, and back
@@ -934,6 +1124,11 @@ export function makeCockpitOfficeScenarios(fx) {
                         ctx.prevView == null
                             ? `localStorage.removeItem(${JSON.stringify(VIEW_KEY)})`
                             : `localStorage.setItem(${JSON.stringify(VIEW_KEY)}, ${JSON.stringify(ctx.prevView)})`
+                    );
+                    await h.ev(
+                        ctx.prevLayout == null
+                            ? `localStorage.removeItem(${JSON.stringify(LAYOUT_KEY)})`
+                            : `localStorage.setItem(${JSON.stringify(LAYOUT_KEY)}, ${JSON.stringify(ctx.prevLayout)})`
                     );
                     // the temp dir is the run's cwd: teardownFixtureRun removes it once the run is cancelled
                     if (ctx.prevFixture != null) writeFileSync(FIXTURE, ctx.prevFixture);
@@ -1110,7 +1305,7 @@ export function makeCockpitOfficeScenarios(fx) {
             );
             await press("Escape");
 
-            // 6. the real run's meeting room: the run's plate, its bar and counts, a column of its six tasks (four shown,
+            // 6. the real run's table: the run's plate, its bar and counts, a column of its six tasks (four shown,
             // the rest counted); Open lead first, Adjust (the run has a plan), Full card last
             await h.ev(`[...document.querySelectorAll("[data-office-room]")].find((b) => !b.dataset.officeRoom.includes("fx-office-run"))?.click()`);
             await settleBoss(h);
@@ -1124,7 +1319,7 @@ export function makeCockpitOfficeScenarios(fx) {
             })()`);
             p = await probe(h);
             rec(
-                "6. a meeting room opens its run's box: N/6 in its counts, four task rows and N more in the full card; Open lead first, Adjust, Full card last",
+                "6. a run's table opens its run's box: N/6 in its counts, four task rows and N more in the full card; Open lead first, Adjust, Full card last",
                 p?.dialog === "lead" &&
                     p.items[0] === "Open lead" &&
                     p.items.includes("Adjust") &&
@@ -1197,10 +1392,10 @@ export function makeCockpitOfficeScenarios(fx) {
             const moved = await press("ArrowDown");
             const shut = await press("Escape");
             rec(
-                "8. m opens the office menu, the footer's m chip lit: Next Needs you, Notice board, Next desk, Previous desk, Events, Cards view, All keys; ↓ moves the ▶; Esc shuts it",
+                "8. m opens the office menu, the footer's m chip lit: Next Needs you, Notice board, Next desk, Previous desk, Lift, Move this room, Arrange automatically, Events, Cards view, All keys; ↓ moves the ▶; Esc shuts it",
                 menu?.menu === true &&
                     lit === "true" &&
-                    JSON.stringify(menu.menuItems) === JSON.stringify(["Next Needs you", "Notice board", "Next desk", "Previous desk", "Events", "Cards view", "All keys"]) &&
+                    JSON.stringify(menu.menuItems) === JSON.stringify(["Next Needs you", "Notice board", "Next desk", "Previous desk", "Lift", "Move this room", "Arrange automatically", "Events", "Cards view", "All keys"]) &&
                     menu.menuSel === 0 &&
                     moved?.menuSel === 1 &&
                     shut?.menu === false,
@@ -1209,7 +1404,7 @@ export function makeCockpitOfficeScenarios(fx) {
 
             // 9. the menu's Events shows the rail; Esc while walking hides it again
             await press("m");
-            await press("ArrowDown", 4);
+            await press("ArrowDown", menu?.menuItems?.indexOf("Events") ?? 7);
             await press("Enter");
             const shown = await h.ev(`!!document.querySelector('[aria-label="Events"]')`);
             await press("Escape");
@@ -1653,7 +1848,8 @@ export function makeCockpitOfficeScenarios(fx) {
             return steps;
         },
     };
-    // the spec's Benchmark: Cards then Office on the office-bench roster plus three fixture runs (~75 people)
+    // the spec's Benchmark: Cards then Office on the office-bench roster plus three fixture runs (48 agents over six projects,
+    // of which one floor of four rooms is drawn, about 30 people)
     const cockpitOfficeBench = {
         name: "cockpit-office-bench",
         surface: "cockpit",
@@ -1663,6 +1859,9 @@ export function makeCockpitOfficeScenarios(fx) {
             writeFileSync(FIXTURE, JSON.stringify(ROSTERS["office-bench"](Date.now()), null, 2));
             ctx.prevView = await h.ev(`localStorage.getItem(${JSON.stringify(VIEW_KEY)})`);
             await h.ev(`localStorage.setItem(${JSON.stringify(VIEW_KEY)}, JSON.stringify("cards"))`);
+            // the rooms arranged automatically, as the office opens for a viewer who never moved one
+            ctx.prevLayout = await h.ev(`localStorage.getItem(${JSON.stringify(LAYOUT_KEY)})`);
+            await h.ev(`localStorage.removeItem(${JSON.stringify(LAYOUT_KEY)})`);
             try {
                 await h.ev("location.reload()");
             } catch {
@@ -1758,14 +1957,16 @@ export function makeCockpitOfficeScenarios(fx) {
             await h.cdp("Emulation.setEmulatedMedia", { features: [] });
             await dev(h, { patrol: false, walkers: 0 });
 
-            // the lounge holds 18 and reads +N past them, so the people drawn are not the roster: count the plan's desks
-            // and seats plus the boss, once the walkers who go to the lounge three at a time have arrived
+            // the lounge holds 5 and reads +N past them, so the people drawn are not the roster: count the floor's desks
+            // and seats plus the boss, once the walkers who go to the lounge three at a time have arrived. The office
+            // draws one floor, four rooms, so the bench's six projects make two floors
             let p = await probe(h);
             for (let t = 0; t < 20_000 && p?.walking !== 0; t += 250) {
                 await sleep(250);
                 p = await probe(h);
             }
             r.roster = (p?.desks ?? 0) + (p?.seats ?? 0) + 1;
+            r.floors = p?.floors?.length;
             r.people = p?.people;
             r.cache = p?.cache?.entries;
 
@@ -1788,7 +1989,11 @@ export function makeCockpitOfficeScenarios(fx) {
             const trip = await metrics(h);
             r.heapTripMB = mb(trip.heap - closed.heap);
 
-            rec("0. the bench holds about 75 people (desks, seats and the boss)", r.roster >= 70, `${r.roster} (${p?.desks} desks, ${p?.seats} seats, ${p?.people} drawn)`);
+            rec(
+                "0. the bench fills a floor of four rooms with about 30 people (desks, seats and the boss), the other two projects on the floor above",
+                r.roster >= 28 && r.floors === 2,
+                `${r.roster} (${p?.desks} desks, ${p?.seats} seats, ${p?.people} drawn), ${r.floors} floors`
+            );
             rec("1. JS heap, Office minus Cards <= 5 MB", r.heapOpenMB <= 5, `${r.heapOpenMB} MB`);
             rec("2. DOM nodes added <= 2,000", r.nodesAdded <= 2000, `${r.nodesAdded} (the office ${r.officeNodes})`);
             rec("3. main thread busy walking, over the Cards baseline <= 2 %", r.busyPct <= 2, `${r.busyPct} % (${r.busyRawPct} % raw, baseline ${r.baseBusyPct} %)`);
@@ -1812,6 +2017,11 @@ export function makeCockpitOfficeScenarios(fx) {
                     ? `localStorage.removeItem(${JSON.stringify(VIEW_KEY)})`
                     : `localStorage.setItem(${JSON.stringify(VIEW_KEY)}, ${JSON.stringify(ctx.prevView)})`
             );
+            await h.ev(
+                ctx.prevLayout == null
+                    ? `localStorage.removeItem(${JSON.stringify(LAYOUT_KEY)})`
+                    : `localStorage.setItem(${JSON.stringify(LAYOUT_KEY)}, ${JSON.stringify(ctx.prevLayout)})`
+            );
             if (ctx.prevFixture != null) writeFileSync(FIXTURE, ctx.prevFixture);
             else rmSync(FIXTURE, { force: true });
             await h.ev("location.reload()");
@@ -1819,5 +2029,682 @@ export function makeCockpitOfficeScenarios(fx) {
         },
     };
 
-    return { cockpitOffice, cockpitOfficeControls, cockpitOfficeNeedsYouBoard, cockpitOfficeBench };
+    // Floors (docs/superpowers/specs/2026-10-16-office-floors-design.md; canvas .superpowers/design/office-floors: Main,
+    // LiftPanel, Ride, Drag, Capacity, Room, NoticeBoard) on the office-floors fixture: nine projects over three floors
+    // arranged as the Main board has them, driven by real keys and, where a step says so, the real mouse. The Office
+    // box is sized by the window (sizeOfficeBox): 1,424 x 800 for steps 1-12, which makes a room 579 x 353
+    const cockpitOfficeFloors = {
+        name: "cockpit-office-floors",
+        surface: "cockpit",
+        async arrange(h) {
+            const ctx = { prevFixture: existsSync(FIXTURE) ? readFileSync(FIXTURE, "utf8") : null };
+            mkdirSync(new URL(".", FIXTURE), { recursive: true });
+            writeFileSync(FIXTURE, JSON.stringify(ROSTERS["office-floors"](Date.now()), null, 2));
+            ctx.prevView = await h.ev(`localStorage.getItem(${JSON.stringify(VIEW_KEY)})`);
+            ctx.prevLayout = await h.ev(`localStorage.getItem(${JSON.stringify(LAYOUT_KEY)})`);
+            ctx.prevAnimation = await h.ev(`localStorage.getItem(${JSON.stringify(ANIMATION_KEY)})`);
+            await h.ev(`localStorage.setItem(${JSON.stringify(VIEW_KEY)}, JSON.stringify("office"))`);
+            await h.ev(`localStorage.setItem(${JSON.stringify(LAYOUT_KEY)}, ${JSON.stringify(JSON.stringify(OFFICE_FLOORS_LAYOUT))})`);
+            await h.ev(`localStorage.removeItem(${JSON.stringify(ANIMATION_KEY)})`);
+            await h.ev(`localStorage.removeItem("cockpit.office.bigcard")`);
+            ctx.missing = await reloadOffice(h, 1);
+            if (!ctx.missing) ctx.box = await sizeOfficeBox(h, 1424, 800);
+            return ctx;
+        },
+        async teardown(h, ctx) {
+            const step = async (what, fn) => {
+                try {
+                    await fn();
+                } catch (e) {
+                    console.error(`cockpit-office-floors teardown: ${what} failed: ${e?.message ?? e}`);
+                }
+            };
+            await step("clear the window size", () => h.cdp("Emulation.clearDeviceMetricsOverride", {}));
+            await step("hand back the live Needs you rows", () => h.ev("window.__cockpitOfficeAttention?.(null)"));
+            await step("clear the dev state", () => h.ev("window.__cockpitOffice?.(null)"));
+            const put = (key, v) => (v == null ? `localStorage.removeItem(${JSON.stringify(key)})` : `localStorage.setItem(${JSON.stringify(key)}, ${JSON.stringify(v)})`);
+            await step("put back the view", () => h.ev(put(VIEW_KEY, ctx.prevView)));
+            await step("put back the arrangement", () => h.ev(put(LAYOUT_KEY, ctx.prevLayout)));
+            await step("put back the animation switch", () => h.ev(put(ANIMATION_KEY, ctx.prevAnimation)));
+            await step("put back the roster", () => {
+                if (ctx.prevFixture != null) writeFileSync(FIXTURE, ctx.prevFixture);
+                else rmSync(FIXTURE, { force: true });
+            });
+            await step("reload without the fixture", async () => {
+                await h.ev("location.reload()");
+                await sleep(1500);
+            });
+        },
+        async assert(h, ctx) {
+            const steps = [];
+            const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+            if (ctx.missing) {
+                rec("0. the office loads", false, ctx.missing);
+                return steps;
+            }
+            rec("0. the window gives the Office a 1,424 x 800 box", Math.abs(ctx.box.w - 1424) <= 2 && Math.abs(ctx.box.h - 800) <= 2, JSON.stringify(ctx.box));
+            // the boss's walk, a ride and the path hint are all over: the boss stands still on the floor shown
+            const settle = async (ms = 15000) => {
+                let q = await probe(h);
+                for (let t = 0; t < ms; t += 100) {
+                    if (q?.boss && !q.boss.moving && !q.riding && q.dots === 0) {
+                        await sleep(150);
+                        q = await probe(h);
+                        if (q?.boss && !q.boss.moving && !q.riding && q.dots === 0) return q;
+                    }
+                    await sleep(100);
+                    q = await probe(h);
+                }
+                return q;
+            };
+            const press = async (k, n = 1) => {
+                for (let i = 0; i < n; i++) {
+                    await focusCockpit(h);
+                    await key(h, k);
+                    await sleep(120);
+                }
+                return probe(h);
+            };
+            // polls an expression in the page for up to ms; true once it holds
+            const until = async (expr, ms = 6000) => {
+                for (let t = 0; t <= ms; t += 100) {
+                    if (await h.ev(expr).catch(() => false)) return true;
+                    await sleep(100);
+                }
+                return false;
+            };
+            const read = (sel) => h.ev(`document.querySelector(${JSON.stringify(sel)})?.textContent ?? ""`);
+            // each room of the floor shown by slot: a project's name, or "·" for an empty one
+            const names = (q) => (q?.rooms ?? []).map((r) => (r.kind === "agents" ? r.title : "·"));
+            const room = (q, name) => q?.rooms?.find((r) => r.key === `room:${name}`);
+            const clickFloor = (x, y) =>
+                h.ev(`(() => {
+                    const root = document.querySelector("[data-office-root]");
+                    const r = root.getBoundingClientRect();
+                    root.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: r.left + ${x}, clientY: r.top + ${y} }));
+                })()`);
+            // a desk's click walks the boss there and opens its box; Esc shuts the box and leaves the boss walking
+            const clickDesk = async (id) => {
+                await h.ev(`document.querySelector(${JSON.stringify(desk(id))})?.click()`);
+                await settle();
+                await press("Escape");
+            };
+            const deskOf = (name) => `fx-floors-${name}`;
+            // a floor on show at once, the boss stood where it was
+            const showFloor = async (f) => {
+                await dev(h, { floor: f });
+                await sleep(500);
+                return probe(h);
+            };
+            // the arrangement back as the Main board has it, the page loaded again on floor 1
+            const reseed = async () => {
+                await h.ev(`localStorage.setItem(${JSON.stringify(LAYOUT_KEY)}, ${JSON.stringify(JSON.stringify(OFFICE_FLOORS_LAYOUT))})`);
+                const missing = await reloadOffice(h, 1);
+                const q = missing ? null : await settle();
+                return missing ? { missing } : q;
+            };
+            const SLOT_NAMES = ["arcterm", "cuscofi-app", "mit-thesis", "cuscofi-production"];
+
+            // 1. Main, floor 1: four rooms by slot; arcterm's holds 4 desks and 2 tables, its chip says what is left and asks
+            let p = await settle();
+            const chipDrawn = await read(`[data-office-chip="room:arcterm"]`);
+            const arc1 = room(p, "arcterm");
+            await h.shot("cdp-shots/cockpit-office-floors-1-floor.png");
+            rec(
+                "1. floor 1 draws its four rooms by slot; arcterm's has 4 desks, 2 tables and the chip `! +3 agents · +1 run`; the lift says ▲ 1 on 2",
+                p?.floor === 1 &&
+                    JSON.stringify(p.floors) === JSON.stringify(["G", "1", "2"]) &&
+                    JSON.stringify(names(p)) === JSON.stringify(SLOT_NAMES) &&
+                    arc1?.desks === 4 &&
+                    arc1.tables === 2 &&
+                    arc1.chip?.text === "+3 agents · +1 run" &&
+                    arc1.chip.ask === true &&
+                    chipDrawn.replace(/\s+/g, " ").trim() === "! +3 agents · +1 run" &&
+                    JSON.stringify(p.liftAsks) === JSON.stringify(["▲ 1 on 2"]),
+                JSON.stringify({ floor: p?.floor, floors: p?.floors, names: names(p), arcterm: arc1 && { desks: arc1.desks, tables: arc1.tables, chip: arc1.chip?.text, ask: arc1.chip?.ask }, chipDrawn, liftAsks: p?.liftAsks })
+            );
+
+            // 1b. G draws the brick facade with the glass doors, the sign and the needle leftmost; a floor above it
+            // draws a plain wall with windows in that strip (hashed off the scenery canvas), and no entrance
+            const footHash = () =>
+                h.ev(`(() => {
+                    const c = document.querySelector('[data-office-canvas="under"]');
+                    const root = document.querySelector("[data-office-root]");
+                    const k = c.height / root.offsetHeight;
+                    const y0 = Math.floor((root.offsetHeight - 40) * k);
+                    const px = c.getContext("2d").getImageData(0, y0, c.width, c.height - y0).data;
+                    let hash = 0;
+                    for (let i = 0; i < px.length; i += 4) hash = (hash * 31 + px[i] + 7 * px[i + 1] + 13 * px[i + 2]) | 0;
+                    return hash;
+                })()`);
+            const foot1 = await footHash();
+            const ground = await showFloor(0);
+            const footG = await footHash();
+            await h.shot("cdp-shots/cockpit-office-floors-1b-ground.png");
+            rec(
+                "1b. Ground draws four rooms and a foot strip of its own (the brick facade, the glass doors, the sign); the lift says ▲ 4 on 1 and ▲ 1 on 2",
+                ground?.floor === 0 &&
+                    JSON.stringify(names(ground)) === JSON.stringify(["Home", "portfolio-journal", "vnstock-js", "vnstock-js-docs"]) &&
+                    JSON.stringify(ground.liftAsks) === JSON.stringify(["▲ 1 on 2", "▲ 4 on 1"]) &&
+                    foot1 !== footG,
+                JSON.stringify({ floor: ground?.floor, names: names(ground), liftAsks: ground?.liftAsks, foot: [foot1, footG] })
+            );
+            await showFloor(1);
+            await settle();
+
+            // 2. the boss at the lift's doors: ↵ opens the lift's panel, a button per floor, ▶ on Floor 2
+            const lift = p?.lift;
+            await clickFloor(lift.spot.x, lift.spot.y);
+            p = await settle();
+            const atLift = !!p?.boss && Math.abs(p.boss.x - lift.spot.x) <= 3 && Math.abs(p.boss.y - lift.spot.y) <= 3;
+            p = await press("Enter");
+            const row = (f) => h.ev(`(() => {
+                const b = document.querySelector('[data-office-lift-panel] [data-office-floor="${f}"]');
+                return b ? { text: b.textContent.replace(/\\s+/g, " ").trim(), arrow: b.getAttribute("aria-current") === "true", disabled: b.getAttribute("aria-disabled") === "true", asks: b.querySelector("[data-office-floor-asks]")?.textContent.trim() ?? null } : null;
+            })()`);
+            const rows = { 2: await row(2), 1: await row(1), 0: await row(0) };
+            await h.shot("cdp-shots/cockpit-office-floors-2-lift.png");
+            rec(
+                "2. at the lift ↵ opens its panel: Floor 2, Floor 1 (the one shown), Ground, `! 1` on Floor 2, the ▶ on Floor 2",
+                atLift &&
+                    p?.dialog === "lift" &&
+                    JSON.stringify(p.items) === JSON.stringify(["Floor 2", "Floor 1", "Ground"]) &&
+                    p.sel === 0 &&
+                    rows[2]?.asks === "! 1" &&
+                    rows[2].arrow &&
+                    rows[1]?.disabled &&
+                    rows[0]?.asks == null,
+                JSON.stringify({ atLift, dialog: p?.dialog, items: p?.items, sel: p?.sel, rows })
+            );
+
+            // 3. ↵ rides to Floor 2: the doors shut over the office with the dial on Floor 2 (held for the shot), then
+            // open on a floor with chotkeo's room and three empty ones
+            await dev(h, { rideHold: true });
+            await press("Enter");
+            const shut = await until(`!!document.querySelector("[data-office-ride-shut]") && document.querySelector("[data-office-ride-label]")?.textContent.trim() === "Floor 2"`, 8000);
+            const riding = await probe(h);
+            await sleep(300);
+            await h.shot("cdp-shots/cockpit-office-floors-3-ride.png");
+            await dev(h, { rideHold: false });
+            await until(`!document.querySelector("[data-office-ride]")`, 6000);
+            p = await settle();
+            rec(
+                "3. ↵ on Floor 2 rides: the doors shut with the dial on Floor 2, then open on chotkeo's room and three empty ones",
+                shut &&
+                    riding?.riding === true &&
+                    p?.floor === 2 &&
+                    p.riding === false &&
+                    JSON.stringify(names(p)) === JSON.stringify(["chotkeo", "·", "·", "·"]) &&
+                    JSON.stringify(p.rooms.map((r) => r.kind)) === JSON.stringify(["agents", "empty", "empty", "empty"]),
+                JSON.stringify({ shut, riding: riding?.riding, floor: p?.floor, names: names(p), kinds: p?.rooms?.map((r) => r.kind) })
+            );
+
+            // 4. PageDown and PageUp ride a floor at a time; n to an ask on another floor rides there and walks to it
+            const f4 = [];
+            for (const k of ["PageDown", "PageUp", "PageDown"]) {
+                await press(k);
+                f4.push((await settle())?.floor);
+            }
+            const trail = [];
+            p = await probe(h);
+            for (let i = 0; i < 8 && !(p?.floor === 2 && p.cursor === deskOf("chotkeo-deal-scraper")); i++) {
+                await press("n");
+                p = await settle(20000);
+                trail.push(`${p?.floor}:${p?.cursor}`);
+            }
+            rec(
+                "4. PageDown, PageUp, PageDown ride 1, 2, 1; n until the ask on floor 2 rides there and walks to chotkeo's asking agent",
+                JSON.stringify(f4) === JSON.stringify([1, 2, 1]) && p?.floor === 2 && p.cursor === deskOf("chotkeo-deal-scraper"),
+                JSON.stringify({ f4, floor: p?.floor, cursor: p?.cursor, trail })
+            );
+
+            // 5. g in arcterm's room picks it up, ↓ aims it at the slot below (mit-thesis's: a swap), ↵ puts it down there
+            await press("PageDown");
+            p = await settle();
+            await clickDesk(deskOf("arcterm-canvas-gallery"));
+            p = await press("g");
+            await press("ArrowDown");
+            p = await probe(h);
+            const card5 = {
+                head: await read("[data-office-carry-head]"),
+                line: await read("[data-office-carry-line]"),
+                origin: await h.ev(`document.querySelector("[data-office-carry-origin]")?.dataset.officeCarryOrigin ?? null`),
+                target: await h.ev(`document.querySelector("[data-office-carry-target]")?.dataset.officeCarryTarget ?? null`),
+            };
+            await h.shot("cdp-shots/cockpit-office-floors-5-carry.png");
+            const aimed = p?.carry;
+            const layer5 = p?.layer;
+            p = await press("Enter");
+            p = await settle();
+            rec(
+                "5. g in arcterm's room, ↓: the card says Swap with mit-thesis, the target is slot 2; ↵ swaps: mit-thesis in slot 0, arcterm in slot 2",
+                p?.floor === 1 &&
+                    layer5 === "carry" &&
+                    aimed?.project === "arcterm" &&
+                    aimed.by === "key" &&
+                    JSON.stringify(aimed.target) === JSON.stringify({ floor: 1, slot: 2 }) &&
+                    card5.head === "Moving arcterm" &&
+                    card5.line === "Swap with mit-thesis" &&
+                    card5.origin === "room:arcterm" &&
+                    card5.target === "room:mit-thesis" &&
+                    p.carry == null &&
+                    JSON.stringify(names(p)) === JSON.stringify(["mit-thesis", "cuscofi-app", "arcterm", "cuscofi-production"]),
+                JSON.stringify({ layer: layer5, aimed, card: card5, names: names(p), carry: p?.carry })
+            );
+
+            // 6. the arrangement is kept per viewer: after a reload the swap is still there
+            const missing6 = await reloadOffice(h, 1);
+            p = missing6 ? null : await settle();
+            const box6 = await readBox(h);
+            rec(
+                "6. after a reload the swap is still there (saved in localStorage under cockpit.office.layout)",
+                !missing6 &&
+                    p?.floor === 1 &&
+                    JSON.stringify(names(p)) === JSON.stringify(["mit-thesis", "cuscofi-app", "arcterm", "cuscofi-production"]) &&
+                    Math.abs(box6.w - 1424) <= 2 &&
+                    Math.abs(box6.h - 800) <= 2,
+                JSON.stringify({ missing6, floor: p?.floor, names: names(p), box: box6 })
+            );
+
+            // 7. By pointer: a press on mit-thesis's title, moved past 4 px to the middle of slot 2 (arcterm's), picks the
+            // room up; the card follows the pointer and says what a drop does; let go, they swap back
+            const centre = (b) => ({ x: b.x + b.w / 2, y: b.y + b.h / 2 });
+            const drag = async (title, to, hold) => {
+                const a = centre(title);
+                await mouse(h, "mouseMoved", a.x, a.y);
+                await mouse(h, "mousePressed", a.x, a.y);
+                for (let i = 1; i <= 8; i++) {
+                    await mouse(h, "mouseMoved", a.x + ((to.x - a.x) * i) / 8, a.y + ((to.y - a.y) * i) / 8);
+                    await sleep(40);
+                }
+                await sleep(250);
+                await hold?.();
+                await mouse(h, "mouseReleased", to.x, to.y);
+            };
+            p = await probe(h);
+            const mit = room(p, "mit-thesis");
+            const slot2 = p.rooms.find((r) => r.slot === 2);
+            let mid7 = null;
+            await drag(mit.titleBox, centre(slot2.box), async () => {
+                mid7 = {
+                    ...(await probe(h)),
+                    head: await read("[data-office-carry-head]"),
+                    line: await read("[data-office-carry-line]"),
+                    by: await h.ev(`document.querySelector("[data-office-carry-card]")?.dataset.officeCarryCard ?? null`),
+                    panel: await h.ev(`!!document.querySelector("[data-office-carry-panel] [data-office-floor]")`),
+                };
+                await h.shot("cdp-shots/cockpit-office-floors-7-drag.png");
+            });
+            await sleep(300);
+            p = await settle();
+            rec(
+                "7. by pointer: a press on mit-thesis's title moved to slot 2 picks it up (the card says Drop to swap with arcterm, the lift's map open); let go, arcterm is back in slot 0 and mit-thesis in slot 2",
+                mid7?.layer === "carry" &&
+                    mid7.carry?.project === "mit-thesis" &&
+                    mid7.carry.by === "pointer" &&
+                    JSON.stringify(mid7.carry.target) === JSON.stringify({ floor: 1, slot: 2 }) &&
+                    mid7.by === "pointer" &&
+                    mid7.line === "Drop to swap with arcterm" &&
+                    mid7.panel &&
+                    p?.carry == null &&
+                    JSON.stringify(names(p)) === JSON.stringify(SLOT_NAMES),
+                JSON.stringify({ layer: mid7?.layer, carry: mid7?.carry, by: mid7?.by, head: mid7?.head, line: mid7?.line, panel: mid7?.panel, after: names(p), carry2: p?.carry })
+            );
+
+            // the lift's map while a room is carried: the row of a floor, and whether it says it is full
+            const mapRow = (f) =>
+                h.ev(`(() => {
+                    const b = document.querySelector('[data-office-carry-panel] [data-office-floor="${f}"]');
+                    return b ? { text: b.textContent.replace(/\\s+/g, " ").trim(), arrow: b.getAttribute("aria-current") === "true", full: b.hasAttribute("data-office-floor-full"), dim: b.getAttribute("aria-disabled") === "true" } : null;
+                })()`);
+
+            // 7b. carrying across floors by keys: PageUp rides with the room and the lift's map opens; PageUp past the top
+            // aims it at + New floor; Esc rides back and puts it where it was
+            await clickDesk(deskOf("arcterm-canvas-gallery"));
+            await press("g");
+            await press("PageUp");
+            await until(`window.__cockpitOfficeProbe().floor === 2 && !window.__cockpitOfficeProbe().riding`, 8000);
+            const up1 = await settle();
+            const map1 = { 2: await mapRow(2), 1: await mapRow(1), new: await mapRow("new") };
+            await press("PageUp");
+            await sleep(300);
+            const up2 = await probe(h);
+            const newLine = await read("[data-office-carry-line]");
+            const mapNew = await mapRow("new");
+            await h.shot("cdp-shots/cockpit-office-floors-7b-new-floor.png");
+            await press("Escape");
+            await until(`window.__cockpitOfficeProbe().floor === 1 && !window.__cockpitOfficeProbe().riding`, 8000);
+            p = await settle();
+            rec(
+                "7b. g, PageUp rides to floor 2 with the room, the lift's map open on it; PageUp again aims it at + New floor; Esc rides back and puts it where it was",
+                up1?.floor === 2 &&
+                    up1.carry?.project === "arcterm" &&
+                    up1.carry.target?.floor === 2 &&
+                    up1.layer === "carry" &&
+                    map1[2]?.arrow &&
+                    map1.new != null &&
+                    up2?.floor === 2 &&
+                    up2.carry?.target === "new" &&
+                    newLine === "Put it on a new floor" &&
+                    mapNew?.arrow &&
+                    p?.floor === 1 &&
+                    p.carry == null &&
+                    p.layer === "walk" &&
+                    JSON.stringify(names(p)) === JSON.stringify(SLOT_NAMES),
+                JSON.stringify({ up1: [up1?.floor, up1?.carry, up1?.layer], map1, up2: [up2?.floor, up2?.carry], newLine, mapNew, back: [p?.floor, p?.carry, p?.layer, names(p)] })
+            );
+
+            // 7c. G holds four rooms: carried there by PageDown its row says Floor full and the target stays on G's
+            // slots, so ↵ swaps with the room in the slot, which goes up to arcterm's place
+            await press("g");
+            await press("PageDown");
+            await until(`window.__cockpitOfficeProbe().floor === 0 && !window.__cockpitOfficeProbe().riding`, 8000);
+            const down = await settle();
+            const rowG = await mapRow(0);
+            const swapWith = down?.rooms?.find((r) => r.slot === down.carry?.target?.slot)?.title;
+            const lineG = await read("[data-office-carry-line]");
+            await h.shot("cdp-shots/cockpit-office-floors-7c-full.png");
+            await press("Enter");
+            const landed = await settle();
+            const onG = names(landed);
+            const above = await showFloor(1);
+            rec(
+                "7c. carried down to G, the room's row says Floor full and the target stays on G's four slots; ↵ swaps with the room there, which goes to floor 1",
+                down?.floor === 0 &&
+                    down.carry?.target?.floor === 0 &&
+                    rowG?.full &&
+                    rowG.text.includes("Floor full") &&
+                    swapWith != null &&
+                    lineG === `Swap with ${swapWith}` &&
+                    landed?.carry == null &&
+                    landed.floor === 0 &&
+                    onG[down.carry.target.slot] === "arcterm" &&
+                    names(above)[0] === swapWith,
+                JSON.stringify({ floor: down?.floor, target: down?.carry?.target, rowG, swapWith, lineG, onG, floor1: names(above) })
+            );
+            p = await reseed();
+            rec("7c'. the arrangement put back: floor 1 holds arcterm, cuscofi-app, mit-thesis, cuscofi-production", p?.floor === 1 && JSON.stringify(names(p)) === JSON.stringify(SLOT_NAMES), JSON.stringify({ floor: p?.floor, names: names(p) }));
+
+            // 7d. by mouse across floors: a drag of arcterm's title opens the lift's map; a drop on Floor 2's button puts it
+            // in that floor's first empty slot; a drop on a full floor's button does nothing
+            const pageBox = (sel) =>
+                h.ev(`(() => {
+                    const r = document.querySelector(${JSON.stringify(sel)})?.getBoundingClientRect();
+                    return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null;
+                })()`);
+            const dragToButton = async (floor, hold) => {
+                p = await probe(h);
+                const t = centre(room(p, "arcterm").titleBox);
+                const from = await pagePoint(h, t.x, t.y);
+                await mousePage(h, "mouseMoved", from.x, from.y);
+                await mousePage(h, "mousePressed", from.x, from.y);
+                await mousePage(h, "mouseMoved", from.x + 30, from.y + 20);
+                await until(`!!document.querySelector('[data-office-carry-panel] [data-office-floor="${floor}"]')`, 4000);
+                const to = await pageBox(`[data-office-carry-panel] [data-office-floor="${floor}"]`);
+                for (let i = 1; i <= 8; i++) {
+                    await mousePage(h, "mouseMoved", from.x + 30 + ((to.x - from.x - 30) * i) / 8, from.y + 20 + ((to.y - from.y - 20) * i) / 8);
+                    await sleep(40);
+                }
+                await sleep(250);
+                await hold?.();
+                await mousePage(h, "mouseReleased", to.x, to.y);
+                await sleep(400);
+            };
+            let hover2 = null;
+            await dragToButton(2, async () => {
+                hover2 = { ...(await probe(h)), line: await read("[data-office-carry-line]") };
+                await h.shot("cdp-shots/cockpit-office-floors-7d-floor-button.png");
+            });
+            p = await settle();
+            rec(
+                "7d. by mouse: dragged over Floor 2's button, the card says Drop to move it to Floor 2; dropped, arcterm is in floor 2's first empty slot",
+                hover2?.carry?.by === "pointer" &&
+                    JSON.stringify(hover2.carry.target) === JSON.stringify({ floor: 2, slot: 1 }) &&
+                    hover2.line === "Drop to move it to Floor 2" &&
+                    p?.floor === 2 &&
+                    p.carry == null &&
+                    JSON.stringify(names(p)) === JSON.stringify(["chotkeo", "arcterm", "·", "·"]),
+                JSON.stringify({ hover: hover2?.carry, line: hover2?.line, floor: p?.floor, names: names(p) })
+            );
+            p = await reseed();
+            let hoverG = null;
+            await dragToButton(0, async () => {
+                hoverG = { ...(await probe(h)), line: await read("[data-office-carry-line]"), row: await mapRow(0) };
+            });
+            p = await settle();
+            rec(
+                "7d'. a drop on the full Ground floor's button does nothing: no target while over it, and the room stays where it was",
+                hoverG?.carry?.by === "pointer" &&
+                    hoverG.carry.target === null &&
+                    hoverG.row?.full === true &&
+                    p?.floor === 1 &&
+                    p.carry == null &&
+                    JSON.stringify(names(p)) === JSON.stringify(SLOT_NAMES),
+                JSON.stringify({ hover: hoverG?.carry, row: hoverG?.row, line: hoverG?.line, floor: p?.floor, carry: p?.carry, names: names(p) })
+            );
+
+            // 8. m → Arrange automatically puts the rooms in name order from G, Home first (it stays on the floor shown)
+            p = await press("m");
+            const menu8 = p?.menuItems ?? [];
+            const want8 = menu8.indexOf("Arrange automatically");
+            for (let i = 0; i < 12 && p?.menuSel !== want8 && want8 >= 0; i++) p = await press("ArrowDown");
+            const sel8 = p?.menuSel;
+            await press("Enter");
+            await sleep(600);
+            const by = {};
+            for (const f of [0, 1, 2]) by[f] = names(await showFloor(f));
+            rec(
+                "8. m → Arrange automatically puts the rooms in name order from G: Home, arcterm, chotkeo, cuscofi-app; cuscofi-production, mit-thesis, portfolio-journal, vnstock-js; vnstock-js-docs",
+                menu8.includes("Lift") &&
+                    menu8.includes("Move this room") &&
+                    sel8 === want8 &&
+                    JSON.stringify(by[0]) === JSON.stringify(["Home", "arcterm", "chotkeo", "cuscofi-app"]) &&
+                    JSON.stringify(by[1]) === JSON.stringify(["cuscofi-production", "mit-thesis", "portfolio-journal", "vnstock-js"]) &&
+                    JSON.stringify(by[2]) === JSON.stringify(["vnstock-js-docs", "·", "·", "·"]),
+                JSON.stringify({ menu: menu8, sel: sel8, by })
+            );
+            p = await reseed();
+
+            // 9. Esc after g puts the room back: g in arcterm's room, →, Esc
+            await clickDesk(deskOf("arcterm-canvas-gallery"));
+            await press("g");
+            p = await press("ArrowRight");
+            const aimed9 = p?.carry;
+            p = await press("Escape");
+            await sleep(200);
+            p = await settle();
+            rec(
+                "9. g in arcterm's room, →, Esc: the room is back where it was, nothing is carried",
+                JSON.stringify(aimed9?.target) === JSON.stringify({ floor: 1, slot: 1 }) &&
+                    p?.carry == null &&
+                    p.layer === "walk" &&
+                    JSON.stringify(names(p)) === JSON.stringify(SLOT_NAMES),
+                JSON.stringify({ aimed: aimed9, carry: p?.carry, layer: p?.layer, names: names(p) })
+            );
+
+            // 10. The full room: arcterm's 4 desks, 2 tables with their screens and the chip; mit-thesis, with no run, has
+            // no table and a plant in the strip's left (plus the top-right one while its first desk row has a place free)
+            // the boss waits in the hall, off the desks and their ↵ prompt
+            p = await probe(h);
+            await clickFloor(p.hall.x + p.hall.w / 2, p.hall.y + 330);
+            p = await settle();
+            const arc10 = room(p, "arcterm");
+            const mit10 = room(p, "mit-thesis");
+            await clipShot(h, "cockpit-office-floors-10-room", arc10.box);
+            const inRoom = await h.ev(`(() => {
+                const root = document.querySelector("[data-office-root]").getBoundingClientRect();
+                const b = ${JSON.stringify(arc10.box)};
+                const inside = (el) => {
+                    const r = el.getBoundingClientRect();
+                    const x = r.left - root.left + r.width / 2;
+                    const y = r.top - root.top + r.height / 2;
+                    return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+                };
+                return {
+                    tables: [...document.querySelectorAll('[data-office-room^="meet:"]')].filter(inside).length,
+                    captions: [...document.querySelectorAll("[data-office-table-caption]")].filter(inside).map((e) => e.textContent.trim()),
+                    desks: [...document.querySelectorAll("[data-office-desk]")].filter(inside).length,
+                };
+            })()`);
+            // a plant stands in the strip when its y is inside the room's bottom MEET_H (124) px
+            const MEET_H = 124;
+            const stripPlants = (r) => (r?.plants ?? []).filter((q) => q.y >= r.box.y + r.box.h - MEET_H && q.y < r.box.y + r.box.h);
+            rec(
+                "10. arcterm's room holds 4 desks, 2 tables with their captions and the chip; mit-thesis's, with no run, has no table and a plant in its strip",
+                arc10?.desks === 4 &&
+                    arc10.tables === 2 &&
+                    arc10.chip?.text === "+3 agents · +1 run" &&
+                    inRoom.desks === 4 &&
+                    inRoom.tables === 2 &&
+                    JSON.stringify(inRoom.captions) === JSON.stringify(["Land queue · 2 of 7", "Canvas gallery · 1 of 3"]) &&
+                    mit10?.tables === 0 &&
+                    mit10.plant === true &&
+                    stripPlants(mit10).length === 1 &&
+                    stripPlants(arc10).length === 0 &&
+                    mit10.desks === 1,
+                JSON.stringify({ arcterm: { desks: arc10?.desks, tables: arc10?.tables, chip: arc10?.chip?.text, plants: arc10?.plants }, inRoom, mit: { tables: mit10?.tables, plant: mit10?.plant, plants: mit10?.plants, box: mit10?.box, desks: mit10?.desks } })
+            );
+
+            // 11. The chip: n stops at it (it asks), ↵ lists what has no desk or table, the asking one first; a click on the
+            // chip walks the boss to it and opens the same box; ↵ on its first row opens that agent's card beside the chip
+            const chipKey = "chip:room:arcterm";
+            p = await probe(h);
+            for (let i = 0; i < 8 && p?.cursor !== chipKey; i++) {
+                await press("n");
+                p = await settle(20000);
+            }
+            const atChip = p?.cursor === chipKey;
+            p = await press("Enter");
+            const list = {
+                dialog: p?.dialog,
+                items: p?.items,
+                words: await h.ev(`[...document.querySelectorAll('[data-office-dialog="chip"] [data-office-hidden-word]')].map((e) => e.textContent.trim())`),
+            };
+            await h.shot("cdp-shots/cockpit-office-floors-11-chip.png");
+            await press("Escape");
+            // walked off, the chip is clicked with the mouse
+            await clickDesk(deskOf("arcterm-canvas-gallery"));
+            const chipBox = room(await probe(h), "arcterm").chip.box;
+            await mouse(h, "mousePressed", chipBox.x + chipBox.w / 2, chipBox.y + chipBox.h / 2);
+            await mouse(h, "mouseReleased", chipBox.x + chipBox.w / 2, chipBox.y + chipBox.h / 2);
+            p = await settle();
+            const byClick = { cursor: p?.cursor, dialog: p?.dialog, items: p?.items };
+            p = await press("Enter");
+            await sleep(300);
+            const card11 = await read(`[data-office-popup="agent"]`);
+            await h.shot("cdp-shots/cockpit-office-floors-11b-chip-card.png");
+            const opened = { popup: p?.popup, layer: p?.layer, named: card11.includes("Tray popover") };
+            await press("Escape", 2);
+            rec(
+                "11. n stops at arcterm's chip; ↵ lists the hidden agents and the run, the asking one first; a click on the chip opens the same box; ↵ on its first row opens that agent's card beside the chip",
+                atChip &&
+                    list.dialog === "chip" &&
+                    JSON.stringify(list.items) === JSON.stringify(["Tray popover", "Sleepwatch", "Worktree cleanup", "Tray popover"]) &&
+                    JSON.stringify(list.words) === JSON.stringify(["Needs you", "done", "idle", "done"]) &&
+                    byClick.cursor === chipKey &&
+                    byClick.dialog === "chip" &&
+                    JSON.stringify(byClick.items) === JSON.stringify(list.items) &&
+                    opened.popup === "agent" &&
+                    opened.layer === "card" &&
+                    opened.named,
+                JSON.stringify({ atChip, list, byClick, opened })
+            );
+
+            // 12. The notice board on floor 2 (NoticeBoard): the Needs you rows of floor 1's two asking agents are on the
+            // board of every floor; a click on the lift's doors walks the boss to them and opens the lift's panel
+            const since = Date.now() - 12 * 60_000;
+            const askRows = ["Changelog pass", "Tray popover"].map((n, i) => ({
+                kind: "learn-proposal",
+                key: `learn:fx-floors-${i}`,
+                learnid: `skill:fx-floors#${i}`,
+                source: `arcterm · ${n}`,
+                text: `${n} is waiting for you.`,
+                why: `“${n} asked”`,
+                action: "Accept",
+                phaseidx: 0,
+                waitingsince: since,
+            }));
+            await h.ev(`window.__cockpitOfficeAttention(${JSON.stringify(askRows)})`);
+            await until(`document.querySelectorAll("[data-office-board] [data-office-board-slip]").length === 2`);
+            p = await probe(h);
+            const on1 = { count: p?.board?.count, floor: p?.floor };
+            await press("PageUp");
+            await until(`window.__cockpitOfficeProbe().floor === 2 && !window.__cockpitOfficeProbe().riding`, 8000);
+            p = await settle();
+            const boardBox = await h.ev(`(() => {
+                const root = document.querySelector("[data-office-root]").getBoundingClientRect();
+                const r = document.querySelector("[data-office-board]").getBoundingClientRect();
+                return { x: Math.round(r.left - root.left), y: Math.round(r.top - root.top), w: Math.round(r.width), h: Math.round(r.height) };
+            })()`);
+            await clipShot(h, "cockpit-office-floors-12-board", boardBox, 12);
+            const on2 = {
+                count: p?.board?.count,
+                floor: p?.floor,
+                slips: await h.ev(`document.querySelectorAll("[data-office-board] [data-office-board-slip]").length`),
+                number: await read("[data-office-board-count]"),
+            };
+            const doors = await pageBox("[data-office-lift]");
+            await mousePage(h, "mouseMoved", doors.x, doors.y);
+            await mousePage(h, "mousePressed", doors.x, doors.y);
+            await mousePage(h, "mouseReleased", doors.x, doors.y);
+            p = await settle();
+            const atSpot = !!p?.boss && Math.abs(p.boss.x - p.lift.spot.x) <= 3 && Math.abs(p.boss.y - p.lift.spot.y) <= 3;
+            await h.shot("cdp-shots/cockpit-office-floors-12b-lift-doors.png");
+            rec(
+                "12. the board on floor 2 lists the two rows of floor 1's asking agents, as floor 1's does; a click on the lift's doors walks the boss to them and opens the lift's panel",
+                on1.count === 2 &&
+                    on2.floor === 2 &&
+                    on2.count === 2 &&
+                    on2.slips === 2 &&
+                    on2.number === "2" &&
+                    atSpot &&
+                    p?.dialog === "lift" &&
+                    JSON.stringify(p.items) === JSON.stringify(["Floor 2", "Floor 1", "Ground"]),
+                JSON.stringify({ on1, on2, atSpot, dialog: p?.dialog, items: p?.items })
+            );
+            await press("Escape");
+            await h.ev(`window.__cockpitOfficeAttention(null)`);
+            await sleep(300);
+
+            // 13. Capacity: what a room holds follows the Office's size, never which floor or slot it is on. Back on floor 1
+            await showFloor(1);
+            const hands = async (w, hgt, runs) => {
+                const box = await sizeOfficeBox(h, w, hgt);
+                if (runs) await dev(h, { runs });
+                await sleep(500);
+                const q = await settle();
+                const arc = room(q, "arcterm");
+                return { box, q, arc };
+            };
+            const small = await hands(1050, 650);
+            await clipShot(h, "cockpit-office-floors-13a-1050x650", small.arc.box);
+            rec(
+                "13a. at 1,050 x 650 arcterm's room holds 3 desks and 2 tables; the chip says +4 agents · +1 run",
+                Math.abs(small.box.w - 1050) <= 2 &&
+                    Math.abs(small.box.h - 650) <= 2 &&
+                    small.q?.floor === 1 &&
+                    small.arc?.desks === 3 &&
+                    small.arc.tables === 2 &&
+                    small.arc.chip?.text === "+4 agents · +1 run" &&
+                    JSON.stringify(names(small.q)) === JSON.stringify(SLOT_NAMES),
+                JSON.stringify({ box: small.box, floor: small.q?.floor, room: small.arc && { w: small.arc.box.w, h: small.arc.box.h, desks: small.arc.desks, tables: small.arc.tables, chip: small.arc.chip?.text } })
+            );
+            const big = await hands(1600, 1000, [...OFFICE_FLOORS_RUNS, OFFICE_FLOORS_FOURTH_RUN]);
+            await clipShot(h, "cockpit-office-floors-13b-1600x1000", big.arc.box);
+            rec(
+                "13b. at 1,600 x 1,000, with a fourth run at work, arcterm's room seats all 7 agents at 7 desks and draws 3 tables; the done run is the chip's: +1 run",
+                Math.abs(big.box.w - 1600) <= 2 &&
+                    Math.abs(big.box.h - 1000) <= 2 &&
+                    big.arc?.desks === 7 &&
+                    big.arc.tables === 3 &&
+                    big.arc.chip?.text === "+1 run" &&
+                    big.arc.chip.ask === false,
+                JSON.stringify({ box: big.box, room: big.arc && { w: big.arc.box.w, h: big.arc.box.h, desks: big.arc.desks, tables: big.arc.tables, chip: big.arc.chip } })
+            );
+
+            return steps;
+        },
+    };
+
+    return { cockpitOffice, cockpitOfficeControls, cockpitOfficeNeedsYouBoard, cockpitOfficeBench, cockpitOfficeFloors };
 }

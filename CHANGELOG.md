@@ -68,6 +68,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- **The Office is now a building of floors**: you ride a lift between them. Each project is one room, its runs are
+  meeting tables in it, and you arrange the rooms with g or by dragging.
 - A plan queued behind another run reads **Queued · after** and the run's name in the Agent tree, so its row says it is queued even when
   the run's name is cut off.
 - **The office lives in the Cockpit only**: Jarvis's Runs list no longer has an **office** chip, and Jarvis stays on

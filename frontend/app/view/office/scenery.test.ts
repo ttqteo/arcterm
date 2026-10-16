@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { buildPlan, type Plan, type PlanInput } from "@/app/view/agents/officeplanmodel";
+import { buildPlan, MEET_H, type Box, type Plan, type PlanInput } from "@/app/view/agents/officeplanmodel";
 import { describe, expect, it } from "vitest";
 import { NEAR_CHAIR } from "./officegrids";
 import type { OfficeColors } from "./officepalette";
@@ -52,10 +52,28 @@ function input(width = 1050, over: Partial<PlanInput> = {}): PlanInput {
     };
 }
 const plan = (width?: number, over?: Partial<PlanInput>): Plan => buildPlan(input(width, over));
-const rects = (ops: Op[], role: string) =>
-    ops.filter((o) => o.k === "rect" && o.role === role) as Extract<Op, { k: "rect" }>[];
+// the same cards over three floors: Home on G, arcterm on 1, mozox (and its run's table) on 2
+const FLOORS_AT = {
+    Home: { floor: 0, slot: 0 },
+    arcterm: { floor: 1, slot: 0 },
+    mozox: { floor: 2, slot: 3 },
+};
+const onFloor = (floor: number, over: Partial<PlanInput> = {}): Plan => plan(1050, { at: FLOORS_AT, floor, ...over });
+type RectOp = Extract<Op, { k: "rect" }>;
+type FillOp = Extract<Op, { k: "fill" }>;
+const rects = (ops: Op[], role: string) => ops.filter((o) => o.k === "rect" && o.role === role) as RectOp[];
+const fills = (ops: Op[], material: string) => ops.filter((o) => o.k === "fill" && o.material === material) as FillOp[];
 const lastIndex = (ops: Op[], pred: (o: Op) => boolean) => ops.map(pred).lastIndexOf(true);
 const firstIndex = (ops: Op[], pred: (o: Op) => boolean) => ops.findIndex(pred);
+// a plan box on the art grid, as scenery.ts lays it
+const artOf = (b: Box): Box => {
+    const x = art(b.x);
+    const y = art(b.y);
+    return { x, y, w: art(b.x + b.w) - x, h: art(b.y + b.h) - y };
+};
+const isFill = (material: string, b: Box) => (o: Op) =>
+    o.k === "fill" && o.material === material && o.x === b.x && o.y === b.y && o.w === b.w && o.h === b.h;
+const within = (o: Box, b: Box) => o.x >= b.x && o.y >= b.y && o.x + o.w <= b.x + b.w && o.y + o.h <= b.y + b.h;
 
 describe("scenery", () => {
     it("sizes the canvases to cover the plan, on the art grid, at any width", () => {
@@ -178,7 +196,10 @@ describe("scenery", () => {
         const p = plan();
         const s = scenery(p, "day", false);
         const room = p.rooms.find((r) => r.table)!;
-        for (const seat of p.seats.filter((x) => x.room === room.key)) {
+        const seated = p.seats.filter((x) => x.zone === room.key);
+        // a run's lead and its tasks: more than the lead alone, or the loop below proves nothing
+        expect(seated.length).toBeGreaterThan(2);
+        for (const seat of seated) {
             const near = seat.bottom > room.table!.y + 20;
             const at = (o: Op) =>
                 o.k === "grid" && o.rows === NEAR_CHAIR && o.x === art(seat.x - 3) && o.y === art(seat.bottom) - 6;
@@ -208,10 +229,13 @@ describe("scenery", () => {
 
     it("darkens a room with no one at work, its wall face included", () => {
         const p = plan();
-        const home = p.rooms.find((r) => r.key === "room:home")!;
+        const home = p.rooms.find((r) => r.key === "room:Home")!;
         expect(home.lit).toBe(false);
-        const dark = rects(scenery(p, "day", false).over, "dark").find((r) => r.x === art(home.box.x))!;
-        expect(dark.y).toBe(art(home.box.y) - 3);
+        // the rooms of a column share their x, so the tint is found by its top as well
+        const dark = rects(scenery(p, "day", false).over, "dark").find(
+            (r) => r.x === art(home.box.x) && r.y === art(home.box.y) - 3
+        )!;
+        expect(dark).toBeDefined();
         expect(dark.h).toBe(art(home.box.y + home.box.h) - art(home.box.y) + 3);
     });
 
@@ -242,6 +266,307 @@ describe("scenery", () => {
         expect(materialAt("brick", 0, 12, 10)).toBe("mortar");
         expect(["carpet", "carpet2"]).toContain(materialAt("carpet", 1, 1));
         expect(materialAt("face", 8, 0)).toBe("face2");
+    });
+});
+
+describe("a floor's rooms", () => {
+    it("lays a project room in wood, its meeting strip and its tables in carpet drawn after it", () => {
+        const p = plan();
+        const s = scenery(p, "day", false);
+        const projects = p.rooms.filter((r) => r.kind === "agents");
+        expect(projects.length).toBeGreaterThan(0);
+        for (const r of projects) {
+            const wood = firstIndex(s.under, isFill("wood", artOf(r.box)));
+            expect(wood, r.key).toBeGreaterThanOrEqual(0);
+            // the strip at the room's foot is carpet whether or not a run has a table in it
+            const strip = artOf({ x: r.box.x, y: r.box.y + r.box.h - MEET_H, w: r.box.w, h: MEET_H });
+            expect(firstIndex(s.under, isFill("carpet", strip)), r.key).toBeGreaterThan(wood);
+        }
+        const zones = p.rooms.filter((r) => r.kind === "meeting");
+        expect(zones.length).toBeGreaterThan(0);
+        for (const z of zones) {
+            const room = p.rooms.find((r) => r.key === z.parent)!;
+            const carpet = firstIndex(s.under, isFill("carpet", artOf(z.box)));
+            expect(carpet, z.key).toBeGreaterThan(firstIndex(s.under, isFill("wood", artOf(room.box))));
+            // a zone is not a room of wood
+            expect(s.under.some(isFill("wood", artOf(z.box))), z.key).toBe(false);
+        }
+    });
+
+    it("lays an empty room in carpet and darkens it, its wall face included", () => {
+        const p = plan();
+        const s = scenery(p, "day", false);
+        const empty = p.rooms.filter((r) => r.kind === "empty");
+        expect(empty).toHaveLength(1);
+        for (const r of empty) {
+            expect(r.lit).toBe(false);
+            expect(s.under.some(isFill("carpet", artOf(r.box))), r.key).toBe(true);
+            expect(s.under.some(isFill("wood", artOf(r.box))), r.key).toBe(false);
+            const b = artOf(r.box);
+            const dark = rects(s.over, "dark").find((d) => d.x === b.x && d.y === b.y - 3)!;
+            expect(dark, r.key).toBeDefined();
+            expect(dark.w).toBe(b.w);
+            expect(dark.h).toBe(b.h + 3);
+        }
+    });
+
+    it("dims a table whose run is not at work on its own box, never twice over a dark room", () => {
+        const over = (tasks: string[], harborState: "working" | "idle" = "working") => {
+            const base = input();
+            return plan(1050, {
+                agents: base.agents.map((a) =>
+                    a.id === "harbor" ? { ...a, state: harborState, finished: harborState === "idle" } : a
+                ),
+                runs: base.runs.map((r) => ({
+                    ...r,
+                    done: tasks.every((t) => t === "done"),
+                    tasks: tasks.map((state, i) => ({ ...r.tasks[0], id: `t${i}`, key: `${r.id}:t${i}`, state })),
+                })),
+            });
+        };
+        const zoneOf = (p: Plan) => p.rooms.find((r) => r.kind === "meeting")!;
+        // a finished run at a table in a room with someone at work: the table alone is dim
+        const finished = over(["done", "done"]);
+        const z = zoneOf(finished);
+        const parent = finished.rooms.find((r) => r.key === z.parent)!;
+        expect(z.lit).toBe(false);
+        expect(parent.lit).toBe(true);
+        const zb = artOf(z.box);
+        const tints = rects(scenery(finished, "day", false).over, "dark").filter((d) => within(d, zb));
+        // the zone's own box: no wall face's rows above it
+        expect(tints.map((d) => [d.x, d.y, d.w, d.h])).toEqual([[zb.x, zb.y, zb.w, zb.h]]);
+        // the same table in a room nobody works in: the room's tint covers it, so the table adds none
+        const dark = over(["done", "done"], "idle");
+        expect(zoneOf(dark).lit).toBe(false);
+        expect(dark.rooms.find((r) => r.key === zoneOf(dark).parent)!.lit).toBe(false);
+        const own = rects(scenery(dark, "day", false).over, "dark").filter(
+            (d) => d.x === zb.x && d.y === zb.y && d.w === zb.w && d.h === zb.h
+        );
+        expect(own).toHaveLength(0);
+        // a run at work: no tint on its table
+        const working = over(["done", "running"]);
+        expect(zoneOf(working).lit).toBe(true);
+        expect(rects(scenery(working, "day", false).over, "dark").filter((d) => within(d, zb))).toHaveLength(0);
+    });
+
+    it("draws a run's screen over its table, inside its zone, a square to a task", () => {
+        const p = plan();
+        const s = scenery(p, "day", false);
+        const zone = p.rooms.find((r) => r.kind === "meeting")!;
+        const table = artOf(zone.table!);
+        const zb = artOf(zone.box);
+        const frame = rects(s.under, "metal").find((m) => within(m, zb) && m.y + m.h <= table.y);
+        expect(frame).toBeDefined();
+        // centred on the table, not against the room's wall
+        expect(Math.abs(frame!.x + frame!.w / 2 - (table.x + table.w / 2))).toBeLessThanOrEqual(1);
+        // done, running, stalled, failed, pending
+        expect(zone.screen).toEqual(["done", "work", "fail", "fail", "wait"]);
+        const paint = { done: "done", work: "working", wait: "edgeMid", fail: "error" } as const;
+        // one 3 x 2 square per task, in the task's colour, 4 pixels apart along the screen
+        const roles = new Set<string>(Object.values(paint));
+        const cells = s.under
+            .filter(
+                (o): o is RectOp => o.k === "rect" && roles.has(o.role) && o.w === 3 && o.h === 2 && within(o, frame!)
+            )
+            .sort((a, b) => a.x - b.x);
+        expect(cells.map((c) => c.role)).toEqual(zone.screen!.map((c) => paint[c]));
+        cells.slice(1).forEach((c, i) => expect(c.x - cells[i].x).toBe(4));
+        expect(new Set(cells.map((c) => c.y)).size).toBe(1);
+        // the cells sit centred on the screen's face
+        const left = cells[0].x - (frame!.x + 1);
+        const right = frame!.x + frame!.w - 1 - (cells[cells.length - 1].x + 3);
+        expect(Math.abs(left - right)).toBeLessThanOrEqual(1);
+    });
+
+    it("plants a pot at each of a room's plants and in the lounge, and nowhere else", () => {
+        for (const p of [plan(), plan(1600, { height: 1000 }), onFloor(2)]) {
+            const s = scenery(p, "day", false);
+            const lounge = artOf(p.lounge);
+            const want = [
+                [lounge.x + art(200) + 3, lounge.y + art(172) + 10],
+                ...p.rooms.flatMap((r) => (r.plants ?? []).map((q) => [art(q.x) + 3, art(q.y) + 10])),
+            ].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+            const got = rects(s.under, "potHi")
+                .map((r) => [r.x, r.y])
+                .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+            expect(got).toEqual(want);
+        }
+        // the plant is real: at least one room of the default floor has one
+        expect(plan().rooms.some((r) => r.plants?.length)).toBe(true);
+        // and a room can hold two
+        expect(plan().rooms.some((r) => (r.plants?.length ?? 0) === 2)).toBe(true);
+    });
+});
+
+describe("the foot of the building", () => {
+    // the art row where the hall ends and the wall under it begins
+    const foot = (p: Plan) => art(p.body.y + p.body.h);
+
+    it("is brick with the entrance's glass doors and the sign on G", () => {
+        const p = onFloor(0);
+        expect(p.ground).toBe(true);
+        const s = scenery(p, "day", false);
+        expect(fills(s.under, "brick").some((f) => f.y === foot(p) + 3 && f.x === 0)).toBe(true);
+        const e = artOf(p.entrance);
+        // the doors: a metal frame over the entrance's box with two glass leaves in it
+        expect(rects(s.under, "metal").some((m) => m.x === e.x + 1 && m.w === e.w - 2)).toBe(true);
+        expect(rects(s.under, "glass").filter((g) => g.x > e.x && g.x < e.x + e.w && g.y > foot(p))).toHaveLength(2);
+        // the sign over them, in the brand's colours
+        expect(rects(s.over, "accent").length).toBeGreaterThan(0);
+        expect(
+            s.over.filter((o) => o.k === "grid" && o.roles["#"] === "accent50" && o.y >= foot(p) - 5).length
+        ).toBeGreaterThan(0);
+    });
+
+    it("is a plain wall with windows above G: no brick, no entrance, no sign", () => {
+        for (const floor of [1, 2]) {
+            const p = onFloor(floor);
+            expect(p.ground).toBe(false);
+            const s = scenery(p, "day", false);
+            expect(fills(s.under, "brick"), `floor ${floor}`).toHaveLength(0);
+            expect(
+                fills(s.under, "face").some((f) => f.x === 0 && f.y === foot(p) + 3 && f.w >= art(p.width) - 1),
+                `floor ${floor}`
+            ).toBe(true);
+            // nothing of the doors: no metal frame in the strip, no sign anywhere
+            expect(rects(s.under, "metal").filter((m) => m.y >= foot(p))).toHaveLength(0);
+            expect(rects(s.over, "accent")).toHaveLength(0);
+            expect(s.over.some((o) => o.k === "grid" && o.roles["#"] === "accent50")).toBe(false);
+            // windows in the strip all the same
+            expect(rects(s.under, "glass").filter((g) => g.y > foot(p)).length).toBeGreaterThan(5);
+        }
+    });
+
+    it("sets the plain wall's windows every 128 px, from the wall's left to its right", () => {
+        const p = onFloor(1);
+        const s = scenery(p, "day", false);
+        const xs = rects(s.under, "glass")
+            .filter((g) => g.y === foot(p) + 5 && g.w === 10)
+            .map((g) => g.x)
+            .sort((a, b) => a - b);
+        expect(xs.length).toBeGreaterThan(5);
+        xs.slice(1).forEach((x, i) => expect(Math.abs((x - xs[i]) * 3 - 128)).toBeLessThanOrEqual(3));
+        expect(xs[0] * 3).toBeLessThan(128);
+        expect(xs[xs.length - 1] * 3 + 36).toBeGreaterThan(p.width - 128);
+    });
+
+    it("takes the extra height a tall view gives it, on G and above", () => {
+        for (const floor of [0, 1]) {
+            const p = onFloor(floor, { height: 1000 });
+            const s = scenery(p, "day", false);
+            expect(s.height * 3).toBeGreaterThanOrEqual(p.height);
+            const wall = floor === 0 ? fills(s.under, "brick") : fills(s.under, "face").filter((f) => f.y > foot(p));
+            expect(wall).toHaveLength(1);
+            expect(wall[0].y + wall[0].h).toBe(s.height);
+        }
+    });
+});
+
+describe("the lift", () => {
+    const doors = (p: Plan) => artOf(p.lift.doors);
+    const dial = (p: Plan) => artOf(p.lift.dial);
+    // the needle's pixels, in the dial's lamp colour, as offsets from the dial's centre column
+    const needle = (p: Plan) => {
+        const d = dial(p);
+        const cx = d.x + Math.floor(d.w / 2);
+        return rects(scenery(p, "day", false).under, "lamp")
+            .filter((r) => within(r, d))
+            .map((r) => ({ dx: r.x - cx, y: r.y }));
+    };
+
+    it("stands two steel doors at the hall's foot, a split between them, on every floor", () => {
+        for (const floor of [0, 1, 2]) {
+            const p = onFloor(floor);
+            const s = scenery(p, "day", false);
+            const d = doors(p);
+            // the frame: an ink outline round a steel face
+            expect(
+                s.under.some(
+                    (o) =>
+                        o.k === "rect" && o.role === "ink" && o.x === d.x && o.y === d.y && o.w === d.w && o.h === d.h
+                ),
+                `floor ${floor}`
+            ).toBe(true);
+            expect(
+                rects(s.under, "metal").some(
+                    (m) => m.x === d.x + 1 && m.y === d.y + 1 && m.w === d.w - 2 && m.h === d.h - 2
+                )
+            ).toBe(true);
+            // each leaf catches the light along its top
+            expect(rects(s.under, "metalHi").filter((m) => within(m, d)).length).toBeGreaterThanOrEqual(2);
+            // the split: one ink pixel wide, down the middle between the leaves
+            const split = rects(s.under, "ink").find(
+                (r) => r.w === 1 && r.x === d.x + Math.floor(d.w / 2) && r.y > d.y && r.y + r.h < d.y + d.h
+            );
+            expect(split, `floor ${floor}`).toBeDefined();
+            expect(split!.h).toBeGreaterThanOrEqual(d.h - 4);
+            // the doors reach the hall's foot, where the wall under it begins
+            expect(d.y + d.h).toBe(art(p.body.y + p.body.h));
+        }
+    });
+
+    it("puts a call button beside the doors: a steel plate with a lit lamp and a pale one", () => {
+        const p = onFloor(1);
+        const s = scenery(p, "day", false);
+        const d = doors(p);
+        const plate = rects(s.under, "laptop").find((r) => r.x > d.x + d.w && r.y >= d.y && r.y + r.h <= d.y + d.h);
+        expect(plate).toBeDefined();
+        const inPlate = (r: RectOp) => r.x >= plate!.x && r.x + r.w <= plate!.x + plate!.w && r.y >= plate!.y;
+        expect(rects(s.under, "lamp").filter(inPlate)).toHaveLength(1);
+        expect(rects(s.under, "face").filter(inPlate)).toHaveLength(1);
+        // beside the doors: a few pixels off their edge
+        expect(plate!.x - (d.x + d.w)).toBeLessThanOrEqual(4);
+    });
+
+    it("draws a dial over the doors: a half disc with a screen face, inside the dial's box", () => {
+        const p = onFloor(1);
+        const s = scenery(p, "day", false);
+        const d = dial(p);
+        const faces = s.under.filter(
+            (o): o is Extract<Op, { k: "grid" }> =>
+                o.k === "grid" && o.roles.S === "screen" && o.x === d.x && o.y === d.y
+        );
+        expect(faces).toHaveLength(1);
+        const rows = faces[0].rows;
+        expect(rows).toHaveLength(d.h);
+        for (const row of rows) {
+            expect(row.length).toBeLessThanOrEqual(d.w);
+        }
+        // a half disc: its rows widen toward the doors, and the top row is ink alone
+        const widths = rows.map((row) => row.replace(/\./g, "").length);
+        expect(widths[0]).toBeLessThan(widths[widths.length - 1]);
+        widths.slice(1).forEach((w, i) => expect(w).toBeGreaterThanOrEqual(widths[i]));
+        expect(rows[0]).not.toContain("S");
+        expect(rows[rows.length - 1]).toContain("S");
+        // the dial sits on the doors
+        expect(d.y + d.h).toBeLessThanOrEqual(doors(p).y + 1);
+        expect(d.y + d.h).toBeGreaterThanOrEqual(doors(p).y);
+    });
+
+    it("points the needle at the floor shown among the floors: G leftmost, the top floor rightmost", () => {
+        const [g, one, two] = [0, 1, 2].map((f) => needle(onFloor(f)));
+        expect(g.length).toBeGreaterThan(2);
+        // one floor between: straight up from the dial's centre
+        expect(one.every((n) => n.dx === 0)).toBe(true);
+        expect(one.length).toBeGreaterThan(2);
+        // G leans left and the top floor right, by the same amount
+        expect(g.every((n) => n.dx <= 0) && g.some((n) => n.dx < 0)).toBe(true);
+        expect(two.every((n) => n.dx >= 0) && two.some((n) => n.dx > 0)).toBe(true);
+        const mirror = (list: typeof g) => list.map((n) => `${-n.dx},${n.y}`).sort();
+        expect(mirror(g)).toEqual(two.map((n) => `${n.dx},${n.y}`).sort());
+        // a needle as tall as the dial's face allows: the tip clears the pivot by at least four rows
+        const rowsOf = (list: typeof g) => new Set(list.map((n) => n.y)).size;
+        expect(rowsOf(one)).toBeGreaterThanOrEqual(4);
+    });
+
+    it("spreads the needle over however many floors there are", () => {
+        // G alone: straight up. Two floors: G and the top at the same angle either side of straight up
+        const alone = needle(plan());
+        expect(alone.every((n) => n.dx === 0)).toBe(true);
+        const two = { Home: { floor: 0, slot: 0 }, arcterm: { floor: 1, slot: 0 }, mozox: { floor: 1, slot: 1 } };
+        const [lo, hi] = [0, 1].map((f) => needle(plan(1050, { at: two, floor: f })));
+        expect(lo.some((n) => n.dx < 0) && lo.every((n) => n.dx <= 0)).toBe(true);
+        expect(hi.some((n) => n.dx > 0) && hi.every((n) => n.dx >= 0)).toBe(true);
     });
 });
 
@@ -314,10 +639,40 @@ describe("sceneryKey", () => {
         expect(key({ ...p, board: { ...p.board, spot: { x: p.board.spot.x + 9, y: p.board.spot.y } } })).toBe(key(p));
     });
 
+    it("changes with the floor shown, with the floors there are, and with a room's chip text", () => {
+        const p = plan();
+        const k = key(p);
+        expect(key({ ...p, floor: p.floor + 1 })).not.toBe(k);
+        expect(key({ ...p, floors: [...p.floors, { floor: 1, label: "1", rooms: [], asks: 0, lit: false }] })).not.toBe(
+            k
+        );
+        // what the lift panel lists (asks, lights) is not drawn on the canvas
+        expect(key({ ...p, floors: p.floors.map((f) => ({ ...f, asks: f.asks + 2, lit: !f.lit })) })).toBe(k);
+        // eight agents in one room: three desks and a chip for the rest
+        const crowd = plan(1050, {
+            agents: Array.from({ length: 8 }, (_, i) => ({
+                id: `a${i}`,
+                name: `agent ${i}`,
+                project: "arcterm",
+                state: "working" as const,
+                harness: "claude",
+                finished: false,
+            })),
+        });
+        const chipped = crowd.rooms.find((r) => r.chip)!;
+        expect(chipped.chip!.text).toBe("+5 agents");
+        const withText = (text: string): Plan => ({
+            ...crowd,
+            rooms: crowd.rooms.map((r) => (r === chipped ? { ...r, chip: { ...r.chip!, text } } : r)),
+        });
+        expect(key(withText("+9 agents"))).not.toBe(key(crowd));
+        expect(key(withText("+5 agents"))).toBe(key(crowd));
+    });
+
     it("changes with a room's light and with a desk's light alone", () => {
         const p = plan();
         const k = key(p);
-        expect(key({ ...p, rooms: p.rooms.map((r) => (r.key === "room:home" ? { ...r, lit: !r.lit } : r)) })).not.toBe(
+        expect(key({ ...p, rooms: p.rooms.map((r) => (r.key === "room:Home" ? { ...r, lit: !r.lit } : r)) })).not.toBe(
             k
         );
         expect(

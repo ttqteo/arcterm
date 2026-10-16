@@ -2,13 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The Office's controls, a Game Boy's: the arrows, ↵ as A and Esc as B, with m opening the office menu as START does
-// (canvas .superpowers/design/office-controls). Pure: what a key does over the layer that is up, the office menu's
-// items, how the ▶ steps, and which edge the dialog box takes. No React, no Wave runtime imports.
+// (canvas .superpowers/design/office-controls), plus the lift's PageUp / PageDown and g to carry a room (canvas
+// .superpowers/design/office-floors). Pure: what a key does over the layer that is up, the office menu's items, how the
+// ▶ steps, and which edge the dialog box takes. No React, no Wave runtime imports.
 
 import type { Dir } from "./officeboss";
+import { newFloor, stepSlot, type Placements, type RoomPlace } from "./officelayout";
 
-/** What is up over the office: nothing (the boss walks), the desk's dialog box, or the desk's full card. */
-export type OfficeLayer = "walk" | "dialog" | "card";
+/** What is up over the office: nothing (the boss walks), the desk's dialog box, the desk's full card, or a room the boss
+ *  carries (g), which takes every key until it is dropped or put back. */
+export type OfficeLayer = "walk" | "dialog" | "card" | "carry";
 
 export type OfficeKeyAction =
     | { do: "walk"; dir: Dir }
@@ -21,6 +24,11 @@ export type OfficeKeyAction =
     | { do: "menu" }
     | { do: "desk"; delta: -1 | 1 }
     | { do: "nextAsk" }
+    | { do: "floor"; delta: -1 | 1 }
+    | { do: "grab" }
+    | { do: "slot"; dir: Dir }
+    | { do: "drop" }
+    | { do: "cancel" }
     | { do: "none" }
     | { do: "pass" };
 
@@ -32,14 +40,27 @@ export interface KeyMods {
 
 const ARROWS: Record<string, Dir> = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
 
-/** Pure: what a key does in the office. A chord (Cmd, Ctrl or Alt held) is never the office's; then the open menu
- *  takes every key; then the layer decides. "pass" leaves the key to the Cockpit's own (1–9, t, r, b, Space, and Enter
- *  on the full card). */
+/** Pure: what a key does in the office. A chord (Cmd, Ctrl or Alt held) is never the office's; then a carried room
+ *  takes every key (arrows to a neighbouring slot, PageUp / PageDown to another floor, ↵ drops, Esc and g put it back,
+ *  nothing else acts); then the open menu takes every key; then the layer decides. "pass" leaves the key to the
+ *  Cockpit's own (1–9, t, r, b, Space, and Enter on the full card). */
 export function officeKey(layer: OfficeLayer, menuOpen: boolean, key: string, mods: KeyMods = {}): OfficeKeyAction {
     if (mods.meta || mods.ctrl || mods.alt) {
         return { do: "pass" };
     }
     const dir = ARROWS[key];
+    if (layer === "carry") {
+        if (dir) {
+            return { do: "slot", dir };
+        }
+        if (key === "PageUp" || key === "PageDown") {
+            return { do: "floor", delta: key === "PageUp" ? 1 : -1 };
+        }
+        if (key === "Enter") {
+            return { do: "drop" };
+        }
+        return key === "Escape" || key === "g" ? { do: "cancel" } : { do: "none" };
+    }
     if (menuOpen) {
         if (dir === "up" || dir === "down") {
             return { do: "move", delta: dir === "up" ? -1 : 1 };
@@ -70,6 +91,15 @@ export function officeKey(layer: OfficeLayer, menuOpen: boolean, key: string, mo
     if (key === "h" || key === "l") {
         return { do: "tab", delta: key === "h" ? -1 : 1 };
     }
+    // the lift and carrying a room belong to the walking boss: no ride while a box or the card is up
+    if (layer === "walk") {
+        if (key === "PageUp" || key === "PageDown") {
+            return { do: "floor", delta: key === "PageUp" ? 1 : -1 };
+        }
+        if (key === "g") {
+            return { do: "grab" };
+        }
+    }
     if (layer === "dialog") {
         if (dir === "up" || dir === "down") {
             return { do: "move", delta: dir === "up" ? -1 : 1 };
@@ -85,7 +115,8 @@ export function officeKey(layer: OfficeLayer, menuOpen: boolean, key: string, mo
     return key === "Enter" && layer === "walk" ? { do: "talk" } : { do: "pass" };
 }
 
-/** Pure: one step back, as B does: the full card goes back to the dialog box, the dialog box to walking. */
+/** Pure: one step back, as B does: the full card goes back to the dialog box, the dialog box to walking, and a carried
+ *  room is put down and the boss walks on. */
 export function backFrom(layer: OfficeLayer): OfficeLayer {
     return layer === "card" ? "dialog" : "walk";
 }
@@ -142,7 +173,17 @@ export function dialogEdge(
     return (bossTop + bossBottom) / 2 > viewH / 2 ? "top" : "bottom";
 }
 
-export type OfficeMenuId = "nextAsk" | "needsYou" | "nextDesk" | "prevDesk" | "events" | "cards" | "keys";
+export type OfficeMenuId =
+    | "nextAsk"
+    | "needsYou"
+    | "nextDesk"
+    | "prevDesk"
+    | "lift"
+    | "move"
+    | "arrange"
+    | "events"
+    | "cards"
+    | "keys";
 
 export interface OfficeMenuItem {
     id: OfficeMenuId;
@@ -153,14 +194,18 @@ export interface OfficeMenuItem {
     count?: string;
     ask?: boolean;
     rule?: boolean;
+    // drawn dimmed: the ▶ passes over it and ↵ does nothing
+    disabled?: boolean;
 }
 
-/** Pure: the office menu (m), START's list. It names each item's own key, so it is where the keys are learnt. */
+/** Pure: the office menu (m), START's list. It names each item's own key, so it is where the keys are learnt. `inRoom`
+ *  is whether the boss stands in a project room: Move this room picks that room up, so it is disabled anywhere else. */
 export function officeMenuItems(
     asks: number,
     newEvents: number,
     eventsOpen: boolean,
-    boardRows: number
+    boardRows: number,
+    inRoom: boolean
 ): OfficeMenuItem[] {
     return [
         { id: "nextAsk", label: "Next Needs you", key: "n", count: asks > 0 ? String(asks) : undefined, ask: true },
@@ -172,6 +217,9 @@ export function officeMenuItems(
         },
         { id: "nextDesk", label: "Next desk", key: "j" },
         { id: "prevDesk", label: "Previous desk", key: "k" },
+        { id: "lift", label: "Lift", key: "PgUp PgDn" },
+        { id: "move", label: "Move this room", key: "g", ...(inRoom ? {} : { disabled: true }) },
+        { id: "arrange", label: "Arrange automatically" },
         {
             id: "events",
             label: eventsOpen ? "Hide events" : "Events",
@@ -181,4 +229,45 @@ export function officeMenuItems(
         { id: "cards", label: "Cards view", key: "o" },
         { id: "keys", label: "All keys", key: "?" },
     ];
+}
+
+/** The floors a carried room can go to, as the lift's summaries give them. */
+export interface CarryFloor {
+    floor: number;
+    rooms: readonly string[];
+}
+
+/** Pure: whether the carried room may build a new floor above the top one: only while the top floor holds another room,
+ *  since the room carried alone off its own top floor would only empty it. */
+export function canBuildFloor(floors: readonly CarryFloor[], project: string): boolean {
+    const top = floors.reduce<CarryFloor | undefined>((t, f) => (t == null || f.floor > t.floor ? f : t), undefined);
+    return top != null && top.rooms.some((r) => r !== project);
+}
+
+/** Pure: where the carried room's target goes for an arrow (a neighbouring slot of the floor shown; none on a new floor)
+ *  or PageUp / PageDown (the next floor that holds a room, in the same slot; past the top, a new floor; and back from a
+ *  new floor, the top floor in the slot the room came from). At an end it stays put. */
+export function carryTarget(
+    target: RoomPlace | "new",
+    act: { do: "slot"; dir: Dir } | { do: "floor"; delta: -1 | 1 },
+    ctx: { floors: readonly CarryFloor[]; project: string; fromSlot: number }
+): RoomPlace | "new" {
+    const shown = ctx.floors.map((f) => f.floor).sort((a, b) => a - b);
+    if (act.do === "slot") {
+        return target === "new" ? target : { floor: target.floor, slot: stepSlot(target.slot, act.dir) };
+    }
+    if (target === "new") {
+        return act.delta < 0 && shown.length > 0 ? { floor: shown[shown.length - 1], slot: ctx.fromSlot } : target;
+    }
+    const next =
+        act.delta > 0 ? shown.find((f) => f > target.floor) : [...shown].reverse().find((f) => f < target.floor);
+    if (next != null) {
+        return { floor: next, slot: target.slot };
+    }
+    return act.delta > 0 && canBuildFloor(ctx.floors, ctx.project) ? "new" : target;
+}
+
+/** Pure: the place a drop puts the room: its target, or for a new floor the first slot of the floor above the top one. */
+export function carryPlace(target: RoomPlace | "new", at: Placements): RoomPlace {
+    return target === "new" ? { floor: newFloor(at), slot: 0 } : target;
 }

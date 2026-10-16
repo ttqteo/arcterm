@@ -124,24 +124,46 @@ Finished window (mục **Idle** dưới lưới) ngồi ở phòng chờ, nên t
 Văn phòng vẽ bằng pixel art nhìn từ trên xuống: trong giờ làm thì sáng, ngoài giờ (tối, đêm, cuối tuần) thì dịu lại;
 mỗi người nhận ra nhờ kiểu tóc, và sếp (bạn) đội mũ. Phòng không ai làm việc thì tắt đèn.
 
-- **Mỗi project là một dải**: bên trái là phòng của các agent (mỗi agent một bàn, quay mặt ra phía bạn), bên phải
-  mỗi run một phòng họp, lead ngồi đầu bàn, worker ngồi quanh, màn hình trên tường là DAG của run. **Sảnh** ở giữa có
-  phòng chờ (TV, sofa, máy cà phê): agent idle quá Finished window ra máy cà phê, sau 10 phút thì lên sofa. Phòng
-  chờ có 5 chỗ (3 ghế sofa, 2 chỗ đứng); ai tới sau khi hết chỗ thì dòng `+N in the lounge` đếm, bàn của họ vẫn trống.
-  Agent không có project ngồi ở phòng **Home** cạnh cửa vào.
+- **Một tòa nhà nhiều tầng**: mỗi **tầng** là đúng một màn hình, bốn phòng quanh **sảnh**; chỉ khi cửa sổ thấp hơn 676 px thì
+  tầng mới cuộn, phòng không co lại. Mỗi project là **một phòng**: bàn của các agent xếp hàng ở trên (mỗi agent một
+  bàn, quay mặt ra phía bạn), mỗi run là **một bàn họp** ở dải cuối phòng, lead ngồi đầu bàn, worker ngồi quanh, màn
+  hình nhỏ trên bàn là DAG của run, dưới bàn ghi `tên run · số task xong of tổng`. Agent và run không có project ở
+  phòng **Home**; slot chưa có phòng là một phòng tối `Empty room`.
+- **Phòng chứa được bao nhiêu thì theo cỡ của Office**: 1.050 × 650 được 3 bàn agent và 2 bàn họp, 1.600 × 1.000 được
+  10 bàn và 3 bàn họp. Phần không vừa gom vào một chip `+3 agents · +1 run` ở góc phải tên phòng (vàng, mở đầu bằng
+  `!` khi ai trong đó đang hỏi): `↵` ở chip liệt kê họ, `↵` ở một dòng mở thẻ của người đó cạnh chip. Ai ngồi ở bàn thì
+  ngồi yên: đổi trạng thái không chuyển ai từ bàn vào chip.
+- **Sảnh** ở giữa mỗi tầng có phòng chờ (TV, sofa, máy cà phê) của tầng đó: agent idle quá Finished window ra máy cà
+  phê, sau 10 phút thì lên sofa. Phòng chờ có 5 chỗ (3 ghế sofa, 2 chỗ đứng); ai tới sau khi hết chỗ thì dòng `+N in the
+  lounge` đếm, bàn của họ vẫn trống. Dưới phòng chờ là **bảng tin Needs you**, giống nhau ở mọi tầng và liệt kê những dòng
+  Needs you của cả tòa nhà, nên trả lời được mà không cần đi thang. Cuối sảnh là **thang máy**.
+- **Thang máy**: `PageUp` / `PageDown` lên / xuống một tầng ở bất cứ đâu trên tầng. Hoặc đi tới cửa thang (hay bấm vào
+  cửa, hay `m` → **Lift**) rồi `↵` để mở bảng thang: mỗi tầng một nút tròn (G, 1, 2…) kèm dấu `! N` vàng khi tầng đó
+  có câu hỏi và tên các project trong đó; `↑` `↓` chọn, `↵` đi, `Esc` ở lại. Cửa thang đóng lại, kim chỉ tầng nhích
+  từng nấc, cửa mở ra ở tầng mới và sếp bước ra cạnh thang. Cạnh cửa thang có dòng vàng `▲ 1 on 2` cho mỗi tầng khác
+  đang có câu hỏi; `n` tới một câu hỏi ở tầng khác thì tự đi thang rồi đi bộ tới đó. Tắt animation hay bật giảm
+  chuyển động thì tầng đổi ngay, không có cửa.
+- **Sắp xếp phòng**: đứng trong một phòng, `g` (hay `m` → **Move this room**) nhấc cả phòng lên. `←` `↑` `↓` `→`
+  chọn slot đích trên tầng (phòng ở đó đổi chỗ với phòng bạn mang, slot trống thì nhận luôn); `PageUp` / `PageDown` chở
+  phòng sang tầng khác, qua tầng trên cùng thì đích là **+ New floor**, còn tầng đã đủ 4 phòng thì nút ghi `Floor full`
+  và đích vẫn là các slot để đổi chỗ; `↵` đặt xuống, `Esc` (hay `g` lần nữa) trả về chỗ cũ. Bằng chuột: kéo phòng bằng
+  **tiêu đề** của nó (qua 4 px mới tính là kéo, nên bấm vẫn chỉ là chọn): thả vào một slot để đổi chỗ, hoặc thả vào nút
+  một tầng trên bảng thang (tự mở khi kéo) để phòng vào slot trống đầu tiên của tầng đó; nút của tầng đủ phòng không
+  nhận. `m` → **Arrange automatically** xếp lại: Home trước, rồi các project theo tên, từ G lên. Cách xếp lưu theo
+  từng người dùng nên còn nguyên khi mở lại.
 - **Chỉ thứ cần bạn mới nổi**: dưới bàn là tên agent; chữ trạng thái chỉ hiện **Needs you** (vàng, kèm dấu `!`) và
   **done**. Phòng không ai làm thì tắt đèn. Rê chuột lên bàn để xem trạng thái đầy đủ.
 - **Bạn là sếp, chơi như game Pokémon**: `←` `↑` `↓` `→` để đi (tường chặn, cửa đi qua được), `j` / `k` tới bàn kế,
   `n` hiện lối đi chấm chấm tới câu hỏi kế tiếp trong một giây rồi đi tới đó. Đứng ở bàn nào thì trên đầu người đó có
   `↵ Talk` (hay `↵ Answer` nếu đang hỏi): bấm `↵` mở **hộp thoại** ở mép văn phòng, chứa điều agent nói, câu hỏi, các
   bước gần nhất và số liệu của nó, kèm menu ▶ bên phải. `↑` `↓` chọn, `↵` làm, `Esc` lùi một bước: hộp thoại có các
-  câu trả lời rồi **Send**, hay **Open**, **Reply**, **Terminal**, **Background**; ở phòng họp là **Open lead**, **Adjust**;
+  câu trả lời rồi **Send**, hay **Open**, **Reply**, **Terminal**, **Background**; ở bàn họp của run là **Open lead**, **Adjust**;
   ở ghế worker là các nút của task đó. **Full card** (hay `f`) mở thẻ đầy đủ cạnh bàn; `Esc` quay về hộp thoại.
-  `1`–`9`, `r`, `t`, `b` vẫn dùng được như trước. Bấm vào bàn hay phòng họp cũng mở hộp thoại.
+  `1`–`9`, `r`, `t`, `b` vẫn dùng được như trước. Bấm vào bàn, bàn họp hay thang máy cũng mở hộp thoại.
 - **Văn phòng chiếm hết màn**: không còn tiêu đề Cockpit; số đếm (need you, working…), Cards | Office, project và
   **Live only** nằm trong thanh HUD trong văn phòng. Footer chỉ còn `m menu` và event mới nhất; rail Events ẩn trong
-  Office. `m` mở **menu văn phòng** (như START): next Needs you, bàn kế / trước, **Events** (hiện rail), Cards view, và
-  danh sách phím.
+  Office. `m` mở **menu văn phòng** (như START): next Needs you, bảng tin, bàn kế / trước, **Lift**, **Move this room**,
+  **Arrange automatically**, **Events** (hiện rail), Cards view, và danh sách phím.
 - **Giờ làm và năng lượng**: ngoài giờ làm (mặc định 9–18, và cả cuối tuần) văn phòng tối lại, ai idle đã về nhà, ai
   còn làm có đèn bàn. Quota 5 giờ từ 70 % thì có người ngáp, từ 90 % thì có cà phê trên bàn; quota reset thì mọi
   người vươn vai. `⚡` trên thanh HUD là năng lượng còn lại: 100 % trừ phần quota đã dùng (dùng 4 % thì hiện

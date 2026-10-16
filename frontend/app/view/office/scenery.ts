@@ -4,9 +4,11 @@
 // The cockpit office's building on two canvases (cockpit office spec, "Drawing"): the plan → what the canvas under
 // the people and the one over them draw, in art pixels (one is PLAN_CELL CSS px), each op naming a colour role, never
 // a colour. rasterise turns a list into RGBA bytes; sceneryKey says when to draw again. Ported from the canvas's
-// prototype (.superpowers/design/cockpit-office-pixel/prototype/scene.mjs), op for op. Pure: no React, no DOM.
+// prototype (.superpowers/design/cockpit-office-pixel/prototype/scene.mjs), op for op. It draws the one floor the
+// plan holds (office floors spec, "A floor"): four rooms round the hall with the lift at its foot, G's facade or a
+// plain wall under it. Pure: no React, no DOM.
 
-import { HWALL, WALL, type Box, type Plan } from "@/app/view/agents/officeplanmodel";
+import { HWALL, MEET_H, WALL, type Box, type Plan } from "@/app/view/agents/officeplanmodel";
 import { NEAR_CHAIR } from "./officegrids";
 import type { OfficeColors, OfficePhase, OfficeRole } from "./officepalette";
 import type { Rgb } from "./spritecache";
@@ -32,6 +34,7 @@ export const CHAIR_ROLES: Record<string, OfficeRole> = { O: "ink", R: "chair", r
 
 const LEAF = ["..OOOOO..", ".OGGgGGO.", "OGgGGGGdO", "OGGGgGGdO", "OdGGGGddO", "OGdGGdGdO", ".OddGddO.", "..OOOOO.."];
 const LEAF_ROLES: Record<string, OfficeRole> = { O: "ink", G: "leaf", g: "leafHi", d: "leafDark" };
+const DIAL_ROLES: Record<string, OfficeRole> = { O: "ink", S: "screen" };
 // the sign's letters, a 5 x 5 pixel face
 const FONT: Record<string, string[]> = {
     A: [".###.", "#...#", "#####", "#...#", "#...#"],
@@ -154,6 +157,33 @@ export function boardArt(box: Box) {
     return { frame, cork, legs: [leg(frame.x + 3), leg(frame.x + frame.w - 6)] };
 }
 
+/** The lift's dial as the rows of a grid, w x h art px: a half disc standing on the doors, ink round a screen face
+ *  (`O` ink, `S` screen, `.` clear), its rows widening toward the doors and its top row ink alone. */
+function dialRows(w: number, h: number): string[] {
+    const c = Math.floor(w / 2);
+    const reach = (r: number) => Math.min(c, Math.round((w / 2) * Math.sqrt(1 - ((h - r - 0.5) / h) ** 2)));
+    return Array.from({ length: h }, (_, r) => {
+        // a face pixel needs ink-free neighbours on its row and the row above it
+        const face = r === 0 ? -1 : Math.min(reach(r) - 1, reach(r - 1));
+        let row = "";
+        for (let x = 0; x < w; x++) {
+            const d = Math.abs(x - c);
+            row += d > reach(r) ? "." : d <= face ? "S" : "O";
+        }
+        return row;
+    });
+}
+
+/** The dial's needle: the pixels from its pivot, the middle of the face's last row, `len` long, at `deg` degrees from
+ *  straight up (left negative). The floors fan out over 120 degrees, G leftmost. */
+function needlePixels(len: number, deg: number): { dx: number; up: number }[] {
+    const a = (deg * Math.PI) / 180;
+    return Array.from({ length: len + 1 }, (_, t) => ({
+        dx: Math.round(t * Math.sin(a)),
+        up: Math.round(t * Math.cos(a)),
+    }));
+}
+
 /** What the canvas under the people and the one over them draw, in order; sizes in art px. */
 export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery {
     const night = phase === "after";
@@ -166,12 +196,16 @@ export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery
     // floors
     const body = artBox(plan.body);
     under.fill(body.x, body.y, body.w, body.h, "tiles");
+    // a project room is wood with a carpet strip at its foot, where its runs' tables stand (a project with no run
+    // keeps the bare strip); a table's zone and an empty room are carpet. plan.rooms lists a room before its zones
     for (const r of plan.rooms) {
         const b = artBox(r.box);
-        if (r.kind === "agents" || r.kind === "home") {
+        if (r.kind === "agents") {
             under.fill(b.x, b.y, b.w, b.h, "wood");
+            const strip = artBox({ x: r.box.x, y: r.box.y + r.box.h - MEET_H, w: r.box.w, h: MEET_H });
+            under.fill(strip.x, strip.y, strip.w, strip.h, "carpet");
         }
-        if (r.kind === "meeting") {
+        if (r.kind === "meeting" || r.kind === "empty") {
             under.fill(b.x, b.y, b.w, b.h, "carpet");
         }
     }
@@ -221,8 +255,11 @@ export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery
         under.rect(x + 3, y + 14, 7, 1, "shadow");
     };
     plant(...L(200, 172));
-    for (const r of plan.rooms.filter((r) => r.kind === "agents")) {
-        plant(art(r.box.x + r.box.w - 44), art(r.box.y + r.box.h - 64));
+    // a project room's plants: one where the plan left a desk place free, one on the strip with no table in it
+    for (const r of plan.rooms) {
+        for (const p of r.plants ?? []) {
+            plant(art(p.x), art(p.y));
+        }
     }
 
     // the Needs you notice board in the hall under the lounge: cork in a wood frame on two legs. Its paper slips are
@@ -242,6 +279,43 @@ export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery
             }
         }
         under.shadow(f.x, f.y, f.w, f.h);
+    }
+
+    // the lift at the hall's foot: two steel doors with a split between them, a call button beside them, and a dial
+    // over them whose needle points at the floor shown among the floors, G leftmost. The label "Floor <n>" and the asks
+    // on other floors are DOM (cockpitoffice.tsx), so a new ask never draws this again
+    {
+        const d = artBox(plan.lift.doors);
+        const split = d.x + Math.floor(d.w / 2);
+        under.box(d.x, d.y, d.w, d.h, "metal");
+        for (const [x0, x1] of [
+            [d.x + 1, split],
+            [split + 1, d.x + d.w - 1],
+        ]) {
+            // each leaf catches the light along its top and down its left edge
+            under.rect(x0, d.y + 1, x1 - x0, 1, "metalHi");
+            under.rect(x0, d.y + 2, 1, d.h - 4, "metalHi");
+        }
+        under.rect(split, d.y + 1, 1, d.h - 2, "ink");
+        under.rect(d.x + d.w, d.y + 1, 1, d.h - 1, "shadow");
+        // the call button: a steel plate with a lit lamp over a pale one
+        const bx = d.x + d.w + 2;
+        const by = d.y + 5;
+        under.box(bx, by, 5, 9, "laptop");
+        under.rect(bx + 1, by + 2, 3, 2, "lamp");
+        under.rect(bx + 1, by + 5, 3, 2, "face");
+        under.shadow(bx, by, 5, 9);
+
+        const e = artBox(plan.lift.dial);
+        under.grid(dialRows(e.w, e.h), e.x, e.y, DIAL_ROLES);
+        const at = Math.max(
+            0,
+            plan.floors.findIndex((f) => f.floor === plan.floor)
+        );
+        const deg = (at - (plan.floors.length - 1) / 2) * (120 / Math.max(1, plan.floors.length - 1));
+        for (const { dx, up } of needlePixels(e.h - 3, deg)) {
+            under.px(e.x + Math.floor(e.w / 2) + dx, e.y + e.h - 1 - up, "lamp");
+        }
     }
 
     // desks: the chair under the person, the desk over them
@@ -270,11 +344,11 @@ export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery
         }
     }
 
-    // meeting rooms: chairs, table, the DAG screen against the wall
+    // table zones: chairs, table, the run's DAG screen over it
     for (const r of plan.rooms.filter((r) => r.kind === "meeting")) {
         const t = r.table ? artBox(r.table) : null;
         if (r.table && t) {
-            for (const s of plan.seats.filter((s) => s.room === r.key)) {
+            for (const s of plan.seats.filter((s) => s.zone === r.key)) {
                 const px = art(s.x - 3);
                 const pb = art(s.bottom);
                 if (s.bottom > r.table.y + 20) {
@@ -291,19 +365,17 @@ export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery
             over.rect(t.x + 1, t.y + 1, t.w - 2, 1, "deskHi");
             over.rect(t.x + 1, t.y + t.h - 4, t.w - 2, 3, "deskFace");
         }
-        if (r.screen) {
-            const sx0 = art(r.box.x + r.box.w - 170);
-            const sy0 = art(r.box.y + 8);
+        if (r.screen && t) {
+            // the run's DAG on a thin screen at the zone's top, centred over the table, behind the people on the far
+            // side: they sit from 12 px down the zone, so the screen takes the band above their heads
             const sw0 = Math.max(26, r.screen.length * 4 + 5);
-            under.box(sx0, sy0, sw0, 10, "metal");
-            under.rect(sx0 + 2, sy0 + 2, sw0 - 4, 6, "screen");
-            r.screen.forEach((c, i) => under.rect(sx0 + 3 + i * 4, sy0 + 3, 3, 2, SCREEN_CELL[c]));
-            const done = r.screen.filter((c) => c === "done").length;
-            under.rect(sx0 + 3, sy0 + 6, sw0 - 6, 1, "edgeMid");
-            under.rect(sx0 + 3, sy0 + 6, Math.round(((sw0 - 6) * done) / r.screen.length), 1, "working");
-            under.rect(sx0 + 3, sy0 + 10, 1, 2, "ink");
-            under.rect(sx0 + sw0 - 4, sy0 + 10, 1, 2, "ink");
-            under.shadow(sx0, sy0, sw0, 10);
+            const sx0 = t.x + Math.round((t.w - sw0) / 2);
+            const sy0 = art(r.box.y);
+            under.box(sx0, sy0, sw0, 6, "metal");
+            under.rect(sx0 + 2, sy0 + 1, sw0 - 4, 4, "screen");
+            const x0 = sx0 + 2 + Math.floor((sw0 - 4 - (r.screen.length * 4 - 1)) / 2);
+            r.screen.forEach((c, i) => under.rect(x0 + i * 4, sy0 + 2, 3, 2, SCREEN_CELL[c]));
+            under.shadow(sx0, sy0, sw0, 6);
         }
     }
 
@@ -348,16 +420,20 @@ export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery
         under.rect(tv.x + 6, ty + 7, tv.w - 12, 1, "shadow");
     }
 
-    // the facade: the outer bottom wall from outside
+    // the foot of the building: the outer bottom wall from outside. On G it is brick with the entrance, on a floor above
+    // it is the plain wall face with a window every 128 px and no door
     const fy = art(plan.body.y + plan.body.h);
     {
         under.rect(0, fy, W, 1, "ink");
         under.rect(0, fy + 1, W, 1, "cap");
         under.rect(0, fy + 2, W, 1, "ink");
-        under.fill(0, fy + 3, W, H - fy - 3, "brick", fy + 3);
-        const e = artBox(plan.entrance);
-        for (let x = 60; x < plan.width - 60; x += 140) {
-            if (!(x + 36 < plan.entrance.x - 20 || x > plan.entrance.x + plan.entrance.w + 20)) {
+        if (plan.ground) {
+            under.fill(0, fy + 3, W, H - fy - 3, "brick", fy + 3);
+        } else {
+            under.fill(0, fy + 3, W, H - fy - 3, "face");
+        }
+        for (let x = 60; x < plan.width - 60; x += plan.ground ? 140 : 128) {
+            if (plan.ground && !(x + 36 < plan.entrance.x - 20 || x > plan.entrance.x + plan.entrance.w + 20)) {
                 continue;
             }
             const wx = art(x);
@@ -369,23 +445,33 @@ export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery
             }
             under.rect(wx, fy + 11, 12, 1, "cap");
         }
-        // glass doors, each half a whole number of pixels wide
-        const half = Math.floor(e.w / 2);
-        under.box(e.x, fy + 1, e.w, H - fy - 1, "metal");
-        under.box(e.x + 2, fy + 3, half - 2, H - fy - 3, "glass");
-        under.box(e.x + half, fy + 3, half - 2, H - fy - 3, "glass");
-        under.px(e.x + half - 2, fy + 7, "ink");
-        under.px(e.x + half + 1, fy + 7, "ink");
-        if (!night) {
-            under.px(e.x + 4, fy + 4, "glassHi");
-            under.px(e.x + 5, fy + 5, "glassHi");
+        if (plan.ground) {
+            // glass doors, each half a whole number of pixels wide
+            const e = artBox(plan.entrance);
+            const half = Math.floor(e.w / 2);
+            under.box(e.x, fy + 1, e.w, H - fy - 1, "metal");
+            under.box(e.x + 2, fy + 3, half - 2, H - fy - 3, "glass");
+            under.box(e.x + half, fy + 3, half - 2, H - fy - 3, "glass");
+            under.px(e.x + half - 2, fy + 7, "ink");
+            under.px(e.x + half + 1, fy + 7, "ink");
+            if (!night) {
+                under.px(e.x + 4, fy + 4, "glassHi");
+                under.px(e.x + 5, fy + 5, "glassHi");
+            }
         }
     }
 
     // over: lights off, night, lamps, wall caps, the sign
+    // a room with no one at work is dark, its wall face included (an empty room is never lit); a table whose run is at
+    // rest dims on its own box, and not again when its room is dark already
+    const roomOf = new Map(plan.rooms.map((r) => [r.key, r]));
     for (const r of plan.rooms.filter((r) => !r.lit)) {
         const b = artBox(r.box);
-        over.rect(b.x, b.y - 3, b.w, b.h + 3, "dark");
+        if (r.kind !== "meeting") {
+            over.rect(b.x, b.y - 3, b.w, b.h + 3, "dark");
+        } else if (roomOf.get(r.parent ?? "")?.lit !== false) {
+            over.rect(b.x, b.y, b.w, b.h, "dark");
+        }
     }
     if (night) {
         over.rect(body.x, body.y - 3, body.w, body.h + 3, "night");
@@ -428,8 +514,8 @@ export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery
         top.rect(x + 1, y0 + 1, 1, y1 - y0 - 2, "cap");
         under.rect(x + 3, y0 + 4, 1, y1 - y0 - 4, "shadow");
     }
-    // the sign over the doors: the brand's frame, its letters in a 5x5 pixel face
-    {
+    // the sign over the doors, on G only: the brand's frame, its letters in a 5x5 pixel face
+    if (plan.ground) {
         const e = artBox(plan.entrance);
         const sw0 = 51;
         const sx0 = e.x + Math.round(e.w / 2) - Math.round(sw0 / 2);
@@ -523,9 +609,10 @@ export function rasterise(ops: Op[], w: number, h: number, colors: OfficeColors)
 }
 
 /**
- * What the canvases draw, as a string: they draw again only when it changes. The plan's geometry, each room's light,
- * each desk's light, each run's screen, tired, the phase and the theme (a run's screen and the laptops' lights are
- * status tokens). Never a pose, a walker or a label.
+ * What the canvases draw, as a string: they draw again only when it changes. The plan's geometry, the floor shown and
+ * the floors there are (the dial's needle, G's facade), each room's light, plant, chip and run's screen, each desk's
+ * light, tired, the phase and the theme (a run's screen and the laptops' lights are status tokens). Never a pose, a
+ * walker or a label.
  */
 export function sceneryKey(plan: Plan, phase: OfficePhase, tired: boolean, theme: string): string {
     return JSON.stringify([
@@ -534,12 +621,25 @@ export function sceneryKey(plan: Plan, phase: OfficePhase, tired: boolean, theme
         phase,
         tired,
         theme,
+        plan.floor,
+        plan.floors.map((f) => f.label),
         plan.body,
         plan.lounge,
         plan.board.box,
+        plan.lift.doors,
+        plan.lift.dial,
         plan.entrance,
         plan.walls,
-        plan.rooms.map((r) => [r.key, r.box, r.lit, r.door ?? 0, r.table ?? 0, r.screen ?? 0]),
+        plan.rooms.map((r) => [
+            r.key,
+            r.box,
+            r.lit,
+            r.door ?? 0,
+            r.table ?? 0,
+            r.screen ?? 0,
+            r.plants ?? 0,
+            r.chip?.text ?? 0,
+        ]),
         plan.desks.map((d) => [d.x, d.y, d.light]),
         plan.seats.map((s) => [s.x, s.bottom]),
     ]);

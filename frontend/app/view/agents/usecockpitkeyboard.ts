@@ -13,7 +13,7 @@ import { askerAt, columnJump, type RowTarget } from "./cardgridlayout";
 import { isRowKey, rowCardId } from "./leadcardmodel";
 import type { Dir } from "./officeboss";
 import { officeKey, type OfficeLayer } from "./officecontrols";
-import { BOARD_KEY } from "./officeplanmodel";
+import { BOARD_KEY, LIFT_KEY } from "./officeplanmodel";
 
 export const ARROW_DIR: Record<string, Dir> = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
 
@@ -33,6 +33,15 @@ export interface OfficeKeys {
     nextAsk(): void;
     // ◀ ▶ over the notice board's box: the page a row on
     pageBoard(delta: -1 | 1): void;
+    // PageUp / PageDown: ride the lift to the next floor up (+1) or down (-1); nothing past the top or the ground floor.
+    // With a room carried it rides with the room, and past the top the room's target is a new floor
+    floor(delta: -1 | 1): void;
+    // g: pick up the room the boss stands in; nothing when it stands in none
+    grab(): void;
+    // the carry's keys: the arrows move the target to a slot of the floor, ↵ puts the room down, Esc and g put it back
+    slot(dir: Dir): void;
+    drop(): void;
+    cancel(): void;
 }
 
 export type CockpitKeyDeps = {
@@ -90,7 +99,8 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
         if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable) {
             return; // typing — let the input own its keys
         }
-        if (e.key === "o" && !e.metaKey && !e.ctrlKey && !e.altKey && toggleView) {
+        // a room carried takes every key until it is put down (officecontrols.ts), the view switch too
+        if (e.key === "o" && !e.metaKey && !e.ctrlKey && !e.altKey && toggleView && office?.layer() !== "carry") {
             e.preventDefault();
             toggleView();
             return;
@@ -141,12 +151,37 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
                     e.preventDefault();
                     office.nextAsk();
                     return;
+                case "floor":
+                    e.preventDefault();
+                    office.floor(act.delta);
+                    return;
+                case "grab":
+                    e.preventDefault();
+                    office.grab();
+                    return;
+                case "slot":
+                    e.preventDefault();
+                    office.slot(act.dir);
+                    return;
+                case "drop":
+                    e.preventDefault();
+                    office.drop();
+                    return;
+                case "cancel":
+                    e.preventDefault();
+                    office.cancel();
+                    return;
                 case "tab": {
                     // the notice board's box pages between its rows (← → and h l); until the box is shown h l are
                     // left as they were
                     if (cursorId === BOARD_KEY && office.layer() === "dialog") {
                         e.preventDefault();
                         office.pageBoard(act.delta);
+                        return;
+                    }
+                    // the lift's panel lists the floors in one column: ← → do nothing there, and leave the view alone
+                    if (cursorId === LIFT_KEY && office.layer() === "dialog") {
+                        e.preventDefault();
                         return;
                     }
                     // a question with several parts switches question (h l, and ← → in the dialog box)

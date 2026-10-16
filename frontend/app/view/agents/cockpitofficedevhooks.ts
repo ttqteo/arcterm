@@ -9,7 +9,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "./agents";
 import { attentionFixtureAtom } from "./attentionstore";
 import { officeDevAtom, readOfficeProbe, type OfficeDev } from "./cockpitoffice";
-import { officeAnimationAtom } from "./officestore";
+import { officeAnimationAtom, officeFloorAtom } from "./officestore";
 import { themePresetAtom } from "./themestore";
 
 declare global {
@@ -23,8 +23,14 @@ declare global {
 }
 
 export function installCockpitOfficeDevHooks(model: AgentsViewModel): void {
-    window.__cockpitOffice = (o) =>
-        globalStore.set(officeDevAtom, o == null ? null : { ...(globalStore.get(officeDevAtom) ?? {}), ...o });
+    window.__cockpitOffice = (o) => {
+        // the floor is shown at once and is not kept in what the office draws instead of live data
+        const { floor, ...rest } = o ?? {};
+        if (floor != null) {
+            globalStore.set(officeFloorAtom, floor);
+        }
+        globalStore.set(officeDevAtom, o == null ? null : { ...(globalStore.get(officeDevAtom) ?? {}), ...rest });
+    };
     // the Needs you rows the strip and the notice board show in place of the live list; null is live again
     window.__cockpitOfficeAttention = (items) => globalStore.set(attentionFixtureAtom, items);
     window.__cockpitOfficeAnimation = (on) => globalStore.set(officeAnimationAtom, on);
