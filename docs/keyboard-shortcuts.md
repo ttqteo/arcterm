@@ -417,8 +417,9 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `+` / `-` | Zoom in / out |
 | `Esc` | Clear the selection; with nothing selected, close the graph |
 
-Resting the pointer on a task shows its peek: the full title, the description's first paragraph (or the files
-it touches), what it is waiting on, its latest activity, and why it failed. Drag a task to move it (its place is
+Clicking a task opens its peek beside it: the title, its worker session, route, review, model, tokens,
+description, Verify output and the actions it needs; a second click, a background click or `Esc` closes it.
+Hovering only highlights the task. Drag a task to move it (its place is
 kept for that run until Reset layout); drag empty canvas to pan. A dashed band marks a lane: tasks that merge as one.
 
 ### Final check viewer (a run's Final check screenshots, opened from its run sheet)

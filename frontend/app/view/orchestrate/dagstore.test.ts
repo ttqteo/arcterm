@@ -93,6 +93,27 @@ describe("buildViewData", () => {
     });
 });
 
+describe("review", () => {
+    it("splits the review's state from its route, same as lead", () => {
+        const reviewed = { ...group, tasks: [{ id: "t-0", label: "x", state: "done", reviewverdict: "pass" }] } as any;
+        expect(buildViewData(reviewed, owner, harnesses, none).nodes[0].review).toEqual({
+            state: "passed first time",
+            route: "same as lead · claude-sonnet-4-6",
+        });
+    });
+    it("names a custom reviewer route and its model", () => {
+        const custom = {
+            ...group,
+            reviewerroute: { runtime: "pi" },
+            tasks: [{ id: "t-0", label: "x", state: "pending" }],
+        } as any;
+        expect(buildViewData(custom, owner, harnesses, none).nodes[0].review).toEqual({
+            state: "not started",
+            route: "reviewer route · operator default",
+        });
+    });
+});
+
 describe("worker routes", () => {
     const withWorkerRoute = { ...group, workerroute: { runtime: "claude", model: "haiku" } } as any;
     it("gives an unpinned task the dag's worker route, as the engine does", () => {

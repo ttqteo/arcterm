@@ -1,33 +1,18 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// The Route DAG's rendered pieces as ReactFlow node and edge types: the task card with its hover peek, the
-// final stage's card, the dashed lane band, and the routed edge. Ported from the design canvas
-// (dag-visualizer/Main.dc.html).
+// The Route DAG's rendered pieces as ReactFlow node and edge types: the task card, the final stage's card,
+// the dashed lane band, and the routed edge. Ported from the design canvas (dag-visualizer/Main.dc.html).
 
-import { Tooltip } from "@/app/element/tooltip";
 import { Handle, Position, useInternalNode, type EdgeProps, type NodeProps } from "@xyflow/react";
-import { atom, useAtomValue, type Atom } from "jotai";
 import { createContext, useContext } from "react";
-import { runAtom } from "../agents/channelsstore";
 import type { FinalStageView, FinalTone } from "../agents/finalstage";
 import { FinalStepStrip } from "../agents/finalstageviews";
-import { InlineMarkdown } from "../agents/inlinemarkdown";
-import { ActivityLine } from "../agents/statusline";
 import { META_TEXT } from "../jarvis/briefstyle";
 import { glyphKind, kindOf, wordOf, type EdgeStyle, type GlyphKind, type NodeKind } from "./dagcanvas";
-import { descriptionLead } from "./dagdescription";
-import type { TaskBrief } from "./dagdigest";
 import { FINAL_NODE_ID } from "./dagfinal";
 import { CARD_H, CARD_W, edgeGeo, type Point, type Rect } from "./daglayout";
-import { dagModalAgentsContextAtom } from "./dagmodalstate";
-import { taskPeek } from "./dagpeek";
 import type { DagViewNode } from "./dagstore";
-import { resolveTaskWorker } from "./taskcorrelate";
-
-// how long the pointer rests on a node before its peek appears: long enough that sweeping across the
-// graph does not flash a card per node
-export const PEEK_OPEN_DELAY_MS = 400;
 
 export type DagCardData = {
     task: TaskNode;
@@ -36,9 +21,6 @@ export type DagCardData = {
     selected: boolean;
     dimmed: boolean;
     hovered: boolean;
-    // undefined while the digest is missing or stale: the peek then makes no digest claim
-    digestTask: DagTaskDigest | undefined;
-    briefs: Map<string, TaskBrief>;
     onHover: (id: string | null) => void;
 };
 
@@ -56,6 +38,11 @@ const LOOK = new Map<NodeKind, Look>([
     ["inert", { bg: "bg-surface", border: "border-edge-mid", label: "text-muted", word: "text-muted" }],
     ["waiting", { bg: "bg-surface", border: "border-edge-mid", label: "text-ink-mid", word: "text-ink-mid" }],
 ]);
+
+// the state word's tone, shared with the peek's header so the card and its node agree
+export function wordTone(t: TaskNode): string {
+    return (LOOK.get(kindOf(t)) ?? LOOK.get("waiting")).word;
+}
 
 const tok = (name: string) => `var(--color-${name})`;
 
@@ -85,7 +72,7 @@ const GLYPH = new Map<GlyphKind, Glyph>([
     ["waiting", NO_MARK],
 ]);
 
-function StateGlyph({ kind }: { kind: GlyphKind }) {
+export function StateGlyph({ kind }: { kind: GlyphKind }) {
     const g = GLYPH.get(kind) ?? NO_MARK;
     return (
         <span className="relative mt-px h-[14px] w-[14px] flex-none">
@@ -121,44 +108,38 @@ export function DagCardNode({ data }: NodeProps) {
     const bg = hovered && !selected && kind !== "attention" ? "bg-surface-hover" : look.bg;
     const border = selected ? "border-accent ring-1 ring-accent" : hovered ? "border-edge-strong" : look.border;
     return (
-        <Tooltip
-            placement="right"
-            openDelay={PEEK_OPEN_DELAY_MS}
-            content={<TaskPeekCard task={task} digestTask={d.digestTask} briefs={d.briefs} />}
+        <div
+            data-dag-node={task.id}
+            data-dag-node-route={`${view.route.source}:${view.route.runtime}:${view.route.model}`}
+            role="button"
+            aria-pressed={selected}
+            aria-label={`${task.id} ${view.label}, ${word}, ${fact}`}
+            onPointerEnter={() => d.onHover(task.id)}
+            onPointerLeave={() => d.onHover(null)}
+            style={{ width: CARD_W, height: CARD_H }}
+            className={`flex cursor-grab select-none flex-col justify-between rounded-[11px] border px-2.5 py-[7px] shadow-popover-line ${bg} ${border} ${
+                dimmed ? "opacity-40" : ""
+            }`}
         >
-            <div
-                data-dag-node={task.id}
-                data-dag-node-route={`${view.route.source}:${view.route.runtime}:${view.route.model}`}
-                role="button"
-                aria-pressed={selected}
-                aria-label={`${task.id} ${view.label}, ${word}, ${fact}`}
-                onPointerEnter={() => d.onHover(task.id)}
-                onPointerLeave={() => d.onHover(null)}
-                style={{ width: CARD_W, height: CARD_H }}
-                className={`flex cursor-grab select-none flex-col justify-between rounded-[11px] border px-2.5 py-[7px] shadow-popover-line ${bg} ${border} ${
-                    dimmed ? "opacity-40" : ""
-                }`}
-            >
-                <Handle type="target" position={Position.Left} isConnectable={false} className="!opacity-0" />
-                <div className="flex w-full items-start gap-2">
-                    <StateGlyph kind={glyphKind(task)} />
-                    <span className={`line-clamp-2 min-w-0 text-[12.5px] font-semibold leading-[17px] ${look.label}`}>
-                        {view.label}
-                    </span>
-                </div>
-                <div className={`flex items-center gap-1.5 leading-[14px] ${META_TEXT}`}>
-                    <span className="min-w-0 flex-1 truncate">
-                        {task.id} · <span className={look.word}>{word}</span> · {fact}
-                    </span>
-                    {view.tag ? (
-                        <span className="flex-none rounded-[5px] border border-edge-mid bg-surface-raised px-[5px] text-[10px] text-accent-soft">
-                            {view.tag}
-                        </span>
-                    ) : null}
-                </div>
-                <Handle type="source" position={Position.Right} isConnectable={false} className="!opacity-0" />
+            <Handle type="target" position={Position.Left} isConnectable={false} className="!opacity-0" />
+            <div className="flex w-full items-start gap-2">
+                <StateGlyph kind={glyphKind(task)} />
+                <span className={`line-clamp-2 min-w-0 text-[12.5px] font-semibold leading-[17px] ${look.label}`}>
+                    {view.label}
+                </span>
             </div>
-        </Tooltip>
+            <div className={`flex items-center gap-1.5 leading-[14px] ${META_TEXT}`}>
+                <span className="min-w-0 flex-1 truncate">
+                    {task.id} · <span className={look.word}>{word}</span> · {fact}
+                </span>
+                {view.tag ? (
+                    <span className="flex-none rounded-[5px] border border-edge-mid bg-surface-raised px-[5px] text-[10px] text-accent-soft">
+                        {view.tag}
+                    </span>
+                ) : null}
+            </div>
+            <Handle type="source" position={Position.Right} isConnectable={false} className="!opacity-0" />
+        </div>
     );
 }
 
@@ -176,6 +157,11 @@ const FINAL_GLYPH: Record<FinalTone, GlyphKind> = {
     fail: "failed",
     warn: "attention",
 };
+
+export function finalGlyph(tone: FinalTone): GlyphKind {
+    return FINAL_GLYPH[tone];
+}
+
 const FINAL_BORDER: Record<FinalTone, string> = {
     wait: "border-edge-strong",
     run: "border-accent/50",
@@ -184,7 +170,7 @@ const FINAL_BORDER: Record<FinalTone, string> = {
     warn: "border-warning/55",
 };
 
-// the final stage as the graph's last node. It is not a task: nothing drags it and it has no peek.
+// the final stage as the graph's last node. It is not a task: nothing drags it.
 export function DagFinalNode({ data }: NodeProps) {
     const { selected } = data as unknown as DagFinalData;
     const view = useContext(FinalStageViewContext);
@@ -203,7 +189,7 @@ export function DagFinalNode({ data }: NodeProps) {
             >
                 <Handle type="target" position={Position.Left} isConnectable={false} className="!opacity-0" />
                 <div className="flex w-full items-start gap-2">
-                    <StateGlyph kind={FINAL_GLYPH[view.tone]} />
+                    <StateGlyph kind={finalGlyph(view.tone)} />
                     <span className="min-w-0 truncate text-[12.5px] font-semibold leading-[17px] text-ink-hi">
                         Final verification
                     </span>
@@ -270,71 +256,3 @@ export function RoutedEdge({ source, target, data }: EdgeProps) {
 
 export const dagNodeTypes = { dagTask: DagCardNode, dagFinal: DagFinalNode, laneBand: LaneBandNode };
 export const dagEdgeTypes = { routed: RoutedEdge };
-
-// TaskPeekCard is the hover peek: the description's lead, the rows taskPeek derives, plus the worker's live
-// activity line while it is working. It mounts only while the peek is open, so only a hovered node's child
-// run is loaded.
-function TaskPeekCard({
-    task,
-    digestTask,
-    briefs,
-}: {
-    task: TaskNode;
-    digestTask: DagTaskDigest | undefined;
-    briefs: Map<string, TaskBrief>;
-}) {
-    const childRun = useAtomValue<Run | undefined>(
-        (task.runid ? runAtom(task.runid) : NO_RUN_ATOM) as Atom<Run | undefined>
-    );
-    const agentsCtx = useAtomValue(dagModalAgentsContextAtom);
-    const worker = resolveTaskWorker({ id: task.id, runid: task.runid }, childRun, agentsCtx?.agents ?? []);
-    // the shared 1s ticker drives the Verify elapsed; without the roster context there is no ticker
-    const tick = useAtomValue(agentsCtx?.model.nowAtom ?? NO_TICK_ATOM);
-    const peek = taskPeek(task, digestTask, briefs, tick || Date.now());
-    const { lead, more } = descriptionLead(task.description);
-    return (
-        <div data-dag-peek={task.id} className="flex w-[290px] flex-col gap-[5px] py-0.5">
-            <div className="text-[13px] font-semibold leading-[17px] text-ink-hi">{peek.title}</div>
-            {lead ? (
-                <div className="line-clamp-4 text-[11.5px] text-secondary">
-                    <InlineMarkdown text={lead} plainLinks />
-                </div>
-            ) : null}
-            {worker.agent && agentsCtx ? <ActivityLine agent={worker.agent} nowAtom={agentsCtx.model.nowAtom} /> : null}
-            {peek.rows.map((row, i) => (
-                <div
-                    key={i}
-                    className={`text-[10.5px] leading-[14px] tabular-nums ${
-                        row.tone === "warning" ? "text-warning" : "text-muted"
-                    }`}
-                >
-                    {row.text}
-                </div>
-            ))}
-            {peek.verify ? (
-                <div data-dag-peek-verify={task.id} className="flex flex-col gap-[3px]">
-                    <div className={META_TEXT}>{peek.verify.heading}</div>
-                    {peek.verify.tail ? (
-                        <pre
-                            className={`m-0 max-h-[110px] overflow-auto whitespace-pre-wrap break-all rounded-md border border-edge-mid bg-surface-code px-2 py-1.5 font-mono text-[10.5px] leading-[14px] ${
-                                peek.verify.tone === "warning" ? "text-warning" : "text-secondary"
-                            }`}
-                        >
-                            {peek.verify.tail}
-                        </pre>
-                    ) : null}
-                </div>
-            ) : null}
-            <div className="text-[10.5px] leading-[14px] text-muted">
-                {more
-                    ? "click to select and read the full description · double-click opens its worker"
-                    : "click to select · double-click to open its worker"}
-            </div>
-        </div>
-    );
-}
-
-// stable no-run atom for a task that has not been dispatched (runAtom is oref-cached, so per-run atoms keep
-// identity across renders; a static Atom is needed for the no-run slot so the hook count never varies)
-const NO_RUN_ATOM = atom<Run | undefined>(undefined);
-const NO_TICK_ATOM = atom(0);

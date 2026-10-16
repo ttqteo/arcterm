@@ -11,6 +11,7 @@ import {
     openView,
     pickNext,
     relatives,
+    selectionNeedsPan,
     wordOf,
     ZOOM_FLOOR,
     ZOOM_MIN,
@@ -242,5 +243,22 @@ describe("fitScale / openView / nodeInView", () => {
     it("knows whether a node is comfortably on screen", () => {
         expect(nodeInView({ x: 0, y: 0, zoom: 1 }, { x: 100, y: 100 }, pane)).toBe(true);
         expect(nodeInView({ x: 0, y: 0, zoom: 1 }, { x: 800, y: 100 }, pane)).toBe(false);
+    });
+});
+
+describe("selectionNeedsPan", () => {
+    const pane = { w: 900, h: 700 };
+    const view = { x: 0, y: 0, zoom: 1 };
+    const node = { x: 100, y: 100 };
+    it("leaves a visible node alone with no card, or with the card beside it", () => {
+        expect(selectionNeedsPan(view, node, pane, null)).toBe(false);
+        expect(selectionNeedsPan(view, node, pane, { x: 308, y: 100, w: 420, h: 300 })).toBe(false);
+    });
+    it("pans when the card landed over the node", () => {
+        expect(selectionNeedsPan(view, node, pane, { x: 150, y: 80, w: 420, h: 300 })).toBe(true);
+    });
+    it("pans to a node out of view", () => {
+        expect(selectionNeedsPan(view, { x: 800, y: 100 }, pane, null)).toBe(true);
+        expect(selectionNeedsPan({ x: -500, y: 0, zoom: 1 }, node, pane, { x: 12, y: 12, w: 420, h: 300 })).toBe(true);
     });
 });

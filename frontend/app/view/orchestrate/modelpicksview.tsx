@@ -61,9 +61,9 @@ export function ModelPicksBanner({ dagOref, runId }: { dagOref: string; runId: s
     );
 }
 
-// the selected task's pick in the detail rail: changeable while the task waits, shown read-only while it runs. A
-// refusal (the task started meanwhile, or this machine cannot run the model) stays on the row; mount it keyed by
-// task so the error does not follow the selection.
+// the selected task's pick, a Model row of the peek's dl: changeable while the task waits, shown read-only while
+// it runs. A refusal (the task started meanwhile, or this machine cannot run the model) stays on the row; mount it
+// keyed by task so the error does not follow the selection.
 export function TaskModelPick({ group, owner, task }: { group: TaskGroup; owner: Run; task: TaskNode }) {
     const [error, setError] = useState<string | null>(null);
     const row = pickRows(group, owner).find((r) => r.id === task.id);
@@ -75,41 +75,43 @@ export function TaskModelPick({ group, owner, task }: { group: TaskGroup; owner:
             setError(dagActionError("setmodel", row.id, e));
         });
     };
+    const errorLine = error && <div className="text-[11px] text-error">{error}</div>;
+    if (!row.waiting) {
+        return (
+            <>
+                <dt className="text-[11px] leading-4 text-ink-mid">Model</dt>
+                <dd data-model-pick={row.id} className="m-0 min-w-0 text-[11px] leading-4">
+                    <div className="flex items-center gap-1.5 text-success">
+                        <span className="size-[7px] flex-none rounded-full bg-success pulse-dot" />
+                        running on {row.runningModel}
+                    </div>
+                    <div className="text-muted">Keeps its model. If it fails, retry it on {lead} from here.</div>
+                    {errorLine}
+                </dd>
+            </>
+        );
+    }
     return (
-        <div data-model-pick={row.id} className="flex flex-col gap-1 border-t border-border pt-1.5">
-            <div className="flex items-center gap-2.5">
-                <span className="flex-none text-[10.5px] text-ink-mid">model</span>
-                {row.waiting ? (
+        <>
+            <dt className="text-[11px] leading-[22px] text-ink-mid">Model</dt>
+            <dd data-model-pick={row.id} className="m-0 flex min-w-0 flex-col gap-[3px]">
+                <div className="flex items-center gap-2">
                     <div
                         role="group"
                         aria-label={`${row.id} model`}
-                        className="flex flex-none gap-0.5 rounded-[7px] border border-border bg-surface-raised p-0.5"
+                        className="flex flex-none gap-0.5 rounded-[7px] border border-border bg-surface p-0.5"
                     >
                         <ToggleButton on={row.model === "sonnet"} label="sonnet" onClick={() => setModel("sonnet")} />
                         <ToggleButton on={row.model === "lead"} label={lead} onClick={() => setModel("lead")} />
                     </div>
-                ) : (
-                    <span className="flex flex-none items-center gap-1.5 text-[10.5px] text-success">
-                        <span className="size-[7px] rounded-full bg-success pulse-dot" />
-                        running on {row.runningModel}
+                    <span className={cn("text-[10.5px]", row.changed ? "text-accent-soft" : "text-muted")}>
+                        {row.changed ? "you changed it" : "waiting"}
                     </span>
-                )}
-                <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-mid" title={row.reason}>
-                    {row.reason ? `Plan reviewer: ${row.reason}` : ""}
-                </span>
-                <span
-                    className={cn("flex-none text-[10.5px]", row.changed ? "text-accent-soft" : "text-muted")}
-                >
-                    {!row.waiting ? "" : row.changed ? "you changed it" : "waiting"}
-                </span>
-            </div>
-            {!row.waiting && (
-                <div className="text-[11px] text-muted">
-                    A task that already started keeps its model. If it fails, retry it on {lead} from here.
                 </div>
-            )}
-            {error && <div className="text-[11px] text-error">{error}</div>}
-        </div>
+                {row.reason ? <span className="text-[11px] text-ink-mid">Plan reviewer: {row.reason}</span> : null}
+                {errorLine}
+            </dd>
+        </>
     );
 }
 

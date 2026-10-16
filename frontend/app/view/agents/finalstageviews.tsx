@@ -66,9 +66,15 @@ function StepMark({ tone }: { tone: FinalTone }) {
     return <span aria-hidden className={cn("size-[7px] flex-none rounded-full", MARK[tone])} />;
 }
 
-function StepLabel({ step }: { step: FinalStep }) {
+function StepLabel({ step, className }: { step: FinalStep; className?: string }) {
     return (
-        <span className={cn("text-[11.5px] font-medium", step.tone === "wait" ? "text-ink-mid" : "text-ink-hi")}>
+        <span
+            className={cn(
+                "text-[11.5px] font-medium",
+                step.tone === "wait" ? "text-ink-mid" : "text-ink-hi",
+                className
+            )}
+        >
             {step.label}
         </span>
     );
@@ -136,8 +142,9 @@ export function FinalKeptOutput({ kept, className }: { kept: FinalStep["kept"]; 
     return <FinalOutput output={out.text} className={className} />;
 }
 
-// One row per step: mark, label, state text. A row whose step kept its output opens it beneath.
-export function FinalStepList({ steps }: { steps: FinalStep[] }) {
+// One row per step: mark, label, state text. showCommand adds each step's command between the label and the
+// state. A row whose step kept its output opens it beneath.
+export function FinalStepList({ steps, showCommand }: { steps: FinalStep[]; showCommand?: boolean }) {
     const [open, setOpen] = useState<FinalStepKey | null>(null);
     return (
         <div className="flex flex-col">
@@ -155,8 +162,17 @@ export function FinalStepList({ steps }: { steps: FinalStep[] }) {
                             className={cn("flex items-center gap-[9px] py-1.5", opens && "cursor-pointer")}
                         >
                             <StepMark tone={step.tone} />
-                            <StepLabel step={step} />
-                            <span className="flex-1" />
+                            <StepLabel step={step} className={showCommand ? "w-14 flex-none" : undefined} />
+                            {showCommand ? (
+                                <span
+                                    title={step.command}
+                                    className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-muted"
+                                >
+                                    {step.command}
+                                </span>
+                            ) : (
+                                <span className="flex-1" />
+                            )}
                             <StepText step={step} />
                         </div>
                         {isOpen ? (
@@ -295,8 +311,16 @@ export function FinalPastRounds({ past }: { past: FinalRoundLine[] }) {
 }
 
 // What an ended stage came to: a failure's detail whole, every unverified reason, and a line per earlier
-// round. Long text scrolls inside it, never cut.
-export function FinalOutcome({ view, className }: { view: FinalStageView; className?: string }) {
+// round, under pastLabel when given. Long text scrolls inside it, never cut.
+export function FinalOutcome({
+    view,
+    pastLabel,
+    className,
+}: {
+    view: FinalStageView;
+    pastLabel?: string;
+    className?: string;
+}) {
     if (view.detail === "" && view.unverified.length === 0 && view.past.length === 0) {
         return null;
     }
@@ -317,7 +341,14 @@ export function FinalOutcome({ view, className }: { view: FinalStageView; classN
                     ))}
                 </ul>
             ) : null}
-            <FinalPastRounds past={view.past} />
+            {pastLabel != null && view.past.length > 0 ? (
+                <div className="flex flex-col">
+                    <span className="pb-0.5 text-[11px] text-ink-mid">{pastLabel}</span>
+                    <FinalPastRounds past={view.past} />
+                </div>
+            ) : (
+                <FinalPastRounds past={view.past} />
+            )}
         </div>
     );
 }

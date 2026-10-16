@@ -17,25 +17,24 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { atom, useAtom, useAtomValue } from "jotai";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useFinalStageView } from "../agents/finalstageviews";
 import {
     edgeStyle,
     factOf,
     graphKey,
-    nodeInView,
     openView,
     relatives,
+    selectionNeedsPan,
     ZOOM_MAX,
     ZOOM_MIN,
     type EdgeFocus,
 } from "./dagcanvas";
-import { DagDetailRail, openTaskFromGraph } from "./dagdetailrail";
 import { taskBriefs, useDagDigest } from "./dagdigest";
 import { FINAL_NODE_ID, finalEdgeStyle, withFinalNode } from "./dagfinal";
-import { DagFinalRail, openFinalFromGraph } from "./dagfinalrail";
+import { DagFinalPeek, openFinalFromGraph } from "./dagfinalpeek";
 import { DagGraphHeader } from "./daggraph-header";
-import { CARD_H, CARD_W, computeLayout, edgeKey, laneBand, lanesOf, type Point } from "./daglayout";
+import { CARD_H, CARD_W, computeLayout, edgeKey, laneBand, lanesOf, type Point, type Rect } from "./daglayout";
 import {
     applyOffsets,
     dagLayoutOffsetsAtom,
@@ -53,7 +52,10 @@ import {
     type LaneBandData,
     type RoutedEdgeData,
 } from "./dagnodes";
+import { nextSelection, PEEK_PAD_PX } from "./dagpeek";
+import type { PeekPlace } from "./dagpeekcard";
 import { buildViewData, hoveredTaskAtom, mergeReadyIds, selectedTaskIdAtom, useDagGroup } from "./dagstore";
+import { DagTaskPeek, openTaskFromGraph } from "./dagtaskpeek";
 import { enterOpensTask } from "./taskcorrelate";
 import { stageEntries, stageTone, type StageEntry } from "./taskroute";
 
@@ -120,7 +122,7 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
     const [rawStore, setStore] = useAtom(dagLayoutOffsetsAtom);
     const { fitView, getNode, getViewport, getZoom, setCenter, zoomTo } = useReactFlow();
     const [paneRef, paneElRef, paneRect] = useDimensionsWithCallbackRef<HTMLDivElement>();
-    const [descOpen, setDescOpen] = useState(false);
+    const [controlsRef, , controlsRect] = useDimensionsWithCallbackRef<HTMLDivElement>();
     // owner is the dag's own run (LiveDagModal loads run:<runId>), so its ids address the digest
     const digestState = useDagDigest(owner.channeloid ?? "", owner.id, oref);
     const mergeReady = useMemo(
@@ -132,6 +134,7 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
         () => new Map((digestState.stale ? [] : (digestState.digest?.tasks ?? [])).map((td) => [td.taskid, td])),
         [digestState.digest, digestState.stale]
     );
+    const briefs = useMemo(() => taskBriefs(group), [group]);
 
     const tasks = group?.tasks;
     const oid = group?.oid ?? "";
@@ -168,7 +171,6 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
         if (loading || !group) return { built: [] as Node[], edges: [] as Edge[] };
         const { nodes: vnodes } = buildViewData(group, owner, harnesses, mergeReady);
         const byId = new Map(group.tasks.map((t) => [t.id, t]));
-        const briefs = taskBriefs(group);
         const nowMs = tick || Date.now();
         const inRel = (id: string) => rel == null || id === selectedId || rel.up.has(id) || rel.down.has(id);
         const taskNodes: Node[] = vnodes.map((v) => {
@@ -180,8 +182,6 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
                 selected: v.id === selectedId,
                 dimmed: !inRel(v.id),
                 hovered: hovered?.id === v.id,
-                digestTask: digestById.get(v.id),
-                briefs,
                 onHover,
             };
             return { id: v.id, type: "dagTask", position: positions.get(v.id) ?? { x: 0, y: 0 }, data };
@@ -299,6 +299,8 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
     // the opening view (spec D9), once per dag, after the pane has a size: fitting a 0x0 pane would pick
     // the focus set for every graph
     const openedFor = useRef<string | null>(null);
+    // the opening fit while it is in flight (ReactFlow runs it once the nodes are measured)
+    const openFit = useRef<Promise<unknown> | null>(null);
     useEffect(() => {
         if (!tasks || tasks.length === 0 || nodes.length === 0 || openedFor.current === oid) return;
         const pane = paneSize();
@@ -310,23 +312,46 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
             pane,
             lanes.some((l) => l.length > 1)
         );
-        void fitView({ padding: FIT_PADDING, minZoom, maxZoom: 1, nodes: fitIds?.map((id) => ({ id })) });
+        const fit = fitView({ padding: FIT_PADDING, minZoom, maxZoom: 1, nodes: fitIds?.map((id) => ({ id })) });
+        openFit.current = fit;
+        void fit.then(() => {
+            if (openFit.current === fit) openFit.current = null;
+        });
     }, [fitView, lanes, nodes.length, oid, paneRect, paneSize, positions, tasks]);
 
-    // a new selection starts with its description closed
-    useEffect(() => setDescOpen(false), [selectedId]);
+    // the selected node's element, which its peek floats beside. ReactFlow renders a node a commit after it
+    // enters the nodes, so this resolves again as they change.
+    const [anchor, setAnchor] = useState<{ id: string; el: HTMLElement } | null>(null);
+    useLayoutEffect(() => {
+        const el = selectedId
+            ? paneElRef.current?.querySelector<HTMLElement>(`[data-dag-node="${CSS.escape(selectedId)}"]`)
+            : null;
+        setAnchor((prev) => {
+            if (el == null) return null;
+            return prev?.id === selectedId && prev.el === el ? prev : { id: selectedId, el };
+        });
+    }, [nodes, paneElRef, selectedId]);
 
-    // bring the selection back on screen when selecting it, or the rail growing under it, hid it. The viewport
-    // is read, not a dependency: a pan by hand must not snap back to the selection.
-    useEffect(() => {
-        if (!selectedId || openedFor.current !== oid) return;
-        const pos = getNode(selectedId)?.position ?? positions.get(selectedId);
-        const pane = paneSize();
-        if (pos == null || pane.w <= 0 || pane.h <= 0) return;
-        const viewport = getViewport();
-        if (nodeInView(viewport, pos, pane)) return;
-        void setCenter(pos.x + CARD_W / 2, pos.y + CARD_H / 2, { zoom: viewport.zoom, duration: PAN_MS });
-    }, [selectedId, descOpen, paneRect]);
+    // once per selection, when its peek is first placed: pan only when the node is off screen or the card had
+    // no room beside it. A card that grows, or a pane that resizes, never pans the graph.
+    const panToPlaced = useCallback(
+        (id: string, card: Rect) => {
+            const check = (c: Rect | null) => {
+                if (globalStore.get(selectedTaskIdAtom) !== id) return;
+                const pos = getNode(id)?.position;
+                const pane = paneSize();
+                if (pos == null || pane.w <= 0 || pane.h <= 0) return;
+                const viewport = getViewport();
+                if (!selectionNeedsPan(viewport, pos, pane, c)) return;
+                void setCenter(pos.x + CARD_W / 2, pos.y + CARD_H / 2, { zoom: viewport.zoom, duration: PAN_MS });
+            };
+            // a card placed before the opening fit lands was measured against the viewport the fit replaces
+            const fit = openFit.current;
+            if (fit != null) void fit.then(() => check(null));
+            else check(card);
+        },
+        [getNode, getViewport, paneSize, setCenter]
+    );
 
     useEffect(() => {
         if (!tasks) return;
@@ -376,6 +401,18 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
     const selectedView = selectedTask
         ? (built.find((n) => n.id === selectedTask.id)?.data as unknown as DagCardData | undefined)?.view
         : undefined;
+    const paneEl = paneElRef.current;
+    const place: PeekPlace | null =
+        anchor != null && anchor.id === selectedId && paneEl != null
+            ? {
+                  anchor: anchor.el,
+                  boundary: paneEl,
+                  // the column sits PEEK_PAD_PX (right-3) in from the pane's edge
+                  rightInsetPx: (controlsRect?.width ?? 0) + PEEK_PAD_PX,
+                  onClose: () => globalStore.set(selectedTaskIdAtom, null),
+                  onPlaced: (card) => panToPlaced(anchor.id, card),
+              }
+            : null;
     return (
         <div className="relative flex h-full min-h-0 w-full min-w-0 flex-col bg-background">
             <DagGraphHeader group={group} owner={owner} />
@@ -425,9 +462,10 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
                         maxZoom={ZOOM_MAX}
                         colorMode="dark"
                         proOptions={{ hideAttribution: true }}
-                        onNodeClick={(_e, n) => {
-                            if (n.type === "dagTask" || n.type === "dagFinal")
-                                globalStore.set(selectedTaskIdAtom, n.id);
+                        onNodeClick={(e, n) => {
+                            if (n.type !== "dagTask" && n.type !== "dagFinal") return;
+                            const current = globalStore.get(selectedTaskIdAtom);
+                            globalStore.set(selectedTaskIdAtom, nextSelection(current, n.id, e.detail));
                         }}
                         onNodeDoubleClick={(_e, n) => {
                             const task = group.tasks.find((t) => t.id === n.id);
@@ -444,7 +482,11 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
                         />
                     </ReactFlow>
                 </FinalStageViewContext.Provider>
-                <div className="absolute right-3 top-3 z-[5] flex flex-col items-end gap-1.5">
+                <div
+                    ref={controlsRef}
+                    data-dag-controls
+                    className="absolute right-3 top-3 z-[5] flex flex-col items-end gap-1.5"
+                >
                     <ZoomCluster onFit={fitAll} />
                     {store[oid] != null ? (
                         <button
@@ -471,19 +513,21 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
                         </button>
                     ) : null}
                 </div>
+                {place == null ? null : selectedTask && selectedView ? (
+                    <DagTaskPeek
+                        key={selectedTask.id}
+                        group={group}
+                        owner={owner}
+                        view={selectedView}
+                        task={selectedTask}
+                        digestTask={digestById.get(selectedTask.id)}
+                        briefs={briefs}
+                        place={place}
+                    />
+                ) : selectedId === FINAL_NODE_ID ? (
+                    <DagFinalPeek group={group} owner={owner} view={finalView} place={place} />
+                ) : null}
             </div>
-            {selectedTask && selectedView ? (
-                <DagDetailRail
-                    group={group}
-                    owner={owner}
-                    view={selectedView}
-                    task={selectedTask}
-                    descOpen={descOpen}
-                    onToggleDesc={() => setDescOpen((o) => !o)}
-                />
-            ) : selectedId === FINAL_NODE_ID && finalView.steps.length > 0 ? (
-                <DagFinalRail group={group} owner={owner} view={finalView} />
-            ) : null}
         </div>
     );
 }

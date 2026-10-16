@@ -1,9 +1,9 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// The hover peek's glance at a task description. About half the real plans open straight on **Files:**, so
+// The peek's glance at a task description. About half the real plans open straight on **Files:**, so
 // those lead with the files the task touches instead of a bare label. Returns markdown source: InlineMarkdown
-// renders it, as Markdown renders the full description in the detail rail.
+// renders it, as Markdown renders the full description the peek expands to.
 
 export const LEAD_FILES_MAX = 4;
 

@@ -5,6 +5,7 @@
 // moves the selection, and how the graph opens. Ported from the design canvas (dag-visualizer/Main.dc.html).
 
 import { firstLine, formatElapsed } from "./dagdigest";
+import type { Rect } from "./daglayout";
 
 type Point = { x: number; y: number };
 type TaskState = Pick<TaskNode, "state" | "gate">;
@@ -338,5 +339,25 @@ export function nodeInView(viewport: { x: number; y: number; zoom: number }, p: 
         sx + CARD_W * viewport.zoom <= pane.w - VIEW_MARGIN_X &&
         sy >= VIEW_MARGIN_TOP &&
         sy + CARD_H * viewport.zoom <= pane.h - VIEW_MARGIN_BOTTOM
+    );
+}
+
+// selectionNeedsPan says whether opening a node's peek should pan to it: only when the node is off screen or
+// the card, in pane pixels, landed over it because the pane had no room on either side
+export function selectionNeedsPan(
+    viewport: { x: number; y: number; zoom: number },
+    p: Point,
+    pane: Pane,
+    card: Rect | null
+): boolean {
+    if (!nodeInView(viewport, p, pane)) return true;
+    if (card == null) return false;
+    const sx = viewport.x + p.x * viewport.zoom;
+    const sy = viewport.y + p.y * viewport.zoom;
+    return (
+        sx < card.x + card.w &&
+        card.x < sx + CARD_W * viewport.zoom &&
+        sy < card.y + card.h &&
+        card.y < sy + CARD_H * viewport.zoom
     );
 }

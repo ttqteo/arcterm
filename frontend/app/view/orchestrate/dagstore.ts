@@ -6,7 +6,7 @@ import { cardModelTag, reviewerRouteOf, reviewStateText, taskRoute, type RouteSo
 
 export { routeSourceLabel } from "./taskroute";
 
-// selectedTaskIdAtom is shared by the live graph and its detail rail. Opening or closing a modal resets
+// selectedTaskIdAtom is shared by the live graph and its peek. Opening or closing a modal resets
 // it through dagmodalstate.ts, while node clicks and keyboard navigation update it directly.
 export const selectedTaskIdAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 
@@ -56,7 +56,7 @@ export interface DagViewNode {
     actions: string[]; // approve | sendback | retry | skip | merge
     route: DagNodeRoute;
     tag: string | null; // the card's model tag, when the task runs off the workers model
-    reviewLine: string; // the rail's review line after "review · "
+    review: { state: string; route: string }; // how the review went, and who reviews on which model
 }
 export interface DagViewEdge {
     source: string;
@@ -112,7 +112,7 @@ export function buildViewData(
                 resolvedModel: capability?.resolvedmodel ?? "unavailable",
             },
             tag: cardModelTag(t, owner, group),
-            reviewLine: `${reviewerLabel} · ${reviewerModel} · ${reviewStateText(t)}`,
+            review: { state: reviewStateText(t), route: `${reviewerLabel} · ${reviewerModel}` },
         };
     });
     const edges: DagViewEdge[] = [];

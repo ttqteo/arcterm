@@ -11800,8 +11800,7 @@ const dagLifecycle = {
         );
         rec("5a. No node carries a native tooltip", titledInNode === 0, JSON.stringify({ titledInNode }));
 
-        // React synthesizes onPointerEnter from pointerover/mouseover; the peek's floating-ui hover listens for a
-        // native mouseenter on the card's wrapper, which the bubbling dispatch reaches
+        // the hover events the old hover peek opened on (its delay was 400ms); the peek now opens on a click only
         const hoverPeek = await h.ev(`(async () => {
             const card = document.querySelector('[data-dag-modal-kind] [data-dag-node]:not([data-dag-node="final"])');
             if (!card) return { card: null };
@@ -11810,15 +11809,20 @@ const dagLifecycle = {
                 card.dispatchEvent(new Ev(type, { bubbles: true }));
             }
             await new Promise((r) => setTimeout(r, 700));
-            const peek = !!document.querySelector('[data-dag-peek]');
+            const taskPeek = !!document.querySelector('[data-dag-task-peek]');
+            const oldPeek = !!document.querySelector('[data-dag-peek]');
             const titled = document.querySelectorAll('[data-dag-modal-kind] .react-flow__node [title]').length;
             for (const type of ['pointerout', 'pointerleave', 'mouseout', 'mouseleave']) {
                 const Ev = type.startsWith('pointer') ? PointerEvent : MouseEvent;
                 card.dispatchEvent(new Ev(type, { bubbles: true }));
             }
-            return { card: card.getAttribute('data-dag-node'), peek, titled };
+            return { card: card.getAttribute('data-dag-node'), taskPeek, oldPeek, titled };
         })()`);
-        rec("5b. Hover opens the peek", hoverPeek.peek === true && hoverPeek.titled === 0, JSON.stringify(hoverPeek));
+        rec(
+            "5b. Hover opens nothing",
+            hoverPeek.card != null && hoverPeek.taskPeek === false && hoverPeek.oldPeek === false && hoverPeek.titled === 0,
+            JSON.stringify(hoverPeek)
+        );
 
         const liveDag = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: runId })).group;
         const depPairs = liveDag.tasks.flatMap((t) => (t.deps || []).map((d) => [d, t.id]));
@@ -11840,21 +11844,31 @@ const dagLifecycle = {
             const pressed = () => document.querySelectorAll('[data-dag-modal-kind] [data-dag-node]:not([data-dag-node="final"])[aria-pressed="true"]').length;
             const card = document.querySelector('[data-dag-modal-kind] [data-dag-node]:not([data-dag-node="final"])');
             if (!card) return { card: null };
+            const id = card.getAttribute('data-dag-node');
+            const peek = () => !!document.querySelector('[data-dag-task-peek="' + CSS.escape(id) + '"]');
             card.click();
-            await new Promise((r) => setTimeout(r, 200));
+            // the peek is named only once floating-ui has placed it
+            for (let i = 0; i < 20 && !peek(); i++) await new Promise((r) => setTimeout(r, 100));
             const selectedBefore = pressed();
+            const peekBefore = peek();
             window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
             await new Promise((r) => setTimeout(r, 300));
             return {
-                card: card.getAttribute('data-dag-node'),
+                card: id,
                 selectedBefore,
+                peekBefore,
                 selectedAfter: pressed(),
+                peekAfter: !!document.querySelector('[data-dag-task-peek]'),
                 modalOpen: !!document.querySelector('[data-dag-modal-kind]'),
             };
         })()`);
         rec(
-            "5d. Esc clears a selection before closing",
-            escSelection.selectedBefore === 1 && escSelection.selectedAfter === 0 && escSelection.modalOpen === true,
+            "5d. A click opens the node's peek, and Esc clears the selection and the peek before closing",
+            escSelection.selectedBefore === 1 &&
+                escSelection.peekBefore === true &&
+                escSelection.selectedAfter === 0 &&
+                escSelection.peekAfter === false &&
+                escSelection.modalOpen === true,
             JSON.stringify(escSelection)
         );
 
@@ -19343,6 +19357,7 @@ const OBS_WIDE = { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false
 const OBS_NARROW = { width: 1000, height: 900, deviceScaleFactor: 1, mobile: false };
 const OBS_MODAL = `document.querySelector('[data-dag-modal-kind]')`;
 const OBS_RAIL = `document.querySelector('[data-timeline-rail]')`;
+const OBS_PEEK = (id) => `document.querySelector('[data-dag-modal-kind] [data-dag-task-peek="${id}"]')`;
 // a row that renders its raw event kind means the projection is missing that kind's title
 const OBS_RAW_KIND = /\b(task|dag|child|lead)-[a-z-]+\b/;
 
@@ -19444,16 +19459,20 @@ const dagObservability = {
             JSON.stringify(deeplink)
         );
 
+        // a click on the open node's own card would close it, and the step-4 deeplink may have opened it
         const explicit = await h.ev(`(async () => {
             const node = ${OBS_MODAL}?.querySelector('[data-dag-node="t-3"]');
             if (!node) return null;
-            node.click();
-            await new Promise((r) => setTimeout(r, 500));
-            const text = ${OBS_MODAL}.innerText || "";
+            const peek = () => ${OBS_PEEK("t-3")};
+            if (!peek()) node.click();
+            for (let i = 0; i < 20 && !peek(); i++) await new Promise((r) => setTimeout(r, 250));
+            const text = peek()?.innerText || "";
+            const rail = ${OBS_RAIL}?.innerText || "";
             return {
+                peek: !!peek(),
                 pending: text.includes("Not dispatched yet"),
-                live: text.includes("● live"),
-                failed: text.includes("load failed"),
+                live: rail.includes("● live"),
+                failed: rail.includes("load failed"),
             };
         })()`);
         rec(
@@ -19481,14 +19500,15 @@ const dagObservability = {
         const worker = await h.ev(`(async () => {
             const node = ${OBS_MODAL}?.querySelector('[data-dag-node="t-1"]');
             if (!node) return null;
-            node.click();
-            const openBtn = () =>
-                [...(${OBS_MODAL}?.querySelectorAll("button") ?? [])].find((b) => /open in agent/i.test(b.innerText || ""));
+            const peek = () => ${OBS_PEEK("t-1")};
+            if (!peek()) node.click();
+            const openBtn = () => [...(peek()?.querySelectorAll("button") ?? [])].find((b) => /open in agent/i.test(b.innerText || ""));
             for (let i = 0; i < 40 && !openBtn(); i++) {
                 await new Promise((r) => setTimeout(r, 250));
             }
-            const text = ${OBS_MODAL}?.innerText || "";
+            const text = peek()?.innerText || "";
             return {
+                peek: !!peek(),
                 openable: !!openBtn(),
                 pending: text.includes("Not dispatched yet"),
                 unavailable: text.includes("Worker session unavailable"),
@@ -19501,7 +19521,7 @@ const dagObservability = {
         );
 
         const landed = await h.ev(`(async () => {
-            const btn = [...(${OBS_MODAL}?.querySelectorAll("button") ?? [])].find((b) => /open in agent/i.test(b.innerText || ""));
+            const btn = [...(${OBS_PEEK("t-1")}?.querySelectorAll("button") ?? [])].find((b) => /open in agent/i.test(b.innerText || ""));
             if (!btn) return null;
             btn.click();
             await new Promise((r) => setTimeout(r, 1200));
@@ -19519,6 +19539,483 @@ const dagObservability = {
     },
     async teardown(h, ctx) {
         await teardownFixtureRun(h, ctx, "dag-observability");
+    },
+};
+
+// --- dag-peek: the card a DAG node click opens beside the node (Main.dc.html, Final.dc.html) ------------------
+// Four tasks at parallelism 1: only t-1 dispatches. One seed makes t-2 a done gate and t-3 a failed task, and gives
+// the dag its Check, Verify and Final commands with no final, so the final node is the waiting stage with five rows.
+// The dag is not finalizing, so the engine leaves the stage alone. A seeded DAG proves the UI, not the engine.
+const DAG_PEEK_VIEWPORT = { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false };
+const DAG_PEEK_DONE_WHEN = "Done when: `git status --porcelain` prints nothing";
+const DAG_PEEK_BULLETS = ["make no file changes", "run no commands", "send no messages"];
+const DAG_PEEK_TASKS = [
+    {
+        id: "t-1",
+        label: "noop",
+        description: [
+            "Do nothing and stop immediately. This task only gives the DAG peek card a description with more than its lead.",
+            "",
+            ...DAG_PEEK_BULLETS.map((b) => `- ${b}`),
+            "",
+            DAG_PEEK_DONE_WHEN,
+        ].join("\n"),
+        deps: [],
+        gate: false,
+        state: "",
+    },
+    { id: "t-2", label: "noop gate", description: "do nothing, stop immediately", deps: [], gate: true, state: "" },
+    { id: "t-3", label: "noop 3", description: "do nothing, stop immediately", deps: [], gate: false, state: "" },
+    { id: "t-4", label: "noop 4", description: "do nothing, stop immediately", deps: ["t-1"], gate: false, state: "" },
+];
+const DAG_PEEK_CMDS = { check: "true", verify: "true", finalcmd: "true" };
+const DAG_PEEK_REFUSAL = "dag-peek refused this retry on the page";
+// the old hover peek opened after 400ms
+const DAG_PEEK_HOVER_MS = 700;
+const DAG_PEEK_CATALOG_MS = 30_000;
+// t-1's right edge within this of the pane's right edge leaves the card no room on its right
+const DAG_PEEK_FLIP_PX = 200;
+const DAG_PEEK_REFUSAL_KEY = "__dagPeekRefusal";
+
+const dagPeekPrint = (dag) => {
+    const t = (id) => (dag?.tasks ?? []).find((x) => x.id === id);
+    return JSON.stringify([dag?.check ?? "", dag?.verify ?? "", dag?.finalcmd ?? "", dag?.final ?? null, t("t-2")?.state, t("t-3")?.state, t("t-3")?.escalations ?? 0]);
+};
+const DAG_PEEK_MODAL = `document.querySelector("[data-dag-modal-kind]")`;
+const dagPeekTaskSel = (id) => `[data-dag-task-peek="${id}"]`;
+const DAG_PEEK_FINAL_SEL = "[data-dag-final-peek]";
+const dagPeekCard = (sel) => `${DAG_PEEK_MODAL}?.querySelector(${JSON.stringify(sel)})`;
+const dagPeekClickNode = (id) => `${DAG_PEEK_MODAL}?.querySelector('[data-dag-node="${id}"]')?.click()`;
+const dagPeekAnyCard = `!!document.querySelector("[data-dag-task-peek], [data-dag-final-peek], [data-dag-peek]")`;
+// the card is a sibling of .react-flow inside the pane div, so .react-flow's parent is the pane
+const DAG_PEEK_LIB = `
+    const modal = ${DAG_PEEK_MODAL};
+    const pane = modal?.querySelector(".react-flow")?.parentElement ?? null;
+    const box = (el) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom) };
+    };
+    const inside = (a, b) => a != null && b != null && a.l >= b.l - 1 && a.t >= b.t - 1 && a.r <= b.r + 1 && a.b <= b.b + 1;
+    const meets = (a, b) => a != null && b != null && a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+    const transform = () => modal?.querySelector(".react-flow__viewport")?.style.transform ?? null;
+`;
+// where the card sits against its node, the pane, the timeline rail and the graph's controls
+const dagPeekGeom = (sel, nodeId) => `(() => {
+    ${DAG_PEEK_LIB}
+    const el = modal?.querySelector(${JSON.stringify(sel)});
+    const card = box(el);
+    const node = box(modal?.querySelector('[data-dag-node="${nodeId}"]'));
+    const p = box(pane);
+    const rail = box(modal?.querySelector("[data-timeline-rail]"));
+    const controls = box(modal?.querySelector("[data-dag-controls]"));
+    return {
+        card,
+        node,
+        pane: p,
+        rail,
+        controls,
+        transform: transform(),
+        visible: el != null && getComputedStyle(el).visibility !== "hidden",
+        beside: card && node ? (card.l >= node.r ? "right" : card.r <= node.l ? "left" : null) : null,
+        inPane: inside(card, p),
+        clearRail: rail != null && !meets(card, rail),
+        clearControls: controls != null && !meets(card, controls),
+    };
+})()`;
+const DAG_PEEK_FRAME = `(() => {
+    ${DAG_PEEK_LIB}
+    return { pane: box(pane), transform: transform() };
+})()`;
+// a point on the graph's empty background: a pan or a pane click starts there
+const DAG_PEEK_EMPTY = `(() => {
+    const bg = ${DAG_PEEK_MODAL}?.querySelector(".react-flow__pane");
+    if (!bg) return null;
+    const r = bg.getBoundingClientRect();
+    for (let y = r.top + 40; y < r.bottom - 40; y += 24) {
+        for (let x = r.left + 40; x < r.right - 40; x += 24) {
+            if (document.elementFromPoint(x, y) === bg) return { x: Math.round(x), y: Math.round(y) };
+        }
+    }
+    return null;
+})()`;
+const dagPeekBar = (sel) => `[...(${dagPeekCard(sel)}?.querySelectorAll("[data-dag-peek-action]") ?? [])].map((b) => ({
+    action: b.getAttribute("data-dag-peek-action"),
+    label: b.textContent.trim(),
+    primary: b.classList.contains("bg-accent"),
+}))`;
+
+// removes the page's refusal if it is still in place; the override deletes itself once it has refused
+const DAG_PEEK_RESTORE = `(() => {
+    const f = window.${DAG_PEEK_REFUSAL_KEY};
+    if (!f) return "absent";
+    if (Object.prototype.hasOwnProperty.call(f.RpcApi, "DagActionCommand")) delete f.RpcApi.DagActionCommand;
+    delete window.${DAG_PEEK_REFUSAL_KEY};
+    return "restored";
+})()`;
+
+async function dagPeekOpen(h, sel, nodeId) {
+    if (!(await h.ev(`!!${dagPeekCard(sel)}`))) await h.ev(dagPeekClickNode(nodeId));
+    return polishWaitFor(h, `!!${dagPeekCard(sel)}`, 4000);
+}
+
+// the viewport's transform, once two reads 300ms apart agree: the opening fit and a selection's pan animate
+async function dagPeekSettled(h) {
+    let last = null;
+    for (let waited = 0; waited < 4000; waited += 300) {
+        const now = await h.ev(DAG_PEEK_FRAME);
+        if (last != null && JSON.stringify(now) === JSON.stringify(last)) return now;
+        last = now;
+        await polishNap(300);
+    }
+    return last;
+}
+
+async function dagPeekMouse(h, type, pt, buttons = 0) {
+    await h.cdp("Input.dispatchMouseEvent", {
+        type,
+        x: pt.x,
+        y: pt.y,
+        button: type === "mouseMoved" && buttons === 0 ? "none" : "left",
+        buttons,
+        clickCount: type === "mouseMoved" ? 0 : 1,
+    });
+}
+
+const dagPeekScenario = {
+    name: "dag-peek",
+    surface: "jarvis",
+    async arrange(h) {
+        await h.cdp("Emulation.setDeviceMetricsOverride", DAG_PEEK_VIEWPORT);
+        const ctx = await arrangeSheetDagRun(h, "dag-peek", DAG_PEEK_TASKS);
+        if (ctx.arrangeError != null) return ctx;
+        try {
+            await waitForDispatch(h, ctx, "t-1");
+            ctx.dagId = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group.id;
+            await seedDag(
+                h,
+                ctx,
+                (dag) => ({
+                    ...dag,
+                    ...DAG_PEEK_CMDS,
+                    final: null,
+                    tasks: dag.tasks.map((t) =>
+                        t.id === "t-2" ? { ...t, state: "done" } : t.id === "t-3" ? { ...t, state: "failed", escalations: 0 } : t
+                    ),
+                }),
+                dagPeekPrint
+            );
+            ctx.seeded = true;
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: fstHolds(ok), detail: JSON.stringify(detail) });
+        const group = async () => (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group;
+        const stateOf = (g, id) => (g?.tasks ?? []).find((t) => t.id === id);
+
+        const openDag = `[...(document.querySelector("[data-run-sheet]")?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Open DAG")`;
+        const sheet = await polishWaitFor(h, `!!${openDag}`, 15000);
+        if (sheet) await h.ev(`${openDag}.click()`);
+        const graph = await polishWaitFor(
+            h,
+            `document.querySelectorAll('[data-dag-modal-kind] [data-dag-node]').length === 5 && !!${DAG_PEEK_MODAL}?.querySelector("[data-dag-controls]")`,
+            10000
+        );
+        const seeded = await group();
+        rec(
+            "0. t-1 dispatched, t-2 a done gate and t-3 failed, and the DAG opened from the run sheet with four tasks and the final node",
+            () =>
+                ctx.arrangeError == null &&
+                ctx.opened?.ok === true &&
+                ctx.dispatched &&
+                ctx.seeded &&
+                sheet &&
+                graph &&
+                stateOf(seeded, "t-2")?.state === "done" &&
+                stateOf(seeded, "t-3")?.state === "failed",
+            ctx.arrangeError ?? {
+                runId: ctx.runId,
+                dagId: ctx.dagId,
+                opened: ctx.opened,
+                dispatched: ctx.dispatched,
+                sheet,
+                graph,
+                tasks: (seeded?.tasks ?? []).map((t) => [t.id, t.state]),
+            }
+        );
+        if (!graph) return steps;
+
+        // a. t-1's card beside its node, inside the pane, and the open moves nothing
+        const before = await dagPeekSettled(h);
+        const t1 = dagPeekTaskSel("t-1");
+        const openedT1 = await dagPeekOpen(h, t1, "t-1");
+        await polishNap(600);
+        const a = await h.ev(dagPeekGeom(t1, "t-1"));
+        await h.shot("cdp-shots/dag-peek-running.png");
+        rec(
+            "a. clicking t-1 opens its card beside the node, inside the graph pane, clear of the timeline rail and the controls; the pane and the viewport do not move",
+            () =>
+                openedT1 &&
+                a.visible &&
+                a.beside != null &&
+                a.inPane &&
+                a.clearRail &&
+                a.clearControls &&
+                fstSame(a.pane, before.pane) &&
+                a.transform === before.transform,
+            { before, a }
+        );
+
+        // b. the full description opens inside the card
+        const toggled = await h.ev(`(() => {
+            const b = [...(${dagPeekCard(t1)}?.querySelectorAll("button[aria-expanded]") ?? [])].find((x) => x.textContent.trim() === "Read the full description");
+            if (!b) return false;
+            b.click();
+            return true;
+        })()`);
+        await polishWaitFor(h, `(${dagPeekCard(t1)}?.textContent ?? "").includes("Done when:")`, 3000);
+        const b = await h.ev(`(() => {
+            const card = ${dagPeekCard(t1)};
+            const flat = (el) => (el?.textContent ?? "").replace(/\\s+/g, " ").trim();
+            return {
+                bullets: [...(card?.querySelectorAll("li") ?? [])].map(flat),
+                doneWhen: flat(card).includes(${JSON.stringify(DAG_PEEK_DONE_WHEN.replace(/`/g, ""))}),
+                less: [...(card?.querySelectorAll("button[aria-expanded='true']") ?? [])].some((x) => x.textContent.trim() === "Show less"),
+                frame: ${DAG_PEEK_FRAME},
+            };
+        })()`);
+        await h.shot("cdp-shots/dag-peek-description.png");
+        rec(
+            "b. Read the full description expands the bullets and the Done when line inside the card; the pane and the viewport still do not move",
+            () =>
+                toggled &&
+                fstSame(b.bullets, DAG_PEEK_BULLETS) &&
+                b.doneWhen &&
+                b.less &&
+                fstSame(b.frame.pane, before.pane) &&
+                b.frame.transform === before.transform,
+            { toggled, b, before }
+        );
+
+        // c. a second click on the open node closes its card
+        await h.ev(dagPeekClickNode("t-1"));
+        const closedT1 = await polishWaitFor(h, `!${dagPeekCard(t1)}`, 3000);
+        rec("c. a second click on t-1 closes the card", () => closedT1, { closedT1 });
+
+        // d. the done gate's card
+        const t2 = dagPeekTaskSel("t-2");
+        const openedT2 = await dagPeekOpen(h, t2, "t-2");
+        const d = await h.ev(`({
+            gate: [...(${dagPeekCard(t2)}?.querySelectorAll("span") ?? [])].some((s) => s.textContent.trim() === "gate"),
+            bar: ${dagPeekBar(t2)},
+        })`);
+        await h.shot("cdp-shots/dag-peek-gate.png");
+        rec(
+            "d. clicking t-2 opens its card with a gate chip, and the bar Approve (primary) and Send back",
+            () =>
+                openedT2 &&
+                d.gate &&
+                fstSame(d.bar, [
+                    { action: "approve", label: "Approve", primary: true },
+                    { action: "sendback", label: "Send back", primary: false },
+                ]),
+            { openedT2, d }
+        );
+
+        // e. the failed task's card and its escalate panel
+        const t3 = dagPeekTaskSel("t-3");
+        const openedT3 = await dagPeekOpen(h, t3, "t-3");
+        const bar3 = await h.ev(dagPeekBar(t3));
+        await h.ev(`${dagPeekCard(t3)}?.querySelector('[data-dag-peek-action="escalate"]')?.click()`);
+        const ESC = `${dagPeekCard(t3)}?.querySelector("[data-dag-peek-escalate]")`;
+        const requeue = `[...(${ESC}?.querySelectorAll("button") ?? [])].find((x) => x.textContent.trim() === "Re-queue on model")`;
+        const panel = await polishWaitFor(h, `!!${ESC}`, 3000);
+        const disabledFirst = await h.ev(`${requeue}?.disabled ?? null`);
+        await h.ev(`${ESC}?.querySelector('[data-testid="route-picker"]')?.click()`);
+        const OPTION = `[...document.querySelectorAll('[data-testid^="route-option-"]')].find((o) => !/-(inherit|extra)$/.test(o.getAttribute("data-testid")) && !o.hasAttribute("data-refused"))`;
+        // a fresh app loads the model catalog on the picker's first open
+        const listed = await polishWaitFor(h, `!!${OPTION}`, DAG_PEEK_CATALOG_MS);
+        const route = await h.ev(`(() => {
+            const o = ${OPTION};
+            if (!o) return null;
+            o.click();
+            return o.getAttribute("data-testid");
+        })()`);
+        await polishWaitFor(h, `${requeue}?.disabled === false`, 3000);
+        const enabledAfter = await h.ev(`${requeue}?.disabled === false`);
+        await h.shot("cdp-shots/dag-peek-failed-escalate.png");
+        await h.ev(`[...(${ESC}?.querySelectorAll("button") ?? [])].find((x) => x.textContent.trim() === "Cancel")?.click()`);
+        const cancelled = await polishWaitFor(h, `!${ESC}`, 3000);
+        const afterCancel = stateOf(await group(), "t-3");
+        rec(
+            "e. clicking t-3 opens its card with Retry (primary), Skip, Escalate…; Escalate… opens the panel with Re-queue on model disabled until a route is picked, and Cancel sends nothing",
+            () =>
+                openedT3 &&
+                fstSame(bar3, [
+                    { action: "retry", label: "Retry", primary: true },
+                    { action: "skip", label: "Skip", primary: false },
+                    { action: "escalate", label: "Escalate…", primary: false },
+                ]) &&
+                panel &&
+                disabledFirst === true &&
+                listed &&
+                route != null &&
+                enabledAfter &&
+                cancelled &&
+                afterCancel?.state === "failed" &&
+                (afterCancel.escalations ?? 0) === 0,
+            { openedT3, bar3, panel, disabledFirst, listed, route, enabledAfter, cancelled, t3: afterCancel && { state: afterCancel.state, escalations: afterCancel.escalations ?? 0 } }
+        );
+
+        // f. a refusal put in place on the page: the app's own RpcApi refuses the next DagActionCommand once, so no
+        // retry reaches the engine. The module URL is the one the app loaded, so the import is its instance.
+        const installed = await h.ev(`(async () => {
+            const hits = performance.getEntriesByType("resource").map((e) => e.name).filter((n) => /\\/wshclientapi\\.ts(\\?|$)/.test(n));
+            const url = hits[hits.length - 1];
+            if (!url) return { ok: false, why: "no wshclientapi module in the page's resources" };
+            const { RpcApi } = await import(url);
+            if (!RpcApi || typeof RpcApi.DagActionCommand !== "function") return { ok: false, why: "no RpcApi.DagActionCommand at " + url };
+            const state = { calls: [] };
+            RpcApi.DagActionCommand = function (client, data) {
+                delete RpcApi.DagActionCommand;
+                state.calls.push(data);
+                return Promise.reject(new Error(${JSON.stringify(DAG_PEEK_REFUSAL)}));
+            };
+            window.${DAG_PEEK_REFUSAL_KEY} = { RpcApi, state };
+            return { ok: true, url };
+        })()`);
+        await h.ev(`${dagPeekCard(t3)}?.querySelector('[data-dag-peek-action="retry"]')?.click()`);
+        const ALERT = `${dagPeekCard(t3)}?.querySelector('[role="alert"]')`;
+        await polishWaitFor(h, `!!${ALERT}`, 3000);
+        const f = await h.ev(`({
+            alert: (${ALERT}?.textContent ?? "").trim() || null,
+            calls: window.${DAG_PEEK_REFUSAL_KEY}?.state.calls ?? null,
+        })`);
+        await h.shot("cdp-shots/dag-peek-action-error.png");
+        const restored = await h.ev(DAG_PEEK_RESTORE);
+        const afterRetry = stateOf(await group(), "t-3");
+        rec(
+            "f. a refused Retry on t-3 shows `retry t-3 failed: <reason>` on its card, the card having called the app's own RpcApi",
+            () =>
+                installed.ok &&
+                f.alert === `retry t-3 failed: ${DAG_PEEK_REFUSAL}` &&
+                f.calls?.length === 1 &&
+                f.calls[0].action === "retry" &&
+                f.calls[0].taskid === "t-3" &&
+                restored === "restored" &&
+                afterRetry?.state === "failed",
+            { installed, f, restored, t3: afterRetry?.state }
+        );
+
+        // g. the waiting task
+        const t4 = dagPeekTaskSel("t-4");
+        const openedT4 = await dagPeekOpen(h, t4, "t-4");
+        await polishWaitFor(h, `(${dagPeekCard(t4)}?.textContent ?? "").includes("Not dispatched yet")`, 3000);
+        const g = await h.ev(`(${dagPeekCard(t4)}?.textContent ?? "").includes("Not dispatched yet")`);
+        await h.shot("cdp-shots/dag-peek-waiting.png");
+        rec("g. clicking t-4 opens the waiting card with Not dispatched yet", () => openedT4 && g, { openedT4, waiting: g });
+
+        // h. panned against the pane's right edge, t-1's card flips to the node's left
+        const reopened = await dagPeekOpen(h, t1, "t-1");
+        await dagPeekSettled(h);
+        const drags = [];
+        let flip = await h.ev(dagPeekGeom(t1, "t-1"));
+        for (let i = 0; i < 3 && flip.node && flip.pane && flip.pane.r - flip.node.r > DAG_PEEK_FLIP_PX; i++) {
+            const from = await h.ev(DAG_PEEK_EMPTY);
+            if (!from) break;
+            const dx = flip.pane.r - DAG_PEEK_FLIP_PX / 2 - flip.node.r;
+            drags.push({ from, dx });
+            await dagPeekMouse(h, "mouseMoved", from);
+            await dagPeekMouse(h, "mousePressed", from, 1);
+            for (let s = 1; s <= 8; s++) {
+                await dagPeekMouse(h, "mouseMoved", { x: Math.round(from.x + (dx * s) / 8), y: from.y }, 1);
+            }
+            await dagPeekMouse(h, "mouseReleased", { x: Math.round(from.x + dx), y: from.y });
+            await polishNap(300);
+            flip = await h.ev(dagPeekGeom(t1, "t-1"));
+        }
+        await polishNap(300);
+        flip = await h.ev(dagPeekGeom(t1, "t-1"));
+        await h.shot("cdp-shots/dag-peek-flipped.png");
+        rec(
+            "h. panned until t-1 is within 200px of the pane's right edge, its card sits left of the node, inside the pane and clear of the controls",
+            () =>
+                reopened &&
+                flip.visible &&
+                flip.pane.r - flip.node.r <= DAG_PEEK_FLIP_PX &&
+                flip.card.r <= flip.node.l &&
+                flip.inPane &&
+                flip.clearControls,
+            { reopened, drags, flip }
+        );
+        await h.ev(`${DAG_PEEK_MODAL}?.querySelector('[aria-label="Fit graph"]')?.click()`);
+        await dagPeekSettled(h);
+
+        // i. the final stage's card
+        const openedFinal = await dagPeekOpen(h, DAG_PEEK_FINAL_SEL, "final");
+        await polishNap(600);
+        const iGeom = await h.ev(dagPeekGeom(DAG_PEEK_FINAL_SEL, "final"));
+        const rows = await h.ev(`[...(${dagPeekCard(DAG_PEEK_FINAL_SEL)}?.querySelectorAll("[data-final-step]") ?? [])].map((s) => ({
+            key: s.getAttribute("data-final-step"),
+            command: s.querySelector("span[title]")?.getAttribute("title") ?? null,
+        }))`);
+        await h.shot("cdp-shots/dag-peek-final.png");
+        rec(
+            "i. clicking the final node opens its card with rows tree, check, verify, final, verifier, each with its command, inside the pane and clear of the rail and the controls",
+            () =>
+                openedFinal &&
+                fstSame(rows.map((r) => r.key), ["tree", "check", "verify", "final", "verifier"]) &&
+                rows.every((r) => r.command) &&
+                iGeom.visible &&
+                iGeom.inPane &&
+                iGeom.clearRail &&
+                iGeom.clearControls,
+            { openedFinal, rows, geom: iGeom }
+        );
+
+        // j. Esc closes the card before it closes the modal
+        await h.ev(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+        const escClosed = await polishWaitFor(h, `!${dagPeekCard(DAG_PEEK_FINAL_SEL)}`, 3000);
+        const modalStays = await h.ev(`${DAG_PEEK_MODAL} != null`);
+        rec("j. Esc closes the card and leaves the modal open", () => escClosed && modalStays, { escClosed, modalStays });
+
+        // k. a click on the graph's background closes the card
+        const reopenedFinal = await dagPeekOpen(h, DAG_PEEK_FINAL_SEL, "final");
+        const bgAt = await h.ev(DAG_PEEK_EMPTY);
+        if (bgAt) {
+            await dagPeekMouse(h, "mouseMoved", bgAt);
+            await dagPeekMouse(h, "mousePressed", bgAt, 1);
+            await dagPeekMouse(h, "mouseReleased", bgAt);
+        }
+        const paneClosed = await polishWaitFor(h, `!${dagPeekCard(DAG_PEEK_FINAL_SEL)}`, 3000);
+        const modalAfterPane = await h.ev(`${DAG_PEEK_MODAL} != null`);
+        rec(
+            "k. reopened, the final card closes on a background click, and the modal stays",
+            () => reopenedFinal && bgAt != null && paneClosed && modalAfterPane,
+            { reopenedFinal, bgAt, paneClosed, modalAfterPane }
+        );
+
+        // l. hovering a node opens nothing
+        const nodeAt = await h.ev(`(() => {
+            const r = ${DAG_PEEK_MODAL}?.querySelector('[data-dag-node="t-3"]')?.getBoundingClientRect();
+            return r ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) } : null;
+        })()`);
+        if (nodeAt) await dagPeekMouse(h, "mouseMoved", nodeAt);
+        await polishNap(DAG_PEEK_HOVER_MS);
+        const hoverCard = await h.ev(dagPeekAnyCard);
+        if (bgAt) await dagPeekMouse(h, "mouseMoved", bgAt);
+        rec("l. hovering a node for 700ms opens nothing", () => nodeAt != null && hoverCard === false, { nodeAt, hoverCard });
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownFixtureRun(h, ctx, "dag-peek", {
+            what: "restore RpcApi.DagActionCommand",
+            fn: () => h.ev(DAG_PEEK_RESTORE),
+        });
     },
 };
 
@@ -20162,7 +20659,7 @@ const FST_ROW = `${FST_TREE}?.querySelector("[data-final-row]")`;
 const FST_PANE = `document.querySelector("[data-final-pane]")`;
 const FST_MODAL = `document.querySelector("[data-dag-modal-kind]")`;
 const FST_NODE = `${FST_MODAL}?.querySelector('[data-dag-node="final"]')`;
-const FST_DAG_RAIL = `${FST_MODAL}?.querySelector("[data-dag-final-rail]")`;
+const FST_DAG_PEEK = `${FST_MODAL}?.querySelector("[data-dag-final-peek]")`;
 const FST_SHEET = `document.querySelector("[data-run-sheet]")`;
 const FST_FOLD = `[...(${FST_TREE}?.querySelectorAll("div.cursor-pointer") ?? [])].find((d) => /^\\d+ (done|reviews?)/.test(d.textContent.trim()))`;
 const FST_LEAD_ROW = `(() => {
@@ -20209,13 +20706,13 @@ const FST_AGENT = `(() => {
         viewer: document.querySelector("[data-final-shots-viewer]") != null,
     };
 })()`;
-// the DAG modal: the final node, the edges into it, the stage line, and the node's bottom rail
+// the DAG modal: the final node, the edges into it, the stage line, and the node's peek card
 const FST_DAG = `(() => {
     ${FST_LIB}
     const modal = ${FST_MODAL};
     if (!modal) return null;
     const card = ${FST_NODE};
-    const rail = ${FST_DAG_RAIL};
+    const peek = ${FST_DAG_PEEK};
     const route = [...modal.querySelectorAll("span")].find((s) => s.textContent.trim().startsWith("Run route ·"));
     return {
         cards: [...modal.querySelectorAll("[data-dag-node]")].map((c) => c.getAttribute("data-dag-node")),
@@ -20229,15 +20726,15 @@ const FST_DAG = `(() => {
                   strip: stepsOf(card).map((s) => s.state),
               }
             : null,
-        rail: rail
+        peek: peek
             ? {
-                  text: flat(rail),
-                  steps: stepsOf(rail),
-                  output: outputOf(rail),
-                  end: rail.querySelector("[data-final-end]") != null,
-                  past: pastOf(rail),
-                  shots: shotsOf(rail),
-                  open: [...rail.querySelectorAll("button")].some((b) => /open in agent/i.test(b.textContent)),
+                  text: flat(peek),
+                  steps: stepsOf(peek),
+                  output: outputOf(peek),
+                  end: peek.querySelector("[data-final-end]") != null,
+                  past: pastOf(peek),
+                  shots: shotsOf(peek),
+                  open: [...peek.querySelectorAll("button")].some((b) => /open in agent/i.test(b.textContent)),
               }
             : null,
         viewer: document.querySelector("[data-final-shots-viewer]") != null,
@@ -20276,7 +20773,7 @@ async function fstDag(h, ctx, ok, opts) {
         const card = ${FST_NODE};
         if (card && card.getAttribute("aria-pressed") !== "true") card.click();
     })()`);
-    return fstUntil(h, FST_DAG, (d) => d.node.pressed === "true" && d.rail != null && ok(d), opts);
+    return fstUntil(h, FST_DAG, (d) => d.node.pressed === "true" && d.peek != null && ok(d), opts);
 }
 
 // A run's events cannot be written through an RPC. The page appends every run:event it receives to that run's
@@ -20610,10 +21107,10 @@ const finalStageScenario = {
                 fstSame(fstStates(a.stage.steps), ["running", ...fstRepeat("waiting", 4)]) &&
                 /^round 1 · Tree · \d+s$/.test(d.node.meta) &&
                 fstSame(d.node.strip, ["running", ...fstRepeat("waiting", 4)]) &&
-                d.rail.output == null &&
-                d.rail.steps[0].command === "prepares the tree the stage runs in" &&
-                d.rail.steps[1].command === FST_CHECK,
-            { row: a?.rows, slot: a?.slot, pane: a?.pane, node: d?.node, rail: d?.rail?.steps }
+                d.peek.output == null &&
+                d.peek.steps[0].command === "prepares the tree the stage runs in" &&
+                d.peek.steps[1].command === FST_CHECK,
+            { row: a?.rows, slot: a?.slot, pane: a?.pane, node: d?.node, peek: d?.peek?.steps }
         );
         await shot("b2-tree-dag");
 
@@ -20651,8 +21148,8 @@ const finalStageScenario = {
                 fstSame(a.stage.past, [{ round: "1", text: "round 1 · failed at Final" }]) &&
                 /^round 2 · verifier · 4m \d\ds$/.test(d.node.meta) &&
                 fstSame(d.node.strip, [...fstRepeat("passed", 4), "running"]) &&
-                d.rail.open === false,
-            { row: a?.rows, pane: a?.pane?.steps, past: a?.stage?.past, node: d?.node, open: d?.rail?.open }
+                d.peek.open === false,
+            { row: a?.rows, pane: a?.pane?.steps, past: a?.stage?.past, node: d?.node, open: d?.peek?.open }
         );
         await shot("b4-reviewing-dag");
 
@@ -20664,12 +21161,12 @@ const finalStageScenario = {
         await closeViewer();
         d = await fstDag(h, ctx, (s) => s.node.meta === "round 1 · failed at Final");
         await shot("b5-failed-dag");
-        await finalShotsClick(h, `${FST_DAG_RAIL}?.querySelector("[data-final-shots-link]")`);
-        const railViewer = (await fstUntil(h, FST_DAG, (s) => s.viewer))?.viewer;
+        await finalShotsClick(h, `${FST_DAG_PEEK}?.querySelector("[data-final-shots-link]")`);
+        const peekViewer = (await fstUntil(h, FST_DAG, (s) => s.viewer))?.viewer;
         await shot("b5-failed-viewer");
         await closeViewer();
         rec(
-            "B5. failed at Final in round 1: the detail whole, the Verifier not run, the lead has it, and the screenshots open the viewer from the pane and the DAG rail",
+            "B5. failed at Final in round 1: the detail whole, the Verifier not run, the lead has it, and the screenshots open the viewer from the pane and the DAG peek card",
             () =>
                 a.rows[0].sub === "failed at Final · round 1" &&
                 a.rows[0].tone === "fail" &&
@@ -20682,10 +21179,10 @@ const finalStageScenario = {
                 paneViewer &&
                 d.node.meta === "round 1 · failed at Final" &&
                 fstSame(d.node.strip, [...fstRepeat("passed", 3), "failed", "notrun"]) &&
-                d.rail.text.includes(fstFlat(FST_DETAIL)) &&
-                d.rail.shots != null &&
-                railViewer,
-            { row: a?.rows, slot: a?.slot, pane: a?.pane, paneViewer, node: d?.node, rail: d?.rail, railViewer }
+                d.peek.text.includes(fstFlat(FST_DETAIL)) &&
+                d.peek.shots != null &&
+                peekViewer,
+            { row: a?.rows, slot: a?.slot, pane: a?.pane, paneViewer, node: d?.node, peek: d?.peek, peekViewer }
         );
 
         // a step that ended kept its output beside the round's ARC_FINAL_OUT (finalStepsDir); only Check's is
@@ -20711,18 +21208,18 @@ const finalStageScenario = {
         const keptRail = await fstUntil(h, keptRead, (s) => s.rail.includes(FST_KEPT_MARK));
         await shot("b5b-kept-rail");
         await fstDag(h, ctx, (s) => s.node.meta === "round 1 · failed at Final");
-        const dagCell = `${FST_DAG_RAIL}?.querySelector('[data-final-step="check"]')`;
+        const dagCell = `${FST_DAG_PEEK}?.querySelector('[data-final-step="check"]')`;
         const dagRead = `(() => ({
-            text: (${FST_DAG_RAIL}?.textContent ?? "").replace(/\\s+/g, " ").trim(),
-            pressed: [...(${FST_DAG_RAIL}?.querySelectorAll('[data-final-step][aria-pressed="true"]') ?? [])].map((c) => c.getAttribute("data-final-step")),
+            text: (${FST_DAG_PEEK}?.textContent ?? "").replace(/\\s+/g, " ").trim(),
+            expanded: [...(${FST_DAG_PEEK}?.querySelectorAll('[data-final-step][aria-expanded="true"]') ?? [])].map((c) => c.getAttribute("data-final-step")),
         }))()`;
         await finalShotsClick(h, dagCell);
         const keptDag = await fstUntil(h, dagRead, (s) => s.text.includes(FST_KEPT_MARK));
         await shot("b5b-kept-dag");
         await finalShotsClick(h, dagCell);
-        const keptDagClosed = await fstUntil(h, dagRead, (s) => s.pressed.length === 0);
+        const keptDagClosed = await fstUntil(h, dagRead, (s) => s.expanded.length === 0);
         rec(
-            "B5b. a step that ended opens the output it kept: Check's from the pane, the rail and the DAG rail, Verify's says none was kept, and a second click returns to the outcome",
+            "B5b. a step that ended opens the output it kept: Check's from the pane, the rail and the DAG peek card (under its row, the outcome still shown), Verify's says none was kept, and a second click returns to the outcome",
             () =>
                 fstSame(keptCheck.pressed, ["check"]) &&
                 keptCheck.pane.includes(`$ ${FST_CHECK}`) &&
@@ -20730,8 +21227,8 @@ const finalStageScenario = {
                 !keptGone.pane.includes(FST_KEPT_MARK) &&
                 keptClosed.pane.includes(fstFlat(FST_DETAIL)) &&
                 keptRail.rail.includes(FST_KEPT_MARK) &&
-                fstSame(keptDag.pressed, ["check"]) &&
-                !keptDag.text.includes(fstFlat(FST_DETAIL)) &&
+                fstSame(keptDag.expanded, ["check"]) &&
+                keptDag.text.includes(fstFlat(FST_DETAIL)) &&
                 keptDagClosed.text.includes(fstFlat(FST_DETAIL)) &&
                 !keptDagClosed.text.includes(FST_KEPT_MARK),
             { keptCheck, keptGone, keptClosed, keptRail, keptDag, keptDagClosed }
@@ -20750,8 +21247,8 @@ const finalStageScenario = {
                 fstSame(a.stage.past, [{ round: "1", text: "round 1 · failed at Final" }]) &&
                 d.node.meta === "round 2 waits on t-1, t-2, t-3" &&
                 fstSame(d.node.strip, fstRepeat("waiting", 5)) &&
-                fstSame(d.rail.past, [{ round: "1", text: "round 1 · failed at Final" }]),
-            { row: a?.rows, pane: a?.pane, past: a?.stage?.past, node: d?.node, rail: d?.rail }
+                fstSame(d.peek.past, [{ round: "1", text: "round 1 · failed at Final" }]),
+            { row: a?.rows, pane: a?.pane, past: a?.stage?.past, node: d?.node, peek: d?.peek }
         );
         await shot("b6-fixing-dag");
 
@@ -20783,7 +21280,7 @@ const finalStageScenario = {
         // away from the row, so landing on it is the Enter's doing
         await fstFocusLead(h);
         const away = await fstUntil(h, FST_AGENT, (s) => s.rows[0].selected === false);
-        d = await fstDag(h, ctx, (s) => s.rail.open === true);
+        d = await fstDag(h, ctx, (s) => s.peek.open === true);
         await shot("b7-session-dag");
         const entered = await h.ev(`(() => {
             const node = ${FST_NODE}?.closest(".react-flow__node");
@@ -20801,17 +21298,17 @@ const finalStageScenario = {
         );
         const onAgent = await h.activeSurfaceLabel();
         rec(
-            "B7b. the final node's rail has Open in Agent, and Enter on the node lands on the Agent surface with the verifier's session focused",
+            "B7b. the final node's peek card has Open in Agent, and Enter on the node lands on the Agent surface with the verifier's session focused",
             () =>
                 away.rows[0].selected === false &&
-                d.rail.open === true &&
+                d.peek.open === true &&
                 entered &&
                 !landed.modal &&
                 onAgent === SURFACE_LABEL.agent &&
                 landed.agent.rows.length === 1 &&
                 landed.agent.rows[0].selected &&
                 landed.agent.pane == null,
-            { away: away?.rows, open: d?.rail?.open, entered, onAgent, modal: landed?.modal, rows: landed?.agent?.rows }
+            { away: away?.rows, open: d?.peek?.open, entered, onAgent, modal: landed?.modal, rows: landed?.agent?.rows }
         );
 
         // the verifier gave its verdict: its run is over
@@ -20830,10 +21327,10 @@ const finalStageScenario = {
                 fstSame(fstStates(a.stage.steps), [...fstRepeat("passed", 4), "unverified"]) &&
                 d.node.meta === "round 2 · unverified" &&
                 fstSame(d.node.strip, [...fstRepeat("passed", 4), "unverified"]) &&
-                d.rail.text.includes(FST_UNVERIFIED) &&
-                !d.rail.end &&
-                fstSame(d.rail.past, [{ round: "1", text: "round 1 · failed at Final" }]),
-            { row: a?.rows, slot: a?.slot, stage: a?.stage, node: d?.node, rail: d?.rail }
+                d.peek.text.includes(FST_UNVERIFIED) &&
+                !d.peek.end &&
+                fstSame(d.peek.past, [{ round: "1", text: "round 1 · failed at Final" }]),
+            { row: a?.rows, slot: a?.slot, stage: a?.stage, node: d?.node, peek: d?.peek }
         );
         await shot("b8-unverified-dag");
 
@@ -20861,8 +21358,8 @@ const finalStageScenario = {
                 fstSame(a.stage.steps.map((s) => s.text), FST_STEP_TEXT) &&
                 d.node.meta === `round 2 · passed · ${FST_TOTAL}` &&
                 fstSame(d.node.strip, fstRepeat("passed", 5)) &&
-                fstSame(d.rail.steps.map((s) => s.text), FST_STEP_TEXT),
-            { folded: { rows: folded?.rows, fold: folded?.fold }, row: a?.rows, slot: a?.slot, stage: a?.stage, node: d?.node, rail: d?.rail?.steps }
+                fstSame(d.peek.steps.map((s) => s.text), FST_STEP_TEXT),
+            { folded: { rows: folded?.rows, fold: folded?.fold }, row: a?.rows, slot: a?.slot, stage: a?.stage, node: d?.node, peek: d?.peek?.steps }
         );
         await shot("b9-passed-dag");
 
@@ -20978,7 +21475,7 @@ const finalStageScenario = {
         );
         await shot("a4-pane");
 
-        d = await fstDag(h, ctx, (s) => s.rail.output != null);
+        d = await fstDag(h, ctx, (s) => s.peek.output != null);
         rec(
             "A5. the DAG's last node is the final stage, with an edge from each sink task, and the stage line has no final verify entry",
             () =>
@@ -20991,30 +21488,32 @@ const finalStageScenario = {
             { cards: d?.cards, edges: d?.edges, node: d?.node, stageLine: d?.stageLine }
         );
         rec(
-            "A6. selecting the node opens its rail: each step's command and state, the output tail and End final stage",
+            "A6. selecting the node opens its peek card: each step's command and state, the output tail and End final stage",
             () =>
                 d.node.pressed === "true" &&
-                fstSame(d.rail.steps.map((s) => s.command), [
+                fstSame(d.peek.steps.map((s) => s.command), [
                     "prepares the tree the stage runs in",
                     FST_LIVE_VERIFY,
                     FST_LIVE_FINAL,
                     "judges the merged result",
                 ]) &&
-                fstSame(fstStates(d.rail.steps), ["passed", "running", "waiting", "waiting"]) &&
-                d.rail.output.includes(FST_MARK) &&
-                d.rail.end,
-            { node: d?.node, rail: d?.rail }
+                fstSame(fstStates(d.peek.steps), ["passed", "running", "waiting", "waiting"]) &&
+                d.peek.output.includes(FST_MARK) &&
+                d.peek.end,
+            { node: d?.node, peek: d?.peek }
         );
-        await shot("a6-dag-rail");
+        await shot("a6-dag-peek");
 
-        // the rail's minimum height is what keeps the form below End final stage in view; nothing else measures it
-        const RAIL_FORM = `document.querySelector("[data-dag-final-rail] [data-run-sheet-end-final]")`;
-        await finalShotsClick(h, `document.querySelector("[data-dag-final-rail] [data-final-end]")`);
-        await polishWaitFor(h, `${RAIL_FORM} != null`, 3000);
-        const railForm = await h.ev(`(() => {
-            const form = ${RAIL_FORM};
+        // the form opens inside the card, whose height the placement bounds by the pane; nothing else measures it
+        const PEEK_FORM = `document.querySelector("[data-dag-final-peek] [data-run-sheet-end-final]")`;
+        await finalShotsClick(h, `document.querySelector("[data-dag-final-peek] [data-final-end]")`);
+        await polishWaitFor(h, `${PEEK_FORM} != null`, 3000);
+        const peekForm = await h.ev(`(() => {
+            const form = ${PEEK_FORM};
             if (!form) return null;
             const box = form.parentElement.getBoundingClientRect();
+            const card = form.closest("[data-dag-final-peek]");
+            const c = card.getBoundingClientRect();
             const clippedBy = [];
             for (let el = form.parentElement.parentElement; el && el !== document.body; el = el.parentElement) {
                 const cs = getComputedStyle(el);
@@ -21028,18 +21527,28 @@ const finalStageScenario = {
             const corner = (x, y) => form.parentElement.contains(document.elementFromPoint(x, y));
             return {
                 box: { top: Math.round(box.top), bottom: Math.round(box.bottom), height: Math.round(box.height) },
+                card: { top: Math.round(c.top), bottom: Math.round(c.bottom) },
+                inCard: card != null,
+                cardCuts: box.top < c.top - 0.5 || box.bottom > c.bottom + 0.5 || box.left < c.left - 0.5 || box.right > c.right + 0.5,
                 viewport: innerHeight,
                 clippedBy,
                 corners: corner(box.left + 4, box.bottom - 4) && corner(box.right - 4, box.bottom - 4),
             };
         })()`);
-        await shot("a6-dag-rail-end-form");
-        await finalShotsClick(h, fstButton(RAIL_FORM, "Keep running"));
-        const railFormClosed = await polishWaitFor(h, `${RAIL_FORM} == null`, 3000);
+        await shot("a6-dag-peek-end-form");
+        await finalShotsClick(h, fstButton(PEEK_FORM, "Keep running"));
+        const peekFormClosed = await polishWaitFor(h, `${PEEK_FORM} == null`, 3000);
         rec(
-            "A6b. End final stage in the DAG rail opens its form whole: no scrolling or clipping ancestor cuts it, nothing covers its bottom, and Keep running closes it",
-            () => railForm != null && railForm.clippedBy.length === 0 && railForm.corners && railForm.box.bottom <= railForm.viewport && railFormClosed,
-            { railForm, railFormClosed }
+            "A6b. End final stage in the DAG peek card opens its form whole inside the card: neither the card nor any clipping ancestor cuts it, nothing covers its bottom, and Keep running closes it",
+            () =>
+                peekForm != null &&
+                peekForm.inCard &&
+                !peekForm.cardCuts &&
+                peekForm.clippedBy.length === 0 &&
+                peekForm.corners &&
+                peekForm.box.bottom <= peekForm.viewport &&
+                peekFormClosed,
+            { peekForm, peekFormClosed }
         );
 
         await h.goto("agent");
@@ -21074,9 +21583,9 @@ const finalStageScenario = {
                 !a.pane.end &&
                 d.node.meta === "round 1 · unverified" &&
                 fstSame(d.node.strip, ["passed", "stopped", "notrun", "notrun"]) &&
-                d.rail.text.includes(`ended by the human: ${FST_REASON}`) &&
-                !d.rail.end,
-            { paneForm, typed, rows: a?.rows, slot: a?.slot, pane: a?.pane, node: d?.node, rail: d?.rail }
+                d.peek.text.includes(`ended by the human: ${FST_REASON}`) &&
+                !d.peek.end,
+            { paneForm, typed, rows: a?.rows, slot: a?.slot, pane: a?.pane, node: d?.node, peek: d?.peek }
         );
         await shot("a7-ended-dag");
         return steps;
@@ -24972,17 +25481,19 @@ const paletteNotes = {
 };
 
 const PICKS_BANNER = `document.querySelector('[data-dag-modal-kind] [data-model-picks-banner]')`;
-// the pick row lives in the selected task's rail, so only the selected task's row is ever on screen
-const PICK_ROWS = `[...document.querySelectorAll('[data-dag-modal-kind] [data-model-pick]')]`;
-const pickRowExpr = (id) => `document.querySelector('[data-dag-modal-kind] [data-model-pick="${id}"]')`;
+// the pick row lives in the selected task's peek card, so only the selected task's row is ever on screen
+const PICKS_PEEK = `[data-dag-modal-kind] [data-dag-task-peek]`;
+const PICK_ROWS = `[...document.querySelectorAll('${PICKS_PEEK} [data-model-pick]')]`;
+const pickRowExpr = (id) => `document.querySelector('${PICKS_PEEK} [data-model-pick="${id}"]')`;
 const pickToggleExpr = (id, sonnet) =>
     `[...(${pickRowExpr(id)}?.querySelectorAll('[role="group"] button') ?? [])].find((b) => (b.textContent.trim() === 'sonnet') === ${sonnet})`;
 const dagCardExpr = (id) => `document.querySelector('[data-dag-modal-kind] [data-dag-node="${id}"]')`;
 // a card's model tag is its own span, `<model> · <source>`
 const cardTagExpr = (id) =>
     `([...(${dagCardExpr(id)}?.querySelectorAll('span') ?? [])].map((s) => s.textContent.trim()).find((t) => / · (plan|review|you|escalated|pinned)$/.test(t)) ?? null)`;
-// the detail rail's worker line carries the same route attribute as the cards
-const DAG_RAIL_ROUTE = `document.querySelector('[data-dag-modal-kind] [data-dag-node-route]:not([data-dag-node])')`;
+// the peek card's Worker row carries the same route attribute as the nodes
+const DAG_RAIL_ROUTE = `document.querySelector('${PICKS_PEEK} [data-dag-node-route]')`;
+const peekRouteExpr = (id) => `document.querySelector('[data-dag-modal-kind] [data-dag-task-peek="${id}"] [data-dag-node-route]')`;
 const railExpr = `({ route: ${DAG_RAIL_ROUTE}?.getAttribute('data-dag-node-route') ?? null, text: ${flatText(DAG_RAIL_ROUTE)} })`;
 // Task 1's Model line leaves it off the picks; one sonnet pick and one lead pick make the banner "1 of 3"
 const MODEL_PICKS = [
@@ -25174,7 +25685,7 @@ const modelPicks = {
         rec("1. the banner reads `1 of 3 tasks on sonnet`", banner.includes("1 of 3 tasks on sonnet"), `banner=${JSON.stringify(banner)}`);
 
         await h.ev(`${dagCardExpr("t-3")}?.click()`);
-        await polishWaitFor(h, `!!${DAG_RAIL_ROUTE}`, 3000);
+        const leadCard = await polishWaitFor(h, `!!${peekRouteExpr("t-3")}`, 3000);
         const leadRows = await h.ev(`${PICK_ROWS}.map((r) => r.getAttribute('data-model-pick'))`);
         await h.ev(`${dagCardExpr("t-2")}?.click()`);
         await polishWaitFor(h, `!!${pickRowExpr("t-2")}`, 3000);
@@ -25182,17 +25693,34 @@ const modelPicks = {
             rows: ${PICK_ROWS}.map((r) => r.getAttribute('data-model-pick')),
             pressed: ${pickRowExpr("t-2")}?.querySelector('[role="group"] button[aria-pressed="true"]')?.textContent.trim() ?? null,
             reason: ${flatText(pickRowExpr("t-2"))}.includes(${JSON.stringify(MODEL_PICKS[0].reason)}),
-            sideRail: !!document.querySelector('[data-dag-modal-kind] [data-timeline-rail] [data-model-pick]'),
+            outside: document.querySelectorAll('[data-dag-modal-kind] [data-model-pick]').length - ${PICK_ROWS}.length,
         })`);
         rec(
-            "2. only the sonnet pick shows a model row in the task rail, on sonnet, with its reason",
-            leadRows.length === 0 &&
+            "2. only the sonnet pick shows a model row in the task's peek card, on sonnet, with its reason",
+            leadCard &&
+                leadRows.length === 0 &&
                 rail.rows.length === 1 &&
                 rail.rows[0] === "t-2" &&
                 rail.pressed === "sonnet" &&
                 rail.reason &&
-                !rail.sideRail,
-            JSON.stringify({ leadRows, ...rail })
+                rail.outside === 0,
+            JSON.stringify({ leadCard, leadRows, ...rail })
+        );
+
+        const card = await h.ev(`(() => {
+            const row = ${pickRowExpr("t-2")};
+            const toggle = row?.querySelector('[role="group"]');
+            return {
+                inCard: row?.closest('[data-dag-task-peek]')?.getAttribute('data-dag-task-peek') ?? null,
+                toggle: [...(toggle?.querySelectorAll('button') ?? [])].map((b) => b.textContent.trim()),
+                text: ${flatText(pickRowExpr("t-2"))},
+            };
+        })()`);
+        await h.shot("cdp-shots/model-picks-1b-card.png");
+        rec(
+            "1b. the waiting t-2's card carries its model toggle, waiting, with the plan reviewer's reason",
+            card.inCard === "t-2" && card.toggle.length === 2 && card.toggle.includes("sonnet") && card.text.includes("waiting") && card.text.includes("Plan reviewer:"),
+            JSON.stringify(card)
         );
 
         const picked = await h.ev(`({
@@ -25202,12 +25730,13 @@ const modelPicks = {
             rail: ${railExpr},
         })`);
         rec(
-            "3. the cards tag the plan's and the reviewer's picks, and the rail names the reviewer",
+            "3. the cards tag the plan's and the reviewer's picks, and the peek card's Worker row names the reviewer",
             picked.t1 === "sonnet · plan" &&
                 picked.t2 === "sonnet · review" &&
                 picked.t3 == null &&
                 picked.rail.route === "reviewer:claude:sonnet" &&
-                picked.rail.text.includes("worker · reviewer's pick"),
+                picked.rail.text.includes("claude / sonnet") &&
+                picked.rail.text.includes("reviewer's pick"),
             JSON.stringify(picked)
         );
 
@@ -25227,12 +25756,12 @@ const modelPicks = {
         const yours = await h.ev(`({ tag: ${cardTagExpr("t-2")}, rail: ${railExpr} })`);
         await h.shot("cdp-shots/model-picks-2-yours.png");
         rec(
-            "5. toggling it back to sonnet tags the card `sonnet · you` and the rail names your pick",
+            "5. toggling it back to sonnet tags the node `sonnet · you` and the peek card's Worker row names your pick",
             onSonnet?.modelsource === "owner" &&
                 onSonnet.runspec?.model === "sonnet" &&
                 yours.tag === "sonnet · you" &&
                 yours.rail.route === "owner:claude:sonnet" &&
-                yours.rail.text.includes("worker · your pick"),
+                yours.rail.text.includes("your pick"),
             JSON.stringify({ task: taskFacts(onSonnet), ...yours })
         );
 
@@ -47183,6 +47712,7 @@ export const SCENARIOS = [
     runTimingScenario,
     runCost,
     dagObservability,
+    dagPeekScenario,
     recordBandDetachRestore,
     agentRailFileLink,
     finalShotsScenario,

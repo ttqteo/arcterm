@@ -58,6 +58,8 @@ export interface FinalStageView {
     output: string;
     detail: string;
     unverified: string[];
+    // a human ended the stage
+    endedByYou: boolean;
     // earlier rounds, oldest first
     past: FinalRoundLine[];
     subline: string;
@@ -312,6 +314,7 @@ const HIDDEN: FinalStageView = {
     output: "",
     detail: "",
     unverified: [],
+    endedByYou: false,
     past: [],
     subline: "",
     nodeMeta: "",
@@ -421,6 +424,7 @@ export function finalStageView(
         output: command ? (stage.output ?? "") : "",
         detail: stage?.detail ?? "",
         unverified: reasons,
+        endedByYou: ended && endedByHuman(stage),
         past,
         subline,
         nodeMeta,

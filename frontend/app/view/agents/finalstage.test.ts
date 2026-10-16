@@ -271,6 +271,22 @@ describe("finalStageView, the steps", () => {
         expect(unverified.subline).toBe("unverified · 2 reasons");
     });
 
+    it("tells a stage a human ended from one that ended by itself", () => {
+        const passing = [ev("tree", S), ev("check", S)];
+        expect(finalStageView(dag({ state: "failed", round: 1, detail: HUMAN }), passing, NOW).endedByYou).toBe(true);
+        expect(
+            finalStageView(dag({ state: "unverified", round: 1, unverified: ["flaky", HUMAN] }), passing, NOW)
+                .endedByYou
+        ).toBe(true);
+        expect(
+            finalStageView(dag({ state: "failed", round: 1, detail: "Verify `x` exited 1" }), passing, NOW).endedByYou
+        ).toBe(false);
+        expect(
+            finalStageView(dag({ state: "unverified", round: 1, unverified: ["flaky"] }), passing, NOW).endedByYou
+        ).toBe(false);
+        expect(finalStageView(dag(undefined), [], NOW).endedByYou).toBe(false);
+    });
+
     it("a stage a human ended while only the verifier ran stops at the Verifier", () => {
         const all = [ev("tree", S), ev("check", S), ev("verify", S), ev("final", S)];
         const final = { state: "unverified", round: 1, unverified: [HUMAN], verifierrunid: "v-run" };

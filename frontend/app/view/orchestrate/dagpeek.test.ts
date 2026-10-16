@@ -1,9 +1,20 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { computePosition, type Platform, type Rect } from "@floating-ui/react";
 import { describe, expect, it } from "vitest";
 import type { TaskBrief } from "./dagdigest";
-import { taskPeek, verifySection } from "./dagpeek";
+import {
+    nextSelection,
+    PEEK_GAP_PX,
+    PEEK_PAD_PX,
+    PEEK_PLACEMENT,
+    PEEK_W_PX,
+    peekActions,
+    peekMiddleware,
+    taskPeek,
+    verifySection,
+} from "./dagpeek";
 
 const NOW = 10_000_000;
 const MIN = 60_000;
@@ -164,5 +175,119 @@ describe("taskPeek review rows", () => {
             NOW
         );
         expect(peek.rows).toContainEqual({ text: "review fail: misses empty input", tone: "warning" });
+    });
+});
+
+describe("peekActions", () => {
+    it("keeps the engine's order with escalate last, the first one primary", () => {
+        expect(peekActions(["retry", "skip", "escalate"])).toEqual([
+            { action: "retry", label: "Retry", primary: true, picker: false },
+            { action: "skip", label: "Skip", primary: false, picker: false },
+            { action: "escalate", label: "Escalate…", primary: false, picker: true },
+        ]);
+        expect(peekActions(["escalate", "approve", "sendback"]).map((a) => a.action)).toEqual([
+            "approve",
+            "sendback",
+            "escalate",
+        ]);
+    });
+    it("labels in sentence case, an unknown action as itself capitalised", () => {
+        expect(peekActions(["approve", "sendback", "merge", "resolve", "rebase"]).map((a) => a.label)).toEqual([
+            "Approve",
+            "Send back",
+            "Merge",
+            "Resolve",
+            "Rebase",
+        ]);
+    });
+    it("makes a lone escalate both primary and the picker", () => {
+        expect(peekActions(["escalate"])).toEqual([
+            { action: "escalate", label: "Escalate…", primary: true, picker: true },
+        ]);
+    });
+    it("offers nothing for no actions", () => {
+        expect(peekActions([])).toEqual([]);
+    });
+});
+
+describe("nextSelection", () => {
+    it("opens, switches and toggles the card shut", () => {
+        expect(nextSelection(null, "t1", 1)).toBe("t1");
+        expect(nextSelection("t1", "t2", 1)).toBe("t2");
+        expect(nextSelection("t1", "t1", 1)).toBeNull();
+    });
+    it("never closes on the second click of a double-click", () => {
+        expect(nextSelection("t1", "t1", 2)).toBe("t1");
+        expect(nextSelection(null, "t1", 2)).toBe("t1");
+    });
+});
+
+describe("peekMiddleware", () => {
+    const NODE_W = 196;
+    const NODE_H = 64;
+    type Box = { rect: Rect };
+    type Card = { style: Record<string, string>; height: number };
+
+    // rects only, no DOM: the card honours the max height the size middleware writes, as a styled element does
+    const cardHeight = (card: Card) => Math.min(card.height, parseFloat(card.style.maxHeight) || Infinity);
+    const platform: Pick<Platform, "getElementRects" | "getDimensions" | "getClippingRect"> = {
+        getElementRects: async ({ reference, floating }) => ({
+            reference: (reference as unknown as Box).rect,
+            floating: { x: 0, y: 0, width: PEEK_W_PX, height: cardHeight(floating as unknown as Card) },
+        }),
+        getDimensions: async (el) => ({ width: PEEK_W_PX, height: cardHeight(el as unknown as Card) }),
+        getClippingRect: async ({ boundary }) => boundary as Rect,
+    };
+
+    async function place(node: { x: number; y: number }, pane: Rect, cardH = 300, rightInsetPx = PEEK_PAD_PX) {
+        const card: Card = { style: {}, height: cardH };
+        const reference = { rect: { ...node, width: NODE_W, height: NODE_H } };
+        const out = await computePosition(reference as any, card as any, {
+            placement: PEEK_PLACEMENT,
+            strategy: "absolute",
+            middleware: peekMiddleware(pane, rightInsetPx),
+            platform: platform as Platform,
+        });
+        return { ...out, height: cardHeight(card) };
+    }
+
+    const pane: Rect = { x: 0, y: 0, width: 1000, height: 600 };
+
+    it("sits right of the node, top-aligned, a gap off", async () => {
+        const p = await place({ x: 100, y: 100 }, pane);
+        expect(p.placement).toBe("right-start");
+        expect(p.x).toBe(100 + NODE_W + PEEK_GAP_PX);
+        expect(p.y).toBe(100);
+        expect(p.middlewareData.hide?.referenceHidden).toBe(false);
+    });
+
+    it("flips to the node's left near the pane's right edge", async () => {
+        const p = await place({ x: 700, y: 100 }, pane);
+        expect(p.placement).toBe("left-start");
+        expect(p.x).toBe(700 - PEEK_GAP_PX - PEEK_W_PX);
+    });
+
+    it("keeps the card's bottom inside the pane for a node low in it", async () => {
+        const shifted = await place({ x: 100, y: 500 }, pane);
+        expect(shifted.y + shifted.height).toBeLessThanOrEqual(pane.height - PEEK_PAD_PX);
+        expect(shifted.y).toBeLessThan(500);
+        const capped = await place({ x: 100, y: 500 }, pane, 900);
+        expect(capped.height).toBe(pane.height - 2 * PEEK_PAD_PX);
+        expect(capped.y).toBe(PEEK_PAD_PX);
+    });
+
+    it("reports a node panned out of the pane as hidden", async () => {
+        const p = await place({ x: -400, y: 100 }, pane);
+        expect(p.middlewareData.hide?.referenceHidden).toBe(true);
+    });
+
+    it("never reaches into the controls strip on the right", async () => {
+        const wide: Rect = { x: 0, y: 0, width: 1200, height: 600 };
+        const inset = 150 + PEEK_PAD_PX;
+        // the right side fits until the strip is taken off it
+        expect((await place({ x: 500, y: 20 }, wide)).placement).toBe("right-start");
+        const p = await place({ x: 500, y: 20 }, wide, 300, inset);
+        expect(p.placement).toBe("left-start");
+        expect(p.x + PEEK_W_PX).toBeLessThanOrEqual(wide.width - inset);
     });
 });
