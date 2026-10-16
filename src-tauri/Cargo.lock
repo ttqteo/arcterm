@@ -4292,6 +4292,7 @@ name = "wave-tauri"
 version = "0.15.14"
 dependencies = [
  "chrono",
+ "dispatch2",
  "mac-notification-sys",
  "objc2",
  "objc2-app-kit",

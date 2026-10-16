@@ -46,6 +46,9 @@ objc2-foundation = { version = "=0.3.2", default-features = false, features = ["
 # not answer. Pinned to the versions already in the tree via tao.
 objc2-core-foundation = { version = "=0.3.2", default-features = false, features = ["std", "CFArray", "CFCGTypes", "CFDictionary", "CFNumber", "CFString"] }
 objc2-core-graphics = { version = "=0.3.2", default-features = false, features = ["std", "CGGeometry", "CGWindow"] }
+# the main dispatch queue, where tao queues a window's size and place (macwindow::after_tao_frame). Pinned to the
+# version already in the tree via tao.
+dispatch2 = "=0.3.1"
 
 # tests only: catch the Objective-C exception a test throws on purpose (macwindow's exception log); a dev-dependency's
 # features stay out of the app's own build

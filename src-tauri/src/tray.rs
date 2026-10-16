@@ -214,8 +214,10 @@ fn open(app: &AppHandle) -> tauri::Result<()> {
         }
     });
     if cfg!(target_os = "macos") {
-        // the window stays hidden and its webview shows in a panel, whose losing the key is the blur
-        crate::macwindow::show_in_panel(&win, panel_blurred);
+        // the window stays hidden and its webview shows in a panel, whose losing the key is the blur; the panel takes
+        // the frame place gave the window, which tao sets after this returns
+        let w = win.clone();
+        crate::macwindow::after_tao_frame(move || crate::macwindow::show_in_panel(&w, panel_blurred));
     } else {
         win.show()?;
         win.set_focus()?;
@@ -261,7 +263,8 @@ fn place(app: &AppHandle, win: &WebviewWindow) {
     let (x, y) = trayicon::popover_origin(icon, size, work);
     let _ = win.set_size(PhysicalSize::new(size.0.round() as u32, size.1.round() as u32));
     let _ = win.set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32));
-    crate::macwindow::panel_follow(win);
+    let w = win.clone();
+    crate::macwindow::after_tao_frame(move || crate::macwindow::panel_follow(&w));
 }
 
 // `why` is logged on either side of the destroy, which on the Mac once aborted the app (macwindow::show_in_panel)

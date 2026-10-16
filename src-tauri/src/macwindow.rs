@@ -334,7 +334,7 @@ mod imp {
         HOSTED.with(|h| *h.borrow_mut() = Some(Hosted { panel, web, home }));
     }
 
-    // Runs from the tray's place, on the main thread, once tao's hidden window has the popover's size and place
+    // Runs from the tray's place, through after_tao_frame, once tao's hidden window has the popover's size and place
     pub fn panel_follow(window: &WebviewWindow) {
         let Some(mtm) = MainThreadMarker::new() else {
             return;
@@ -701,6 +701,16 @@ pub fn show_in_panel(window: &WebviewWindow, blurred: fn()) {
     imp::show_in_panel(window, blurred);
     #[cfg(not(target_os = "macos"))]
     let _ = (window, blurred);
+}
+
+// Runs f on the main dispatch queue after the size and place tao has queued there: tao sets a window's frame
+// asynchronously, so the tray's panel copied the frame from before it (the popover stayed at its loading page's 62 pt,
+// 2026-10-16). Elsewhere f runs at once.
+pub fn after_tao_frame(f: impl FnOnce() + Send + 'static) {
+    #[cfg(target_os = "macos")]
+    dispatch2::DispatchQueue::main().exec_async(f);
+    #[cfg(not(target_os = "macos"))]
+    f();
 }
 
 // Runs from the tray's place, on the main thread.

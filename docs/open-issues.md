@@ -173,7 +173,14 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 - [ ] (arcterm) On macOS 27 a left click on the icon opens the popover, not Open / Quit, and a right click opens
   Open / Quit, whose Open brings the cockpit forward (2026-10-16 fix: the menu is attached only for the right click).
 - [ ] (arcterm) Click the icon with the cockpit behind another app, and again on a full-screen Space: the popover
-  opens under the icon and the cockpit stays where it was (the `ArcTrayPanel` class swap); nothing crashes.
+  opens under the icon and the cockpit stays where it was (its webview shows in an `ArcTrayPanel`,
+  `macwindow::show_in_panel`); nothing crashes.
+- [ ] (arcterm) The popover is as tall as its page, not its loading page's 62 pt: the panel takes the hidden window's
+  frame after tao applies it (`macwindow::after_tao_frame`, 2026-10-16). Clicking Storage, clicking outside it and Esc
+  close it without a crash.
+- [ ] (arcterm) Closed popovers leave their windows registered: after a few opens on 2026-10-16 the window list held
+  six hidden 360 pt tao windows and one closed panel at layer 5, with no webview process left behind them. Find what
+  keeps them alive (tao's window after `destroy`, the panel after `close`) before they pile up over days.
 - [ ] (arcterm) The cold open: `[tray] popover ready N ms after the click` in `waveapp.log` stays under 500 ms. Past
   it, the popover needs a hidden window made at launch.
 - [ ] (arcterm) A click outside closes the popover; a second click on the icon closes it and does not reopen it.
