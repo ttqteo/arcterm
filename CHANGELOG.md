@@ -26,6 +26,19 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- In the Cockpit's Office your pet is the boss you walk around: Sprout, the Minion, or Spider-Man, who swings in
+  through a window and turns into Peter Parker in a shirt and tie. Its speech bubble and the condition panel open over
+  it, and the footer pet comes back when you leave. <!-- big -->
+
+### Changed
+
+- The agent header no longer shows a bare `i` key beside the initiative; `i` still opens it, and the link's tooltip
+  says so.
+
+## 0.15.14 — 2026-10-16
+
+### Added
+
 - **The run queue in Jarvis**: a plan queued with `--after` sits in the Brief's Runs right under the run it waits on
   (a chain nests one level per link), a plan waiting for room at the end. Click one for what it waits on, its plan
   and route, and Start now, Run next or Remove; a run started from the queue says what it was queued after.
@@ -34,9 +47,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   it.
 - **Stop a background command**: a Claude agent's running background command (a hung build, a dev server it left
   behind) has a Stop beside it in the agent rail's Background tasks; two clicks end it and what it started. Windows.
-- In the Cockpit's Office your pet is the boss you walk around: Sprout, the Minion, or Spider-Man, who swings in
-  through a window and turns into Peter Parker in a shirt and tie. Its speech bubble and the condition panel open over
-  it, and the footer pet comes back when you leave.
 - The Office has a notice board in the hall: what needs you waits there as pinned slips, and ↵ at the board pages
   through them with the same buttons the Cards view shows. The Office's "need you" count adds the board's slips to the
   agents that ask.

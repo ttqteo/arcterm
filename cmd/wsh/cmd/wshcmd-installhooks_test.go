@@ -955,7 +955,13 @@ func TestInstallClaudeMod_writesTheModWithTheWshPath(t *testing.T) {
 			t.Fatalf("view mod's %s not installed: %v", rel, err)
 		}
 	}
-	for _, d := range []string{dir, viewDir} {
+	skimDir := claudeModDirs(home)[2]
+	for _, rel := range []string{".claude-plugin/plugin.json", "hooks/hooks.json", "hooks/register.ts", "hooks/highlight-core.ts", "hooks/highlight-row.tsx"} {
+		if _, err := os.Stat(filepath.Join(skimDir, filepath.FromSlash(rel))); err != nil {
+			t.Fatalf("skim mod's %s not installed: %v", rel, err)
+		}
+	}
+	for _, d := range []string{dir, viewDir, skimDir} {
 		_ = filepath.WalkDir(d, func(p string, d os.DirEntry, err error) error {
 			if err == nil && strings.HasSuffix(p, ".test.ts") {
 				t.Fatalf("a test file was installed: %s", p)

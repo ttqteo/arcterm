@@ -1,6 +1,6 @@
 // the must-read sentences of a reply: claude wraps them in ==…== (the prompt section below asks it to), the mod
 // strips the marks before the reply is stored and draws the sentences highlighted in the terminal alone. so a
-// copy, the transcript file, `wsh agents` and the model's next turn all read the reply without them.
+// copy, the transcript file and the model's next turn all read the reply without them.
 // highlight-row.tsx does the drawing; register.ts the hooks.
 
 export const MARK = "==";

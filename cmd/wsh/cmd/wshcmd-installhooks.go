@@ -152,13 +152,13 @@ func stableWshPath(home string) string {
 	return filepath.Join(home, ".arc", "bin", name)
 }
 
-//go:embed all:claude-mod all:claude-view-mod
+//go:embed all:claude-mod all:claude-view-mod all:claude-skim-mod
 var claudeModFS embed.FS
 
-// claudeMods are the embedded mods' directories, written by `task sync:claudemod` from claude/arc-mod and
-// claude/arc-view-mod. The view mod is its own plugin because claude never runs a plugin's render hook
-// on a transcript row that plugin raised.
-var claudeMods = []string{"claude-mod", "claude-view-mod"}
+// claudeMods are the embedded mods' directories, written by `task sync:claudemod` from claude/arc-mod,
+// claude/arc-view-mod and claude/skim-mod. The view mod is its own plugin because claude never runs a plugin's
+// render hook on a transcript row that plugin raised; skim is its own because it is also published alone.
+var claudeMods = []string{"claude-mod", "claude-view-mod", "claude-skim-mod"}
 
 const claudePluginDirsVar = "CLAUDE_CODE_PLUGIN_DIRS"
 

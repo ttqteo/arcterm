@@ -30,9 +30,24 @@ does not, say what you saw and it becomes a bug row under Actionable.
 **2026-10-16 (the Office's pet boss)**
 
 - [ ] (arcterm) In the installed app: Cockpit → Office with Spider-Man picked. He swings in through a window, unmasks
-  and stands as Peter in a shirt and tie; walk with the arrows (front-on, no mirroring); stand still 4 s for a pastime;
-  click him for the condition panel. Switch to Cards and back within 2 minutes: no entrance. Pick Sprout, reopen after
-  2 minutes: the beam. The footer pet is gone in the Office and back outside it.
+  and stands as Peter in a shirt and tie (the shirt is red with the default `vn-shirt` outfit, pale with none); walk
+  with the arrows (front-on, no mirroring); stand still 4 s for a pastime; click him for the condition panel. Switch
+  to Cards and back within 2 minutes: no entrance. Pick Sprout, reopen after 2 minutes: the beam. The footer pet is
+  gone in the Office and back outside it.
+
+**2026-10-16 (initiative `i` keycap dropped)**
+
+- [ ] (arcterm) An agent with an initiative: the header shows `◇ <initiative> ⌄` with no `i` keycap after it; hovering
+  it names `(i)`, and `i` (focus outside the TUI) still opens the popover. `agentheader.tsx`.
+
+**2026-10-16 (skim split out of arc-view)**
+
+- [ ] (arcterm) After a dev build relaunches arcterm: `~/.arc/claude-skim-mod` exists, `~/.arc/claude-view-mod/hooks`
+  holds only `register.ts`, `wake-core.ts`, `wake-row.tsx`, and `env.CLAUDE_CODE_PLUGIN_DIRS` lists all three mods.
+  In a new `claude` session a long explanation draws dimmed around its highlighted sentences, `/skim` toggles it with
+  "skim off" in the status area, and a lead's wake row still draws as its events.
+- [ ] (arcterm) Published copy: in a Claude Code profile without arcterm's mods, `/plugin marketplace add
+  ttqteo/claude-skim` then `/plugin install skim@claude-skim` loads it and highlights a long reply.
 
 **2026-10-16 (the Office's floors and lift, run 006c403f)**
 

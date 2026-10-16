@@ -166,7 +166,6 @@ function InitiativeLink({ model, agent }: { model: AgentsViewModel; agent: Agent
                 {initiativeLinkText(agent.name, effort)}
                 <ChevronDown size={11} aria-hidden className="ml-[3px] inline-block align-[-1px]" />
             </button>
-            <KeyCap chord="i" variant="inline" className="ml-[6px] !px-[5px] !py-0 text-[10.5px] leading-[16px]" />
             <InitiativePopover model={model} agent={agent} anchor={anchor} />
         </>
     );

@@ -5,6 +5,6 @@ export type Ask = { hash: string; text: string };
 
 declare module "claude-code" {
     interface PluginState {
-        "arc-view": { isSkimOff: boolean; ask: Ask | null; isAskHidden: boolean };
+        skim: { isSkimOff: boolean; ask: Ask | null; isAskHidden: boolean };
     }
 }
