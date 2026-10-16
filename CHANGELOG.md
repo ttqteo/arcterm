@@ -62,6 +62,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A plan queued behind another run reads **Queued · after** and the run's name in the Agent tree, so its row says it is queued even when
+  the run's name is cut off.
 - **The office lives in the Cockpit only**: Jarvis's Runs list no longer has an **office** chip, and Jarvis stays on
   the footer instead of taking a desk under the runs.
 - **The Office plays like a pixel game**: ↵ at a desk opens a dialog box at the edge of the office with what the agent

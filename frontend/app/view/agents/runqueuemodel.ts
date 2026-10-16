@@ -70,16 +70,17 @@ export function queuedRows(
     });
 }
 
-/** Pure: the row's second line. `Blocked · <reason>`, `After <title>` while what it waits on has not landed, else
- *  `Queued #<place>` (an After that has landed leaves only room to wait for). An After whose title is not known yet
- *  reads as the first 8 characters of its id. */
+/** Pure: the row's second line. `Blocked · <reason>`, `Queued · after <title>` while what it waits on has not landed,
+ *  else `Queued #<place>` (an After that has landed leaves only room to wait for). An After whose title is not known yet
+ *  reads as the first 8 characters of its id. A waiting row leads with `Queued`, so the word survives the truncation of a
+ *  long title. */
 export function queuedMeta(row: QueuedRow): string {
     const { entry } = row;
     if (isBlockedEntry(entry)) {
         return entry.reason ? `Blocked · ${entry.reason}` : "Blocked";
     }
     if (entry.after && !row.afterMet) {
-        return `After ${row.afterTitle ?? entry.after.slice(0, 8)}`;
+        return `Queued · after ${row.afterTitle ?? entry.after.slice(0, 8)}`;
     }
     return `Queued #${row.place}`;
 }
