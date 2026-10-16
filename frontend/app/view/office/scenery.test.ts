@@ -5,7 +5,7 @@ import { buildPlan, type Plan, type PlanInput } from "@/app/view/agents/officepl
 import { describe, expect, it } from "vitest";
 import { NEAR_CHAIR } from "./officegrids";
 import type { OfficeColors } from "./officepalette";
-import { art, materialAt, rasterise, scenery, sceneryKey, type Op } from "./scenery";
+import { art, boardArt, materialAt, rasterise, scenery, sceneryKey, type Op } from "./scenery";
 
 const NOW = Date.parse("2026-10-15T14:20:00");
 function input(width = 1050, over: Partial<PlanInput> = {}): PlanInput {
@@ -67,6 +67,38 @@ describe("scenery", () => {
             // the right outer wall is drawn inside the canvas
             expect(s.over.some((o) => o.k === "rect" && o.role === "cap" && o.x + o.w >= s.width - 3)).toBe(true);
         }
+    });
+
+    it("draws the notice board in the hall at plan.board.box: its cork inside its frame", () => {
+        const p = plan();
+        const s = scenery(p, "day", false);
+        const { frame, cork, legs } = boardArt(p.board.box);
+        // the board's art box: the frame and the legs stand inside it, 3 CSS px to an art px
+        const at = { x: art(p.board.box.x), y: art(p.board.box.y), w: art(p.board.box.w), h: art(p.board.box.h) };
+        for (const r of [frame, ...legs]) {
+            expect(r.x).toBeGreaterThanOrEqual(at.x);
+            expect(r.y).toBeGreaterThanOrEqual(at.y);
+            expect(r.x + r.w).toBeLessThanOrEqual(at.x + at.w);
+            expect(r.y + r.h).toBeLessThanOrEqual(at.y + at.h);
+        }
+        // the frame is a trim box with an ink outline, the cork a desk-coloured rect inside it, drawn after it
+        const frameAt = lastIndex(
+            s.under,
+            (o) => o.k === "rect" && o.role === "trim" && o.x === frame.x + 1 && o.y === frame.y + 1
+        );
+        const corkAt = lastIndex(
+            s.under,
+            (o) =>
+                o.k === "rect" &&
+                o.role === "desk" &&
+                o.x === cork.x &&
+                o.y === cork.y &&
+                o.w === cork.w &&
+                o.h === cork.h
+        );
+        expect(frameAt).toBeGreaterThanOrEqual(0);
+        expect(corkAt).toBeGreaterThan(frameAt);
+        expect(frame.x + 2).toBe(cork.x);
     });
 
     it("puts every op on whole art pixels", () => {
@@ -272,6 +304,14 @@ describe("sceneryKey", () => {
         });
         expect(key(screen)).not.toBe(k);
         expect(key(plan(1001))).not.toBe(k);
+    });
+
+    it("changes with the notice board's place", () => {
+        const p = plan();
+        const moved: Plan = { ...p, board: { ...p.board, box: { ...p.board.box, y: p.board.box.y + 30 } } };
+        expect(key(moved)).not.toBe(key(p));
+        // the boss's spot at the board is not drawn: moving it alone draws nothing again
+        expect(key({ ...p, board: { ...p.board, spot: { x: p.board.spot.x + 9, y: p.board.spot.y } } })).toBe(key(p));
     });
 
     it("changes with a room's light and with a desk's light alone", () => {

@@ -1,6 +1,6 @@
 # Office Needs you board — design
 
-Date: 2026-10-16. Status: agreed, not built.
+Date: 2026-10-16. Status: built (run 0e23de6a).
 
 ## Problem
 
@@ -12,6 +12,9 @@ toolbar's "need you" chip, which counts only asking agents: the strip says 1 whi
 
 In Office, Needs you becomes a **notice board** in the hall, a place the boss walks to like a desk. Cards keeps the
 strip as it is.
+
+Decided after the build (2026-10-16): the Office HUD's "need you" chip counts everything that waits on you, the asking
+agents plus the board's rows; its filter still shows only the asking desks. The Cards tab keeps counting asking agents.
 
 ## Placement and look
 
@@ -35,7 +38,7 @@ keeps this place. Whichever of the two is built second adapts to the other:
 ## Opening it
 
 - **Walk:** the boss stands at the board and presses ↵, as at a desk; the "press ↵" hint shows over its head.
-- **Click:** the boss walks there (`showPath`) and the dialog box opens.
+- **Click:** as a click on a desk does, the boss walks there and the dialog box opens.
 - **Office menu (`m`):** a "Notice board" item, with the count in the asking colour, walks the boss to the board and
   opens it (not "Needs you": the menu already has "Next Needs you" on `n`, which jumps between asking desks).
 - **Cursor:** while rows wait, the board is a stop in the office's `order()`, so ↑↓ and next-ask reach it.

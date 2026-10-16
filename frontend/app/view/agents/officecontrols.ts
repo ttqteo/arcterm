@@ -142,22 +142,34 @@ export function dialogEdge(
     return (bossTop + bossBottom) / 2 > viewH / 2 ? "top" : "bottom";
 }
 
-export type OfficeMenuId = "nextAsk" | "nextDesk" | "prevDesk" | "events" | "cards" | "keys";
+export type OfficeMenuId = "nextAsk" | "needsYou" | "nextDesk" | "prevDesk" | "events" | "cards" | "keys";
 
 export interface OfficeMenuItem {
     id: OfficeMenuId;
     label: string;
     key?: string;
-    // a count beside the label: the desks asking (drawn in the asking colour) or the events not yet seen
+    // a count beside the label: the desks asking or the notice board's rows (drawn in the asking colour), or the events
+    // not yet seen
     count?: string;
     ask?: boolean;
     rule?: boolean;
 }
 
 /** Pure: the office menu (m), START's list. It names each item's own key, so it is where the keys are learnt. */
-export function officeMenuItems(asks: number, newEvents: number, eventsOpen: boolean): OfficeMenuItem[] {
+export function officeMenuItems(
+    asks: number,
+    newEvents: number,
+    eventsOpen: boolean,
+    boardRows: number
+): OfficeMenuItem[] {
     return [
         { id: "nextAsk", label: "Next Needs you", key: "n", count: asks > 0 ? String(asks) : undefined, ask: true },
+        {
+            id: "needsYou",
+            label: "Notice board",
+            count: boardRows > 0 ? String(boardRows) : undefined,
+            ask: true,
+        },
         { id: "nextDesk", label: "Next desk", key: "j" },
         { id: "prevDesk", label: "Previous desk", key: "k" },
         {

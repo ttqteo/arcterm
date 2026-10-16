@@ -74,11 +74,23 @@ import { useRunDigests } from "./runlineagestore";
 import { ARROW_DIR, useCockpitKeyboard, type OfficeKeys } from "./usecockpitkeyboard";
 import { CockpitOffice, type OfficeHandle } from "./cockpitoffice";
 import { officeInputs } from "./officeinputs";
-import { cockpitView, cockpitViewAtom, officeEventsOpenAtom } from "./officestore";
+import {
+    cockpitView,
+    cockpitViewAtom,
+    officeBoardPageAtom,
+    officeBoardWhyAtom,
+    officeEventsOpenAtom,
+} from "./officestore";
 import { dialogItems, questionTabs, type DeskKind, type DialogInput, type DialogItemId } from "./officedialogmodel";
+import { boardCall, boardItems, boardPage, boardTabs, boardWords } from "./officeboardmodel";
+import { BOARD_KEY } from "./officeplanmodel";
+import { useNeedsYou } from "./needsyou";
+import type { StripRow } from "./needsyoustripmodel";
 import {
     AgentDialogBody,
     AgentPlate,
+    BoardDialogBody,
+    BoardPlate,
     RunDialogBody,
     RunPlate,
     WorkerDialogBody,
@@ -189,6 +201,18 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     // the Cockpit is the card grid or the office (cockpit office spec); the office draws the same cards
     const view = cockpitView(useAtomValue(cockpitViewAtom));
     const officeRef = useRef<OfficeHandle | null>(null);
+    // Needs you: the Cards strip has its own rows (NeedsYouStrip); in Office these are the notice board's, one page each.
+    // An escalation's Open goes through focusAgentCard, which is defined further down
+    const focusAgentRef = useRef<(agentId: string) => void>(() => undefined);
+    const ny = useNeedsYou(model, (agentId) => focusAgentRef.current(agentId));
+    const boardPageAt = useAtomValue(officeBoardPageAtom);
+    const boardWhyOpen = useAtomValue(officeBoardWhyAtom);
+    // a page's Why is that page's: it shuts when another row comes into view, whether by a page turn or by the row in
+    // view leaving (acted on, or gone on a reload), so it never opens on a row nobody asked about
+    const boardRowKey = ny.rows[Math.max(boardPage(boardPageAt, ny.rows.length), 0)]?.key;
+    useEffect(() => {
+        globalStore.set(officeBoardWhyAtom, false);
+    }, [boardRowKey]);
 
     const [pulseId, setPulseId] = useState<string>();
     const lastJumpRef = useRef<string>(undefined);
@@ -338,13 +362,19 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
 
     // keep the cursor on a visible stop as the set changes; a worker's id follows its row, else the first stop
     useEffect(() => {
-        // the office's stops include the Idle section's agents and seats with no card row
-        const stops = view === "office" ? [...navigableIds, ...(officeRef.current?.order() ?? [])] : navigableIds;
-        const next = resolveCursor(cursorId, stops, cursorAlias);
+        // the office's stops include the Idle section's agents and seats with no card row. The notice board is a stop the
+        // cursor may stay on at any row count (the boss stands at it even when nothing waits), but never the one it falls
+        // back to: before the roster loads it would be the first stop, and the boss would open at the board
+        const stops =
+            view === "office"
+                ? [...navigableIds, ...(officeRef.current?.order() ?? []).filter((k) => k !== BOARD_KEY)]
+                : navigableIds;
+        const next =
+            view === "office" && cursorId === BOARD_KEY ? cursorId : resolveCursor(cursorId, stops, cursorAlias);
         if (next !== cursorId) {
             setCursorId(next);
         }
-    }, [navigableIds.join(","), cursorId, view]);
+    }, [navigableIds.join(","), cursorId, view, ny.rows.length]);
 
     // asking overrides backgrounded: a muted agent that starts asking re-surfaces (it's in `asking`,
     // not `working`), so drop it from the set to avoid re-muting when it returns to working.
@@ -396,6 +426,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         }
         fireAndForget(() => openTarget(model, { kind: "agent", tabId: agentId }));
     };
+    focusAgentRef.current = focusAgentCard;
 
     const focusRowComposer = (id: string) => {
         (document.querySelector(`[data-agent-id="${id}"] textarea`) as HTMLTextAreaElement)?.focus();
@@ -468,6 +499,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                     officeRef.current?.showPath(target);
                 }
             },
+            pageBoard: (d) => officeRef.current?.pageBoard(d),
         }),
         []
     );
@@ -490,6 +522,9 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         switch (id) {
             case "nextAsk":
                 officeKeys.nextAsk();
+                return;
+            case "needsYou":
+                officeRef.current?.openBoard();
                 return;
             case "nextDesk":
                 officeKeys.desk(1);
@@ -559,8 +594,52 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         };
     };
 
+    // what a ▶ item does on the notice board: boardCall says which of the strip's handlers (useNeedsYou) it runs
+    const runBoardItem = (row: StripRow, id: DialogItemId) => {
+        const call = boardCall(row, id);
+        if (!call) {
+            return;
+        }
+        switch (call.kind) {
+            case "act":
+                ny.act(row, call.act);
+                return;
+            case "open":
+                ny.open(row);
+                return;
+            case "learn":
+                fireAndForget(() => ny.decideLearn(row, call.accept));
+                return;
+            case "why":
+                globalStore.set(officeBoardWhyAtom, !globalStore.get(officeBoardWhyAtom));
+                return;
+        }
+    };
+
+    // the notice board's box: the page in view of the Needs you rows (none left: no box)
+    const boardDialog = (): OfficeDialogVM | null => {
+        const page = boardPage(boardPageAt, ny.rows.length);
+        if (page < 0) {
+            return null;
+        }
+        const row = ny.rows[page];
+        const words = boardWords(row, boardWhyOpen);
+        return {
+            kind: "board",
+            label: "Notice board",
+            items: boardItems(row, boardWhyOpen, ny.busy.has(row.key)),
+            tabs: boardTabs(ny.rows, page),
+            plate: <BoardPlate count={ny.rows.length} />,
+            body: <BoardDialogBody words={words} row={row} now={ny.now} />,
+            run: (id) => runBoardItem(row, id),
+        };
+    };
+
     // the dialog box of the desk at the boss (office controls canvas): the same card lookup as renderOfficeCard
     const dialogFor = (key: string): OfficeDialogVM | null => {
+        if (key === BOARD_KEY) {
+            return boardDialog();
+        }
         const c = cards.find((x) =>
             x.kind === "agent"
                 ? x.id === key
@@ -773,15 +852,23 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         </>
     );
 
-    // the HUD bar inside the office's view: the same filters and switches as the Cards header, as compact pills
+    // the HUD bar inside the office's view: the same filters and switches as the Cards header, as compact pills. Its
+    // "need you" counts all that waits on you, the asking agents and the notice board's rows, though its filter still
+    // shows the asking desks
+    const officeChips = chipDefs.map(([key, label, count]): [ChipFilter, string, number] => [
+        key,
+        label,
+        key === "asking" ? count + ny.rows.length : count,
+    ]);
     const officeHud = (
         <>
             <span className="h-4 w-px shrink-0 bg-edge-mid" />
             <div role="group" aria-label="Show" className="flex min-w-0 items-center gap-0.5">
-                {chipDefs.map(([key, label, count]) => (
+                {officeChips.map(([key, label, count]) => (
                     <button
                         key={key}
                         type="button"
+                        data-office-chip={key}
                         aria-pressed={chip === key}
                         onClick={() => setChip(toggleChip(chip, key))}
                         className={cn(
@@ -863,7 +950,8 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                     </div>
                 ) : null}
 
-                <NeedsYouStrip model={model} onFocusAgent={focusAgentCard} />
+                {/* Office has Needs you as the notice board in its hall (boardDialog above) */}
+                {view !== "office" ? <NeedsYouStrip model={model} onFocusAgent={focusAgentCard} /> : null}
 
                 <div className="relative flex min-h-0 flex-1 flex-col">
                     <AnimatePresence initial={false}>
@@ -892,6 +980,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                                 newEvents={railEvents.fresh.length}
                                 eventsOpen={eventsOpen}
                                 onMenu={onOfficeMenu}
+                                boardRows={ny.rows.length}
                                 handleRef={officeRef}
                             />
                         )

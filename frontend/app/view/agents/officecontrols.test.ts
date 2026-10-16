@@ -138,26 +138,29 @@ describe("dialogEdge", () => {
 });
 
 describe("officeMenuItems", () => {
-    it("lists START's items with their keys, the desks asking and the events not seen", () => {
-        const items = officeMenuItems(2, 3, false);
+    it("lists START's items with their keys, the desks asking, the board's rows and the events not seen", () => {
+        const items = officeMenuItems(2, 3, false, 3);
         expect(items.map((i) => i.label)).toEqual([
             "Next Needs you",
+            "Notice board",
             "Next desk",
             "Previous desk",
             "Events",
             "Cards view",
             "All keys",
         ]);
-        expect(items.map((i) => i.key)).toEqual(["n", "j", "k", undefined, "o", "?"]);
+        expect(items.map((i) => i.key)).toEqual(["n", undefined, "j", "k", undefined, "o", "?"]);
         expect(items[0]).toMatchObject({ count: "2", ask: true });
-        expect(items[3]).toMatchObject({ count: "3 new", rule: true });
+        expect(items[1]).toEqual({ id: "needsYou", label: "Notice board", count: "3", ask: true });
+        expect(items[4]).toMatchObject({ count: "3 new", rule: true });
     });
 
     it("drops a zero count, and names Events Hide events while the rail is open", () => {
-        const items = officeMenuItems(0, 0, false);
+        const items = officeMenuItems(0, 0, false, 0);
         expect(items[0].count).toBeUndefined();
-        expect(items[3].count).toBeUndefined();
-        const open = officeMenuItems(1, 4, true);
-        expect(open[3]).toMatchObject({ id: "events", label: "Hide events", count: undefined });
+        expect(items[1]).toMatchObject({ id: "needsYou", count: undefined });
+        expect(items[4].count).toBeUndefined();
+        const open = officeMenuItems(1, 4, true, 1);
+        expect(open[4]).toMatchObject({ id: "events", label: "Hide events", count: undefined });
     });
 });

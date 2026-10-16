@@ -16,7 +16,7 @@ import {
     spotOf,
     stepToward,
 } from "./officeboss";
-import { buildPlan, type Plan, type PlanAgent, type Point } from "./officeplanmodel";
+import { BOARD_KEY, buildPlan, type Plan, type PlanAgent, type Point } from "./officeplanmodel";
 
 const ag = (id: string, project?: string, state: PlanAgent["state"] = "working"): PlanAgent => ({
     id,
@@ -180,7 +180,7 @@ describe("officeboss", () => {
         expect(facing({ x: 0, y: 0 }, { x: 0, y: 0 }, "up")).toBe("up");
     });
 
-    it("finds the desk or seat at the boss, and none in the hall", () => {
+    it("finds the desk or seat at the boss, and none elsewhere in the hall", () => {
         expect(deskAt(plan, a1)).toBe("a1");
         expect(deskAt(plan, spotOf(plan, "r1")!)).toBe("r1");
         expect(deskAt(plan, { x: plan.hall.x + 100, y: plan.hall.y + 300 })).toBeUndefined();
@@ -245,7 +245,75 @@ describe("officeboss", () => {
                 }
             }
         }
-        expect([...reached].sort()).toEqual([...plan.desks, ...plan.seats].map((s) => s.key).sort());
+        // the notice board's spot is one of the places the boss reaches on foot
+        expect([...reached].sort()).toEqual(
+            [BOARD_KEY, ...plan.desks.map((d) => d.key), ...plan.seats.map((s) => s.key)].sort()
+        );
+    });
+
+    describe("the notice board", () => {
+        const spot = plan.board.spot;
+        const centre = { x: plan.board.box.x + plan.board.box.w / 2, y: plan.board.box.y + plan.board.box.h / 2 };
+
+        it("is furniture the boss's feet stay off, with its spot in front of it", () => {
+            expect(canWalk(plan, centre)).toBe(false);
+            expect(canStand(plan, centre)).toBe(true); // still floor, for a jump's path
+            expect(canWalk(plan, spot)).toBe(true);
+        });
+
+        it("is at the board within reach of its spot, only in the hall", () => {
+            expect(deskAt(plan, spot)).toBe(BOARD_KEY);
+            expect(deskAt(plan, { x: spot.x + 12, y: spot.y - 12 })).toBe(BOARD_KEY);
+            expect(deskAt(plan, { x: spot.x + 60, y: spot.y })).toBeUndefined();
+            expect(deskAt(plan, { x: spot.x, y: spot.y - 40 })).toBeUndefined();
+        });
+
+        it("stops the boss in front of the board and keeps it at the board there", () => {
+            const up = stepToward(plan, spot, "up", 200);
+            expect(up.y).toBeGreaterThan(plan.board.box.y + plan.board.box.h);
+            expect(deskAt(plan, up)).toBe(BOARD_KEY);
+        });
+
+        it("is where spotOf stands for its key", () => {
+            expect(spotOf(plan, BOARD_KEY)).toEqual(spot);
+        });
+
+        it("offers its dialog only while the boss stands still at it with the cursor on it", () => {
+            expect(cardAt(plan, { at: spot, path: [] }, BOARD_KEY)).toEqual({ board: true });
+            expect(cardAt(plan, { at: a1, path: [] }, BOARD_KEY)).toBeUndefined();
+            expect(cardAt(plan, { at: spot, path: [] }, "a1")).toBeUndefined();
+            expect(cardAt(plan, { at: spot, path: [spot, a1] }, BOARD_KEY)).toBeUndefined();
+            expect(cardAt(plan, { at: spot, path: [], holding: "left" }, BOARD_KEY)).toBeUndefined();
+        });
+
+        it("walks from a desk, a seat and Home's booth to it, on floor all the way", () => {
+            for (const from of ["a1", "b1", "r1", "h1"]) {
+                const path = pathBetween(plan, spotOf(plan, from)!, spot);
+                expect(path[path.length - 1], from).toEqual(spot);
+                expect(offFloor(plan, path), from).toEqual([]);
+                const back = pathBetween(plan, spot, spotOf(plan, from)!);
+                expect(offFloor(plan, back), from).toEqual([]);
+            }
+        });
+
+        it("stays on the floor of a tall Home booth too", () => {
+            const tall = buildPlan({
+                agents: [
+                    ...["a", "b", "c", "d"].map((p) => ag(`${p}1`, p)),
+                    ...[1, 2, 3, 4, 5].map((i) => ag(`h${i}`)),
+                ],
+                runs: [run("r1", "a"), run("r2", "d")],
+                width: 900,
+                now: 0,
+                away: {},
+                night: false,
+            });
+            for (const key of [...tall.desks.map((d) => d.key), ...tall.seats.map((s) => s.key)]) {
+                expect(offFloor(tall, pathBetween(tall, spotOf(tall, key)!, tall.board.spot)), key).toEqual([]);
+                expect(offFloor(tall, pathBetween(tall, tall.board.spot, spotOf(tall, key)!)), key).toEqual([]);
+            }
+            expect(canWalk(tall, tall.board.spot)).toBe(true);
+        });
     });
 
     it("stops the boss in front of a desk, and lets it walk off one it stands on", () => {

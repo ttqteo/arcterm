@@ -6,6 +6,7 @@
 // (m) and the HUD bar. The rules are officecontrols.ts and officedialogmodel.ts; cockpitoffice.tsx places the boxes and
 // cockpitsurface.tsx builds each desk's dialog.
 
+import { TONE_TEXT } from "@/app/view/jarvis/briefstyle";
 import { cn } from "@/util/util";
 import { useAtomValue, type Atom } from "jotai";
 import { Check, Workflow } from "lucide-react";
@@ -19,6 +20,8 @@ import { LEAD_MARK_CLASS, leadMark, type LeadCardVM, type TaskRowVM } from "./le
 import { liveTokensAtom } from "./livetokensstore";
 import { entriesAtomFor } from "./livetranscriptatoms";
 import { NarrationTimeline } from "./narrationtimeline";
+import { stripAge, type StripRow } from "./needsyoustripmodel";
+import type { BoardWords } from "./officeboardmodel";
 import type { OfficeMenuItem } from "./officecontrols";
 import {
     agentMeta,
@@ -365,6 +368,51 @@ export function WorkerDialogBody({
             <TaskLine row={row} />
             {row.sub ? <p className="m-0 line-clamp-2 px-1 text-[12.5px] text-muted">{row.sub}</p> : null}
             {worker ? <AgentDialogBody agent={worker} nowAtom={nowAtom} activeQuestion={activeQuestion} /> : null}
+        </>
+    );
+}
+
+/** The notice board's plate: the asking dot, its name and how many rows wait on the person. */
+export function BoardPlate({ count }: { count: number }) {
+    return (
+        <>
+            <span aria-hidden className="size-[7px] shrink-0 rounded-full bg-asking" />
+            <b className="min-w-0 truncate text-[13.5px] font-semibold text-primary">Notice board</b>
+            <span className="shrink-0 text-[11.5px] font-semibold tabular-nums text-warning">Needs you · {count}</span>
+        </>
+    );
+}
+
+/** One page of the notice board: the row's title line in its tone, its text at the agent box's main size, its why, the
+ *  words that raised a learned rule once Why is open, and how long it has waited. */
+export function BoardDialogBody({ words, row, now }: { words: BoardWords; row: StripRow; now: number }) {
+    const age = stripAge(row.waitingSince, now);
+    return (
+        <>
+            <span
+                data-office-board-title=""
+                className={cn("truncate text-[12px] font-semibold tracking-[.02em]", TONE_TEXT[row.tone])}
+            >
+                {words.title}
+            </span>
+            <p className="m-0 line-clamp-2 text-[17px] font-semibold leading-6 text-primary">{words.text}</p>
+            {words.why ? (
+                <p className="m-0 line-clamp-2 text-[14.5px] leading-[22px] text-secondary">{words.why}</p>
+            ) : null}
+            {words.quote ? (
+                <div
+                    data-office-board-quote=""
+                    className="line-clamp-2 rounded-md bg-surface-code px-3 py-2 text-[13px] leading-5 text-secondary"
+                >
+                    <span className="text-muted">Your words: </span>
+                    {words.quote}
+                </div>
+            ) : null}
+            {age ? (
+                <div className="mt-auto text-[11.5px] tabular-nums text-muted">
+                    Waiting <span className={cn("font-semibold", TONE_TEXT[row.tone])}>{age}</span>
+                </div>
+            ) : null}
         </>
     );
 }

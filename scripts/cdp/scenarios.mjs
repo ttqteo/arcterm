@@ -13791,7 +13791,8 @@ async function teardownFixtureRun(h, ctx, name, restore) {
             rmSync(tree, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 })
         );
     }
-    await step("remove the temp dir", () => rmSync(ctx.cwd, { recursive: true, force: true }));
+    // the cancelled lead's shell can hold its cwd, the temp dir, for a moment
+    await step("remove the temp dir", () => rmSync(ctx.cwd, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
     const left = [...trees].filter((tree) => existsSync(tree));
     if (left.length) throw new Error(`${name} teardown: run trees left behind: ${left.join(", ")}`);
     if (trees.size) console.log(`${name} teardown: run trees gone: ${[...trees].join(", ")}`);
@@ -39575,7 +39576,7 @@ const whatsNew = {
     },
 };
 
-const { cockpitOffice, cockpitOfficeControls, cockpitOfficeBench } = makeCockpitOfficeScenarios({ arrangeFixtureRun, teardownFixtureRun });
+const { cockpitOffice, cockpitOfficeControls, cockpitOfficeNeedsYouBoard, cockpitOfficeBench } = makeCockpitOfficeScenarios({ arrangeFixtureRun, teardownFixtureRun });
 
 // --- run-queue: plans queued to start are rows on the Agent tree, with Start now, Run next and Remove ---------------------
 // (docs/superpowers/specs/2026-10-14-run-handoff-lifecycle-design.md, decision 4.) A real queue in wavesrv and real rows,
@@ -44434,6 +44435,7 @@ export const SCENARIOS = [
     whatsNew,
     cockpitOffice,
     cockpitOfficeControls,
+    cockpitOfficeNeedsYouBoard,
     cockpitOfficeBench,
     runQueueScenario,
     runOriginScenario,

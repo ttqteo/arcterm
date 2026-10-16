@@ -6,7 +6,7 @@
 // boss stands at is the selected card. Walkers to the lounge take the same paths. Pure: no React, no DOM.
 
 import type { WalkDir } from "@/app/view/office/plansprite";
-import type { Box, Desk, Plan, Point, Room, Seat } from "./officeplanmodel";
+import { BOARD_KEY, type Box, type Desk, type Plan, type Point, type Room, type Seat } from "./officeplanmodel";
 
 export type Dir = WalkDir;
 
@@ -45,12 +45,15 @@ const pot = (x: number, y: number): Box => ({ x: x + 6, y: y + 26, w: 22, h: 18 
 
 /** What the boss's feet stay off: each desk with the person at it and its name, each meeting table with its chairs,
  *  and what scenery.ts draws on the floor: the lounge's sofa with the people on it, its coffee machine, and the
- *  plants. A desk's spot and a table's stay clear, so the boss stands in front of a desk, never on it. */
+ *  plants, and the Needs you notice board in the hall. A desk's spot and a table's stay clear, so the boss stands in
+ *  front of a desk, never on it; so does the board's. */
 function furniture(plan: Plan): Box[] {
     let boxes = furnitureCache.get(plan);
     if (boxes == null) {
         const l = plan.lounge;
+        const b = plan.board.box;
         boxes = [
+            { x: b.x - 8, y: b.y - 8, w: b.w + 16, h: b.h + 16 },
             ...plan.desks.map((d) => ({ x: d.x - 8, y: d.y - 20, w: 96, h: 100 })),
             ...plan.rooms.flatMap((r) =>
                 r.table ? [{ x: r.table.x - 8, y: r.table.y - 20, w: r.table.w + 16, h: r.table.h + 53 }] : []
@@ -179,17 +182,21 @@ export function facing(a: Point, b: Point, was: Dir = "down"): Dir {
     return Math.abs(dx) >= Math.abs(dy) ? (dx < 0 ? "left" : "right") : dy < 0 ? "up" : "down";
 }
 
-/** Where the boss stands for a desk or seat key. */
+/** Where the boss stands for a desk or seat key, or the notice board's. */
 export function spotOf(plan: Plan, key: string): Point | undefined {
+    if (key === BOARD_KEY) {
+        return plan.board.spot;
+    }
     return plan.desks.find((d) => d.key === key)?.spot ?? plan.seats.find((s) => s.key === key)?.spot;
 }
 
-/** The desk or seat the boss stands in front of: the nearest whose spot is within reach, in the room it stands in;
- *  undefined anywhere else, in the hall and the lounge too. */
+/** The desk or seat the boss stands in front of: the nearest whose spot is within reach, in the room it stands in; the
+ *  notice board's key in the hall, within reach of the board's spot; undefined anywhere else, in the lounge too. */
 export function deskAt(plan: Plan, p: Point): string | undefined {
     const room = roomAt(plan, p);
     if (room === "hall") {
-        return undefined;
+        const s = plan.board.spot;
+        return Math.abs(s.x - p.x) <= REACH_X && Math.abs(s.y - p.y) <= REACH_Y ? BOARD_KEY : undefined;
     }
     let best: string | undefined;
     let dist = Number.POSITIVE_INFINITY;
@@ -208,17 +215,21 @@ export function deskAt(plan: Plan, p: Point): string | undefined {
     return best;
 }
 
-/** The desk or seat whose card the boss can open: the cursor's, while the boss stands still at it. */
+/** The desk or seat whose card the boss can open: the cursor's, while the boss stands still at it. The notice board has
+ *  no card: it answers `{ board: true }`, which opens its dialog box and nothing else. */
 export function cardAt(
     plan: Plan,
     boss: { at: Point; path: readonly Point[]; holding?: Dir } | null,
     cursorId: string | undefined
-): { desk?: Desk; seat?: Seat; room: Room } | undefined {
+): { desk?: Desk; seat?: Seat; room?: Room; board?: boolean } | undefined {
     if (boss == null || cursorId == null || boss.path.length > 1 || boss.holding != null) {
         return undefined;
     }
     if (deskAt(plan, boss.at) !== cursorId) {
         return undefined;
+    }
+    if (cursorId === BOARD_KEY) {
+        return { board: true };
     }
     const desk = plan.desks.find((d) => d.key === cursorId);
     const seat = desk ? undefined : plan.seats.find((s) => s.key === cursorId);

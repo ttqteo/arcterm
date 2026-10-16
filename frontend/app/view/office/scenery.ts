@@ -135,6 +135,25 @@ const artBox = (b: Box) => {
     return { x, y, w: art(b.x + b.w) - x, h: art(b.y + b.h) - y };
 };
 
+const BOARD_ART_W = 26;
+const BOARD_ART_H = 17;
+const BOARD_ART_TOP = 10; // the bubble over the board takes the rows above its frame
+
+/** The notice board's parts in art px, from its box in the hall: the wood frame, the cork inside it and the two legs
+ *  (their tops under the frame). The scenery draws them and cockpitoffice.tsx pins its slips over the cork. */
+export function boardArt(box: Box) {
+    const b = artBox(box);
+    const frame = {
+        x: b.x + Math.floor((b.w - BOARD_ART_W) / 2),
+        y: b.y + BOARD_ART_TOP,
+        w: BOARD_ART_W,
+        h: BOARD_ART_H,
+    };
+    const cork = { x: frame.x + 2, y: frame.y + 2, w: frame.w - 4, h: frame.h - 4 };
+    const leg = (x: number) => ({ x, y: frame.y + frame.h - 1, w: 3, h: 5 });
+    return { frame, cork, legs: [leg(frame.x + 3), leg(frame.x + frame.w - 6)] };
+}
+
 /** What the canvas under the people and the one over them draw, in order; sizes in art px. */
 export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery {
     const night = phase === "after";
@@ -204,6 +223,25 @@ export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery
     plant(...L(200, 172));
     for (const r of plan.rooms.filter((r) => r.kind === "agents")) {
         plant(art(r.box.x + r.box.w - 44), art(r.box.y + r.box.h - 64));
+    }
+
+    // the Needs you notice board in the hall under the lounge: cork in a wood frame on two legs. Its paper slips are
+    // DOM (cockpitoffice.tsx), so a row coming or going never draws this again
+    {
+        const { frame: f, cork: c, legs } = boardArt(plan.board.box);
+        const foot = legs[0].y + legs[0].h;
+        under.rect(f.x + 3, foot, f.w - 6, 1, "shadow");
+        for (const leg of legs) {
+            under.box(leg.x, leg.y, leg.w, leg.h, "deskFace");
+        }
+        under.box(f.x, f.y, f.w, f.h, "trim");
+        under.rect(c.x, c.y, c.w, c.h, "desk");
+        for (let j = 0; j < 3; j++) {
+            for (let i = 0; i < 5; i++) {
+                under.px(c.x + 1 + i * 4 + (j % 2) * 2, c.y + 2 + j * 4, "seam");
+            }
+        }
+        under.shadow(f.x, f.y, f.w, f.h);
     }
 
     // desks: the chair under the person, the desk over them
@@ -498,6 +536,7 @@ export function sceneryKey(plan: Plan, phase: OfficePhase, tired: boolean, theme
         theme,
         plan.body,
         plan.lounge,
+        plan.board.box,
         plan.entrance,
         plan.walls,
         plan.rooms.map((r) => [r.key, r.box, r.lit, r.door ?? 0, r.table ?? 0, r.screen ?? 0]),

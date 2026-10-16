@@ -45,7 +45,7 @@ import {
     type SeatPose,
     type Shade,
 } from "@/app/view/office/plansprite";
-import { art, rasterise, scenery, sceneryKey, type Op } from "@/app/view/office/scenery";
+import { art, boardArt, rasterise, scenery, sceneryKey, type Op } from "@/app/view/office/scenery";
 import { clearSprites, clearTokenColors, spriteCacheStats, tokenRgb } from "@/app/view/office/spritecache";
 import { cn } from "@/util/util";
 import { atom, useAtom, useAtomValue, type Atom, type PrimitiveAtom } from "jotai";
@@ -81,6 +81,7 @@ import {
     type Away,
     type Energy,
 } from "./officebehavior";
+import { boardPage } from "./officeboardmodel";
 import {
     advance,
     BOSS_SPEED,
@@ -115,6 +116,7 @@ import {
 import { OfficeDialogBox, OfficeHudBar, OfficeMenuBox, type OfficeDialogVM } from "./officedialog";
 import { clampSel, enabledOf, selAfterActivate, type DeskKind } from "./officedialogmodel";
 import {
+    BOARD_KEY,
     buildPlan,
     peopleDrawn,
     popupBox,
@@ -133,6 +135,8 @@ import {
     officeAnimation,
     officeAnimationAtom,
     officeBigCardAtom,
+    officeBoardPageAtom,
+    officeBoardWhyAtom,
     officeHoursAtom,
     officeMenuOpenAtom,
 } from "./officestore";
@@ -171,8 +175,15 @@ export interface OfficeHandle {
     /** Esc: one step back (the menu shuts; the card goes back to the box, the box to walking); false when nothing was up. */
     back(): boolean;
     toggleMenu(): void;
+    /** The cursor's stops in office order: the desks and seats, then the notice board while Needs you rows wait. */
     order(): string[];
+    /** The stops `n` visits: the asking desks, then the notice board while Needs you rows wait. */
     asks(): string[];
+    /** ◀ ▶ over the notice board's box: the page `delta` rows on, clamped to the rows there are; the ▶ goes back to the
+     *  page's first item and its Why shuts. */
+    pageBoard(delta: -1 | 1): void;
+    /** The office menu's Notice board, and a click on the board: the boss walks there and its box opens. */
+    openBoard(): void;
 }
 
 export interface CockpitOfficeProps {
@@ -192,6 +203,9 @@ export interface CockpitOfficeProps {
     newEvents: number;
     eventsOpen: boolean;
     onMenu: (id: OfficeMenuId) => void;
+    // the Needs you rows that wait: the notice board's bubble and slips, its place among the cursor's stops, and the
+    // office menu's count. The rows themselves are the dialog's (dialogFor)
+    boardRows: number;
     handleRef: MutableRefObject<OfficeHandle | null>;
 }
 
@@ -258,7 +272,7 @@ const probe = {
     sceneryDraws: 0,
     phase: "day" as OfficePhase,
     popup: "" as "" | "agent" | "run",
-    prompt: "" as "" | "agent" | "run",
+    prompt: "" as "" | "agent" | "run" | "board",
     big: false,
     layer: "walk" as OfficeLayer,
     dialog: "" as "" | DeskKind,
@@ -269,6 +283,7 @@ const probe = {
     menu: false,
     menuItems: [] as string[],
     menuSel: -1,
+    boardRows: 0,
 };
 let lastPlan: Plan | null = null;
 let lastWalking: ReadonlySet<string> = new Set();
@@ -290,6 +305,16 @@ export function readOfficeProbe() {
                   }
                 : null,
         dots: globalStore.get(dotsAtom).length,
+        // the notice board: the rows it drew (count, and the pages there are), the page in view counted from 1 (0 with
+        // no rows), whether its Why is open, and where the boss stands at it. Page and Why are read when asked, like the
+        // boss: they change without the office drawing
+        board: {
+            count: probe.boardRows,
+            page: boardPage(globalStore.get(officeBoardPageAtom), probe.boardRows) + 1,
+            of: probe.boardRows,
+            why: globalStore.get(officeBoardWhyAtom),
+            spot: lastPlan?.board.spot ?? null,
+        },
         order: lastPlan?.order ?? [],
         hall: lastPlan?.hall ?? null,
         boxes: lastPlan
@@ -709,7 +734,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     dialogRef.current = props.dialogFor;
     const onMenuRef = useRef(props.onMenu);
     onMenuRef.current = props.onMenu;
-    const menuItems = officeMenuItems(plan.asks.length, props.newEvents, props.eventsOpen);
+    const menuItems = officeMenuItems(plan.asks.length, props.newEvents, props.eventsOpen, props.boardRows);
     const menuItemsRef = useRef(menuItems);
     menuItemsRef.current = menuItems;
     // whether OfficeDialogLayer draws a box now: with none at the boss's desk the dialog layer is walking, and the keys
@@ -824,9 +849,28 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             }
             globalStore.set(officeMenuOpenAtom, open);
         },
-        order: () => planRef.current.order,
-        asks: () => planRef.current.asks,
+        // the board is a stop while rows wait; plan.order and plan.asks stay the desks'
+        order: () => (props.boardRows > 0 ? [...planRef.current.order, BOARD_KEY] : planRef.current.order),
+        asks: () => (props.boardRows > 0 ? [...planRef.current.asks, BOARD_KEY] : planRef.current.asks),
+        pageBoard: (delta) => {
+            const at = boardPage(globalStore.get(officeBoardPageAtom), props.boardRows);
+            if (at < 0) {
+                return;
+            }
+            globalStore.set(officeBoardPageAtom, boardPage(at + delta, props.boardRows));
+            globalStore.set(officeBoardWhyAtom, false);
+            globalStore.set(selAtom, 0);
+        },
+        openBoard: () => pickRef.current(BOARD_KEY),
     };
+
+    // the last row gone while the board's box is up: dialogFor has no page then, so the box is not drawn; the layer goes
+    // back to walking so the next ↵ is a fresh talk
+    useEffect(() => {
+        if (props.boardRows === 0 && cursorId === BOARD_KEY && globalStore.get(layerAtom) === "dialog") {
+            globalStore.set(layerAtom, "walk");
+        }
+    }, [props.boardRows, cursorId]);
 
     const pickRef = useRef((key: string) => {
         goTo(key);
@@ -973,6 +1017,8 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             globalStore.set(dotsAtom, []);
             globalStore.set(layerAtom, "walk");
             globalStore.set(selAtom, 0);
+            globalStore.set(officeBoardPageAtom, 0);
+            globalStore.set(officeBoardWhyAtom, false);
             globalStore.set(officeMenuOpenAtom, false);
             globalStore.set(menuSelAtom, 0);
             globalStore.set(cardAdjustAtom, false);
@@ -1049,6 +1095,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             cups: energy === "tired" ? plan.desks.filter((d) => d.light === "working").length : 0,
             walking: walkingIds.size,
             loungeMore: plan.loungeOverflow.length,
+            boardRows: props.boardRows,
         });
     });
 
@@ -1124,6 +1171,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                             z={2}
                         />
                         <Labels plan={plan} walking={walkingIds} night={night} phase={phase} />
+                        <NoticeBoard box={plan.board.box} rows={props.boardRows} phase={phase} onPick={onPick} />
                         <WalkersView phase={phase} />
                         <BossView plan={plan} phase={phase} />
                         <PathDots />
@@ -1131,6 +1179,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                             plan={plan}
                             cursorId={cursorId}
                             renderCard={renderCard}
+                            boardRows={props.boardRows}
                             onTalk={() => handleRef.current?.talk()}
                         />
                         {dev?.sheet ? <PoseSheet phase={phase} /> : null}
@@ -1450,6 +1499,95 @@ function Bubble({ mark, left, top, phase }: { mark: PlanMark; left: number; top:
         />
     );
 }
+
+// the Needs you notice board: its frame and cork are on the canvas (scenery.ts boardArt). This is its button (a click
+// walks the boss there and opens its box), a paper slip pinned for each row that waits (three at most; the count says the
+// rest), and over it the asking bubble with the count. Written spelled out, so Tailwind finds every class
+const BOARD_PAPER: Record<OfficePhase, { pin: string; edge: string; line: string }> = {
+    day: { pin: "bg-office-day-sofa", edge: "border-office-day-cap", line: "bg-office-day-cap" },
+    after: { pin: "bg-office-after-sofa", edge: "border-office-after-cap", line: "bg-office-after-cap" },
+};
+// each slip's left and top on the cork, and its tilt in degrees
+const BOARD_SLIPS: [number, number, number][] = [
+    [4, 6, -4],
+    [25, 4, 3],
+    [46, 7, -2],
+];
+const BOARD_SLIP_W = 16;
+const BOARD_SLIP_H = 22;
+
+const NoticeBoard = memo(function NoticeBoard(p: {
+    box: Box;
+    rows: number;
+    phase: OfficePhase;
+    onPick: (key: string) => void;
+}) {
+    const { box: b, rows, phase, onPick } = p;
+    const paper = BOARD_PAPER[phase];
+    const { cork } = boardArt(b);
+    const label = rows > 0 ? `Notice board, ${rows} waiting on you` : "Notice board";
+    // the bubble stands over the frame, on the art grid like a desk's; the count sits on a plate beside it
+    const bubbleLeft = (art(b.x) + 10) * PLAN_CELL;
+    const bubbleTop = art(b.y) * PLAN_CELL;
+    return (
+        <>
+            <button
+                type="button"
+                data-office-board=""
+                title={rows > 0 ? `${label} (Enter reads it)` : label}
+                aria-label={label}
+                onClick={() => onPick(BOARD_KEY)}
+                className="absolute z-[3] cursor-pointer border-0 bg-transparent p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                style={box(b)}
+            >
+                {BOARD_SLIPS.slice(0, rows).map(([x, y, tilt], i) => (
+                    <span
+                        key={i}
+                        data-office-board-slip=""
+                        className={cn(
+                            "pointer-events-none absolute box-border border bg-office-cup",
+                            paper.edge,
+                            phase === "after" && "opacity-80"
+                        )}
+                        style={{
+                            left: cork.x * PLAN_CELL - b.x + x,
+                            top: cork.y * PLAN_CELL - b.y + y,
+                            width: BOARD_SLIP_W,
+                            height: BOARD_SLIP_H,
+                            transform: `rotate(${tilt}deg)`,
+                        }}
+                    >
+                        <span
+                            className={cn(
+                                "absolute -top-[2px] left-[6px] box-border size-1 border border-office-ink",
+                                paper.pin
+                            )}
+                        />
+                        {[10, 7, 9].map((w, line) => (
+                            <span
+                                key={line}
+                                className={cn("absolute left-[3px] h-[2px]", paper.line)}
+                                style={{ top: 7 + line * 4, width: w }}
+                            />
+                        ))}
+                    </span>
+                ))}
+            </button>
+            {rows > 0 ? (
+                <>
+                    <Bubble mark="!" left={bubbleLeft} top={bubbleTop} phase={phase} />
+                    <span
+                        data-office-board-count=""
+                        className="pointer-events-none absolute z-[6] rounded-[3px] bg-office-plate px-[5px] text-[11.5px] font-bold leading-[14px] tabular-nums text-asking"
+                        style={{ left: bubbleLeft + 9 * PLAN_CELL + 3, top: bubbleTop + 3 }}
+                    >
+                        {rows}
+                    </span>
+                </>
+            ) : null}
+        </>
+    );
+}, sameValues);
 
 // in work hours the floor is light, so a label sits on a plate; after hours it is dark enough without
 const plate = (night: boolean) => (night ? "" : "rounded-[3px] bg-office-plate px-[5px]");
@@ -1801,11 +1939,13 @@ function OfficePopup({
     plan,
     cursorId,
     renderCard,
+    boardRows,
     onTalk,
 }: {
     plan: Plan;
     cursorId?: string;
     renderCard: (key: string, opts?: { adjust?: boolean }) => ReactNode;
+    boardRows: number;
     onTalk: () => void;
 }) {
     // the boss's look, not its spot: a walk step does not re-render the card
@@ -1815,12 +1955,16 @@ function OfficePopup({
     const open = layer === "card";
     const [big, setBig] = useAtom(officeBigCardAtom);
     const boxRef = useRef<HTMLDivElement>(null);
-    const at = cardAt(plan, look?.rest ? { at: look.rest, path: [] } : null, cursorId);
+    const found = cardAt(plan, look?.rest ? { at: look.rest, path: [] } : null, cursorId);
+    // the notice board has no card and no "↵ Talk" prompt: its dialog box is OfficeDialogLayer's
+    const at = found?.board ? undefined : found;
     const card = at != null && cursorId != null ? renderCard(cursorId, { adjust }) : null;
     const kind = at?.desk ? "agent" : "run";
+    // the board offers "↵ Read" while the boss stands still at it and rows wait
+    const readBoard = found?.board === true && boardRows > 0 && layer === "walk";
     probe.popup = card && open ? kind : "";
     // the ↵ prompt shows only while walking: the dialog box hides it
-    probe.prompt = card && layer === "walk" ? kind : "";
+    probe.prompt = readBoard ? "board" : card && layer === "walk" ? kind : "";
     probe.big = !!card && open && big;
     const shown = card != null && open;
     // a card grown past the office's view scrolls into it
@@ -1829,6 +1973,17 @@ function OfficePopup({
             boxRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
         }
     }, [shown, big, cursorId]);
+    if (readBoard && look?.rest) {
+        // over the boss's head, as at a desk
+        return (
+            <OfficePrompt
+                kind="board"
+                over={{ x: look.rest.x, y: look.rest.y - spriteH("boss") - 4 }}
+                verb="Read"
+                onTalk={onTalk}
+            />
+        );
+    }
     if (!card || !at || layer === "dialog") {
         return null;
     }
@@ -1890,7 +2045,7 @@ function OfficePrompt({
     verb,
     onTalk,
 }: {
-    kind: "agent" | "run";
+    kind: "agent" | "run" | "board";
     over: Point;
     verb: string;
     onTalk: () => void;

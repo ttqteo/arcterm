@@ -15,9 +15,10 @@ import {
     type AgentVM,
 } from "./agentsviewmodel";
 import { REVIEW_ACTIONS, ROW_ACTION_LABEL, type RowAction } from "./leadcardmodel";
+import type { BoardAct } from "./officeboardmodel";
 import { firstSel } from "./officecontrols";
 
-export type DeskKind = "agent" | "lead" | "worker" | "leadless";
+export type DeskKind = "agent" | "lead" | "worker" | "leadless" | "board";
 
 export type DialogItemId =
     | "open"
@@ -28,7 +29,8 @@ export type DialogItemId =
     | "card"
     | "send"
     | `opt:${number}`
-    | `row:${number}`;
+    | `row:${number}`
+    | `board:${BoardAct}`;
 
 export interface DialogItem {
     id: DialogItemId;

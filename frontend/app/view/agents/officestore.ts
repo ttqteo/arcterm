@@ -45,3 +45,8 @@ export const officeEventsOpenAtom = atom(false) as PrimitiveAtom<boolean>;
 
 // the office menu (m) is open: cockpitoffice.tsx opens and shuts it, and the footer's m chip lights while it is open
 export const officeMenuOpenAtom = atom(false) as PrimitiveAtom<boolean>;
+
+// the notice board's page in view (one page per Needs you row, officeboardmodel.ts), and whether the Why of that page is
+// open: shut again whenever the page changes. Not kept: the office opens on the first page
+export const officeBoardPageAtom = atom(0) as PrimitiveAtom<number>;
+export const officeBoardWhyAtom = atom(false) as PrimitiveAtom<boolean>;

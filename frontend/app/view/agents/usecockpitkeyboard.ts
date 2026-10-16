@@ -13,6 +13,7 @@ import { askerAt, columnJump, type RowTarget } from "./cardgridlayout";
 import { isRowKey, rowCardId } from "./leadcardmodel";
 import type { Dir } from "./officeboss";
 import { officeKey, type OfficeLayer } from "./officecontrols";
+import { BOARD_KEY } from "./officeplanmodel";
 
 export const ARROW_DIR: Record<string, Dir> = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
 
@@ -30,6 +31,8 @@ export interface OfficeKeys {
     toggleMenu(): void;
     desk(delta: -1 | 1): void;
     nextAsk(): void;
+    // ◀ ▶ over the notice board's box: the page a row on
+    pageBoard(delta: -1 | 1): void;
 }
 
 export type CockpitKeyDeps = {
@@ -139,6 +142,13 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
                     office.nextAsk();
                     return;
                 case "tab": {
+                    // the notice board's box pages between its rows (← → and h l); until the box is shown h l are
+                    // left as they were
+                    if (cursorId === BOARD_KEY && office.layer() === "dialog") {
+                        e.preventDefault();
+                        office.pageBoard(act.delta);
+                        return;
+                    }
                     // a question with several parts switches question (h l, and ← → in the dialog box)
                     const asker = askerAt(cursorId, roster, rowTargets);
                     const n = asker?.ask?.questions?.length ?? 0;

@@ -56,8 +56,9 @@ No part calls a model. Every rule reads data arcterm already holds: agent and ta
 - The Cockpit's heading row gets a **Cards | Office** segmented toggle beside **Live only**, and `o` toggles it
   (Cockpit binding `cockpit:office`, documented in `docs/keyboard-shortcuts.md`). The choice is `cockpitViewAtom`
   (`atomWithStorage("cockpit.view")`, `"cards"` by default; storage read in try/catch, falls back to cards).
-- Office replaces **only the card grid**. The status tabs, the project switcher, Live only, the Needs you strip, the
-  folded sections under the grid (Backgrounded, Idle, Background), the Events rail and the HintsBar stay as they are.
+- Office replaces **only the card grid**. The status tabs, the project switcher, Live only, the Needs you strip (in Office
+  the hall's notice board since 2026-10-16), the folded sections under the grid (Backgrounded, Idle, Background), the
+  Events rail and the HintsBar stay as they are.
 - The office draws exactly the cards the grid would draw after the tab, project and Live only filters, and the
   agents of the Idle section (an agent idle past the Finished window, which the grid parks there), so a filter
   narrows the office as it narrows the grid. In Office the Idle section is not drawn under it: its agents are in the
@@ -84,6 +85,7 @@ and the two columns share whatever width the hall leaves.
 - **The hall** runs between the columns, top to bottom (234 px wide). At its top, **the lounge**: a rug, a TV on the
   wall, the sofa facing it, the coffee machine and a plant, where idle people go. At its foot, by the entrance,
   **Home**: a booth holding the cards with no project, one desk per row; it grows up the hall, under the lounge.
+  Between the lounge and Home hangs the Needs you notice board (`2026-10-16-office-needs-you-board-design.md`).
 - **The lounge holds a fixed set of spots:** the sofa's seats, and standing places by the coffee machine and the
   plant, as many as fit with their labels: every label sits whole inside the lounge, over no other label or person
   (a name too long for its room is cut with an ellipsis, the full text in the person's title). Spots fill by
