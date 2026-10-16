@@ -27,7 +27,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Added
 
 - The Office has a notice board in the hall: what needs you waits there as pinned slips, and ↵ at the board pages
-  through them with the same buttons the Cards view shows.
+  through them with the same buttons the Cards view shows. The Office's "need you" count adds the board's slips to the
+  agents that ask.
 - **Memory hygiene**: Setup → Memory checks each project's Claude Code memory every week, or when you ask, and
   proposes changes with their evidence (files a memory names that are gone, a rule already in AGENTS.md, how often
   sessions open it): drop, merge, or move a shared memory into the project's own. Nothing changes until you accept a

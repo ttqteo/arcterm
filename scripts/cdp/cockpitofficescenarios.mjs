@@ -1381,12 +1381,14 @@ export function makeCockpitOfficeScenarios(fx) {
             await showBoard();
             await sleep(200);
             const one = await drawn();
+            // the HUD's need you counts the asking agents and the board's rows; step 9 reads the Cards tab's asking count
+            const officeNeed = await h.ev(`parseInt(document.querySelector('[data-office-chip="asking"]')?.textContent ?? "", 10)`);
             const bubblesWaiting = await bubbles();
             await h.shot("cdp-shots/office-needs-you-board-1-main.png");
             rec(
                 "1. in Office there is no Needs you strip; the notice board is drawn with two slips and the count 2 over it",
                 one.strip === false && one.board && one.slips === 2 && one.count === "2",
-                JSON.stringify(one)
+                JSON.stringify({ ...one, officeNeed })
             );
 
             // 2. the cursor reaches the board: j steps along the office order to it (the last stop); n from the asking
@@ -1635,15 +1637,18 @@ export function makeCockpitOfficeScenarios(fx) {
                 rows: [...document.querySelectorAll("[data-cockpit-needs-you] [data-needs-you-row]")].map((r) => r.dataset.needsYouRow),
                 office: !!document.querySelector("[data-cockpit-office]"),
                 board: !!document.querySelector("[data-office-board]"),
+                need: parseInt([...document.querySelectorAll("button")].find((b) => /need you$/.test(b.textContent.trim()))?.textContent ?? "", 10),
             })`);
             await h.shot("cdp-shots/office-needs-you-board-9-cards.png");
             rec(
-                "9. Cards shows the strip with the same two rows and no board",
+                "9. Cards shows the strip with the same two rows and no board; Office's HUD counted those rows on top of the Cards tab's asking agents",
                 strip &&
                     JSON.stringify(cards.rows) === JSON.stringify([BOARD_PLAN_KEY, BOARD_LEARN_KEY]) &&
                     !cards.office &&
-                    !cards.board,
-                JSON.stringify(cards)
+                    !cards.board &&
+                    Number.isFinite(cards.need) &&
+                    officeNeed === cards.need + 2,
+                JSON.stringify({ ...cards, officeNeed })
             );
             return steps;
         },

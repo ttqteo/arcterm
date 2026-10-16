@@ -852,15 +852,23 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         </>
     );
 
-    // the HUD bar inside the office's view: the same filters and switches as the Cards header, as compact pills
+    // the HUD bar inside the office's view: the same filters and switches as the Cards header, as compact pills. Its
+    // "need you" counts all that waits on you, the asking agents and the notice board's rows, though its filter still
+    // shows the asking desks
+    const officeChips = chipDefs.map(([key, label, count]): [ChipFilter, string, number] => [
+        key,
+        label,
+        key === "asking" ? count + ny.rows.length : count,
+    ]);
     const officeHud = (
         <>
             <span className="h-4 w-px shrink-0 bg-edge-mid" />
             <div role="group" aria-label="Show" className="flex min-w-0 items-center gap-0.5">
-                {chipDefs.map(([key, label, count]) => (
+                {officeChips.map(([key, label, count]) => (
                     <button
                         key={key}
                         type="button"
+                        data-office-chip={key}
                         aria-pressed={chip === key}
                         onClick={() => setChip(toggleChip(chip, key))}
                         className={cn(
