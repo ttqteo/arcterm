@@ -26,7 +26,19 @@ import { fontMonoAtom, fontSansAtom } from "./fontstore";
 import { RUNTIME_FLAGS, type Runtime } from "./launch";
 import { DEFAULT_REMEMBER_FLAGS, naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
 import { DEFAULT_HOURS, sanitizeHours } from "./officebehavior";
-import { DEFAULT_OFFICE_ANIMATION, officeAnimation, officeAnimationAtom, officeHoursAtom } from "./officestore";
+import {
+    DEFAULT_OFFICE_ANIMATION,
+    DEFAULT_SOUND,
+    officeAnimation,
+    officeAnimationAtom,
+    officeHoursAtom,
+    officeSoundEventsAtom,
+    officeSoundMusicAtom,
+    officeSoundUiAtom,
+    officeSoundVolumeAtom,
+    soundSwitch,
+    soundVolume,
+} from "./officestore";
 import { DEFAULT_RAIL_VISIBLE, railVisibleAtom } from "./railstore";
 import { DEFAULT_ROW_FIELDS, ROW_FIELD_ROWS } from "./rowfields";
 import { rowFieldsAtom } from "./rowfieldsstore";
@@ -88,6 +100,10 @@ function useRowBindings(sections: SettingSectionDef[], flagRuntime: Runtime) {
     const [officeAnim, setOfficeAnim] = useAtom(officeAnimationAtom);
     const [officeHrs, setOfficeHrs] = useAtom(officeHoursAtom);
     const hrs = sanitizeHours(officeHrs);
+    const [soundEvents, setSoundEvents] = useAtom(officeSoundEventsAtom);
+    const [soundUi, setSoundUi] = useAtom(officeSoundUiAtom);
+    const [soundMusic, setSoundMusic] = useAtom(officeSoundMusicAtom);
+    const [soundVol, setSoundVol] = useAtom(officeSoundVolumeAtom);
     const [flags, setFlags] = useAtom(naFlagsAtom);
     const [remember, setRemember] = useAtom(naRememberFlagsAtom);
     const [rowFields, setRowField] = useAtom(rowFieldsAtom);
@@ -120,6 +136,22 @@ function useRowBindings(sections: SettingSectionDef[], flagRuntime: Runtime) {
         "appearance.officehours": {
             changed: hrs.start !== DEFAULT_HOURS.start || hrs.end !== DEFAULT_HOURS.end,
             revert: () => setOfficeHrs(DEFAULT_HOURS),
+        },
+        "appearance.officesoundevents": {
+            changed: soundSwitch(soundEvents, DEFAULT_SOUND.events) !== DEFAULT_SOUND.events,
+            revert: () => setSoundEvents(DEFAULT_SOUND.events),
+        },
+        "appearance.officesoundui": {
+            changed: soundSwitch(soundUi, DEFAULT_SOUND.ui) !== DEFAULT_SOUND.ui,
+            revert: () => setSoundUi(DEFAULT_SOUND.ui),
+        },
+        "appearance.officesoundmusic": {
+            changed: soundSwitch(soundMusic, DEFAULT_SOUND.music) !== DEFAULT_SOUND.music,
+            revert: () => setSoundMusic(DEFAULT_SOUND.music),
+        },
+        "appearance.officesoundvolume": {
+            changed: soundVolume(soundVol) !== DEFAULT_SOUND.volume,
+            revert: () => setSoundVol(DEFAULT_SOUND.volume),
         },
         "newagent.remember": {
             changed: remember !== DEFAULT_REMEMBER_FLAGS,
