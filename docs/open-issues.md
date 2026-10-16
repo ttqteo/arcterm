@@ -834,6 +834,13 @@ Tracked in their own initiatives, not here:
   beyond the holds' noise of ±3 points: the raw readings are 14.7–16.5 % before and 15.2–18.0 % after, and every
   over-Cards figure sits below the baseline, so the budgets read as held from a baseline that swings by more than
   they allow.
+- **Cockpit office with the pixel-game controls** (2026-10-16, `cockpit-office-bench` at fd9c41ac0, after run 25462413's
+  HUD bar, dialog box and office menu; Tauri dev app on Windows through `final-verify.mjs`, its own ports and store,
+  the Cards baseline read 36.6 %): every budget held. 76 people, the office's own DOM nodes 245 (218 before the
+  controls), −1174 nodes and −4.68 MB heap against Cards; busy walking −16.2 % over Cards (20.4 % raw), reduced motion
+  −16.9 %, quiet −26.8 % with no clock running; 145 sprites; 115 ms to draw; a second round trip −2 MB. The first
+  bench run on Windows rather than the Mac, so the busy figures are not comparable with the rows above; the
+  production-build re-measure is still open.
 
 ---
 
