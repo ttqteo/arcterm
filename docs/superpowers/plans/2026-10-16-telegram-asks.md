@@ -346,7 +346,7 @@ Commit: `feat(telebot): long-poll runtime that sends asks and delivers answers`.
 
 **Depends on:** Task 3
 
-**Files:** `pkg/wconfig/settingsconfig.go`, `pkg/wshrpc/wshrpctypes_telegram.go`, `pkg/wshrpc/wshrpctypes.go`, `pkg/wshrpc/wshserver/wshserver_telegram.go`, `pkg/wshrpc/wshserver/wshserver_telegram_test.go`, `pkg/jarvis/attention.go`, `cmd/server/main-server.go`, generated: `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`, `pkg/wshrpc/wshclient/wshclient.go`, `pkg/wconfig/metaconsts.go`
+**Files:** `pkg/wconfig/settingsconfig.go`, `pkg/wshrpc/wshrpctypes_telegram.go`, `pkg/wshrpc/wshrpctypes.go`, `pkg/wshrpc/wshserver/wshserver_telegram.go`, `pkg/wshrpc/wshserver/wshserver_telegram_test.go`, `pkg/jarvis/attention.go`, `cmd/server/main-server.go`, `pkg/wshrpc/wshserver/wshserver_secrets.go`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`, `pkg/wshrpc/wshclient/wshclient.go`, `pkg/wconfig/metaconsts.go`
 
 1. Settings (`SettingsType`, beside the `notify:*` fields at `settingsconfig.go:51`):
 
