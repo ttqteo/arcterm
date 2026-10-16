@@ -11585,6 +11585,197 @@ const codeSideColumn = {
     },
 };
 
+// --- element primitives: the terminal view and the icon/copy buttons -------------------------------
+// Guards the Tailwind port of the element SCSS (iconbutton, copybutton, term). Besides the shots it writes
+// the computed style of every ported element, in each state it can reach, to element-primitives-styles.json:
+// diffing that file between two trees is the look-did-not-change check, which a screenshot is too coarse for.
+const PRIMITIVES_PROJECT = "verify-element-primitives";
+const PRIMITIVES_TOPIC = "verify-primitives";
+const PRIMITIVES_STYLES = "cdp-shots/element-primitives-styles.json";
+const PRIMITIVES_WAIT_MS = 10000;
+const PRIMITIVES_HOVER_MARK = "data-verify-hover";
+const PRIMITIVE_PROPS = [
+    "display", "position", "flex-direction", "flex-grow", "flex-shrink", "flex-basis", "align-items",
+    "justify-content", "column-gap", "row-gap", "width", "height", "min-width", "max-width", "min-height",
+    "padding-top", "padding-right", "padding-bottom", "padding-left",
+    "margin-top", "margin-right", "margin-bottom", "margin-left",
+    "border-top-width", "border-top-style", "border-top-color", "border-left-width", "border-left-style",
+    "border-top-left-radius", "background-color", "background-image", "color", "opacity", "cursor",
+    "pointer-events", "visibility", "font-size", "font-family", "font-weight", "line-height", "outline-style",
+    "outline-width", "outline-color", "box-shadow", "overflow-x", "overflow-y", "z-index",
+];
+
+// an in-page expression: the computed style and box of the element `sel` (a JS expression) names
+const primitiveStyle = (sel) => `(() => {
+    const el = ${sel};
+    if (!el) return null;
+    const cs = getComputedStyle(el);
+    const r = el.getBoundingClientRect();
+    const out = { box: [Math.round(r.width * 10) / 10, Math.round(r.height * 10) / 10] };
+    for (const p of ${JSON.stringify(PRIMITIVE_PROPS)}) out[p] = cs.getPropertyValue(p);
+    return out;
+})()`;
+
+// :hover forced through the CSS domain: a synthetic mouse move did not set it in the dev app's WebView
+async function primitiveForceHover(h, sel, on) {
+    await h.ev(`(() => {
+        document.querySelectorAll('[${PRIMITIVES_HOVER_MARK}]').forEach((e) => e.removeAttribute('${PRIMITIVES_HOVER_MARK}'));
+        ${sel}?.setAttribute('${PRIMITIVES_HOVER_MARK}', '');
+    })()`);
+    await h.cdp("DOM.enable", {});
+    await h.cdp("CSS.enable", {});
+    const { root } = await h.cdp("DOM.getDocument", { depth: 0 });
+    const { nodeId } = await h.cdp("DOM.querySelector", { nodeId: root.nodeId, selector: `[${PRIMITIVES_HOVER_MARK}]` });
+    if (!nodeId) return false;
+    await h.cdp("CSS.forcePseudoState", { nodeId, forcedPseudoClasses: on ? ["hover"] : [] });
+    return true;
+}
+
+const elementPrimitives = {
+    name: "element-primitives",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { name: PRIMITIVES_PROJECT };
+        try {
+            ctx.dir = mkdtempSync(join(tmpdir(), "verify-primitives-"));
+            git(ctx.dir, "init", "-q", "--initial-branch=main");
+            writeFileSync(join(ctx.dir, "README.md"), "# Primitives\n\nA paragraph.\n\n```sh\necho hello\n```\n");
+            git(ctx.dir, "add", ".");
+            git(ctx.dir, "commit", "-q", "-m", "seed the primitives fixture");
+            await h.rpc("createproject", { name: ctx.name, path: ctx.dir });
+            ctx.madeProject = true;
+            await waitForProjectInConfig(h, ctx.name);
+            await openCanvasTerminal(h, ctx, PRIMITIVES_TOPIC);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.arrangeError != null) {
+            return [skipStep("element primitives", `could not verify: the arrange failed: ${ctx.arrangeError}`)];
+        }
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const styles = {};
+        const take = async (key, sel) => (styles[key] = await h.ev(primitiveStyle(sel)));
+        try {
+            await primitiveSteps(h, ctx, rec, styles, take);
+        } finally {
+            mkdirSync(dirname(PRIMITIVES_STYLES), { recursive: true });
+            writeFileSync(PRIMITIVES_STYLES, JSON.stringify(styles, null, 2) + "\n");
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`element-primitives teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        if (ctx.tabId) {
+            await step("close the terminal tab", () =>
+                waveService(h, "workspace", "CloseTab", [ctx.workspaceId, ctx.tabId, false])
+            );
+        }
+        if (ctx.madeProject) await step("delete the project", () => h.rpc("deleteproject", { name: ctx.name }));
+        if (ctx.dir) await step("remove the temp dir", () => rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 3 }));
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
+async function primitiveSteps(h, ctx, rec, styles, take) {
+    const TERM = `document.querySelector('[data-agent-terminal="${ctx.tabId}"] [data-term-view]')`;
+    await h.goto("agent");
+    await polishWaitFor(h, `!!document.querySelector('[data-tree-terminal="${ctx.tabId}"]')`, PRIMITIVES_WAIT_MS);
+    await h.ev(`document.querySelector('[data-tree-terminal="${ctx.tabId}"]')?.click()`);
+    const mounted = await polishWaitFor(h, `!!${TERM}?.querySelector('.xterm-viewport')`, PRIMITIVES_WAIT_MS);
+    rec("a. the shell terminal mounts its view on the Agent surface", mounted, `tab=${ctx.tabId}`);
+    if (!mounted) return;
+    // the shell prints its banner a moment after the mount; the shot should show text in the viewport
+    await polishWaitFor(h, `(${TERM}.querySelector('.xterm-rows')?.textContent ?? '').trim() !== ''`, PRIMITIVES_WAIT_MS);
+    await take("term.root", TERM);
+    await take("term.connect", `${TERM}.querySelector('.terminal')?.parentElement`);
+    await take("term.terminal", `${TERM}.querySelector('.terminal')`);
+    await take("term.viewport", `${TERM}.querySelector('.xterm-viewport')`);
+    await take("term.ruler", `${TERM}.querySelector('.xterm-decoration-overview-ruler')`);
+    rec(
+        "b. the terminal fills its view, its viewport is transparent and the overview ruler is hidden",
+        styles["term.root"]?.display === "flex" &&
+            styles["term.terminal"]?.width === styles["term.connect"]?.width &&
+            styles["term.viewport"]?.["background-color"] === "rgba(0, 0, 0, 0)" &&
+            (styles["term.ruler"] == null || styles["term.ruler"].display === "none"),
+        JSON.stringify({
+            root: styles["term.root"]?.box,
+            viewportBg: styles["term.viewport"]?.["background-color"],
+            ruler: styles["term.ruler"]?.display ?? "absent",
+        })
+    );
+    await h.shot("cdp-shots/element-primitives-terminal.png");
+
+    // a markdown code block in the Code preview carries the copy button, an IconButton
+    await h.goto("code");
+    const row = `document.querySelector('[data-code-picker-row=${JSON.stringify(ctx.name)}]')`;
+    if (!(await h.ev(`!!${row}`))) await h.ev(`document.querySelector('[data-code-project-picker]')?.click()`);
+    const picked = (await polishWaitFor(h, `!!${row}`, 5000)) && (await h.ev(`(() => { ${row}.click(); return true; })()`));
+    await polishNap(1200); // the index is one git ls-files call
+    await h.ev(
+        `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', code: 'KeyP', ctrlKey: true, bubbles: true }))`
+    );
+    await polishNap(300);
+    const typed = await setFinderQuery(h, "README.md");
+    const CODEBLOCK = `document.querySelector('.markdown pre.codeblock')`;
+    const COPY = `${CODEBLOCK}?.querySelector('button[title="Copy"]')`;
+    const block = await polishWaitFor(h, `!!${COPY}`, PRIMITIVES_WAIT_MS);
+    const seen = block
+        ? null
+        : await h.ev(`({ markdown: !!document.querySelector('.markdown'), pre: document.querySelectorAll('pre').length,
+            heading: document.querySelector('.markdown .heading')?.textContent ?? null })`);
+    rec(
+        "c. README.md renders a code block with a copy button",
+        picked === true && block,
+        JSON.stringify({ picked, typed, seen })
+    );
+    if (!block) {
+        await h.shot("cdp-shots/element-primitives-nocodeblock.png");
+        return;
+    }
+    await take("copy.button", COPY);
+    await take("copy.icon", `${COPY}?.querySelector('i')`);
+    const hovered = await primitiveForceHover(h, COPY, true);
+    await take("copy.button.hover", COPY);
+    await primitiveForceHover(h, COPY, false);
+    rec(
+        "d. the copy button rests dim and hover lifts it to full opacity",
+        hovered && styles["copy.button"]?.opacity === "0.7" && styles["copy.button.hover"]?.opacity === "1",
+        JSON.stringify({ rest: styles["copy.button"]?.opacity, hover: styles["copy.button.hover"]?.opacity })
+    );
+    // the actions strip shows on the block's hover; force it so the shot shows the button
+    await primitiveForceHover(h, CODEBLOCK, true);
+    await h.shot("cdp-shots/element-primitives-copy.png");
+    await h.ev(`${COPY}?.click()`);
+    const copied = await polishWaitFor(h, `!!${COPY}?.querySelector('i.fa-check')`, 1500);
+    await take("copy.button.copied", COPY);
+    await take("copy.icon.copied", `${COPY}?.querySelector('i')`);
+    const success = await h.ev(`(() => {
+        const probe = document.createElement('i');
+        probe.style.color = 'var(--color-success)';
+        document.body.appendChild(probe);
+        const c = getComputedStyle(probe).color;
+        probe.remove();
+        return c;
+    })()`);
+    rec(
+        "e. clicking copy shows the check in the success color at full opacity",
+        copied && styles["copy.button.copied"]?.opacity === "1" && styles["copy.icon.copied"]?.color === success,
+        JSON.stringify({ copied, color: styles["copy.icon.copied"]?.color, success })
+    );
+    await h.shot("cdp-shots/element-primitives-copied.png");
+    await primitiveForceHover(h, CODEBLOCK, false);
+}
+
 // --- dag lifecycle: engine + graph surface ----------------------------------------------------
 // Drives the real DagSubmit/DagAction/DagMerge RPCs through an orchestrator-mode run, then opens
 // the graph surface and asserts the ReactFlow canvas renders the submitted nodes. Blast radius is
@@ -27079,12 +27270,12 @@ async function waveService(h, service, method, args, uicontext = null) {
 }
 
 // the workspace of the page's own tab, so the terminal lands in the window under test
-async function openCanvasTerminal(h, ctx) {
+async function openCanvasTerminal(h, ctx, topic = CANVAS_TOPIC) {
     const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
     const wslist = await h.rpc("workspacelist", null);
     const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
     ctx.workspaceId = ws.workspacedata.oid;
-    ctx.tabId = await waveService(h, "workspace", "CreateTab", [ctx.workspaceId, CANVAS_TOPIC, false]);
+    ctx.tabId = await waveService(h, "workspace", "CreateTab", [ctx.workspaceId, topic, false]);
     const tab = await waveService(h, "object", "GetObject", [`tab:${ctx.tabId}`]);
     ctx.blockId = tab?.blockids?.[0];
     if (!ctx.blockId) throw new Error("the new tab has no block");
@@ -27094,14 +27285,14 @@ async function openCanvasTerminal(h, ctx) {
         oref: `block:${ctx.blockId}`,
         meta: { view: "term", controller: "shell", "cmd:cwd": "~" },
     });
-    await h.rpc("setmeta", { oref: `tab:${ctx.tabId}`, meta: { "session:project": CANVAS_TOPIC } });
+    await h.rpc("setmeta", { oref: `tab:${ctx.tabId}`, meta: { "session:project": topic } });
     // The canvas swap is an agent's header: a plain terminal's slim pane head has none, so the terminal reports as a
     // Claude agent, as the grid scenario's does, and the tab id is the agent id
     await h.rpc("eventpublish", {
         event: "agent:status",
         scopes: [`block:${ctx.blockId}`],
         persist: 1,
-        data: { oref: `block:${ctx.blockId}`, state: "idle", agent: "claude", title: CANVAS_TOPIC, ts: Date.now() },
+        data: { oref: `block:${ctx.blockId}`, state: "idle", agent: "claude", title: topic, ts: Date.now() },
     });
 }
 
@@ -47659,6 +47850,7 @@ export const SCENARIOS = [
     codeSideColumn,
     jarvisPet,
     petBubbleDismiss,
+    elementPrimitives,
     briefSurface,
     briefLayout,
     briefChunkPanel,

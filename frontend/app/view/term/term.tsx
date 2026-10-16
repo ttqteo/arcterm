@@ -22,7 +22,6 @@ import * as React from "react";
 import { TermLinkTooltip } from "./term-tooltip";
 import { makeRightClickGate, singleRightClickAction } from "./termrightclick";
 import { pendingTermSearchAtom } from "./termsearch";
-import { TermStickers } from "./termsticker";
 import { TermThemeUpdater } from "./termtheme";
 import { normalizeCursorStyle } from "./termutil";
 import { TermWrap } from "./termwrap";
@@ -204,14 +203,6 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
         };
     }, [blockId, termSettings, termFontSize, connFontFamily]);
 
-    const stickerConfig = {
-        charWidth: 8,
-        charHeight: 16,
-        rows: model.termRef.current?.terminal.rows ?? 24,
-        cols: model.termRef.current?.terminal.cols ?? 80,
-        blockId: blockId,
-    };
-
     const showTermMenu = React.useCallback(
         (e: React.MouseEvent<HTMLDivElement>) => {
             ContextMenuModel.getInstance().showContextMenu(model.getContextMenuItems(), e);
@@ -251,10 +242,18 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
     );
 
     return (
-        <div className="view-term" ref={viewRef} onContextMenu={handleContextMenu}>
+        <div
+            className="view-term relative flex h-full w-full flex-col overflow-hidden"
+            data-term-view
+            ref={viewRef}
+            onContextMenu={handleContextMenu}
+        >
             <TermThemeUpdater termRef={model.termRef} />
-            <TermStickers config={stickerConfig} />
-            <div key="connect-elem" className="term-connectelem" ref={connectElemRef} />
+            <div
+                key="connect-elem"
+                className="term-connectelem my-[5px] mr-px ml-1 flex min-h-0 grow overflow-hidden leading-none [&_.terminal]:w-full [&_.xterm-decoration-overview-ruler]:!hidden [&_.xterm-viewport]:!bg-transparent"
+                ref={connectElemRef}
+            />
             <NullErrorBoundary debugName="TermLinkTooltip">
                 <TermLinkTooltip termWrap={termWrapInst} />
             </NullErrorBoundary>

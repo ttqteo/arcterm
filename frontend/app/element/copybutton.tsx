@@ -1,9 +1,7 @@
 // Copyright 2025, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
-import "./copybutton.scss";
 import { IconButton } from "./iconbutton";
 
 type CopyButtonProps = {
@@ -48,7 +46,7 @@ const CopyButton = ({ title, className, onClick }: CopyButtonProps) => {
                 elemtype: "iconbutton",
                 icon: isCopied ? "check" : "copy",
                 title,
-                className: clsx("copy-button", { copied: isCopied }),
+                className: isCopied ? "opacity-100 *:text-success" : undefined,
                 click: handleOnClick,
             }}
             className={className}

@@ -407,7 +407,6 @@ plus `shadow-popover-sm/md/lg/xl/2xl` (lighter popovers), `shadow-popover-soft`
 (diffuse), `shadow-popover-line` (1px micro-shadows), and
 `shadow-inset-highlight` (the white top-edge highlight on filled CTAs). Do
 not hand-roll new shadow recipes in `className`/`style` — reuse the scale.
-Legacy modals use `--modal-box-shadow` (`0 8px 24px` at 0.8 black).
 
 ## Shapes
 

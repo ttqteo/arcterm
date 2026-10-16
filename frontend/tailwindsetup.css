@@ -363,17 +363,10 @@
     --zoomfactor: 1;
     --zoomfactor-inv: 1;
 
-    /* Compat: legacy SCSS modules still in the bundle (search.scss, term.scss) read these vars,
-       which used to come from the Electron-era theme.scss (deleted 2026-08-14). Without them
-       a modal's background is transparent and its z-index falls back to auto, painting the dialog
-       behind the terminal so its buttons can't be clicked. Map to the @theme tokens. */
+    /* Compat: the terminal search's SCSS (search.scss) reads these vars, which used to come from the Electron-era
+       theme.scss (deleted 2026-08-14). Map to the @theme tokens. */
     --modal-bg-color: var(--color-surface-raised);
     --modal-border-color: var(--color-edge-mid);
-    --zindex-modal-backdrop: 1;
-    --zindex-modal: 2;
-    --zindex-modal-wrapper: 500;
-    --zindex-typeahead-modal: 100; /* legacy suggestion/typeahead modal (theme.scss had 100) */
-    --zindex-termstickers: 20; /* legacy term sticker layer (theme.scss had 20) */
     --modal-box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8); /* legacy search-modal shadow; theme.scss value was malformed */
 }
 

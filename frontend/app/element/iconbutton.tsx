@@ -2,11 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useLongClick } from "@/app/hook/useLongClick";
-import { makeIconClass } from "@/util/util";
-import clsx from "clsx";
+import { cn, makeIconClass } from "@/util/util";
 import { atom, useAtom } from "jotai";
 import { CSSProperties, forwardRef, memo, useMemo, useRef } from "react";
-import "./iconbutton.scss";
 
 type IconButtonProps = { decl: IconButtonDecl; className?: string };
 export const IconButton = memo(
@@ -22,10 +20,13 @@ export const IconButton = memo(
         return (
             <button
                 ref={ref}
-                className={clsx("wave-iconbutton", className, decl.className, {
-                    disabled,
-                    "no-action": decl.noAction,
-                })}
+                className={cn(
+                    "flex cursor-pointer items-center border-none opacity-70 [outline:inherit] hover:opacity-100 *:pointer-events-none",
+                    (disabled || decl.noAction) && "cursor-default",
+                    disabled && "!opacity-45",
+                    className,
+                    decl.className
+                )}
                 title={decl.title}
                 aria-label={decl.title}
                 style={styleVal}
@@ -39,6 +40,7 @@ export const IconButton = memo(
 
 type ToggleIconButtonProps = { decl: ToggleIconButtonDecl; className?: string };
 
+// the terminal search's case / whole-word / regex switches
 export const ToggleIconButton = memo(
     forwardRef<HTMLButtonElement, ToggleIconButtonProps>(({ decl, className }, ref) => {
         const activeAtom = useMemo(() => decl.active ?? atom(false), [decl.active]);
@@ -50,11 +52,14 @@ export const ToggleIconButton = memo(
         return (
             <button
                 ref={ref}
-                className={clsx("wave-iconbutton", "toggle", className, decl.className, {
-                    active,
-                    disabled,
-                    "no-action": decl.noAction,
-                })}
+                className={cn(
+                    "flex cursor-pointer items-center rounded-[3px] border-none p-px opacity-70 [outline:inherit] hover:bg-hoverbg hover:opacity-100 *:pointer-events-none",
+                    active && "border border-solid border-accent p-0 opacity-100",
+                    (disabled || decl.noAction) && "cursor-default",
+                    disabled && "!opacity-45",
+                    className,
+                    decl.className
+                )}
                 title={title}
                 aria-label={title}
                 style={{ color: decl.iconColor ?? "inherit" }}

@@ -247,7 +247,6 @@ declare global {
     type Block = WaveObj & {
         parentoref?: string;
         runtimeopts?: RuntimeOpts;
-        stickers?: StickerType[];
         subblockids?: string[];
     };
 
@@ -3756,27 +3755,6 @@ declare global {
         ticket: string;
         status: string;
         updated: number;
-    };
-
-    // waveobj.StickerClickOptsType
-    type StickerClickOptsType = {
-        sendinput?: string;
-        createblock?: BlockDef;
-    };
-
-    // waveobj.StickerDisplayOptsType
-    type StickerDisplayOptsType = {
-        icon: string;
-        imgsrc: string;
-        svgblob?: string;
-    };
-
-    // waveobj.StickerType
-    type StickerType = {
-        stickertype: string;
-        style: {[key: string]: any};
-        clickopts?: StickerClickOptsType;
-        display: StickerDisplayOptsType;
     };
 
     // storage.StorageAutoClean

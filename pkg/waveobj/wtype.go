@@ -1055,24 +1055,6 @@ type BlockDef struct {
 	Meta  MetaMapType         `json:"meta,omitempty"`
 }
 
-type StickerClickOptsType struct {
-	SendInput   string    `json:"sendinput,omitempty"`
-	CreateBlock *BlockDef `json:"createblock,omitempty"`
-}
-
-type StickerDisplayOptsType struct {
-	Icon    string `json:"icon"`
-	ImgSrc  string `json:"imgsrc"`
-	SvgBlob string `json:"svgblob,omitempty"`
-}
-
-type StickerType struct {
-	StickerType string                  `json:"stickertype"`
-	Style       map[string]any          `json:"style"`
-	ClickOpts   *StickerClickOptsType   `json:"clickopts,omitempty"`
-	Display     *StickerDisplayOptsType `json:"display"`
-}
-
 type RuntimeOpts struct {
 	TermSize TermSize `json:"termsize,omitempty"`
 	WinSize  WinSize  `json:"winsize,omitempty"`
@@ -1089,13 +1071,12 @@ type WinSize struct {
 }
 
 type Block struct {
-	OID         string         `json:"oid"`
-	ParentORef  string         `json:"parentoref,omitempty"`
-	Version     int            `json:"version"`
-	RuntimeOpts *RuntimeOpts   `json:"runtimeopts,omitempty"`
-	Stickers    []*StickerType `json:"stickers,omitempty"`
-	Meta        MetaMapType    `json:"meta"`
-	SubBlockIds []string       `json:"subblockids,omitempty"`
+	OID         string       `json:"oid"`
+	ParentORef  string       `json:"parentoref,omitempty"`
+	Version     int          `json:"version"`
+	RuntimeOpts *RuntimeOpts `json:"runtimeopts,omitempty"`
+	Meta        MetaMapType  `json:"meta"`
+	SubBlockIds []string     `json:"subblockids,omitempty"`
 }
 
 func (*Block) GetOType() string {
