@@ -50,14 +50,18 @@ which the office's boss element replaces the footer creature, and `petview.tsx` 
 
 What each file is for:
 - Modify: `frontend/app/view/jarvis/petsprite.ts` — the `t` cell code, `PETER_BOSS_POSES`, `SPIDEY_UNMASK`,
-  `SPIDEY_PUFF`, and a `bossRows` helper
+  `SPIDEY_PUFF`, and the `bossRows` / `bossSprite` helpers
 - Modify: `frontend/app/view/jarvis/petsprite.test.ts` — their shape and codes
 - Modify: `frontend/tailwindsetup.css` — `--color-peter-tie` beside `--color-peter-shirt`
 
+The boss wears the outfit picked in Settings, as the footer does (the spec's `spriteFor(pose, marks, outfit,
+character)`): Sprout and the Minion through `spriteFor` itself; Peter's boss grids get the same treatment the footer's
+Spider-Man gets, the VN shirt recolouring his shirt cells (`v` → `R`, `dressSpideyInFlag`) and the flag held behind him.
+
 - [ ] **Step 1: Write the failing tests**
 
-Add to `petsprite.test.ts` (extend the import from `./petsprite` with `bossRows`, `PETER_BOSS_POSES`, `SPIDEY_PUFF`,
-`SPIDEY_UNMASK`):
+Add to `petsprite.test.ts` (extend the import from `./petsprite` with `bossRows`, `bossSprite`, `PETER_BOSS_POSES`,
+`SPIDEY_PUFF`, `SPIDEY_UNMASK`, and `outfitRows` / `spriteFor` if they are not imported yet):
 
 ```ts
 describe("Peter the boss", () => {
@@ -91,9 +95,25 @@ describe("Peter the boss", () => {
     });
 
     it("draws Spider-Man in the office from the boss grids, the others from their own", () => {
-        expect(bossRows("stand", "spidey")).toBe(PETER_BOSS_POSES.stand);
-        expect(bossRows("stand", "sprout")).toBe(POSES.stand);
-        expect(bossRows("walk1", "minion")).toBe(MINION_POSES.walk1);
+        expect(bossRows("stand", null, "spidey")).toBe(PETER_BOSS_POSES.stand);
+        expect(bossRows("stand", null, "sprout")).toBe(POSES.stand);
+        expect(bossRows("walk1", null, "minion")).toBe(MINION_POSES.walk1);
+    });
+
+    it("keeps the picked outfit: the VN shirt over Peter's shirt, the tie still on it", () => {
+        const dressed = bossRows("stand", "vn-shirt", "spidey").join("");
+        expect(dressed).not.toContain("v");
+        expect(dressed).toContain("R");
+        expect(dressed).toContain("t");
+        expect(bossRows("stand", "vn-shirt", "sprout")).toEqual(outfitRows("stand", "vn-shirt", "sprout"));
+    });
+
+    it("draws Sprout and the Minion as the footer does, and holds the flag behind Peter", () => {
+        expect(bossSprite("walk1", ["unread"], "vn-flag", "minion")).toEqual(
+            spriteFor("walk1", ["unread"], "vn-flag", "minion")
+        );
+        expect(bossSprite("stand", [], "vn-flag", "spidey").back.length).toBeGreaterThan(0);
+        expect(bossSprite("stand", [], null, "spidey").back).toEqual([]);
     });
 
     it("defines the tie's token in the theme", () => {
@@ -461,11 +481,31 @@ export const SPIDEY_PUFF: readonly string[] = [
     "......m..m......",
 ];
 
-/** A pose's grid for the office's boss: Spider-Man is Peter the boss there, the others are themselves. */
-export function bossRows(pose: PetPose, character: PetCharacter): readonly string[] {
-    return character === "spidey" ? PETER_BOSS_POSES[pose] : outfitRows(pose, null, character);
+/** A pose's grid for the office's boss in an outfit: Spider-Man is Peter the boss there, the others are themselves. */
+export function bossRows(pose: PetPose, outfit: PetOutfit | null, character: PetCharacter): readonly string[] {
+    if (character !== "spidey") {
+        return outfitRows(pose, outfit, character);
+    }
+    return outfit === "vn-shirt" ? PETER_BOSS_DRESSED[pose] : PETER_BOSS_POSES[pose];
+}
+
+/** The office boss's cells, as spriteFor draws the footer's: body, marks, and the flag in hand behind it. */
+export function bossSprite(
+    pose: PetPose,
+    marks: readonly PetMark[],
+    outfit: PetOutfit | null,
+    character: PetCharacter
+): PetSprite {
+    if (character !== "spidey") {
+        return spriteFor(pose, marks, outfit, character);
+    }
+    return { ...spriteOfRows(bossRows(pose, outfit, character), marks), back: outfit === "vn-flag" ? [...FLAG_CELLS] : [] };
 }
 ```
+
+Build `PETER_BOSS_DRESSED` beside `SPIDEY_DRESSED` in the loop that fills the dressed tables (after `PETER_BOSS_POSES`
+is defined): `PETER_BOSS_DRESSED[pose] = dressSpideyInFlag(PETER_BOSS_POSES[pose]);`. Put `bossRows` / `bossSprite`
+after `spriteOfRows`, so everything they call is defined above them.
 
 - [ ] **Step 5: Run the tests**
 
@@ -925,7 +965,8 @@ there.
 - [ ] **Step 1: Write the failing test**
 
 `scenery.test.ts` already builds plans with `const plan = (width?, over?) => buildPlan(input(width, over))`; use it.
-A pane is 12 art cells wide (36 px at `PLAN_CELL` 3), so its centre is 18 px past the step's `x`.
+A pane is drawn at `art(x)` cells (`round(x / CELL)`, `CELL` 3) and is 12 cells wide, so its centre is
+`(art(x) + 6) * CELL` px, not `x + 18` (step 190 gives 207). Import `CELL` from `./scenery` beside `art`.
 
 ```ts
 describe("outerWindows", () => {
@@ -944,11 +985,15 @@ describe("outerWindows", () => {
     it("sits on the wall's 130 px steps, the TV's step left out", () => {
         const p = plan(1400);
         const xs = outerWindows(p).map((w) => w.x);
-        for (const x of xs) {
-            expect((x - 18 - 60) % 130).toBe(0);
+        const steps: number[] = [];
+        for (let s = 60; s < p.width - 80; s += 130) {
+            steps.push((art(s) + 6) * CELL);
         }
-        const steps = Math.ceil((p.width - 80 - 60) / 130);
-        expect(xs.length).toBeLessThanOrEqual(steps);
+        // every window is on a step; the TV's steps are left out (one or two: the TV is 38 cells, a step ~43)
+        for (const x of xs) {
+            expect(steps).toContain(x);
+        }
+        expect(new Set(xs).size).toBeLessThan(steps.length);
     });
 });
 ```
@@ -1040,6 +1085,11 @@ remounts and calls `setAnchor` again with its new element, so nothing else is ne
 Run: `task check:ts` (5-minute timeout)
 Expected: exit 0.
 
+Nothing sets `petOfficeBossAtom` until Task 6, so this task changes nothing on screen by itself. What it renders is
+shown by Task 7's `cockpit-office-pet` scenario: step 0 (no `[data-pet-sprite]` on the footer while the Office shows),
+step 7 (the bubble over the boss, and none while an entrance plays), step 8 (the peek opened from the boss) and step 9
+(the footer creature back after leaving the Office).
+
 - [ ] **Step 4: Commit**
 
 ```bash
@@ -1050,23 +1100,44 @@ git commit -m "feat(pet): the footer creature gives way to the office's boss" --
 
 **Depends on:** Task 1, Task 2, Task 3, Task 4, Task 5
 
-**Files:** `frontend/app/view/agents/cockpitoffice.tsx`, `frontend/app/view/agents/cockpitofficedevhooks.ts`, `frontend/app/view/office/plansprite.ts`, `scripts/cdp/cockpitofficescenarios.mjs`
+**Files:** `frontend/app/view/agents/cockpitoffice.tsx`, `frontend/app/view/agents/cockpitofficedevhooks.ts`, `frontend/app/view/office/plansprite.ts`, `frontend/app/view/office/plansprite.test.ts`, `frontend/app/view/jarvis/petteleportsvg.tsx`, `scripts/cdp/cockpitofficescenarios.mjs`
 
 What each file is for:
 - Modify: `frontend/app/view/agents/cockpitoffice.tsx` — `BossView` draws the pet's svg, plays the entrance, sets the
   pet atoms, toggles the peek on a click; the office marks when it was left; the probe reports the boss pet
-- Modify: `frontend/app/view/agents/cockpitofficedevhooks.ts` — DEV seams: hold the entrance at a time or skip it, set
-  the pet character
+- Modify: `frontend/app/view/agents/cockpitofficedevhooks.ts` — DEV seams: force, replay or skip the entrance, the
+  boss's rest and expression, set the pet character, show the bubble
 - Modify: `frontend/app/view/office/plansprite.ts` — drop the chibi boss poses once nothing draws them
+- Modify: `frontend/app/view/office/plansprite.test.ts` — drop what it checked of the chibi boss
+- Modify: `frontend/app/view/jarvis/petteleportsvg.tsx` — `BeamLayers` draws a fixed `at`, as `WebSwingLayers` does
 - Modify: `scripts/cdp/cockpitofficescenarios.mjs` — `arrangeOffice` skips the entrance, so the existing scenarios'
   shots are the same as before
 
+What it renders is shown by Task 7's `cockpit-office-pet` scenario, which the Final runs: step 0 (the pet svg as the
+boss, the entrance played on mount, Sprout's and the Minion's beam), step 1 (each phase of Spider-Man's entrance and the
+strand), step 2 (Peter, no suit), step 3 (a walk key, a floor click and ↵ each skip a live entrance), step 4 (Peter's
+front-on walk), step 5 (every pose of the canvas's `Main` board: sit, the four pastimes, tired), step 6 (the after-hours
+brightness), steps 7–8 (the bubble and the peek on the boss), step 9 (no entrance within 2 minutes). Until Task 7 adds
+it, check this task's view in the browser cockpit (Step 7).
+
 - [ ] **Step 1: The DEV seams**
 
-In `cockpitoffice.tsx`'s `OfficeDev`:
+In `cockpitoffice.tsx`'s `OfficeDev` (`window.__cockpitOffice` merges each call into what is set, so a seam is cleared
+by passing `null`, never by leaving it out; every seam below treats `null` as unset):
 
 ```ts
-    entrance?: "skip" | number; // "skip" ends it at once; a number holds it still at that many ms (the pet scenario)
+    // a number forces the current pet's entrance and holds it still at that many ms, whatever the cooldown, a skip, or
+    // that this mount's entrance already ended or never played; "skip" ends a playing entrance at once and keeps a later
+    // mount from playing one while it is set; null is live (the cooldown, as in a real session)
+    entrance?: "skip" | number | null;
+    // each new value plays the current pet's entrance live from its start, whatever the cooldown; a walk key, a click
+    // on the floor or ↵ ends it as in a real session. A number entrance wins over it. (The pet scenario's skip steps.)
+    replayEntrance?: number | null;
+    // the rest the boss takes in place of pickRest's: setting it starts that rest at once (as if the boss had stood
+    // still REST_AFTER_MS), and the boss keeps it each time it stops; null picks at random again
+    bossRest?: BossRest | null;
+    // in place of the condition's expression (tired, …); null is the live condition
+    bossExpression?: PetExpression["kind"] | null;
 ```
 
 In `cockpitofficedevhooks.ts`, add `__cockpitOfficePet?: (character: string) => string;` and
@@ -1094,20 +1165,26 @@ In `cockpitofficedevhooks.ts`, add `__cockpitOfficePet?: (character: string) => 
 
 Replace the chibi `<Mover … boss />` in `BossView` with a `BossPet` component; keep the ring `<img>` as it is. `BossPet`:
 
-- Reads `bossLookAtom` (moving, dir), `walkFrameAtom`, `petCharacterAtom` (through `petCharacter`), `petBubbleAtom`,
+- Reads `bossLookAtom` (moving, dir), `walkFrameAtom`, `petCharacterAtom` (through `petCharacter`), the outfit as
+  `petview.tsx` reads it (`petOutfit(petOutfitChoice(useAtomValue(petOutfitChoiceAtom)), new Date())`), `petBubbleAtom`,
   `petUnreadAtom`, `petPeekOpenAtom`, `useReducedMotion()`, and the condition from `usePetSignals(model)` (exported by
-  `petview.tsx`) through `expressionFor` / `postureFor` (`petcondition.ts`). `CockpitOffice` passes `model` down to it.
+  `petview.tsx`) through `expressionFor` / `postureFor` (`petcondition.ts`), with `officeDev.bossExpression` in place of
+  the expression's kind when it is set. `CockpitOffice` passes `model` down to it.
 - Keeps in refs: `stillSince` (set to `Date.now()` when `look.moving` turns false), `lastInputAt` (bumped by the office's
   walk, talk, click and key handlers: add one `bumpBossInput()` the `OfficeHandle` methods and the floor click call),
-  `flip` (the last facing `bossPet` returned) and `rest` (`pickRest(Math.random)` each time the boss stops).
+  `flip` (the last facing `bossPet` returned) and `rest` (`pickRest(Math.random)` each time the boss stops, or
+  `officeDev.bossRest` when it is set; a change of `bossRest` to a value sets `rest` to it and `stillSince` to
+  `Date.now() - REST_AFTER_MS`, so that rest shows at once).
 - Re-renders on a timer only while resting: `setTimeout` to the next pastime frame (`PASTIMES[rest].frameMs`), to
   `stillSince + REST_AFTER_MS`, and to `lastInputAt + SLEEP_AFTER_MS`, whichever is next; none while walking (the walk
   frame atom drives it) or under reduced motion past the rest's start.
-- Calls `bossPet({...})` and `spriteOfRows(bossRows(look.pose, character), look.marks)` and draws one `<svg>` the size
-  of `PET_PX`, `shapeRendering="crispEdges"`, `overflow="visible"`, `aria-hidden`, with `sprite.body` in a `<g>` mirrored
-  by `matrix(-1 0 0 1 ${PET_PX} 0)` when `flip`, then `sprite.overlay`, each cell a `<rect>` filled `var(${cell.token})`
-  (as `petview.tsx`'s `cellRect`).
-- Wraps the svg in a `<button type="button" data-office-boss="" data-office-boss-pet={character} aria-label="Jarvis
+- Calls `bossPet({...})` and `bossSprite(look.pose, look.marks, outfit, character)` (Task 1) and draws one `<svg>` the
+  size of `PET_PX`, `shapeRendering="crispEdges"`, `overflow="visible"`, `aria-hidden`, with `sprite.back` first (never
+  mirrored, the flag in hand), `sprite.body` in a `<g>` mirrored by `matrix(-1 0 0 1 ${PET_PX} 0)` when `flip`, then
+  `sprite.overlay`, each cell a `<rect>` filled `var(${cell.token})` (as `petview.tsx`'s `cellRect`, which already
+  draws `back` this way).
+- Wraps the svg in a `<button type="button" data-office-boss="" data-office-boss-pet={character}
+  data-office-entrance={phase while an entrance plays, else absent} aria-label="Jarvis
   condition">` positioned like `Mover` (`absolute left-0 top-0 z-[7]`, the transform written by `useDomTransform` on
   `bossAtom`, feet at `at`: `translate(${round((at.x - PET_PX / 2) / PLAN_CELL) * PLAN_CELL}px, ${round((at.y - PET_PX) /
   PLAN_CELL) * PLAN_CELL}px)`), `pointer-events-auto`, with `className="[filter:brightness(0.7)]"` added when `phase ===
@@ -1124,15 +1201,27 @@ Where the office placed things over the boss's head by `spriteH("boss")` (the di
 In `BossPet`, on mount: `const play = shouldPlayEntrance(Date.now(), reduce)`; when it plays, keep `startedAt =
 performance.now()`, set `petOfficeEnteringAtom` true, and run a `requestAnimationFrame` loop at 12 fps (redraw when
 `Math.floor(t / 83)` changes) until `entranceLength(character)`, then set the atom false and draw the pet as above. Any
-call to `bumpBossInput()` while it plays ends it at once (the walk keys, a click on the floor, ↵). `officeDev.entrance ===
-"skip"` ends it; a number holds `t` there and stops the loop. On unmount of `CockpitOffice` call
+call to `bumpBossInput()` while it plays ends it at once (the walk keys, a click on the floor, ↵). Keep `played` (that
+mount's `shouldPlayEntrance` answer, before any DEV seam) for the probe. On unmount of `CockpitOffice` call
 `markOfficeLeft(Date.now())` and set `petOfficeEnteringAtom` false.
+
+The DEV seams (Step 1), checked in this order:
+
+- `officeDev.entrance` a number: draw the current character's entrance at `t` = that number and hold it there (no
+  loop, `petOfficeEnteringAtom` true), whether or not this mount played one, it ended, it was skipped or the cooldown
+  holds; a new number moves it; the character changing redraws it for the new character. Clearing it (`null` or
+  `"skip"`) ends it, the boss in place.
+- `officeDev.entrance === "skip"`: a playing entrance ends at once, and a mount while it is set plays none.
+- a new `officeDev.replayEntrance` value: start the current character's entrance live from `t` = 0 (a new
+  `startedAt`), whatever the cooldown, with the same loop and the same skips as on mount.
 
 While it plays, by `entrancePhase(character, t)`:
 
 - `"beam"` (Sprout, the Minion): inside the svg, `<PetTeleportLayers run={{ kind: "arrive", at: startedAt }}
-  sprite={spriteOfRows(bossRows("stand", character), [])} cellPx={PET_CELL_PX} character={character} />`
-  (`petteleportsvg.tsx`), which plays its own clock.
+  sprite={bossSprite("stand", [], outfit, character)} cellPx={PET_CELL_PX} character={character} />`
+  (`petteleportsvg.tsx`), which plays its own clock from `run.at`. For a held DEV `t`, pass the prop `at={t}` as well:
+  `WebSwingLayers` already draws a fixed `at` in place of its clock (`const t = at ?? clock`); give `BeamLayers` the same
+  one line, so the held beam stays still.
 - `"swing"`: the svg placed at `swingPoint(win, spot, t / 700)` (`win` is `nearestWindow(outerWindows(plan), spot)`,
   falling back to `{ x: spot.x - 36, y: spot.y - 90 }` when there is none; `spot` is the boss's `at`), drawing
   `SPIDEY_SWING`, with a strand from the window to his hand: a `<line>` in `var(--color-spidey-web)`, 3 px wide, from the
@@ -1146,10 +1235,12 @@ While it plays, by `entrancePhase(character, t)`:
 In `readOfficeProbe()`, add:
 
 ```ts
-        bossPet: lastBossPet, // { character, pose, flip, marks, entrance: EntrancePhase | null } as last drawn
+        bossPet: lastBossPet, // { character, pose, flip, marks, entrance: EntrancePhase | null, played } as last drawn
 ```
 
-where `BossPet` writes `lastBossPet` each render (module `let`, like `lastPlan`).
+where `BossPet` writes `lastBossPet` each render (module `let`, like `lastPlan`): `entrance` is the phase while one
+plays (held or live) and `null` once it is done, skipped or none played; `played` is this mount's `shouldPlayEntrance`
+answer (Step 3).
 
 In `scripts/cdp/cockpitofficescenarios.mjs`'s `arrangeOffice`, add `entrance: "skip"` to the `dev(h, { runs:
 OFFICE_RUNS, afterHours: false, energy: 63 })` call unless `opts.entrance` is set, so the existing scenarios see the boss
@@ -1177,50 +1268,73 @@ read `window.__cockpitOfficeProbe().bossPet` and screenshot: the boss is the pet
 - [ ] **Step 8: Commit**
 
 ```bash
-git commit -m "feat(office): the boss is the pet, and it makes an entrance" -- frontend/app/view/agents/cockpitoffice.tsx frontend/app/view/agents/cockpitofficedevhooks.ts frontend/app/view/office/plansprite.ts frontend/app/view/office/plansprite.test.ts scripts/cdp/cockpitofficescenarios.mjs
+git commit -m "feat(office): the boss is the pet, and it makes an entrance" -- frontend/app/view/agents/cockpitoffice.tsx frontend/app/view/agents/cockpitofficedevhooks.ts frontend/app/view/office/plansprite.ts frontend/app/view/office/plansprite.test.ts frontend/app/view/jarvis/petteleportsvg.tsx scripts/cdp/cockpitofficescenarios.mjs
 ```
 
 ### Task 7: The `cockpit-office-pet` scenario, the changelog, the RAM line
 
 **Depends on:** Task 6
 
-**Files:** `scripts/cdp/cockpitofficescenarios.mjs`, `CHANGELOG.md`, `docs/open-issues.md`
+**Files:** `scripts/cdp/cockpitofficescenarios.mjs`, `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/open-issues.md`
 
 What each file is for:
 - Modify: `scripts/cdp/cockpitofficescenarios.mjs` — a `cockpit-office-pet` scenario, returned with the others
+- Modify: `scripts/cdp/scenarios.mjs` — take `cockpitOfficePet` from `makeCockpitOfficeScenarios` and list it, or the
+  Final cannot find `cockpit-office-pet`
 - Modify: `CHANGELOG.md` — one `Added` line
-- Modify: `docs/open-issues.md` — the hand check, and the RAM watch line after `cockpit-office-bench`
+- Modify: `docs/open-issues.md` — the hand check, and the RAM watch line with the bench before and after
 
 - [ ] **Step 1: The scenario**
 
-Add `cockpit-office-pet` beside `cockpit-office` (same `arrange` through `arrangeOffice(h, { entrance: true })` and the
-same teardown), with these steps, each `rec`'d and each shot under `cdp-shots/cockpit-office-pet-*.png`:
+Add `cockpitOfficePet` (`name: "cockpit-office-pet"`) beside `cockpitOffice` in `makeCockpitOfficeScenarios`, return it
+with the others, and in `scripts/cdp/scenarios.mjs` add it to the destructuring of `makeCockpitOfficeScenarios({ … })`
+and to the scenario list beside `cockpitOfficeBench`. Its arrange is `arrangeOffice(h, { entrance: true })` (so
+`arrangeOffice` leaves the entrance live) and its teardown `cockpitOffice`'s, plus restoring the pet character the
+scenario found (`__cockpitOfficePet(prev)`) and `dev(h, null)`. Each step is `rec`'d, each shot under
+`cdp-shots/cockpit-office-pet-*.png`. `arrangeOffice` reloads and waits for the office, so a live entrance (Sprout's
+beam is 480 ms) is over before the first step: the steps check that one was played through `bossPet.played`, and show
+the frames with Task 6's DEV seams (`entrance: <ms>` forces a frame whatever has happened; `replayEntrance` plays one
+live; `null` clears a seam, since `__cockpitOffice` merges each call into what is set).
 
-0. The office loads with the entrance playing: `probe().bossPet.entrance` is not null right after the arrange, and the
-   footer has no `[data-pet-sprite]`.
+0. The office mounted with the entrance and the footer gave way: `probe().bossPet.played === true` (the first office
+   after the reload), the footer has no `[data-pet-sprite]`, and `[data-office-boss] svg rect` exists. Sprout's and the
+   Minion's beam: `prev = __cockpitOfficePet("sprout")`, `dev(h, { entrance: 200 })`: `bossPet.entrance === "beam"`,
+   `bossPet.character === "sprout"` and `[data-office-boss][data-office-entrance="beam"]` holds the teleport's cells;
+   shot `beam-sprout`. Then `__cockpitOfficePet("minion")`, the same checks, shot `beam-minion`.
 1. Spider-Man's entrance, one shot per phase: `__cockpitOfficePet("spidey")`, then `dev(h, { entrance: t })` for `t` in
    350, 850, 1150, 1550, 2000 and a shot each; `bossPet.entrance` reads `swing`, `land`, `stand`, `unmask`, `puff`. At
-   350 a `line` in `var(--color-spidey-web)` is drawn.
+   350 a `line` in `var(--color-spidey-web)` is drawn and the boss button is away from the boss's spot (on the swing).
 2. `dev(h, { entrance: "skip" })`: `bossPet.entrance` is null, `bossPet.character === "spidey"`, `bossPet.pose ===
    "stand"`, and the boss button holds no `--color-spidey-red` cell (Peter shows no suit). Shot.
-3. Walking: hold → (key down, as the existing walk steps do) for 600 ms and read `bossPet.pose` in `walk1`/`walk2` and
-   `bossPet.flip === false`. Release; shot.
-4. A pastime: `dev(h, { entrance: "skip" })` and wait `REST_AFTER_MS` + 500 ms (4.5 s); `bossPet.pose` is one of the
-   rest poses (`stand`, `sit`, `read1`, `read2`, `music1`, `music2`, `work1`, `work2`, `ball1`, `ball2`). Shot.
-5. The bubble over the boss: `__cockpitOfficeBubble(true)`, then the bubble's box sits above the boss button's box
-   (`[data-office-boss]`). Shot, then `__cockpitOfficeBubble(false)`.
-6. A click on the boss (`[data-office-boss]`) opens the peek: `[data-pet-peek]` shows. A click on
+3. A live entrance is skipped by a walk key, a click on the floor, and ↵: three times, `dev(h, { entrance: null,
+   replayEntrance: Date.now() })`, check `bossPet.entrance === "swing"` (live), then respectively press →
+   (`key(h, "ArrowRight")`), click the floor away from any desk (as `cockpit-office`'s step 7 clicks the hall's floor),
+   and press ↵ (`key(h, "Enter")`); within 300 ms `bossPet.entrance` is null and `bossPet.pose` is `stand`, `walk1` or
+   `walk2`. `settleBoss(h)` after the click. Shot after the last. Then `dev(h, { entrance: "skip" })`.
+4. Walking: hold → (key down, as the existing walk steps do) for 600 ms and read `bossPet.pose` in `walk1`/`walk2` and
+   `bossPet.flip === false` (Peter's walk is front-on). Release; shot.
+5. Every pose of the canvas's `Main` board: for `rest` in `sit`, `read`, `music`, `work`, `ball`, `stand`,
+   `dev(h, { bossRest: rest })` and poll the probe up to 3 s: `sit` and `stand` read that pose; a pastime reads each of
+   its two `PASTIMES` frames in turn. A shot each (for `work`, `work1` and `work2`). Then
+   `dev(h, { bossRest: null, bossExpression: "tired" })`: `bossPet.pose === "tired"` and `bossPet.marks` holds `drop`;
+   shot; then `dev(h, { bossExpression: null })`. (`speak` is step 7, the walk frames step 4.)
+6. After hours: `dev(h, { afterHours: true })`: the boss button's computed `filter` holds `brightness(0.7)`; shot. Then
+   `dev(h, { afterHours: false })`: its filter is `none`.
+7. The bubble over the boss: `__cockpitOfficeBubble(true)`, then the bubble's box (`[data-pet-bubble]`) sits above the
+   boss button's box (`[data-office-boss]`) and `bossPet.pose === "speak"`. Shot, then `__cockpitOfficeBubble(false)`.
+   While an entrance holds (`dev(h, { entrance: 350 })`), `__cockpitOfficeBubble(true)` shows no `[data-pet-bubble]`;
+   then `dev(h, { entrance: "skip" })` and `__cockpitOfficeBubble(false)`.
+8. A click on the boss (`[data-office-boss]`) opens the peek: `[data-pet-peek]` shows. A click on
    `[data-pet-peek-backdrop]` shuts it.
-7. Sprout and the Minion: `__cockpitOfficePet("sprout")` then `"minion"`; `bossPet.character` follows and a shot each.
-8. Leaving and coming back: toggle to Cards: a `[data-pet-sprite]` shows on the footer again. Toggle back to Office
-   within 2 minutes: `bossPet.entrance` is null at once (no entrance).
-
-Restore the pet character the scenario found (`__cockpitOfficePet(prev)`) in teardown.
+9. Leaving and coming back: `dev(h, { entrance: null })` first, so the skip set in steps 2, 3 and 7 no longer holds.
+   Toggle to Cards: a `[data-pet-sprite]` shows on the footer again. Toggle back to Office within 2 minutes:
+   `bossPet.played === false` and `bossPet.entrance` is null at once (the cooldown held it back).
 
 - [ ] **Step 2: Run it**
 
 Run: `node scripts/cdp/final-verify.mjs cockpit-office-pet` (it starts and stops its own app)
-Expected: every step PASS; look at each shot in `cdp-shots/` against the canvas's `Entrance` and `Floor` boards.
+Expected: every step PASS; look at each shot in `cdp-shots/` against the canvas's `Main`, `Entrance` and `Floor`
+boards.
 
 - [ ] **Step 3: The changelog**
 
@@ -1230,10 +1344,15 @@ Under `## Unreleased` → `### Added` in `CHANGELOG.md` (open the section if the
 - In the Cockpit's Office your pet is the boss you walk around: Sprout, the Minion, or Spider-Man, who swings in through a window and turns into Peter Parker in a shirt and tie. Its speech bubble and the condition panel open over it, and the footer pet comes back when you leave. <!-- big -->
 ```
 
-- [ ] **Step 4: The hand check and the RAM line**
+- [ ] **Step 4: The bench before and after, the hand check and the RAM line**
 
-Run `node scripts/cdp/final-verify.mjs cockpit-office-bench` and read its PASS/FAIL row numbers. In
-`docs/open-issues.md`:
+The spec measures the bench before and after. **Before** is the run's base commit (`git merge-base HEAD main`), where
+the boss is still the chibi: the "Cockpit office as floors" RAM watch entry in `docs/open-issues.md` is the
+`cockpit-office-bench` measured on exactly that code (the floors run's result, which is this run's base), in the same
+Windows dev app, so it is the before; a worker cannot check the base out beside this one (the engine owns the run's
+worktrees), and measuring it again would cost a second cold dev-app build. Read its heap, DOM nodes, busy and
+time-to-draw figures. **After:** run `node scripts/cdp/final-verify.mjs cockpit-office-bench` in this checkout and read
+the same figures from its PASS/FAIL rows. In `docs/open-issues.md`:
 
 - Under "0 · Waiting on a hand check", a dated block `**2026-10-16 (the Office's pet boss)**` with:
   `- [ ] (arcterm) In the installed app: Cockpit → Office with Spider-Man picked. He swings in through a window, unmasks
@@ -1241,10 +1360,11 @@ Run `node scripts/cdp/final-verify.mjs cockpit-office-bench` and read its PASS/F
   click him for the condition panel. Switch to Cards and back within 2 minutes: no entrance. Pick Sprout, reopen after
   2 minutes: the beam. The footer pet is gone in the Office and back outside it.`
 - Under "(arcterm) RAM watch", a **Cockpit office pet boss** line dated 2026-10-16 with the bench's heap, DOM nodes and
-  busy figures and whether every budget held. A miss is reported, not tuned away by raising a budget.
+  busy figures before (the floors entry, named as the source) and after, the difference of each, and whether every
+  budget held. A miss is reported, not tuned away by raising a budget.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git commit -m "test(office): the pet boss scenario; changelog and RAM watch" -- scripts/cdp/cockpitofficescenarios.mjs CHANGELOG.md docs/open-issues.md
+git commit -m "test(office): the pet boss scenario; changelog and RAM watch" -- scripts/cdp/cockpitofficescenarios.mjs scripts/cdp/scenarios.mjs CHANGELOG.md docs/open-issues.md
 ```
