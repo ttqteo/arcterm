@@ -630,6 +630,31 @@ export function makeCockpitOfficeScenarios(fx) {
                 JSON.stringify({ loom, front: [front?.boss, front?.cursor, front?.prompt], aside: [aside?.boss, aside?.cursor, aside?.prompt] })
             );
 
+            // 4e. a click on the floor over loom's desk walks the boss round the desk to it, never over the desk or the
+            // person at it (officeboss.ts furniture: the desk's box is 8 px wider each side, 20 px over its top, 100 tall)
+            const over = { x: loom.x + 40, y: loom.y - 24 };
+            const deskBox = { x: loom.x - 8, y: loom.y - 20, w: 96, h: 100 };
+            await h.ev(`(() => {
+                const root = document.querySelector("[data-office-root]");
+                const r = root.getBoundingClientRect();
+                root.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: r.left + ${over.x}, clientY: r.top + ${over.y} }));
+            })()`);
+            const walked = [];
+            for (let t = 0; t < 4000; t += 30) {
+                const q = await probe(h);
+                if (q?.boss) walked.push({ x: q.boss.x, y: q.boss.y });
+                if (t > 200 && q?.boss && !q.boss.moving) break;
+                await sleep(30);
+            }
+            await h.shot("cdp-shots/cockpit-office-round-desk.png");
+            const onDesk = walked.filter((q) => q.x >= deskBox.x && q.x <= deskBox.x + deskBox.w && q.y >= deskBox.y && q.y <= deskBox.y + deskBox.h);
+            const last = walked[walked.length - 1];
+            rec(
+                "4e. a click on the floor over loom's desk walks the boss round the desk to it, never over the desk",
+                walked.length > 3 && onDesk.length === 0 && last && Math.abs(last.x - over.x) <= 3 && Math.abs(last.y - over.y) <= 3,
+                JSON.stringify({ over, deskBox, samples: walked.length, onDesk, last })
+            );
+
             p = await probe(h);
             rec(
                 "4c. the boss walking and the frame clock draw the scenery no more",

@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // How the boss moves through one floor of the Cockpit office (cockpit office spec, "The boss"; office floors spec):
-// walls stop it, doors let it through, a jump to a desk walks out of its room, along the hall and in through the other
-// door, and the desk the boss stands at is the selected card. A project's room is one room, its table zones are not
+// walls and furniture stop it, doors let it through, a jump to a desk walks out of its room through the middle of its
+// door, across the hall around what stands there and in through the other door, and the desk the boss stands at is the
+// selected card. A project's room is one room, its table zones are not
 // rooms one walks between; the chip of what did not fit, the notice board and the lift are places to stand like a desk.
 // Walkers to the lounge take the same paths. Pure: no React, no DOM.
 
@@ -40,8 +41,6 @@ const DOOR_REACH = BOSS_HALF_W + 4;
 // desk's width, and from the spot up to the desk
 const REACH_X = 40;
 const REACH_Y = 30;
-// the hall's walking lane, clear of the board and the lift
-const LANE_FROM_RIGHT = 36;
 
 const DELTA: Record<Dir, Point> = {
     up: { x: 0, y: -1 },
@@ -116,7 +115,7 @@ function furniture(plan: Plan): Box[] {
     return boxes;
 }
 
-/** Where the boss may walk and stop: the floor, less the furniture. A jump's path may still cross a desk. */
+/** Where the boss may walk and stop: the floor, less the furniture. A path between two spots goes round it too. */
 export function canWalk(plan: Plan, p: Point): boolean {
     return canStand(plan, p) && !furniture(plan).some((b) => inside(p, b));
 }
@@ -157,31 +156,317 @@ function doorPoints(r: Room): { inner: Point; outer: Point } {
 
 const dedupe = (pts: Point[]) => pts.filter((p, i) => i === 0 || p.x !== pts[i - 1].x || p.y !== pts[i - 1].y);
 
-/** The way between two spots: straight within a room, else out through one door, along the hall's lane, and in
- * through the other. */
+type Line = (a: Point, b: Point) => boolean;
+
+/** Whether the line from a to b stays on the floor: every point a px apart, b included. */
+function onFloorLine(plan: Plan, a: Point, b: Point): boolean {
+    const n = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y));
+    for (let i = 1; i <= n; i++) {
+        if (!canStand(plan, { x: a.x + ((b.x - a.x) * i) / n, y: a.y + ((b.y - a.y) * i) / n })) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/** Whether the line from a to b touches the box, its edges included (the slab test). */
+function crosses(a: Point, b: Point, box: Box): boolean {
+    let t0 = 0;
+    let t1 = 1;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    for (const [p, q] of [
+        [-dx, a.x - box.x],
+        [dx, box.x + box.w - a.x],
+        [-dy, a.y - box.y],
+        [dy, box.y + box.h - a.y],
+    ]) {
+        if (p === 0) {
+            if (q < 0) {
+                return false;
+            }
+        } else if (p < 0) {
+            t0 = Math.max(t0, q / p);
+        } else {
+            t1 = Math.min(t1, q / p);
+        }
+        if (t0 > t1) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/** Whether the boss walks the line from a to b: on the floor and clear of every piece of furniture. */
+function walkLine(plan: Plan, a: Point, b: Point): boolean {
+    return onFloorLine(plan, a, b) && !furniture(plan).some((box) => crosses(a, b, box));
+}
+
+/** A path drawn taut: from each point, straight to the furthest one after it that a clear line still reaches. */
+function taut(clear: Line, path: Point[]): Point[] {
+    const out = [path[0]];
+    let from = 0;
+    for (let i = 1; i < path.length; i++) {
+        if (i === path.length - 1 || !clear(path[from], path[i + 1])) {
+            out.push(path[i]);
+            from = i;
+        }
+    }
+    return out;
+}
+
+// a binary heap of lattice points by cost, the least first
+class Queue {
+    private keys: number[] = [];
+    private costs: number[] = [];
+    get size() {
+        return this.keys.length;
+    }
+    push(key: number, cost: number) {
+        let i = this.keys.length;
+        this.keys.push(key);
+        this.costs.push(cost);
+        while (i > 0) {
+            const up = (i - 1) >> 1;
+            if (this.costs[up] <= cost) {
+                break;
+            }
+            this.keys[i] = this.keys[up];
+            this.costs[i] = this.costs[up];
+            i = up;
+        }
+        this.keys[i] = key;
+        this.costs[i] = cost;
+    }
+    pop(): number {
+        const top = this.keys[0];
+        const key = this.keys.pop()!;
+        const cost = this.costs.pop()!;
+        const n = this.keys.length;
+        if (n > 0) {
+            let i = 0;
+            for (;;) {
+                const l = 2 * i + 1;
+                if (l >= n) {
+                    break;
+                }
+                const c = l + 1 < n && this.costs[l + 1] < this.costs[l] ? l + 1 : l;
+                if (this.costs[c] >= cost) {
+                    break;
+                }
+                this.keys[i] = this.keys[c];
+                this.costs[i] = this.costs[c];
+                i = c;
+            }
+            this.keys[i] = key;
+            this.costs[i] = cost;
+        }
+        return top;
+    }
+}
+
+type Ground = "walk" | "stand";
+
+/** A floor's lattice: a point every STEP_PX from its top left corner, the step the arrows walk, so a path finds every gap
+ *  they do (the 4 px between the lounge's sofa and the hall's wall, the 19 px between two desks). Whether one may walk
+ *  or stand at each is worked out the first time a search asks, and kept with the plan; the rest is a search's scratch. */
+interface Lattice {
+    cols: number;
+    rows: number;
+    ground: Record<Ground, Uint8Array>; // 0 not yet asked, 1 yes, 2 no
+    cost: Float64Array;
+    back: Int32Array;
+    seen: Uint32Array; // the search that last set cost and back
+    shut: Uint32Array; // the search that last took the point off its queue
+    search: number;
+}
+const latticeCache = new WeakMap<Plan, Lattice>();
+
+function latticeOf(plan: Plan): Lattice {
+    let l = latticeCache.get(plan);
+    if (l == null) {
+        const cols = Math.ceil(plan.width / STEP_PX) + 1;
+        const rows = Math.ceil(plan.height / STEP_PX) + 1;
+        const n = cols * rows;
+        l = {
+            cols,
+            rows,
+            ground: { walk: new Uint8Array(n), stand: new Uint8Array(n) },
+            cost: new Float64Array(n),
+            back: new Int32Array(n),
+            seen: new Uint32Array(n),
+            shut: new Uint32Array(n),
+            search: 0,
+        };
+        latticeCache.set(plan, l);
+    }
+    return l;
+}
+
+function onGround(plan: Plan, l: Lattice, kind: Ground, i: number, j: number): boolean {
+    if (i < 0 || j < 0 || i >= l.cols || j >= l.rows) {
+        return false;
+    }
+    const k = j * l.cols + i;
+    const marks = l.ground[kind];
+    if (marks[k] === 0) {
+        const p = { x: i * STEP_PX, y: j * STEP_PX };
+        marks[k] = (kind === "walk" ? canWalk(plan, p) : canStand(plan, p)) ? 1 : 2;
+    }
+    return marks[k] === 1;
+}
+
+// the lattice points round p, at most a step from it, that kind lets one stand on
+function around(plan: Plan, l: Lattice, kind: Ground, p: Point): number[] {
+    const out: number[] = [];
+    for (const i of [Math.floor(p.x / STEP_PX), Math.ceil(p.x / STEP_PX)]) {
+        for (const j of [Math.floor(p.y / STEP_PX), Math.ceil(p.y / STEP_PX)]) {
+            const k = j * l.cols + i;
+            if (onGround(plan, l, kind, i, j) && !out.includes(k)) {
+                out.push(k);
+            }
+        }
+    }
+    return out;
+}
+
+const NEIGHBOURS: [number, number, number][] = [
+    [1, 0, 1],
+    [-1, 0, 1],
+    [0, 1, 1],
+    [0, -1, 1],
+    [1, 1, Math.SQRT2],
+    [1, -1, Math.SQRT2],
+    [-1, 1, Math.SQRT2],
+    [-1, -1, Math.SQRT2],
+];
+
+/** The lattice points from round `from` to the first one `reached` accepts, over the ground `kind` lets one on: A* in
+ *  eight directions toward `aim` (none: the nearest such point), a diagonal never cutting a corner. Null when none is. */
+function search(plan: Plan, kind: Ground, from: Point, reached: (k: number) => boolean, aim?: Point): Point[] | null {
+    const l = latticeOf(plan);
+    const id = ++l.search;
+    const cols = l.cols;
+    const ai = aim ? aim.x / STEP_PX : 0;
+    const aj = aim ? aim.y / STEP_PX : 0;
+    const guess = (i: number, j: number) => {
+        if (!aim) {
+            return 0;
+        }
+        const dx = Math.abs(ai - i);
+        const dy = Math.abs(aj - j);
+        return Math.max(dx, dy) + (Math.SQRT2 - 1) * Math.min(dx, dy);
+    };
+    const queue = new Queue();
+    for (const k of around(plan, l, kind, from)) {
+        const i = k % cols;
+        const j = (k - i) / cols;
+        const c = Math.hypot(i * STEP_PX - from.x, j * STEP_PX - from.y) / STEP_PX;
+        l.seen[k] = id;
+        l.cost[k] = c;
+        l.back[k] = -1;
+        queue.push(k, c + guess(i, j));
+    }
+    while (queue.size > 0) {
+        const k = queue.pop();
+        if (l.shut[k] === id) {
+            continue;
+        }
+        l.shut[k] = id;
+        const i = k % cols;
+        const j = (k - i) / cols;
+        if (reached(k)) {
+            const path: Point[] = [];
+            for (let at = k; at !== -1; at = l.back[at]) {
+                const ai2 = at % cols;
+                path.push({ x: ai2 * STEP_PX, y: ((at - ai2) / cols) * STEP_PX });
+            }
+            return path.reverse();
+        }
+        for (const [di, dj, len] of NEIGHBOURS) {
+            const ni = i + di;
+            const nj = j + dj;
+            if (!onGround(plan, l, kind, ni, nj)) {
+                continue;
+            }
+            if (di !== 0 && dj !== 0 && (!onGround(plan, l, kind, ni, j) || !onGround(plan, l, kind, i, nj))) {
+                continue;
+            }
+            const nk = nj * cols + ni;
+            const c = l.cost[k] + len;
+            if (l.seen[nk] === id && c >= l.cost[nk]) {
+                continue;
+            }
+            l.seen[nk] = id;
+            l.cost[nk] = c;
+            l.back[nk] = k;
+            queue.push(nk, c + guess(ni, nj));
+        }
+    }
+    return null;
+}
+
+/** The way from one spot to another on the same side of a door: straight when nothing stands between, else round the
+ *  furniture. A spot on furniture (a desk that came to where one stood, a seat on the sofa) is left or reached by the
+ *  shortest way off it, over only the floor. Straight, as before, when no way is found. */
+function route(plan: Plan, from: Point, to: Point): Point[] {
+    const walk = (p: Point) => canWalk(plan, p);
+    const walkable: Line = (a, b) => walkLine(plan, a, b);
+    const standable: Line = (a, b) => onFloorLine(plan, a, b);
+    if (walk(from) && walk(to) && walkable(from, to)) {
+        return [from, to];
+    }
+    const l = latticeOf(plan);
+    const onWalk = (k: number) =>
+        l.ground.walk[k] === 1 || onGround(plan, l, "walk", k % l.cols, Math.floor(k / l.cols));
+    // a spot and the way from it to the nearest point one may walk on: none when it is on the floor already
+    const off = (p: Point): Point[] | null => {
+        if (walk(p)) {
+            return [p];
+        }
+        const way = search(plan, "stand", p, onWalk);
+        return way ? [p, ...way] : null;
+    };
+    const head = off(from);
+    const tail = off(to)?.reverse();
+    if (head == null || tail == null) {
+        return [from, to];
+    }
+    const a = head[head.length - 1];
+    const b = tail[0];
+    let mid: Point[] | null = [a, b];
+    if (!walkable(a, b)) {
+        const ends = new Set(around(plan, l, "walk", b));
+        const way = ends.size > 0 ? search(plan, "walk", a, (k) => ends.has(k), b) : null;
+        mid = way ? [a, ...way, b] : null;
+    }
+    if (mid == null) {
+        return [from, to];
+    }
+    return dedupe([...taut(standable, head), ...taut(walkable, mid).slice(1), ...taut(standable, tail).slice(1)]);
+}
+
+/** The way between two spots: within a room round its furniture, else out through the middle of one door, across the
+ *  hall and in through the middle of the other, round the furniture on each leg. */
 export function pathBetween(plan: Plan, from: Point, to: Point): Point[] {
     const a = roomAt(plan, from);
     const b = roomAt(plan, to);
-    if (a === b) {
-        return [from, to];
+    const roomOf = (k: string) => plan.rooms.find((r) => r.key === k)!;
+    const stops: Point[] = [from];
+    if (a !== b && a !== "hall") {
+        const d = doorPoints(roomOf(a));
+        stops.push(d.inner, d.outer);
     }
-    const roomOf = (k: string) => plan.rooms.find((r) => r.key === k);
-    const lane = plan.hall.x + plan.hall.w - LANE_FROM_RIGHT;
+    if (a !== b && b !== "hall") {
+        const d = doorPoints(roomOf(b));
+        stops.push(d.outer, d.inner);
+    }
+    stops.push(to);
     const out: Point[] = [from];
-    let hallFrom = from;
-    if (a !== "hall") {
-        const d = doorPoints(roomOf(a)!);
-        out.push(d.inner, d.outer);
-        hallFrom = d.outer;
+    for (let i = 0; i < stops.length - 1; i++) {
+        out.push(...route(plan, stops[i], stops[i + 1]).slice(1));
     }
-    const enter = b !== "hall" ? doorPoints(roomOf(b)!) : undefined;
-    const hallTo = enter ? enter.outer : to;
-    out.push({ x: lane, y: hallFrom.y }, { x: lane, y: hallTo.y });
-    if (enter) {
-        out.push(enter.outer, enter.inner);
-    }
-    out.push(to);
-    return dedupe(out);
+    return out.length < 2 ? [from, to] : dedupe(out);
 }
 
 /** Dots every `gap` px along a path, for the hint `n` shows. */

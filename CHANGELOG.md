@@ -67,6 +67,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   no "No agents running" panel over the rooms. The Cards view keeps both.
 - The Office's boss stops with its whole body against a wall, instead of walking half through it into the next room or
   with its head over the top of the building.
+- A click in the Office, or a jump to a desk, walks the boss round the desks, tables and the sofa instead of through
+  them, and so do the people walking to the lounge.
 - Highlighted sentences in Claude's replies now show on Team accounts too. Claude Code's security plugin there kept
   the instructions out of the system prompt, so Claude never marked anything; they now ride with your prompt instead.
 - `Esc` in the Office stays in the Office: it only steps back, and no longer reaches the window behind it, where on a

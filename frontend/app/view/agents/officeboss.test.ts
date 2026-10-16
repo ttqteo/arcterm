@@ -81,8 +81,8 @@ const upstairs = buildPlan({
 // one project: its three other rooms are empty
 const lone = buildPlan({ agents: [ag("a1", "alpha")], runs: [], width: 1050, now: 0, away: {}, night: false });
 
-// every 3 px along every segment must be floor: a corner check alone would let a path cut through a wall
-function offFloor(p: Plan, path: Point[]): Point[] {
+// every 3 px along every segment must pass: a corner check alone would let a path cut through a wall or a desk
+function offWhere(ok: (p: Plan, q: Point) => boolean, p: Plan, path: Point[]): Point[] {
     const bad: Point[] = [];
     for (let i = 0; i < path.length - 1; i++) {
         const a = path[i];
@@ -90,16 +90,20 @@ function offFloor(p: Plan, path: Point[]): Point[] {
         const len = Math.hypot(b.x - a.x, b.y - a.y);
         for (let d = 0; d <= len; d += 3) {
             const q = { x: a.x + ((b.x - a.x) * d) / (len || 1), y: a.y + ((b.y - a.y) * d) / (len || 1) };
-            if (!canStand(p, q)) {
+            if (!ok(p, q)) {
                 bad.push(q);
             }
         }
-        if (!canStand(p, b)) {
+        if (!ok(p, b)) {
             bad.push(b);
         }
     }
     return bad;
 }
+// off the floor: in a wall or the next room
+const offFloor = (p: Plan, path: Point[]) => offWhere(canStand, p, path);
+// over furniture: a desk, a table, the sofa, a plant
+const overFurniture = (p: Plan, path: Point[]) => offWhere(canWalk, p, path);
 const nearDoorMiddle = (path: Point[], r: { door?: { x: number; y: number; w: number; h: number } }) =>
     dotsAlong(path, 2).some(
         (p) => Math.hypot(p.x - (r.door!.x + r.door!.w / 2), p.y - (r.door!.y + r.door!.h / 2)) <= 14
@@ -170,23 +174,77 @@ describe("officeboss", () => {
         expect(canStand(plan, { x: door.x + door.w + 6, y: door.y + door.h + 3 })).toBe(false);
     });
 
-    it("walks out of one room, along the hall and into another, on floor all the way", () => {
+    it("walks out of one room, across the hall and into another, on floor all the way and round every desk", () => {
         const b1 = spotOf(plan, "b1")!;
         const path = pathBetween(plan, a1, b1);
         expect(path[0]).toEqual(a1);
         expect(path[path.length - 1]).toEqual(b1);
-        expect(path.some((p) => p.x === plan.hall.x + plan.hall.w - 36)).toBe(true);
         for (const p of path) {
             expect(canStand(plan, p), JSON.stringify(p)).toBe(true);
         }
         expect(offFloor(plan, path)).toEqual([]);
+        expect(overFurniture(plan, path)).toEqual([]);
+        // nothing between two desks of a row: straight
         const a2 = spotOf(plan, "a2")!;
         expect(pathBetween(plan, a1, a2)).toEqual([a1, a2]);
         const h1 = spotOf(plan, "h1")!;
         const home = pathBetween(plan, a1, h1);
         expect(home.every((p) => canStand(plan, p))).toBe(true);
         expect(offFloor(plan, home)).toEqual([]);
+        expect(overFurniture(plan, home)).toEqual([]);
         expect(offFloor(plan, pathBetween(plan, h1, spotOf(plan, "r1")!))).toEqual([]);
+        expect(overFurniture(plan, pathBetween(plan, h1, spotOf(plan, "r1")!))).toEqual([]);
+    });
+
+    it("walks round a desk, never over it, to the floor on its far side", () => {
+        const d = plan.desks.find((x) => x.key === "a1")!;
+        // straight up from a1's spot is a1's desk and the person at it; over them is the floor under the room's top wall
+        const above = { x: a1.x, y: d.y - 24 };
+        expect(canWalk(plan, above)).toBe(true);
+        const path = pathBetween(plan, a1, above);
+        expect(path[0]).toEqual(a1);
+        expect(path[path.length - 1]).toEqual(above);
+        expect(path.length).toBeGreaterThan(2);
+        expect(overFurniture(plan, path)).toEqual([]);
+        expect(offFloor(plan, path)).toEqual([]);
+        expect(path.every((p) => roomAt(plan, p) === "room:alpha")).toBe(true);
+        // and back
+        expect(overFurniture(plan, pathBetween(plan, above, a1))).toEqual([]);
+    });
+
+    it("walks every desk and seat to every other on a full floor round the furniture, never over it", () => {
+        const spots = [
+            ...full.desks.map((d) => d.spot),
+            ...full.seats.map((s) => s.spot),
+            full.board.spot,
+            full.lift.spot,
+        ];
+        for (const a of spots) {
+            for (const b of spots) {
+                const path = pathBetween(full, a, b);
+                expect(path[0]).toEqual(a);
+                expect(path[path.length - 1]).toEqual(b);
+                expect(overFurniture(full, path), JSON.stringify([a, b])).toEqual([]);
+                expect(offFloor(full, path), JSON.stringify([a, b])).toEqual([]);
+            }
+        }
+    });
+
+    it("walks a walker from its desk to the coffee machine and the sofa, round the desks, the last steps onto them", () => {
+        for (const to of [plan.coffee, plan.sofa]) {
+            // the spot at the machine and the seat on the sofa are furniture: the way stays on the floor up to them
+            expect(canWalk(plan, to)).toBe(false);
+            const path = pathBetween(plan, a1, to);
+            expect(path[0]).toEqual(a1);
+            expect(path[path.length - 1]).toEqual(to);
+            expect(offFloor(plan, path)).toEqual([]);
+            // only the stretch onto the furniture at the end is off the walkable floor
+            const over = overFurniture(plan, path);
+            expect(
+                over.every((q) => Math.hypot(q.x - to.x, q.y - to.y) <= 60),
+                JSON.stringify(over)
+            ).toBe(true);
+        }
     });
 
     it("walks from every desk to every other desk and seat on a full floor, never off the floor", () => {
@@ -425,32 +483,32 @@ describe("officeboss", () => {
             expect(deskAt(full, spotOf(full, "r2")!)).toBe("r2");
         });
 
-        it("walks straight from a desk to a seat in the same room", () => {
+        it("walks from a desk to a seat in the same room, in the room and round its table", () => {
             const r1 = spotOf(plan, "r1")!;
-            expect(pathBetween(plan, a1, r1)).toEqual([a1, r1]);
-            expect(pathBetween(plan, r1, a1)).toEqual([r1, a1]);
+            for (const [a, b] of [
+                [a1, r1],
+                [r1, a1],
+            ]) {
+                const path = pathBetween(plan, a, b);
+                expect(path[0]).toEqual(a);
+                expect(path[path.length - 1]).toEqual(b);
+                expect(path.every((p) => roomAt(plan, p) === "room:alpha")).toBe(true);
+                expect(overFurniture(plan, path)).toEqual([]);
+            }
         });
 
-        it("goes out one door, along the hall's lane and in the other between rooms of two columns", () => {
+        it("goes out one door, across the hall and in the other between rooms of two columns", () => {
             const alpha = room("room:alpha");
             const beta = room("room:beta");
             expect(alpha.doorSide).not.toBe(beta.doorSide);
             const path = pathBetween(plan, a1, spotOf(plan, "b1")!);
-            const lane = plan.hall.x + plan.hall.w - 36;
-            expect(path.map((p) => roomAt(plan, p))).toEqual([
-                alpha.key,
-                alpha.key,
-                "hall",
-                "hall",
-                "hall",
-                "hall",
-                beta.key,
-                beta.key,
-            ]);
-            expect(path.filter((p) => p.x === lane)).toHaveLength(2);
+            // alpha, then the hall, then beta, each once
+            const rooms = path.map((p) => roomAt(plan, p)).filter((r, i, all) => i === 0 || r !== all[i - 1]);
+            expect(rooms).toEqual([alpha.key, "hall", beta.key]);
             expect(nearDoorMiddle(path, alpha)).toBe(true);
             expect(nearDoorMiddle(path, beta)).toBe(true);
             expect(offFloor(plan, path)).toEqual([]);
+            expect(overFurniture(plan, path)).toEqual([]);
         });
     });
 
