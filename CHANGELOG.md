@@ -109,6 +109,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- **A run's workers sit in their project's room in the office**, and under that project everywhere else, instead of a
+  room named after their task ("1", "4").
 - **A GPU reset no longer leaves a terminal white**: it switches to the plain renderer at once and goes back to WebGL
   two seconds later.
 - **arcterm starts even when a window opens before its server**: boot no longer fails with "wavesrv did not report

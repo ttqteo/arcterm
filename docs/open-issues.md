@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-16 (run workers in their project's room)**
+
+- [ ] With an orchestrator run's workers or reviewers live, open Cockpit → Office: they sit in the run's project room
+  (e.g. `arcterm`), with no room named `1` / `4` or a run-id hash. `projectname.ts` `projectNameFromTranscriptPath`.
+
 **2026-10-16 (queued row says Queued)**
 
 - [ ] Queue a plan `--after` a running run: its row in the Agent tree reads `Queued · after <run title>`, and a narrow

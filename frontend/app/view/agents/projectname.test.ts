@@ -13,6 +13,18 @@ describe("projectNameFromTranscriptPath", () => {
         const p = "C:\\Users\\u\\.claude\\projects\\C--Users-kael02-IdeaProjects-cyber_anomaly_detector\\x.jsonl";
         expect(projectNameFromTranscriptPath(p)).toBe("cyber_anomaly_detector");
     });
+    it("files an engine or Claude worktree under the checkout it was made from", () => {
+        const base = "C:/Users/u/.claude/projects/";
+        const run = "D--src-arcterm--waveterm-worktrees-fa79e660-7cba-4917-8097-8bbdd120f4d8";
+        expect(projectNameFromTranscriptPath(`${base}${run}-t-1/x.jsonl`)).toBe("arcterm");
+        expect(projectNameFromTranscriptPath(`${base}${run}/x.jsonl`)).toBe("arcterm");
+        expect(projectNameFromTranscriptPath(`${base}D--src-arcterm--claude-worktrees-fix-x/x.jsonl`)).toBe(
+            "arcterm"
+        );
+        expect(projectNameFromTranscriptPath(`${base}D--src-arcterm--worktrees-release-build/x.jsonl`)).toBe(
+            "arcterm"
+        );
+    });
     it("returns empty for paths without a projects segment", () => {
         expect(projectNameFromTranscriptPath("/tmp/foo.jsonl")).toBe("");
         expect(projectNameFromTranscriptPath("")).toBe("");
