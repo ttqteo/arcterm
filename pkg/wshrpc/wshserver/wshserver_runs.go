@@ -468,7 +468,7 @@ func (ws *WshServer) CreateRunCommand(ctx context.Context, data wshrpc.CommandCr
 	if err := validateRoute("reviewerRoute", harness.OperationLead, data.ReviewerRoute, true); err != nil {
 		return nil, err
 	}
-	if err := validateRoute("lightReviewerRoute", data.LightReviewerRoute, true); err != nil {
+	if err := validateRoute("lightReviewerRoute", harness.OperationLead, data.LightReviewerRoute, true); err != nil {
 		return nil, err
 	}
 	run := jarvis.NewRun(data.Goal, data.WorkspaceId, ch.ProjectPath, resolved.Principles, mode, playbook, time.Now().UnixMilli())

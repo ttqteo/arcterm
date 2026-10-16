@@ -879,11 +879,11 @@ func TestRunsStartDataAutonomous(t *testing.T) {
 func TestRunsShowLinesAutonomous(t *testing.T) {
 	ch := &waveobj.Channel{OID: "ch-1", Name: "waveterm"}
 	run := &waveobj.Run{ID: "r-1", Goal: "g", Status: "executing", Mode: "orchestrator", Runtime: "claude", CreatedTs: 1}
-	if out := strings.Join(runsShowLines(ch, run, nil, 2, nil), "\n"); strings.Contains(out, "autonomous") {
+	if out := strings.Join(runsShowLines(ch, run, nil, 2, nil, nil), "\n"); strings.Contains(out, "autonomous") {
 		t.Fatalf("an Ask me run shows autonomous:\n%s", out)
 	}
 	run.Autonomous = true
-	if out := strings.Join(runsShowLines(ch, run, nil, 2, nil), "\n"); !strings.Contains(out, "autonomous") {
+	if out := strings.Join(runsShowLines(ch, run, nil, 2, nil, nil), "\n"); !strings.Contains(out, "autonomous") {
 		t.Fatalf("an autonomous run does not say so:\n%s", out)
 	}
 }

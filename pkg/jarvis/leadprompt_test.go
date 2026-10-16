@@ -211,7 +211,7 @@ func TestOrchestrationRulesCompleteOnTheirOwn(t *testing.T) {
 // runs of a project land in a line, so complete can come back with the land queued or being resolved: the lead reads
 // that as the land under way, and knows its tab closes with the dag done but stays through a forced land in line
 func TestOrchestrationRulesNameAQueuedLand(t *testing.T) {
-	r := OrchestrationRules("r1", "", "", "")
+	r := OrchestrationRules("r1", "", "", "", false)
 	for _, want := range []string{
 		"`land queued`",
 		"`land resolving`",
@@ -384,14 +384,14 @@ func TestEveryCommittingPromptCarriesTheNoAttributionRule(t *testing.T) {
 func TestEveryWorkingPromptCarriesTheSubagentCap(t *testing.T) {
 	for name, p := range map[string]string{
 		"quick":               BuildQuickPrompt("add a spinner", nil, "claude"),
-		"orchestrate launch":  BuildOrchestratePrompt("ship auth", nil, "claude"),
-		"orchestration rules": OrchestrationRules("run-1", "", "", ""),
+		"orchestrate launch":  BuildOrchestratePrompt("ship auth", nil, "claude", false),
+		"orchestration rules": OrchestrationRules("run-1", "", "", "", false),
 	} {
 		if !strings.Contains(p, SubagentCapRule) {
 			t.Errorf("%s prompt never states the subagent cap:\n%s", name, p)
 		}
 	}
-	if !strings.Contains(BuildOrchestratePrompt("ship auth", nil, "claude"), "a subagent per task, is not bounded: it is architectural, and the engine runs it") {
+	if !strings.Contains(BuildOrchestratePrompt("ship auth", nil, "claude", false), "a subagent per task, is not bounded: it is architectural, and the engine runs it") {
 		t.Error("the launch prompt must send a plan worked a subagent per task to the engine")
 	}
 }
