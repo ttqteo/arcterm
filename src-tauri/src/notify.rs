@@ -36,6 +36,7 @@ fn activate(app: &AppHandle, target: String) {
     }
 }
 
+/// Loud (something is blocked on you) bounces the Dock icon or flashes the taskbar; no toast plays a sound.
 #[tauri::command]
 pub fn notify_os(app: AppHandle, title: String, body: String, target: String, loud: bool) {
     if loud {
@@ -43,19 +44,19 @@ pub fn notify_os(app: AppHandle, title: String, body: String, target: String, lo
             let _ = w.request_user_attention(Some(tauri::UserAttentionType::Informational));
         }
     }
-    if let Err(e) = show(&app, &title, &body, target, loud) {
+    if let Err(e) = show(&app, &title, &body, target) {
         log_line(&format!("[tauri] notify_os failed: {}", e));
     }
 }
 
 #[cfg(windows)]
-fn show(app: &AppHandle, title: &str, body: &str, target: String, loud: bool) -> Result<(), String> {
-    use tauri_winrt_notification::{Sound, Toast};
+fn show(app: &AppHandle, title: &str, body: &str, target: String) -> Result<(), String> {
+    use tauri_winrt_notification::Toast;
     let handle = app.clone();
     Toast::new(&app_id(cfg!(debug_assertions), &app.config().identifier))
         .title(title)
         .text1(body)
-        .sound(if loud { Some(Sound::Default) } else { None })
+        .sound(None)
         .on_activated(move |_action| {
             activate(&handle, target.clone());
             Ok(())
@@ -93,8 +94,8 @@ const MAX_WAITING: usize = 16;
 static WAITING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 #[cfg(target_os = "macos")]
-fn show(app: &AppHandle, title: &str, body: &str, target: String, loud: bool) -> Result<(), String> {
-    use mac_notification_sys::{Notification, Sound};
+fn show(app: &AppHandle, title: &str, body: &str, target: String) -> Result<(), String> {
+    use mac_notification_sys::Notification;
     use std::sync::atomic::Ordering::SeqCst;
     // set once per process; every later call reports AlreadySet
     let _ = mac_notification_sys::set_application(bundle_id(tauri::is_dev(), &app.config().identifier));
@@ -109,9 +110,6 @@ fn show(app: &AppHandle, title: &str, body: &str, target: String, loud: bool) ->
         .spawn(move || {
             let mut n = Notification::new();
             n.title(&title).message(&body).wait_for_click(wait);
-            if loud {
-                n.sound(Sound::Default);
-            }
             let response = n.send();
             if wait {
                 WAITING.fetch_sub(1, SeqCst);
@@ -132,7 +130,7 @@ fn show(app: &AppHandle, title: &str, body: &str, target: String, loud: bool) ->
 }
 
 #[cfg(not(any(windows, target_os = "macos")))]
-fn show(_app: &AppHandle, _title: &str, _body: &str, _target: String, _loud: bool) -> Result<(), String> {
+fn show(_app: &AppHandle, _title: &str, _body: &str, _target: String) -> Result<(), String> {
     Ok(())
 }
 

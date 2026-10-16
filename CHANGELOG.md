@@ -55,6 +55,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   or `Enter` picks. The letter and number keys still work.
 - The agent header no longer shows a bare `i` key beside the initiative; `i` still opens it, and the link's tooltip
   says so.
+- The system notification for an agent that needs you no longer plays a sound; the Dock icon still bounces.
 
 ### Fixed
 

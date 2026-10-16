@@ -32,7 +32,7 @@ export interface NotifyEvent {
     meta?: string;
     // the agent's harness (claude, pi, …), for its mark beside the project
     runtime?: string;
-    // a sound and a taskbar flash: something is blocked on you
+    // a Dock bounce (a taskbar flash on Windows): something is blocked on you
     loud: boolean;
     // a request from an agent stopped at a prompt (a permission prompt): no agent:ask carries it to the pet
     atPrompt?: boolean;
