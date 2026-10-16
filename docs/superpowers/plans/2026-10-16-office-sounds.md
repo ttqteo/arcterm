@@ -295,9 +295,7 @@ line, not the test.
 
 **Depends on:** Task 2
 
-**Files:** `frontend/app/view/agents/officesoundcues.ts`, `frontend/app/view/agents/officesoundcues.test.ts`,
-`frontend/app/view/agents/officeplanmodel.ts`, `frontend/app/view/agents/officeinputs.ts`,
-`frontend/app/view/agents/officeinputs.test.ts`
+**Files:** `frontend/app/view/agents/officesoundcues.ts`, `frontend/app/view/agents/officesoundcues.test.ts`, `frontend/app/view/agents/officeplanmodel.ts`, `frontend/app/view/agents/officeinputs.ts`, `frontend/app/view/agents/officeinputs.test.ts`
 
 **Step 1:** In `officeplanmodel.ts`, add to `PlanRun` after `done`:
 
@@ -867,8 +865,7 @@ export function playOfficeUi(id: UiCue): void {
 
 **Depends on:** Task 4
 
-**Files:** `frontend/app/view/agents/officesound.tsx`, `frontend/app/view/agents/cockpitoffice.tsx`,
-`frontend/app/view/agents/cockpitsurface.tsx`
+**Files:** `frontend/app/view/agents/officesound.tsx`, `frontend/app/view/agents/cockpitoffice.tsx`, `frontend/app/view/agents/cockpitsurface.tsx`
 
 **Step 1:** Create `officesound.tsx`:
 
@@ -1046,8 +1043,7 @@ draws and walks; the sound itself is the hand check of Task 8.
 
 **Depends on:** Task 1
 
-**Files:** `frontend/app/view/agents/settingsmodel.ts`, `frontend/app/view/agents/settingsmodel.test.ts`,
-`frontend/app/view/agents/settingspages/appearance.tsx`, `frontend/app/view/agents/settingssurface.tsx`
+**Files:** `frontend/app/view/agents/settingsmodel.ts`, `frontend/app/view/agents/settingsmodel.test.ts`, `frontend/app/view/agents/settingspages/appearance.tsx`, `frontend/app/view/agents/settingssurface.tsx`
 
 **Step 1: Update the failing test first.** In `settingsmodel.test.ts`, the `cards["appearance/office"]` expectation
 becomes:
@@ -1157,10 +1153,7 @@ differs from `DEFAULT_SOUND.<field>`; revert sets the default).
 
 **Depends on:** Task 5
 
-**Files:** `frontend/app/view/agents/officecontrols.ts`, `frontend/app/view/agents/officecontrols.test.ts`,
-`frontend/app/view/agents/usecockpitkeyboard.ts`, `frontend/app/view/agents/cockpitoffice.tsx`,
-`frontend/app/view/agents/cockpitsurface.tsx`, `frontend/app/store/keybindings/bindings.ts`,
-`docs/keyboard-shortcuts.md`
+**Files:** `frontend/app/view/agents/officecontrols.ts`, `frontend/app/view/agents/officecontrols.test.ts`, `frontend/app/view/agents/usecockpitkeyboard.ts`, `frontend/app/view/agents/cockpitoffice.tsx`, `frontend/app/view/agents/cockpitsurface.tsx`, `frontend/app/store/keybindings/bindings.ts`, `docs/keyboard-shortcuts.md`
 
 **Step 1: Write the failing tests** in `officecontrols.test.ts`:
 
@@ -1214,9 +1207,7 @@ pass (a keybindings test that checks for duplicate keys per surface must still p
 
 **Depends on:** Task 6, Task 7
 
-**Files:** `frontend/app/view/agents/cockpitofficedevhooks.ts`, `scripts/cdp/cockpitofficescenarios.mjs`,
-`scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/open-issues.md`,
-`docs/superpowers/specs/2026-10-16-office-sounds-design.md`
+**Files:** `frontend/app/view/agents/cockpitofficedevhooks.ts`, `scripts/cdp/cockpitofficescenarios.mjs`, `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/open-issues.md`, `docs/superpowers/specs/2026-10-16-office-sounds-design.md`
 
 **Step 1: DEV hooks.** In `cockpitofficedevhooks.ts` declare on `Window`
 `__cockpitOfficeSound?: (on: boolean) => void;` and `__cockpitOfficeSoundLog?: () => string[] | null;`, and in
