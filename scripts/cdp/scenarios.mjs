@@ -40178,9 +40178,13 @@ const whatsNew = {
     },
 };
 
-const { cockpitOffice, cockpitOfficePet, cockpitOfficeControls, cockpitOfficeNeedsYouBoard, cockpitOfficeBench, cockpitOfficeFloors, cockpitOfficeBackground } = makeCockpitOfficeScenarios({
+const { cockpitOffice, cockpitOfficePet, cockpitOfficeControls, cockpitOfficeNeedsYouBoard, cockpitOfficeBench, cockpitOfficeSound, cockpitOfficeFloors, cockpitOfficeBackground } = makeCockpitOfficeScenarios({
     arrangeFixtureRun,
     teardownFixtureRun,
+    spOpen,
+    spRow,
+    spClick,
+    caMenuClick,
 });
 
 // --- run-queue: plans queued to start are rows on the Agent tree, with Start now, Run next and Remove ---------------------
@@ -45618,6 +45622,7 @@ export const SCENARIOS = [
     cockpitOfficeBackground,
     cockpitOfficePet,
     cockpitOfficeBench,
+    cockpitOfficeSound,
     runQueueScenario,
     briefRunQueueScenario,
     runOriginScenario,

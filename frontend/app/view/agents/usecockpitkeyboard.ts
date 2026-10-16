@@ -13,6 +13,7 @@ import { askerAt, columnJump, type RowTarget } from "./cardgridlayout";
 import { isRowKey, rowCardId } from "./leadcardmodel";
 import type { Dir } from "./officeboss";
 import { officeKey, type OfficeLayer } from "./officecontrols";
+import { toggleOfficeMute } from "./officestore";
 import { BOARD_KEY, LIFT_KEY } from "./officeplanmodel";
 
 export const ARROW_DIR: Record<string, Dir> = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
@@ -135,6 +136,10 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
                     if (office.card()) {
                         e.preventDefault();
                     }
+                    return;
+                case "sound":
+                    e.preventDefault();
+                    toggleOfficeMute();
                     return;
                 case "back":
                     office.back();

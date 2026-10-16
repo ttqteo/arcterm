@@ -101,6 +101,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import type { AgentsViewModel } from "./agents";
+import { playOfficeUi } from "./officeaudio";
 import {
     admitWalkers,
     afterHours,
@@ -192,7 +193,10 @@ import {
     type Seat,
     type Tone,
 } from "./officeplanmodel";
+import { OfficeSound } from "./officesound";
+import { stepSound, type BoardCue } from "./officesoundcues";
 import {
+    DEFAULT_SOUND,
     officeAnimation,
     officeAnimationAtom,
     officeBigCardAtom,
@@ -203,6 +207,8 @@ import {
     officeHoursAtom,
     officeLayoutAtom,
     officeMenuOpenAtom,
+    officeSoundMutedAtom,
+    soundSwitch,
     type Carry,
 } from "./officestore";
 import { themeOverridesAtom, themePresetAtom } from "./themestore";
@@ -317,6 +323,8 @@ export interface CockpitOfficeProps {
     // the Needs you rows that wait: the notice board's bubble and slips, its place among the cursor's stops, and the
     // office menu's count. The rows themselves are the dialog's (dialogFor)
     boardRows: number;
+    // the same rows' keys and kinds, for the office's sound (officesound.tsx)
+    boardCues: BoardCue[];
     handleRef: MutableRefObject<OfficeHandle | null>;
 }
 
@@ -705,6 +713,9 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     // reduced motion or the animation off nothing is drawn moving, the entrance included
     const [entrancePlays] = useState(() => shouldPlayEntrance(Date.now(), !moving));
 
+    // the Needs you rows follow the project filter, so the office's sound rebases its board when it changes
+    const projectFilter = useAtomValue(props.model.projectFilterAtom);
+
     const now = props.now;
     const livePct = useAtomValue(officeFiveHourAtom);
     const pct = dev?.energy ?? livePct;
@@ -812,6 +823,26 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     devRef.current = dev;
     const arrivedRef = useRef<string | undefined>(undefined);
     const carry = useRef(0);
+    // the boss's sounds (office sounds spec, "Architecture"): a step every STEP_SOUND_PX the arrows walk it, one bump
+    // per arrow held against a wall
+    const stepAcc = useRef(0);
+    const bumped = useRef(false);
+    const bossSound = (from: Point, to: Point) => {
+        const moved = Math.abs(to.x - from.x) + Math.abs(to.y - from.y);
+        if (moved === 0) {
+            if (!bumped.current) {
+                bumped.current = true;
+                playOfficeUi("bump");
+            }
+            return;
+        }
+        bumped.current = false;
+        const s = stepSound(stepAcc.current, moved);
+        stepAcc.current = s.acc;
+        if (s.play) {
+            playOfficeUi("step");
+        }
+    };
     const bossWasMoving = useRef(false);
     const hintTimer = useRef<number | undefined>(undefined);
     // the lift: whether a ride is on, its timers, the floor it goes to, what it does once the boss has stopped walking
@@ -867,7 +898,9 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                 if (carry.current >= STEP_PX) {
                     const dist = Math.floor(carry.current / STEP_PX) * STEP_PX;
                     carry.current -= dist;
-                    globalStore.set(bossAtom, { ...b, at: stepToward(plan, b.at, b.holding, dist), dir: b.holding });
+                    const to = stepToward(plan, b.at, b.holding, dist);
+                    bossSound(b.at, to);
+                    globalStore.set(bossAtom, { ...b, at: to, dir: b.holding });
                 }
                 bossBusy = true;
             } else if (devRef.current?.patrol && plan.order.length > 1) {
@@ -976,9 +1009,11 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         }
         globalStore.set(layerAtom, "walk");
         if (!movingRef.current) {
+            const to = stepToward(planRef.current, b.at, dir, ARROW_STEP_PX);
+            bossSound(b.at, to);
             globalStore.set(bossAtom, {
                 ...b,
-                at: stepToward(planRef.current, b.at, dir, ARROW_STEP_PX),
+                at: to,
                 dir,
                 path: [],
             });
@@ -992,6 +1027,8 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         kick();
     };
     const release = (dir: Dir) => {
+        // with reduced motion or the animation off `holding` is never set, so this reset comes before its check
+        bumped.current = false;
         const b = globalStore.get(bossAtom);
         if (b?.holding === dir) {
             globalStore.set(bossAtom, { ...b, holding: undefined });
@@ -1386,6 +1423,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     onMenuRef.current = props.onMenu;
     // read when the menu opens (a walk step renders nothing): the boss in a project room can pick it up
     const menuInRoom = useAtomValue(menuInRoomAtom);
+    const muted = soundSwitch(useAtomValue(officeSoundMutedAtom), DEFAULT_SOUND.muted);
     const menuItems = officeMenuItems(
         plan.asks.length,
         props.newEvents,
@@ -1393,7 +1431,8 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         props.boardRows,
         menuInRoom,
         props.background,
-        props.backgroundOpen
+        props.backgroundOpen,
+        muted
     );
     const menuItemsRef = useRef(menuItems);
     menuItemsRef.current = menuItems;
@@ -1591,6 +1630,30 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             globalStore.set(layerAtom, "walk");
         }
     }, [props.boardRows, cursorId]);
+
+    // a blip when the dialog box, the full card or the office menu opens; carrying a room (g, layer "carry") is silent
+    useEffect(() => {
+        let layer = globalStore.get(layerAtom);
+        let menu = globalStore.get(officeMenuOpenAtom);
+        const offLayer = globalStore.sub(layerAtom, () => {
+            const next = globalStore.get(layerAtom);
+            if (next !== layer && (next === "dialog" || next === "card")) {
+                playOfficeUi("blip");
+            }
+            layer = next;
+        });
+        const offMenu = globalStore.sub(officeMenuOpenAtom, () => {
+            const next = globalStore.get(officeMenuOpenAtom);
+            if (next && !menu) {
+                playOfficeUi("blip");
+            }
+            menu = next;
+        });
+        return () => {
+            offLayer();
+            offMenu();
+        };
+    }, []);
 
     const pickRef = useRef((key: string) => {
         goTo(key);
@@ -1840,6 +1903,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
 
     return (
         <div className="relative flex min-h-0 flex-1 flex-col">
+            <OfficeSound agents={agents} runs={runs} board={props.boardCues} night={night} scope={projectFilter} />
             <div
                 ref={scrollRef}
                 data-cockpit-office

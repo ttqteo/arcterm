@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Settings > Appearance: the palette every surface derives from, its role colors, the interface and code
-// faces, Jarvis's character, outfit and quotes, the Cockpit office's animation and work hours, and what an agent row in the sidebar shows. The terminal's own face is
+// faces, Jarvis's character, outfit and quotes, the Cockpit office's animation, work hours and sound, and what an agent row in the sidebar shows. The terminal's own face is
 // a Terminal setting.
 
 import { PET_CHARACTER_NAME, petCharacter } from "@/app/view/jarvis/petcharacter";
@@ -10,13 +10,25 @@ import { petOutfitChoice, type PetOutfitChoice } from "@/app/view/jarvis/petoutf
 import type { PetCharacter } from "@/app/view/jarvis/petsprite";
 import { petCharacterAtom, petOutfitChoiceAtom, petQuotesOnAtom } from "@/app/view/jarvis/petstore";
 import { cn } from "@/util/util";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { Check } from "lucide-react";
 import { useContext, useState } from "react";
 import { MONO_FONTS, SANS_FONTS } from "../fonts";
 import { fontMonoAtom, fontSansAtom } from "../fontstore";
 import { sanitizeHours, type WorkHours } from "../officebehavior";
-import { officeAnimation, officeAnimationAtom, officeHoursAtom } from "../officestore";
+import {
+    DEFAULT_SOUND,
+    officeAnimation,
+    officeAnimationAtom,
+    officeHoursAtom,
+    officeSoundEventsAtom,
+    officeSoundMusicAtom,
+    officeSoundUiAtom,
+    officeSoundVolumeAtom,
+    SOUND_VOLUMES,
+    soundSwitch,
+    soundVolume,
+} from "../officestore";
 import { ROW_FIELD_ROWS } from "../rowfields";
 import { rowFieldsAtom } from "../rowfieldsstore";
 import { RowCtx, Segmented, Select, SettingCard, SettingRow, Toggle } from "../settingsui";
@@ -45,6 +57,7 @@ export function AppearancePage() {
             <SettingCard id="office" label="Office">
                 <OfficeAnimationRow />
                 <OfficeHoursRow />
+                <OfficeSoundRows />
             </SettingCard>
             <SettingCard id="agentrows" label="Agent sidebar">
                 <AgentRowFieldRows />
@@ -308,6 +321,54 @@ function OfficeHoursRow() {
                 />
             </div>
         </SettingRow>
+    );
+}
+
+function OfficeSoundSwitch(props: { id: string; label: string; atom: PrimitiveAtom<boolean>; dflt: boolean }) {
+    const [raw, set] = useAtom(props.atom);
+    const on = soundSwitch(raw, props.dflt);
+    return (
+        <SettingRow id={props.id}>
+            <Toggle on={on} onToggle={() => set(!on)} label={props.label} />
+        </SettingRow>
+    );
+}
+
+// the office's three sound switches and the volume they share (office sounds spec, "Controls")
+function OfficeSoundRows() {
+    const [raw, setVolume] = useAtom(officeSoundVolumeAtom);
+    const volume = soundVolume(raw);
+    const pct = (v: number) => `${Math.round(v * 100)} %`;
+    const items: ContextMenuItem[] = SOUND_VOLUMES.map((v) => ({
+        label: pct(v),
+        type: "radio",
+        checked: v === volume,
+        click: () => setVolume(v),
+    }));
+    return (
+        <>
+            <OfficeSoundSwitch
+                id="appearance.officesoundevents"
+                label="Office jingles"
+                atom={officeSoundEventsAtom}
+                dflt={DEFAULT_SOUND.events}
+            />
+            <OfficeSoundSwitch
+                id="appearance.officesoundui"
+                label="Boss sounds"
+                atom={officeSoundUiAtom}
+                dflt={DEFAULT_SOUND.ui}
+            />
+            <OfficeSoundSwitch
+                id="appearance.officesoundmusic"
+                label="Office music"
+                atom={officeSoundMusicAtom}
+                dflt={DEFAULT_SOUND.music}
+            />
+            <SettingRow id="appearance.officesoundvolume">
+                <Select value={String(volume)} label={pct(volume)} ariaLabel="Office volume" items={items} />
+            </SettingRow>
+        </>
     );
 }
 

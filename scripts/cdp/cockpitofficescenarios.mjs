@@ -33,6 +33,7 @@ const KEY_CODES = {
     m: 77,
     n: 78,
     o: 79,
+    s: 83,
     1: 49,
 };
 // the boss's walking speed (officeboss.ts BOSS_SPEED), for how long to hold an arrow
@@ -1763,10 +1764,12 @@ export function makeCockpitOfficeScenarios(fx) {
             const moved = await press("ArrowDown");
             const shut = await press("Escape");
             rec(
-                "8. m opens the office menu, the footer's m chip lit: Next Needs you, Notice board, Next desk, Previous desk, Lift, Move this room, Arrange automatically, Events, Cards view, All keys; ↓ moves the ▶; Esc shuts it",
+                "8. m opens the office menu, the footer's m chip lit: Next Needs you, Notice board, Next desk, Previous desk, Lift, Move this room, Arrange automatically, Events, Mute sound, Cards view, All keys; ↓ moves the ▶; Esc shuts it",
                 menu?.menu === true &&
                     lit === "true" &&
-                    JSON.stringify(menu.menuItems) === JSON.stringify(["Next Needs you", "Notice board", "Next desk", "Previous desk", "Lift", "Move this room", "Arrange automatically", "Events", "Cards view", "All keys"]) &&
+                    // Background is listed while a detached `claude --bg` session runs on this machine (the
+                    // cockpit-office-background scenario owns it), so it is no part of this list
+                    JSON.stringify(menu.menuItems.filter((i) => i !== "Background")) === JSON.stringify(["Next Needs you", "Notice board", "Next desk", "Previous desk", "Lift", "Move this room", "Arrange automatically", "Events", "Mute sound", "Cards view", "All keys"]) &&
                     menu.menuSel === 0 &&
                     moved?.menuSel === 1 &&
                     shut?.menu === false,
@@ -2398,6 +2401,266 @@ export function makeCockpitOfficeScenarios(fx) {
             else rmSync(FIXTURE, { force: true });
             await h.ev("location.reload()");
             await sleep(1500);
+        },
+    };
+
+    // Office sounds (docs/superpowers/specs/2026-10-16-office-sounds-design.md) on the DEV log sink: the office logs what it
+    // would play instead of playing it (cockpitofficedevhooks.ts), so this checks which cue, when, and whether sound is
+    // allowed, not how anything sounds (a hand check). Fixture runs and real keys, no real run.
+    const SOUND_KEYS = ["events", "ui", "music", "volume", "muted"].map((k) => `cockpit.office.sound.${k}`);
+    const SOUND_MUTED_KEY = "cockpit.office.sound.muted";
+    const JINGLES = ["landed", "taskDone", "needsYou", "setback"];
+    // the Settings rows the office's sound has, with their titles
+    const SOUND_ROWS = [
+        ["appearance.officesoundevents", "Office jingles"],
+        ["appearance.officesoundui", "Boss sounds"],
+        ["appearance.officesoundmusic", "Office music"],
+        ["appearance.officesoundvolume", "Office volume"],
+    ];
+    // one fixture run whose tasks are in these states, `o` laid over the run (done, landed)
+    const soundRuns = (states, o = {}) => devRuns("fx-sound-run", [["Sound run", "arcterm", states]]).map((r) => ({ ...r, ...o }));
+    const cockpitOfficeSound = {
+        name: "office-sound",
+        surface: "cockpit",
+        async arrange(h) {
+            const ctx = { prevFixture: existsSync(FIXTURE) ? readFileSync(FIXTURE, "utf8") : null, prevSound: {} };
+            mkdirSync(new URL(".", FIXTURE), { recursive: true });
+            writeFileSync(FIXTURE, JSON.stringify(ROSTERS["office"](Date.now()), null, 2));
+            ctx.prevView = await h.ev(`localStorage.getItem(${JSON.stringify(VIEW_KEY)})`);
+            ctx.prevAnimation = await h.ev(`localStorage.getItem(${JSON.stringify(ANIMATION_KEY)})`);
+            await h.ev(`localStorage.setItem(${JSON.stringify(VIEW_KEY)}, JSON.stringify("office"))`);
+            // the defaults hold: the atoms read these keys as the page loads
+            for (const k of SOUND_KEYS) {
+                ctx.prevSound[k] = await h.ev(`localStorage.getItem(${JSON.stringify(k)})`);
+                await h.ev(`localStorage.removeItem(${JSON.stringify(k)})`);
+            }
+            await h.reload();
+            await h.goto("cockpit");
+            ctx.missing = await waitForOffice(h);
+            if (!ctx.missing) {
+                // nothing moves under the shots; the Needs you list is a fixture with no rows, so a live row that arrives
+                // meanwhile is no cue in the log
+                await h.ev("window.__cockpitOfficeAnimation(false)");
+                await h.ev("window.__cockpitOfficeAttention([])");
+                await dev(h, { entrance: "skip" });
+            }
+            return ctx;
+        },
+        async teardown(h, ctx) {
+            const step = async (what, fn) => {
+                try {
+                    await fn();
+                } catch (e) {
+                    console.error(`office-sound teardown: ${what} failed: ${e?.message ?? e}`);
+                }
+            };
+            const put = (key, v) => (v == null ? `localStorage.removeItem(${JSON.stringify(key)})` : `localStorage.setItem(${JSON.stringify(key)}, ${JSON.stringify(v)})`);
+            await step("turn the sound log off", () => h.ev("window.__cockpitOfficeSound?.(false)"));
+            await step("hand back the live Needs you rows", () => h.ev("window.__cockpitOfficeAttention?.(null)"));
+            await step("clear the dev state", () => h.ev("window.__cockpitOffice?.(null)"));
+            await step("put back the animation switch", () => h.ev(put(ANIMATION_KEY, ctx.prevAnimation)));
+            await step("put back the view", () => h.ev(put(VIEW_KEY, ctx.prevView)));
+            for (const k of SOUND_KEYS) {
+                await step(`put back ${k}`, () => h.ev(put(k, ctx.prevSound?.[k])));
+            }
+            await step("put back the roster", () => {
+                if (ctx.prevFixture != null) writeFileSync(FIXTURE, ctx.prevFixture);
+                else rmSync(FIXTURE, { force: true });
+            });
+            await step("reload without the fixture", async () => {
+                await h.ev("location.reload()");
+                await sleep(1500);
+            });
+        },
+        async assert(h, ctx) {
+            const steps = [];
+            const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+            if (ctx.missing) {
+                rec("0. the office loads", false, ctx.missing);
+                return steps;
+            }
+            const log = async () => (await h.ev("window.__cockpitOfficeSoundLog ? window.__cockpitOfficeSoundLog() : null")) ?? [];
+            const ls = (k) => h.ev(`localStorage.getItem(${JSON.stringify(k)})`);
+            const press = async (k) => {
+                await focusCockpit(h);
+                await key(h, k);
+                await sleep(150);
+                return probe(h);
+            };
+            const tail = (l) => JSON.stringify(l.slice(-4));
+            // the cue effects run after the render that follows each dev() call
+            const setRuns = async (runs, ms = 500) => {
+                await dev(h, { runs });
+                await sleep(ms);
+                return log();
+            };
+
+            // 1. a run that only came into view is silent
+            await h.ev("window.__cockpitOfficeSound(true)");
+            const l1 = await setRuns(soundRuns(["running", "running"]));
+            rec(
+                "1. a run that only came into view is silent: none of landed, taskDone, needsYou, setback in the log",
+                !l1.some((c) => JINGLES.includes(c)),
+                tail(l1)
+            );
+
+            // 2. a task finishing plays taskDone
+            const l2 = await setRuns(soundRuns(["done", "running"]));
+            rec("2. a task that finishes plays taskDone", l2.at(-1) === "taskDone" && l2.length === l1.length + 1, tail(l2));
+
+            // 3. a task that fails plays setback (a gap past the 1.5 s one between cues)
+            await sleep(1600);
+            const l3 = await setRuns(soundRuns(["done", "review-failed"]));
+            rec("3. a task that fails its review plays setback", l3.at(-1) === "setback" && l3.length === l2.length + 1, tail(l3));
+
+            // 4. a run that lands plays landed, one cue for the burst (the task finishing with it does not add taskDone)
+            await sleep(1600);
+            const l4 = await setRuns(soundRuns(["done", "done"], { done: true, landed: true }));
+            rec(
+                "4. a run that lands plays landed, one entry for the burst and not taskDone too",
+                l4.at(-1) === "landed" && l4.length === l3.length + 1,
+                tail(l4)
+            );
+
+            // 5. s mutes: nothing plays for what would have played
+            await focusCockpit(h);
+            await key(h, "s");
+            const muted = await ls(SOUND_MUTED_KEY);
+            await sleep(1600);
+            const before5 = (await log()).length;
+            await setRuns(soundRuns(["running", "running"]), 300);
+            const l5 = await setRuns(soundRuns(["done", "running"]));
+            rec(
+                "5. s mutes (cockpit.office.sound.muted true), and a task finishing then logs nothing",
+                muted === "true" && l5.length === before5,
+                JSON.stringify({ muted, before: before5, after: l5.length, tail: l5.slice(-2) })
+            );
+
+            // 6. s again unmutes; the office menu lists Mute sound right before Cards view with its key
+            await focusCockpit(h);
+            await key(h, "s");
+            const unmuted = await ls(SOUND_MUTED_KEY);
+            const menu = await press("m");
+            const items = menu?.menuItems ?? [];
+            const at = items.indexOf("Mute sound");
+            const menuKey = await h.ev(`(() => {
+                const row = [...document.querySelectorAll("[data-office-menu] [role=menuitem]")].find((b) => b.querySelector("span.truncate")?.textContent.trim() === "Mute sound");
+                return row ? (row.querySelector("kbd")?.textContent.trim() ?? null) : undefined;
+            })()`);
+            await h.shot("cdp-shots/office-sound-menu.png");
+            await key(h, "Escape");
+            rec(
+                "6. s again unmutes (muted false); m lists Mute sound right before Cards view, its row showing the key s",
+                unmuted === "false" && at > 0 && items[at + 1] === "Cards view" && menuKey === "s",
+                JSON.stringify({ unmuted, items, menuKey })
+            );
+
+            // 7. Settings → Appearance: the four rows, the music switch and the volume write their keys
+            await h.goto("settings");
+            const up = await fx.spOpen(h, "appearance");
+            await h.ev(`${fx.spRow("appearance.officesoundevents")}?.scrollIntoView({ block: "center" })`);
+            await sleep(200);
+            const rows = [];
+            for (const [id, title] of SOUND_ROWS) {
+                rows.push(await h.ev(`${fx.spRow(id)}?.textContent.includes(${JSON.stringify(title)}) ?? false`));
+            }
+            const musicSwitch = `${fx.spRow("appearance.officesoundmusic")}?.querySelector('[role="switch"]')`;
+            await h.ev(`${musicSwitch}?.click()`);
+            await sleep(200);
+            const musicOn = await ls("cockpit.office.sound.music");
+            await h.ev(`${musicSwitch}?.click()`);
+            await sleep(200);
+            const musicOff = await ls("cockpit.office.sound.music");
+            const opened = await fx.spClick(h, `${fx.spRow("appearance.officesoundvolume")}?.querySelector("button[data-select]")`);
+            let picked = false;
+            for (let t = 0; t <= 3000 && !picked; t += 100) {
+                picked = await h.ev(fx.caMenuClick("75 %")).catch(() => false);
+                if (!picked) await sleep(100);
+            }
+            await sleep(300);
+            const volume = await ls("cockpit.office.sound.volume");
+            await h.ev(`${fx.spRow("appearance.officesoundui")}?.scrollIntoView({ block: "center" })`);
+            await sleep(200);
+            await h.shot("cdp-shots/office-sound-settings.png");
+            rec(
+                "7. Appearance has Office jingles, Boss sounds, Office music and Office volume; the music switch writes true then false, the volume 75 % writes 0.75",
+                up && rows.every(Boolean) && musicOn === "true" && musicOff === "false" && opened && picked && volume === "0.75",
+                JSON.stringify({ up, rows, musicOn, musicOff, opened, picked, volume })
+            );
+
+            // 8. the boss's sounds: footsteps while the arrows walk, one bump at a wall, a blip as the menu opens
+            await h.goto("cockpit");
+            const back = await waitForOffice(h);
+            if (back) {
+                rec("8. the boss's sounds", false, back);
+                return steps;
+            }
+            await h.ev("window.__cockpitOfficeSoundSet({ ui: true })");
+            await h.ev("window.__cockpitOfficeAnimation(true)");
+            await focusCockpit(h);
+            // the layer is walk: in a dialog box the arrows move its ▶ and the boss stands still
+            await key(h, "Escape");
+            await sleep(150);
+            const start = await settleBoss(h, 6000);
+            const log8 = (await log()).length;
+            await hold(h, "ArrowRight", 700);
+            let there = (await settleBoss(h, 2000))?.boss;
+            if (there && start?.boss && there.x === start.boss.x) {
+                await hold(h, "ArrowLeft", 700);
+                there = (await settleBoss(h, 2000))?.boss;
+            }
+            const walked = (await log()).slice(log8);
+            rec(
+                "8a. the arrows walking the boss log step, and the boss moved",
+                !!start?.boss && !!there && there.x !== start.boss.x && walked.includes("step"),
+                JSON.stringify({ from: start?.boss, to: there, walked })
+            );
+            // up until nothing moves any more: the boss stands at a wall
+            let rest = there;
+            let atWall = false;
+            for (let i = 0; i < 8 && !atWall; i++) {
+                await hold(h, "ArrowUp", 1000);
+                const b = (await settleBoss(h, 2000))?.boss;
+                atWall = !!b && !!rest && b.x === rest.x && b.y === rest.y;
+                rest = b;
+            }
+            const log8b = (await log()).length;
+            await hold(h, "ArrowUp", 1000);
+            const bumped = (await log()).slice(log8b);
+            rec(
+                "8b. at a wall one ArrowUp hold logs exactly one bump and no step",
+                atWall && bumped.filter((c) => c === "bump").length === 1 && !bumped.includes("step"),
+                JSON.stringify({ atWall, at: rest, bumped })
+            );
+            const log8c = (await log()).length;
+            await press("m");
+            const opened8 = (await log()).slice(log8c);
+            await key(h, "Escape");
+            rec("8c. m opening the office menu logs blip", opened8.includes("blip"), JSON.stringify(opened8));
+            await h.ev("window.__cockpitOfficeAnimation(false)");
+            await h.ev("window.__cockpitOfficeSoundSet({ ui: false })");
+
+            // 9. the music: day, night, and off while muted
+            await dev(h, { afterHours: false });
+            await h.ev("window.__cockpitOfficeSoundSet({ music: true })");
+            await sleep(300);
+            const m1 = await log();
+            await dev(h, { afterHours: true });
+            await sleep(300);
+            const m2 = await log();
+            await focusCockpit(h);
+            await key(h, "s");
+            await sleep(300);
+            const m3 = await log();
+            await key(h, "s");
+            const unmuted9 = await ls(SOUND_MUTED_KEY);
+            await h.ev("window.__cockpitOfficeSoundSet({ music: false })");
+            rec(
+                "9. music on plays music:day, after hours music:night, and s (muted) music:off",
+                m1.at(-1) === "music:day" && m2.at(-1) === "music:night" && m3.at(-1) === "music:off" && unmuted9 === "false",
+                JSON.stringify({ day: m1.at(-1), night: m2.at(-1), muted: m3.at(-1), unmuted: unmuted9 })
+            );
+            return steps;
         },
     };
 
@@ -3174,5 +3437,5 @@ export function makeCockpitOfficeScenarios(fx) {
         },
     };
 
-    return { cockpitOffice, cockpitOfficePet, cockpitOfficeControls, cockpitOfficeNeedsYouBoard, cockpitOfficeBench, cockpitOfficeFloors, cockpitOfficeBackground };
+    return { cockpitOffice, cockpitOfficePet, cockpitOfficeControls, cockpitOfficeNeedsYouBoard, cockpitOfficeBench, cockpitOfficeSound, cockpitOfficeFloors, cockpitOfficeBackground };
 }

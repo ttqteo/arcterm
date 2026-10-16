@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The Cockpit office's per-viewer choices (cockpit office spec, "Where it lives" and "Motion"), kept in localStorage
-// like the pet's. Read them through cockpitView, officeAnimation and sanitizeHours, which turn anything unexpected
-// into the default.
+// like the pet's. Read them through cockpitView, officeAnimation, soundSwitch, soundVolume and sanitizeHours, which turn
+// anything unexpected into the default.
 
+import { globalStore } from "@/app/store/jotaiStore";
 import { atom, type PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { DEFAULT_HOURS, type WorkHours } from "./officebehavior";
@@ -31,6 +32,32 @@ export const officeAnimationAtom = atomWithStorage<boolean>(
     undefined,
     { getOnInit: true }
 ) as PrimitiveAtom<boolean>;
+
+// the office's sound (office sounds spec, "Controls"): jingles on, the boss's sounds and the music off, a shared
+// volume, and a mute over all of it that leaves the three switches as they were
+export const DEFAULT_SOUND = { events: true, ui: false, music: false, volume: 0.5, muted: false } as const;
+export const SOUND_VOLUMES: readonly number[] = [0.25, 0.5, 0.75, 1];
+
+const soundAtom = <T>(key: string, init: T) =>
+    atomWithStorage<T>(`cockpit.office.sound.${key}`, init, undefined, { getOnInit: true }) as PrimitiveAtom<T>;
+export const officeSoundEventsAtom = soundAtom<boolean>("events", DEFAULT_SOUND.events);
+export const officeSoundUiAtom = soundAtom<boolean>("ui", DEFAULT_SOUND.ui);
+export const officeSoundMusicAtom = soundAtom<boolean>("music", DEFAULT_SOUND.music);
+export const officeSoundVolumeAtom = soundAtom<number>("volume", DEFAULT_SOUND.volume);
+export const officeSoundMutedAtom = soundAtom<boolean>("muted", DEFAULT_SOUND.muted);
+
+export function soundSwitch(v: unknown, dflt: boolean): boolean {
+    return typeof v === "boolean" ? v : dflt;
+}
+
+export function soundVolume(v: unknown): number {
+    return typeof v === "number" && SOUND_VOLUMES.includes(v) ? v : DEFAULT_SOUND.volume;
+}
+
+// s in the office and the office menu's Mute sound / Sound on
+export function toggleOfficeMute(): void {
+    globalStore.set(officeSoundMutedAtom, !soundSwitch(globalStore.get(officeSoundMutedAtom), DEFAULT_SOUND.muted));
+}
 
 // the rooms' arrangement over the floors, per viewer (office floors spec, "The arrangement"). atomWithStorage hands back
 // whatever JSON was stored: read it through parseLayout
