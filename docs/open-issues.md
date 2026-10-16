@@ -33,6 +33,23 @@ does not, say what you saw and it becomes a bug row under Actionable.
   under the runs. Sprout walks the footer as before; its bubble and its peek open from it (not from a desk). The
   Cockpit's Office is unchanged. `briefsurface.tsx`, `petview.tsx`; the commit that deleted `view/jarvis/office*`.
 
+**2026-10-16 (kael sync: memory hygiene, autonomous runs, wider plan review, radar kinds)**
+
+- [ ] (arcterm) Setup → Memory: the tab sits between Learned and Project; a project row shows its index size and
+  "Not checked yet" until a check runs; **Check now** proposes changes with their evidence, Accept applies one and
+  Undo puts it back. `setupmemory.tsx`, `setupsurface.tsx`.
+- [ ] (arcterm) New → Orchestrate: the Models block is a 2×2 grid (Lead, Workers, Reviewers, Light reviewers) and an
+  **Approvals** row (Ask me | Autonomous) with its note sits under it; a run started on Autonomous shows the word on
+  its run sheet's config line. `launcherrunfields.tsx`, `launchermodal.tsx`.
+- [ ] (arcterm) A run's sheet → Adjust: the Approvals dial saves, turning it on with a lead question waiting hands that
+  question back; the palette offers **Go autonomous** / **Ask me again** on the run. `briefrunsheet.tsx`.
+- [ ] (arcterm) A run's plan review: five reviewer rows in the Agent tree, each titled `Plan review · <lens>`, and one
+  chip per reviewer in the DAG view; a round-2 resubmit shows one `Round-2 follow-up`. `agenttree.tsx`.
+- [ ] (arcterm) Settings → Background AI → Radar: a **Commit classifier** row under Radar audit, its placeholder
+  `haiku` on claude and `pi default` on pi. `settingspages/backgroundai.tsx`.
+- [ ] (arcterm) A terminal after a GPU reset (or a WebGL context loss): it goes on drawing with the DOM renderer at
+  once, no white sad-face canvas, and WebGL comes back about 2 s later. `termwrap.ts`.
+
 **2026-10-16 (the Office plays like a pixel game, run 25462413)**
 
 - [ ] (arcterm) In the installed Mac app (Final ran the scenarios in headless Chrome, not WKWebView): Cockpit → Office.
