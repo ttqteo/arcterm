@@ -318,16 +318,18 @@ tasks:
             - cmd/wsh/cmd/pi-simplify-gate-core-extension.ts
 
     sync:claudemod:
-        desc: Copy the authored Claude mods (claude/arc-mod, claude/arc-view-mod) into their go:embed locations cmd/wsh/cmd/claude-mod and claude-view-mod (generated, never hand-edited), without their tests or engine-written types.
+        desc: Copy the authored Claude mods (claude/arc-mod, claude/arc-view-mod, claude/skim-mod) into their go:embed locations cmd/wsh/cmd/claude-mod, claude-view-mod and claude-skim-mod (generated, never hand-edited), without their tests or engine-written types.
         cmds:
-            - for: [{ src: arc-mod, dst: claude-mod }, { src: arc-view-mod, dst: claude-view-mod }]
+            - for: [{ src: arc-mod, dst: claude-mod }, { src: arc-view-mod, dst: claude-view-mod }, { src: skim-mod, dst: claude-skim-mod }]
               cmd: rm -rf cmd/wsh/cmd/{{.ITEM.dst}} && cp -r claude/{{.ITEM.src}} cmd/wsh/cmd/{{.ITEM.dst}} && rm -rf cmd/wsh/cmd/{{.ITEM.dst}}/.claude-plugin/types && rm -f cmd/wsh/cmd/{{.ITEM.dst}}/hooks/*.test.ts
         sources:
             - claude/arc-mod/**/*
             - claude/arc-view-mod/**/*
+            - claude/skim-mod/**/*
         generates:
             - cmd/wsh/cmd/claude-mod/**/*
             - cmd/wsh/cmd/claude-view-mod/**/*
+            - cmd/wsh/cmd/claude-skim-mod/**/*
 
     build:server:internal:
         deps:

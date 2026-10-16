@@ -27,6 +27,15 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-16 (skim split out of arc-view)**
+
+- [ ] (arcterm) After a dev build relaunches arcterm: `~/.arc/claude-skim-mod` exists, `~/.arc/claude-view-mod/hooks`
+  holds only `register.ts`, `wake-core.ts`, `wake-row.tsx`, and `env.CLAUDE_CODE_PLUGIN_DIRS` lists all three mods.
+  In a new `claude` session a long explanation draws dimmed around its highlighted sentences, `/skim` toggles it with
+  "skim off" in the status area, and a lead's wake row still draws as its events.
+- [ ] (arcterm) Published copy: in a Claude Code profile without arcterm's mods, `/plugin marketplace add
+  ttqteo/claude-skim` then `/plugin install skim@claude-skim` loads it and highlights a long reply.
+
 **2026-10-16 (the Office's floors and lift, run 006c403f)**
 
 - [ ] (arcterm) In the installed Mac app (the `cockpit-office-floors` scenario ran in the Windows dev app, WebView2,

@@ -81,7 +81,7 @@ Mỗi lần mở, app chạy `wsh install-agent-hooks`. Lệnh này idempotent: 
 | Cho | arcterm ghi gì | Điều kiện |
 |---|---|---|
 | `wsh` | `~/.arc/bin/wsh` (`wsh.exe` trên Windows), bản sao cố định của CLI đi kèm app | Luôn luôn |
-| Claude Code | Các hook arcterm quản lý trong `~/.claude/settings.json` (`PreToolUse`, `PostToolUse`, `Notification`, `Stop`, `SubagentStop`, `UserPromptSubmit`, `PreCompact`, `SessionStart`); hai mod `~/.arc/claude-mod` và `~/.arc/claude-view-mod`, được liệt kê trong `env.CLAUDE_CODE_PLUGIN_DIRS` | Luôn luôn (thư mục `~/.claude` được tạo nếu chưa có) |
+| Claude Code | Các hook arcterm quản lý trong `~/.claude/settings.json` (`PreToolUse`, `PostToolUse`, `Notification`, `Stop`, `SubagentStop`, `UserPromptSubmit`, `PreCompact`, `SessionStart`); ba mod `~/.arc/claude-mod`, `~/.arc/claude-view-mod` và `~/.arc/claude-skim-mod`, được liệt kê trong `env.CLAUDE_CODE_PLUGIN_DIRS` | Luôn luôn (thư mục `~/.claude` được tạo nếu chưa có) |
 | Claude Code cũ hơn 2.1.287, hoặc không tìm thấy `claude` | Bọc `statusLine.command` thành `wsh statusline --inner=…` để đọc usage; lệnh gốc của bạn vẫn chạy | Tự quyết định theo `claude --version` |
 | pi | Các extension `waveterm-status.ts`, `waveterm-tools.ts`, `waveterm-ask.ts`, `waveterm-simplify-gate.ts` (kèm file `-core`) trong `~/.pi/agent/extensions/`; theme `arc` ở `~/.pi/agent/themes/arc.json`; trong `~/.pi/agent/settings.json` thêm `theme` và `packages` nếu chưa có; `keybindings.json` chỉ khi bạn chưa có file | Khi `pi` có trên PATH |
 | OpenCode | Plugin `~/.config/opencode/plugins/waveterm-status.js` | Khi `opencode` có trên PATH |

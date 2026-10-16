@@ -10,7 +10,7 @@ Mỗi lần mở, app chạy `wsh install-agent-hooks`. Lệnh này làm mới c
 
 | Harness | Cài vào đâu | Làm gì |
 |---|---|---|
-| Claude Code | hook trong `~/.claude/settings.json`; mod `~/.arc/claude-mod` và `~/.arc/claude-view-mod`, liệt kê trong `env.CLAUDE_CODE_PLUGIN_DIRS` | Trạng thái, tên phiên, usage, câu hỏi trên thẻ, chặn lệnh nguy hiểm, hàng đợi lệnh nặng |
+| Claude Code | hook trong `~/.claude/settings.json`; mod `~/.arc/claude-mod`, `~/.arc/claude-view-mod` và `~/.arc/claude-skim-mod`, liệt kê trong `env.CLAUDE_CODE_PLUGIN_DIRS` | Trạng thái, tên phiên, usage, câu hỏi trên thẻ, chặn lệnh nguy hiểm, hàng đợi lệnh nặng |
 | pi | extension của pi (và theme `arc`) | Trạng thái, câu hỏi, usage, hàng đợi lệnh nặng |
 | OpenCode | plugin trạng thái | Trạng thái trên rail |
 | Antigravity | khóa `arcterm` trong `~/.gemini/config/hooks.json` | Xem [Antigravity](#antigravity-agy) |
@@ -36,7 +36,7 @@ Muốn một phiên dev không động vào các file này, đặt `ARC_DEV_NO_G
 - **Chặn một số lệnh shell**, bất kể prompt nói gì. Ví dụ dừng app bằng tên tiến trình (`taskkill /IM wave-tauri.exe`): bản dev và arcterm đã cài dùng chung tên, nên lệnh đó giết luôn arcterm đang chạy phiên này cùng mọi agent khác. Dừng theo PID thì được.
 - **Hàng đợi lệnh nặng**: trước mỗi lệnh shell nó gọi `wsh jobslot`. Lệnh nặng (build, typecheck, cả bộ test, `npm install`) chờ đến lượt trong hàng đợi chung của wavesrv và giữ chỗ trong lúc chạy; bạn bấm **Skip** ở popover Jobs thì agent nhận "Not run: …" và nên tiếp tục mà báo là đã bỏ qua. Xem [Usage → Hàng đợi lệnh nặng](usage.md#hàng-đợi-lệnh-nặng). pi và Antigravity đi qua cùng hàng đợi.
 
-`claude/arc-view-mod` là mod thứ hai, chỉ để vẽ các hàng transcript của prompt mà mod arc gửi vào. Kiểm tra mod bằng `claude plugin validate claude/arc-mod`.
+`claude/arc-view-mod` là mod thứ hai, chỉ để vẽ các hàng transcript của prompt mà mod arc gửi vào. `claude/skim-mod` là mod thứ ba: Claude đánh dấu vài câu cần đọc trong một câu trả lời dài, mod tô sáng chúng, làm mờ phần còn lại, và `/skim` bật hoặc tắt việc làm mờ. Mod này cũng được publish riêng ở [ttqteo/claude-skim](https://github.com/ttqteo/claude-skim). Kiểm tra mod bằng `claude plugin validate claude/arc-mod`.
 
 ## Codex
 
