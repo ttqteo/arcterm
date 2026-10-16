@@ -20,7 +20,7 @@ wait, and opens its dialog through the existing `dialogFor` / layer machinery; t
 
 **Verify:** `node scripts/verify.mjs ./pkg/wconfig`
 **Check:** `NODE_OPTIONS=--max-old-space-size=4096 task check:ts`
-**Final:** `node scripts/cdp/final-verify.mjs cockpit-office cockpit-office-controls cockpit-office-board`
+**Final:** `node scripts/cdp/final-verify.mjs cockpit-office cockpit-office-controls office-needs-you-board`
 **Prototype:** <repo>/.superpowers/design/office-needs-you-board/project/
 
 ## Global Constraints
@@ -59,7 +59,7 @@ The strip keeps rendering exactly as today; this task only moves code.
 Below `attentionLoadedAtom`, add:
 
 ```ts
-// DEV only (the cockpit-office-board scenario): Needs you rows to show in place of the live list. null is live.
+// DEV only (the office-needs-you-board scenario): Needs you rows to show in place of the live list. null is live.
 // The poll never writes it, so a scenario's rows survive the next loadAttention.
 export const attentionFixtureAtom = atom<AttentionItem[] | null>(null) as PrimitiveAtom<AttentionItem[] | null>;
 ```
@@ -201,6 +201,25 @@ describe("boardWords", () => {
         expect(boardWords(learn, true).quote).toBe("“never stage files”");
     });
 });
+
+describe("boardCall", () => {
+    it("maps each ▶ item to the strip handler it runs", () => {
+        const r = row({
+            act: { label: "Start now", kind: "start-queued" },
+            secondAct: { label: "Remove", kind: "remove-queued" },
+        });
+        expect(boardCall(r, "board:act")).toEqual({ kind: "act", act: r.act });
+        expect(boardCall(r, "board:act2")).toEqual({ kind: "act", act: r.secondAct });
+        expect(boardCall(r, "board:open")).toEqual({ kind: "open" });
+        expect(boardCall(r, "board:accept")).toEqual({ kind: "learn", accept: true });
+        expect(boardCall(r, "board:dismiss")).toEqual({ kind: "learn", accept: false });
+        expect(boardCall(r, "board:why")).toEqual({ kind: "why" });
+    });
+    it("is null for a second act the row lacks and for another desk's item", () => {
+        expect(boardCall(row({}), "board:act2")).toBeNull();
+        expect(boardCall(row({}), "reply")).toBeNull();
+    });
+});
 ```
 
 - [ ] **Step 3: Run them to see them fail**
@@ -225,7 +244,17 @@ export function boardTabs(rows: readonly StripRow[], page: number): QuestionTabs
 export interface BoardWords { title: string; text: string; why: string; quote?: string }
 /** Pure: the box's words. A learned rule's `why` is the person's own words: shown only once Why is picked. */
 export function boardWords(row: StripRow, whyOpen: boolean): BoardWords;
+export type BoardCall =
+    | { kind: "act"; act: AttentionAct }
+    | { kind: "open" }
+    | { kind: "learn"; accept: boolean }
+    | { kind: "why" };
+/** Pure: which strip handler a ▶ item runs; null for an item that is not the board's, or a second act the row lacks.
+ *  The Cockpit surface only switches on it (Task 4), so what each item does is pinned here. */
+export function boardCall(row: StripRow, id: DialogItemId): BoardCall | null;
 ```
+
+(`AttentionAct` is the type of `StripRow.act`, from `@/app/view/jarvis/attentionact`.)
 
 Rules (they are what the tests pin):
 - Non-learned row: `board:act` (label `row.act.label`) unless the act is `open` and `row.open` is null; then
@@ -237,6 +266,8 @@ Rules (they are what the tests pin):
 - `boardWords`: `title` is `` `${row.kindLabel} · ${row.source}` `` (just the kind when the source is empty); for a
   learned row `why` is `""` and `quote` is `row.why` only when `whyOpen`; otherwise `why` is `row.why` and `quote`
   undefined.
+- `boardCall`: `board:act` → the row's act; `board:act2` → its second act (null without one); `board:open` → open;
+  `board:accept` / `board:dismiss` → learn with accept true / false; `board:why` → why; any other id → null.
 
 - [ ] **Step 5: Run the tests to see them pass**
 
@@ -261,7 +292,8 @@ git commit -m "feat(office): the notice board's dialog model" -- frontend/app/vi
 What each file is for:
 - Modify: `frontend/app/view/agents/officeplanmodel.ts` (the `Plan` interface at :126, `buildPlan`'s return at
   ~:638)
-- Modify: `frontend/app/view/agents/officeboss.ts` (`deskAt` :189, `cardAt` :212, `spotOf` :183)
+- Modify: `frontend/app/view/agents/officeboss.ts` (`furniture` :49, `deskAt` :189, `cardAt` :212, `spotOf` :183)
+- Modify: `frontend/app/view/agents/cockpitoffice.tsx` (the `officeMenuItems` caller, `OfficePopup`)
 - Modify: `frontend/app/view/agents/officeplanmodel.test.ts`, `frontend/app/view/agents/officeboss.test.ts`
 - Modify: `frontend/app/view/agents/officecontrols.ts`, `frontend/app/view/agents/officecontrols.test.ts` (menu item)
 
@@ -272,9 +304,12 @@ In `officeplanmodel.test.ts`, with any existing plan fixture:
   `plan.hall.x + 8` (against the hall's left wall), and it overlaps no room, desk or lounger box.
 - `plan.board.spot` is under the board (its x the board's centre, its y `board.box.y + board.box.h + 22`) and on
   the hall's floor (`canStand(plan, plan.board.spot)`).
-- With a Home booth (an agent with no project) the board is still in the hall above the booth.
+- With a Home booth (an agent with no project) the board and its spot are still in the hall above the booth's top
+  wall (`spot.y` below `top + bodyH - boothH - HWALL`), with the fewest bands (one project, one agent) and with several.
 
 In `officeboss.test.ts`:
+- `canWalk(plan, <the board box's centre>)` is false (the board is furniture) and `canWalk(plan, plan.board.spot)` is
+  true.
 - `deskAt(plan, plan.board.spot)` is `BOARD_KEY`; 60 px to the right of the spot it is `undefined`.
 - `spotOf(plan, BOARD_KEY)` is `plan.board.spot`.
 - `cardAt(plan, { at: plan.board.spot, path: [] }, BOARD_KEY)` is defined (`{ board: true }`); with the cursor on
@@ -282,7 +317,7 @@ In `officeboss.test.ts`:
 - `pathBetween(plan, <a desk's spot>, plan.board.spot)` ends at the board's spot and every point on it can be stood on.
 
 In `officecontrols.test.ts`, update both `officeMenuItems` tests for the new third parameter `boardRows` and the item
-`{ id: "board", label: "Notice board", count: "3", ask: true }` placed second, right after "Next Needs you"; no key;
+`{ id: "needsYou", label: "Notice board", count: "3", ask: true }` placed second, right after "Next Needs you"; no key;
 no count at 0.
 
 - [ ] **Step 2: Run them to see them fail**
@@ -296,17 +331,19 @@ Expected: FAIL.
   `officeboss.ts` import it from here), `export const BOARD_W = 96, BOARD_H = 96;` (the canvas's NoticeBoard board) and
   `board: { box: Box; spot: Point }` on `Plan`. In `buildPlan`: `box = { x: hallX + 8, y: top + LOUNGE_H + 16, w:
   BOARD_W, h: BOARD_H }`, `spot = { x: box.x + box.w / 2, y: box.y + box.h + 22 }`. Keep it clear of the lounge's
-  `loungeMore` label and of the hall lane at `hall.x + hall.w - 36` (`officeboss.ts` `LANE_FROM_RIGHT`). If the
-  building is too short for it (the hall shorter than `LOUNGE_H + 16 + BOARD_H + 40`), grow `bodyH` the way the booth
-  does (`officeplanmodel.ts:383-394`).
-- `officeboss.ts`: import `BOARD_KEY` from `./officeplanmodel`. `deskAt`: in the hall, return `BOARD_KEY` when `p` is within `REACH_X` /
+  `loungeMore` label and of the hall lane at `hall.x + hall.w - 36` (`officeboss.ts` `LANE_FROM_RIGHT`). The booth takes the hall's foot at the
+  same left wall (its top wall at `top + bodyH - boothH - HWALL`), so add
+  `LOUNGE_H + 16 + BOARD_H + 40 + (boothH ? boothH + HWALL : 0)` to the `Math.max` that sets `bodyH`
+  (`officeplanmodel.ts:387-392`).
+- `officeboss.ts`: import `BOARD_KEY` from `./officeplanmodel`. `furniture()`: add the board's box (padded the way the
+  sofa's is, but never reaching `plan.board.spot`) so the boss cannot walk over it. `deskAt`: in the hall, return `BOARD_KEY` when `p` is within `REACH_X` /
   `REACH_Y` of `plan.board.spot`, before the `undefined`. `spotOf`: `BOARD_KEY` → `plan.board.spot`. `cardAt`: when
   `cursorId === BOARD_KEY` and the boss stands still at it, return `{ room: undefined, board: true }`; widen the
   return type to `{ desk?: Desk; seat?: Seat; room?: Room; board?: boolean }` and check each caller in
   `cockpitoffice.tsx` (`OfficePopup` reads `at.desk`; it must not draw a card or the "↵ Talk" prompt for the board,
   so make it return null when `at?.board`).
-- `officecontrols.ts`: `OfficeMenuId` gains `"board"`; `officeMenuItems(asks, newEvents, eventsOpen, boardRows)`
-  puts `{ id: "board", label: "Notice board", count: boardRows > 0 ? String(boardRows) : undefined, ask: true }`
+- `officecontrols.ts`: `OfficeMenuId` gains `"needsYou"`; `officeMenuItems(asks, newEvents, eventsOpen, boardRows)`
+  puts `{ id: "needsYou", label: "Notice board", count: boardRows > 0 ? String(boardRows) : undefined, ask: true }`
   second. Update the one caller (`cockpitoffice.tsx:712`) to pass `props.boardRows ?? 0` (the prop arrives in Task 4;
   until then pass `0`).
 
@@ -327,15 +364,16 @@ git commit -m "feat(office): a notice board in the hall the boss can stand at" -
 
 **Depends on:** Task 1, Task 2, Task 3
 
-**Files:** `frontend/app/view/agents/cockpitoffice.tsx`, `frontend/app/view/agents/cockpitsurface.tsx`, `frontend/app/view/agents/officestore.ts`, `frontend/app/view/agents/usecockpitkeyboard.ts`, `frontend/app/view/agents/officedialog.tsx`, `frontend/app/view/office/plansprite.ts`
+**Files:** `frontend/app/view/agents/cockpitoffice.tsx`, `frontend/app/view/agents/cockpitsurface.tsx`, `frontend/app/view/agents/officestore.ts`, `frontend/app/view/agents/usecockpitkeyboard.ts`, `frontend/app/view/agents/officedialog.tsx`, `frontend/app/view/office/scenery.ts`, `frontend/app/view/office/scenery.test.ts`
 
 What each file is for:
-- Modify: `frontend/app/view/agents/cockpitoffice.tsx`
+- Modify: `frontend/app/view/agents/cockpitoffice.tsx` (the board's DOM layer, bubble, slips, prompt, handle)
 - Modify: `frontend/app/view/agents/cockpitsurface.tsx`
 - Modify: `frontend/app/view/agents/officestore.ts`
 - Modify: `frontend/app/view/agents/usecockpitkeyboard.ts`
 - Modify: `frontend/app/view/agents/officedialog.tsx` (the board's plate and body)
-- Possibly create: a board sprite in `frontend/app/view/office/plansprite.ts` (see Step 2)
+- Modify: `frontend/app/view/office/scenery.ts`, `frontend/app/view/office/scenery.test.ts` (the board's frame and
+  cork, drawn with the lounge)
 
 - [ ] **Step 1: Page state**
 
@@ -344,20 +382,26 @@ in view; set back to false whenever the page changes).
 
 - [ ] **Step 2: Draw the board**
 
-In `cockpitoffice.tsx`, in the hall's scenery layer (where the lounge's sofa and plant are drawn), draw the board at
-`plan.board.box` as the canvas's NoticeBoard board shows it: a dark-trimmed frame on two legs, cork inside, and one
-paper slip per waiting row (three at most), each with a pin. Draw it the way the office draws its other fixtures (look
-at how the sofa, coffee machine and plants are drawn, sprite or boxes, and follow that; colours from
-`officepalette.ts` roles: `trim` frame, `desk` cork, `cup` slips, `sofa` pins, `ink` outlines, in both phases). It
-carries `data-office-board=""`.
+The board is drawn in two parts, so the scenery does not redraw when a row comes or goes:
+
+- **Frame and cork, in `scenery.ts`.** In `scenery()`, after the lounge (where the sofa, coffee machine and plant are
+  drawn as `under.box` / `under.rect` ops), draw the board at `artBox(plan.board.box)` as the canvas's NoticeBoard
+  board shows it: a dark-trimmed frame on two legs, cork inside, with its shadow. Roles from `officepalette.ts`:
+  `trim` frame, `desk` cork, `ink` outlines (check each role exists; use the nearest existing one if not). Add
+  `plan.board.box` to `sceneryKey`. `scenery.test.ts`: the ops include the board's box, and `sceneryKey` changes when
+  `plan.board.box` moves.
+- **Slips, in `cockpitoffice.tsx`.** A DOM layer over `plan.board.box`, placed the way the office places its other
+  DOM over the plan (the desks' hit areas, the bubbles), carrying `data-office-board=""`: one paper slip per waiting
+  row (three at most, `data-office-board-slip`), each with a pin, as small token-coloured boxes (`bg-office-*`
+  utilities from the same roles: the cup colour for the paper, the sofa colour for the pin). It is also the board's
+  click target.
 
 Above it, while `boardRows > 0`, the bubble: the `asking`-tone `!` mark the asking desks use (`Bubble` with the ask
 mark, `cockpitoffice.tsx:1442`) and beside it the count on the label plate (`bg-office-plate`, `text-asking`,
 `tabular-nums`), `data-office-board-count`.
 
-A click on the board calls the handle's `goTo(BOARD_KEY)` and then opens the dialog once the boss arrives: reuse how a
-click on a desk walks the boss there and opens its box; if a desk click only walks, open the board's box on arrival in
-`afterStop` when the arrival was a board click (a ref flag).
+A click on the board calls `onPick(BOARD_KEY)`, as a desk click does (`cockpitoffice.tsx:830-836`, `pickRef`: `goTo`, then
+`openDialog`, then `onCursor`), so the boss walks there and the box opens.
 
 - [ ] **Step 3: The "↵ Read" prompt**
 
@@ -369,7 +413,9 @@ copying it.
 - [ ] **Step 4: The cursor stops at the board**
 
 `CockpitOfficeProps` gains `boardRows: number`. The handle's `order()` returns `plan.order` plus `BOARD_KEY` at the end
-while `boardRows > 0`; `asks()` is unchanged (the `n` key keeps jumping between asking desks). `goTo` / `showPath`
+while `boardRows > 0`, and so does `asks()` (`plan.asks` plus `BOARD_KEY`): the spec's "↑↓ and next-ask reach it",
+so `n` (Next Needs you) comes to the board after the asking desks. Leave `plan.asks` itself alone; only the handle
+adds the board. `goTo` / `showPath`
 already resolve a key through `spotOf`, which knows the board after Task 3. Check that the Cockpit's cursor
 (`cockpitsurface.tsx:341-342`, the office's stops) keeps `BOARD_KEY` as a valid cursor instead of resetting it.
 
@@ -394,9 +440,9 @@ return {
 };
 ```
 
-- `runBoardItem`: `board:act` → `ny.act(row, row.act)`; `board:act2` → `ny.act(row, row.secondAct!)`;
-  `board:open` → `ny.open(row)`; `board:accept` / `board:dismiss` → `ny.decideLearn(row, accept)`; `board:why` →
-  toggle `officeBoardWhyAtom`. A `work-on` act goes through `ny.act` too (it already calls `workOnDueChunk`).
+- `runBoardItem` only switches on `boardCall(row, id)` (Task 2): `act` → `ny.act(row, call.act)`; `open` →
+  `ny.open(row)`; `learn` → `ny.decideLearn(row, call.accept)`; `why` → toggle `officeBoardWhyAtom`; null → nothing.
+  A `work-on` act goes through `ny.act` too (it already calls `workOnDueChunk`).
 - `officedialog.tsx`: `BoardPlate` (asking dot, "Notice board", "Needs you · N" in `text-warning tabular-nums`, as
   the canvas's Dialog board) and `BoardDialogBody` (the title line in the row's tone, the text at the agent box's
   main size, the why, the quote on `bg-surface-code` when Why is open, and "Waiting <age>" at the foot using
@@ -404,8 +450,12 @@ return {
 
 - [ ] **Step 6: Paging and closing**
 
-- `usecockpitkeyboard.ts` `case "tab"`: when `cursorId === BOARD_KEY`, step `officeBoardPageAtom` by `act.delta`,
-  clamped with `boardPage`, set `officeBoardWhyAtom` false, `preventDefault`, and return.
+- `OfficeHandle` gains `pageBoard(delta: -1 | 1)`: it steps `officeBoardPageAtom` by `delta`, clamped with
+  `boardPage` against the row count, sets `officeBoardWhyAtom` false, and sets `selAtom` (module-local to
+  `cockpitoffice.tsx`) back to 0, so the ▶ starts on the new page's first item as the canvas does (the render clamps
+  it through `clampSel`).
+- `usecockpitkeyboard.ts` `case "tab"`: when `cursorId === BOARD_KEY`, call `office.pageBoard(act.delta)`,
+  `preventDefault`, and return.
 - When the row count drops (a row acted on or gone) the page clamps through `boardPage` on the next render; when it
   reaches 0 rows, `dialogFor` returns null, so the box is no longer drawn and `boxLayer` reads it as walking. Also
   set the layer back to `"walk"` there so the next ↵ is a fresh talk: do it in `cockpitoffice.tsx` with an effect on
@@ -414,8 +464,8 @@ return {
 
 - [ ] **Step 7: The office menu item and hiding the strip**
 
-- `onOfficeMenu` (`cockpitsurface.tsx:489`): `case "board"`: `officeRef.current?.showPath(BOARD_KEY)` then open the
-  box on arrival, the same way as the board click in Step 2 (expose one handle method, `openBoard()`, that both use).
+- `onOfficeMenu` (`cockpitsurface.tsx:489`): `case "needsYou"`: walk the boss to the board and open its box, as the
+  board click in Step 2 does: expose `openBoard()` on the handle (it calls `onPick(BOARD_KEY)`) and use it there.
 - Pass `props.boardRows` to `officeMenuItems` (`cockpitoffice.tsx:712`).
 - Render `<NeedsYouStrip …/>` (`cockpitsurface.tsx:866`) only when `view !== "office"`.
 
@@ -429,55 +479,70 @@ Expected: PASS.
 - [ ] **Step 9: Commit**
 
 ```bash
-git commit -m "feat(office): the Needs you notice board" -- frontend/app/view/agents/cockpitoffice.tsx frontend/app/view/agents/cockpitsurface.tsx frontend/app/view/agents/officestore.ts frontend/app/view/agents/usecockpitkeyboard.ts frontend/app/view/agents/officedialog.tsx
+git commit -m "feat(office): the Needs you notice board" -- frontend/app/view/agents/cockpitoffice.tsx frontend/app/view/agents/cockpitsurface.tsx frontend/app/view/agents/officestore.ts frontend/app/view/agents/usecockpitkeyboard.ts frontend/app/view/agents/officedialog.tsx frontend/app/view/office/scenery.ts frontend/app/view/office/scenery.test.ts
 ```
-
-(add any sprite file you touched to the pathspec.)
 
 ---
 
-### Task 5: The `cockpit-office-board` scenario, changelog and docs
+### Task 5: The `office-needs-you-board` scenario, changelog and docs
 
 **Depends on:** Task 4
 
-**Files:** `frontend/app/view/agents/cockpitofficedevhooks.ts`, `scripts/cdp/cockpitofficescenarios.mjs`, `CHANGELOG.md`, `docs/keyboard-shortcuts.md`, `docs/open-issues.md`, `docs/superpowers/specs/2026-10-15-cockpit-office-design.md`
+**Files:** `frontend/app/view/agents/cockpitofficedevhooks.ts`, `frontend/app/view/agents/cockpitoffice.tsx`, `scripts/cdp/cockpitofficescenarios.mjs`, `CHANGELOG.md`, `docs/keyboard-shortcuts.md`, `docs/superpowers/specs/2026-10-15-cockpit-office-design.md`
 
 What each file is for:
-- Modify: `frontend/app/view/agents/cockpitofficedevhooks.ts`
+- Modify: `frontend/app/view/agents/cockpitofficedevhooks.ts` (the rows hook)
+- Modify: `frontend/app/view/agents/cockpitoffice.tsx` (the probe object, `cockpitoffice.tsx:248`)
 - Modify: `scripts/cdp/cockpitofficescenarios.mjs`
-- Modify: `CHANGELOG.md`, `docs/keyboard-shortcuts.md` (if it lists the office menu), `docs/open-issues.md`
+- Modify: `CHANGELOG.md`, `docs/keyboard-shortcuts.md` (if it lists the office menu)
 - Modify: `docs/superpowers/specs/2026-10-15-cockpit-office-design.md` (one line pointing at the board spec where it
   describes the hall)
 
 - [ ] **Step 1: A DEV hook for the rows**
 
 `cockpitofficedevhooks.ts`: `window.__cockpitOfficeAttention = (items: AttentionItem[] | null) =>
-globalStore.set(attentionFixtureAtom, items)`; declare it on `Window`. Extend `readOfficeProbe` (or the probe object
-in `cockpitoffice.tsx`) with `board: { count, page, of, why }` from what the office drew.
+globalStore.set(attentionFixtureAtom, items)`; declare it on `Window`. In `cockpitoffice.tsx`, extend the probe
+object (`probe`, read by `readOfficeProbe`) with `board: { count, page, of, why }` from what the office drew, kept up
+to date where the office already writes the probe.
 
 - [ ] **Step 2: The scenario**
 
-In `cockpitofficescenarios.mjs`, add `cockpit-office-board`, modelled on `cockpit-office-controls` (same arrange: the
-office fixture, Office view, animation off). Arrange sets three rows through the hook: a `plan-review` item (source
-"Jarvis as graph", text "4 proposed", why "An agent proposed these chunks. They count once you accept them.",
-`effortoid` set), a `run-land-held` item with `channelid` and `runid`, and a `learn-proposal` with `learnid` and `why`
-"“never leave files staged”". Teardown sets the hook back to `null`. Steps, each with a shot in `cdp-shots/`:
+In `cockpitofficescenarios.mjs`, add `office-needs-you-board`, modelled on `cockpit-office-controls` (same arrange: the
+office fixture, Office view, animation off). Arrange sets two rows through the hook, as the spec's Testing names:
+- a `plan-review` item: source "Jarvis as graph", text "4 proposed", why "An agent proposed these chunks. They count
+  once you accept them.", and `oref` `"effort:<id>"` (`buildNeedsYouRows` reads the effort from `oref`, not
+  `effortoid`; without it the row opens nothing and its ▶ menu is empty). Use the id of an initiative the dev store
+  has (read one in arrange the way other scenarios that open an initiative do; grep `scripts/cdp/` for one), so its
+  Open lands;
+- a `learn-proposal` with `learnid` and `why` "“never leave files staged”".
 
-1. Office view: no `[data-cockpit-needs-you]` in the DOM; `[data-office-board]` drawn; `[data-office-board-count]`
-   reads 3.
-2. Office menu (`m`) lists "Notice board" second, with 3; picking it walks the boss to the board and opens
-   `[data-office-dialog="board"]` on page 1 of 3 ("Plan to review · Jarvis as graph", items `["Open"]`).
-3. → pages to "Run to land" (items "Land again", "Open"); → again to "Learned rule" (items "Accept", "Dismiss",
-   "Why"); ↓↓ ↵ on Why shows the quote.
-4. Esc closes the box; the "↵ Read" prompt (`[data-office-prompt="board"]`) shows; ↵ opens the box again.
-5. Clearing the rows (the hook with `[]`) closes the box and drops the bubble; the board stays drawn.
-6. Cards view (`o`) shows the strip with the same three rows when the hook is set again.
+Teardown sets the hook back to `null`. Steps, each with a shot in `cdp-shots/`:
 
-Do not press Accept, Dismiss or Land again: they call the server. The unit tests cover what they run.
+1. Office view: no `[data-cockpit-needs-you]` in the DOM; `[data-office-board]` drawn with two
+   `[data-office-board-slip]`; `[data-office-board-count]` reads 2.
+2. The cursor reaches the board: from a desk, `j` (or ↓) steps along `order()` until the cursor is `board:needs-you`
+   (the probe's cursor, or the boss's spot under the board); then `n` from an asking desk also lands on the board
+   after the asking desks.
+3. A click on `[data-office-board]` from elsewhere in the office walks the boss to the board's spot and opens
+   `[data-office-dialog="board"]` on page 1 of 2 ("Plan to review · Jarvis as graph", items `["Open"]`). Esc.
+4. Office menu (`m`) lists "Notice board" second, with 2; picking it walks the boss to the board and opens the box on
+   page 1 of 2.
+5. → pages to "Learned rule" (items "Accept", "Dismiss", "Why"), the ▶ on Accept (the first item); ↓↓ ↵ on Why shows
+   the quote; ← back to page 1 puts the ▶ on its first item again.
+6. Esc closes the box; the "↵ Read" prompt (`[data-office-prompt="board"]`) shows; ↵ opens the box again.
+7. ↵ on Open (page 1): it opens the initiative (read `openTarget` in `frontend/app/view/jarvis/openref.ts` for where
+   an effort target lands, or, if the fixture's roster has an agent on that initiative, `buildNeedsYouRows` opens that
+   agent instead) and the step asserts it landed there; then return to the Cockpit's Office view.
+8. Clearing the rows (the hook with `[]`) closes any open box and drops the bubble and the slips; the board stays
+   drawn.
+9. Cards view (`o`) shows the strip with the same two rows when the hook is set again.
+
+Open only loads and shows; do not press Accept or Dismiss: they call the server. `boardCall`'s unit tests (Task 2)
+pin which handler each item runs, and the handlers are the strip's own.
 
 - [ ] **Step 3: Run it**
 
-Run: `node scripts/cdp/final-verify.mjs cockpit-office-board`
+Run: `node scripts/cdp/final-verify.mjs office-needs-you-board`
 Expected: every step PASS. If no dev app can start on this machine, say so in the commit message and leave the
 scenario in.
 
@@ -485,12 +550,10 @@ scenario in.
 
 - `CHANGELOG.md` under `## Unreleased` → `Added`: "The Office has a notice board in the hall: what needs you waits
   there as pinned slips, and ↵ at the board pages through them with the same buttons the Cards view shows."
-- `docs/open-issues.md` "0 · Waiting on a hand check": `- [ ] (arcterm) Office notice board: walk to it, page with
-  ← →, run Open, Land again and a learned rule's Accept from the box (run <run id>)`.
 - `docs/keyboard-shortcuts.md`: the office menu's "Notice board" item, if the file lists the menu's items.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git commit -m "test(office): cockpit-office-board scenario; changelog and docs for the notice board" -- frontend/app/view/agents/cockpitofficedevhooks.ts scripts/cdp/cockpitofficescenarios.mjs CHANGELOG.md docs/open-issues.md docs/keyboard-shortcuts.md docs/superpowers/specs/2026-10-15-cockpit-office-design.md
+git commit -m "test(office): office-needs-you-board scenario; changelog and docs for the notice board" -- frontend/app/view/agents/cockpitofficedevhooks.ts frontend/app/view/agents/cockpitoffice.tsx scripts/cdp/cockpitofficescenarios.mjs CHANGELOG.md docs/keyboard-shortcuts.md docs/superpowers/specs/2026-10-15-cockpit-office-design.md
 ```
