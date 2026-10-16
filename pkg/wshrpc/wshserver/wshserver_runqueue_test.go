@@ -33,7 +33,7 @@ type queueWorld struct {
 	maxActive int
 	created   []wshrpc.CommandCreateRunData
 	createErr error
-	published [][]wshrpc.RunQueueEntry
+	published []wshrpc.RunQueueChangedData
 	hold      chan struct{} // when set, a create waits for it to close
 	entered   chan struct{} // told when a create begins
 }
@@ -71,10 +71,10 @@ func useQueueWorld(t *testing.T) *queueWorld {
 		defer w.mu.Unlock()
 		return w.maxActive
 	}
-	runQueuePublish = func(entries []wshrpc.RunQueueEntry) {
+	runQueuePublish = func(data wshrpc.RunQueueChangedData) {
 		w.mu.Lock()
 		defer w.mu.Unlock()
-		w.published = append(w.published, entries)
+		w.published = append(w.published, data)
 	}
 	t.Cleanup(func() {
 		runQueueLoadRuns, runQueueCreateRun, runQueueMaxActive, runQueuePublish = oldLoad, oldCreate, oldMax, oldPublish
@@ -140,7 +140,18 @@ func (w *queueWorld) lastPublished() []wshrpc.RunQueueEntry {
 	if len(w.published) == 0 {
 		return nil
 	}
-	return w.published[len(w.published)-1]
+	return w.published[len(w.published)-1].Entries
+}
+
+// startedIn is every Started pair the publishes carried, in order.
+func (w *queueWorld) startedIn() []wshrpc.RunQueueStarted {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	var out []wshrpc.RunQueueStarted
+	for _, d := range w.published {
+		out = append(out, d.Started...)
+	}
+	return out
 }
 
 func (w *queueWorld) publishCount() int {
@@ -495,6 +506,55 @@ func TestRunQueueStartNowBlocksTheEntryThenReturnsTheError(t *testing.T) {
 	}
 	if last := w.lastPublished(); len(last) != 1 || last[0].State != wshrpc.RunQueueState_Blocked {
 		t.Fatalf("the block is published: %v", last)
+	}
+}
+
+func TestRunQueueStartPublishesWhichRunTheEntryBecame(t *testing.T) {
+	w := useQueueWorld(t)
+	e := queueEntry(t, "Alpha", "")
+	evaluateRunQueue(context.Background())
+
+	got := w.startedIn()
+	if len(got) != 1 || got[0].EntryId != e.Id || got[0].RunId != w.runId(1) {
+		t.Fatalf("want one started pair %s -> %s, got %+v", e.Id, w.runId(1), got)
+	}
+}
+
+func TestRunQueueFailedStartPublishesNoStarted(t *testing.T) {
+	w := useQueueWorld(t)
+	w.createErr = errors.New("no worktree")
+	queueEntry(t, "Alpha", "")
+	evaluateRunQueue(context.Background())
+
+	if got := w.startedIn(); len(got) != 0 {
+		t.Fatalf("a failed start names no run, got %+v", got)
+	}
+	if w.publishCount() == 0 {
+		t.Fatalf("the block is still published")
+	}
+}
+
+func TestRunQueueStartCarriesARunAfterOntoTheRun(t *testing.T) {
+	w := useQueueWorld(t)
+	w.setRun(&waveobj.Run{ID: "r1", Goal: "Learned additions", Status: jarvis.RunStatus_Done, Land: &waveobj.RunLand{State: "landed"}})
+	queueEntry(t, "Alpha", "r1")
+	evaluateRunQueue(context.Background())
+
+	if len(w.created) != 1 || w.created[0].AfterRunId != "r1" {
+		t.Fatalf("the start carries AfterRunId r1, got %+v", w.created)
+	}
+}
+
+func TestRunQueueStartNowPastAQueuedAfterCarriesNoAfterRun(t *testing.T) {
+	w := useQueueWorld(t)
+	w.maxActive = 0
+	a := queueEntry(t, "Alpha", "")
+	b := queueEntry(t, "Beta", a.Id)
+	if err := (&WshServer{}).RunQueueStartNowCommand(context.Background(), wshrpc.CommandRunQueueIdData{Id: b.Id}); err != nil {
+		t.Fatalf("StartNow(B): %v", err)
+	}
+	if len(w.created) != 1 || w.created[0].Goal != "Beta" || w.created[0].AfterRunId != "" {
+		t.Fatalf("an After that still names an entry is no run to remember, got %+v", w.created)
 	}
 }
 

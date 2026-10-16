@@ -52,8 +52,8 @@ var (
 	runQueueMaxActive = func() int {
 		return runqueue.ClampMaxActive(wconfig.GetWatcher().GetFullConfig().Settings.RunsMaxActive)
 	}
-	runQueuePublish = func(entries []wshrpc.RunQueueEntry) {
-		wps.Broker.Publish(wps.WaveEvent{Event: wps.Event_RunQueueChanged, Data: wshrpc.RunQueueChangedData{Entries: entries}})
+	runQueuePublish = func(data wshrpc.RunQueueChangedData) {
+		wps.Broker.Publish(wps.WaveEvent{Event: wps.Event_RunQueueChanged, Data: data})
 	}
 )
 
@@ -219,7 +219,13 @@ func readQueuedStart(ctx context.Context) (entry wshrpc.RunQueueEntry, ok, unblo
 func startQueuedEntry(ctx context.Context, e wshrpc.RunQueueEntry) error {
 	sctx, cancel := context.WithTimeout(ctx, runQueueStartTimeout)
 	defer cancel()
-	rtn, err := runQueueCreateRun(sctx, e.Data)
+	data := e.Data
+	// a queue entry id is "q-" + hex (RunQueueEntry.Id); an After still naming one (only Start now starts an entry
+	// past its After) is no run to remember
+	if e.After != "" && !strings.HasPrefix(e.After, "q-") {
+		data.AfterRunId = e.After
+	}
+	rtn, err := runQueueCreateRun(sctx, data)
 	if err == nil && (rtn == nil || rtn.Run == nil) {
 		err = errors.New("the start returned no run")
 	}
@@ -240,7 +246,7 @@ func startQueuedEntry(ctx context.Context, e wshrpc.RunQueueEntry) error {
 	}
 	leaveRunQueue(e.Id, run.ID)
 	appendRunEvent(ctx, e.Data.ChannelId, run.ID, runEventKindQueuedStart, nil, map[string]any{"entryid": e.Id})
-	publishRunQueue()
+	publishRunQueue(wshrpc.RunQueueStarted{EntryId: e.Id, RunId: run.ID})
 	return nil
 }
 
@@ -276,13 +282,14 @@ func withoutStartedEntries(entries []wshrpc.RunQueueEntry) []wshrpc.RunQueueEntr
 	return kept
 }
 
-func publishRunQueue() {
+// publishRunQueue sends the whole list; started names the run each entry a start just created became.
+func publishRunQueue(started ...wshrpc.RunQueueStarted) {
 	entries, err := runqueue.List()
 	if err != nil {
 		log.Printf("runqueue: publishing the queue: %v", err)
 		return
 	}
-	runQueuePublish(entries)
+	runQueuePublish(wshrpc.RunQueueChangedData{Entries: entries, Started: started})
 }
 
 // loadRunQueueRuns is the loop's view of the runs: those that count against the cap (not done or cancelled), and the

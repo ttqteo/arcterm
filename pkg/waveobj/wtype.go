@@ -265,6 +265,9 @@ type Run struct {
 	// OriginTranscript is that session's transcript path when the run started, so the run still lists beside
 	// the session once both have ended and the tab is gone.
 	OriginTranscript string `json:"origintranscript,omitempty"`
+	// AfterRunId is the run this one was queued After (`wsh runs start --after`), so its sheet can say what it
+	// waited on once the queue entry is gone. Empty for a run that did not come from the queue with a run After.
+	AfterRunId string `json:"afterrunid,omitempty"`
 	// OriginNotify is set at create when the origin session is to be told how this run ended; a run from before the
 	// message existed never has it, so none is sent for one.
 	OriginNotify bool `json:"originnotify,omitempty"`
