@@ -2,9 +2,9 @@
 
 **Verify:** `node scripts/verify.mjs ./pkg/telebot ./pkg/jarvis ./pkg/wconfig ./pkg/wshrpc/... ./cmd/server/...`
 
-**Check:** `node --stack-size=4000 node_modules/typescript/lib/tsc.js --noEmit`
+**Check:** `task check:ts`
 
-**Final:** `node scripts/cdp/final-verify.mjs settings-telegram surface-smoke`
+**Final:** `ARC_TELEGRAM_API_BASE=http://127.0.0.1:18765 node scripts/cdp/final-verify.mjs settings-telegram surface-smoke`
 
 **Goal:** an agent's pending ask reaches the paired Telegram chat; tapping an option or replying with text answers it
 through the same `agentask.DeliverAnswer` path the cockpit uses, and the agent carries on. Nothing else is
@@ -31,13 +31,22 @@ commands back a Telegram row under Settings → General → Notifications.
   does the same).
 - Display name: `jarvis.ResolveAskOwner(ctx, jarvis.ChannelOwnerORef(ctx, oref))` returns `(channel, _, source)`
   (`pkg/jarvis/watcher.go:88,108`), used the same way at `pkg/jarvis/attention.go:933-942`. Dead blocks are filtered by
-  the unexported `livePendingAsks` (`attention.go:996`).
+  the unexported `livePendingAsks` (`attention.go:996`), called at `attention.go:914` and in
+  `pkg/jarvis/attention_askprune_test.go:49`. A standalone agent's ask resolves to `(nil, "", "")`; the Needs you row
+  then falls back to a fixed word (`attention.go:391`).
 - Secrets: `secretstore.GetSecret(name) (string, bool, error)` (`pkg/secretstore/secretstore.go:176`); the frontend sets
   one with `RpcApi.SetSecretsCommand(TabRpcClient, { name: value })` and deletes with `null`
   (`frontend/app/view/agents/settingspages/backgroundai.tsx:106,121`).
 - Settings write from Go: `wconfig.SetBaseConfigValue(waveobj.MetaMapType{...})` (`pkg/wconfig/settingsconfig.go:654`);
   read: `wconfig.GetWatcher().GetFullConfig().Settings`. `wconfig.ConfigHook` in `cmd/server/main-server.go:393` is where
   a config change pokes services.
+- `task generate` depends on `build:schema` (`Taskfile.yml:389`), which rewrites the tracked `schema/settings.json`
+  from `SettingsType`; `TestSettingsKeysInSync` (`pkg/wconfig/settingskeysync_test.go`) fails if they drift.
+- `frontend/app/view/agents/settingsmodel.test.ts` pins the rows of each card (`general/notifications` at ~l.315) and
+  the total row count (~l.376).
+- `CHANGELOG.md` has no `## Unreleased` section today: its top section is `## 0.15.14 — 2026-10-16`, which already has
+  5 `<!-- big -->` lines, the most `whatsnew.test.ts` allows.
+- Dev mode: `wavebase.IsDevMode()` (`pkg/wavebase/wavebase.go:114`).
 - wshrpc command groups are interfaces in `pkg/wshrpc/wshrpctypes_*.go`, composed in `WshRpcInterface`
   (`pkg/wshrpc/wshrpctypes.go:34`); handlers live in `pkg/wshrpc/wshserver/wshserver_*.go`. Run `task generate` after.
 
@@ -168,6 +177,7 @@ type tracker struct {
 	byAsk map[string]*askMsg // askID
 	byN   map[int]*askMsg
 	byMsg map[int]*askMsg // Telegram message id → ask
+	closed map[int]bool   // message ids of forgotten asks, so a reply to one gets "Already answered."; capped at 1000
 }
 
 func newTracker() *tracker
@@ -184,6 +194,7 @@ func (t *tracker) gone(pending map[string]agentask.PendingAsk) []*askMsg
 // with sent(a, msgID).
 func (t *tracker) track(d dueAsk) *askMsg
 func (t *tracker) sent(a *askMsg, msgID int)
+// forget drops the ask and moves its message ids into closed.
 func (t *tracker) forget(a *askMsg)
 
 // questionText is the message body for question q: "🤖 <who>\n<header>\n<question>\n\nReply to this message to answer
@@ -198,23 +209,32 @@ func keyboard(a *askMsg) [][]Button
 type step struct {
 	Toast   string   // answerCallbackQuery text; "" for none
 	Edit    string   // new text for the message tapped/replied to; "" leaves it
+	Reply   string   // a message the bot sends to the chat; "" for none
 	Rekey   bool     // re-render the keyboard (a toggle)
 	Next    bool     // send question a.q (already advanced)
 	Deliver bool     // all questions answered: deliver a.answers
 }
 
-// onCallback applies a tap. Unknown n (answered, restarted) → Toast "Already answered", Edit "— No longer waiting".
+// onCallback applies a tap. Unknown n (answered, restarted) → nil ask, Toast "Already answered", Edit "✓ Answered in
+// arcterm" (the caller edits the tapped message, cb.Message, since there is no ask).
 // A tap on an earlier question → Toast "Answer the latest question". "a": the item is SelectedIndexes [o], or for a
 // prose ask Text = option label; Edit "✓ <label>". "t": flips picks[o], Rekey. "s" with no picks → Toast "Pick at
 // least one"; else SelectedIndexes sorted (prose: Text = labels joined ", "), Edit "✓ <labels>".
 func (t *tracker) onCallback(data string) (*askMsg, step)
 
-// onReply applies a text reply to message replyTo. Not one of ours, or not the current question → ok=false (the bot
-// sends its fixed "I only answer agent questions…" line). Else Text = trimmed text, Edit `✓ "<text>"`.
-func (t *tracker) onReply(replyTo int, text string) (a *askMsg, s step, ok bool)
+// onReply applies a text reply to message replyTo. A message of a forgotten ask (in closed) → Reply "Already
+// answered.". An earlier question of a live ask → Reply "Answer the latest question.". Not one of ours → Reply
+// FixedReply. The current question → Text = trimmed text, Edit `✓ "<text>"`.
+func (t *tracker) onReply(replyTo int, text string) (*askMsg, step)
+
+// FixedReply answers a paired chat's message that is neither /start nor a reply to a question message.
+const FixedReply = "I only answer agent questions. Reply to a question message to answer it."
 ```
 
-After an answer, `a.q++`; `Next` when `a.q < len(questions)`, else `Deliver`.
+After an answer, `a.q++`; `Next` when `a.q < len(questions)`, else `Deliver`. A step with `Deliver` has already
+forgotten the ask (under the tracker, before it returns), so the reconcile loop never sees it as gone and never
+overwrites its `✓ <label>` with "✓ Answered in arcterm"; a delivery error is reported by the caller, which keeps the
+ask's last message id from the step.
 
 `pair.go`:
 
@@ -243,14 +263,17 @@ func (p *Pairer) Match(text string, now time.Time) bool
 - `TestMultiSelectToggleThenSend` — toggles 2 then 0, Send → `SelectedIndexes [0 2]`; Send with none → Toast.
 - `TestMultiQuestionAdvances` — two questions: first tap → `Next` with `a.q == 1`, no Deliver; second → Deliver with
   two items.
-- `TestReplyOnlyToCurrentQuestion` — reply to question 0's message after it advanced → ok=false; reply to the current
-  one → `Text`.
-- `TestStaleCallback` — unknown n → "Already answered".
+- `TestReplyOnlyToCurrentQuestion` — reply to question 0's message after it advanced → Reply "Answer the latest
+  question."; reply to the current one → `Text`; reply to a message id never sent → Reply `FixedReply`.
+- `TestReplyToForgottenAsk` — after `forget`, a reply to one of its messages → Reply "Already answered.".
+- `TestDeliverForgetsAsk` — the step that delivers leaves the ask untracked: `gone` on a pending map without it
+  returns nothing.
+- `TestStaleCallback` — unknown n → nil ask, Toast "Already answered", Edit "✓ Answered in arcterm".
 - `TestKeyboardCallbackDataUnder64Bytes` — n=999999, q=9, o=99.
 - `TestQuestionTextCollapsesAndCaps`.
 - `TestPairMatchOnceAndExpires` — wrong code false; right code true then false; past `PairTTL` false.
 
-Run: `go test ./pkg/telebot -run 'TestDue|TestGone|TestTap|TestProse|TestMulti|TestReply|TestStale|TestKeyboard|TestQuestion|TestPair'` → PASS.
+Run: `go test ./pkg/telebot -run 'TestDue|TestGone|TestTap|TestProse|TestMulti|TestReply|TestDeliver|TestStale|TestKeyboard|TestQuestion|TestPair'` → PASS.
 
 Commit: `feat(telebot): ask tracking, answers and pairing`.
 
@@ -263,15 +286,18 @@ Commit: `feat(telebot): ask tracking, answers and pairing`.
 **Files:** `pkg/telebot/bot.go`, `pkg/telebot/bot_test.go`
 
 ```go
+// TokenSecretName is the secret-store name of the bot token; the Settings row sets it with SetSecretsCommand.
+const TokenSecretName = "telegram_bottoken"
+
 // Deps is everything the bot takes from wavesrv, as funcs so the test drives it with fakes.
 type Deps struct {
 	Pending  func(ctx context.Context) map[string]agentask.PendingAsk // live, non-dead asks
 	Deliver  func(oref, askID string, answers []baseds.AgentAnswerItem) (bool, error)
-	Who      func(ctx context.Context, oref string) string // "api-refactor · arcterm"
+	Who      func(ctx context.Context, oref string) string // "api-refactor · arcterm", or "agent"
 	Settings func() Settings                                // Enabled, ChatID (int64, 0 = unpaired)
 	Token    func() string                                  // "" = none stored
 	SavePair func(chatID int64, chatName string) error
-	APIBase  string // "" = defaultAPIBase
+	APIBase  string // "" = defaultAPIBase; a fake Bot API in tests and the CDP scenario
 	Tick     time.Duration // 2 s in production
 }
 
@@ -302,10 +328,13 @@ func (b *Bot) Pair() (code string, expires time.Time)
 `Run` waits on a poke channel. On each poke it reads `Settings()` and `Token()`; if off or no token it cancels the
 running session and records why. If the token changed (or nothing runs) it cancels the old session and starts a new
 one: `GetMe` (401 → `LastError = "Token rejected by Telegram"`, stay stopped until the next poke), then
-`GetUpdates(offset=-1, timeout=0)` once to drop the backlog, then two goroutines under the session context:
+`GetUpdates(offset=-1, timeout=0)` once to drop the backlog (it returns the last update; polling starts at its
+`update_id + 1`, or 0 when it returns none), then two goroutines under the session context:
 
-- **poll:** `GetUpdates(offset, 50)` in a loop; errors back off 1 s doubling to 60 s (409 →
-  `LastError = "Another app is polling this bot"`); each update goes to `handle`.
+- **poll:** `GetUpdates(offset, 50)` in a loop; each update goes to `handle` and moves `offset` past it. Errors back
+  off 1 s doubling to 60 s; 409 → `LastError = "Another app is polling this bot"` and keep backing off; 401 →
+  `LastError = "Token rejected by Telegram"`, `Polling = false`, and the session ends until the next poke (as a 401 on
+  `GetMe` does).
 - **reconcile:** every `Tick`, only when paired: `gone` → `EditMessage(…, "✓ Answered in arcterm", nil)` on each of the
   ask's messages; `due` → `track`, `SendMessage(questionText(Who(oref), q0), keyboard)`, `sent`.
 
@@ -314,10 +343,12 @@ one: `GetMe` (401 → `LastError = "Token rejected by Telegram"`, stay stopped u
 - message `/start <code>` that `Pairer.Match`es → `SavePair(chat.ID, chatName(chat))`, reply "Paired. Agent questions
   will arrive here." (`chatName`: title, else @username, else first name).
 - any update from a chat other than `Settings().ChatID` → ignored, no reply.
-- callback → `onCallback`, then `AnswerCallback(Toast)`, apply `Edit`/`Rekey`, `Next` → send the next question,
-  `Deliver` → `Deliver(oref, askID, answers)`; an error edits the last message to "Could not answer — open arcterm".
-  Tracker access is under one mutex shared with reconcile; network calls happen outside it.
-- reply message → `onReply`; not ok → send "I only answer agent questions. Reply to a question message to answer it."
+- callback → `onCallback`, then `AnswerCallback(Toast)`, apply `Edit` (to `cb.Message` when the ask is nil, a stale
+  tap) and `Rekey`, `Next` → send the next question, `Deliver` → `Deliver(oref, askID, answers)`; an error edits the
+  last message to "Could not answer — open arcterm". Tracker access is under one mutex shared with reconcile; network
+  calls happen outside it.
+- reply message → `onReply`; send its `Reply` when set, apply `Edit`, `Next`, `Deliver` as for a callback.
+- any other message from the paired chat (not `/start`, not a reply) → send `FixedReply`.
 
 `LastError` clears on the next successful call.
 
@@ -333,10 +364,20 @@ send/edit/answerCallback; `Deps` with an in-memory pending map and a recording `
 - `TestPairingSavesChat` — `Pair()`, queue `/start <code>` from chat 42 → `SavePair(42, …)` and the reply.
 - `TestUnauthorizedStops` — fake answers `getMe` with 401 → `Status().LastError == "Token rejected by Telegram"`,
   `Polling == false`.
+- `TestUnauthorizedOnUpdatesStops` — `getMe` ok, then `getUpdates` 401 → same status, and no further `getUpdates`
+  reaches the fake within 300 ms.
+- `TestConflictReportsAnotherApp` — `getUpdates` 409 → `LastError == "Another app is polling this bot"`.
+- `TestBacklogDroppedFirst` — the fake holds update 7 (a callback) before start: the first `getUpdates` has
+  `offset=-1`, the next `offset=8`, and update 7 is never handled (no `answerCallbackQuery`).
+- `TestNonReplyGetsFixedLine` — a plain message from the paired chat → `sendMessage` with `FixedReply`.
+- `TestDeliveredAskNotEditedAsGone` — tap delivers, then the ask leaves the pending map → the message's last edit is
+  still `✓ <label>`, never "✓ Answered in arcterm".
+- `TestStaleTapEditsTappedMessage` — a callback with an unknown n → `answerCallbackQuery` "Already answered" and
+  `editMessageText` on the callback's message id.
 - `TestDeliverErrorEdits`.
 - `TestOffOrNoTokenDoesNothing` — no request reaches the fake.
 
-Run: `go test ./pkg/telebot` → PASS (also `go test -race ./pkg/telebot`).
+Run: `go test ./pkg/telebot` → PASS. (No `-race`: the repo builds with `CGO_ENABLED=0` and has no gcc.)
 
 Commit: `feat(telebot): long-poll runtime that sends asks and delivers answers`.
 
@@ -346,7 +387,7 @@ Commit: `feat(telebot): long-poll runtime that sends asks and delivers answers`.
 
 **Depends on:** Task 3
 
-**Files:** `pkg/wconfig/settingsconfig.go`, `pkg/wshrpc/wshrpctypes_telegram.go`, `pkg/wshrpc/wshrpctypes.go`, `pkg/wshrpc/wshserver/wshserver_telegram.go`, `pkg/wshrpc/wshserver/wshserver_telegram_test.go`, `pkg/jarvis/attention.go`, `cmd/server/main-server.go`, `pkg/wshrpc/wshserver/wshserver_secrets.go`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`, `pkg/wshrpc/wshclient/wshclient.go`, `pkg/wconfig/metaconsts.go`
+**Files:** `pkg/wconfig/settingsconfig.go`, `pkg/wshrpc/wshrpctypes_telegram.go`, `pkg/wshrpc/wshrpctypes.go`, `pkg/wshrpc/wshserver/wshserver_telegram.go`, `pkg/wshrpc/wshserver/wshserver_telegram_test.go`, `pkg/jarvis/attention.go`, `pkg/jarvis/attention_askprune_test.go`, `cmd/server/main-server.go`, `pkg/wshrpc/wshserver/wshserver_secrets.go`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`, `pkg/wshrpc/wshclient/wshclient.go`, `pkg/wconfig/metaconsts.go`, `schema/settings.json`
 
 1. Settings (`SettingsType`, beside the `notify:*` fields at `settingsconfig.go:51`):
 
@@ -383,10 +424,12 @@ Commit: `feat(telebot): long-poll runtime that sends asks and delivers answers`.
    Add `TelegramCommands` to `WshRpcInterface` (`wshrpctypes.go:34`).
 
 3. `wshserver_telegram.go`: the three handlers over `telebot.Default` (nil → status `{}` / error "telegram is not
-   running"). Unpair writes `{"telegram:chatid": nil, "telegram:chatname": nil}` with `wconfig.SetBaseConfigValue`.
-   Secret name constant `telebot.TokenSecretName = "telegram_bottoken"` (add it in `bot.go` if Task 3 did not).
+   running"). Unpair writes `unpairSettings()` with `wconfig.SetBaseConfigValue`, where `unpairSettings()` is a pure
+   func returning `waveobj.MetaMapType{"telegram:chatid": nil, "telegram:chatname": nil}`. Use Task 3's
+   `telebot.TokenSecretName`.
 
-4. Export `livePendingAsks` as `LivePendingAsks` in `pkg/jarvis/attention.go` (update its one caller).
+4. Export `livePendingAsks` as `LivePendingAsks` in `pkg/jarvis/attention.go` and update both callers:
+   `attention.go:914` and `pkg/jarvis/attention_askprune_test.go:49,51`.
 
 5. `cmd/server/main-server.go`: `startTelebot()` next to `startJobQueue()` (line ~385):
 
@@ -403,7 +446,7 @@ Commit: `feat(telebot): long-poll runtime that sends asks and delivers answers`.
    		Deliver: agentask.DeliverAnswer,
    		Who: func(ctx context.Context, oref string) string {
    			ch, _, source := jarvis.ResolveAskOwner(ctx, jarvis.ChannelOwnerORef(ctx, oref))
-   			if source == "" {
+   			if source == "" { // a standalone agent: no channel dispatched it
    				source = "agent"
    			}
    			if ch != nil && ch.Name != "" {
@@ -428,7 +471,8 @@ Commit: `feat(telebot): long-poll runtime that sends asks and delivers answers`.
    				"telegram:chatid": strconv.FormatInt(chatID, 10), "telegram:chatname": name,
    			})
    		},
-   		Tick: 2 * time.Second,
+   		APIBase: devTelegramAPIBase(),
+   		Tick:    2 * time.Second,
    	})
    	go func() {
    		defer func() { panichandler.PanicHandler("telebot.Run", recover()) }()
@@ -438,17 +482,21 @@ Commit: `feat(telebot): long-poll runtime that sends asks and delivers answers`.
    }
    ```
 
+   `devTelegramAPIBase()` returns `os.Getenv("ARC_TELEGRAM_API_BASE")` when `wavebase.IsDevMode()`, else `""`: the CDP
+   scenario points a dev app at a fake Bot API; a packaged build never reads it. Log once when it is set.
+
    Call `telebot.Default.Poke()` in `wconfig.ConfigHook` (line ~393). A token set through `SetSecretsCommand` does not
    fire the config hook: in `wshserver_secrets.go`'s `SetSecretsCommand`, poke `telebot.Default` when the map has
    `telebot.TokenSecretName`.
 
-6. `task generate`.
+6. `task generate`. It also rewrites `schema/settings.json` with the three `telegram:*` keys; commit it.
 
 **Tests (`wshserver_telegram_test.go`):** `TestTelegramStatusWithoutBot` (nil Default → zero status, no panic);
-`TestTelegramUnpairClearsSettings` (uses a temp config dir the way other wconfig-writing wshserver tests do — copy that
-setup; if none exists, test `unpairSettings()` as a pure func returning the MetaMap and skip the write).
+`TestTelegramUnpairClearsSettings` (`unpairSettings()` has exactly the keys `telegram:chatid` and `telegram:chatname`,
+both nil).
 
-Run: `go test ./pkg/wshrpc/wshserver -run Telegram`, `go build ./cmd/server/... ./cmd/wsh/...` → PASS.
+Run: `go test ./pkg/wshrpc/wshserver -run Telegram`, `go test ./pkg/wconfig -run TestSettingsKeysInSync`,
+`go test ./pkg/jarvis -run LivePendingAsks`, `go build ./cmd/server/... ./cmd/wsh/...` → PASS.
 
 Commit: `feat(telebot): settings, RPC and wavesrv wiring`.
 
@@ -458,7 +506,7 @@ Commit: `feat(telebot): settings, RPC and wavesrv wiring`.
 
 **Depends on:** Task 4
 
-**Files:** `frontend/app/view/agents/telegrammodel.ts`, `frontend/app/view/agents/telegrammodel.test.ts`, `frontend/app/view/agents/telegramrow.tsx`, `frontend/app/view/agents/settingsmodel.ts`, `frontend/app/view/agents/settingspages/general.tsx`, `scripts/cdp/scenarios.mjs`, `docs/guide/settings.md`, `CHANGELOG.md`, `docs/open-issues.md`
+**Files:** `frontend/app/view/agents/telegrammodel.ts`, `frontend/app/view/agents/telegrammodel.test.ts`, `frontend/app/view/agents/telegramrow.tsx`, `frontend/app/view/agents/settingsmodel.ts`, `frontend/app/view/agents/settingsmodel.test.ts`, `frontend/app/view/agents/settingspages/general.tsx`, `scripts/cdp/scenarios.mjs`, `docs/guide/settings.md`, `CHANGELOG.md`, `docs/open-issues.md`
 
 1. `settingsmodel.ts`: add a row after `notifications.reply`:
 
@@ -471,7 +519,8 @@ Commit: `feat(telebot): settings, RPC and wavesrv wiring`.
    ```
 
    (no `key`: the row draws its own control; copy how another key-less row is declared in this file, e.g. one with a
-   custom card.)
+   custom card.) In `settingsmodel.test.ts`, append `"notifications.telegram"` to the `general/notifications` card's
+   expected rows (~l.315) and raise the total in "keeps every row exactly once" from 54 to 55 (~l.376).
 
 2. `telegrammodel.ts` (pure) + test:
 
@@ -499,22 +548,46 @@ Commit: `feat(telebot): settings, RPC and wavesrv wiring`.
    `TelegramStatusCommand` every 2 s while mounted (`useEffect` interval). Colors and type from DESIGN.md tokens only.
    Add `<TelegramRow />` at the end of `NotificationRows` in `settingspages/general.tsx`.
 
-4. CDP scenario `settings-telegram` in `scripts/cdp/scenarios.mjs` (copy `settings-keepawake`'s shape): goto settings,
-   open General, wait for `[data-setting-row="notifications.telegram"]` (use the row attribute `SettingRow` actually
-   renders), scroll it into view, `h.shot("cdp-shots/settings-telegram.png")`; assert it shows the token field and the
-   "no token" status text. Teardown leaves `telegram:enabled` as it found it.
+4. CDP scenario `settings-telegram` in `scripts/cdp/scenarios.mjs` (copy `settings-keepawake`'s shape: numbered `rec`
+   steps, a shot per step; find the row by the attribute `SettingRow` actually renders, e.g.
+   `[data-setting-row="notifications.telegram"]`). It runs a fake Bot API with `node:http` on `127.0.0.1:18765` (a
+   constant, matching the Final line's `ARC_TELEGRAM_API_BASE`), started in `arrange` and closed in teardown. The fake
+   answers `/bot<token>/<method>`: `getMe` → `{id, username: "arc_test_bot"}`, held until the scenario releases it;
+   `getUpdates` → the queued updates, or `[]` after up to 1 s; `sendMessage` / `editMessageText` /
+   `answerCallbackQuery` → ok, recorded; a switch makes every call answer 401. `arrange` saves the person's
+   `telegram:enabled`, `telegram:chatid`, `telegram:chatname`, and fails (rather than overwrite) when
+   `TelegramStatusCommand` says a token is already stored. Steps, each asserting the row's text and shooting
+   `cdp-shots/settings-telegram-<n>.png` with the row scrolled into view:
+   1. Settings → General, the row shows the token field and the no-token status.
+   2. Type a token (`Input.insertText`) into the row's `SecretInput` and save → the status reads off, and
+      `TelegramStatusCommand` has `hastoken: true`.
+   3. Click the switch → `telegram:enabled` is stored true (poll `getfullconfig` as settings-keepawake does) and the
+      status reads connecting while the fake holds `getMe`. If the fake sees no `getMe` within 10 s, fail with "the dev
+      app was not started with ARC_TELEGRAM_API_BASE=http://127.0.0.1:18765".
+   4. Release `getMe` → unpaired, with the Pair button.
+   5. Click Pair → the code shows large, with "Send /start <code> to @arc_test_bot".
+   6. Queue a `/start <code>` message from chat 4242 named "Verify chat" → "Paired with Verify chat", the fake recorded
+      the "Paired." reply, and `telegram:chatid` is stored `"4242"`.
+   7. Click Unpair → unpaired, and `telegram:chatid` / `telegram:chatname` are cleared.
+   8. Switch the fake to 401 → "Token rejected by Telegram".
+   9. Click Remove token → the no-token status, `hastoken: false`.
+   Teardown deletes the secret (`setsecrets` with `null`), restores the three settings, and closes the fake.
+
+   Task 5's acceptance is these nine steps passing with their shots; a real bot stays a hand check (item 7 below).
 
 5. `docs/guide/settings.md`: a "Telegram" subsection under Notifications: the @BotFather steps, Pair, what is sent
    (question text only), what it cannot do (no prompts, no starting or stopping), Unpair.
 
-6. `CHANGELOG.md`, under `## Unreleased` → `Added`:
+6. `CHANGELOG.md`: open a new `## Unreleased` with `### Added` above `## 0.15.14 — 2026-10-16` (that release already
+   has 5 big lines, the most `whatsnew.test.ts` allows), and add:
    `- Answer an agent's question from Telegram: pair a bot in Settings → General → Notifications, then tap an option or reply in your own words. <!-- big -->`
 
 7. `docs/open-issues.md`: under "0 · Waiting on a hand check" add
    `- [ ] (arcterm) Telegram asks: pair a real bot, answer by button, by reply, and in the app (message edits)`;
    under "RAM watch" add `- (arcterm) telebot: one long-poll goroutine + 2 s ticker; measure wavesrv RSS on/off`.
 
-Run: `npx vitest run frontend/app/view/agents/telegrammodel.test.ts` → PASS; `task check:ts` (allow 4 min) → exit 0;
+Run: `npx vitest run frontend/app/view/agents/telegrammodel.test.ts frontend/app/view/agents/settingsmodel.test.ts frontend/app/cockpit/whatsnew.test.ts`
+→ PASS; `task check:ts` (allow 4 min) → exit 0;
 `npx eslint frontend/app/view/agents/telegram*.ts*` and `npx prettier --check` on the touched frontend files.
 
 Commit: `feat(settings): Telegram row for answering asks from your phone`.
