@@ -10,6 +10,7 @@ import { ChevronLeft, Cpu, HardDrive, MemoryStick, Pause, Settings } from "lucid
 import type { ReactNode } from "react";
 import { formatElapsed, formatLeft, PACE_CHOICES, PAUSE_CHOICES } from "./jobqueue";
 import {
+    fmtDisk,
     fmtSize,
     LEVEL_BAR,
     LEVEL_DOT,
@@ -176,10 +177,10 @@ function StorageCard({ s, onCleanUp }: { s: TraySnapshot; onCleanUp: () => void 
             </div>
             <div className="flex items-baseline gap-1.5">
                 <span className="whitespace-nowrap text-[20px] font-semibold tabular-nums text-primary">
-                    {m ? fmtSize(m.diskFree) : "—"}
+                    {m ? fmtDisk(m.diskFree) : "—"}
                 </span>
                 <span className="flex-1 whitespace-nowrap text-[11px] text-muted">
-                    {m ? `free of ${fmtSize(m.diskTotal)}` : ""}
+                    {m ? `free of ${fmtDisk(m.diskTotal)}` : ""}
                 </span>
                 <button
                     type="button"
@@ -199,7 +200,7 @@ function StorageCard({ s, onCleanUp }: { s: TraySnapshot; onCleanUp: () => void 
                 {st ? (
                     <>
                         <span className="h-[5px] w-2 rounded-[2px] bg-secondary" />
-                        arcterm {fmtSize(st.arcBytes)} · {fmtSize(st.cleanableBytes)} can be cleaned
+                        arcterm {fmtDisk(st.arcBytes)} · {fmtDisk(st.cleanableBytes)} can be cleaned
                     </>
                 ) : (
                     "Not scanned yet"

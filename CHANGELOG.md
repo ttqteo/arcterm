@@ -68,6 +68,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   Mac it could take arcterm out of full screen.
 - On a Mac, clicking arcterm's menu bar icon, with either button, opens the popover with memory, CPU and what waits on
   you, instead of only Open / Quit, and the icon is the size of the icons beside it.
+- Disk sizes read as Finder and System Settings read them: a 245 GB drive shows 245 GB in the menu bar popover and
+  Settings → Storage, not 228 GB. Memory keeps the units Activity Monitor uses.
 
 ## 0.15.14 — 2026-10-16
 

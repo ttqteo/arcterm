@@ -8,14 +8,26 @@ import type { TrayLevel, TrayStorage } from "./traytypes";
 
 const MIB = 1024 * 1024;
 const GIB = 1024 * MIB;
+const MB = 1000 * 1000;
+const GB = 1000 * MB;
 
-/** Binary units, labelled as Activity Monitor and Task Manager label them: GB from 0.1 GB up, so 0.3 GB reads as 0.3 GB. */
-export function fmtSize(bytes: number): string {
-    if (bytes < GIB / 10) {
-        return `${Math.round(bytes / MIB)} MB`;
+/** GB from 0.1 GB up, so 0.3 GB reads as 0.3 GB; one decimal under 100 GB, none when it is .0. */
+function sizeIn(bytes: number, mb: number, gb: number): string {
+    if (bytes < gb / 10) {
+        return `${Math.round(bytes / mb)} MB`;
     }
-    const g = bytes / GIB;
+    const g = bytes / gb;
     return g < 100 ? `${g.toFixed(1).replace(/\.0$/, "")} GB` : `${Math.round(g)} GB`;
+}
+
+/** Memory, in binary units labelled as Activity Monitor and Task Manager label them. */
+export function fmtSize(bytes: number): string {
+    return sizeIn(bytes, MIB, GIB);
+}
+
+/** Disk, in decimal units as Finder and System Settings count them: a 245 GB drive reads 245 GB, not 228. */
+export function fmtDisk(bytes: number): string {
+    return sizeIn(bytes, MB, GB);
 }
 
 export function levelWord(level: TrayLevel): string | null {
@@ -83,7 +95,7 @@ export function autoCleanLine(last: TrayStorage["lastAuto"], now: number): strin
     const at = new Date(last.ts);
     const clock = at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
     const day = sameDay(at, new Date(now)) ? "today" : at.toLocaleDateString([], { month: "short", day: "numeric" });
-    return `auto-clean took ${fmtSize(last.bytes)} ${day} at ${clock}${last.error ? ` · ${last.error}` : ""}`;
+    return `auto-clean took ${fmtDisk(last.bytes)} ${day} at ${clock}${last.error ? ` · ${last.error}` : ""}`;
 }
 
 export type PageState = "loading" | "offline" | "ready";

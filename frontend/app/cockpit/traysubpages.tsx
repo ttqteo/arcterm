@@ -7,7 +7,7 @@
 
 import { cn } from "@/util/util";
 import { useState } from "react";
-import { autoCleanLine, fmtSize, LEVEL_BAR, split } from "./trayformat";
+import { autoCleanLine, fmtDisk, fmtSize, LEVEL_BAR, split } from "./trayformat";
 import { CARD, OPEN_BUTTON, PressureWord, ROW_BUTTON, type Send, SubHeader } from "./traypage";
 import type { TraySnapshot } from "./traytypes";
 
@@ -136,7 +136,7 @@ export function StoragePage({ s, send, back }: { s: TraySnapshot; send: Send; ba
                 title="Clean up storage"
                 back={back}
                 right={
-                    m ? <span className="text-[11px] tabular-nums text-muted">{fmtSize(m.diskFree)} free</span> : null
+                    m ? <span className="text-[11px] tabular-nums text-muted">{fmtDisk(m.diskFree)} free</span> : null
                 }
             />
             {st == null ? (
@@ -148,12 +148,12 @@ export function StoragePage({ s, send, back }: { s: TraySnapshot; send: Send; ba
                     <div className={cn(CARD, "gap-1")}>
                         <div className="flex items-baseline gap-1.5">
                             <span className="text-[20px] font-semibold tabular-nums text-primary">
-                                {fmtSize(st.arcBytes)}
+                                {fmtDisk(st.arcBytes)}
                             </span>
                             <span className="text-[11px] text-muted">on disk for arcterm and its agents</span>
                         </div>
                         <span className="text-[10.5px] tabular-nums text-muted">
-                            {fmtSize(st.cleanableBytes)} can be cleaned{autoLine ? ` · ${autoLine}` : ""}
+                            {fmtDisk(st.cleanableBytes)} can be cleaned{autoLine ? ` · ${autoLine}` : ""}
                         </span>
                     </div>
                     <div className={cn(CARD, "gap-0 py-1.5")}>
@@ -168,7 +168,7 @@ export function StoragePage({ s, send, back }: { s: TraySnapshot; send: Send; ba
                                         {r.title}
                                     </span>
                                     <span className="text-[12px] font-semibold tabular-nums text-secondary">
-                                        {fmtSize(r.bytes)}
+                                        {fmtDisk(r.bytes)}
                                     </span>
                                     {r.action != null && r.cleanableBytes > 0 ? (
                                         <button
@@ -186,7 +186,7 @@ export function StoragePage({ s, send, back }: { s: TraySnapshot; send: Send; ba
                                             className={cn(ROW_BUTTON, armed === r.category && "text-error")}
                                         >
                                             {armed === r.category
-                                                ? `${r.action} ${fmtSize(r.cleanableBytes)}?`
+                                                ? `${r.action} ${fmtDisk(r.cleanableBytes)}?`
                                                 : r.action}
                                         </button>
                                     ) : null}
@@ -218,7 +218,7 @@ export function StoragePage({ s, send, back }: { s: TraySnapshot; send: Send; ba
                                     arcterm store
                                 </span>
                                 <span className="text-[12px] font-semibold tabular-nums text-secondary">
-                                    {fmtSize(st.storeBytes)}
+                                    {fmtDisk(st.storeBytes)}
                                 </span>
                             </div>
                             <span className="text-[11px] text-muted">Agents, runs and settings. Never cleaned.</span>

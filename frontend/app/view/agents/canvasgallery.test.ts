@@ -150,7 +150,7 @@ describe("cleanup helpers", () => {
     it("words the bar's summary and the toast", () => {
         expect(selectionLabel({ count: 0, bytes: 0 })).toBe("Nothing selected");
         expect(selectionLabel({ count: 2, bytes: 12000 })).toBe("2 selected · 12 KB");
-        expect(selectionLabel({ count: 1, bytes: 3 * 1024 * 1024 })).toBe("1 selected · 3 MB");
+        expect(selectionLabel({ count: 1, bytes: 3 * 1000 * 1000 })).toBe("1 selected · 3 MB");
         expect(trashMessage(1, 0)).toBe("Moved 1 canvas to the trash");
         expect(trashMessage(3, 0)).toBe("Moved 3 canvases to the trash");
         expect(trashMessage(2, 1)).toBe("Moved 2 canvases to the trash, 1 skipped");
@@ -181,10 +181,10 @@ describe("cleanupMeta", () => {
         const old = canvas({
             boards: ["Main", "States"],
             modts: new Date(2026, 8, 5, 10, 0).getTime(),
-            bytes: 200 * 1024,
+            bytes: 200 * 1000,
         });
         expect(cleanupMeta(old, NOW)).toBe("2 boards · 5 Sep · 200 KB");
-        expect(cleanupMeta(canvas({ boards: ["Main"], modts: NOW, bytes: 1751 * 1024 }), NOW)).toBe(
+        expect(cleanupMeta(canvas({ boards: ["Main"], modts: NOW, bytes: 1751 * 1000 }), NOW)).toBe(
             "1 board · 13:37 · 2 MB"
         );
     });

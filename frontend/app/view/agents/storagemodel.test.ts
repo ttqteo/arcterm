@@ -16,8 +16,8 @@ import {
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = Date.UTC(2026, 9, 8, 12);
-const MB = 1024 * 1024;
-const GB = 1024 * MB;
+const MB = 1000 * 1000;
+const GB = 1000 * MB;
 
 const item = (id: string, over: Partial<StorageItem> = {}): StorageItem => ({
     id,
@@ -167,7 +167,7 @@ describe("shouldNudge", () => {
 describe("formatSize", () => {
     it("reads at a glance", () => {
         expect(formatSize(0)).toBe("0 KB");
-        expect(formatSize(512 * 1024)).toBe("512 KB");
+        expect(formatSize(512 * 1000)).toBe("512 KB");
         expect(formatSize(152 * MB)).toBe("152 MB");
         expect(formatSize(3.44 * GB)).toBe("3.4 GB");
         expect(formatSize(2 * GB)).toBe("2 GB");

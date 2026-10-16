@@ -12,8 +12,10 @@ export const NUDGE_GB_CHOICES = ["1", "2", "5", "10"] as const;
 export const DEFAULT_NUDGE_GB = 2;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const MIB = 1024 * 1024;
-const GIB = 1024 * MIB;
+// Decimal units, as Finder and System Settings count a disk.
+const KB = 1000;
+const MB = 1000 * KB;
+const GB = 1000 * MB;
 
 export const CARD_ORDER = ["runworktrees", "sessions", "housekeeping", "buildoutput", "canvases"] as const;
 
@@ -151,7 +153,7 @@ export function usedTotal(report: StorageReport | null): number {
 }
 
 export function shouldNudge(cleanableBytes: number, nudgeGb: number, lastDay: string | null, today: string): boolean {
-    return nudgeGb > 0 && cleanableBytes > nudgeGb * GIB && lastDay !== today;
+    return nudgeGb > 0 && cleanableBytes > nudgeGb * GB && lastDay !== today;
 }
 
 /** The local date, YYYY-MM-DD: the nudge's once-a-day key. */
@@ -162,13 +164,13 @@ export function dayKey(ms: number): string {
 }
 
 export function formatSize(bytes: number): string {
-    if (bytes < MIB) {
-        return `${Math.round(bytes / 1024)} KB`;
+    if (bytes < MB) {
+        return `${Math.round(bytes / KB)} KB`;
     }
-    if (bytes < GIB) {
-        return `${Math.round(bytes / MIB)} MB`;
+    if (bytes < GB) {
+        return `${Math.round(bytes / MB)} MB`;
     }
-    return `${Number((bytes / GIB).toFixed(1))} GB`;
+    return `${Number((bytes / GB).toFixed(1))} GB`;
 }
 
 export function cleanToast(result: StorageCleanResult): string {

@@ -1,8 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { autoCleanLine, fmtSize, levelWord, memoryCaption, pageState, sparkPoints, split, usedPct } from "./trayformat";
+import {
+    autoCleanLine,
+    fmtDisk,
+    fmtSize,
+    levelWord,
+    memoryCaption,
+    pageState,
+    sparkPoints,
+    split,
+    usedPct,
+} from "./trayformat";
 
 const MIB = 1024 * 1024;
 const GIB = 1024 * MIB;
+const MB = 1000 * 1000;
+const GB = 1000 * MB;
 
 describe("fmtSize", () => {
     it("reads in binary units, one decimal under 100 GB, none when it is .0", () => {
@@ -13,6 +25,15 @@ describe("fmtSize", () => {
         expect(fmtSize(1.2 * GIB)).toBe("1.2 GB");
         expect(fmtSize(16 * GIB)).toBe("16 GB");
         expect(fmtSize(127.4 * GIB)).toBe("127 GB");
+    });
+});
+
+describe("fmtDisk", () => {
+    it("reads in decimal units, as Finder and System Settings count a disk", () => {
+        expect(fmtDisk(245.11 * GB)).toBe("245 GB");
+        expect(fmtDisk(45.14 * GB)).toBe("45.1 GB");
+        expect(fmtDisk(0.3 * GB)).toBe("0.3 GB");
+        expect(fmtDisk(51 * MB)).toBe("51 MB");
     });
 });
 
@@ -68,14 +89,14 @@ describe("autoCleanLine", () => {
     const at = new Date(2026, 9, 15, 9, 12).getTime();
     const noon = new Date(2026, 9, 15, 12, 0).getTime();
     it("says today for today's clean and nothing for none", () => {
-        expect(autoCleanLine({ bytes: 1.1 * GIB, ts: at, error: "" }, noon)).toBe(
+        expect(autoCleanLine({ bytes: 1.1 * GB, ts: at, error: "" }, noon)).toBe(
             "auto-clean took 1.1 GB today at 09:12"
         );
         expect(autoCleanLine(null, noon)).toBeNull();
     });
     it("names the date of an earlier clean and carries its error", () => {
         const next = new Date(2026, 9, 16, 8, 0).getTime();
-        const line = autoCleanLine({ bytes: 12 * MIB, ts: at, error: "trash busy" }, next);
+        const line = autoCleanLine({ bytes: 12 * MB, ts: at, error: "trash busy" }, next);
         expect(line).toMatch(/^auto-clean took 12 MB .+ at 09:12 · trash busy$/);
         expect(line).not.toContain("today");
     });
