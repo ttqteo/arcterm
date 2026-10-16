@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- The Office has a notice board in the hall: what needs you waits there as pinned slips, and ↵ at the board pages
+  through them with the same buttons the Cards view shows.
 - arcterm in the menu bar (the tray on Windows): see memory, CPU and disk, free them up, run or skip a queued job, and open what waits on you, without bringing the window forward. <!-- big -->
 - A Doc review lists the document's headings under Sections, beside the agent's ask: click one to jump there. The ask's
   items that lead to a section now show an arrow, and one the agent wrote short ("New in Go" for "What is new in Go")

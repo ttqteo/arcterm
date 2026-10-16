@@ -14,7 +14,7 @@ import { busyPct, HOLD_MS, mb, metrics, round1 } from "./officescenarios.mjs";
 
 export const FIXTURE = new URL("../../public/cockpit-fixtures/active.json", import.meta.url);
 export const VIEW_KEY = "cockpit.view";
-const KEY_CODES = { ArrowUp: 38, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39, Escape: 27, Enter: 13, f: 70, j: 74, k: 75, m: 77, n: 78, o: 79, 1: 49 };
+const KEY_CODES = { ArrowUp: 38, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39, Escape: 27, Enter: 13, f: 70, h: 72, j: 74, k: 75, l: 76, m: 77, n: 78, o: 79, 1: 49 };
 // the boss's walking speed (officeboss.ts BOSS_SPEED), for how long to hold an arrow
 const BOSS_PX_PER_S = 160;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -85,6 +85,61 @@ export async function settleBoss(h, ms = 4000) {
 }
 
 const desk = (id) => `[data-office-desk="${id}"]`;
+
+// the notice board scenario's cursor key (officeplanmodel.ts BOARD_KEY), its initiative, and the localStorage key of the
+// office's animation switch (officestore.ts)
+const BOARD_KEY = "board:needs-you";
+const BOARD_SOURCE = "Jarvis as graph";
+const BOARD_QUOTE = "never leave files staged";
+const BOARD_PLAN_KEY = "fx-board-plan";
+const BOARD_LEARN_KEY = "learn:fx-board-rule";
+const ANIMATION_KEY = "cockpit.office.animation";
+
+// the Needs you rows the board scenario hands the office through the DEV hook (cockpitofficedevhooks.ts): a plan to
+// review, whose oref is the initiative its Open lands on (buildNeedsYouRows reads the effort from oref), and a learned
+// rule; n > 2 adds more learned rules
+function boardRows(effortId, n = 2) {
+    const since = Date.now() - 12 * 60_000;
+    const rows = [
+        {
+            kind: "plan-review",
+            key: BOARD_PLAN_KEY,
+            source: BOARD_SOURCE,
+            text: "4 proposed",
+            why: "An agent proposed these chunks. They count once you accept them.",
+            action: "Open",
+            phaseidx: 0,
+            waitingsince: since,
+            oref: `effort:${effortId}`,
+        },
+        {
+            kind: "learn-proposal",
+            key: BOARD_LEARN_KEY,
+            learnid: "skill:fx-board#stage",
+            source: "Skill · commit",
+            text: "Stage only the files a commit names.",
+            why: `“${BOARD_QUOTE}”`,
+            action: "Accept",
+            phaseidx: 0,
+            waitingsince: since,
+        },
+    ];
+    for (let i = 3; i <= n; i++) {
+        rows.push({
+            kind: "learn-proposal",
+            key: `learn:fx-board-rule-${i}`,
+            learnid: `skill:fx-board#rule-${i}`,
+            source: "Skill · commit",
+            text: `A fixture rule, number ${i}.`,
+            why: `“a fixture quote ${i}”`,
+            action: "Accept",
+            phaseidx: 0,
+            waitingsince: since,
+        });
+    }
+    return rows;
+}
+const setBoardRows = (h, rows) => h.ev(`window.__cockpitOfficeAttention(${JSON.stringify(rows)})`);
 // how many drawn people show one of these sprites right now (data-office-sprite on each person's <img>)
 const spriteCount = (h, names) =>
     h.ev(`[...document.querySelectorAll("[data-office-root] [data-office-sprite]")].filter((i) => ${JSON.stringify(names)}.includes(i.dataset.officeSprite)).length`);
@@ -1196,6 +1251,383 @@ export function makeCockpitOfficeScenarios(fx) {
             return steps;
         },
     };
+    // the Needs you notice board (docs/superpowers/specs/2026-10-16-office-needs-you-board-design.md; canvas
+    // .superpowers/design/office-needs-you-board: Main, Dialog, States). Two Needs you rows are handed in through the
+    // DEV hook, a plan to review whose Open lands on a real throwaway initiative and a learned rule; the animation is off
+    // so every walk lands at once. Open only loads and shows: Accept and Dismiss call the server, so they are not pressed
+    // (officeboardmodel.test.ts pins which of the strip's handlers each ▶ item runs)
+    const cockpitOfficeNeedsYouBoard = {
+        name: "office-needs-you-board",
+        surface: "cockpit",
+        async arrange(h) {
+            const ctx = await arrangeOffice(h);
+            if (ctx.missing) {
+                return ctx;
+            }
+            try {
+                const made = await h.rpc("effortcreate", { title: BOARD_SOURCE, chunks: [{ label: "Draft the graph" }] });
+                ctx.effortId = made.effortoid;
+                ctx.prevAnimation = await h.ev(`localStorage.getItem(${JSON.stringify(ANIMATION_KEY)})`);
+                await h.ev("window.__cockpitOfficeAnimation(false)");
+                await setBoardRows(h, boardRows(ctx.effortId));
+                await sleep(400);
+            } catch (e) {
+                ctx.missing = `could not arrange the notice board: ${e?.message ?? e}`;
+            }
+            return ctx;
+        },
+        async teardown(h, ctx) {
+            const step = async (what, fn) => {
+                try {
+                    await fn();
+                } catch (e) {
+                    console.error(`office-needs-you-board teardown: ${what} failed: ${e?.message ?? e}`);
+                }
+            };
+            await step("hand back the live Needs you rows", () => h.ev("window.__cockpitOfficeAttention?.(null)"));
+            await step("close the detail sheet", () =>
+                h.ev(`document.querySelector('[data-jarvis-brief-sheet] button[aria-label="Close detail sheet"]')?.click()`)
+            );
+            await step("restore the animation switch", () =>
+                h.ev(
+                    ctx.prevAnimation == null
+                        ? `localStorage.removeItem(${JSON.stringify(ANIMATION_KEY)})`
+                        : `localStorage.setItem(${JSON.stringify(ANIMATION_KEY)}, ${JSON.stringify(ctx.prevAnimation)})`
+                )
+            );
+            if (ctx.effortId) {
+                await step("delete the initiative", () => h.rpc("effortdelete", { effortoid: ctx.effortId }));
+            }
+            await cockpitOffice.teardown(h, ctx);
+        },
+        async assert(h, ctx) {
+            const steps = [];
+            const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+            if (ctx.missing) {
+                rec("0. the office loads and the board's rows are set", false, ctx.missing);
+                return steps;
+            }
+            await settleBoss(h);
+            const press = async (k, n = 1) => {
+                for (let i = 0; i < n; i++) {
+                    await focusCockpit(h);
+                    await key(h, k);
+                    await sleep(120);
+                }
+                return probe(h);
+            };
+            // polls an expression in the page for up to ms; true once it holds
+            const until = async (expr, ms = 4000) => {
+                for (let t = 0; t <= ms; t += 100) {
+                    if (await h.ev(expr).catch(() => false)) return true;
+                    await sleep(100);
+                }
+                return false;
+            };
+            const atSpot = (p) =>
+                !!p?.boss &&
+                !!p.board?.spot &&
+                p.boss.room === "hall" &&
+                Math.abs(p.boss.x - p.board.spot.x) <= 3 &&
+                Math.abs(p.boss.y - p.board.spot.y) <= 3;
+            const read = (sel) => h.ev(`document.querySelector(${JSON.stringify(sel)})?.textContent ?? ""`);
+            const clickDesk = async (id) => {
+                await h.ev(`document.querySelector(${JSON.stringify(desk(id))})?.click()`);
+                await settleBoss(h);
+                await press("Escape");
+            };
+            const clickBoard = async () => {
+                await h.ev(`document.querySelector("[data-office-board]")?.click()`);
+                return settleBoss(h);
+            };
+            const clickFloor = (x, y) =>
+                h.ev(`(() => {
+                    const root = document.querySelector("[data-office-root]");
+                    const r = root.getBoundingClientRect();
+                    root.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: r.left + ${x}, clientY: r.top + ${y} }));
+                })()`);
+            const showBoard = () => h.ev(`document.querySelector("[data-office-board]")?.scrollIntoView({ block: "center" })`);
+            const bubbles = () => h.ev(`document.querySelectorAll('[data-office-bubble="!"]').length`);
+            const drawn = () =>
+                h.ev(`({
+                    strip: !!document.querySelector("[data-cockpit-needs-you]"),
+                    board: !!document.querySelector("[data-office-board]"),
+                    slips: document.querySelectorAll("[data-office-board] [data-office-board-slip]").length,
+                    count: document.querySelector("[data-office-board-count]")?.textContent ?? null,
+                })`);
+
+            // 1. Main: the strip is gone from Office; the board is in the hall with a slip for each row and the count over it
+            await until(`document.querySelectorAll("[data-office-board] [data-office-board-slip]").length === 2`);
+            await showBoard();
+            await sleep(200);
+            const one = await drawn();
+            const bubblesWaiting = await bubbles();
+            await h.shot("cdp-shots/office-needs-you-board-1-main.png");
+            rec(
+                "1. in Office there is no Needs you strip; the notice board is drawn with two slips and the count 2 over it",
+                one.strip === false && one.board && one.slips === 2 && one.count === "2",
+                JSON.stringify(one)
+            );
+
+            // 2. the cursor reaches the board: j steps along the office order to it (the last stop); n from the asking
+            // desk lands on it after the asking desks
+            await clickDesk("fx-office-quill");
+            let p = await probe(h);
+            const hops = [];
+            for (let i = 0; i < (p?.order?.length ?? 0) + 2 && p?.cursor !== BOARD_KEY; i++) {
+                p = await press("j");
+                hops.push(p?.cursor);
+            }
+            p = await settleBoss(h);
+            const walked = { cursor: p?.cursor, spot: atSpot(p), prompt: p?.prompt, hops: hops.length };
+            await showBoard();
+            await h.shot("cdp-shots/office-needs-you-board-2-cursor.png");
+            await clickDesk("fx-office-quill");
+            const nHops = [];
+            for (let i = 0; i < 4 && nHops[nHops.length - 1] !== BOARD_KEY; i++) {
+                await press("n");
+                p = await settleBoss(h, 5000);
+                nHops.push(p?.cursor);
+            }
+            rec(
+                "2. j steps the cursor on to the notice board as the last stop, the boss standing under it with ↵ offered; n from the asking desk lands on it after the asking desks",
+                walked.cursor === BOARD_KEY &&
+                    walked.spot &&
+                    walked.prompt === "board" &&
+                    JSON.stringify(nHops) === JSON.stringify(["fx-office-quill", BOARD_KEY]) &&
+                    atSpot(p),
+                JSON.stringify({ walked, nHops, boss: p?.boss })
+            );
+
+            // 3. a click on the board from elsewhere walks the boss to its spot and opens its box on page 1 of 2
+            await clickDesk("fx-office-quill");
+            p = await clickBoard();
+            const tabs = () => read("[data-office-question-tabs]");
+            const three = {
+                cursor: p?.cursor,
+                dialog: p?.dialog,
+                items: p?.items,
+                sel: p?.sel,
+                page: [p?.board?.page, p?.board?.of],
+                title: await read('[data-office-dialog="board"] [data-office-board-title]'),
+                tabs: await tabs(),
+                spot: atSpot(p),
+            };
+            await h.shot("cdp-shots/office-needs-you-board-3-click.png");
+            rec(
+                "3. a click on the board from elsewhere walks the boss to it and opens its box: page 1 of 2, Plan to review · Jarvis as graph, the one item Open",
+                three.cursor === BOARD_KEY &&
+                    three.dialog === "board" &&
+                    JSON.stringify(three.items) === JSON.stringify(["Open"]) &&
+                    three.sel === 0 &&
+                    JSON.stringify(three.page) === "[1,2]" &&
+                    three.title === `Plan to review · ${BOARD_SOURCE}` &&
+                    three.tabs.includes("1 of 2") &&
+                    three.spot,
+                JSON.stringify(three)
+            );
+            await press("Escape");
+
+            // 4. the office menu lists Notice board second with its count; picking it walks the boss there and opens the box
+            await clickDesk("fx-office-quill");
+            const menu = await press("m");
+            const entry = await read('[data-office-menu] [data-office-pick="1"]');
+            await h.shot("cdp-shots/office-needs-you-board-4-menu.png");
+            await press("ArrowDown");
+            await press("Enter");
+            p = await settleBoss(h);
+            rec(
+                "4. m lists Notice board second with the count 2; picking it walks the boss to the board and opens the box on page 1 of 2",
+                menu?.menuItems?.[1] === "Notice board" &&
+                    entry.includes("Notice board") &&
+                    entry.includes("2") &&
+                    p?.dialog === "board" &&
+                    p.cursor === BOARD_KEY &&
+                    JSON.stringify([p.board?.page, p.board?.of]) === "[1,2]" &&
+                    atSpot(p),
+                JSON.stringify({ items: menu?.menuItems, entry, dialog: p?.dialog, page: [p?.board?.page, p?.board?.of], boss: p?.boss })
+            );
+
+            // 5. → pages to the learned rule (Accept, Dismiss, Why), the ▶ on Accept; ↓ ↓ ↵ on Why shows the words that
+            // raised it; ← goes back to page 1 with the ▶ on its first item and the Why shut
+            p = await press("ArrowRight");
+            const learned = {
+                page: [p?.board?.page, p?.board?.of],
+                items: p?.items,
+                sel: p?.sel,
+                title: await read('[data-office-dialog="board"] [data-office-board-title]'),
+                quote: await read('[data-office-dialog="board"] [data-office-board-quote]'),
+            };
+            await h.shot("cdp-shots/office-needs-you-board-5-learned.png");
+            await press("ArrowDown", 2);
+            p = await press("Enter");
+            const why = {
+                sel: p?.sel,
+                open: p?.board?.why,
+                quote: await read('[data-office-dialog="board"] [data-office-board-quote]'),
+            };
+            await h.shot("cdp-shots/office-needs-you-board-5-why.png");
+            p = await press("ArrowLeft");
+            const back = { page: p?.board?.page, items: p?.items, sel: p?.sel, why: p?.board?.why };
+            rec(
+                "5. → pages to Learned rule with Accept, Dismiss and Why, the ▶ on Accept; ↓ ↓ ↵ on Why shows the quote; ← back to page 1 puts the ▶ on its first item again",
+                JSON.stringify(learned.page) === "[2,2]" &&
+                    JSON.stringify(learned.items) === JSON.stringify(["Accept", "Dismiss", "Why"]) &&
+                    learned.sel === 0 &&
+                    learned.title.startsWith("Learned rule") &&
+                    learned.quote === "" &&
+                    why.open === true &&
+                    why.quote.includes(BOARD_QUOTE) &&
+                    back.page === 1 &&
+                    JSON.stringify(back.items) === JSON.stringify(["Open"]) &&
+                    back.sel === 0 &&
+                    back.why === false,
+                JSON.stringify({ learned, why, back })
+            );
+
+            // 6. Esc closes the box and offers ↵ Read over the boss; ↵ opens it again
+            p = await press("Escape");
+            const prompt = await read('[data-office-prompt="board"]');
+            await h.shot("cdp-shots/office-needs-you-board-6-prompt.png");
+            const shut = { dialog: p?.dialog, prompt: p?.prompt };
+            p = await press("Enter");
+            rec(
+                "6. Esc closes the box and the ↵ Read prompt shows at the board; ↵ opens the box again",
+                shut.dialog === "" && shut.prompt === "board" && prompt.includes("Read") && p?.dialog === "board",
+                JSON.stringify({ shut, prompt, reopened: p?.dialog })
+            );
+
+            // 6b. the paging keys act only while the box is open: shut, h and l leave the page; open, they turn it
+            p = await press("ArrowRight");
+            const turned = p?.board?.page;
+            p = await press("Escape");
+            const shutOn = p?.board?.page;
+            await press("h");
+            await press("l");
+            p = await press("h");
+            const stayed = { page: p?.board?.page, dialog: p?.dialog };
+            await press("Enter");
+            p = await press("h");
+            const reopened = { page: p?.board?.page, dialog: p?.dialog, items: p?.items };
+            rec(
+                "6b. with the box shut at the board h and l do not turn the page; with it open they do",
+                turned === 2 &&
+                    shutOn === 2 &&
+                    stayed.page === 2 &&
+                    stayed.dialog === "" &&
+                    reopened.dialog === "board" &&
+                    reopened.page === 1 &&
+                    JSON.stringify(reopened.items) === JSON.stringify(["Open"]),
+                JSON.stringify({ turned, shutOn, stayed, reopened })
+            );
+
+            // 7. ↵ on Open opens the initiative the plan came from, on Jarvis's detail sheet
+            await press("Enter");
+            const landed = await until(
+                `document.querySelector('[data-jarvis-brief-sheet="effort"]')?.innerText.includes(${JSON.stringify(BOARD_SOURCE)}) === true`,
+                15000
+            );
+            const surface = await h.activeSurfaceLabel();
+            await h.shot("cdp-shots/office-needs-you-board-7-open.png");
+            rec(
+                "7. ↵ on Open opens the plan's initiative: Jarvis, with its detail sheet on it",
+                landed && surface === "Jarvis",
+                JSON.stringify({ landed, surface })
+            );
+            await h.ev(`document.querySelector('[data-jarvis-brief-sheet] button[aria-label="Close detail sheet"]')?.click()`);
+            await h.goto("cockpit");
+            const back7 = await waitForOffice(h);
+            await settleBoss(h);
+
+            // 8. the rows going while the box is open: the box closes, the bubble and slips go, the board stays, and the
+            // boss still stands at it with the keys walking
+            await clickDesk("fx-office-quill");
+            await clickBoard();
+            const open8 = await probe(h);
+            await setBoardRows(h, []);
+            await until(`document.querySelectorAll("[data-office-board-slip]").length === 0`);
+            await sleep(300);
+            p = await probe(h);
+            const empty = await drawn();
+            await showBoard();
+            await h.shot("cdp-shots/office-needs-you-board-8-cleared.png");
+            rec(
+                "8. the last row going while the box is open closes it, drops the bubble and the slips and leaves the board drawn; the boss still stands at it, the layer back to walking",
+                back7 == null &&
+                    open8?.dialog === "board" &&
+                    p?.dialog === "" &&
+                    p.layer === "walk" &&
+                    p.cursor === BOARD_KEY &&
+                    atSpot(p) &&
+                    empty.board &&
+                    empty.slips === 0 &&
+                    empty.count === null &&
+                    (await bubbles()) === bubblesWaiting - 1 &&
+                    JSON.stringify([p.board?.count, p.board?.page]) === "[0,0]",
+                JSON.stringify({ back7, open8: open8?.dialog, dialog: p?.dialog, layer: p?.layer, cursor: p?.cursor, boss: p?.boss, spot: p?.board?.spot, empty, bubbles: [bubblesWaiting, await bubbles()] })
+            );
+
+            // 8b. with no rows the boss still walks up to the quiet board and the cursor stays on it: no jump to a desk
+            await clickDesk("fx-office-quill");
+            const spot = (await probe(h))?.board?.spot;
+            if (spot) await clickFloor(spot.x, spot.y);
+            p = await settleBoss(h);
+            await sleep(800);
+            const still = await probe(h);
+            await h.shot("cdp-shots/office-needs-you-board-8b-quiet.png");
+            rec(
+                "8b. with no rows waiting the boss walks up to the board and the cursor stays on it, the boss where it stopped: no jump to a desk, nothing offered",
+                spot != null &&
+                    atSpot(p) &&
+                    p.cursor === BOARD_KEY &&
+                    atSpot(still) &&
+                    still.boss.x === p.boss.x &&
+                    still.boss.y === p.boss.y &&
+                    still.cursor === BOARD_KEY &&
+                    still.prompt === "" &&
+                    still.dialog === "",
+                JSON.stringify({ spot, stopped: [p?.cursor, p?.boss], later: [still?.cursor, still?.boss, still?.prompt, still?.dialog] })
+            );
+
+            // 8c. four rows: three slips at most, the count says four, and the box has four pages
+            await setBoardRows(h, boardRows(ctx.effortId, 4));
+            await until(`document.querySelectorAll("[data-office-board-slip]").length === 3`);
+            await sleep(300);
+            const four = await drawn();
+            await showBoard();
+            p = await clickBoard();
+            const tabs4 = await tabs();
+            await h.shot("cdp-shots/office-needs-you-board-8c-four.png");
+            rec(
+                "8c. four rows pin three slips, the count over the board reads 4, and the box pages 1 of 4",
+                four.slips === 3 && four.count === "4" && p?.board?.count === 4 && tabs4.includes("1 of 4"),
+                JSON.stringify({ four, count: p?.board?.count, tabs: tabs4 })
+            );
+            await press("Escape");
+
+            // 9. Cards keeps the strip, with the same rows
+            await setBoardRows(h, boardRows(ctx.effortId));
+            await sleep(300);
+            await focusCockpit(h);
+            await key(h, "o");
+            const strip = await until(`document.querySelectorAll("[data-cockpit-needs-you] [data-needs-you-row]").length === 2`);
+            const cards = await h.ev(`({
+                rows: [...document.querySelectorAll("[data-cockpit-needs-you] [data-needs-you-row]")].map((r) => r.dataset.needsYouRow),
+                office: !!document.querySelector("[data-cockpit-office]"),
+                board: !!document.querySelector("[data-office-board]"),
+            })`);
+            await h.shot("cdp-shots/office-needs-you-board-9-cards.png");
+            rec(
+                "9. Cards shows the strip with the same two rows and no board",
+                strip &&
+                    JSON.stringify(cards.rows) === JSON.stringify([BOARD_PLAN_KEY, BOARD_LEARN_KEY]) &&
+                    !cards.office &&
+                    !cards.board,
+                JSON.stringify(cards)
+            );
+            return steps;
+        },
+    };
     // the spec's Benchmark: Cards then Office on the office-bench roster plus three fixture runs (~75 people)
     const cockpitOfficeBench = {
         name: "cockpit-office-bench",
@@ -1362,5 +1794,5 @@ export function makeCockpitOfficeScenarios(fx) {
         },
     };
 
-    return { cockpitOffice, cockpitOfficeControls, cockpitOfficeBench };
+    return { cockpitOffice, cockpitOfficeControls, cockpitOfficeNeedsYouBoard, cockpitOfficeBench };
 }

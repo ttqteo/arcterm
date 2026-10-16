@@ -81,6 +81,7 @@ and the two columns share whatever width the hall leaves.
 - **The hall** runs between the columns, top to bottom (234 px wide). At its top, **the lounge**: a rug, a TV on the
   wall, the sofa facing it, the coffee machine and a plant, where idle people go. At its foot, by the entrance,
   **Home**: a booth holding the cards with no project, one desk per row; it grows up the hall, under the lounge.
+  Between the lounge and Home hangs the Needs you notice board (`2026-10-16-office-needs-you-board-design.md`).
 - **The lounge holds a fixed set of spots:** the sofa's seats, and standing places by the coffee machine and the
   plant, as many as fit with their labels: every label sits whole inside the lounge, over no other label or person
   (a name too long for its room is cut with an ellipsis, the full text in the person's title). Spots fill by

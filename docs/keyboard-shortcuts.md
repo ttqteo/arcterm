@@ -213,13 +213,13 @@ A link inside an item view does a full open, even with `Mod` held.
 | `t` | Open the agent's terminal |
 | `b` | Background the agent (keeps it running) |
 | `o` | Switch the Cockpit between Cards and Office |
-| `←` `↑` `↓` `→` (Office) | Walk the boss; walls stop it, doors let it through. In the dialog box `↑` `↓` move the ▶ and `←` `→` switch the question |
-| `j` / `k` (Office) | The boss walks to the next / previous desk or seat |
-| `n` (Office) | Show the way to the next Needs you for a second, then walk there |
-| `Enter` (Office) | At a desk, open its dialog box; in the box, do what the ▶ points at (an answer, then Send); on the full card, Enter works as above |
+| `←` `↑` `↓` `→` (Office) | Walk the boss; walls stop it, doors let it through. In the dialog box `↑` `↓` move the ▶ and `←` `→` switch the question (or, at the notice board, the page) |
+| `j` / `k` (Office) | The boss walks to the next / previous desk or seat, the notice board last while something waits on you |
+| `n` (Office) | Show the way to the next Needs you for a second, then walk there; the notice board comes after the asking desks |
+| `Enter` (Office) | At a desk or the notice board, open its dialog box; in the box, do what the ▶ points at (an answer, then Send); on the full card, Enter works as above |
 | `f` (Office) | Open the desk's full card big; on the card, grow or shrink it (the size stays for the next card) |
 | `Esc` (Office) | One step back: the full card to the dialog box, the box to walking; walking, hide the Events rail the menu showed |
-| `m` (Office) | The office menu: next Needs you, next or previous desk, Events, Cards view, all keys |
+| `m` (Office) | The office menu: next Needs you, Notice board (walks to it and opens it), next or previous desk, Events, Cards view, all keys |
 
 ### Agent
 
